@@ -1,9 +1,35 @@
 #include <demo.h>
 #include <dear_widgets.h>
 
+#include <vector>
+
+static int grid_rows = 8;
+static int grid_columns = 8;
+static std::vector<float> grid_values;
+
+class StaticInit
+{
+public:
+	StaticInit()
+	{
+		for (int j = 0; j < grid_rows; ++j)
+		{
+			for (int i = 0; i < grid_columns; ++i)
+			{
+				float x = ((float)i) / ((float)(grid_columns - 1));
+				float y = ((float)j) / ((float)(grid_rows - 1));
+
+				grid_values.push_back(x);
+				grid_values.push_back(y);
+			}
+		}
+	}
+};
+
 namespace ImWidgets {
 	void	ShowDemo()
 	{
+		static StaticInit s_StaticInit;
 		static float f = 0.0f;
 		static int counter = 0;
 
@@ -14,6 +40,12 @@ namespace ImWidgets {
 		static ImWidgetsLengthUnit currentUnit = ImWidgetsLengthUnit_Metric;
 		DragLengthScalar("DragLengthScalar", ImGuiDataType_Float, &length, &currentUnit, 1.0f, &fZero, nullptr, ImGuiSliderFlags_None);
 
+		ImWidgets::BeginGroupPanel("Colors");
+		{
+			HueToHue("Wesh");
+			LumToSat("Wesh2");
+		}
+		ImWidgets::EndGroupPanel();
 		ImWidgets::BeginGroupPanel("Slider 2D");
 		{
 			static ImVec2 slider2D;
@@ -41,6 +73,13 @@ namespace ImWidgets {
 											  boundMin.y, boundMax.y,
 											  boundMin.z, boundMax.z,
 											0.75f);
+		}
+		ImWidgets::EndGroupPanel();
+		ImWidgets::BeginGroupPanel("Grids");
+		{
+			ImVec2 boundMin(-1.0f, -1.0f);
+			ImVec2 boundMax(1.0f, 1.0f);
+			Grid2D_AoS_Float("Slider 3D Float", &grid_values[0], grid_rows, grid_columns, boundMin.x, boundMax.x, boundMin.y, boundMax.y);
 		}
 		ImWidgets::EndGroupPanel();
 

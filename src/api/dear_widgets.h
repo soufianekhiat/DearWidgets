@@ -17,8 +17,10 @@ namespace ImWidgets {
 		ImWidgetsLengthUnit_COUNT
 	};
 
+	// Layout
 	IMGUI_API void CenterNextItem(ImVec2 nextItemSize);
 
+	// Numbers, Scalar
 	IMGUI_API bool DragFloatLog(const char* label, float* data, float v_speed, float log_basis = 10.0f, const void* p_min = NULL, const void* p_max = NULL, ImGuiSliderFlags flags = 0);
 
 	IMGUI_API bool DragLengthScalar(const char* label, ImGuiDataType data_type, void* p_data, ImWidgetsLengthUnit* p_defaultUnit, float v_speed, const void* p_min = NULL, const void* p_max = NULL, ImGuiSliderFlags flags = 0);
@@ -33,6 +35,14 @@ namespace ImWidgets {
 
 	IMGUI_API bool InputVec2(const char* label, ImVec2* value, ImVec2* p_vMinValue, ImVec2* p_vMaxValue, float const fScale = 1.0f);
 	IMGUI_API bool InputVec3(const char* label, ImVec4* value, ImVec4 const vMinValue, ImVec4 const vMaxValue, float const fScale = 1.0f);
+
+	// Grid
+	// Default behavior: AoS & RowMajor
+	IMGUI_API bool Grid2D_AoS_Float(const char* label, float* buffer, int rows, int columns, float minX, float maxX, float minY, float maxY);
+
+	// Color Processing
+	IMGUI_API bool HueToHue(const char* label);
+	IMGUI_API bool LumToSat(const char* label);
 
 	//////////////////////////////////////////////////////////////////////////
 	// External
