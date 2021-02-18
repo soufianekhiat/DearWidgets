@@ -1506,6 +1506,197 @@ namespace ImWidgets {
 		return bModified;
 	}
 
+	bool Grid2D_AoS_Float(const char* label, float* buffer, int rows, int columns, float minX, float maxX, float minY, float maxY)
+	{
+		assert(minX < maxX);
+		assert(minY < maxY);
+
+		ImGuiID const iID = ImGui::GetID(label);
+		ImGui::PushID(iID);
+
+		float const vSizeFull = ImGui::GetWindowContentRegionWidth();
+		ImVec2 const vSecurity(15.0f, 15.0f);
+		ImVec2 const vSize(vSizeFull - vSecurity.x, vSizeFull - vSecurity.y);
+
+		float const fHeightOffset = ImGui::GetTextLineHeight();
+		ImVec2 const vHeightOffset(0.0f, fHeightOffset);
+
+		ImVec2 vPos = ImGui::GetCursorScreenPos();
+		ImRect oRect(vPos + vSecurity, vPos + vSize);
+
+		float const width = oRect.GetWidth();
+		float const height = oRect.GetHeight();
+
+		//ImGui::InvisibleButton("##Zone", oRect.GetSize(), 0);
+		ImGui::Dummy(oRect.GetSize());
+
+		bool hovered;
+		bool held;
+
+		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+		// Horizontal Line
+		for (int j = 0; j < rows; ++j)
+		{
+			for (int i = 0; i < columns - 1; ++i)
+			{
+				float x0 = buffer[2 * ((j + 0) * columns + i + 0) + 0];
+				float y0 = buffer[2 * ((j + 0) * columns + i + 0) + 1];
+				float x1 = buffer[2 * ((j + 0) * columns + i + 1) + 0];
+				float y1 = buffer[2 * ((j + 0) * columns + i + 1) + 1];
+
+				pDrawList->AddLine(oRect.GetTL() + ImVec2(x0 * width, y0 * height), oRect.GetTL() + ImVec2(x1 * width, y1 * height), IM_COL32(255, 255, 0, 255), 2.0f);
+			}
+		}
+		// Vertical Line
+		for (int j = 0; j < rows - 1; ++j)
+		{
+			for (int i = 0; i < columns; ++i)
+			{
+				float x0 = buffer[2 * ((j + 0) * columns + i + 0) + 0];
+				float y0 = buffer[2 * ((j + 0) * columns + i + 0) + 1];
+				float x1 = buffer[2 * ((j + 1) * columns + i + 0) + 0];
+				float y1 = buffer[2 * ((j + 1) * columns + i + 0) + 1];
+
+				pDrawList->AddLine(oRect.GetTL() + ImVec2(x0 * width, y0 * height), oRect.GetTL() + ImVec2(x1 * width, y1 * height), IM_COL32(255, 255, 0, 255), 2.0f);
+			}
+		}
+		for (int j = 0; j < rows; ++j)
+		{
+			for (int i = 0; i < columns; ++i)
+			{
+				float* pX = &buffer[2 * (j * columns + i) + 0];
+				float* pY = &buffer[2 * (j * columns + i) + 1];
+
+				ImVec2 vCenter = oRect.GetTL() + ImVec2(*pX * width, *pY * height);
+				ImRect oLocalRect(vCenter - oRect.GetSize() * 0.01f, vCenter + oRect.GetSize() * 0.01f);
+
+				ImGui::PushID(pX);
+
+				ImGui::ButtonBehavior(oLocalRect, ImGui::GetID(pY), &hovered, &held);
+				bool dragged = hovered && held;
+				pDrawList->AddCircleFilled(vCenter, vSize.x * 0.01f, IM_COL32(hovered ? 0 : 255, hovered ? 255 : 0, 0, 255), 16);
+				if (dragged)
+				{
+					ImVec2 vCursorPos = ImGui::GetMousePos();
+					ImVec2 vDelta = vCursorPos - oLocalRect.GetCenter();
+
+					vDelta /= oRect.GetSize();
+
+					*pX += vDelta.x;
+					*pY += vDelta.y;
+
+					*pX = ImSaturate(*pX);
+					*pY = ImSaturate(*pY);
+				}
+
+				ImGui::PopID();
+			}
+		}
+
+		ImGui::Dummy(ImVec2(ImGui::GetContentRegionAvailWidth(), ImGui::GetTextLineHeightWithSpacing()));
+
+		ImGui::PopID();
+
+		return false;
+	}
+
+	bool HueToHue(const char* label)
+	{
+		ImGuiID const iID = ImGui::GetID(label);
+		ImGui::PushID(iID);
+
+		ImVec2 curPos = ImGui::GetCursorScreenPos();
+		float const width = ImGui::GetContentRegionAvailWidth();
+		float const height = 0.5f * width;
+
+		//const float window_rounding = ImGui::GetStyle().WindowRounding;
+		//ImGui::RenderFrame(curPos, curPos + ImVec2(width, width));
+		ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
+
+		ImVec2 uv_white = ImGui::GetFontTexUvWhitePixel();
+
+		float dx = width / 6.0f;
+
+		ImVec2 x00(curPos + ImVec2(0, 0));
+		//ImVec2 x01(curPos + ImVec2(0, height));
+		ImVec2 x02(curPos + ImVec2(dx, 0));
+		ImVec2 x03(curPos + ImVec2(dx, height));
+		ImVec2 x04(curPos + ImVec2(2*dx, 0));
+		ImVec2 x05(curPos + ImVec2(2*dx, height));
+		ImVec2 x06(curPos + ImVec2(3*dx, 0));
+		ImVec2 x07(curPos + ImVec2(3*dx, height));
+		ImVec2 x08(curPos + ImVec2(4*dx, 0));
+		ImVec2 x09(curPos + ImVec2(4*dx, height));
+		ImVec2 x10(curPos + ImVec2(5*dx, 0));
+		ImVec2 x11(curPos + ImVec2(5*dx, height));
+		//ImVec2 x12(curPos + ImVec2(6*dx, 0));
+		ImVec2 x13(curPos + ImVec2(6*dx, height));
+
+		ImU32 const alpha = 64;
+		ImU32 const red		= IM_COL32(255, 0, 0, alpha);
+		ImU32 const yellow	= IM_COL32(255, 255, 0, alpha);
+		ImU32 const green	= IM_COL32(0, 255, 0, alpha);
+		ImU32 const cyan	= IM_COL32(0, 255, 255, alpha);
+		ImU32 const blue	= IM_COL32(0, 0, 255, alpha);
+		ImU32 const magenta	= IM_COL32(255, 0, 255, alpha);
+
+		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+		pDrawList->AddRectFilledMultiColor(x00, x03, red, yellow, yellow, red);
+		pDrawList->AddRectFilledMultiColor(x02, x05, yellow, green, green, yellow);
+		pDrawList->AddRectFilledMultiColor(x04, x07, green, cyan, cyan, green);
+		pDrawList->AddRectFilledMultiColor(x06, x09, cyan, blue, blue, cyan);
+		pDrawList->AddRectFilledMultiColor(x08, x11, blue, magenta, magenta, blue);
+		pDrawList->AddRectFilledMultiColor(x10, x13, magenta, red, red, magenta);
+
+		ImGui::PopID();
+
+		return false;
+	}
+
+	bool LumToSat(const char* label)
+	{
+		ImGuiID const iID = ImGui::GetID(label);
+		ImGui::PushID(iID);
+
+		ImVec2 curPos = ImGui::GetCursorScreenPos();
+		float const width = ImGui::GetContentRegionAvailWidth();
+		float const height = 0.5f * width;
+
+		ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
+
+		const int slice = 32;
+		const float fSlice = static_cast<float>(slice);
+
+		ImVec2 dA(curPos);
+		ImVec2 dB(curPos + ImVec2(width / fSlice, height));
+
+		ImVec2 const dD(ImVec2(width / fSlice, 0));
+
+		ImU32 const alpha	= 255;
+
+		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+		for (int i = 0; i < slice; ++i)
+		{
+			float t0 = ((float)i) / ((float)(slice - 1));
+			float t1 = ((float)(i + 1)) / ((float)(slice - 1));
+
+			ImU8 u0 = static_cast<ImU8>(ImPow(ImSaturate(t0), 2.2f) * 255);
+			ImU8 u1 = static_cast<ImU8>(ImPow(ImSaturate(t1), 2.2f) * 255);
+
+			ImU32 const col0 = IM_COL32(u0, u0, u0, alpha);
+			ImU32 const col1 = IM_COL32(u1, u1, u1, alpha);
+			pDrawList->AddRectFilledMultiColor(dA, dB, col0, col1, col1, col0);
+
+			dA += dD;
+			dB += dD;
+		}
+		//ImGui::ShadeVertsLinearColorGradientKeepAlpha(pDrawList, vert_start_idx, vert_end_idx, x00, x12, black, white);
+
+		ImGui::PopID();
+
+		return false;
+	}
+
 	//////////////////////////////////////////////////////////////////////////
 	// External
 	//////////////////////////////////////////////////////////////////////////
