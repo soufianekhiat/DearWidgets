@@ -40,9 +40,14 @@ namespace ImWidgets {
 	// Default behavior: AoS & RowMajor
 	IMGUI_API bool Grid2D_AoS_Float(const char* label, float* buffer, int rows, int columns, float minX, float maxX, float minY, float maxY);
 
+	// Core
+	IMGUI_API bool PlaneMovePoint2D(const char* label, float* buffer_aot, int float2_count, float minX, float maxX, float minY, float maxY);
+	IMGUI_API bool MoveLine2D(const char* label, float* buffer_aot, int float2_count, float minX, float maxX, float minY, float maxY);
+
 	// Color Processing
 	IMGUI_API bool HueToHue(const char* label);
 	IMGUI_API bool LumToSat(const char* label);
+	IMGUI_API bool ColorRing(const char* label, float thickness, int split);
 
 	//////////////////////////////////////////////////////////////////////////
 	// External
@@ -50,4 +55,15 @@ namespace ImWidgets {
 	// By @thedmd: https://github.com/ocornut/imgui/issues/1496#issuecomment-655048353
 	void BeginGroupPanel(const char* name, const ImVec2& size = ImVec2(-1.0f, -1.0f));
 	void EndGroupPanel();
+
+	// By @r-lyeh: https://github.com/ocornut/imgui/issues/786#issuecomment-479539045
+	void ShowBezierDemo();
+
+	// By @nem0: https://github.com/ocornut/imgui/issues/786#issuecomment-358106252
+	enum class CurveEditorFlags
+	{
+		NO_TANGENTS = 1 << 0,
+		SHOW_GRID = 1 << 1
+	};
+	int CurveEditor(const char* label, float* values, int points_count, const ImVec2& editor_size, ImU32 flags, int* new_count);
 }

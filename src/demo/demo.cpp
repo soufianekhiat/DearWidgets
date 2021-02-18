@@ -2,10 +2,17 @@
 #include <dear_widgets.h>
 
 #include <vector>
+#include <random>
 
 static int grid_rows = 8;
 static int grid_columns = 8;
 static std::vector<float> grid_values;
+
+static std::vector<float> linear_values;
+
+std::random_device rd;
+std::mt19937_64 gen(rd());
+std::uniform_real_distribution<float> dis(-1.0f, 1.0f);
 
 class StaticInit
 {
@@ -22,7 +29,18 @@ public:
 				grid_values.push_back(x);
 				grid_values.push_back(y);
 			}
+
+			linear_values.push_back(dis(gen)*0.5f);
+			linear_values.push_back(dis(gen));
 		}
+
+		ImVec2* pVec2Buffer = reinterpret_cast<ImVec2*>(&linear_values[0]);
+
+		std::sort(pVec2Buffer, pVec2Buffer + linear_values.size() / 2,
+			[](ImVec2 const& a, ImVec2 const& b)
+			{
+				return a.x < b.x;
+			});
 	}
 };
 
@@ -40,6 +58,24 @@ namespace ImWidgets {
 		static ImWidgetsLengthUnit currentUnit = ImWidgetsLengthUnit_Metric;
 		DragLengthScalar("DragLengthScalar", ImGuiDataType_Float, &length, &currentUnit, 1.0f, &fZero, nullptr, ImGuiSliderFlags_None);
 
+		float const width = ImGui::GetContentRegionAvailWidth() * 0.75;
+
+		//ShowBezierDemo();
+		ImWidgets::BeginGroupPanel("Ring Color");
+		{
+			ColorRing("Ring Color", 8.0f, 64);
+		}
+		ImWidgets::BeginGroupPanel("Curve Editor");
+		{
+			CurveEditor("Edit Curve", &linear_values[0], linear_values.size() / 2, ImVec2(width, width * 0.5f), (ImU32)CurveEditorFlags::NO_TANGENTS | (ImU32)CurveEditorFlags::SHOW_GRID, nullptr);
+		}
+		ImWidgets::EndGroupPanel();
+		ImWidgets::BeginGroupPanel("2D Move");
+		{
+			MoveLine2D("Region", &linear_values[0], linear_values.size() / 2, -1.0f, 1.0f, -1.0f, 1.0f);
+			//PlaneMovePoint2D("Region", &linear_values[0], linear_values.size()/2, -1.0f, 1.0f, -1.0f, 1.0f);
+		}
+		ImWidgets::EndGroupPanel();
 		ImWidgets::BeginGroupPanel("Colors");
 		{
 			HueToHue("Wesh");
