@@ -30,3 +30,10 @@
 *.exe
 *.out
 *.app
+.vs
+projects
+*.sln
+*.pdb
+WorkingDir/dearwidgetsdemo.map
+tmp
+sharpmakes/bin
