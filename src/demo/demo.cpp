@@ -61,6 +61,19 @@ namespace ImWidgets {
 		float const width = ImGui::GetContentRegionAvailWidth() * 0.75;
 
 		//ShowBezierDemo();
+		ImWidgets::BeginGroupPanel("Density Plot");
+		{
+			DensityPlotNearest("Dense SS N", [](float x, float y) -> float { return std::sin(x) * std::sin(y); }, 32, 32, -4.0f, 4.0f, -3.0f, 3.0f);
+			DensityPlotBilinear("Dense SS B", [](float x, float y) -> float { return std::sin(x) * std::sin(y); }, 32, 32, -4.0f, 4.0f, -3.0f, 3.0f);
+			DensityPlotNearest("Dense S N", [](float x, float y) -> float { return std::sin(x * y); }, 32, 32, 0.0f, 4.0f, 0.0f, 4.0f);
+			DensityPlotBilinear("Dense S B", [](float x, float y) -> float { return std::sin(x * y); }, 32, 32, 0.0f, 4.0f, 0.0f, 4.0f);
+		}
+		ImWidgets::BeginGroupPanel("Chromaticity Plot");
+		{
+			static float xyzToRGB[] = {3.1338561f, -1.6168667f, -0.4906146f, -0.9787684f, 1.9161415f, 0.033454f, 0.0719453f, -0.2289914f, 1.4052427f};
+			ChromaticPlotInternalBilinear("Color", ImVec2(), ImVec2(), ImVec2(), ImVec2(), &xyzToRGB[0], 1.0f / 2.2f, 32, 32,
+				0.0f, 0.8f, 0.0f, 0.9f);
+		}
 		ImWidgets::BeginGroupPanel("Ring Color");
 		{
 			ColorRing("Ring Color", 8.0f, 64);

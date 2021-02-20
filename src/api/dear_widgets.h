@@ -9,12 +9,45 @@ namespace ImWidgets {
 #define ImWidget_Pebi (ImWidget_Tebi*1024ull)
 
 	typedef int ImWidgetsLengthUnit;
+	typedef int ImWidgetsChromaticPlot;
 
 	enum ImWidgetsLengthUnit_
 	{
 		ImWidgetsLengthUnit_Metric = 0,
 		ImWidgetsLengthUnit_Imperial,
 		ImWidgetsLengthUnit_COUNT
+	};
+
+	enum ImWidgetsChromaticPlot_
+	{
+		// White Points
+		ImWidgetsChromaticPlot_C,
+		ImWidgetsChromaticPlot_D50,
+		ImWidgetsChromaticPlot_D65,
+		ImWidgetsChromaticPlot_E,
+
+		// Standard
+		ImWidgetsChromaticPlot_1931_2deg,
+		ImWidgetsChromaticPlot_1964_10deg,
+
+		// Color Spaces
+		ImWidgetsChromaticPlot_NTSC,		// C
+		ImWidgetsChromaticPlot_EBU,			// D65
+		ImWidgetsChromaticPlot_SMPTE,		// D65
+		ImWidgetsChromaticPlot_HDTV,		// D65
+		ImWidgetsChromaticPlot_CIE,			// E
+		ImWidgetsChromaticPlot_sRGB,		// D65
+		ImWidgetsChromaticPlot_Adobe,		// D65
+		ImWidgetsChromaticPlot_ColorMatch,	// D50
+		ImWidgetsChromaticPlot_ProPhoto,	// D50
+
+		// Style
+		ImWidgetsChromaticPlot_ShowWavelength,
+		ImWidgetsChromaticPlot_ShowGrid,
+		ImWidgetsChromaticPlot_ShowPrimaries,
+		ImWidgetsChromaticPlot_ShowWhitePoint,
+
+		ImWidgetsChromaticPlot_COUNT
 	};
 
 	// Layout
@@ -48,6 +81,13 @@ namespace ImWidgets {
 	IMGUI_API bool HueToHue(const char* label);
 	IMGUI_API bool LumToSat(const char* label);
 	IMGUI_API bool ColorRing(const char* label, float thickness, int split);
+
+	// xyzToRGB: a rowMajorMatrix
+	IMGUI_API bool ChromaticPlotInternalBilinear(const char* label, ImVec2 primR, ImVec2 primG, ImVec2 primB, ImVec2 whitePoint, float* xyzToRGB, float gamma, int resX, int resY, float minX = 0.0f, float maxX = 0.8f, float minY = 0.0f, float maxY = 0.9f);
+	//IMGUI_API bool ChromaticPlot(const char* label, int resX, int resY, ImWidgetsChromaticPlot flags);
+
+	IMGUI_API bool DensityPlotBilinear(const char* label, float(*sample)(float x, float y), int resX, int resY, float minX, float maxX, float minY, float maxY);
+	IMGUI_API bool DensityPlotNearest(const char* label, float(*sample)(float x, float y), int resX, int resY, float minX, float maxX, float minY, float maxY);
 
 	//////////////////////////////////////////////////////////////////////////
 	// External
