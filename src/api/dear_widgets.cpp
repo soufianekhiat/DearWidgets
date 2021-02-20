@@ -9,6 +9,17 @@
 
 namespace ImWidgets {
 	//////////////////////////////////////////////////////////////////////////
+	// Data
+	//////////////////////////////////////////////////////////////////////////
+	static float s_CIE_1931_2deg_min = 360.0f;
+	static float s_CIE_1931_2deg_max = 830.0f;
+	#define s_CIE_1931_2deg_samplesCount 95
+	static float s_CIE_1931_2deg_X[] = { 0.0001299f,0.0002321f,0.0004149f,0.0007416f,0.001368f,0.002236f,0.004243f,0.00765f,0.01431f,0.02319f,0.04351f,0.07763f,0.13438f,0.21477f,0.2839f,0.3285f,0.34828f,0.34806f,0.3362f,0.3187f,0.2908f,0.2511f,0.19536f,0.1421f,0.09564f,0.05795001f,0.03201f,0.0147f,0.0049f,0.0024f,0.0093f,0.0291f,0.06327f,0.1096f,0.1655f,0.2257499f,0.2904f,0.3597f,0.4334499f,0.5120501f,0.5945f,0.6784f,0.7621f,0.8425f,0.9163f,0.9786f,1.0263f,1.0567f,1.0622f,1.0456f,1.0026f,0.9384f,0.8544499f,0.7514f,0.6424f,0.5419f,0.4479f,0.3608f,0.2835f,0.2187f,0.1649f,0.1212f,0.0874f,0.0636f,0.04677f,0.0329f,0.0227f,0.01584f,0.01135916f,0.008110916f,0.005790346f,0.004109457f,0.002899327f,0.00204919f,0.001439971f,0.0009999493f,0.0006900786f,0.0004760213f,0.0003323011f,0.0002348261f,0.0001661505f,0.000117413f,0.00008307527f,0.00005870652f,0.00004150994f,0.00002935326f,0.00002067383f,0.00001455977f,0.00001025398f,7.221456e-6f,5.085868e-6f,3.581652e-6f,2.522525e-6f,1.776509e-6f,1.251141e-6f };
+	static float s_CIE_1931_2deg_Y[] = { 3.917e-6f, 6.965e-6f, 0.00001239f, 0.00002202f, 0.000039f, 0.000064f, 0.00012f, 0.000217f, 0.000396f, 0.00064f, 0.00121f, 0.00218f, 0.004f, 0.0073f, 0.0116f, 0.01684f, 0.023f, 0.0298f, 0.038f, 0.048f, 0.06f, 0.0739f, 0.09098f, 0.1126f, 0.13902f, 0.1693f, 0.20802f, 0.2586f, 0.323f, 0.4073f, 0.503f, 0.6082f, 0.71f, 0.7932f, 0.862f, 0.9148501f, 0.954f, 0.9803f, 0.9949501f, 1.f, 0.995f, 0.9786f, 0.952f, 0.9154f, 0.87f, 0.8163f, 0.757f, 0.6949f, 0.631f, 0.5668f, 0.503f, 0.4412f, 0.381f, 0.321f, 0.265f, 0.217f, 0.175f, 0.1382f, 0.107f, 0.0816f, 0.061f, 0.04458f, 0.032f, 0.0232f, 0.017f, 0.01192f, 0.00821f, 0.005723f, 0.004102f, 0.002929f, 0.002091f, 0.001484f, 0.001047f, 0.00074f, 0.00052f, 0.0003611f, 0.0002492f, 0.0001719f, 0.00012f, 0.0000848f, 0.00006f, 0.0000424f, 0.00003f, 0.0000212f, 0.00001499f, 0.0000106f, 7.4657e-6f, 5.2578e-6f, 3.7029e-6f, 2.6078e-6f, 1.8366e-6f, 1.2934e-6f, 9.1093e-7f, 6.4153e-7f, 4.5181e-7f};
+	static float s_CIE_1931_2deg_Z[] = { 0.0006061f,0.001086f,0.001946f,0.003486f,0.006450001f,0.01054999f,0.02005001f,0.03621f,0.06785001f,0.1102f,0.2074f,0.3713f,0.6456f,1.0390501f,1.3856f,1.62296f,1.74706f,1.7826f,1.77211f,1.7441f,1.6692f,1.5281f,1.28764f,1.0419f,0.8129501f,0.6162f,0.46518f,0.3533f,0.272f,0.2123f,0.1582f,0.1117f,0.07824999f,0.05725001f,0.04216f,0.02984f,0.0203f,0.0134f,0.008749999f,0.005749999f,0.0039f,0.002749999f,0.0021f,0.0018f,0.001650001f,0.0014f,0.0011f,0.001f,0.0008f,0.0006f,0.00034f,0.00024f,0.00019f,0.0001f,0.00004999999f,0.00003f,0.00002f,0.00001f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f };
+	static float s_Illuminance_D65[] = { 46.6383f,49.3637f,52.0891f,51.0323f,49.9755f,52.3118f,54.6482f,68.7015f,82.7549f,87.1204f,91.486f,92.4589f,93.4318f,90.057f,86.6823f,95.7736f,104.865f,110.936f,117.008f,117.41f,117.812f,116.336f,114.861f,115.392f,115.923f,112.367f,108.811f,109.082f,109.354f,108.578f,107.802f,106.296f,104.79f,106.239f,107.689f,106.047f,104.405f,104.225f,104.046f,102.023f,100.f,98.1671f,96.3342f,96.0611f,95.788f,92.2368f,88.6856f,89.3459f,90.0062f,89.8026f,89.5991f,88.6489f,87.6987f,85.4936f,83.2886f,83.4939f,83.6992f,81.863f,80.0268f,80.1207f,80.2146f,81.2462f,82.2778f,80.281f,78.2842f,74.0027f,69.7213f,70.6652f,71.6091f,72.979f,74.349f,67.9765f,61.604f,65.7448f,69.8856f,72.4863f,75.087f,69.3398f,63.5927f,55.0054f,46.4182f,56.6118f,66.8054f,65.0941f,63.3828f,63.8434f,64.304f,61.8779f,59.4519f,55.7054f,51.959f,54.6998f,57.4406f,58.8765f,60.3125f };
+
+	//////////////////////////////////////////////////////////////////////////
 	// Helpers
 	//////////////////////////////////////////////////////////////////////////
 	void	ScaleData(ImGuiDataType data_type, void* p_data, double value)
@@ -49,14 +60,19 @@ namespace ImWidgets {
 	}
 
 	template < typename Type >
-	Type Normalize01(Type const x, Type const _min, Type const _max)
+	Type	Normalize01(Type const x, Type const _min, Type const _max)
 	{
 		return (x - _min) / (_max - _min);
 	}
 	template < typename Type >
-	Type Rescale(Type const x, Type const _min, Type const _max, Type const newMin, Type const newMax)
+	Type	ScaleFromNormalized(Type const x, Type const newMin, Type const newMax)
 	{
-		return Normalize01(x, _min, _max)*(newMax - newMin) + newMin;
+		return x * (newMax - newMin) + newMin;
+	}
+	template < typename Type >
+	Type	Rescale(Type const x, Type const _min, Type const _max, Type const newMin, Type const newMax)
+	{
+		return ScaleFromNormalized(Normalize01(x, _min, _max), newMin, newMax);
 	}
 
 	bool	IsNegativeScalar(ImGuiDataType data_type, ImU64* src)
@@ -383,7 +399,6 @@ namespace ImWidgets {
 		return result;
 	}
 
-#pragma optimize( "", off )
 	ImU64	SubScalar(ImGuiDataType data_type, void* p_a, void* p_b)
 	{
 		ImU64 result = 0;
@@ -662,6 +677,76 @@ namespace ImWidgets {
 		}
 
 		return result;
+	}
+
+	float	Dot3(float x0, float x1, float x2, float* vec3)
+	{
+		return x0 * vec3[0] + x1 * vec3[1] + x2 * vec3[2];
+	}
+
+	void	Mat33MulV(float* z0, float* z1, float* z2, float x, float y, float z, float* mat)
+	{
+		*z0 = Dot3(x, y, z, &mat[0]);
+		*z1 = Dot3(x, y, z, &mat[3]);
+		*z2 = Dot3(x, y, z, &mat[6]);
+	}
+
+#pragma optimize( "", off )
+	float	LinearSample(float t, float* buffer, int count)
+	{
+#if 0
+		float const width = (float)(count - 1);
+
+		float tx = ScaleFromNormalized(t, 0.0f, width);
+
+		float i0 = ImFloor(tx);
+		float i1 = ImCeil(tx);
+
+		float t0 = i0 / width;
+		float t1 = i1 / width;
+
+		float ti;
+		if (t0 != t1)
+			ti = Normalize01(t, t0, t1);
+		else
+			ti = 1.0f;
+
+		return ImLerp(buffer[(int)i0], buffer[(int)i1], ti);
+#else
+		float const width = (float)(count - 1);
+
+		float const i0 = ImFloor(t * width);
+		float const i1 = ImCeil(t * width);
+
+		float ti;
+		if (i0 != i1)
+			ti = (t * width - i0) / (i1 - i0);
+		else
+			ti = 1.0f;
+
+		return ImLerp(buffer[(int)i0], buffer[(int)i1], ti);
+#endif
+	}
+
+#pragma optimize( "", off )
+	void	ChromaticCurve(float* x, float* y, float wavelength, float* illuminanceX, float* illuminanceY, float* illuminanceZ, float* standardCIE, int samplesCount, float min, float max)
+	{
+		if (wavelength < min || wavelength > max)
+		{
+			*x = *y = 0.0f;
+		}
+
+		float t = Normalize01(wavelength, min, max);
+
+		float const fCIE = LinearSample(t, standardCIE, samplesCount);
+		float const fIllumX = fCIE * LinearSample(t, illuminanceX, samplesCount);
+		float const fIllumY = fCIE * LinearSample(t, illuminanceY, samplesCount);
+		float const fIllumZ = fCIE * LinearSample(t, illuminanceZ, samplesCount);
+
+		float const sum = fIllumX + fIllumY + fIllumZ;
+
+		*x = fIllumX / sum;
+		*y = fIllumY / sum;
 	}
 
 	void		MemoryString(std::string& sResult, ImU64 const uMemoryByte)
@@ -1938,6 +2023,182 @@ namespace ImWidgets {
 
 		return false;
 	}
+
+	ImU32	ImColorFrom_xyz(float x, float y, float z, float* xyzToRGB, float gamma)
+	{
+		float r, g, b;
+		float maxValue;
+		Mat33MulV(&r, &g, &b, x, y, z, xyzToRGB);
+		maxValue = ImMax(r, ImMax(g, b));
+		if (maxValue > 0.0f)
+		{
+			r /= maxValue;
+			g /= maxValue;
+			b /= maxValue;
+		}
+		r = ImSaturate(r);
+		g = ImSaturate(g);
+		b = ImSaturate(b);
+
+		r = ImPow(r, gamma);
+		g = ImPow(g, gamma);
+		b = ImPow(b, gamma);
+
+		return IM_COL32(r * 255, g * 255, b * 255, 255);
+	}
+
+	bool ChromaticPlotInternalBilinear(const char* label, ImVec2 primR, ImVec2 primG, ImVec2 primB, ImVec2 whitePoint, float* xyzToRGB, float gamma, int resX, int resY,
+		float minX /*= 0.0f*/, float maxX /*= 0.8f*/, float minY /*= 0.0f*/, float maxY /*= 0.9f*/)
+	{
+		ImGuiID const iID = ImGui::GetID(label);
+		ImGui::PushID(iID);
+
+		ImVec2 curPos = ImGui::GetCursorScreenPos();
+		float const width = ImGui::GetContentRegionAvailWidth();
+		float const height = width;
+
+		ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
+
+		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
+		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+
+		float sx = ((float)width) / ((float)resX);
+		float sy = ((float)height) / ((float)resY);
+		float dx = 0.5f * sx;
+		float dy = 0.5f * sx;
+		// From x: 0 -> 0.8; y: 0 -> 0.9
+		float r, g, b;
+		float maxValue;
+		for (int i = 0; i < resX; ++i)
+		{
+			float x0 = ScaleFromNormalized(((float)(i + 0)) / ((float)(resX - 1)), minX, maxX);
+			float x1 = ScaleFromNormalized(((float)(i + 1)) / ((float)(resX - 1)), minX, maxX);
+
+			for (int j = 0; j < resY; ++j)
+			{
+				float y0 = ScaleFromNormalized(1.0f - ((float)(j + 0)) / ((float)(resY - 1)), minY, maxY);
+				float y1 = ScaleFromNormalized(1.0f - ((float)(j + 1)) / ((float)(resY - 1)), minY, maxY);
+				float z00 = 1.0f - x0 - y0;
+				float z10 = 1.0f - x1 - y0;
+				float z01 = 1.0f - x0 - y1;
+				float z11 = 1.0f - x1 - y1;
+
+				ImU32 const col00 = ImColorFrom_xyz(x0, y0, z00, xyzToRGB, gamma);
+				//ImU32 const col01 = ImColorFrom_xyz(x0, y1, z01, xyzToRGB, gamma);
+				//ImU32 const col10 = ImColorFrom_xyz(x1, y0, z10, xyzToRGB, gamma);
+				//ImU32 const col11 = ImColorFrom_xyz(x1, y1, z11, xyzToRGB, gamma);
+				//
+				//pDrawList->AddRectFilledMultiColor(curPos + ImVec2(sx * (i + 0), sy * (j + 0)),
+				//								   curPos + ImVec2(sx * (i + 1), sy * (j + 1)),
+				//								   col00, col10, col11, col01);
+
+				pDrawList->AddRectFilledMultiColor(curPos + ImVec2(sx * (i + 0), sy * (j + 0)),
+												   curPos + ImVec2(sx * (i + 1), sy * (j + 1)),
+												   col00, col00, col00, col00);
+			}
+		}
+
+		float x, y;
+		ImVec2 chromLine[s_CIE_1931_2deg_samplesCount];
+		for (int i = 0; i < s_CIE_1931_2deg_samplesCount; ++i)
+		{
+			//chromLine[i] = ImVec2();
+			float const wavelength = Rescale(((float)i) / ((float)(s_CIE_1931_2deg_samplesCount - 1)), 0.0f, 1.0f, s_CIE_1931_2deg_min, s_CIE_1931_2deg_max);
+			ChromaticCurve(&x, &y, wavelength,
+				s_CIE_1931_2deg_X, s_CIE_1931_2deg_Y, s_CIE_1931_2deg_Z,
+				s_Illuminance_D65, s_CIE_1931_2deg_samplesCount,
+				s_CIE_1931_2deg_min, s_CIE_1931_2deg_max);
+
+			chromLine[i] = curPos + ImVec2(x * width, (1.0f - y) * width);
+		}
+		pDrawList->AddPolyline(&chromLine[0], s_CIE_1931_2deg_samplesCount, IM_COL32(0, 0, 0, 255), true, 2.0f);
+
+		ImGui::PopID();
+
+		return false;
+	}
+
+	template < bool IsBilinear >
+	bool DensityPlotEx(const char* label, float(*sample)(float x, float y), int resX, int resY, float minX, float maxX, float minY, float maxY)
+	{
+		ImGuiID const iID = ImGui::GetID(label);
+		ImGui::PushID(iID);
+
+		float* pMin = ImGui::GetStateStorage()->GetFloatRef(iID + 0, FLT_MAX);
+		float* pMax = ImGui::GetStateStorage()->GetFloatRef(iID + 1, -FLT_MAX);
+
+		ImVec2 curPos = ImGui::GetCursorScreenPos();
+		float const width = ImGui::GetContentRegionAvailWidth();
+		float const height = width;
+
+		ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
+
+		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
+		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+
+		auto GetColor = [pMin, pMax, &sample](float x, float y) {
+			float value = sample(x, y);
+			if (value < *pMin)
+				* pMin = value;
+			if (value > * pMax)
+				* pMax = value;
+
+			float showValue = Normalize01(value, *pMin, *pMax);
+			ImU32 const uVal = static_cast<ImU32>(showValue * 255.0f);
+
+			return IM_COL32(uVal, uVal, uVal, 255);
+		};
+
+		float sx = ((float)width) / ((float)resX);
+		float sy = ((float)height) / ((float)resY);
+		float dx = 0.5f * sx;
+		float dy = 0.5f * sx;
+		// From x: 0 -> 0.8; y: 0 -> 0.9
+		float r, g, b;
+		float maxValue;
+		for (int i = 0; i < resX; ++i)
+		{
+			float x0 = ScaleFromNormalized(((float)(i + 0)) / ((float)(resX - 1)), minX, maxX);
+			float x1 = ScaleFromNormalized(((float)(i + 1)) / ((float)(resX - 1)), minX, maxX);
+
+			for (int j = 0; j < resY; ++j)
+			{
+				float y0 = ScaleFromNormalized(1.0f - ((float)(j + 0)) / ((float)(resY - 1)), minY, maxY);
+				float y1 = ScaleFromNormalized(1.0f - ((float)(j + 1)) / ((float)(resY - 1)), minY, maxY);
+
+				ImU32 const col00 = GetColor(x0, y0);
+				if constexpr (IsBilinear)
+				{
+					ImU32 const col01 = GetColor(x0, y1);
+					ImU32 const col10 = GetColor(x1, y0);
+					ImU32 const col11 = GetColor(x1, y1);
+					pDrawList->AddRectFilledMultiColor(curPos + ImVec2(sx * (i + 0), sy * (j + 0)),
+						curPos + ImVec2(sx * (i + 1), sy * (j + 1)),
+						col00, col10, col11, col01);
+				}
+				else
+				{
+					pDrawList->AddRectFilledMultiColor(curPos + ImVec2(sx * (i + 0), sy * (j + 0)),
+													   curPos + ImVec2(sx * (i + 1), sy * (j + 1)),
+													   col00, col00, col00, col00);
+				}
+			}
+		}
+
+		ImGui::PopID();
+
+		return false;
+	}
+
+	bool DensityPlotBilinear(const char* label, float(*sample)(float x, float y), int resX, int resY, float minX, float maxX, float minY, float maxY)
+	{
+		return DensityPlotEx<true>(label, sample, resX, resY, minX, maxX, minY, maxY);
+	}
+	IMGUI_API bool DensityPlotNearest(const char* label, float(*sample)(float x, float y), int resX, int resY, float minX, float maxX, float minY, float maxY)
+	{
+		return DensityPlotEx<false>(label, sample, resX, resY, minX, maxX, minY, maxY);
+	}
+
 
 	//////////////////////////////////////////////////////////////////////////
 	// External
