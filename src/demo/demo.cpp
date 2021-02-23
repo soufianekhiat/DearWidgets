@@ -94,6 +94,17 @@ namespace ImWidgets {
 		ImGui::ShowMetricsWindow(&show_app_metrics);
 
 		//ShowBezierDemo();
+		ImWidgets::BeginGroupPanel("Analytical Plot");
+		{
+			float const width = ImGui::GetContentRegionAvailWidth();
+			ImGui::PlotLines("PlotLines", [](void* data, int idx)
+				{
+					float const x = (((float)idx) / 127.0f) * 8.0f;
+					return sin(x * x * x) * sin(x);
+				}, nullptr, 128, 0, nullptr, FLT_MAX, FLT_MAX, ImVec2(width, width));
+			AnalyticalPlot("Analytical", [](float const x) { return sin(x * x * x) * sin(x); }, 0.0f, 8.0f, 32);
+		}
+		ImWidgets::EndGroupPanel();
 		ImWidgets::BeginGroupPanel("Chromaticity Plot");
 		{
 			char const* observer[] = { "1931 2°", "1964 10°" };
