@@ -7,3 +7,6 @@
 [submodule "extern/glad"]
 	path = extern/glad
 	url = https://github.com/soufianekhiat/glad.git
+[submodule "extern/Clipper"]
+	path = extern/Clipper
+	url = git@github.com:Geri-Borbas/Clipper.git
