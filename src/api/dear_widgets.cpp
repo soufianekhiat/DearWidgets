@@ -2151,7 +2151,8 @@ namespace ImWidgets {
 		float const ddx2 = ImAbs(x2 - x3);
 		float const ddx3 = ImAbs(x3 - x4);
 
-		return rms + ddx0 * ddx0 + ddx1 * ddx1 + ddx2 * ddx2 + ddx3 * ddx3;
+		//return 0*rms + ddx0 * ddx0 + ddx1 * ddx1 + ddx2 * ddx2 + ddx3 * ddx3;
+		return ddx1 * ddx1 + ddx2 * ddx2;
 	}
 
 	// Plots
@@ -2168,7 +2169,7 @@ namespace ImWidgets {
 		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 
 		float const dx = (maxX - minX) / ((float)minSamples);
-		float const ddx = dx * 0.2f;
+		float const ddx = dx * 0.02f;
 
 		std::vector<float> roughness;
 		roughness.reserve(minSamples);
@@ -2198,7 +2199,7 @@ namespace ImWidgets {
 		}
 		float const minRough = *std::min_element(roughness.begin(), roughness.end());
 		float const maxRough = *std::max_element(roughness.begin(), roughness.end());
-		std::transform(roughness.begin(), roughness.end(), roughness.begin(), [=](float const xx) { return ImPow(ImSaturate(1.0f - (xx - minRough) / (maxRough - minRough) + 1e-5f), 1.0f); });
+		std::transform(roughness.begin(), roughness.end(), roughness.begin(), [=](float const xx) { return ImPow(ImSaturate(1.0f - (xx - minRough) / (maxRough - minRough)), 2.0f); });
 
 		ImVector<ImVec2> pts;
 		//pts.reserve(minSamples);
@@ -2209,7 +2210,7 @@ namespace ImWidgets {
 			//float const x = ScaleFromNormalized((float)i / ((float)(minSamples - 1)), minX, maxX);
 			float const coef = Normalize01(x, minX, maxX);
 			float const curRoughInv = LinearSample(coef, &roughness[0], roughness.size());
-			x += ddx * ImMax(curRoughInv, 1e-5f);
+			x += ddx * ImMax(curRoughInv, 1e-4f);
 
 			y = func(x);
 
@@ -2219,8 +2220,8 @@ namespace ImWidgets {
 			pts.push_back(curPos + ImVec2(winX, winY));
 		};
 
-		if (pts.size() > ((1 << (sizeof(ImDrawIdx) * 8)) - 1 ))
-			pts.resize(((1 << (sizeof(ImDrawIdx) * 8)) - 1));
+		if (pts.size() > ((1 << (sizeof(ImDrawIdx) * 4)) - 1 ))
+			pts.resize(((1 << (sizeof(ImDrawIdx) * 4)) - 1));
 
 		pDrawList->AddPolyline(&pts[0], pts.size(), IM_COL32(255, 255, 255, 255), false, 1.0f);
 
@@ -2261,6 +2262,48 @@ namespace ImWidgets {
 	static ImVec2 s_ChromaticPlotSize = ImVec2(128.0f, 128.0f);
 	static ImVec2 s_ChromaticPlotBoundMin = ImVec2(0.0f, 0.8f);
 	static ImVec2 s_ChromaticPlotBoundMax = ImVec2(0.0f, 0.9f);
+
+	ImVec4 xyY2XYZ(float x, float y, float Y)
+	{
+		if (y > 0.0f)
+			return ImVec4(x * Y / y, Y, (1.0f - x - y) * Y / y, 0.0f);
+		else
+			return ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+	}
+	ImVec4 XYZ2xyY(float X, float Y, float Z)
+	{
+		float const sum = X + Y + Z;
+		if (sum > 0.0f)
+			return ImVec4(X / sum, Y / sum, Z / sum, 0.0f);
+		else
+			return ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+	}
+	ImVec2 XYZ2uvp(float X, float Y, float Z)
+	{
+		float const sum = X + 15.0f * Y + 3.0f * Z;
+		if (sum > 0.0f)
+			return ImVec2(4.0f * X / sum, 9.0f * Y / sum);
+		else
+			return ImVec2(0.0f, 0.0f);
+	}
+
+	/*
+	ImVec2	GetCIEPoint(float x, float y)
+	{
+#if 0
+		float const z = 1.0f - x - y;
+
+		float const sum = x + 15.0f * y + 3.0f * z; 
+
+		x = 4.0f * x / sum;
+		y = 9.0f * y / sum;
+#else
+		return XYZ2xyY(x, y, 0.0f);
+#endif
+
+		//return ImVec2(x, y);
+	}
+	*/
 
 	template <bool IsBilinear>
 	void	ChromaticPlotInternalCommon(ImDrawList* pDrawList,
@@ -2324,11 +2367,17 @@ namespace ImWidgets {
 				}
 			}
 		}
+		//DensityPlotEx< IsBilinear >
+		//	("##DensCIE",
+		//	[](float x, float y)
+		//	{
+		//	}, resX, resY, minX, maxX, minY, maxY);
 
 		int lineSamples = ImMin(chromeLineSamplesCount, observerSampleCount);
 
 		float illum;
 		float x, y, z;
+		float sum;
 		ImVector<ImVec2> chromLine;
 		chromLine.resize(lineSamples);
 		for (int i = 0; i < lineSamples; ++i)
@@ -2340,10 +2389,13 @@ namespace ImWidgets {
 			y = illum * FunctionFromData(wavelength, observerWavelengthMin, observerWavelengthMax, observerY, observerSampleCount);
 			z = illum * FunctionFromData(wavelength, observerWavelengthMin, observerWavelengthMax, observerZ, observerSampleCount);
 
-			float const sum = x + y + z;
+			sum = x + y + z;
+			//sum = x + 15.0f * y + 3.0f * z;
 
 			x /= sum;
 			y /= sum;
+			//x = 4.0f * x / sum;
+			//y = 9.0f * y / sum;
 
 			float xx = Rescale(x, minX, maxX, 0.0f, width);
 			float yy = Rescale(y, maxY, minY, 0.0f, height);
@@ -2368,6 +2420,7 @@ namespace ImWidgets {
 		ImVec2 vWhitePoint = whitePoint;
 		vWhitePoint.x = curPos.x + Rescale(vWhitePoint.x, minX, maxX, 0.0f, width);
 		vWhitePoint.y = curPos.y + Rescale(vWhitePoint.y, maxY, minY, 0.0f, height);
+
 		pDrawList->AddCircleFilled(vWhitePoint, 5.0f, IM_COL32(0, 0, 0, 255), 4);
 
 		s_ChromaticPlotBoundMin = ImVec2(minX, minY);
@@ -2445,6 +2498,19 @@ namespace ImWidgets {
 	void DrawChromaticPoint(ImDrawList* pDrawList, ImVec2 const vpos, ImU32 col)
 	{
 		ImVec2 vPoint = vpos;
+
+		float x = vPoint.x;
+		float y = vPoint.y;
+		float const z = 1.0f - x - y;
+
+		float const sum = x + y + z;
+		//float const sum = x + 15.0f * y + 3.0f * z;
+		//
+		//vPoint.x = 4.0f * x / sum;
+		//vPoint.y = 9.0f * y / sum;
+		vPoint.x = x / sum;
+		vPoint.y = y / sum;
+
 		vPoint.x = s_ChromaticPlotStart.x + Rescale(vPoint.x, s_ChromaticPlotBoundMin.x, s_ChromaticPlotBoundMax.x, 0.0f, s_ChromaticPlotSize.x);
 		vPoint.y = s_ChromaticPlotStart.y + Rescale(vPoint.y, s_ChromaticPlotBoundMax.y, s_ChromaticPlotBoundMin.y, 0.0f, s_ChromaticPlotSize.y);
 		pDrawList->AddCircleFilled(vPoint, 5.0f, col, 4);
@@ -2458,8 +2524,24 @@ namespace ImWidgets {
 		for (int i = 0; i < pts_counts; ++i)
 		{
 			ImVec2& vPoint = pts[i];
-			vPoint.x = s_ChromaticPlotStart.x + Rescale(pCur->x, s_ChromaticPlotBoundMin.x, s_ChromaticPlotBoundMax.x, 0.0f, s_ChromaticPlotSize.x);
-			vPoint.y = s_ChromaticPlotStart.y + Rescale(pCur->y, s_ChromaticPlotBoundMax.y, s_ChromaticPlotBoundMin.y, 0.0f, s_ChromaticPlotSize.y);
+
+			//float x = vPoint.x;
+			//float y = vPoint.y;
+			//float const z = 1.0f - x - y;
+			//
+			//float const sum = x + 15.0f * y + 3.0f * z;
+			//
+			//x = 4.0f * x / sum;
+			//y = 9.0f * y / sum;
+			float x = pCur->x;
+			float y = pCur->y;
+			//float const z = 1.0f - x - y;
+			//float const sum = x + y + z;
+			//x = x / sum;
+			//y = y / sum;
+
+			vPoint.x = s_ChromaticPlotStart.x + Rescale(/*pCur->*/x, s_ChromaticPlotBoundMin.x, s_ChromaticPlotBoundMax.x, 0.0f, s_ChromaticPlotSize.x);
+			vPoint.y = s_ChromaticPlotStart.y + Rescale(/*pCur->*/y, s_ChromaticPlotBoundMax.y, s_ChromaticPlotBoundMin.y, 0.0f, s_ChromaticPlotSize.y);
 
 			++pCur;
 		}
@@ -2659,6 +2741,222 @@ namespace ImWidgets {
 		return DensityPlotEx<false>(label, sample, resX, resY, minX, maxX, minY, maxY);
 	}
 
+	//template < bool IsBilinear >
+#pragma optimize( "", off )
+	bool DensityIsolinePlotEx(const char* label, float(*sample)(float x, float y), float* isoValues, int isoLinesCount, ImU32* isoLinesColors, int isolinesColorsCount, int resX, int resY, float minX, float maxX, float minY, float maxY)
+	{
+		ImGuiID const iID = ImGui::GetID(label);
+		ImGui::PushID(iID);
+
+		float* pMin = ImGui::GetStateStorage()->GetFloatRef(iID + 0, FLT_MAX);
+		float* pMax = ImGui::GetStateStorage()->GetFloatRef(iID + 1, -FLT_MAX);
+
+		ImVec2 curPos = ImGui::GetCursorScreenPos();
+		float const width = ImGui::GetContentRegionAvailWidth();
+		float const height = width;
+
+		ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
+
+		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
+		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+
+		auto GetColor = [pMin, pMax, &sample](float x, float y) {
+			float value = sample(x, y);
+
+			float showValue = Normalize01(value, *pMin, *pMax);
+			ImU32 const uVal = static_cast<ImU32>(showValue * 255.0f);
+
+			return IM_COL32(uVal, uVal, uVal, 255);
+		};
+
+		float sx = ((float)width) / ((float)resX);
+		float sy = ((float)height) / ((float)resY);
+		float dx = 0.5f * sx;
+		float dy = 0.5f * sx;
+		float r, g, b;
+		float maxValue;
+		std::vector< std::vector<bool> > boundaries;
+		boundaries.resize(resY);
+		for (int j = 0; j < resY; ++j)
+		{
+			boundaries[j].resize(resX);
+		}
+
+		for (int i = 0; i < resX; ++i)
+		{
+			float x0 = ScaleFromNormalized(((float)(i + 0)) / ((float)(resX - 1)), minX, maxX);
+			float x1 = ScaleFromNormalized(((float)(i + 1)) / ((float)(resX - 1)), minX, maxX);
+
+			for (int j = 0; j < resY; ++j)
+			{
+				float y0 = ScaleFromNormalized(1.0f - ((float)(j + 0)) / ((float)(resY - 1)), minY, maxY);
+				float y1 = ScaleFromNormalized(1.0f - ((float)(j + 1)) / ((float)(resY - 1)), minY, maxY);
+
+				float const value = sample(x0, y0);
+				if (value < *pMin)
+					* pMin = value;
+				if (value > * pMax)
+					* pMax = value;
+
+				ImU32 const col00 = GetColor(x0, y0);
+				//if constexpr (IsBilinear)
+				{
+					ImU32 const col01 = GetColor(x0, y1);
+					ImU32 const col10 = GetColor(x1, y0);
+					ImU32 const col11 = GetColor(x1, y1);
+					pDrawList->AddRectFilledMultiColor(curPos + ImVec2(sx * (i + 0), sy * (j + 0)),
+						curPos + ImVec2(sx * (i + 1), sy * (j + 1)),
+						col00, col10, col11, col01);
+				}
+				//else
+				//{
+				//	pDrawList->AddRectFilledMultiColor(curPos + ImVec2(sx * (i + 0), sy * (j + 0)),
+				//		curPos + ImVec2(sx * (i + 1), sy * (j + 1)),
+				//		col00, col00, col00, col00);
+				//}
+			}
+		}
+		for (int k = 0; k < isoLinesCount; ++k)
+		{
+			float const isoValue = isoValues[k];
+			ImU32 const isoColor = isoLinesColors[k % isolinesColorsCount];
+
+			for (int i = 0; i < resX; ++i)
+			{
+				float x0 = ScaleFromNormalized(((float)(i + 0)) / ((float)(resX - 1)), minX, maxX);
+
+				for (int j = 0; j < resY; ++j)
+				{
+					float y0 = ScaleFromNormalized(1.0f - ((float)(j + 0)) / ((float)(resY - 1)), minY, maxY);
+					float const value = sample(x0, y0);
+					boundaries[j][i] = (value > isoValue);
+				}
+			}
+
+			for (int i = 1; i < resX; ++i)
+			{
+				for (int j = 1; j < resY; ++j)
+				{
+					int _00 = (int)boundaries[j - 1][i - 1];
+					int _10 = (int)boundaries[j - 0][i - 1];
+					int _11 = (int)boundaries[j - 0][i - 0];
+					int _01 = (int)boundaries[j - 1][i - 0];
+
+					int val = (_00 << 0) | (_10 << 1) | (_11 << 2) | (_01 << 3);
+
+					int cnt = 0;
+					int src = -1;
+					int dst = -1;
+					int src2 = -1;
+					int dst2 = -1;
+					if (val == 0b0000) // 0
+					{
+						cnt = 0;
+					}
+					else if (val == 0b0010) // 1
+					{
+						cnt = 1;
+						src = 0; dst = 1;
+					}
+					else if (val == 0b0100) // 2
+					{
+						cnt = 1;
+						src = 1; dst = 2;
+					}
+					else if (val == 0b0110) // 3
+					{
+						cnt = 1;
+						src = 0; dst = 2;
+					}
+					else if (val == 0b1000) // 4
+					{
+						cnt = 1;
+						src = 2; dst = 3;
+					}
+					else if (val == 0b1010) // 5
+					{
+						cnt = 2;
+						src = 1; dst = 2;
+						src2 = 3; dst2 = 0;
+					}
+					else if (val == 0b1100) // 6
+					{
+						cnt = 1;
+						src = 1; dst = 3;
+					}
+					else if (val == 0b1110) // 7
+					{
+						cnt = 1;
+						src = 3; dst = 0;
+					}
+					else if (val == 0b0001) // 8
+					{
+						cnt = 1;
+						src = 3; dst = 0;
+					}
+					else if (val == 0b0011) // 9
+					{
+						cnt = 1;
+						src = 1; dst = 3;
+					}
+					else if (val == 0b0101) // 10
+					{
+						cnt = 2;
+						src = 0; dst = 1;
+						src2 = 2; dst2 = 3;
+					}
+					else if (val == 0b0111) // 11
+					{
+						cnt = 1;
+						src = 2; dst = 3;
+					}
+					else if (val == 0b1001) // 12
+					{
+						cnt = 1;
+						src = 0; dst = 2;
+					}
+					else if (val == 0b1011) // 13
+					{
+						cnt = 1;
+						src = 1; dst = 2;
+					}
+					else if (val == 0b1101) // 14
+					{
+						cnt = 1;
+						src = 0; dst = 1;
+					}
+					else if (val == 0b1111) // 15
+					{
+						cnt = 0;
+					}
+
+					if (cnt > 0)
+					{
+						ImVec2 x00 = curPos + ImVec2(sx * (i - 1), sy * (j - 1));
+						ImVec2 x01 = curPos + ImVec2(sx * (i - 1), sy * (j + 0));
+						ImVec2 x11 = curPos + ImVec2(sx * (i + 0), sy * (j + 0));
+						ImVec2 x10 = curPos + ImVec2(sx * (i + 0), sy * (j - 1));
+
+						ImVec2 vals[] = { (x00 + x01) * 0.5f, (x01 + x11) * 0.5f, (x11 + x10) * 0.5f, (x10 + x00) * 0.5f };
+
+						if (cnt >= 1)
+							pDrawList->AddLine(vals[src], vals[dst], isoColor, 2.0f);
+						else if (cnt >= 2)
+							pDrawList->AddLine(vals[src2], vals[dst2], isoColor, 2.0f);
+					}
+				}
+			}
+		}
+
+		ImGui::PopID();
+
+		return false;
+	}
+
+	bool DensityIsolinePlotBilinear(const char* label, float(*sample)(float x, float y), float* isoValue, int isoLinesCount, ImU32* isoLinesColors, int isolinesColorsCount, int resX, int resY, float minX, float maxX, float minY, float maxY)
+	{
+		return DensityIsolinePlotEx/*<true>*/(label, sample, isoValue, isoLinesCount, isoLinesColors, isolinesColorsCount, resX, resY, minX, maxX, minY, maxY);
+	}
 
 	//////////////////////////////////////////////////////////////////////////
 	// External
