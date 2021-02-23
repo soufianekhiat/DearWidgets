@@ -1,5 +1,30 @@
 #include <imgui.h>
 
+//////////////////////////////////////////////////////////////////////////
+// Style TODO:
+//	* Expose Style
+//	* Line Thickness for Slider2D
+//	* Line Color for Slider2D
+//
+// Known issue:
+//	* Slider2DInt must take into account the half pixel
+//	* Move 2D must store state "IsDrag"
+//
+// Optim TODO:
+//	* ChromaticPlot draw only the internal MultiColorQuad where its needed "inside" or at least leave the option for style "transparency etc"
+//	* ChromaticPlot: Bake some as much as possible values: provide different version: ChromaticPlotDynamic {From enum and compute info at each frame}, ChromaticPlotFromData {From Baked data}
+//
+// Write use case for:
+//	* HueToHue:
+//		- Color Remap
+//	* LumToSat:
+//		- Color Remap
+//	* ColorRing:
+//		- HDR Color Management {Shadow, MidTone, Highlight}
+//	* Grid2D_AoS_Float:
+//		- Color Remap:
+//////////////////////////////////////////////////////////////////////////
+
 namespace ImWidgets {
 
 #define ImWidget_Kibi (1024ull)
@@ -10,6 +35,9 @@ namespace ImWidgets {
 
 	typedef int ImWidgetsLengthUnit;
 	typedef int ImWidgetsChromaticPlot;
+	typedef int ImWidgetsObserver;
+	typedef int ImWidgetsIlluminance;
+	typedef int ImWidgetsColorSpace;
 
 	enum ImWidgetsLengthUnit_
 	{
@@ -18,28 +46,66 @@ namespace ImWidgets {
 		ImWidgetsLengthUnit_COUNT
 	};
 
-	enum ImWidgetsChromaticPlot_
+	enum ImWidgetsObserver_
+	{
+		// Standard
+		ImWidgetsObserverChromaticPlot_1931_2deg = 0,
+		ImWidgetsObserverChromaticPlot_1964_10deg,
+		ImWidgetsObserverChromaticPlot_COUNT
+	};
+
+	enum ImWidgetsIlluminance_
 	{
 		// White Points
-		ImWidgetsChromaticPlot_C,
-		ImWidgetsChromaticPlot_D50,
-		ImWidgetsChromaticPlot_D65,
-		ImWidgetsChromaticPlot_E,
+		ImWidgetsWhitePointChromaticPlot_A = 0,
+		ImWidgetsWhitePointChromaticPlot_B,
+		ImWidgetsWhitePointChromaticPlot_C,
+		ImWidgetsWhitePointChromaticPlot_D50,
+		ImWidgetsWhitePointChromaticPlot_D55,
+		ImWidgetsWhitePointChromaticPlot_D65,
+		ImWidgetsWhitePointChromaticPlot_D75,
+		ImWidgetsWhitePointChromaticPlot_D93,
+		ImWidgetsWhitePointChromaticPlot_E,
+		ImWidgetsWhitePointChromaticPlot_F1,
+		ImWidgetsWhitePointChromaticPlot_F2,
+		ImWidgetsWhitePointChromaticPlot_F3,
+		ImWidgetsWhitePointChromaticPlot_F4,
+		ImWidgetsWhitePointChromaticPlot_F5,
+		ImWidgetsWhitePointChromaticPlot_F6,
+		ImWidgetsWhitePointChromaticPlot_F7,
+		ImWidgetsWhitePointChromaticPlot_F8,
+		ImWidgetsWhitePointChromaticPlot_F9,
+		ImWidgetsWhitePointChromaticPlot_F10,
+		ImWidgetsWhitePointChromaticPlot_F11,
+		ImWidgetsWhitePointChromaticPlot_F12,
+		ImWidgetsWhitePointChromaticPlot_COUNT
+	};
 
-		// Standard
-		ImWidgetsChromaticPlot_1931_2deg,
-		ImWidgetsChromaticPlot_1964_10deg,
-
+	enum ImWidgetsColorSpace_
+	{
 		// Color Spaces
-		ImWidgetsChromaticPlot_NTSC,		// C
-		ImWidgetsChromaticPlot_EBU,			// D65
-		ImWidgetsChromaticPlot_SMPTE,		// D65
-		ImWidgetsChromaticPlot_HDTV,		// D65
-		ImWidgetsChromaticPlot_CIE,			// E
-		ImWidgetsChromaticPlot_sRGB,		// D65
-		ImWidgetsChromaticPlot_Adobe,		// D65
-		ImWidgetsChromaticPlot_ColorMatch,	// D50
-		ImWidgetsChromaticPlot_ProPhoto,	// D50
+		ImWidgetsColorSpace_AdobeRGB = 0,	// D65
+		ImWidgetsColorSpace_AppleRGB,		// D65
+		ImWidgetsColorSpace_Best,			// D50
+		ImWidgetsColorSpace_Beta,			// D50
+		ImWidgetsColorSpace_Bruce,			// D65
+		ImWidgetsColorSpace_CIERGB,			// E
+		ImWidgetsColorSpace_ColorMatch,		// D50
+		ImWidgetsColorSpace_Don_RGB_4,		// D50
+		ImWidgetsColorSpace_ECI,			// D50
+		ImWidgetsColorSpace_Ekta_Space_PS5,	// D50
+		ImWidgetsColorSpace_NTSC,			// C
+		ImWidgetsColorSpace_PAL_SECAM,		// D65
+		ImWidgetsColorSpace_ProPhoto,		// D50
+		ImWidgetsColorSpace_SMPTE_C,		// D65
+		ImWidgetsColorSpace_sRGB,			// D65
+		ImWidgetsColorSpace_WideGamutRGB,	// D50
+		ImWidgetsColorSpace_Rec2020,		// D65
+		ImWidgetsColorSpace_COUNT
+	};
+
+	enum ImWidgetsChromaticPlot_
+	{
 
 		// Style
 		ImWidgetsChromaticPlot_ShowWavelength,
@@ -77,17 +143,46 @@ namespace ImWidgets {
 	IMGUI_API bool PlaneMovePoint2D(const char* label, float* buffer_aot, int float2_count, float minX, float maxX, float minY, float maxY);
 	IMGUI_API bool MoveLine2D(const char* label, float* buffer_aot, int float2_count, float minX, float maxX, float minY, float maxY);
 
+
+	// Widgets
+	// Density Plot
+	IMGUI_API bool DensityPlotBilinear(const char* label, float(*sample)(float x, float y), int resX, int resY, float minX, float maxX, float minY, float maxY);
+	IMGUI_API bool DensityPlotNearest(const char* label, float(*sample)(float x, float y), int resX, int resY, float minX, float maxX, float minY, float maxY);
+
+	// Draws
+	// Mask
+	IMGUI_API void DrawConvexMaskMesh(ImDrawList* pDrawList, ImVec2 curPos, float* buffer_aot, int float2_count, ImVec2 size);
+
+	// xyzToRGB: a rowMajorMatrix
+	IMGUI_API void DrawChromaticPlotNearest(ImDrawList* pDrawList,
+		ImVec2 const vPos,
+		float width, float heigth,
+		int const chromeLineSamplesCount,
+		ImWidgetsColorSpace const colorspace,
+		ImWidgetsObserver const observer,
+		ImWidgetsIlluminance const illum,
+		int resX, int resY,
+		float wavelengthMin = 400.0f, float wavelengthMax = 700.0f,
+		float minX = 0.0f, float maxX = 0.8f,
+		float minY = 0.0f, float maxY = 0.9f);
+	IMGUI_API void DrawChromaticPlotBilinear(ImDrawList* pDrawList,
+		ImVec2 const vPos,
+		float width, float heigth,
+		int const chromeLineSamplesCount,
+		ImWidgetsColorSpace const colorspace,
+		ImWidgetsObserver const observer,
+		ImWidgetsIlluminance const illum,
+		int resX, int resY,
+		float wavelengthMin = 400.0f, float wavelengthMax = 700.0f,
+		float minX = 0.0f, float maxX = 0.8f,
+		float minY = 0.0f, float maxY = 0.9f);
+	IMGUI_API void DrawChromaticPoint(ImDrawList* pDrawList, ImVec2 const vpos, ImU32 col);
+	IMGUI_API void DrawChromaticLine(ImDrawList* pDrawList, ImVec2 const* vpos, int const pts_counts, ImU32 col, bool closed, float thickness);
+
 	// Color Processing
 	IMGUI_API bool HueToHue(const char* label);
 	IMGUI_API bool LumToSat(const char* label);
 	IMGUI_API bool ColorRing(const char* label, float thickness, int split);
-
-	// xyzToRGB: a rowMajorMatrix
-	IMGUI_API bool ChromaticPlotInternalBilinear(const char* label, ImVec2 primR, ImVec2 primG, ImVec2 primB, ImVec2 whitePoint, float* xyzToRGB, float gamma, int resX, int resY, float minX = 0.0f, float maxX = 0.8f, float minY = 0.0f, float maxY = 0.9f);
-	//IMGUI_API bool ChromaticPlot(const char* label, int resX, int resY, ImWidgetsChromaticPlot flags);
-
-	IMGUI_API bool DensityPlotBilinear(const char* label, float(*sample)(float x, float y), int resX, int resY, float minX, float maxX, float minY, float maxY);
-	IMGUI_API bool DensityPlotNearest(const char* label, float(*sample)(float x, float y), int resX, int resY, float minX, float maxX, float minY, float maxY);
 
 	//////////////////////////////////////////////////////////////////////////
 	// External
