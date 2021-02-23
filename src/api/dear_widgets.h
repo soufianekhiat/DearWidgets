@@ -148,6 +148,8 @@ namespace ImWidgets {
 	IMGUI_API bool DensityPlotBilinear(const char* label, float(*sample)(float x, float y), int resX, int resY, float minX, float maxX, float minY, float maxY);
 	IMGUI_API bool DensityPlotNearest(const char* label, float(*sample)(float x, float y), int resX, int resY, float minX, float maxX, float minY, float maxY);
 
+	IMGUI_API bool DensityIsolinePlotBilinear(const char* label, float(*sample)(float x, float y), float* isoValue, int isoLinesCount, ImU32* isoLinesColors, int isolinesColorsCount, int resX, int resY, float minX, float maxX, float minY, float maxY);
+
 	// Plots
 	IMGUI_API void	AnalyticalPlot(char const* label, float(*func)(float const x), float const minX, float const maxX, int const minSamples = 64);
 

@@ -93,21 +93,35 @@ namespace ImWidgets {
 		bool show_app_metrics = true;
 		ImGui::ShowMetricsWindow(&show_app_metrics);
 
-		//ShowBezierDemo();
+		ImWidgets::BeginGroupPanel("Iso Line");
+		{
+			float isoLines[] = { 0.0f, 0.5f, 0.95f };
+			ImU32 cols[] = { IM_COL32(255, 0, 0, 255), IM_COL32(255, 255, 0, 255), IM_COL32(255, 0, 255, 255) };
+			DensityIsolinePlotBilinear("IsoLine 0", [](float x, float y) -> float { return std::sin(x) * std::sin(y); }, &isoLines[0], 3, &cols[0], 3, 64, 64, -4.0f, 4.0f, -3.0f, 3.0f);
+			DensityIsolinePlotBilinear("IsoLine 1", [](float x, float y) -> float { return std::sin(x * y); }, &isoLines[0], 3, &cols[0], 3, 64, 64, -4.0f, 4.0f, -3.0f, 3.0f);
+		}
+		ImWidgets::EndGroupPanel();
 		ImWidgets::BeginGroupPanel("Analytical Plot");
 		{
 			float const width = ImGui::GetContentRegionAvailWidth();
-			ImGui::PlotLines("PlotLines", [](void* data, int idx)
+			ImGui::Text("ImGui::PlotLines: 128 samples");
+			ImGui::Dummy(ImVec2(1.0f, ImGui::GetTextLineHeightWithSpacing()));
+			ImGui::PlotLines("##PlotLines", [](void* data, int idx)
 				{
 					float const x = (((float)idx) / 127.0f) * 8.0f;
 					return sin(x * x * x) * sin(x);
 				}, nullptr, 128, 0, nullptr, FLT_MAX, FLT_MAX, ImVec2(width, width));
-			AnalyticalPlot("Analytical", [](float const x) { return sin(x * x * x) * sin(x); }, 0.0f, 8.0f, 32);
+			ImGui::Dummy(ImVec2(1.0f, ImGui::GetTextLineHeightWithSpacing()));
+			ImGui::Text("DearWidgets:Plot with Dynamic Resampling (Init Samples Count: 8)");
+			ImGui::Dummy(ImVec2(1.0f, ImGui::GetTextLineHeightWithSpacing()));
+			AnalyticalPlot("Analytical", [](float const x) { return sin(x * x * x) * sin(x); }, 0.0f, 8.0f, 8);
+			ImGui::Dummy(ImVec2(1.0f, ImGui::GetTextLineHeightWithSpacing()));
+			ImGui::Dummy(ImVec2(1.0f, ImGui::GetTextLineHeightWithSpacing()));
 		}
 		ImWidgets::EndGroupPanel();
 		ImWidgets::BeginGroupPanel("Chromaticity Plot");
 		{
-			char const* observer[] = { "1931 2°", "1964 10°" };
+			char const* observer[] = { "1931 2 deg", "1964 10 deg" };
 			//char const* illum[] = { "A", "B", "C", "D50", "D55", "D65", "D75", "D93", "E", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12" };
 			char const* illum[] = { "D50", "D65" };
 			char const* colorSpace[] = { "AdobeRGB", "AppleRGB", "Best", "Beta", "Bruce", "CIERGB",
@@ -133,7 +147,7 @@ namespace ImWidgets {
 				-0.1f, 0.9f,
 				-0.1f, 0.9f);
 			std::vector< ImVec2 > oPts;
-			for (float T = 1667.0f; T <= 25000.0f; T += (25000.0f - 1667.0f)/128.0f)
+			for (float T = 3000.0f; T <= 25000.0f; T += (25000.0f - 1667.0f)/128.0f)
 			{
 				oPts.push_back(TemperatureTo_xy(T));
 				//DrawChromaticPoint(ImGui::GetWindowDrawList(), TemperatureTo_xy(T), IM_COL32(0, 0, 0, 255));
