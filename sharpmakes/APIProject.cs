@@ -21,7 +21,7 @@ namespace DearWidgets
             //conf.AddPrivateDependency<CoreProject>(target);
 
             //conf.Defines.Add("IMGUI_DEFINE_MATH_OPERATORS");
-            //conf.IncludePaths.Add(@"[project.RootPath]/extern/imgui/");
+            //conf.IncludePaths.Add(@"[project.RootPath]/extern/Clipper/cpp/");
             //conf.IncludePaths.Add(@"[project.ExternPath]/glad/include");
         }
     }

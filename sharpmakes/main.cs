@@ -24,7 +24,7 @@ namespace DearWidgets
         {
             conf.Name = "[target.Api]_[target.Optimization]";
 
-            conf.SolutionFileName = "[target.Build]_[target.Api]_[target.Platform]_[solution.Name]";
+            conf.SolutionFileName = "[solution.Name]_[target.Build]_[target.Platform]_[target.Api]";
 
             conf.SolutionPath = SolutionRootPath;
 
