@@ -9,6 +9,8 @@
 #include <chrono>
 #include <algorithm>
 
+#include <vector>
+
 namespace ImWidgets {
 	//////////////////////////////////////////////////////////////////////////
 	// Data
@@ -2130,6 +2132,99 @@ namespace ImWidgets {
 		ImGui::PopID();
 
 		return false;
+	}
+
+	float Roughness(float x0, float x1, float x2, float x3, float x4)
+	{
+		float const m = 0.2f * x0 + 0.2f * x1 + 0.2f * x2 + 0.2f * x3 + 0.2f * x4;
+
+		float const dx0 = m - x0;
+		float const dx1 = m - x1;
+		float const dx2 = m - x2;
+		float const dx3 = m - x3;
+		float const dx4 = m - x4;
+
+		float const rms = (dx0 * dx0 + dx1 * dx1 + dx2 * dx2 + dx3 * dx3 + dx4 * dx4);
+
+		float const ddx0 = ImAbs(x0 - x1);
+		float const ddx1 = ImAbs(x1 - x2);
+		float const ddx2 = ImAbs(x2 - x3);
+		float const ddx3 = ImAbs(x3 - x4);
+
+		return rms + ddx0 * ddx0 + ddx1 * ddx1 + ddx2 * ddx2 + ddx3 * ddx3;
+	}
+
+	// Plots
+	void	AnalyticalPlot(char const* label, float(*func)(float const x), float const minX, float const maxX, int const minSamples)
+	{
+		ImGuiID const iID = ImGui::GetID(label);
+		ImGui::PushID(iID);
+
+		ImVec2 curPos = ImGui::GetCursorScreenPos();
+		float const width = ImGui::GetContentRegionAvailWidth();
+		float const height = width;
+
+		ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
+		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+
+		float const dx = (maxX - minX) / ((float)minSamples);
+		float const ddx = dx * 0.2f;
+
+		std::vector<float> roughness;
+		roughness.reserve(minSamples);
+
+		float y;
+		float minY =  FLT_MAX;
+		float maxY = -FLT_MAX;
+		for (int i = 0; i < minSamples; ++i)
+		{
+			float const x = ScaleFromNormalized((float)i / ((float)(minSamples - 1)), minX, maxX);
+
+			float y1 = func(x - 2.0f * ddx);
+			float y2 = func(x - 1.0f * ddx);
+			float y3 = func(x);
+			float y4 = func(x + 1.0f * ddx);
+			float y5 = func(x + 2.0f * ddx);
+
+			float const rough = Roughness(y1, y2, y3, y4, y5);
+
+			roughness.push_back(rough);
+
+			y = y3;
+			if (y < minY)
+				minY = y;
+			if (y > maxY)
+				maxY = y;
+		}
+		float const minRough = *std::min_element(roughness.begin(), roughness.end());
+		float const maxRough = *std::max_element(roughness.begin(), roughness.end());
+		std::transform(roughness.begin(), roughness.end(), roughness.begin(), [=](float const xx) { return ImPow(ImSaturate(1.0f - (xx - minRough) / (maxRough - minRough) + 1e-5f), 1.0f); });
+
+		ImVector<ImVec2> pts;
+		//pts.reserve(minSamples);
+		//for (int i = 0; i < minSamples; ++i)
+		float x = minX;
+		while (x <= maxX)
+		{
+			//float const x = ScaleFromNormalized((float)i / ((float)(minSamples - 1)), minX, maxX);
+			float const coef = Normalize01(x, minX, maxX);
+			float const curRoughInv = LinearSample(coef, &roughness[0], roughness.size());
+			x += ddx * ImMax(curRoughInv, 1e-5f);
+
+			y = func(x);
+
+			float const winX = Rescale(x, minX, maxX, 0.0f, width);
+			float const winY = Rescale(y, minY, maxY, 0.0f, height);
+
+			pts.push_back(curPos + ImVec2(winX, winY));
+		};
+
+		if (pts.size() > ((1 << (sizeof(ImDrawIdx) * 8)) - 1 ))
+			pts.resize(((1 << (sizeof(ImDrawIdx) * 8)) - 1));
+
+		pDrawList->AddPolyline(&pts[0], pts.size(), IM_COL32(255, 255, 255, 255), false, 1.0f);
+
+		ImGui::PopID();
 	}
 
 	float	FunctionFromData(float const x, float const minX, float const maxX, float* data, int const samples_count)

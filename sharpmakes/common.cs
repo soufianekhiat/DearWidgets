@@ -129,6 +129,7 @@ namespace DearWidgets
 				conf.Defines.Add("__DEAR_DEBUG__");
 			else
 				conf.Defines.Add("__DEAR_RELEASE__");
+			//conf.Defines.Add("ImDrawIdx=unsigned int");
 		}
 
 		[Configure(Platform.win64)]

@@ -143,11 +143,13 @@ namespace ImWidgets {
 	IMGUI_API bool PlaneMovePoint2D(const char* label, float* buffer_aot, int float2_count, float minX, float maxX, float minY, float maxY);
 	IMGUI_API bool MoveLine2D(const char* label, float* buffer_aot, int float2_count, float minX, float maxX, float minY, float maxY);
 
-
 	// Widgets
 	// Density Plot
 	IMGUI_API bool DensityPlotBilinear(const char* label, float(*sample)(float x, float y), int resX, int resY, float minX, float maxX, float minY, float maxY);
 	IMGUI_API bool DensityPlotNearest(const char* label, float(*sample)(float x, float y), int resX, int resY, float minX, float maxX, float minY, float maxY);
+
+	// Plots
+	IMGUI_API void	AnalyticalPlot(char const* label, float(*func)(float const x), float const minX, float const maxX, int const minSamples = 64);
 
 	// Draws
 	// Mask
