@@ -96,6 +96,7 @@ namespace DearWidgets
 			conf.IncludePaths.Add(@"[project.RootPath]\");
 			conf.IncludePaths.Add(@"[project.ExternPath]");
 
+			conf.Defines.Add("ImDrawIdx=ImU32");
 			conf.Defines.Add("IMGUI_DEFINE_MATH_OPERATORS");
             //conf.IncludePaths.Add(@"[project.ExternPath]/imgui/");
             conf.IncludePaths.Add(@"[project.RootPath]/extern/imgui/");

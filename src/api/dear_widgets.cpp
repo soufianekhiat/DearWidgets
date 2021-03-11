@@ -2,9 +2,6 @@
 
 //#include <clipper.hpp>
 
-//#define IMGUI_DEFINE_MATH_OPERATORS
-#include <imgui_internal.h>
-
 #include <string>
 #include <chrono>
 #include <algorithm>
@@ -188,22 +185,6 @@ namespace ImWidgets {
 
 			break;
 		}
-	}
-
-	template < typename Type >
-	Type	Normalize01(Type const x, Type const _min, Type const _max)
-	{
-		return (x - _min) / (_max - _min);
-	}
-	template < typename Type >
-	Type	ScaleFromNormalized(Type const x, Type const newMin, Type const newMax)
-	{
-		return x * (newMax - newMin) + newMin;
-	}
-	template < typename Type >
-	Type	Rescale(Type const x, Type const _min, Type const _max, Type const newMin, Type const newMax)
-	{
-		return ScaleFromNormalized(Normalize01(x, _min, _max), newMin, newMax);
 	}
 
 	bool	IsNegativeScalar(ImGuiDataType data_type, ImU64* src)
@@ -810,6 +791,76 @@ namespace ImWidgets {
 		return result;
 	}
 
+	ImU64	Normalize01(ImGuiDataType data_type, void* p_value, void* p_min, void* p_max)
+	{
+		ImU64 result = 0;
+		switch (data_type)
+		{
+		case ImGuiDataType_S8:
+		{
+			ImS8 value = (*reinterpret_cast<ImS8*>(p_value) - *static_cast<ImS8*>(p_min)) / (*static_cast<ImS8*>(p_max) - *static_cast<ImS8*>(p_min));
+			result = static_cast<ImU64>(value);
+		}
+		break;
+		case ImGuiDataType_U8:
+		{
+			ImU8 value = (*reinterpret_cast<ImU8*>(p_value) - *static_cast<ImU8*>(p_min)) / (*static_cast<ImU8*>(p_max) - *static_cast<ImU8*>(p_min));
+			result = static_cast<ImU64>(value);
+		}
+		break;
+		case ImGuiDataType_S16:
+		{
+			ImS16 value = (*reinterpret_cast<ImS16*>(p_value) - *static_cast<ImS16*>(p_min)) / (*static_cast<ImS16*>(p_max) - *static_cast<ImS16*>(p_min));
+			result = static_cast<ImU64>(value);
+		}
+		break;
+		case ImGuiDataType_U16:
+		{
+			ImU16 value = (*reinterpret_cast<ImU16*>(p_value) - *static_cast<ImU16*>(p_min)) / (*static_cast<ImU16*>(p_max) - *static_cast<ImU16*>(p_min));
+			result = static_cast<ImU64>(value);
+		}
+		break;
+		case ImGuiDataType_S32:
+		{
+			ImS32 value = (*reinterpret_cast<ImS32*>(p_value) - *static_cast<ImS32*>(p_min)) / (*static_cast<ImS32*>(p_max) - *static_cast<ImS32*>(p_min));
+			result = static_cast<ImU64>(value);
+		}
+		break;
+		case ImGuiDataType_U32:
+		{
+			ImU32 value = (*reinterpret_cast<ImU32*>(p_value) - *static_cast<ImU32*>(p_min)) / (*static_cast<ImU32*>(p_max) - *static_cast<ImU32*>(p_min));
+			result = static_cast<ImU64>(value);
+		}
+		break;
+		case ImGuiDataType_S64:
+		{
+			ImS64 value = (*reinterpret_cast<ImS64*>(p_value) - *static_cast<ImS64*>(p_min)) / (*static_cast<ImS64*>(p_max) - *static_cast<ImS64*>(p_min));
+			result = static_cast<ImU64>(value);
+		}
+		break;
+		case ImGuiDataType_U64:
+		{
+			ImU64 value = (*reinterpret_cast<ImU64*>(p_value) - *static_cast<ImU64*>(p_min)) / (*static_cast<ImU64*>(p_max) - *static_cast<ImU64*>(p_min));
+			result = static_cast<ImU64>(value);
+		}
+		break;
+		case ImGuiDataType_Float:
+		{
+			float value = (*reinterpret_cast<float*>(p_value) - *static_cast<float*>(p_min)) / (*static_cast<float*>(p_max) - *static_cast<float*>(p_min));
+			result = *reinterpret_cast<ImU64*>(&value);
+		}
+		break;
+		case ImGuiDataType_Double:
+		{
+			double value = (*reinterpret_cast<double*>(p_value) - *static_cast<double*>(p_min)) / (*static_cast<double*>(p_max) - *static_cast<double*>(p_min));
+			result = *reinterpret_cast<ImU64*>(&value);
+		}
+		break;
+		}
+
+		return result;
+	}
+
 	float	Dot3(float x0, float x1, float x2, float* vec3)
 	{
 		return x0 * vec3[0] + x1 * vec3[1] + x2 * vec3[2];
@@ -822,64 +873,27 @@ namespace ImWidgets {
 		*z2 = Dot3(x, y, z, &mat[6]);
 	}
 
-#pragma optimize( "", off )
-	float	LinearSample(float t, float* buffer, int count)
-	{
-#if 0
-		float const width = (float)(count - 1);
-
-		float tx = ScaleFromNormalized(t, 0.0f, width);
-
-		float i0 = ImFloor(tx);
-		float i1 = ImCeil(tx);
-
-		float t0 = i0 / width;
-		float t1 = i1 / width;
-
-		float ti;
-		if (t0 != t1)
-			ti = Normalize01(t, t0, t1);
-		else
-			ti = 1.0f;
-
-		return ImLerp(buffer[(int)i0], buffer[(int)i1], ti);
-#else
-		float const width = (float)(count - 1);
-
-		float const i0 = ImFloor(t * width);
-		float const i1 = ImCeil(t * width);
-
-		float ti;
-		if (i0 != i1)
-			ti = (t * width - i0) / (i1 - i0);
-		else
-			ti = 1.0f;
-
-		return ImLerp(buffer[(int)i0], buffer[(int)i1], ti);
-#endif
-	}
-
 	void		MemoryString(std::string& sResult, ImU64 const uMemoryByte)
 	{
-		if (uMemoryByte < ImWidget_Kibi)
+		if (uMemoryByte < ImWidgets_Kibi)
 		{
 			sResult = std::to_string(static_cast<float>(uMemoryByte)) + " B";
 		}
-		else if (uMemoryByte < ImWidget_Mibi)
+		else if (uMemoryByte < ImWidgets_Mibi)
 		{
-			sResult = std::to_string(static_cast<float>(uMemoryByte) / static_cast<float>(ImWidget_Kibi)) + " KiB";
+			sResult = std::to_string(static_cast<float>(uMemoryByte) / static_cast<float>(ImWidgets_Kibi)) + " KiB";
 		}
-		else if (uMemoryByte < ImWidget_Gibi)
+		else if (uMemoryByte < ImWidgets_Gibi)
 		{
-			sResult = std::to_string(static_cast<float>(uMemoryByte) / static_cast<float>(ImWidget_Mibi)) + " MiB";
+			sResult = std::to_string(static_cast<float>(uMemoryByte) / static_cast<float>(ImWidgets_Mibi)) + " MiB";
 		}
-		else if (uMemoryByte < ImWidget_Tebi)
+		else if (uMemoryByte < ImWidgets_Tebi)
 		{
-			sResult = std::to_string(static_cast<float>(uMemoryByte) / static_cast<float>(ImWidget_Gibi)) + " GiB";
+			sResult = std::to_string(static_cast<float>(uMemoryByte) / static_cast<float>(ImWidgets_Gibi)) + " GiB";
 		}
-		else if (uMemoryByte < ImWidget_Pebi)
+		else if (uMemoryByte < ImWidgets_Pebi)
 		{
-			sResult = std::to_string(static_cast<float>(uMemoryByte) / static_cast<float>(ImWidget_Tebi)) + " TiB";
+			sResult = std::to_string(static_cast<float>(uMemoryByte) / static_cast<float>(ImWidgets_Tebi)) + " TiB";
 		}
 	}
 
@@ -972,8 +986,8 @@ namespace ImWidgets {
 	float DistOnSegmentSqr(ImVec2 const p, ImVec2 const v, ImVec2 const w)
 	{
 		float l2 = Dist2(v, w);
-		if (l2 == 0.0f)
-			return 0.0f;
+		//if (l2 == 0.0f)
+		//	return 0.0f;
 
 		float t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
 
@@ -981,15 +995,25 @@ namespace ImWidgets {
 	}
 	float DistToSegmentSqr(ImVec2 const p, ImVec2 const v, ImVec2 const w)
 	{
-		float l2 = Dist2(v, w);
-		if (l2 == 0.0f)
-			return Dist2(p, v);
+		//float l2 = Dist2(v, w);
+		////if (l2 == 0.0f)
+		////	return Dist2(p, v);
+		//
+		//float t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+		//t = ImSaturate(t);
+		//
+		//return Dist2(p, ImVec2(v.x + t * (w.x - v.x),
+		//					   v.y + t * (w.y - v.y)));
 
-		float t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
-		t = ImSaturate(t);
+		float const lDx = v.x - w.x;
+		float const lDy = v.y - w.y;
 
-		return Dist2(p, ImVec2(v.x + t * (w.x - v.x),
-							   v.y + t * (w.y - v.y)));
+		float const dx = v.x - p.x;
+		float const dy = v.y - p.y;
+
+		float const l2 = ImSqrt(ImLengthSqr(w - v));
+
+		return ImAbs(lDx * dy - lDy * dx) / l2;
 	}
 	float Side(ImVec2 const src, ImVec2 const tgt, ImVec2 const pts)
 	{
@@ -1172,9 +1196,9 @@ namespace ImWidgets {
 		return modified;
 	}
 
-	bool InputVec2(char const* pLabel, ImVec2* pValue, ImVec2* p_vMinValue, ImVec2* p_vMaxValue, float const fScale /*= 1.0f*/)
+	bool InputVec2(char const* pLabel, ImVec2* pValue, ImVec2 vMinValue, ImVec2 vMaxValue, float const fScale /*= 1.0f*/)
 	{
-		return Slider2DScalar(pLabel, ImGuiDataType_Float, &pValue->x, &pValue->y, &p_vMinValue->x, &p_vMaxValue->x, &p_vMinValue->y, &p_vMaxValue->y, fScale);
+		return Slider2DScalar(pLabel, ImGuiDataType_Float, &pValue->x, &pValue->y, &vMinValue.x, &vMaxValue.x, &vMinValue.y, &vMaxValue.y, fScale);
 	}
 
 	bool InputVec3(char const* pLabel, ImVec4* pValue, ImVec4 const vMinValue, ImVec4 const vMaxValue, float const fScale /*= 1.0f*/)
@@ -1396,14 +1420,14 @@ namespace ImWidgets {
 		return Slider2DScalar(pLabel, ImGuiDataType_S32, pValueX, pValueY, p_minX, p_maxX, p_minY, p_maxY, fScale);
 	}
 
-	bool Slider2DFloat(char const* pLabel, float* pValueX, float* pValueY, float* p_minX, float* p_maxX, float* p_minY, float* p_maxY, float const fScale)
+	bool Slider2DFloat(char const* pLabel, float* pValueX, float* pValueY, float minX, float maxX, float minY, float maxY, float const fScale)
 	{
-		return Slider2DScalar(pLabel, ImGuiDataType_Float, pValueX, pValueY, p_minX, p_maxX, p_minY, p_maxY, fScale);
+		return Slider2DScalar(pLabel, ImGuiDataType_Float, pValueX, pValueY, &minX, &maxX, &minY, &maxY, fScale);
 	}
 
-	bool Slider2DDouble(char const* pLabel, double* pValueX, double* pValueY, double* p_minX, double* p_maxX, double* p_minY, double* p_maxY, float const fScale)
+	bool Slider2DDouble(char const* pLabel, double* pValueX, double* pValueY, double minX, double maxX, double minY, double maxY, float const fScale)
 	{
-		return Slider2DScalar(pLabel, ImGuiDataType_Double, pValueX, pValueY, p_minX, p_maxX, p_minY, p_maxY, fScale);
+		return Slider2DScalar(pLabel, ImGuiDataType_Double, pValueX, pValueY, &minX, &maxX, &minY, &maxY, fScale);
 	}
 
 	bool SliderScalar3D(char const* pLabel, float* pValueX, float* pValueY, float* pValueZ, float const fMinX, float const fMaxX, float const fMinY, float const fMaxY, float const fMinZ, float const fMaxZ, float const fScale /*= 1.0f*/)
@@ -1713,6 +1737,78 @@ namespace ImWidgets {
 		return bModified;
 	}
 
+	bool LineSlider(const char* label, ImVec2 start, ImVec2 end, ImGuiDataType data_type, void* p_data, const void* p_min, const void* p_max, ImWidgetsPointer pointer)
+	{
+		ImGuiID iID = ImGui::GetID(label);
+		ImGui::PushID(iID);
+		ImRect oRect(ImVec2(ImMin(start.x, end.x), ImMin(start.y, end.y)),
+					 ImVec2(ImMax(start.x, end.x), ImMax(start.y, end.y)));
+
+		ImVec2 curPos = ImGui::GetCursorScreenPos();
+		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+
+		pDrawList->AddLine(start, end, IM_COL32(255, 0, 0, 255), 2.0f);
+
+		float fValue	= ScalarToFloat(data_type, (ImU64*)p_data);
+		float fMin		= ScalarToFloat(data_type, (ImU64*)p_min);
+		float fMax		= ScalarToFloat(data_type, (ImU64*)p_max);
+		float const fBound = fMax - fMin;
+
+		float t = Normalize01(fValue, fMin, fMax);
+
+		ImVec2 cur = ImLerp(start, end, t);
+
+		DrawTrianglePointerFilled(pDrawList, cur, 16.0f, IM_COL32(255, 128, 0, 255), pointer);
+
+		ImVec2 const vMousePos = ImGui::GetMousePos();
+		ImVec2 const vSecurity(15.0f, 15.0f);
+		ImVec2 const vDragStart(oRect.Min.x, oRect.Max.y);
+		ImVec2 const vDragEnd(oRect.Max.x, oRect.Min.y);
+		ImRect frame_bb = ImRect(oRect.Min - vSecurity, oRect.Max + vSecurity);
+
+		//pDrawList->AddRect(frame_bb.Min, frame_bb.Max, IM_COL32(0, 255, 0, 255));
+		//pDrawList->AddRect(oRect.Min, oRect.Max, IM_COL32(0, 0, 255, 255));
+
+		//ImVec2 vLocalStart(ImMin(vDragStart.x, vDragEnd.x), ImMin(vDragStart.y, vDragEnd.y));
+		//ImVec2 vLocalEnd(ImMax(vDragStart.x, vDragEnd.x), ImMax(vDragStart.y, vDragEnd.y));
+		ImVec2 vLocalStart	= vDragStart;
+		ImVec2 vLocalEnd	= vDragEnd;
+
+		bool bModified = false;
+		bool hovered;
+		bool held;
+		bool pressed = ImGui::ButtonBehavior(frame_bb, ImGui::GetID("##DragLineHandle"), &hovered, &held);
+		if (hovered && held)
+		{
+			//float const fDist = ImSqrt(DistToSegmentSqr(vMousePos, ImVec2(vDragStart.x, vDragEnd.y), ImVec2(vDragEnd.x, vDragStart.y)));
+			float const fDist = ImSqrt(DistToSegmentSqr(vMousePos, vLocalStart, vLocalEnd));
+			//float const fDist = ImSqrt(DistToSegmentSqr(vMousePos,
+			//											ImVec2(ImMax(vDragStart.x, vDragEnd.x), ImMin(vDragStart.y, vDragEnd.y)),
+			//											ImVec2(ImMin(vDragStart.x, vDragEnd.x), ImMax(vDragStart.y, vDragEnd.y))));
+			if (fDist < 32.0f) // 100 is arbitrary threshold
+			{
+				float const fMaxDist = ImSqrt(Dist2(vLocalStart, vLocalEnd));
+				float const fDist = ImSaturate(ImSqrt(DistOnSegmentSqr(vMousePos, vLocalStart, vLocalEnd)) / fMaxDist);
+
+				fValue = fDist * fBound * fDist + fMin;
+
+				ImU64 uVal = FloatToScalar(data_type, fValue);
+
+				EqualScalar(data_type, (ImU64*)p_data, &uVal);
+
+				bModified = true;
+			}
+		}
+		ImGui::PopID();
+
+		//ImGui::Dummy(frame_bb.GetSize() + ImVec2(16.0f, 16.0f) * 2.0f);
+		//ImGui::SliderScalar(label, data_type, p_data, p_min, p_max);
+
+		return bModified;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+
 	bool Grid2D_AoS_Float(const char* label, float* buffer, int rows, int columns, float minX, float maxX, float minY, float maxY)
 	{
 		assert(minX < maxX);
@@ -1975,101 +2071,62 @@ namespace ImWidgets {
 		return modified;
 	}
 
-	bool HueToHue(const char* label)
+	void DrawHueBand(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, float alpha, float gamma, float offset)
 	{
-		ImGuiID const iID = ImGui::GetID(label);
-		ImGui::PushID(iID);
+		auto HueFunc = [alpha](float const t) -> ImU32
+		{
+			float r, g, b;
+			ImGui::ColorConvertHSVtoRGB(t, 1.0f, 1.0f, r, g, b);
+			int const ur = static_cast<int>(255.0f * r);
+			int const ug = static_cast<int>(255.0f * g);
+			int const ub = static_cast<int>(255.0f * b);
+			int const ua = static_cast<int>(255.0f * alpha);
+			return IM_COL32(ur, ug, ub, ua);
+		};
 
-		ImVec2 curPos = ImGui::GetCursorScreenPos();
-		float const width = ImGui::GetContentRegionAvailWidth();
-		float const height = 0.5f * width;
-
-		//const float window_rounding = ImGui::GetStyle().WindowRounding;
-		//ImGui::RenderFrame(curPos, curPos + ImVec2(width, width));
-		ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
-
-		ImVec2 uv_white = ImGui::GetFontTexUvWhitePixel();
-
-		float dx = width / 6.0f;
-
-		ImVec2 x00(curPos + ImVec2(0, 0));
-		//ImVec2 x01(curPos + ImVec2(0, height));
-		ImVec2 x02(curPos + ImVec2(dx, 0));
-		ImVec2 x03(curPos + ImVec2(dx, height));
-		ImVec2 x04(curPos + ImVec2(2*dx, 0));
-		ImVec2 x05(curPos + ImVec2(2*dx, height));
-		ImVec2 x06(curPos + ImVec2(3*dx, 0));
-		ImVec2 x07(curPos + ImVec2(3*dx, height));
-		ImVec2 x08(curPos + ImVec2(4*dx, 0));
-		ImVec2 x09(curPos + ImVec2(4*dx, height));
-		ImVec2 x10(curPos + ImVec2(5*dx, 0));
-		ImVec2 x11(curPos + ImVec2(5*dx, height));
-		//ImVec2 x12(curPos + ImVec2(6*dx, 0));
-		ImVec2 x13(curPos + ImVec2(6*dx, height));
-
-		ImU32 const alpha = 64;
-		ImU32 const red		= IM_COL32(255, 0, 0, alpha);
-		ImU32 const yellow	= IM_COL32(255, 255, 0, alpha);
-		ImU32 const green	= IM_COL32(0, 255, 0, alpha);
-		ImU32 const cyan	= IM_COL32(0, 255, 255, alpha);
-		ImU32 const blue	= IM_COL32(0, 0, 255, alpha);
-		ImU32 const magenta	= IM_COL32(255, 0, 255, alpha);
-
-		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-		pDrawList->AddRectFilledMultiColor(x00, x03, red, yellow, yellow, red);
-		pDrawList->AddRectFilledMultiColor(x02, x05, yellow, green, green, yellow);
-		pDrawList->AddRectFilledMultiColor(x04, x07, green, cyan, cyan, green);
-		pDrawList->AddRectFilledMultiColor(x06, x09, cyan, blue, blue, cyan);
-		pDrawList->AddRectFilledMultiColor(x08, x11, blue, magenta, magenta, blue);
-		pDrawList->AddRectFilledMultiColor(x10, x13, magenta, red, red, magenta);
-
-		ImGui::PopID();
-
-		return false;
+		DrawColorBandEx< true >(pDrawList, vpos, size, HueFunc, division, gamma, offset);
 	}
 
-	bool LumToSat(const char* label)
+	void DrawHueBand(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, float colorStartRGB[3], float alpha, float gamma)
 	{
-		ImGuiID const iID = ImGui::GetID(label);
-		ImGui::PushID(iID);
+		float h, s, v;
+		ImGui::ColorConvertRGBtoHSV(colorStartRGB[0], colorStartRGB[1], colorStartRGB[2], h, s, v);
+		DrawHueBand(pDrawList, vpos, size, division, alpha, gamma, h);
+	}
 
-		ImVec2 curPos = ImGui::GetCursorScreenPos();
-		float const width = ImGui::GetContentRegionAvailWidth();
-		float const height = 0.5f * width;
-
-		ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
-
-		const int slice = 32;
-		const float fSlice = static_cast<float>(slice);
-
-		ImVec2 dA(curPos);
-		ImVec2 dB(curPos + ImVec2(width / fSlice, height));
-
-		ImVec2 const dD(ImVec2(width / fSlice, 0));
-
-		ImU32 const alpha	= 255;
-
-		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-		for (int i = 0; i < slice; ++i)
+	void DrawLumianceBand(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma)
+	{
+		float h, s, v;
+		ImGui::ColorConvertRGBtoHSV(color.x, color.y, color.z, h, s, v);
+		auto LumianceFunc = [h, s, v](float const t) -> ImU32
 		{
-			float t0 = ((float)i) / ((float)(slice - 1));
-			float t1 = ((float)(i + 1)) / ((float)(slice - 1));
+			float r, g, b;
+			ImGui::ColorConvertHSVtoRGB(h, s, ImLerp(0.0f, v, t), r, g, b);
+			int const ur = static_cast<int>(255.0f * r);
+			int const ug = static_cast<int>(255.0f * g);
+			int const ub = static_cast<int>(255.0f * b);
+			return IM_COL32(ur, ug, ub, 255);
+		};
 
-			ImU8 u0 = static_cast<ImU8>(ImPow(ImSaturate(t0), 2.2f) * 255);
-			ImU8 u1 = static_cast<ImU8>(ImPow(ImSaturate(t1), 2.2f) * 255);
+		DrawColorBandEx< true >(pDrawList, vpos, size, LumianceFunc, division, gamma, 0.0f);
+	}
 
-			ImU32 const col0 = IM_COL32(u0, u0, u0, alpha);
-			ImU32 const col1 = IM_COL32(u1, u1, u1, alpha);
-			pDrawList->AddRectFilledMultiColor(dA, dB, col0, col1, col1, col0);
+	void DrawSaturationBand(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma)
+	{
+		float h, s, v;
+		ImGui::ColorConvertRGBtoHSV(color.x, color.y, color.z, h, s, v);
+		auto LumianceFunc = [h, s, v](float const t) -> ImU32
+		{
+			float r, g, b;
+			ImGui::ColorConvertHSVtoRGB(h, ImLerp(0.0f, 1.0f, t) * s, ImLerp(0.5f, 1.0f, t) * v, r, g, b);
+			//ImGui::ColorConvertHSVtoRGB(h, ImLerp(0.0f, 1.0f, t) * s, v, r, g, b);
+			int const ur = static_cast<int>(255.0f * r);
+			int const ug = static_cast<int>(255.0f * g);
+			int const ub = static_cast<int>(255.0f * b);
+			return IM_COL32(ur, ug, ub, 255);
+		};
 
-			dA += dD;
-			dB += dD;
-		}
-		//ImGui::ShadeVertsLinearColorGradientKeepAlpha(pDrawList, vert_start_idx, vert_end_idx, x00, x12, black, white);
-
-		ImGui::PopID();
-
-		return false;
+		DrawColorBandEx< true >(pDrawList, vpos, size, LumianceFunc, division, gamma, 0.0f);
 	}
 
 	bool ColorRing(const char* label, float thickness, int split)
@@ -2133,99 +2190,132 @@ namespace ImWidgets {
 
 		return false;
 	}
-
-	float Roughness(float x0, float x1, float x2, float x3, float x4)
+	
+	void HueSelectorEx(char const* label, ImVec2 const size, float* hueCenter, float* hueWidth, float* featherLeft, float* featherRight, ImU32 triangleColor, int division, float alpha, float hideHueAlpha, float offset)
 	{
-		float const m = 0.2f * x0 + 0.2f * x1 + 0.2f * x2 + 0.2f * x3 + 0.2f * x4;
+		ImGuiID const iID = ImGui::GetID(label);
+		ImGui::PushID(iID);
 
-		float const dx0 = m - x0;
-		float const dx1 = m - x1;
-		float const dx2 = m - x2;
-		float const dx3 = m - x3;
-		float const dx4 = m - x4;
+		ImGui::Text(label);
+		ImVec2 curPos = ImGui::GetCursorScreenPos();
+		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+		DrawHueBand(pDrawList, curPos, size, division, alpha, 1.0f, offset);
 
-		float const rms = (dx0 * dx0 + dx1 * dx1 + dx2 * dx2 + dx3 * dx3 + dx4 * dx4);
+		float center = ImClamp(*hueCenter, 0.0f, 1.0f - 1e-4f);
+		float width = ImClamp(*hueWidth, 0.0f, 0.5f - 1e-4f);
+		float featherL = ImClamp(*featherLeft, 0.0f, 0.5f - 1e-4f);
+		float featherR = ImClamp(*featherRight, 0.0f, 0.5f - 1e-4f);
 
-		float const ddx0 = ImAbs(x0 - x1);
-		float const ddx1 = ImAbs(x1 - x2);
-		float const ddx2 = ImAbs(x2 - x3);
-		float const ddx3 = ImAbs(x3 - x4);
+		float xCenter = curPos.x + ImFmod(center + offset, 1.0f) * size.x;
+		float const triangleSize = 16.0f;
 
-		//return 0*rms + ddx0 * ddx0 + ddx1 * ddx1 + ddx2 * ddx2 + ddx3 * ddx3;
-		return ddx1 * ddx1 + ddx2 * ddx2;
+		DrawTrianglePointerFilled(pDrawList, ImVec2(xCenter, curPos.y + size.y), triangleSize, triangleColor, ImWidgetsPointer_Up);
+
+		float fromRight = 0.0f;
+		float blackLeft = 0.0f;
+		float fLeft = 0.0f;
+		float centerWidth = 0.0f;
+		float fRight = 0.0f;
+		float blackRight = 0.0f;
+		float fromLeft = 0.0f;
+
+		fromRight = (0.0f) * size.x;
+		blackLeft = (center - featherL) * size.x;
+		fLeft = featherL * size.x;
+		centerWidth = 2.0f * width * size.x;
+		fRight = featherR * size.x;
+		blackRight = 1.0f - center - width - featherL;
+		fromLeft = 0.0 * size.x;
+
+
+		//DrawColorDensityPlotEx< true >(pDrawList,
+		//						[hueAlpha = hideHueAlpha, center = localHueCenter, width = localHueWidth, left = *featherLeft, right = *featherRight](float const x, float const) -> ImU32
+		//						{
+		//							float val;
+		//							if (x < center - width && x > center - width - left)
+		//							{
+		//								val = ImSaturate((center * (-1 + hueAlpha) + left + width + x - hueAlpha * (width + x)) / left);
+		//							}
+		//							else if (x < center + width + right && x > center + width)
+		//							{
+		//								val = ImSaturate((center - center * hueAlpha + right + width - hueAlpha * width + (-1 + hueAlpha) * x) / right);
+		//							}
+		//							else if (x > center - width - left && x < center + width + right)
+		//							{
+		//								val = 1.0f;
+		//							}
+		//							else
+		//							{
+		//								val = hueAlpha;
+		//							}
+		//							return IM_COL32(0, 0, 0, ImPow(1.0f - val, 1.0f / 2.2f) * 255);
+		//						}, 0.0f, 1.0f, 0.0f, 0.0f, curPos, size, division, 1);
+
+		ImGui::Dummy(size);
+		//ImGui::InvisibleButton("##ZoneHue", ImVec2(size.x, size.y/* + triangleSize*/), 0);
+
+		//bool DensityPlotEx(const char* label, FuncType func, int resX, int resY, float minX, float maxX, float minY, float maxY);
+		//DensityPlotEx< true >("##Overlay",
+		//	[localHueCenter, localHueWidth](float const x, float const y)
+		//	{
+		//		return 1.0f;
+		//	}, division, 2, 0.0f, 1.0f, 0.0f, 1.0f);
+
+		//if (localHueWidth > 0.0f)
+		//{
+		//	float const dxPos = localHueCenter + ImFmod(localHueWidth - offset, 0.5f);
+		//	ImVec2 fromLeft;
+		//	if (dxPos > 1.0f)
+		//	{
+		//		fromLeft = ImVec2(size.x * (dxPos - 1.0f), 0.0f);
+		//	}
+		//	else
+		//	{
+		//		fromLeft = ImVec2(0.0f, 0.0f);
+		//	}
+		//	pDrawList->AddRectFilled(curPos + fromLeft, ImVec2(xCenter - localHueWidth * size.x, curPos.y + size.y), IM_COL32(0, 0, 0, hideHueAlpha * 255));
+		//	pDrawList->AddLine(ImVec2(xCenter - localHueWidth * size.x, curPos.y), ImVec2(xCenter - localHueWidth * size.x, curPos.y + size.y), IM_COL32(0, 0, 0, 255));
+		//
+		//	float const dxNeg = localHueCenter - ImFmod(localHueWidth - offset, 0.5f);
+		//	ImVec2 fromRight;
+		//	if (dxNeg < 0.0f)
+		//	{
+		//		fromRight = ImVec2(size.x * (1.0f + dxNeg), size.y);
+		//	}
+		//	else
+		//	{
+		//		fromRight = size;
+		//	}
+		//	pDrawList->AddRectFilled(ImVec2(xCenter + localHueWidth * size.x, curPos.y), curPos + fromRight, IM_COL32(0, 0, 0, hideHueAlpha * 255));
+		//	pDrawList->AddLine(ImVec2(xCenter + localHueWidth * size.x, curPos.y), ImVec2(xCenter + localHueWidth * size.x, curPos.y + size.y), IM_COL32(0, 0, 0, 255));
+		//}
+		//else
+		//{
+		//	pDrawList->AddLine(ImVec2(xCenter, curPos.y), ImVec2(xCenter, curPos.y + size.y), IM_COL32(0, 0, 0, 255));
+		//}
+
+		float const fZero = 0.0f;
+		float const fOne = 1.0f;
+
+		LineSlider("##ZoneHueLineSlider", curPos + ImVec2(0.0f, size.y), curPos + ImVec2(size.x, size.y), ImGuiDataType_Float, hueCenter, &fZero, &fOne, ImWidgetsPointer_Up);
+		ImGui::Dummy(ImVec2(size.x, triangleSize));
+
+		ImGui::PushMultiItemsWidths(2, size.x);
+		ImGui::DragFloat("##Center", hueCenter, 0.001f, 0.0f, 1.0f); ImGui::SameLine();
+		ImGui::DragFloat("##Width", hueWidth, 0.001f, 0.0f, 0.5f);
+
+		ImGui::PopID();
+	}
+
+	void HueSelector(char const* label, ImVec2 const size, float* hueCenter, float* hueWidth, float* featherLeft, float* featherRight, int division, float alpha, float hideHueAlpha, float offset)
+	{
+		HueSelectorEx(label, size, hueCenter, hueWidth, featherLeft, featherRight, IM_COL32(255, 128, 0, 255), division, alpha, hideHueAlpha, offset);
 	}
 
 	// Plots
 	void	AnalyticalPlot(char const* label, float(*func)(float const x), float const minX, float const maxX, int const minSamples)
 	{
-		ImGuiID const iID = ImGui::GetID(label);
-		ImGui::PushID(iID);
-
-		ImVec2 curPos = ImGui::GetCursorScreenPos();
-		float const width = ImGui::GetContentRegionAvailWidth();
-		float const height = width;
-
-		ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
-		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-
-		float const dx = (maxX - minX) / ((float)minSamples);
-		float const ddx = dx * 0.02f;
-
-		std::vector<float> roughness;
-		roughness.reserve(minSamples);
-
-		float y;
-		float minY =  FLT_MAX;
-		float maxY = -FLT_MAX;
-		for (int i = 0; i < minSamples; ++i)
-		{
-			float const x = ScaleFromNormalized((float)i / ((float)(minSamples - 1)), minX, maxX);
-
-			float y1 = func(x - 2.0f * ddx);
-			float y2 = func(x - 1.0f * ddx);
-			float y3 = func(x);
-			float y4 = func(x + 1.0f * ddx);
-			float y5 = func(x + 2.0f * ddx);
-
-			float const rough = Roughness(y1, y2, y3, y4, y5);
-
-			roughness.push_back(rough);
-
-			y = y3;
-			if (y < minY)
-				minY = y;
-			if (y > maxY)
-				maxY = y;
-		}
-		float const minRough = *std::min_element(roughness.begin(), roughness.end());
-		float const maxRough = *std::max_element(roughness.begin(), roughness.end());
-		std::transform(roughness.begin(), roughness.end(), roughness.begin(), [=](float const xx) { return ImPow(ImSaturate(1.0f - (xx - minRough) / (maxRough - minRough)), 2.0f); });
-
-		ImVector<ImVec2> pts;
-		//pts.reserve(minSamples);
-		//for (int i = 0; i < minSamples; ++i)
-		float x = minX;
-		while (x <= maxX)
-		{
-			//float const x = ScaleFromNormalized((float)i / ((float)(minSamples - 1)), minX, maxX);
-			float const coef = Normalize01(x, minX, maxX);
-			float const curRoughInv = LinearSample(coef, &roughness[0], roughness.size());
-			x += ddx * ImMax(curRoughInv, 1e-4f);
-
-			y = func(x);
-
-			float const winX = Rescale(x, minX, maxX, 0.0f, width);
-			float const winY = Rescale(y, minY, maxY, 0.0f, height);
-
-			pts.push_back(curPos + ImVec2(winX, winY));
-		};
-
-		if (pts.size() > ((1 << (sizeof(ImDrawIdx) * 4)) - 1 ))
-			pts.resize(((1 << (sizeof(ImDrawIdx) * 4)) - 1));
-
-		pDrawList->AddPolyline(&pts[0], pts.size(), IM_COL32(255, 255, 255, 255), false, 1.0f);
-
-		ImGui::PopID();
+		AnalyticalPlotEx(label, func, minX, maxX, minSamples);
 	}
 
 	float	FunctionFromData(float const x, float const minX, float const maxX, float* data, int const samples_count)
@@ -2367,11 +2457,6 @@ namespace ImWidgets {
 				}
 			}
 		}
-		//DensityPlotEx< IsBilinear >
-		//	("##DensCIE",
-		//	[](float x, float y)
-		//	{
-		//	}, resX, resY, minX, maxX, minY, maxY);
 
 		int lineSamples = ImMin(chromeLineSamplesCount, observerSampleCount);
 
@@ -2548,6 +2633,88 @@ namespace ImWidgets {
 		pDrawList->AddPolyline(&pts[0], pts_counts, col, closed, thickness);
 	}
 
+	void	DrawTrianglePointer(ImDrawList* pDrawList, ImVec2 targetPoint, float size, ImU32 col, ImWidgetsPointer pointDirection)
+	{
+		constexpr float cos0 = -0.5f;
+		constexpr float sin0 = 0.8660254037844386f;
+
+		ImVec2 center;
+
+		if (pointDirection == ImWidgetsPointer_Up)
+		{
+			center = targetPoint + ImVec2(0.0f, 1.0f);
+			pDrawList->AddTriangle(
+				targetPoint,
+				ImVec2(center.x - cos0 * size, center.y + sin0 * size),
+				ImVec2(center.x + cos0 * size, center.y + sin0 * size), col);
+		}
+		else if (pointDirection == ImWidgetsPointer_Down)
+		{
+			center = targetPoint + ImVec2(0.0f, -1.0f);
+			pDrawList->AddTriangle(
+				targetPoint,
+				ImVec2(center.x + cos0 * size, center.y - sin0 * size),
+				ImVec2(center.x - cos0 * size, center.y - sin0 * size), col);
+		}
+		else if (pointDirection == ImWidgetsPointer_Right)
+		{
+			center = targetPoint + ImVec2(-1.0f, 0.0f);
+			pDrawList->AddTriangle(
+				targetPoint,
+				ImVec2(center.x - sin0 * size, center.y - cos0 * size),
+				ImVec2(center.x - sin0 * size, center.y + cos0 * size), col);
+		}
+		else if (pointDirection == ImWidgetsPointer_Left)
+		{
+			center = targetPoint + ImVec2(1.0f, 0.0f);
+			pDrawList->AddTriangle(
+				targetPoint,
+				ImVec2(center.x + sin0 * size, center.y + cos0 * size),
+				ImVec2(center.x + sin0 * size, center.y - cos0 * size), col);
+		}
+	}
+
+	void	DrawTrianglePointerFilled(ImDrawList* pDrawList, ImVec2 targetPoint, float size, ImU32 col, ImWidgetsPointer pointDirection)
+	{
+		constexpr float cos0 = -0.5f;
+		constexpr float sin0 = 0.8660254037844386f;
+
+		ImVec2 center;
+
+		if (pointDirection == ImWidgetsPointer_Up)
+		{
+			center = targetPoint + ImVec2(0.0f, 1.0f);
+			pDrawList->AddTriangleFilled(
+				targetPoint,
+				ImVec2(center.x - cos0 * size, center.y + sin0 * size),
+				ImVec2(center.x + cos0 * size, center.y + sin0 * size), col);
+		}
+		else if (pointDirection == ImWidgetsPointer_Down)
+		{
+			center = targetPoint + ImVec2(0.0f, -1.0f);
+			pDrawList->AddTriangleFilled(
+				targetPoint,
+				ImVec2(center.x + cos0 * size, center.y - sin0 * size),
+				ImVec2(center.x - cos0 * size, center.y - sin0 * size), col);
+		}
+		else if (pointDirection == ImWidgetsPointer_Right)
+		{
+			center = targetPoint + ImVec2(-1.0f, 0.0f);
+			pDrawList->AddTriangleFilled(
+				targetPoint,
+				ImVec2(center.x - sin0 * size, center.y - cos0 * size),
+				ImVec2(center.x - sin0 * size, center.y + cos0 * size), col);
+		}
+		else if (pointDirection == ImWidgetsPointer_Left)
+		{
+			center = targetPoint + ImVec2(1.0f, 0.0f);
+			pDrawList->AddTriangleFilled(
+				targetPoint,
+				ImVec2(center.x + sin0 * size, center.y + cos0 * size),
+				ImVec2(center.x + sin0 * size, center.y - cos0 * size), col);
+		}
+	}
+
 	// Mask
 	struct tri
 	{
@@ -2557,25 +2724,37 @@ namespace ImWidgets {
 			a(_a), b(_b), c(_c)
 		{}
 	};
-#pragma optimize( "", off )
+
+	int triangleDrawCur = 0;
+	int trianglesCount = 0;
+
 	void	DrawConvexMaskMesh(ImDrawList* pDrawList, ImVec2 curPos, float* buffer_aot, int float2_count, ImVec2 size)
 	{
-		//ImVec2 curPos = ImGui::GetCursorScreenPos();
-		//float const width = ImGui::GetContentRegionAvailWidth();
-		//float const height = width;
-
-		//ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
-
-		//ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-		//ImDrawList* pDrawList = ImGui::GetOverlayDrawList();
-		//ImDrawList* pDrawList = ImGui::GetBackgroundDrawList();
-
 		ImVec2 bb_pts[4] = { curPos, curPos + ImVec2(0.0f, size.y), curPos + size, curPos + ImVec2(size.x, 0.0f) };
 
 		// Get closer point compare to bb_min;
 		float minDist = FLT_MAX;
 		int foundIdx = -1;
 		ImVec2* vBuffer = (ImVec2*)buffer_aot;
+
+		ImVec2 vCenter = ImVec2(0.0f, 0.0f);
+		float const coef = 1.0f / float(float2_count);
+		for (ImVec2 const* v = vBuffer; v != vBuffer + float2_count; ++v)
+		{
+			vCenter += *v * coef;
+		}
+
+		std::sort(vBuffer, vBuffer + float2_count,
+			[vCenter](ImVec2 const& a, ImVec2 const& b)
+			{
+				ImVec2 vA = a - vCenter;
+				ImVec2 vB = b - vCenter;
+				vA /= ImLength(vA);
+				vB /= ImLength(vB);
+
+				return ImAcos(vA.x) > ImAcos(vB.x);
+			} );
+
 		//for (int i = float2_count - 1; i >= 0; --i)
 		ImVec2* pCur = vBuffer;
 		for (int i = 0; i < float2_count; ++i)
@@ -2606,14 +2785,18 @@ namespace ImWidgets {
 			v1 /= ImSqrt(ImLengthSqr(v1));
 			float crossSign = ImSign(v0.x * v1.y - v0.y * v1.x);
 			float dot = v0.x * v1.x + v0.y * v1.y;
-			if (dot > 0.9999999f)
+			//if (dot > 1.0f)//0.9999999f)
+			//if (dot > 0.9999999f)
+			if (dot > 0.999f || ImAbs(crossSign) < 1e-5f)
 			{
+				// If triangle too thin skip it
 				nextIdx++;
 				nextIdx %= float2_count;
 				continue;
 			}
 			if (crossSign > 0.0f)
 			{
+				// Can be attached to the current corner
 				triangles.push_back(tri(float2_count + boundIdx, nextIdx, curIdx));
 				curIdx = nextIdx;
 				nextIdx++;
@@ -2621,25 +2804,36 @@ namespace ImWidgets {
 			}
 			else
 			{
+				// Flipped triangle so use the next corner
 				int bnd2 = boundIdx + 1;
 				bnd2 %= 4;
-				triangles.push_back(tri(float2_count + boundIdx, float2_count + bnd2, curIdx));
+				//triangles.push_back(tri(float2_count + boundIdx, float2_count + bnd2, curIdx));
+				triangles.push_back(tri(float2_count + boundIdx, curIdx, float2_count + bnd2));
+				triangles.push_back(tri(float2_count + bnd2, curIdx, nextIdx));
 				boundIdx = bnd2;
-				triangles.push_back(tri(float2_count + boundIdx, nextIdx, curIdx));
 				curIdx = nextIdx;
 				nextIdx++;
 				nextIdx %= float2_count;
 			}
 		} while (curIdx != foundIdx && nextIdx != ((foundIdx + 1) % float2_count));
-
+			//} while (nextIdx != foundIdx && nextIdx != ((foundIdx + 1) % float2_count));
+		//} while (boundIdx != 0 && curIdx != foundIdx);
+		//} while (curIdx != foundIdx);
+		//triangles.push_back(tri(float2_count + 4, foundIdx, float2_count + 1));
 		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
-		pDrawList->PrimReserve(triangles.size() * 3, float2_count + 4);
+		//pDrawList->PrimReserve(triangles.size() * 3, float2_count + 4);
+		pDrawList->PrimReserve(triangleDrawCur == -1 ? triangles.size() * 3 : 3, float2_count + 4);
 
+		int iTriVal = triangleDrawCur;
+		int triIdx = 0;
 		for (tri const& tr : triangles)
 		{
-			pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + tr.a));
-			pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + tr.b));
-			pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + tr.c));
+			if (triangleDrawCur == -1 || iTriVal == triIdx++)
+			{
+				pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + tr.a));
+				pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + tr.b));
+				pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + tr.c));
+			}
 		}
 
 		//ImVec4 vBgCol = ImGui::GetStyle().Colors[ImGuiCol_FrameBg];
@@ -2660,77 +2854,6 @@ namespace ImWidgets {
 	}
 
 	// Density Plots
-	template < bool IsBilinear >
-	bool DensityPlotEx(const char* label, float(*sample)(float x, float y), int resX, int resY, float minX, float maxX, float minY, float maxY)
-	{
-		ImGuiID const iID = ImGui::GetID(label);
-		ImGui::PushID(iID);
-
-		float* pMin = ImGui::GetStateStorage()->GetFloatRef(iID + 0, FLT_MAX);
-		float* pMax = ImGui::GetStateStorage()->GetFloatRef(iID + 1, -FLT_MAX);
-
-		ImVec2 curPos = ImGui::GetCursorScreenPos();
-		float const width = ImGui::GetContentRegionAvailWidth();
-		float const height = width;
-
-		ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
-
-		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
-		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-
-		auto GetColor = [pMin, pMax, &sample](float x, float y) {
-			float value = sample(x, y);
-			if (value < *pMin)
-				* pMin = value;
-			if (value > * pMax)
-				* pMax = value;
-
-			float showValue = Normalize01(value, *pMin, *pMax);
-			ImU32 const uVal = static_cast<ImU32>(showValue * 255.0f);
-
-			return IM_COL32(uVal, uVal, uVal, 255);
-		};
-
-		float sx = ((float)width) / ((float)resX);
-		float sy = ((float)height) / ((float)resY);
-		float dx = 0.5f * sx;
-		float dy = 0.5f * sx;
-		// From x: 0 -> 0.8; y: 0 -> 0.9
-		float r, g, b;
-		float maxValue;
-		for (int i = 0; i < resX; ++i)
-		{
-			float x0 = ScaleFromNormalized(((float)(i + 0)) / ((float)(resX - 1)), minX, maxX);
-			float x1 = ScaleFromNormalized(((float)(i + 1)) / ((float)(resX - 1)), minX, maxX);
-
-			for (int j = 0; j < resY; ++j)
-			{
-				float y0 = ScaleFromNormalized(1.0f - ((float)(j + 0)) / ((float)(resY - 1)), minY, maxY);
-				float y1 = ScaleFromNormalized(1.0f - ((float)(j + 1)) / ((float)(resY - 1)), minY, maxY);
-
-				ImU32 const col00 = GetColor(x0, y0);
-				if constexpr (IsBilinear)
-				{
-					ImU32 const col01 = GetColor(x0, y1);
-					ImU32 const col10 = GetColor(x1, y0);
-					ImU32 const col11 = GetColor(x1, y1);
-					pDrawList->AddRectFilledMultiColor(curPos + ImVec2(sx * (i + 0), sy * (j + 0)),
-						curPos + ImVec2(sx * (i + 1), sy * (j + 1)),
-						col00, col10, col11, col01);
-				}
-				else
-				{
-					pDrawList->AddRectFilledMultiColor(curPos + ImVec2(sx * (i + 0), sy * (j + 0)),
-													   curPos + ImVec2(sx * (i + 1), sy * (j + 1)),
-													   col00, col00, col00, col00);
-				}
-			}
-		}
-
-		ImGui::PopID();
-
-		return false;
-	}
 
 	bool DensityPlotBilinear(const char* label, float(*sample)(float x, float y), int resX, int resY, float minX, float maxX, float minY, float maxY)
 	{
@@ -2741,9 +2864,8 @@ namespace ImWidgets {
 		return DensityPlotEx<false>(label, sample, resX, resY, minX, maxX, minY, maxY);
 	}
 
-	//template < bool IsBilinear >
-#pragma optimize( "", off )
-	bool DensityIsolinePlotEx(const char* label, float(*sample)(float x, float y), float* isoValues, int isoLinesCount, ImU32* isoLinesColors, int isolinesColorsCount, int resX, int resY, float minX, float maxX, float minY, float maxY)
+	template < bool IsBilinear >
+	bool DensityIsolinePlotEx(const char* label, float(*sample)(float x, float y), bool showSurface, float* isoValues, int isoLinesCount, ImU32* isoLinesColors, int isolinesColorsCount, int resX, int resY, float minX, float maxX, float minY, float maxY)
 	{
 		ImGuiID const iID = ImGui::GetID(label);
 		ImGui::PushID(iID);
@@ -2760,15 +2882,6 @@ namespace ImWidgets {
 		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
 		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 
-		auto GetColor = [pMin, pMax, &sample](float x, float y) {
-			float value = sample(x, y);
-
-			float showValue = Normalize01(value, *pMin, *pMax);
-			ImU32 const uVal = static_cast<ImU32>(showValue * 255.0f);
-
-			return IM_COL32(uVal, uVal, uVal, 255);
-		};
-
 		float sx = ((float)width) / ((float)resX);
 		float sy = ((float)height) / ((float)resY);
 		float dx = 0.5f * sx;
@@ -2776,71 +2889,64 @@ namespace ImWidgets {
 		float r, g, b;
 		float maxValue;
 		std::vector< std::vector<bool> > boundaries;
-		boundaries.resize(resY);
-		for (int j = 0; j < resY; ++j)
+		std::vector< std::vector<float> > coefs;
+		boundaries.resize(resY + 1);
+		coefs.resize(resY + 1);
+		for (int i = 0; i <= resY; ++i)
 		{
-			boundaries[j].resize(resX);
+			boundaries[i].resize(resX + 1);
+			coefs[i].resize(resY + 1);
 		}
 
-		for (int i = 0; i < resX; ++i)
+		if (showSurface)
 		{
-			float x0 = ScaleFromNormalized(((float)(i + 0)) / ((float)(resX - 1)), minX, maxX);
-			float x1 = ScaleFromNormalized(((float)(i + 1)) / ((float)(resX - 1)), minX, maxX);
+			auto GetColor = [pMin, pMax, &sample](float x, float y) {
+				float value = sample(x, y);
 
-			for (int j = 0; j < resY; ++j)
-			{
-				float y0 = ScaleFromNormalized(1.0f - ((float)(j + 0)) / ((float)(resY - 1)), minY, maxY);
-				float y1 = ScaleFromNormalized(1.0f - ((float)(j + 1)) / ((float)(resY - 1)), minY, maxY);
-
-				float const value = sample(x0, y0);
 				if (value < *pMin)
-					* pMin = value;
-				if (value > * pMax)
-					* pMax = value;
+					*pMin = value;
+				if (value > *pMax)
+					*pMax = value;
 
-				ImU32 const col00 = GetColor(x0, y0);
-				//if constexpr (IsBilinear)
-				{
-					ImU32 const col01 = GetColor(x0, y1);
-					ImU32 const col10 = GetColor(x1, y0);
-					ImU32 const col11 = GetColor(x1, y1);
-					pDrawList->AddRectFilledMultiColor(curPos + ImVec2(sx * (i + 0), sy * (j + 0)),
-						curPos + ImVec2(sx * (i + 1), sy * (j + 1)),
-						col00, col10, col11, col01);
-				}
-				//else
-				//{
-				//	pDrawList->AddRectFilledMultiColor(curPos + ImVec2(sx * (i + 0), sy * (j + 0)),
-				//		curPos + ImVec2(sx * (i + 1), sy * (j + 1)),
-				//		col00, col00, col00, col00);
-				//}
-			}
+				float showValue = Normalize01(value, *pMin, *pMax);
+				ImU32 const uVal = static_cast<ImU32>(showValue * 255.0f);
+
+				return IM_COL32(uVal, uVal, uVal, 255);
+			};
+
+			DrawColorDensityPlotEx< IsBilinear >(pDrawList, GetColor, minX, maxX, minY, maxY, curPos, ImVec2(width, height), resX, resY);
 		}
 		for (int k = 0; k < isoLinesCount; ++k)
 		{
 			float const isoValue = isoValues[k];
 			ImU32 const isoColor = isoLinesColors[k % isolinesColorsCount];
 
-			for (int i = 0; i < resX; ++i)
+			for (int j = 0; j <= resY; ++j)
 			{
-				float x0 = ScaleFromNormalized(((float)(i + 0)) / ((float)(resX - 1)), minX, maxX);
+				float y0 = ScaleFromNormalized(1.0f - ((float)(j + 0)) / ((float)(resY - 1)), minY, maxY);
 
-				for (int j = 0; j < resY; ++j)
+				for (int i = 0; i <= resX; ++i)
 				{
-					float y0 = ScaleFromNormalized(1.0f - ((float)(j + 0)) / ((float)(resY - 1)), minY, maxY);
+					float x0 = ScaleFromNormalized(((float)(i + 0)) / ((float)(resX - 1)), minX, maxX);
 					float const value = sample(x0, y0);
-					boundaries[j][i] = (value > isoValue);
+					coefs[j][i] = value;
+					boundaries[j][i] = (value >= isoValue);
 				}
 			}
 
-			for (int i = 1; i < resX; ++i)
+			for (int j = 1; j <= resY; ++j)
 			{
-				for (int j = 1; j < resY; ++j)
+				for (int i = 1; i <= resX; ++i)
 				{
 					int _00 = (int)boundaries[j - 1][i - 1];
 					int _10 = (int)boundaries[j - 0][i - 1];
 					int _11 = (int)boundaries[j - 0][i - 0];
 					int _01 = (int)boundaries[j - 1][i - 0];
+
+					float _00f = ImAbs(coefs[j - 1][i - 1]);
+					float _10f = ImAbs(coefs[j - 0][i - 1]);
+					float _11f = ImAbs(coefs[j - 0][i - 0]);
+					float _01f = ImAbs(coefs[j - 1][i - 0]);
 
 					int val = (_00 << 0) | (_10 << 1) | (_11 << 2) | (_01 << 3);
 
@@ -2849,6 +2955,7 @@ namespace ImWidgets {
 					int dst = -1;
 					int src2 = -1;
 					int dst2 = -1;
+					ImVec4 coefs;
 					if (val == 0b0000) // 0
 					{
 						cnt = 0;
@@ -2937,11 +3044,21 @@ namespace ImWidgets {
 						ImVec2 x11 = curPos + ImVec2(sx * (i + 0), sy * (j + 0));
 						ImVec2 x10 = curPos + ImVec2(sx * (i + 0), sy * (j - 1));
 
-						ImVec2 vals[] = { (x00 + x01) * 0.5f, (x01 + x11) * 0.5f, (x11 + x10) * 0.5f, (x10 + x00) * 0.5f };
+						ImVec2 vals[] = {	x00 * 0.5f + x01 * 0.5f,
+											x01 * 0.5f + x11 * 0.5f,
+											x11 * 0.5f + x10 * 0.5f,
+											x10 * 0.5f + x00 * 0.5f };
+						//ImVec2 vals[] = {	(x00 * _00f + x01 * _01f) / (_00f + _01f),
+						//					(x01 * _01f + x11 * _11f) / (_01f + _11f),
+						//					(x11 * _11f + x10 * _10f) / (_11f + _10f),
+						//					(x10 * _10f + x00 * _00f) / (_10f + _00f) };
+						//ImVec2 vals[] = {	(x00 * _01f + x01 * _00f) / (_00f + _01f),
+						//					(x01 * _11f + x11 * _01f) / (_01f + _11f),
+						//					(x11 * _10f + x10 * _11f) / (_11f + _10f),
+						//					(x10 * _00f + x00 * _10f) / (_10f + _00f) };
 
-						if (cnt >= 1)
-							pDrawList->AddLine(vals[src], vals[dst], isoColor, 2.0f);
-						else if (cnt >= 2)
+						pDrawList->AddLine(vals[src], vals[dst], isoColor, 2.0f);
+						if (cnt >= 2)
 							pDrawList->AddLine(vals[src2], vals[dst2], isoColor, 2.0f);
 					}
 				}
@@ -2953,9 +3070,9 @@ namespace ImWidgets {
 		return false;
 	}
 
-	bool DensityIsolinePlotBilinear(const char* label, float(*sample)(float x, float y), float* isoValue, int isoLinesCount, ImU32* isoLinesColors, int isolinesColorsCount, int resX, int resY, float minX, float maxX, float minY, float maxY)
+	bool DensityIsolinePlotBilinear(const char* label, float(*sample)(float x, float y), bool showSurface, float* isoValue, int isoLinesCount, ImU32* isoLinesColors, int isolinesColorsCount, int resX, int resY, float minX, float maxX, float minY, float maxY)
 	{
-		return DensityIsolinePlotEx/*<true>*/(label, sample, isoValue, isoLinesCount, isoLinesColors, isolinesColorsCount, resX, resY, minX, maxX, minY, maxY);
+		return DensityIsolinePlotEx<true>(label, sample, showSurface, isoValue, isoLinesCount, isoLinesColors, isolinesColorsCount, resX, resY, minX, maxX, minY, maxY);
 	}
 
 	//////////////////////////////////////////////////////////////////////////

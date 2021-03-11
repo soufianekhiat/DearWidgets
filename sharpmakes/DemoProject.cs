@@ -50,6 +50,7 @@ namespace DearWidgets
         {
             conf.Output = Configuration.OutputType.Exe;
             conf.AddPrivateDependency<APIProject>(target);
+			conf.TargetPath = RootPath + "/WorkingDir";
 
             conf.IncludePaths.Add(@"[project.RootPath]/src/demo/");
             conf.IncludePaths.Add(@"[project.RootPath]/extern/imgui/backends/");
@@ -99,6 +100,10 @@ namespace DearWidgets
             //        SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_wgpu.cpp");
             //    }
             //}
+
+			conf.VcxprojUserFile = new Configuration.VcxprojUserFileSettings();
+			conf.VcxprojUserFile.LocalDebuggerWorkingDirectory = @"[project.RootPath]/WorkingDir/";
+			//@"$(SolutionDir)WorkingDir";
         }
     }
 }
