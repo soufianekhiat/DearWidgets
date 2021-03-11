@@ -1968,7 +1968,7 @@ namespace ImWidgets {
 		return false;
 	}
 
-	IMGUI_API bool MoveLine2D(const char* label, float* buffer_aot, int float2_count, float minX, float maxX, float minY, float maxY)
+	IMGUI_API bool MoveLine2D(const char* label, float* buffer_aot, int float2_count, float minX, float maxX, float minY, float maxY, bool closeLoop)
 	{
 		assert(minX < maxX);
 		assert(minY < maxY);
@@ -2003,6 +2003,15 @@ namespace ImWidgets {
 			float y0 = Rescale(buffer_aot[2 * (i + 0) + 1], minY, maxY, 0.0f, 1.0f);
 			float x1 = Rescale(buffer_aot[2 * (i + 1) + 0], minX, maxX, 0.0f, 1.0f);
 			float y1 = Rescale(buffer_aot[2 * (i + 1) + 1], minY, maxY, 0.0f, 1.0f);
+
+			pDrawList->AddLine(oRect.GetTL() + ImVec2(x0 * width, y0 * height), oRect.GetTL() + ImVec2(x1 * width, y1 * height), IM_COL32(255, 255, 0, 255), 2.0f);
+		}
+		if (closeLoop)
+		{
+			float x0 = Rescale(buffer_aot[2 * (float2_count - 1) + 0], minX, maxX, 0.0f, 1.0f);
+			float y0 = Rescale(buffer_aot[2 * (float2_count - 1) + 1], minY, maxY, 0.0f, 1.0f);
+			float x1 = Rescale(buffer_aot[2 * (0) + 0], minX, maxX, 0.0f, 1.0f);
+			float y1 = Rescale(buffer_aot[2 * (0) + 1], minY, maxY, 0.0f, 1.0f);
 
 			pDrawList->AddLine(oRect.GetTL() + ImVec2(x0 * width, y0 * height), oRect.GetTL() + ImVec2(x1 * width, y1 * height), IM_COL32(255, 255, 0, 255), 2.0f);
 		}
@@ -2053,16 +2062,16 @@ namespace ImWidgets {
 			ImGui::PopID();
 		}
 
-		if (modified)
-		{
-			ImVec2* pVec2Buffer = reinterpret_cast<ImVec2*>(buffer_aot);
+		//if (modified)
+		//{
+		//	ImVec2* pVec2Buffer = reinterpret_cast<ImVec2*>(buffer_aot);
 
-			std::sort(	pVec2Buffer, pVec2Buffer + float2_count,
-						[]( ImVec2 const& a, ImVec2 const& b)
-						{
-							return a.x < b.x;
-						});
-		}
+		//	std::sort(	pVec2Buffer, pVec2Buffer + float2_count,
+		//				[]( ImVec2 const& a, ImVec2 const& b)
+		//				{
+		//					return a.x < b.x;
+		//				});
+		//}
 
 		ImGui::Dummy(ImVec2(ImGui::GetContentRegionAvailWidth(), ImGui::GetTextLineHeightWithSpacing()));
 
@@ -2725,8 +2734,8 @@ namespace ImWidgets {
 		{}
 	};
 
-	int triangleDrawCur = 0;
-	int trianglesCount = 0;
+	//int triangleDrawCur = -1;
+	//int trianglesCount = 0;
 
 	void	DrawConvexMaskMesh(ImDrawList* pDrawList, ImVec2 curPos, float* buffer_aot, int float2_count, ImVec2 size)
 	{
@@ -2737,24 +2746,6 @@ namespace ImWidgets {
 		int foundIdx = -1;
 		ImVec2* vBuffer = (ImVec2*)buffer_aot;
 
-		ImVec2 vCenter = ImVec2(0.0f, 0.0f);
-		float const coef = 1.0f / float(float2_count);
-		for (ImVec2 const* v = vBuffer; v != vBuffer + float2_count; ++v)
-		{
-			vCenter += *v * coef;
-		}
-
-		std::sort(vBuffer, vBuffer + float2_count,
-			[vCenter](ImVec2 const& a, ImVec2 const& b)
-			{
-				ImVec2 vA = a - vCenter;
-				ImVec2 vB = b - vCenter;
-				vA /= ImLength(vA);
-				vB /= ImLength(vB);
-
-				return ImAcos(vA.x) > ImAcos(vB.x);
-			} );
-
 		//for (int i = float2_count - 1; i >= 0; --i)
 		ImVec2* pCur = vBuffer;
 		for (int i = 0; i < float2_count; ++i)
@@ -2762,7 +2753,7 @@ namespace ImWidgets {
 			ImVec2 const& v = *pCur;
 			++pCur;
 			ImVec2 delta = v - curPos;
-			float curDist = delta.x * delta.x + delta.y * delta.y;
+			float curDist = ImLengthSqr(delta);
 			if (curDist < minDist)
 			{
 				minDist = curDist;
@@ -2781,20 +2772,20 @@ namespace ImWidgets {
 			ImVec2& bnd = bb_pts[boundIdx];
 			ImVec2 v0 = vBuffer[curIdx] - bnd;
 			ImVec2 v1 = vBuffer[nextIdx] - bnd;
-			v0 /= ImSqrt(ImLengthSqr(v0));
-			v1 /= ImSqrt(ImLengthSqr(v1));
-			float crossSign = ImSign(v0.x * v1.y - v0.y * v1.x);
+			v0 /= ImLength(v0);
+			v1 /= ImLength(v1);
+			float crossSignZ = ImSign(v0.x * v1.y - v0.y * v1.x);
 			float dot = v0.x * v1.x + v0.y * v1.y;
 			//if (dot > 1.0f)//0.9999999f)
-			//if (dot > 0.9999999f)
-			if (dot > 0.999f || ImAbs(crossSign) < 1e-5f)
+			if (dot > 0.9999999f)
+			//if (dot > 0.999f || ImAbs(crossSignZ) < 1e-5f)
 			{
 				// If triangle too thin skip it
 				nextIdx++;
 				nextIdx %= float2_count;
 				continue;
 			}
-			if (crossSign > 0.0f)
+			if (crossSignZ > 0.0f)
 			{
 				// Can be attached to the current corner
 				triangles.push_back(tri(float2_count + boundIdx, nextIdx, curIdx));
@@ -2815,20 +2806,20 @@ namespace ImWidgets {
 				nextIdx++;
 				nextIdx %= float2_count;
 			}
-		} while (curIdx != foundIdx && nextIdx != ((foundIdx + 1) % float2_count));
-			//} while (nextIdx != foundIdx && nextIdx != ((foundIdx + 1) % float2_count));
+		//} while (curIdx != foundIdx && nextIdx != ((foundIdx + 1) % float2_count));
+		} while (nextIdx != foundIdx && nextIdx != ((foundIdx + 1) % float2_count));
 		//} while (boundIdx != 0 && curIdx != foundIdx);
 		//} while (curIdx != foundIdx);
 		//triangles.push_back(tri(float2_count + 4, foundIdx, float2_count + 1));
 		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
-		//pDrawList->PrimReserve(triangles.size() * 3, float2_count + 4);
-		pDrawList->PrimReserve(triangleDrawCur == -1 ? triangles.size() * 3 : 3, float2_count + 4);
+		pDrawList->PrimReserve(triangles.size() * 3, float2_count + 4);
+		//pDrawList->PrimReserve(triangleDrawCur == -1 ? triangles.size() * 3 : 3, float2_count + 4);
 
-		int iTriVal = triangleDrawCur;
+		//int iTriVal = triangleDrawCur;
 		int triIdx = 0;
 		for (tri const& tr : triangles)
 		{
-			if (triangleDrawCur == -1 || iTriVal == triIdx++)
+			//if (triangleDrawCur == -1 || iTriVal == triIdx++)
 			{
 				pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + tr.a));
 				pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + tr.b));
