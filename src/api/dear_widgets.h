@@ -1,5 +1,10 @@
 #include <imgui.h>
 
+//#define IMGUI_DEFINE_MATH_OPERATORS
+#include <imgui_internal.h>
+
+#include <cmath>
+
 //////////////////////////////////////////////////////////////////////////
 // Style TODO:
 //	* Expose Style
@@ -27,17 +32,18 @@
 
 namespace ImWidgets {
 
-#define ImWidget_Kibi (1024ull)
-#define ImWidget_Mibi (ImWidget_Kibi*1024ull)
-#define ImWidget_Gibi (ImWidget_Mibi*1024ull)
-#define ImWidget_Tebi (ImWidget_Gibi*1024ull)
-#define ImWidget_Pebi (ImWidget_Tebi*1024ull)
+#define ImWidgets_Kibi (1024ull)
+#define ImWidgets_Mibi (ImWidgets_Kibi*1024ull)
+#define ImWidgets_Gibi (ImWidgets_Mibi*1024ull)
+#define ImWidgets_Tebi (ImWidgets_Gibi*1024ull)
+#define ImWidgets_Pebi (ImWidgets_Tebi*1024ull)
 
 	typedef int ImWidgetsLengthUnit;
 	typedef int ImWidgetsChromaticPlot;
 	typedef int ImWidgetsObserver;
 	typedef int ImWidgetsIlluminance;
 	typedef int ImWidgetsColorSpace;
+	typedef int ImWidgetsPointer;
 
 	enum ImWidgetsLengthUnit_
 	{
@@ -106,7 +112,6 @@ namespace ImWidgets {
 
 	enum ImWidgetsChromaticPlot_
 	{
-
 		// Style
 		ImWidgetsChromaticPlot_ShowWavelength,
 		ImWidgetsChromaticPlot_ShowGrid,
@@ -115,6 +120,20 @@ namespace ImWidgets {
 
 		ImWidgetsChromaticPlot_COUNT
 	};
+
+	enum ImWidgetsPointer_
+	{
+		// Style
+		ImWidgetsPointer_Up,
+		ImWidgetsPointer_Down,
+		ImWidgetsPointer_Right,
+		ImWidgetsPointer_Left,
+
+		ImWidgetsPointer_COUNT
+	};
+
+	//static int triangleDrawCur = 0;
+	extern int triangleDrawCur;
 
 	// Layout
 	IMGUI_API void CenterNextItem(ImVec2 nextItemSize);
@@ -127,13 +146,15 @@ namespace ImWidgets {
 	IMGUI_API bool Slider2DScalar(char const* pLabel, ImGuiDataType data_type, void* pValueX, void* pValueY, void* p_minX, void* p_maxX, void* p_minY, void* p_maxY, float const fScale = 1.0f);
 
 	IMGUI_API bool Slider2DInt(char const* pLabel, int* pValueX, int* pValueY, int* p_minX, int* p_maxX, int* p_minY, int* p_maxY, float const fScale = 1.0f);
-	IMGUI_API bool Slider2DFloat(char const* pLabel, float* pValueX, float* pValueY, float* p_minX, float* p_maxX, float* p_minY, float* p_maxY, float const fScale = 1.0f);
-	IMGUI_API bool Slider2DDouble(char const* pLabel, double* pValueX, double* pValueY, double* p_minX, double* p_maxX, double* p_minY, double* p_maxY, float const fScale = 1.0f);
+	IMGUI_API bool Slider2DFloat(char const* pLabel, float* pValueX, float* pValueY, float minX, float maxX, float minY, float maxY, float const fScale = 1.0f);
+	IMGUI_API bool Slider2DDouble(char const* pLabel, double* pValueX, double* pValueY, double minX, double maxX, double minY, double maxY, float const fScale = 1.0f);
 
 	IMGUI_API bool SliderScalar3D(char const* pLabel, float* pValueX, float* pValueY, float* pValueZ, float const fMinX, float const fMaxX, float const fMinY, float const fMaxY, float const fMinZ, float const fMaxZ, float const fScale = 1.0f);
 
-	IMGUI_API bool InputVec2(const char* label, ImVec2* value, ImVec2* p_vMinValue, ImVec2* p_vMaxValue, float const fScale = 1.0f);
+	IMGUI_API bool InputVec2(const char* label, ImVec2* value, ImVec2 vMinValue, ImVec2 vMaxValue, float const fScale = 1.0f);
 	IMGUI_API bool InputVec3(const char* label, ImVec4* value, ImVec4 const vMinValue, ImVec4 const vMaxValue, float const fScale = 1.0f);
+
+	IMGUI_API bool LineSlider(const char* label, ImVec2 start, ImVec2 end, ImGuiDataType data_type, void* p_data, const void* p_min, const void* p_max, ImWidgetsPointer pointer);
 
 	// Grid
 	// Default behavior: AoS & RowMajor
@@ -145,19 +166,42 @@ namespace ImWidgets {
 
 	// Widgets
 	// Density Plot
+	template < bool IsBilinear, typename FuncType >
+	IMGUI_API bool DensityPlotEx(const char* label, FuncType func, int resX, int resY, float minX, float maxX, float minY, float maxY);
 	IMGUI_API bool DensityPlotBilinear(const char* label, float(*sample)(float x, float y), int resX, int resY, float minX, float maxX, float minY, float maxY);
 	IMGUI_API bool DensityPlotNearest(const char* label, float(*sample)(float x, float y), int resX, int resY, float minX, float maxX, float minY, float maxY);
 
-	IMGUI_API bool DensityIsolinePlotBilinear(const char* label, float(*sample)(float x, float y), float* isoValue, int isoLinesCount, ImU32* isoLinesColors, int isolinesColorsCount, int resX, int resY, float minX, float maxX, float minY, float maxY);
+	IMGUI_API bool DensityIsolinePlotBilinear(const char* label, float(*sample)(float x, float y), bool showSurface, float* isoValue, int isoLinesCount, ImU32* isoLinesColors, int isolinesColorsCount, int resX, int resY, float minX, float maxX, float minY, float maxY);
 
 	// Plots
-	IMGUI_API void	AnalyticalPlot(char const* label, float(*func)(float const x), float const minX, float const maxX, int const minSamples = 64);
+	template <typename FuncType>
+	IMGUI_API void AnalyticalPlotEx(char const* label, FuncType func, float const minX, float const maxX, int const minSamples);
+	IMGUI_API void AnalyticalPlot(char const* label, float(*func)(float const x), float const minX, float const maxX, int const minSamples = 64);
 
 	// Draws
+	IMGUI_API void DrawTrianglePointer(ImDrawList* pDrawList, ImVec2 targetPoint, float size, ImU32 col, ImWidgetsPointer pointDirection);
+	IMGUI_API void DrawTrianglePointerFilled(ImDrawList* pDrawList, ImVec2 targetPoint, float size, ImU32 col, ImWidgetsPointer pointDirection);
+
 	// Mask
 	IMGUI_API void DrawConvexMaskMesh(ImDrawList* pDrawList, ImVec2 curPos, float* buffer_aot, int float2_count, ImVec2 size);
 
+	// func: ImU32(*func)(float const x, float const y)
+	template < bool IsBilinear, typename FuncType >
+	IMGUI_API void DrawDensityPlotEx(ImDrawList* pDrawList, FuncType func, float minX, float maxX, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionX, int resolutionY);
+
 	// xyzToRGB: a rowMajorMatrix
+	template < bool IsBilinear >
+	IMGUI_API void DrawChromaticPlotEx(ImDrawList* pDrawList,
+		ImVec2 const vPos,
+		float width, float heigth,
+		int const chromeLineSamplesCount,
+		ImWidgetsColorSpace const colorspace,
+		ImWidgetsObserver const observer,
+		ImWidgetsIlluminance const illum,
+		int resX, int resY,
+		float wavelengthMin = 400.0f, float wavelengthMax = 700.0f,
+		float minX = 0.0f, float maxX = 0.8f,
+		float minY = 0.0f, float maxY = 0.9f);
 	IMGUI_API void DrawChromaticPlotNearest(ImDrawList* pDrawList,
 		ImVec2 const vPos,
 		float width, float heigth,
@@ -183,10 +227,22 @@ namespace ImWidgets {
 	IMGUI_API void DrawChromaticPoint(ImDrawList* pDrawList, ImVec2 const vpos, ImU32 col);
 	IMGUI_API void DrawChromaticLine(ImDrawList* pDrawList, ImVec2 const* vpos, int const pts_counts, ImU32 col, bool closed, float thickness);
 
+	// func: ImU32(*func)(float const t): t in [0; 1]
+	template <bool IsBilinear, typename FuncType>
+	IMGUI_API void DrawColorBandEx(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, FuncType func, int division, float gamma, float colorOffset);
+	// func ImU32(*func)(float const t): t in [0; 1]
+	template <bool IsBilinear, typename FuncType>
+	IMGUI_API void DrawColorRingEx(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, float thickness, FuncType func, int division, float colorOffset);
+
 	// Color Processing
-	IMGUI_API bool HueToHue(const char* label);
-	IMGUI_API bool LumToSat(const char* label);
+	IMGUI_API void DrawHueBand(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, float alpha, float gamma, float offset = 0.0f);
+	IMGUI_API void DrawHueBand(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, float colorStartRGB[3], float alpha, float gamma);
+	IMGUI_API void DrawLumianceBand(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma);
+	IMGUI_API void DrawSaturationBand(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma);
 	IMGUI_API bool ColorRing(const char* label, float thickness, int split);
+
+	// Color Selector
+	IMGUI_API void HueSelector(char const* label, ImVec2 const size, float* hueCenter, float* hueWidth, float* featherLeft, float* featherRight, int division = 32, float alpha = 1.0f, float hideHueAlpha = 0.75f, float offset = 0.0f);
 
 	//////////////////////////////////////////////////////////////////////////
 	// External
@@ -205,4 +261,6 @@ namespace ImWidgets {
 		SHOW_GRID = 1 << 1
 	};
 	int CurveEditor(const char* label, float* values, int points_count, const ImVec2& editor_size, ImU32 flags, int* new_count);
+
+#include <dear_widgets.hpp>
 }

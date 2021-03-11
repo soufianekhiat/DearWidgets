@@ -76,6 +76,8 @@ int main(int, char**)
     //ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesJapanese());
     //IM_ASSERT(font != NULL);
 
+	io.Fonts->AddFontFromFileTTF("../extern/FiraCode/distr/ttf/FiraCode-Medium.ttf", 16.0f);
+
     // Our state
     //bool show_demo_window = true;
     //bool show_another_window = false;
