@@ -183,7 +183,7 @@ namespace ImWidgets {
 	IMGUI_API void DrawTrianglePointerFilled(ImDrawList* pDrawList, ImVec2 targetPoint, float size, ImU32 col, ImWidgetsPointer pointDirection);
 
 	// Mask
-	IMGUI_API void DrawConvexMaskMesh(ImDrawList* pDrawList, ImVec2 curPos, ImVec2 size, ImU32 maskColor, float* buffer_aot, int float2_count, float minX, float maxX, float minY, float maxY);
+	IMGUI_API void DrawConvexMaskMesh(ImDrawList* pDrawList, ImVec2 curPos, ImVec2 size, ImU32 maskColor, float* buffer_aot, int float2_count, float minX, float maxX, float minY, float maxY, bool flipY = false);
 
 	// func: ImU32(*func)(float const x, float const y)
 	template < bool IsBilinear, typename FuncType >
