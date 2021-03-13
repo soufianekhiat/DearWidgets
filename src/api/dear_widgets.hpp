@@ -130,15 +130,38 @@ void DrawColorDensityPlotEx(ImDrawList* pDrawList, FuncType func, float minX, fl
 	float const sx = size.x / ((float)resolutionX);
 	float const sy = size.y / ((float)resolutionY);
 
+	float const dy = 1.0f / ((float)resolutionY);
+	float const dx = 1.0f / ((float)resolutionX);
+	float const hdx = 0.5f / ((float)resolutionX);
+	float const hdy = 0.5f / ((float)resolutionY);
+
 	for (int i = 0; i < resolutionX; ++i)
 	{
-		float x0 = ScaleFromNormalized(((float)(i + 0)) / ((float)(resolutionX)), minX, maxX);
-		float x1 = ScaleFromNormalized(((float)(i + 1)) / ((float)(resolutionX)), minX, maxX);
+		float x0;
+		float x1;
+		if constexpr (IsBilinear)
+		{
+			x0 = ScaleFromNormalized(((float)i + 0) * dx, minX, maxX);
+			x1 = ScaleFromNormalized(((float)i + 1) * dx, minX, maxX);
+		}
+		else
+		{
+			x0 = ScaleFromNormalized(((float)i + 0) * dx + hdx, minX, maxX);
+		}
 
 		for (int j = 0; j < resolutionY; ++j)
 		{
-			float y0 = ScaleFromNormalized(1.0f - ((float)(j + 0)) / ((float)(resolutionY)), minY, maxY);
-			float y1 = ScaleFromNormalized(1.0f - ((float)(j + 1)) / ((float)(resolutionY)), minY, maxY);
+			float y0;
+			float y1;
+			if constexpr (IsBilinear)
+			{
+				y0 = ScaleFromNormalized(((float)(j + 0) * dy), maxY, minY);
+				y1 = ScaleFromNormalized(((float)(j + 1) * dy), maxY, minY);
+			}
+			else
+			{
+				y0 = ScaleFromNormalized(((float)(j + 0) * dy + hdy), maxY, minY);
+			}
 
 			ImU32 const col00 = func(x0, y0);
 			if constexpr (IsBilinear)

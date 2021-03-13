@@ -284,23 +284,34 @@ namespace ImWidgets {
 				static int resX = 124;
 				static int resY = 124;
 				static bool isBilinear = true;
+				static bool pause = false;
 				ImGui::SliderInt("ResX", &resX, 4, 512);
 				ImGui::SliderInt("ResY", &resY, 4, 512);
 				ImGui::Checkbox("Is Bilinear", &isBilinear);
+				if (ImGui::Button("Pause"))
+				{
+					pause = !pause;
+				}
+				static float usedTime = 0.0f;
+				if (!pause)
+				{
+					usedTime = fTime;
+				}
+				float timeCopy = usedTime;
 				if (isBilinear)
 				{
 					DrawColorDensityPlotEx< true >(pDrawList,
-						[fTime](float const x, float const y)
+						[time = timeCopy](float const x, float const y)
 						{
-							return sdHorseshoeColor(ImVec2(x, y), fTime);
+							return sdHorseshoeColor(ImVec2(x, y), time);
 						}, -1.0f, 1.0f, -1.0f, 1.0f, ImGui::GetCursorScreenPos(), ImVec2(width, width), resX, resY);
 				}
 				else
 				{
 					DrawColorDensityPlotEx< false >(pDrawList,
-						[fTime](float const x, float const y)
+						[time = timeCopy](float const x, float const y)
 						{
-							return sdHorseshoeColor(ImVec2(x, y), fTime);
+							return sdHorseshoeColor(ImVec2(x, y), time);
 						}, -1.0f, 1.0f, -1.0f, 1.0f, ImGui::GetCursorScreenPos(), ImVec2(width, width), resX, resY);
 				}
 				ImGui::Dummy(ImVec2(width, width));
@@ -312,19 +323,24 @@ namespace ImWidgets {
 				float const width = ImGui::GetContentRegionAvail().x;
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 
+				static bool showDensityPlot = true;
 				static ImVec4 vMaskColor = ImVec4(1.0f, 0.5f, 0.0f, 0.5f);
+				ImGui::Checkbox("Show Density Plot", &showDensityPlot);
 				ImGui::ColorEdit4("Mask Color", &vMaskColor.x);
 				ImVec2 const curPos = ImGui::GetCursorScreenPos();
 
 				ImU32 maskColor = ImGui::ColorConvertFloat4ToU32(vMaskColor);
 
-				DrawColorDensityPlotEx< true >(pDrawList,
-					[](float const x, float const y)
-					{
-						float z = ImSaturate(std::sin(x) * std::sin(y) * 0.5f + 0.5f);
-				
-						return IM_COL32(255 * z, 255 * z, 255 * z, 255);
-					}, -4.0f, 4.0f, -4.0f, 4.0f, curPos, ImVec2(width, width), 32, 32);
+				if (showDensityPlot)
+				{
+					DrawColorDensityPlotEx< true >(pDrawList,
+						[](float const x, float const y)
+						{
+							float z = ImSaturate(std::sin(x) * std::sin(y) * 0.5f + 0.5f);
+
+							return IM_COL32(255 * z, 255 * z, 255 * z, 255);
+						}, -4.0f, 4.0f, -4.0f, 4.0f, curPos, ImVec2(width, width), 32, 32);
+				}
 
 				DrawConvexMaskMesh(pDrawList, curPos, ImVec2(width, width), maskColor, &maskShape_values[0], maskShape_values.size() / 2, -1.0f, 1.0f, -1.0f, 1.0f);
 
@@ -337,12 +353,26 @@ namespace ImWidgets {
 		}
 		if (ImGui::TreeNode("Widgets"))
 		{
-			if (ImGui::TreeNode("DragLengthScalar"))
+			if (ImGui::TreeNode("Hue Selector"))
 			{
-				static const float fZero = 0.0f;
-				static float length = 16.0f;
-				static ImWidgetsLengthUnit currentUnit = ImWidgetsLengthUnit_Metric;
-				DragLengthScalar("DragLengthScalar", ImGuiDataType_Float, &length, &currentUnit, 1.0f, &fZero, nullptr, ImGuiSliderFlags_None);
+				float const width = ImGui::GetContentRegionAvail().x;
+				float const height = 32.0f;
+				static float offset = 0.0f;
+
+				static int division = 32;
+				ImGui::DragInt("Division", &division, 1.0f, 2, 256);
+				static float alphaHue = 1.0f;
+				static float alphaHideHue = 0.75f;
+				ImGui::DragFloat("Offset##ColorSelector", &offset, 0.0f, 0.0f, 1.0f);
+				ImGui::DragFloat("Alpha Hue", &alphaHue, 0.0f, 0.0f, 1.0f);
+				ImGui::DragFloat("Alpha Hue Hide", &alphaHideHue, 0.0f, 0.0f, 1.0f);
+				static float hueCenter = 0.5f;
+				static float hueWidth = 0.1f;
+				static float featherLeft = 0.5f;
+				static float featherRight = 0.5f;
+				ImGui::DragFloat("featherLeft", &featherLeft, 0.0f, 0.0f, 0.5f);
+				ImGui::DragFloat("featherRight", &featherRight, 0.0f, 0.0f, 0.5f);
+				HueSelector("Hue Selector", ImVec2(width, height), &hueCenter, &hueWidth, &featherLeft, &featherRight, division, alphaHue, alphaHideHue, offset);
 				ImGui::TreePop();
 			}
 			if (ImGui::TreeNode("Density Plot Nearest"))
@@ -433,8 +463,13 @@ namespace ImWidgets {
 			}
 			ImGui::TreePop();
 		}
-		if (ImGui::TreeNode("Draft - Open Ideas mostly WIP"))
+		if (ImGui::TreeNode("Alpha - Draft - Open Ideas mostly WIP"))
 		{
+			ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 128, 0, 255));
+			ImGui::TextWrapped("/!\\ Use carefully and at your risk, The API will change, the ideas are from broken to I'm not satisfy by the results.");
+			ImGui::TextWrapped("/!\\ PR are welcome to contribute.");
+			ImGui::PopStyleColor();
+
 			if (ImGui::TreeNode("Draw"))
 			{
 				if (ImGui::TreeNode("Chromaticity Draw"))
@@ -487,6 +522,14 @@ namespace ImWidgets {
 			}
 			if (ImGui::TreeNode("Widgets"))
 			{
+				if (ImGui::TreeNode("DragLengthScalar"))
+				{
+					static const float fZero = 0.0f;
+					static float length = 16.0f;
+					static ImWidgetsLengthUnit currentUnit = ImWidgetsLengthUnit_Metric;
+					DragLengthScalar("DragLengthScalar", ImGuiDataType_Float, &length, &currentUnit, 1.0f, &fZero, nullptr, ImGuiSliderFlags_None);
+					ImGui::TreePop();
+				}
 				if (ImGui::TreeNode("Slider 2D Float"))
 				{
 					static ImVec2 slider2D;
@@ -552,7 +595,8 @@ namespace ImWidgets {
 						ImGui::PushID(i);
 						ImWidgets::LineSlider("##LineSliderValue",
 							center + dir * ImVec2(32.0f, 32.0f),
-							center + dir * width * 0.5f, ImGuiDataType_Float, &fValue, &fZero, &fOne, ImWidgetsPointer_Up);
+							center + dir * width * 0.5f,
+							IM_COL32(255, 128, 0, 255), ImGuiDataType_Float, &fValue, &fZero, &fOne, ImWidgetsPointer_Up);
 						ImGui::PopID();
 					}
 					ImGui::SliderFloat("##LineSliderSlodersdgf", &fValue, fZero, fOne);
@@ -562,27 +606,6 @@ namespace ImWidgets {
 			}
 			ImGui::TreePop();
 		}
-
-		ImWidgets::BeginGroupPanel("Color Selector");
-		{
-			float const width = ImGui::GetContentRegionAvail().x;
-			float const height = 32.0f;
-			static float offset = 0.0f;
-
-			static float alphaHue = 1.0f;
-			static float alphaHideHue = 0.75f;
-			ImGui::DragFloat("Offset##ColorSelector", &offset, 0.0f, 0.0f, 1.0f);
-			ImGui::DragFloat("Alpha Hue", &alphaHue, 0.0f, 0.0f, 1.0f);
-			ImGui::DragFloat("Alpha Hue Hide", &alphaHideHue, 0.0f, 0.0f, 1.0f);
-			static float hueCenter = 0.5f;
-			static float hueWidth = 0.1f;
-			static float featherLeft = 0.5f;
-			static float featherRight = 0.5f;
-			ImGui::DragFloat("featherLeft", &featherLeft, 0.0f, 0.0f, 0.5f);
-			ImGui::DragFloat("featherRight", &featherRight, 0.0f, 0.0f, 0.5f);
-			HueSelector("Hue Selector", ImVec2(width, height), &hueCenter, &hueWidth, &featherLeft, &featherRight, 64, alphaHue, alphaHideHue, offset);
-		}
-		ImWidgets::EndGroupPanel();
 
 		ImGui::End();
 

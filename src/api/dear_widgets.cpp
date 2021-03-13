@@ -1737,7 +1737,7 @@ namespace ImWidgets {
 		return bModified;
 	}
 
-	bool LineSlider(const char* label, ImVec2 start, ImVec2 end, ImGuiDataType data_type, void* p_data, const void* p_min, const void* p_max, ImWidgetsPointer pointer)
+	bool LineSlider(const char* label, ImVec2 start, ImVec2 end, ImU32 lineColor, ImGuiDataType data_type, void* p_data, const void* p_min, const void* p_max, ImWidgetsPointer pointer)
 	{
 		ImGuiID iID = ImGui::GetID(label);
 		ImGui::PushID(iID);
@@ -1747,7 +1747,7 @@ namespace ImWidgets {
 		ImVec2 curPos = ImGui::GetCursorScreenPos();
 		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 
-		pDrawList->AddLine(start, end, IM_COL32(255, 0, 0, 255), 2.0f);
+		pDrawList->AddLine(start, end, lineColor, 2.0f);
 
 		float fValue	= ScalarToFloat(data_type, (ImU64*)p_data);
 		float fMin		= ScalarToFloat(data_type, (ImU64*)p_min);
@@ -2187,7 +2187,7 @@ namespace ImWidgets {
 		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 		DrawHueBand(pDrawList, curPos, size, division, alpha, 1.0f, offset);
 
-		float center = ImClamp(*hueCenter, 0.0f, 1.0f - 1e-4f);
+		float center = ImClamp(ImFmod(*hueCenter + offset, 1.0f), 0.0f, 1.0f - 1e-4f);
 		float width = ImClamp(*hueWidth, 0.0f, 0.5f - 1e-4f);
 		float featherL = ImClamp(*featherLeft, 0.0f, 0.5f - 1e-4f);
 		float featherR = ImClamp(*featherRight, 0.0f, 0.5f - 1e-4f);
@@ -2195,95 +2195,54 @@ namespace ImWidgets {
 		float xCenter = curPos.x + ImFmod(center + offset, 1.0f) * size.x;
 		float const triangleSize = 16.0f;
 
-		DrawTrianglePointerFilled(pDrawList, ImVec2(xCenter, curPos.y + size.y), triangleSize, triangleColor, ImWidgetsPointer_Up);
-
-		float fromRight = 0.0f;
-		float blackLeft = 0.0f;
-		float fLeft = 0.0f;
-		float centerWidth = 0.0f;
-		float fRight = 0.0f;
-		float blackRight = 0.0f;
-		float fromLeft = 0.0f;
-
-		fromRight = (0.0f) * size.x;
-		blackLeft = (center - featherL) * size.x;
-		fLeft = featherL * size.x;
-		centerWidth = 2.0f * width * size.x;
-		fRight = featherR * size.x;
-		blackRight = 1.0f - center - width - featherL;
-		fromLeft = 0.0 * size.x;
-
-
-		//DrawColorDensityPlotEx< true >(pDrawList,
-		//						[hueAlpha = hideHueAlpha, center = localHueCenter, width = localHueWidth, left = *featherLeft, right = *featherRight](float const x, float const) -> ImU32
-		//						{
-		//							float val;
-		//							if (x < center - width && x > center - width - left)
-		//							{
-		//								val = ImSaturate((center * (-1 + hueAlpha) + left + width + x - hueAlpha * (width + x)) / left);
-		//							}
-		//							else if (x < center + width + right && x > center + width)
-		//							{
-		//								val = ImSaturate((center - center * hueAlpha + right + width - hueAlpha * width + (-1 + hueAlpha) * x) / right);
-		//							}
-		//							else if (x > center - width - left && x < center + width + right)
-		//							{
-		//								val = 1.0f;
-		//							}
-		//							else
-		//							{
-		//								val = hueAlpha;
-		//							}
-		//							return IM_COL32(0, 0, 0, ImPow(1.0f - val, 1.0f / 2.2f) * 255);
-		//						}, 0.0f, 1.0f, 0.0f, 0.0f, curPos, size, division, 1);
+		if (width == 0.0f)
+		{
+			pDrawList->AddLine(ImVec2(xCenter, curPos.y), ImVec2(xCenter, curPos.y + size.y), IM_COL32(0, 0, 0, 255));
+		}
+		else
+		{
+			DrawColorDensityPlotEx< true >(pDrawList,
+									[hueAlpha = hideHueAlpha, center, width, left = featherL, right = featherR](float const xx, float const) -> ImU32
+									{
+										float x = ImFmod(xx, 1.0f);
+										float val;
+										if (x < center - width && x > center - width - left)
+										{
+											val = ImSaturate((center * (-1 + hueAlpha) + left + width + x - hueAlpha * (width + x)) / left);
+										}
+										else if (x < center + width + right && x > center + width)
+										{
+											val = ImSaturate((center - center * hueAlpha + right + width - hueAlpha * width + (-1 + hueAlpha) * x) / right);
+										}
+										else if (x > center - width - left && x < center + width + right)
+										{
+											val = 1.0f;
+										}
+										else if (center + width + right > 1.0f)
+										{
+											val = ImSaturate((center - center * hueAlpha + right + width - hueAlpha * width + (-1 + hueAlpha) * (x + 1.0f)) / right);
+										}
+										else if (center - width - left < 0.0f)
+										{
+											val = ImClamp((center * (-1 + hueAlpha) + left + width + x - 1.0f - hueAlpha * (width + x - 1.0f)) / left, hueAlpha, 1.0f);
+										}
+										else
+										{
+											val = hueAlpha;
+										}
+										return IM_COL32(0, 0, 0, ImPow(1.0f - val, 1.0f / 2.2f) * 255);
+									}, 0.0f, 1.0f, 0.0f, 0.0f, curPos, size, division, 1);
+		}
 
 		ImGui::Dummy(size);
-		//ImGui::InvisibleButton("##ZoneHue", ImVec2(size.x, size.y/* + triangleSize*/), 0);
-
-		//bool DensityPlotEx(const char* label, FuncType func, int resX, int resY, float minX, float maxX, float minY, float maxY);
-		//DensityPlotEx< true >("##Overlay",
-		//	[localHueCenter, localHueWidth](float const x, float const y)
-		//	{
-		//		return 1.0f;
-		//	}, division, 2, 0.0f, 1.0f, 0.0f, 1.0f);
-
-		//if (localHueWidth > 0.0f)
-		//{
-		//	float const dxPos = localHueCenter + ImFmod(localHueWidth - offset, 0.5f);
-		//	ImVec2 fromLeft;
-		//	if (dxPos > 1.0f)
-		//	{
-		//		fromLeft = ImVec2(size.x * (dxPos - 1.0f), 0.0f);
-		//	}
-		//	else
-		//	{
-		//		fromLeft = ImVec2(0.0f, 0.0f);
-		//	}
-		//	pDrawList->AddRectFilled(curPos + fromLeft, ImVec2(xCenter - localHueWidth * size.x, curPos.y + size.y), IM_COL32(0, 0, 0, hideHueAlpha * 255));
-		//	pDrawList->AddLine(ImVec2(xCenter - localHueWidth * size.x, curPos.y), ImVec2(xCenter - localHueWidth * size.x, curPos.y + size.y), IM_COL32(0, 0, 0, 255));
-		//
-		//	float const dxNeg = localHueCenter - ImFmod(localHueWidth - offset, 0.5f);
-		//	ImVec2 fromRight;
-		//	if (dxNeg < 0.0f)
-		//	{
-		//		fromRight = ImVec2(size.x * (1.0f + dxNeg), size.y);
-		//	}
-		//	else
-		//	{
-		//		fromRight = size;
-		//	}
-		//	pDrawList->AddRectFilled(ImVec2(xCenter + localHueWidth * size.x, curPos.y), curPos + fromRight, IM_COL32(0, 0, 0, hideHueAlpha * 255));
-		//	pDrawList->AddLine(ImVec2(xCenter + localHueWidth * size.x, curPos.y), ImVec2(xCenter + localHueWidth * size.x, curPos.y + size.y), IM_COL32(0, 0, 0, 255));
-		//}
-		//else
-		//{
-		//	pDrawList->AddLine(ImVec2(xCenter, curPos.y), ImVec2(xCenter, curPos.y + size.y), IM_COL32(0, 0, 0, 255));
-		//}
 
 		float const fZero = 0.0f;
 		float const fOne = 1.0f;
 
-		LineSlider("##ZoneHueLineSlider", curPos + ImVec2(0.0f, size.y), curPos + ImVec2(size.x, size.y), ImGuiDataType_Float, hueCenter, &fZero, &fOne, ImWidgetsPointer_Up);
+		if (LineSlider("##ZoneHueLineSlider", curPos + ImVec2(0.0f, size.y), curPos + ImVec2(size.x, size.y), IM_COL32(255, 255, 255, 255), ImGuiDataType_Float, &center, &fZero, &fOne, ImWidgetsPointer_Up))
+		{
+			*hueCenter = center - offset;
+		}
 		ImGui::Dummy(ImVec2(size.x, triangleSize));
 
 		ImGui::PushMultiItemsWidths(2, size.x);

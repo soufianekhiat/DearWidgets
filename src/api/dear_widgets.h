@@ -154,7 +154,7 @@ namespace ImWidgets {
 	IMGUI_API bool InputVec2(const char* label, ImVec2* value, ImVec2 vMinValue, ImVec2 vMaxValue, float const fScale = 1.0f);
 	IMGUI_API bool InputVec3(const char* label, ImVec4* value, ImVec4 const vMinValue, ImVec4 const vMaxValue, float const fScale = 1.0f);
 
-	IMGUI_API bool LineSlider(const char* label, ImVec2 start, ImVec2 end, ImGuiDataType data_type, void* p_data, const void* p_min, const void* p_max, ImWidgetsPointer pointer);
+	IMGUI_API bool LineSlider(const char* label, ImVec2 start, ImVec2 end, ImU32 lineColor, ImGuiDataType data_type, void* p_data, const void* p_min, const void* p_max, ImWidgetsPointer pointer);
 
 	// Grid
 	// Default behavior: AoS & RowMajor
