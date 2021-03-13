@@ -8,10 +8,10 @@
 
 static int grid_rows = 8;
 static int grid_columns = 8;
-static std::vector<float> grid_values;
+static ImVector<float> grid_values;
 
-static std::vector<float> linear_values;
-static std::vector<float> maskShape_values;
+static ImVector<float> linear_values;
+static ImVector<float> maskShape_values;
 
 std::random_device rd;
 std::mt19937_64 gen(rd());

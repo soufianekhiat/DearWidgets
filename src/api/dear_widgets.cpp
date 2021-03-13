@@ -2809,8 +2809,8 @@ namespace ImWidgets {
 		float dy = 0.5f * sx;
 		float r, g, b;
 		float maxValue;
-		std::vector< std::vector<bool> > boundaries;
-		std::vector< std::vector<float> > coefs;
+		ImVector< ImVector<bool> > boundaries; // Don't use std::vector<bool> as design
+		ImVector< ImVector<float> > coefs;
 		boundaries.resize(resY + 1);
 		coefs.resize(resY + 1);
 		for (int i = 0; i <= resY; ++i)
