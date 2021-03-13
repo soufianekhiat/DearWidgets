@@ -1157,7 +1157,10 @@ namespace ImWidgets {
 
 		ImWidgetsLengthUnit& defaultUnit = *p_defaultUnit;
 
-		std::string format = std::string(ImGui::DataTypeGetInfo(data_type)->PrintFmt);
+		ImVec2 curPos = ImGui::GetCursorScreenPos();
+
+		//std::string format = std::string(ImGui::DataTypeGetInfo(data_type)->PrintFmt);
+		std::string format = "%.3f";
 		if (ImGui::Button("<", ImVec2(16.0f, 0.0f)))
 		{
 			--defaultUnit;
@@ -1177,6 +1180,14 @@ namespace ImWidgets {
 		float const width = ImGui::GetContentRegionAvail().x;
 		ImGui::SetNextItemWidth(width * 0.5f - 32.0f);
 		modified |= ImGui::DragScalar(label, data_type, p_data, v_speed, p_min, p_max, format.c_str(), flags);
+
+		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+		ImGui::SetWindowFontScale(1.0f);
+		ImVec2 const vTextSize = ImGui::CalcTextSize(defaultUnit == ImWidgetsLengthUnit_Metric ? "meter" : "feet");
+		ImVec2 itemSize = ImGui::GetItemRectSize();
+		pDrawList->AddText(curPos + ImVec2(itemSize.x * 0.5f + 16.0f, ImGui::GetTextLineHeight()), ImGui::GetColorU32(ImGuiCol_Text), defaultUnit == ImWidgetsLengthUnit_Metric ? "meter" : "feet");
+		ImGui::SetWindowFontScale(1.0f);
+
 		if (defaultUnit == ImWidgetsLengthUnit_Imperial)
 		{
 			ScaleData(data_type, p_data, 1.0 / 0.28084);
@@ -1187,11 +1198,8 @@ namespace ImWidgets {
 			++defaultUnit;
 			defaultUnit %= ImWidgetsLengthUnit_COUNT;
 		}
-		ImGui::SetWindowFontScale(1.0f);
-		ImVec2 const vTextSize = ImGui::CalcTextSize(defaultUnit == ImWidgetsLengthUnit_Metric ? "meter" : "feet");
-		CenterNextItem(vTextSize);
-		ImGui::Text(defaultUnit == ImWidgetsLengthUnit_Metric ? "meter" : "feet");
-		ImGui::SetWindowFontScale(1.0f);
+
+		ImGui::Dummy(ImVec2(0.0f, ImGui::GetTextLineHeight()));
 
 		return modified;
 	}
@@ -2687,13 +2695,14 @@ namespace ImWidgets {
 			float crossSignZ = ImSign(v0.x * v1.y - v0.y * v1.x);
 			float dot = v0.x * v1.x + v0.y * v1.y;
 			//if (dot > 0.9999999f)
+			//if (dot > 0.9999f)
 			//{
 			//	// If triangle too thin skip it
 			//	nextIdx++;
 			//	nextIdx %= float2_count;
 			//	continue;
 			//}
-			if (crossSignZ > 0.0f)
+			if (crossSignZ >= 0.0f)
 			{
 				// Can be attached to the current corner
 				triangles.push_back(tri(float2_count + boundIdx, nextIdx, curIdx));
@@ -2716,7 +2725,7 @@ namespace ImWidgets {
 				lastConvex = false;
 				jumped = true;
 			}
-		} while (!jumped || curIdx != foundIdx && boundIdx != 0);
+		} while (!jumped || nextIdx != (foundIdx + 1)%float2_count && boundIdx != 0);
 
 		if (lastConvex)
 		{
