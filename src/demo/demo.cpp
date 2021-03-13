@@ -401,9 +401,9 @@ namespace ImWidgets {
 				ImGui::DragFloat("##IsoLine1", &isoLines[1], 0.001f, -1.0f, 1.0f); ImGui::SameLine();
 				ImGui::DragFloat("##IsoLine2", &isoLines[2], 0.001f, -1.0f, 1.0f); ImGui::SameLine();
 				ImGui::DragFloat("##IsoLine3", &isoLines[3], 0.001f, -1.0f, 1.0f);
+
 				static ImU32 cols[] = { IM_COL32(255, 0, 0, 255), IM_COL32(255, 255, 0, 255), IM_COL32(255, 0, 255, 255), IM_COL32(0, 255, 0, 255) };
 				ImGui::PushMultiItemsWidths(4, width);
-
 				static ImVec4 col;
 				col = ImGui::ColorConvertU32ToFloat4(cols[0]);
 				if (ImGui::ColorEdit4("##IsoColor0", &col.x))
@@ -466,7 +466,8 @@ namespace ImWidgets {
 		if (ImGui::TreeNode("Alpha - Draft - Open Ideas mostly WIP"))
 		{
 			ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 128, 0, 255));
-			ImGui::TextWrapped("/!\\ Use carefully and at your risk, The API will change, the ideas are from broken to I'm not satisfy by the results.");
+			ImGui::TextWrapped("/!\\ Use carefully and at your risk!");
+			ImGui::TextWrapped("/!\\ API will change, that at 'first draft' stage.");
 			ImGui::TextWrapped("/!\\ PR are welcome to contribute.");
 			ImGui::PopStyleColor();
 
@@ -500,6 +501,18 @@ namespace ImWidgets {
 					static ImVec4 vMaskColor(1.0f, 0.5f, 0.0f, 1.0f);
 					ImGui::ColorEdit4("Mask Color", &vMaskColor.x);
 					ImU32 maskColor = ImGui::ColorConvertFloat4ToU32(vMaskColor);
+
+					static ImVec2 vMin(-0.2f, -0.1f);
+					static ImVec2 vMax(1.0f, 1.0f);
+
+					ImGui::PushMultiItemsWidths(2, width);
+					ImGui::DragFloat("minX", &vMin.x, 0.001f, -1.0f, 0.0f); ImGui::SameLine();
+					ImGui::DragFloat("minY", &vMin.y, 0.001f, -1.0f, 0.0f);
+
+					ImGui::PushMultiItemsWidths(2, width);
+					ImGui::DragFloat("maxX", &vMax.x, 0.001f, 1.0f, 2.0f); ImGui::SameLine();
+					ImGui::DragFloat("maxY", &vMax.y, 0.001f, 1.0f, 2.0f);
+
 					ImVec2 curPos = ImGui::GetCursorScreenPos();
 					ImGui::InvisibleButton("##Zone", ImVec2(width, width), 0);
 					DrawChromaticPlotBilinear(
@@ -513,8 +526,8 @@ namespace ImWidgets {
 						resX, resY,
 						maskColor,
 						waveMin, waveMax,
-						-0.2f, 0.8f,
-						-0.1f, 0.9f);
+						vMin.x, vMax.x,
+						vMin.y, vMax.y);
 
 					ImGui::TreePop();
 				}

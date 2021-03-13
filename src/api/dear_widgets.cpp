@@ -2363,46 +2363,16 @@ namespace ImWidgets {
 	{
 		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
 
-		float sx = ((float)width) / ((float)resX);
-		float sy = ((float)height) / ((float)resY);
-		float dx = 0.5f * sx;
-		float dy = 0.5f * sx;
-		// From x: 0 -> 0.8; y: 0 -> 0.9
-		float r, g, b;
-		float maxValue;
-		for (int i = 0; i < resX; ++i)
-		{
-			float x0 = ScaleFromNormalized(((float)(i + 0)) / ((float)(resX - 1)), minX, maxX);
-			float x1 = ScaleFromNormalized(((float)(i + 1)) / ((float)(resX - 1)), minX, maxX);
-
-			for (int j = 0; j < resY; ++j)
-			{
-				float y0 = ScaleFromNormalized(1.0f - ((float)(j + 0)) / ((float)(resY - 1)), minY, maxY);
-				float y1 = ScaleFromNormalized(1.0f - ((float)(j + 1)) / ((float)(resY - 1)), minY, maxY);
-				float z00 = 1.0f - x0 - y0;
-				float z10 = 1.0f - x1 - y0;
-				float z01 = 1.0f - x0 - y1;
-				float z11 = 1.0f - x1 - y1;
-
-				ImU32 const col00 = ImColorFrom_xyz(x0, y0, z00, xyzToRGB, gamma);
-				if constexpr (IsBilinear)
+		DrawColorDensityPlotEx< IsBilinear >
+			(
+				pDrawList,
+				[xyzToRGB, gamma](float x, float y)
 				{
-					ImU32 const col01 = ImColorFrom_xyz(x0, y1, z01, xyzToRGB, gamma);
-					ImU32 const col10 = ImColorFrom_xyz(x1, y0, z10, xyzToRGB, gamma);
-					ImU32 const col11 = ImColorFrom_xyz(x1, y1, z11, xyzToRGB, gamma);
-
-					pDrawList->AddRectFilledMultiColor(	curPos + ImVec2(sx * (i + 0), sy * (j + 0)),
-														curPos + ImVec2(sx * (i + 1), sy * (j + 1)),
-														col00, col10, col11, col01);
-				}
-				else
-				{
-					pDrawList->AddRectFilledMultiColor(	curPos + ImVec2(sx * (i + 0), sy * (j + 0)),
-														curPos + ImVec2(sx * (i + 1), sy * (j + 1)),
-														col00, col00, col00, col00);
-				}
-			}
-		}
+					return ImColorFrom_xyz(x, y, 1.0f - x - y, xyzToRGB, gamma);
+				},
+				minX, maxX, minY, maxY,
+				curPos, ImVec2(width, height),
+				resX, resY);
 
 		int lineSamples = ImMin(chromeLineSamplesCount, observerSampleCount);
 
@@ -2413,8 +2383,7 @@ namespace ImWidgets {
 		chromLine.resize(lineSamples);
 		for (int i = 0; i < lineSamples; ++i)
 		{
-			//float const wavelength = ScaleFromNormalized(1.0f - ((float)i) / ((float)(lineSamples - 1)), wavelengthMin, wavelengthMax);
-			float const wavelength = ScaleFromNormalized(1.0f - ((float)i) / ((float)(lineSamples - 1)), wavelengthMin, wavelengthMax);
+			float const wavelength = ScaleFromNormalized(((float)i) / ((float)(lineSamples - 1)), wavelengthMin, wavelengthMax);
 
 			illum = FunctionFromData(wavelength, standardCIEWavelengthMin, standardCIEWavelengthMax, standardCIE, standardCIESampleCount);
 			x = illum * FunctionFromData(wavelength, observerWavelengthMin, observerWavelengthMax, observerX, observerSampleCount);
@@ -2429,18 +2398,10 @@ namespace ImWidgets {
 			//x = 4.0f * x / sum;
 			//y = 9.0f * y / sum;
 
-			//float xx = Rescale(x, minX, maxX, 0.0f, width);
-			//float yy = Rescale(y, maxY, minY, 0.0f, height);
-
-			//chromLine[i] = curPos + ImVec2(xx, yy);
-			chromLine[i] = ImVec2(Rescale(x, 0.0f, 1.0f, 0.0f, 1.0f), Rescale(y, 1.0f, 0.0f, 0.0f, 1.0f));
+			chromLine[i] = ImVec2(x, y);
 		}
 
-		//DrawConvexMaskMesh(pDrawList, curPos, (float*)&chromLine[0], lineSamples, ImVec2(width, height));
-		DrawConvexMaskMesh(pDrawList, curPos, ImVec2(width, height), maskColor, (float*)&(chromLine[0].x), lineSamples, minX, maxX, minY, maxY);
-
-		//DrawChromaticLine(pDrawList, &curPos, lineSamples, IM_COL32(0, 0, 0, 255), true, 2.0f);
-		//pDrawList->AddPolyline(&chromLine[0], lineSamples, IM_COL32(0, 0, 0, 255), true, 2.0f);
+		DrawConvexMaskMesh(pDrawList, curPos, ImVec2(width, height), maskColor, (float*)&(chromLine[0].x), lineSamples, minX, maxX, minY, maxY, true);
 
 		ImVec2 sRGBLines[] = { primR, primG, primB };
 		for (int i = 0; i < 3; ++i)
@@ -2448,15 +2409,13 @@ namespace ImWidgets {
 			ImVec2& vCur = sRGBLines[i];
 
 			vCur.x = curPos.x + Rescale(vCur.x, minX, maxX, 0.0f, width);
-			vCur.y = curPos.y + Rescale(vCur.y, maxY, minY, 0.0f, height);
-			//vCur.y = curPos.y + Rescale(vCur.y, minY, maxY, 0.0f, height);
+			vCur.y = curPos.y + Rescale(vCur.y, minY, maxY, height, 0.0f);
 		}
 		pDrawList->AddPolyline(&sRGBLines[0], 3, IM_COL32(255, 255, 255, 255), true, 5.0f);
 
 		ImVec2 vWhitePoint = whitePoint;
 		vWhitePoint.x = curPos.x + Rescale(vWhitePoint.x, minX, maxX, 0.0f, width);
-		vWhitePoint.y = curPos.y + Rescale(vWhitePoint.y, maxY, minY, 0.0f, height);
-		//vWhitePoint.y = curPos.y + Rescale(vWhitePoint.y, minY, maxY, 0.0f, height);
+		vWhitePoint.y = curPos.y + Rescale(vWhitePoint.y, minY, maxY, height, 0.0f);
 
 		pDrawList->AddCircleFilled(vWhitePoint, 5.0f, IM_COL32(0, 0, 0, 255), 4);
 
@@ -2681,7 +2640,7 @@ namespace ImWidgets {
 		{}
 	};
 
-	IMGUI_API void DrawConvexMaskMesh(ImDrawList* pDrawList, ImVec2 curPos, ImVec2 size, ImU32 maskColor, float* buffer_aot, int float2_count, float minX, float maxX, float minY, float maxY)
+	IMGUI_API void DrawConvexMaskMesh(ImDrawList* pDrawList, ImVec2 curPos, ImVec2 size, ImU32 maskColor, float* buffer_aot, int float2_count, float minX, float maxX, float minY, float maxY, bool flipY)
 	{
 		ImVec2 bb_pts[4] = { ImVec2(minX, minY), ImVec2(minX, maxY), ImVec2(maxX, maxY), ImVec2(maxX, minY) };
 
@@ -2778,17 +2737,35 @@ namespace ImWidgets {
 			pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + tr.c));
 		}
 
-		for (int i = 0; i < float2_count; ++i)
+		if (flipY)
 		{
-			float x = Rescale(vBuffer[i].x, minX, maxX, 0, size.x);
-			float y = Rescale(vBuffer[i].y, minY, maxY, 0, size.y);
-			pDrawList->PrimWriteVtx(curPos + ImVec2(x, y), uv, maskColor);
+			for (int i = 0; i < float2_count; ++i)
+			{
+				float x = Rescale(vBuffer[i].x, minX, maxX, 0, size.x);
+				float y = Rescale(vBuffer[i].y, maxY, minY, 0, size.y);
+				pDrawList->PrimWriteVtx(curPos + ImVec2(x, y), uv, maskColor);
+			}
+			for (int i = 0; i < 4; ++i)
+			{
+				float x = Rescale(bb_pts[i].x, minX, maxX, 0, size.x);
+				float y = Rescale(bb_pts[i].y, maxY, minY, 0, size.y);
+				pDrawList->PrimWriteVtx(curPos + ImVec2(x, y), uv, maskColor);
+			}
 		}
-		for (int i = 0; i < 4; ++i)
+		else
 		{
-			float x = Rescale(bb_pts[i].x, minX, maxX, 0, size.x);
-			float y = Rescale(bb_pts[i].y, minY, maxY, 0, size.y);
-			pDrawList->PrimWriteVtx(curPos + ImVec2(x, y), uv, maskColor);
+			for (int i = 0; i < float2_count; ++i)
+			{
+				float x = Rescale(vBuffer[i].x, minX, maxX, 0, size.x);
+				float y = Rescale(vBuffer[i].y, minY, maxY, 0, size.y);
+				pDrawList->PrimWriteVtx(curPos + ImVec2(x, y), uv, maskColor);
+			}
+			for (int i = 0; i < 4; ++i)
+			{
+				float x = Rescale(bb_pts[i].x, minX, maxX, 0, size.x);
+				float y = Rescale(bb_pts[i].y, minY, maxY, 0, size.y);
+				pDrawList->PrimWriteVtx(curPos + ImVec2(x, y), uv, maskColor);
+			}
 		}
 	}
 
