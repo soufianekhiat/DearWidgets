@@ -186,7 +186,7 @@ void DrawColorDensityPlotEx(ImDrawList* pDrawList, FuncType func, float minX, fl
 // func: ImU32(*func)(float const t)
 template <bool IsBilinear, typename FuncType>
 inline
-void	DrawColorBandEx(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, FuncType func, int division, float gamma, float offset)
+void	DrawColorBandEx(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, FuncType func, int division, float gamma)
 {
 	float const width = size.x;
 	float const height = size.y;

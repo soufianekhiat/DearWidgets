@@ -232,7 +232,7 @@ namespace ImWidgets {
 
 	// func: ImU32(*func)(float const t): t in [0; 1]
 	template <bool IsBilinear, typename FuncType>
-	IMGUI_API void DrawColorBandEx(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, FuncType func, int division, float gamma, float colorOffset);
+	IMGUI_API void DrawColorBandEx(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, FuncType func, int division, float gamma);
 	// func ImU32(*func)(float const t): t in [0; 1]
 	template <bool IsBilinear, typename FuncType>
 	IMGUI_API void DrawColorRingEx(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, float thickness, FuncType func, int division, float colorOffset);

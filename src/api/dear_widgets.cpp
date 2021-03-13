@@ -2059,8 +2059,14 @@ namespace ImWidgets {
 
 	void DrawHueBand(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, float alpha, float gamma, float offset)
 	{
-		auto HueFunc = [alpha](float const t) -> ImU32
+		auto HueFunc = [alpha, offset](float const tt) -> ImU32
 		{
+			float t;
+			if (tt - offset < 0.0f)
+				t = ImFmod(1.0f + (tt - offset), 1.0f);
+			else
+				t = ImFmod(tt - offset, 1.0f);
+
 			float r, g, b;
 			ImGui::ColorConvertHSVtoRGB(t, 1.0f, 1.0f, r, g, b);
 			int const ur = static_cast<int>(255.0f * r);
@@ -2070,7 +2076,7 @@ namespace ImWidgets {
 			return IM_COL32(ur, ug, ub, ua);
 		};
 
-		DrawColorBandEx< true >(pDrawList, vpos, size, HueFunc, division, gamma, offset);
+		DrawColorBandEx< true >(pDrawList, vpos, size, HueFunc, division, gamma);
 	}
 
 	void DrawHueBand(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, float colorStartRGB[3], float alpha, float gamma)
@@ -2094,7 +2100,7 @@ namespace ImWidgets {
 			return IM_COL32(ur, ug, ub, 255);
 		};
 
-		DrawColorBandEx< true >(pDrawList, vpos, size, LumianceFunc, division, gamma, 0.0f);
+		DrawColorBandEx< true >(pDrawList, vpos, size, LumianceFunc, division, gamma);
 	}
 
 	void DrawSaturationBand(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma)
@@ -2105,14 +2111,13 @@ namespace ImWidgets {
 		{
 			float r, g, b;
 			ImGui::ColorConvertHSVtoRGB(h, ImLerp(0.0f, 1.0f, t) * s, ImLerp(0.5f, 1.0f, t) * v, r, g, b);
-			//ImGui::ColorConvertHSVtoRGB(h, ImLerp(0.0f, 1.0f, t) * s, v, r, g, b);
 			int const ur = static_cast<int>(255.0f * r);
 			int const ug = static_cast<int>(255.0f * g);
 			int const ub = static_cast<int>(255.0f * b);
 			return IM_COL32(ur, ug, ub, 255);
 		};
 
-		DrawColorBandEx< true >(pDrawList, vpos, size, LumianceFunc, division, gamma, 0.0f);
+		DrawColorBandEx< true >(pDrawList, vpos, size, LumianceFunc, division, gamma);
 	}
 
 	bool ColorRing(const char* label, float thickness, int split)
@@ -2126,10 +2131,7 @@ namespace ImWidgets {
 
 		ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
 
-		//int vrtxCount = split * 6;
-		//int triCount = split * 2;
-
-		float radius = width * 0.5f; // minus 2*padding
+		float radius = width * 0.5f;
 
 		const float dAngle = 2.0f * IM_PI / ((float)split);
 		float angle = 2.0f * IM_PI / 3.0f;
@@ -2192,7 +2194,7 @@ namespace ImWidgets {
 		float featherL = ImClamp(*featherLeft, 0.0f, 0.5f - 1e-4f);
 		float featherR = ImClamp(*featherRight, 0.0f, 0.5f - 1e-4f);
 
-		float xCenter = curPos.x + ImFmod(center + offset, 1.0f) * size.x;
+		float xCenter = curPos.x + center * size.x;
 		float const triangleSize = 16.0f;
 
 		if (width == 0.0f)
@@ -2208,11 +2210,11 @@ namespace ImWidgets {
 										float val;
 										if (x < center - width && x > center - width - left)
 										{
-											val = ImSaturate((center * (-1 + hueAlpha) + left + width + x - hueAlpha * (width + x)) / left);
+											val = ImClamp((center * (-1 + hueAlpha) + left + width + x - hueAlpha * (width + x)) / left, hueAlpha, 1.0f);
 										}
 										else if (x < center + width + right && x > center + width)
 										{
-											val = ImSaturate((center - center * hueAlpha + right + width - hueAlpha * width + (-1 + hueAlpha) * x) / right);
+											val = ImClamp((center - center * hueAlpha + right + width - hueAlpha * width + (-1 + hueAlpha) * x) / right, hueAlpha, 1.0f);
 										}
 										else if (x > center - width - left && x < center + width + right)
 										{
@@ -2220,7 +2222,7 @@ namespace ImWidgets {
 										}
 										else if (center + width + right > 1.0f)
 										{
-											val = ImSaturate((center - center * hueAlpha + right + width - hueAlpha * width + (-1 + hueAlpha) * (x + 1.0f)) / right);
+											val = ImClamp((center - center * hueAlpha + right + width - hueAlpha * width + (-1 + hueAlpha) * (x + 1.0f)) / right, hueAlpha, 1.0f);
 										}
 										else if (center - width - left < 0.0f)
 										{
@@ -2239,9 +2241,13 @@ namespace ImWidgets {
 		float const fZero = 0.0f;
 		float const fOne = 1.0f;
 
-		if (LineSlider("##ZoneHueLineSlider", curPos + ImVec2(0.0f, size.y), curPos + ImVec2(size.x, size.y), IM_COL32(255, 255, 255, 255), ImGuiDataType_Float, &center, &fZero, &fOne, ImWidgetsPointer_Up))
+		float localCenter = center;
+		if (LineSlider("##ZoneHueLineSlider", curPos + ImVec2(0.0f, size.y), curPos + ImVec2(size.x, size.y), IM_COL32(255, 255, 255, 255), ImGuiDataType_Float, &localCenter, &fZero, &fOne, ImWidgetsPointer_Up))
 		{
-			*hueCenter = center - offset;
+			if (localCenter - offset < 0.0f)
+				*hueCenter = ImFmod(1.0f + (localCenter - offset), 1.0f);
+			else
+				*hueCenter = ImFmod(localCenter - offset, 1.0f);
 		}
 		ImGui::Dummy(ImVec2(size.x, triangleSize));
 
