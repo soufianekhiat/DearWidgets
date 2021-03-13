@@ -49,14 +49,6 @@ public:
 			maskShape_values.push_back(x);
 			maskShape_values.push_back(y);
 		}
-
-		//ImVec2* pVec2Buffer = reinterpret_cast<ImVec2*>(&linear_values[0]);
-		//
-		//std::sort(pVec2Buffer, pVec2Buffer + linear_values.size() / 2,
-		//	[](ImVec2 const& a, ImVec2 const& b)
-		//	{
-		//		return a.x < b.x;
-		//	});
 	}
 };
 
@@ -71,10 +63,8 @@ ImVec2 TemperatureTo_xy(float TT)
 	double const _10_6 = 1e6 / (T * T);
 	double const _10_3 = 1e3 / (T);
 	if (/*T >= 1667.0f &&*/ T <= 4000.0f)
-		//xc = -0.2661239f * _10_9 * invT3 - 0.2343589f * _10_6 * invT2 + 0.8776956f * _10_3 * invT + 0.179910f;
 		xc = -0.2661239 * _10_9 - 0.2343589 * _10_6 + 0.8776956 * _10_3 + 0.179910;
 	else //if (x = 25000.0f)
-		//xc = -3.0258469f * _10_9 * invT3 + 2.1070379 * _10_6 * invT2 + 0.2226347f * _10_3 * invT + 0.240390f;
 		xc = -3.0258469 * _10_9 + 2.1070379 * _10_6 + 0.2226347 * _10_3 + 0.240390;
 
 	double const xc2 = xc * xc;
@@ -98,7 +88,6 @@ float sdHorseshoe(ImVec2 p, ImVec2 c, float r, ImVec2 w)
 {
 	p.x = ImAbs(p.x);
 	float l = ImWidgets::ImLength(p);
-	//p = mat2(-c.x, c.y, c.y, c.x) * p;
 	p = ImVec2(-c.x * p.x + p.y * c.y, c.y * p.x + p.y * c.x);
 	p = ImVec2((p.y > 0.0f) ? p.x : l * ImSign(-c.x), (p.x > 0.0f) ? p.y : l);
 	p = ImVec2(p.x, ImAbs(p.y - r)) - w;
