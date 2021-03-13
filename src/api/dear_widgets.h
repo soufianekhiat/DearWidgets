@@ -183,7 +183,7 @@ namespace ImWidgets {
 	IMGUI_API void DrawTrianglePointerFilled(ImDrawList* pDrawList, ImVec2 targetPoint, float size, ImU32 col, ImWidgetsPointer pointDirection);
 
 	// Mask
-	IMGUI_API void DrawConvexMaskMesh(ImDrawList* pDrawList, ImVec2 curPos, float* buffer_aot, int float2_count, ImVec2 size);
+	IMGUI_API void DrawConvexMaskMesh(ImDrawList* pDrawList, ImVec2 curPos, ImVec2 size, ImU32 maskColor, float* buffer_aot, int float2_count, float minX, float maxX, float minY, float maxY);
 
 	// func: ImU32(*func)(float const x, float const y)
 	template < bool IsBilinear, typename FuncType >
@@ -199,6 +199,7 @@ namespace ImWidgets {
 		ImWidgetsObserver const observer,
 		ImWidgetsIlluminance const illum,
 		int resX, int resY,
+		ImU32 maskColor,
 		float wavelengthMin = 400.0f, float wavelengthMax = 700.0f,
 		float minX = 0.0f, float maxX = 0.8f,
 		float minY = 0.0f, float maxY = 0.9f);
@@ -210,6 +211,7 @@ namespace ImWidgets {
 		ImWidgetsObserver const observer,
 		ImWidgetsIlluminance const illum,
 		int resX, int resY,
+		ImU32 maskColor,
 		float wavelengthMin = 400.0f, float wavelengthMax = 700.0f,
 		float minX = 0.0f, float maxX = 0.8f,
 		float minY = 0.0f, float maxY = 0.9f);
@@ -221,6 +223,7 @@ namespace ImWidgets {
 		ImWidgetsObserver const observer,
 		ImWidgetsIlluminance const illum,
 		int resX, int resY,
+		ImU32 maskColor,
 		float wavelengthMin = 400.0f, float wavelengthMax = 700.0f,
 		float minX = 0.0f, float maxX = 0.8f,
 		float minY = 0.0f, float maxY = 0.9f);
@@ -251,6 +254,7 @@ namespace ImWidgets {
 	void BeginGroupPanel(const char* name, const ImVec2& size = ImVec2(-1.0f, -1.0f));
 	void EndGroupPanel();
 
+#if 0
 	// By @r-lyeh: https://github.com/ocornut/imgui/issues/786#issuecomment-479539045
 	void ShowBezierDemo();
 
@@ -261,6 +265,7 @@ namespace ImWidgets {
 		SHOW_GRID = 1 << 1
 	};
 	int CurveEditor(const char* label, float* values, int points_count, const ImVec2& editor_size, ImU32 flags, int* new_count);
+#endif
 
 #include <dear_widgets.hpp>
 }

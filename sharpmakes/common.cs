@@ -98,6 +98,7 @@ namespace DearWidgets
 
 			conf.Defines.Add("ImDrawIdx=ImU32");
 			conf.Defines.Add("IMGUI_DEFINE_MATH_OPERATORS");
+			conf.Defines.Add("IMGUI_DISABLE_OBSOLETE_FUNCTIONS");
             //conf.IncludePaths.Add(@"[project.ExternPath]/imgui/");
             conf.IncludePaths.Add(@"[project.RootPath]/extern/imgui/");
 			conf.IncludePaths.Add(@"[project.ExternPath]/glad/include");

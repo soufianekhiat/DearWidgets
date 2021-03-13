@@ -1059,7 +1059,7 @@ namespace ImWidgets {
 	//////////////////////////////////////////////////////////////////////////
 	void CenterNextItem(ImVec2 nextItemSize)
 	{
-		float const width = ImGui::GetContentRegionAvailWidth();
+		float const width = ImGui::GetContentRegionAvail().x;
 		ImGui::Dummy(ImVec2((width - nextItemSize.x) * 0.5f, nextItemSize.y));
 		ImGui::SameLine();
 	}
@@ -1174,7 +1174,7 @@ namespace ImWidgets {
 		{
 			format += " m";
 		}
-		float const width = ImGui::GetContentRegionAvailWidth();
+		float const width = ImGui::GetContentRegionAvail().x;
 		ImGui::SetNextItemWidth(width * 0.5f - 32.0f);
 		modified |= ImGui::DragScalar(label, data_type, p_data, v_speed, p_min, p_max, format.c_str(), flags);
 		if (defaultUnit == ImWidgetsLengthUnit_Imperial)
@@ -1223,7 +1223,7 @@ namespace ImWidgets {
 
 		ImVec2 const vSizeSubstract = ImGui::CalcTextSize(std::to_string(1.0f).c_str()) * 1.1f;
 
-		float const vSizeFull = (ImGui::GetWindowContentRegionWidth() - vSizeSubstract.x) * fScale;
+		float const vSizeFull = (ImGui::GetContentRegionAvail().x - vSizeSubstract.x) * fScale;
 		ImVec2 const vSize(vSizeFull, vSizeFull);
 
 		float const fHeightOffset = ImGui::GetTextLineHeight();
@@ -1440,7 +1440,7 @@ namespace ImWidgets {
 
 		ImVec2 const vSizeSubstract = ImGui::CalcTextSize(std::to_string(1.0f).c_str()) * 1.1f;
 
-		float const vSizeFull = ImGui::GetWindowContentRegionWidth();
+		float const vSizeFull = ImGui::GetContentRegionAvail().x;
 		float const fMinSize = (vSizeFull - vSizeSubstract.x * 0.5f) * fScale * 0.75f;
 		ImVec2 const vSize(fMinSize, fMinSize);
 
@@ -1817,7 +1817,7 @@ namespace ImWidgets {
 		ImGuiID const iID = ImGui::GetID(label);
 		ImGui::PushID(iID);
 
-		float const vSizeFull = ImGui::GetWindowContentRegionWidth();
+		float const vSizeFull = ImGui::GetContentRegionAvail().x;
 		ImVec2 const vSecurity(15.0f, 15.0f);
 		ImVec2 const vSize(vSizeFull - vSecurity.x, vSizeFull - vSecurity.y);
 
@@ -1896,7 +1896,7 @@ namespace ImWidgets {
 			}
 		}
 
-		ImGui::Dummy(ImVec2(ImGui::GetContentRegionAvailWidth(), ImGui::GetTextLineHeightWithSpacing()));
+		ImGui::Dummy(ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetTextLineHeightWithSpacing()));
 
 		ImGui::PopID();
 
@@ -1911,7 +1911,7 @@ namespace ImWidgets {
 		ImGuiID const iID = ImGui::GetID(label);
 		ImGui::PushID(iID);
 
-		float const vSizeFull = ImGui::GetWindowContentRegionWidth();
+		float const vSizeFull = ImGui::GetContentRegionAvail().x;
 		ImVec2 const vSecurity(15.0f, 15.0f);
 		ImVec2 const vSize(vSizeFull - vSecurity.x, vSizeFull - vSecurity.y);
 
@@ -1961,7 +1961,7 @@ namespace ImWidgets {
 			ImGui::PopID();
 		}
 
-		ImGui::Dummy(ImVec2(ImGui::GetContentRegionAvailWidth(), ImGui::GetTextLineHeightWithSpacing()));
+		ImGui::Dummy(ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetTextLineHeightWithSpacing()));
 
 		ImGui::PopID();
 
@@ -1978,15 +1978,16 @@ namespace ImWidgets {
 		ImGuiID const iID = ImGui::GetID(label);
 		ImGui::PushID(iID);
 
-		float const vSizeFull = ImGui::GetWindowContentRegionWidth();
-		ImVec2 const vSecurity(15.0f, 15.0f);
-		ImVec2 const vSize(vSizeFull - vSecurity.x, vSizeFull - vSecurity.y);
+		float const vSizeFull = ImGui::GetContentRegionAvail().x;
+		//ImVec2 const vSecurity(15.0f, 15.0f);
+		//ImVec2 const vSize(vSizeFull - vSecurity.x, vSizeFull - vSecurity.y);
+		ImVec2 const vSize(vSizeFull, vSizeFull);
 
 		float const fHeightOffset = ImGui::GetTextLineHeight();
 		ImVec2 const vHeightOffset(0.0f, fHeightOffset);
 
 		ImVec2 vPos = ImGui::GetCursorScreenPos();
-		ImRect oRect(vPos + vSecurity, vPos + vSize);
+		ImRect oRect(vPos, vPos + vSize);
 
 		float const width = oRect.GetWidth();
 		float const height = oRect.GetHeight();
@@ -1994,8 +1995,6 @@ namespace ImWidgets {
 		ImGui::Dummy(oRect.GetSize());
 
 		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-		//pDrawList->AddBezierCurve()
-		//pDrawList->AddPolyline(reinterpret_cast<ImVec2*>(buffer_aot), float2_count, IM_COL32(255, 255, 0, 255), false, 2.0f);
 		pDrawList->PathClear();
 		for (int i = 0; i < float2_count - 1; ++i)
 		{
@@ -2015,15 +2014,6 @@ namespace ImWidgets {
 
 			pDrawList->AddLine(oRect.GetTL() + ImVec2(x0 * width, y0 * height), oRect.GetTL() + ImVec2(x1 * width, y1 * height), IM_COL32(255, 255, 0, 255), 2.0f);
 		}
-		//for (int i = 0; i < float2_count - 1; ++i)
-		//{
-		//	float x0 = Rescale(buffer_aot[2 * (i + 0) + 0], minX, maxX, 0.0f, 1.0f);
-		//	float y0 = Rescale(buffer_aot[2 * (i + 0) + 1], minY, maxY, 0.0f, 1.0f);
-		//	float x1 = Rescale(buffer_aot[2 * (i + 1) + 0], minX, maxX, 0.0f, 1.0f);
-		//	float y1 = Rescale(buffer_aot[2 * (i + 1) + 1], minY, maxY, 0.0f, 1.0f);
-		//
-		//	pDrawList->AddLine(oRect.GetTL() + ImVec2(x0 * width, y0 * height), oRect.GetTL() + ImVec2(x1 * width, y1 * height), IM_COL32(255, 255, 0, 255), 2.0f);
-		//}
 
 		bool hovered;
 		bool held;
@@ -2061,19 +2051,6 @@ namespace ImWidgets {
 
 			ImGui::PopID();
 		}
-
-		//if (modified)
-		//{
-		//	ImVec2* pVec2Buffer = reinterpret_cast<ImVec2*>(buffer_aot);
-
-		//	std::sort(	pVec2Buffer, pVec2Buffer + float2_count,
-		//				[]( ImVec2 const& a, ImVec2 const& b)
-		//				{
-		//					return a.x < b.x;
-		//				});
-		//}
-
-		ImGui::Dummy(ImVec2(ImGui::GetContentRegionAvailWidth(), ImGui::GetTextLineHeightWithSpacing()));
 
 		ImGui::PopID();
 
@@ -2144,7 +2121,7 @@ namespace ImWidgets {
 		ImGui::PushID(iID);
 
 		ImVec2 curPos = ImGui::GetCursorScreenPos();
-		float const width = ImGui::GetContentRegionAvailWidth();
+		float const width = ImGui::GetContentRegionAvail().x;
 		float const height = width;
 
 		ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
@@ -2420,6 +2397,7 @@ namespace ImWidgets {
 		float const standardCIEWavelengthMin, float const standardCIEWavelengthMax,
 		float gamma,
 		int resX, int resY,
+		ImU32 maskColor,
 		float wavelengthMin, float wavelengthMax,
 		float minX, float maxX,
 		float minY, float maxY)
@@ -2454,15 +2432,15 @@ namespace ImWidgets {
 					ImU32 const col10 = ImColorFrom_xyz(x1, y0, z10, xyzToRGB, gamma);
 					ImU32 const col11 = ImColorFrom_xyz(x1, y1, z11, xyzToRGB, gamma);
 
-					pDrawList->AddRectFilledMultiColor(curPos + ImVec2(sx * (i + 0), sy * (j + 0)),
-												   		curPos + ImVec2(sx * (i + 1), sy * (j + 1)),
-												   		col00, col10, col11, col01);
+					pDrawList->AddRectFilledMultiColor(	curPos + ImVec2(sx * (i + 0), sy * (j + 0)),
+														curPos + ImVec2(sx * (i + 1), sy * (j + 1)),
+														col00, col10, col11, col01);
 				}
 				else
 				{
-					pDrawList->AddRectFilledMultiColor(curPos + ImVec2(sx * (i + 0), sy * (j + 0)),
-													   curPos + ImVec2(sx * (i + 1), sy * (j + 1)),
-													   col00, col00, col00, col00);
+					pDrawList->AddRectFilledMultiColor(	curPos + ImVec2(sx * (i + 0), sy * (j + 0)),
+														curPos + ImVec2(sx * (i + 1), sy * (j + 1)),
+														col00, col00, col00, col00);
 				}
 			}
 		}
@@ -2476,6 +2454,7 @@ namespace ImWidgets {
 		chromLine.resize(lineSamples);
 		for (int i = 0; i < lineSamples; ++i)
 		{
+			//float const wavelength = ScaleFromNormalized(1.0f - ((float)i) / ((float)(lineSamples - 1)), wavelengthMin, wavelengthMax);
 			float const wavelength = ScaleFromNormalized(1.0f - ((float)i) / ((float)(lineSamples - 1)), wavelengthMin, wavelengthMax);
 
 			illum = FunctionFromData(wavelength, standardCIEWavelengthMin, standardCIEWavelengthMax, standardCIE, standardCIESampleCount);
@@ -2491,15 +2470,18 @@ namespace ImWidgets {
 			//x = 4.0f * x / sum;
 			//y = 9.0f * y / sum;
 
-			float xx = Rescale(x, minX, maxX, 0.0f, width);
-			float yy = Rescale(y, maxY, minY, 0.0f, height);
+			//float xx = Rescale(x, minX, maxX, 0.0f, width);
+			//float yy = Rescale(y, maxY, minY, 0.0f, height);
 
-			chromLine[i] = curPos + ImVec2(xx, yy);
+			//chromLine[i] = curPos + ImVec2(xx, yy);
+			chromLine[i] = ImVec2(Rescale(x, 0.0f, 1.0f, 0.0f, 1.0f), Rescale(y, 1.0f, 0.0f, 0.0f, 1.0f));
 		}
 
-		DrawConvexMaskMesh(pDrawList, curPos, (float*)&chromLine[0], lineSamples, ImVec2(width, height));
+		//DrawConvexMaskMesh(pDrawList, curPos, (float*)&chromLine[0], lineSamples, ImVec2(width, height));
+		DrawConvexMaskMesh(pDrawList, curPos, ImVec2(width, height), maskColor, (float*)&(chromLine[0].x), lineSamples, minX, maxX, minY, maxY);
 
-		pDrawList->AddPolyline(&chromLine[0], lineSamples, IM_COL32(0, 0, 0, 255), true, 2.0f);
+		//DrawChromaticLine(pDrawList, &curPos, lineSamples, IM_COL32(0, 0, 0, 255), true, 2.0f);
+		//pDrawList->AddPolyline(&chromLine[0], lineSamples, IM_COL32(0, 0, 0, 255), true, 2.0f);
 
 		ImVec2 sRGBLines[] = { primR, primG, primB };
 		for (int i = 0; i < 3; ++i)
@@ -2508,12 +2490,14 @@ namespace ImWidgets {
 
 			vCur.x = curPos.x + Rescale(vCur.x, minX, maxX, 0.0f, width);
 			vCur.y = curPos.y + Rescale(vCur.y, maxY, minY, 0.0f, height);
+			//vCur.y = curPos.y + Rescale(vCur.y, minY, maxY, 0.0f, height);
 		}
 		pDrawList->AddPolyline(&sRGBLines[0], 3, IM_COL32(255, 255, 255, 255), true, 5.0f);
 
 		ImVec2 vWhitePoint = whitePoint;
 		vWhitePoint.x = curPos.x + Rescale(vWhitePoint.x, minX, maxX, 0.0f, width);
 		vWhitePoint.y = curPos.y + Rescale(vWhitePoint.y, maxY, minY, 0.0f, height);
+		//vWhitePoint.y = curPos.y + Rescale(vWhitePoint.y, minY, maxY, 0.0f, height);
 
 		pDrawList->AddCircleFilled(vWhitePoint, 5.0f, IM_COL32(0, 0, 0, 255), 4);
 
@@ -2531,6 +2515,7 @@ namespace ImWidgets {
 		ImWidgetsObserver const observer,
 		ImWidgetsIlluminance const illum,
 		int resX, int resY,
+		ImU32 maskColor,
 		float wavelengthMin, float wavelengthMax,
 		float minX, float maxX,
 		float minY, float maxY)
@@ -2551,6 +2536,7 @@ namespace ImWidgets {
 			s_Illums_min[illum], s_Illums_max[illum],
 			1.0f / s_ColorSpace_Gamma[colorspace],
 			resX, resY,
+			maskColor,
 			wavelengthMin, wavelengthMax,
 			minX, maxX,
 			minY, maxY);
@@ -2564,6 +2550,7 @@ namespace ImWidgets {
 		ImWidgetsObserver const observer,
 		ImWidgetsIlluminance const illum,
 		int resX, int resY,
+		ImU32 maskColor,
 		float wavelengthMin, float wavelengthMax,
 		float minX, float maxX,
 		float minY, float maxY)
@@ -2584,6 +2571,7 @@ namespace ImWidgets {
 			s_Illums_min[illum], s_Illums_max[illum],
 			1.0f / s_ColorSpace_Gamma[colorspace],
 			resX, resY,
+			maskColor,
 			wavelengthMin, wavelengthMax,
 			minX, maxX,
 			minY, maxY);
@@ -2734,25 +2722,21 @@ namespace ImWidgets {
 		{}
 	};
 
-	//int triangleDrawCur = -1;
-	//int trianglesCount = 0;
-
-	void	DrawConvexMaskMesh(ImDrawList* pDrawList, ImVec2 curPos, float* buffer_aot, int float2_count, ImVec2 size)
+	IMGUI_API void DrawConvexMaskMesh(ImDrawList* pDrawList, ImVec2 curPos, ImVec2 size, ImU32 maskColor, float* buffer_aot, int float2_count, float minX, float maxX, float minY, float maxY)
 	{
-		ImVec2 bb_pts[4] = { curPos, curPos + ImVec2(0.0f, size.y), curPos + size, curPos + ImVec2(size.x, 0.0f) };
+		ImVec2 bb_pts[4] = { ImVec2(minX, minY), ImVec2(minX, maxY), ImVec2(maxX, maxY), ImVec2(maxX, minY) };
 
 		// Get closer point compare to bb_min;
 		float minDist = FLT_MAX;
 		int foundIdx = -1;
 		ImVec2* vBuffer = (ImVec2*)buffer_aot;
 
-		//for (int i = float2_count - 1; i >= 0; --i)
 		ImVec2* pCur = vBuffer;
 		for (int i = 0; i < float2_count; ++i)
 		{
 			ImVec2 const& v = *pCur;
 			++pCur;
-			ImVec2 delta = v - curPos;
+			ImVec2 delta = v - bb_pts[0];
 			float curDist = ImLengthSqr(delta);
 			if (curDist < minDist)
 			{
@@ -2767,6 +2751,8 @@ namespace ImWidgets {
 		int curIdx = foundIdx;
 		int nextIdx = foundIdx + 1;
 		nextIdx %= float2_count;
+		bool lastConvex = true;
+		bool jumped = false;
 		do
 		{
 			ImVec2& bnd = bb_pts[boundIdx];
@@ -2776,15 +2762,13 @@ namespace ImWidgets {
 			v1 /= ImLength(v1);
 			float crossSignZ = ImSign(v0.x * v1.y - v0.y * v1.x);
 			float dot = v0.x * v1.x + v0.y * v1.y;
-			//if (dot > 1.0f)//0.9999999f)
-			if (dot > 0.9999999f)
-			//if (dot > 0.999f || ImAbs(crossSignZ) < 1e-5f)
-			{
-				// If triangle too thin skip it
-				nextIdx++;
-				nextIdx %= float2_count;
-				continue;
-			}
+			//if (dot > 0.9999999f)
+			//{
+			//	// If triangle too thin skip it
+			//	nextIdx++;
+			//	nextIdx %= float2_count;
+			//	continue;
+			//}
 			if (crossSignZ > 0.0f)
 			{
 				// Can be attached to the current corner
@@ -2792,60 +2776,64 @@ namespace ImWidgets {
 				curIdx = nextIdx;
 				nextIdx++;
 				nextIdx %= float2_count;
+				lastConvex = true;
 			}
 			else
 			{
 				// Flipped triangle so use the next corner
 				int bnd2 = boundIdx + 1;
 				bnd2 %= 4;
-				//triangles.push_back(tri(float2_count + boundIdx, float2_count + bnd2, curIdx));
 				triangles.push_back(tri(float2_count + boundIdx, curIdx, float2_count + bnd2));
 				triangles.push_back(tri(float2_count + bnd2, curIdx, nextIdx));
 				boundIdx = bnd2;
 				curIdx = nextIdx;
 				nextIdx++;
 				nextIdx %= float2_count;
+				lastConvex = false;
+				jumped = true;
 			}
-		//} while (curIdx != foundIdx && nextIdx != ((foundIdx + 1) % float2_count));
-		} while (nextIdx != foundIdx && nextIdx != ((foundIdx + 1) % float2_count));
-		//} while (boundIdx != 0 && curIdx != foundIdx);
-		//} while (curIdx != foundIdx);
-		//triangles.push_back(tri(float2_count + 4, foundIdx, float2_count + 1));
+		} while (!jumped || curIdx != foundIdx && boundIdx != 0);
+
+		if (lastConvex)
+		{
+			triangles.push_back(tri(float2_count + 0, foundIdx, float2_count + 3));
+		}
+		else
+		{
+			tri& lastTri = triangles.back();
+
+			if ((lastTri.b != foundIdx && lastTri.c != foundIdx))
+			{
+				//triangles.push_back(tri(float2_count + 0, (foundIdx + float2_count - 1) % float2_count, (foundIdx + float2_count) % float2_count));
+				triangles.push_back(tri(float2_count + 0, (foundIdx + float2_count - 0) % float2_count, (foundIdx + float2_count - 1) % float2_count));
+			}
+		}
 		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
 		pDrawList->PrimReserve(triangles.size() * 3, float2_count + 4);
-		//pDrawList->PrimReserve(triangleDrawCur == -1 ? triangles.size() * 3 : 3, float2_count + 4);
 
-		//int iTriVal = triangleDrawCur;
 		int triIdx = 0;
 		for (tri const& tr : triangles)
 		{
-			//if (triangleDrawCur == -1 || iTriVal == triIdx++)
-			{
-				pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + tr.a));
-				pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + tr.b));
-				pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + tr.c));
-			}
+			pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + tr.a));
+			pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + tr.b));
+			pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + tr.c));
 		}
 
-		//ImVec4 vBgCol = ImGui::GetStyle().Colors[ImGuiCol_FrameBg];
-		ImVec4 vBgCol = ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
-		//vBgCol.w = 1.0f;
-		ImU32 uBgCol = ImGui::ColorConvertFloat4ToU32(vBgCol);
-
-		ImU32 const InColor = uBgCol;// IM_COL32(0, 0, 0, 255);
-		ImU32 const OutColor = uBgCol;// IIM_COL32(0, 0, 0, 255);
 		for (int i = 0; i < float2_count; ++i)
 		{
-			pDrawList->PrimWriteVtx(vBuffer[i], uv, InColor);
+			float x = Rescale(vBuffer[i].x, minX, maxX, 0, size.x);
+			float y = Rescale(vBuffer[i].y, minY, maxY, 0, size.y);
+			pDrawList->PrimWriteVtx(curPos + ImVec2(x, y), uv, maskColor);
 		}
-		pDrawList->PrimWriteVtx(bb_pts[0], uv, OutColor);
-		pDrawList->PrimWriteVtx(bb_pts[1], uv, OutColor);
-		pDrawList->PrimWriteVtx(bb_pts[2], uv, OutColor);
-		pDrawList->PrimWriteVtx(bb_pts[3], uv, OutColor);
+		for (int i = 0; i < 4; ++i)
+		{
+			float x = Rescale(bb_pts[i].x, minX, maxX, 0, size.x);
+			float y = Rescale(bb_pts[i].y, minY, maxY, 0, size.y);
+			pDrawList->PrimWriteVtx(curPos + ImVec2(x, y), uv, maskColor);
+		}
 	}
 
 	// Density Plots
-
 	bool DensityPlotBilinear(const char* label, float(*sample)(float x, float y), int resX, int resY, float minX, float maxX, float minY, float maxY)
 	{
 		return DensityPlotEx<true>(label, sample, resX, resY, minX, maxX, minY, maxY);
@@ -2865,7 +2853,7 @@ namespace ImWidgets {
 		float* pMax = ImGui::GetStateStorage()->GetFloatRef(iID + 1, -FLT_MAX);
 
 		ImVec2 curPos = ImGui::GetCursorScreenPos();
-		float const width = ImGui::GetContentRegionAvailWidth();
+		float const width = ImGui::GetContentRegionAvail().x;
 		float const height = width;
 
 		ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
@@ -3085,7 +3073,7 @@ namespace ImWidgets {
 
 		ImVec2 effectiveSize = size;
 		if (size.x < 0.0f)
-			effectiveSize.x = ImGui::GetContentRegionAvailWidth();
+			effectiveSize.x = ImGui::GetContentRegionAvail().x;
 		else
 			effectiveSize.x = size.x;
 		ImGui::Dummy(ImVec2(effectiveSize.x, 0.0f));
@@ -3193,6 +3181,7 @@ namespace ImWidgets {
 		ImGui::EndGroup();
 	}
 
+#if 0
 	//////////////////////////////////////////////////////////////////////////
 	template <int steps>
 	void bezier_table(ImVec2 P[4], ImVec2 results[steps + 1])
@@ -3335,7 +3324,8 @@ namespace ImWidgets {
 		ImGui::Dummy(ImVec2(0, 3));
 
 		// prepare canvas
-		const float avail = ImGui::GetContentRegionAvailWidth();
+		//const float avail = ImGui::GetContentRegionAvailWidth();
+		float const avail = ImGui::GetContentRegionAvail().x;
 		const float dim = AREA_WIDTH > 0 ? AREA_WIDTH : avail;
 		ImVec2 Canvas(dim, dim);
 
@@ -3886,4 +3876,5 @@ namespace ImWidgets {
 
 		return changed_idx;
 	}
+#endif
 }

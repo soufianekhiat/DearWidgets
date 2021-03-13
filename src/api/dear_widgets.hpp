@@ -261,6 +261,7 @@ void DrawChromaticPlotEx(ImDrawList* pDrawList,
 	ImWidgetsObserver const observer,
 	ImWidgetsIlluminance const illum,
 	int resX, int resY,
+	ImU32 maskColor,
 	float wavelengthMin, float wavelengthMax,
 	float minX, float maxX,
 	float minY, float maxY)
@@ -274,6 +275,7 @@ void DrawChromaticPlotEx(ImDrawList* pDrawList,
 			observer,
 			illum,
 			resX, resY,
+			maskColor,
 			wavelengthMin, wavelengthMax,
 			minX, maxX,
 			minY, maxY);
@@ -286,6 +288,7 @@ void DrawChromaticPlotEx(ImDrawList* pDrawList,
 			observer,
 			illum,
 			resX, resY,
+			maskColor,
 			wavelengthMin, wavelengthMax,
 			minX, maxX,
 			minY, maxY);
@@ -301,7 +304,7 @@ void	AnalyticalPlotEx(char const* label, FuncType func, float const minX, float 
 	ImGui::PushID(iID);
 
 	ImVec2 curPos = ImGui::GetCursorScreenPos();
-	float const width = ImGui::GetContentRegionAvailWidth();
+	float const width = ImGui::GetContentRegionAvail().x;
 	float const height = width;
 
 	ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
@@ -377,7 +380,7 @@ bool DensityPlotEx(const char* label, FuncType func, int resX, int resY, float m
 	float* pMax = ImGui::GetStateStorage()->GetFloatRef(iID + 1, -FLT_MAX);
 
 	ImVec2 curPos = ImGui::GetCursorScreenPos();
-	float const width = ImGui::GetContentRegionAvailWidth();
+	float const width = ImGui::GetContentRegionAvail().x;
 	float const height = width;
 
 	ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);

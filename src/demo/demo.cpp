@@ -41,7 +41,7 @@ public:
 		float const radius = 0.5f;
 		for (int i = 0; i < ptsCount; ++i)
 		{
-			float const angle = 2.0f * IM_PI * ((float)i)/((float)(ptsCount - 1));
+			float const angle = -2.0f * IM_PI * ((float)i)/((float)(ptsCount - 1));
 
 			float x = radius * ImCos(angle);
 			float y = radius * ImSin(angle);
@@ -133,16 +133,13 @@ namespace ImWidgets {
 
 		ImGui::Begin("Dear Widgets");
 
-		float const width = ImGui::GetContentRegionAvailWidth() * 0.75;
-
-		bool show_app_metrics = true;
-		ImGui::ShowMetricsWindow(&show_app_metrics);
+		float const width = ImGui::GetContentRegionAvail().x * 0.75;
 
 		if (ImGui::TreeNode("Draw"))
 		{
 			if (ImGui::TreeNode("Triangles Pointers"))
 			{
-				float const width = ImGui::GetContentRegionAvailWidth();
+				float const width = ImGui::GetContentRegionAvail().x;
 
 				ImVec2 curPos = ImGui::GetCursorScreenPos();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
@@ -165,7 +162,7 @@ namespace ImWidgets {
 			{
 				static float col[4] = { 1, 0, 0, 1 };
 				ImGui::ColorEdit4("Color", col);
-				float const width = ImGui::GetContentRegionAvailWidth();
+				float const width = ImGui::GetContentRegionAvail().x;
 				float const height = 32.0f;
 				static float gamma = 1.0f;
 				ImGui::DragFloat("Gamma##Color", &gamma, 0.01f, 0.1f, 10.0f);
@@ -217,7 +214,7 @@ namespace ImWidgets {
 
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				{
-					float const width = ImGui::GetContentRegionAvailWidth();
+					float const width = ImGui::GetContentRegionAvail().x;
 					ImVec2 curPos = ImGui::GetCursorScreenPos();
 					ImGui::InvisibleButton("##Zone", ImVec2(width, width), 0);
 
@@ -238,7 +235,7 @@ namespace ImWidgets {
 				ImGui::SliderInt("Frequency", &frequency, 1, 32);
 				{
 					ImGui::Text("Nearest");
-					float const width = ImGui::GetContentRegionAvailWidth();
+					float const width = ImGui::GetContentRegionAvail().x;
 					ImVec2 curPos = ImGui::GetCursorScreenPos();
 					ImGui::InvisibleButton("##Zone", ImVec2(width, width) * 0.5f, 0);
 
@@ -261,7 +258,7 @@ namespace ImWidgets {
 				}
 				{
 					ImGui::Text("Custom");
-					float const width = ImGui::GetContentRegionAvailWidth();
+					float const width = ImGui::GetContentRegionAvail().x;
 					ImVec2 curPos = ImGui::GetCursorScreenPos();
 					ImGui::InvisibleButton("##Zone", ImVec2(width, width) * 0.5f, 0);
 
@@ -279,7 +276,7 @@ namespace ImWidgets {
 			}
 			if (ImGui::TreeNode("Color2D"))
 			{
-				float const width = ImGui::GetContentRegionAvailWidth();
+				float const width = ImGui::GetContentRegionAvail().x;
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 
 				float const fTime = static_cast<float>(ImGui::GetTime());
@@ -312,19 +309,24 @@ namespace ImWidgets {
 			}
 			if (ImGui::TreeNode("Convex Mask"))
 			{
-				float const width = ImGui::GetWindowContentRegionWidth();
-				ImVec2 const curPos = ImGui::GetCursorScreenPos();
+				float const width = ImGui::GetContentRegionAvail().x;
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+
+				static ImVec4 vMaskColor = ImVec4(1.0f, 0.5f, 0.0f, 0.5f);
+				ImGui::ColorEdit4("Mask Color", &vMaskColor.x);
+				ImVec2 const curPos = ImGui::GetCursorScreenPos();
+
+				ImU32 maskColor = ImGui::ColorConvertFloat4ToU32(vMaskColor);
 
 				DrawColorDensityPlotEx< true >(pDrawList,
 					[](float const x, float const y)
 					{
 						float z = ImSaturate(std::sin(x) * std::sin(y) * 0.5f + 0.5f);
-
+				
 						return IM_COL32(255 * z, 255 * z, 255 * z, 255);
 					}, -4.0f, 4.0f, -4.0f, 4.0f, curPos, ImVec2(width, width), 32, 32);
 
-				ImWidgets::DrawConvexMaskMesh(pDrawList, curPos, &maskShape_values[0], maskShape_values.size() / 2, ImVec2(width, width));
+				DrawConvexMaskMesh(pDrawList, curPos, ImVec2(width, width), maskColor, &maskShape_values[0], maskShape_values.size() / 2, -1.0f, 1.0f, -1.0f, 1.0f);
 
 				MoveLine2D("Shape", &maskShape_values[0], maskShape_values.size() / 2, -1.0f, 1.0f, -1.0f, 1.0f, true);
 
@@ -363,7 +365,7 @@ namespace ImWidgets {
 				static bool bShowSurface = true;
 				ImGui::Checkbox("Show Surface", &bShowSurface);
 				ImGui::Text("Isoline Values");
-				float const width = ImGui::GetContentRegionAvailWidth();
+				float const width = ImGui::GetContentRegionAvail().x;
 				ImGui::PushMultiItemsWidths(4, width);
 				ImGui::DragFloat("##IsoLine0", &isoLines[0], 0.001f, -1.0f, 1.0f); ImGui::SameLine();
 				ImGui::DragFloat("##IsoLine1", &isoLines[1], 0.001f, -1.0f, 1.0f); ImGui::SameLine();
@@ -399,7 +401,7 @@ namespace ImWidgets {
 			}
 			if (ImGui::TreeNode("Analytic Plot"))
 			{
-				float const width = ImGui::GetContentRegionAvailWidth();
+				float const width = ImGui::GetContentRegionAvail().x;
 				ImGui::Text("ImGui::PlotLines: 128 samples");
 				ImGui::Dummy(ImVec2(1.0f, ImGui::GetTextLineHeightWithSpacing()));
 				ImGui::PlotLines("##PlotLines", [](void* data, int idx)
@@ -459,10 +461,12 @@ namespace ImWidgets {
 					ImGui::Combo("Illuminance", &curIllum, illum, IM_ARRAYSIZE(illum));
 					ImGui::Combo("ColorSpace", &curColorSpace, colorSpace, IM_ARRAYSIZE(colorSpace));
 					ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-					float const width = ImGui::GetContentRegionAvailWidth();
+					float const width = ImGui::GetContentRegionAvail().x;
+					static ImVec4 vMaskColor(1.0f, 0.5f, 0.0f, 1.0f);
+					ImGui::ColorEdit4("Mask Color", &vMaskColor.x);
+					ImU32 maskColor = ImGui::ColorConvertFloat4ToU32(vMaskColor);
 					ImVec2 curPos = ImGui::GetCursorScreenPos();
 					ImGui::InvisibleButton("##Zone", ImVec2(width, width), 0);
-					//ImGui::DragInt("Triangle", &triangleDrawCur, 1.0f, -1, 1024);
 					DrawChromaticPlotBilinear(
 						pDrawList,
 						curPos,
@@ -472,9 +476,10 @@ namespace ImWidgets {
 						curObserver,
 						curIllum,
 						resX, resY,
+						maskColor,
 						waveMin, waveMax,
-						0.0f, 0.8f,
-						0.0f, 0.9f);
+						-0.2f, 0.8f,
+						-0.1f, 0.9f);
 
 					ImGui::TreePop();
 				}
@@ -529,7 +534,7 @@ namespace ImWidgets {
 				}
 				if (ImGui::TreeNode("Line Slider"))
 				{
-					float const width = ImGui::GetContentRegionAvailWidth();
+					float const width = ImGui::GetContentRegionAvail().x;
 					ImVec2 curPos = ImGui::GetCursorScreenPos();
 					ImVec2 center = curPos + ImVec2(width, width) * 0.5f;
 					ImGui::Dummy(ImVec2(width, width));
@@ -560,7 +565,7 @@ namespace ImWidgets {
 
 		ImWidgets::BeginGroupPanel("Color Selector");
 		{
-			float const width = ImGui::GetContentRegionAvailWidth();
+			float const width = ImGui::GetContentRegionAvail().x;
 			float const height = 32.0f;
 			static float offset = 0.0f;
 
@@ -580,5 +585,8 @@ namespace ImWidgets {
 		ImWidgets::EndGroupPanel();
 
 		ImGui::End();
+
+		bool show_app_metrics = true;
+		ImGui::ShowMetricsWindow(&show_app_metrics);
 	}
 }
