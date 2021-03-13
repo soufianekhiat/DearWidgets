@@ -5,7 +5,7 @@ Library helper based on Dear ImGui ().
 ### Draw
 * Triangle Pointer {Right, Up, Left, Down}
 
-![](..\DearWidgetsImages\Images\dearwidgetsdemo_mRxPnn8bNH.png)
+![](https:\\github.com\soufianekhiat\DearWidgetsImages\Images\dearwidgetsdemo_mRxPnn8bNH.png)
 
 * Hue Band
 * Luminance Band
