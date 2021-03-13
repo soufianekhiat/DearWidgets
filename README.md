@@ -36,8 +36,9 @@ Library helper based on Dear ImGui ().
 ![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/W0Q9VXNeGK.gif)
 
 ## Constrains
-Internally use C++ feature:
+C++ features used internally:
 * template
 * constexpr
+* if constexpr
 * Lambda from template
 * auto
