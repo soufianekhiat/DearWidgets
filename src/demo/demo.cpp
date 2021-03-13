@@ -199,7 +199,7 @@ namespace ImWidgets {
 
 						return IM_COL32(r * 255, g * 255, b * 255, fAlpha * 255);
 					},
-					division, gamma, 0.0f);
+					division, gamma);
 				ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
 				ImGui::TreePop();
 			}
@@ -362,14 +362,14 @@ namespace ImWidgets {
 				static int division = 32;
 				ImGui::DragInt("Division", &division, 1.0f, 2, 256);
 				static float alphaHue = 1.0f;
-				static float alphaHideHue = 0.75f;
+				static float alphaHideHue = 0.125f;
 				ImGui::DragFloat("Offset##ColorSelector", &offset, 0.0f, 0.0f, 1.0f);
 				ImGui::DragFloat("Alpha Hue", &alphaHue, 0.0f, 0.0f, 1.0f);
 				ImGui::DragFloat("Alpha Hue Hide", &alphaHideHue, 0.0f, 0.0f, 1.0f);
 				static float hueCenter = 0.5f;
 				static float hueWidth = 0.1f;
-				static float featherLeft = 0.5f;
-				static float featherRight = 0.5f;
+				static float featherLeft = 0.125f;
+				static float featherRight = 0.125f;
 				ImGui::DragFloat("featherLeft", &featherLeft, 0.0f, 0.0f, 0.5f);
 				ImGui::DragFloat("featherRight", &featherRight, 0.0f, 0.0f, 0.5f);
 				HueSelector("Hue Selector", ImVec2(width, height), &hueCenter, &hueWidth, &featherLeft, &featherRight, division, alphaHue, alphaHideHue, offset);
