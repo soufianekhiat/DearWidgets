@@ -103,7 +103,7 @@ A version for Slider2DScaler is available for (Im{S|U}{8,16,32,64}, Float and Do
 
 ![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/FoeyB7aWSp.gif)
 
-* Line Slider
+* Line Slider (TBD)
 
 ![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/4haBv2KuX7.gif)
 
