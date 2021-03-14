@@ -116,3 +116,4 @@ C++ features used internally:
 * if constexpr
 * Lambda from template
 * auto
+* std::vector&lt;float&gt;, std::vector&lt;bool&gt; for isoline
