@@ -1,5 +1,5 @@
 # DearWidgets
-Collection of draw (from ImDrawList) and widgets I use.
+Collection of draw (from ImDrawList) and widgets.
 Version 0.0.0.0.1
 
 Incentivise development [Patreon](https://www.patreon.com/SoufianeKHIAT)
