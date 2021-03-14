@@ -154,6 +154,9 @@ namespace ImWidgets {
 	IMGUI_API bool InputVec2(const char* label, ImVec2* value, ImVec2 vMinValue, ImVec2 vMaxValue, float const fScale = 1.0f);
 	IMGUI_API bool InputVec3(const char* label, ImVec4* value, ImVec4 const vMinValue, ImVec4 const vMaxValue, float const fScale = 1.0f);
 
+	IMGUI_API bool RangeSelect2D(char const* pLabel, float* pCurMinX, float* pCurMinY, float* pCurMaxX, float* pCurMaxY, float const fBoundMinX, float const fBoundMinY, float const fBoundMaxX, float const fBoundMaxY, float const fScale /*= 1.0f*/);
+	IMGUI_API bool RangeSelectVec2(const char* pLabel, ImVec2* pCurMin, ImVec2* pCurMax, ImVec2 const vBoundMin, ImVec2 const vBoundMax, float const fScale /*= 1.0f*/);
+
 	IMGUI_API bool LineSlider(const char* label, ImVec2 start, ImVec2 end, ImU32 lineColor, ImGuiDataType data_type, void* p_data, const void* p_min, const void* p_max, ImWidgetsPointer pointer);
 
 	// Grid

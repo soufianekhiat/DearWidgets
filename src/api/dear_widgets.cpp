@@ -1214,6 +1214,370 @@ namespace ImWidgets {
 		return SliderScalar3D(pLabel, &pValue->x, &pValue->y, &pValue->z, vMinValue.x, vMaxValue.x, vMinValue.y, vMaxValue.y, vMinValue.z, vMaxValue.z, fScale);
 	}
 
+	bool RangeSelect2D(char const* pLabel, float* pCurMinX, float* pCurMinY, float* pCurMaxX, float* pCurMaxY, float const fBoundMinX, float const fBoundMinY, float const fBoundMaxX, float const fBoundMaxY, float const fScale /*= 1.0f*/)
+	{
+		//EMV_ASSERT(fBoundMinX < fBoundMaxX);
+		//EMV_ASSERT(fBoundMinY < fBoundMaxY);
+
+		float& fCurMinX = *pCurMinX;
+		float& fCurMinY = *pCurMinY;
+		float& fCurMaxX = *pCurMaxX;
+		float& fCurMaxY = *pCurMaxY;
+
+		//EMV_ASSERT(fCurMinX < fCurMaxX);
+		//EMV_ASSERT(fCurMinY < fCurMaxY);
+
+		float const fDeltaBoundX = fBoundMaxX - fBoundMinX;
+		float const fDeltaBoundY = fBoundMaxY - fBoundMinY;
+
+		float const fDeltaX = fCurMaxX - fCurMinX;
+		float const fDeltaY = fCurMaxY - fCurMinY;
+
+		float const fScaleX = fDeltaX / fDeltaBoundX;
+		float const fScaleY = fDeltaY / fDeltaBoundY;
+		float const fScaleMinX = Rescale01(fCurMinX, fBoundMinX, fBoundMaxX);
+		float const fScaleMinY = Rescale01(fCurMinY, fBoundMinY, fBoundMaxY);
+		float const fScaleMaxX = Rescale01(fCurMaxX, fBoundMinX, fBoundMaxX);
+		float const fScaleMaxY = Rescale01(fCurMaxY, fBoundMinY, fBoundMaxY);
+
+		ImGuiID const iID = ImGui::GetID(pLabel);
+
+		ImVec2 const vSizeSubstract = ImGui::CalcTextSize(std::to_string(1.0f).c_str()) * 1.1f;
+
+		float const vSizeFull = (ImGui::GetContentRegionAvail().x - vSizeSubstract.x) * fScale;
+		ImVec2 const vSize(vSizeFull, vSizeFull);
+
+		float const fHeightOffset = ImGui::GetTextLineHeight();
+		ImVec2 const vHeightOffset(0.0f, fHeightOffset);
+
+		ImVec2 vPos = ImGui::GetCursorScreenPos();
+		ImRect oRect(vPos + vHeightOffset, vPos + vSize + vHeightOffset);
+
+		constexpr float fCursorOff = 10.0f;
+		float const fXLimit = fCursorOff / oRect.GetWidth();
+		float const fYLimit = fCursorOff / oRect.GetHeight();
+
+		ImVec2 const vCursorPos((oRect.Max.x - oRect.Min.x) * fScaleX + oRect.Min.x, (oRect.Max.y - oRect.Min.y) * fScaleY + oRect.Min.y);
+
+		ImGui::Dummy(vHeightOffset);
+		ImGui::Dummy(vHeightOffset);
+
+		//ImGui::Text(pLabel);
+
+		ImGui::PushID(iID);
+		ImU32 const uFrameCol = ImGui::GetColorU32(ImGuiCol_FrameBg);
+		ImU32 const uFrameZoneCol = ImGui::GetColorU32(ImGuiCol_FrameBgActive);
+
+		ImVec2 const vOriginPos = ImGui::GetCursorScreenPos();
+		ImGui::RenderFrame(oRect.Min, oRect.Max, uFrameCol, false, 0.0f);
+		bool bModified = false;
+		ImVec2 const vSecurity(15.0f, 15.0f);
+		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+
+		ImVec4 const vBlue(70.0f / 255.0f, 102.0f / 255.0f, 230.0f / 255.0f, 1.0f); // TODO: choose from style
+		ImVec4 const vOrange(255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f); // TODO: choose from style
+
+		ImS32 const uBlue = ImGui::GetColorU32(vBlue);
+		ImS32 const uOrange = ImGui::GetColorU32(vOrange);
+
+		constexpr float fBorderThickness = 2.0f;
+		constexpr float fLineThickness = 3.0f;
+		constexpr float fHandleRadius = 7.0f;
+		constexpr float fHandleOffsetCoef = 2.0f;
+
+		float const fRegMinX = ImLerp(oRect.Min.x, oRect.Max.x, fScaleMinX);
+		float const fRegMinY = ImLerp(oRect.Min.y, oRect.Max.y, fScaleMinY);
+		float const fRegMaxX = ImLerp(oRect.Min.x, oRect.Max.x, fScaleMaxX);
+		float const fRegMaxY = ImLerp(oRect.Min.y, oRect.Max.y, fScaleMaxY);
+
+		ImRect oRegionRect(fRegMinX, fRegMinY, fRegMaxX, fRegMaxY);
+
+		ImVec2 vMinCursorPos(fRegMinX, fRegMinY);
+		ImVec2 vMaxCursorPos(fRegMaxX, fRegMaxY);
+
+		float const fRegWidth = oRegionRect.GetWidth();
+		ImRect oWidthHandle(ImVec2(vMinCursorPos.x + 0.25f * fRegWidth, oRect.Min.y - 0.5f * fCursorOff), ImVec2(vMaxCursorPos.x - 0.25f * fRegWidth, oRect.Min.y + 0.5f * fCursorOff));
+		float const fRegHeight = oRegionRect.GetHeight();
+		ImRect oHeightHandle(ImVec2(oRect.Min.x - 0.5f * fCursorOff, vMinCursorPos.y + 0.25f * fRegHeight), ImVec2(oRect.Min.x + 0.5f * fCursorOff, vMaxCursorPos.y - 0.25f * fRegHeight));
+
+		//pDrawList->AddRect(oRect.Min, oRect.Max, uBlue, 0.0f, 0, fBorderThickness);
+		//pDrawList->AddRect(oRegionRect.Min, oRegionRect.Max, uOrange, 0.0f, 0, fLineThickness);
+
+		ImGui::RenderFrame(oRegionRect.Min, oRegionRect.Max, uFrameZoneCol, false, 0.0f);
+
+		pDrawList->AddNgonFilled(vMinCursorPos, 5.0f, uBlue, 4);
+		pDrawList->AddNgonFilled(vMaxCursorPos, 5.0f, uBlue, 4);
+
+		ImRect oDragZone(oRegionRect.Min + ImVec2(fCursorOff, fCursorOff) + vSecurity, oRegionRect.Max - ImVec2(fCursorOff, fCursorOff) - vSecurity);
+		//if (oDragZone.IsInverted())
+		//{
+		//	oDragZone.Min = ImVec2();
+		//	oDragZone.Max = ImVec2();
+		//}
+
+		//if (ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
+		//	ImGui::IsMouseHoveringRect(vMinCursorPos - ImVec2(fHandleRadius, fHandleRadius) - vSecurity, vMinCursorPos + ImVec2(fHandleRadius, fHandleRadius) + vSecurity))
+
+		ImRect vDragBBMin(vMinCursorPos - ImVec2(fHandleRadius, fHandleRadius) - vSecurity, vMinCursorPos + ImVec2(fHandleRadius, fHandleRadius) + vSecurity);
+		ImRect vDragBBMax(vMaxCursorPos - ImVec2(fHandleRadius, fHandleRadius) - vSecurity, vMaxCursorPos + ImVec2(fHandleRadius, fHandleRadius) + vSecurity);
+		ImRect vDragHandleMin(oWidthHandle.Min - ImVec2(fCursorOff, fCursorOff) - vSecurity, oWidthHandle.Max + ImVec2(fCursorOff, fCursorOff) + vSecurity);
+		ImRect vDragHandleHeight(oHeightHandle.Min - ImVec2(fCursorOff, fCursorOff) - vSecurity, oHeightHandle.Max + ImVec2(fCursorOff, fCursorOff) + vSecurity);
+		ImRect vDragRect(oRegionRect.Min, oRegionRect.Max);
+
+		// TODO:
+		float const fArbitrarySpeedScaleBar = 0.0125f;
+
+		bool hovered;
+		bool held;
+		bool pressed = ImGui::ButtonBehavior(vDragBBMin, ImGui::GetID("##Zone"), &hovered, &held);
+		if (hovered && held)
+		{
+			ImVec2 const vLocalCursorPos = ImGui::GetMousePos();
+
+			ImVec2 newVal = Rescalev(vLocalCursorPos, ImVec2(oRect.Min.x, oRect.Min.y), ImVec2(oRect.Max.x, oRect.Max.y), ImVec2(fBoundMinX, fBoundMinY), ImVec2(fBoundMaxX, fBoundMaxY));
+
+			newVal.x = ImClamp(newVal.x, fBoundMinX, *pCurMaxX);
+			newVal.y = ImClamp(newVal.y, fBoundMinY, *pCurMaxY);
+
+			*pCurMinX = newVal.x;
+			*pCurMinY = newVal.y;
+
+			bModified = true;
+		}
+		else
+		{
+			//if (ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
+			//	ImGui::IsMouseHoveringRect(vMaxCursorPos - ImVec2(fHandleRadius, fHandleRadius) - vSecurity, vMaxCursorPos + ImVec2(fHandleRadius, fHandleRadius) + vSecurity))
+			pressed = ImGui::ButtonBehavior(vDragBBMax, ImGui::GetID("##Zone"), &hovered, &held);
+			if (hovered && held)
+			{
+				ImVec2 const vLocalCursorPos = ImGui::GetMousePos();
+						
+				ImVec2 newVal = Rescalev(vLocalCursorPos, ImVec2(oRect.Min.x, oRect.Min.y), ImVec2(oRect.Max.x, oRect.Max.y), ImVec2(fBoundMinX, fBoundMinY), ImVec2(fBoundMaxX, fBoundMaxY));
+
+				newVal.x = ImClamp(newVal.x, *pCurMinX, fBoundMaxX);
+				newVal.y = ImClamp(newVal.y, *pCurMinY, fBoundMaxY);
+
+				*pCurMaxX = newVal.x;
+				*pCurMaxY = newVal.y;
+
+				bModified = true;
+			}
+			else
+			{
+				//if ((ImGui::IsMouseDown(ImGuiMouseButton_Left) || ImGui::IsMouseDown(ImGuiMouseButton_Right)) &&
+				//	ImGui::IsMouseHoveringRect(oWidthHandle.Min - ImVec2(fCursorOff, fCursorOff) - vSecurity, oWidthHandle.Max + ImVec2(fCursorOff, fCursorOff) + vSecurity))
+				pressed = ImGui::ButtonBehavior(vDragHandleMin, ImGui::GetID("##Zone"), &hovered, &held);
+				if (hovered && held)
+				{
+					constexpr float fSpeedHandleWidth = 0.125f;
+					float fDeltaWidth = oWidthHandle.GetCenter().x - ImGui::GetMousePos().x;
+					// Apply Soft-Threshold
+					//fDeltaWidth = fSpeedHandleWidth*Sign(fDeltaWidth)*std::max(std::abs(fDeltaWidth) - 0.5f*fCursorOff, 0.0f);
+
+					fDeltaWidth = fSpeedHandleWidth * ImClamp(fDeltaWidth, -0.5f * oRect.GetWidth(), 0.5f * oRect.GetWidth());
+
+					float fDeltaWidthValue = Rescale(fDeltaWidth, -0.5f * oRect.GetWidth(), 0.5f * oRect.GetWidth(), -0.5f * (fBoundMaxX - fBoundMinX), 0.5f * (fBoundMaxX - fBoundMinX));
+
+					if (ImGui::IsMouseDown(ImGuiMouseButton_Right))
+					{
+						*pCurMinX = ImClamp(*pCurMinX + fArbitrarySpeedScaleBar * fDeltaWidthValue, fBoundMinX, *pCurMaxX);
+						*pCurMaxX = ImClamp(*pCurMaxX - fArbitrarySpeedScaleBar * fDeltaWidthValue, *pCurMinX, fBoundMaxX);
+					}
+					else
+					{
+						if (*pCurMinX <= fBoundMinX && fDeltaWidthValue > 0.0f)
+						{
+							fDeltaWidthValue = 0.0f;
+						}
+						else if (*pCurMaxX >= fBoundMaxX && fDeltaWidthValue < 0.0f)
+						{
+							fDeltaWidthValue = 0.0f;
+						}
+
+						*pCurMinX = ImClamp(*pCurMinX - fDeltaWidthValue, fBoundMinX, *pCurMaxX);
+						*pCurMaxX = ImClamp(*pCurMaxX - fDeltaWidthValue, *pCurMinX, fBoundMaxX);
+					}
+
+					bModified = true;
+				}
+				else
+				{
+					//if ((ImGui::IsMouseDown(ImGuiMouseButton_Left) || ImGui::IsMouseDown(ImGuiMouseButton_Right)) &&
+					//	ImGui::IsMouseHoveringRect(oHeightHandle.Min - ImVec2(fCursorOff, fCursorOff) - vSecurity, oHeightHandle.Max + ImVec2(fCursorOff, fCursorOff) + vSecurity))
+					pressed = ImGui::ButtonBehavior(vDragHandleHeight, ImGui::GetID("##Zone"), &hovered, &held);
+					if (hovered && held)
+					{
+						constexpr float fSpeedHandleHeight = 0.125f;
+						float fDeltaHeight = oHeightHandle.GetCenter().y - ImGui::GetMousePos().y;
+						// Apply Soft-Threshold
+						//fDeltaHeight = fSpeedHandleHeight*Sign(fDeltaHeight)*std::max(std::abs(fDeltaHeight) - 0.5f*fCursorOff, 0.0f);
+						fDeltaHeight = fSpeedHandleHeight * ImClamp(fDeltaHeight, -0.5f * oRect.GetHeight(), 0.5f * oRect.GetHeight());
+
+						float fDeltaHeightValue = Rescale(fDeltaHeight, -0.5f * oRect.GetHeight(), 0.5f * oRect.GetHeight(), -0.5f * (fBoundMaxY - fBoundMinY), 0.5f * (fBoundMaxY - fBoundMinY));
+
+						if (ImGui::IsMouseDown(ImGuiMouseButton_Right))
+						{
+							*pCurMinY = ImClamp(*pCurMinY + fArbitrarySpeedScaleBar * fDeltaHeightValue, fBoundMinY, *pCurMaxY);
+							*pCurMaxY = ImClamp(*pCurMaxY - fArbitrarySpeedScaleBar * fDeltaHeightValue, *pCurMinY, fBoundMaxY);
+						}
+						else
+						{
+							if (*pCurMinY <= fBoundMinY && fDeltaHeightValue > 0.0f)
+							{
+								fDeltaHeightValue = 0.0f;
+							}
+							else if (*pCurMaxY >= fBoundMaxY && fDeltaHeightValue < 0.0f)
+							{
+								fDeltaHeightValue = 0.0f;
+							}
+
+							*pCurMinY = ImClamp(*pCurMinY - fDeltaHeightValue, fBoundMinY, *pCurMaxY);
+							*pCurMaxY = ImClamp(*pCurMaxY - fDeltaHeightValue, *pCurMinY, fBoundMaxY);
+						}
+
+						bModified = true;
+					}
+					else
+					{
+						//if (ImGui::IsMouseHoveringRect(oRegionRect.Min, oRegionRect.Max) && !oRegionRect.IsInverted())
+						pressed = ImGui::ButtonBehavior(vDragRect, ImGui::GetID("##Zone"), &hovered, &held);
+						if (hovered && held)
+						{
+							// Top Left
+							pDrawList->AddLine(oDragZone.Min, oDragZone.Min + ImVec2(oRegionRect.GetWidth() * 0.2f, 0.0f), uFrameCol, 1.0f);
+							pDrawList->AddLine(oDragZone.Min, oDragZone.Min + ImVec2(0.0f, oRegionRect.GetHeight() * 0.2f), uFrameCol, 1.0f);
+							// Bottom Right
+							pDrawList->AddLine(oDragZone.Max, oDragZone.Max - ImVec2(oRegionRect.GetWidth() * 0.2f, 0.0f), uFrameCol, 1.0f);
+							pDrawList->AddLine(oDragZone.Max, oDragZone.Max - ImVec2(0.0f, oRegionRect.GetHeight() * 0.2f), uFrameCol, 1.0f);
+
+							if (ImGui::IsMouseDown(ImGuiMouseButton_Left) && ImGui::IsMouseHoveringRect(oDragZone.Min, oDragZone.Max))
+							{
+								ImVec2 vDragDelta = ImGui::GetMousePos() - oDragZone.GetCenter();
+
+								if (*pCurMinX <= fBoundMinX && vDragDelta.x < 0.0f)
+								{
+									vDragDelta.x = 0.0f;
+								}
+								else if (*pCurMaxX >= fBoundMaxX && vDragDelta.x > 0.0f)
+								{
+									vDragDelta.x = 0.0f;
+								}
+
+								if (*pCurMinY <= fBoundMinY && vDragDelta.y < 0.0f)
+								{
+									vDragDelta.y = 0.0f;
+								}
+								else if (*pCurMaxY >= fBoundMaxY && vDragDelta.y > 0.0f)
+								{
+									vDragDelta.y = 0.0f;
+								}
+
+								float fLocalDeltaX = Rescale(vDragDelta.x, -0.5f * oRect.GetWidth(), 0.5f * oRect.GetWidth(), -0.5f * (fBoundMaxX - fBoundMinX), 0.5f * (fBoundMaxX - fBoundMinX));
+								float fLocalDeltaY = Rescale(vDragDelta.y, -0.5f * oRect.GetHeight(), 0.5f * oRect.GetHeight(), -0.5f * (fBoundMaxY - fBoundMinY), 0.5f * (fBoundMaxY - fBoundMinY));
+
+								*pCurMinX = ImClamp(*pCurMinX + fLocalDeltaX, fBoundMinX, *pCurMaxX);
+								*pCurMaxX = ImClamp(*pCurMaxX + fLocalDeltaX, *pCurMinX, fBoundMaxX);
+
+								*pCurMinY = ImClamp(*pCurMinY + fLocalDeltaY, fBoundMinY, *pCurMaxY);
+								*pCurMaxY = ImClamp(*pCurMaxY + fLocalDeltaY, *pCurMinY, fBoundMaxY);
+							}
+						}
+					}
+				}
+			}
+		}
+
+		char pBufferMinX[16];
+		char pBufferMaxX[16];
+		char pBufferMinY[16];
+		char pBufferMaxY[16];
+		ImFormatString(pBufferMinX, IM_ARRAYSIZE(pBufferMinX), "%.5f", *(float const*)pCurMinX);
+		ImFormatString(pBufferMaxX, IM_ARRAYSIZE(pBufferMaxX), "%.5f", *(float const*)pCurMaxX);
+		ImFormatString(pBufferMinY, IM_ARRAYSIZE(pBufferMinY), "%.5f", *(float const*)pCurMinY);
+		ImFormatString(pBufferMaxY, IM_ARRAYSIZE(pBufferMaxY), "%.5f", *(float const*)pCurMaxY);
+
+		ImU32 const uTextCol = ImGui::ColorConvertFloat4ToU32(ImGui::GetStyle().Colors[ImGuiCol_Text]);
+
+		ImGui::SetWindowFontScale(0.75f);
+
+		ImVec2 const vMinXSize = ImGui::CalcTextSize(pBufferMinX);
+		ImVec2 const vMaxXSize = ImGui::CalcTextSize(pBufferMaxX);
+		ImVec2 const vMinYSize = ImGui::CalcTextSize(pBufferMinY);
+		ImVec2 const vMaxYSize = ImGui::CalcTextSize(pBufferMaxY);
+
+		pDrawList->AddText(ImVec2(vMinCursorPos.x - 0.5f * vMinXSize.x, oRect.Max.y + fCursorOff), uTextCol, pBufferMinX);
+		pDrawList->AddText(ImVec2(vMaxCursorPos.x - 0.5f * vMaxXSize.x, oRect.Max.y + fCursorOff), uTextCol, pBufferMaxX);
+
+		pDrawList->AddText(ImVec2(oRect.Max.x + fCursorOff, vMinCursorPos.y - 0.5f * vMinYSize.y), uTextCol, pBufferMinY);
+		pDrawList->AddText(ImVec2(oRect.Max.x + fCursorOff, vMaxCursorPos.y - 0.5f * vMaxYSize.y), uTextCol, pBufferMaxY);
+
+		ImGui::SetWindowFontScale(1.0f);
+
+		if (!oRegionRect.IsInverted())
+		{
+			pDrawList->AddLine(vMinCursorPos + ImVec2(fCursorOff, 0.0f), vMinCursorPos + ImVec2(2.0f * fCursorOff, 0.0f), uOrange, fLineThickness);
+			pDrawList->AddLine(vMinCursorPos + ImVec2(0.0f, fCursorOff), vMinCursorPos + ImVec2(0.0f, 2.0f * fCursorOff), uOrange, fLineThickness);
+
+			pDrawList->AddLine(vMaxCursorPos - ImVec2(fCursorOff, 0.0f), vMaxCursorPos - ImVec2(2.0f * fCursorOff, 0.0f), uOrange, fLineThickness);
+			pDrawList->AddLine(vMaxCursorPos - ImVec2(0.0f, fCursorOff), vMaxCursorPos - ImVec2(0.0f, 2.0f * fCursorOff), uOrange, fLineThickness);
+		}
+
+		// Cross Center
+		pDrawList->AddLine(oDragZone.GetCenter() - ImVec2(fCursorOff, 0.0f), oDragZone.GetCenter() + ImVec2(fCursorOff, 0.0f), uFrameCol, 1.0f);
+		pDrawList->AddLine(oDragZone.GetCenter() - ImVec2(0.0f, fCursorOff), oDragZone.GetCenter() + ImVec2(0.0f, fCursorOff), uFrameCol, 1.0f);
+		//////////////////////////////////////////////////////////////////////////
+		// Top Left
+		pDrawList->AddLine(oRect.Min, ImVec2(vMinCursorPos.x, oRect.Min.y), uOrange, fLineThickness);
+		pDrawList->AddLine(oRect.Min, ImVec2(oRect.Min.x, vMinCursorPos.y), uOrange, fLineThickness);
+		// Bottom Left
+		pDrawList->AddLine(ImVec2(oRect.Min.x, oRect.Max.y), ImVec2(vMinCursorPos.x - fCursorOff, oRect.Max.y), uOrange, fLineThickness);
+		pDrawList->AddLine(ImVec2(oRect.Min.x, oRect.Max.y), ImVec2(oRect.Min.x, vMaxCursorPos.y), uOrange, fLineThickness);
+		// 
+		pDrawList->AddLine(ImVec2(vMinCursorPos.x + fCursorOff, oRect.Max.y), ImVec2(vMaxCursorPos.x - fCursorOff, oRect.Max.y), uOrange, fLineThickness);
+		pDrawList->AddLine(ImVec2(vMaxCursorPos.x + fCursorOff, oRect.Max.y), ImVec2(oRect.Max.x, oRect.Max.y), uOrange, fLineThickness);
+		// Right
+		pDrawList->AddLine(oRect.Max, ImVec2(oRect.Max.x, vMaxCursorPos.y + fCursorOff), uOrange, fLineThickness);
+		pDrawList->AddLine(ImVec2(oRect.Max.x, vMaxCursorPos.y - fCursorOff), ImVec2(oRect.Max.x, vMinCursorPos.y + fCursorOff), uOrange, fLineThickness);
+		pDrawList->AddLine(ImVec2(oRect.Max.x, vMinCursorPos.y - fCursorOff), ImVec2(oRect.Max.x, oRect.Min.y), uOrange, fLineThickness);
+		// Top Right
+		pDrawList->AddLine(ImVec2(oRect.Max.x, oRect.Min.y), ImVec2(vMaxCursorPos.x, oRect.Min.y), uOrange, fLineThickness);
+		// Top Handle
+		pDrawList->AddLine(ImVec2(vMinCursorPos.x, oRect.Min.y - fCursorOff), ImVec2(vMinCursorPos.x, oRect.Min.y + fCursorOff), uBlue, fLineThickness);
+		pDrawList->AddLine(ImVec2(vMaxCursorPos.x, oRect.Min.y - fCursorOff), ImVec2(vMaxCursorPos.x, oRect.Min.y + fCursorOff), uBlue, fLineThickness);
+		pDrawList->AddRectFilled(oWidthHandle.Min, oWidthHandle.Max, uBlue);
+		// Left Handle
+		pDrawList->AddLine(ImVec2(oRect.Min.x - fCursorOff, vMinCursorPos.y), ImVec2(oRect.Min.x + fCursorOff, vMinCursorPos.y), uBlue, fLineThickness);
+		pDrawList->AddLine(ImVec2(oRect.Min.x - fCursorOff, vMaxCursorPos.y), ImVec2(oRect.Min.x + fCursorOff, vMaxCursorPos.y), uBlue, fLineThickness);
+		pDrawList->AddRectFilled(oHeightHandle.Min, oHeightHandle.Max, uBlue);
+		// Dots
+		pDrawList->AddCircleFilled(ImVec2(oRect.Max.x, vMinCursorPos.y), 2.0f, uBlue, 3);
+		pDrawList->AddCircleFilled(ImVec2(oRect.Max.x, vMaxCursorPos.y), 2.0f, uBlue, 3);
+		pDrawList->AddCircleFilled(ImVec2(vMinCursorPos.x, oRect.Max.y), 2.0f, uBlue, 3);
+		pDrawList->AddCircleFilled(ImVec2(vMaxCursorPos.x, oRect.Max.y), 2.0f, uBlue, 3);
+		//////////////////////////////////////////////////////////////////////////
+
+		ImGui::PopID();
+
+		//ImGui::Dummy(vHeightOffset);
+		ImGui::Dummy(vHeightOffset);
+		ImGui::Dummy(vSize);
+
+		ImGui::Text("Min x: %f", fCurMinX);
+		ImGui::Text("Min y: %f", fCurMinY);
+		ImGui::Text("Max x: %f", fCurMaxX);
+		ImGui::Text("Max y: %f", fCurMaxY);
+
+		ImGui::Dummy(vHeightOffset);
+
+		return bModified;
+	}
+
+	bool RangeSelectVec2(const char* pLabel, ImVec2* pCurMin, ImVec2* pCurMax, ImVec2 const vBoundMin, ImVec2 const vBoundMax, float const fScale /*= 1.0f*/)
+	{
+		return RangeSelect2D(pLabel, &pCurMin->x, &pCurMin->y, &pCurMax->x, &pCurMax->y, vBoundMin.x, vBoundMin.y, vBoundMax.x, vBoundMax.y, fScale);
+	}
+
 	bool Slider2DScalar(char const* pLabel, ImGuiDataType data_type, void* p_valueX, void* p_valueY, void* p_minX, void* p_maxX, void* p_minY, void* p_maxY, float const fScale /*= 1.0f*/)
 	{
 		assert(ScalarToFloat(data_type, (ImU64*)p_minX) < ScalarToFloat(data_type, (ImU64*)p_maxX));
