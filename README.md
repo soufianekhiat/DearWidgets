@@ -34,6 +34,10 @@ TODO: Add support for 2D (angle, radius) lambda
 
 ![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/GQLfC3C7Jk.gif)
 
+* Custom Color Ring
+
+![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/Kt4ye6FDWq.gif)
+
 * Chromatic Plot{Bilinear, Nearest}
     * Chromatic Point
     * Chromatic Line
