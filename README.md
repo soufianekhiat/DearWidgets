@@ -55,7 +55,6 @@ Use carefully that can have impact on your performances for HighRes canvas or/an
 
 ![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/W0Q9VXNeGK.gif)
 
-
 ### Draft
 
 Draft means draft.
@@ -81,7 +80,7 @@ A version for Slider2DScaler is available for (Im{S|U}{8,16,32,64}, Float and Do
 
 * Range Select 2D
 
-
+![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/RangeSelect2D_EnvhshMO1B.gif)
 
 * Slider 3D
 
