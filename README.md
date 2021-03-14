@@ -2,6 +2,12 @@
 Collection of draw (from ImDrawList) and widgets I use.
 Version 0.0.0.0.1
 
+Incentivise development [Patreon](https://www.patreon.com/SoufianeKHIAT)
+
+[<img src="https://c5.patreon.com/external/logo/become_a_patron_button@2x.png" alt="Become a Patron" width="150"/>](https://www.patreon.com/SoufianeKHIAT)
+
+https://www.patreon.com/SoufianeKHIAT
+
 PR & Discussion are open.
 
 ## Features
@@ -72,6 +78,10 @@ A version for Slider2DScaler is available for (Im{S|U}{8,16,32,64}, Float and Do
 * Slider 2D Int
 
 ![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/PGFHy3o6Tg.gif)
+
+* Range Select 2D
+
+
 
 * Slider 3D
 

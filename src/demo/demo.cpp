@@ -551,6 +551,14 @@ namespace ImWidgets {
 					Slider2DInt("Slider 2D Int", &curX, &curY, &minX, &maxX, &minY, &maxY, 0.75f);
 					ImGui::TreePop();
 				}
+				if (ImGui::TreeNode("Range Select 2D"))
+				{
+					static ImVec2 min(-0.5f, -0.5f);
+					static ImVec2 max(0.5f, 0.5f);
+
+					RangeSelect2D("Range Select 2D", &min.x, &min.y, &max.x, &max.y, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f);
+					ImGui::TreePop();
+				}
 				if (ImGui::TreeNode("Slider 3D"))
 				{
 					static ImVec4 cur3D;
