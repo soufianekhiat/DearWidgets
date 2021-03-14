@@ -16,7 +16,7 @@ PR & Discussion are open.
 
 Used internally for LineSlider
 
-![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/dearwidgetsdemo_mRxPnn8bNH.png)
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/dearwidgetsdemo_mRxPnn8bNH.png)
 
 * Hue Band
 * Luminance Band
@@ -24,19 +24,19 @@ Used internally for LineSlider
 
 Used Internally to implement HueSelector.
 
-![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/dearwidgetsdemo_mw6vQsfBi7.png)
-![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/dearwidgetsdemo_4ufS2JkG81.png)
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/dearwidgetsdemo_mw6vQsfBi7.png)
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/dearwidgetsdemo_4ufS2JkG81.png)
 
 * Color Ring
 
 TODO: Ring HueSelector
 TODO: Add support for 2D (angle, radius) lambda
 
-![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/GQLfC3C7Jk.gif)
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/GQLfC3C7Jk.gif)
 
 * Custom Color Ring
 
-![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/Kt4ye6FDWq.gif)
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/Kt4ye6FDWq.gif)
 
 * Chromatic Plot{Bilinear, Nearest}
     * Chromatic Point
@@ -48,19 +48,19 @@ TODO: Add support for 2D (angle, radius) lambda
 
 Support for ConvexMask, will fail or flip triangle if the shape is not convex. In practice some non-convex shape could work if all vertices are visible from the corner of the BoundingBox Used.
 
-![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/kYA3Dw6TmH.gif)
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/kYA3Dw6TmH.gif)
 
 * DrawColorDensityPlot (aka ShaderToy)
 
 Use carefully that can have impact on your performances for HighRes canvas or/and expensive lambda.
 
-![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/us8Fc2jkIh.png)
-![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/yEGBSzv2F8.gif)
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/us8Fc2jkIh.png)
+![](hhttps://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/yEGBSzv2F8.gif)
 
 ### Widgets
 * Hue Selector
 
-![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/W0Q9VXNeGK.gif)
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/W0Q9VXNeGK.gif)
 
 ### Draft
 
@@ -70,42 +70,42 @@ Draft means draft.
 
 * ChromaticityPlot
 
-![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/ChromaticityPlot_puswCA4lPP.gif)
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/ChromaticityPlot_puswCA4lPP.gif)
 
 #### Widgets
 
 * DragLengthScalar
 
-![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/XQ3kGD9aAW.gif)
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/XQ3kGD9aAW.gif)
 
 * Slider 2D Float
 A version for Slider2DScaler is available for (Im{S|U}{8,16,32,64}, Float and Double)
 
-![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/0dkkSCsb5Y.gif)
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/0dkkSCsb5Y.gif)
 
 * Slider 2D Int
 
-![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/PGFHy3o6Tg.gif)
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/PGFHy3o6Tg.gif)
 
 * Range Select 2D
 
-![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/RangeSelect2D_EnvhshMO1B.gif)
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/RangeSelect2D_EnvhshMO1B.gif)
 
 * Slider 3D
 
-![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/IQZMEeqfx0.gif)
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/IQZMEeqfx0.gif)
 
 * Grid
 
-![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/Wj5zT2ESJu.gif)
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/Wj5zT2ESJu.gif)
 
 * 2D Move
 
-![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/FoeyB7aWSp.gif)
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/FoeyB7aWSp.gif)
 
 * Line Slider (TBD)
 
-![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/4haBv2KuX7.gif)
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/4haBv2KuX7.gif)
 
 
 ## Constrains
