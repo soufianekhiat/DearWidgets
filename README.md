@@ -41,6 +41,9 @@ TODO: Add support for 2D (angle, radius) lambda
 * Chromatic Plot{Bilinear, Nearest}
     * Chromatic Point
     * Chromatic Line
+
+![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/ChromaticityPlot_puswCA4lPP.gif)
+
 * Convex Mask
 
 Support for ConvexMask, will fail or flip triangle if the shape is not convex. In practice some non-convex shape could work if all vertices are visible from the corner of the BoundingBox Used.
@@ -66,6 +69,8 @@ Draft means draft.
 #### Draw
 
 * ChromaticityPlot
+
+![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/ChromaticityPlot_puswCA4lPP.gif)
 
 #### Widgets
 
