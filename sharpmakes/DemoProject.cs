@@ -22,27 +22,27 @@ namespace DearWidgets
             SourceFiles.Add("[project.ExternPath]/imgui/imgui_draw.cpp");
 
             // Mains
-            SourceFiles.Add(@"[project.RootPath]/src/demo/main_dx11.cpp");
-            SourceFiles.Add(@"[project.RootPath]/src/demo/main_dx12.cpp");
+            // SourceFiles.Add(@"[project.RootPath]/src/demo/main_dx11.cpp");
+            // SourceFiles.Add(@"[project.RootPath]/src/demo/main_dx12.cpp");
 
             // Backend
-            SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_win32.h");
-            SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_win32.cpp");
+            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_win32.h");
+            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_win32.cpp");
 
-            SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_dx11.h");
-            SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_dx11.cpp");
+            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_dx11.h");
+            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_dx11.cpp");
 
-            SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_dx12.h");
-            SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_dx12.cpp");
+            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_dx12.h");
+            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_dx12.cpp");
 
-            SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_opengl3.h");
-            SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_opengl3.cpp");
+            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_opengl3.h");
+            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_opengl3.cpp");
 
-            SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_vulkan.h");
-            SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_vulkan.cpp");
+            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_vulkan.h");
+            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_vulkan.cpp");
 
-            SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_wgpu.h");
-            SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_wgpu.cpp");
+            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_wgpu.h");
+            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_wgpu.cpp");
         }
 
         [Configure()]
@@ -62,9 +62,25 @@ namespace DearWidgets
             //SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_glfw.h");
             //SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_glfw.cpp");
 
+            if (target.Api == TargetAPI.D3D9)
+            {
+                conf.LibraryFiles.Add("d3d9.lib");
+            }
+            if (target.Api == TargetAPI.D3D10)
+            {
+                conf.LibraryFiles.Add("d3d10.lib");
+                conf.LibraryFiles.Add("d3dcompiler.lib");
+                conf.LibraryFiles.Add("dxgi.lib");
+            }
             if (target.Api == TargetAPI.D3D11)
             {
                 conf.LibraryFiles.Add("d3d11.lib");
+                conf.LibraryFiles.Add("d3dcompiler.lib");
+                conf.LibraryFiles.Add("dxgi.lib");
+            }
+            if (target.Api == TargetAPI.D3D11)
+            {
+                conf.LibraryFiles.Add("d3d12.lib");
                 conf.LibraryFiles.Add("d3dcompiler.lib");
                 conf.LibraryFiles.Add("dxgi.lib");
             }

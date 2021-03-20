@@ -3,6 +3,8 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui_internal.h>
 
+#include "ImPlatform.h"
+
 #include <vector>
 #include <random>
 
@@ -112,6 +114,51 @@ ImU32 sdHorseshoeColor(ImVec2 p, float fTime)
 	return IM_COL32( 255 * col.x, 255 * col.y, 255 * col.z, 255);
 }
 #pragma endregion ShaderToyHelper
+
+int main()
+{
+	if ( !ImWidgets::ImInit( "Dear Widgets Demo", 1024, 764 ) )
+		return 1;
+
+	// Setup Dear ImGui context
+	ImGuiIO& io = ImGui::GetIO(); (void)io;
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;		// Enable Keyboard Controls
+	////io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;	// Enable Gamepad Controls
+	//io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;			// Enable Docking
+	//io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;		// Enable Multi-Viewport / Platform Windows
+	////io.ConfigViewportsNoAutoMerge = true;
+	////io.ConfigViewportsNoTaskBarIcon = true;
+
+	io.Fonts->AddFontFromFileTTF("../extern/FiraCode/distr/ttf/FiraCode-Medium.ttf", 16.0f);
+
+	// Setup Dear ImGui style
+	ImGui::StyleColorsDark();
+	//ImGui::StyleColorsClassic();
+
+	// When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
+	ImGuiStyle& style = ImGui::GetStyle();
+	//if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+	//{
+	//	style.WindowRounding = 0.0f;
+	//	style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+	//}
+
+	ImWidgets::ImBegin();
+
+	while ( ImWidgets::ImPlatformContinue() )
+	{
+		if ( !ImWidgets::ImBeginFrame() )
+			continue;
+
+			ImWidgets::ShowDemo();
+
+		ImWidgets::ImEndFrame( ImVec4( 0.0f, 0.0f, 0.0f, 1.0f ) );
+	}
+
+	ImWidgets::ImEnd();
+
+	return 0;
+}
 
 namespace ImWidgets {
 	void	ShowDemo()

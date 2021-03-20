@@ -13,8 +13,8 @@ namespace DearWidgets
         public DearWidgetsSolution()
         {
             Name = "DearWidgets";
-            AddTargets(new DearTarget(Platform.win64,
-                                      TargetAPI.D3D12 | TargetAPI.D3D11 | TargetAPI.OpenGL3 | TargetAPI.Vulkan | TargetAPI.WGPU,
+            AddTargets(new DearTarget(Platform.win64 | Platform.linux,//w | Platform.mac,
+                                      TargetAPI.D3D9 | TargetAPI.D3D10 | TargetAPI.OpenGL3,
                                       Optimization.Debug | Optimization.Release,
                                       BuildType.APIOnly | BuildType.DemoOnly | BuildType.Full));
         }
@@ -28,15 +28,19 @@ namespace DearWidgets
 
             conf.SolutionPath = SolutionRootPath;
 
-            if (target.Build == BuildType.APIOnly || target.Build == BuildType.Full)
-            {
-                conf.AddProject<APIProject>(target);
-            }
-            if (target.Build == BuildType.DemoOnly || target.Build == BuildType.Full)
-            {
-                conf.AddProject<DemoProject>(target);
-            }
-        }
+			if (target.Platform == Platform.linux && target.Api == TargetAPI.OpenGL3 ||
+				target.Platform == Platform.win64)
+			{
+				if (target.Build == BuildType.APIOnly || target.Build == BuildType.Full)
+				{
+					conf.AddProject<APIProject>(target);
+				}
+				if (target.Build == BuildType.DemoOnly || target.Build == BuildType.Full)
+				{
+					conf.AddProject<DemoProject>(target);
+				}
+			}
+		}
     }
 
     public class Main

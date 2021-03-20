@@ -15,11 +15,14 @@ namespace DearWidgets
     [Fragment, Flags]
     public enum TargetAPI
     {
-        D3D12 = (1 << 0),
-        Vulkan = (1 << 1),
+        D3D9 = (1 << 0),
+        D3D10 = (1 << 1),
         D3D11 = (1 << 2),
-        OpenGL3 = (1 << 3),
-        WGPU = (1 << 4),
+        D3D12 = (1 << 3),
+        Vulkan = (1 << 4),
+        OpenGL2 = (1 << 5),
+        OpenGL3 = (1 << 6),
+        WGPU = (1 << 7),
     }
 
     [Fragment, Flags]
@@ -70,12 +73,8 @@ namespace DearWidgets
 			RootPath = ProjectRootPath;
 			CustomProperties.Add( "VcpkgEnabled", "false" );
 
-			AddTargets(new DearTarget(	Platform.win64,
-										TargetAPI.D3D12 |
-										TargetAPI.D3D11 |
-										TargetAPI.Vulkan |
-										TargetAPI.OpenGL3 |
-										TargetAPI.WGPU,
+			AddTargets(new DearTarget(	Platform.win64 | Platform.linux,// | Platform.mac,
+										TargetAPI.D3D9 | TargetAPI.D3D10 | TargetAPI.OpenGL3,
 										Optimization.Debug | Optimization.Release,
 										BuildType.APIOnly | BuildType.DemoOnly | BuildType.Full ) );
 		}
@@ -134,6 +133,18 @@ namespace DearWidgets
 			//conf.Defines.Add("ImDrawIdx=unsigned int");
 		}
 
+		[Configure(Platform.mac)]
+		public virtual void ConfigureMax(Configuration conf, DearTarget target)
+		{
+			conf.Defines.Add("__DEAR_MAC__");
+		}
+
+		[Configure(Platform.linux)]
+		public virtual void ConfigureLinux(Configuration conf, DearTarget target)
+		{
+			conf.Defines.Add("__DEAR_LINUX__");
+		}
+
 		[Configure(Platform.win64)]
 		public virtual void ConfigureWindows(Configuration conf, DearTarget target)
 		{
@@ -161,16 +172,34 @@ namespace DearWidgets
 			conf.Options.Add(Sharpmake.Options.Vc.Linker.Reference.EliminateUnreferencedData);
 		}
 
+		[Configure(TargetAPI.D3D9)]
+		public virtual void ConfigureD3D9(Configuration conf, DearTarget target)
+		{
+			conf.Defines.Add("__DEAR_GFX_DX9__");
+        }
+
+		[Configure(TargetAPI.D3D10)]
+		public virtual void ConfigureD3D10(Configuration conf, DearTarget target)
+		{
+			conf.Defines.Add("__DEAR_GFX_DX10__");
+        }
+
 		[Configure(TargetAPI.D3D11)]
 		public virtual void ConfigureD3D11(Configuration conf, DearTarget target)
 		{
-			conf.Defines.Add("__DEAR_GFX_D3D11__");
+			conf.Defines.Add("__DEAR_GFX_DX11__");
         }
 
 		[Configure(TargetAPI.D3D12)]
 		public virtual void ConfigureD3D12(Configuration conf, DearTarget target)
 		{
-			conf.Defines.Add("__DEAR_GFX_D3D12__");
+			conf.Defines.Add("__DEAR_GFX_DX12__");
+        }
+
+		[Configure(TargetAPI.OpenGL2)]
+		public virtual void ConfigureOpenGL2(Configuration conf, DearTarget target)
+		{
+			conf.Defines.Add("__DEAR_GFX_OGL2__");
         }
 
 		[Configure(TargetAPI.OpenGL3)]
