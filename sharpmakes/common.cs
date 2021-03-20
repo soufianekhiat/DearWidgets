@@ -22,7 +22,8 @@ namespace DearWidgets
         Vulkan = (1 << 4),
         OpenGL2 = (1 << 5),
         OpenGL3 = (1 << 6),
-        WGPU = (1 << 7),
+        Metal = (1 << 7),
+        WGPU = (1 << 8),
     }
 
     [Fragment, Flags]
@@ -212,6 +213,12 @@ namespace DearWidgets
 		public virtual void ConfigureVulkan(Configuration conf, DearTarget target)
 		{
 			conf.Defines.Add("__DEAR_GFX_VULKAN__");
+        }
+
+		[Configure(TargetAPI.Metal)]
+		public virtual void ConfigureMetal(Configuration conf, DearTarget target)
+		{
+			conf.Defines.Add("__DEAR_METAL__");
         }
 
 		[Configure(TargetAPI.WGPU)]

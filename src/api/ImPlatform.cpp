@@ -1,22 +1,25 @@
 #include <ImPlatform.h>
 
+// TODO: OpenGL Loader
+
 // INTERNAL_MACRO
 #define IM_GFX_OPENGL2		( 1u << 0u )
 #define IM_GFX_OPENGL3		( 1u << 1u )
 #define IM_GFX_DIRECTX9		( 1u << 2u )
 #define IM_GFX_DIRECTX10	( 1u << 3u )
 #define IM_GFX_DIRECTX11	( 1u << 4u )
-//#define IM_GFX_DIRECTX12	( 1u << 5u )
+#define IM_GFX_DIRECTX12	( 1u << 5u )
 #define IM_GFX_VULKAN		( 1u << 6u )
 #define IM_GFX_METAL		( 1u << 7u )
+#define IM_GFX_WGPU			( 1u << 8u )
 
-#define IM_GFX_MASK			0x000000FFu
+#define IM_GFX_MASK			0x0000FFFFu
 
-#define IM_PLATFORM_WIN32	( ( 1u << 0u ) << 8u )
-#define IM_PLATFORM_GLFW	( ( 1u << 1u ) << 8u )
-#define IM_PLATFORM_APPLE	( ( 1u << 2u ) << 8u )
+#define IM_PLATFORM_WIN32	( ( 1u << 0u ) << 16u )
+#define IM_PLATFORM_GLFW	( ( 1u << 1u ) << 16u )
+#define IM_PLATFORM_APPLE	( ( 1u << 2u ) << 16u )
 
-#define IM_PLATFORM_MASK	0x0000FF00u
+#define IM_PLATFORM_MASK	0xFFFF0000u
 
 // Possible Permutation
 #define IM_TARGET_WIN32_DX9		( IM_PLATFORM_WIN32 | IM_GFX_DIRECTX9 )
@@ -51,7 +54,7 @@
 #elif defined(__DEAR_LINUX__)
 #define IM_CURRENT_PLATFORM IM_PLATFORM_GLFW
 #elif defined(__DEAR_MAC__)
-#define IM_CURRENT_PLATFORM IM_PLATFORM_GLFW
+#define IM_CURRENT_PLATFORM IM_PLATFORM_APPLE
 #else
 #endif
 
@@ -67,16 +70,22 @@
 #define IM_CURRENT_GFX IM_GFX_OPENGL2
 #elif defined(__DEAR_GFX_OGL3__)
 #define IM_CURRENT_GFX IM_GFX_OPENGL3
+#elif defined(__DEAR_GFX_VULKAN__)
+#define IM_CURRENT_GFX IM_GFX_VULKAN
+#elif defined(__DEAR_METAL__)
+#define IM_CURRENT_GFX IM_GFX_METAL
 #else
 #endif
 
-#if defined(IM_CURRENT_PLATFORM) && defined(IM_CURRENT_GFX)
-#define IM_CURRENT_TARGET ( IM_CURRENT_PLATFORM | IM_CURRENT_GFX )
-#endif
+//#if defined(IM_CURRENT_PLATFORM) && defined(IM_CURRENT_GFX)
+//#define IM_CURRENT_TARGET ( IM_CURRENT_PLATFORM | IM_CURRENT_GFX )
+//#endif
+
+#define IM_CURRENT_TARGET ( IM_PLATFORM_WIN32 | IM_GFX_OPENGL3 )
 
 #ifndef IM_CURRENT_TARGET
 #ifdef _WIN32
-#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX10
+#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX11
 #elif defined(__APPLE__)
 #define IM_CURRENT_TARGET IM_TARGET_APPLE_METAL
 #elif defined(UNIX)
@@ -136,6 +145,49 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 #pragma comment( lib, "d3dcompiler.lib" )
 #pragma comment( lib, "dxgi.lib" )
 
+#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_VULKAN)
+#include <imgui/backends/imgui_impl_vulkan.h>
+#include <imgui/backends/imgui_impl_vulkan.cpp>
+#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_METAL)
+#include <imgui/backends/imgui_impl_metal.h>
+#include <imgui/backends/imgui_impl_metal.cpp>
+#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL2)
+#include <imgui/backends/imgui_impl_opengl2.h>
+#include <imgui/backends/imgui_impl_opengl2.cpp>
+#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL3)
+#include <imgui/backends/imgui_impl_opengl3.h>
+#include <imgui/backends/imgui_impl_opengl3.cpp>
+
+#pragma comment( lib, "opengl32.lib" )
+
+#define IM_OPENGL_GLAD // Use Glad by default
+
+#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_WGPU)
+#include <imgui/backends/imgui_impl_wgpu.h>
+#include <imgui/backends/imgui_impl_wgpu.cpp>
+
+#endif
+
+#if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL2) || ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL3)
+#if defined(IM_OPENGL_GL3W)
+#include <GL/gl3w.h>            // Initialize with gl3wInit()
+#elif defined(IM_OPENGL_GLEW)
+#include <GL/glew.h>            // Initialize with glewInit()
+#elif defined(IM_OPENGL_GLAD)
+#include <glad/glad.h>          // Initialize with gladLoadGL()
+#elif defined(IM_OPENGL_GLBINDING2)
+#define GLFW_INCLUDE_NONE       // GLFW including OpenGL headers causes ambiguity or multiple definition errors.
+#include <glbinding/Binding.h>  // Initialize with glbinding::Binding::initialize()
+#include <glbinding/gl/gl.h>
+using namespace gl;
+#elif defined(IM_OPENGL_GLBINDING3)
+#define GLFW_INCLUDE_NONE       // GLFW including OpenGL headers causes ambiguity or multiple definition errors.
+#include <glbinding/glbinding.h>// Initialize with glbinding::initialize()
+#include <glbinding/gl/gl.h>
+using namespace gl;
+#else
+#error OpenGL Not defined properly {IM_OPENGL_GL3W, IM_OPENGL_GLEW, IM_OPENGL_GLAD, IM_OPENGL_GLBINDING2, IM_OPENGL_GLBINDING3} or custom
+#endif
 #endif
 
 static struct
@@ -149,8 +201,11 @@ static struct
 #else
 #error IM_CURRENT_TARGET not specified correctly
 #endif
-
-#if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX9)
+#if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL2)
+#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL3)
+	HDC						pDevContext		= nullptr;
+	char const*				pGLSLVersion	= "#version 130";
+#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX9)
 	LPDIRECT3D9				pD3D		= nullptr;
 	LPDIRECT3DDEVICE9		pD3DDevice	= nullptr;
 	D3DPRESENT_PARAMETERS	oD3Dpp		= {};
@@ -159,6 +214,10 @@ static struct
 	IDXGISwapChain*			pSwapChain				= nullptr;
 	ID3D10RenderTargetView*	pMainRenderTargetView	= nullptr;
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX11)
+	ID3D11Device*			pD3DDevice				= NULL;
+	ID3D11DeviceContext*	pD3DDeviceContext		= NULL;
+	IDXGISwapChain*			pSwapChain				= NULL;
+	ID3D11RenderTargetView*	pMainRenderTargetView	= NULL;
 //#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX12)
 #endif
 
@@ -170,7 +229,7 @@ namespace ImWidgets
 	LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 #endif
 
-#if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX9) || ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX10) || ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX11) //|| ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX12)
+#if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX9) || ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX10) || ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX11) || ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX12)
 
 #if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX10) || ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX11) || ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX12)
 	void	ImCreateRenderTarget()
@@ -181,10 +240,31 @@ namespace ImWidgets
 		PlatformData.pD3DDevice->CreateRenderTargetView(pBackBuffer, NULL, &PlatformData.pMainRenderTargetView);
 		pBackBuffer->Release();
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX11)
+		ID3D11Texture2D* pBackBuffer;
+		PlatformData.pSwapChain->GetBuffer( 0, IID_PPV_ARGS( &pBackBuffer ) );
+		PlatformData.pD3DDevice->CreateRenderTargetView( pBackBuffer, NULL, &PlatformData.pMainRenderTargetView );
+		pBackBuffer->Release();
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX12)
 #endif
 	}
 #endif
+
+	void	ImCleanupRenderTarget()
+	{
+#if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX10)
+		if (PlatformData.pMainRenderTargetView)
+		{
+			PlatformData.pMainRenderTargetView->Release();
+			PlatformData.pMainRenderTargetView = nullptr;
+		}
+#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX11)
+		ID3D11Texture2D* pBackBuffer;
+		PlatformData.pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
+		PlatformData.pD3DDevice->CreateRenderTargetView(pBackBuffer, nullptr, &PlatformData.pMainRenderTargetView);
+		pBackBuffer->Release();
+#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX12)
+#endif
+	}
 
 	bool ImCreateDeviceD3D( HWND hWnd )
 	{
@@ -259,7 +339,7 @@ namespace ImWidgets
 		//createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
 		D3D_FEATURE_LEVEL featureLevel;
 		const D3D_FEATURE_LEVEL featureLevelArray[2] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0, };
-		if ( D3D11CreateDeviceAndSwapChain( nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, uCreateDeviceFlags, featureLevelArray, 2, D3D11_SDK_VERSION, &oSwapDesc, &g_pSwapChain, &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext ) != S_OK )
+		if ( D3D11CreateDeviceAndSwapChain( nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, uCreateDeviceFlags, featureLevelArray, 2, D3D11_SDK_VERSION, &oSwapDesc, &PlatformData.pSwapChain, &PlatformData.pD3DDevice, &featureLevel, &PlatformData.pD3DDeviceContext ) != S_OK )
 			return false;
 
 		ImCreateRenderTarget();
@@ -282,7 +362,34 @@ namespace ImWidgets
 			PlatformData.pD3D = nullptr;
 		}
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX10)
+		ImCleanupRenderTarget();
+		if ( PlatformData.pSwapChain )
+		{
+			PlatformData.pSwapChain->Release();
+			PlatformData.pSwapChain = nullptr;
+		}
+		if ( g_pd3dDevice )
+		{
+			PlatformData.pD3DDevice->Release();
+			PlatformData.pD3DDevice = nullptr;
+		}
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX11)
+		ImCleanupRenderTarget();
+		if ( PlatformData.pSwapChain )
+		{
+			PlatformData.pSwapChain->Release();
+			PlatformData.pSwapChain = nullptr;
+		}
+		if ( g_pd3dDeviceContext )
+		{
+			PlatformData.pD3DDeviceContext->Release();
+			PlatformData.pD3DDeviceContext = nullptr;
+		}
+		if ( g_pd3dDevice )
+		{
+			PlatformData.pD3DDevice->Release();
+			PlatformData.pD3DDevice = nullptr;
+		}
 #endif
 	}
 
@@ -297,19 +404,6 @@ namespace ImWidgets
 		ImGui_ImplDX9_CreateDeviceObjects();
 	}
 #endif
-
-	void	ImCleanupRenderTarget()
-	{
-#if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX10)
-		if ( PlatformData.pMainRenderTargetView )
-		{
-			PlatformData.pMainRenderTargetView->Release();
-			PlatformData.pMainRenderTargetView = nullptr;
-		}
-#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX11)
-#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX12)
-#endif
-	}
 #endif
 
 #if ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_WIN32)
@@ -322,30 +416,41 @@ namespace ImWidgets
 		switch ( msg )
 		{
 		case WM_SIZE:
+			if ( wParam != SIZE_MINIMIZED )
+			{
 #if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL2)
+				// TODO
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL3)
+				// TODO
+				//glViewport(0, 0, LOWORD(lParam), HIWORD(lParam));
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX9)
-			if (PlatformData.pD3DDevice != NULL && wParam != SIZE_MINIMIZED)
-			{
-				PlatformData.oD3Dpp.BackBufferWidth = LOWORD(lParam);
-				PlatformData.oD3Dpp.BackBufferHeight = HIWORD(lParam);
-				ImResetDevice();
-			}
+				if ( PlatformData.pD3DDevice != nullptr )
+				{
+					PlatformData.oD3Dpp.BackBufferWidth		= LOWORD(lParam);
+					PlatformData.oD3Dpp.BackBufferHeight	= HIWORD(lParam);
+					ImResetDevice();
+				}
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX10)
-
-			if (g_pd3dDevice != NULL && wParam != SIZE_MINIMIZED)
-			{
-				ImCleanupRenderTarget();
-				PlatformData.pSwapChain->ResizeBuffers( 0, (UINT)LOWORD(lParam), (UINT)HIWORD(lParam), DXGI_FORMAT_UNKNOWN, 0 );
-				ImCreateRenderTarget();
-			}
+				if ( PlatformData.pD3DDevice != nullptr )
+				{
+					ImCleanupRenderTarget();
+					PlatformData.pSwapChain->ResizeBuffers( 0, (UINT)LOWORD(lParam), (UINT)HIWORD(lParam), DXGI_FORMAT_UNKNOWN, 0 );
+					ImCreateRenderTarget();
+				}
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX11)
+				if ( PlatformData.pD3DDevice != nullptr )
+				{
+					ImCleanupRenderTarget();
+					PlatformData.pSwapChain->ResizeBuffers( 0, (UINT)LOWORD(lParam), (UINT)HIWORD(lParam), DXGI_FORMAT_UNKNOWN, 0 );
+					ImCreateRenderTarget();
+				}
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX12)
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK)) == IM_GFX_VULKAN)
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK)) == IM_GFX_METAL)
 #else
 #error IM_CURRENT_TARGET not specified correctly
 #endif
+			}
 			return 0;
 		case WM_SYSCOMMAND:
 			if ((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu
@@ -374,7 +479,7 @@ namespace ImWidgets
 		TCHAR szName[1024];
 		_tcscpy(szName, pWindowsName);
 
-		//ImGui_ImplWin32_EnableDpiAwareness();
+		ImGui_ImplWin32_EnableDpiAwareness();
 
 		PlatformData.oWinStruct = { sizeof(WNDCLASSEX), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, szName, nullptr };
 		::RegisterClassEx(&PlatformData.oWinStruct);
@@ -390,6 +495,37 @@ namespace ImWidgets
 	{
 #if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL2)
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL3)
+
+#if ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_WIN32)
+		PlatformData.pDevContext = GetDC( PlatformData.pHandle );
+
+		PIXELFORMATDESCRIPTOR pfd =
+		{
+			sizeof(PIXELFORMATDESCRIPTOR),
+			1,
+			PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER, // Flags
+			PFD_TYPE_RGBA,		// The kind of framebuffer. RGBA or palette.
+			32,					// Colordepth of the framebuffer.
+			0, 0, 0, 0, 0, 0,
+			0,
+			0,
+			0,
+			0, 0, 0, 0,
+			24,					// Number of bits for the depthbuffer
+			8,					// Number of bits for the stencilbuffer
+			0,					// Number of Aux buffers in the framebuffer.
+			PFD_MAIN_PLANE,
+			0,
+			0, 0, 0
+		};
+
+		int pixelFormat = ChoosePixelFormat( PlatformData.pDevContext, &pfd );
+		SetPixelFormat( PlatformData.pDevContext, pixelFormat, &pfd );
+		HGLRC glContext = wglCreateContext( PlatformData.pDevContext );
+
+		wglMakeCurrent( PlatformData.pDevContext, glContext );
+#endif
+
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX9) || ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX10) || ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX11) || ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX12)
 		if ( !ImCreateDeviceD3D( PlatformData.pHandle ) )
 		{
@@ -409,8 +545,8 @@ namespace ImWidgets
 	bool ImShowWindow()
 	{
 #if ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_WIN32)
-		::ShowWindow(PlatformData.pHandle, SW_SHOWDEFAULT);
-		::UpdateWindow(PlatformData.pHandle);
+		::ShowWindow( PlatformData.pHandle, SW_SHOWDEFAULT );
+		::UpdateWindow( PlatformData.pHandle );
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_GLFW)
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK)) == IM_PLATFORM_APPLE)
 #endif
@@ -440,6 +576,27 @@ namespace ImWidgets
 
 	void ImBegin()
 	{
+#if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL2) || ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL3)
+
+		// Initialize OpenGL loader
+#if defined(IM_OPENGL_GL3W)
+		bool err = gl3wInit() != 0;
+#elif defined(IM_OPENGL_GLEW)
+		bool err = glewInit() != GLEW_OK;
+#elif defined(IM_OPENGL_GLAD)
+		bool err = gladLoadGL() == 0;
+#elif defined(IM_OPENGL_GLBINDING2)
+		bool err = false;
+		glbinding::Binding::initialize();
+#elif defined(IM_OPENGL_GLBINDING3)
+		bool err = false;
+		glbinding::initialize([](const char* name) { return (glbinding::ProcAddress)glfwGetProcAddress(name); });
+#else
+		bool err = false; // If you use IMGUI_IMPL_OPENGL_LOADER_CUSTOM, your loader is likely to requires some form of initialization.
+#endif
+
+#endif
+
 #if ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_WIN32)
 		ImGui_ImplWin32_Init( PlatformData.pHandle );
 		ZeroMemory( &PlatformData.oMessage, sizeof( PlatformData.oMessage ) );
@@ -448,15 +605,21 @@ namespace ImWidgets
 #endif
 
 #if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL2)
+		ImGui_ImplOpenGL2_Init();
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL3)
+		ImGui_ImplOpenGL3_Init( PlatformData.pGLSLVersion );
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX9)
 		ImGui_ImplDX9_Init( PlatformData.pD3DDevice );
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX10)
 		ImGui_ImplDX10_Init( PlatformData.pD3DDevice );
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX11)
-//#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX12)
+		ImGui_ImplDX11_Init( PlatformData.pD3DDevice, PlatformData.pD3DDeviceContext );
+#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX12)
+		ImGui_ImplDX12_Init(...);
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK)) == IM_GFX_VULKAN)
+		ImGui_ImplVulkan_Init(..);
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK)) == IM_GFX_METAL)
+		ImGui_ImplMetal_Init(..);
 #else
 #error IM_CURRENT_TARGET not specified correctly
 #endif
@@ -528,14 +691,23 @@ namespace ImWidgets
 	bool ImGfxAPINewFrame()
 	{
 #if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL2)
+		ImGui_ImplOpenGL2_NewFrame();
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL3)
+		ImGui_ImplOpenGL3_NewFrame();
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX9)
 		ImGui_ImplDX9_NewFrame();
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX10)
 		ImGui_ImplDX10_NewFrame();
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX11)
+		ImGui_ImplDX11_NewFrame();
+#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX12)
+		ImGui_ImplDX11_NewFrame();
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK)) == IM_GFX_VULKAN)
+		ImGui_ImplVulkan_NewFrame();
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK)) == IM_GFX_METAL)
+		ImGui_ImplMetal_NewFrame();
+#elif ((IM_CURRENT_TARGET & IM_GFX_MASK)) == IM_GFX_WGPU)
+		ImGui_ImplWGPU_NewFrame();
 #else
 #error IM_CURRENT_TARGET not specified correctly
 #endif
@@ -560,6 +732,12 @@ namespace ImWidgets
 
 #if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL2)
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL3)
+
+		ImGuiIO& io = ImGui::GetIO(); (void)io;
+		glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
+		glClearColor( vClearColor.x, vClearColor.y, vClearColor.z, vClearColor.w );
+		glClear(GL_COLOR_BUFFER_BIT);
+
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX9)
 		g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, FALSE);
 		g_pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
@@ -571,6 +749,9 @@ namespace ImWidgets
 		g_pd3dDevice->OMSetRenderTargets( 1, &PlatformData.pMainRenderTargetView, nullptr );
 		g_pd3dDevice->ClearRenderTargetView( PlatformData.pMainRenderTargetView, pClearColorWithAlpha );
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX11)
+		float const pClearColorWithAlpha[4] = { vClearColor.x * vClearColor.w, vClearColor.y * vClearColor.w, vClearColor.z * vClearColor.w, vClearColor.w };
+		g_pd3dDeviceContext->OMSetRenderTargets( 1, &PlatformData.pMainRenderTargetView, nullptr );
+		g_pd3dDeviceContext->ClearRenderTargetView( PlatformData.pMainRenderTargetView, pClearColorWithAlpha );
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK)) == IM_GFX_VULKAN)
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK)) == IM_GFX_METAL)
 #else
@@ -583,7 +764,11 @@ namespace ImWidgets
 	bool ImGfxAPIRender()
 	{
 #if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL2)
+		ImGui::Render();
+		ImGui_ImplOpenGL2_RenderDrawData( ImGui::GetDrawData() );
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL3)
+		ImGui::Render();
+		ImGui_ImplOpenGL3_RenderDrawData( ImGui::GetDrawData() );
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX9)
 		if ( PlatformData.pD3DDevice->BeginScene() >= 0 )
 		{
@@ -595,8 +780,20 @@ namespace ImWidgets
 		ImGui::Render();
 		ImGui_ImplDX10_RenderDrawData( ImGui::GetDrawData() );
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX11)
+		ImGui::Render();
+		ImGui_ImplDX11_RenderDrawData( ImGui::GetDrawData() );
+#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX12)
+		ImGui::Render();
+		ImGui_ImplDX12_RenderDrawData( ImGui::GetDrawData(), ... );
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK)) == IM_GFX_VULKAN)
+		ImGui::Render();
+		ImGui_ImplVulkan_RenderDrawData( ImGui::GetDrawData(), ... );
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK)) == IM_GFX_METAL)
+		ImGui::Render();
+		ImGui_ImplMetal_RenderDrawData( ImGui::GetDrawData(), ... );
+#elif ((IM_CURRENT_TARGET & IM_GFX_MASK)) == IM_GFX_WGPU)
+		ImGui::Render();
+		ImGui_ImplWGPU_RenderDrawData( ImGui::GetDrawData(), ... );
 #else
 #error IM_CURRENT_TARGET not specified correctly
 #endif
@@ -608,6 +805,17 @@ namespace ImWidgets
 	{
 #if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL2)
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL3)
+
+		//if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+		//{
+		//	HGLRC currentContext = wglGetCurrentContext();
+		//	ImGui::UpdatePlatformWindows();
+		//	ImGui::RenderPlatformWindowsDefault();
+		//	wglMakeCurrent(devContext, currentContext);
+		//}
+
+		SwapBuffers( PlatformData.pDevContext );
+
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX9)
 
 #if IMGUI_HAS_VIEWPORT
@@ -630,8 +838,13 @@ namespace ImWidgets
 		PlatformData.pSwapChain->Present(0, 0); // Present without vsync
 
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX11)
+
+		//g_pSwapChain->Present(1, 0); // Present with vsync
+		PlatformData.pSwapChain->Present( 0, 0 ); // Present without vsync
+
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK)) == IM_GFX_VULKAN)
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK)) == IM_GFX_METAL)
+#elif ((IM_CURRENT_TARGET & IM_GFX_MASK)) == IM_GFX_WGPU)
 #else
 #error IM_CURRENT_TARGET not specified correctly
 #endif
@@ -642,14 +855,21 @@ namespace ImWidgets
 	void ImShutdownGfxAPI()
 	{
 #if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL2)
+		ImGui_ImplOpenGL2_Shutdown();
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL3)
+		ImGui_ImplOpenGL3_Shutdown();
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX9)
 		ImGui_ImplDX9_Shutdown();
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX10)
 		ImGui_ImplDX10_Shutdown();
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX11)
+		ImGui_ImplDX11_Shutdown();
+#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX12)
+		ImGui_ImplDX12_Shutdown();
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK)) == IM_GFX_VULKAN)
+		ImGui_ImplVulkan_Shutdown();
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK)) == IM_GFX_METAL)
+		ImGui_ImplMetal_Shutdown();
 #else
 #error IM_CURRENT_TARGET not specified correctly
 #endif

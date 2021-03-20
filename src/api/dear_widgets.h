@@ -30,6 +30,14 @@
 //		- Color Remap:
 //////////////////////////////////////////////////////////////////////////
 
+#if !__cpp_if_constexpr
+#define constexpr
+#endif
+
+#if 0
+#define nullptr NULL
+#endif
+
 namespace ImWidgets {
 
 #define ImWidgets_Kibi (1024ull)
