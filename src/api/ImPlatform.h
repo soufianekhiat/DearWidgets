@@ -51,6 +51,8 @@
 #define IM_TARGET_GLFW_METAL	( IM_PLATFORM_GLFW | IM_GFX_METAL )
 #define IM_TARGET_GLFW_METAL	( IM_PLATFORM_GLFW | IM_GFX_METAL )
 
+#define IM_CURRENT_TARGET IM_TARGET_GLFW_OPENGL3
+
 #ifdef __DEAR_WIN__
 #define IM_CURRENT_PLATFORM IM_PLATFORM_WIN32
 #elif defined(__DEAR_LINUX__)
@@ -131,14 +133,17 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL2)
 #include <imgui/backends/imgui_impl_opengl2.h>
 
+#ifndef IM_OPENGL_LOADER
+#define IM_OPENGL_GLAD
+#endif
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL3)
 #include <imgui/backends/imgui_impl_opengl3.h>
 
-#define IM_OPENGL_GLAD // Use Glad by default
-
+#ifndef IM_OPENGL_LOADER
+#define IM_OPENGL_GLAD
+#endif
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_WGPU)
 #include <imgui/backends/imgui_impl_wgpu.h>
-
 #endif
 
 #if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL2) || ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL3)
@@ -170,13 +175,19 @@ static struct
 	WNDCLASSEX	oWinStruct;
 	MSG			oMessage;
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_GLFW)
+	GLFWwindow*	pWindow		=	nullptr;
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK)) == IM_PLATFORM_APPLE)
 #else
 #error IM_CURRENT_TARGET not specified correctly
 #endif
+
 #if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL2)
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL3)
+
+#if ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_WIN32)
 	HDC						pDevContext				= nullptr;
+#endif
+
 	char const*				pGLSLVersion			= "#version 130";
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX9)
 	LPDIRECT3D9				pD3D					= nullptr;

@@ -13,7 +13,7 @@ namespace DearWidgets
         public DearWidgetsSolution()
         {
             Name = "DearWidgets";
-            AddTargets(new DearTarget(Platform.win64 | Platform.linux,//w | Platform.mac,
+            AddTargets(new DearTarget(Platform.win64 | Platform.linux,// | Platform.mac,
                                       TargetAPI.D3D9 | TargetAPI.D3D10 | TargetAPI.OpenGL3,
                                       Optimization.Debug | Optimization.Release,
                                       BuildType.APIOnly | BuildType.DemoOnly | BuildType.Full));
@@ -33,11 +33,11 @@ namespace DearWidgets
 			{
 				if (target.Build == BuildType.APIOnly || target.Build == BuildType.Full)
 				{
-					conf.AddProject<APIProject>(target);
+					conf.AddProject< APIProject >(target);
 				}
 				if (target.Build == BuildType.DemoOnly || target.Build == BuildType.Full)
 				{
-					conf.AddProject<DemoProject>(target);
+					conf.AddProject< DemoProject >(target);
 				}
 			}
 		}

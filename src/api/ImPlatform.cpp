@@ -1,6 +1,5 @@
 #include <ImPlatform.h>
 
-
 #if ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_WIN32)
 #include <imgui/backends/imgui_impl_win32.h>
 #include <imgui/backends/imgui_impl_win32.cpp>
@@ -8,6 +7,9 @@
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_GLFW)
+#include <imgui/backends/imgui_impl_glfw.cpp>
+#include <GLFW/glfw3.h>
+
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK)) == IM_PLATFORM_APPLE)
 #else
 #error IM_CURRENT_TARGET not specified correctly
@@ -340,13 +342,36 @@ namespace ImWidgets
 
 		ImGui_ImplWin32_EnableDpiAwareness();
 
-		PlatformData.oWinStruct = { sizeof(WNDCLASSEX), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, szName, nullptr };
-		::RegisterClassEx(&PlatformData.oWinStruct);
+		PlatformData.oWinStruct = { sizeof( WNDCLASSEX ), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, szName, nullptr };
+		::RegisterClassEx( &PlatformData.oWinStruct );
 
-		PlatformData.pHandle = ::CreateWindow(PlatformData.oWinStruct.lpszClassName, szName, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, uWidth, uHeight, nullptr, nullptr, PlatformData.oWinStruct.hInstance, nullptr);
+		PlatformData.pHandle = ::CreateWindow( PlatformData.oWinStruct.lpszClassName, szName, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, uWidth, uHeight, nullptr, nullptr, PlatformData.oWinStruct.hInstance, nullptr );
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_GLFW)
+
+		if ( !glfwInit() )
+			return false;
+
+#if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL3)
+		// GL 3.0 + GLSL 130
+		const char* glsl_version = "#version 130";
+		glfwWindowHint( GLFW_CONTEXT_VERSION_MAJOR, 3 );
+		glfwWindowHint( GLFW_CONTEXT_VERSION_MINOR, 0 );
+		//glfwWindowHint( GLFW_CONTEXT_VERSION_MAJOR, 4 );
+		//glfwWindowHint( GLFW_CONTEXT_VERSION_MINOR, 6 );
+		///glfwWindowHint( GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE ); // 3.2+ only
+		//glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);           // 3.0+ only
+#endif
+
+		PlatformData.pWindow = glfwCreateWindow( uWidth, uHeight, pWindowsName, nullptr, nullptr );
+		if ( PlatformData.pWindow == nullptr )
+			return false;
+
+		glfwMakeContextCurrent( PlatformData.pWindow );
+		glfwSwapInterval( 1 );
+
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK)) == IM_PLATFORM_APPLE)
 #endif
+
 		return true;
 	}
 
@@ -407,6 +432,9 @@ namespace ImWidgets
 		::ShowWindow( PlatformData.pHandle, SW_SHOWDEFAULT );
 		::UpdateWindow( PlatformData.pHandle );
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_GLFW)
+
+		
+
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK)) == IM_PLATFORM_APPLE)
 #endif
 		return true;
@@ -453,13 +481,15 @@ namespace ImWidgets
 #else
 		bool err = false; // If you use IMGUI_IMPL_OPENGL_LOADER_CUSTOM, your loader is likely to requires some form of initialization.
 #endif
-
 #endif
 
 #if ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_WIN32)
 		ImGui_ImplWin32_Init( PlatformData.pHandle );
 		ZeroMemory( &PlatformData.oMessage, sizeof( PlatformData.oMessage ) );
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_GLFW)
+#if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL3)
+		ImGui_ImplGlfw_InitForOpenGL( PlatformData.pWindow, true );
+#endif
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK)) == IM_PLATFORM_APPLE)
 #endif
 
@@ -486,23 +516,26 @@ namespace ImWidgets
 
 	void ImEnd()
 	{
-#if ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_WIN32)
 		ImShutdownGfxAPI();
 		ImShutdownWindow();
+
 		ImGui::DestroyContext();
 
 		ImShutdownPostGfxAPI();
 
+#if ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_WIN32)
 		::DestroyWindow( PlatformData.pHandle );
 		::UnregisterClass( PlatformData.oWinStruct.lpszClassName, PlatformData.oWinStruct.hInstance );
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_GLFW)
+		glfwDestroyWindow( PlatformData.pWindow );
+		glfwTerminate();
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK)) == IM_PLATFORM_APPLE)
 #endif
 	}
 
 	bool ImBeginFrame()
 	{
-		if (ImWidgets::ImPlatformEvents())
+		if ( ImWidgets::ImPlatformEvents() )
 			return false;
 
 		ImWidgets::ImNewFrame();
@@ -524,6 +557,7 @@ namespace ImWidgets
 #if ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_WIN32)
 		return PlatformData.oMessage.message != WM_QUIT;
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_GLFW)
+		return !glfwWindowShouldClose( PlatformData.pWindow );
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK)) == IM_PLATFORM_APPLE)
 #endif
 	}
@@ -543,6 +577,8 @@ namespace ImWidgets
 			return false;
 		}
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_GLFW)
+		glfwPollEvents();
+		return false;
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK)) == IM_PLATFORM_APPLE)
 #endif
 	}
@@ -579,6 +615,7 @@ namespace ImWidgets
 #if ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_WIN32)
 		ImGui_ImplWin32_NewFrame();
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_GLFW)
+		ImGui_ImplGlfw_NewFrame();
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK)) == IM_PLATFORM_APPLE)
 #endif
 
@@ -589,13 +626,22 @@ namespace ImWidgets
 	{
 		ImGui::EndFrame();
 
+		ImS32 iWidth, iHeight;
+
 #if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL2)
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL3)
 
-		ImGuiIO& io = ImGui::GetIO(); (void)io;
-		glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
+#if ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_WIN32)
+
+		// TODO
+#elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_GLFW)
+		glfwGetFramebufferSize( PlatformData.pWindow, &iWidth, &iHeight );
+#elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK)) == IM_PLATFORM_APPLE)
+#endif
+
+		glViewport( 0, 0, iWidth, iHeight );
 		glClearColor( vClearColor.x, vClearColor.y, vClearColor.z, vClearColor.w );
-		glClear(GL_COLOR_BUFFER_BIT);
+		glClear( GL_COLOR_BUFFER_BIT );
 
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX9)
 		g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, FALSE);
@@ -673,7 +719,22 @@ namespace ImWidgets
 		//	wglMakeCurrent(devContext, currentContext);
 		//}
 
+#if ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_WIN32)
 		SwapBuffers( PlatformData.pDevContext );
+#elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_GLFW)
+
+		ImGuiIO& io = ImGui::GetIO();
+		if ( io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable )
+		{
+			GLFWwindow* pBackupCurrentContext = glfwGetCurrentContext();
+			ImGui::UpdatePlatformWindows();
+			ImGui::RenderPlatformWindowsDefault();
+			glfwMakeContextCurrent( pBackupCurrentContext );
+		}
+
+		glfwSwapBuffers( PlatformData.pWindow );
+#elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK)) == IM_PLATFORM_APPLE)
+#endif
 
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX9)
 
@@ -685,7 +746,7 @@ namespace ImWidgets
 		}
 #endif
 
-		HRESULT uResult = g_pd3dDevice->Present(NULL, NULL, NULL, NULL);
+		HRESULT uResult = g_pd3dDevice->Present( nullptr, nullptr, nullptr, nullptr );
 
 		// Handle loss of D3D9 device
 		if ( uResult == D3DERR_DEVICELOST && g_pd3dDevice->TestCooperativeLevel() == D3DERR_DEVICENOTRESET )
@@ -694,7 +755,7 @@ namespace ImWidgets
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX10)
 
 		//g_pSwapChain->Present(1, 0); // Present with vsync
-		PlatformData.pSwapChain->Present(0, 0); // Present without vsync
+		PlatformData.pSwapChain->Present( 0, 0 ); // Present without vsync
 
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX11)
 
@@ -753,6 +814,7 @@ namespace ImWidgets
 #if ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_WIN32)
 		ImGui_ImplWin32_Shutdown();
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_GLFW)
+		ImGui_ImplGlfw_Shutdown();
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_APPLE)
 #else
 #endif

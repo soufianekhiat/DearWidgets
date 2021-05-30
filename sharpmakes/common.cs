@@ -155,6 +155,14 @@ namespace DearWidgets
 			conf.Defines.Add("WINAPI_FAMILY=WINAPI_FAMILY_DESKTOP_APP");
 			conf.Defines.Add("_WIN32_WINNT=0x0600");
 			conf.Options.Add(Sharpmake.Options.Vc.Linker.RandomizedBaseAddress.Disable);
+			// GLFW
+            conf.IncludePaths.Add(@"[project.RootPath]/extern/GLFW/include");
+			conf.LibraryPaths.Add(@"[project.ExternPath]/glfw/lib-vc2019/");
+			conf.LibraryFiles.Add("glfw3.lib");
+			conf.LibraryFiles.Add("winmm.lib");
+			conf.LibraryFiles.Add("comctl32.lib");
+			conf.LibraryFiles.Add("msvcrt.lib");
+			conf.LibraryFiles.Add("msvcmrt.lib");
 		}
 
         [Configure(Optimization.Debug)]//, ConfigurePriority(2)]
