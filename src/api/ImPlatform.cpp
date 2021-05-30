@@ -1,163 +1,54 @@
 #include <ImPlatform.h>
 
-// TODO: OpenGL Loader
-
-// INTERNAL_MACRO
-#define IM_GFX_OPENGL2		( 1u << 0u )
-#define IM_GFX_OPENGL3		( 1u << 1u )
-#define IM_GFX_DIRECTX9		( 1u << 2u )
-#define IM_GFX_DIRECTX10	( 1u << 3u )
-#define IM_GFX_DIRECTX11	( 1u << 4u )
-#define IM_GFX_DIRECTX12	( 1u << 5u )
-#define IM_GFX_VULKAN		( 1u << 6u )
-#define IM_GFX_METAL		( 1u << 7u )
-#define IM_GFX_WGPU			( 1u << 8u )
-
-#define IM_GFX_MASK			0x0000FFFFu
-
-#define IM_PLATFORM_WIN32	( ( 1u << 0u ) << 16u )
-#define IM_PLATFORM_GLFW	( ( 1u << 1u ) << 16u )
-#define IM_PLATFORM_APPLE	( ( 1u << 2u ) << 16u )
-
-#define IM_PLATFORM_MASK	0xFFFF0000u
-
-// Possible Permutation
-#define IM_TARGET_WIN32_DX9		( IM_PLATFORM_WIN32 | IM_GFX_DIRECTX9 )
-#define IM_TARGET_WIN32_DX10	( IM_PLATFORM_WIN32 | IM_GFX_DIRECTX10 )
-#define IM_TARGET_WIN32_DX11	( IM_PLATFORM_WIN32 | IM_GFX_DIRECTX11 )
-
-#define IM_TARGET_APPLE_METAL	( IM_PLATFORM_APPLE | IM_GFX_METAL )
-#define IM_TARGET_APPLE_OPENGL2	( IM_PLATFORM_APPLE | IM_GFX_OPENGL2 )
-
-#define IM_TARGET_GLFW_OPENGL2	( IM_PLATFORM_GLFW | IM_GFX_OPENGL2 )
-#define IM_TARGET_GLFW_OPENGL2	( IM_PLATFORM_GLFW | IM_GFX_OPENGL2 )
-#define IM_TARGET_GLFW_OPENGL2	( IM_PLATFORM_GLFW | IM_GFX_OPENGL2 )
-#define IM_TARGET_GLFW_OPENGL2	( IM_PLATFORM_GLFW | IM_GFX_OPENGL2 )
-
-#define IM_TARGET_GLFW_OPENGL3	( IM_PLATFORM_GLFW | IM_GFX_OPENGL3 )
-#define IM_TARGET_GLFW_OPENGL3	( IM_PLATFORM_GLFW | IM_GFX_OPENGL3 )
-#define IM_TARGET_GLFW_OPENGL3	( IM_PLATFORM_GLFW | IM_GFX_OPENGL3 )
-#define IM_TARGET_GLFW_OPENGL3	( IM_PLATFORM_GLFW | IM_GFX_OPENGL3 )
-
-#define IM_TARGET_GLFW_VULKAN	( IM_PLATFORM_GLFW | IM_GFX_VULKAN )
-#define IM_TARGET_GLFW_VULKAN	( IM_PLATFORM_GLFW | IM_GFX_VULKAN )
-#define IM_TARGET_GLFW_VULKAN	( IM_PLATFORM_GLFW | IM_GFX_VULKAN )
-#define IM_TARGET_GLFW_VULKAN	( IM_PLATFORM_GLFW | IM_GFX_VULKAN )
-
-#define IM_TARGET_GLFW_METAL	( IM_PLATFORM_GLFW | IM_GFX_METAL )
-#define IM_TARGET_GLFW_METAL	( IM_PLATFORM_GLFW | IM_GFX_METAL )
-#define IM_TARGET_GLFW_METAL	( IM_PLATFORM_GLFW | IM_GFX_METAL )
-#define IM_TARGET_GLFW_METAL	( IM_PLATFORM_GLFW | IM_GFX_METAL )
-
-#ifdef __DEAR_WIN__
-#define IM_CURRENT_PLATFORM IM_PLATFORM_WIN32
-#elif defined(__DEAR_LINUX__)
-#define IM_CURRENT_PLATFORM IM_PLATFORM_GLFW
-#elif defined(__DEAR_MAC__)
-#define IM_CURRENT_PLATFORM IM_PLATFORM_APPLE
-#else
-#endif
-
-#ifdef __DEAR_GFX_DX9__
-#define IM_CURRENT_GFX IM_GFX_DIRECTX9
-#elif defined(__DEAR_GFX_DX10__)
-#define IM_CURRENT_GFX IM_GFX_DIRECTX10
-#elif defined(__DEAR_GFX_DX11__)
-#define IM_CURRENT_GFX IM_GFX_DIRECTX11
-#elif defined(__DEAR_GFX_DX12__)
-#define IM_CURRENT_GFX IM_GFX_DIRECTX12
-#elif defined(__DEAR_GFX_OGL2__)
-#define IM_CURRENT_GFX IM_GFX_OPENGL2
-#elif defined(__DEAR_GFX_OGL3__)
-#define IM_CURRENT_GFX IM_GFX_OPENGL3
-#elif defined(__DEAR_GFX_VULKAN__)
-#define IM_CURRENT_GFX IM_GFX_VULKAN
-#elif defined(__DEAR_METAL__)
-#define IM_CURRENT_GFX IM_GFX_METAL
-#else
-#endif
-
-//#if defined(IM_CURRENT_PLATFORM) && defined(IM_CURRENT_GFX)
-//#define IM_CURRENT_TARGET ( IM_CURRENT_PLATFORM | IM_CURRENT_GFX )
-//#endif
-
-#define IM_CURRENT_TARGET ( IM_PLATFORM_WIN32 | IM_GFX_OPENGL3 )
-
-#ifndef IM_CURRENT_TARGET
-#ifdef _WIN32
-#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX11
-#elif defined(__APPLE__)
-#define IM_CURRENT_TARGET IM_TARGET_APPLE_METAL
-#elif defined(UNIX)
-#define IM_CURRENT_TARGET IM_TARGET_GLFW_OPENGL3
-#endif
-#endif
 
 #if ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_WIN32)
 #include <imgui/backends/imgui_impl_win32.h>
 #include <imgui/backends/imgui_impl_win32.cpp>
 #define DIRECTINPUT_VERSION 0x0800
-#include <dinput.h>
-#include <tchar.h>
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_GLFW)
-#include <imgui/backends/imgui_impl_glfw.h>
 #elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK)) == IM_PLATFORM_APPLE)
-#include <imgui/backends/imgui_impl_osx.h>
 #else
 #error IM_CURRENT_TARGET not specified correctly
 #endif
 
 #if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX9)
-#include <imgui/backends/imgui_impl_dx9.h>
 #include <imgui/backends/imgui_impl_dx9.cpp>
 #include <d3d9.h>
 
 #pragma comment( lib, "d3d9.lib" )
 
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX10)
-#include <imgui/backends/imgui_impl_dx10.h>
 #include <imgui/backends/imgui_impl_dx10.cpp>
-#include <d3d10_1.h>
-#include <d3d10.h>
 
 #pragma comment( lib, "d3d10.lib" )
 #pragma comment( lib, "d3dcompiler.lib" )
 #pragma comment( lib, "dxgi.lib" )
 
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX11)
-#include <imgui/backends/imgui_impl_dx11.h>
 #include <imgui/backends/imgui_impl_dx11.cpp>
-#include <d3d11.h>
 
 #pragma comment( lib, "d3d11.lib" )
 #pragma comment( lib, "d3dcompiler.lib" )
 #pragma comment( lib, "dxgi.lib" )
 
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX12)
-#include <imgui/backends/imgui_impl_dx12.h>
 #include <imgui/backends/imgui_impl_dx12.cpp>
-#include <d3d12.h>
-#include <dxgi1_4.h>
 
 #pragma comment( lib, "d3d12.lib" )
 #pragma comment( lib, "d3dcompiler.lib" )
 #pragma comment( lib, "dxgi.lib" )
 
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_VULKAN)
-#include <imgui/backends/imgui_impl_vulkan.h>
 #include <imgui/backends/imgui_impl_vulkan.cpp>
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_METAL)
-#include <imgui/backends/imgui_impl_metal.h>
 #include <imgui/backends/imgui_impl_metal.cpp>
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL2)
-#include <imgui/backends/imgui_impl_opengl2.h>
 #include <imgui/backends/imgui_impl_opengl2.cpp>
 
 #pragma comment( lib, "opengl32.lib" )
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL3)
-#include <imgui/backends/imgui_impl_opengl3.h>
 #include <imgui/backends/imgui_impl_opengl3.cpp>
 
 #pragma comment( lib, "opengl32.lib" )
@@ -165,7 +56,6 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 #define IM_OPENGL_GLAD // Use Glad by default
 
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_WGPU)
-#include <imgui/backends/imgui_impl_wgpu.h>
 #include <imgui/backends/imgui_impl_wgpu.cpp>
 
 #endif
@@ -191,39 +81,6 @@ using namespace gl;
 #error OpenGL Not defined properly {IM_OPENGL_GL3W, IM_OPENGL_GLEW, IM_OPENGL_GLAD, IM_OPENGL_GLBINDING2, IM_OPENGL_GLBINDING3} or custom
 #endif
 #endif
-
-static struct
-{
-#if ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_WIN32)
-	HWND		pHandle		= nullptr;
-	WNDCLASSEX	oWinStruct;
-	MSG			oMessage;
-#elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_GLFW)
-#elif ((IM_CURRENT_TARGET & IM_PLATFORM_MASK)) == IM_PLATFORM_APPLE)
-#else
-#error IM_CURRENT_TARGET not specified correctly
-#endif
-#if ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL2)
-#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_OPENGL3)
-	HDC						pDevContext		= nullptr;
-	char const*				pGLSLVersion	= "#version 130";
-#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX9)
-	LPDIRECT3D9				pD3D		= nullptr;
-	LPDIRECT3DDEVICE9		pD3DDevice	= nullptr;
-	D3DPRESENT_PARAMETERS	oD3Dpp		= {};
-#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX10)
-	ID3D10Device*			pD3DDevice				= nullptr;
-	IDXGISwapChain*			pSwapChain				= nullptr;
-	ID3D10RenderTargetView*	pMainRenderTargetView	= nullptr;
-#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX11)
-	ID3D11Device*			pD3DDevice				= NULL;
-	ID3D11DeviceContext*	pD3DDeviceContext		= NULL;
-	IDXGISwapChain*			pSwapChain				= NULL;
-	ID3D11RenderTargetView*	pMainRenderTargetView	= NULL;
-//#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX12)
-#endif
-
-} PlatformData;
 
 namespace ImWidgets
 {
