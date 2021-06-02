@@ -168,7 +168,7 @@ using namespace gl;
 #endif
 #endif
 
-static struct
+struct PlatformDataImpl
 {
 #if ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_WIN32)
 	HWND		pHandle		= nullptr;
@@ -204,7 +204,9 @@ static struct
 	ID3D11RenderTargetView*	pMainRenderTargetView	= nullptr;
 //#elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX12)
 #endif
-} PlatformData;
+};
+
+extern PlatformDataImpl PlatformData;
 
 namespace ImWidgets
 {

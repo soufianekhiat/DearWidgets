@@ -84,6 +84,8 @@ using namespace gl;
 #endif
 #endif
 
+PlatformDataImpl PlatformData;
+
 namespace ImWidgets
 {
 #if ((IM_CURRENT_TARGET & IM_PLATFORM_MASK) == IM_PLATFORM_WIN32)
