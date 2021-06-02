@@ -547,6 +547,10 @@ namespace ImWidgets
 	{
 		ImWidgets::ImGfxAPIClear( vClearColor );
 		ImWidgets::ImGfxAPIRender();
+	}
+
+	void ImEndGfx()
+	{
 		ImWidgets::ImGfxAPISwapBuffer();
 	}
 

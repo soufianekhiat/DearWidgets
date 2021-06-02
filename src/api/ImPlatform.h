@@ -214,6 +214,7 @@ namespace ImWidgets
 	void ImEnd();
 	bool ImBeginFrame();
 	void ImEndFrame( ImVec4 const vClearColor );
+	void ImEndGfx();
 
 	// Internal-Use Only
 	bool ImPlatformContinue();
