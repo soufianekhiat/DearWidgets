@@ -602,7 +602,7 @@ namespace ImWidgets
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX11)
 		ImGui_ImplDX11_NewFrame();
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK) == IM_GFX_DIRECTX12)
-		ImGui_ImplDX11_NewFrame();
+		ImGui_ImplDX12_NewFrame();
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK)) == IM_GFX_VULKAN)
 		ImGui_ImplVulkan_NewFrame();
 #elif ((IM_CURRENT_TARGET & IM_GFX_MASK)) == IM_GFX_METAL)
