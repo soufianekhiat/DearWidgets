@@ -791,68 +791,68 @@ namespace ImWidgets {
 		return result;
 	}
 
-	ImU64	Normalize01(ImGuiDataType data_type, void* p_value, void* p_min, void* p_max)
+	ImU64	Normalize01(ImGuiDataType data_type, void* p_value, void const* p_min, void const* p_max)
 	{
 		ImU64 result = 0;
 		switch (data_type)
 		{
 		case ImGuiDataType_S8:
 		{
-			ImS8 value = (*reinterpret_cast<ImS8*>(p_value) - *static_cast<ImS8*>(p_min)) / (*static_cast<ImS8*>(p_max) - *static_cast<ImS8*>(p_min));
+			ImS8 value = (*reinterpret_cast<ImS8*>(p_value) - *static_cast<ImS8 const*>(p_min)) / (*static_cast<ImS8 const*>(p_max) - *static_cast<ImS8 const*>(p_min));
 			result = static_cast<ImU64>(value);
 		}
 		break;
 		case ImGuiDataType_U8:
 		{
-			ImU8 value = (*reinterpret_cast<ImU8*>(p_value) - *static_cast<ImU8*>(p_min)) / (*static_cast<ImU8*>(p_max) - *static_cast<ImU8*>(p_min));
+			ImU8 value = (*reinterpret_cast<ImU8*>(p_value) - *static_cast<ImU8 const*>(p_min)) / (*static_cast<ImU8 const*>(p_max) - *static_cast<ImU8 const*>(p_min));
 			result = static_cast<ImU64>(value);
 		}
 		break;
 		case ImGuiDataType_S16:
 		{
-			ImS16 value = (*reinterpret_cast<ImS16*>(p_value) - *static_cast<ImS16*>(p_min)) / (*static_cast<ImS16*>(p_max) - *static_cast<ImS16*>(p_min));
+			ImS16 value = (*reinterpret_cast<ImS16*>(p_value) - *static_cast<ImS16 const*>(p_min)) / (*static_cast<ImS16 const*>(p_max) - *static_cast<ImS16 const*>(p_min));
 			result = static_cast<ImU64>(value);
 		}
 		break;
 		case ImGuiDataType_U16:
 		{
-			ImU16 value = (*reinterpret_cast<ImU16*>(p_value) - *static_cast<ImU16*>(p_min)) / (*static_cast<ImU16*>(p_max) - *static_cast<ImU16*>(p_min));
+			ImU16 value = (*reinterpret_cast<ImU16*>(p_value) - *static_cast<ImU16 const*>(p_min)) / (*static_cast<ImU16 const*>(p_max) - *static_cast<ImU16 const*>(p_min));
 			result = static_cast<ImU64>(value);
 		}
 		break;
 		case ImGuiDataType_S32:
 		{
-			ImS32 value = (*reinterpret_cast<ImS32*>(p_value) - *static_cast<ImS32*>(p_min)) / (*static_cast<ImS32*>(p_max) - *static_cast<ImS32*>(p_min));
+			ImS32 value = (*reinterpret_cast<ImS32*>(p_value) - *static_cast<ImS32 const*>(p_min)) / (*static_cast<ImS32 const*>(p_max) - *static_cast<ImS32 const*>(p_min));
 			result = static_cast<ImU64>(value);
 		}
 		break;
 		case ImGuiDataType_U32:
 		{
-			ImU32 value = (*reinterpret_cast<ImU32*>(p_value) - *static_cast<ImU32*>(p_min)) / (*static_cast<ImU32*>(p_max) - *static_cast<ImU32*>(p_min));
+			ImU32 value = (*reinterpret_cast<ImU32*>(p_value) - *static_cast<ImU32 const*>(p_min)) / (*static_cast<ImU32 const*>(p_max) - *static_cast<ImU32 const*>(p_min));
 			result = static_cast<ImU64>(value);
 		}
 		break;
 		case ImGuiDataType_S64:
 		{
-			ImS64 value = (*reinterpret_cast<ImS64*>(p_value) - *static_cast<ImS64*>(p_min)) / (*static_cast<ImS64*>(p_max) - *static_cast<ImS64*>(p_min));
+			ImS64 value = (*reinterpret_cast<ImS64*>(p_value) - *static_cast<ImS64 const*>(p_min)) / (*static_cast<ImS64 const*>(p_max) - *static_cast<ImS64 const*>(p_min));
 			result = static_cast<ImU64>(value);
 		}
 		break;
 		case ImGuiDataType_U64:
 		{
-			ImU64 value = (*reinterpret_cast<ImU64*>(p_value) - *static_cast<ImU64*>(p_min)) / (*static_cast<ImU64*>(p_max) - *static_cast<ImU64*>(p_min));
+			ImU64 value = (*reinterpret_cast<ImU64*>(p_value) - *static_cast<ImU64 const*>(p_min)) / (*static_cast<ImU64 const*>(p_max) - *static_cast<ImU64 const*>(p_min));
 			result = static_cast<ImU64>(value);
 		}
 		break;
 		case ImGuiDataType_Float:
 		{
-			float value = (*reinterpret_cast<float*>(p_value) - *static_cast<float*>(p_min)) / (*static_cast<float*>(p_max) - *static_cast<float*>(p_min));
+			float value = (*reinterpret_cast<float*>(p_value) - *static_cast<float const*>(p_min)) / (*static_cast<float const*>(p_max) - *static_cast<float const*>(p_min));
 			result = *reinterpret_cast<ImU64*>(&value);
 		}
 		break;
 		case ImGuiDataType_Double:
 		{
-			double value = (*reinterpret_cast<double*>(p_value) - *static_cast<double*>(p_min)) / (*static_cast<double*>(p_max) - *static_cast<double*>(p_min));
+			double value = (*reinterpret_cast<double*>(p_value) - *static_cast<double const*>(p_min)) / (*static_cast<double const*>(p_max) - *static_cast<double const*>(p_min));
 			result = *reinterpret_cast<ImU64*>(&value);
 		}
 		break;
@@ -1064,6 +1064,7 @@ namespace ImWidgets {
 		ImGui::SameLine();
 	}
 
+#if 0
 	bool DragFloatLog(const char* label, float* data, float v_speed, float log_basis, const void* p_min, const void* p_max, ImGuiSliderFlags flags)
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
@@ -1089,7 +1090,7 @@ namespace ImWidgets {
 		//	format = ImGui::PatchFormatStringFloatToInt(format);
 
 		// Tabbing or CTRL-clicking on Drag turns it into an InputText
-		const bool hovered = ImGui::ItemHoverable(frame_bb, id);
+		const bool hovered = ImGui::ItemHoverable(frame_bb, id, ImGuiItemFlags_Inputable);
 		const bool temp_input_allowed = (flags & ImGuiSliderFlags_NoInput) == 0;
 		bool temp_input_is_active = temp_input_allowed && ImGui::TempInputIsActive(id);
 		if (!temp_input_is_active)
@@ -1150,6 +1151,7 @@ namespace ImWidgets {
 		IMGUI_TEST_ENGINE_ITEM_INFO(id, label, window->DC.ItemFlags);
 		return value_changed;
 	}
+#endif
 
 	bool DragLengthScalar(const char* label, ImGuiDataType data_type, void* p_data, ImWidgetsLengthUnit* p_defaultUnit, float v_speed, const void* p_min, const void* p_max, ImGuiSliderFlags flags)
 	{
@@ -1580,15 +1582,15 @@ namespace ImWidgets {
 
 	bool Slider2DScalar(char const* pLabel, ImGuiDataType data_type, void* p_valueX, void* p_valueY, void* p_minX, void* p_maxX, void* p_minY, void* p_maxY, float const fScale /*= 1.0f*/)
 	{
-		assert(ScalarToFloat(data_type, (ImU64*)p_minX) < ScalarToFloat(data_type, (ImU64*)p_maxX));
-		assert(ScalarToFloat(data_type, (ImU64*)p_minY) < ScalarToFloat(data_type, (ImU64*)p_maxY));
+		IM_ASSERT(ScalarToFloat(data_type, (ImU64*)p_minX) < ScalarToFloat(data_type, (ImU64*)p_maxX));
+		IM_ASSERT(ScalarToFloat(data_type, (ImU64*)p_minY) < ScalarToFloat(data_type, (ImU64*)p_maxY));
 
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if (window->SkipItems)
 			return false;
 
-		//ImGuiContext& g = *GImGui;
-		//const ImGuiStyle& style = g.Style;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
 		//const ImGuiID id = window->GetID(pLabel);
 
 		ImGuiID const iID = ImGui::GetID(pLabel);
@@ -1608,9 +1610,13 @@ namespace ImWidgets {
 
 		ImGui::PushID(iID);
 
+		ImGui::ItemSize( oRect, style.FramePadding.y );
+		if ( !ImGui::ItemAdd( oRect, iID, NULL, 0 ) )
+			return false;
 		ImU32 const uFrameCol = ImGui::GetColorU32(ImGuiCol_FrameBg);
 
 		ImVec2 const vOriginPos = ImGui::GetCursorScreenPos();
+		ImGui::RenderNavHighlight( oRect, iID );
 		ImGui::RenderFrame(oRect.Min, oRect.Max, uFrameCol, false, 0.0f);
 
 		ImU64 s_delta_x = SubScalar(data_type, p_maxX, p_minX);
@@ -1622,8 +1628,8 @@ namespace ImWidgets {
 		//ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
 		bool hovered;
 		bool held;
-		bool pressed = ImGui::ButtonBehavior(frame_bb, ImGui::GetID("##Zone"), &hovered, &held);
-		if (hovered && held)
+		bool pressed = ImGui::ButtonBehavior( frame_bb, iID, &hovered, &held, ImGuiButtonFlags_PressedOnClickRelease );
+		if ( held )
 		{
 			ImVec2 const vCursorPos = ImGui::GetMousePos() - oRect.Min;
 
@@ -1636,6 +1642,7 @@ namespace ImWidgets {
 			EqualScalar(data_type, (ImU64*)p_valueX, &s_value_x);
 			EqualScalar(data_type, (ImU64*)p_valueY, &s_value_y);
 
+			ImGui::MarkItemEdited( iID );
 			bModified = true;
 		}
 		//ImGui::PopItemFlag();
@@ -1711,8 +1718,10 @@ namespace ImWidgets {
 
 		ImRect handle_x_bb = ImRect(vHandlePosX - ImVec2(fHandleRadius, fHandleRadius) - vSecurity, vHandlePosX + ImVec2(fHandleRadius, fHandleRadius) + vSecurity);
 		ImRect handle_y_bb = ImRect(vHandlePosY - ImVec2(fHandleRadius, fHandleRadius) - vSecurity, vHandlePosY + ImVec2(fHandleRadius, fHandleRadius) + vSecurity);
+		ImGui::ItemSize( handle_x_bb );
+		ImGui::ItemAdd( handle_x_bb, ImGui::GetID( "##HandleX" ), NULL, 0 );
 		pressed = ImGui::ButtonBehavior(handle_x_bb, ImGui::GetID("##HandleX"), &hovered, &held);
-		if (hovered && held)
+		if (held)
 		{
 			ImVec2 const vCursorPosLocal = ImGui::GetMousePos() - oRect.Min;
 
@@ -1723,7 +1732,9 @@ namespace ImWidgets {
 
 			bModified = true;
 		}
-		pressed = ImGui::ButtonBehavior(handle_y_bb, ImGui::GetID("##HandleX"), &hovered, &held);
+		ImGui::ItemSize( handle_y_bb );
+		ImGui::ItemAdd( handle_y_bb, ImGui::GetID( "##HandleY" ), NULL, 0 );
+		pressed = ImGui::ButtonBehavior( handle_y_bb, ImGui::GetID( "##HandleY" ), &hovered, &held );
 		if (hovered && held)
 		{
 			ImVec2 const vCursorPosLocal = ImGui::GetMousePos() - oRect.Min;
@@ -1782,7 +1793,7 @@ namespace ImWidgets {
 
 		ImGui::Dummy(vHeightOffset);
 		ImGui::Dummy(vHeightOffset);
-		ImGui::Dummy(vSize);
+		//ImGui::Dummy(vSize);
 
 		return bModified;
 	}
@@ -2111,8 +2122,74 @@ namespace ImWidgets {
 
 	bool LineSlider(const char* label, ImVec2 start, ImVec2 end, ImU32 lineColor, ImGuiDataType data_type, void* p_data, const void* p_min, const void* p_max, ImWidgetsPointer pointer)
 	{
-		ImGuiID iID = ImGui::GetID(label);
-		ImGui::PushID(iID);
+		//ImGuiWindow* window = ImGui::GetCurrentWindow();
+		//if ( window->SkipItems )
+		//	return false;
+
+		//ImGuiContext& g = *GImGui;
+		//const ImGuiStyle& style = g.Style;
+		//const ImGuiID id = window->GetID( label );
+		//const float w = ImGui::CalcItemWidth();
+
+		//const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( ImGui::GetContentRegionAvail().x, style.FramePadding.y * 2.0f ) );
+		//const ImRect total_bb = frame_bb;
+
+		//const bool temp_input_allowed = false;// ( flags & ImGuiSliderFlags_NoInput ) == 0;
+		//ImGui::ItemSize( total_bb, style.FramePadding.y );
+		//if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, temp_input_allowed ? ImGuiItemFlags_Inputable : 0 ) )
+		//	return false;
+
+		//const bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.InFlags );
+		//bool temp_input_is_active = temp_input_allowed && ImGui::TempInputIsActive( id );
+		//if ( !temp_input_is_active )
+		//{
+		//	// Tabbing or CTRL-clicking on Slider turns it into an input box
+		//	const bool clicked = hovered && ImGui::IsMouseClicked( 0, id );
+		//	const bool make_active = ( clicked || g.NavActivateId == id );
+		//	if ( make_active && clicked )
+		//		ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+		//	if ( make_active && temp_input_allowed )
+		//		if ( ( clicked && g.IO.KeyCtrl ) || ( g.NavActivateId == id && ( g.NavActivateFlags & ImGuiActivateFlags_PreferInput ) ) )
+		//			temp_input_is_active = true;
+
+		//	if ( make_active && !temp_input_is_active )
+		//	{
+		//		ImGui::SetActiveID( id, window );
+		//		ImGui::SetFocusID( id, window );
+		//		ImGui::FocusWindow( window );
+		//		g.ActiveIdUsingNavDirMask |= ( 1 << ImGuiDir_Left ) | ( 1 << ImGuiDir_Right );
+		//	}
+		//}
+
+		//// Draw frame
+		//const ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
+		//ImGui::RenderNavHighlight( frame_bb, id );
+		//ImGui::RenderFrame( frame_bb.Min, frame_bb.Max, frame_col, true, g.Style.FrameRounding );
+
+		//// Slider behavior
+		//ImRect grab_bb;
+		//const bool value_changed = ImGui::SliderBehavior( frame_bb, id, data_type, p_data, p_min, p_max, "%f", ImGuiSliderFlags_AlwaysClamp, &grab_bb );
+		//if ( value_changed )
+		//	ImGui::MarkItemEdited( id );
+	
+		//ImU64 factorScalar = Normalize01( data_type, p_data, p_min, p_max );
+		//float factor = ScalarToFloat( data_type, &factorScalar );
+		//ImVec2 cur( ImLerp( frame_bb.Min.x, frame_bb.Max.x, factor ), grab_bb.Min.y );
+		//// Render grab
+		//if ( grab_bb.Max.x > grab_bb.Min.x )
+		//	DrawTrianglePointerFilled( window->DrawList, cur, 16.0f, IM_COL32( 255, 128, 0, 255 ), pointer );
+
+		//IMGUI_TEST_ENGINE_ITEM_INFO( id, label, g.LastItemData.StatusFlags | ( temp_input_allowed ? ImGuiItemStatusFlags_Inputable : 0 ) );
+		//return value_changed;
+
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+		ImGuiContext& g = *GImGui;
+		ImGuiStyle const& style = g.Style;
+		ImGuiID id = ImGui::GetID(label);
+
+		ImGui::PushID( id );
 		ImRect oRect(ImVec2(ImMin(start.x, end.x), ImMin(start.y, end.y)),
 					 ImVec2(ImMax(start.x, end.x), ImMax(start.y, end.y)));
 
@@ -2128,15 +2205,26 @@ namespace ImWidgets {
 
 		float t = Normalize01(fValue, fMin, fMax);
 
+		float const cursorSize = 64.0f;
 		ImVec2 cur = ImLerp(start, end, t);
+		ImRect drag_bb( cur - ImVec2( cursorSize * 0.5f, 0.0f ), cur + ImVec2( cursorSize * 0.5f, cursorSize ) );
 
-		DrawTrianglePointerFilled(pDrawList, cur, 16.0f, IM_COL32(255, 128, 0, 255), pointer);
+		ImGui::ItemSize( drag_bb, style.FramePadding.y );
+		if ( !ImGui::ItemAdd( drag_bb, id, &drag_bb, 0 ) )
+			return false;
 
-		ImVec2 const vMousePos = ImGui::GetMousePos();
+		bool const hovered = ImGui::ItemHoverable( drag_bb, id, g.LastItemData.InFlags );
+
+		ImGui::RenderNavHighlight( drag_bb, id );
+		const ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
+		ImGui::RenderFrame( drag_bb.Min, drag_bb.Max, frame_col, true, g.Style.FrameRounding );
+
+		DrawTrianglePointerFilled(pDrawList, cur, cursorSize, IM_COL32(255, 128, 0, 255), pointer);
+
 		ImVec2 const vSecurity(15.0f, 15.0f);
 		ImVec2 const vDragStart(oRect.Min.x, oRect.Max.y);
 		ImVec2 const vDragEnd(oRect.Max.x, oRect.Min.y);
-		ImRect frame_bb = ImRect(oRect.Min - vSecurity, oRect.Max + vSecurity);
+		//ImRect frame_bb = ImRect(oRect.Min - vSecurity, oRect.Max + vSecurity);
 
 		//pDrawList->AddRect(frame_bb.Min, frame_bb.Max, IM_COL32(0, 255, 0, 255));
 		//pDrawList->AddRect(oRect.Min, oRect.Max, IM_COL32(0, 0, 255, 255));
@@ -2147,11 +2235,19 @@ namespace ImWidgets {
 		ImVec2 vLocalEnd	= vDragEnd;
 
 		bool bModified = false;
-		bool hovered;
+		//bool hovered;
 		bool held;
-		bool pressed = ImGui::ButtonBehavior(frame_bb, ImGui::GetID("##DragLineHandle"), &hovered, &held);
-		if (hovered && held)
+
+		// Slider behavior
+		ImRect grab_bb;
+		//const bool value_changed = ImGui::SliderBehavior( frame_bb, id, data_type, p_data, p_min, p_max, NULL, ImGuiSliderFlags_AlwaysClamp, &grab_bb );
+		//if ( value_changed )
+		//	ImGui::MarkItemEdited( id );
+
+		//bool pressed = ImGui::DragBehavior( id, data_type, p_data, 1.0f, p_min, p_max, nullptr, ImGuiSliderFlags_AlwaysClamp );
+		if ( ImGui::IsMouseDragging( ImGuiMouseButton_Left ) || ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
 		{
+			ImVec2 const vMousePos = ImGui::GetMousePos();
 			//float const fDist = ImSqrt(DistToSegmentSqr(vMousePos, ImVec2(vDragStart.x, vDragEnd.y), ImVec2(vDragEnd.x, vDragStart.y)));
 			float const fDist = ImSqrt(DistToSegmentSqr(vMousePos, vLocalStart, vLocalEnd));
 			//float const fDist = ImSqrt(DistToSegmentSqr(vMousePos,
@@ -2168,6 +2264,7 @@ namespace ImWidgets {
 
 				EqualScalar(data_type, (ImU64*)p_data, &uVal);
 
+				ImGui::MarkItemEdited( id );
 				bModified = true;
 			}
 		}
@@ -2758,7 +2855,7 @@ namespace ImWidgets {
 		float x, y, z;
 		float sum;
 		ImVector<ImVec2> chromLine;
-		chromLine.resize(lineSamples);
+		chromLine.resize(lineSamples + 1);
 		for (int i = 0; i < lineSamples; ++i)
 		{
 			float const wavelength = ScaleFromNormalized(((float)i) / ((float)(lineSamples - 1)), wavelengthMin, wavelengthMax);
@@ -2779,6 +2876,7 @@ namespace ImWidgets {
 			chromLine[i] = ImVec2(x, y);
 		}
 
+		//pDrawList->AddConcavePolyFilled( &chromLine[ 0 ], lineSamples, maskColor );
 		DrawConvexMaskMesh(pDrawList, curPos, ImVec2(width, height), maskColor, (float*)&(chromLine[0].x), lineSamples, minX, maxX, minY, maxY, true);
 
 		ImVec2 sRGBLines[] = { primR, primG, primB };

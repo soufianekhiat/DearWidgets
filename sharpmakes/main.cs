@@ -13,8 +13,12 @@ namespace DearWidgets
         public DearWidgetsSolution()
         {
             Name = "DearWidgets";
-            AddTargets(new DearTarget(Platform.win64 | Platform.linux,// | Platform.mac,
-                                      TargetAPI.D3D9 | TargetAPI.D3D10 | TargetAPI.OpenGL3,
+            AddTargets(new DearTarget(Platform.linux,// | Platform.mac,
+                                      TargetAPI.OpenGL3,
+                                      Optimization.Debug | Optimization.Release,
+                                      BuildType.APIOnly | BuildType.DemoOnly | BuildType.Full));
+            AddTargets(new DearTarget(Platform.win64,// | Platform.mac,
+                                      TargetAPI.D3D9 | TargetAPI.D3D10,
                                       Optimization.Debug | Optimization.Release,
                                       BuildType.APIOnly | BuildType.DemoOnly | BuildType.Full));
         }
@@ -24,21 +28,18 @@ namespace DearWidgets
         {
             conf.Name = "[target.Api]_[target.Optimization]";
 
-            conf.SolutionFileName = "[solution.Name]_[target.Build]_[target.Platform]_[target.Api]";
+            //conf.SolutionFileName = "[solution.Name]_[target.Build]_[target.Platform]_[target.Api]";
+            conf.SolutionFileName = "[solution.Name]_[target.Build]";
 
             conf.SolutionPath = SolutionRootPath;
 
-			if (target.Platform == Platform.linux && target.Api == TargetAPI.OpenGL3 ||
-				target.Platform == Platform.win64)
+			if (target.Build == BuildType.APIOnly || target.Build == BuildType.Full)
 			{
-				if (target.Build == BuildType.APIOnly || target.Build == BuildType.Full)
-				{
-					conf.AddProject< APIProject >(target);
-				}
-				if (target.Build == BuildType.DemoOnly || target.Build == BuildType.Full)
-				{
-					conf.AddProject< DemoProject >(target);
-				}
+				conf.AddProject< APIProject >(target);
+			}
+			if (target.Build == BuildType.DemoOnly || target.Build == BuildType.Full)
+			{
+				conf.AddProject< DemoProject >(target);
 			}
 		}
     }

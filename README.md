@@ -2,7 +2,7 @@
 Collection of draw (from ImDrawList) and widgets.
 Version 0.0.0.0.1
 
-Incentivise development [Patreon](https://www.patreon.com/SoufianeKHIAT)
+### Incentivise development:
 
 [<img src="https://c5.patreon.com/external/logo/become_a_patron_button@2x.png" alt="Become a Patron" width="150"/>](https://www.patreon.com/SoufianeKHIAT)
 
