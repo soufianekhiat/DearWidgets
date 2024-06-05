@@ -1,7 +1,10 @@
 #include <demo.h>
 #include <dear_widgets.h>
-#define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui_internal.h>
+
+#define IM_CURRENT_TARGET IM_TARGET_GLFW_OPENGL3
+#define IM_PLATFORM_IMPLEMENTATION
+#include <ImPlatform.h>
 
 #include <vector>
 #include <random>
@@ -106,12 +109,74 @@ ImU32 sdHorseshoeColor(ImVec2 p, float fTime)
 	// coloring
 	ImVec4 col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f) - ImVec4(0.1f, 0.4f, 0.7f, 1.0f) * ImSign(d);
 	col = col * (1.0f - exp(-2.0f * ImAbs(d)));
-	col = col * (0.8f + 0.2f * ImCos(120.0 * ImAbs(d)));
+	col = col * (0.8f + 0.2f * ImCos(120.0f * ImAbs(d)));
 	col = ImLerp(col, ImVec4(1.0f, 1.0f, 1.0f, 1.0f), 1.0f - ImWidgets::ImSmoothStep(0.0f, 0.02f, ImAbs(d)));
 
 	return IM_COL32( 255 * col.x, 255 * col.y, 255 * col.z, 255);
 }
 #pragma endregion ShaderToyHelper
+
+int main()
+{
+	if ( !ImPlatform::ImSimpleStart( "Dear Widgets Demo", ImVec2( 0.0f, 0.0f ), 1024 * 2, 764 * 2) )
+		return 1;
+
+	// Setup Dear ImGui context
+	ImGuiIO& io = ImGui::GetIO(); (void)io;
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;		// Enable Keyboard Controls
+	////io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;	// Enable Gamepad Controls
+	//io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;			// Enable Docking
+	//io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;		// Enable Multi-Viewport / Platform Windows
+	////io.ConfigViewportsNoAutoMerge = true;
+	////io.ConfigViewportsNoTaskBarIcon = true;
+
+	// Setup Dear ImGui style
+	ImGui::StyleColorsDark();
+	//ImGui::StyleColorsClassic();
+
+	io.Fonts->AddFontFromFileTTF( "../extern/FiraCode/distr/ttf/FiraCode-Medium.ttf", 16.0f );
+
+	io.FontGlobalScale = 3.0f;
+	ImGui::GetStyle().ScaleAllSizes( 3.0f );
+
+	if ( !ImPlatform::ImSimpleInitialize( false ) )
+	{
+		return 0.0f;
+	}
+
+	//ImGui::GetStyle().ScaleAllSizes();
+
+	// When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
+	//ImGuiStyle& style = ImGui::GetStyle();
+	//if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+	//{
+	//	style.WindowRounding = 0.0f;
+	//	style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+	//}
+
+	ImVec4 clear_color = ImVec4( 0.461f, 0.461f, 0.461f, 1.0f );
+	while ( ImPlatform::ImPlatformContinue() )
+	{
+		bool quit = ImPlatform::ImPlatformEvents();
+		if ( quit )
+			break;
+
+		if ( !ImPlatform::ImGfxCheck() )
+		{
+			continue;
+		}
+
+		ImPlatform::ImSimpleBegin();
+
+		ImWidgets::ShowDemo();
+
+		ImPlatform::ImSimpleEnd( clear_color, false );
+	}
+
+	ImPlatform::ImSimpleFinish();
+
+	return 0;
+}
 
 namespace ImWidgets {
 	void	ShowDemo()
@@ -122,7 +187,7 @@ namespace ImWidgets {
 
 		ImGui::Begin("Dear Widgets");
 
-		float const width = ImGui::GetContentRegionAvail().x * 0.75;
+		//float const width = ImGui::GetContentRegionAvail().x * 0.75f;
 
 		if (ImGui::TreeNode("Draw"))
 		{
@@ -177,7 +242,7 @@ namespace ImWidgets {
 				static float alpha = 1.0f;
 				ImGui::SliderFloat("alpha", &alpha, 0.0f, 1.0f);
 				// DrawColorBandEx(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, FuncType func, int division, float _alpha, float gamma, float offset)
-				float const fFrequency = frequency;
+				float const fFrequency = (float)frequency;
 				float const fAlpha = alpha;
 				DrawColorBandEx< true >(ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), ImVec2(width, height),
 					[fFrequency, fAlpha](float const t)
@@ -194,6 +259,8 @@ namespace ImWidgets {
 			}
 			if (ImGui::TreeNode("Color Ring"))
 			{
+				float const width = ImGui::GetContentRegionAvail().x;
+
 				static int division = 16;
 				ImGui::SliderInt("Division", &division, 3, 128);
 				static float colorOffset = 16;
@@ -203,7 +270,7 @@ namespace ImWidgets {
 
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				{
-					float const width = ImGui::GetContentRegionAvail().x;
+					//float const width = ImGui::GetContentRegionAvail().x;
 					ImVec2 curPos = ImGui::GetCursorScreenPos();
 					ImGui::InvisibleButton("##Zone", ImVec2(width, width), 0);
 
@@ -224,7 +291,7 @@ namespace ImWidgets {
 				ImGui::SliderInt("Frequency", &frequency, 1, 32);
 				{
 					ImGui::Text("Nearest");
-					float const width = ImGui::GetContentRegionAvail().x;
+					//float const width = ImGui::GetContentRegionAvail().x;
 					ImVec2 curPos = ImGui::GetCursorScreenPos();
 					ImGui::InvisibleButton("##Zone", ImVec2(width, width) * 0.5f, 0);
 
@@ -247,7 +314,7 @@ namespace ImWidgets {
 				}
 				{
 					ImGui::Text("Custom");
-					float const width = ImGui::GetContentRegionAvail().x;
+					//float const width = ImGui::GetContentRegionAvail().x;
 					ImVec2 curPos = ImGui::GetCursorScreenPos();
 					ImGui::InvisibleButton("##Zone", ImVec2(width, width) * 0.5f, 0);
 
@@ -425,6 +492,7 @@ namespace ImWidgets {
 				ImGui::Dummy(ImVec2(1.0f, ImGui::GetTextLineHeightWithSpacing()));
 				ImGui::PlotLines("##PlotLines", [](void* data, int idx)
 					{
+						(void)data;
 						float const x = (((float)idx) / 127.0f) * 8.0f;
 						return sin(x * x * x) * sin(x);
 					}, nullptr, 128, 0, nullptr, FLT_MAX, FLT_MAX, ImVec2(width, width));
@@ -514,7 +582,7 @@ namespace ImWidgets {
 						curIllum,
 						resX, resY,
 						maskColor,
-						waveMin, waveMax,
+						(float)waveMin, (float)waveMax,
 						vMin.x, vMax.x,
 						vMin.y, vMax.y);
 

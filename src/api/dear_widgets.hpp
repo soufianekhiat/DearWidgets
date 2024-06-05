@@ -138,7 +138,7 @@ void DrawColorDensityPlotEx(ImDrawList* pDrawList, FuncType func, float minX, fl
 	for (int i = 0; i < resolutionX; ++i)
 	{
 		float x0;
-		float x1;
+		float x1; (void)x1;
 		if constexpr (IsBilinear)
 		{
 			x0 = ScaleFromNormalized(((float)i + 0) * dx, minX, maxX);
@@ -152,7 +152,7 @@ void DrawColorDensityPlotEx(ImDrawList* pDrawList, FuncType func, float minX, fl
 		for (int j = 0; j < resolutionY; ++j)
 		{
 			float y0;
-			float y1;
+			float y1; (void)y1;
 			if constexpr (IsBilinear)
 			{
 				y0 = ScaleFromNormalized(((float)(j + 0) * dy), maxY, minY);
