@@ -13,3 +13,6 @@
 [submodule "extern/FiraCode"]
 	path = extern/FiraCode
 	url = https://github.com/tonsky/FiraCode
+[submodule "extern/ImPlatform"]
+	path = extern/ImPlatform
+	url = https://github.com/soufianekhiat/ImPlatform.git

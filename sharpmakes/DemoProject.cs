@@ -20,6 +20,7 @@ namespace DearWidgets
             SourceFiles.Add("[project.ExternPath]/imgui/imgui_widgets.cpp");
             SourceFiles.Add("[project.ExternPath]/imgui/misc/cpp/imgui_stdlib.cpp");
             SourceFiles.Add("[project.ExternPath]/imgui/imgui_draw.cpp");
+            SourceFiles.Add("[project.ExternPath]/ImPlatform/ImPlatform/ImPlatform.h");
 
             // Mains
             // SourceFiles.Add(@"[project.RootPath]/src/demo/main_dx11.cpp");
@@ -54,6 +55,7 @@ namespace DearWidgets
 
             conf.IncludePaths.Add(@"[project.RootPath]/src/demo/");
             conf.IncludePaths.Add(@"[project.RootPath]/extern/imgui/backends/");
+            conf.IncludePaths.Add(@"[project.RootPath]/extern/ImPlatform/ImPlatform/");
             //conf.IncludePrivatePaths.Add(@"[project.RootPath]\codebase\SpanMultipleSrcDirs\dir_individual_files");
             //conf.AddPrivateDependency<CoreProject>(target);
 

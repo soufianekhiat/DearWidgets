@@ -2,7 +2,9 @@
 #include <dear_widgets.h>
 #include <imgui_internal.h>
 
-#include "ImPlatform.h"
+#define IM_CURRENT_TARGET IM_TARGET_GLFW_OPENGL3
+#define IM_PLATFORM_IMPLEMENTATION
+#include <ImPlatform.h>
 
 #include <vector>
 #include <random>
@@ -116,7 +118,7 @@ ImU32 sdHorseshoeColor(ImVec2 p, float fTime)
 
 int main()
 {
-	if ( !ImWidgets::ImInit( "Dear Widgets Demo", 1024, 764 ) )
+	if ( !ImPlatform::ImSimpleStart( "Dear Widgets Demo", ImVec2( 0.0f, 0.0f ), 1024 * 2, 764 * 2) )
 		return 1;
 
 	// Setup Dear ImGui context
@@ -128,11 +130,21 @@ int main()
 	////io.ConfigViewportsNoAutoMerge = true;
 	////io.ConfigViewportsNoTaskBarIcon = true;
 
-	io.Fonts->AddFontFromFileTTF("../extern/FiraCode/distr/ttf/FiraCode-Medium.ttf", 16.0f);
-
 	// Setup Dear ImGui style
 	ImGui::StyleColorsDark();
 	//ImGui::StyleColorsClassic();
+
+	io.Fonts->AddFontFromFileTTF( "../extern/FiraCode/distr/ttf/FiraCode-Medium.ttf", 16.0f );
+
+	io.FontGlobalScale = 3.0f;
+	ImGui::GetStyle().ScaleAllSizes( 3.0f );
+
+	if ( !ImPlatform::ImSimpleInitialize( false ) )
+	{
+		return 0.0f;
+	}
+
+	//ImGui::GetStyle().ScaleAllSizes();
 
 	// When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
 	//ImGuiStyle& style = ImGui::GetStyle();
@@ -142,21 +154,26 @@ int main()
 	//	style.Colors[ImGuiCol_WindowBg].w = 1.0f;
 	//}
 
-	ImWidgets::ImBegin();
-
-	while ( ImWidgets::ImPlatformContinue() )
+	ImVec4 clear_color = ImVec4( 0.461f, 0.461f, 0.461f, 1.0f );
+	while ( ImPlatform::ImPlatformContinue() )
 	{
-		if ( !ImWidgets::ImBeginFrame() )
+		bool quit = ImPlatform::ImPlatformEvents();
+		if ( quit )
+			break;
+
+		if ( !ImPlatform::ImGfxCheck() )
+		{
 			continue;
+		}
+
+		ImPlatform::ImSimpleBegin();
 
 		ImWidgets::ShowDemo();
 
-		ImWidgets::ImEndFrame( ImVec4( 0.0f, 0.0f, 0.0f, 1.0f ) );
-
-		ImWidgets::ImEndGfx();
+		ImPlatform::ImSimpleEnd( clear_color, false );
 	}
 
-	ImWidgets::ImEnd();
+	ImPlatform::ImSimpleFinish();
 
 	return 0;
 }
