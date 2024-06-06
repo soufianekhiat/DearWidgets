@@ -1611,7 +1611,7 @@ namespace ImWidgets {
 		ImGui::PushID(iID);
 
 		ImGui::ItemSize( oRect, style.FramePadding.y );
-		if ( !ImGui::ItemAdd( oRect, iID, NULL, 0 ) )
+		if ( !ImGui::ItemAdd( oRect, iID, NULL ) )
 			return false;
 		ImU32 const uFrameCol = ImGui::GetColorU32(ImGuiCol_FrameBg);
 

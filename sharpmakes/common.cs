@@ -41,7 +41,7 @@ namespace DearWidgets
         { }
 
         public DearTarget(Platform platform, TargetAPI api, Optimization optimization, BuildType buildType)
-            : base(platform, DevEnv.vs2019, optimization)
+            : base(platform, DevEnv.vs2022, optimization)
         {
             Api = api;
             Build = buildType;
@@ -155,10 +155,10 @@ namespace DearWidgets
 			conf.Defines.Add("WINAPI_FAMILY=WINAPI_FAMILY_DESKTOP_APP");
 			conf.Defines.Add("_WIN32_WINNT=0x0600");
 			conf.Options.Add(Sharpmake.Options.Vc.Linker.RandomizedBaseAddress.Disable);
-			// GLFW
-            conf.IncludePaths.Add(@"[project.RootPath]/extern/GLFW/include");
-			conf.LibraryPaths.Add(@"[project.ExternPath]/glfw/lib-vc2019/");
-			conf.LibraryFiles.Add("glfw3.lib");
+			//// GLFW
+            //conf.IncludePaths.Add(@"[project.RootPath]/extern/GLFW/include");
+			//conf.LibraryPaths.Add(@"[project.ExternPath]/glfw/lib-vc2019/");
+			//conf.LibraryFiles.Add("glfw3.lib");
 			conf.LibraryFiles.Add("winmm.lib");
 			conf.LibraryFiles.Add("comctl32.lib");
 			conf.LibraryFiles.Add("msvcrt.lib");

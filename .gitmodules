@@ -4,12 +4,6 @@
 [submodule "extern/imgui"]
 	path = extern/imgui
 	url = https://github.com/ocornut/imgui.git
-[submodule "extern/glad"]
-	path = extern/glad
-	url = https://github.com/soufianekhiat/glad.git
-[submodule "extern/Clipper"]
-	path = extern/Clipper
-	url = git@github.com:Geri-Borbas/Clipper.git
 [submodule "extern/FiraCode"]
 	path = extern/FiraCode
 	url = https://github.com/tonsky/FiraCode

@@ -14,7 +14,7 @@ namespace DearWidgets
             Name = "DearWidgetsDemo";
             SourceRootPath = RootPath + @"\src\demo";
 
-            SourceFiles.Add("[project.ExternPath]/glad/src/glad.c");
+            //SourceFiles.Add("[project.ExternPath]/glad/src/glad.c");
             SourceFiles.Add("[project.ExternPath]/imgui/imgui.cpp");
             SourceFiles.Add("[project.ExternPath]/imgui/imgui_tables.cpp");
             SourceFiles.Add("[project.ExternPath]/imgui/imgui_widgets.cpp");

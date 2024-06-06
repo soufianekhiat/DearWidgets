@@ -49,7 +49,7 @@ namespace DearWidgets
         [Sharpmake.Main]
         public static void SharpmakeMain(Sharpmake.Arguments arguments)
         {
-            Sharpmake.KitsRootPaths.SetUseKitsRootForDevEnv(DevEnv.vs2019, KitsRootEnum.KitsRoot10, Sharpmake.Options.Vc.General.WindowsTargetPlatformVersion.Latest);
+            Sharpmake.KitsRootPaths.SetUseKitsRootForDevEnv(DevEnv.vs2022, KitsRootEnum.KitsRoot10, Sharpmake.Options.Vc.General.WindowsTargetPlatformVersion.Latest);
 
             arguments.Generate<DearWidgetsSolution>();
         }
