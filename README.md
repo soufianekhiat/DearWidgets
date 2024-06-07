@@ -1,6 +1,24 @@
 # DearWidgets
-Collection of draw (from ImDrawList) and widgets.
-Version 0.0.0.0.1
+DearWidgets is two collections of helpers:
+- DrawLists
+- Widgets
+- Scalar Math
+
+Dear Widgets is a collection of help to simplify the develoment of application.
+
+DearWidgets add some helpers which allow us to create Custom Widget independently of the try. A Scalar is stored as an ImU64, which is a memcpy of any type supported by ImGui {Im{U|S}{8, 16, 32, 64} | bool | float | double}.
+* bool	IsNegativeScalar
+* void	EqualScalar
+* float	ScalarToFloat
+* ImU64	FloatToScalar
+* ImU64	AddScalar
+* ImU64	SubScalar
+* ImU64	MulScalar
+* ImU64	DivScalar
+* ImU64	Normalize01
+* ...
+
+DearWidgets is using ImPlatform.
 
 ### Incentivise development:
 
@@ -11,7 +29,7 @@ https://www.patreon.com/SoufianeKHIAT
 PR & Discussion are open.
 
 ## Features
-### Draw
+### DrawList
 * Triangle Pointer {Right, Up, Left, Down}
 
 Used internally for LineSlider
@@ -107,10 +125,21 @@ A version for Slider2DScaler is available for (Im{S|U}{8,16,32,64}, Float and Do
 
 ![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/4haBv2KuX7.gif)
 
+## Performance Considerations
+Notice some DrawList are purely calling DrawList from Dear ImGui. So based on your parameters a non-negligeable impact on performance can be notice. Do not put an unreasonable resolution.
 
 ## Constrains
 C++ features used internally:
 * std::string
+
+## Legacy
+Removed:
+* AnalyticalPlotEx
+* AnalyticalPlot
+* CenterNextItem
+* DragFloatLog
+
+Removed C++ feature dependencies:
 * template
 * constexpr
 * if constexpr

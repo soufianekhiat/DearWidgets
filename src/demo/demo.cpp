@@ -2,7 +2,18 @@
 #include <dear_widgets.h>
 #include <imgui_internal.h>
 
+#if defined(__DEAR_GFX_OGL3__)
+#define IM_GLFW3_AUTO_LINK
 #define IM_CURRENT_TARGET IM_TARGET_GLFW_OPENGL3
+#elif defined(__DEAR_GFX_DX9__)
+#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX9
+#elif defined(__DEAR_GFX_DX10__)
+#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX10
+#elif defined(__DEAR_GFX_DX11__)
+#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX11
+#elif defined(__DEAR_GFX_DX12__)
+#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX12
+#endif
 #define IM_PLATFORM_IMPLEMENTATION
 #include <ImPlatform.h>
 
@@ -141,7 +152,7 @@ int main()
 
 	if ( !ImPlatform::ImSimpleInitialize( false ) )
 	{
-		return 0.0f;
+		return 0;
 	}
 
 	//ImGui::GetStyle().ScaleAllSizes();
@@ -187,337 +198,149 @@ namespace ImWidgets {
 
 		ImGui::Begin("Dear Widgets");
 
-		//float const width = ImGui::GetContentRegionAvail().x * 0.75f;
-
 		if (ImGui::TreeNode("Draw"))
 		{
-			if (ImGui::TreeNode("Triangles Pointers"))
+			if ( ImGui::TreeNode( "Triangles Pointers" ) )
 			{
 				float const width = ImGui::GetContentRegionAvail().x;
+
+				static float angle = 0.0f;
+				static float size = 16.0f;
+				static float thickness = 1.0f;
+				ImGui::SliderAngle( "Angle##Triangle", &angle );
+				ImGui::SliderFloat( "Size##Triangle", &size, 1.0f, 64.0f );
+				ImGui::SliderFloat( "Thickness##Triangle", &thickness, 1.0f, 5.0f );
 
 				ImVec2 curPos = ImGui::GetCursorScreenPos();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-				ImGui::InvisibleButton("##Zone", ImVec2(width, 72.0f), 0);
-				float const fPointerLine = 32.0f;
-				pDrawList->AddLine(ImVec2(curPos.x + 0.5f * 32.0f, curPos.y + fPointerLine), ImVec2(curPos.x + 3.5f * 32.0f, curPos.y + fPointerLine), IM_COL32(0, 255, 0, 255), 2.0f);
-				pDrawList->AddLine(ImVec2(curPos.x + 5.0f * 32.0f, curPos.y), ImVec2(curPos.x + 5.0f * 32.0f, curPos.y + 72.0f), IM_COL32(0, 255, 0, 255), 2.0f);
-				pDrawList->AddLine(ImVec2(curPos.x + 7.0f * 32.0f, curPos.y), ImVec2(curPos.x + 7.0f * 32.0f, curPos.y + 72.0f), IM_COL32(0, 255, 0, 255), 2.0f);
-				pDrawList->AddCircleFilled(ImVec2(curPos.x + 1.0f * 32.0f, curPos.y + fPointerLine), 4.0f, IM_COL32(255, 128, 0, 255), 16);
-				pDrawList->AddCircleFilled(ImVec2(curPos.x + 3.0f * 32.0f, curPos.y + fPointerLine), 4.0f, IM_COL32(255, 128, 0, 255), 16);
-				pDrawList->AddCircleFilled(ImVec2(curPos.x + 5.0f * 32.0f, curPos.y + fPointerLine), 4.0f, IM_COL32(255, 128, 0, 255), 16);
-				pDrawList->AddCircleFilled(ImVec2(curPos.x + 7.0f * 32.0f, curPos.y + fPointerLine), 4.0f, IM_COL32(255, 128, 0, 255), 16);
-				ImWidgets::DrawTrianglePointerFilled(pDrawList, ImVec2(curPos.x + 1.0f * 32.0f, curPos.y + fPointerLine), 32.0f, IM_COL32(255, 0, 0, 255), ImWidgetsPointer_Up);
-				ImWidgets::DrawTrianglePointerFilled(pDrawList, ImVec2(curPos.x + 3.0f * 32.0f, curPos.y + fPointerLine), 32.0f, IM_COL32(255, 0, 0, 255), ImWidgetsPointer_Down);
-				ImWidgets::DrawTrianglePointerFilled(pDrawList, ImVec2(curPos.x + 5.0f * 32.0f, curPos.y + fPointerLine), 32.0f, IM_COL32(255, 0, 0, 255), ImWidgetsPointer_Right);
-				ImWidgets::DrawTrianglePointerFilled(pDrawList, ImVec2(curPos.x + 7.0f * 32.0f, curPos.y + fPointerLine), 32.0f, IM_COL32(255, 0, 0, 255), ImWidgetsPointer_Left);
+				ImGui::InvisibleButton( "##Zone", ImVec2( width, 96.0f ), 0 );
+				ImGui::InvisibleButton( "##Zone", ImVec2( width, 96.0f ), 0 );
+				float fPointerLine = 64.0f;
+				pDrawList->AddLine( ImVec2( curPos.x + 0.5f * 32.0f, curPos.y + fPointerLine ), ImVec2( curPos.x + 3.5f * 32.0f, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f );
+				pDrawList->AddLine( ImVec2( curPos.x + 5.0f * 32.0f, curPos.y ), ImVec2( curPos.x + 5.0f * 32.0f, curPos.y + 72.0f ), IM_COL32( 0, 255, 0, 255 ), 2.0f );
+				pDrawList->AddLine( ImVec2( curPos.x + 7.0f * 32.0f, curPos.y ), ImVec2( curPos.x + 7.0f * 32.0f, curPos.y + 72.0f ), IM_COL32( 0, 255, 0, 255 ), 2.0f );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 1.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 3.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 5.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 7.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				ImWidgets::DrawTrianglePointer( pDrawList, ImVec2( curPos.x + 1.0f * 32.0f, curPos.y + fPointerLine ), angle, size, thickness, IM_COL32( 255, 0, 0, 255 ) );
+				ImWidgets::DrawTrianglePointer( pDrawList, ImVec2( curPos.x + 3.0f * 32.0f, curPos.y + fPointerLine ), angle, size, thickness, IM_COL32( 255, 0, 0, 255 ) );
+				ImWidgets::DrawTrianglePointer( pDrawList, ImVec2( curPos.x + 5.0f * 32.0f, curPos.y + fPointerLine ), angle, size, thickness, IM_COL32( 255, 0, 0, 255 ) );
+				ImWidgets::DrawTrianglePointer( pDrawList, ImVec2( curPos.x + 7.0f * 32.0f, curPos.y + fPointerLine ), angle, size, thickness, IM_COL32( 255, 0, 0, 255 ) );
+
+				fPointerLine *= 3.0f;
+				pDrawList->AddLine( ImVec2( curPos.x + 0.5f * 32.0f, curPos.y + fPointerLine ), ImVec2( curPos.x + 3.5f * 32.0f, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f );
+				pDrawList->AddLine( ImVec2( curPos.x + 5.0f * 32.0f, curPos.y ), ImVec2( curPos.x + 5.0f * 32.0f, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f );
+				pDrawList->AddLine( ImVec2( curPos.x + 7.0f * 32.0f, curPos.y ), ImVec2( curPos.x + 7.0f * 32.0f, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 1.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 3.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 5.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 7.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				ImWidgets::DrawTrianglePointerFilled( pDrawList, ImVec2( curPos.x + 1.0f * 32.0f, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
+				ImWidgets::DrawTrianglePointerFilled( pDrawList, ImVec2( curPos.x + 3.0f * 32.0f, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
+				ImWidgets::DrawTrianglePointerFilled( pDrawList, ImVec2( curPos.x + 5.0f * 32.0f, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
+				ImWidgets::DrawTrianglePointerFilled( pDrawList, ImVec2( curPos.x + 7.0f * 32.0f, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
 				ImGui::TreePop();
 			}
-			if (ImGui::TreeNode("Color Bands"))
+			if ( ImGui::TreeNode( "Color Bands" ) )
 			{
-				static float col[4] = { 1, 0, 0, 1 };
-				ImGui::ColorEdit4("Color", col);
+				static float col[ 4 ] = { 1, 0, 0, 1 };
+				ImGui::ColorEdit4( "Color##ColorBand", col );
 				float const width = ImGui::GetContentRegionAvail().x;
-				float const height = 32.0f;
+				static float height = 32.0f;
 				static float gamma = 1.0f;
-				ImGui::DragFloat("Gamma##Color", &gamma, 0.01f, 0.1f, 10.0f);
+				ImGui::DragFloat( "Height##ColorBand", &height, 1.0f, 1.0f, 128.0f );
+				ImGui::DragFloat( "Gamma##ColorBand", &gamma, 0.01f, 0.1f, 10.0f );
 				static int division = 32;
-				ImGui::DragInt("Division", &division, 1, 1, 128);
+				ImGui::DragInt( "Division##ColorBand", &division, 1, 1, 128 );
 
-				ImGui::Text("HueBand");
-				DrawHueBand(ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), ImVec2(width, height), division, col, col[3], gamma);
-				ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
+				ImGui::Text( "HueBand" );
+				DrawHueBand( ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), ImVec2( width, height ), division, col, col[ 3 ], gamma );
+				ImGui::InvisibleButton( "Hue##ColorBand", ImVec2( width, height ), 0 );
 
-				ImGui::Text("LuminanceBand");
-				DrawLumianceBand(ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), ImVec2(width, height), division, ImVec4(col[0], col[1], col[2], col[3]), gamma);
-				ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
+				ImGui::Text( "LuminanceBand" );
+				DrawLumianceBand( ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), ImVec2( width, height ), division, ImVec4( col[ 0 ], col[ 1 ], col[ 2 ], col[ 3 ] ), gamma );
+				ImGui::InvisibleButton( "Luminance##ColorBand", ImVec2( width, height ), 0 );
 
-				ImGui::Text("SaturationBand");
-				DrawSaturationBand(ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), ImVec2(width, height), division, ImVec4(col[0], col[1], col[2], col[3]), gamma);
-				ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
+				ImGui::Text( "SaturationBand" );
+				DrawSaturationBand( ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), ImVec2( width, height ), division, ImVec4( col[ 0 ], col[ 1 ], col[ 2 ], col[ 3 ] ), gamma );
+				ImGui::InvisibleButton( "Saturation##ColorBand", ImVec2( width, height ), 0 );
 
 				ImGui::Separator();
-				ImGui::Text("Custom Color Band");
+				ImGui::Text( "Custom Color Band" );
 				static int frequency = 6;
-				ImGui::SliderInt("Frequency", &frequency, 1, 32);
+				ImGui::SliderInt( "Frequency##ColorBand", &frequency, 1, 32 );
 				static float alpha = 1.0f;
-				ImGui::SliderFloat("alpha", &alpha, 0.0f, 1.0f);
-				// DrawColorBandEx(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, FuncType func, int division, float _alpha, float gamma, float offset)
-				float const fFrequency = (float)frequency;
-				float const fAlpha = alpha;
-				DrawColorBandEx< true >(ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), ImVec2(width, height),
-					[fFrequency, fAlpha](float const t)
+				ImGui::SliderFloat( "alpha##ColorBand", &alpha, 0.0f, 1.0f );
+				float data[] = { ( float )frequency, alpha };
+				DrawProceduralColor1DBilinear(
+					ImGui::GetWindowDrawList(),
+					[]( float t, void* pUserData ) -> ImU32
 					{
-						float r = ImSign(ImSin(fFrequency * 2.0f * IM_PI * t + 2.0f * IM_PI * 0.0f / fFrequency)) * 0.5f + 0.5f;
-						float g = ImSign(ImSin(fFrequency * 2.0f * IM_PI * t + 2.0f * IM_PI * 2.0f / fFrequency)) * 0.5f + 0.5f;
-						float b = ImSign(ImSin(fFrequency * 2.0f * IM_PI * t + 2.0f * IM_PI * 4.0f / fFrequency)) * 0.5f + 0.5f;
-
-						return IM_COL32(r * 255, g * 255, b * 255, fAlpha * 255);
+						float fFrequency = ( ( float* )pUserData )[ 0 ];
+						float fAlpha = ( ( float* )pUserData )[ 1 ];
+						float r = ImSign( ImSin( fFrequency * 2.0f * IM_PI * t + 2.0f * IM_PI * 0.0f / fFrequency ) ) * 0.5f + 0.5f;
+						float g = ImSign( ImSin( fFrequency * 2.0f * IM_PI * t + 2.0f * IM_PI * 2.0f / fFrequency ) ) * 0.5f + 0.5f;
+						float b = ImSign( ImSin( fFrequency * 2.0f * IM_PI * t + 2.0f * IM_PI * 4.0f / fFrequency ) ) * 0.5f + 0.5f;
+											
+						return IM_COL32( r * 255, g * 255, b * 255, fAlpha * 255 );
 					},
-					division, gamma);
-				ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
+					&data[ 0 ],
+					0.0f, 1.0f, ImGui::GetCursorScreenPos(), ImVec2( width, height ), division );
+				ImGui::InvisibleButton( "##Zone", ImVec2( width, height ), 0 );
 				ImGui::TreePop();
 			}
-			if (ImGui::TreeNode("Color Ring"))
+			if ( ImGui::TreeNode( "Color Ring" ) )
 			{
-				float const width = ImGui::GetContentRegionAvail().x;
-
-				static int division = 16;
-				ImGui::SliderInt("Division", &division, 3, 128);
-				static float colorOffset = 16;
-				ImGui::SliderFloat("Color Offset", &colorOffset, 0.0f, 2.0f);
-				static float thickness = 0.5f;
-				ImGui::SliderFloat("Thickness", &thickness, 1.0f / width, 1.0f);
-
-				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-				{
-					//float const width = ImGui::GetContentRegionAvail().x;
-					ImVec2 curPos = ImGui::GetCursorScreenPos();
-					ImGui::InvisibleButton("##Zone", ImVec2(width, width), 0);
-
-					DrawColorRingEx< true >(pDrawList, curPos, ImVec2(width, width), thickness,
-						[](float t)
-						{
-							float r, g, b;
-							ImGui::ColorConvertHSVtoRGB(t, 1.0f, 1.0f, r, g, b);
-
-							return IM_COL32(r * 255, g * 255, b * 255, 255);
-						}, division, colorOffset);
-				}
-				static float center = 0.5f;
-				ImGui::DragFloat("Center", &center, 0.01f, 0.0f, 1.0f);
-				static float colorDotBound = 0.5f;
-				ImGui::SliderFloat("Alpha Pow", &colorDotBound, -1.0f, 1.0f);
-				static int frequency = 6;
-				ImGui::SliderInt("Frequency", &frequency, 1, 32);
-				{
-					ImGui::Text("Nearest");
-					//float const width = ImGui::GetContentRegionAvail().x;
-					ImVec2 curPos = ImGui::GetCursorScreenPos();
-					ImGui::InvisibleButton("##Zone", ImVec2(width, width) * 0.5f, 0);
-
-					float fCenter = center;
-					float fColorDotBound = colorDotBound;
-					DrawColorRingEx< false >(pDrawList, curPos, ImVec2(width, width * 0.5f), thickness,
-						[fCenter, fColorDotBound](float t)
-						{
-							float r, g, b;
-							ImGui::ColorConvertHSVtoRGB(t, 1.0f, 1.0f, r, g, b);
-
-							ImVec2 const v0(ImCos(t * 2.0f * IM_PI), ImSin(t * 2.0f * IM_PI));
-							ImVec2 const v1(ImCos(fCenter * 2.0f * IM_PI), ImSin(fCenter * 2.0f * IM_PI));
-
-							float const dot = ImWidgets::ImDot(v0, v1);
-							float const angle = ImAcos(dot) / IM_PI;// / width;
-
-							return IM_COL32(r * 255, g * 255, b * 255, (dot > fColorDotBound ? 1.0f : 0.0f) * 255);
-						}, division, colorOffset);
-				}
-				{
-					ImGui::Text("Custom");
-					//float const width = ImGui::GetContentRegionAvail().x;
-					ImVec2 curPos = ImGui::GetCursorScreenPos();
-					ImGui::InvisibleButton("##Zone", ImVec2(width, width) * 0.5f, 0);
-
-					float const fFreq = (float)frequency;
-					DrawColorRingEx< true >(pDrawList, curPos, ImVec2(width, width) * 0.5f, thickness,
-						[fFreq](float t)
-						{
-							float v = ImSign(ImCos(fFreq * 2.0f * IM_PI * t)) * 0.5f + 0.5f;
-
-							return IM_COL32(v * 255, v * 255, v * 255, 255);
-						}, division, colorOffset);
-				}
-
 				ImGui::TreePop();
 			}
-			if (ImGui::TreeNode("Color2D"))
+			if ( ImGui::TreeNode( "Color2D" ) )
 			{
 				float const width = ImGui::GetContentRegionAvail().x;
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 
-				float const fTime = static_cast<float>(ImGui::GetTime());
+				float const fTime = static_cast< float >( ImGui::GetTime() );
 
 				static int resX = 124;
 				static int resY = 124;
 				static bool isBilinear = true;
 				static bool pause = false;
-				ImGui::SliderInt("ResX", &resX, 4, 512);
-				ImGui::SliderInt("ResY", &resY, 4, 512);
-				ImGui::Checkbox("Is Bilinear", &isBilinear);
-				if (ImGui::Button("Pause"))
+				ImGui::SliderInt( "ResX", &resX, 4, 512 );
+				ImGui::SliderInt( "ResY", &resY, 4, 512 );
+				ImGui::Checkbox( "Is Bilinear", &isBilinear );
+				if ( ImGui::Button( "Pause" ) )
 				{
 					pause = !pause;
 				}
 				static float usedTime = 0.0f;
-				if (!pause)
+				if ( !pause )
 				{
 					usedTime = fTime;
 				}
 				float timeCopy = usedTime;
-				if (isBilinear)
+				ImColor2DCallback func = []( float x, float y, void* pUserData ) -> ImU32
+					{
+						float timeCopy = *( ( float* )pUserData );
+						return sdHorseshoeColor( ImVec2( x, y ), timeCopy );
+					};
+				if ( isBilinear )
 				{
-					DrawColorDensityPlotEx< true >(pDrawList,
-						[time = timeCopy](float const x, float const y)
-						{
-							return sdHorseshoeColor(ImVec2(x, y), time);
-						}, -1.0f, 1.0f, -1.0f, 1.0f, ImGui::GetCursorScreenPos(), ImVec2(width, width), resX, resY);
+					DrawProceduralColor2DBilinear( pDrawList,
+													func, &timeCopy, -1.0f, 1.0f, -1.0f, 1.0f, ImGui::GetCursorScreenPos(), ImVec2( width, width ), resX, resY );
 				}
 				else
 				{
-					DrawColorDensityPlotEx< false >(pDrawList,
-						[time = timeCopy](float const x, float const y)
-						{
-							return sdHorseshoeColor(ImVec2(x, y), time);
-						}, -1.0f, 1.0f, -1.0f, 1.0f, ImGui::GetCursorScreenPos(), ImVec2(width, width), resX, resY);
+					DrawProceduralColor2DNearest( pDrawList,
+													 func, &timeCopy, -1.0f, 1.0f, -1.0f, 1.0f, ImGui::GetCursorScreenPos(), ImVec2( width, width ), resX, resY );
 				}
-				ImGui::Dummy(ImVec2(width, width));
+				ImGui::Dummy( ImVec2( width, width ) );
 
 				ImGui::TreePop();
 			}
-			if (ImGui::TreeNode("Convex Mask"))
-			{
-				float const width = ImGui::GetContentRegionAvail().x;
-				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-
-				static bool showDensityPlot = true;
-				static ImVec4 vMaskColor = ImVec4(1.0f, 0.5f, 0.0f, 0.5f);
-				ImGui::Checkbox("Show Density Plot", &showDensityPlot);
-				ImGui::ColorEdit4("Mask Color", &vMaskColor.x);
-				ImVec2 const curPos = ImGui::GetCursorScreenPos();
-
-				ImU32 maskColor = ImGui::ColorConvertFloat4ToU32(vMaskColor);
-
-				if (showDensityPlot)
-				{
-					DrawColorDensityPlotEx< true >(pDrawList,
-						[](float const x, float const y)
-						{
-							float z = ImSaturate(std::sin(x) * std::sin(y) * 0.5f + 0.5f);
-
-							return IM_COL32(255 * z, 255 * z, 255 * z, 255);
-						}, -4.0f, 4.0f, -4.0f, 4.0f, curPos, ImVec2(width, width), 32, 32);
-				}
-
-				DrawConvexMaskMesh(pDrawList, curPos, ImVec2(width, width), maskColor, &maskShape_values[0], maskShape_values.size() / 2, -1.0f, 1.0f, -1.0f, 1.0f);
-
-				MoveLine2D("Shape", &maskShape_values[0], maskShape_values.size() / 2, -1.0f, 1.0f, -1.0f, 1.0f, true);
-
-				ImGui::TreePop();
-			}
-
 			ImGui::TreePop();
 		}
 		if (ImGui::TreeNode("Widgets"))
 		{
-			if (ImGui::TreeNode("Hue Selector"))
-			{
-				float const width = ImGui::GetContentRegionAvail().x;
-				float const height = 32.0f;
-				static float offset = 0.0f;
-
-				static int division = 32;
-				ImGui::DragInt("Division", &division, 1.0f, 2, 256);
-				static float alphaHue = 1.0f;
-				static float alphaHideHue = 0.125f;
-				ImGui::DragFloat("Offset##ColorSelector", &offset, 0.0f, 0.0f, 1.0f);
-				ImGui::DragFloat("Alpha Hue", &alphaHue, 0.0f, 0.0f, 1.0f);
-				ImGui::DragFloat("Alpha Hue Hide", &alphaHideHue, 0.0f, 0.0f, 1.0f);
-				static float hueCenter = 0.5f;
-				static float hueWidth = 0.1f;
-				static float featherLeft = 0.125f;
-				static float featherRight = 0.125f;
-				ImGui::DragFloat("featherLeft", &featherLeft, 0.0f, 0.0f, 0.5f);
-				ImGui::DragFloat("featherRight", &featherRight, 0.0f, 0.0f, 0.5f);
-				HueSelector("Hue Selector", ImVec2(width, height), &hueCenter, &hueWidth, &featherLeft, &featherRight, division, alphaHue, alphaHideHue, offset);
-				ImGui::TreePop();
-			}
-			if (ImGui::TreeNode("Density Plot Nearest"))
-			{
-				DensityPlotNearest("Dense SS N", [](float x, float y) -> float { return std::sin(x) * std::sin(y); }, 32, 32, -4.0f, 4.0f, -3.0f, 3.0f);
-				DensityPlotNearest("Dense S N", [](float x, float y) -> float { return std::sin(x * y); }, 32, 32, 0.0f, 4.0f, 0.0f, 4.0f);
-				ImGui::TreePop();
-			}
-			if (ImGui::TreeNode("Density Plot Bilinear"))
-			{
-				DensityPlotBilinear("Dense SS B", [](float x, float y) -> float { return std::sin(x) * std::sin(y); }, 32, 32, -4.0f, 4.0f, -3.0f, 3.0f);
-				DensityPlotBilinear("Dense S B", [](float x, float y) -> float { return std::sin(x * y); }, 32, 32, 0.0f, 4.0f, 0.0f, 4.0f);
-				ImGui::TreePop();
-			}
-			if (ImGui::TreeNode("Isoline"))
-			{
-				static int resolution = 128;
-				static float isoLines[] = { 0.0f, 0.5f, 0.95f, 1.0f };
-				ImGui::SliderInt("Resolution", &resolution, 4, 512);
-				static bool bShowSurface = true;
-				ImGui::Checkbox("Show Surface", &bShowSurface);
-				ImGui::Text("Isoline Values");
-				float const width = ImGui::GetContentRegionAvail().x;
-				ImGui::PushMultiItemsWidths(4, width);
-				ImGui::DragFloat("##IsoLine0", &isoLines[0], 0.001f, -1.0f, 1.0f); ImGui::SameLine();
-				ImGui::DragFloat("##IsoLine1", &isoLines[1], 0.001f, -1.0f, 1.0f); ImGui::SameLine();
-				ImGui::DragFloat("##IsoLine2", &isoLines[2], 0.001f, -1.0f, 1.0f); ImGui::SameLine();
-				ImGui::DragFloat("##IsoLine3", &isoLines[3], 0.001f, -1.0f, 1.0f);
-
-				static ImU32 cols[] = { IM_COL32(255, 0, 0, 255), IM_COL32(255, 255, 0, 255), IM_COL32(255, 0, 255, 255), IM_COL32(0, 255, 0, 255) };
-				ImGui::PushMultiItemsWidths(4, width);
-				static ImVec4 col;
-				col = ImGui::ColorConvertU32ToFloat4(cols[0]);
-				if (ImGui::ColorEdit4("##IsoColor0", &col.x))
-					cols[0] = ImGui::ColorConvertFloat4ToU32(col);
-				ImGui::SameLine();
-
-				col = ImGui::ColorConvertU32ToFloat4(cols[1]);
-				if (ImGui::ColorEdit4("##IsoColor1", &col.x))
-					cols[1] = ImGui::ColorConvertFloat4ToU32(col);
-				ImGui::SameLine();
-
-				col = ImGui::ColorConvertU32ToFloat4(cols[2]);
-				if (ImGui::ColorEdit4("##IsoColor2", &col.x))
-					cols[2] = ImGui::ColorConvertFloat4ToU32(col);
-				ImGui::SameLine();
-
-				col = ImGui::ColorConvertU32ToFloat4(cols[3]);
-				if (ImGui::ColorEdit4("##IsoColor3", &col.x))
-					cols[3] = ImGui::ColorConvertFloat4ToU32(col);
-
-				DensityIsolinePlotBilinear("IsoLine 0", [](float x, float y) -> float { return 1.01f * std::sin(x) * std::sin(y); }, bShowSurface, &isoLines[0], 4, &cols[0], 4, resolution, resolution, -4.0f, 4.0f, -3.0f, 3.0f);
-				DensityIsolinePlotBilinear("IsoLine 1", [](float x, float y) -> float { return 1.01f * std::sin(x * y); }, bShowSurface, &isoLines[0], 4, &cols[0], 4, resolution, resolution, -4.0f, 4.0f, -3.0f, 3.0f);
-
-				ImGui::TreePop();
-			}
-			if (ImGui::TreeNode("Analytic Plot"))
-			{
-				float const width = ImGui::GetContentRegionAvail().x;
-				ImGui::Text("ImGui::PlotLines: 128 samples");
-				ImGui::Dummy(ImVec2(1.0f, ImGui::GetTextLineHeightWithSpacing()));
-				ImGui::PlotLines("##PlotLines", [](void* data, int idx)
-					{
-						(void)data;
-						float const x = (((float)idx) / 127.0f) * 8.0f;
-						return sin(x * x * x) * sin(x);
-					}, nullptr, 128, 0, nullptr, FLT_MAX, FLT_MAX, ImVec2(width, width));
-				ImGui::Dummy(ImVec2(1.0f, ImGui::GetTextLineHeightWithSpacing()));
-
-				ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 128, 0, 255));
-				ImGui::TextWrapped("/!\\ Use carefully and at your risk, this widget can generate very quickly very high number of vertices.\nCondisider the override of ImDrawIdx to ImU32 in your build system.");
-				ImGui::PopStyleColor();
-
-				static int initSampleCount = 8;
-				ImGui::DragInt("Init Samples Count", &initSampleCount, 1.0f, 4, 16);
-				static float minX = 0.0f;
-				static float maxX = 8.0f;
-				float fMaxX = maxX;
-				float fMinX = minX;
-				ImGui::DragFloat("Min X", &minX, 0.01f, 0.0f, fMaxX - 0.01f);
-				ImGui::DragFloat("Max X", &maxX, 0.01f, fMinX + 0.01f, 16.0f);
-				ImGui::Text("DearWidgets:Plot with Dynamic Resampling (Init Samples Count: 8)");
-				ImGui::Dummy(ImVec2(1.0f, ImGui::GetTextLineHeightWithSpacing()));
-				AnalyticalPlot("Analytical", [](float const x) { return sin(x * x * x) * sin(x); }, minX, maxX, initSampleCount);
-				ImGui::Dummy(ImVec2(1.0f, ImGui::GetTextLineHeightWithSpacing()));
-				ImGui::Dummy(ImVec2(1.0f, ImGui::GetTextLineHeightWithSpacing()));
-
-				ImGui::TreePop();
-			}
 			ImGui::TreePop();
 		}
 		if (ImGui::TreeNode("Alpha - Draft - Open Ideas mostly WIP"))
@@ -530,154 +353,12 @@ namespace ImWidgets {
 
 			if (ImGui::TreeNode("Draw"))
 			{
-				if (ImGui::TreeNode("Chromaticity Draw"))
-				{
-					static int chromLinesampleCount = 16;
-					ImGui::SliderInt("Chromatic Sample Count", &chromLinesampleCount, 3, 256);
-					static int resX = 16;
-					ImGui::SliderInt("Resolution X", &resX, 3, 256);
-					static int resY = 16;
-					ImGui::SliderInt("Resolution Y", &resY, 3, 256);
-					static int waveMin = 400;
-					static int waveMax = 700;
-					ImGui::SliderInt("Wavelength Min", &waveMin, 300, waveMax);
-					ImGui::SliderInt("Wavelength Max", &waveMax, waveMin, 800);
-					char const* observer[] = { "1931 2 deg", "1964 10 deg" };
-					char const* illum[] = { "D50", "D65" };
-					char const* colorSpace[] = { "AdobeRGB", "AppleRGB", "Best", "Beta", "Bruce", "CIERGB",
-						"ColorMatch", "Don_RGB_4", "ECI","Ekta_Space_PS5", "NTSC",
-						"PAL_SECAM", "ProPhoto", "SMPTE_C", "sRGB", "WideGamutRGB", "Rec2020" };
-					static int curObserver = 0;
-					static int curIllum = 1;
-					static int curColorSpace = 0;
-					ImGui::Combo("Observer", &curObserver, observer, IM_ARRAYSIZE(observer));
-					ImGui::Combo("Illuminance", &curIllum, illum, IM_ARRAYSIZE(illum));
-					ImGui::Combo("ColorSpace", &curColorSpace, colorSpace, IM_ARRAYSIZE(colorSpace));
-					ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-					float const width = ImGui::GetContentRegionAvail().x;
-					static ImVec4 vMaskColor(1.0f, 0.5f, 0.0f, 1.0f);
-					ImGui::ColorEdit4("Mask Color", &vMaskColor.x);
-					ImU32 maskColor = ImGui::ColorConvertFloat4ToU32(vMaskColor);
-
-					static ImVec2 vMin(-0.2f, -0.1f);
-					static ImVec2 vMax(1.0f, 1.0f);
-
-					ImGui::PushMultiItemsWidths(2, width);
-					ImGui::DragFloat("minX", &vMin.x, 0.001f, -1.0f, 0.0f); ImGui::SameLine();
-					ImGui::DragFloat("minY", &vMin.y, 0.001f, -1.0f, 0.0f);
-
-					ImGui::PushMultiItemsWidths(2, width);
-					ImGui::DragFloat("maxX", &vMax.x, 0.001f, 1.0f, 2.0f); ImGui::SameLine();
-					ImGui::DragFloat("maxY", &vMax.y, 0.001f, 1.0f, 2.0f);
-
-					ImVec2 curPos = ImGui::GetCursorScreenPos();
-					ImGui::InvisibleButton("##Zone", ImVec2(width, width), 0);
-					DrawChromaticPlotBilinear(
-						pDrawList,
-						curPos,
-						width, width,
-						chromLinesampleCount,
-						curColorSpace,
-						curObserver,
-						curIllum,
-						resX, resY,
-						maskColor,
-						(float)waveMin, (float)waveMax,
-						vMin.x, vMax.x,
-						vMin.y, vMax.y);
-
-					ImGui::TreePop();
-				}
 				ImGui::TreePop();
 			}
 			if (ImGui::TreeNode("Widgets"))
 			{
 				if (ImGui::TreeNode("DragLengthScalar"))
 				{
-					static const float fZero = 0.0f;
-					static float length = 16.0f;
-					static ImWidgetsLengthUnit currentUnit = ImWidgetsLengthUnit_Metric;
-					DragLengthScalar("DragLengthScalar", ImGuiDataType_Float, &length, &currentUnit, 1.0f, &fZero, nullptr, ImGuiSliderFlags_None);
-					ImGui::TreePop();
-				}
-				if (ImGui::TreeNode("Slider 2D Float"))
-				{
-					static ImVec2 slider2D;
-					ImVec2 boundMin(-1.0f, -1.0f);
-					ImVec2 boundMax(1.0f, 1.0f);
-					Slider2DFloat("Slider 2D Float", &slider2D.x, &slider2D.y, boundMin.x, boundMax.x, boundMin.y, boundMax.y, 0.75f);
-					ImGui::TreePop();
-				}
-				if (ImGui::TreeNode("Slider 2D Int"))
-				{
-					static int curX = 0;
-					static int curY = 0;
-					int minX = -5;
-					int minY = -5;
-					int maxX = 5;
-					int maxY = 5;
-					Slider2DInt("Slider 2D Int", &curX, &curY, &minX, &maxX, &minY, &maxY, 0.75f);
-					ImGui::TreePop();
-				}
-				if (ImGui::TreeNode("Range Select 2D"))
-				{
-					static ImVec2 min(-0.5f, -0.5f);
-					static ImVec2 max(0.5f, 0.5f);
-
-					RangeSelect2D("Range Select 2D", &min.x, &min.y, &max.x, &max.y, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f);
-					ImGui::TreePop();
-				}
-				if (ImGui::TreeNode("Slider 3D"))
-				{
-					static ImVec4 cur3D;
-					ImVec4 boundMin(-1.0f, -1.0f, -1.0f, 0.0f);
-					ImVec4 boundMax(1.0f, 1.0f, 1.0f, 0.0f);
-					SliderScalar3D("Slider 3D Float", &cur3D.x, &cur3D.y, &cur3D.z,
-						boundMin.x, boundMax.x,
-						boundMin.y, boundMax.y,
-						boundMin.z, boundMax.z,
-						0.75f);
-					ImGui::TreePop();
-				}
-				if (ImGui::TreeNode("Grid"))
-				{
-					ImVec2 boundMin(-1.0f, -1.0f);
-					ImVec2 boundMax(1.0f, 1.0f);
-					Grid2D_AoS_Float("Slider 3D Float", &grid_values[0], grid_rows, grid_columns, boundMin.x, boundMax.x, boundMin.y, boundMax.y);
-					ImGui::TreePop();
-				}
-				if (ImGui::TreeNode("2D Move"))
-				{
-					static bool closeLoop = true;
-					ImGui::Checkbox("Closed Loop", &closeLoop);
-					MoveLine2D("Region", &linear_values[0], linear_values.size() / 2, -1.0f, 1.0f, -1.0f, 1.0f, closeLoop);
-					ImGui::TreePop();
-				}
-				if (ImGui::TreeNode("Line Slider"))
-				{
-					float const width = ImGui::GetContentRegionAvail().x;
-					ImVec2 curPos = ImGui::GetCursorScreenPos();
-					ImVec2 center = curPos + ImVec2(width, width) * 0.5f;
-					ImGui::Dummy(ImVec2(width, width));
-					static float fZero = 0.0f;
-					static float fOne = 1.0f;
-					static float fValue = 0.5f;
-					for (int i = 0; i < 6; ++i)
-					{
-						float const fI = (float)i;
-						float const cos0 = ImCos(fI * 2.0f * IM_PI / 6.0f);
-						float const sin0 = ImSin(fI * 2.0f * IM_PI / 6.0f);
-
-						ImVec2 dir = ImVec2(cos0, sin0);
-
-						ImGui::PushID(i);
-						ImWidgets::LineSlider("##LineSliderValue",
-							center + dir * ImVec2(32.0f, 32.0f),
-							center + dir * width * 0.5f,
-							IM_COL32(255, 128, 0, 255), ImGuiDataType_Float, &fValue, &fZero, &fOne, ImWidgetsPointer_Up);
-						ImGui::PopID();
-					}
-					ImGui::SliderFloat("##LineSliderSlodersdgf", &fValue, fZero, fOne);
 					ImGui::TreePop();
 				}
 				ImGui::TreePop();

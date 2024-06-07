@@ -75,7 +75,7 @@ namespace DearWidgets
 			CustomProperties.Add( "VcpkgEnabled", "false" );
 
 			AddTargets(new DearTarget(	Platform.win64 | Platform.linux,// | Platform.mac,
-										TargetAPI.D3D9 | TargetAPI.D3D10 | TargetAPI.OpenGL3,
+										TargetAPI.OpenGL3 | TargetAPI.D3D9 | TargetAPI.D3D10 | TargetAPI.D3D12,
 										Optimization.Debug | Optimization.Release,
 										BuildType.APIOnly | BuildType.DemoOnly | BuildType.Full ) );
 		}
@@ -155,14 +155,11 @@ namespace DearWidgets
 			conf.Defines.Add("WINAPI_FAMILY=WINAPI_FAMILY_DESKTOP_APP");
 			conf.Defines.Add("_WIN32_WINNT=0x0600");
 			conf.Options.Add(Sharpmake.Options.Vc.Linker.RandomizedBaseAddress.Disable);
-			//// GLFW
-            //conf.IncludePaths.Add(@"[project.RootPath]/extern/GLFW/include");
-			//conf.LibraryPaths.Add(@"[project.ExternPath]/glfw/lib-vc2019/");
-			//conf.LibraryFiles.Add("glfw3.lib");
 			conf.LibraryFiles.Add("winmm.lib");
 			conf.LibraryFiles.Add("comctl32.lib");
 			conf.LibraryFiles.Add("msvcrt.lib");
 			conf.LibraryFiles.Add("msvcmrt.lib");
+			conf.Defines.Add("_CRT_SECURE_NO_WARNINGS");
 		}
 
         [Configure(Optimization.Debug)]//, ConfigurePriority(2)]

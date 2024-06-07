@@ -1,8 +1,5 @@
 ﻿#include <dear_widgets.h>
 
-//#include <clipper.hpp>
-
-#include <string>
 #include <chrono>
 #include <algorithm>
 
@@ -186,6 +183,43 @@ namespace ImWidgets {
 			break;
 		}
 	}
+	void	ScaleData(ImGuiDataType data_type, void* p_data, ImU64 value)
+	{
+		switch (data_type)
+		{
+		case ImGuiDataType_S8:
+			*reinterpret_cast<ImS8*>(p_data) *= static_cast<ImS8>(value);
+			break;
+		case ImGuiDataType_U8:
+			*reinterpret_cast<ImU8*>(p_data) *= static_cast<ImU8>(value);
+			break;
+		case ImGuiDataType_S16:
+			*reinterpret_cast<ImS16*>(p_data) *= static_cast<ImS16>(value);
+			break;
+		case ImGuiDataType_U16:
+			*reinterpret_cast<ImU16*>(p_data) *= static_cast<ImU16>(value);
+			break;
+		case ImGuiDataType_S32:
+			*reinterpret_cast<ImS32*>(p_data) *= static_cast<ImS32>(value);
+			break;
+		case ImGuiDataType_U32:
+			*reinterpret_cast<ImU32*>(p_data) *= static_cast<ImU32>(value);
+			break;
+		case ImGuiDataType_S64:
+			*reinterpret_cast<ImS64*>(p_data) *= static_cast<ImS64>(value);
+			break;
+		case ImGuiDataType_U64:
+			*reinterpret_cast<ImU64*>(p_data) *= static_cast<ImU64>(value);
+			break;
+		case ImGuiDataType_Float:
+			*reinterpret_cast<float*>(p_data) *= static_cast<float>(value);
+			break;
+		case ImGuiDataType_Double:
+			*reinterpret_cast<double*>(p_data) *= value;
+
+			break;
+		}
+	}
 
 	bool	IsNegativeScalar(ImGuiDataType data_type, ImU64* src)
 	{
@@ -245,76 +279,76 @@ namespace ImWidgets {
 		return !IsNegativeScalar(data_type, src);
 	}
 
-	template <typename TypeSrc>
-	ImU64	SetScalar(ImGuiDataType data_type, TypeSrc src)
-	{
-		ImU64 result;
-		switch (data_type)
-		{
-		case ImGuiDataType_S8:
-		{
-			ImS8 value = static_cast<ImS8>(src);
-			result = static_cast<ImU64>(value);
-		}
-		break;
-		case ImGuiDataType_U8:
-		{
-			ImU8 value = static_cast<ImU8>(src);
-			result = static_cast<ImU64>(value);
-		}
-		break;
-		case ImGuiDataType_S16:
-		{
-			ImS16 value = static_cast<ImS16>(src);
-			result = static_cast<ImU64>(value);
-		}
-		break;
-		case ImGuiDataType_U16:
-		{
-			ImU16 value = static_cast<ImU16>(src);
-			result = static_cast<ImU64>(value);
-		}
-		break;
-		case ImGuiDataType_S32:
-		{
-			ImS32 value = static_cast<ImS32>(src);
-			result = static_cast<ImU64>(value);
-		}
-		break;
-		case ImGuiDataType_U32:
-		{
-			ImU32 value = static_cast<ImU32>(src);
-			result = static_cast<ImU64>(value);
-		}
-		break;
-		case ImGuiDataType_S64:
-		{
-			ImS64 value = static_cast<ImS64>(src);
-			result = static_cast<ImU64>(value);
-		}
-		break;
-		case ImGuiDataType_U64:
-		{
-			ImU64 value = static_cast<ImU64>(src);
-			result = static_cast<ImU64>(value);
-		}
-		break;
-		case ImGuiDataType_Float:
-		{
-			float value = static_cast<float>(src);
-			result = *reinterpret_cast<ImU64*>(&value);
-		}
-		break;
-		case ImGuiDataType_Double:
-		{
-			double value = static_cast<double>(src);
-			result = *reinterpret_cast<ImU64*>(&value);
-		}
-		break;
-		}
+	//template <typename TypeSrc>
+	//ImU64	SetScalar(ImGuiDataType data_type, TypeSrc src)
+	//{
+	//	ImU64 result;
+	//	switch (data_type)
+	//	{
+	//	case ImGuiDataType_S8:
+	//	{
+	//		ImS8 value = static_cast<ImS8>(src);
+	//		result = static_cast<ImU64>(value);
+	//	}
+	//	break;
+	//	case ImGuiDataType_U8:
+	//	{
+	//		ImU8 value = static_cast<ImU8>(src);
+	//		result = static_cast<ImU64>(value);
+	//	}
+	//	break;
+	//	case ImGuiDataType_S16:
+	//	{
+	//		ImS16 value = static_cast<ImS16>(src);
+	//		result = static_cast<ImU64>(value);
+	//	}
+	//	break;
+	//	case ImGuiDataType_U16:
+	//	{
+	//		ImU16 value = static_cast<ImU16>(src);
+	//		result = static_cast<ImU64>(value);
+	//	}
+	//	break;
+	//	case ImGuiDataType_S32:
+	//	{
+	//		ImS32 value = static_cast<ImS32>(src);
+	//		result = static_cast<ImU64>(value);
+	//	}
+	//	break;
+	//	case ImGuiDataType_U32:
+	//	{
+	//		ImU32 value = static_cast<ImU32>(src);
+	//		result = static_cast<ImU64>(value);
+	//	}
+	//	break;
+	//	case ImGuiDataType_S64:
+	//	{
+	//		ImS64 value = static_cast<ImS64>(src);
+	//		result = static_cast<ImU64>(value);
+	//	}
+	//	break;
+	//	case ImGuiDataType_U64:
+	//	{
+	//		ImU64 value = static_cast<ImU64>(src);
+	//		result = static_cast<ImU64>(value);
+	//	}
+	//	break;
+	//	case ImGuiDataType_Float:
+	//	{
+	//		float value = static_cast<float>(src);
+	//		result = *reinterpret_cast<ImU64*>(&value);
+	//	}
+	//	break;
+	//	case ImGuiDataType_Double:
+	//	{
+	//		double value = static_cast<double>(src);
+	//		result = *reinterpret_cast<ImU64*>(&value);
+	//	}
+	//	break;
+	//	}
 
-		return result;
-	}
+	//	return result;
+	//}
 
 	void	EqualScalar(ImGuiDataType data_type, ImU64* p_target, ImU64* p_source)
 	{
@@ -1053,3241 +1087,288 @@ namespace ImWidgets {
 	{
 		return x < 0.0f ? -1.0f : 1.0f;
 	}
+	float	ImLinearSample( float t, float* buffer, int count )
+	{
+#if 0
+		float const width = ( float )( count - 1 );
+
+		float tx = ScaleFromNormalized( t, 0.0f, width );
+
+		float i0 = ImFloor( tx );
+		float i1 = ImCeil( tx );
+
+		float t0 = i0 / width;
+		float t1 = i1 / width;
+
+		float ti;
+		if ( t0 != t1 )
+			ti = Normalize01( t, t0, t1 );
+		else
+			ti = 1.0f;
+
+		return ImLerp( buffer[ ( int )i0 ], buffer[ ( int )i1 ], ti );
+#else
+		float const width = ( float )( count - 1 );
+
+		float const i0 = ImFloor( t * width );
+		float const i1 = ImCeil( t * width );
+
+		float ti;
+		if ( i0 != i1 )
+			ti = ( t * width - i0 ) / ( i1 - i0 );
+		else
+			ti = 1.0f;
+
+		return ImLerp( buffer[ ( int )i0 ], buffer[ ( int )i1 ], ti );
+#endif
+	}
+	//////////////////////////////////////////////////////////////////////////
+	// Style
+	//////////////////////////////////////////////////////////////////////////
+	static Style s_Style;
+
+	Style& GetStyle()
+	{
+		return s_Style;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// DrawList
+	//////////////////////////////////////////////////////////////////////////
+	void GetTrianglePointer( ImVec2& a, ImVec2& b, ImVec2& c, ImVec2 targetPoint, float angle, float size )
+	{
+		float cos2pi_3 = ImCos( ( 2.0f / 3.0f ) * IM_PI );
+		float sin2pi_3 = ImSin( ( 2.0f / 3.0f ) * IM_PI );
+
+		float cos0 = ImCos( angle );
+		float sin0 = ImSin( angle );
+
+		ImVec2 center = targetPoint + ImVec2( -1.0f, 0.0f );
+		b = ImVec2( cos2pi_3 - 1.0f, sin2pi_3 );
+		c = ImVec2( cos2pi_3 - 1.0f, -sin2pi_3 );
+
+		a = targetPoint;
+		b = ImRotate( b, cos0, sin0 ) * size + targetPoint;
+		c = ImRotate( c, cos0, sin0 ) * size + targetPoint;
+	}
+
+	void DrawTrianglePointer( ImDrawList* pDrawList, ImVec2 targetPoint, float angle, float size, float thickness, ImU32 col )
+	{
+		ImVec2 a, b, c;
+		GetTrianglePointer( a, b, c, targetPoint, angle, size );
+
+		pDrawList->AddTriangle( a, b, c, col, thickness );
+	}
+
+	void DrawTrianglePointerFilled( ImDrawList* pDrawList, ImVec2 targetPoint, float angle, float size, ImU32 col )
+	{
+		ImVec2 a, b, c;
+		GetTrianglePointer( a, b, c, targetPoint, angle, size );
+
+		pDrawList->AddTriangleFilled( a, b, c, col );
+	}
+
+	void DrawProceduralColor1DNearest( ImDrawList* pDrawList, ImColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX )
+	{
+		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
+
+		float const sx = size.x / ( ( float )resolutionX );
+
+		float const dx = 1.0f / ( ( float )resolutionX );
+		float const hdx = 0.5f / ( ( float )resolutionX );
+
+		for ( int i = 0; i < resolutionX; ++i )
+		{
+			float x0;
+			float x1; ( void )x1;
+			x0 = ScaleFromNormalized( ( ( float )i + 0 ) * dx + hdx, minX, maxX );
+
+			ImU32 const col00 = func( x0 , pUserData );
+			pDrawList->AddRectFilledMultiColor( position + ImVec2( sx * ( i + 0 ), 0.0f ),
+												position + ImVec2( sx * ( i + 1 ), size.y ),
+												col00, col00, col00, col00 );
+		}
+	}
+
+	void DrawProceduralColor1DBilinear( ImDrawList* pDrawList, ImColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX )
+	{
+		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
+
+		float const sx = size.x / ( ( float )resolutionX );
+
+		float const dx = 1.0f / ( ( float )resolutionX );
+		float const hdx = 0.5f / ( ( float )resolutionX );
+
+		for ( int i = 0; i < resolutionX; ++i )
+		{
+			float x0;
+			float x1; ( void )x1;
+			x0 = ScaleFromNormalized( ( ( float )i + 0 ) * dx, minX, maxX );
+			x1 = ScaleFromNormalized( ( ( float )i + 1 ) * dx, minX, maxX );
+
+			ImU32 const col00 = func( x0, pUserData );
+			ImU32 const col01 = func( x0, pUserData );
+			ImU32 const col10 = func( x1, pUserData );
+			ImU32 const col11 = func( x1, pUserData );
+			pDrawList->AddRectFilledMultiColor( position + ImVec2( sx * ( i + 0 ), 0.0f ),
+												position + ImVec2( sx * ( i + 1 ), size.y ),
+												col00, col10, col11, col01 );
+		}
+	}
+
+	void DrawProceduralColor2DNearest( ImDrawList* pDrawList, ImColor2DCallback func, void* pUserData, float minX, float maxX, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionX, int resolutionY )
+	{
+		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
+
+		float const sx = size.x / ( ( float )resolutionX );
+		float const sy = size.y / ( ( float )resolutionY );
+
+		float const dy = 1.0f / ( ( float )resolutionY );
+		float const dx = 1.0f / ( ( float )resolutionX );
+		float const hdx = 0.5f / ( ( float )resolutionX );
+		float const hdy = 0.5f / ( ( float )resolutionY );
+
+		for ( int i = 0; i < resolutionX; ++i )
+		{
+			float x0;
+			float x1; ( void )x1;
+			x0 = ScaleFromNormalized( ( ( float )i + 0 ) * dx + hdx, minX, maxX );
+
+			for ( int j = 0; j < resolutionY; ++j )
+			{
+				float y0;
+				float y1; ( void )y1;
+				y0 = ScaleFromNormalized( ( ( float )( j + 0 ) * dy + hdy ), maxY, minY );
+
+				ImU32 const col00 = func( x0, y0, pUserData );
+				pDrawList->AddRectFilledMultiColor( position + ImVec2( sx * ( i + 0 ), sy * ( j + 0 ) ),
+													position + ImVec2( sx * ( i + 1 ), sy * ( j + 1 ) ),
+													col00, col00, col00, col00 );
+			}
+		}
+	}
+
+	void DrawProceduralColor2DBilinear( ImDrawList* pDrawList, ImColor2DCallback func, void* pUserData, float minX, float maxX, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionX, int resolutionY )
+	{
+		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
+
+		float const sx = size.x / ( ( float )resolutionX );
+		float const sy = size.y / ( ( float )resolutionY );
+
+		float const dy = 1.0f / ( ( float )resolutionY );
+		float const dx = 1.0f / ( ( float )resolutionX );
+		float const hdx = 0.5f / ( ( float )resolutionX );
+		float const hdy = 0.5f / ( ( float )resolutionY );
+
+		for ( int i = 0; i < resolutionX; ++i )
+		{
+			float x0;
+			float x1; ( void )x1;
+			x0 = ScaleFromNormalized( ( ( float )i + 0 ) * dx, minX, maxX );
+			x1 = ScaleFromNormalized( ( ( float )i + 1 ) * dx, minX, maxX );
+
+			for ( int j = 0; j < resolutionY; ++j )
+			{
+				float y0;
+				float y1; ( void )y1;
+				y0 = ScaleFromNormalized( ( ( float )( j + 0 ) * dy ), maxY, minY );
+				y1 = ScaleFromNormalized( ( ( float )( j + 1 ) * dy ), maxY, minY );
+
+				ImU32 const col00 = func( x0, y0, pUserData );
+				ImU32 const col01 = func( x0, y1, pUserData );
+				ImU32 const col10 = func( x1, y0, pUserData );
+				ImU32 const col11 = func( x1, y1, pUserData );
+				pDrawList->AddRectFilledMultiColor( position + ImVec2( sx * ( i + 0 ), sy * ( j + 0 ) ),
+													position + ImVec2( sx * ( i + 1 ), sy * ( j + 1 ) ),
+													col00, col10, col11, col01 );
+			}
+		}
+	}
+	
+	ImU32 ImInternalHueFunc( float ttt, void* pUserData )
+	{
+		float alpha = ( ( float* )pUserData )[ 0 ];
+		float offset = ( ( float* )pUserData )[ 1 ];
+		float gamma = ( ( float* )pUserData )[ 2 ];
+		float tt = ImPow( ttt, gamma );
+		float t;
+		if ( tt - offset < 0.0f )
+			t = ImFmod( 1.0f + ( tt - offset ), 1.0f );
+		else
+			t = ImFmod( tt - offset, 1.0f );
+
+		float r, g, b;
+		ImGui::ColorConvertHSVtoRGB( t, 1.0f, 1.0f, r, g, b );
+		int const ur = static_cast< int >( 255.0f * r );
+		int const ug = static_cast< int >( 255.0f * g );
+		int const ub = static_cast< int >( 255.0f * b );
+		int const ua = static_cast< int >( 255.0f * alpha );
+		return IM_COL32( ur, ug, ub, ua );
+	};
+	void DrawHueBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, float alpha, float gamma, float offset )
+	{
+		float data[] = { alpha, offset, gamma };
+
+		DrawProceduralColor1DBilinear( pDrawList, &ImInternalHueFunc, &data[ 0 ], 0.0f, 1.0f, vpos, size, division );
+	}
+
+	void DrawHueBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, float colorStartRGB[ 3 ], float alpha, float gamma )
+	{
+		float h, s, v;
+		ImGui::ColorConvertRGBtoHSV( colorStartRGB[ 0 ], colorStartRGB[ 1 ], colorStartRGB[ 2 ], h, s, v );
+		DrawHueBand( pDrawList, vpos, size, division, alpha, gamma, h );
+	}
+
+	ImU32 ImInternalLumianceFunc( float tt, void* pUserData )
+	{
+		float h = ( ( float* )pUserData )[ 0 ];
+		float s = ( ( float* )pUserData )[ 1 ];
+		float v = ( ( float* )pUserData )[ 2 ];
+		float gamma = ( ( float* )pUserData )[ 3 ];
+		float t = ImPow( tt, gamma );
+		float r, g, b;
+		ImGui::ColorConvertHSVtoRGB( h, s, ImLerp( 0.0f, v, t ), r, g, b );
+		int const ur = static_cast< int >( 255.0f * r );
+		int const ug = static_cast< int >( 255.0f * g );
+		int const ub = static_cast< int >( 255.0f * b );
+		return IM_COL32( ur, ug, ub, 255 );
+	}
+	void DrawLumianceBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma )
+	{
+		float h, s, v;
+		ImGui::ColorConvertRGBtoHSV( color.x, color.y, color.z, h, s, v );
+		float data[] = { h, s, v, gamma };
+		DrawProceduralColor1DBilinear( pDrawList, &ImInternalLumianceFunc, &data[ 0 ], 0.0f, 1.0f, vpos, size, division );
+	}
+
+	ImU32 ImInternalSaturationFunc( float tt, void* pUserData )
+	{
+		float h = ( ( float* )pUserData )[ 0 ];
+		float s = ( ( float* )pUserData )[ 1 ];
+		float v = ( ( float* )pUserData )[ 2 ];
+		float gamma = ( ( float* )pUserData )[ 3 ];
+		float t = ImPow( tt, gamma );
+		float r, g, b;
+		ImGui::ColorConvertHSVtoRGB( h, ImLerp( 0.0f, 1.0f, t ) * s, ImLerp( 0.5f, 1.0f, t ) * v, r, g, b );
+		int const ur = static_cast< int >( 255.0f * r );
+		int const ug = static_cast< int >( 255.0f * g );
+		int const ub = static_cast< int >( 255.0f * b );
+		return IM_COL32( ur, ug, ub, 255 );
+	}
+	void DrawSaturationBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma )
+	{
+		float h, s, v;
+		ImGui::ColorConvertRGBtoHSV( color.x, color.y, color.z, h, s, v );
+		float data[] = { h, s, v, gamma };
+
+		DrawProceduralColor1DBilinear( pDrawList, &ImInternalSaturationFunc, &data[ 0 ], 0.0f, 1.0f, vpos, size, division );
+	}
 
 	//////////////////////////////////////////////////////////////////////////
 	// Widgets
 	//////////////////////////////////////////////////////////////////////////
-	void CenterNextItem(ImVec2 nextItemSize)
-	{
-		float const width = ImGui::GetContentRegionAvail().x;
-		ImGui::Dummy(ImVec2((width - nextItemSize.x) * 0.5f, nextItemSize.y));
-		ImGui::SameLine();
-	}
 
-#if 0
-	bool DragFloatLog(const char* label, float* data, float v_speed, float log_basis, const void* p_min, const void* p_max, ImGuiSliderFlags flags)
-	{
-		ImGuiWindow* window = ImGui::GetCurrentWindow();
-		if (window->SkipItems)
-			return false;
-
-		ImGuiContext& g = *GImGui;
-		const ImGuiStyle& style = g.Style;
-		const ImGuiID id = window->GetID(label);
-		const float w = ImGui::CalcItemWidth();
-		const ImVec2 label_size = ImGui::CalcTextSize(label, NULL, true);
-		const ImRect frame_bb(window->DC.CursorPos, window->DC.CursorPos + ImVec2(w, label_size.y + style.FramePadding.y * 2.0f));
-		const ImRect total_bb(frame_bb.Min, frame_bb.Max + ImVec2(label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f, 0.0f));
-
-		ImGui::ItemSize(total_bb, style.FramePadding.y);
-		if (!ImGui::ItemAdd(total_bb, id, &frame_bb))
-			return false;
-
-		//// Default format string when passing NULL
-		//if (format == NULL)
-		//	format = ImGui::DataTypeGetInfo(data_type)->PrintFmt;
-		//else if (data_type == ImGuiDataType_S32 && strcmp(format, "%d") != 0) // (FIXME-LEGACY: Patch old "%.0f" format string to use "%d", read function more details.)
-		//	format = ImGui::PatchFormatStringFloatToInt(format);
-
-		// Tabbing or CTRL-clicking on Drag turns it into an InputText
-		const bool hovered = ImGui::ItemHoverable(frame_bb, id, ImGuiItemFlags_Inputable);
-		const bool temp_input_allowed = (flags & ImGuiSliderFlags_NoInput) == 0;
-		bool temp_input_is_active = temp_input_allowed && ImGui::TempInputIsActive(id);
-		if (!temp_input_is_active)
-		{
-			const bool focus_requested = temp_input_allowed && ImGui::FocusableItemRegister(window, id);
-			const bool clicked = (hovered && g.IO.MouseClicked[0]);
-			const bool double_clicked = (hovered && g.IO.MouseDoubleClicked[0]);
-			if (focus_requested || clicked || double_clicked || g.NavActivateId == id || g.NavInputId == id)
-			{
-				ImGui::SetActiveID(id, window);
-				ImGui::SetFocusID(id, window);
-				ImGui::FocusWindow(window);
-				g.ActiveIdUsingNavDirMask = (1 << ImGuiDir_Left) | (1 << ImGuiDir_Right);
-				if (temp_input_allowed && (focus_requested || (clicked && g.IO.KeyCtrl) || double_clicked || g.NavInputId == id))
-				{
-					temp_input_is_active = true;
-					ImGui::FocusableItemUnregister(window);
-				}
-			}
-			// Experimental: simple click (without moving) turns Drag into an InputText
-			// FIXME: Currently polling ImGuiConfigFlags_IsTouchScreen, may either poll an hypothetical ImGuiBackendFlags_HasKeyboard and/or an explicit drag settings.
-			if (g.IO.ConfigDragClickToInputText && temp_input_allowed && !temp_input_is_active)
-				if (g.ActiveId == id && hovered && g.IO.MouseReleased[0] && !ImGui::IsMouseDragPastThreshold(0, g.IO.MouseDragThreshold * 0.5f/*DRAG_MOUSE_THRESHOLD_FACTOR*/))
-				{
-					g.NavInputId = id;
-					temp_input_is_active = true;
-					ImGui::FocusableItemUnregister(window);
-				}
-		}
-
-		if (temp_input_is_active)
-		{
-			// Only clamp CTRL+Click input when ImGuiSliderFlags_AlwaysClamp is set
-			const bool is_clamp_input = (flags & ImGuiSliderFlags_AlwaysClamp) != 0 && (p_min == NULL || p_max == NULL || ImGui::DataTypeCompare(ImGuiDataType_Float, p_min, p_max) < 0);
-			return ImGui::TempInputScalar(frame_bb, id, label, ImGuiDataType_Float, data, "%f", is_clamp_input ? p_min : NULL, is_clamp_input ? p_max : NULL);
-		}
-
-		// Draw frame
-		const ImU32 frame_col = ImGui::GetColorU32(g.ActiveId == id ? ImGuiCol_FrameBgActive : g.HoveredId == id ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg);
-		ImGui::RenderNavHighlight(frame_bb, id);
-		ImGui::RenderFrame(frame_bb.Min, frame_bb.Max, frame_col, true, style.FrameRounding);
-
-		// Drag behavior
-		const bool value_changed = ImGui::DragBehavior(id, ImGuiDataType_Float, data, v_speed, p_min, p_max, "%f", flags);
-		if (value_changed)
-			ImGui::MarkItemEdited(id);
-
-		// Display value using user-provided display format so user can add prefix/suffix/decorations to the value.
-		char value_buf[64];
-		const char* value_buf_end = value_buf + ImGui::DataTypeFormatString(value_buf, IM_ARRAYSIZE(value_buf), ImGuiDataType_Float, data, "%f");
-		if (g.LogEnabled)
-			ImGui::LogSetNextTextDecoration("{", "}");
-		ImGui::RenderTextClipped(frame_bb.Min, frame_bb.Max, value_buf, value_buf_end, NULL, ImVec2(0.5f, 0.5f));
-
-		if (label_size.x > 0.0f)
-			ImGui::RenderText(ImVec2(frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + style.FramePadding.y), label);
-
-		IMGUI_TEST_ENGINE_ITEM_INFO(id, label, window->DC.ItemFlags);
-		return value_changed;
-	}
-#endif
-
-	bool DragLengthScalar(const char* label, ImGuiDataType data_type, void* p_data, ImWidgetsLengthUnit* p_defaultUnit, float v_speed, const void* p_min, const void* p_max, ImGuiSliderFlags flags)
-	{
-		bool modified = false;
-
-		ImWidgetsLengthUnit& defaultUnit = *p_defaultUnit;
-
-		ImVec2 curPos = ImGui::GetCursorScreenPos();
-
-		//std::string format = std::string(ImGui::DataTypeGetInfo(data_type)->PrintFmt);
-		std::string format = "%.3f";
-		if (ImGui::Button("<", ImVec2(16.0f, 0.0f)))
-		{
-			--defaultUnit;
-			if (defaultUnit < 0)
-				defaultUnit = ImWidgetsLengthUnit_COUNT - 1;
-		}
-		ImGui::SameLine();
-		if (defaultUnit == ImWidgetsLengthUnit_Imperial)
-		{
-			ScaleData(data_type, p_data, 0.28084);
-			format += " ft";
-		}
-		else
-		{
-			format += " m";
-		}
-		float const width = ImGui::GetContentRegionAvail().x;
-		ImGui::SetNextItemWidth(width * 0.5f - 32.0f);
-		modified |= ImGui::DragScalar(label, data_type, p_data, v_speed, p_min, p_max, format.c_str(), flags);
-
-		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-		ImGui::SetWindowFontScale(1.0f);
-		ImVec2 const vTextSize = ImGui::CalcTextSize(defaultUnit == ImWidgetsLengthUnit_Metric ? "meter" : "feet");
-		ImVec2 itemSize = ImGui::GetItemRectSize();
-		pDrawList->AddText(curPos + ImVec2(itemSize.x * 0.5f + 16.0f, ImGui::GetTextLineHeight()), ImGui::GetColorU32(ImGuiCol_Text), defaultUnit == ImWidgetsLengthUnit_Metric ? "meter" : "feet");
-		ImGui::SetWindowFontScale(1.0f);
-
-		if (defaultUnit == ImWidgetsLengthUnit_Imperial)
-		{
-			ScaleData(data_type, p_data, 1.0 / 0.28084);
-		}
-		ImGui::SameLine();
-		if (ImGui::Button(">", ImVec2(16.0f, 0.0f)))
-		{
-			++defaultUnit;
-			defaultUnit %= ImWidgetsLengthUnit_COUNT;
-		}
-
-		ImGui::Dummy(ImVec2(0.0f, ImGui::GetTextLineHeight()));
-
-		return modified;
-	}
-
-	bool InputVec2(char const* pLabel, ImVec2* pValue, ImVec2 vMinValue, ImVec2 vMaxValue, float const fScale /*= 1.0f*/)
-	{
-		return Slider2DScalar(pLabel, ImGuiDataType_Float, &pValue->x, &pValue->y, &vMinValue.x, &vMaxValue.x, &vMinValue.y, &vMaxValue.y, fScale);
-	}
-
-	bool InputVec3(char const* pLabel, ImVec4* pValue, ImVec4 const vMinValue, ImVec4 const vMaxValue, float const fScale /*= 1.0f*/)
-	{
-		return SliderScalar3D(pLabel, &pValue->x, &pValue->y, &pValue->z, vMinValue.x, vMaxValue.x, vMinValue.y, vMaxValue.y, vMinValue.z, vMaxValue.z, fScale);
-	}
-
-	bool RangeSelect2D(char const* pLabel, float* pCurMinX, float* pCurMinY, float* pCurMaxX, float* pCurMaxY, float const fBoundMinX, float const fBoundMinY, float const fBoundMaxX, float const fBoundMaxY, float const fScale /*= 1.0f*/)
-	{
-		//EMV_ASSERT(fBoundMinX < fBoundMaxX);
-		//EMV_ASSERT(fBoundMinY < fBoundMaxY);
-
-		float& fCurMinX = *pCurMinX;
-		float& fCurMinY = *pCurMinY;
-		float& fCurMaxX = *pCurMaxX;
-		float& fCurMaxY = *pCurMaxY;
-
-		//EMV_ASSERT(fCurMinX < fCurMaxX);
-		//EMV_ASSERT(fCurMinY < fCurMaxY);
-
-		float const fDeltaBoundX = fBoundMaxX - fBoundMinX;
-		float const fDeltaBoundY = fBoundMaxY - fBoundMinY;
-
-		float const fDeltaX = fCurMaxX - fCurMinX;
-		float const fDeltaY = fCurMaxY - fCurMinY;
-
-		float const fScaleX = fDeltaX / fDeltaBoundX;
-		float const fScaleY = fDeltaY / fDeltaBoundY;
-		float const fScaleMinX = Rescale01(fCurMinX, fBoundMinX, fBoundMaxX);
-		float const fScaleMinY = Rescale01(fCurMinY, fBoundMinY, fBoundMaxY);
-		float const fScaleMaxX = Rescale01(fCurMaxX, fBoundMinX, fBoundMaxX);
-		float const fScaleMaxY = Rescale01(fCurMaxY, fBoundMinY, fBoundMaxY);
-
-		ImGuiID const iID = ImGui::GetID(pLabel);
-
-		ImVec2 const vSizeSubstract = ImGui::CalcTextSize(std::to_string(1.0f).c_str()) * 1.1f;
-
-		float const vSizeFull = (ImGui::GetContentRegionAvail().x - vSizeSubstract.x) * fScale;
-		ImVec2 const vSize(vSizeFull, vSizeFull);
-
-		float const fHeightOffset = ImGui::GetTextLineHeight();
-		ImVec2 const vHeightOffset(0.0f, fHeightOffset);
-
-		ImVec2 vPos = ImGui::GetCursorScreenPos();
-		ImRect oRect(vPos + vHeightOffset, vPos + vSize + vHeightOffset);
-
-		constexpr float fCursorOff = 10.0f;
-		float const fXLimit = fCursorOff / oRect.GetWidth();
-		float const fYLimit = fCursorOff / oRect.GetHeight();
-
-		ImVec2 const vCursorPos((oRect.Max.x - oRect.Min.x) * fScaleX + oRect.Min.x, (oRect.Max.y - oRect.Min.y) * fScaleY + oRect.Min.y);
-
-		ImGui::Dummy(vHeightOffset);
-		ImGui::Dummy(vHeightOffset);
-
-		//ImGui::Text(pLabel);
-
-		ImGui::PushID(iID);
-		ImU32 const uFrameCol = ImGui::GetColorU32(ImGuiCol_FrameBg);
-		ImU32 const uFrameZoneCol = ImGui::GetColorU32(ImGuiCol_FrameBgActive);
-
-		ImVec2 const vOriginPos = ImGui::GetCursorScreenPos();
-		ImGui::RenderFrame(oRect.Min, oRect.Max, uFrameCol, false, 0.0f);
-		bool bModified = false;
-		ImVec2 const vSecurity(15.0f, 15.0f);
-		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-
-		ImVec4 const vBlue(70.0f / 255.0f, 102.0f / 255.0f, 230.0f / 255.0f, 1.0f); // TODO: choose from style
-		ImVec4 const vOrange(255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f); // TODO: choose from style
-
-		ImS32 const uBlue = ImGui::GetColorU32(vBlue);
-		ImS32 const uOrange = ImGui::GetColorU32(vOrange);
-
-		constexpr float fBorderThickness = 2.0f;
-		constexpr float fLineThickness = 3.0f;
-		constexpr float fHandleRadius = 7.0f;
-		constexpr float fHandleOffsetCoef = 2.0f;
-
-		float const fRegMinX = ImLerp(oRect.Min.x, oRect.Max.x, fScaleMinX);
-		float const fRegMinY = ImLerp(oRect.Min.y, oRect.Max.y, fScaleMinY);
-		float const fRegMaxX = ImLerp(oRect.Min.x, oRect.Max.x, fScaleMaxX);
-		float const fRegMaxY = ImLerp(oRect.Min.y, oRect.Max.y, fScaleMaxY);
-
-		ImRect oRegionRect(fRegMinX, fRegMinY, fRegMaxX, fRegMaxY);
-
-		ImVec2 vMinCursorPos(fRegMinX, fRegMinY);
-		ImVec2 vMaxCursorPos(fRegMaxX, fRegMaxY);
-
-		float const fRegWidth = oRegionRect.GetWidth();
-		ImRect oWidthHandle(ImVec2(vMinCursorPos.x + 0.25f * fRegWidth, oRect.Min.y - 0.5f * fCursorOff), ImVec2(vMaxCursorPos.x - 0.25f * fRegWidth, oRect.Min.y + 0.5f * fCursorOff));
-		float const fRegHeight = oRegionRect.GetHeight();
-		ImRect oHeightHandle(ImVec2(oRect.Min.x - 0.5f * fCursorOff, vMinCursorPos.y + 0.25f * fRegHeight), ImVec2(oRect.Min.x + 0.5f * fCursorOff, vMaxCursorPos.y - 0.25f * fRegHeight));
-
-		//pDrawList->AddRect(oRect.Min, oRect.Max, uBlue, 0.0f, 0, fBorderThickness);
-		//pDrawList->AddRect(oRegionRect.Min, oRegionRect.Max, uOrange, 0.0f, 0, fLineThickness);
-
-		ImGui::RenderFrame(oRegionRect.Min, oRegionRect.Max, uFrameZoneCol, false, 0.0f);
-
-		pDrawList->AddNgonFilled(vMinCursorPos, 5.0f, uBlue, 4);
-		pDrawList->AddNgonFilled(vMaxCursorPos, 5.0f, uBlue, 4);
-
-		ImRect oDragZone(oRegionRect.Min + ImVec2(fCursorOff, fCursorOff) + vSecurity, oRegionRect.Max - ImVec2(fCursorOff, fCursorOff) - vSecurity);
-		//if (oDragZone.IsInverted())
-		//{
-		//	oDragZone.Min = ImVec2();
-		//	oDragZone.Max = ImVec2();
-		//}
-
-		//if (ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
-		//	ImGui::IsMouseHoveringRect(vMinCursorPos - ImVec2(fHandleRadius, fHandleRadius) - vSecurity, vMinCursorPos + ImVec2(fHandleRadius, fHandleRadius) + vSecurity))
-
-		ImRect vDragBBMin(vMinCursorPos - ImVec2(fHandleRadius, fHandleRadius) - vSecurity, vMinCursorPos + ImVec2(fHandleRadius, fHandleRadius) + vSecurity);
-		ImRect vDragBBMax(vMaxCursorPos - ImVec2(fHandleRadius, fHandleRadius) - vSecurity, vMaxCursorPos + ImVec2(fHandleRadius, fHandleRadius) + vSecurity);
-		ImRect vDragHandleMin(oWidthHandle.Min - ImVec2(fCursorOff, fCursorOff) - vSecurity, oWidthHandle.Max + ImVec2(fCursorOff, fCursorOff) + vSecurity);
-		ImRect vDragHandleHeight(oHeightHandle.Min - ImVec2(fCursorOff, fCursorOff) - vSecurity, oHeightHandle.Max + ImVec2(fCursorOff, fCursorOff) + vSecurity);
-		ImRect vDragRect(oRegionRect.Min, oRegionRect.Max);
-
-		// TODO:
-		float const fArbitrarySpeedScaleBar = 0.0125f;
-
-		bool hovered;
-		bool held;
-		bool pressed = ImGui::ButtonBehavior(vDragBBMin, ImGui::GetID("##Zone"), &hovered, &held);
-		if (hovered && held)
-		{
-			ImVec2 const vLocalCursorPos = ImGui::GetMousePos();
-
-			ImVec2 newVal = Rescalev(vLocalCursorPos, ImVec2(oRect.Min.x, oRect.Min.y), ImVec2(oRect.Max.x, oRect.Max.y), ImVec2(fBoundMinX, fBoundMinY), ImVec2(fBoundMaxX, fBoundMaxY));
-
-			newVal.x = ImClamp(newVal.x, fBoundMinX, *pCurMaxX);
-			newVal.y = ImClamp(newVal.y, fBoundMinY, *pCurMaxY);
-
-			*pCurMinX = newVal.x;
-			*pCurMinY = newVal.y;
-
-			bModified = true;
-		}
-		else
-		{
-			//if (ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
-			//	ImGui::IsMouseHoveringRect(vMaxCursorPos - ImVec2(fHandleRadius, fHandleRadius) - vSecurity, vMaxCursorPos + ImVec2(fHandleRadius, fHandleRadius) + vSecurity))
-			pressed = ImGui::ButtonBehavior(vDragBBMax, ImGui::GetID("##Zone"), &hovered, &held);
-			if (hovered && held)
-			{
-				ImVec2 const vLocalCursorPos = ImGui::GetMousePos();
-						
-				ImVec2 newVal = Rescalev(vLocalCursorPos, ImVec2(oRect.Min.x, oRect.Min.y), ImVec2(oRect.Max.x, oRect.Max.y), ImVec2(fBoundMinX, fBoundMinY), ImVec2(fBoundMaxX, fBoundMaxY));
-
-				newVal.x = ImClamp(newVal.x, *pCurMinX, fBoundMaxX);
-				newVal.y = ImClamp(newVal.y, *pCurMinY, fBoundMaxY);
-
-				*pCurMaxX = newVal.x;
-				*pCurMaxY = newVal.y;
-
-				bModified = true;
-			}
-			else
-			{
-				//if ((ImGui::IsMouseDown(ImGuiMouseButton_Left) || ImGui::IsMouseDown(ImGuiMouseButton_Right)) &&
-				//	ImGui::IsMouseHoveringRect(oWidthHandle.Min - ImVec2(fCursorOff, fCursorOff) - vSecurity, oWidthHandle.Max + ImVec2(fCursorOff, fCursorOff) + vSecurity))
-				pressed = ImGui::ButtonBehavior(vDragHandleMin, ImGui::GetID("##Zone"), &hovered, &held);
-				if (hovered && held)
-				{
-					constexpr float fSpeedHandleWidth = 0.125f;
-					float fDeltaWidth = oWidthHandle.GetCenter().x - ImGui::GetMousePos().x;
-					// Apply Soft-Threshold
-					//fDeltaWidth = fSpeedHandleWidth*Sign(fDeltaWidth)*std::max(std::abs(fDeltaWidth) - 0.5f*fCursorOff, 0.0f);
-
-					fDeltaWidth = fSpeedHandleWidth * ImClamp(fDeltaWidth, -0.5f * oRect.GetWidth(), 0.5f * oRect.GetWidth());
-
-					float fDeltaWidthValue = Rescale(fDeltaWidth, -0.5f * oRect.GetWidth(), 0.5f * oRect.GetWidth(), -0.5f * (fBoundMaxX - fBoundMinX), 0.5f * (fBoundMaxX - fBoundMinX));
-
-					if (ImGui::IsMouseDown(ImGuiMouseButton_Right))
-					{
-						*pCurMinX = ImClamp(*pCurMinX + fArbitrarySpeedScaleBar * fDeltaWidthValue, fBoundMinX, *pCurMaxX);
-						*pCurMaxX = ImClamp(*pCurMaxX - fArbitrarySpeedScaleBar * fDeltaWidthValue, *pCurMinX, fBoundMaxX);
-					}
-					else
-					{
-						if (*pCurMinX <= fBoundMinX && fDeltaWidthValue > 0.0f)
-						{
-							fDeltaWidthValue = 0.0f;
-						}
-						else if (*pCurMaxX >= fBoundMaxX && fDeltaWidthValue < 0.0f)
-						{
-							fDeltaWidthValue = 0.0f;
-						}
-
-						*pCurMinX = ImClamp(*pCurMinX - fDeltaWidthValue, fBoundMinX, *pCurMaxX);
-						*pCurMaxX = ImClamp(*pCurMaxX - fDeltaWidthValue, *pCurMinX, fBoundMaxX);
-					}
-
-					bModified = true;
-				}
-				else
-				{
-					//if ((ImGui::IsMouseDown(ImGuiMouseButton_Left) || ImGui::IsMouseDown(ImGuiMouseButton_Right)) &&
-					//	ImGui::IsMouseHoveringRect(oHeightHandle.Min - ImVec2(fCursorOff, fCursorOff) - vSecurity, oHeightHandle.Max + ImVec2(fCursorOff, fCursorOff) + vSecurity))
-					pressed = ImGui::ButtonBehavior(vDragHandleHeight, ImGui::GetID("##Zone"), &hovered, &held);
-					if (hovered && held)
-					{
-						constexpr float fSpeedHandleHeight = 0.125f;
-						float fDeltaHeight = oHeightHandle.GetCenter().y - ImGui::GetMousePos().y;
-						// Apply Soft-Threshold
-						//fDeltaHeight = fSpeedHandleHeight*Sign(fDeltaHeight)*std::max(std::abs(fDeltaHeight) - 0.5f*fCursorOff, 0.0f);
-						fDeltaHeight = fSpeedHandleHeight * ImClamp(fDeltaHeight, -0.5f * oRect.GetHeight(), 0.5f * oRect.GetHeight());
-
-						float fDeltaHeightValue = Rescale(fDeltaHeight, -0.5f * oRect.GetHeight(), 0.5f * oRect.GetHeight(), -0.5f * (fBoundMaxY - fBoundMinY), 0.5f * (fBoundMaxY - fBoundMinY));
-
-						if (ImGui::IsMouseDown(ImGuiMouseButton_Right))
-						{
-							*pCurMinY = ImClamp(*pCurMinY + fArbitrarySpeedScaleBar * fDeltaHeightValue, fBoundMinY, *pCurMaxY);
-							*pCurMaxY = ImClamp(*pCurMaxY - fArbitrarySpeedScaleBar * fDeltaHeightValue, *pCurMinY, fBoundMaxY);
-						}
-						else
-						{
-							if (*pCurMinY <= fBoundMinY && fDeltaHeightValue > 0.0f)
-							{
-								fDeltaHeightValue = 0.0f;
-							}
-							else if (*pCurMaxY >= fBoundMaxY && fDeltaHeightValue < 0.0f)
-							{
-								fDeltaHeightValue = 0.0f;
-							}
-
-							*pCurMinY = ImClamp(*pCurMinY - fDeltaHeightValue, fBoundMinY, *pCurMaxY);
-							*pCurMaxY = ImClamp(*pCurMaxY - fDeltaHeightValue, *pCurMinY, fBoundMaxY);
-						}
-
-						bModified = true;
-					}
-					else
-					{
-						//if (ImGui::IsMouseHoveringRect(oRegionRect.Min, oRegionRect.Max) && !oRegionRect.IsInverted())
-						pressed = ImGui::ButtonBehavior(vDragRect, ImGui::GetID("##Zone"), &hovered, &held);
-						if (hovered && held)
-						{
-							// Top Left
-							pDrawList->AddLine(oDragZone.Min, oDragZone.Min + ImVec2(oRegionRect.GetWidth() * 0.2f, 0.0f), uFrameCol, 1.0f);
-							pDrawList->AddLine(oDragZone.Min, oDragZone.Min + ImVec2(0.0f, oRegionRect.GetHeight() * 0.2f), uFrameCol, 1.0f);
-							// Bottom Right
-							pDrawList->AddLine(oDragZone.Max, oDragZone.Max - ImVec2(oRegionRect.GetWidth() * 0.2f, 0.0f), uFrameCol, 1.0f);
-							pDrawList->AddLine(oDragZone.Max, oDragZone.Max - ImVec2(0.0f, oRegionRect.GetHeight() * 0.2f), uFrameCol, 1.0f);
-
-							if (ImGui::IsMouseDown(ImGuiMouseButton_Left) && ImGui::IsMouseHoveringRect(oDragZone.Min, oDragZone.Max))
-							{
-								ImVec2 vDragDelta = ImGui::GetMousePos() - oDragZone.GetCenter();
-
-								if (*pCurMinX <= fBoundMinX && vDragDelta.x < 0.0f)
-								{
-									vDragDelta.x = 0.0f;
-								}
-								else if (*pCurMaxX >= fBoundMaxX && vDragDelta.x > 0.0f)
-								{
-									vDragDelta.x = 0.0f;
-								}
-
-								if (*pCurMinY <= fBoundMinY && vDragDelta.y < 0.0f)
-								{
-									vDragDelta.y = 0.0f;
-								}
-								else if (*pCurMaxY >= fBoundMaxY && vDragDelta.y > 0.0f)
-								{
-									vDragDelta.y = 0.0f;
-								}
-
-								float fLocalDeltaX = Rescale(vDragDelta.x, -0.5f * oRect.GetWidth(), 0.5f * oRect.GetWidth(), -0.5f * (fBoundMaxX - fBoundMinX), 0.5f * (fBoundMaxX - fBoundMinX));
-								float fLocalDeltaY = Rescale(vDragDelta.y, -0.5f * oRect.GetHeight(), 0.5f * oRect.GetHeight(), -0.5f * (fBoundMaxY - fBoundMinY), 0.5f * (fBoundMaxY - fBoundMinY));
-
-								*pCurMinX = ImClamp(*pCurMinX + fLocalDeltaX, fBoundMinX, *pCurMaxX);
-								*pCurMaxX = ImClamp(*pCurMaxX + fLocalDeltaX, *pCurMinX, fBoundMaxX);
-
-								*pCurMinY = ImClamp(*pCurMinY + fLocalDeltaY, fBoundMinY, *pCurMaxY);
-								*pCurMaxY = ImClamp(*pCurMaxY + fLocalDeltaY, *pCurMinY, fBoundMaxY);
-							}
-						}
-					}
-				}
-			}
-		}
-
-		char pBufferMinX[16];
-		char pBufferMaxX[16];
-		char pBufferMinY[16];
-		char pBufferMaxY[16];
-		ImFormatString(pBufferMinX, IM_ARRAYSIZE(pBufferMinX), "%.5f", *(float const*)pCurMinX);
-		ImFormatString(pBufferMaxX, IM_ARRAYSIZE(pBufferMaxX), "%.5f", *(float const*)pCurMaxX);
-		ImFormatString(pBufferMinY, IM_ARRAYSIZE(pBufferMinY), "%.5f", *(float const*)pCurMinY);
-		ImFormatString(pBufferMaxY, IM_ARRAYSIZE(pBufferMaxY), "%.5f", *(float const*)pCurMaxY);
-
-		ImU32 const uTextCol = ImGui::ColorConvertFloat4ToU32(ImGui::GetStyle().Colors[ImGuiCol_Text]);
-
-		ImGui::SetWindowFontScale(0.75f);
-
-		ImVec2 const vMinXSize = ImGui::CalcTextSize(pBufferMinX);
-		ImVec2 const vMaxXSize = ImGui::CalcTextSize(pBufferMaxX);
-		ImVec2 const vMinYSize = ImGui::CalcTextSize(pBufferMinY);
-		ImVec2 const vMaxYSize = ImGui::CalcTextSize(pBufferMaxY);
-
-		pDrawList->AddText(ImVec2(vMinCursorPos.x - 0.5f * vMinXSize.x, oRect.Max.y + fCursorOff), uTextCol, pBufferMinX);
-		pDrawList->AddText(ImVec2(vMaxCursorPos.x - 0.5f * vMaxXSize.x, oRect.Max.y + fCursorOff), uTextCol, pBufferMaxX);
-
-		pDrawList->AddText(ImVec2(oRect.Max.x + fCursorOff, vMinCursorPos.y - 0.5f * vMinYSize.y), uTextCol, pBufferMinY);
-		pDrawList->AddText(ImVec2(oRect.Max.x + fCursorOff, vMaxCursorPos.y - 0.5f * vMaxYSize.y), uTextCol, pBufferMaxY);
-
-		ImGui::SetWindowFontScale(1.0f);
-
-		if (!oRegionRect.IsInverted())
-		{
-			pDrawList->AddLine(vMinCursorPos + ImVec2(fCursorOff, 0.0f), vMinCursorPos + ImVec2(2.0f * fCursorOff, 0.0f), uOrange, fLineThickness);
-			pDrawList->AddLine(vMinCursorPos + ImVec2(0.0f, fCursorOff), vMinCursorPos + ImVec2(0.0f, 2.0f * fCursorOff), uOrange, fLineThickness);
-
-			pDrawList->AddLine(vMaxCursorPos - ImVec2(fCursorOff, 0.0f), vMaxCursorPos - ImVec2(2.0f * fCursorOff, 0.0f), uOrange, fLineThickness);
-			pDrawList->AddLine(vMaxCursorPos - ImVec2(0.0f, fCursorOff), vMaxCursorPos - ImVec2(0.0f, 2.0f * fCursorOff), uOrange, fLineThickness);
-		}
-
-		// Cross Center
-		pDrawList->AddLine(oDragZone.GetCenter() - ImVec2(fCursorOff, 0.0f), oDragZone.GetCenter() + ImVec2(fCursorOff, 0.0f), uFrameCol, 1.0f);
-		pDrawList->AddLine(oDragZone.GetCenter() - ImVec2(0.0f, fCursorOff), oDragZone.GetCenter() + ImVec2(0.0f, fCursorOff), uFrameCol, 1.0f);
-		//////////////////////////////////////////////////////////////////////////
-		// Top Left
-		pDrawList->AddLine(oRect.Min, ImVec2(vMinCursorPos.x, oRect.Min.y), uOrange, fLineThickness);
-		pDrawList->AddLine(oRect.Min, ImVec2(oRect.Min.x, vMinCursorPos.y), uOrange, fLineThickness);
-		// Bottom Left
-		pDrawList->AddLine(ImVec2(oRect.Min.x, oRect.Max.y), ImVec2(vMinCursorPos.x - fCursorOff, oRect.Max.y), uOrange, fLineThickness);
-		pDrawList->AddLine(ImVec2(oRect.Min.x, oRect.Max.y), ImVec2(oRect.Min.x, vMaxCursorPos.y), uOrange, fLineThickness);
-		// 
-		pDrawList->AddLine(ImVec2(vMinCursorPos.x + fCursorOff, oRect.Max.y), ImVec2(vMaxCursorPos.x - fCursorOff, oRect.Max.y), uOrange, fLineThickness);
-		pDrawList->AddLine(ImVec2(vMaxCursorPos.x + fCursorOff, oRect.Max.y), ImVec2(oRect.Max.x, oRect.Max.y), uOrange, fLineThickness);
-		// Right
-		pDrawList->AddLine(oRect.Max, ImVec2(oRect.Max.x, vMaxCursorPos.y + fCursorOff), uOrange, fLineThickness);
-		pDrawList->AddLine(ImVec2(oRect.Max.x, vMaxCursorPos.y - fCursorOff), ImVec2(oRect.Max.x, vMinCursorPos.y + fCursorOff), uOrange, fLineThickness);
-		pDrawList->AddLine(ImVec2(oRect.Max.x, vMinCursorPos.y - fCursorOff), ImVec2(oRect.Max.x, oRect.Min.y), uOrange, fLineThickness);
-		// Top Right
-		pDrawList->AddLine(ImVec2(oRect.Max.x, oRect.Min.y), ImVec2(vMaxCursorPos.x, oRect.Min.y), uOrange, fLineThickness);
-		// Top Handle
-		pDrawList->AddLine(ImVec2(vMinCursorPos.x, oRect.Min.y - fCursorOff), ImVec2(vMinCursorPos.x, oRect.Min.y + fCursorOff), uBlue, fLineThickness);
-		pDrawList->AddLine(ImVec2(vMaxCursorPos.x, oRect.Min.y - fCursorOff), ImVec2(vMaxCursorPos.x, oRect.Min.y + fCursorOff), uBlue, fLineThickness);
-		pDrawList->AddRectFilled(oWidthHandle.Min, oWidthHandle.Max, uBlue);
-		// Left Handle
-		pDrawList->AddLine(ImVec2(oRect.Min.x - fCursorOff, vMinCursorPos.y), ImVec2(oRect.Min.x + fCursorOff, vMinCursorPos.y), uBlue, fLineThickness);
-		pDrawList->AddLine(ImVec2(oRect.Min.x - fCursorOff, vMaxCursorPos.y), ImVec2(oRect.Min.x + fCursorOff, vMaxCursorPos.y), uBlue, fLineThickness);
-		pDrawList->AddRectFilled(oHeightHandle.Min, oHeightHandle.Max, uBlue);
-		// Dots
-		pDrawList->AddCircleFilled(ImVec2(oRect.Max.x, vMinCursorPos.y), 2.0f, uBlue, 3);
-		pDrawList->AddCircleFilled(ImVec2(oRect.Max.x, vMaxCursorPos.y), 2.0f, uBlue, 3);
-		pDrawList->AddCircleFilled(ImVec2(vMinCursorPos.x, oRect.Max.y), 2.0f, uBlue, 3);
-		pDrawList->AddCircleFilled(ImVec2(vMaxCursorPos.x, oRect.Max.y), 2.0f, uBlue, 3);
-		//////////////////////////////////////////////////////////////////////////
-
-		ImGui::PopID();
-
-		//ImGui::Dummy(vHeightOffset);
-		ImGui::Dummy(vHeightOffset);
-		ImGui::Dummy(vSize);
-
-		ImGui::Text("Min x: %f", fCurMinX);
-		ImGui::Text("Min y: %f", fCurMinY);
-		ImGui::Text("Max x: %f", fCurMaxX);
-		ImGui::Text("Max y: %f", fCurMaxY);
-
-		ImGui::Dummy(vHeightOffset);
-
-		return bModified;
-	}
-
-	bool RangeSelectVec2(const char* pLabel, ImVec2* pCurMin, ImVec2* pCurMax, ImVec2 const vBoundMin, ImVec2 const vBoundMax, float const fScale /*= 1.0f*/)
-	{
-		return RangeSelect2D(pLabel, &pCurMin->x, &pCurMin->y, &pCurMax->x, &pCurMax->y, vBoundMin.x, vBoundMin.y, vBoundMax.x, vBoundMax.y, fScale);
-	}
-
-	bool Slider2DScalar(char const* pLabel, ImGuiDataType data_type, void* p_valueX, void* p_valueY, void* p_minX, void* p_maxX, void* p_minY, void* p_maxY, float const fScale /*= 1.0f*/)
-	{
-		IM_ASSERT(ScalarToFloat(data_type, (ImU64*)p_minX) < ScalarToFloat(data_type, (ImU64*)p_maxX));
-		IM_ASSERT(ScalarToFloat(data_type, (ImU64*)p_minY) < ScalarToFloat(data_type, (ImU64*)p_maxY));
-
-		ImGuiWindow* window = ImGui::GetCurrentWindow();
-		if (window->SkipItems)
-			return false;
-
-		ImGuiContext& g = *GImGui;
-		const ImGuiStyle& style = g.Style;
-		//const ImGuiID id = window->GetID(pLabel);
-
-		ImGuiID const iID = ImGui::GetID(pLabel);
-
-		ImVec2 const vSizeSubstract = ImGui::CalcTextSize(std::to_string(1.0f).c_str()) * 1.1f;
-
-		float const vSizeFull = (ImGui::GetContentRegionAvail().x - vSizeSubstract.x) * fScale;
-		ImVec2 const vSize(vSizeFull, vSizeFull);
-
-		float const fHeightOffset = ImGui::GetTextLineHeight();
-		ImVec2 const vHeightOffset(0.0f, fHeightOffset);
-
-		ImVec2 vPos = ImGui::GetCursorScreenPos();
-		ImRect oRect(vPos + vHeightOffset, vPos + vSize + vHeightOffset);
-
-		ImGui::Text(pLabel);
-
-		ImGui::PushID(iID);
-
-		ImGui::ItemSize( oRect, style.FramePadding.y );
-		if ( !ImGui::ItemAdd( oRect, iID, NULL ) )
-			return false;
-		ImU32 const uFrameCol = ImGui::GetColorU32(ImGuiCol_FrameBg);
-
-		ImVec2 const vOriginPos = ImGui::GetCursorScreenPos();
-		ImGui::RenderNavHighlight( oRect, iID );
-		ImGui::RenderFrame(oRect.Min, oRect.Max, uFrameCol, false, 0.0f);
-
-		ImU64 s_delta_x = SubScalar(data_type, p_maxX, p_minX);
-		ImU64 s_delta_y = SubScalar(data_type, p_maxY, p_minY);
-
-		bool bModified = false;
-		ImVec2 const vSecurity(15.0f, 15.0f);
-		ImRect frame_bb = ImRect(oRect.Min - vSecurity, oRect.Max + vSecurity);
-		//ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
-		bool hovered;
-		bool held;
-		bool pressed = ImGui::ButtonBehavior( frame_bb, iID, &hovered, &held, ImGuiButtonFlags_PressedOnClickRelease );
-		if ( held )
-		{
-			ImVec2 const vCursorPos = ImGui::GetMousePos() - oRect.Min;
-
-			float fValueX = vCursorPos.x / (oRect.Max.x - oRect.Min.x) * ScalarToFloat(data_type, &s_delta_x) + ScalarToFloat(data_type, (ImU64*)p_minX);
-			float fValueY = ScalarToFloat(data_type, &s_delta_y) - vCursorPos.y / (oRect.Max.y - oRect.Min.y) * ScalarToFloat(data_type, &s_delta_y) + ScalarToFloat(data_type, (ImU64*)p_minY);
-
-			ImU64 s_value_x = FloatToScalar(data_type, fValueX);
-			ImU64 s_value_y = FloatToScalar(data_type, fValueY);
-
-			EqualScalar(data_type, (ImU64*)p_valueX, &s_value_x);
-			EqualScalar(data_type, (ImU64*)p_valueY, &s_value_y);
-
-			ImGui::MarkItemEdited( iID );
-			bModified = true;
-		}
-		//ImGui::PopItemFlag();
-
-		ImU64 s_clamped_x = ClampScalar(data_type, p_valueX, p_minX, p_maxX);
-		ImU64 s_clamped_y = ClampScalar(data_type, p_valueY, p_minY, p_maxY);
-		EqualScalar(data_type, (ImU64*)p_valueX, &s_clamped_x);
-		EqualScalar(data_type, (ImU64*)p_valueY, &s_clamped_y);
-
-		float const fScaleX = (ScalarToFloat(data_type, (ImU64*)p_valueX) - ScalarToFloat(data_type, (ImU64*)p_minX)) / ScalarToFloat(data_type, &s_delta_x);
-		float const fScaleY = 1.0f - (ScalarToFloat(data_type, (ImU64*)p_valueY) - ScalarToFloat(data_type, (ImU64*)p_minY)) / ScalarToFloat(data_type, &s_delta_y);
-
-		constexpr float fCursorOff = 10.0f;
-		float const fXLimit = fCursorOff / oRect.GetWidth();
-		float const fYLimit = fCursorOff / oRect.GetHeight();
-
-		ImVec2 const vCursorPos((oRect.Max.x - oRect.Min.x) * fScaleX + oRect.Min.x, (oRect.Max.y - oRect.Min.y) * fScaleY + oRect.Min.y);
-
-		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-
-		ImVec4 const vBlue(70.0f / 255.0f, 102.0f / 255.0f, 230.0f / 255.0f, 1.0f); // TODO: choose from style
-		ImVec4 const vOrange(255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f); // TODO: choose from style
-
-		ImS32 const uBlue = ImGui::GetColorU32(vBlue);
-		ImS32 const uOrange = ImGui::GetColorU32(vOrange);
-
-		constexpr float fBorderThickness	= 2.0f;
-		constexpr float fLineThickness		= 3.0f;
-		constexpr float fHandleRadius		= 7.0f;
-		constexpr float fHandleOffsetCoef	= 2.0f;
-
-		// Cursor
-		pDrawList->AddCircleFilled(vCursorPos, 5.0f, uBlue, 16);
-
-		// Vertical Line
-		if (fScaleY > 2.0f * fYLimit)
-			pDrawList->AddLine(ImVec2(vCursorPos.x, oRect.Min.y + fCursorOff), ImVec2(vCursorPos.x, vCursorPos.y - fCursorOff), uOrange, fLineThickness);
-		if (fScaleY < 1.0f - 2.0f * fYLimit)
-			pDrawList->AddLine(ImVec2(vCursorPos.x, oRect.Max.y - fCursorOff), ImVec2(vCursorPos.x, vCursorPos.y + fCursorOff), uOrange, fLineThickness);
-
-		// Horizontal Line
-		if (fScaleX > 2.0f * fXLimit)
-			pDrawList->AddLine(ImVec2(oRect.Min.x + fCursorOff, vCursorPos.y), ImVec2(vCursorPos.x - fCursorOff, vCursorPos.y), uOrange, fLineThickness);
-		if (fScaleX < 1.0f - 2.0f * fYLimit)
-			pDrawList->AddLine(ImVec2(oRect.Max.x - fCursorOff, vCursorPos.y), ImVec2(vCursorPos.x + fCursorOff, vCursorPos.y), uOrange, fLineThickness);
-
-		std::string formatX = ImGui::DataTypeGetInfo(data_type)->PrintFmt;
-		std::string formatY = ImGui::DataTypeGetInfo(data_type)->PrintFmt;
-
-		if (IsPositiveScalar(data_type, (ImU64*)p_valueX))
-		{
-			formatX = " " + formatX;
-		}
-		if (IsPositiveScalar(data_type, (ImU64*)p_valueY))
-		{
-			formatY = " " + formatY;
-		}
-
-		char pBufferX[64];
-		char pBufferY[64];
-		/*const char* value_buf_end_x = pBufferX + */ImGui::DataTypeFormatString(pBufferX, IM_ARRAYSIZE(pBufferX), data_type, p_valueX, formatX.c_str());
-		/*const char* value_buf_end_y = pBufferX + */ImGui::DataTypeFormatString(pBufferY, IM_ARRAYSIZE(pBufferY), data_type, p_valueY, formatY.c_str());
-
-		ImU32 const uTextCol = ImGui::ColorConvertFloat4ToU32(ImGui::GetStyle().Colors[ImGuiCol_Text]);
-
-		ImGui::SetWindowFontScale(0.75f);
-
-		ImVec2 const vXSize = ImGui::CalcTextSize(pBufferX);
-		ImVec2 const vYSize = ImGui::CalcTextSize(pBufferY);
-
-		ImVec2 const vHandlePosX = ImVec2(vCursorPos.x, oRect.Max.y + vYSize.x * 0.5f);
-		ImVec2 const vHandlePosY = ImVec2(oRect.Max.x + fHandleOffsetCoef * fCursorOff + vYSize.x, vCursorPos.y);
-
-		ImRect handle_x_bb = ImRect(vHandlePosX - ImVec2(fHandleRadius, fHandleRadius) - vSecurity, vHandlePosX + ImVec2(fHandleRadius, fHandleRadius) + vSecurity);
-		ImRect handle_y_bb = ImRect(vHandlePosY - ImVec2(fHandleRadius, fHandleRadius) - vSecurity, vHandlePosY + ImVec2(fHandleRadius, fHandleRadius) + vSecurity);
-		ImGui::ItemSize( handle_x_bb );
-		ImGui::ItemAdd( handle_x_bb, ImGui::GetID( "##HandleX" ), NULL, 0 );
-		pressed = ImGui::ButtonBehavior(handle_x_bb, ImGui::GetID("##HandleX"), &hovered, &held);
-		if (held)
-		{
-			ImVec2 const vCursorPosLocal = ImGui::GetMousePos() - oRect.Min;
-
-			//*fValueX = vCursorPos.x / (oRect.Max.x - oRect.Min.x) * fDeltaX + fMinX;
-			float fValueX = vCursorPosLocal.x / (oRect.Max.x - oRect.Min.x) * ScalarToFloat(data_type, &s_delta_x) + ScalarToFloat(data_type, (ImU64*)p_minX);
-			ImU64 s_value_x = FloatToScalar(data_type, fValueX);
-			EqualScalar(data_type, (ImU64*)p_valueX, &s_value_x);
-
-			bModified = true;
-		}
-		ImGui::ItemSize( handle_y_bb );
-		ImGui::ItemAdd( handle_y_bb, ImGui::GetID( "##HandleY" ), NULL, 0 );
-		pressed = ImGui::ButtonBehavior( handle_y_bb, ImGui::GetID( "##HandleY" ), &hovered, &held );
-		if (hovered && held)
-		{
-			ImVec2 const vCursorPosLocal = ImGui::GetMousePos() - oRect.Min;
-
-			//*fValueY = fDeltaY - vCursorPos.y / (oRect.Max.y - oRect.Min.y) * fDeltaY + fMinY;
-			float fValueY = ScalarToFloat(data_type, &s_delta_y) - vCursorPosLocal.y / (oRect.Max.y - oRect.Min.y) * ScalarToFloat(data_type, &s_delta_y) + ScalarToFloat(data_type, (ImU64*)p_minY);
-			ImU64 s_value_y = FloatToScalar(data_type, fValueY);
-			EqualScalar(data_type, (ImU64*)p_valueY, &s_value_y);
-
-			bModified = true;
-		}
-
-		pDrawList->AddText(
-			ImVec2(
-				ImMin(ImMax(vCursorPos.x - vXSize.x * 0.5f, oRect.Min.x), oRect.Min.x + vSize.x - vXSize.x),
-				oRect.Max.y + fCursorOff),
-			uTextCol,
-			pBufferX);
-		pDrawList->AddText(
-			ImVec2(oRect.Max.x + fCursorOff, ImMin(ImMax(vCursorPos.y - vYSize.y * 0.5f, oRect.Min.y),
-				oRect.Min.y + vSize.y - vYSize.y)),
-			uTextCol,
-			pBufferY);
-		ImGui::SetWindowFontScale(1.0f);
-
-		// Borders::Right
-		pDrawList->AddCircleFilled(ImVec2(oRect.Max.x, vCursorPos.y), 2.0f, uOrange, 3);
-		// Handle Right::Y
-		pDrawList->AddNgonFilled(ImVec2(oRect.Max.x + fHandleOffsetCoef * fCursorOff + vYSize.x, vCursorPos.y), fHandleRadius, uBlue, 4);
-		if (fScaleY > fYLimit)
-			pDrawList->AddLine(ImVec2(oRect.Max.x, oRect.Min.y), ImVec2(oRect.Max.x, vCursorPos.y - fCursorOff), uBlue, fBorderThickness);
-		if (fScaleY < 1.0f - fYLimit)
-			pDrawList->AddLine(ImVec2(oRect.Max.x, oRect.Max.y), ImVec2(oRect.Max.x, vCursorPos.y + fCursorOff), uBlue, fBorderThickness);
-		// Borders::Top
-		pDrawList->AddCircleFilled(ImVec2(vCursorPos.x, oRect.Min.y), 2.0f, uOrange, 3);
-		if (fScaleX > fXLimit)
-			pDrawList->AddLine(ImVec2(oRect.Min.x, oRect.Min.y), ImVec2(vCursorPos.x - fCursorOff, oRect.Min.y), uBlue, fBorderThickness);
-		if (fScaleX < 1.0f - fXLimit)
-			pDrawList->AddLine(ImVec2(oRect.Max.x, oRect.Min.y), ImVec2(vCursorPos.x + fCursorOff, oRect.Min.y), uBlue, fBorderThickness);
-		// Borders::Left
-		pDrawList->AddCircleFilled(ImVec2(oRect.Min.x, vCursorPos.y), 2.0f, uOrange, 3);
-		if (fScaleY > fYLimit)
-			pDrawList->AddLine(ImVec2(oRect.Min.x, oRect.Min.y), ImVec2(oRect.Min.x, vCursorPos.y - fCursorOff), uBlue, fBorderThickness);
-		if (fScaleY < 1.0f - fYLimit)
-			pDrawList->AddLine(ImVec2(oRect.Min.x, oRect.Max.y), ImVec2(oRect.Min.x, vCursorPos.y + fCursorOff), uBlue, fBorderThickness);
-		// Borders::Bottom
-		pDrawList->AddCircleFilled(ImVec2(vCursorPos.x, oRect.Max.y), 2.0f, uOrange, 3);
-		// Handle Bottom::X
-		pDrawList->AddNgonFilled(ImVec2(vCursorPos.x, oRect.Max.y + vXSize.y * 2.0f), fHandleRadius, uBlue, 4);
-		if (fScaleX > fXLimit)
-			pDrawList->AddLine(ImVec2(oRect.Min.x, oRect.Max.y), ImVec2(vCursorPos.x - fCursorOff, oRect.Max.y), uBlue, fBorderThickness);
-		if (fScaleX < 1.0f - fXLimit)
-			pDrawList->AddLine(ImVec2(oRect.Max.x, oRect.Max.y), ImVec2(vCursorPos.x + fCursorOff, oRect.Max.y), uBlue, fBorderThickness);
-
-		ImGui::PopID();
-
-		ImGui::Dummy(vHeightOffset);
-		ImGui::Dummy(vHeightOffset);
-		//ImGui::Dummy(vSize);
-
-		return bModified;
-	}
-
-	bool Slider2DInt(char const* pLabel, int* pValueX, int* pValueY, int* p_minX, int* p_maxX, int* p_minY, int* p_maxY, float const fScale)
-	{
-		return Slider2DScalar(pLabel, ImGuiDataType_S32, pValueX, pValueY, p_minX, p_maxX, p_minY, p_maxY, fScale);
-	}
-
-	bool Slider2DFloat(char const* pLabel, float* pValueX, float* pValueY, float minX, float maxX, float minY, float maxY, float const fScale)
-	{
-		return Slider2DScalar(pLabel, ImGuiDataType_Float, pValueX, pValueY, &minX, &maxX, &minY, &maxY, fScale);
-	}
-
-	bool Slider2DDouble(char const* pLabel, double* pValueX, double* pValueY, double minX, double maxX, double minY, double maxY, float const fScale)
-	{
-		return Slider2DScalar(pLabel, ImGuiDataType_Double, pValueX, pValueY, &minX, &maxX, &minY, &maxY, fScale);
-	}
-
-	bool SliderScalar3D(char const* pLabel, float* pValueX, float* pValueY, float* pValueZ, float const fMinX, float const fMaxX, float const fMinY, float const fMaxY, float const fMinZ, float const fMaxZ, float const fScale /*= 1.0f*/)
-	{
-		assert(fMinX < fMaxX);
-		assert(fMinY < fMaxY);
-		assert(fMinZ < fMaxZ);
-
-		ImGuiID const iID = ImGui::GetID(pLabel);
-
-		ImVec2 const vSizeSubstract = ImGui::CalcTextSize(std::to_string(1.0f).c_str()) * 1.1f;
-
-		float const vSizeFull = ImGui::GetContentRegionAvail().x;
-		float const fMinSize = (vSizeFull - vSizeSubstract.x * 0.5f) * fScale * 0.75f;
-		ImVec2 const vSize(fMinSize, fMinSize);
-
-		float const fHeightOffset = ImGui::GetTextLineHeight();
-		ImVec2 const vHeightOffset(0.0f, fHeightOffset);
-
-		ImVec2 vPos = ImGui::GetCursorScreenPos();
-		ImRect oRect(vPos + vHeightOffset, vPos + vSize + vHeightOffset);
-
-		ImGui::Text(pLabel);
-
-		ImGui::PushID(iID);
-
-		ImU32 const uFrameCol = ImGui::GetColorU32(ImGuiCol_FrameBg) | 0xFF000000;
-		ImU32 const uFrameCol2 = ImGui::GetColorU32(ImGuiCol_FrameBgActive);
-
-		float& fX = *pValueX;
-		float& fY = *pValueY;
-		float& fZ = *pValueZ;
-
-		float const fDeltaX = fMaxX - fMinX;
-		float const fDeltaY = fMaxY - fMinY;
-		float const fDeltaZ = fMaxZ - fMinZ;
-
-		ImVec2 const vOriginPos = ImGui::GetCursorScreenPos();
-
-		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-
-		float const fX3 = vSize.x / 3.0f;
-		float const fY3 = vSize.y / 3.0f;
-
-		ImVec2 const vStart = oRect.Min;
-
-		ImVec2 aPositions[] = {
-			ImVec2(vStart.x,			vStart.y + fX3),
-			ImVec2(vStart.x,			vStart.y + vSize.y),
-			ImVec2(vStart.x + 2.0f * fX3,	vStart.y + vSize.y),
-			ImVec2(vStart.x + vSize.x,	vStart.y + 2.0f * fY3),
-			ImVec2(vStart.x + vSize.x,	vStart.y),
-			ImVec2(vStart.x + fX3,		vStart.y)
-		};
-
-		pDrawList->AddPolyline(&aPositions[0], 6, uFrameCol2, true, 1.0f);
-
-		// Cube Shape
-		pDrawList->AddLine(
-			oRect.Min + ImVec2(0.0f, vSize.y),
-			oRect.Min + ImVec2(fX3, 2.0f * fY3), uFrameCol2, 1.0f);
-		pDrawList->AddLine(
-			oRect.Min + ImVec2(fX3, 2.0f * fY3),
-			oRect.Min + ImVec2(vSize.x, 2.0f * fY3), uFrameCol2, 1.0f);
-		pDrawList->AddLine(
-			oRect.Min + ImVec2(fX3, 0.0f),
-			oRect.Min + ImVec2(fX3, 2.0f * fY3), uFrameCol2, 1.0f);
-
-		ImGui::PopID();
-
-		constexpr float fDragZOffsetX = 64.0f;
-
-		ImRect oZDragRect(ImVec2(vStart.x + 2.0f * fX3 + fDragZOffsetX, vStart.y + 2.0f * fY3), ImVec2(vStart.x + vSize.x + fDragZOffsetX, vStart.y + vSize.y));
-
-		ImVec2 const vMousePos = ImGui::GetMousePos();
-		ImVec2 const vSecurity(15.0f, 15.0f);
-		ImVec2 const vDragStart(oZDragRect.Min.x, oZDragRect.Max.y);
-		ImVec2 const vDragEnd(oZDragRect.Max.x, oZDragRect.Min.y);
-		ImRect frame_bb = ImRect(oRect.Min - vSecurity, oRect.Max + vSecurity);
-		bool bModified = false;
-		bool hovered;
-		bool held;
-		bool pressed = ImGui::ButtonBehavior(oZDragRect, ImGui::GetID("##HandleZ"), &hovered, &held);
-		if (hovered && held)
-		{
-			if (DistToSegmentSqr(vMousePos, vDragStart, vDragEnd) < 100.0f) // 100 is arbitrary threshold
-			{
-				float const fMaxDist = ImSqrt(Dist2(vDragStart, vDragEnd));
-				float const fDist = ImSaturate(ImSqrt(DistOnSegmentSqr(vMousePos, vDragStart, vDragEnd)) / fMaxDist);
-
-				fZ = fDist * fDeltaZ * fDist + fMinZ;
-
-				bModified = true;
-			}
-		}
-
-		float const fScaleZ = (fZ - fMinZ) / fDeltaZ;
-
-		ImVec2 const vRectStart(vStart.x, vStart.y + fX3);
-		ImVec2 const vRectEnd(vStart.x + fX3, vStart.y);
-		ImRect const oXYDrag((vRectEnd - vRectStart) * fScaleZ + vRectStart,
-							 (vRectEnd - vRectStart) * fScaleZ + vRectStart + ImVec2(2.0f * fX3, 2.0f * fY3));
-		//if (ImGui::IsMouseHoveringRect(oXYDrag.Min - vSecurity, oXYDrag.Max + vSecurity) && ImGui::IsMouseDown(ImGuiMouseButton_Left))
-		pressed = ImGui::ButtonBehavior(oXYDrag, ImGui::GetID("##Zone"), &hovered, &held);
-		if (hovered && held)
-		{
-			ImVec2 const vLocalPos = ImGui::GetMousePos() - oXYDrag.Min;
-
-			fX = vLocalPos.x / (oXYDrag.Max.x - oXYDrag.Min.x) * fDeltaX + fMinX;
-			fY = fDeltaY - vLocalPos.y / (oXYDrag.Max.y - oXYDrag.Min.y) * fDeltaY + fMinY;
-
-			bModified = true;
-		}
-
-		fX = ImClamp(fX, fMinX, fMaxX);
-		fY = ImClamp(fY, fMinY, fMaxY);
-		fZ = ImClamp(fZ, fMinZ, fMaxZ);
-
-		float const fScaleX = (fX - fMinX) / fDeltaX;
-		float const fScaleY = 1.0f - (fY - fMinY) / fDeltaY;
-
-		ImVec4 const vBlue(70.0f / 255.0f, 102.0f / 255.0f, 230.0f / 255.0f, 1.0f);
-		ImVec4 const vOrange(255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f);
-
-		ImS32 const uBlue = ImGui::GetColorU32(vBlue);
-		ImS32 const uOrange = ImGui::GetColorU32(vOrange);
-
-		constexpr float fBorderThickness = 2.0f; // TODO: move as Style
-		constexpr float fLineThickness = 3.0f; // TODO: move as Style
-		constexpr float fHandleRadius = 7.0f; // TODO: move as Style
-		constexpr float fHandleOffsetCoef = 2.0f; // TODO: move as Style
-
-		pDrawList->AddLine(
-			vDragStart,
-			vDragEnd, uFrameCol2, 1.0f);
-		pDrawList->AddRectFilled(
-			oXYDrag.Min, oXYDrag.Max, uFrameCol);
-
-		constexpr float fCursorOff = 10.0f;
-		float const fXLimit = fCursorOff / oXYDrag.GetWidth();
-		float const fYLimit = fCursorOff / oXYDrag.GetHeight();
-		float const fZLimit = fCursorOff / oXYDrag.GetWidth();
-
-		char pBufferX[16];
-		char pBufferY[16];
-		char pBufferZ[16];
-		ImFormatString(pBufferX, IM_ARRAYSIZE(pBufferX), "%.5f", *(float const*)& fX);
-		ImFormatString(pBufferY, IM_ARRAYSIZE(pBufferY), "%.5f", *(float const*)& fY);
-		ImFormatString(pBufferZ, IM_ARRAYSIZE(pBufferZ), "%.5f", *(float const*)& fZ);
-
-		ImU32 const uTextCol = ImGui::ColorConvertFloat4ToU32(ImGui::GetStyle().Colors[ImGuiCol_Text]);
-
-		ImVec2 const vCursorPos((oXYDrag.Max.x - oXYDrag.Min.x) * fScaleX + oXYDrag.Min.x, (oXYDrag.Max.y - oXYDrag.Min.y) * fScaleY + oXYDrag.Min.y);
-
-		ImGui::SetWindowFontScale(0.75f);
-
-		ImVec2 const vXSize = ImGui::CalcTextSize(pBufferX);
-		ImVec2 const vYSize = ImGui::CalcTextSize(pBufferY);
-		ImVec2 const vZSize = ImGui::CalcTextSize(pBufferZ);
-
-		ImVec2 const vTextSlideXMin = oRect.Min + ImVec2(0.0f, vSize.y);
-		ImVec2 const vTextSlideXMax = oRect.Min + ImVec2(2.0f * fX3, vSize.y);
-		ImVec2 const vXTextPos((vTextSlideXMax - vTextSlideXMin) * fScaleX + vTextSlideXMin);
-
-		ImVec2 const vTextSlideYMin = oRect.Min + ImVec2(vSize.x, 2.0f * fY3);
-		ImVec2 const vTextSlideYMax = oRect.Min + ImVec2(vSize.x, 0.0f);
-		ImVec2 const vYTextPos((vTextSlideYMax - vTextSlideYMin) * (1.0f - fScaleY) + vTextSlideYMin);
-
-		ImVec2 const vTextSlideZMin = vDragStart + ImVec2(fCursorOff, fCursorOff);
-		ImVec2 const vTextSlideZMax = vDragEnd + ImVec2(fCursorOff, fCursorOff);
-		ImVec2 const vZTextPos((vTextSlideZMax - vTextSlideZMin) * fScaleZ + vTextSlideZMin);
-
-		ImVec2 const vHandlePosX = vXTextPos + ImVec2(0.0f, vXSize.y + fHandleOffsetCoef * fCursorOff);
-		ImVec2 const vHandlePosY = vYTextPos + ImVec2(vYSize.x + (fHandleOffsetCoef + 1.0f) * fCursorOff, 0.0f);
-
-		ImRect handle_x_bb = ImRect(vHandlePosX - ImVec2(fHandleRadius, fHandleRadius) - vSecurity, vHandlePosX + ImVec2(fHandleRadius, fHandleRadius) + vSecurity);
-		ImRect handle_y_bb = ImRect(vHandlePosY - ImVec2(fHandleRadius, fHandleRadius) - vSecurity, vHandlePosY + ImVec2(fHandleRadius, fHandleRadius) + vSecurity);
-		//ImRect handle_z_bb = ImRect(vHandlePosY - ImVec2(fHandleRadius, fHandleRadius) - vSecurity, vHandlePosY + ImVec2(fHandleRadius, fHandleRadius) + vSecurity);
-
-		//if (ImGui::IsMouseHoveringRect(vHandlePosX - ImVec2(fHandleRadius, fHandleRadius) - vSecurity, vHandlePosX + ImVec2(fHandleRadius, fHandleRadius) + vSecurity) &&
-		//	ImGui::IsMouseDown(ImGuiMouseButton_Left))
-		pressed = ImGui::ButtonBehavior(handle_x_bb, ImGui::GetID("##HandleX"), &hovered, &held);
-		if (hovered && held)
-		{
-			float const fCursorPosX = ImGui::GetMousePos().x - vStart.x;
-
-			fX = fDeltaX * fCursorPosX / (2.0f * fX3) + fMinX;
-
-			bModified = true;
-		}
-		//else if (ImGui::IsMouseHoveringRect(vHandlePosY - ImVec2(fHandleRadius, fHandleRadius) - vSecurity, vHandlePosY + ImVec2(fHandleRadius, fHandleRadius) + vSecurity) &&
-		//	ImGui::IsMouseDown(ImGuiMouseButton_Left))
-		pressed = ImGui::ButtonBehavior(handle_y_bb, ImGui::GetID("##HandleY"), &hovered, &held);
-		if (hovered && held)
-		{
-			float const fCursorPosY = ImGui::GetMousePos().y - vStart.y;
-
-			fY = fDeltaY * (1.0f - fCursorPosY / (2.0f * fY3)) + fMinY;
-
-			bModified = true;
-		}
-
-		pDrawList->AddText(
-			ImVec2(
-				ImMin(ImMax(vXTextPos.x - vXSize.x * 0.5f, vTextSlideXMin.x), vTextSlideXMax.x - vXSize.x),
-				vXTextPos.y + fCursorOff),
-			uTextCol,
-			pBufferX);
-		pDrawList->AddText(
-			ImVec2(
-				vYTextPos.x + fCursorOff,
-				ImMin(ImMax(vYTextPos.y - vYSize.y * 0.5f, vTextSlideYMax.y), vTextSlideYMin.y - vYSize.y)),
-			uTextCol,
-			pBufferY);
-		pDrawList->AddText(
-			vZTextPos,
-			uTextCol,
-			pBufferZ);
-		ImGui::SetWindowFontScale(1.0f);
-
-		// Handles
-		pDrawList->AddNgonFilled(vHandlePosX, fHandleRadius, uBlue, 4);
-		pDrawList->AddNgonFilled(vHandlePosY, fHandleRadius, uBlue, 4);
-
-		// Vertical Line
-		if (fScaleY > 2.0f * fYLimit)
-			pDrawList->AddLine(ImVec2(vCursorPos.x, oXYDrag.Min.y + fCursorOff), ImVec2(vCursorPos.x, vCursorPos.y - fCursorOff), uOrange, fLineThickness);
-		if (fScaleY < 1.0f - 2.0f * fYLimit)
-			pDrawList->AddLine(ImVec2(vCursorPos.x, oXYDrag.Max.y - fCursorOff), ImVec2(vCursorPos.x, vCursorPos.y + fCursorOff), uOrange, fLineThickness);
-
-		// Horizontal Line
-		if (fScaleX > 2.0f * fXLimit)
-			pDrawList->AddLine(ImVec2(oXYDrag.Min.x + fCursorOff, vCursorPos.y), ImVec2(vCursorPos.x - fCursorOff, vCursorPos.y), uOrange, fLineThickness);
-		if (fScaleX < 1.0f - 2.0f * fYLimit)
-			pDrawList->AddLine(ImVec2(oXYDrag.Max.x - fCursorOff, vCursorPos.y), ImVec2(vCursorPos.x + fCursorOff, vCursorPos.y), uOrange, fLineThickness);
-
-		// Line To Text
-		// X
-		if (fScaleZ > 2.0f * fZLimit)
-			pDrawList->AddLine(
-				ImVec2(vCursorPos.x - 0.5f * fCursorOff, oXYDrag.Max.y + 0.5f * fCursorOff),
-				ImVec2(vXTextPos.x + 0.5f * fCursorOff, vXTextPos.y - 0.5f * fCursorOff), uOrange, fLineThickness
-			);
-		else
-			pDrawList->AddLine(
-				ImVec2(vCursorPos.x, oXYDrag.Max.y),
-				ImVec2(vXTextPos.x, vXTextPos.y), uOrange, 1.0f
-			);
-		pDrawList->AddCircleFilled(vXTextPos, 2.0f, uOrange, 3);
-		// Y
-		if (fScaleZ < 1.0f - 2.0f * fZLimit)
-			pDrawList->AddLine(
-				ImVec2(oXYDrag.Max.x + 0.5f * fCursorOff, vCursorPos.y - 0.5f * fCursorOff),
-				ImVec2(vYTextPos.x - 0.5f * fCursorOff, vYTextPos.y + 0.5f * fCursorOff), uOrange, fLineThickness
-			);
-		else
-			pDrawList->AddLine(
-				ImVec2(oXYDrag.Max.x, vCursorPos.y),
-				ImVec2(vYTextPos.x, vYTextPos.y), uOrange, 1.0f
-			);
-		pDrawList->AddCircleFilled(vYTextPos, 2.0f, uOrange, 3);
-
-		// Borders::Right
-		pDrawList->AddCircleFilled(ImVec2(oXYDrag.Max.x, vCursorPos.y), 2.0f, uOrange, 3);
-		if (fScaleY > fYLimit)
-			pDrawList->AddLine(ImVec2(oXYDrag.Max.x, oXYDrag.Min.y), ImVec2(oXYDrag.Max.x, vCursorPos.y - fCursorOff), uBlue, fBorderThickness);
-		if (fScaleY < 1.0f - fYLimit)
-			pDrawList->AddLine(ImVec2(oXYDrag.Max.x, oXYDrag.Max.y), ImVec2(oXYDrag.Max.x, vCursorPos.y + fCursorOff), uBlue, fBorderThickness);
-		// Borders::Top
-		pDrawList->AddCircleFilled(ImVec2(vCursorPos.x, oXYDrag.Min.y), 2.0f, uOrange, 3);
-		if (fScaleX > fXLimit)
-			pDrawList->AddLine(ImVec2(oXYDrag.Min.x, oXYDrag.Min.y), ImVec2(vCursorPos.x - fCursorOff, oXYDrag.Min.y), uBlue, fBorderThickness);
-		if (fScaleX < 1.0f - fXLimit)
-			pDrawList->AddLine(ImVec2(oXYDrag.Max.x, oXYDrag.Min.y), ImVec2(vCursorPos.x + fCursorOff, oXYDrag.Min.y), uBlue, fBorderThickness);
-		// Borders::Left
-		pDrawList->AddCircleFilled(ImVec2(oXYDrag.Min.x, vCursorPos.y), 2.0f, uOrange, 3);
-		if (fScaleY > fYLimit)
-			pDrawList->AddLine(ImVec2(oXYDrag.Min.x, oXYDrag.Min.y), ImVec2(oXYDrag.Min.x, vCursorPos.y - fCursorOff), uBlue, fBorderThickness);
-		if (fScaleY < 1.0f - fYLimit)
-			pDrawList->AddLine(ImVec2(oXYDrag.Min.x, oXYDrag.Max.y), ImVec2(oXYDrag.Min.x, vCursorPos.y + fCursorOff), uBlue, fBorderThickness);
-		// Borders::Bottom
-		pDrawList->AddCircleFilled(ImVec2(vCursorPos.x, oXYDrag.Max.y), 2.0f, uOrange, 3);
-		if (fScaleX > fXLimit)
-			pDrawList->AddLine(ImVec2(oXYDrag.Min.x, oXYDrag.Max.y), ImVec2(vCursorPos.x - fCursorOff, oXYDrag.Max.y), uBlue, fBorderThickness);
-		if (fScaleX < 1.0f - fXLimit)
-			pDrawList->AddLine(ImVec2(oXYDrag.Max.x, oXYDrag.Max.y), ImVec2(vCursorPos.x + fCursorOff, oXYDrag.Max.y), uBlue, fBorderThickness);
-
-		pDrawList->AddLine(
-			oRect.Min + ImVec2(0.0f, fY3),
-			oRect.Min + ImVec2(2.0f * fX3, fY3), uFrameCol2, 1.0f);
-		pDrawList->AddLine(
-			oRect.Min + ImVec2(2.0f * fX3, fY3),
-			oRect.Min + ImVec2(vSize.x, 0.0f), uFrameCol2, 1.0f);
-		pDrawList->AddLine(
-			oRect.Min + ImVec2(2.0f * fX3, fY3),
-			oRect.Min + ImVec2(2.0f * fX3, vSize.y), uFrameCol2, 1.0f);
-
-		// Cursor
-		pDrawList->AddCircleFilled(vCursorPos, 5.0f, uBlue, 16);
-		// CursorZ
-		pDrawList->AddNgonFilled((vDragEnd - vDragStart) * fScaleZ + vDragStart, fHandleRadius, uBlue, 4);
-
-		ImGui::Dummy(vHeightOffset);
-		ImGui::Dummy(vHeightOffset * 1.25f);
-		ImGui::Dummy(vSize);
-
-		return bModified;
-	}
-
-	bool LineSlider(const char* label, ImVec2 start, ImVec2 end, ImU32 lineColor, ImGuiDataType data_type, void* p_data, const void* p_min, const void* p_max, ImWidgetsPointer pointer)
-	{
-		//ImGuiWindow* window = ImGui::GetCurrentWindow();
-		//if ( window->SkipItems )
-		//	return false;
-
-		//ImGuiContext& g = *GImGui;
-		//const ImGuiStyle& style = g.Style;
-		//const ImGuiID id = window->GetID( label );
-		//const float w = ImGui::CalcItemWidth();
-
-		//const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( ImGui::GetContentRegionAvail().x, style.FramePadding.y * 2.0f ) );
-		//const ImRect total_bb = frame_bb;
-
-		//const bool temp_input_allowed = false;// ( flags & ImGuiSliderFlags_NoInput ) == 0;
-		//ImGui::ItemSize( total_bb, style.FramePadding.y );
-		//if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, temp_input_allowed ? ImGuiItemFlags_Inputable : 0 ) )
-		//	return false;
-
-		//const bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.InFlags );
-		//bool temp_input_is_active = temp_input_allowed && ImGui::TempInputIsActive( id );
-		//if ( !temp_input_is_active )
-		//{
-		//	// Tabbing or CTRL-clicking on Slider turns it into an input box
-		//	const bool clicked = hovered && ImGui::IsMouseClicked( 0, id );
-		//	const bool make_active = ( clicked || g.NavActivateId == id );
-		//	if ( make_active && clicked )
-		//		ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
-		//	if ( make_active && temp_input_allowed )
-		//		if ( ( clicked && g.IO.KeyCtrl ) || ( g.NavActivateId == id && ( g.NavActivateFlags & ImGuiActivateFlags_PreferInput ) ) )
-		//			temp_input_is_active = true;
-
-		//	if ( make_active && !temp_input_is_active )
-		//	{
-		//		ImGui::SetActiveID( id, window );
-		//		ImGui::SetFocusID( id, window );
-		//		ImGui::FocusWindow( window );
-		//		g.ActiveIdUsingNavDirMask |= ( 1 << ImGuiDir_Left ) | ( 1 << ImGuiDir_Right );
-		//	}
-		//}
-
-		//// Draw frame
-		//const ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
-		//ImGui::RenderNavHighlight( frame_bb, id );
-		//ImGui::RenderFrame( frame_bb.Min, frame_bb.Max, frame_col, true, g.Style.FrameRounding );
-
-		//// Slider behavior
-		//ImRect grab_bb;
-		//const bool value_changed = ImGui::SliderBehavior( frame_bb, id, data_type, p_data, p_min, p_max, "%f", ImGuiSliderFlags_AlwaysClamp, &grab_bb );
-		//if ( value_changed )
-		//	ImGui::MarkItemEdited( id );
-	
-		//ImU64 factorScalar = Normalize01( data_type, p_data, p_min, p_max );
-		//float factor = ScalarToFloat( data_type, &factorScalar );
-		//ImVec2 cur( ImLerp( frame_bb.Min.x, frame_bb.Max.x, factor ), grab_bb.Min.y );
-		//// Render grab
-		//if ( grab_bb.Max.x > grab_bb.Min.x )
-		//	DrawTrianglePointerFilled( window->DrawList, cur, 16.0f, IM_COL32( 255, 128, 0, 255 ), pointer );
-
-		//IMGUI_TEST_ENGINE_ITEM_INFO( id, label, g.LastItemData.StatusFlags | ( temp_input_allowed ? ImGuiItemStatusFlags_Inputable : 0 ) );
-		//return value_changed;
-
-		ImGuiWindow* window = ImGui::GetCurrentWindow();
-		if ( window->SkipItems )
-			return false;
-		ImGuiContext& g = *GImGui;
-		ImGuiStyle const& style = g.Style;
-		ImGuiID id = ImGui::GetID(label);
-
-		ImGui::PushID( id );
-		ImRect oRect(ImVec2(ImMin(start.x, end.x), ImMin(start.y, end.y)),
-					 ImVec2(ImMax(start.x, end.x), ImMax(start.y, end.y)));
-
-		ImVec2 curPos = ImGui::GetCursorScreenPos();
-		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-
-		pDrawList->AddLine(start, end, lineColor, 2.0f);
-
-		float fValue	= ScalarToFloat(data_type, (ImU64*)p_data);
-		float fMin		= ScalarToFloat(data_type, (ImU64*)p_min);
-		float fMax		= ScalarToFloat(data_type, (ImU64*)p_max);
-		float const fBound = fMax - fMin;
-
-		float t = Normalize01(fValue, fMin, fMax);
-
-		float const cursorSize = 64.0f;
-		ImVec2 cur = ImLerp(start, end, t);
-		ImRect drag_bb( cur - ImVec2( cursorSize * 0.5f, 0.0f ), cur + ImVec2( cursorSize * 0.5f, cursorSize ) );
-
-		ImGui::ItemSize( drag_bb, style.FramePadding.y );
-		if ( !ImGui::ItemAdd( drag_bb, id, &drag_bb, 0 ) )
-			return false;
-
-		bool const hovered = ImGui::ItemHoverable( drag_bb, id, g.LastItemData.InFlags );
-
-		ImGui::RenderNavHighlight( drag_bb, id );
-		const ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
-		ImGui::RenderFrame( drag_bb.Min, drag_bb.Max, frame_col, true, g.Style.FrameRounding );
-
-		DrawTrianglePointerFilled(pDrawList, cur, cursorSize, IM_COL32(255, 128, 0, 255), pointer);
-
-		ImVec2 const vSecurity(15.0f, 15.0f);
-		ImVec2 const vDragStart(oRect.Min.x, oRect.Max.y);
-		ImVec2 const vDragEnd(oRect.Max.x, oRect.Min.y);
-		//ImRect frame_bb = ImRect(oRect.Min - vSecurity, oRect.Max + vSecurity);
-
-		//pDrawList->AddRect(frame_bb.Min, frame_bb.Max, IM_COL32(0, 255, 0, 255));
-		//pDrawList->AddRect(oRect.Min, oRect.Max, IM_COL32(0, 0, 255, 255));
-
-		//ImVec2 vLocalStart(ImMin(vDragStart.x, vDragEnd.x), ImMin(vDragStart.y, vDragEnd.y));
-		//ImVec2 vLocalEnd(ImMax(vDragStart.x, vDragEnd.x), ImMax(vDragStart.y, vDragEnd.y));
-		ImVec2 vLocalStart	= vDragStart;
-		ImVec2 vLocalEnd	= vDragEnd;
-
-		bool bModified = false;
-		//bool hovered;
-		bool held;
-
-		// Slider behavior
-		ImRect grab_bb;
-		//const bool value_changed = ImGui::SliderBehavior( frame_bb, id, data_type, p_data, p_min, p_max, NULL, ImGuiSliderFlags_AlwaysClamp, &grab_bb );
-		//if ( value_changed )
-		//	ImGui::MarkItemEdited( id );
-
-		//bool pressed = ImGui::DragBehavior( id, data_type, p_data, 1.0f, p_min, p_max, nullptr, ImGuiSliderFlags_AlwaysClamp );
-		if ( ImGui::IsMouseDragging( ImGuiMouseButton_Left ) || ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
-		{
-			ImVec2 const vMousePos = ImGui::GetMousePos();
-			//float const fDist = ImSqrt(DistToSegmentSqr(vMousePos, ImVec2(vDragStart.x, vDragEnd.y), ImVec2(vDragEnd.x, vDragStart.y)));
-			float const fDist = ImSqrt(DistToSegmentSqr(vMousePos, vLocalStart, vLocalEnd));
-			//float const fDist = ImSqrt(DistToSegmentSqr(vMousePos,
-			//											ImVec2(ImMax(vDragStart.x, vDragEnd.x), ImMin(vDragStart.y, vDragEnd.y)),
-			//											ImVec2(ImMin(vDragStart.x, vDragEnd.x), ImMax(vDragStart.y, vDragEnd.y))));
-			if (fDist < 32.0f) // 100 is arbitrary threshold
-			{
-				float const fMaxDist = ImSqrt(Dist2(vLocalStart, vLocalEnd));
-				float const fDist = ImSaturate(ImSqrt(DistOnSegmentSqr(vMousePos, vLocalStart, vLocalEnd)) / fMaxDist);
-
-				fValue = fDist * fBound * fDist + fMin;
-
-				ImU64 uVal = FloatToScalar(data_type, fValue);
-
-				EqualScalar(data_type, (ImU64*)p_data, &uVal);
-
-				ImGui::MarkItemEdited( id );
-				bModified = true;
-			}
-		}
-		ImGui::PopID();
-
-		//ImGui::Dummy(frame_bb.GetSize() + ImVec2(16.0f, 16.0f) * 2.0f);
-		//ImGui::SliderScalar(label, data_type, p_data, p_min, p_max);
-
-		return bModified;
-	}
-
-	//////////////////////////////////////////////////////////////////////////
-
-	bool Grid2D_AoS_Float(const char* label, float* buffer, int rows, int columns, float minX, float maxX, float minY, float maxY)
-	{
-		assert(minX < maxX);
-		assert(minY < maxY);
-
-		ImGuiID const iID = ImGui::GetID(label);
-		ImGui::PushID(iID);
-
-		float const vSizeFull = ImGui::GetContentRegionAvail().x;
-		ImVec2 const vSecurity(15.0f, 15.0f);
-		ImVec2 const vSize(vSizeFull - vSecurity.x, vSizeFull - vSecurity.y);
-
-		float const fHeightOffset = ImGui::GetTextLineHeight();
-		ImVec2 const vHeightOffset(0.0f, fHeightOffset);
-
-		ImVec2 vPos = ImGui::GetCursorScreenPos();
-		ImRect oRect(vPos + vSecurity, vPos + vSize);
-
-		float const width = oRect.GetWidth();
-		float const height = oRect.GetHeight();
-
-		//ImGui::InvisibleButton("##Zone", oRect.GetSize(), 0);
-		ImGui::Dummy(oRect.GetSize());
-
-		bool hovered;
-		bool held;
-
-		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-		// Horizontal Line
-		for (int j = 0; j < rows; ++j)
-		{
-			for (int i = 0; i < columns - 1; ++i)
-			{
-				float x0 = buffer[2 * ((j + 0) * columns + i + 0) + 0];
-				float y0 = buffer[2 * ((j + 0) * columns + i + 0) + 1];
-				float x1 = buffer[2 * ((j + 0) * columns + i + 1) + 0];
-				float y1 = buffer[2 * ((j + 0) * columns + i + 1) + 1];
-
-				pDrawList->AddLine(oRect.GetTL() + ImVec2(x0 * width, y0 * height), oRect.GetTL() + ImVec2(x1 * width, y1 * height), IM_COL32(255, 255, 0, 255), 2.0f);
-			}
-		}
-		// Vertical Line
-		for (int j = 0; j < rows - 1; ++j)
-		{
-			for (int i = 0; i < columns; ++i)
-			{
-				float x0 = buffer[2 * ((j + 0) * columns + i + 0) + 0];
-				float y0 = buffer[2 * ((j + 0) * columns + i + 0) + 1];
-				float x1 = buffer[2 * ((j + 1) * columns + i + 0) + 0];
-				float y1 = buffer[2 * ((j + 1) * columns + i + 0) + 1];
-
-				pDrawList->AddLine(oRect.GetTL() + ImVec2(x0 * width, y0 * height), oRect.GetTL() + ImVec2(x1 * width, y1 * height), IM_COL32(255, 255, 0, 255), 2.0f);
-			}
-		}
-		for (int j = 0; j < rows; ++j)
-		{
-			for (int i = 0; i < columns; ++i)
-			{
-				float* pX = &buffer[2 * (j * columns + i) + 0];
-				float* pY = &buffer[2 * (j * columns + i) + 1];
-
-				ImVec2 vCenter = oRect.GetTL() + ImVec2(*pX * width, *pY * height);
-				ImRect oLocalRect(vCenter - oRect.GetSize() * 0.01f, vCenter + oRect.GetSize() * 0.01f);
-
-				ImGui::PushID(pX);
-
-				ImGui::ButtonBehavior(oLocalRect, ImGui::GetID(pY), &hovered, &held);
-				bool dragged = hovered && held;
-				pDrawList->AddCircleFilled(vCenter, vSize.x * 0.01f, IM_COL32(hovered ? 0 : 255, hovered ? 255 : 0, 0, 255), 16);
-				if (dragged)
-				{
-					ImVec2 vCursorPos = ImGui::GetMousePos();
-					ImVec2 vDelta = vCursorPos - oLocalRect.GetCenter();
-
-					vDelta /= oRect.GetSize();
-
-					*pX += vDelta.x;
-					*pY += vDelta.y;
-
-					*pX = ImSaturate(*pX);
-					*pY = ImSaturate(*pY);
-				}
-
-				ImGui::PopID();
-			}
-		}
-
-		ImGui::Dummy(ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetTextLineHeightWithSpacing()));
-
-		ImGui::PopID();
-
-		return false;
-	}
-
-	bool PlaneMovePoint2D(const char* label, float* buffer_aot, int float2_count, float minX, float maxX, float minY, float maxY)
-	{
-		assert(minX < maxX);
-		assert(minY < maxY);
-
-		ImGuiID const iID = ImGui::GetID(label);
-		ImGui::PushID(iID);
-
-		float const vSizeFull = ImGui::GetContentRegionAvail().x;
-		ImVec2 const vSecurity(15.0f, 15.0f);
-		ImVec2 const vSize(vSizeFull - vSecurity.x, vSizeFull - vSecurity.y);
-
-		float const fHeightOffset = ImGui::GetTextLineHeight();
-		ImVec2 const vHeightOffset(0.0f, fHeightOffset);
-
-		ImVec2 vPos = ImGui::GetCursorScreenPos();
-		ImRect oRect(vPos + vSecurity, vPos + vSize);
-
-		float const width = oRect.GetWidth();
-		float const height = oRect.GetHeight();
-
-		//ImGui::InvisibleButton("##Zone", oRect.GetSize(), 0);
-		ImGui::Dummy(oRect.GetSize());
-
-		bool hovered;
-		bool held;
-
-		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-		for (int i = 0; i < float2_count; ++i)
-		{
-			float* pX = &buffer_aot[2 * i + 0];
-			float* pY = &buffer_aot[2 * i + 1];
-
-			ImVec2 vCenter = oRect.GetTL() + ImVec2(*pX * width, *pY * height);
-			ImRect oLocalRect(vCenter - oRect.GetSize() * 0.01f, vCenter + oRect.GetSize() * 0.01f);
-
-			ImGui::PushID(pX);
-
-			ImGui::ButtonBehavior(oLocalRect, ImGui::GetID(pY), &hovered, &held);
-			bool dragged = hovered && held;
-			pDrawList->AddCircleFilled(vCenter, vSize.x * 0.01f, IM_COL32(hovered ? 0 : 255, hovered ? 255 : 0, 0, 255), 16);
-			if (dragged)
-			{
-				ImVec2 vCursorPos = ImGui::GetMousePos();
-				ImVec2 vDelta = vCursorPos - oLocalRect.GetCenter();
-
-				vDelta /= oRect.GetSize();
-
-				*pX += vDelta.x;
-				*pY += vDelta.y;
-
-				*pX = ImSaturate(*pX);
-				*pY = ImSaturate(*pY);
-			}
-
-			ImGui::PopID();
-		}
-
-		ImGui::Dummy(ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetTextLineHeightWithSpacing()));
-
-		ImGui::PopID();
-
-		return false;
-	}
-
-	IMGUI_API bool MoveLine2D(const char* label, float* buffer_aot, int float2_count, float minX, float maxX, float minY, float maxY, bool closeLoop)
-	{
-		assert(minX < maxX);
-		assert(minY < maxY);
-
-		bool modified = false;
-
-		ImGuiID const iID = ImGui::GetID(label);
-		ImGui::PushID(iID);
-
-		float const vSizeFull = ImGui::GetContentRegionAvail().x;
-		//ImVec2 const vSecurity(15.0f, 15.0f);
-		//ImVec2 const vSize(vSizeFull - vSecurity.x, vSizeFull - vSecurity.y);
-		ImVec2 const vSize(vSizeFull, vSizeFull);
-
-		float const fHeightOffset = ImGui::GetTextLineHeight();
-		ImVec2 const vHeightOffset(0.0f, fHeightOffset);
-
-		ImVec2 vPos = ImGui::GetCursorScreenPos();
-		ImRect oRect(vPos, vPos + vSize);
-
-		float const width = oRect.GetWidth();
-		float const height = oRect.GetHeight();
-
-		ImGui::Dummy(oRect.GetSize());
-
-		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-		pDrawList->PathClear();
-		for (int i = 0; i < float2_count - 1; ++i)
-		{
-			float x0 = Rescale(buffer_aot[2 * (i + 0) + 0], minX, maxX, 0.0f, 1.0f);
-			float y0 = Rescale(buffer_aot[2 * (i + 0) + 1], minY, maxY, 0.0f, 1.0f);
-			float x1 = Rescale(buffer_aot[2 * (i + 1) + 0], minX, maxX, 0.0f, 1.0f);
-			float y1 = Rescale(buffer_aot[2 * (i + 1) + 1], minY, maxY, 0.0f, 1.0f);
-
-			pDrawList->AddLine(oRect.GetTL() + ImVec2(x0 * width, y0 * height), oRect.GetTL() + ImVec2(x1 * width, y1 * height), IM_COL32(255, 255, 0, 255), 2.0f);
-		}
-		if (closeLoop)
-		{
-			float x0 = Rescale(buffer_aot[2 * (float2_count - 1) + 0], minX, maxX, 0.0f, 1.0f);
-			float y0 = Rescale(buffer_aot[2 * (float2_count - 1) + 1], minY, maxY, 0.0f, 1.0f);
-			float x1 = Rescale(buffer_aot[2 * (0) + 0], minX, maxX, 0.0f, 1.0f);
-			float y1 = Rescale(buffer_aot[2 * (0) + 1], minY, maxY, 0.0f, 1.0f);
-
-			pDrawList->AddLine(oRect.GetTL() + ImVec2(x0 * width, y0 * height), oRect.GetTL() + ImVec2(x1 * width, y1 * height), IM_COL32(255, 255, 0, 255), 2.0f);
-		}
-
-		bool hovered;
-		bool held;
-		for (int i = 0; i < float2_count; ++i)
-		{
-			float* pX = &buffer_aot[2 * i + 0];
-			float* pY = &buffer_aot[2 * i + 1];
-
-			float x = Rescale(*pX, minX, maxX, 0.0f, 1.0f);
-			float y = Rescale(*pY, minY, maxY, 0.0f, 1.0f);
-
-			ImVec2 vCenter = oRect.GetTL() + ImVec2(x * width, y * height);
-			ImRect oLocalRect(vCenter - oRect.GetSize() * 0.01f, vCenter + oRect.GetSize() * 0.01f);
-
-			ImGui::PushID(pX);
-
-			ImGui::ButtonBehavior(oLocalRect, ImGui::GetID(pY), &hovered, &held);
-			bool dragged = hovered && held;
-			pDrawList->AddCircleFilled(vCenter, vSize.x * 0.01f, IM_COL32(hovered ? 0 : 255, hovered ? 255 : 0, 0, 255), 16);
-			if (dragged)
-			{
-				ImVec2 vCursorPos = ImGui::GetMousePos();
-				ImVec2 vDelta = vCursorPos - oLocalRect.GetCenter();
-
-				vDelta /= oRect.GetSize();
-
-				*pX += vDelta.x;
-				*pY += vDelta.y;
-
-				*pX = ImClamp(*pX, minX, maxX);
-				*pY = ImClamp(*pY, minY, maxY);
-
-				modified = true;
-			}
-
-			ImGui::PopID();
-		}
-
-		ImGui::PopID();
-
-		return modified;
-	}
-
-	void DrawHueBand(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, float alpha, float gamma, float offset)
-	{
-		auto HueFunc = [alpha, offset](float const tt) -> ImU32
-		{
-			float t;
-			if (tt - offset < 0.0f)
-				t = ImFmod(1.0f + (tt - offset), 1.0f);
-			else
-				t = ImFmod(tt - offset, 1.0f);
-
-			float r, g, b;
-			ImGui::ColorConvertHSVtoRGB(t, 1.0f, 1.0f, r, g, b);
-			int const ur = static_cast<int>(255.0f * r);
-			int const ug = static_cast<int>(255.0f * g);
-			int const ub = static_cast<int>(255.0f * b);
-			int const ua = static_cast<int>(255.0f * alpha);
-			return IM_COL32(ur, ug, ub, ua);
-		};
-
-		DrawColorBandEx< true >(pDrawList, vpos, size, HueFunc, division, gamma);
-	}
-
-	void DrawHueBand(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, float colorStartRGB[3], float alpha, float gamma)
-	{
-		float h, s, v;
-		ImGui::ColorConvertRGBtoHSV(colorStartRGB[0], colorStartRGB[1], colorStartRGB[2], h, s, v);
-		DrawHueBand(pDrawList, vpos, size, division, alpha, gamma, h);
-	}
-
-	void DrawLumianceBand(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma)
-	{
-		float h, s, v;
-		ImGui::ColorConvertRGBtoHSV(color.x, color.y, color.z, h, s, v);
-		auto LumianceFunc = [h, s, v](float const t) -> ImU32
-		{
-			float r, g, b;
-			ImGui::ColorConvertHSVtoRGB(h, s, ImLerp(0.0f, v, t), r, g, b);
-			int const ur = static_cast<int>(255.0f * r);
-			int const ug = static_cast<int>(255.0f * g);
-			int const ub = static_cast<int>(255.0f * b);
-			return IM_COL32(ur, ug, ub, 255);
-		};
-
-		DrawColorBandEx< true >(pDrawList, vpos, size, LumianceFunc, division, gamma);
-	}
-
-	void DrawSaturationBand(ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma)
-	{
-		float h, s, v;
-		ImGui::ColorConvertRGBtoHSV(color.x, color.y, color.z, h, s, v);
-		auto LumianceFunc = [h, s, v](float const t) -> ImU32
-		{
-			float r, g, b;
-			ImGui::ColorConvertHSVtoRGB(h, ImLerp(0.0f, 1.0f, t) * s, ImLerp(0.5f, 1.0f, t) * v, r, g, b);
-			int const ur = static_cast<int>(255.0f * r);
-			int const ug = static_cast<int>(255.0f * g);
-			int const ub = static_cast<int>(255.0f * b);
-			return IM_COL32(ur, ug, ub, 255);
-		};
-
-		DrawColorBandEx< true >(pDrawList, vpos, size, LumianceFunc, division, gamma);
-	}
-
-	bool ColorRing(const char* label, float thickness, int split)
-	{
-		ImGuiID const iID = ImGui::GetID(label);
-		ImGui::PushID(iID);
-
-		ImVec2 curPos = ImGui::GetCursorScreenPos();
-		float const width = ImGui::GetContentRegionAvail().x;
-		float const height = width;
-
-		ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
-
-		float radius = width * 0.5f;
-
-		const float dAngle = 2.0f * IM_PI / ((float)split);
-		float angle = 2.0f * IM_PI / 3.0f;
-
-		ImVec2 offset = curPos + ImVec2(radius, radius);
-
-		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
-		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-		pDrawList->PrimReserve(split * 6, split * 4);
-		for (int i = 0; i < split; ++i)
-		{
-			float x0 = radius * ImCos(angle);
-			float y0 = radius * ImSin(angle);
-
-			float x1 = radius * ImCos(angle + dAngle);
-			float y1 = radius * ImSin(angle + dAngle);
-
-			float x2 = (radius - thickness) * ImCos(angle + dAngle);
-			float y2 = (radius - thickness) * ImSin(angle + dAngle);
-
-			float x3 = (radius - thickness) * ImCos(angle);
-			float y3 = (radius - thickness) * ImSin(angle);
-
-			pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx));
-			pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + 1));
-			pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + 2));
-
-			pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx));
-			pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + 2));
-			pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + 3));
-
-			float r0, g0, b0;
-			float r1, g1, b1;
-			ImGui::ColorConvertHSVtoRGB(((float)i) / ((float)(split - 1)), 1.0f, 1.0f, r0, g0, b0);
-			ImGui::ColorConvertHSVtoRGB(((float)((i + 1)%split)) / ((float)(split - 1)), 1.0f, 1.0f, r1, g1, b1);
-
-			pDrawList->PrimWriteVtx(offset + ImVec2(x0, y0), uv, IM_COL32(r0 * 255, g0 * 255, b0 * 255, 255));
-			pDrawList->PrimWriteVtx(offset + ImVec2(x1, y1), uv, IM_COL32(r1 * 255, g1 * 255, b1 * 255, 255));
-			pDrawList->PrimWriteVtx(offset + ImVec2(x2, y2), uv, IM_COL32(r1 * 255, g1 * 255, b1 * 255, 255));
-			pDrawList->PrimWriteVtx(offset + ImVec2(x3, y3), uv, IM_COL32(r0 * 255, g0 * 255, b0 * 255, 255));
-			angle += dAngle;
-		}
-		ImGui::PopID();
-
-		return false;
-	}
-	
-	void HueSelectorEx(char const* label, ImVec2 const size, float* hueCenter, float* hueWidth, float* featherLeft, float* featherRight, ImU32 triangleColor, int division, float alpha, float hideHueAlpha, float offset)
-	{
-		ImGuiID const iID = ImGui::GetID(label);
-		ImGui::PushID(iID);
-
-		ImGui::Text(label);
-		ImVec2 curPos = ImGui::GetCursorScreenPos();
-		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-		DrawHueBand(pDrawList, curPos, size, division, alpha, 1.0f, offset);
-
-		float center = ImClamp(ImFmod(*hueCenter + offset, 1.0f), 0.0f, 1.0f - 1e-4f);
-		float width = ImClamp(*hueWidth, 0.0f, 0.5f - 1e-4f);
-		float featherL = ImClamp(*featherLeft, 0.0f, 0.5f - 1e-4f);
-		float featherR = ImClamp(*featherRight, 0.0f, 0.5f - 1e-4f);
-
-		float xCenter = curPos.x + center * size.x;
-		float const triangleSize = 16.0f;
-
-		if (width == 0.0f)
-		{
-			pDrawList->AddLine(ImVec2(xCenter, curPos.y), ImVec2(xCenter, curPos.y + size.y), IM_COL32(0, 0, 0, 255));
-		}
-		else
-		{
-			DrawColorDensityPlotEx< true >(pDrawList,
-									[hueAlpha = hideHueAlpha, center, width, left = featherL, right = featherR](float const xx, float const) -> ImU32
-									{
-										float x = ImFmod(xx, 1.0f);
-										float val;
-										if (x < center - width && x > center - width - left)
-										{
-											val = ImClamp((center * (-1 + hueAlpha) + left + width + x - hueAlpha * (width + x)) / left, hueAlpha, 1.0f);
-										}
-										else if (x < center + width + right && x > center + width)
-										{
-											val = ImClamp((center - center * hueAlpha + right + width - hueAlpha * width + (-1 + hueAlpha) * x) / right, hueAlpha, 1.0f);
-										}
-										else if (x > center - width - left && x < center + width + right)
-										{
-											val = 1.0f;
-										}
-										else if (center + width + right > 1.0f)
-										{
-											val = ImClamp((center - center * hueAlpha + right + width - hueAlpha * width + (-1 + hueAlpha) * (x + 1.0f)) / right, hueAlpha, 1.0f);
-										}
-										else if (center - width - left < 0.0f)
-										{
-											val = ImClamp((center * (-1 + hueAlpha) + left + width + x - 1.0f - hueAlpha * (width + x - 1.0f)) / left, hueAlpha, 1.0f);
-										}
-										else
-										{
-											val = hueAlpha;
-										}
-										return IM_COL32(0, 0, 0, ImPow(1.0f - val, 1.0f / 2.2f) * 255);
-									}, 0.0f, 1.0f, 0.0f, 0.0f, curPos, size, division, 1);
-		}
-
-		ImGui::Dummy(size);
-
-		float const fZero = 0.0f;
-		float const fOne = 1.0f;
-
-		float localCenter = center;
-		if (LineSlider("##ZoneHueLineSlider", curPos + ImVec2(0.0f, size.y), curPos + ImVec2(size.x, size.y), IM_COL32(255, 255, 255, 255), ImGuiDataType_Float, &localCenter, &fZero, &fOne, ImWidgetsPointer_Up))
-		{
-			if (localCenter - offset < 0.0f)
-				*hueCenter = ImFmod(1.0f + (localCenter - offset), 1.0f);
-			else
-				*hueCenter = ImFmod(localCenter - offset, 1.0f);
-		}
-		ImGui::Dummy(ImVec2(size.x, triangleSize));
-
-		ImGui::PushMultiItemsWidths(2, size.x);
-		ImGui::DragFloat("##Center", hueCenter, 0.001f, 0.0f, 1.0f); ImGui::SameLine();
-		ImGui::DragFloat("##Width", hueWidth, 0.001f, 0.0f, 0.5f);
-
-		ImGui::PopID();
-	}
-
-	void HueSelector(char const* label, ImVec2 const size, float* hueCenter, float* hueWidth, float* featherLeft, float* featherRight, int division, float alpha, float hideHueAlpha, float offset)
-	{
-		HueSelectorEx(label, size, hueCenter, hueWidth, featherLeft, featherRight, IM_COL32(255, 128, 0, 255), division, alpha, hideHueAlpha, offset);
-	}
-
-	// Plots
-	void	AnalyticalPlot(char const* label, float(*func)(float const x), float const minX, float const maxX, int const minSamples)
-	{
-		AnalyticalPlotEx(label, func, minX, maxX, minSamples);
-	}
-
-	float	FunctionFromData(float const x, float const minX, float const maxX, float* data, int const samples_count)
-	{
-		float const t = ImSaturate(Normalize01(x, minX, maxX));
-
-		return LinearSample(t, data, samples_count);
-	}
-
-	ImU32	ImColorFrom_xyz(float x, float y, float z, float* xyzToRGB, float gamma)
-	{
-		float r, g, b;
-		float maxValue;
-		Mat33MulV(&r, &g, &b, x, y, z, xyzToRGB);
-		maxValue = ImMax(r, ImMax(g, b));
-		if (maxValue > 0.0f)
-		{
-			r /= maxValue;
-			g /= maxValue;
-			b /= maxValue;
-		}
-		r = ImSaturate(r);
-		g = ImSaturate(g);
-		b = ImSaturate(b);
-
-		r = ImPow(r, gamma);
-		g = ImPow(g, gamma);
-		b = ImPow(b, gamma);
-
-		return IM_COL32(r * 255, g * 255, b * 255, 255);
-	}
-
-	static ImVec2 s_ChromaticPlotStart = ImVec2(0.0f, 0.0f);
-	static ImVec2 s_ChromaticPlotSize = ImVec2(128.0f, 128.0f);
-	static ImVec2 s_ChromaticPlotBoundMin = ImVec2(0.0f, 0.8f);
-	static ImVec2 s_ChromaticPlotBoundMax = ImVec2(0.0f, 0.9f);
-
-	ImVec4 xyY2XYZ(float x, float y, float Y)
-	{
-		if (y > 0.0f)
-			return ImVec4(x * Y / y, Y, (1.0f - x - y) * Y / y, 0.0f);
-		else
-			return ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-	}
-	ImVec4 XYZ2xyY(float X, float Y, float Z)
-	{
-		float const sum = X + Y + Z;
-		if (sum > 0.0f)
-			return ImVec4(X / sum, Y / sum, Z / sum, 0.0f);
-		else
-			return ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-	}
-	ImVec2 XYZ2uvp(float X, float Y, float Z)
-	{
-		float const sum = X + 15.0f * Y + 3.0f * Z;
-		if (sum > 0.0f)
-			return ImVec2(4.0f * X / sum, 9.0f * Y / sum);
-		else
-			return ImVec2(0.0f, 0.0f);
-	}
-
-	/*
-	ImVec2	GetCIEPoint(float x, float y)
-	{
-#if 0
-		float const z = 1.0f - x - y;
-
-		float const sum = x + 15.0f * y + 3.0f * z; 
-
-		x = 4.0f * x / sum;
-		y = 9.0f * y / sum;
-#else
-		return XYZ2xyY(x, y, 0.0f);
-#endif
-
-		//return ImVec2(x, y);
-	}
-	*/
-
-	template <bool IsBilinear>
-	void	ChromaticPlotInternalCommon(ImDrawList* pDrawList,
-		ImVec2 const curPos,
-		float width, float height,
-		ImVec2 primR, ImVec2 primG, ImVec2 primB,
-		ImVec2 whitePoint,
-		float* xyzToRGB,
-		int const chromeLineSamplesCount,
-		float* observerX, float* observerY, float* observerZ,
-		int const observerSampleCount,
-		float const observerWavelengthMin, float const observerWavelengthMax,
-		float* standardCIE,
-		int const standardCIESampleCount,
-		float const standardCIEWavelengthMin, float const standardCIEWavelengthMax,
-		float gamma,
-		int resX, int resY,
-		ImU32 maskColor,
-		float wavelengthMin, float wavelengthMax,
-		float minX, float maxX,
-		float minY, float maxY)
-	{
-		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
-
-		DrawColorDensityPlotEx< IsBilinear >
-			(
-				pDrawList,
-				[xyzToRGB, gamma](float x, float y)
-				{
-					return ImColorFrom_xyz(x, y, 1.0f - x - y, xyzToRGB, gamma);
-				},
-				minX, maxX, minY, maxY,
-				curPos, ImVec2(width, height),
-				resX, resY);
-
-		int lineSamples = ImMin(chromeLineSamplesCount, observerSampleCount);
-
-		float illum;
-		float x, y, z;
-		float sum;
-		ImVector<ImVec2> chromLine;
-		chromLine.resize(lineSamples + 1);
-		for (int i = 0; i < lineSamples; ++i)
-		{
-			float const wavelength = ScaleFromNormalized(((float)i) / ((float)(lineSamples - 1)), wavelengthMin, wavelengthMax);
-
-			illum = FunctionFromData(wavelength, standardCIEWavelengthMin, standardCIEWavelengthMax, standardCIE, standardCIESampleCount);
-			x = illum * FunctionFromData(wavelength, observerWavelengthMin, observerWavelengthMax, observerX, observerSampleCount);
-			y = illum * FunctionFromData(wavelength, observerWavelengthMin, observerWavelengthMax, observerY, observerSampleCount);
-			z = illum * FunctionFromData(wavelength, observerWavelengthMin, observerWavelengthMax, observerZ, observerSampleCount);
-
-			sum = x + y + z;
-			//sum = x + 15.0f * y + 3.0f * z;
-
-			x /= sum;
-			y /= sum;
-			//x = 4.0f * x / sum;
-			//y = 9.0f * y / sum;
-
-			chromLine[i] = ImVec2(x, y);
-		}
-
-		//pDrawList->AddConcavePolyFilled( &chromLine[ 0 ], lineSamples, maskColor );
-		DrawConvexMaskMesh(pDrawList, curPos, ImVec2(width, height), maskColor, (float*)&(chromLine[0].x), lineSamples, minX, maxX, minY, maxY, true);
-
-		ImVec2 sRGBLines[] = { primR, primG, primB };
-		for (int i = 0; i < 3; ++i)
-		{
-			ImVec2& vCur = sRGBLines[i];
-
-			vCur.x = curPos.x + Rescale(vCur.x, minX, maxX, 0.0f, width);
-			vCur.y = curPos.y + Rescale(vCur.y, minY, maxY, height, 0.0f);
-		}
-		pDrawList->AddPolyline(&sRGBLines[0], 3, IM_COL32(255, 255, 255, 255), true, 5.0f);
-
-		ImVec2 vWhitePoint = whitePoint;
-		vWhitePoint.x = curPos.x + Rescale(vWhitePoint.x, minX, maxX, 0.0f, width);
-		vWhitePoint.y = curPos.y + Rescale(vWhitePoint.y, minY, maxY, height, 0.0f);
-
-		pDrawList->AddCircleFilled(vWhitePoint, 5.0f, IM_COL32(0, 0, 0, 255), 4);
-
-		s_ChromaticPlotBoundMin = ImVec2(minX, minY);
-		s_ChromaticPlotBoundMax = ImVec2(maxX, maxY);
-		s_ChromaticPlotStart = curPos;
-		s_ChromaticPlotSize = ImVec2(width, height);
-	}
-
-	void	DrawChromaticPlotNearest(ImDrawList* pDrawList,
-		ImVec2 const vPos,
-		float width, float height,
-		int const chromeLineSamplesCount,
-		ImWidgetsColorSpace const colorspace,
-		ImWidgetsObserver const observer,
-		ImWidgetsIlluminance const illum,
-		int resX, int resY,
-		ImU32 maskColor,
-		float wavelengthMin, float wavelengthMax,
-		float minX, float maxX,
-		float minY, float maxY)
-	{
-		ChromaticPlotInternalCommon< false >(
-			pDrawList,
-			vPos,
-			width, height,
-			s_ColorSpace_Primaries[colorspace][0], s_ColorSpace_Primaries[colorspace][1], s_ColorSpace_Primaries[colorspace][2],
-			s_WhitePoints_Values[s_ColorSpace_WhitePointIndex[colorspace]][illum],
-			s_ColorSpace_XYZ2RGB[colorspace],
-			chromeLineSamplesCount,
-			s_CIE_Observers_X[observer], s_CIE_Observers_Y[observer], s_CIE_Observers_Z[observer],
-			s_CIE_Observers_SamplesCount[observer],
-			s_CIE_Observers_min[observer], s_CIE_Observers_max[observer],
-			s_Illums[illum],
-			s_Illums_SamplesCount[illum],
-			s_Illums_min[illum], s_Illums_max[illum],
-			1.0f / s_ColorSpace_Gamma[colorspace],
-			resX, resY,
-			maskColor,
-			wavelengthMin, wavelengthMax,
-			minX, maxX,
-			minY, maxY);
-	}
-
-	void	DrawChromaticPlotBilinear(ImDrawList* pDrawList,
-		ImVec2 const vPos,
-		float width, float height,
-		int const chromeLineSamplesCount,
-		ImWidgetsColorSpace const colorspace,
-		ImWidgetsObserver const observer,
-		ImWidgetsIlluminance const illum,
-		int resX, int resY,
-		ImU32 maskColor,
-		float wavelengthMin, float wavelengthMax,
-		float minX, float maxX,
-		float minY, float maxY)
-	{
-		ChromaticPlotInternalCommon< true >(
-			pDrawList,
-			vPos,
-			width, height,
-			s_ColorSpace_Primaries[colorspace][0], s_ColorSpace_Primaries[colorspace][1], s_ColorSpace_Primaries[colorspace][2],
-			s_WhitePoints_Values[s_ColorSpace_WhitePointIndex[colorspace]][illum],
-			s_ColorSpace_XYZ2RGB[colorspace],
-			chromeLineSamplesCount,
-			s_CIE_Observers_X[observer], s_CIE_Observers_Y[observer], s_CIE_Observers_Z[observer],
-			s_CIE_Observers_SamplesCount[observer],
-			s_CIE_Observers_min[observer], s_CIE_Observers_max[observer],
-			s_Illums[illum],
-			s_Illums_SamplesCount[illum],
-			s_Illums_min[illum], s_Illums_max[illum],
-			1.0f / s_ColorSpace_Gamma[colorspace],
-			resX, resY,
-			maskColor,
-			wavelengthMin, wavelengthMax,
-			minX, maxX,
-			minY, maxY);
-	}
-
-	void DrawChromaticPoint(ImDrawList* pDrawList, ImVec2 const vpos, ImU32 col)
-	{
-		ImVec2 vPoint = vpos;
-
-		float x = vPoint.x;
-		float y = vPoint.y;
-		float const z = 1.0f - x - y;
-
-		float const sum = x + y + z;
-		//float const sum = x + 15.0f * y + 3.0f * z;
-		//
-		//vPoint.x = 4.0f * x / sum;
-		//vPoint.y = 9.0f * y / sum;
-		vPoint.x = x / sum;
-		vPoint.y = y / sum;
-
-		vPoint.x = s_ChromaticPlotStart.x + Rescale(vPoint.x, s_ChromaticPlotBoundMin.x, s_ChromaticPlotBoundMax.x, 0.0f, s_ChromaticPlotSize.x);
-		vPoint.y = s_ChromaticPlotStart.y + Rescale(vPoint.y, s_ChromaticPlotBoundMax.y, s_ChromaticPlotBoundMin.y, 0.0f, s_ChromaticPlotSize.y);
-		pDrawList->AddCircleFilled(vPoint, 5.0f, col, 4);
-	}
-
-	IMGUI_API void DrawChromaticLine(ImDrawList* pDrawList, ImVec2 const* vpos, int const pts_counts, ImU32 col, bool closed, float thickness)
-	{
-		ImVector<ImVec2> pts;
-		pts.resize(pts_counts);
-		ImVec2 const* pCur = vpos;
-		for (int i = 0; i < pts_counts; ++i)
-		{
-			ImVec2& vPoint = pts[i];
-
-			//float x = vPoint.x;
-			//float y = vPoint.y;
-			//float const z = 1.0f - x - y;
-			//
-			//float const sum = x + 15.0f * y + 3.0f * z;
-			//
-			//x = 4.0f * x / sum;
-			//y = 9.0f * y / sum;
-			float x = pCur->x;
-			float y = pCur->y;
-			//float const z = 1.0f - x - y;
-			//float const sum = x + y + z;
-			//x = x / sum;
-			//y = y / sum;
-
-			vPoint.x = s_ChromaticPlotStart.x + Rescale(/*pCur->*/x, s_ChromaticPlotBoundMin.x, s_ChromaticPlotBoundMax.x, 0.0f, s_ChromaticPlotSize.x);
-			vPoint.y = s_ChromaticPlotStart.y + Rescale(/*pCur->*/y, s_ChromaticPlotBoundMax.y, s_ChromaticPlotBoundMin.y, 0.0f, s_ChromaticPlotSize.y);
-
-			++pCur;
-		}
-		pDrawList->AddPolyline(&pts[0], pts_counts, col, closed, thickness);
-	}
-
-	void	DrawTrianglePointer(ImDrawList* pDrawList, ImVec2 targetPoint, float size, ImU32 col, ImWidgetsPointer pointDirection)
-	{
-		constexpr float cos0 = -0.5f;
-		constexpr float sin0 = 0.8660254037844386f;
-
-		ImVec2 center;
-
-		if (pointDirection == ImWidgetsPointer_Up)
-		{
-			center = targetPoint + ImVec2(0.0f, 1.0f);
-			pDrawList->AddTriangle(
-				targetPoint,
-				ImVec2(center.x - cos0 * size, center.y + sin0 * size),
-				ImVec2(center.x + cos0 * size, center.y + sin0 * size), col);
-		}
-		else if (pointDirection == ImWidgetsPointer_Down)
-		{
-			center = targetPoint + ImVec2(0.0f, -1.0f);
-			pDrawList->AddTriangle(
-				targetPoint,
-				ImVec2(center.x + cos0 * size, center.y - sin0 * size),
-				ImVec2(center.x - cos0 * size, center.y - sin0 * size), col);
-		}
-		else if (pointDirection == ImWidgetsPointer_Right)
-		{
-			center = targetPoint + ImVec2(-1.0f, 0.0f);
-			pDrawList->AddTriangle(
-				targetPoint,
-				ImVec2(center.x - sin0 * size, center.y - cos0 * size),
-				ImVec2(center.x - sin0 * size, center.y + cos0 * size), col);
-		}
-		else if (pointDirection == ImWidgetsPointer_Left)
-		{
-			center = targetPoint + ImVec2(1.0f, 0.0f);
-			pDrawList->AddTriangle(
-				targetPoint,
-				ImVec2(center.x + sin0 * size, center.y + cos0 * size),
-				ImVec2(center.x + sin0 * size, center.y - cos0 * size), col);
-		}
-	}
-
-	void	DrawTrianglePointerFilled(ImDrawList* pDrawList, ImVec2 targetPoint, float size, ImU32 col, ImWidgetsPointer pointDirection)
-	{
-		constexpr float cos0 = -0.5f;
-		constexpr float sin0 = 0.8660254037844386f;
-
-		ImVec2 center;
-
-		if (pointDirection == ImWidgetsPointer_Up)
-		{
-			center = targetPoint + ImVec2(0.0f, 1.0f);
-			pDrawList->AddTriangleFilled(
-				targetPoint,
-				ImVec2(center.x - cos0 * size, center.y + sin0 * size),
-				ImVec2(center.x + cos0 * size, center.y + sin0 * size), col);
-		}
-		else if (pointDirection == ImWidgetsPointer_Down)
-		{
-			center = targetPoint + ImVec2(0.0f, -1.0f);
-			pDrawList->AddTriangleFilled(
-				targetPoint,
-				ImVec2(center.x + cos0 * size, center.y - sin0 * size),
-				ImVec2(center.x - cos0 * size, center.y - sin0 * size), col);
-		}
-		else if (pointDirection == ImWidgetsPointer_Right)
-		{
-			center = targetPoint + ImVec2(-1.0f, 0.0f);
-			pDrawList->AddTriangleFilled(
-				targetPoint,
-				ImVec2(center.x - sin0 * size, center.y - cos0 * size),
-				ImVec2(center.x - sin0 * size, center.y + cos0 * size), col);
-		}
-		else if (pointDirection == ImWidgetsPointer_Left)
-		{
-			center = targetPoint + ImVec2(1.0f, 0.0f);
-			pDrawList->AddTriangleFilled(
-				targetPoint,
-				ImVec2(center.x + sin0 * size, center.y + cos0 * size),
-				ImVec2(center.x + sin0 * size, center.y - cos0 * size), col);
-		}
-	}
-
-	// Mask
-	struct tri
-	{
-		ImU16 a; ImU16 b; ImU16 c;
-
-		tri(ImU16 _a, ImU16 _b, ImU16 _c) :
-			a(_a), b(_b), c(_c)
-		{}
-	};
-
-	IMGUI_API void DrawConvexMaskMesh(ImDrawList* pDrawList, ImVec2 curPos, ImVec2 size, ImU32 maskColor, float* buffer_aot, int float2_count, float minX, float maxX, float minY, float maxY, bool flipY)
-	{
-		ImVec2 bb_pts[4] = { ImVec2(minX, minY), ImVec2(minX, maxY), ImVec2(maxX, maxY), ImVec2(maxX, minY) };
-
-		// Get closer point compare to bb_min;
-		float minDist = FLT_MAX;
-		int foundIdx = -1;
-		ImVec2* vBuffer = (ImVec2*)buffer_aot;
-
-		ImVec2* pCur = vBuffer;
-		for (int i = 0; i < float2_count; ++i)
-		{
-			ImVec2 const& v = *pCur;
-			++pCur;
-			ImVec2 delta = v - bb_pts[0];
-			float curDist = ImLengthSqr(delta);
-			if (curDist < minDist)
-			{
-				minDist = curDist;
-				foundIdx = i;
-			}
-		}
-
-		// Generate triangles
-		ImVector<tri> triangles;
-		int boundIdx = 0;
-		int curIdx = foundIdx;
-		int nextIdx = foundIdx + 1;
-		nextIdx %= float2_count;
-		bool lastConvex = true;
-		bool jumped = false;
-		do
-		{
-			ImVec2& bnd = bb_pts[boundIdx];
-			ImVec2 v0 = vBuffer[curIdx] - bnd;
-			ImVec2 v1 = vBuffer[nextIdx] - bnd;
-			v0 /= ImLength(v0);
-			v1 /= ImLength(v1);
-			float crossSignZ = ImSign(v0.x * v1.y - v0.y * v1.x);
-			float dot = v0.x * v1.x + v0.y * v1.y;
-			//if (dot > 0.9999999f)
-			//if (dot > 0.9999f)
-			//{
-			//	// If triangle too thin skip it
-			//	nextIdx++;
-			//	nextIdx %= float2_count;
-			//	continue;
-			//}
-			if (crossSignZ >= 0.0f)
-			{
-				// Can be attached to the current corner
-				triangles.push_back(tri(float2_count + boundIdx, nextIdx, curIdx));
-				curIdx = nextIdx;
-				nextIdx++;
-				nextIdx %= float2_count;
-				lastConvex = true;
-			}
-			else
-			{
-				// Flipped triangle so use the next corner
-				int bnd2 = boundIdx + 1;
-				bnd2 %= 4;
-				triangles.push_back(tri(float2_count + boundIdx, curIdx, float2_count + bnd2));
-				triangles.push_back(tri(float2_count + bnd2, curIdx, nextIdx));
-				boundIdx = bnd2;
-				curIdx = nextIdx;
-				nextIdx++;
-				nextIdx %= float2_count;
-				lastConvex = false;
-				jumped = true;
-			}
-		} while (!jumped || nextIdx != (foundIdx + 1)%float2_count && boundIdx != 0);
-
-		if (lastConvex)
-		{
-			triangles.push_back(tri(float2_count + 0, foundIdx, float2_count + 3));
-		}
-		else
-		{
-			tri& lastTri = triangles.back();
-
-			if ((lastTri.b != foundIdx && lastTri.c != foundIdx))
-			{
-				//triangles.push_back(tri(float2_count + 0, (foundIdx + float2_count - 1) % float2_count, (foundIdx + float2_count) % float2_count));
-				triangles.push_back(tri(float2_count + 0, (foundIdx + float2_count - 0) % float2_count, (foundIdx + float2_count - 1) % float2_count));
-			}
-		}
-		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
-		pDrawList->PrimReserve(triangles.size() * 3, float2_count + 4);
-
-		int triIdx = 0;
-		for (tri const& tr : triangles)
-		{
-			pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + tr.a));
-			pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + tr.b));
-			pDrawList->PrimWriteIdx((ImDrawIdx)(pDrawList->_VtxCurrentIdx + tr.c));
-		}
-
-		if (flipY)
-		{
-			for (int i = 0; i < float2_count; ++i)
-			{
-				float x = Rescale(vBuffer[i].x, minX, maxX, 0, size.x);
-				float y = Rescale(vBuffer[i].y, maxY, minY, 0, size.y);
-				pDrawList->PrimWriteVtx(curPos + ImVec2(x, y), uv, maskColor);
-			}
-			for (int i = 0; i < 4; ++i)
-			{
-				float x = Rescale(bb_pts[i].x, minX, maxX, 0, size.x);
-				float y = Rescale(bb_pts[i].y, maxY, minY, 0, size.y);
-				pDrawList->PrimWriteVtx(curPos + ImVec2(x, y), uv, maskColor);
-			}
-		}
-		else
-		{
-			for (int i = 0; i < float2_count; ++i)
-			{
-				float x = Rescale(vBuffer[i].x, minX, maxX, 0, size.x);
-				float y = Rescale(vBuffer[i].y, minY, maxY, 0, size.y);
-				pDrawList->PrimWriteVtx(curPos + ImVec2(x, y), uv, maskColor);
-			}
-			for (int i = 0; i < 4; ++i)
-			{
-				float x = Rescale(bb_pts[i].x, minX, maxX, 0, size.x);
-				float y = Rescale(bb_pts[i].y, minY, maxY, 0, size.y);
-				pDrawList->PrimWriteVtx(curPos + ImVec2(x, y), uv, maskColor);
-			}
-		}
-	}
-
-	// Density Plots
-	bool DensityPlotBilinear(const char* label, float(*sample)(float x, float y), int resX, int resY, float minX, float maxX, float minY, float maxY)
-	{
-		return DensityPlotEx<true>(label, sample, resX, resY, minX, maxX, minY, maxY);
-	}
-	bool DensityPlotNearest(const char* label, float(*sample)(float x, float y), int resX, int resY, float minX, float maxX, float minY, float maxY)
-	{
-		return DensityPlotEx<false>(label, sample, resX, resY, minX, maxX, minY, maxY);
-	}
-
-	template < bool IsBilinear >
-	bool DensityIsolinePlotEx(const char* label, float(*sample)(float x, float y), bool showSurface, float* isoValues, int isoLinesCount, ImU32* isoLinesColors, int isolinesColorsCount, int resX, int resY, float minX, float maxX, float minY, float maxY)
-	{
-		ImGuiID const iID = ImGui::GetID(label);
-		ImGui::PushID(iID);
-
-		float* pMin = ImGui::GetStateStorage()->GetFloatRef(iID + 0, FLT_MAX);
-		float* pMax = ImGui::GetStateStorage()->GetFloatRef(iID + 1, -FLT_MAX);
-
-		ImVec2 curPos = ImGui::GetCursorScreenPos();
-		float const width = ImGui::GetContentRegionAvail().x;
-		float const height = width;
-
-		ImGui::InvisibleButton("##Zone", ImVec2(width, height), 0);
-
-		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
-		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-
-		float sx = ((float)width) / ((float)resX);
-		float sy = ((float)height) / ((float)resY);
-		float dx = 0.5f * sx;
-		float dy = 0.5f * sx;
-		float r, g, b;
-		float maxValue;
-		std::vector< std::vector<bool> > boundaries; // Don't use std::vector<bool> as design
-		std::vector< std::vector<float> > coefs;
-		boundaries.resize(resY + 1);
-		coefs.resize(resY + 1);
-		for (int i = 0; i <= resY; ++i)
-		{
-			boundaries[i].resize(resX + 1);
-			coefs[i].resize(resY + 1);
-		}
-
-		if (showSurface)
-		{
-			auto GetColor = [pMin, pMax, &sample](float x, float y) {
-				float value = sample(x, y);
-
-				if (value < *pMin)
-					*pMin = value;
-				if (value > *pMax)
-					*pMax = value;
-
-				float showValue = Normalize01(value, *pMin, *pMax);
-				ImU32 const uVal = static_cast<ImU32>(showValue * 255.0f);
-
-				return IM_COL32(uVal, uVal, uVal, 255);
-			};
-
-			DrawColorDensityPlotEx< IsBilinear >(pDrawList, GetColor, minX, maxX, minY, maxY, curPos, ImVec2(width, height), resX, resY);
-		}
-		for (int k = 0; k < isoLinesCount; ++k)
-		{
-			float const isoValue = isoValues[k];
-			ImU32 const isoColor = isoLinesColors[k % isolinesColorsCount];
-
-			for (int j = 0; j <= resY; ++j)
-			{
-				float y0 = ScaleFromNormalized(1.0f - ((float)(j + 0)) / ((float)(resY - 1)), minY, maxY);
-
-				for (int i = 0; i <= resX; ++i)
-				{
-					float x0 = ScaleFromNormalized(((float)(i + 0)) / ((float)(resX - 1)), minX, maxX);
-					float const value = sample(x0, y0);
-					coefs[j][i] = value;
-					boundaries[j][i] = (value >= isoValue);
-				}
-			}
-
-			for (int j = 1; j <= resY; ++j)
-			{
-				for (int i = 1; i <= resX; ++i)
-				{
-					int _00 = (int)boundaries[j - 1][i - 1];
-					int _10 = (int)boundaries[j - 0][i - 1];
-					int _11 = (int)boundaries[j - 0][i - 0];
-					int _01 = (int)boundaries[j - 1][i - 0];
-
-					float _00f = ImAbs(coefs[j - 1][i - 1]);
-					float _10f = ImAbs(coefs[j - 0][i - 1]);
-					float _11f = ImAbs(coefs[j - 0][i - 0]);
-					float _01f = ImAbs(coefs[j - 1][i - 0]);
-
-					int val = (_00 << 0) | (_10 << 1) | (_11 << 2) | (_01 << 3);
-
-					int cnt = 0;
-					int src = -1;
-					int dst = -1;
-					int src2 = -1;
-					int dst2 = -1;
-					ImVec4 coefs;
-					if (val == 0b0000) // 0
-					{
-						cnt = 0;
-					}
-					else if (val == 0b0010) // 1
-					{
-						cnt = 1;
-						src = 0; dst = 1;
-					}
-					else if (val == 0b0100) // 2
-					{
-						cnt = 1;
-						src = 1; dst = 2;
-					}
-					else if (val == 0b0110) // 3
-					{
-						cnt = 1;
-						src = 0; dst = 2;
-					}
-					else if (val == 0b1000) // 4
-					{
-						cnt = 1;
-						src = 2; dst = 3;
-					}
-					else if (val == 0b1010) // 5
-					{
-						cnt = 2;
-						src = 1; dst = 2;
-						src2 = 3; dst2 = 0;
-					}
-					else if (val == 0b1100) // 6
-					{
-						cnt = 1;
-						src = 1; dst = 3;
-					}
-					else if (val == 0b1110) // 7
-					{
-						cnt = 1;
-						src = 3; dst = 0;
-					}
-					else if (val == 0b0001) // 8
-					{
-						cnt = 1;
-						src = 3; dst = 0;
-					}
-					else if (val == 0b0011) // 9
-					{
-						cnt = 1;
-						src = 1; dst = 3;
-					}
-					else if (val == 0b0101) // 10
-					{
-						cnt = 2;
-						src = 0; dst = 1;
-						src2 = 2; dst2 = 3;
-					}
-					else if (val == 0b0111) // 11
-					{
-						cnt = 1;
-						src = 2; dst = 3;
-					}
-					else if (val == 0b1001) // 12
-					{
-						cnt = 1;
-						src = 0; dst = 2;
-					}
-					else if (val == 0b1011) // 13
-					{
-						cnt = 1;
-						src = 1; dst = 2;
-					}
-					else if (val == 0b1101) // 14
-					{
-						cnt = 1;
-						src = 0; dst = 1;
-					}
-					else if (val == 0b1111) // 15
-					{
-						cnt = 0;
-					}
-
-					if (cnt > 0)
-					{
-						ImVec2 x00 = curPos + ImVec2(sx * (i - 1), sy * (j - 1));
-						ImVec2 x01 = curPos + ImVec2(sx * (i - 1), sy * (j + 0));
-						ImVec2 x11 = curPos + ImVec2(sx * (i + 0), sy * (j + 0));
-						ImVec2 x10 = curPos + ImVec2(sx * (i + 0), sy * (j - 1));
-
-						ImVec2 vals[] = {	x00 * 0.5f + x01 * 0.5f,
-											x01 * 0.5f + x11 * 0.5f,
-											x11 * 0.5f + x10 * 0.5f,
-											x10 * 0.5f + x00 * 0.5f };
-						//ImVec2 vals[] = {	(x00 * _00f + x01 * _01f) / (_00f + _01f),
-						//					(x01 * _01f + x11 * _11f) / (_01f + _11f),
-						//					(x11 * _11f + x10 * _10f) / (_11f + _10f),
-						//					(x10 * _10f + x00 * _00f) / (_10f + _00f) };
-						//ImVec2 vals[] = {	(x00 * _01f + x01 * _00f) / (_00f + _01f),
-						//					(x01 * _11f + x11 * _01f) / (_01f + _11f),
-						//					(x11 * _10f + x10 * _11f) / (_11f + _10f),
-						//					(x10 * _00f + x00 * _10f) / (_10f + _00f) };
-
-						pDrawList->AddLine(vals[src], vals[dst], isoColor, 2.0f);
-						if (cnt >= 2)
-							pDrawList->AddLine(vals[src2], vals[dst2], isoColor, 2.0f);
-					}
-				}
-			}
-		}
-
-		ImGui::PopID();
-
-		return false;
-	}
-
-	bool DensityIsolinePlotBilinear(const char* label, float(*sample)(float x, float y), bool showSurface, float* isoValue, int isoLinesCount, ImU32* isoLinesColors, int isolinesColorsCount, int resX, int resY, float minX, float maxX, float minY, float maxY)
-	{
-		return DensityIsolinePlotEx<true>(label, sample, showSurface, isoValue, isoLinesCount, isoLinesColors, isolinesColorsCount, resX, resY, minX, maxX, minY, maxY);
-	}
-
-	//////////////////////////////////////////////////////////////////////////
-	// External
-	//////////////////////////////////////////////////////////////////////////
-	static ImVector<ImRect> s_GroupPanelLabelStack;
-
-	void BeginGroupPanel(const char* name, const ImVec2& size)
-	{
-		ImGui::BeginGroup();
-
-		auto cursorPos = ImGui::GetCursorScreenPos();
-		auto itemSpacing = ImGui::GetStyle().ItemSpacing;
-		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
-		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
-
-		auto frameHeight = ImGui::GetFrameHeight();
-		ImGui::BeginGroup();
-
-		ImVec2 effectiveSize = size;
-		if (size.x < 0.0f)
-			effectiveSize.x = ImGui::GetContentRegionAvail().x;
-		else
-			effectiveSize.x = size.x;
-		ImGui::Dummy(ImVec2(effectiveSize.x, 0.0f));
-
-		ImGui::Dummy(ImVec2(frameHeight * 0.5f, 0.0f));
-		ImGui::SameLine(0.0f, 0.0f);
-		ImGui::BeginGroup();
-		ImGui::Dummy(ImVec2(frameHeight * 0.5f, 0.0f));
-		ImGui::SameLine(0.0f, 0.0f);
-		ImGui::TextUnformatted(name);
-		auto labelMin = ImGui::GetItemRectMin();
-		auto labelMax = ImGui::GetItemRectMax();
-		ImGui::SameLine(0.0f, 0.0f);
-		ImGui::Dummy(ImVec2(0.0, frameHeight + itemSpacing.y));
-		ImGui::BeginGroup();
-
-		//ImGui::GetWindowDrawList()->AddRect(labelMin, labelMax, IM_COL32(255, 0, 255, 255));
-
-		ImGui::PopStyleVar(2);
-
-#if IMGUI_VERSION_NUM >= 17301
-		ImGui::GetCurrentWindow()->ContentRegionRect.Max.x -= frameHeight * 0.5f;
-		ImGui::GetCurrentWindow()->WorkRect.Max.x -= frameHeight * 0.5f;
-		ImGui::GetCurrentWindow()->InnerRect.Max.x -= frameHeight * 0.5f;
-#else
-		ImGui::GetCurrentWindow()->ContentsRegionRect.Max.x -= frameHeight * 0.5f;
-#endif
-		ImGui::GetCurrentWindow()->Size.x -= frameHeight;
-
-		auto itemWidth = ImGui::CalcItemWidth();
-		ImGui::PushItemWidth(ImMax(0.0f, itemWidth - frameHeight));
-
-		s_GroupPanelLabelStack.push_back(ImRect(labelMin, labelMax));
-	}
-
-	void EndGroupPanel()
-	{
-		ImGui::PopItemWidth();
-
-		auto itemSpacing = ImGui::GetStyle().ItemSpacing;
-
-		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
-		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
-
-		auto frameHeight = ImGui::GetFrameHeight();
-
-		ImGui::EndGroup();
-
-		//ImGui::GetWindowDrawList()->AddRectFilled(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), IM_COL32(0, 255, 0, 64), 4.0f);
-
-		ImGui::EndGroup();
-
-		ImGui::SameLine(0.0f, 0.0f);
-		ImGui::Dummy(ImVec2(frameHeight * 0.5f, 0.0f));
-		ImGui::Dummy(ImVec2(0.0, frameHeight - frameHeight * 0.5f - itemSpacing.y));
-
-		ImGui::EndGroup();
-
-		auto itemMin = ImGui::GetItemRectMin();
-		auto itemMax = ImGui::GetItemRectMax();
-		//ImGui::GetWindowDrawList()->AddRectFilled(itemMin, itemMax, IM_COL32(255, 0, 0, 64), 4.0f);
-
-		auto labelRect = s_GroupPanelLabelStack.back();
-		s_GroupPanelLabelStack.pop_back();
-
-		ImVec2 halfFrame = ImVec2(frameHeight * 0.25f, frameHeight) * 0.5f;
-		ImRect frameRect = ImRect(itemMin + halfFrame, itemMax - ImVec2(halfFrame.x, 0.0f));
-		labelRect.Min.x -= itemSpacing.x;
-		labelRect.Max.x += itemSpacing.x;
-		for (int i = 0; i < 4; ++i)
-		{
-			switch (i)
-			{
-				// left half-plane
-			case 0: ImGui::PushClipRect(ImVec2(-FLT_MAX, -FLT_MAX), ImVec2(labelRect.Min.x, FLT_MAX), true); break;
-				// right half-plane
-			case 1: ImGui::PushClipRect(ImVec2(labelRect.Max.x, -FLT_MAX), ImVec2(FLT_MAX, FLT_MAX), true); break;
-				// top
-			case 2: ImGui::PushClipRect(ImVec2(labelRect.Min.x, -FLT_MAX), ImVec2(labelRect.Max.x, labelRect.Min.y), true); break;
-				// bottom
-			case 3: ImGui::PushClipRect(ImVec2(labelRect.Min.x, labelRect.Max.y), ImVec2(labelRect.Max.x, FLT_MAX), true); break;
-			}
-
-			ImGui::GetWindowDrawList()->AddRect(
-				frameRect.Min, frameRect.Max,
-				ImColor(ImGui::GetStyleColorVec4(ImGuiCol_Border)),
-				halfFrame.x);
-
-			ImGui::PopClipRect();
-		}
-
-		ImGui::PopStyleVar(2);
-
-#if IMGUI_VERSION_NUM >= 17301
-		ImGui::GetCurrentWindow()->ContentRegionRect.Max.x += frameHeight * 0.5f;
-		ImGui::GetCurrentWindow()->WorkRect.Max.x += frameHeight * 0.5f;
-		ImGui::GetCurrentWindow()->InnerRect.Max.x += frameHeight * 0.5f;
-#else
-		ImGui::GetCurrentWindow()->ContentsRegionRect.Max.x += frameHeight * 0.5f;
-#endif
-		ImGui::GetCurrentWindow()->Size.x += frameHeight;
-
-		ImGui::Dummy(ImVec2(0.0f, 0.0f));
-
-		ImGui::EndGroup();
-	}
-
-#if 0
-	//////////////////////////////////////////////////////////////////////////
-	template <int steps>
-	void bezier_table(ImVec2 P[4], ImVec2 results[steps + 1])
-	{
-		static float C[(steps + 1) * 4], * K = 0;
-		if (!K)
-		{
-			K = C;
-			for (unsigned step = 0; step <= steps; ++step)
-			{
-				float t = (float)step / (float)steps;
-				C[step * 4 + 0] = (1 - t) * (1 - t) * (1 - t);	// * P0
-				C[step * 4 + 1] = 3 * (1 - t) * (1 - t) * t;	// * P1
-				C[step * 4 + 2] = 3 * (1 - t) * t * t;			// * P2
-				C[step * 4 + 3] = t * t * t;					// * P3
-			}
-		}
-		for (unsigned step = 0; step <= steps; ++step)
-		{
-			ImVec2 point = {
-				K[step * 4 + 0] * P[0].x + K[step * 4 + 1] * P[1].x + K[step * 4 + 2] * P[2].x + K[step * 4 + 3] * P[3].x,
-				K[step * 4 + 0] * P[0].y + K[step * 4 + 1] * P[1].y + K[step * 4 + 2] * P[2].y + K[step * 4 + 3] * P[3].y
-			};
-			results[step] = point;
-		}
-	}
-
-	float BezierValue(float dt01, float P[4])
-	{
-		enum { STEPS = 256 };
-		ImVec2 Q[4] = { { 0, 0 }, { P[0], P[1] }, { P[2], P[3] }, { 1, 1 } };
-		ImVec2 results[STEPS + 1];
-		bezier_table<STEPS>(Q, results);
-		return results[(int)((dt01 < 0 ? 0 : dt01 > 1 ? 1 : dt01) * STEPS)].y;
-	}
-
-	int Bezier(const char* label, float P[5])
-	{
-		// visuals
-		enum { SMOOTHNESS = 64 }; // curve smoothness: the higher number of segments, the smoother curve
-		enum { CURVE_WIDTH = 4 }; // main curved line width
-		enum { LINE_WIDTH = 1 }; // handlers: small lines width
-		enum { GRAB_RADIUS = 8 }; // handlers: circle radius
-		enum { GRAB_BORDER = 2 }; // handlers: circle border width
-		enum { AREA_CONSTRAINED = true }; // should grabbers be constrained to grid area?
-		enum { AREA_WIDTH = 128 }; // area width in pixels. 0 for adaptive size (will use max avail width)
-
-		// curve presets
-		static struct { const char* name; float points[4]; } presets[] = {
-			{ "Linear", 0.000f, 0.000f, 1.000f, 1.000f },
-
-			{ "In Sine", 0.470f, 0.000f, 0.745f, 0.715f },
-			{ "In Quad", 0.550f, 0.085f, 0.680f, 0.530f },
-			{ "In Cubic", 0.550f, 0.055f, 0.675f, 0.190f },
-			{ "In Quart", 0.895f, 0.030f, 0.685f, 0.220f },
-			{ "In Quint", 0.755f, 0.050f, 0.855f, 0.060f },
-			{ "In Expo", 0.950f, 0.050f, 0.795f, 0.035f },
-			{ "In Circ", 0.600f, 0.040f, 0.980f, 0.335f },
-			{ "In Back", 0.600f, -0.28f, 0.735f, 0.045f },
-
-			{ "Out Sine", 0.390f, 0.575f, 0.565f, 1.000f },
-			{ "Out Quad", 0.250f, 0.460f, 0.450f, 0.940f },
-			{ "Out Cubic", 0.215f, 0.610f, 0.355f, 1.000f },
-			{ "Out Quart", 0.165f, 0.840f, 0.440f, 1.000f },
-			{ "Out Quint", 0.230f, 1.000f, 0.320f, 1.000f },
-			{ "Out Expo", 0.190f, 1.000f, 0.220f, 1.000f },
-			{ "Out Circ", 0.075f, 0.820f, 0.165f, 1.000f },
-			{ "Out Back", 0.175f, 0.885f, 0.320f, 1.275f },
-
-			{ "InOut Sine", 0.445f, 0.050f, 0.550f, 0.950f },
-			{ "InOut Quad", 0.455f, 0.030f, 0.515f, 0.955f },
-			{ "InOut Cubic", 0.645f, 0.045f, 0.355f, 1.000f },
-			{ "InOut Quart", 0.770f, 0.000f, 0.175f, 1.000f },
-			{ "InOut Quint", 0.860f, 0.000f, 0.070f, 1.000f },
-			{ "InOut Expo", 1.000f, 0.000f, 0.000f, 1.000f },
-			{ "InOut Circ", 0.785f, 0.135f, 0.150f, 0.860f },
-			{ "InOut Back", 0.680f, -0.55f, 0.265f, 1.550f },
-
-			// easeInElastic: not a bezier
-			// easeOutElastic: not a bezier
-			// easeInOutElastic: not a bezier
-			// easeInBounce: not a bezier
-			// easeOutBounce: not a bezier
-			// easeInOutBounce: not a bezier
-		};
-
-		// preset selector
-
-		bool reload = 0;
-		ImGui::PushID(label);
-		if (ImGui::ArrowButton("##lt", ImGuiDir_Left))
-		{ // ImGui::ArrowButton(ImGui::GetCurrentWindow()->GetID("##lt"), ImGuiDir_Left, ImVec2(0, 0), 0)
-			if (--P[4] >= 0) reload = 1; else ++P[4];
-		}
-		ImGui::SameLine();
-
-		if (ImGui::Button("Presets"))
-		{
-			ImGui::OpenPopup("!Presets");
-		}
-		if (ImGui::BeginPopup("!Presets"))
-		{
-			for (int i = 0; i < IM_ARRAYSIZE(presets); ++i)
-			{
-				if (i == 1 || i == 9 || i == 17) ImGui::Separator();
-				if (ImGui::MenuItem(presets[i].name, NULL, P[4] == i))
-				{
-					P[4] = i;
-					reload = 1;
-				}
-			}
-			ImGui::EndPopup();
-		}
-		ImGui::SameLine();
-
-		if (ImGui::ArrowButton("##rt", ImGuiDir_Right))
-		{ // ImGui::ArrowButton(ImGui::GetCurrentWindow()->GetID("##rt"), ImGuiDir_Right, ImVec2(0, 0), 0)
-			if (++P[4] < IM_ARRAYSIZE(presets)) reload = 1; else --P[4];
-		}
-		ImGui::SameLine();
-		ImGui::PopID();
-
-		if (reload)
-		{
-			memcpy(P, presets[(int)P[4]].points, sizeof(float) * 4);
-		}
-
-		// bezier widget
-
-		const ImGuiStyle& Style = ImGui::GetStyle();
-		const ImGuiIO& IO = ImGui::GetIO();
-		ImDrawList* DrawList = ImGui::GetWindowDrawList();
-		ImGuiWindow* Window = ImGui::GetCurrentWindow();
-		if (Window->SkipItems)
-			return false;
-
-		// header and spacing
-		int changed = ImGui::SliderFloat4(label, P, 0, 1, "%.3f", 1.0f);
-		int hovered = ImGui::IsItemActive() || ImGui::IsItemHovered(); // IsItemDragged() ?
-		ImGui::Dummy(ImVec2(0, 3));
-
-		// prepare canvas
-		//const float avail = ImGui::GetContentRegionAvailWidth();
-		float const avail = ImGui::GetContentRegionAvail().x;
-		const float dim = AREA_WIDTH > 0 ? AREA_WIDTH : avail;
-		ImVec2 Canvas(dim, dim);
-
-		ImRect bb(Window->DC.CursorPos, Window->DC.CursorPos + Canvas);
-		ImGui::ItemSize(bb);
-		if (!ImGui::ItemAdd(bb, NULL))
-			return changed;
-
-		const ImGuiID id = Window->GetID(label);
-		hovered |= 0 != ImGui::ItemHoverable(ImRect(bb.Min, bb.Min + ImVec2(avail, dim)), id);
-
-		ImGui::RenderFrame(bb.Min, bb.Max, ImGui::GetColorU32(ImGuiCol_FrameBg, 1), true, Style.FrameRounding);
-
-		// background grid
-		for (int i = 0; i <= Canvas.x; i += (Canvas.x / 4))
-		{
-			DrawList->AddLine(
-				ImVec2(bb.Min.x + i, bb.Min.y),
-				ImVec2(bb.Min.x + i, bb.Max.y),
-				ImGui::GetColorU32(ImGuiCol_TextDisabled));
-		}
-		for (int i = 0; i <= Canvas.y; i += (Canvas.y / 4))
-		{
-			DrawList->AddLine(
-				ImVec2(bb.Min.x, bb.Min.y + i),
-				ImVec2(bb.Max.x, bb.Min.y + i),
-				ImGui::GetColorU32(ImGuiCol_TextDisabled));
-		}
-
-		// eval curve
-		ImVec2 Q[4] = { { 0, 0 }, { P[0], P[1] }, { P[2], P[3] }, { 1, 1 } };
-		ImVec2 results[SMOOTHNESS + 1];
-		bezier_table<SMOOTHNESS>(Q, results);
-
-		// control points: 2 lines and 2 circles
-		{
-			// handle grabbers
-			ImVec2 mouse = ImGui::GetIO().MousePos, pos[2];
-			float distance[2];
-
-			for (int i = 0; i < 2; ++i)
-			{
-				pos[i] = ImVec2(P[i * 2 + 0], 1 - P[i * 2 + 1]) * (bb.Max - bb.Min) + bb.Min;
-				distance[i] = (pos[i].x - mouse.x) * (pos[i].x - mouse.x) + (pos[i].y - mouse.y) * (pos[i].y - mouse.y);
-			}
-
-			int selected = distance[0] < distance[1] ? 0 : 1;
-			if (distance[selected] < (4 * GRAB_RADIUS * 4 * GRAB_RADIUS))
-			{
-				ImGui::SetTooltip("(%4.3f, %4.3f)", P[selected * 2 + 0], P[selected * 2 + 1]);
-
-				if (/*hovered &&*/ (ImGui::IsMouseClicked(0) || ImGui::IsMouseDragging(0)))
-				{
-					float& px = (P[selected * 2 + 0] += ImGui::GetIO().MouseDelta.x / Canvas.x);
-					float& py = (P[selected * 2 + 1] -= ImGui::GetIO().MouseDelta.y / Canvas.y);
-
-					if constexpr (AREA_CONSTRAINED) {
-						px = (px < 0 ? 0 : (px > 1 ? 1 : px));
-						py = (py < 0 ? 0 : (py > 1 ? 1 : py));
-					}
-
-					changed = true;
-				}
-			}
-		}
-
-		// if (hovered || changed) DrawList->PushClipRectFullScreen();
-
-		// draw curve
-		{
-			ImColor color(ImGui::GetStyle().Colors[ImGuiCol_PlotLines]);
-			for (int i = 0; i < SMOOTHNESS; ++i) {
-				ImVec2 p = { results[i + 0].x, 1 - results[i + 0].y };
-				ImVec2 q = { results[i + 1].x, 1 - results[i + 1].y };
-				ImVec2 r(p.x * (bb.Max.x - bb.Min.x) + bb.Min.x, p.y * (bb.Max.y - bb.Min.y) + bb.Min.y);
-				ImVec2 s(q.x * (bb.Max.x - bb.Min.x) + bb.Min.x, q.y * (bb.Max.y - bb.Min.y) + bb.Min.y);
-				DrawList->AddLine(r, s, color, CURVE_WIDTH);
-			}
-		}
-
-		// draw preview (cycles every 1s)
-		static clock_t epoch = clock();
-		ImVec4 white(ImGui::GetStyle().Colors[ImGuiCol_Text]);
-		for (int i = 0; i < 3; ++i)
-		{
-			double now = ((clock() - epoch) / (double)CLOCKS_PER_SEC);
-			float delta = ((int)(now * 1000) % 1000) / 1000.f; delta += i / 3.f; if (delta > 1) delta -= 1;
-			int idx = (int)(delta * SMOOTHNESS);
-			float evalx = results[idx].x; // 
-			float evaly = results[idx].y; // ImGui::BezierValue( delta, P );
-			ImVec2 p0 = ImVec2(evalx, 1 - 0) * (bb.Max - bb.Min) + bb.Min;
-			ImVec2 p1 = ImVec2(0, 1 - evaly) * (bb.Max - bb.Min) + bb.Min;
-			ImVec2 p2 = ImVec2(evalx, 1 - evaly) * (bb.Max - bb.Min) + bb.Min;
-			DrawList->AddCircleFilled(p0, GRAB_RADIUS / 2, ImColor(white));
-			DrawList->AddCircleFilled(p1, GRAB_RADIUS / 2, ImColor(white));
-			DrawList->AddCircleFilled(p2, GRAB_RADIUS / 2, ImColor(white));
-		}
-
-		// draw lines and grabbers
-		float luma = ImGui::IsItemActive() || ImGui::IsItemHovered() ? 0.5f : 1.0f;
-		ImVec4 pink(1.00f, 0.00f, 0.75f, luma), cyan(0.00f, 0.75f, 1.00f, luma);
-		ImVec2 p1 = ImVec2(P[0], 1 - P[1]) * (bb.Max - bb.Min) + bb.Min;
-		ImVec2 p2 = ImVec2(P[2], 1 - P[3]) * (bb.Max - bb.Min) + bb.Min;
-		DrawList->AddLine(ImVec2(bb.Min.x, bb.Max.y), p1, ImColor(white), LINE_WIDTH);
-		DrawList->AddLine(ImVec2(bb.Max.x, bb.Min.y), p2, ImColor(white), LINE_WIDTH);
-		DrawList->AddCircleFilled(p1, GRAB_RADIUS, ImColor(white));
-		DrawList->AddCircleFilled(p1, GRAB_RADIUS - GRAB_BORDER, ImColor(pink));
-		DrawList->AddCircleFilled(p2, GRAB_RADIUS, ImColor(white));
-		DrawList->AddCircleFilled(p2, GRAB_RADIUS - GRAB_BORDER, ImColor(cyan));
-
-		// if (hovered || changed) DrawList->PopClipRect();
-
-		return changed;
-	}
-
-	void ShowBezierDemo() {
-		{ static float v[5] = { 0.950f, 0.050f, 0.795f, 0.035f }; Bezier("easeInExpo", v); }
-	}
-
-	//////////////////////////////////////////////////////////////////////////
-	constexpr float NODE_SLOT_RADIUS = 4.0f;
-
-	int CurveEditor(const char* label,
-					float* values,
-					int points_count,
-					const ImVec2& editor_size,
-					ImU32 flags,
-					int* new_count)
-	{
-		enum class StorageValues : ImGuiID
-		{
-			FROM_X = 100,
-			FROM_Y,
-			WIDTH,
-			HEIGHT,
-			IS_PANNING,
-			POINT_START_X,
-			POINT_START_Y
-		};
-
-		const float HEIGHT = 100;
-		static ImVec2 start_pan;
-
-		ImGuiContext& g = *GImGui;
-		const ImGuiStyle& style = g.Style;
-		ImVec2 size = editor_size;
-		size.x = size.x < 0 ? ImGui::CalcItemWidth() + (style.FramePadding.x * 2) : size.x;
-		size.y = size.y < 0 ? HEIGHT : size.y;
-
-		ImGuiWindow* parent_window = ImGui::GetCurrentWindow();
-		ImGuiID id = parent_window->GetID(label);
-		if (!ImGui::BeginChildFrame(id, size, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
-		{
-			ImGui::EndChild();
-			return -1;
-		}
-
-		int hovered_idx = -1;
-		if (new_count)* new_count = points_count;
-
-		ImGuiWindow* window = ImGui::GetCurrentWindow();
-		if (window->SkipItems)
-		{
-			ImGui::EndChild();
-			return -1;
-		}
-
-		ImVec2 points_min(FLT_MAX, FLT_MAX);
-		ImVec2 points_max(-FLT_MAX, -FLT_MAX);
-		for (int point_idx = 0; point_idx < points_count; ++point_idx)
-		{
-			ImVec2 point;
-			if (flags & (int)CurveEditorFlags::NO_TANGENTS)
-			{
-				point = ((ImVec2*)values)[point_idx];
-			}
-			else
-			{
-				point = ((ImVec2*)values)[1 + point_idx * 3];
-			}
-			points_max = ImMax(points_max, point);
-			points_min = ImMin(points_min, point);
-		}
-		points_max.y = ImMax(points_max.y, points_min.y + 0.0001f);
-
-		float from_x = window->StateStorage.GetFloat((ImGuiID)StorageValues::FROM_X, points_min.x);
-		float from_y = window->StateStorage.GetFloat((ImGuiID)StorageValues::FROM_Y, points_min.y);
-		float width = window->StateStorage.GetFloat((ImGuiID)StorageValues::WIDTH, points_max.x - points_min.x);
-		float height = window->StateStorage.GetFloat((ImGuiID)StorageValues::HEIGHT, points_max.y - points_min.y);
-		window->StateStorage.SetFloat((ImGuiID)StorageValues::FROM_X, from_x);
-		window->StateStorage.SetFloat((ImGuiID)StorageValues::FROM_Y, from_y);
-		window->StateStorage.SetFloat((ImGuiID)StorageValues::WIDTH, width);
-		window->StateStorage.SetFloat((ImGuiID)StorageValues::HEIGHT, height);
-
-		ImVec2 beg_pos = ImGui::GetCursorScreenPos();
-
-		const ImRect inner_bb = window->InnerRect;
-		const ImRect frame_bb(inner_bb.Min - style.FramePadding, inner_bb.Max + style.FramePadding);
-
-		auto transform = [&](const ImVec2& pos) -> ImVec2
-		{
-			float x = (pos.x - from_x) / width;
-			float y = (pos.y - from_y) / height;
-
-			return ImVec2(
-				inner_bb.Min.x * (1 - x) + inner_bb.Max.x * x,
-				inner_bb.Min.y * y + inner_bb.Max.y * (1 - y)
-			);
-		};
-
-		auto invTransform = [&](const ImVec2& pos) -> ImVec2
-		{
-			float x = (pos.x - inner_bb.Min.x) / (inner_bb.Max.x - inner_bb.Min.x);
-			float y = (inner_bb.Max.y - pos.y) / (inner_bb.Max.y - inner_bb.Min.y);
-
-			return ImVec2(
-				from_x + width * x,
-				from_y + height * y
-			);
-		};
-
-		if (flags & (int)CurveEditorFlags::SHOW_GRID)
-		{
-			int exp;
-			frexp(width / 5, &exp);
-			float step_x = (float)ldexp(1.0, exp);
-			int cell_cols = int(width / step_x);
-
-			float x = step_x * int(from_x / step_x);
-			for (int i = -1; i < cell_cols + 2; ++i)
-			{
-				ImVec2 a = transform({ x + i * step_x, from_y });
-				ImVec2 b = transform({ x + i * step_x, from_y + height });
-				window->DrawList->AddLine(a, b, 0x55000000);
-				char buf[64];
-				if (exp > 0)
-				{
-					ImFormatString(buf, sizeof(buf), " %d", int(x + i * step_x));
-				}
-				else
-				{
-					ImFormatString(buf, sizeof(buf), " %f", x + i * step_x);
-				}
-				window->DrawList->AddText(b, 0x55000000, buf);
-			}
-
-			frexp(height / 5, &exp);
-			float step_y = (float)ldexp(1.0, exp);
-			int cell_rows = int(height / step_y);
-
-			float y = step_y * int(from_y / step_y);
-			for (int i = -1; i < cell_rows + 2; ++i)
-			{
-				ImVec2 a = transform({ from_x, y + i * step_y });
-				ImVec2 b = transform({ from_x + width, y + i * step_y });
-				window->DrawList->AddLine(a, b, 0x55000000);
-				char buf[64];
-				if (exp > 0)
-				{
-					ImFormatString(buf, sizeof(buf), " %d", int(y + i * step_y));
-				}
-				else
-				{
-					ImFormatString(buf, sizeof(buf), " %f", y + i * step_y);
-				}
-				window->DrawList->AddText(a, 0x55000000, buf);
-			}
-		}
-
-		if (ImGui::GetIO().MouseWheel != 0 && ImGui::IsItemHovered())
-		{
-			float scale = powf(2, ImGui::GetIO().MouseWheel);
-			width *= scale;
-			height *= scale;
-			window->StateStorage.SetFloat((ImGuiID)StorageValues::WIDTH, width);
-			window->StateStorage.SetFloat((ImGuiID)StorageValues::HEIGHT, height);
-		}
-		if (ImGui::IsMouseReleased(1))
-		{
-			window->StateStorage.SetBool((ImGuiID)StorageValues::IS_PANNING, false);
-		}
-		if (window->StateStorage.GetBool((ImGuiID)StorageValues::IS_PANNING, false))
-		{
-			ImVec2 drag_offset = ImGui::GetMouseDragDelta(1);
-			from_x = start_pan.x;
-			from_y = start_pan.y;
-			from_x -= drag_offset.x * width / (inner_bb.Max.x - inner_bb.Min.x);
-			from_y += drag_offset.y * height / (inner_bb.Max.y - inner_bb.Min.y);
-			window->StateStorage.SetFloat((ImGuiID)StorageValues::FROM_X, from_x);
-			window->StateStorage.SetFloat((ImGuiID)StorageValues::FROM_Y, from_y);
-		}
-		else if (ImGui::IsMouseDragging(1) && ImGui::IsItemHovered())
-		{
-			window->StateStorage.SetBool((ImGuiID)StorageValues::IS_PANNING, true);
-			start_pan.x = from_x;
-			start_pan.y = from_y;
-		}
-
-		int changed_idx = -1;
-		for (int point_idx = points_count - 2; point_idx >= 0; --point_idx)
-		{
-			ImVec2* points;
-			if (flags & (int)CurveEditorFlags::NO_TANGENTS)
-			{
-				points = ((ImVec2*)values) + point_idx;
-			}
-			else
-			{
-				points = ((ImVec2*)values) + 1 + point_idx * 3;
-			}
-
-			ImVec2 p_prev = points[0];
-			ImVec2 tangent_last;
-			ImVec2 tangent;
-			ImVec2 p;
-			if (flags & (int)CurveEditorFlags::NO_TANGENTS)
-			{
-				p = points[1];
-			}
-			else
-			{
-				tangent_last = points[1];
-				tangent = points[2];
-				p = points[3];
-			}
-
-			auto handlePoint = [&](ImVec2& p, int idx) -> bool
-			{
-				static const float SIZE = 3;
-
-				ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
-				ImVec2 pos = transform(p);
-
-				ImGui::SetCursorScreenPos(pos - ImVec2(SIZE, SIZE));
-				ImGui::PushID(idx);
-				ImGui::InvisibleButton("", ImVec2(2 * NODE_SLOT_RADIUS, 2 * NODE_SLOT_RADIUS));
-
-				ImU32 col = ImGui::IsItemActive() || ImGui::IsItemHovered() ? ImGui::GetColorU32(ImGuiCol_PlotLinesHovered) : ImGui::GetColorU32(ImGuiCol_PlotLines);
-
-				window->DrawList->AddLine(pos + ImVec2(-SIZE, 0), pos + ImVec2(0, SIZE), col);
-				window->DrawList->AddLine(pos + ImVec2(SIZE, 0), pos + ImVec2(0, SIZE), col);
-				window->DrawList->AddLine(pos + ImVec2(SIZE, 0), pos + ImVec2(0, -SIZE), col);
-				window->DrawList->AddLine(pos + ImVec2(-SIZE, 0), pos + ImVec2(0, -SIZE), col);
-
-				if (ImGui::IsItemHovered()) hovered_idx = point_idx + idx;
-
-				bool changed = false;
-				if (ImGui::IsItemActive() && ImGui::IsMouseClicked(0))
-				{
-					window->StateStorage.SetFloat((ImGuiID)StorageValues::POINT_START_X, pos.x);
-					window->StateStorage.SetFloat((ImGuiID)StorageValues::POINT_START_Y, pos.y);
-				}
-
-				if (ImGui::IsItemHovered() || ImGui::IsItemActive() && ImGui::IsMouseDragging(0))
-				{
-					char tmp[64];
-					ImFormatString(tmp, sizeof(tmp), "%0.2f, %0.2f", p.x, p.y);
-					window->DrawList->AddText({ pos.x, pos.y - ImGui::GetTextLineHeight() }, 0xff000000, tmp);
-				}
-
-				if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0))
-				{
-					pos.x = window->StateStorage.GetFloat((ImGuiID)StorageValues::POINT_START_X, pos.x);
-					pos.y = window->StateStorage.GetFloat((ImGuiID)StorageValues::POINT_START_Y, pos.y);
-					pos += ImGui::GetMouseDragDelta();
-					ImVec2 v = invTransform(pos);
-
-					p = v;
-					changed = true;
-				}
-				ImGui::PopID();
-
-				ImGui::SetCursorScreenPos(cursor_pos);
-				return changed;
-			};
-
-			auto handleTangent = [&](ImVec2& t, const ImVec2& p, int idx) -> bool
-			{
-				static const float SIZE = 2;
-				static const float LENGTH = 18;
-
-				auto normalized = [](const ImVec2& v) -> ImVec2
-				{
-					float len = 1.0f / sqrtf(v.x * v.x + v.y * v.y);
-					return ImVec2(v.x * len, v.y * len);
-				};
-
-				ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
-				ImVec2 pos = transform(p);
-				ImVec2 tang = pos + normalized(ImVec2(t.x, -t.y)) * LENGTH;
-
-				ImGui::SetCursorScreenPos(tang - ImVec2(SIZE, SIZE));
-				ImGui::PushID(-idx);
-				ImGui::InvisibleButton("", ImVec2(2 * NODE_SLOT_RADIUS, 2 * NODE_SLOT_RADIUS));
-
-				window->DrawList->AddLine(pos, tang, ImGui::GetColorU32(ImGuiCol_PlotLines));
-
-				ImU32 col = ImGui::IsItemHovered() ? ImGui::GetColorU32(ImGuiCol_PlotLinesHovered) : ImGui::GetColorU32(ImGuiCol_PlotLines);
-
-				window->DrawList->AddLine(tang + ImVec2(-SIZE, SIZE), tang + ImVec2(SIZE, SIZE), col);
-				window->DrawList->AddLine(tang + ImVec2(SIZE, SIZE), tang + ImVec2(SIZE, -SIZE), col);
-				window->DrawList->AddLine(tang + ImVec2(SIZE, -SIZE), tang + ImVec2(-SIZE, -SIZE), col);
-				window->DrawList->AddLine(tang + ImVec2(-SIZE, -SIZE), tang + ImVec2(-SIZE, SIZE), col);
-
-				bool changed = false;
-				if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0))
-				{
-					tang = ImGui::GetIO().MousePos - pos;
-					tang = normalized(tang);
-					tang.y *= -1;
-
-					t = tang;
-					changed = true;
-				}
-				ImGui::PopID();
-
-				ImGui::SetCursorScreenPos(cursor_pos);
-				return changed;
-			};
-
-			ImGui::PushID(point_idx);
-			if ((flags & (int)CurveEditorFlags::NO_TANGENTS) == 0)
-			{
-				window->DrawList->AddBezierCurve(
-					transform(p_prev),
-					transform(p_prev + tangent_last),
-					transform(p + tangent),
-					transform(p),
-					ImGui::GetColorU32(ImGuiCol_PlotLines),
-					1.0f,
-					20);
-				if (handleTangent(tangent_last, p_prev, 0))
-				{
-					points[1] = ImClamp(tangent_last, ImVec2(0, -1), ImVec2(1, 1));
-					changed_idx = point_idx;
-				}
-				if (handleTangent(tangent, p, 1))
-				{
-					points[2] = ImClamp(tangent, ImVec2(-1, -1), ImVec2(0, 1));
-					changed_idx = point_idx + 1;
-				}
-				if (handlePoint(p, 1))
-				{
-					if (p.x <= p_prev.x) p.x = p_prev.x + 0.001f;
-					if (point_idx < points_count - 2 && p.x >= points[6].x)
-					{
-						p.x = points[6].x - 0.001f;
-					}
-					points[3] = p;
-					changed_idx = point_idx + 1;
-				}
-			}
-			else
-			{
-				window->DrawList->AddLine(transform(p_prev), transform(p), ImGui::GetColorU32(ImGuiCol_PlotLines), 1.0f);
-				if (handlePoint(p, 1))
-				{
-					if (p.x <= p_prev.x)
-						p.x = p_prev.x + 0.001f;
-
-					if (point_idx < points_count - 2 && p.x >= points[2].x)
-					{
-						p.x = points[2].x - 0.001f;
-					}
-					points[1] = p;
-					changed_idx = point_idx + 1;
-				}
-			}
-			if (point_idx == 0)
-			{
-				if (handlePoint(p_prev, 0))
-				{
-					if (p.x <= p_prev.x)
-						p_prev.x = p.x - 0.001f;
-
-					points[0] = p_prev;
-					changed_idx = point_idx;
-				}
-			}
-			ImGui::PopID();
-		}
-
-		ImGui::SetCursorScreenPos(inner_bb.Min);
-		ImGui::InvisibleButton("bg", inner_bb.Max - inner_bb.Min);
-
-		if (ImGui::IsItemActive() && ImGui::IsMouseDoubleClicked(0) && new_count)
-		{
-			ImVec2 mp = ImGui::GetMousePos();
-			ImVec2 new_p = invTransform(mp);
-			ImVec2* points = (ImVec2*)values;
-
-			if ((flags & (int)CurveEditorFlags::NO_TANGENTS) == 0)
-			{
-				points[points_count * 3 + 0] = ImVec2(-0.2f, 0);
-				points[points_count * 3 + 1] = new_p;
-				points[points_count * 3 + 2] = ImVec2(0.2f, 0);;
-				++* new_count;
-
-				auto compare = [](const void* a, const void* b) -> int
-				{
-					float fa = (((const ImVec2*)a) + 1)->x;
-					float fb = (((const ImVec2*)b) + 1)->x;
-					return fa < fb ? -1 : (fa > fb) ? 1 : 0;
-				};
-
-				qsort(values, points_count + 1, sizeof(ImVec2) * 3, compare);
-			}
-			else
-			{
-				points[points_count] = new_p;
-				++* new_count;
-
-				auto compare = [](const void* a, const void* b) -> int
-				{
-					float fa = ((const ImVec2*)a)->x;
-					float fb = ((const ImVec2*)b)->x;
-					return fa < fb ? -1 : (fa > fb) ? 1 : 0;
-				};
-
-				qsort(values, points_count + 1, sizeof(ImVec2), compare);
-			}
-		}
-
-		if (hovered_idx >= 0 && ImGui::IsMouseDoubleClicked(0) && new_count && points_count > 2)
-		{
-			ImVec2* points = (ImVec2*)values;
-			--* new_count;
-			if ((flags & (int)CurveEditorFlags::NO_TANGENTS) == 0)
-			{
-				for (int j = hovered_idx * 3; j < points_count * 3 - 3; j += 3)
-				{
-					points[j + 0] = points[j + 3];
-					points[j + 1] = points[j + 4];
-					points[j + 2] = points[j + 5];
-				}
-			}
-			else
-			{
-				for (int j = hovered_idx; j < points_count - 1; ++j)
-				{
-					points[j] = points[j + 1];
-				}
-			}
-		}
-
-		ImGui::EndChildFrame();
-		ImGui::RenderText(ImVec2(frame_bb.Max.x + style.ItemInnerSpacing.x, inner_bb.Min.y), label);
-
-		return changed_idx;
-	}
-#endif
 }
+
+
+
