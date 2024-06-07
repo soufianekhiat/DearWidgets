@@ -1122,6 +1122,30 @@ namespace ImWidgets {
 		return ImLerp( buffer[ ( int )i0 ], buffer[ ( int )i1 ], ti );
 #endif
 	}
+
+	ImU32	ImColorFrom_xyz( float x, float y, float z, float* xyzToRGB, float gamma )
+	{
+		float r, g, b;
+		float maxValue;
+		Mat33MulV( &r, &g, &b, x, y, z, xyzToRGB );
+		maxValue = ImMax( r, ImMax( g, b ) );
+		if ( maxValue > 0.0f )
+		{
+			r /= maxValue;
+			g /= maxValue;
+			b /= maxValue;
+		}
+		r = ImSaturate( r );
+		g = ImSaturate( g );
+		b = ImSaturate( b );
+
+		r = ImPow( r, gamma );
+		g = ImPow( g, gamma );
+		b = ImPow( b, gamma );
+
+		return IM_COL32( r * 255, g * 255, b * 255, 255 );
+	}
+
 	//////////////////////////////////////////////////////////////////////////
 	// Style
 	//////////////////////////////////////////////////////////////////////////
@@ -1364,10 +1388,322 @@ namespace ImWidgets {
 		DrawProceduralColor1DBilinear( pDrawList, &ImInternalSaturationFunc, &data[ 0 ], 0.0f, 1.0f, vpos, size, division );
 	}
 
+	void	DrawColorRing( ImDrawList* pDrawList, ImVec2 const curPos, ImVec2 const size, float thickness_, ImColor1DCallback func, void* pUserData, int division, float colorOffset, bool bIsBilinear )
+	{
+		float const radius = ImMin( size.x, size.y ) * 0.5f;
+
+		float const dAngle = 2.0f * IM_PI / ( ( float )division );
+		float angle = 2.0f * IM_PI / 3.0f;
+
+		ImVec2 offset = curPos + ImVec2( radius, radius );
+		if ( size.x < size.y )
+		{
+			offset.y += 0.5f * ( size.y - size.x );
+		}
+		else if ( size.x > size.y )
+		{
+			offset.x += 0.5f * ( size.x - size.y );
+		}
+
+		float const thickness = ImSaturate( thickness_ ) * radius;
+
+		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
+		pDrawList->PrimReserve( division * 6, division * 4 );
+		for ( int i = 0; i < division; ++i )
+		{
+			float x0 = radius * ImCos( angle );
+			float y0 = radius * ImSin( angle );
+
+			float x1 = radius * ImCos( angle + dAngle );
+			float y1 = radius * ImSin( angle + dAngle );
+
+			float x2 = ( radius - thickness ) * ImCos( angle + dAngle );
+			float y2 = ( radius - thickness ) * ImSin( angle + dAngle );
+
+			float x3 = ( radius - thickness ) * ImCos( angle );
+			float y3 = ( radius - thickness ) * ImSin( angle );
+
+			pDrawList->PrimWriteIdx( ( ImDrawIdx )( pDrawList->_VtxCurrentIdx ) );
+			pDrawList->PrimWriteIdx( ( ImDrawIdx )( pDrawList->_VtxCurrentIdx + 1 ) );
+			pDrawList->PrimWriteIdx( ( ImDrawIdx )( pDrawList->_VtxCurrentIdx + 2 ) );
+
+			pDrawList->PrimWriteIdx( ( ImDrawIdx )( pDrawList->_VtxCurrentIdx ) );
+			pDrawList->PrimWriteIdx( ( ImDrawIdx )( pDrawList->_VtxCurrentIdx + 2 ) );
+			pDrawList->PrimWriteIdx( ( ImDrawIdx )( pDrawList->_VtxCurrentIdx + 3 ) );
+
+			float const t0 = std::fmodf( colorOffset + ( ( float )i ) / ( ( float )division ), 1.0f );
+			ImU32 const uCol0 = func( t0, pUserData );
+
+			float const t1 = std::fmodf( colorOffset + ( ( float )( i + 1 ) ) / ( ( float )division ), 1.0f );
+			ImU32 const uCol1 = bIsBilinear ? func( t1, pUserData ) : uCol0;
+			pDrawList->PrimWriteVtx( offset + ImVec2( x0, y0 ), uv, uCol0 );
+			pDrawList->PrimWriteVtx( offset + ImVec2( x1, y1 ), uv, uCol1 );
+			pDrawList->PrimWriteVtx( offset + ImVec2( x2, y2 ), uv, uCol1 );
+			pDrawList->PrimWriteVtx( offset + ImVec2( x3, y3 ), uv, uCol0 );
+			angle += dAngle;
+		}
+	}
+
+	// Adapted version from:
+	// cf. https://github.com/ocornut/imgui/issues/760#issuecomment-237195662
+	// cf. https://github.com/ocornut/imgui/issues/760#issuecomment-237195662
+	// Remove C++ feature, work with float, no auto
+	// Far from efficient, perf depending no the size, but it work!
+	void DrawShapeWithHole( ImDrawList* draw, ImVec2* poly, int points_count, ImColor color, int gap, int strokeWidth )
+	{
+		ImVector<ImVec2> scanHits;
+		ImVec2 min, max; // polygon min/max points
+		ImGuiIO io = ImGui::GetIO();
+		float y;
+		bool isMinMaxDone = false;
+		unsigned int polysize = points_count;// poly->size();
+
+		// find the orthagonal bounding box
+		// probably can put this as a predefined
+		if ( !isMinMaxDone )
+		{
+			min.x = min.y = FLT_MAX;
+			max.x = max.y = FLT_MIN;
+			//for ( auto p : poly )
+			for ( int i = 0; i < points_count; ++i )
+			{
+				ImVec2 p = poly[ i ];
+				if ( p.x < min.x ) min.x = p.x;
+				if ( p.y < min.y ) min.y = p.y;
+				if ( p.x > max.x ) max.x = p.x;
+				if ( p.y > max.y ) max.y = p.y;
+			}
+			isMinMaxDone = true;
+		}
+
+		// Bounds check
+		if ( ( max.x < 0 ) || ( min.x > io.DisplaySize.x ) || ( max.y < 0 ) || ( min.y > io.DisplaySize.y ) ) return;
+
+		// Vertically clip
+		if ( min.y < 0 ) min.y = 0;
+		if ( max.y > io.DisplaySize.y ) max.y = io.DisplaySize.y;
+
+		// so we know we start on the outside of the object we step out by 1.
+		min.x -= 1;
+		max.x += 1;
+
+		// Initialise our starting conditions
+		y = min.y;
+
+		struct ImVec2CompX
+		{
+			static int IMGUI_CDECL Comp( const void* lhs, const void* rhs )
+			{
+				if ( ( ( const ImVec2* )lhs )->x > ( ( const ImVec2* )rhs )->x ) return +1;
+				if ( ( ( const ImVec2* )lhs )->x < ( ( const ImVec2* )rhs )->x ) return -1;
+				return 0;
+			}
+		};
+
+		// Go through each scan line iteratively, jumping by 'gap' pixels each time
+		while ( y < max.y )
+		{
+			scanHits.clear();
+			{
+				int jump = 1;
+				ImVec2 fp = poly[ 0 ];
+
+				for ( size_t i = 0; i < polysize - 1; i++ )
+				{
+					ImVec2 pa = poly[ i ];
+					ImVec2 pb = poly[ i + 1 ];
+
+					// jump double/dud points
+					if ( pa.x == pb.x && pa.y == pb.y ) continue;
+
+					// if we encounter our hull/poly start point, then we've now created the
+					// closed
+					// hull, jump the next segment and reset the first-point
+					if ( ( !jump ) && ( fp.x == pb.x ) && ( fp.y == pb.y ) )
+					{
+						if ( i < polysize - 2 )
+						{
+							fp = poly[ i + 2 ];
+							jump = 1;
+							i++;
+						}
+					}
+					else
+					{
+						jump = 0;
+					}
+
+					// test to see if this segment makes the scan-cut.
+					if ( ( pa.y > pb.y && y < pa.y && y > pb.y ) || ( pa.y < pb.y && y > pa.y && y < pb.y ) )
+					{
+						ImVec2 intersect;
+
+						intersect.y = y;
+						if ( pa.x == pb.x )
+						{
+							intersect.x = pa.x;
+						}
+						else
+						{
+							intersect.x = ( pb.x - pa.x ) / ( pb.y - pa.y ) * ( y - pa.y ) + pa.x;
+						}
+						scanHits.push_back( intersect );
+					}
+				}
+
+				// Sort the scan hits by X, so we have a proper left->right ordering
+				//sort( scanHits.begin(), scanHits.end(), []( ImVec2 const& a, ImVec2 const& b ){ return a.x < b.x; } );
+				ImQsort( &scanHits[ 0 ], scanHits.size(), sizeof( ImVec2 ), &ImVec2CompX::Comp );
+
+				// generate the line segments.
+				{
+					int i = 0;
+					int l = scanHits.size() - 1; // we need pairs of points, this prevents segfault.
+					for ( i = 0; i < l; i += 2 )
+					{
+						draw->AddLine( scanHits[ i ], scanHits[ i + 1 ], color, strokeWidth );
+					}
+				}
+			}
+			y += gap;
+		} // for each scan line
+
+		scanHits.clear();
+	}
+
 	//////////////////////////////////////////////////////////////////////////
 	// Widgets
 	//////////////////////////////////////////////////////////////////////////
+	void	DrawchromaticityPlotGeneric( ImDrawList* pDrawList,
+										 ImVec2 curPos,
+										 ImVec2 size,
+										 ImVec2 primR, ImVec2 primG, ImVec2 primB,
+										 ImVec2 whitePoint,
+										 float* xyzToRGB,
+										 int const chromeLineSamplesCount,
+										 float* observerX, float* observerY, float* observerZ,
+										 int const observerSampleCount,
+										 float const observerWavelengthMin, float const observerWavelengthMax,
+										 float* standardCIE,
+										 int const standardCIESampleCount,
+										 float const standardCIEWavelengthMin, float const standardCIEWavelengthMax,
+										 float gamma,
+										 int resX, int resY,
+										 ImU32 maskColor,
+										 float wavelengthMin, float wavelengthMax,
+										 float minX, float maxX,
+										 float minY, float maxY )
+	{
+		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
 
+		float* data[] = { xyzToRGB, &gamma };
+		DrawProceduralColor2DBilinear(
+				pDrawList,
+				[]( float x, float y, void* pUserData ){
+					float*	pXYZ2RGB = ( ( float** )pUserData )[ 0 ];
+					float	fGamma = *( ( float** )pUserData )[ 1 ];
+					return ImColorFrom_xyz( x, y, 1.0f - x - y, pXYZ2RGB, fGamma );
+				},
+				&data[ 0 ],
+				minX, maxX, minY, maxY,
+				curPos, size,
+				resX, resY );
+
+		int lineSamples = ImMin( chromeLineSamplesCount, observerSampleCount );
+
+		float illum;
+		float x, y, z;
+		float sum;
+		ImVector<ImVec2> chromLine;
+		// +1 to close the line
+		// +5 for the enclosure
+		chromLine.resize( lineSamples + 1 + 5 );
+		for ( int i = 0; i < lineSamples; ++i )
+		{
+			float const wavelength = ScaleFromNormalized( ( ( float )i ) / ( ( float )( lineSamples - 1 ) ), wavelengthMin, wavelengthMax );
+
+			illum = FunctionFromData( wavelength, standardCIEWavelengthMin, standardCIEWavelengthMax, standardCIE, standardCIESampleCount );
+			x = illum * FunctionFromData( wavelength, observerWavelengthMin, observerWavelengthMax, observerX, observerSampleCount );
+			y = illum * FunctionFromData( wavelength, observerWavelengthMin, observerWavelengthMax, observerY, observerSampleCount );
+			z = illum * FunctionFromData( wavelength, observerWavelengthMin, observerWavelengthMax, observerZ, observerSampleCount );
+
+			sum = x + y + z;
+			//sum = x + 15.0f * y + 3.0f * z;
+
+			x /= sum;
+			y /= sum;
+			//x = 4.0f * x / sum;
+			//y = 9.0f * y / sum;
+
+			chromLine[ i ] = ImVec2( x, y );
+		}
+		chromLine[ lineSamples ] = chromLine[ 0 ];
+		//minX, maxX, minY, maxY
+		chromLine[ lineSamples + 1 ] = ImVec2( maxX, maxY );
+		chromLine[ lineSamples + 2 ] = ImVec2( maxX, minY );
+		chromLine[ lineSamples + 3 ] = ImVec2( minX, minY );
+		chromLine[ lineSamples + 4 ] = ImVec2( minX, maxY );
+		chromLine[ lineSamples + 5 ] = ImVec2( maxX, maxY );
+		DrawShapeWithHole( pDrawList, &chromLine[ 0 ], chromLine.size(), maskColor );
+
+		////pDrawList->AddConcavePolyFilled( &chromLine[ 0 ], lineSamples, maskColor );
+		//DrawConvexMaskMesh( pDrawList, curPos, ImVec2( width, height ), maskColor, ( float* )&( chromLine[ 0 ].x ), lineSamples, minX, maxX, minY, maxY, true );
+
+		//ImVec2 sRGBLines[] = { primR, primG, primB };
+		//for ( int i = 0; i < 3; ++i )
+		//{
+		//	ImVec2& vCur = sRGBLines[ i ];
+
+		//	vCur.x = curPos.x + Rescale( vCur.x, minX, maxX, 0.0f, width );
+		//	vCur.y = curPos.y + Rescale( vCur.y, minY, maxY, height, 0.0f );
+		//}
+		//pDrawList->AddPolyline( &sRGBLines[ 0 ], 3, IM_COL32( 255, 255, 255, 255 ), true, 5.0f );
+
+		//ImVec2 vWhitePoint = whitePoint;
+		//vWhitePoint.x = curPos.x + Rescale( vWhitePoint.x, minX, maxX, 0.0f, width );
+		//vWhitePoint.y = curPos.y + Rescale( vWhitePoint.y, minY, maxY, height, 0.0f );
+
+		//pDrawList->AddCircleFilled( vWhitePoint, 5.0f, IM_COL32( 0, 0, 0, 255 ), 4 );
+
+		//s_ChromaticPlotBoundMin = ImVec2( minX, minY );
+		//s_ChromaticPlotBoundMax = ImVec2( maxX, maxY );
+		//s_ChromaticPlotStart = curPos;
+		//s_ChromaticPlotSize = ImVec2( width, height );
+	}
+
+	void DrawchromaticityPlot( ImDrawList* pDrawList,
+							   ImWidgetsIlluminance illum,
+							   ImWidgetsObserver observer,
+							   ImWidgetsColorSpace colorSpace,
+							   int chromeLineSamplesCount,
+							   ImVec2 const vpos, ImVec2 const size,
+							   int resX, int resY,
+							   ImU32 maskColor,
+							   float wavelengthMin, float wavelengthMax,
+							   float minX, float maxX,
+							   float minY, float maxY )
+	{
+		DrawchromaticityPlotGeneric(
+			pDrawList,
+			vpos,
+			size,
+			s_ColorSpace_Primaries[ colorSpace ][ 0 ], s_ColorSpace_Primaries[ colorSpace ][ 1 ], s_ColorSpace_Primaries[ colorSpace ][ 2 ],
+			s_WhitePoints_Values[ s_ColorSpace_WhitePointIndex[ colorSpace ] ][ illum ],
+			s_ColorSpace_XYZ2RGB[ colorSpace ],
+			chromeLineSamplesCount,
+			s_CIE_Observers_X[ observer ], s_CIE_Observers_Y[ observer ], s_CIE_Observers_Z[ observer ],
+			s_CIE_Observers_SamplesCount[ observer ],
+			s_CIE_Observers_min[ observer ], s_CIE_Observers_max[ observer ],
+			s_Illums[ illum ],
+			s_Illums_SamplesCount[ illum ],
+			s_Illums_min[ illum ], s_Illums_max[ illum ],
+			1.0f / s_ColorSpace_Gamma[ colorSpace ],
+			resX, resY,
+			maskColor,
+			wavelengthMin, wavelengthMax,
+			minX, maxX,
+			minY, maxY );
+	}
 }
 
 

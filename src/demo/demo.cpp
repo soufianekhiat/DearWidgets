@@ -20,6 +20,8 @@
 #include <vector>
 #include <random>
 
+#include <imgui_draw_ex.h>
+
 static int grid_rows = 8;
 static int grid_columns = 8;
 static ImVector<float> grid_values;
@@ -123,7 +125,7 @@ ImU32 sdHorseshoeColor(ImVec2 p, float fTime)
 	col = col * (0.8f + 0.2f * ImCos(120.0f * ImAbs(d)));
 	col = ImLerp(col, ImVec4(1.0f, 1.0f, 1.0f, 1.0f), 1.0f - ImWidgets::ImSmoothStep(0.0f, 0.02f, ImAbs(d)));
 
-	return IM_COL32( 255 * col.x, 255 * col.y, 255 * col.z, 255);
+	return IM_COL32( 255 * col.x, 255 * col.y, 255 * col.z, 255 );
 }
 #pragma endregion ShaderToyHelper
 
@@ -266,6 +268,7 @@ namespace ImWidgets {
 				DrawSaturationBand( ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), ImVec2( width, height ), division, ImVec4( col[ 0 ], col[ 1 ], col[ 2 ], col[ 3 ] ), gamma );
 				ImGui::InvisibleButton( "Saturation##ColorBand", ImVec2( width, height ), 0 );
 
+#ifdef __cpp_lambdas 
 				ImGui::Separator();
 				ImGui::Text( "Custom Color Band" );
 				static int frequency = 6;
@@ -287,11 +290,82 @@ namespace ImWidgets {
 					},
 					&data[ 0 ],
 					0.0f, 1.0f, ImGui::GetCursorScreenPos(), ImVec2( width, height ), division );
-				ImGui::InvisibleButton( "##Zone", ImVec2( width, height ), 0 );
+				ImGui::InvisibleButton( "Custom##ColorBand", ImVec2( width, height ), 0 );
+#else
+				// TODO add function pointer C-like
+				// ImColor1DCallback
+				// ImU32 CustomColorBand( float x, void* );
+#endif
 				ImGui::TreePop();
 			}
 			if ( ImGui::TreeNode( "Color Ring" ) )
 			{
+				float const width = ImGui::GetContentRegionAvail().x;
+
+				static int division = 16;
+				ImGui::SliderInt( "Division", &division, 3, 128 );
+				static float colorOffset = 16;
+				ImGui::SliderFloat( "Color Offset", &colorOffset, 0.0f, 2.0f );
+				static float thickness = 0.5f;
+				ImGui::SliderFloat( "Thickness", &thickness, 1.0f / width, 1.0f );
+
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				{
+					//float const width = ImGui::GetContentRegionAvail().x;
+					ImVec2 curPos = ImGui::GetCursorScreenPos();
+					ImGui::InvisibleButton( "##Zone", ImVec2( width, width ), 0 );
+
+					DrawColorRing( pDrawList, curPos, ImVec2( width, width ), thickness,
+											 []( float t, void* ){
+												 float r, g, b;
+												 ImGui::ColorConvertHSVtoRGB( t, 1.0f, 1.0f, r, g, b );
+
+												 return IM_COL32( r * 255, g * 255, b * 255, 255 );
+											 }, NULL, division, colorOffset, true );
+				}
+				static float center = 0.5f;
+				ImGui::DragFloat( "Center", &center, 0.01f, 0.0f, 1.0f );
+				static float colorDotBound = 0.5f;
+				ImGui::SliderFloat( "Alpha Pow", &colorDotBound, -1.0f, 1.0f );
+				static int frequency = 6;
+				ImGui::SliderInt( "Frequency", &frequency, 1, 32 );
+				{
+					ImGui::Text( "Nearest" );
+					//float const width = ImGui::GetContentRegionAvail().x;
+					ImVec2 curPos = ImGui::GetCursorScreenPos();
+					ImGui::InvisibleButton( "##Zone", ImVec2( width, width ) * 0.5f, 0 );
+
+					float data[] = { center, colorDotBound };
+					DrawColorRing( pDrawList, curPos, ImVec2( width, width * 0.5f ), thickness,
+											  []( float t, void* pUserData ){
+												   float fCenter = ( ( float* )pUserData )[ 0 ];
+												   float fColorDotBound = ( ( float* )pUserData )[1 ];
+												  float r, g, b;
+												  ImGui::ColorConvertHSVtoRGB( t, 1.0f, 1.0f, r, g, b );
+
+												  ImVec2 const v0( ImCos( t * 2.0f * IM_PI ), ImSin( t * 2.0f * IM_PI ) );
+												  ImVec2 const v1( ImCos( fCenter * 2.0f * IM_PI ), ImSin( fCenter * 2.0f * IM_PI ) );
+
+												  float const dot = ImDot( v0, v1 );
+												  float const angle = ImAcos( dot ) / IM_PI;// / width;
+
+												  return IM_COL32( r * 255, g * 255, b * 255, ( dot > fColorDotBound ? 1.0f : 0.0f ) * 255 );
+											  }, &data[ 0 ], division, colorOffset, false);
+				}
+				{
+					ImGui::Text( "Custom" );
+					ImVec2 curPos = ImGui::GetCursorScreenPos();
+					ImGui::InvisibleButton( "##Zone", ImVec2( width, width ) * 0.5f, 0 );
+
+					float fFreqValue = frequency;
+					DrawColorRing( pDrawList, curPos, ImVec2( width, width ) * 0.5f, thickness,
+						[]( float t, void* pUserData ){
+							float fFreq = *( ( float* )pUserData );
+							float v = ImSign( ImCos( fFreq * 2.0f * IM_PI * t ) ) * 0.5f + 0.5f;
+
+							return IM_COL32( v * 255, v * 255, v * 255, 255 );
+						}, &fFreqValue, division, colorOffset, true );
+				}
 				ImGui::TreePop();
 			}
 			if ( ImGui::TreeNode( "Color2D" ) )
@@ -334,6 +408,87 @@ namespace ImWidgets {
 													 func, &timeCopy, -1.0f, 1.0f, -1.0f, 1.0f, ImGui::GetCursorScreenPos(), ImVec2( width, width ), resX, resY );
 				}
 				ImGui::Dummy( ImVec2( width, width ) );
+
+				ImGui::TreePop();
+			}
+			if ( ImGui::TreeNode( "Shape with Hole" ) )
+			{
+				static ImVec4 col = { 1, 0, 0, 1 };
+				ImGui::ColorEdit4( "Color##Hole", &col.x );
+				float const size = ImGui::GetContentRegionAvail().x;
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+				ImVec2 pos_norms[] = { { 0.0f, 0.0f }, { 0.0f, 1.0f }, { 1.0f, 1.0f }, { 1.0f, 0.0f }, { 0.0f, 0.0f },
+									   { 0.3f, 0.3f }, { 0.7f, 0.3f }, { 0.7f, 0.7f }, { 0.3f, 0.7f }, { 0.3f, 0.3f } };
+				for ( ImVec2& v : pos_norms )
+				{
+					v.x *= size;
+					v.y *= size;
+					v += pos;
+				}
+
+				DrawShapeWithHole( pDrawList, &pos_norms[ 0 ], 10, IM_COL32( 255 * col.x, 255 * col.y, 255 * col.z, 255 * col.w ) );
+
+				ImGui::Dummy( ImVec2( size, size ) );
+
+				ImGui::TreePop();
+			}
+			if ( ImGui::TreeNode( "Chromaticity Plot" ) )
+			{
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				float const size = ImGui::GetContentRegionAvail().x;
+
+				static int chromLinesampleCount = 16;
+				ImGui::SliderInt( "Chromatic Sample Count", &chromLinesampleCount, 3, 256 );
+				static int resX = 16;
+				ImGui::SliderInt( "Resolution X", &resX, 3, 256 );
+				static int resY = 16;
+				ImGui::SliderInt( "Resolution Y", &resY, 3, 256 );
+				static int waveMin = 400;
+				static int waveMax = 700;
+				ImGui::SliderInt( "Wavelength Min", &waveMin, 300, waveMax );
+				ImGui::SliderInt( "Wavelength Max", &waveMax, waveMin, 800 );
+				char const* observer[] = { "1931 2 deg", "1964 10 deg" };
+				char const* illum[] = { "D50", "D65" };
+				char const* colorSpace[] = { "AdobeRGB", "AppleRGB", "Best", "Beta", "Bruce", "CIERGB",
+					"ColorMatch", "Don_RGB_4", "ECI","Ekta_Space_PS5", "NTSC",
+					"PAL_SECAM", "ProPhoto", "SMPTE_C", "sRGB", "WideGamutRGB", "Rec2020" };
+				static int curObserver = 0;
+				static int curIllum = 1;
+				static int curColorSpace = 0;
+				ImGui::Combo( "Observer", &curObserver, observer, IM_ARRAYSIZE( observer ) );
+				ImGui::Combo( "Illuminance", &curIllum, illum, IM_ARRAYSIZE( illum ) );
+				ImGui::Combo( "ColorSpace", &curColorSpace, colorSpace, IM_ARRAYSIZE( colorSpace ) );
+				static ImVec4 vMaskColor( 1.0f, 0.5f, 0.0f, 1.0f );
+				ImGui::ColorEdit4( "Mask Color", &vMaskColor.x );
+				ImU32 maskColor = ImGui::ColorConvertFloat4ToU32( vMaskColor );
+
+				static ImVec2 vMin( -0.2f, -0.1f );
+				static ImVec2 vMax( 1.0f, 1.0f );
+
+				ImGui::PushMultiItemsWidths( 2, size );
+				ImGui::DragFloat( "minX", &vMin.x, 0.001f, -1.0f, 0.0f ); ImGui::SameLine();
+				ImGui::DragFloat( "minY", &vMin.y, 0.001f, -1.0f, 0.0f );
+
+				ImGui::PushMultiItemsWidths( 2, size );
+				ImGui::DragFloat( "maxX", &vMax.x, 0.001f, 1.0f, 2.0f ); ImGui::SameLine();
+				ImGui::DragFloat( "maxY", &vMax.y, 0.001f, 1.0f, 2.0f );
+
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+				DrawchromaticityPlot( pDrawList,
+									  curIllum,
+									  curObserver,
+									  curColorSpace,
+									  chromLinesampleCount,
+									  pos, ImVec2(size, size),
+									  resX, resY,
+									  maskColor,
+									  waveMin, waveMax,
+									  vMin.x, vMax.x,
+									  vMin.y, vMax.y );
+
+				ImGui::Dummy( ImVec2( size, size ) );
 
 				ImGui::TreePop();
 			}

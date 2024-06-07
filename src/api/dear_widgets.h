@@ -332,6 +332,39 @@ namespace ImWidgets{
 	{
 		return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
 	}
+	inline
+	float	ImNormalize01(float const x, float const _min, float const _max)
+	{
+		return ( x - _min ) / ( _max - _min );
+	}
+	inline
+	float	ImScaleFromNormalized(float const x, float const newMin, float const newMax)
+	{
+		return x * ( newMax - newMin ) + newMin;
+	}
+	inline
+	float	ImRescale(float const x, float const _min, float const _max, float const newMin, float const newMax)
+	{
+		return ImScaleFromNormalized( ImNormalize01( x, _min, _max ), newMin, newMax );
+	}
+	template < typename Type >
+	inline
+	Type	Normalize01(Type const x, Type const _min, Type const _max)
+	{
+		return ( x - _min ) / ( _max - _min );
+	}
+	template < typename Type >
+	inline
+	Type	ScaleFromNormalized(Type const x, Type const newMin, Type const newMax)
+	{
+		return x * ( newMax - newMin ) + newMin;
+	}
+	template < typename Type >
+	inline
+	Type	Rescale(Type const x, Type const _min, Type const _max, Type const newMin, Type const newMax)
+	{
+		return ScaleFromNormalized( Normalize01( x, _min, _max ), newMin, newMax );
+	}
 
 	inline
 	float ImLength(ImVec2 v)
@@ -344,6 +377,18 @@ namespace ImWidgets{
 		return ImSqrt( ImLengthSqr( v ) );
 	}
 	float	ImLinearSample( float t, float* buffer, int count );
+	inline
+	float	FunctionFromData( float const x, float const minX, float const maxX, float* data, int const samples_count )
+	{
+		float const t = ImSaturate( ImNormalize01( x, minX, maxX ) );
+
+		return ImLinearSample( t, data, samples_count );
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Color Functions
+	//////////////////////////////////////////////////////////////////////////
+	IMGUI_API ImU32	ImColorFrom_xyz( float x, float y, float z, float* xyzToRGB, float gamma );
 
 	//////////////////////////////////////////////////////////////////////////
 	// Scalar Helpers
@@ -364,24 +409,6 @@ namespace ImWidgets{
 	void	MemoryString( std::string& sResult, ImU64 const uMemoryByte );
 	void	MemoryString( std::string& sResult, ImU64 const uMemoryByte );
 	void	MemoryString( std::string& sResult, ImU64 const uMemoryByte );
-	template < typename Type >
-	inline
-	Type	Normalize01(Type const x, Type const _min, Type const _max)
-	{
-		return ( x - _min ) / ( _max - _min );
-	}
-	template < typename Type >
-	inline
-	Type	ScaleFromNormalized(Type const x, Type const newMin, Type const newMax)
-	{
-		return x * ( newMax - newMin ) + newMin;
-	}
-	template < typename Type >
-	inline
-	Type	Rescale(Type const x, Type const _min, Type const _max, Type const newMin, Type const newMax)
-	{
-		return ScaleFromNormalized( Normalize01( x, _min, _max ), newMin, newMax );
-	}
 
 	//////////////////////////////////////////////////////////////////////////
 	// DrawList
@@ -399,4 +426,45 @@ namespace ImWidgets{
 	IMGUI_API void DrawHueBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, float colorStartRGB[ 3 ], float alpha, float gamma );
 	IMGUI_API void DrawLumianceBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma );
 	IMGUI_API void DrawSaturationBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma );
+
+	IMGUI_API void DrawColorRing( ImDrawList* pDrawList, ImVec2 const curPos, ImVec2 const size, float thickness_, ImColor1DCallback func, void* pUserData, int division, float colorOffset, bool bIsBilinear );
+
+	// poly: Counterclockwise: Positive shape & Clockwise for hole, don't forget to close your shape
+	IMGUI_API void DrawShapeWithHole( ImDrawList* draw, ImVec2* poly, int points_count, ImColor color, int gap = 1, int strokeWidth = 1 );
+
+	IMGUI_API
+	void	DrawchromaticityPlotGeneric( ImDrawList* pDrawList,
+										 ImVec2 const curPos,
+										 float width, float height,
+										 ImVec2 primR, ImVec2 primG, ImVec2 primB,
+										 ImVec2 whitePoint,
+										 float* xyzToRGB,
+										 int const chromeLineSamplesCount,
+										 float* observerX, float* observerY, float* observerZ,
+										 int const observerSampleCount,
+										 float const observerWavelengthMin, float const observerWavelengthMax,
+										 float* standardCIE,
+										 int const standardCIESampleCount,
+										 float const standardCIEWavelengthMin, float const standardCIEWavelengthMax,
+										 float gamma,
+										 int resX, int resY,
+										 ImU32 maskColor,
+										 float wavelengthMin = 400.0f, float wavelengthMax = 700.0f,
+										 float minX = 0.0f, float maxX = 0.8f,
+										 float minY = 0.0f, float maxY = 0.9f );
+	IMGUI_API void DrawchromaticityPlot( ImDrawList* draw,
+										 ImWidgetsIlluminance illuminance,
+										 ImWidgetsObserver observer,
+										 ImWidgetsColorSpace colorSpace,
+										 int chromeLineSamplesCount,
+										 ImVec2 const vpos, ImVec2 const size,
+										 int resolutionX, int resolutionY,
+										 ImU32 maskColor,
+										 float wavelengthMin = 400.0f, float wavelengthMax = 700.0f,
+										 float minX = 0.0f, float maxX = 0.8f,
+										 float minY = 0.0f, float maxY = 0.9f );
+
+	//////////////////////////////////////////////////////////////////////////
+	// Widgets
+	//////////////////////////////////////////////////////////////////////////
 }
