@@ -432,7 +432,7 @@ namespace ImWidgets {
 					v += pos;
 				}
 
-				DrawShapeWithHole( pDrawList, &pos_norms[ 0 ], 10, IM_COL32( 255 * col.x, 255 * col.y, 255 * col.z, 255 * col.w ), gap, strokeWidth );
+				DrawShapeWithHole( pDrawList, &pos_norms[ 0 ], 10, IM_COL32( 255 * col.x, 255 * col.y, 255 * col.z, 255 * col.w ), ImRect( pos, pos + ImVec2( size, size ) ), gap, strokeWidth);
 
 				ImGui::Dummy( ImVec2( size, size ) );
 
@@ -491,7 +491,7 @@ namespace ImWidgets {
 				ImGui::SliderFloat( "Border Thickness##Chromaticity", &borderThickness, 0.5f, 5.0f );
 
 				ImVec2 pos = ImGui::GetCursorScreenPos();
-				DrawchromaticityPlot( pDrawList,
+				DrawChromaticityPlot( pDrawList,
 									  curIllum,
 									  curObserver,
 									  curColorSpace,
@@ -507,6 +507,77 @@ namespace ImWidgets {
 									  showBorder,
 									  ( ImU32 )ImColor( borderColor ),
 									  borderThickness );
+
+				ImGui::Dummy( ImVec2( size, size ) );
+
+				ImGui::TreePop();
+			}
+			if ( ImGui::TreeNode( "Chromaticity Line/Point" ) )
+			{
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				float const size = ImGui::GetContentRegionAvail().x;
+
+				static float temp = 6504.0f;
+				ImGui::SliderFloat( "Temperature K##ChromaticityLines", &temp, 1000.0f, 12000.0f );
+				static int samplesCount = 64;
+				ImGui::SliderInt( "Sample Count##ChromaticityLines", &samplesCount, 2, 256 );
+
+				static ImVec2 vMin( 0.261f, 0.285f );
+				static ImVec2 vMax( 0.446f, 0.395f );
+
+				ImGui::PushMultiItemsWidths( 3, size );
+				ImGui::DragFloat( "minX##ChromaticityLines", &vMin.x, 0.001f, -1.0f, vMax.x ); ImGui::SameLine();
+				ImGui::DragFloat( "minY##ChromaticityLines", &vMin.y, 0.001f, -1.0f, vMax.y );
+
+				ImGui::PushMultiItemsWidths( 3, size );
+				ImGui::DragFloat( "maxX##ChromaticityLines", &vMax.x, 0.001f, vMin.x, 2.0f ); ImGui::SameLine();
+				ImGui::DragFloat( "maxY##ChromaticityLines", &vMax.y, 0.001f, vMin.y, 2.0f );
+
+				ImVector<ImU32> colors;
+				colors.resize( samplesCount );
+				for ( int i = 0; i < samplesCount; ++i )
+				{
+					ImU32 col = KelvinTemperatureTosRGBColors( ImLerp( 3000.0f, 8000.0f, (float)i / ((float)(samplesCount - 1)) ) );
+					colors[ i ] = col;
+				}
+				ImU32 tempCol = KelvinTemperatureTosRGBColors( temp );
+
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+				DrawChromaticityPlot( pDrawList,
+									  ImWidgetsWhitePointChromaticPlot_D55,
+									  ImWidgetsObserverChromaticPlot_1964_10deg,
+									  ImWidgetsColorSpace_sRGB,
+									  128,
+									  pos, ImVec2( size, size ),
+									  64, 64,
+									  IM_COL32( 255, 255, 255, 255 ),
+									  //IM_COL32( 21, 21, 21, 255 ),
+									  360.0f, 830.0f,
+									  vMin.x, vMax.x,
+									  vMin.y, vMax.y,
+									  true,
+									  true,
+									  true,
+									  IM_COL32( 0, 0, 0, 255 ),
+									  2.0f );
+				DrawChromaticityLines( pDrawList,
+									   pos,
+									   ImVec2( size, size ),
+									   &colors[ 0 ],
+									   samplesCount,
+									   vMin.x, vMax.x,
+									   vMin.y, vMax.y,
+									   IM_COL32( 0, 0, 0, 255 ),
+									   ImDrawFlags_None,
+									   2.0f);
+				DrawChromaticityPoints( pDrawList,
+									   pos,
+									   ImVec2( size, size ),
+									   &tempCol,
+									   1,
+									   vMin.x, vMax.x,
+									   vMin.y, vMax.y,
+									   IM_COL32( 255, 0, 0, 255 ), 16.0f, 4 );
 
 				ImGui::Dummy( ImVec2( size, size ) );
 

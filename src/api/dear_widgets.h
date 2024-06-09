@@ -319,6 +319,12 @@ namespace ImWidgets{
 	}
 
 	inline
+	float ImRound(float x)
+	{
+		return round(x);
+	}
+
+	inline
 	float ImSmoothStep(float edge0, float edge1, float x)
 	{
 		// Scale, bias and saturate x to 0..1 range
@@ -331,6 +337,16 @@ namespace ImWidgets{
 	float ImDot( ImVec4 const& a, ImVec4 const& b )
 	{
 		return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+	}
+	inline
+	float ImDot3( ImVec4 const& a, ImVec4 const& b )
+	{
+		return a.x * b.x + a.y * b.y + a.z * b.z;
+	}
+	inline
+	float ImDot3( float* a, float* b )
+	{
+		return a[ 0 ] * b[ 0 ] + a[ 1 ] * b[ 1 ] + a[ 2 ] * b[ 2 ];
 	}
 	inline
 	float	ImNormalize01(float const x, float const _min, float const _max)
@@ -367,6 +383,11 @@ namespace ImWidgets{
 	}
 
 	inline
+	float  ImLengthSqr3( const ImVec4& lhs )
+	{
+		return ( lhs.x * lhs.x ) + ( lhs.y * lhs.y ) + ( lhs.z * lhs.z );
+	}
+	inline
 	float ImLength(ImVec2 v)
 	{
 		return ImSqrt( ImLengthSqr( v ) );
@@ -376,13 +397,59 @@ namespace ImWidgets{
 	{
 		return ImSqrt( ImLengthSqr( v ) );
 	}
+	inline
+	float ImLength3(ImVec4 v)
+	{
+		return ImSqrt( ImLengthSqr3( v ) );
+	}
 	float	ImLinearSample( float t, float* buffer, int count );
 	inline
-	float	FunctionFromData( float const x, float const minX, float const maxX, float* data, int const samples_count )
+	float	ImFunctionFromData( float const x, float const minX, float const maxX, float* data, int const samples_count )
 	{
 		float const t = ImSaturate( ImNormalize01( x, minX, maxX ) );
 
 		return ImLinearSample( t, data, samples_count );
+	}
+
+	inline
+	float	ImsRGBToLinear( float x )
+	{
+		if ( x <= 0.04045f )
+			return x / 12.92f;
+		else
+			return ImPow( ( x + 0.055f ) / 1.055f, 2.4f);
+	}
+	inline
+	float	ImLinearTosRGB( float x )
+	{
+		if ( x <= 0.0031308f )
+			return 12.92f * x;
+		else
+			return 1.055f * ImPow( x, 1.0f / 2.4f) - 0.055f;
+	}
+	ImU32	KelvinTemperatureTosRGBColors( float temperature ); // [ 1000 K; 12000 K ]
+
+	inline
+	void Mat33RowMajorMulVec3( float& x, float& y, float& z, float* mat33RowMajor, float* vec3 )
+	{
+		x = ImDot3( mat33RowMajor + 0, vec3 );
+		y = ImDot3( mat33RowMajor + 3, vec3 );
+		z = ImDot3( mat33RowMajor + 6, vec3 );
+	}
+
+	inline
+	void ImU32ColorToImRGBColor(ImVector<float>& colorsConverted, ImU32* colors, int color_count)
+	{
+		ImU32* current = colors;
+		colorsConverted.resize( 3 * color_count );
+		for ( int k = 0; k < color_count; ++k )
+		{
+			ImVec4 col = ( ImVec4 )ImColor( *current );
+			colorsConverted[ 3 * k + 0 ] = col.x;
+			colorsConverted[ 3 * k + 1 ] = col.y;
+			colorsConverted[ 3 * k + 2 ] = col.z;
+			++current;
+		}
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -430,13 +497,13 @@ namespace ImWidgets{
 	IMGUI_API void DrawColorRing( ImDrawList* pDrawList, ImVec2 const curPos, ImVec2 const size, float thickness_, ImColor1DCallback func, void* pUserData, int division, float colorOffset, bool bIsBilinear );
 
 	// poly: Counterclockwise: Positive shape & Clockwise for hole, don't forget to close your shape
-	IMGUI_API void DrawShapeWithHole( ImDrawList* draw, ImVec2* poly, int points_count, ImColor color, int gap = 1, int strokeWidth = 1 );
+	IMGUI_API void DrawShapeWithHole( ImDrawList* draw, ImVec2* poly, int points_count, ImColor color, ImRect bb, int gap = 1, int strokeWidth = 1 );
 
 	// TODO: find a clean way expose the style of the draws:
 	// Triangle of ColorSpace
 	// White Point
 	IMGUI_API
-	void	DrawchromaticityPlotGeneric( ImDrawList* pDrawList,
+	void	DrawChromaticityPlotGeneric( ImDrawList* pDrawList,
 										 ImVec2 const curPos,
 										 float width, float height,
 										 ImVec2 primR, ImVec2 primG, ImVec2 primB,
@@ -460,7 +527,7 @@ namespace ImWidgets{
 										 bool showBorder = true,
 										 ImU32 borderColor = IM_COL32( 0, 0, 0, 255 ),
 										 float borderThickness = 1.0f );
-	IMGUI_API void DrawchromaticityPlot( ImDrawList* draw,
+	IMGUI_API void DrawChromaticityPlot( ImDrawList* draw,
 										 ImWidgetsIlluminance illuminance,
 										 ImWidgetsObserver observer,
 										 ImWidgetsColorSpace colorSpace,
@@ -476,6 +543,64 @@ namespace ImWidgets{
 										 bool showBorder = true,
 										 ImU32 borderColor = IM_COL32( 0, 0, 0, 255 ),
 										 float borderThickness = 1.0f );
+	IMGUI_API
+	void	DrawChromaticityPointsGeneric( ImDrawList* pDrawList,
+										   ImVec2 curPos,
+										   ImVec2 size,
+										   float* rgbToXYZ,
+										   float* colors4, // AoS
+										   int color_count,
+										   float minX, float maxX,
+										   float minY, float maxY,
+										   ImU32 plotColor, float radius, int num_segments,
+										   int colorStride = 4 ); // 4 for rgba,rgba,rgba,...; 3 for rgb,rgb,rgb,... or anything else
+	IMGUI_API void DrawChromaticityPoints( ImDrawList* pDrawList,
+										   ImVec2 curPos,
+										   ImVec2 size,
+										   ImU32* colors4,
+										   int color_count,
+										   float minX, float maxX,
+										   float minY, float maxY,
+										   ImU32 plotColor, float radius, int num_segments );
+	IMGUI_API void DrawChromaticityPoints( ImDrawList* pDrawList,
+										  ImVec2 curPos,
+										  ImVec2 size,
+										  ImWidgetsColorSpace colorSpace,
+										  float* colors4, // AoS
+										  int color_count,
+										  float minX, float maxX,
+										  float minY, float maxY,
+										  ImU32 plotColor, float radius, int num_segments,
+										  int colorStride = 4 ); // 4 for rgba,rgba,rgba,...; 3 for rgb,rgb,rgb,... or anything else );
+	IMGUI_API
+	void	DrawChromaticityLinesGeneric( ImDrawList* pDrawList,
+										  ImVec2 curPos,
+										  ImVec2 size,
+										  float* rgbToXYZ,
+										  float* colors4, // AoS
+										  int color_count,
+										  float minX, float maxX,
+										  float minY, float maxY,
+										  ImU32 plotColor, ImDrawFlags flags, float thickness,
+										  int colorStride = 4 ); // 4 for rgba,rgba,rgba,...; 3 for rgb,rgb,rgb,... or anything else );
+	IMGUI_API void DrawChromaticityLines( ImDrawList* pDrawList,
+										  ImVec2 curPos,
+										  ImVec2 size,
+										  ImU32* color,
+										  int color_count,
+										  float minX, float maxX,
+										  float minY, float maxY,
+										  ImU32 plotColor, ImDrawFlags flags, float thickness ); // 4 for rgba,rgba,rgba,...; 3 for rgb,rgb,rgb,... or anything else );
+	IMGUI_API void DrawChromaticityLines( ImDrawList* pDrawList,
+										  ImVec2 curPos,
+										  ImVec2 size,
+										  ImWidgetsColorSpace colorSpace,
+										  float* colors4, // AoS
+										  int color_count,
+										  float minX, float maxX,
+										  float minY, float maxY,
+										  ImU32 plotColor, ImDrawFlags flags, float thickness,
+										  int colorStride = 4 ); // 4 for rgba,rgba,rgba,...; 3 for rgb,rgb,rgb,... or anything else );
 
 	//////////////////////////////////////////////////////////////////////////
 	// Widgets

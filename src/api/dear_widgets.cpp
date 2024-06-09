@@ -23,6 +23,7 @@ namespace ImWidgets {
 	static float s_CIE_1964_10deg_Y[] = { 0.000000013398f,0.000000020294f,0.000000030560f,0.000000045740f,0.000000068050f,0.000000100650f,0.000000147980f,0.000000216270f,0.000000314200f,0.000000453700f,0.000000651100f,0.000000928800f,0.000001317500f,0.000001857200f,0.000002602000f,0.000003625000f,0.000005019000f,0.000006907000f,0.000009449000f,0.000012848000f,0.000017364000f,0.000023327000f,0.000031150000f,0.000041350000f,0.000054560000f,0.000071560000f,0.000093300000f,0.000120870000f,0.000155640000f,0.000199200000f,0.000253400000f,0.000320200000f,0.000402400000f,0.000502300000f,0.000623200000f,0.000768500000f,0.000941700000f,0.001147800000f,0.001390300000f,0.001674000000f,0.002004400000f,0.002386000000f,0.002822000000f,0.003319000000f,0.003880000000f,0.004509000000f,0.005209000000f,0.005985000000f,0.006833000000f,0.007757000000f,0.008756000000f,0.009816000000f,0.010918000000f,0.012058000000f,0.013237000000f,0.014456000000f,0.015717000000f,0.017025000000f,0.018399000000f,0.019848000000f,0.021391000000f,0.022992000000f,0.024598000000f,0.026213000000f,0.027841000000f,0.029497000000f,0.031195000000f,0.032927000000f,0.034738000000f,0.036654000000f,0.038676000000f,0.040792000000f,0.042946000000f,0.045114000000f,0.047333000000f,0.049602000000f,0.051934000000f,0.054337000000f,0.056822000000f,0.059399000000f,0.062077000000f,0.064737000000f,0.067285000000f,0.069764000000f,0.072218000000f,0.074704000000f,0.077272000000f,0.079979000000f,0.082874000000f,0.086000000000f,0.089456000000f,0.092947000000f,0.096275000000f,0.099535000000f,0.102829000000f,0.106256000000f,0.109901000000f,0.113835000000f,0.118167000000f,0.122932000000f,0.128201000000f,0.133457000000f,0.138323000000f,0.143042000000f,0.147787000000f,0.152761000000f,0.158102000000f,0.163941000000f,0.170362000000f,0.177425000000f,0.185190000000f,0.193025000000f,0.200313000000f,0.207156000000f,0.213644000000f,0.219940000000f,0.226170000000f,0.232467000000f,0.239025000000f,0.245997000000f,0.253589000000f,0.261876000000f,0.270643000000f,0.279645000000f,0.288694000000f,0.297665000000f,0.306469000000f,0.315035000000f,0.323335000000f,0.331366000000f,0.339133000000f,0.347860000000f,0.358326000000f,0.370001000000f,0.382464000000f,0.395379000000f,0.408482000000f,0.421588000000f,0.434619000000f,0.447601000000f,0.460777000000f,0.474340000000f,0.488200000000f,0.502340000000f,0.516740000000f,0.531360000000f,0.546190000000f,0.561180000000f,0.576290000000f,0.591500000000f,0.606741000000f,0.622150000000f,0.637830000000f,0.653710000000f,0.669680000000f,0.685660000000f,0.701550000000f,0.717230000000f,0.732570000000f,0.747460000000f,0.761757000000f,0.775340000000f,0.788220000000f,0.800460000000f,0.812140000000f,0.823330000000f,0.834120000000f,0.844600000000f,0.854870000000f,0.865040000000f,0.875211000000f,0.885370000000f,0.895370000000f,0.905150000000f,0.914650000000f,0.923810000000f,0.932550000000f,0.940810000000f,0.948520000000f,0.955600000000f,0.961988000000f,0.967540000000f,0.972230000000f,0.976170000000f,0.979460000000f,0.982200000000f,0.984520000000f,0.986520000000f,0.988320000000f,0.990020000000f,0.991761000000f,0.993530000000f,0.995230000000f,0.996770000000f,0.998090000000f,0.999110000000f,0.999770000000f,1.000000000000f,0.999710000000f,0.998850000000f,0.997340000000f,0.995260000000f,0.992740000000f,0.989750000000f,0.986300000000f,0.982380000000f,0.977980000000f,0.973110000000f,0.967740000000f,0.961890000000f,0.955552000000f,0.948601000000f,0.940981000000f,0.932798000000f,0.924158000000f,0.915175000000f,0.905954000000f,0.896608000000f,0.887249000000f,0.877986000000f,0.868934000000f,0.860164000000f,0.851519000000f,0.842963000000f,0.834393000000f,0.825623000000f,0.816764000000f,0.807544000000f,0.797947000000f,0.787893000000f,0.777405000000f,0.766490000000f,0.755309000000f,0.743845000000f,0.732190000000f,0.720353000000f,0.708281000000f,0.696055000000f,0.683621000000f,0.671048000000f,0.658341000000f,0.645545000000f,0.632718000000f,0.619815000000f,0.606887000000f,0.593878000000f,0.580781000000f,0.567653000000f,0.554490000000f,0.541228000000f,0.527963000000f,0.514634000000f,0.501363000000f,0.488124000000f,0.474935000000f,0.461834000000f,0.448823000000f,0.435917000000f,0.423153000000f,0.410526000000f,0.398057000000f,0.385835000000f,0.373951000000f,0.362311000000f,0.350863000000f,0.339554000000f,0.328309000000f,0.317118000000f,0.305936000000f,0.294737000000f,0.283493000000f,0.272222000000f,0.260990000000f,0.249877000000f,0.238946000000f,0.228254000000f,0.217853000000f,0.207780000000f,0.198072000000f,0.188748000000f,0.179828000000f,0.171285000000f,0.163059000000f,0.155151000000f,0.147535000000f,0.140211000000f,0.133170000000f,0.126400000000f,0.119892000000f,0.113640000000f,0.107633000000f,0.101870000000f,0.096347000000f,0.091063000000f,0.086010000000f,0.081187000000f,0.076583000000f,0.072198000000f,0.068024000000f,0.064052000000f,0.060281000000f,0.056697000000f,0.053292000000f,0.050059000000f,0.046998000000f,0.044096000000f,0.041345000000f,0.038750700000f,0.036297800000f,0.033983200000f,0.031800400000f,0.029739500000f,0.027791800000f,0.025955100000f,0.024226300000f,0.022601700000f,0.021077900000f,0.019650500000f,0.018315300000f,0.017068600000f,0.015905100000f,0.014818300000f,0.013800800000f,0.012849500000f,0.011960700000f,0.011130300000f,0.010355500000f,0.009633200000f,0.008959900000f,0.008332400000f,0.007748800000f,0.007204600000f,0.006697500000f,0.006225100000f,0.005785000000f,0.005375100000f,0.004994100000f,0.004639200000f,0.004309300000f,0.004002800000f,0.003717740000f,0.003452620000f,0.003205830000f,0.002976230000f,0.002762810000f,0.002564560000f,0.002380480000f,0.002209710000f,0.002051320000f,0.001904490000f,0.001768470000f,0.001642360000f,0.001525350000f,0.001416720000f,0.001315950000f,0.001222390000f,0.001135550000f,0.001054940000f,0.000980140000f,0.000910660000f,0.000846190000f,0.000786290000f,0.000730680000f,0.000678990000f,0.000631010000f,0.000586440000f,0.000545110000f,0.000506720000f,0.000471110000f,0.000438050000f,0.000407410000f,0.000378962000f,0.000352543000f,0.000328001000f,0.000305208000f,0.000284041000f,0.000264375000f,0.000246109000f,0.000229143000f,0.000213376000f,0.000198730000f,0.000185115000f,0.000172454000f,0.000160678000f,0.000149730000f,0.000139550000f,0.000130086000f,0.000121290000f,0.000113106000f,0.000105501000f,0.000098428000f,0.000091853000f,0.000085738000f,0.000080048000f,0.000074751000f,0.000069819000f,0.000065222000f,0.000060939000f,0.000056942000f,0.000053217000f,0.000049737000f,0.000046491000f,0.000043464000f,0.000040635000f,0.000038000000f,0.000035540500f,0.000033244800f,0.000031100600f,0.000029099000f,0.000027230700f,0.000025486000f,0.000023856100f,0.000022333200f,0.000020910400f,0.000019580800f,0.000018338400f,0.000017177700f,0.000016093400f,0.000015080000f,0.000014133600f,0.000013249000f,0.000012422600f,0.000011649900f,0.000010927700f,0.000010251900f,0.000009619600f,0.000009028100f,0.000008474000f,0.000007954800f,0.000007468600f,0.000007012800f,0.000006585800f,0.000006185700f,0.000005810700f,0.000005459000f,0.000005129800f,0.000004820600f,0.000004531200f,0.000004259100f,0.000004004200f,0.000003764730f,0.000003539950f,0.000003329140f,0.000003131150f,0.000002945290f,0.000002770810f,0.000002607050f,0.000002453290f,0.000002308940f,0.000002173380f,0.000002046130f,0.000001926620f,0.000001814400f,0.000001708950f,0.000001609880f,0.000001516770f,0.000001429210f,0.000001346860f,0.000001269450f,0.000001196620f,0.000001128090f,0.000001063680f,0.000001003130f,0.000000946220f,0.000000892630f,0.000000842160f,0.000000794640f,0.000000749780f,0.000000707440f,0.000000667480f,0.000000629700f };
 	static float s_CIE_1964_10deg_Z[] = { 0.000000535027f,0.000000810720f,0.000001221200f,0.000001828700f,0.000002722200f,0.000004028300f,0.000005925700f,0.000008665100f,0.000012596000f,0.000018201000f,0.000026143700f,0.000037330000f,0.000052987000f,0.000074764000f,0.000104870000f,0.000146220000f,0.000202660000f,0.000279230000f,0.000382450000f,0.000520720000f,0.000704776000f,0.000948230000f,0.001268200000f,0.001686100000f,0.002228500000f,0.002927800000f,0.003823700000f,0.004964200000f,0.006406700000f,0.008219300000f,0.010482200000f,0.013289000000f,0.016747000000f,0.020980000000f,0.026127000000f,0.032344000000f,0.039802000000f,0.048691000000f,0.059210000000f,0.071576000000f,0.086010900000f,0.102740000000f,0.122000000000f,0.144020000000f,0.168990000000f,0.197120000000f,0.228570000000f,0.263470000000f,0.301900000000f,0.343870000000f,0.389366000000f,0.437970000000f,0.489220000000f,0.542900000000f,0.598810000000f,0.656760000000f,0.716580000000f,0.778120000000f,0.841310000000f,0.906110000000f,0.972542000000f,1.038900000000f,1.103100000000f,1.165100000000f,1.224900000000f,1.282500000000f,1.338200000000f,1.392600000000f,1.446100000000f,1.499400000000f,1.553480000000f,1.607200000000f,1.658900000000f,1.708200000000f,1.754800000000f,1.798500000000f,1.839200000000f,1.876600000000f,1.910500000000f,1.940800000000f,1.967280000000f,1.989100000000f,2.005700000000f,2.017400000000f,2.024400000000f,2.027300000000f,2.026400000000f,2.022300000000f,2.015300000000f,2.006000000000f,1.994800000000f,1.981400000000f,1.965300000000f,1.946400000000f,1.924800000000f,1.900700000000f,1.874100000000f,1.845100000000f,1.813900000000f,1.780600000000f,1.745370000000f,1.709100000000f,1.672300000000f,1.634700000000f,1.595600000000f,1.554900000000f,1.512200000000f,1.467300000000f,1.419900000000f,1.370000000000f,1.317560000000f,1.262400000000f,1.205000000000f,1.146600000000f,1.088000000000f,1.030200000000f,0.973830000000f,0.919430000000f,0.867460000000f,0.818280000000f,0.772125000000f,0.728290000000f,0.686040000000f,0.645530000000f,0.606850000000f,0.570060000000f,0.535220000000f,0.502340000000f,0.471400000000f,0.442390000000f,0.415254000000f,0.390024000000f,0.366399000000f,0.344015000000f,0.322689000000f,0.302356000000f,0.283036000000f,0.264816000000f,0.247848000000f,0.232318000000f,0.218502000000f,0.205851000000f,0.193596000000f,0.181736000000f,0.170281000000f,0.159249000000f,0.148673000000f,0.138609000000f,0.129096000000f,0.120215000000f,0.112044000000f,0.104710000000f,0.098196000000f,0.092361000000f,0.087088000000f,0.082248000000f,0.077744000000f,0.073456000000f,0.069268000000f,0.065060000000f,0.060709000000f,0.056457000000f,0.052609000000f,0.049122000000f,0.045954000000f,0.043050000000f,0.040368000000f,0.037839000000f,0.035384000000f,0.032949000000f,0.030451000000f,0.028029000000f,0.025862000000f,0.023920000000f,0.022174000000f,0.020584000000f,0.019127000000f,0.017740000000f,0.016403000000f,0.015064000000f,0.013676000000f,0.012308000000f,0.011056000000f,0.009915000000f,0.008872000000f,0.007918000000f,0.007030000000f,0.006223000000f,0.005453000000f,0.004714000000f,0.003988000000f,0.003289000000f,0.002646000000f,0.002063000000f,0.001533000000f,0.001091000000f,0.000711000000f,0.000407000000f,0.000184000000f,0.000047000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f,0.000000000000f };
 
+	// src: https://github.com/hughsie/colord/tree/main/data/illuminant
 	static float s_Illuminance_D65_min = 300.0f;
 	static float s_Illuminance_D65_max = 830.0f;
 #define s_Illuminance_D65_samplesCount 531
@@ -33,6 +34,16 @@ namespace ImWidgets {
 #define s_Illuminance_D50_samplesCount 97
 	static float s_Illuminance_D50[] = { 0.019f,1.035f,2.051f,4.914f,7.778f,11.263f,14.748f,16.348f,17.948f,19.479f,21.010f,22.476f,23.942f,25.451f,26.961f,25.724f,24.488f,27.179f,29.871f,39.589f,49.308f,52.910f,56.513f,58.273f,60.034f,58.926f,57.818f,66.321f,74.825f,81.036f,87.247f,88.930f,90.612f,90.990f,91.368f,93.238f,95.109f,93.536f,91.963f,93.843f,95.724f,96.169f,96.613f,96.871f,97.129f,99.614f,102.099f,101.427f,100.755f,101.536f,102.317f,101.159f,100.000f,98.868f,97.735f,98.327f,98.918f,96.208f,93.499f,95.593f,97.688f,98.478f,99.269f,99.155f,99.042f,97.382f,95.722f,97.290f,98.857f,97.262f,95.667f,96.929f,98.190f,100.597f,103.003f,101.068f,99.133f,93.257f,87.381f,89.492f,91.604f,92.246f,92.889f,84.872f,76.854f,81.683f,86.511f,89.546f,92.580f,85.405f,78.230f,67.961f,57.692f,70.307f,82.923f,80.599f,78.274f };
 
+	static float s_Illuminance_C_min = 380.0f;
+	static float s_Illuminance_C_max = 780.0f;
+#define s_Illuminance_C_samplesCount 81
+	static float s_Illuminance_C[] = { 33.00f, 39.92f, 47.40f, 55.17f, 63.30f, 71.81f, 80.60f, 89.53f, 98.10f, 105.80f, 112.40f, 117.75f, 121.50f, 123.45f, 124.00f, 123.60f, 123.10f, 123.30f, 123.80f, 124.09f, 123.90f, 122.92f, 120.70f, 116.90f, 112.10f, 106.98f, 102.30f, 98.81f, 96.90f, 96.78f, 98.00f, 99.94f, 102.10f, 103.95f, 105.20f, 105.67f, 105.30f, 104.11f, 102.30f, 100.15f, 97.80f, 95.43f, 93.20f, 91.22f, 89.70f, 88.83f, 88.40f, 88.19f, 88.10f, 88.06f, 88.00f, 87.86f, 87.80f, 87.99f, 88.20f, 88.20f, 87.90f, 87.22f, 86.30f, 85.30f, 84.00f, 82.21f, 80.20f, 78.24f, 76.30f, 74.36f, 72.40f, 70.40f, 68.30f, 66.30f, 64.40f, 62.80f, 61.50f, 60.20f, 59.20f, 58.50f, 58.10f, 58.00f, 58.20f, 58.50f, 59.10f };
+
+	static float s_Illuminance_E_min = 380.0f;
+	static float s_Illuminance_E_max = 830.0f;
+#define s_Illuminance_E_samplesCount 91
+	static float s_Illuminance_E[] = { 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f };
+
 	static float* s_CIE_Observers_X[] = { s_CIE_1931_2deg_X, s_CIE_1964_10deg_X };
 	static float* s_CIE_Observers_Y[] = { s_CIE_1931_2deg_Y, s_CIE_1964_10deg_Y };
 	static float* s_CIE_Observers_Z[] = { s_CIE_1931_2deg_Z, s_CIE_1964_10deg_Z };
@@ -40,37 +51,378 @@ namespace ImWidgets {
 	static float s_CIE_Observers_max[] = { s_CIE_1931_2deg_max, s_CIE_1964_10deg_max };
 	static int s_CIE_Observers_SamplesCount[] = { s_CIE_1931_2deg_samplesCount, s_CIE_1964_10deg_samplesCount };
 
-	static float* s_Illums[] = { s_Illuminance_D50, s_Illuminance_D65 };
-	static float s_Illums_min[] = { s_Illuminance_D50_min, s_Illuminance_D65_min };
-	static float s_Illums_max[] = { s_Illuminance_D50_max, s_Illuminance_D65_max };
-	static int s_Illums_SamplesCount[] = { s_Illuminance_D50_samplesCount, s_Illuminance_D65_samplesCount };
+	static float* s_Illums[] = { s_Illuminance_D50, s_Illuminance_D65, s_Illuminance_D50, s_Illuminance_D50, s_Illuminance_D65, s_Illuminance_E, s_Illuminance_D50, s_Illuminance_D50, s_Illuminance_D50, s_Illuminance_D50, s_Illuminance_C, s_Illuminance_D65, s_Illuminance_D50, s_Illuminance_D65, s_Illuminance_D65, s_Illuminance_D50 };
+	static float s_Illums_min[] = { s_Illuminance_D50_min, s_Illuminance_D65_min, s_Illuminance_D50_min, s_Illuminance_D50_min, s_Illuminance_D65_min, s_Illuminance_E_min, s_Illuminance_D50_min, s_Illuminance_D50_min, s_Illuminance_D50_min, s_Illuminance_D50_min, s_Illuminance_C_min, s_Illuminance_D65_min, s_Illuminance_D50_min, s_Illuminance_D65_min, s_Illuminance_D65_min, s_Illuminance_D50_min };
+	static float s_Illums_max[] = { s_Illuminance_D50_max, s_Illuminance_D65_max, s_Illuminance_D50_max, s_Illuminance_D50_max, s_Illuminance_D65_max, s_Illuminance_E_max, s_Illuminance_D50_max, s_Illuminance_D50_max, s_Illuminance_D50_max, s_Illuminance_D50_max, s_Illuminance_C_max, s_Illuminance_D65_max, s_Illuminance_D50_max, s_Illuminance_D65_max, s_Illuminance_D65_max, s_Illuminance_D50_max };
+	static int s_Illums_SamplesCount[] = { s_Illuminance_D50_samplesCount, s_Illuminance_D65_samplesCount, s_Illuminance_D50_samplesCount, s_Illuminance_D50_samplesCount, s_Illuminance_D65_samplesCount, s_Illuminance_E_samplesCount, s_Illuminance_D50_samplesCount, s_Illuminance_D50_samplesCount, s_Illuminance_D50_samplesCount, s_Illuminance_D50_samplesCount, s_Illuminance_C_samplesCount, s_Illuminance_D65_samplesCount, s_Illuminance_D50_samplesCount, s_Illuminance_D65_samplesCount, s_Illuminance_D65_samplesCount, s_Illuminance_D50_samplesCount };
+
+	static float s_min_kelvin_temp = 1000.0f;
+	static float s_max_kelvin_temp = 12000.0f;
+	static float s_kelvin_temp_count = 111;
+	static float s_kelvin_sRGB_Colors_Red[] = {
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		255,
+		254,
+		252,
+		249,
+		247,
+		245,
+		243,
+		240,
+		239,
+		237,
+		235,
+		233,
+		231,
+		230,
+		228,
+		227,
+		225,
+		224,
+		222,
+		221,
+		220,
+		218,
+		217,
+		216,
+		215,
+		214,
+		212,
+		211,
+		210,
+		209,
+		208,
+		207,
+		207,
+		206,
+		205,
+		207,
+		207,
+		206,
+		205,
+		204,
+		204,
+		203,
+		202,
+		202,
+		201,
+		200,
+		200,
+		199,
+		198,
+		198,
+		197,
+		197,
+		197,
+		196,
+		195,
+		195 };
+	static float s_kelvin_sRGB_Colors_Green[] = {
+		 56,
+		 71,
+		 83,
+		 93,
+		101,
+		109,
+		115,
+		121,
+		126,
+		131,
+		138,
+		142,
+		147,
+		152,
+		157,
+		161,
+		165,
+		169,
+		173,
+		177,
+		180,
+		184,
+		187,
+		190,
+		193,
+		196,
+		199,
+		201,
+		204,
+		206,
+		209,
+		211,
+		213,
+		215,
+		217,
+		219,
+		221,
+		223,
+		225,
+		227,
+		228,
+		230,
+		232,
+		233,
+		235,
+		236,
+		238,
+		239,
+		240,
+		242,
+		243,
+		244,
+		245,
+		246,
+		248,
+		249,
+		249,
+		247,
+		246,
+		245,
+		243,
+		242,
+		241,
+		240,
+		239,
+		238,
+		237,
+		236,
+		235,
+		234,
+		233,
+		232,
+		231,
+		230,
+		230,
+		229,
+		229,
+		227,
+		227,
+		226,
+		225,
+		225,
+		224,
+		223,
+		223,
+		222,
+		221,
+		221,
+		220,
+		220,
+		218,
+		218,
+		217,
+		217,
+		216,
+		216,
+		215,
+		215,
+		214,
+		214,
+		213,
+		213,
+		212,
+		212,
+		212,
+		211,
+		211,
+		210,
+		210,
+		210,
+		209 };
+		static float s_kelvin_sRGB_Colors_Blue[] = {
+			  0,
+			  0,
+			  0,
+			  0,
+			  0,
+			  0,
+			  0,
+			  0,
+			  0,
+			  0,
+			 18,
+			 33,
+			 44,
+			 54,
+			 63,
+			 72,
+			 79,
+			 87,
+			 94,
+			101,
+			107,
+			114,
+			120,
+			126,
+			132,
+			137,
+			143,
+			148,
+			153,
+			159,
+			163,
+			168,
+			173,
+			177,
+			182,
+			186,
+			190,
+			194,
+			198,
+			202,
+			206,
+			210,
+			213,
+			217,
+			220,
+			224,
+			227,
+			230,
+			233,
+			236,
+			239,
+			242,
+			245,
+			247,
+			251,
+			253,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255,
+			255 };
 
 	// White Points
 	// { 1932-2° {x, y}, 1964-10° {x, y}, Temperature Kelvin }
-	static ImVec2 s_WhitePoints_Values[][2] =
+	static ImVec2 s_WhitePoints_Values[][ 2 ] =
 	{
-		{ ImVec2(0.44757f, 0.40745f), ImVec2(0.45117f, 0.40594f) }, // A:	incandescent / tungsten
-		{ ImVec2(0.34842f, 0.35161f), ImVec2(0.34980f, 0.35270f) }, // B:	obsolete, direct sunlight at noon
-		{ ImVec2(0.31006f, 0.31616f), ImVec2(0.31039f, 0.31905f) }, // C:	obsolete, average / North sky daylight
-		{ ImVec2(0.34567f, 0.35850f), ImVec2(0.34773f, 0.35952f) }, // D50:	horizon light, ICC profile PCS
-		{ ImVec2(0.33242f, 0.34743f), ImVec2(0.33411f, 0.34877f) }, // D55:	mid-morning / mid-afternoon daylight
-		{ ImVec2(0.31271f, 0.32902f), ImVec2(0.31382f, 0.33100f) }, // D65:	noon daylight: television, sRGB color space
-		{ ImVec2(0.29902f, 0.31485f), ImVec2(0.29968f, 0.31740f) }, // D75:	North sky daylight
-		{ ImVec2(0.28315f, 0.29711f), ImVec2(0.28327f, 0.30043f) }, // D93:	high-efficiency blue phosphor monitors, BT.2035
-		{ ImVec2(0.33333f, 0.33333f), ImVec2(0.33333f, 0.33333f) }, // E:	equal energy
-		{ ImVec2(0.31310f, 0.33727f), ImVec2(0.31811f, 0.33559f) }, // F1:	daylight fluorescent
-		{ ImVec2(0.37208f, 0.37529f), ImVec2(0.37925f, 0.36733f) }, // F2:	cool white fluorescent
-		{ ImVec2(0.40910f, 0.39430f), ImVec2(0.41761f, 0.38324f) }, // F3:	white fluorescent
-		{ ImVec2(0.44018f, 0.40329f), ImVec2(0.44920f, 0.39074f) }, // F4:	warm white fluorescent
-		{ ImVec2(0.31379f, 0.34531f), ImVec2(0.31975f, 0.34246f) }, // F5:	daylight fluorescent
-		{ ImVec2(0.37790f, 0.38835f), ImVec2(0.38660f, 0.37847f) }, // F6:	light white fluorescent
-		{ ImVec2(0.31292f, 0.32933f), ImVec2(0.31569f, 0.32960f) }, // F7:	D65 simulator, daylight simulator
-		{ ImVec2(0.34588f, 0.35875f), ImVec2(0.34902f, 0.35939f) }, // F8:	D50 simulator, Sylvania F40 Design 50
-		{ ImVec2(0.37417f, 0.37281f), ImVec2(0.37829f, 0.37045f) }, // F9:	cool white deluxe fluorescent
-		{ ImVec2(0.34609f, 0.35986f), ImVec2(0.35090f, 0.35444f) }, // F10:	Philips TL85, Ultralume 50
-		{ ImVec2(0.38052f, 0.37713f), ImVec2(0.38541f, 0.37123f) }, // F11:	Philips TL84, Ultralume 40
-		{ ImVec2(0.43695f, 0.40441f), ImVec2(0.44256f, 0.39717f) }  // F12:	Philips TL83, Ultralume 30
+		{ ImVec2( 0.44757f, 0.40745f ), ImVec2( 0.45117f, 0.40594f ) }, // A:	incandescent / tungsten
+		{ ImVec2( 0.34842f, 0.35161f ), ImVec2( 0.34980f, 0.35270f ) }, // B:	obsolete, direct sunlight at noon
+		{ ImVec2( 0.31006f, 0.31616f ), ImVec2( 0.31039f, 0.31905f ) }, // C:	obsolete, average / North sky daylight
+		{ ImVec2( 0.34567f, 0.35850f ), ImVec2( 0.34773f, 0.35952f ) }, // D50:	horizon light, ICC profile PCS
+		{ ImVec2( 0.33242f, 0.34743f ), ImVec2( 0.33411f, 0.34877f ) }, // D55:	mid-morning / mid-afternoon daylight
+		{ ImVec2( 0.31271f, 0.32902f ), ImVec2( 0.31382f, 0.33100f ) }, // D65:	noon daylight: television, sRGB color space
+		{ ImVec2( 0.29902f, 0.31485f ), ImVec2( 0.29968f, 0.31740f ) }, // D75:	North sky daylight
+		{ ImVec2( 0.28315f, 0.29711f ), ImVec2( 0.28327f, 0.30043f ) }, // D93:	high-efficiency blue phosphor monitors, BT.2035
+		{ ImVec2( 0.33333f, 0.33333f ), ImVec2( 0.33333f, 0.33333f ) }, // E:	equal energy
+		{ ImVec2( 0.31310f, 0.33727f ), ImVec2( 0.31811f, 0.33559f ) }, // F1:	daylight fluorescent
+		{ ImVec2( 0.37208f, 0.37529f ), ImVec2( 0.37925f, 0.36733f ) }, // F2:	cool white fluorescent
+		{ ImVec2( 0.40910f, 0.39430f ), ImVec2( 0.41761f, 0.38324f ) }, // F3:	white fluorescent
+		{ ImVec2( 0.44018f, 0.40329f ), ImVec2( 0.44920f, 0.39074f ) }, // F4:	warm white fluorescent
+		{ ImVec2( 0.31379f, 0.34531f ), ImVec2( 0.31975f, 0.34246f ) }, // F5:	daylight fluorescent
+		{ ImVec2( 0.37790f, 0.38835f ), ImVec2( 0.38660f, 0.37847f ) }, // F6:	light white fluorescent
+		{ ImVec2( 0.31292f, 0.32933f ), ImVec2( 0.31569f, 0.32960f ) }, // F7:	D65 simulator, daylight simulator
+		{ ImVec2( 0.34588f, 0.35875f ), ImVec2( 0.34902f, 0.35939f ) }, // F8:	D50 simulator, Sylvania F40 Design 50
+		{ ImVec2( 0.37417f, 0.37281f ), ImVec2( 0.37829f, 0.37045f ) }, // F9:	cool white deluxe fluorescent
+		{ ImVec2( 0.34609f, 0.35986f ), ImVec2( 0.35090f, 0.35444f ) }, // F10:	Philips TL85, Ultralume 50
+		{ ImVec2( 0.38052f, 0.37713f ), ImVec2( 0.38541f, 0.37123f ) }, // F11:	Philips TL84, Ultralume 40
+		{ ImVec2( 0.43695f, 0.40441f ), ImVec2( 0.44256f, 0.39717f ) }  // F12:	Philips TL83, Ultralume 30
 	};
+
 	static float s_WhitePoints_Temperature[] =
 	{
 		2856.0f, 4874.0f, 6774.0f, 5003.0f, 5503.0f, 6504.0f, 7504.0f,
@@ -96,11 +448,47 @@ namespace ImWidgets {
 	static float s_ColorSpace_XYZ2RGB_sRGB[] = { 3.2404542f, -1.5371385f, -0.4985314f, -0.9692660f, 1.8760108f, 0.0415560f, 0.0556434f, -0.2040259f, 1.0572252f };
 	static float s_ColorSpace_XYZ2RGB_WideGamutRGB[] = { 1.4628067f, -0.1840623f, -0.2743606f, -0.5217933f, 1.4472381f, 0.0677227f, 0.0349342f, -0.0968930f, 1.2884099f };
 	static float s_ColorSpace_XYZ2RGB_Rec2020[] = { 1.7166512f, -0.3556708f, -0.2533663f, -0.6666844f, 1.6164812f, 0.0157685f, 0.0176399f, -0.0427706f, 0.9421031f };
-	static float* s_ColorSpace_XYZ2RGB[] = { s_ColorSpace_XYZ2RGB_AdobeRGB, s_ColorSpace_XYZ2RGB_AppleRGB, s_ColorSpace_XYZ2RGB_Best, s_ColorSpace_XYZ2RGB_Beta,
-		s_ColorSpace_XYZ2RGB_Bruce, s_ColorSpace_XYZ2RGB_CIERGB, s_ColorSpace_XYZ2RGB_ColorMatch, s_ColorSpace_XYZ2RGB_DonRGB4,
-		s_ColorSpace_XYZ2RGB_ECI, s_ColorSpace_XYZ2RGB_EktaSpacePS5, s_ColorSpace_XYZ2RGB_NTSC, s_ColorSpace_XYZ2RGB_PAL_SECAM,
-		s_ColorSpace_XYZ2RGB_ProPhoto, s_ColorSpace_XYZ2RGB_SMPTE_C, s_ColorSpace_XYZ2RGB_sRGB, s_ColorSpace_XYZ2RGB_WideGamutRGB,
+	static float* s_ColorSpace_XYZ2RGB[] = {
+		s_ColorSpace_XYZ2RGB_AdobeRGB,
+		s_ColorSpace_XYZ2RGB_AppleRGB,
+		s_ColorSpace_XYZ2RGB_Best,
+		s_ColorSpace_XYZ2RGB_Beta,
+		s_ColorSpace_XYZ2RGB_Bruce,
+		s_ColorSpace_XYZ2RGB_CIERGB,
+		s_ColorSpace_XYZ2RGB_ColorMatch,
+		s_ColorSpace_XYZ2RGB_DonRGB4,
+		s_ColorSpace_XYZ2RGB_ECI,
+		s_ColorSpace_XYZ2RGB_EktaSpacePS5,
+		s_ColorSpace_XYZ2RGB_NTSC,
+		s_ColorSpace_XYZ2RGB_PAL_SECAM,
+		s_ColorSpace_XYZ2RGB_ProPhoto,
+		s_ColorSpace_XYZ2RGB_SMPTE_C,
+		s_ColorSpace_XYZ2RGB_sRGB,
+		s_ColorSpace_XYZ2RGB_WideGamutRGB,
 		s_ColorSpace_XYZ2RGB_Rec2020 };
+	static float s_ColorSpace_RGB2XYZ_AdobeRGB[]     = { 0.5767309f, 0.1855540f, 0.1881852f, 0.2973769f, 0.6273491f, 0.0752741f, 0.0270343f, 0.0706872f, 0.9911085f };
+	static float s_ColorSpace_RGB2XYZ_AppleRGB[]     = { 0.4497288f, 0.3162486f, 0.1844926f, 0.2446525f, 0.6720283f, 0.0833192f, 0.0251848f, 0.1411824f, 0.9224628f };
+	static float s_ColorSpace_RGB2XYZ_Best[]         = { 0.6326696f, 0.2045558f, 0.1269946f, 0.2284569f, 0.7373523f, 0.0341908f, 0.0000000f, 0.0095142f, 0.8156958f };
+	static float s_ColorSpace_RGB2XYZ_Beta[]         = { 0.6712537f, 0.1745834f, 0.1183829f, 0.3032726f, 0.6637861f, 0.0329413f, 0.0000000f, 0.0407010f, 0.7845090f };
+	static float s_ColorSpace_RGB2XYZ_Bruce[]        = { 0.4674162f, 0.2944512f, 0.1886026f, 0.2410115f, 0.6835475f, 0.0754410f, 0.0219101f, 0.0736128f, 0.9933071f };
+	static float s_ColorSpace_RGB2XYZ_CIERGB[]       = { 0.4887180f, 0.3106803f, 0.2006017f, 0.1762044f, 0.8129847f, 0.0108109f, 0.0000000f, 0.0102048f, 0.9897952f };
+	static float s_ColorSpace_RGB2XYZ_ColorMatch[]   = { 0.5093439f, 0.3209071f, 0.1339691f, 0.2748840f, 0.6581315f, 0.0669845f, 0.0242545f, 0.1087821f, 0.6921735f };
+	static float s_ColorSpace_RGB2XYZ_DonRGB4[]      = { 0.6457711f, 0.1933511f, 0.1250978f, 0.2783496f, 0.6879702f, 0.0336802f, 0.0037113f, 0.0179861f, 0.8035125f };
+	static float s_ColorSpace_RGB2XYZ_ECI[]          = { 0.6502043f, 0.1780774f, 0.1359384f, 0.3202499f, 0.6020711f, 0.0776791f, 0.0000000f, 0.0678390f, 0.7573710f };
+	static float s_ColorSpace_RGB2XYZ_EktaSpacePS5[] = { 0.6502043f, 0.1780774f, 0.1359384f, 0.3202499f, 0.6020711f, 0.0776791f, 0.0000000f, 0.0678390f, 0.7573710f };
+	static float s_ColorSpace_RGB2XYZ_NTSC[]         = { 0.6068909f, 0.1735011f, 0.2003480f, 0.2989164f, 0.5865990f, 0.1144845f, 0.0000000f, 0.0660957f, 1.1162243f };
+	static float s_ColorSpace_RGB2XYZ_PAL_SECAM[]    = { 0.4306190f, 0.3415419f, 0.1783091f, 0.2220379f, 0.7066384f, 0.0713236f, 0.0201853f, 0.1295504f, 0.9390944f };
+	static float s_ColorSpace_RGB2XYZ_ProPhoto[]     = { 0.7976749f, 0.1351917f, 0.0313534f, 0.2880402f, 0.7118741f, 0.0000857f, 0.0000000f, 0.0000000f, 0.8252100f };
+	static float s_ColorSpace_RGB2XYZ_SMPTE_C[]      = { 0.3935891f, 0.3652497f, 0.1916313f, 0.2124132f, 0.7010437f, 0.0865432f, 0.0187423f, 0.1119313f, 0.9581563f };
+	static float s_ColorSpace_RGB2XYZ_sRGB[]         = { 0.4124564f, 0.3575761f, 0.1804375f, 0.2126729f, 0.7151522f, 0.0721750f, 0.0193339f, 0.1191920f, 0.9503041f };
+	static float s_ColorSpace_RGB2XYZ_WideGamutRGB[] = { 0.7161046f, 0.1009296f, 0.1471858f, 0.2581874f, 0.7249378f, 0.0168748f, 0.0000000f, 0.0517813f, 0.7734287f };
+	// TOTO find proper one
+	static float s_ColorSpace_RGB2XYZ_Rec2020[]      = { 0.7161046f, 0.1009296f, 0.1471858f, 0.2581874f, 0.7249378f, 0.0168748f, 0.0000000f, 0.0517813f, 0.7734287f };
+	static float* s_ColorSpace_RGB2XYZ[] = { s_ColorSpace_RGB2XYZ_AdobeRGB, s_ColorSpace_RGB2XYZ_AppleRGB, s_ColorSpace_RGB2XYZ_Best, s_ColorSpace_RGB2XYZ_Beta,
+		s_ColorSpace_RGB2XYZ_Bruce, s_ColorSpace_RGB2XYZ_CIERGB, s_ColorSpace_RGB2XYZ_ColorMatch, s_ColorSpace_RGB2XYZ_DonRGB4,
+		s_ColorSpace_RGB2XYZ_ECI, s_ColorSpace_RGB2XYZ_EktaSpacePS5, s_ColorSpace_RGB2XYZ_NTSC, s_ColorSpace_RGB2XYZ_PAL_SECAM,
+		s_ColorSpace_RGB2XYZ_ProPhoto, s_ColorSpace_RGB2XYZ_SMPTE_C, s_ColorSpace_RGB2XYZ_sRGB, s_ColorSpace_RGB2XYZ_WideGamutRGB,
+		s_ColorSpace_RGB2XYZ_Rec2020 };
 	static float s_ColorSpace_Gamma[] = { 2.2f, 1.8f, 2.2f, 2.2f, 2.2f, 2.2f, 1.8f, 2.2f, 1.0f, 2.2f, 2.2f, 2.2f, 1.8f, 2.2f, 2.2f, 2.2f, 2.2f };
 	// xy: { {xy}:RR, {xy}:GG, {xy}:BB }
 	static ImVec2 s_ColorSpace_Primaries[][3] = {
@@ -1122,6 +1510,18 @@ namespace ImWidgets {
 		return ImLerp( buffer[ ( int )i0 ], buffer[ ( int )i1 ], ti );
 #endif
 	}
+	ImU32	KelvinTemperatureTosRGBColors( float temperature )
+	{
+		float _r = ImFunctionFromData( temperature, s_min_kelvin_temp, s_max_kelvin_temp, s_kelvin_sRGB_Colors_Red,   s_kelvin_temp_count );
+		float _g = ImFunctionFromData( temperature, s_min_kelvin_temp, s_max_kelvin_temp, s_kelvin_sRGB_Colors_Green, s_kelvin_temp_count );
+		float _b = ImFunctionFromData( temperature, s_min_kelvin_temp, s_max_kelvin_temp, s_kelvin_sRGB_Colors_Blue,  s_kelvin_temp_count );
+
+		ImU8 r = ( ImU8 )ImRound( _r );
+		ImU8 g = ( ImU8 )ImRound( _g );
+		ImU8 b = ( ImU8 )ImRound( _b );
+
+		return IM_COL32( r, g, b, 255 );
+	}
 
 	ImU32	ImColorFrom_xyz( float x, float y, float z, float* xyzToRGB, float gamma )
 	{
@@ -1449,7 +1849,7 @@ namespace ImWidgets {
 	// cf. https://github.com/ocornut/imgui/issues/760#issuecomment-237195662
 	// Remove C++ feature, work with float instead of double, no auto
 	// Far from efficient, perf depending no the size, but it work!
-	void DrawShapeWithHole( ImDrawList* draw, ImVec2* poly, int points_count, ImColor color, int gap, int strokeWidth )
+	void DrawShapeWithHole( ImDrawList* draw, ImVec2* poly, int points_count, ImColor color, ImRect bb, int gap, int strokeWidth )
 	{
 		ImVector<ImVec2> scanHits;
 		ImVec2 min, max; // polygon min/max points
@@ -1566,10 +1966,12 @@ namespace ImWidgets {
 				{
 					int i = 0;
 					int l = scanHits.size() - 1; // we need pairs of points, this prevents segfault.
+					draw->PushClipRect( bb.Min, bb.Max, true );
 					for ( i = 0; i < l; i += 2 )
 					{
 						draw->AddLine( scanHits[ i ], scanHits[ i + 1 ], color, strokeWidth );
 					}
+					draw->PopClipRect();
 				}
 			}
 			y += gap;
@@ -1581,7 +1983,8 @@ namespace ImWidgets {
 	//////////////////////////////////////////////////////////////////////////
 	// Widgets
 	//////////////////////////////////////////////////////////////////////////
-	void	DrawchromaticityPlotGeneric( ImDrawList* pDrawList,
+#pragma optimize( "", off )
+	void	DrawChromaticityPlotGeneric( ImDrawList* pDrawList,
 										 ImVec2 curPos,
 										 ImVec2 size,
 										 ImVec2 primR, ImVec2 primG, ImVec2 primB,
@@ -1621,7 +2024,7 @@ namespace ImWidgets {
 				curPos, size,
 				resX, resY );
 
-		int lineSamples = ImMin( chromeLineSamplesCount, observerSampleCount );
+		//int lineSamples = ImMin( chromeLineSamplesCount, observerSampleCount );
 
 		float illum;
 		float x, y, z;
@@ -1629,16 +2032,17 @@ namespace ImWidgets {
 		ImVector<ImVec2> chromLine;
 		// +1 to close the line
 		// +5 for the enclosure
-		int ptsCount = lineSamples + 1 + 5;
+		//int ptsCount = lineSamples + 1 + 5;
+		int ptsCount = chromeLineSamplesCount + 1 + 5;
 		chromLine.resize( ptsCount );
-		for ( int i = 0; i < lineSamples; ++i )
+		for ( int i = 0; i < chromeLineSamplesCount; ++i )
 		{
-			float const wavelength = ScaleFromNormalized( ( ( float )i ) / ( ( float )( lineSamples - 1 ) ), wavelengthMin, wavelengthMax );
+			float const wavelength = ScaleFromNormalized( ( ( float )i ) / ( ( float )( chromeLineSamplesCount - 1 ) ), wavelengthMin, wavelengthMax );
 
-			illum = FunctionFromData( wavelength, standardCIEWavelengthMin, standardCIEWavelengthMax, standardCIE, standardCIESampleCount );
-			x = illum * FunctionFromData( wavelength, observerWavelengthMin, observerWavelengthMax, observerX, observerSampleCount );
-			y = illum * FunctionFromData( wavelength, observerWavelengthMin, observerWavelengthMax, observerY, observerSampleCount );
-			z = illum * FunctionFromData( wavelength, observerWavelengthMin, observerWavelengthMax, observerZ, observerSampleCount );
+			illum = ImFunctionFromData( wavelength, standardCIEWavelengthMin, standardCIEWavelengthMax, standardCIE, standardCIESampleCount );
+			x = illum * ImFunctionFromData( wavelength, observerWavelengthMin, observerWavelengthMax, observerX, observerSampleCount );
+			y = illum * ImFunctionFromData( wavelength, observerWavelengthMin, observerWavelengthMax, observerY, observerSampleCount );
+			z = illum * ImFunctionFromData( wavelength, observerWavelengthMin, observerWavelengthMax, observerZ, observerSampleCount );
 
 			sum = x + y + z;
 			//sum = x + 15.0f * y + 3.0f * z;
@@ -1650,13 +2054,13 @@ namespace ImWidgets {
 
 			chromLine[ i ] = ImVec2( x, y );
 		}
-		chromLine[ lineSamples ] = chromLine[ 0 ];
+		chromLine[ chromeLineSamplesCount ] = chromLine[ 0 ];
 		//minX, maxX, minY, maxY
-		chromLine[ lineSamples + 1 ] = ImVec2( maxX, maxY );
-		chromLine[ lineSamples + 2 ] = ImVec2( maxX, minY );
-		chromLine[ lineSamples + 3 ] = ImVec2( minX, minY );
-		chromLine[ lineSamples + 4 ] = ImVec2( minX, maxY );
-		chromLine[ lineSamples + 5 ] = ImVec2( maxX, maxY );
+		chromLine[ chromeLineSamplesCount + 1 ] = ImVec2( maxX, maxY );
+		chromLine[ chromeLineSamplesCount + 2 ] = ImVec2( maxX, minY );
+		chromLine[ chromeLineSamplesCount + 3 ] = ImVec2( minX, minY );
+		chromLine[ chromeLineSamplesCount + 4 ] = ImVec2( minX, maxY );
+		chromLine[ chromeLineSamplesCount + 5 ] = ImVec2( maxX, maxY );
 		for ( int i = 0; i < ptsCount; ++i )
 		{
 			chromLine[ i ].x = Rescale( chromLine[ i ].x, minX, maxX, curPos.x, curPos.x + size.x );
@@ -1664,10 +2068,16 @@ namespace ImWidgets {
 		}
 		// Workaround: Overdraw with strokeWidth of 2. Because we seem to have missing the first and last row of pixel.
 		//			The problem is more visible with alpha < 255.
-		DrawShapeWithHole( pDrawList, &chromLine[ 0 ], ptsCount, maskColor, 1, 2 );
+		ImRect clipRect( curPos, curPos + size );
+		DrawShapeWithHole( pDrawList, &chromLine[ 0 ], ptsCount, maskColor, clipRect, 1, 2 );
+		if ( borderColor || showColorSpaceTriangle || showWhitePoint )
+		{
+			pDrawList->PushClipRect( clipRect.Min, clipRect.Max, true );
+		}
+
 		if ( showBorder )
 		{
-			pDrawList->AddPolyline( &chromLine[ 0 ], lineSamples, borderColor, ImDrawFlags_Closed, borderThickness );
+			pDrawList->AddPolyline( &chromLine[ 0 ], chromeLineSamplesCount, borderColor, ImDrawFlags_Closed, borderThickness );
 		}
 
 		if ( showColorSpaceTriangle )
@@ -1691,13 +2101,18 @@ namespace ImWidgets {
 			pDrawList->AddCircleFilled( vWhitePoint, 5.0f, IM_COL32( 0, 0, 0, 255 ), 4 );
 		}
 
+		if ( borderColor || showColorSpaceTriangle || showWhitePoint )
+		{
+			pDrawList->PopClipRect();
+		}
+
 		//s_ChromaticPlotBoundMin = ImVec2( minX, minY );
 		//s_ChromaticPlotBoundMax = ImVec2( maxX, maxY );
 		//s_ChromaticPlotStart = curPos;
 		//s_ChromaticPlotSize = ImVec2( width, height );
 	}
 
-	void DrawchromaticityPlot( ImDrawList* pDrawList,
+	void DrawChromaticityPlot( ImDrawList* pDrawList,
 							   ImWidgetsIlluminance illum,
 							   ImWidgetsObserver observer,
 							   ImWidgetsColorSpace colorSpace,
@@ -1714,7 +2129,7 @@ namespace ImWidgets {
 							   ImU32 borderColor,
 							   float borderThickness )
 	{
-		DrawchromaticityPlotGeneric(
+		DrawChromaticityPlotGeneric(
 			pDrawList,
 			vpos,
 			size,
@@ -1739,5 +2154,164 @@ namespace ImWidgets {
 			showBorder,
 			borderColor,
 			borderThickness );
+	}
+
+	void	DrawChromaticityPointsGeneric( ImDrawList* pDrawList,
+										  ImVec2 curPos,
+										  ImVec2 size,
+										  float* rgbToXYZ,
+										  float* colors4, // AoS: rgba, rgba, ...
+										  int color_count,
+										  float minX, float maxX,
+										  float minY, float maxY,
+										  ImU32 plotColor, float radius, int num_segments,
+										  int colorStride )
+	{
+		float* current = colors4;
+		for ( int i = 0; i < color_count; ++i )
+		{
+			float x, y, z;
+			Mat33RowMajorMulVec3( x, y, z, rgbToXYZ, current );
+			float sum = x + y + z;
+			x /= sum;
+			y /= sum;
+			ImVec2 vCur;
+			vCur.x = curPos.x + ImRescale( x, minX, maxX, 0.0f, size.x );
+			vCur.y = curPos.y + ImRescale( y, minY, maxY, size.y, 0.0f );
+			pDrawList->AddCircleFilled( vCur, radius, plotColor, num_segments );
+			current += colorStride;
+		}
+	}
+
+	void DrawChromaticityPoints( ImDrawList* pDrawList,
+								ImVec2 curPos,
+								ImVec2 size,
+								ImU32* colors,
+								int color_count,
+								float minX, float maxX,
+								float minY, float maxY,
+								ImU32 plotColor, float radius, int num_segments )
+	{
+		ImVector<float> colorsConverted;
+		ImU32ColorToImRGBColor( colorsConverted, colors, color_count );
+		DrawChromaticityPointsGeneric(
+			pDrawList,
+			curPos,
+			size,
+			s_ColorSpace_RGB2XYZ[ ImWidgetsColorSpace_sRGB ],
+			&colorsConverted[ 0 ],
+			color_count,
+			minX, maxX,
+			minY, maxY,
+			plotColor, radius, num_segments,
+			3 );
+	}
+
+	void DrawChromaticityPoints( ImDrawList* pDrawList,
+								ImVec2 curPos,
+								ImVec2 size,
+								ImWidgetsColorSpace colorSpace,
+								float* colors4, // AoS
+								int color_count,
+								float minX, float maxX,
+								float minY, float maxY,
+								ImU32 plotColor, float radius, int num_segments,
+								int colorStride )
+	{
+		DrawChromaticityPointsGeneric(
+			pDrawList,
+			curPos,
+			size,
+			s_ColorSpace_RGB2XYZ[ ImWidgetsColorSpace_sRGB ],
+			colors4,
+			color_count,
+			minX, maxX,
+			minY, maxY,
+			plotColor, radius, num_segments,
+			colorStride );
+	}
+
+#pragma optimize( "", off )
+	void	DrawChromaticityLinesGeneric( ImDrawList* pDrawList,
+										  ImVec2 curPos,
+										  ImVec2 size,
+										  float* rgbToXYZ,
+										  float* colors4, // AoS
+										  int color_count,
+										  float minX, float maxX,
+										  float minY, float maxY,
+										  ImU32 plotColor, ImDrawFlags flags, float thickness,
+										  int colorStride )
+	{
+		ImVector<ImVec2> lines;
+		lines.resize( color_count );
+		float* current = colors4;
+		for ( int k = 0; k < color_count; ++k )
+		{
+			float x, y, z;
+			Mat33RowMajorMulVec3( x, y, z, rgbToXYZ, current );
+
+			float sum = x + y + z;
+			x /= sum;
+			y /= sum;
+
+			ImVec2 vCur;
+
+			vCur.x = curPos.x + ImRescale( x, minX, maxX, 0.0f, size.x );
+			vCur.y = curPos.y + ImRescale( y, minY, maxY, size.y, 0.0f );
+
+			lines[ k ] = vCur;
+
+			current += colorStride;
+		}
+
+		pDrawList->AddPolyline( &lines[ 0 ], color_count, plotColor, flags, thickness );
+	}
+
+	void DrawChromaticityLines( ImDrawList* pDrawList,
+								ImVec2 curPos,
+								ImVec2 size,
+								ImU32* colors,
+								int color_count,
+								float minX, float maxX,
+								float minY, float maxY,
+								ImU32 plotColor, ImDrawFlags flags, float thickness )
+	{
+		ImVector<float> colorsConverted;
+		ImU32ColorToImRGBColor( colorsConverted, colors, color_count );
+		DrawChromaticityLinesGeneric(
+			pDrawList,
+			curPos,
+			size,
+			s_ColorSpace_RGB2XYZ[ ImWidgetsColorSpace_sRGB ],
+			&colorsConverted[ 0 ],
+			color_count,
+			minX, maxX,
+			minY, maxY,
+			plotColor, flags, thickness,
+			3 );
+	}
+
+	void DrawChromaticityLines( ImDrawList* pDrawList,
+								ImVec2 curPos,
+								ImVec2 size,
+								ImWidgetsColorSpace colorSpace,
+								float* colors4,
+								int color_count,
+								float minX, float maxX,
+								float minY, float maxY,
+								ImU32 plotColor, ImDrawFlags flags, float thickness,
+								int colorStride )
+	{
+		DrawChromaticityLinesGeneric(
+			pDrawList,
+			curPos,
+			size,
+			s_ColorSpace_RGB2XYZ[ ImWidgetsColorSpace_sRGB ],
+			colors4,
+			minX, maxX,
+			minY, maxY,
+			plotColor, flags, thickness,
+			colorStride );
 	}
 }
