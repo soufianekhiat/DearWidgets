@@ -1447,7 +1447,7 @@ namespace ImWidgets {
 	// Adapted version from:
 	// cf. https://github.com/ocornut/imgui/issues/760#issuecomment-237195662
 	// cf. https://github.com/ocornut/imgui/issues/760#issuecomment-237195662
-	// Remove C++ feature, work with float, no auto
+	// Remove C++ feature, work with float instead of double, no auto
 	// Far from efficient, perf depending no the size, but it work!
 	void DrawShapeWithHole( ImDrawList* draw, ImVec2* poly, int points_count, ImColor color, int gap, int strokeWidth )
 	{
@@ -1456,7 +1456,6 @@ namespace ImWidgets {
 		ImGuiIO io = ImGui::GetIO();
 		float y;
 		bool isMinMaxDone = false;
-		unsigned int polysize = points_count;// poly->size();
 
 		// find the orthagonal bounding box
 		// probably can put this as a predefined
@@ -1468,20 +1467,27 @@ namespace ImWidgets {
 			for ( int i = 0; i < points_count; ++i )
 			{
 				ImVec2 p = poly[ i ];
-				if ( p.x < min.x ) min.x = p.x;
-				if ( p.y < min.y ) min.y = p.y;
-				if ( p.x > max.x ) max.x = p.x;
-				if ( p.y > max.y ) max.y = p.y;
+				if ( p.x < min.x )
+					min.x = p.x;
+				if ( p.y < min.y )
+					min.y = p.y;
+				if ( p.x > max.x )
+					max.x = p.x;
+				if ( p.y > max.y )
+					max.y = p.y;
 			}
 			isMinMaxDone = true;
 		}
 
 		// Bounds check
-		if ( ( max.x < 0 ) || ( min.x > io.DisplaySize.x ) || ( max.y < 0 ) || ( min.y > io.DisplaySize.y ) ) return;
+		if ( ( max.x < 0 ) || ( min.x > io.DisplaySize.x ) || ( max.y < 0 ) || ( min.y > io.DisplaySize.y ) )
+			return;
 
 		// Vertically clip
-		if ( min.y < 0 ) min.y = 0;
-		if ( max.y > io.DisplaySize.y ) max.y = io.DisplaySize.y;
+		if ( min.y <= 0 )
+			min.y = 0;
+		if ( max.y > io.DisplaySize.y )
+			max.y = io.DisplaySize.y;
 
 		// so we know we start on the outside of the object we step out by 1.
 		min.x -= 1;
@@ -1494,8 +1500,10 @@ namespace ImWidgets {
 		{
 			static int IMGUI_CDECL Comp( const void* lhs, const void* rhs )
 			{
-				if ( ( ( const ImVec2* )lhs )->x > ( ( const ImVec2* )rhs )->x ) return +1;
-				if ( ( ( const ImVec2* )lhs )->x < ( ( const ImVec2* )rhs )->x ) return -1;
+				if ( ( ( const ImVec2* )lhs )->x > ( ( const ImVec2* )rhs )->x )
+					return +1;
+				if ( ( ( const ImVec2* )lhs )->x < ( ( const ImVec2* )rhs )->x )
+					return -1;
 				return 0;
 			}
 		};
@@ -1508,7 +1516,7 @@ namespace ImWidgets {
 				int jump = 1;
 				ImVec2 fp = poly[ 0 ];
 
-				for ( size_t i = 0; i < polysize - 1; i++ )
+				for ( size_t i = 0; i < points_count - 1; i++ )
 				{
 					ImVec2 pa = poly[ i ];
 					ImVec2 pb = poly[ i + 1 ];
@@ -1521,7 +1529,7 @@ namespace ImWidgets {
 					// hull, jump the next segment and reset the first-point
 					if ( ( !jump ) && ( fp.x == pb.x ) && ( fp.y == pb.y ) )
 					{
-						if ( i < polysize - 2 )
+						if ( i < points_count - 2 )
 						{
 							fp = poly[ i + 2 ];
 							jump = 1;
@@ -1552,7 +1560,6 @@ namespace ImWidgets {
 				}
 
 				// Sort the scan hits by X, so we have a proper left->right ordering
-				//sort( scanHits.begin(), scanHits.end(), []( ImVec2 const& a, ImVec2 const& b ){ return a.x < b.x; } );
 				ImQsort( &scanHits[ 0 ], scanHits.size(), sizeof( ImVec2 ), &ImVec2CompX::Comp );
 
 				// generate the line segments.
@@ -1592,7 +1599,12 @@ namespace ImWidgets {
 										 ImU32 maskColor,
 										 float wavelengthMin, float wavelengthMax,
 										 float minX, float maxX,
-										 float minY, float maxY )
+										 float minY, float maxY,
+										 bool showColorSpaceTriangle,
+										 bool showWhitePoint,
+										 bool showBorder,
+										 ImU32 borderColor,
+										 float borderThickness )
 	{
 		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
 
@@ -1617,7 +1629,8 @@ namespace ImWidgets {
 		ImVector<ImVec2> chromLine;
 		// +1 to close the line
 		// +5 for the enclosure
-		chromLine.resize( lineSamples + 1 + 5 );
+		int ptsCount = lineSamples + 1 + 5;
+		chromLine.resize( ptsCount );
 		for ( int i = 0; i < lineSamples; ++i )
 		{
 			float const wavelength = ScaleFromNormalized( ( ( float )i ) / ( ( float )( lineSamples - 1 ) ), wavelengthMin, wavelengthMax );
@@ -1644,26 +1657,39 @@ namespace ImWidgets {
 		chromLine[ lineSamples + 3 ] = ImVec2( minX, minY );
 		chromLine[ lineSamples + 4 ] = ImVec2( minX, maxY );
 		chromLine[ lineSamples + 5 ] = ImVec2( maxX, maxY );
-		DrawShapeWithHole( pDrawList, &chromLine[ 0 ], chromLine.size(), maskColor );
+		for ( int i = 0; i < ptsCount; ++i )
+		{
+			chromLine[ i ].x = Rescale( chromLine[ i ].x, minX, maxX, curPos.x, curPos.x + size.x );
+			chromLine[ i ].y = Rescale( chromLine[ i ].y, minY, maxY, curPos.y + size.y, curPos.y );
+		}
+		// Workaround: Overdraw with strokeWidth of 2. Because we seem to have missing the first and last row of pixel.
+		//			The problem is more visible with alpha < 255.
+		DrawShapeWithHole( pDrawList, &chromLine[ 0 ], ptsCount, maskColor, 1, 2 );
+		if ( showBorder )
+		{
+			pDrawList->AddPolyline( &chromLine[ 0 ], lineSamples, borderColor, ImDrawFlags_Closed, borderThickness );
+		}
 
-		////pDrawList->AddConcavePolyFilled( &chromLine[ 0 ], lineSamples, maskColor );
-		//DrawConvexMaskMesh( pDrawList, curPos, ImVec2( width, height ), maskColor, ( float* )&( chromLine[ 0 ].x ), lineSamples, minX, maxX, minY, maxY, true );
+		if ( showColorSpaceTriangle )
+		{
+			ImVec2 sRGBLines[] = { primR, primG, primB };
+			for ( int i = 0; i < 3; ++i )
+			{
+				ImVec2& vCur = sRGBLines[ i ];
 
-		//ImVec2 sRGBLines[] = { primR, primG, primB };
-		//for ( int i = 0; i < 3; ++i )
-		//{
-		//	ImVec2& vCur = sRGBLines[ i ];
+				vCur.x = curPos.x + ImRescale( vCur.x, minX, maxX, 0.0f, size.x );
+				vCur.y = curPos.y + ImRescale( vCur.y, minY, maxY, size.y, 0.0f );
+			}
+			pDrawList->AddPolyline( &sRGBLines[ 0 ], 3, IM_COL32( 255, 255, 255, 255 ), true, 5.0f );
+		}
 
-		//	vCur.x = curPos.x + Rescale( vCur.x, minX, maxX, 0.0f, width );
-		//	vCur.y = curPos.y + Rescale( vCur.y, minY, maxY, height, 0.0f );
-		//}
-		//pDrawList->AddPolyline( &sRGBLines[ 0 ], 3, IM_COL32( 255, 255, 255, 255 ), true, 5.0f );
-
-		//ImVec2 vWhitePoint = whitePoint;
-		//vWhitePoint.x = curPos.x + Rescale( vWhitePoint.x, minX, maxX, 0.0f, width );
-		//vWhitePoint.y = curPos.y + Rescale( vWhitePoint.y, minY, maxY, height, 0.0f );
-
-		//pDrawList->AddCircleFilled( vWhitePoint, 5.0f, IM_COL32( 0, 0, 0, 255 ), 4 );
+		if ( showWhitePoint )
+		{
+			ImVec2 vWhitePoint = whitePoint;
+			vWhitePoint.x = curPos.x + ImRescale( vWhitePoint.x, minX, maxX, 0.0f, size.x );
+			vWhitePoint.y = curPos.y + ImRescale( vWhitePoint.y, minY, maxY, size.y, 0.0f );
+			pDrawList->AddCircleFilled( vWhitePoint, 5.0f, IM_COL32( 0, 0, 0, 255 ), 4 );
+		}
 
 		//s_ChromaticPlotBoundMin = ImVec2( minX, minY );
 		//s_ChromaticPlotBoundMax = ImVec2( maxX, maxY );
@@ -1681,7 +1707,12 @@ namespace ImWidgets {
 							   ImU32 maskColor,
 							   float wavelengthMin, float wavelengthMax,
 							   float minX, float maxX,
-							   float minY, float maxY )
+							   float minY, float maxY,
+							   bool showColorSpaceTriangle,
+							   bool showWhitePoint,
+							   bool showBorder,
+							   ImU32 borderColor,
+							   float borderThickness )
 	{
 		DrawchromaticityPlotGeneric(
 			pDrawList,
@@ -1702,9 +1733,11 @@ namespace ImWidgets {
 			maskColor,
 			wavelengthMin, wavelengthMax,
 			minX, maxX,
-			minY, maxY );
+			minY, maxY,
+			showColorSpaceTriangle,
+			showWhitePoint,
+			showBorder,
+			borderColor,
+			borderThickness );
 	}
 }
-
-
-

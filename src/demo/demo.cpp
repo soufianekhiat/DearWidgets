@@ -414,7 +414,11 @@ namespace ImWidgets {
 			if ( ImGui::TreeNode( "Shape with Hole" ) )
 			{
 				static ImVec4 col = { 1, 0, 0, 1 };
+				static int gap = 1;
+				static int strokeWidth = 1;
 				ImGui::ColorEdit4( "Color##Hole", &col.x );
+				ImGui::SliderInt( "Gap##Hole", &gap, 1, 16 );
+				ImGui::SliderInt( "Color##Hole", &strokeWidth, 1, 16 );
 				float const size = ImGui::GetContentRegionAvail().x;
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 
@@ -428,7 +432,7 @@ namespace ImWidgets {
 					v += pos;
 				}
 
-				DrawShapeWithHole( pDrawList, &pos_norms[ 0 ], 10, IM_COL32( 255 * col.x, 255 * col.y, 255 * col.z, 255 * col.w ) );
+				DrawShapeWithHole( pDrawList, &pos_norms[ 0 ], 10, IM_COL32( 255 * col.x, 255 * col.y, 255 * col.z, 255 * col.w ), gap, strokeWidth );
 
 				ImGui::Dummy( ImVec2( size, size ) );
 
@@ -439,16 +443,16 @@ namespace ImWidgets {
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				float const size = ImGui::GetContentRegionAvail().x;
 
-				static int chromLinesampleCount = 16;
-				ImGui::SliderInt( "Chromatic Sample Count", &chromLinesampleCount, 3, 256 );
-				static int resX = 16;
-				ImGui::SliderInt( "Resolution X", &resX, 3, 256 );
-				static int resY = 16;
-				ImGui::SliderInt( "Resolution Y", &resY, 3, 256 );
+				static int chromLinesampleCount = 64;
+				ImGui::SliderInt( "Chromatic Sample Count##Chromaticity", &chromLinesampleCount, 3, 256 );
+				static int resX = 64;
+				ImGui::SliderInt( "Resolution X##Chromaticity", &resX, 3, 256 );
+				static int resY = 64;
+				ImGui::SliderInt( "Resolution Y##Chromaticity", &resY, 3, 256 );
 				static int waveMin = 400;
 				static int waveMax = 700;
-				ImGui::SliderInt( "Wavelength Min", &waveMin, 300, waveMax );
-				ImGui::SliderInt( "Wavelength Max", &waveMax, waveMin, 800 );
+				ImGui::SliderInt( "Wavelength Min##Chromaticity", &waveMin, 300, waveMax );
+				ImGui::SliderInt( "Wavelength Max##Chromaticity", &waveMax, waveMin, 800 );
 				char const* observer[] = { "1931 2 deg", "1964 10 deg" };
 				char const* illum[] = { "D50", "D65" };
 				char const* colorSpace[] = { "AdobeRGB", "AppleRGB", "Best", "Beta", "Bruce", "CIERGB",
@@ -457,23 +461,34 @@ namespace ImWidgets {
 				static int curObserver = 0;
 				static int curIllum = 1;
 				static int curColorSpace = 0;
-				ImGui::Combo( "Observer", &curObserver, observer, IM_ARRAYSIZE( observer ) );
-				ImGui::Combo( "Illuminance", &curIllum, illum, IM_ARRAYSIZE( illum ) );
-				ImGui::Combo( "ColorSpace", &curColorSpace, colorSpace, IM_ARRAYSIZE( colorSpace ) );
+				ImGui::Combo( "Observer##Chromaticity", &curObserver, observer, IM_ARRAYSIZE( observer ) );
+				ImGui::Combo( "Illuminance##Chromaticity", &curIllum, illum, IM_ARRAYSIZE( illum ) );
+				ImGui::Combo( "ColorSpace##Chromaticity", &curColorSpace, colorSpace, IM_ARRAYSIZE( colorSpace ) );
 				static ImVec4 vMaskColor( 1.0f, 0.5f, 0.0f, 1.0f );
-				ImGui::ColorEdit4( "Mask Color", &vMaskColor.x );
+				ImGui::ColorEdit4( "Mask Color##Chromaticity", &vMaskColor.x );
+				static bool showColorSpaceTriangle = true;
+				ImGui::Checkbox( "Color Space Triangle##Chromaticity", &showColorSpaceTriangle );
+				static bool showWhitePoint = true;
+				ImGui::Checkbox( "White Point##Chromaticity", &showWhitePoint );
 				ImU32 maskColor = ImGui::ColorConvertFloat4ToU32( vMaskColor );
 
 				static ImVec2 vMin( -0.2f, -0.1f );
 				static ImVec2 vMax( 1.0f, 1.0f );
 
 				ImGui::PushMultiItemsWidths( 2, size );
-				ImGui::DragFloat( "minX", &vMin.x, 0.001f, -1.0f, 0.0f ); ImGui::SameLine();
-				ImGui::DragFloat( "minY", &vMin.y, 0.001f, -1.0f, 0.0f );
+				ImGui::DragFloat( "minX##Chromaticity", &vMin.x, 0.001f, -1.0f, 0.0f ); ImGui::SameLine();
+				ImGui::DragFloat( "minY##Chromaticity", &vMin.y, 0.001f, -1.0f, 0.0f );
 
 				ImGui::PushMultiItemsWidths( 2, size );
-				ImGui::DragFloat( "maxX", &vMax.x, 0.001f, 1.0f, 2.0f ); ImGui::SameLine();
-				ImGui::DragFloat( "maxY", &vMax.y, 0.001f, 1.0f, 2.0f );
+				ImGui::DragFloat( "maxX##Chromaticity", &vMax.x, 0.001f, 1.0f, 2.0f ); ImGui::SameLine();
+				ImGui::DragFloat( "maxY##Chromaticity", &vMax.y, 0.001f, 1.0f, 2.0f );
+
+				static bool showBorder = true;
+				ImGui::Checkbox( "Show Border##Chromaticity", &showBorder );
+				static ImVec4 borderColor = (ImVec4)ImColor(IM_COL32( 0, 0, 0, 255 ));
+				ImGui::ColorEdit4( "Border Color##Chromaticity", &borderColor.x );
+				static float borderThickness = 1.0f;
+				ImGui::SliderFloat( "Border Thickness##Chromaticity", &borderThickness, 0.5f, 5.0f );
 
 				ImVec2 pos = ImGui::GetCursorScreenPos();
 				DrawchromaticityPlot( pDrawList,
@@ -481,12 +496,17 @@ namespace ImWidgets {
 									  curObserver,
 									  curColorSpace,
 									  chromLinesampleCount,
-									  pos, ImVec2(size, size),
+									  pos, ImVec2( size, size ),
 									  resX, resY,
 									  maskColor,
 									  waveMin, waveMax,
 									  vMin.x, vMax.x,
-									  vMin.y, vMax.y );
+									  vMin.y, vMax.y,
+									  showColorSpaceTriangle,
+									  showWhitePoint,
+									  showBorder,
+									  ( ImU32 )ImColor( borderColor ),
+									  borderThickness );
 
 				ImGui::Dummy( ImVec2( size, size ) );
 

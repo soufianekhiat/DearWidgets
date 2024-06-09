@@ -432,6 +432,9 @@ namespace ImWidgets{
 	// poly: Counterclockwise: Positive shape & Clockwise for hole, don't forget to close your shape
 	IMGUI_API void DrawShapeWithHole( ImDrawList* draw, ImVec2* poly, int points_count, ImColor color, int gap = 1, int strokeWidth = 1 );
 
+	// TODO: find a clean way expose the style of the draws:
+	// Triangle of ColorSpace
+	// White Point
 	IMGUI_API
 	void	DrawchromaticityPlotGeneric( ImDrawList* pDrawList,
 										 ImVec2 const curPos,
@@ -451,7 +454,12 @@ namespace ImWidgets{
 										 ImU32 maskColor,
 										 float wavelengthMin = 400.0f, float wavelengthMax = 700.0f,
 										 float minX = 0.0f, float maxX = 0.8f,
-										 float minY = 0.0f, float maxY = 0.9f );
+										 float minY = 0.0f, float maxY = 0.9f,
+										 bool showColorSpaceTriangle = true,
+										 bool showWhitePoint = true,
+										 bool showBorder = true,
+										 ImU32 borderColor = IM_COL32( 0, 0, 0, 255 ),
+										 float borderThickness = 1.0f );
 	IMGUI_API void DrawchromaticityPlot( ImDrawList* draw,
 										 ImWidgetsIlluminance illuminance,
 										 ImWidgetsObserver observer,
@@ -462,7 +470,12 @@ namespace ImWidgets{
 										 ImU32 maskColor,
 										 float wavelengthMin = 400.0f, float wavelengthMax = 700.0f,
 										 float minX = 0.0f, float maxX = 0.8f,
-										 float minY = 0.0f, float maxY = 0.9f );
+										 float minY = 0.0f, float maxY = 0.9f,
+										 bool showColorSpaceTriangle = true,
+										 bool showWhitePoint = true,
+										 bool showBorder = true,
+										 ImU32 borderColor = IM_COL32( 0, 0, 0, 255 ),
+										 float borderThickness = 1.0f );
 
 	//////////////////////////////////////////////////////////////////////////
 	// Widgets
