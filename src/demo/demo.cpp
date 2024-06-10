@@ -591,25 +591,34 @@ namespace ImWidgets {
 				static float offset = 1.0f;
 
 				static int division = 32;
-				ImGui::DragInt( "Division", &division, 1.0f, 2, 256 );
+				ImGui::DragInt( "Division##HueSelector", &division, 1.0f, 2, 256 );
 				static float alphaHue = 1.0f;
 				static float alphaHideHue = 0.125f;
-				ImGui::DragFloat( "Offset##ColorSelector", &offset, 0.0f, -1.0f, 1.0f );
-				ImGui::DragFloat( "Alpha Hue", &alphaHue, 0.0f, 0.0f, 1.0f );
-				ImGui::DragFloat( "Alpha Hue Hide", &alphaHideHue, 0.0f, 0.0f, 1.0f );
+				ImGui::DragFloat( "Offset##HueSelector", &offset, 0.0f, -1.0f, 1.0f );
+				ImGui::DragFloat( "Alpha Hue##HueSelector", &alphaHue, 0.0f, 0.0f, 1.0f );
+				ImGui::DragFloat( "Alpha Hue Hide##HueSelector", &alphaHideHue, 0.0f, 0.0f, 1.0f );
 				static float hueCenter = 0.5f;
 				static float hueWidth = 0.1f;
 				static float featherLeft = 0.125f;
 				static float featherRight = 0.125f;
-				ImGui::DragFloat( "featherLeft", &featherLeft, 0.0f, 0.0f, 0.5f );
-				ImGui::DragFloat( "featherRight", &featherRight, 0.0f, 0.0f, 0.5f );
+				ImGui::DragFloat( "Hue Width##HueSelector", &hueWidth, 0.0f, 0.0f, 0.5f );
+				ImGui::DragFloat( "Feather Left##HueSelector", &featherLeft, 0.0f, 0.0f, 0.5f );
+				ImGui::DragFloat( "Feather Right##HueSelector", &featherRight, 0.0f, 0.0f, 0.5f );
 				static float hueHeight = 32.0f;
 				static float cursorHeight = 16.0f;
-				ImGui::DragFloat( "hueHeight", &hueHeight, 1.0f, 1.0f, 256.0f );
-				ImGui::DragFloat( "cursorHeight", &cursorHeight, 1.0f, 1.0f, 64.0f );
+				ImGui::DragFloat( "Hue Height##HueSelector", &hueHeight, 1.0f, 1.0f, 256.0f );
+				ImGui::DragFloat( "Cursor Height##HueSelector", &cursorHeight, 1.0f, 1.0f, 64.0f );
 
 				HueSelector( "Hue##HueSelector", hueHeight, cursorHeight, &hueCenter, &hueWidth, &featherLeft, &featherRight, division, alphaHue, alphaHideHue, offset );
 
+				ImGui::TreePop();
+			}
+			if ( ImGui::TreeNode( "Slider2D" ) )
+			{
+				static ImVec2 slider2D;
+				ImVec2 boundMin( -1.0f, -1.0f );
+				ImVec2 boundMax( 1.0f, 1.0f );
+				Slider2DScalar( "Slider 2D Float", ImGuiDataType_Float, &slider2D.x, &slider2D.y, &boundMin.x, &boundMax.x, &boundMin.y, &boundMax.y, 0.75f );
 				ImGui::TreePop();
 			}
 			ImGui::TreePop();
