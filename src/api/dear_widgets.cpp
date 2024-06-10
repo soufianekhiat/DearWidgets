@@ -2338,8 +2338,6 @@ namespace ImWidgets {
 
 		const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, label_size.y + style.FramePadding.y * 2.0f ) );
 		const ImRect total_bb( frame_bb.Min, frame_bb.Max + ImVec2( cursorSize + ( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f ), cursorSize ) );
-		//const ImRect cursor_bb( ImVec2( frame_bb.Min.x, frame_bb.Max.y ), ImVec2( frame_bb.Max ) + ImVec2( 0.0f, cursorSize ) );
-		const ImRect inclusive_bb( frame_bb.Min, frame_bb.Max + ImVec2( 0.0f, cursorSize ) );
 
 		const ImRect hue_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, hueHeight ) );
 		const ImRect cursor_bb( ImVec2( hue_bb.Min.x, hue_bb.Max.y ), hue_bb.Max + ImVec2( 0.0f, cursorHeight ) );

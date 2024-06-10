@@ -20,8 +20,6 @@
 #include <vector>
 #include <random>
 
-#include <imgui_draw_ex.h>
-
 static int grid_rows = 8;
 static int grid_columns = 8;
 static ImVector<float> grid_values;
