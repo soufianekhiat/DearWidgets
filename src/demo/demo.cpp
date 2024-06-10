@@ -607,8 +607,8 @@ namespace ImWidgets {
 				ImGui::DragFloat( "featherRight", &featherRight, 0.0f, 0.0f, 0.5f );
 				static float hueHeight = 32.0f;
 				static float cursorHeight = 16.0f;
-				ImGui::DragFloat( "hueHeight", &hueHeight, 1.0f, 1.0f, 32.0f );
-				ImGui::DragFloat( "cursorHeight", &cursorHeight, 1.0f, 1.0f, 32.0f );
+				ImGui::DragFloat( "hueHeight", &hueHeight, 1.0f, 1.0f, 256.0f );
+				ImGui::DragFloat( "cursorHeight", &cursorHeight, 1.0f, 1.0f, 64.0f );
 
 				HueSelector( "Hue##HueSelector", hueHeight, cursorHeight, &hueCenter, &hueWidth, &featherLeft, &featherRight, division, alphaHue, alphaHideHue, offset );
 
@@ -641,7 +641,10 @@ namespace ImWidgets {
 
 		ImGui::End();
 
-		bool show_app_metrics = true;
-		ImGui::ShowMetricsWindow(&show_app_metrics);
+		bool show = true;
+		ImGui::ShowMetricsWindow( &show );
+		ImGui::ShowDemoWindow( &show );
 	}
 }
+
+#include <imgui/imgui_demo.cpp>

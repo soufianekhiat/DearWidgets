@@ -2335,10 +2335,15 @@ namespace ImWidgets {
 
 		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
 		label_size.y = ImMax( label_size.y, hueHeight );
+
 		const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, label_size.y + style.FramePadding.y * 2.0f ) );
 		const ImRect total_bb( frame_bb.Min, frame_bb.Max + ImVec2( cursorSize + ( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f ), cursorSize ) );
-		const ImRect cursor_bb( ImVec2( frame_bb.Min.x, frame_bb.Max.y ), ImVec2( frame_bb.Max ) + ImVec2( 0.0f, cursorSize ) );
+		//const ImRect cursor_bb( ImVec2( frame_bb.Min.x, frame_bb.Max.y ), ImVec2( frame_bb.Max ) + ImVec2( 0.0f, cursorSize ) );
 		const ImRect inclusive_bb( frame_bb.Min, frame_bb.Max + ImVec2( 0.0f, cursorSize ) );
+
+		const ImRect hue_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, hueHeight ) );
+		const ImRect cursor_bb( ImVec2( hue_bb.Min.x, hue_bb.Max.y ), hue_bb.Max + ImVec2( 0.0f, cursorHeight ) );
+		const ImRect full_bb( hue_bb.Min, cursor_bb.Max );
 
 		const ImVec2 curPos = window->DC.CursorPos;
 
@@ -2346,7 +2351,7 @@ namespace ImWidgets {
 		if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, 0 ) )
 			return false;
 
-		const bool hovered = ImGui::ItemHoverable( inclusive_bb, id, g.LastItemData.InFlags );
+		const bool hovered = ImGui::ItemHoverable( full_bb, id, g.LastItemData.InFlags );
 
 		// Tabbing or CTRL-clicking on Slider turns it into an input box
 		const bool clicked = hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id );
@@ -2364,14 +2369,14 @@ namespace ImWidgets {
 
 		// Draw frame
 		const ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
-		ImGui::RenderNavHighlight( inclusive_bb, id );
-		ImGui::RenderFrame( inclusive_bb.Min, inclusive_bb.Max, frame_col, true, g.Style.FrameRounding );
+		ImGui::RenderNavHighlight( full_bb, id );
+		ImGui::RenderFrame( full_bb.Min, full_bb.Max, frame_col, true, g.Style.FrameRounding );
 
 		// Slider behavior
 		ImRect grab_bb;
 		float zero = 0.0f;
 		float one = 1.0f;
-		const bool value_changed = ImGui::SliderBehavior( inclusive_bb, id, ImGuiDataType_Float, hueCenter, &zero, &one, NULL, ImGuiSliderFlags_NoInput | ImGuiSliderFlags_NoRoundToFormat, &grab_bb );
+		const bool value_changed = ImGui::SliderBehavior( full_bb, id, ImGuiDataType_Float, hueCenter, &zero, &one, NULL, ImGuiSliderFlags_NoInput | ImGuiSliderFlags_NoRoundToFormat, &grab_bb );
 		if ( value_changed )
 			ImGui::MarkItemEdited( id );
 
@@ -2379,15 +2384,11 @@ namespace ImWidgets {
 			ImGui::RenderText( ImVec2( frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + style.FramePadding.y ), label );
 
 		float red[] = { 1.0f, 0.0f, 0.0f };
-		DrawHueBand( window->DrawList, frame_bb.Min, frame_bb.GetSize(), division, &red[ 0 ], alpha, offset );
+		DrawHueBand( window->DrawList, hue_bb.Min, hue_bb.GetSize(), division, &red[ 0 ], alpha, offset );
 
 		// Render grab
 		float pos = ImLerp( cursor_bb.Min.x, cursor_bb.Max.x, *hueCenter );
 		DrawTrianglePointerFilled( window->DrawList, ImVec2( pos, cursor_bb.Min.y ), -IM_PI * 0.5f, cursorSize, IM_COL32( 255, 255, 255, 255 ) );
-
-		//window->DrawList->AddRect( cursor_bb.Min, cursor_bb.Max, IM_COL32( 255, 0, 0, 255 ) );
-		//window->DrawList->AddRect( frame_bb.Min, frame_bb.Max, IM_COL32( 0, 255, 0, 255 ) );
-		//window->DrawList->AddRect( total_bb.Min, total_bb.Max, IM_COL32( 0, 0, 255, 255 ) );
 
 		return value_changed;
 	}
