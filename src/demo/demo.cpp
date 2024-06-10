@@ -587,6 +587,33 @@ namespace ImWidgets {
 		}
 		if (ImGui::TreeNode("Widgets"))
 		{
+			if ( ImGui::TreeNode( "Hue Selector" ) )
+			{
+				float const height = 32.0f;
+				static float offset = 1.0f;
+
+				static int division = 32;
+				ImGui::DragInt( "Division", &division, 1.0f, 2, 256 );
+				static float alphaHue = 1.0f;
+				static float alphaHideHue = 0.125f;
+				ImGui::DragFloat( "Offset##ColorSelector", &offset, 0.0f, -1.0f, 1.0f );
+				ImGui::DragFloat( "Alpha Hue", &alphaHue, 0.0f, 0.0f, 1.0f );
+				ImGui::DragFloat( "Alpha Hue Hide", &alphaHideHue, 0.0f, 0.0f, 1.0f );
+				static float hueCenter = 0.5f;
+				static float hueWidth = 0.1f;
+				static float featherLeft = 0.125f;
+				static float featherRight = 0.125f;
+				ImGui::DragFloat( "featherLeft", &featherLeft, 0.0f, 0.0f, 0.5f );
+				ImGui::DragFloat( "featherRight", &featherRight, 0.0f, 0.0f, 0.5f );
+				static float hueHeight = 32.0f;
+				static float cursorHeight = 16.0f;
+				ImGui::DragFloat( "hueHeight", &hueHeight, 1.0f, 1.0f, 32.0f );
+				ImGui::DragFloat( "cursorHeight", &cursorHeight, 1.0f, 1.0f, 32.0f );
+
+				HueSelector( "Hue##HueSelector", hueHeight, cursorHeight, &hueCenter, &hueWidth, &featherLeft, &featherRight, division, alphaHue, alphaHideHue, offset );
+
+				ImGui::TreePop();
+			}
 			ImGui::TreePop();
 		}
 		if (ImGui::TreeNode("Alpha - Draft - Open Ideas mostly WIP"))

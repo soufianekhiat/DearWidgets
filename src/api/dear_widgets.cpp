@@ -9,6 +9,8 @@ namespace ImWidgets {
 	//////////////////////////////////////////////////////////////////////////
 	// Data
 	//////////////////////////////////////////////////////////////////////////
+#define ImSqrt3 1.7320508075688772935274463415059f
+
 	static float s_CIE_1931_2deg_min = 360.0f;
 	static float s_CIE_1931_2deg_max = 830.0f;
 #define s_CIE_1931_2deg_samplesCount 471
@@ -1559,7 +1561,7 @@ namespace ImWidgets {
 	//////////////////////////////////////////////////////////////////////////
 	// DrawList
 	//////////////////////////////////////////////////////////////////////////
-	void GetTrianglePointer( ImVec2& a, ImVec2& b, ImVec2& c, ImVec2 targetPoint, float angle, float size )
+	void GetTrianglePointer( ImVec2& a, ImVec2& b, ImVec2& c, ImVec2 targetPoint, float angle, float height )
 	{
 		float cos2pi_3 = ImCos( ( 2.0f / 3.0f ) * IM_PI );
 		float sin2pi_3 = ImSin( ( 2.0f / 3.0f ) * IM_PI );
@@ -1572,8 +1574,8 @@ namespace ImWidgets {
 		c = ImVec2( cos2pi_3 - 1.0f, -sin2pi_3 );
 
 		a = targetPoint;
-		b = ImRotate( b, cos0, sin0 ) * size + targetPoint;
-		c = ImRotate( c, cos0, sin0 ) * size + targetPoint;
+		b = ImRotate( b, cos0, sin0 ) * 2.0f * height / 3.0f + targetPoint;
+		c = ImRotate( c, cos0, sin0 ) * 2.0f * height / 3.0f + targetPoint;
 	}
 
 	void DrawTrianglePointer( ImDrawList* pDrawList, ImVec2 targetPoint, float angle, float size, float thickness, ImU32 col )
@@ -2313,5 +2315,80 @@ namespace ImWidgets {
 			minY, maxY,
 			plotColor, flags, thickness,
 			colorStride );
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Widgets
+	//////////////////////////////////////////////////////////////////////////
+	bool HueSelector( char const* label, float hueHeight, float cursorHeight, float* hueCenter, float* hueWidth, float* featherLeft, float* featherRight, int division, float alpha, float hideHueAlpha, float offset )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		const ImGuiID id = window->GetID( label );
+		const float w = ImGui::CalcItemWidth();
+
+		const float cursorSize = cursorHeight;
+
+		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
+		label_size.y = ImMax( label_size.y, hueHeight );
+		const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, label_size.y + style.FramePadding.y * 2.0f ) );
+		const ImRect total_bb( frame_bb.Min, frame_bb.Max + ImVec2( cursorSize + ( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f ), cursorSize ) );
+		const ImRect cursor_bb( ImVec2( frame_bb.Min.x, frame_bb.Max.y ), ImVec2( frame_bb.Max ) + ImVec2( 0.0f, cursorSize ) );
+		const ImRect inclusive_bb( frame_bb.Min, frame_bb.Max + ImVec2( 0.0f, cursorSize ) );
+
+		const ImVec2 curPos = window->DC.CursorPos;
+
+		ImGui::ItemSize( total_bb, style.FramePadding.y );
+		if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, 0 ) )
+			return false;
+
+		const bool hovered = ImGui::ItemHoverable( inclusive_bb, id, g.LastItemData.InFlags );
+
+		// Tabbing or CTRL-clicking on Slider turns it into an input box
+		const bool clicked = hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id );
+		const bool make_active = ( clicked || g.NavActivateId == id );
+		if ( make_active && clicked )
+			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+
+		if ( make_active )
+		{
+			ImGui::SetActiveID( id, window );
+			ImGui::SetFocusID( id, window );
+			ImGui::FocusWindow( window );
+			g.ActiveIdUsingNavDirMask |= ( 1 << ImGuiDir_Left ) | ( 1 << ImGuiDir_Right );
+		}
+
+		// Draw frame
+		const ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
+		ImGui::RenderNavHighlight( inclusive_bb, id );
+		ImGui::RenderFrame( inclusive_bb.Min, inclusive_bb.Max, frame_col, true, g.Style.FrameRounding );
+
+		// Slider behavior
+		ImRect grab_bb;
+		float zero = 0.0f;
+		float one = 1.0f;
+		const bool value_changed = ImGui::SliderBehavior( inclusive_bb, id, ImGuiDataType_Float, hueCenter, &zero, &one, NULL, ImGuiSliderFlags_NoInput | ImGuiSliderFlags_NoRoundToFormat, &grab_bb );
+		if ( value_changed )
+			ImGui::MarkItemEdited( id );
+
+		if ( label_size.x > 0.0f )
+			ImGui::RenderText( ImVec2( frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + style.FramePadding.y ), label );
+
+		float red[] = { 1.0f, 0.0f, 0.0f };
+		DrawHueBand( window->DrawList, frame_bb.Min, frame_bb.GetSize(), division, &red[ 0 ], alpha, offset );
+
+		// Render grab
+		float pos = ImLerp( cursor_bb.Min.x, cursor_bb.Max.x, *hueCenter );
+		DrawTrianglePointerFilled( window->DrawList, ImVec2( pos, cursor_bb.Min.y ), -IM_PI * 0.5f, cursorSize, IM_COL32( 255, 255, 255, 255 ) );
+
+		//window->DrawList->AddRect( cursor_bb.Min, cursor_bb.Max, IM_COL32( 255, 0, 0, 255 ) );
+		//window->DrawList->AddRect( frame_bb.Min, frame_bb.Max, IM_COL32( 0, 255, 0, 255 ) );
+		//window->DrawList->AddRect( total_bb.Min, total_bb.Max, IM_COL32( 0, 0, 255, 255 ) );
+
+		return value_changed;
 	}
 }

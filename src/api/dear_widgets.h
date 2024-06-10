@@ -605,4 +605,5 @@ namespace ImWidgets{
 	//////////////////////////////////////////////////////////////////////////
 	// Widgets
 	//////////////////////////////////////////////////////////////////////////
+	IMGUI_API bool HueSelector( char const* label, float hueHeight, float cursorHeight, float* hueCenter, float* hueWidth, float* featherLeft, float* featherRight, int division = 32, float alpha = 1.0f, float hideHueAlpha = 0.75f, float offset = 0.0f );
 }
