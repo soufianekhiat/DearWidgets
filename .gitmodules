@@ -10,3 +10,6 @@
 [submodule "extern/ImPlatform"]
 	path = extern/ImPlatform
 	url = https://github.com/soufianekhiat/ImPlatform.git
+[submodule "extern/stb"]
+	path = extern/stb
+	url = https://github.com/nothings/stb.git

@@ -20,6 +20,9 @@
 #include <vector>
 #include <random>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 static int grid_rows = 8;
 static int grid_columns = 8;
 static ImVector<float> grid_values;
@@ -127,6 +130,8 @@ ImU32 sdHorseshoeColor(ImVec2 p, float fTime)
 }
 #pragma endregion ShaderToyHelper
 
+ImTextureID background;
+ImVec2 background_size;
 int main()
 {
 	if ( !ImPlatform::ImSimpleStart( "Dear Widgets Demo", ImVec2( 0.0f, 0.0f ), 1024 * 2, 764 * 2) )
@@ -165,6 +170,21 @@ int main()
 	//	style.Colors[ImGuiCol_WindowBg].w = 1.0f;
 	//}
 
+	int width;
+	int height;
+	// Image from: https://www.pexels.com/fr-fr/photo/deux-chaises-avec-table-en-verre-sur-le-salon-pres-de-la-fenetre-1571453/
+	stbi_uc* data = stbi_load( "pexels-fotoaibe-1571453.jpg", &width, &height, NULL, 4 );
+	background = ImPlatform::ImCreateTexture2D( ( char* )data, width, height,
+												{
+													ImPlatform::IM_RGBA,
+													ImPlatform::IM_TYPE_UINT8,
+													ImPlatform::IM_FILTERING_LINEAR,
+													ImPlatform::IM_BOUNDARY_CLAMP,
+													ImPlatform::IM_BOUNDARY_CLAMP
+												} );
+	background_size = ImVec2( ( float )width, ( float )height );
+	STBI_FREE( data );
+
 	ImVec4 clear_color = ImVec4( 0.461f, 0.461f, 0.461f, 1.0f );
 	while ( ImPlatform::ImPlatformContinue() )
 	{
@@ -186,6 +206,8 @@ int main()
 
 	ImPlatform::ImSimpleFinish();
 
+	ImPlatform::ImReleaseTexture2D( background );
+
 	return 0;
 }
 
@@ -196,7 +218,10 @@ namespace ImWidgets {
 		static float f = 0.0f;
 		static int counter = 0;
 
-		ImGui::Begin("Dear Widgets");
+		ImGui::SetNextWindowBgAlpha( 0.75f );
+		ImGui::Begin( "Dear Widgets", NULL, ImGuiWindowFlags_NoTitleBar );
+
+		ImWidgets::SetImageBackground( background, background_size, false );
 
 		if (ImGui::TreeNode("Draw"))
 		{

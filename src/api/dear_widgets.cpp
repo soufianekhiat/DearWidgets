@@ -2662,4 +2662,57 @@ namespace ImWidgets {
 
 		return bModified;
 	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Window Customization
+	//////////////////////////////////////////////////////////////////////////
+	bool SetImageBackground( ImTextureID id, ImVec2 imgSize, bool fixedSize, ImU32 col )
+	{
+		float ar = imgSize.x / imgSize.y;
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		//ImDrawList* drawList = window->DrawList;
+		ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+		ImVec2 cur = window->DC.CursorStartPos - window->WindowPadding - ImVec2( 0.0f, window->TitleBarHeight + window->MenuBarHeight );
+		ImVec2 uv;
+		ImVec2 winSize = ImGui::GetWindowSize();
+
+		if ( fixedSize )
+		{
+			uv.x = winSize.x / imgSize.x;
+			uv.y = winSize.y / imgSize.y;
+		}
+		else
+		{
+			if ( winSize.x > winSize.y )
+			{
+				if ( imgSize.x > imgSize.y )
+				{
+					uv.x = 1.0f;
+					uv.y = winSize.y / winSize.x;
+				}
+				else
+				{
+					uv.x = winSize.y / winSize.x;
+					uv.y = 1.0f;
+				}
+			}
+			else
+			{
+				if ( imgSize.x > imgSize.y )
+				{
+					uv.x = winSize.x / winSize.y;
+					uv.y = 1.0f;
+				}
+				else
+				{
+					uv.x = 1.0f;
+					uv.y = winSize.y / winSize.x;
+				}
+			}
+		}
+
+		drawList->AddImage( id, cur, cur + winSize, ImVec2( 0.0f, 0.0f ), uv, col );
+
+		return true;
+	}
 }

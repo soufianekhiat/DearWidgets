@@ -30,6 +30,7 @@ namespace DearWidgets
 			conf.TargetPath = RootPath + "/WorkingDir";
 
             conf.IncludePaths.Add(@"[project.RootPath]/src/demo/");
+            conf.IncludePaths.Add(@"[project.RootPath]/extern/stb/");
             conf.IncludePaths.Add(@"[project.RootPath]/extern/imgui/");
             conf.IncludePaths.Add(@"[project.RootPath]/extern/imgui/examples/libs/glfw/include/");
             conf.LibraryPaths.Add(@"[project.RootPath]/extern/imgui/examples/libs/glfw/");
