@@ -219,8 +219,8 @@ namespace ImWidgets {
 		static int counter = 0;
 
 		ImGui::SetNextWindowBgAlpha( 0.75f );
+		ImGui::PushStyleVar( ImGuiStyleVar_WindowRounding, 50 );
 		ImGui::Begin( "Dear Widgets", NULL, ImGuiWindowFlags_NoTitleBar );
-
 		ImWidgets::SetCurrentWindowBackgroundImage( background, background_size, false );
 
 		if (ImGui::TreeNode("Draw"))
@@ -272,7 +272,7 @@ namespace ImWidgets {
 				static float col[ 4 ] = { 1, 0, 0, 1 };
 				ImGui::ColorEdit4( "Color##ColorBand", col );
 				float const width = ImGui::GetContentRegionAvail().x;
-				static float height = 32.0f;
+				static float height = 64.0f;
 				static float gamma = 1.0f;
 				ImGui::DragFloat( "Height##ColorBand", &height, 1.0f, 1.0f, 128.0f );
 				ImGui::DragFloat( "Gamma##ColorBand", &gamma, 0.01f, 0.1f, 10.0f );
@@ -441,7 +441,7 @@ namespace ImWidgets {
 				static int strokeWidth = 1;
 				ImGui::ColorEdit4( "Color##Hole", &col.x );
 				ImGui::SliderInt( "Gap##Hole", &gap, 1, 16 );
-				ImGui::SliderInt( "Color##Hole", &strokeWidth, 1, 16 );
+				ImGui::SliderInt( "Stroke Width##Hole", &strokeWidth, 1, 16 );
 				float const size = ImGui::GetContentRegionAvail().x;
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 
@@ -466,7 +466,7 @@ namespace ImWidgets {
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				float const size = ImGui::GetContentRegionAvail().x;
 
-				static int chromLinesampleCount = 64;
+				static int chromLinesampleCount = 128;
 				ImGui::SliderInt( "Chromatic Sample Count##Chromaticity", &chromLinesampleCount, 3, 256 );
 				static int resX = 64;
 				ImGui::SliderInt( "Resolution X##Chromaticity", &resX, 3, 256 );
@@ -498,20 +498,23 @@ namespace ImWidgets {
 				static ImVec2 vMin( -0.2f, -0.1f );
 				static ImVec2 vMax( 1.0f, 1.0f );
 
-				ImGui::PushMultiItemsWidths( 2, size );
-				ImGui::DragFloat( "minX##Chromaticity", &vMin.x, 0.001f, -1.0f, 0.0f ); ImGui::SameLine();
-				ImGui::DragFloat( "minY##Chromaticity", &vMin.y, 0.001f, -1.0f, 0.0f );
-
-				ImGui::PushMultiItemsWidths( 2, size );
-				ImGui::DragFloat( "maxX##Chromaticity", &vMax.x, 0.001f, 1.0f, 2.0f ); ImGui::SameLine();
-				ImGui::DragFloat( "maxY##Chromaticity", &vMax.y, 0.001f, 1.0f, 2.0f );
+				if ( ImGui::DragFloat2( "min##Chromaticity", &vMin.x, 0.001f, -1.0f, 2.0f ) )
+				{
+					vMin.x = ImMin( vMin.x, vMax.x - 1e-6f );
+					vMin.y = ImMin( vMin.y, vMax.y - 1e-6f );
+				}
+				if ( ImGui::DragFloat2( "max##Chromaticity", &vMax.x, 0.001f, -1.0f, 2.0f ) )
+				{
+					vMax.x = ImMax( vMax.x, vMin.x + 1e-6f );
+					vMax.y = ImMax( vMax.y, vMin.y + 1e-6f );
+				}
 
 				static bool showBorder = true;
 				ImGui::Checkbox( "Show Border##Chromaticity", &showBorder );
 				static ImVec4 borderColor = (ImVec4)ImColor(IM_COL32( 0, 0, 0, 255 ));
 				ImGui::ColorEdit4( "Border Color##Chromaticity", &borderColor.x );
-				static float borderThickness = 1.0f;
-				ImGui::SliderFloat( "Border Thickness##Chromaticity", &borderThickness, 0.5f, 5.0f );
+				static float borderThickness = 5.0f;
+				ImGui::SliderFloat( "Border Thickness##Chromaticity", &borderThickness, 0.5f, 10.0f );
 
 				ImVec2 pos = ImGui::GetCursorScreenPos();
 				DrawChromaticityPlot( pDrawList,
@@ -528,7 +531,7 @@ namespace ImWidgets {
 									  showColorSpaceTriangle,
 									  showWhitePoint,
 									  showBorder,
-									  ( ImU32 )ImColor( borderColor ),
+									  ImGui::GetColorU32( borderColor ),
 									  borderThickness );
 
 				ImGui::Dummy( ImVec2( size, size ) );
@@ -548,13 +551,16 @@ namespace ImWidgets {
 				static ImVec2 vMin( 0.261f, 0.285f );
 				static ImVec2 vMax( 0.446f, 0.395f );
 
-				ImGui::PushMultiItemsWidths( 3, size );
-				ImGui::DragFloat( "minX##ChromaticityLines", &vMin.x, 0.001f, -1.0f, vMax.x ); ImGui::SameLine();
-				ImGui::DragFloat( "minY##ChromaticityLines", &vMin.y, 0.001f, -1.0f, vMax.y );
-
-				ImGui::PushMultiItemsWidths( 3, size );
-				ImGui::DragFloat( "maxX##ChromaticityLines", &vMax.x, 0.001f, vMin.x, 2.0f ); ImGui::SameLine();
-				ImGui::DragFloat( "maxY##ChromaticityLines", &vMax.y, 0.001f, vMin.y, 2.0f );
+				if ( ImGui::DragFloat2( "min##ChromaticityLines", &vMin.x, 0.001f, -1.0f, 2.0f ) )
+				{
+					vMin.x = ImMin( vMin.x, vMax.x - 1e-6f );
+					vMin.y = ImMin( vMin.y, vMax.y - 1e-6f );
+				}
+				if ( ImGui::DragFloat2( "max##ChromaticityLines", &vMax.x, 0.001f, -1.0f, 2.0f ) )
+				{
+					vMax.x = ImMax( vMax.x, vMin.x + 1e-6f );
+					vMax.y = ImMax( vMax.y, vMin.y + 1e-6f );
+				}
 
 				ImVector<ImU32> colors;
 				colors.resize( samplesCount );
@@ -564,6 +570,11 @@ namespace ImWidgets {
 					colors[ i ] = col;
 				}
 				ImU32 tempCol = KelvinTemperatureTosRGBColors( temp );
+
+				static ImVec4 lineColor = ( ImVec4 )ImColor( IM_COL32( 0, 0, 0, 255 ) );
+				ImGui::ColorEdit4( "Line Color##ChromaticityLines", &lineColor.x );
+				static float lineThickness = 5.0f;
+				ImGui::SliderFloat( "Border Thickness##ChromaticityLines", &lineThickness, 0.5f, 10.0f );
 
 				ImVec2 pos = ImGui::GetCursorScreenPos();
 				DrawChromaticityPlot( pDrawList,
@@ -590,9 +601,9 @@ namespace ImWidgets {
 									   samplesCount,
 									   vMin.x, vMax.x,
 									   vMin.y, vMax.y,
-									   IM_COL32( 0, 0, 0, 255 ),
+									   ImGui::GetColorU32( lineColor ),
 									   ImDrawFlags_None,
-									   2.0f);
+									   lineThickness );
 				DrawChromaticityPoints( pDrawList,
 									   pos,
 									   ImVec2( size, size ),
@@ -634,6 +645,9 @@ namespace ImWidgets {
 				ImGui::DragFloat( "Hue Height##HueSelector", &hueHeight, 1.0f, 1.0f, 256.0f );
 				ImGui::DragFloat( "Cursor Height##HueSelector", &cursorHeight, 1.0f, 1.0f, 64.0f );
 
+				ImWidgets::GetStyle().PushVar( StyleVar_HueSelector_Thickness_ZeroWidth, 10.0f );
+				HueSelector( "Hue##HueSelector", hueHeight, cursorHeight, &hueCenter, &hueWidth, &featherLeft, &featherRight, division, alphaHue, alphaHideHue, offset );
+				ImWidgets::GetStyle().PopVar();
 				HueSelector( "Hue##HueSelector", hueHeight, cursorHeight, &hueCenter, &hueWidth, &featherLeft, &featherRight, division, alphaHue, alphaHideHue, offset );
 
 				ImGui::TreePop();
@@ -672,6 +686,7 @@ namespace ImWidgets {
 		}
 
 		ImGui::End();
+		ImGui::PopStyleVar();
 
 		bool show = true;
 		ImGui::ShowMetricsWindow( &show );

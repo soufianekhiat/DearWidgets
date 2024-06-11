@@ -54,19 +54,19 @@ namespace ImWidgets{
 
 	enum StyleVar
 	{
-		StyleVar_Value,
+		StyleVar_HueSelector_Thickness_ZeroWidth,
 
 		StyleVar_Count
 	};
 
 	struct Style
 	{
-		float	Value;
+		float	HueSelector_Thickness_ZeroWidth;
 		ImVec4  Colors[ StyleColor_Count ];
 
 		Style()
 		{
-			Value = 1.0f;
+			HueSelector_Thickness_ZeroWidth = 2.0f;
 			Colors[ StyleColor_Value ] = ImVec4( 1.0f, 0.0f, 0.0f, 1.0f );
 		}
 
@@ -164,7 +164,7 @@ namespace ImWidgets{
 		{
 			switch ( idx )
 			{
-			case StyleVar_Value:	return &Value;
+			case StyleVar_HueSelector_Thickness_ZeroWidth:	return &HueSelector_Thickness_ZeroWidth;
 			default:				return nullptr;
 			}
 		}
@@ -497,7 +497,7 @@ namespace ImWidgets{
 	IMGUI_API void DrawColorRing( ImDrawList* pDrawList, ImVec2 const curPos, ImVec2 const size, float thickness_, ImColor1DCallback func, void* pUserData, int division, float colorOffset, bool bIsBilinear );
 
 	// poly: Counterclockwise: Positive shape & Clockwise for hole, don't forget to close your shape
-	IMGUI_API void DrawShapeWithHole( ImDrawList* draw, ImVec2* poly, int points_count, ImColor color, ImRect bb, int gap = 1, int strokeWidth = 1 );
+	IMGUI_API void DrawShapeWithHole( ImDrawList* draw, ImVec2* poly, int points_count, ImU32 color, ImRect bb, int gap = 1, int strokeWidth = 1 );
 
 	// TODO: find a clean way expose the style of the draws:
 	// Triangle of ColorSpace
@@ -612,5 +612,5 @@ namespace ImWidgets{
 	// Window Customization
 	//////////////////////////////////////////////////////////////////////////
 	// Note: it will break the rounding.
-	IMGUI_API bool SetCurrentWindowBackgroundImage( ImTextureID id, ImVec2 imgSize, bool fixedSize = false, ImU32 col = IM_COL32( 255, 255, 255, 255 ) );
+	IMGUI_API void SetCurrentWindowBackgroundImage( ImTextureID id, ImVec2 imgSize, bool fixedSize = false, ImU32 col = IM_COL32( 255, 255, 255, 255 ) );
 }

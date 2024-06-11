@@ -1848,10 +1848,9 @@ namespace ImWidgets {
 
 	// Adapted version from:
 	// cf. https://github.com/ocornut/imgui/issues/760#issuecomment-237195662
-	// cf. https://github.com/ocornut/imgui/issues/760#issuecomment-237195662
 	// Remove C++ feature, work with float instead of double, no auto
 	// Far from efficient, perf depending no the size, but it work!
-	void DrawShapeWithHole( ImDrawList* draw, ImVec2* poly, int points_count, ImColor color, ImRect bb, int gap, int strokeWidth )
+	void DrawShapeWithHole( ImDrawList* draw, ImVec2* poly, int points_count, ImU32 color, ImRect bb, int gap, int strokeWidth )
 	{
 		ImVector<ImVec2> scanHits;
 		ImVec2 min, max; // polygon min/max points
@@ -1910,6 +1909,7 @@ namespace ImWidgets {
 			}
 		};
 
+		draw->PushClipRect( bb.Min, bb.Max, true );
 		// Go through each scan line iteratively, jumping by 'gap' pixels each time
 		while ( y < max.y )
 		{
@@ -1968,16 +1968,15 @@ namespace ImWidgets {
 				{
 					int i = 0;
 					int l = scanHits.size() - 1; // we need pairs of points, this prevents segfault.
-					draw->PushClipRect( bb.Min, bb.Max, true );
 					for ( i = 0; i < l; i += 2 )
 					{
 						draw->AddLine( scanHits[ i ], scanHits[ i + 1 ], color, strokeWidth );
 					}
-					draw->PopClipRect();
 				}
 			}
 			y += gap;
 		} // for each scan line
+		draw->PopClipRect();
 
 		scanHits.clear();
 	}
@@ -2107,11 +2106,6 @@ namespace ImWidgets {
 		{
 			pDrawList->PopClipRect();
 		}
-
-		//s_ChromaticPlotBoundMin = ImVec2( minX, minY );
-		//s_ChromaticPlotBoundMax = ImVec2( maxX, maxY );
-		//s_ChromaticPlotStart = curPos;
-		//s_ChromaticPlotSize = ImVec2( width, height );
 	}
 
 	void DrawChromaticityPlot( ImDrawList* pDrawList,
@@ -2169,6 +2163,8 @@ namespace ImWidgets {
 										  ImU32 plotColor, float radius, int num_segments,
 										  int colorStride )
 	{
+		ImRect clipRect( curPos, curPos + size );
+		pDrawList->PushClipRect( clipRect.Min, clipRect.Max, true );
 		float* current = colors4;
 		for ( int i = 0; i < color_count; ++i )
 		{
@@ -2183,6 +2179,7 @@ namespace ImWidgets {
 			pDrawList->AddCircleFilled( vCur, radius, plotColor, num_segments );
 			current += colorStride;
 		}
+		pDrawList->PopClipRect();
 	}
 
 	void DrawChromaticityPoints( ImDrawList* pDrawList,
@@ -2245,6 +2242,8 @@ namespace ImWidgets {
 										  ImU32 plotColor, ImDrawFlags flags, float thickness,
 										  int colorStride )
 	{
+		ImRect clipRect( curPos, curPos + size );
+		pDrawList->PushClipRect( clipRect.Min, clipRect.Max, true );
 		ImVector<ImVec2> lines;
 		lines.resize( color_count );
 		float* current = colors4;
@@ -2268,6 +2267,7 @@ namespace ImWidgets {
 		}
 
 		pDrawList->AddPolyline( &lines[ 0 ], color_count, plotColor, flags, thickness );
+		pDrawList->PopClipRect();
 	}
 
 	void DrawChromaticityLines( ImDrawList* pDrawList,
@@ -2425,10 +2425,13 @@ namespace ImWidgets {
 		float featherL = ImClamp( *featherLeft, 0.0f, 0.5f - 1e-4f );
 		float featherR = ImClamp( *featherRight, 0.0f, 0.5f - 1e-4f );
 
+		ImWidgets::Style& dwstyle = ImWidgets::GetStyle();
+
 		float xCenter = curPos.x + center * w;
 		if ( width == 0.0f )
 		{
-			window->DrawList->AddLine( ImVec2( xCenter, curPos.y ), ImVec2( xCenter, curPos.y + w ), IM_COL32( 0, 0, 0, 255 ) );
+			// TODO: add style for thickness or color
+			window->DrawList->AddLine( ImVec2( xCenter, curPos.y ), ImVec2( xCenter, curPos.y + hueHeight ), IM_COL32( 0, 0, 0, 255 ), dwstyle.HueSelector_Thickness_ZeroWidth );
 		}
 		else
 		{
@@ -2456,7 +2459,6 @@ namespace ImWidgets {
 
 		ImGuiContext& g = *GImGui;
 		const ImGuiStyle& style = g.Style;
-		//const ImGuiID id = window->GetID(pLabel);
 
 		ImGuiID const iID = ImGui::GetID( pLabel );
 
@@ -2490,7 +2492,6 @@ namespace ImWidgets {
 		bool bModified = false;
 		ImVec2 const vSecurity( 15.0f, 15.0f );
 		ImRect frame_bb = ImRect( oRect.Min - vSecurity, oRect.Max + vSecurity );
-		//ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
 		bool hovered;
 		bool held;
 		bool pressed = ImGui::ButtonBehavior( frame_bb, iID, &hovered, &held, ImGuiButtonFlags_PressedOnClickRelease );
@@ -2510,7 +2511,6 @@ namespace ImWidgets {
 			ImGui::MarkItemEdited( iID );
 			bModified = true;
 		}
-		//ImGui::PopItemFlag();
 
 		ImU64 s_clamped_x = ClampScalar( data_type, p_valueX, p_minX, p_maxX );
 		ImU64 s_clamped_y = ClampScalar( data_type, p_valueY, p_minY, p_maxY );
@@ -2531,8 +2531,8 @@ namespace ImWidgets {
 		ImVec4 const vBlue( 70.0f / 255.0f, 102.0f / 255.0f, 230.0f / 255.0f, 1.0f ); // TODO: choose from style
 		ImVec4 const vOrange( 255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f ); // TODO: choose from style
 
-		ImS32 const uBlue = ImGui::GetColorU32( vBlue );
-		ImS32 const uOrange = ImGui::GetColorU32( vOrange );
+		ImU32 const uBlue = ImGui::GetColorU32( vBlue );
+		ImU32 const uOrange = ImGui::GetColorU32( vOrange );
 
 		constexpr float fBorderThickness = 2.0f;
 		constexpr float fLineThickness = 3.0f;
@@ -2666,13 +2666,12 @@ namespace ImWidgets {
 	//////////////////////////////////////////////////////////////////////////
 	// Window Customization
 	//////////////////////////////////////////////////////////////////////////
-	bool SetCurrentWindowBackgroundImage( ImTextureID id, ImVec2 imgSize, bool fixedSize, ImU32 col )
+	void SetCurrentWindowBackgroundImage( ImTextureID id, ImVec2 imgSize, bool fixedSize, ImU32 col )
 	{
 		float ar = imgSize.x / imgSize.y;
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
-		//ImDrawList* drawList = window->DrawList;
 		ImDrawList* drawList = ImGui::GetBackgroundDrawList();
-		ImVec2 cur = window->DC.CursorStartPos - window->WindowPadding - ImVec2( 0.0f, window->TitleBarHeight + window->MenuBarHeight );
+		ImVec2 cur = window->InnerRect.Min;
 		ImVec2 uv;
 		ImVec2 winSize = ImGui::GetWindowSize();
 
@@ -2711,8 +2710,6 @@ namespace ImWidgets {
 			}
 		}
 
-		drawList->AddImage( id, cur, cur + winSize, ImVec2( 0.0f, 0.0f ), uv, col );
-
-		return true;
+		drawList->AddImageRounded( id, cur, cur + winSize, ImVec2( 0.0f, 0.0f ), uv, col, window->WindowRounding );
 	}
 }
