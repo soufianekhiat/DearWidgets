@@ -612,5 +612,5 @@ namespace ImWidgets{
 	// Window Customization
 	//////////////////////////////////////////////////////////////////////////
 	// Note: it will break the rounding.
-	IMGUI_API bool SetImageBackground( ImTextureID id, ImVec2 imgSize, bool fixedSize = false, ImU32 col = IM_COL32( 255, 255, 255, 255 ) );
+	IMGUI_API bool SetCurrentWindowBackgroundImage( ImTextureID id, ImVec2 imgSize, bool fixedSize = false, ImU32 col = IM_COL32( 255, 255, 255, 255 ) );
 }

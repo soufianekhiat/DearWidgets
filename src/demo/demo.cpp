@@ -221,7 +221,7 @@ namespace ImWidgets {
 		ImGui::SetNextWindowBgAlpha( 0.75f );
 		ImGui::Begin( "Dear Widgets", NULL, ImGuiWindowFlags_NoTitleBar );
 
-		ImWidgets::SetImageBackground( background, background_size, false );
+		ImWidgets::SetCurrentWindowBackgroundImage( background, background_size, false );
 
 		if (ImGui::TreeNode("Draw"))
 		{

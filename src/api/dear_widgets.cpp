@@ -2666,7 +2666,7 @@ namespace ImWidgets {
 	//////////////////////////////////////////////////////////////////////////
 	// Window Customization
 	//////////////////////////////////////////////////////////////////////////
-	bool SetImageBackground( ImTextureID id, ImVec2 imgSize, bool fixedSize, ImU32 col )
+	bool SetCurrentWindowBackgroundImage( ImTextureID id, ImVec2 imgSize, bool fixedSize, ImU32 col )
 	{
 		float ar = imgSize.x / imgSize.y;
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
