@@ -131,6 +131,7 @@ Notice some DrawList are purely calling DrawList from Dear ImGui. So based on yo
 ## Constrains
 C++ features used internally:
 * std::string
+* (Optionnal) Lambda
 
 ## Legacy
 Removed:
