@@ -652,13 +652,20 @@ namespace ImWidgets {
 
 				ImGui::TreePop();
 			}
-			if ( ImGui::TreeNode( "Slider2D" ) )
+			if ( ImGui::TreeNode( "Slider2D Float" ) )
 			{
 				static ImVec2 slider2D;
 				ImVec2 boundMin( -1.0f, -1.0f );
 				ImVec2 boundMax( 1.0f, 1.0f );
-				Slider2DScalar( "Slider 2D 2 Float", ImGuiDataType_Float, &slider2D.x, &slider2D.y, &boundMin.x, &boundMax.x, &boundMin.y, &boundMax.y, 0.75f );
+				Slider2DFloat( "Slider 2D Float", &slider2D.x, &slider2D.y, boundMin.x, boundMax.x, boundMin.y, boundMax.y );
 				ImGui::InputFloat2( "Value", &slider2D.x );
+				ImGui::TreePop();
+			}
+			if ( ImGui::TreeNode( "Slider2D Int" ) )
+			{
+				static int vv[2];
+				Slider2DInt( "Slider 2D Int", &vv[ 0 ], &vv[ 1 ], -5, 5, -5, 5 );
+				ImGui::InputInt2( "Value", &vv[ 0 ] );
 				ImGui::TreePop();
 			}
 			ImGui::TreePop();

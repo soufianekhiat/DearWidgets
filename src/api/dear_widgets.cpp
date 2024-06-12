@@ -2448,7 +2448,7 @@ namespace ImWidgets {
 		return value_changed;
 	}
 
-	bool Slider2DScalar( char const* label, ImGuiDataType data_type, void* p_valueX, void* p_valueY, void* p_minX, void* p_maxX, void* p_minY, void* p_maxY, float const fScale /*= 1.0f*/ )
+	bool Slider2DScalar( char const* label, ImGuiDataType data_type, void* p_valueX, void* p_valueY, void* p_minX, void* p_maxX, void* p_minY, void* p_maxY )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
@@ -2465,7 +2465,6 @@ namespace ImWidgets {
 		const float w = ImGui::CalcItemWidth();
 
 		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
-		//label_size.y = ImMax( label_size.y, hueHeight );
 
 		float downScale = 0.75f;
 		float dragX_placement = 0.75f;
@@ -2527,7 +2526,6 @@ namespace ImWidgets {
 		if ( value_changedX || value_changedY )
 			ImGui::MarkItemEdited( id );
 
-		ImGui::ItemSize( total_bb, style.FramePadding.y );
 		if ( !ImGui::ItemAdd( total_bb, idX, &frame_bb_dragX, 0 ) )
 			return false;
 
@@ -2553,7 +2551,6 @@ namespace ImWidgets {
 		ImGui::RenderNavHighlight( frame_bb_dragX, idX );
 		ImGui::RenderFrame( frame_bb_dragX.Min, frame_bb_dragX.Max, frame_col, true, g.Style.FrameRounding );
 
-		ImGui::ItemSize( total_bb, style.FramePadding.y );
 		if ( !ImGui::ItemAdd( total_bb, idY, &frame_bb_dragX, 0 ) )
 			return false;
 
@@ -2657,6 +2654,7 @@ namespace ImWidgets {
 		if ( fScaleX < 1.0f - fXLimit )
 			pDrawList->AddLine( ImVec2( frame_bb_drag.Max.x, frame_bb_drag.Max.y ), ImVec2( vCursorPos.x + fCursorOff, frame_bb_drag.Max.y ), uBlue, border_thickness );
 
+		// Add Text
 		pDrawList->AddText(
 			ImVec2(
 				ImMin( ImMax( vCursorPos.x - vXSize.x * 0.5f, frame_bb_drag.Min.x ), frame_bb_drag.Min.x + frame_bb_drag.GetWidth() - vXSize.x ),
@@ -2670,6 +2668,16 @@ namespace ImWidgets {
 			pBufferY );
 
 		ImGui::SetWindowFontScale( 1.0f );
+	}
+
+	bool Slider2DFloat( char const* pLabel, float* pValueX, float* pValueY, float v_minX, float v_maxX, float v_minY, float v_maxY )
+	{
+		return Slider2DScalar( pLabel, ImGuiDataType_Float, pValueX, pValueY, &v_minX, &v_maxX, &v_minY, &v_maxY );
+	}
+
+	bool Slider2DInt( char const* pLabel, int* pValueX, void* pValueY, int v_minX, int v_maxX, int v_minY, int v_maxY )
+	{
+		return Slider2DScalar( pLabel, ImGuiDataType_S32, pValueX, pValueY, &v_minX, &v_maxX, &v_minY, &v_maxY );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
