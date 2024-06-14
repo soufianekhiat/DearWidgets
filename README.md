@@ -139,6 +139,8 @@ Removed:
 * AnalyticalPlot
 * CenterNextItem
 * DragFloatLog
+* RangeSelect2D didn't find a proper control
+* Slider3D no real use case
 
 Removed C++ feature dependencies:
 * template

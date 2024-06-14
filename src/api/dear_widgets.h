@@ -314,8 +314,7 @@ namespace ImWidgets{
 	inline
 	float ImFract(float x)
 	{
-		float iPart;
-		return ImFmod(x, iPart);
+		return x - ImFloor( x );
 	}
 
 	inline
@@ -465,7 +464,10 @@ namespace ImWidgets{
 	bool	IsNegativeScalar( ImGuiDataType data_type, ImU64* src );
 	bool	IsPositiveScalar( ImGuiDataType data_type, ImU64* src );
 	void	EqualScalar( ImGuiDataType data_type, ImU64* p_target, ImU64* p_source );
+	void	SetScalarIndirect( ImGuiDataType data_type, void* p_source, int idx, ImU64* value );
 	float	ScalarToFloat( ImGuiDataType data_type, ImU64* p_source );
+	float	ScalarIndirectToFloat( ImGuiDataType data_type, void* p_source, int idx );
+	ImU64	ScalarIndirectToScalar( ImGuiDataType data_type, void* p_source, int idx );
 	ImU64	FloatToScalar( ImGuiDataType data_type, float f_value );
 	ImU64	AddScalar( ImGuiDataType data_type, void* p_a, void* p_b );
 	ImU64	SubScalar( ImGuiDataType data_type, void* p_a, void* p_b );
@@ -480,8 +482,11 @@ namespace ImWidgets{
 	//////////////////////////////////////////////////////////////////////////
 	// DrawList
 	//////////////////////////////////////////////////////////////////////////
-	IMGUI_API void DrawTrianglePointer( ImDrawList* pDrawList, ImVec2 targetPoint, float angle, float size, float thickness, ImU32 col );
-	IMGUI_API void DrawTrianglePointerFilled( ImDrawList* pDrawList, ImVec2 targetPoint, float angle, float size, ImU32 col );
+	IMGUI_API void DrawTriangleCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float angle, float size, float thickness, ImU32 col );
+	IMGUI_API void DrawTriangleCursorFilled( ImDrawList* pDrawList, ImVec2 targetPoint, float angle, float size, ImU32 col );
+
+	IMGUI_API void DrawSignetCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float width, float height, float height_ratio, float align01, float angle, float thickness, ImU32 col );
+	IMGUI_API void DrawSignetFilledCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float width, float height, float height_ratio, float align01, float angle, ImU32 col );
 
 	IMGUI_API void DrawProceduralColor1DNearest( ImDrawList* pDrawList, ImColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX );
 	IMGUI_API void DrawProceduralColor1DBilinear( ImDrawList* pDrawList, ImColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX );
@@ -590,7 +595,7 @@ namespace ImWidgets{
 										  int color_count,
 										  float minX, float maxX,
 										  float minY, float maxY,
-										  ImU32 plotColor, ImDrawFlags flags, float thickness ); // 4 for rgba,rgba,rgba,...; 3 for rgb,rgb,rgb,... or anything else );
+										  ImU32 plotColor, ImDrawFlags flags, float thickness );
 	IMGUI_API void DrawChromaticityLines( ImDrawList* pDrawList,
 										  ImVec2 curPos,
 										  ImVec2 size,
@@ -606,9 +611,12 @@ namespace ImWidgets{
 	// Widgets
 	//////////////////////////////////////////////////////////////////////////
 	IMGUI_API bool HueSelector( char const* label, float hueHeight, float cursorHeight, float* hueCenter, float* hueWidth, float* featherLeft, float* featherRight, int division = 32, float alpha = 1.0f, float hideHueAlpha = 0.75f, float offset = 0.0f );
+	IMGUI_API bool SliderNScalar( char const* label, ImGuiDataType data_type, void* ordered_value, int value_count, void* p_min, void* p_max, float cursor_width, bool show_hover_by_region );
 	IMGUI_API bool Slider2DScalar( char const* pLabel, ImGuiDataType data_type, void* pValueX, void* pValueY, void* p_minX, void* p_maxX, void* p_minY, void* p_maxY );
 	IMGUI_API bool Slider2DFloat( char const* pLabel, float* pValueX, float* pValueY, float v_minX, float v_maxX, float v_minY, float v_maxY );
 	IMGUI_API bool Slider2DInt( char const* pLabel, int* pValueX, void* pValueY, int v_minX, int v_maxX, int v_minY, int v_maxY );
+
+	IMGUI_API bool DragFloatPrecise( char const* label, float* value, float v_min, float v_max, ImGuiSliderFlags flags );
 
 	//////////////////////////////////////////////////////////////////////////
 	// Window Customization

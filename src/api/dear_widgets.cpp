@@ -777,30 +777,125 @@ namespace ImWidgets {
 		}
 	}
 
-	float	ScalarToFloat(ImGuiDataType data_type, ImU64* p_source)
+	void	SetScalarIndirect( ImGuiDataType data_type, void* p_target, int idx, ImU64* p_source )
 	{
-		switch (data_type)
+		switch ( data_type )
 		{
 		case ImGuiDataType_S8:
-			return static_cast<float>(*reinterpret_cast<ImS8*>(p_source));
+			reinterpret_cast< ImS8* >( p_target )[ idx ] = *reinterpret_cast< ImS8* >( p_source );
+			break;
 		case ImGuiDataType_U8:
-			return static_cast<float>(*reinterpret_cast<ImU8*>(p_source));
+			reinterpret_cast< ImU8* >( p_target )[ idx ] = *reinterpret_cast< ImU8* >( p_source );
+			break;
 		case ImGuiDataType_S16:
-			return static_cast<float>(*reinterpret_cast<ImS16*>(p_source));
+			reinterpret_cast< ImS16* >( p_target )[ idx ] = *reinterpret_cast< ImS16* >( p_source );
+			break;
 		case ImGuiDataType_U16:
-			return static_cast<float>(*reinterpret_cast<ImU16*>(p_source));
+			reinterpret_cast< ImU16* >( p_target )[ idx ] = *reinterpret_cast< ImU16* >( p_source );
+			break;
 		case ImGuiDataType_S32:
-			return static_cast<float>(*reinterpret_cast<ImS32*>(p_source));
+			reinterpret_cast< ImS32* >( p_target )[ idx ] = *reinterpret_cast< ImS32* >( p_source );
+			break;
 		case ImGuiDataType_U32:
-			return static_cast<float>(*reinterpret_cast<ImU32*>(p_source));
+			reinterpret_cast< ImU64* >( p_target )[ idx ] = *reinterpret_cast< ImU32* >( p_source );
+			break;
 		case ImGuiDataType_S64:
-			return static_cast<float>(*reinterpret_cast<ImS64*>(p_source));
+			reinterpret_cast< ImS64* >( p_target )[ idx ] = *reinterpret_cast< ImS64* >( p_source );
+			break;
 		case ImGuiDataType_U64:
-			return static_cast<float>(*reinterpret_cast<ImU64*>(p_source));
+			reinterpret_cast< ImU64* >( p_target )[ idx ] = *reinterpret_cast< ImU64* >( p_source );
+			break;
 		case ImGuiDataType_Float:
-			return static_cast<float>(*reinterpret_cast<float*>(p_source));
+			reinterpret_cast< float* >( p_target )[ idx ] = *reinterpret_cast< float* >( p_source );
+			break;
 		case ImGuiDataType_Double:
-			return static_cast<float>(*reinterpret_cast<double*>(p_source));
+			reinterpret_cast< double* >( p_target )[ idx ] = *reinterpret_cast< double* >( p_source );
+			break;
+		}
+	}
+
+	float	ScalarToFloat(ImGuiDataType data_type, ImU64* p_source)
+	{
+		switch ( data_type )
+		{
+		case ImGuiDataType_S8:
+			return static_cast< float >( *reinterpret_cast< ImS8* >( p_source ) );
+		case ImGuiDataType_U8:
+			return static_cast< float >( *reinterpret_cast< ImU8* >( p_source ) );
+		case ImGuiDataType_S16:
+			return static_cast< float >( *reinterpret_cast< ImS16* >( p_source ) );
+		case ImGuiDataType_U16:
+			return static_cast< float >( *reinterpret_cast< ImU16* >( p_source ) );
+		case ImGuiDataType_S32:
+			return static_cast< float >( *reinterpret_cast< ImS32* >( p_source ) );
+		case ImGuiDataType_U32:
+			return static_cast< float >( *reinterpret_cast< ImU32* >( p_source ) );
+		case ImGuiDataType_S64:
+			return static_cast< float >( *reinterpret_cast< ImS64* >( p_source ) );
+		case ImGuiDataType_U64:
+			return static_cast< float >( *reinterpret_cast< ImU64* >( p_source ) );
+		case ImGuiDataType_Float:
+			return static_cast< float >( *reinterpret_cast< float* >( p_source ) );
+		case ImGuiDataType_Double:
+			return static_cast< float >( *reinterpret_cast< double* >( p_source ) );
+		}
+
+		return 0.0f;
+	}
+
+	float	ScalarIndirectToFloat( ImGuiDataType data_type, void* p_source, int idx )
+	{
+		switch ( data_type )
+		{
+		case ImGuiDataType_S8:
+			return static_cast< float >( reinterpret_cast< ImS8* >( p_source )[ idx ] );
+		case ImGuiDataType_U8:
+			return static_cast< float >( reinterpret_cast< ImU8* >( p_source )[ idx ] );
+		case ImGuiDataType_S16:
+			return static_cast< float >( reinterpret_cast< ImS16* >( p_source )[ idx ] );
+		case ImGuiDataType_U16:
+			return static_cast< float >( reinterpret_cast< ImU16* >( p_source )[ idx ] );
+		case ImGuiDataType_S32:
+			return static_cast< float >( reinterpret_cast< ImS32* >( p_source )[ idx ] );
+		case ImGuiDataType_U32:
+			return static_cast< float >( reinterpret_cast< ImU32* >( p_source )[ idx ] );
+		case ImGuiDataType_S64:
+			return static_cast< float >( reinterpret_cast< ImS64* >( p_source )[ idx ] );
+		case ImGuiDataType_U64:
+			return static_cast< float >( reinterpret_cast< ImU64* >( p_source )[ idx ] );
+		case ImGuiDataType_Float:
+			return static_cast< float >( reinterpret_cast< float* >( p_source )[ idx ] );
+		case ImGuiDataType_Double:
+			return static_cast< float >( reinterpret_cast< double* >( p_source )[ idx ] );
+		}
+
+		return 0.0f;
+	}
+
+	ImU64	ScalarIndirectToScalar( ImGuiDataType data_type, void* p_source, int idx )
+	{
+		switch ( data_type )
+		{
+		case ImGuiDataType_S8:
+			return static_cast< ImU64 >( reinterpret_cast< ImS8* >( p_source )[ idx ] );
+		case ImGuiDataType_U8:
+			return static_cast< ImU64 >( reinterpret_cast< ImU8* >( p_source )[ idx ] );
+		case ImGuiDataType_S16:
+			return static_cast< ImU64 >( reinterpret_cast< ImS16* >( p_source )[ idx ] );
+		case ImGuiDataType_U16:
+			return static_cast< ImU64 >( reinterpret_cast< ImU16* >( p_source )[ idx ] );
+		case ImGuiDataType_S32:
+			return static_cast< ImU64 >( reinterpret_cast< ImS32* >( p_source )[ idx ] );
+		case ImGuiDataType_U32:
+			return static_cast< ImU64 >( reinterpret_cast< ImU32* >( p_source )[ idx ] );
+		case ImGuiDataType_S64:
+			return static_cast< ImU64 >( reinterpret_cast< ImS64* >( p_source )[ idx ] );
+		case ImGuiDataType_U64:
+			return static_cast< ImU64 >( reinterpret_cast< ImU64* >( p_source )[ idx ] );
+		case ImGuiDataType_Float:
+			return static_cast< ImU64 >( reinterpret_cast< float* >( p_source )[ idx ] );
+		case ImGuiDataType_Double:
+			return static_cast< ImU64 >( reinterpret_cast< double* >( p_source )[ idx ] );
 		}
 
 		return 0.0f;
@@ -1566,8 +1661,10 @@ namespace ImWidgets {
 		float cos2pi_3 = ImCos( ( 2.0f / 3.0f ) * IM_PI );
 		float sin2pi_3 = ImSin( ( 2.0f / 3.0f ) * IM_PI );
 
-		float cos0 = ImCos( angle );
-		float sin0 = ImSin( angle );
+		// minus to have the pointer turning in positive
+		// PI/2 to have the triangle pointing up when angle == 0.0f
+		float cos0 = ImCos( -angle - IM_PI * 0.5f );
+		float sin0 = ImSin( -angle - IM_PI * 0.5f );
 
 		ImVec2 center = targetPoint + ImVec2( -1.0f, 0.0f );
 		b = ImVec2( cos2pi_3 - 1.0f, sin2pi_3 );
@@ -1578,7 +1675,7 @@ namespace ImWidgets {
 		c = ImRotate( c, cos0, sin0 ) * 2.0f * height / 3.0f + targetPoint;
 	}
 
-	void DrawTrianglePointer( ImDrawList* pDrawList, ImVec2 targetPoint, float angle, float size, float thickness, ImU32 col )
+	void DrawTriangleCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float angle, float size, float thickness, ImU32 col )
 	{
 		ImVec2 a, b, c;
 		GetTrianglePointer( a, b, c, targetPoint, angle, size );
@@ -1586,12 +1683,59 @@ namespace ImWidgets {
 		pDrawList->AddTriangle( a, b, c, col, thickness );
 	}
 
-	void DrawTrianglePointerFilled( ImDrawList* pDrawList, ImVec2 targetPoint, float angle, float size, ImU32 col )
+	void DrawTriangleCursorFilled( ImDrawList* pDrawList, ImVec2 targetPoint, float angle, float size, ImU32 col )
 	{
 		ImVec2 a, b, c;
 		GetTrianglePointer( a, b, c, targetPoint, angle, size );
 
 		pDrawList->AddTriangleFilled( a, b, c, col );
+	}
+
+	void GetRotatePoints( ImVec2* pts, int pts_count, ImVec2 pivot, float angle )
+	{
+		float cos0 = ImCos( angle );
+		float sin0 = ImSin( angle );
+		ImVec2 t;
+		for ( int k = 0; k < pts_count; ++k )
+		{
+			t = pts[ k ] - pivot;
+			ImVec2 r;
+			r.x = t.x * cos0 - t.y * sin0;
+			r.y = t.x * sin0 + t.y * cos0;
+			pts[ k ] = r + pivot;
+		}
+	}
+
+	void ImInternalGetSignetVertices( ImVec2* pts, int pts_count, ImVec2 targetPoint, float width, float height, float height_ratio, float align01, float angle )
+	{
+		float left = ImLerp( targetPoint.x - width, targetPoint.x, align01 );
+		float right = left + width;
+		float top = ImLerp( targetPoint.y, targetPoint.y + height, height_ratio );
+		float bottom = targetPoint.y + height;
+
+		pts[ 0 ] = targetPoint;
+		pts[ 1 ] = ImVec2( left, top );
+		pts[ 2 ] = ImVec2( left, bottom );
+		pts[ 3 ] = ImVec2( right, bottom );
+		pts[ 4 ] = ImVec2( right, top );
+
+		GetRotatePoints( &pts[ 0 ], pts_count, targetPoint, angle);
+	}
+
+	void DrawSignetCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float width, float height, float height_ratio, float align01, float angle, float thickness, ImU32 col )
+	{
+		ImVec2 pts[ 5 ];
+		ImInternalGetSignetVertices( &pts[ 0 ], 5, targetPoint, width, height, height_ratio, align01, angle );
+
+		pDrawList->AddPolyline( &pts[ 0 ], 5, col, ImDrawFlags_Closed, thickness);
+	}
+
+	void DrawSignetFilledCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float width, float height, float height_ratio, float align01, float angle, ImU32 col )
+	{
+		ImVec2 pts[ 5 ];
+		ImInternalGetSignetVertices( &pts[ 0 ], 5, targetPoint, width, height, height_ratio, align01, angle );
+
+		pDrawList->AddConvexPolyFilled( &pts[ 0 ], 5, col );
 	}
 
 	void DrawProceduralColor1DNearest( ImDrawList* pDrawList, ImColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX )
@@ -2356,6 +2500,7 @@ namespace ImWidgets {
 		}
 		return IM_COL32( 0, 0, 0, ImPow( 1.0f - val, 1.0f / 2.2f ) * 255 );
 	}
+
 	bool HueSelector( char const* label, float hueHeight, float cursorHeight, float* hueCenter, float* hueWidth, float* featherLeft, float* featherRight, int division, float alpha, float hideHueAlpha, float offset )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
@@ -2443,9 +2588,166 @@ namespace ImWidgets {
 
 		// Render grab
 		float pos = ImLerp( cursor_bb.Min.x, cursor_bb.Max.x, *hueCenter );
-		DrawTrianglePointerFilled( window->DrawList, ImVec2( pos, cursor_bb.Min.y ), -IM_PI * 0.5f, cursorSize, IM_COL32( 255, 255, 255, 255 ) );
+		DrawTriangleCursorFilled( window->DrawList, ImVec2( pos, cursor_bb.Min.y ), -IM_PI * 0.5f, cursorSize, IM_COL32( 255, 255, 255, 255 ) );
 
 		return value_changed;
+	}
+
+	bool SliderNScalar( char const* label, ImGuiDataType data_type, void* ordered_value, int value_count, void* p_min, void* p_max, float cursor_width, bool show_hover_by_region )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		IM_ASSERT( value_count > 1 );
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		const ImGuiID id = window->GetID( label );
+		const float w = ImGui::CalcItemWidth();
+
+		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
+
+		const ImRect frame_bb( window->DC.CursorPos + ImVec2(cursor_width , 0.0f), window->DC.CursorPos + ImVec2(w - cursor_width, label_size.y + style.FramePadding.y * 2.0f));
+		const ImRect total_bb( frame_bb.Min, frame_bb.Max + ImVec2( ( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f ), 0.0f ) );
+
+		const ImVec2 curPos = window->DC.CursorPos;
+
+		float fMin = ScalarToFloat( data_type, ( ImU64* )p_min );
+		float fMax = ScalarToFloat( data_type, ( ImU64* )p_max );
+
+		ImVector<ImGuiID> ids;
+		ids.resize( value_count );
+		ids[ 0 ] = window->GetID( id );
+		for ( int k = 1; k < value_count; ++k )
+		{
+			ids[ k ] = window->GetID( ids[ k - 1 ] );
+		}
+
+		ImVector<float> centers;
+		centers.resize(value_count + 1);
+		centers[ 0 ] = Rescale01( fMin, fMin, fMax );
+		for ( int k = 1; k < value_count; ++k )
+		{
+			float x0 = ScalarIndirectToFloat( data_type, ordered_value, k - 1 );
+			float x1 = ScalarIndirectToFloat( data_type, ordered_value, k );
+			centers[ k ] = Rescale01( x0 * 0.5f + x1 * 0.5f, fMin, fMax );
+		}
+		centers[ value_count ] = Rescale01( fMax, fMin, fMax );
+
+		ImVector< ImRect > drag_bbs;
+		drag_bbs.resize( value_count );
+		for ( int k = 1; k <= value_count; ++k )
+		{
+			drag_bbs[ k - 1 ] = ImRect( 
+					ImVec2( ImLerp( frame_bb.Min.x, frame_bb.Max.x, centers[ k - 1 ] ), frame_bb.Min.y ),
+					ImVec2( ImLerp( frame_bb.Min.x, frame_bb.Max.x, centers[ k     ] ), frame_bb.Max.y )
+				);
+		}
+		//srand( 97 );
+		//for ( int k = 0; k < value_count; ++k )
+		//{
+		//	ImRect& bb = drag_bbs[ k ];
+		//	window->DrawList->AddRect( bb.Min, bb.Max, IM_COL32( rand() % 255, rand() % 255, rand() % 255, 255 ), 0, 0, 5 );
+		//}
+		//srand( 97 );
+		//for ( int k = 0; k < value_count; ++k )
+		//{
+		//	float x = ImLerp( frame_bb.Min.x, frame_bb.Max.x, ScalarIndirectToFloat( data_type, ordered_value, k ) / ( ScalarToFloat( data_type, ( ImU64* )p_max ) - ScalarToFloat( data_type, ( ImU64* )p_min ) ) );
+		//	window->DrawList->AddLine( ImVec2( x, frame_bb.Min.y ), ImVec2( x, frame_bb.Max.y ), IM_COL32( rand() % 255, rand() % 255, rand() % 255, 255 ), 5 );
+		//}
+
+		ImGui::ItemSize( total_bb, style.FramePadding.y );
+
+		// Slider behavior
+		ImRect grab_bb;
+		float zero = 0.0f;
+		float one = 1.0f;
+		bool value_changed = false;
+		bool full_hovered = false;
+		bool is_active = false;
+		for ( int k = 0; k < value_count; ++k )
+		{
+			ImRect& bb = drag_bbs[ k ];
+
+			if ( !ImGui::ItemAdd( total_bb, ids[ k ], &bb, 0) )
+				return false;
+
+			const bool hovered = ImGui::ItemHoverable( bb, ids[ k ], g.LastItemData.InFlags );
+			full_hovered |= hovered;
+
+			// Tabbing or CTRL-clicking on Slider turns it into an input box
+			const bool clicked = hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, ids[ k ] );
+			const bool make_active = ( clicked || g.NavActivateId == ids[ k ] );
+			if ( make_active && clicked )
+				ImGui::SetKeyOwner( ImGuiKey_MouseLeft, ids[ k ] );
+
+			if ( make_active )
+			{
+				ImGui::SetActiveID( ids[ k ], window );
+				ImGui::SetFocusID( ids[ k ], window );
+				ImGui::FocusWindow( window );
+				g.ActiveIdUsingNavDirMask |= ( 1 << ImGuiDir_Left ) | ( 1 << ImGuiDir_Right );
+			}
+
+			is_active |= ( g.ActiveId == ids[ k ] );
+			if ( show_hover_by_region )
+			{
+				// Draw frame
+				const ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == ids[ k ] ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
+				ImGui::RenderNavHighlight( bb, ids[ k ] );
+				ImGui::RenderFrame( bb.Min, bb.Max, frame_col, true, g.Style.FrameRounding );
+			}
+
+			ImU64 currentValue = ScalarIndirectToScalar( data_type, ordered_value, k );
+			float local_min = bb.Min.x;
+			float local_max = bb.Max.x;
+			local_min = Rescale(local_min, frame_bb.Min.x, frame_bb.Max.x, fMin, fMax);
+			local_max = Rescale(local_max, frame_bb.Min.x, frame_bb.Max.x, fMin, fMax);
+			ImU64 v_local_min = FloatToScalar( data_type, local_min );
+			ImU64 v_local_max = FloatToScalar( data_type, local_max );
+			float signet01;
+			if ( k == 0 )
+				signet01 = 0.0f;
+			else if ( k == value_count - 1 )
+				signet01 = 1.0f;
+			else
+				signet01 = 0.5f;
+			float x = ImLerp( frame_bb.Min.x, frame_bb.Max.x, ScalarIndirectToFloat( data_type, ordered_value, k ) / ( ScalarToFloat( data_type, ( ImU64* )p_max ) - ScalarToFloat( data_type, ( ImU64* )p_min ) ) );
+			DrawSignetFilledCursor( window->DrawList, ImVec2( x, frame_bb.Min.y ), cursor_width, frame_bb.GetHeight(), 1.0f / 3.0f, signet01, 0.0f, IM_COL32( 255, 0, 0, 255 ) );
+			bool current_value_changed = ImGui::SliderBehavior( bb, ids[ k ], ImGuiDataType_Float, &currentValue, &v_local_min, &v_local_max, NULL, ImGuiSliderFlags_NoInput | ImGuiSliderFlags_NoRoundToFormat, &grab_bb);
+			if ( current_value_changed )
+			{
+				SetScalarIndirect( data_type, ordered_value, k, &currentValue );
+				ImGui::MarkItemEdited( ids[ k ] );
+			}
+			value_changed |= current_value_changed;
+		}
+		if ( !show_hover_by_region )
+		{
+			const ImU32 frame_col = ImGui::GetColorU32( is_active ? ImGuiCol_FrameBgActive : full_hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
+			ImGui::RenderNavHighlight( frame_bb, id );
+			ImGui::RenderFrame( frame_bb.Min, frame_bb.Max, frame_col, true, g.Style.FrameRounding );
+		}
+		for ( int k = 0; k < value_count; ++k )
+		{
+			ImRect& bb = drag_bbs[ k ];
+
+			float signet01;
+			if ( k == 0 )
+				signet01 = 0.0f;
+			else if ( k == value_count - 1 )
+				signet01 = 1.0f;
+			else
+				signet01 = 0.5f;
+			float x = ImLerp( frame_bb.Min.x, frame_bb.Max.x, ScalarIndirectToFloat( data_type, ordered_value, k ) / ( ScalarToFloat( data_type, ( ImU64* )p_max ) - ScalarToFloat( data_type, ( ImU64* )p_min ) ) );
+			DrawSignetFilledCursor( window->DrawList, ImVec2( x, frame_bb.Min.y ), cursor_width, frame_bb.GetHeight(), 1.0f / 3.0f, signet01, 0.0f, IM_COL32( 255, 0, 0, 255 ) );
+		}
+
+		if ( label_size.x > 0.0f )
+			ImGui::RenderText( ImVec2( frame_bb.Max.x + style.ItemInnerSpacing.x + cursor_width, frame_bb.Min.y + style.FramePadding.y ), label );
+
+		return false;
 	}
 
 	bool Slider2DScalar( char const* label, ImGuiDataType data_type, void* p_valueX, void* p_valueY, void* p_minX, void* p_maxX, void* p_minY, void* p_maxY )
@@ -2466,18 +2768,24 @@ namespace ImWidgets {
 
 		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
 
+		// TODO: Move those to style
 		float downScale = 0.75f;
 		float dragX_placement = 0.75f;
 		float dragY_placement = 0.75f;
-		float dragX_thickness = 16.0f;
-		float dragY_thickness = 16.0f;
+		float dragX_thickness = 32.0f;
+		float dragY_thickness = 32.0f;
 		float border_thickness = 2.0f;
 		float line_thickness = 3.0f;
-		ImVec4 vBlue( 70.0f / 255.0f, 102.0f / 255.0f, 230.0f / 255.0f, 1.0f ); // TODO: choose from style
+		float text_lerp_x = 0.5f;
+		float text_lerp_y = 0.5f;
+		float cursor_radius = 8.0f;
+		int cursor_segments = 4;
+		//ImVec4 vBlue( 70.0f / 255.0f, 102.0f / 255.0f, 230.0f / 255.0f, 1.0f ); // TODO: choose from style
+		ImVec4 vBlue( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f ); // TODO: choose from style
 		ImVec4 vOrange( 255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f ); // TODO: choose from style
 		ImU32 uBlue = ImGui::GetColorU32( vBlue );
 		ImU32 uOrange = ImGui::GetColorU32( vOrange );
-		float fCursorOff = 10.0f;
+		float fCursorOff = 16.0f;
 
 		const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, w ) );
 		const ImRect frame_bb_drag( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w * downScale, w * downScale ) );
@@ -2598,20 +2906,8 @@ namespace ImWidgets {
 			formatY = " " + formatY;
 		}
 
-		char pBufferX[ 64 ];
-		char pBufferY[ 64 ];
-		ImGui::DataTypeFormatString( pBufferX, IM_ARRAYSIZE( pBufferX ), data_type, p_valueX, formatX.c_str() );
-		ImGui::DataTypeFormatString( pBufferY, IM_ARRAYSIZE( pBufferY ), data_type, p_valueY, formatY.c_str() );
-
-		ImU32 const uTextCol = ImGui::ColorConvertFloat4ToU32( ImGui::GetStyle().Colors[ ImGuiCol_Text ] );
-
-		ImGui::SetWindowFontScale( 0.75f );
-
-		ImVec2 const vXSize = ImGui::CalcTextSize( pBufferX );
-		ImVec2 const vYSize = ImGui::CalcTextSize( pBufferY );
-
 		// Cursor
-		pDrawList->AddCircleFilled( vCursorPos, 5.0f, uBlue, 16 );
+		pDrawList->AddCircleFilled( vCursorPos, cursor_radius, uBlue, cursor_segments );
 
 		// Vertical Line
 		if ( fScaleY > 2.0f * fYLimit )
@@ -2655,15 +2951,27 @@ namespace ImWidgets {
 			pDrawList->AddLine( ImVec2( frame_bb_drag.Max.x, frame_bb_drag.Max.y ), ImVec2( vCursorPos.x + fCursorOff, frame_bb_drag.Max.y ), uBlue, border_thickness );
 
 		// Add Text
+		char pBufferX[ 64 ];
+		char pBufferY[ 64 ];
+		ImGui::DataTypeFormatString( pBufferX, IM_ARRAYSIZE( pBufferX ), data_type, p_valueX, formatX.c_str() );
+		ImGui::DataTypeFormatString( pBufferY, IM_ARRAYSIZE( pBufferY ), data_type, p_valueY, formatY.c_str() );
+
+		ImU32 const uTextCol = ImGui::ColorConvertFloat4ToU32( ImGui::GetStyle().Colors[ ImGuiCol_Text ] );
+
+		ImGui::SetWindowFontScale( 0.75f );
+
+		ImVec2 const vXSize = ImGui::CalcTextSize( pBufferX );
+		ImVec2 const vYSize = ImGui::CalcTextSize( pBufferY );
+
 		pDrawList->AddText(
 			ImVec2(
-				ImMin( ImMax( vCursorPos.x - vXSize.x * 0.5f, frame_bb_drag.Min.x ), frame_bb_drag.Min.x + frame_bb_drag.GetWidth() - vXSize.x ),
-				frame_bb_drag.Max.y + fCursorOff ),
+				ImClamp( vCursorPos.x - vXSize.x * 0.5f, frame_bb_drag.Min.x, frame_bb_drag.Min.x + frame_bb_drag.GetWidth() - vXSize.x ),
+				ImLerp( frame_bb_drag.Max.y, frame_bb_dragX.Min.y - vXSize.y, text_lerp_x ) ),
 			uTextCol,
 			pBufferX );
 		pDrawList->AddText(
-			ImVec2( frame_bb_drag.Max.x + fCursorOff, ImMin( ImMax( vCursorPos.y - vYSize.y * 0.5f, frame_bb_drag.Min.y ),
-															 frame_bb_drag.Min.y + frame_bb_drag.GetHeight() - vYSize.y ) ),
+			ImVec2( ImLerp( frame_bb_drag.Max.x, frame_bb_dragY.Min.x - vYSize.x, text_lerp_y ),
+					ImClamp( vCursorPos.y - vXSize.y * 0.5f, frame_bb_drag.Min.y, frame_bb_drag.Min.y + frame_bb_drag.GetHeight() - vYSize.y ) ),
 			uTextCol,
 			pBufferY );
 
@@ -2678,6 +2986,132 @@ namespace ImWidgets {
 	bool Slider2DInt( char const* pLabel, int* pValueX, void* pValueY, int v_minX, int v_maxX, int v_minY, int v_maxY )
 	{
 		return Slider2DScalar( pLabel, ImGuiDataType_S32, pValueX, pValueY, &v_minX, &v_maxX, &v_minY, &v_maxY );
+	}
+
+	bool DragFloatPrecise( char const* label, float* value, float v_min, float v_max, ImGuiSliderFlags flags )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		const ImGuiID id = window->GetID( label );
+		const ImGuiID idP = window->GetID( id );
+		const float w = ImGui::CalcItemWidth();
+
+		const ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
+		const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, label_size.y + style.FramePadding.y * 2.0f ) );
+		const ImRect total_bb( frame_bb.Min, frame_bb.Max + ImVec2( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f, 0.0f ) );
+
+		float precision_block_size = 128.0f;
+
+		const bool temp_input_allowed = ( flags & ImGuiSliderFlags_NoInput ) == 0;
+		ImGui::ItemSize( total_bb, style.FramePadding.y );
+		if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, temp_input_allowed ? ImGuiItemFlags_Inputable : 0 ) )
+			return false;
+
+		// Default format string when passing NULL
+		const bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.InFlags );
+		bool temp_input_is_active = temp_input_allowed && ImGui::TempInputIsActive( id );
+		if ( !temp_input_is_active )
+		{
+			// Tabbing or CTRL-clicking on Drag turns it into an InputText
+			const bool clicked = hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id );
+			const bool double_clicked = ( hovered && g.IO.MouseClickedCount[ 0 ] == 2 && ImGui::TestKeyOwner( ImGuiKey_MouseLeft, id ) );
+			const bool make_active = ( clicked || double_clicked || g.NavActivateId == id );
+			if ( make_active && ( clicked || double_clicked ) )
+				ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+			if ( make_active && temp_input_allowed )
+				if ( ( clicked && g.IO.KeyCtrl ) || double_clicked || ( g.NavActivateId == id && ( g.NavActivateFlags & ImGuiActivateFlags_PreferInput ) ) )
+					temp_input_is_active = true;
+
+			// (Optional) simple click (without moving) turns Drag into an InputText
+			if ( g.IO.ConfigDragClickToInputText && temp_input_allowed && !temp_input_is_active )
+				if ( g.ActiveId == id && hovered && g.IO.MouseReleased[ 0 ] && !ImGui::IsMouseDragPastThreshold( 0, g.IO.MouseDragThreshold * ImGui::GetIO().MouseDragThreshold ) )
+				{
+					g.NavActivateId = id;
+					g.NavActivateFlags = ImGuiActivateFlags_PreferInput;
+					temp_input_is_active = true;
+				}
+
+			if ( make_active && !temp_input_is_active )
+			{
+				ImGui::SetActiveID( id, window );
+				ImGui::SetFocusID( id, window );
+				ImGui::FocusWindow( window );
+				g.ActiveIdUsingNavDirMask = ( 1 << ImGuiDir_Left ) | ( 1 << ImGuiDir_Right );
+			}
+		}
+
+		//float fLog = ImMax< float >( ImRound( ImAbs( ImLog( ImAbs( ImFract( *value ) ) )/ImLog( 10.0f ) ) ), 5.0f );
+		//float fLog;
+		//float fract = ImAbs( ImFract( *value ) );
+		//if ( *value < 1.0f && fract > 0.0f )
+		//	fLog = ImMax( ImAbs( ImLog( fract ) / ImLog( 10.0f ) ), 1.0f );
+		//else
+		//if ( *value != 0 )
+		//	fLog = ImRound( ImLog( ImAbs( *value ) ) / ImLog( 10.0f ) );
+		//else
+		//	fLog = 1.0f;
+
+		//int log = ( int )fLog;
+		//std::string sFormat( 16, '\0' );
+		//ImFormatString( &sFormat[ 0 ], 16, "%%.%df", log );
+
+		if ( temp_input_is_active )
+		{
+			// Only clamp CTRL+Click input when ImGuiSliderFlags_AlwaysClamp is set
+			const bool is_clamp_input = ( flags & ImGuiSliderFlags_AlwaysClamp ) != 0 && ( ImGui::DataTypeCompare( ImGuiDataType_Float, &v_min, &v_max ) < 0 );
+			//return ImGui::TempInputScalar( frame_bb, id, label, ImGuiDataType_Float, value, sFormat.c_str(), is_clamp_input ? &v_min : NULL, is_clamp_input ? &v_max : NULL );
+			return ImGui::TempInputScalar( frame_bb, id, label, ImGuiDataType_Float, value, "%.7f", is_clamp_input ? &v_min : NULL, is_clamp_input ? &v_max : NULL);
+		}
+
+		float fLog;
+		if ( ImGui::IsItemActive() )
+		{
+			float precision_block_size_half = precision_block_size * 0.5f;
+			ImVec2 bb_center = frame_bb.GetCenter();
+			const ImRect drag_top_bb( ImVec2( bb_center.x - precision_block_size_half, frame_bb.Min.y - precision_block_size ),
+									  ImVec2( bb_center.x + precision_block_size_half, frame_bb.Min.y ) );
+			const ImRect drag_bottom_bb( ImVec2( bb_center.x - precision_block_size_half, frame_bb.Max.y ),
+										 ImVec2( bb_center.x + precision_block_size_half, frame_bb.Max.y + precision_block_size ) );
+			window->DrawList->AddRect( drag_top_bb.Min, drag_top_bb.Max, IM_COL32( 255, 0, 0, 255 ) );
+			window->DrawList->AddRect( drag_bottom_bb.Min, drag_bottom_bb.Max, IM_COL32( 0, 255, 0, 255 ) );
+			ImGui::ItemAdd( drag_top_bb, idP, NULL, ImGuiItemFlags_AllowOverlap );
+			if ( ImGui::IsItemHovered() )
+			{
+				fLog = 10.0f;
+			}
+			ImGui::ItemAdd( drag_bottom_bb, idP, NULL, ImGuiItemFlags_AllowOverlap );
+			if ( ImGui::IsItemHovered() )
+			{
+				fLog = 0.01f;
+			}
+		}
+
+		// Draw frame
+		const ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
+		ImGui::RenderNavHighlight( frame_bb, id );
+		ImGui::RenderFrame( frame_bb.Min, frame_bb.Max, frame_col, true, style.FrameRounding );
+
+		// Drag behavior
+		//const bool value_changed = ImGui::DragBehavior( id, ImGuiDataType_Float, value, fLog, &v_min, &v_max, sFormat.c_str(), 0);
+		const bool value_changed = ImGui::DragBehavior( id, ImGuiDataType_Float, value, fLog, &v_min, &v_max, "%.7f", 0 );
+		if ( value_changed )
+			ImGui::MarkItemEdited( id );
+
+		// Display value using user-provided display format so user can add prefix/suffix/decorations to the value.
+		char value_buf[ 64 ];
+		const char* value_buf_end = value_buf + ImGui::DataTypeFormatString( value_buf, IM_ARRAYSIZE( value_buf ), ImGuiDataType_Float, value, "%.7f" );
+		if ( g.LogEnabled )
+			ImGui::LogSetNextTextDecoration( "{", "}" );
+		ImGui::RenderTextClipped( frame_bb.Min, frame_bb.Max, value_buf, value_buf_end, NULL, ImVec2( 0.5f, 0.5f ) );
+
+		if ( label_size.x > 0.0f )
+			ImGui::RenderText( ImVec2( frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + style.FramePadding.y ), label );
+
+		return value_changed;
 	}
 
 	//////////////////////////////////////////////////////////////////////////

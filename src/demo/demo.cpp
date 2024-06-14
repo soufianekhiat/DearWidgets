@@ -248,10 +248,10 @@ namespace ImWidgets {
 				pDrawList->AddCircleFilled( ImVec2( curPos.x + 3.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
 				pDrawList->AddCircleFilled( ImVec2( curPos.x + 5.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
 				pDrawList->AddCircleFilled( ImVec2( curPos.x + 7.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
-				ImWidgets::DrawTrianglePointer( pDrawList, ImVec2( curPos.x + 1.0f * 32.0f, curPos.y + fPointerLine ), angle, size, thickness, IM_COL32( 255, 0, 0, 255 ) );
-				ImWidgets::DrawTrianglePointer( pDrawList, ImVec2( curPos.x + 3.0f * 32.0f, curPos.y + fPointerLine ), angle, size, thickness, IM_COL32( 255, 0, 0, 255 ) );
-				ImWidgets::DrawTrianglePointer( pDrawList, ImVec2( curPos.x + 5.0f * 32.0f, curPos.y + fPointerLine ), angle, size, thickness, IM_COL32( 255, 0, 0, 255 ) );
-				ImWidgets::DrawTrianglePointer( pDrawList, ImVec2( curPos.x + 7.0f * 32.0f, curPos.y + fPointerLine ), angle, size, thickness, IM_COL32( 255, 0, 0, 255 ) );
+				ImWidgets::DrawTriangleCursor( pDrawList, ImVec2( curPos.x + 1.0f * 32.0f, curPos.y + fPointerLine ), angle, size, thickness, IM_COL32( 255, 0, 0, 255 ) );
+				ImWidgets::DrawTriangleCursor( pDrawList, ImVec2( curPos.x + 3.0f * 32.0f, curPos.y + fPointerLine ), angle, size, thickness, IM_COL32( 255, 0, 0, 255 ) );
+				ImWidgets::DrawTriangleCursor( pDrawList, ImVec2( curPos.x + 5.0f * 32.0f, curPos.y + fPointerLine ), angle, size, thickness, IM_COL32( 255, 0, 0, 255 ) );
+				ImWidgets::DrawTriangleCursor( pDrawList, ImVec2( curPos.x + 7.0f * 32.0f, curPos.y + fPointerLine ), angle, size, thickness, IM_COL32( 255, 0, 0, 255 ) );
 
 				fPointerLine *= 3.0f;
 				pDrawList->AddLine( ImVec2( curPos.x + 0.5f * 32.0f, curPos.y + fPointerLine ), ImVec2( curPos.x + 3.5f * 32.0f, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f );
@@ -261,10 +261,41 @@ namespace ImWidgets {
 				pDrawList->AddCircleFilled( ImVec2( curPos.x + 3.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
 				pDrawList->AddCircleFilled( ImVec2( curPos.x + 5.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
 				pDrawList->AddCircleFilled( ImVec2( curPos.x + 7.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
-				ImWidgets::DrawTrianglePointerFilled( pDrawList, ImVec2( curPos.x + 1.0f * 32.0f, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
-				ImWidgets::DrawTrianglePointerFilled( pDrawList, ImVec2( curPos.x + 3.0f * 32.0f, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
-				ImWidgets::DrawTrianglePointerFilled( pDrawList, ImVec2( curPos.x + 5.0f * 32.0f, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
-				ImWidgets::DrawTrianglePointerFilled( pDrawList, ImVec2( curPos.x + 7.0f * 32.0f, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
+				ImWidgets::DrawTriangleCursorFilled( pDrawList, ImVec2( curPos.x + 1.0f * 32.0f, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
+				ImWidgets::DrawTriangleCursorFilled( pDrawList, ImVec2( curPos.x + 3.0f * 32.0f, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
+				ImWidgets::DrawTriangleCursorFilled( pDrawList, ImVec2( curPos.x + 5.0f * 32.0f, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
+				ImWidgets::DrawTriangleCursorFilled( pDrawList, ImVec2( curPos.x + 7.0f * 32.0f, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
+				ImGui::TreePop();
+			}
+			if ( ImGui::TreeNode( "Signet Pointer" ) )
+			{
+				float const widthZone = ImGui::GetContentRegionAvail().x;
+
+				static float angle = 0.0f;
+				static float width = 32.0f;
+				static float height = 64.0f;
+				static float height_ratio = 1.0f / 3.0f;
+				static float align01 = 0.5f;
+				static float thickness = 5.0f;
+				ImGui::SliderAngle( "Angle##Triangle", &angle );
+				ImGui::SliderFloat( "Width##Triangle", &width, 1.0f, 64.0f );
+				ImGui::SliderFloat( "Height##Triangle", &height, 1.0f, 128.0f );
+				ImGui::SliderFloat( "Array Ratio##Triangle", &height_ratio, 0.0f, 1.0f );
+				ImGui::SliderFloat( "Align##Triangle", &align01, 0.0f, 1.0f );
+				ImGui::SliderFloat( "Thickness##Triangle", &thickness, 1.0f, 16.0f );
+
+				ImVec2 curPos = ImGui::GetCursorScreenPos();
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				ImGui::InvisibleButton( "##Zone", ImVec2( widthZone, height * 1.1f ), 0 );
+				ImGui::InvisibleButton( "##Zone", ImVec2( widthZone, height * 1.1f ), 0 );
+				float fPointerLine = 64.0f;
+				pDrawList->AddLine( ImVec2( curPos.x + 0.5f * 32.0f, curPos.y + fPointerLine ), ImVec2( curPos.x + 3.5f * 32.0f, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 1.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 3.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				ImVec4 vBlue( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
+				ImU32 uBlue = ImGui::GetColorU32( vBlue );
+				ImWidgets::DrawSignetCursor( pDrawList, ImVec2( curPos.x + 1.0f * 32.0f, curPos.y + fPointerLine ), width, height, height_ratio, align01, angle, thickness, uBlue );
+				ImWidgets::DrawSignetFilledCursor( pDrawList, ImVec2( curPos.x + 3.0f * 32.0f, curPos.y + fPointerLine ), width, height, height_ratio, align01, angle, uBlue );
 				ImGui::TreePop();
 			}
 			if ( ImGui::TreeNode( "Color Bands" ) )
@@ -619,8 +650,32 @@ namespace ImWidgets {
 			}
 			ImGui::TreePop();
 		}
-		if (ImGui::TreeNode("Widgets"))
+		if ( ImGui::TreeNode( "Widgets" ) )
 		{
+			if ( ImGui::TreeNode( "DragFloatPrecise" ) )
+			{
+				static float value = 100.0f;
+				ImWidgets::DragFloatPrecise( "Value##DragFloatPrecise", &value, -FLT_MAX, FLT_MAX, ImGuiSliderFlags_AlwaysClamp );
+				ImGui::TreePop();
+			}
+			if ( ImGui::TreeNode( "SliderN" ) )
+			{
+				static float value[ 3 ] = { 0.25f, 10.0f, 100.0f };
+				static float min = 0.1f;
+				static float max = 150.0f;
+				ImGui::SetWindowFontScale( 0.75f );
+				ImGui::Text( "Hover per region of influence" );
+				ImGui::SetWindowFontScale( 1.0f );
+				ImWidgets::SliderNScalar( "Values##SliderNRegions", ImGuiDataType_Float, &value, 3, &min, &max, 16.0f, true );
+				ImGui::SetWindowFontScale( 0.75f );
+				ImGui::Text( "Global Hover" );
+				ImGui::SetWindowFontScale( 1.0f );
+				ImWidgets::SliderNScalar( "Values##SliderNGlobal", ImGuiDataType_Float, &value, 3, &min, &max, 16.0f, false );
+				ImGui::DragFloat( "Near Plane", &value[ 0 ], 1.0f, min, value[ 1 ] );
+				ImGui::DragFloat( "Focal Planes", &value[ 1 ], 1.0f, value[ 0 ], value[ 2 ] );
+				ImGui::DragFloat( "Far Planes", &value[ 2 ], 1.0f, value[ 1 ], max );
+				ImGui::TreePop();
+			}
 			if ( ImGui::TreeNode( "Hue Selector" ) )
 			{
 				float const height = 32.0f;
