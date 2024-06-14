@@ -652,12 +652,14 @@ namespace ImWidgets {
 		}
 		if ( ImGui::TreeNode( "Widgets" ) )
 		{
+#if 0
 			if ( ImGui::TreeNode( "DragFloatPrecise" ) )
 			{
 				static float value = 100.0f;
 				ImWidgets::DragFloatPrecise( "Value##DragFloatPrecise", &value, -FLT_MAX, FLT_MAX, ImGuiSliderFlags_AlwaysClamp );
 				ImGui::TreePop();
 			}
+#endif
 			if ( ImGui::TreeNode( "SliderN" ) )
 			{
 				static float value[ 3 ] = { 0.25f, 10.0f, 100.0f };
