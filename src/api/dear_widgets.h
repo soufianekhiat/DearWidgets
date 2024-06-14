@@ -612,11 +612,13 @@ namespace ImWidgets{
 	//////////////////////////////////////////////////////////////////////////
 	IMGUI_API bool HueSelector( char const* label, float hueHeight, float cursorHeight, float* hueCenter, float* hueWidth, float* featherLeft, float* featherRight, int division = 32, float alpha = 1.0f, float hideHueAlpha = 0.75f, float offset = 0.0f );
 	IMGUI_API bool SliderNScalar( char const* label, ImGuiDataType data_type, void* ordered_value, int value_count, void* p_min, void* p_max, float cursor_width, bool show_hover_by_region );
+	IMGUI_API bool SliderNFloat( char const* label, ImGuiDataType data_type, float* ordered_value, int value_count, float v_min, float v_max, float cursor_width, bool show_hover_by_region );
+	IMGUI_API bool SliderNInt( char const* label, ImGuiDataType data_type, int* ordered_value, int value_count, int v_min, int v_max, float cursor_width, bool show_hover_by_region );
 	IMGUI_API bool Slider2DScalar( char const* pLabel, ImGuiDataType data_type, void* pValueX, void* pValueY, void* p_minX, void* p_maxX, void* p_minY, void* p_maxY );
 	IMGUI_API bool Slider2DFloat( char const* pLabel, float* pValueX, float* pValueY, float v_minX, float v_maxX, float v_minY, float v_maxY );
 	IMGUI_API bool Slider2DInt( char const* pLabel, int* pValueX, void* pValueY, int v_minX, int v_maxX, int v_minY, int v_maxY );
 
-	IMGUI_API bool DragFloatPrecise( char const* label, float* value, float v_min, float v_max, ImGuiSliderFlags flags );
+	//IMGUI_API bool DragFloatPrecise( char const* label, float* value, float v_min, float v_max, ImGuiSliderFlags flags );
 
 	//////////////////////////////////////////////////////////////////////////
 	// Window Customization

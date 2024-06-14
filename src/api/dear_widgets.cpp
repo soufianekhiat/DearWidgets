@@ -2750,6 +2750,16 @@ namespace ImWidgets {
 		return false;
 	}
 
+	bool SliderNFloat( char const* label, ImGuiDataType data_type, float* ordered_value, int value_count, float v_min, float v_max, float cursor_width, bool show_hover_by_region )
+	{
+		return SliderNScalar( label, ImGuiDataType_Float, ordered_value, value_count, &v_min, &v_max, cursor_width, show_hover_by_region );
+	}
+
+	bool SliderNInt( char const* label, ImGuiDataType data_type, int* ordered_value, int value_count, int v_min, int v_max, float cursor_width, bool show_hover_by_region )
+	{
+		return SliderNScalar( label, ImGuiDataType_S32, ordered_value, value_count, &v_min, &v_max, cursor_width, show_hover_by_region );
+	}
+
 	bool Slider2DScalar( char const* label, ImGuiDataType data_type, void* p_valueX, void* p_valueY, void* p_minX, void* p_maxX, void* p_minY, void* p_maxY )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
@@ -2988,6 +2998,7 @@ namespace ImWidgets {
 		return Slider2DScalar( pLabel, ImGuiDataType_S32, pValueX, pValueY, &v_minX, &v_maxX, &v_minY, &v_maxY );
 	}
 
+#if 0
 	bool DragFloatPrecise( char const* label, float* value, float v_min, float v_max, ImGuiSliderFlags flags )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
@@ -3113,6 +3124,7 @@ namespace ImWidgets {
 
 		return value_changed;
 	}
+#endif
 
 	//////////////////////////////////////////////////////////////////////////
 	// Window Customization
