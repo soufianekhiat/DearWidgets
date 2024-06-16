@@ -2462,6 +2462,524 @@ namespace ImWidgets {
 	}
 
 	//////////////////////////////////////////////////////////////////////////
+	// Interactions
+	//////////////////////////////////////////////////////////////////////////
+	bool IsTriangleContains( ImVec2 a, ImVec2 b, ImVec2 c, ImVec2 p )
+	{
+		// Compute vectors
+		ImVec2 v0 = { c.x - a.x, c.y - a.y };
+		ImVec2 v1 = { b.x - a.x, b.y - a.y };
+		ImVec2 v2 = { p.x - a.x, p.y - a.y };
+
+		// Compute dot products
+		float dot00 = v0.x * v0.y + v0.y * v0.y;
+		float dot01 = v0.x * v1.x + v0.y * v1.y;
+		float dot02 = v0.x * v2.x + v0.y * v2.y;
+		float dot11 = v1.x * v1.x + v1.y * v1.y;
+		float dot12 = v1.x * v2.x + v1.y * v2.y;
+
+		// Compute barycentric coordinates
+		float invDenom = 1.0f / ( dot00 * dot11 - dot01 * dot01 );
+		float u = ( dot11 * dot02 - dot01 * dot12 ) * invDenom;
+		float v = ( dot00 * dot12 - dot01 * dot02 ) * invDenom;
+
+		// Check if point is in triangle
+		return ( u >= 0.0f ) && ( v >= 0.0f ) && ( u + v < 1.0f );
+	}
+
+	bool IsPolyConvexContains( ImVec2* pts, int pts_count, ImVec2 p )
+	{
+		IM_ASSERT( pts_count >= 3 );
+
+		bool contained = true;
+		for ( int k = 2; k < pts_count; ++k )
+		{
+			ImVec2 a = pts[ k - 2 ];
+			ImVec2 b = pts[ k - 1 ];
+			ImVec2 c = pts[ k - 0 ];
+			contained &= ImTriangleContainsPoint( a, b, c, p );
+		}
+
+		return contained;
+	}
+
+	//-----------------------------------------------------------------------------
+	// [SECTION] ImTriangulator, ImDrawList concave polygon fill
+	// COPY/PASTED FROM IMGUI_DRAW.CPP
+	//-----------------------------------------------------------------------------
+
+	enum ImTriangulatorNodeType0
+	{
+		ImTriangulatorNodeType_Convex,
+		ImTriangulatorNodeType_Ear,
+		ImTriangulatorNodeType_Reflex
+	};
+
+	struct ImTriangulatorNode0
+	{
+		ImTriangulatorNodeType0  Type;
+		int                     Index;
+		ImVec2                  Pos;
+		ImTriangulatorNode0* Next;
+		ImTriangulatorNode0* Prev;
+
+		void    Unlink()
+		{
+			Next->Prev = Prev; Prev->Next = Next;
+		}
+	};
+
+	struct ImTriangulatorNodeSpan0
+	{
+		ImTriangulatorNode0** Data = NULL;
+		int                     Size = 0;
+
+		void    push_back( ImTriangulatorNode0* node )
+		{
+			Data[ Size++ ] = node;
+		}
+		void    find_erase_unsorted( int idx )
+		{
+			for ( int i = Size - 1; i >= 0; i-- ) if ( Data[ i ]->Index == idx )
+			{
+				Data[ i ] = Data[ Size - 1 ]; Size--; return;
+			}
+		}
+	};
+
+	struct ImTriangulator0
+	{
+		static int EstimateTriangleCount( int points_count )
+		{
+			return ( points_count < 3 ) ? 0 : points_count - 2;
+		}
+		static int EstimateScratchBufferSize( int points_count )
+		{
+			return sizeof( ImTriangulatorNode0 ) * points_count + sizeof( ImTriangulatorNode0* ) * points_count * 2;
+		}
+
+		void    Init( const ImVec2* points, int points_count, void* scratch_buffer );
+		void    GetNextTriangle( unsigned int out_triangle[ 3 ] );     // Return relative indexes for next triangle
+
+		// Internal functions
+		void    BuildNodes( const ImVec2* points, int points_count );
+		void    BuildReflexes();
+		void    BuildEars();
+		void    FlipNodeList();
+		bool    IsEar( int i0, int i1, int i2, const ImVec2& v0, const ImVec2& v1, const ImVec2& v2 ) const;
+		void    ReclassifyNode( ImTriangulatorNode0* node );
+
+		// Internal members
+		int                     _TrianglesLeft = 0;
+		ImTriangulatorNode0* _Nodes = NULL;
+		ImTriangulatorNodeSpan0  _Ears;
+		ImTriangulatorNodeSpan0  _Reflexes;
+	};
+
+	// Distribute storage for nodes, ears and reflexes.
+	// FIXME-OPT: if everything is convex, we could report it to caller and let it switch to an convex renderer
+	// (this would require first building reflexes to bail to convex if empty, without even building nodes)
+	void ImTriangulator0::Init( const ImVec2* points, int points_count, void* scratch_buffer )
+	{
+		IM_ASSERT( scratch_buffer != NULL && points_count >= 3 );
+		_TrianglesLeft = EstimateTriangleCount( points_count );
+		_Nodes = ( ImTriangulatorNode0* )scratch_buffer;                          // points_count x Node
+		_Ears.Data = ( ImTriangulatorNode0** )( _Nodes + points_count );                // points_count x Node*
+		_Reflexes.Data = ( ImTriangulatorNode0** )( _Nodes + points_count ) + points_count; // points_count x Node*
+		BuildNodes( points, points_count );
+		BuildReflexes();
+		BuildEars();
+	}
+
+	void ImTriangulator0::BuildNodes( const ImVec2* points, int points_count )
+	{
+		for ( int i = 0; i < points_count; i++ )
+		{
+			_Nodes[ i ].Type = ImTriangulatorNodeType_Convex;
+			_Nodes[ i ].Index = i;
+			_Nodes[ i ].Pos = points[ i ];
+			_Nodes[ i ].Next = _Nodes + i + 1;
+			_Nodes[ i ].Prev = _Nodes + i - 1;
+		}
+		_Nodes[ 0 ].Prev = _Nodes + points_count - 1;
+		_Nodes[ points_count - 1 ].Next = _Nodes;
+	}
+
+	void ImTriangulator0::BuildReflexes()
+	{
+		ImTriangulatorNode0* n1 = _Nodes;
+		for ( int i = _TrianglesLeft; i >= 0; i--, n1 = n1->Next )
+		{
+			if ( ImTriangleIsClockwise( n1->Prev->Pos, n1->Pos, n1->Next->Pos ) )
+				continue;
+			n1->Type = ImTriangulatorNodeType_Reflex;
+			_Reflexes.push_back( n1 );
+		}
+	}
+
+	void ImTriangulator0::BuildEars()
+	{
+		ImTriangulatorNode0* n1 = _Nodes;
+		for ( int i = _TrianglesLeft; i >= 0; i--, n1 = n1->Next )
+		{
+			if ( n1->Type != ImTriangulatorNodeType_Convex )
+				continue;
+			if ( !IsEar( n1->Prev->Index, n1->Index, n1->Next->Index, n1->Prev->Pos, n1->Pos, n1->Next->Pos ) )
+				continue;
+			n1->Type = ImTriangulatorNodeType_Ear;
+			_Ears.push_back( n1 );
+		}
+	}
+
+	void ImTriangulator0::GetNextTriangle( unsigned int out_triangle[ 3 ] )
+	{
+		if ( _Ears.Size == 0 )
+		{
+			FlipNodeList();
+
+			ImTriangulatorNode0* node = _Nodes;
+			for ( int i = _TrianglesLeft; i >= 0; i--, node = node->Next )
+				node->Type = ImTriangulatorNodeType_Convex;
+			_Reflexes.Size = 0;
+			BuildReflexes();
+			BuildEars();
+
+			// If we still don't have ears, it means geometry is degenerated.
+			if ( _Ears.Size == 0 )
+			{
+				// Return first triangle available, mimicking the behavior of convex fill.
+				IM_ASSERT( _TrianglesLeft > 0 ); // Geometry is degenerated
+				_Ears.Data[ 0 ] = _Nodes;
+				_Ears.Size = 1;
+			}
+		}
+
+		ImTriangulatorNode0* ear = _Ears.Data[ --_Ears.Size ];
+		out_triangle[ 0 ] = ear->Prev->Index;
+		out_triangle[ 1 ] = ear->Index;
+		out_triangle[ 2 ] = ear->Next->Index;
+
+		ear->Unlink();
+		if ( ear == _Nodes )
+			_Nodes = ear->Next;
+
+		ReclassifyNode( ear->Prev );
+		ReclassifyNode( ear->Next );
+		_TrianglesLeft--;
+	}
+
+	void ImTriangulator0::FlipNodeList()
+	{
+		ImTriangulatorNode0* prev = _Nodes;
+		ImTriangulatorNode0* temp = _Nodes;
+		ImTriangulatorNode0* current = _Nodes->Next;
+		prev->Next = prev;
+		prev->Prev = prev;
+		while ( current != _Nodes )
+		{
+			temp = current->Next;
+
+			current->Next = prev;
+			prev->Prev = current;
+			_Nodes->Next = current;
+			current->Prev = _Nodes;
+
+			prev = current;
+			current = temp;
+		}
+		_Nodes = prev;
+	}
+
+	// A triangle is an ear is no other vertex is inside it. We can test reflexes vertices only (see reference algorithm)
+	bool ImTriangulator0::IsEar( int i0, int i1, int i2, const ImVec2& v0, const ImVec2& v1, const ImVec2& v2 ) const
+	{
+		ImTriangulatorNode0** p_end = _Reflexes.Data + _Reflexes.Size;
+		for ( ImTriangulatorNode0** p = _Reflexes.Data; p < p_end; p++ )
+		{
+			ImTriangulatorNode0* reflex = *p;
+			if ( reflex->Index != i0 && reflex->Index != i1 && reflex->Index != i2 )
+				if ( ImTriangleContainsPoint( v0, v1, v2, reflex->Pos ) )
+					return false;
+		}
+		return true;
+	}
+
+	void ImTriangulator0::ReclassifyNode( ImTriangulatorNode0* n1 )
+	{
+		// Classify node
+		ImTriangulatorNodeType0 type;
+		const ImTriangulatorNode0* n0 = n1->Prev;
+		const ImTriangulatorNode0* n2 = n1->Next;
+		if ( !ImTriangleIsClockwise( n0->Pos, n1->Pos, n2->Pos ) )
+			type = ImTriangulatorNodeType_Reflex;
+		else if ( IsEar( n0->Index, n1->Index, n2->Index, n0->Pos, n1->Pos, n2->Pos ) )
+			type = ImTriangulatorNodeType_Ear;
+		else
+			type = ImTriangulatorNodeType_Convex;
+
+		// Update lists when a type changes
+		if ( type == n1->Type )
+			return;
+		if ( n1->Type == ImTriangulatorNodeType_Reflex )
+			_Reflexes.find_erase_unsorted( n1->Index );
+		else if ( n1->Type == ImTriangulatorNodeType_Ear )
+			_Ears.find_erase_unsorted( n1->Index );
+		if ( type == ImTriangulatorNodeType_Reflex )
+			_Reflexes.push_back( n1 );
+		else if ( type == ImTriangulatorNodeType_Ear )
+			_Ears.push_back( n1 );
+		n1->Type = type;
+	}
+
+	bool IsPolyConcaveContains( ImVec2* pts, int pts_count, ImVec2 p )
+	{
+		IM_ASSERT( pts_count >= 3 );
+
+		bool contained = true;
+
+		ImDrawListSharedData* _Data = ImGui::GetCurrentWindow()->DrawList->_Data;
+
+		ImTriangulator0 triangulator;
+		unsigned int triangle[ 3 ];
+		{
+			// Non Anti-aliased Fill
+			const int idx_count = ( pts_count - 2 ) * 3;
+			triangulator.Init( pts, pts_count, _Data->TempBuffer.Data );
+			while ( triangulator._TrianglesLeft > 0 )
+			{
+				triangulator.GetNextTriangle( triangle );
+				contained &= ImTriangleContainsPoint( pts[ triangle[ 0 ] ], pts[ triangle[ 1 ] ], pts[ triangle[ 2 ] ], p );
+			}
+		}
+
+		return contained;
+	}
+
+	bool IsMouseHoveringPolyConvex( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip )
+	{
+		bool well_form = true;
+		for ( int k = 0; k < pts_count; ++k )
+		{
+			well_form &= ImRect( r_min, r_max ).Contains( pts[ k ] );
+		}
+		IM_ASSERT( well_form );
+
+		ImGuiContext& g = *ImGui::GetCurrentContext();
+
+		// Clip
+		ImRect rect_clipped( r_min, r_max );
+		if ( clip )
+			rect_clipped.ClipWith( g.CurrentWindow->ClipRect );
+
+		// Hit testing, expanded for touch input
+		if ( !rect_clipped.ContainsWithPad( g.IO.MousePos, g.Style.TouchExtraPadding ) )
+			return false;
+		if ( !IsPolyConvexContains( pts, pts_count, g.IO.MousePos ) )
+			return false;
+
+		return true;
+	}
+
+	bool ItemHoverablePolyConvex( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags )
+	{
+		ImGuiContext& g = *GImGui;
+		ImGuiWindow* window = g.CurrentWindow;
+
+		bool well_form = true;
+		for ( int k = 0; k < pts_count; ++k )
+		{
+			well_form &= bb.Contains( pts[ k ] );
+		}
+		IM_ASSERT( well_form );
+
+		if ( g.HoveredWindow != window )
+			return false;
+		if ( !ImGui::IsMouseHoveringRect( bb.Min, bb.Max ) )
+			return false;
+		if ( !IsMouseHoveringPolyConvex( bb.Min, bb.Max, pts, pts_count ) )
+			return false;
+
+		if ( g.HoveredId != 0 && g.HoveredId != id && !g.HoveredIdAllowOverlap )
+			return false;
+		if ( g.ActiveId != 0 && g.ActiveId != id && !g.ActiveIdAllowOverlap )
+			if ( !g.ActiveIdFromShortcut )
+				return false;
+
+		// Done with rectangle culling so we can perform heavier checks now.
+		if ( !( item_flags & ImGuiItemFlags_NoWindowHoverableCheck ) && !ImGui::IsWindowContentHoverable( window, ImGuiHoveredFlags_None ) )
+		{
+			g.HoveredIdDisabled = true;
+			return false;
+		}
+
+		// We exceptionally allow this function to be called with id==0 to allow using it for easy high-level
+		// hover test in widgets code. We could also decide to split this function is two.
+		if ( id != 0 )
+		{
+			// Drag source doesn't report as hovered
+			if ( g.DragDropActive && g.DragDropPayload.SourceId == id && !( g.DragDropSourceFlags & ImGuiDragDropFlags_SourceNoDisableHover ) )
+				return false;
+
+			ImGui::SetHoveredID( id );
+
+			// AllowOverlap mode (rarely used) requires previous frame HoveredId to be null or to match.
+			// This allows using patterns where a later submitted widget overlaps a previous one. Generally perceived as a front-to-back hit-test.
+			if ( item_flags & ImGuiItemFlags_AllowOverlap )
+			{
+				g.HoveredIdAllowOverlap = true;
+				if ( g.HoveredIdPreviousFrame != id )
+					return false;
+			}
+
+			// Display shortcut (only works with mouse)
+			if ( id == g.LastItemData.ID && ( g.LastItemData.StatusFlags & ImGuiItemStatusFlags_HasShortcut ) )
+				if ( ImGui::IsItemHovered( ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_DelayNormal ) )
+					ImGui::SetTooltip( "%s", ImGui::GetKeyChordName( g.LastItemData.Shortcut ) );
+		}
+
+		// When disabled we'll return false but still set HoveredId
+		if ( item_flags & ImGuiItemFlags_Disabled )
+		{
+			// Release active id if turning disabled
+			if ( g.ActiveId == id && id != 0 )
+				ImGui::ClearActiveID();
+			g.HoveredIdDisabled = true;
+			return false;
+		}
+
+#ifndef IMGUI_DISABLE_DEBUG_TOOLS
+		if ( id != 0 )
+		{
+			// [DEBUG] Item Picker tool!
+			// We perform the check here because reaching is path is rare (1~ time a frame),
+			// making the cost of this tool near-zero! We could get better call-stack and support picking non-hovered
+			// items if we performed the test in ItemAdd(), but that would incur a bigger runtime cost.
+			if ( g.DebugItemPickerActive && g.HoveredIdPreviousFrame == id )
+				ImGui::GetForegroundDrawList()->AddRect( bb.Min, bb.Max, IM_COL32( 255, 255, 0, 255 ) );
+			if ( g.DebugItemPickerBreakId == id )
+				IM_DEBUG_BREAK();
+		}
+#endif
+
+		if ( g.NavDisableMouseHover )
+			return false;
+
+		return true;
+	}
+
+	bool IsMouseHoveringPolyConcave( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip )
+	{
+		bool well_form = true;
+		for ( int k = 0; k < pts_count; ++k )
+		{
+			well_form &= ImRect( r_min, r_max ).Contains( pts[ k ] );
+		}
+		IM_ASSERT( well_form );
+
+		ImGuiContext& g = *ImGui::GetCurrentContext();
+
+		// Clip
+		ImRect rect_clipped( r_min, r_max );
+		if ( clip )
+			rect_clipped.ClipWith( g.CurrentWindow->ClipRect );
+
+		// Hit testing, expanded for touch input
+		if ( !rect_clipped.ContainsWithPad( g.IO.MousePos, g.Style.TouchExtraPadding ) )
+			return false;
+		if ( !IsPolyConcaveContains( pts, pts_count, g.IO.MousePos ) )
+			return false;
+
+		return true;
+	}
+
+	bool ItemHoverablePolyConcave( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags )
+	{
+		ImGuiContext& g = *GImGui;
+		ImGuiWindow* window = g.CurrentWindow;
+
+		bool well_form = true;
+		for ( int k = 0; k < pts_count; ++k )
+		{
+			well_form &= bb.Contains( pts[ k ] );
+		}
+		IM_ASSERT( well_form );
+
+		if ( g.HoveredWindow != window )
+			return false;
+		if ( !ImGui::IsMouseHoveringRect( bb.Min, bb.Max ) )
+			return false;
+		if ( !IsMouseHoveringPolyConcave( bb.Min, bb.Max, pts, pts_count ) )
+			return false;
+
+		if ( g.HoveredId != 0 && g.HoveredId != id && !g.HoveredIdAllowOverlap )
+			return false;
+		if ( g.ActiveId != 0 && g.ActiveId != id && !g.ActiveIdAllowOverlap )
+			if ( !g.ActiveIdFromShortcut )
+				return false;
+
+		// Done with rectangle culling so we can perform heavier checks now.
+		if ( !( item_flags & ImGuiItemFlags_NoWindowHoverableCheck ) && !ImGui::IsWindowContentHoverable( window, ImGuiHoveredFlags_None ) )
+		{
+			g.HoveredIdDisabled = true;
+			return false;
+		}
+
+		// We exceptionally allow this function to be called with id==0 to allow using it for easy high-level
+		// hover test in widgets code. We could also decide to split this function is two.
+		if ( id != 0 )
+		{
+			// Drag source doesn't report as hovered
+			if ( g.DragDropActive && g.DragDropPayload.SourceId == id && !( g.DragDropSourceFlags & ImGuiDragDropFlags_SourceNoDisableHover ) )
+				return false;
+
+			ImGui::SetHoveredID( id );
+
+			// AllowOverlap mode (rarely used) requires previous frame HoveredId to be null or to match.
+			// This allows using patterns where a later submitted widget overlaps a previous one. Generally perceived as a front-to-back hit-test.
+			if ( item_flags & ImGuiItemFlags_AllowOverlap )
+			{
+				g.HoveredIdAllowOverlap = true;
+				if ( g.HoveredIdPreviousFrame != id )
+					return false;
+			}
+
+			// Display shortcut (only works with mouse)
+			if ( id == g.LastItemData.ID && ( g.LastItemData.StatusFlags & ImGuiItemStatusFlags_HasShortcut ) )
+				if ( ImGui::IsItemHovered( ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_DelayNormal ) )
+					ImGui::SetTooltip( "%s", ImGui::GetKeyChordName( g.LastItemData.Shortcut ) );
+		}
+
+		// When disabled we'll return false but still set HoveredId
+		if ( item_flags & ImGuiItemFlags_Disabled )
+		{
+			// Release active id if turning disabled
+			if ( g.ActiveId == id && id != 0 )
+				ImGui::ClearActiveID();
+			g.HoveredIdDisabled = true;
+			return false;
+		}
+
+#ifndef IMGUI_DISABLE_DEBUG_TOOLS
+		if ( id != 0 )
+		{
+			// [DEBUG] Item Picker tool!
+			// We perform the check here because reaching is path is rare (1~ time a frame),
+			// making the cost of this tool near-zero! We could get better call-stack and support picking non-hovered
+			// items if we performed the test in ItemAdd(), but that would incur a bigger runtime cost.
+			if ( g.DebugItemPickerActive && g.HoveredIdPreviousFrame == id )
+				ImGui::GetForegroundDrawList()->AddRect( bb.Min, bb.Max, IM_COL32( 255, 255, 0, 255 ) );
+			if ( g.DebugItemPickerBreakId == id )
+				IM_DEBUG_BREAK();
+		}
+#endif
+
+		if ( g.NavDisableMouseHover )
+			return false;
+
+		return true;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
 	// Widgets
 	//////////////////////////////////////////////////////////////////////////
 	ImU32 ImInternalHueMaskingFunc( float const xx, void* pUserData )

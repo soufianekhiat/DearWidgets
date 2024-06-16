@@ -608,6 +608,17 @@ namespace ImWidgets{
 										  int colorStride = 4 ); // 4 for rgba,rgba,rgba,...; 3 for rgb,rgb,rgb,... or anything else );
 
 	//////////////////////////////////////////////////////////////////////////
+	// Interactions
+	//////////////////////////////////////////////////////////////////////////
+	IMGUI_API bool IsPolyConvexContains( ImVec2* pts, int pts_count, ImVec2 p );
+	IMGUI_API bool IsPolyConcaveContains( ImVec2* pts, int pts_count, ImVec2 p );
+
+	IMGUI_API bool IsMouseHoveringPolyConvex( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip = true );
+	IMGUI_API bool ItemHoverablePolyConvex( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags );
+	IMGUI_API bool IsMouseHoveringPolyConcave( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip = true );
+	IMGUI_API bool ItemHoverablePolyConcave( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags );
+
+	//////////////////////////////////////////////////////////////////////////
 	// Widgets
 	//////////////////////////////////////////////////////////////////////////
 	IMGUI_API bool HueSelector( char const* label, float hueHeight, float cursorHeight, float* hueCenter, float* hueWidth, float* featherLeft, float* featherRight, int division = 32, float alpha = 1.0f, float hideHueAlpha = 0.75f, float offset = 0.0f );

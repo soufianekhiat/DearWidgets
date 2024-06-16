@@ -650,6 +650,56 @@ namespace ImWidgets {
 			}
 			ImGui::TreePop();
 		}
+		if ( ImGui::TreeNode( "Interactions" ) )
+		{
+			if ( ImGui::TreeNode( "Poly Convex Hovered" ) )
+			{
+				float const size = ImGui::GetContentRegionAvail().x;
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+				//ImVec2 pos_norms[] = { { 0.0f, 0.0f }, { 0.0f, 1.0f }, { 1.0f, 1.0f }, { 1.0f, 0.0f }, { 0.0f, 0.0f },
+				//					   { 0.3f, 0.3f }, { 0.7f, 0.3f }, { 0.7f, 0.7f }, { 0.3f, 0.7f }, { 0.3f, 0.3f } };
+				ImVec2 pos_norms[] = { { 0.0f, 0.0f }, { 0.0f, 1.0f }, { 1.0f, 1.0f } };
+				for ( ImVec2& v : pos_norms )
+				{
+					v.x *= size;
+					v.y *= size;
+					v += pos;
+				}
+				bool hovered = IsMouseHoveringPolyConvex( pos, pos + ImVec2( size, size ), pos_norms, 3 );
+				//DrawShapeWithHole( pDrawList, &pos_norms[ 0 ], 3, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ), ImRect( pos, pos + ImVec2( size, size ) ), 1, 1 );
+				pDrawList->AddConvexPolyFilled( &pos_norms[ 0 ], 3, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
+
+				ImGui::Dummy( ImVec2( size, size ) );
+
+				ImGui::TreePop();
+			}
+			if ( ImGui::TreeNode( "Poly Concave Hovered" ) )
+			{
+				float const size = ImGui::GetContentRegionAvail().x;
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+				//ImVec2 pos_norms[] = { { 0.0f, 0.0f }, { 0.0f, 1.0f }, { 1.0f, 1.0f }, { 1.0f, 0.0f }, { 0.0f, 0.0f },
+				//					   { 0.3f, 0.3f }, { 0.7f, 0.3f }, { 0.7f, 0.7f }, { 0.3f, 0.7f }, { 0.3f, 0.3f } };
+				//ImVec2 pos_norms[] = { { 0.0f, 0.0f }, { 0.0f, 1.0f }, { 1.0f, 1.0f }, { 1.0f, 0.7f }, { 0.3f, 0.7f },
+				//					   { 0.3f, 0.3f }, { 1.0f, 0.3f }, { 1.0f, 0.0f }, { 0.0f, 0.0f } };
+				ImVec2 pos_norms[] = { { 0.0f, 0.0f }, { 0.0f, 1.0f }, { 1.0f, 1.0f }, { 1.0f, 0.0f }, { 0.0f, 0.0f },
+									   { 0.3f, 0.3f }, { 0.7f, 0.3f }, { 0.7f, 0.7f }, { 0.3f, 0.7f }, { 0.3f, 0.3f } };
+				for ( ImVec2& v : pos_norms )
+				{
+					v.x *= size;
+					v.y *= size;
+					v += pos;
+				}
+				bool hovered = IsMouseHoveringPolyConcave( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), pos_norms, 10 );
+				pDrawList->AddConcavePolyFilled( &pos_norms[ 0 ], 10, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
+
+				ImGui::Dummy( ImVec2( size, size ) );
+
+				ImGui::TreePop();
+			}
+			ImGui::TreePop();
+		}
 		if ( ImGui::TreeNode( "Widgets" ) )
 		{
 #if 0
