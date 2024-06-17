@@ -775,6 +775,52 @@ namespace ImWidgets {
 		}
 		if ( ImGui::TreeNode( "Widgets" ) )
 		{
+			if ( ImGui::TreeNode( "Button Convex" ) )
+			{
+				float const size = ImGui::GetContentRegionAvail().x;
+				ImVector<ImVec2> disk;
+				disk.resize( 32 );
+				for ( int k = 0; k < 32; ++k )
+				{
+					float angle = ( ( float )k ) * 2.0f * IM_PI / 32.0f;
+					float cos0 = ImCos( angle );
+					float sin0 = ImSin( angle );
+					disk[ k ].x = 0.5f * size + cos0 * size * 0.5f;
+					disk[ k ].y = 0.5f * size + sin0 * size * 0.5f;
+				}
+				ImWidgets::ButtonExConvex( "Convex", ImVec2( 0, 0 ), &disk[ 0 ], 32, 0);
+				ImGui::TreePop();
+			}
+			if ( ImGui::TreeNode( "Button Concave" ) )
+			{
+				float const size = ImGui::GetContentRegionAvail().x;
+				int sz = 8;
+				ImVec2 pos_norms[] = { { 0.0f, 0.0f }, { 0.3f, 0.0f }, { 0.3f, 0.7f }, { 0.7f, 0.7f }, { 0.7f, 0.0f },
+									   { 1.0f, 0.0f }, { 1.0f, 1.0f }, { 0.0f, 1.0f } };
+				for ( int k = 0; k < sz; ++k )
+				{
+					ImVec2& v = pos_norms[ k ];
+					v.x *= size;
+					v.y *= size;
+				}
+				ImWidgets::ButtonExConcave( "Concave", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2(0.0f, size / 3.0f), 0);
+				ImGui::TreePop();
+			}
+			if ( ImGui::TreeNode( "Button With Hole" ) )
+			{
+				float const size = ImGui::GetContentRegionAvail().x;
+				int sz = 10;
+				ImVec2 pos_norms[] = { { 0.0f, 0.0f }, { 0.0f, 1.0f }, { 1.0f, 1.0f }, { 1.0f, 0.0f }, { 0.0f, 0.0f },
+									   { 0.3f, 0.3f }, { 0.7f, 0.3f }, { 0.7f, 0.7f }, { 0.3f, 0.7f }, { 0.3f, 0.3f } };
+				for ( int k = 0; k < sz; ++k )
+				{
+					ImVec2& v = pos_norms[ k ];
+					v.x *= size;
+					v.y *= size;
+				}
+				ImWidgets::ButtonExWithHole( "With Hole", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2(0.0f, size / 3.0f), 0);
+				ImGui::TreePop();
+			}
 #if 0
 			if ( ImGui::TreeNode( "DragFloatPrecise" ) )
 			{

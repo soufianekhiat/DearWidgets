@@ -11,6 +11,9 @@ namespace ImWidgets {
 	//////////////////////////////////////////////////////////////////////////
 #define ImSqrt3 1.7320508075688772935274463415059f
 
+static const float DRAGDROP_HOLD_TO_OPEN_TIMER = 0.70f; // COPY PASTED FROM imgui_widgets.cpp
+static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgui_widgets.cpp
+
 	static float s_CIE_1931_2deg_min = 360.0f;
 	static float s_CIE_1931_2deg_max = 830.0f;
 #define s_CIE_1931_2deg_samplesCount 471
@@ -2471,6 +2474,110 @@ namespace ImWidgets {
 			colorStride );
 	}
 
+	void ImDrawShapeConvex( ImDrawList* drawlist, ImVec2* pts, int pts_count, ImU32 col, float thickness )
+	{
+		drawlist->AddPolyline( pts, pts_count, col, 0, thickness );
+	}
+	void ImDrawShapeConcave( ImDrawList* drawlist, ImVec2* pts, int pts_count, ImU32 col, float thickness )
+	{
+		drawlist->AddPolyline( pts, pts_count, col, 0, thickness );
+	}
+	// TODO
+	void ImDrawShapeWithHole( ImDrawList* drawlist, ImVec2* pts, int pts_count, ImU32 col, float thickness )
+	{
+		drawlist->AddPolyline( pts, pts_count, col, 0, thickness );
+	}
+
+	void ImDrawShapeConvexFilled( ImDrawList* drawlist, ImVec2* pts, int pts_count, ImU32 col )
+	{
+		drawlist->AddConvexPolyFilled( pts, pts_count, col );
+	}
+	void ImDrawShapeConcaveFilled( ImDrawList* drawlist, ImVec2* pts, int pts_count, ImU32 col  )
+	{
+		drawlist->AddConcavePolyFilled( pts, pts_count, col );
+	}
+	void ImDrawShapeWithHoleFilled( ImDrawList* drawlist, ImVec2* pts, int pts_count, ImU32 col )
+	{
+		DrawShapeWithHole( drawlist, pts, pts_count, col );
+	}
+
+	void RenderNavHighlightShape( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags, ImDrawShape func )
+	{
+		ImGuiContext& g = *GImGui;
+		if ( id != g.NavId )
+			return;
+		if ( g.NavDisableHighlight && !( flags & ImGuiNavHighlightFlags_AlwaysDraw ) )
+			return;
+		ImGuiWindow* window = g.CurrentWindow;
+		if ( window->DC.NavHideHighlightOneFrame )
+			return;
+
+		float rounding = ( flags & ImGuiNavHighlightFlags_NoRounding ) ? 0.0f : g.Style.FrameRounding;
+		ImRect display_rect;
+		ImComputeRect( &display_rect, pts, pts_count );
+		display_rect.ClipWith( window->ClipRect );
+		const float thickness = 2.0f;
+		if ( flags & ImGuiNavHighlightFlags_Compact )
+		{
+			func( window->DrawList, pts, pts_count, ImGui::GetColorU32( ImGuiCol_NavHighlight ), thickness );
+		}
+		else
+		{
+			const float distance = 3.0f + thickness * 0.5f;
+			display_rect.Expand( ImVec2( distance, distance ) );
+			bool fully_visible = window->ClipRect.Contains( display_rect );
+			if ( !fully_visible )
+				window->DrawList->PushClipRect( display_rect.Min, display_rect.Max );
+			func( window->DrawList, pts, pts_count, ImGui::GetColorU32( ImGuiCol_NavHighlight ), thickness );
+			if ( !fully_visible )
+				window->DrawList->PopClipRect();
+		}
+	}
+	void RenderNavHighlightConvex( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags )
+	{
+		RenderNavHighlightShape( pts, pts_count, id, flags, &ImDrawShapeConvex );
+	}
+	void RenderNavHighlightConcave( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags )
+	{
+		RenderNavHighlightShape( pts, pts_count, id, flags, &ImDrawShapeConcave );
+	}
+	void RenderNavHighlightWithHole( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags )
+	{
+		RenderNavHighlightShape( pts, pts_count, id, flags, &ImDrawShapeWithHole );
+	}
+
+	void RenderFrameShape( ImVec2* pts, int pts_count, ImU32 fill_col, bool border, ImDrawShape outline, ImDrawShapeFilled fill )
+	{
+		ImGuiContext& g = *GImGui;
+		ImGuiWindow* window = g.CurrentWindow;
+		fill( window->DrawList, pts, pts_count, fill_col );
+		const float border_size = g.Style.FrameBorderSize;
+		if ( border && border_size > 0.0f )
+		{
+			// TODO add offset to the draw functions or "WithOffset" functions
+			ImVector<ImVec2> shadow;
+			shadow.resize(pts_count);
+			for ( int k = 0; k < pts_count; ++k )
+			{
+				shadow[ k ] = pts[ k ] + ImVec2( 1.0f, 1.0f );
+			}
+			outline( window->DrawList, &shadow[ 0 ], pts_count, ImGui::GetColorU32(ImGuiCol_BorderShadow), border_size);
+			//
+			outline( window->DrawList, pts, pts_count, ImGui::GetColorU32( ImGuiCol_Border ), border_size );
+		}
+	}
+	void RenderFrameConcave( ImVec2* pts, int pts_count, ImU32 fill_col, bool border )
+	{
+		RenderFrameShape( pts, pts_count, fill_col, border, ImDrawShapeConvex, ImDrawShapeConvexFilled );
+	}
+	void RenderFrameConvex( ImVec2* pts, int pts_count, ImU32 fill_col, bool border )
+	{
+		RenderFrameShape( pts, pts_count, fill_col, border, ImDrawShapeConcave, ImDrawShapeConcaveFilled );
+	}
+	void RenderFrameWithHole( ImVec2* pts, int pts_count, ImU32 fill_col, bool border )
+	{
+		RenderFrameShape( pts, pts_count, fill_col, border, ImDrawShapeWithHole, ImDrawShapeWithHoleFilled );
+	}
 	//////////////////////////////////////////////////////////////////////////
 	// Interactions
 	//////////////////////////////////////////////////////////////////////////
@@ -3254,9 +3361,314 @@ namespace ImWidgets {
 		return true;
 	}
 
+	bool ButtonBehaviorShape( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags, ImItemHoverablePolyConvexFunc func )
+	{
+		// Copy Past from ImGui::ButtonBehavior to only change ItemHovered
+		ImGuiContext& g = *GImGui;
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+
+		// Default only reacts to left mouse button
+		if ( ( flags & ImGuiButtonFlags_MouseButtonMask_ ) == 0 )
+			flags |= ImGuiButtonFlags_MouseButtonLeft;
+
+		// Default behavior requires click + release inside bounding box
+		if ( ( flags & ImGuiButtonFlags_PressedOnMask_ ) == 0 )
+			flags |= ImGuiButtonFlags_PressedOnDefault_;
+
+		// Default behavior inherited from item flags
+		// Note that _both_ ButtonFlags and ItemFlags are valid sources, so copy one into the item_flags and only check that.
+		ImGuiItemFlags item_flags = ( g.LastItemData.ID == id ? g.LastItemData.InFlags : g.CurrentItemFlags );
+		if ( flags & ImGuiButtonFlags_AllowOverlap )
+			item_flags |= ImGuiItemFlags_AllowOverlap;
+		if ( flags & ImGuiButtonFlags_Repeat )
+			item_flags |= ImGuiItemFlags_ButtonRepeat;
+
+		ImGuiWindow* backup_hovered_window = g.HoveredWindow;
+		const bool flatten_hovered_children = ( flags & ImGuiButtonFlags_FlattenChildren ) && g.HoveredWindow && g.HoveredWindow->RootWindow == window;
+		if ( flatten_hovered_children )
+			g.HoveredWindow = window;
+
+#ifdef IMGUI_ENABLE_TEST_ENGINE
+		// Alternate registration spot, for when caller didn't use ItemAdd()
+		if ( g.LastItemData.ID != id )
+			IMGUI_TEST_ENGINE_ITEM_ADD( id, bb, NULL );
+#endif
+
+		ImRect bb;
+		ImComputeRect( &bb, pts, pts_count );
+
+		bool pressed = false;
+		bool hovered = func( bb, id, pts, pts_count, item_flags );
+
+		// Special mode for Drag and Drop where holding button pressed for a long time while dragging another item triggers the button
+		if ( g.DragDropActive && ( flags & ImGuiButtonFlags_PressedOnDragDropHold ) && !( g.DragDropSourceFlags & ImGuiDragDropFlags_SourceNoHoldToOpenOthers ) )
+			if ( ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenBlockedByActiveItem ) )
+			{
+				hovered = true;
+				ImGui::SetHoveredID( id );
+				if ( g.HoveredIdTimer - g.IO.DeltaTime <= DRAGDROP_HOLD_TO_OPEN_TIMER && g.HoveredIdTimer >= DRAGDROP_HOLD_TO_OPEN_TIMER )
+				{
+					pressed = true;
+					g.DragDropHoldJustPressedId = id;
+					ImGui::FocusWindow( window );
+				}
+			}
+
+		if ( flatten_hovered_children )
+			g.HoveredWindow = backup_hovered_window;
+
+		// Mouse handling
+		const ImGuiID test_owner_id = ( flags & ImGuiButtonFlags_NoTestKeyOwner ) ? ImGuiKeyOwner_Any : id;
+		if ( hovered )
+		{
+			IM_ASSERT( id != 0 ); // Lazily check inside rare path.
+
+			// Poll mouse buttons
+			// - 'mouse_button_clicked' is generally carried into ActiveIdMouseButton when setting ActiveId.
+			// - Technically we only need some values in one code path, but since this is gated by hovered test this is fine.
+			int mouse_button_clicked = -1;
+			int mouse_button_released = -1;
+			for ( int button = 0; button < 3; button++ )
+				if ( flags & ( ImGuiButtonFlags_MouseButtonLeft << button ) ) // Handle ImGuiButtonFlags_MouseButtonRight and ImGuiButtonFlags_MouseButtonMiddle here.
+				{
+					if ( ImGui::IsMouseClicked( button, ImGuiInputFlags_None, test_owner_id ) && mouse_button_clicked == -1 )
+					{
+						mouse_button_clicked = button;
+					}
+					if ( ImGui::IsMouseReleased( button, test_owner_id ) && mouse_button_released == -1 )
+					{
+						mouse_button_released = button;
+					}
+				}
+
+			// Process initial action
+			if ( !( flags & ImGuiButtonFlags_NoKeyModifiers ) || ( !g.IO.KeyCtrl && !g.IO.KeyShift && !g.IO.KeyAlt ) )
+			{
+				if ( mouse_button_clicked != -1 && g.ActiveId != id )
+				{
+					if ( !( flags & ImGuiButtonFlags_NoSetKeyOwner ) )
+						ImGui::SetKeyOwner( ImGui::MouseButtonToKey( mouse_button_clicked ), id );
+					if ( flags & ( ImGuiButtonFlags_PressedOnClickRelease | ImGuiButtonFlags_PressedOnClickReleaseAnywhere ) )
+					{
+						ImGui::SetActiveID( id, window );
+						g.ActiveIdMouseButton = mouse_button_clicked;
+						if ( !( flags & ImGuiButtonFlags_NoNavFocus ) )
+							ImGui::SetFocusID( id, window );
+						ImGui::FocusWindow( window );
+					}
+					if ( ( flags & ImGuiButtonFlags_PressedOnClick ) || ( ( flags & ImGuiButtonFlags_PressedOnDoubleClick ) && g.IO.MouseClickedCount[ mouse_button_clicked ] == 2 ) )
+					{
+						pressed = true;
+						if ( flags & ImGuiButtonFlags_NoHoldingActiveId )
+							ImGui::ClearActiveID();
+						else
+							ImGui::SetActiveID( id, window ); // Hold on ID
+						if ( !( flags & ImGuiButtonFlags_NoNavFocus ) )
+							ImGui::SetFocusID( id, window );
+						g.ActiveIdMouseButton = mouse_button_clicked;
+						ImGui::FocusWindow( window );
+					}
+				}
+				if ( flags & ImGuiButtonFlags_PressedOnRelease )
+				{
+					if ( mouse_button_released != -1 )
+					{
+						const bool has_repeated_at_least_once = ( item_flags & ImGuiItemFlags_ButtonRepeat ) && g.IO.MouseDownDurationPrev[ mouse_button_released ] >= g.IO.KeyRepeatDelay; // Repeat mode trumps on release behavior
+						if ( !has_repeated_at_least_once )
+							pressed = true;
+						if ( !( flags & ImGuiButtonFlags_NoNavFocus ) )
+							ImGui::SetFocusID( id, window );
+						ImGui::ClearActiveID();
+					}
+				}
+
+				// 'Repeat' mode acts when held regardless of _PressedOn flags (see table above).
+				// Relies on repeat logic of IsMouseClicked() but we may as well do it ourselves if we end up exposing finer RepeatDelay/RepeatRate settings.
+				if ( g.ActiveId == id && ( item_flags & ImGuiItemFlags_ButtonRepeat ) )
+					if ( g.IO.MouseDownDuration[ g.ActiveIdMouseButton ] > 0.0f && ImGui::IsMouseClicked( g.ActiveIdMouseButton, ImGuiInputFlags_Repeat, test_owner_id ) )
+						pressed = true;
+			}
+
+			if ( pressed )
+				g.NavDisableHighlight = true;
+		}
+
+		// Gamepad/Keyboard handling
+		// We report navigated and navigation-activated items as hovered but we don't set g.HoveredId to not interfere with mouse.
+		if ( g.NavId == id && !g.NavDisableHighlight && g.NavDisableMouseHover )
+			if ( !( flags & ImGuiButtonFlags_NoHoveredOnFocus ) )
+				hovered = true;
+		if ( g.NavActivateDownId == id )
+		{
+			bool nav_activated_by_code = ( g.NavActivateId == id );
+			bool nav_activated_by_inputs = ( g.NavActivatePressedId == id );
+			if ( !nav_activated_by_inputs && ( item_flags & ImGuiItemFlags_ButtonRepeat ) )
+			{
+				// Avoid pressing multiple keys from triggering excessive amount of repeat events
+				const ImGuiKeyData* key1 = ImGui::GetKeyData( ImGuiKey_Space );
+				const ImGuiKeyData* key2 = ImGui::GetKeyData( ImGuiKey_Enter );
+				const ImGuiKeyData* key3 = ImGui::GetKeyData( ImGuiKey_NavGamepadActivate );
+				const float t1 = ImMax( ImMax( key1->DownDuration, key2->DownDuration ), key3->DownDuration );
+				nav_activated_by_inputs = ImGui::CalcTypematicRepeatAmount( t1 - g.IO.DeltaTime, t1, g.IO.KeyRepeatDelay, g.IO.KeyRepeatRate ) > 0;
+			}
+			if ( nav_activated_by_code || nav_activated_by_inputs )
+			{
+				// Set active id so it can be queried by user via IsItemActive(), equivalent of holding the mouse button.
+				pressed = true;
+				ImGui::SetActiveID( id, window );
+				g.ActiveIdSource = g.NavInputSource;
+				if ( !( flags & ImGuiButtonFlags_NoNavFocus ) && !( g.NavActivateFlags & ImGuiActivateFlags_FromShortcut ) )
+					ImGui::SetFocusID( id, window );
+				if ( g.NavActivateFlags & ImGuiActivateFlags_FromShortcut )
+					g.ActiveIdFromShortcut = true;
+			}
+		}
+
+		// Process while held
+		bool held = false;
+		if ( g.ActiveId == id )
+		{
+			if ( g.ActiveIdSource == ImGuiInputSource_Mouse )
+			{
+				if ( g.ActiveIdIsJustActivated )
+					g.ActiveIdClickOffset = g.IO.MousePos - bb.Min;
+
+				const int mouse_button = g.ActiveIdMouseButton;
+				if ( mouse_button == -1 )
+				{
+					// Fallback for the rare situation were g.ActiveId was set programmatically or from another widget (e.g. #6304).
+					ImGui::ClearActiveID();
+				}
+				else if ( ImGui::IsMouseDown( mouse_button, test_owner_id ) )
+				{
+					held = true;
+				}
+				else
+				{
+					bool release_in = hovered && ( flags & ImGuiButtonFlags_PressedOnClickRelease ) != 0;
+					bool release_anywhere = ( flags & ImGuiButtonFlags_PressedOnClickReleaseAnywhere ) != 0;
+					if ( ( release_in || release_anywhere ) && !g.DragDropActive )
+					{
+						// Report as pressed when releasing the mouse (this is the most common path)
+						bool is_double_click_release = ( flags & ImGuiButtonFlags_PressedOnDoubleClick ) && g.IO.MouseReleased[ mouse_button ] && g.IO.MouseClickedLastCount[ mouse_button ] == 2;
+						bool is_repeating_already = ( item_flags & ImGuiItemFlags_ButtonRepeat ) && g.IO.MouseDownDurationPrev[ mouse_button ] >= g.IO.KeyRepeatDelay; // Repeat mode trumps <on release>
+						bool is_button_avail_or_owned = ImGui::TestKeyOwner( ImGui::MouseButtonToKey( mouse_button ), test_owner_id );
+						if ( !is_double_click_release && !is_repeating_already && is_button_avail_or_owned )
+							pressed = true;
+					}
+					ImGui::ClearActiveID();
+				}
+				if ( !( flags & ImGuiButtonFlags_NoNavFocus ) )
+					g.NavDisableHighlight = true;
+			}
+			else if ( g.ActiveIdSource == ImGuiInputSource_Keyboard || g.ActiveIdSource == ImGuiInputSource_Gamepad )
+			{
+				// When activated using Nav, we hold on the ActiveID until activation button is released
+				if ( g.NavActivateDownId == id )
+					held = true; // hovered == true not true as we are already likely hovered on direct activation.
+				else
+					ImGui::ClearActiveID();
+			}
+			if ( pressed )
+				g.ActiveIdHasBeenPressedBefore = true;
+		}
+
+		// Activation highlight (this may be a remote activation)
+		if ( g.NavHighlightActivatedId == id )
+			hovered = true;
+
+		if ( out_hovered ) *out_hovered = hovered;
+		if ( out_held ) *out_held = held;
+
+		return pressed;
+	}
+
+	bool ButtonBehaviorConvex( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags )
+	{
+		return ButtonBehaviorShape( pts, pts_count, id, out_hovered, out_held, flags, &ItemHoverablePolyConvex );
+	}
+
+	bool ButtonBehaviorConcave( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags )
+	{
+		return ButtonBehaviorShape( pts, pts_count, id, out_hovered, out_held, flags, &ItemHoverablePolyConcave );
+	}
+
+	bool ButtonBehaviorWithHole( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags )
+	{
+		return ButtonBehaviorShape( pts, pts_count, id, out_hovered, out_held, flags, &ItemHoverablePolyWithHole );
+	}
+
 	//////////////////////////////////////////////////////////////////////////
 	// Widgets
 	//////////////////////////////////////////////////////////////////////////
+	bool ButtonExShape( const char* label, const ImVec2& size_arg, ImVec2* pts0, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags, ImItemHoverablePolyConvexFunc func, ImDrawShape draw_outline, ImDrawShapeFilled draw_fill )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		const ImGuiID id = window->GetID( label );
+		const ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
+
+		ImVec2 pos = window->DC.CursorPos;
+		if ( ( flags & ImGuiButtonFlags_AlignTextBaseLine ) && style.FramePadding.y < window->DC.CurrLineTextBaseOffset ) // Try to vertically align buttons that are smaller/have no padding so that text baseline matches (bit hacky, since it shouldn't be a flag)
+			pos.y += window->DC.CurrLineTextBaseOffset - style.FramePadding.y;
+		ImVec2 size = ImGui::CalcItemSize( size_arg, label_size.x + style.FramePadding.x * 2.0f, label_size.y + style.FramePadding.y * 2.0f );
+
+		// Hmm... Lot of copies
+		ImVector<ImVec2> points;
+		points.resize(pts_count);
+		for ( int k = 0; k < pts_count; ++k )
+		{
+			points[ k ] = pos + pts0[ k ];
+		}
+		ImVec2* pts = &points[ 0 ];
+
+		ImRect shape_bb;
+		ImComputeRect( &shape_bb, pts, pts_count );
+
+		ImRect bb( pos, pos + size );
+		bb.Add( shape_bb );
+		size.x = ImMax( size.x, bb.GetWidth() );
+		size.y = ImMax( size.y, bb.GetHeight() );
+		ImGui::ItemSize( size, style.FramePadding.y );
+		if ( !ImGui::ItemAdd( bb, id ) )
+			return false;
+
+		bool hovered, held;
+		bool pressed = ButtonBehaviorShape( pts, pts_count, id, &hovered, &held, flags, func );
+
+		// Render
+		const ImU32 col = ImGui::GetColorU32( ( held && hovered ) ? ImGuiCol_ButtonActive : hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button );
+		RenderNavHighlightShape( pts, pts_count, id, 0, draw_outline );
+		RenderFrameShape( pts, pts_count, col, true, draw_outline, draw_fill );
+
+		if ( g.LogEnabled )
+			ImGui::LogSetNextTextDecoration( "[", "]" );
+		ImGui::RenderTextClipped( text_offset + bb.Min + style.FramePadding, text_offset + bb.Max - style.FramePadding, label, NULL, &label_size, style.ButtonTextAlign, &bb );
+
+		// Automatically close popups
+		//if (pressed && !(flags & ImGuiButtonFlags_DontClosePopups) && (window->Flags & ImGuiWindowFlags_Popup))
+		//    CloseCurrentPopup();
+
+		IMGUI_TEST_ENGINE_ITEM_INFO( id, label, g.LastItemData.StatusFlags );
+		return pressed;
+	}
+	bool ButtonExConvex( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImGuiButtonFlags flags )
+	{
+		return ButtonExShape( label, size_arg, pts, pts_count, ImVec2( 0.0f, 0.0f ), flags, &ItemHoverablePolyConvex, &ImDrawShapeConvex, &ImDrawShapeConvexFilled );
+	}
+	bool ButtonExConcave( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags )
+	{
+		return ButtonExShape( label, size_arg, pts, pts_count, text_offset, flags, &ItemHoverablePolyConcave, &ImDrawShapeConcave, &ImDrawShapeConcaveFilled );
+	}
+	bool ButtonExWithHole( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags )
+	{
+		return ButtonExShape( label, size_arg, pts, pts_count, text_offset, flags, &ItemHoverablePolyWithHole, &ImDrawShapeWithHole, &ImDrawShapeWithHoleFilled );
+	}
+
 	ImU32 ImInternalHueMaskingFunc( float const xx, void* pUserData )
 	{
 		float* values = ( float* )pUserData;

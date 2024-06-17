@@ -451,6 +451,21 @@ namespace ImWidgets{
 		}
 	}
 
+	inline
+	void ImComputeRect( ImRect* p_bb, ImVec2* pts, int pts_count )
+	{
+		ImRect& bb = *p_bb;
+		bb.Min = ImVec2( FLT_MAX, FLT_MAX );
+		bb.Max = ImVec2( -FLT_MAX, -FLT_MAX );
+		for ( int k = 0; k < pts_count; ++k )
+		{
+			bb.Min.x = ImMin( bb.Min.x, pts[ k ].x );
+			bb.Min.y = ImMin( bb.Min.y, pts[ k ].y );
+			bb.Max.x = ImMax( bb.Max.x, pts[ k ].x );
+			bb.Max.y = ImMax( bb.Max.y, pts[ k ].y );
+		}
+	}
+
 	//////////////////////////////////////////////////////////////////////////
 	// Color Functions
 	//////////////////////////////////////////////////////////////////////////
@@ -607,6 +622,18 @@ namespace ImWidgets{
 										  ImU32 plotColor, ImDrawFlags flags, float thickness,
 										  int colorStride = 4 ); // 4 for rgba,rgba,rgba,...; 3 for rgb,rgb,rgb,... or anything else );
 
+	typedef void ( *ImDrawShape )( ImDrawList* drawlist, ImVec2* pts, int pts_count, ImU32 col, float thickness );
+	typedef void ( *ImDrawShapeFilled )( ImDrawList* drawlist, ImVec2* pts, int pts_count, ImU32 col );
+	IMGUI_API void RenderNavHighlightShape( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags, ImDrawShape func );
+	IMGUI_API void RenderNavHighlightConvex( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags );
+	IMGUI_API void RenderNavHighlightConcave( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags );
+	IMGUI_API void RenderNavHighlightWithHole( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags );
+
+	IMGUI_API void RenderFrameShape( ImVec2* pts, int pts_count, ImU32 fill_col, bool border, ImDrawShape outline, ImDrawShapeFilled fill );
+	IMGUI_API void RenderFrameConcave( ImVec2* pts, int pts_count, ImU32 fill_col, bool border );
+	IMGUI_API void RenderFrameConvex( ImVec2* pts, int pts_count, ImU32 fill_col, bool border );
+	IMGUI_API void RenderFrameWithHole( ImVec2* pts, int pts_count, ImU32 fill_col, bool border );
+
 	//////////////////////////////////////////////////////////////////////////
 	// Interactions
 	//////////////////////////////////////////////////////////////////////////
@@ -621,9 +648,20 @@ namespace ImWidgets{
 	IMGUI_API bool IsMouseHoveringPolyWithHole( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip = true );
 	IMGUI_API bool ItemHoverablePolyWithHole( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags );
 
+	typedef bool (*ImItemHoverablePolyConvexFunc)( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags );
+	IMGUI_API bool ButtonBehaviorShape( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags, ImItemHoverablePolyConvexFunc func );
+	IMGUI_API bool ButtonBehaviorConvex( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
+	IMGUI_API bool ButtonBehaviorConcave( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
+	IMGUI_API bool ButtonBehaviorWithHole( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
+
 	//////////////////////////////////////////////////////////////////////////
 	// Widgets
 	//////////////////////////////////////////////////////////////////////////
+	IMGUI_API bool ButtonExShape( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags, ImItemHoverablePolyConvexFunc func, ImDrawShape outline, ImDrawShapeFilled fill );
+	IMGUI_API bool ButtonExConvex( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImGuiButtonFlags flags );
+	IMGUI_API bool ButtonExConcave( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags );
+	IMGUI_API bool ButtonExWithHole( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags );
+
 	IMGUI_API bool HueSelector( char const* label, float hueHeight, float cursorHeight, float* hueCenter, float* hueWidth, float* featherLeft, float* featherRight, int division = 32, float alpha = 1.0f, float hideHueAlpha = 0.75f, float offset = 0.0f );
 	IMGUI_API bool SliderNScalar( char const* label, ImGuiDataType data_type, void* ordered_value, int value_count, void* p_min, void* p_max, float cursor_width, bool show_hover_by_region );
 	IMGUI_API bool SliderNFloat( char const* label, ImGuiDataType data_type, float* ordered_value, int value_count, float v_min, float v_max, float cursor_width, bool show_hover_by_region );
