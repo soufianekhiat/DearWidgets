@@ -1994,7 +1994,7 @@ namespace ImWidgets {
 	// cf. https://github.com/ocornut/imgui/issues/760#issuecomment-237195662
 	// Remove C++ feature, work with float instead of double, no auto
 	// Far from efficient, perf depending no the size, but it work!
-	void DrawShapeWithHole( ImDrawList* draw, ImVec2* poly, int points_count, ImU32 color, ImRect bb, int gap, int strokeWidth )
+	void DrawShapeWithHole( ImDrawList* draw, ImVec2* poly, int points_count, ImU32 color, ImRect* p_bb, int gap, int strokeWidth )
 	{
 		ImVector<ImVec2> scanHits;
 		ImVec2 min, max; // polygon min/max points
@@ -2022,6 +2022,16 @@ namespace ImWidgets {
 					max.y = p.y;
 			}
 			isMinMaxDone = true;
+		}
+		ImRect bb;
+		if ( p_bb == NULL )
+		{
+			bb.Min = min;
+			bb.Max = max;
+		}
+		else
+		{
+			bb = *p_bb;
 		}
 
 		// Bounds check
@@ -2214,7 +2224,7 @@ namespace ImWidgets {
 		// Workaround: Overdraw with strokeWidth of 2. Because we seem to have missing the first and last row of pixel.
 		//			The problem is more visible with alpha < 255.
 		ImRect clipRect( curPos, curPos + size );
-		DrawShapeWithHole( pDrawList, &chromLine[ 0 ], ptsCount, maskColor, clipRect, 1, 2 );
+		DrawShapeWithHole( pDrawList, &chromLine[ 0 ], ptsCount, maskColor, &clipRect, 1, 2 );
 		if ( borderColor || showColorSpaceTriangle || showWhitePoint )
 		{
 			pDrawList->PushClipRect( clipRect.Min, clipRect.Max, true );
@@ -2491,16 +2501,16 @@ namespace ImWidgets {
 	{
 		IM_ASSERT( pts_count >= 3 );
 
-		bool contained = true;
 		for ( int k = 2; k < pts_count; ++k )
 		{
-			ImVec2 a = pts[ k - 2 ];
+			ImVec2 a = pts[ 0 ];
 			ImVec2 b = pts[ k - 1 ];
-			ImVec2 c = pts[ k - 0 ];
-			contained &= ImTriangleContainsPoint( a, b, c, p );
+			ImVec2 c = pts[ k ];
+			if ( ImTriangleContainsPoint( a, b, c, p ) )
+				return true;
 		}
 
-		return contained;
+		return false;
 	}
 
 	//-----------------------------------------------------------------------------
@@ -2735,7 +2745,18 @@ namespace ImWidgets {
 	{
 		IM_ASSERT( pts_count >= 3 );
 
-		bool contained = true;
+		ImRect bb;
+		bb.Min = ImVec2( FLT_MAX, FLT_MAX );
+		bb.Max = ImVec2( -FLT_MAX, -FLT_MAX );
+		for ( int k = 0; k < pts_count; ++k )
+		{
+			bb.Min.x = ImMin( bb.Min.x, pts[ k ].x );
+			bb.Min.y = ImMin( bb.Min.y, pts[ k ].y );
+			bb.Max.x = ImMax( bb.Max.x, pts[ k ].x );
+			bb.Max.y = ImMax( bb.Max.y, pts[ k ].y );
+		}
+		if ( !bb.ContainsWithPad( p, ImVec2( 1.0f, 1.0f ) ) )
+			return false;
 
 		ImDrawListSharedData* _Data = ImGui::GetCurrentWindow()->DrawList->_Data;
 
@@ -2748,11 +2769,153 @@ namespace ImWidgets {
 			while ( triangulator._TrianglesLeft > 0 )
 			{
 				triangulator.GetNextTriangle( triangle );
-				contained &= ImTriangleContainsPoint( pts[ triangle[ 0 ] ], pts[ triangle[ 1 ] ], pts[ triangle[ 2 ] ], p );
+				if ( ImTriangleContainsPoint( pts[ triangle[ 0 ] ], pts[ triangle[ 1 ] ], pts[ triangle[ 2 ] ], p ) )
+					return true;
 			}
 		}
 
-		return contained;
+		return false;
+	}
+
+	bool IsPolyWithHoleContains( ImVec2* pts, int pts_count, ImVec2 p, ImRect* p_bb, int gap, int strokeWidth )
+	{
+		ImVector<ImVec2> scanHits;
+		ImVec2 min, max; // polygon min/max points
+		float y;
+		bool isMinMaxDone = false;
+
+		// find the orthagonal bounding box
+		// probably can put this as a predefined
+		if ( !isMinMaxDone )
+		{
+			min.x = min.y = FLT_MAX;
+			max.x = max.y = FLT_MIN;
+			//for ( auto p : poly )
+			for ( int i = 0; i < pts_count; ++i )
+			{
+				ImVec2 p = pts[ i ];
+				if ( p.x < min.x )
+					min.x = p.x;
+				if ( p.y < min.y )
+					min.y = p.y;
+				if ( p.x > max.x )
+					max.x = p.x;
+				if ( p.y > max.y )
+					max.y = p.y;
+			}
+			isMinMaxDone = true;
+		}
+		ImRect bb;
+		if ( p_bb == NULL )
+		{
+			bb.Min = min;
+			bb.Max = max;
+		}
+		else
+		{
+			bb = *p_bb;
+		}
+		if ( !bb.ContainsWithPad( p, ImVec2( 1.0f, 1.0f ) ) )
+			return false;
+
+		// Bounds check
+		if ( ( max.x < 0 ) || ( max.y < 0 ) )
+			return false;
+
+		// Vertically clip
+		if ( min.y <= 0 )
+			min.y = 0;
+
+		// so we know we start on the outside of the object we step out by 1.
+		min.x -= 1;
+		max.x += 1;
+
+		// Initialise our starting conditions
+		y = min.y;
+
+		struct ImVec2CompX
+		{
+			static int IMGUI_CDECL Comp( const void* lhs, const void* rhs )
+			{
+				if ( ( ( const ImVec2* )lhs )->x > ( ( const ImVec2* )rhs )->x )
+					return +1;
+				if ( ( ( const ImVec2* )lhs )->x < ( ( const ImVec2* )rhs )->x )
+					return -1;
+				return 0;
+			}
+		};
+
+		while ( y < max.y )
+		{
+			scanHits.clear();
+			{
+				int jump = 1;
+				ImVec2 fp = pts[ 0 ];
+
+				for ( size_t i = 0; i < pts_count - 1; i++ )
+				{
+					ImVec2 pa = pts[ i ];
+					ImVec2 pb = pts[ i + 1 ];
+
+					// jump double/dud points
+					if ( pa.x == pb.x && pa.y == pb.y ) continue;
+
+					// if we encounter our hull/poly start point, then we've now created the
+					// closed
+					// hull, jump the next segment and reset the first-point
+					if ( ( !jump ) && ( fp.x == pb.x ) && ( fp.y == pb.y ) )
+					{
+						if ( i < pts_count - 2 )
+						{
+							fp = pts[ i + 2 ];
+							jump = 1;
+							i++;
+						}
+					}
+					else
+					{
+						jump = 0;
+					}
+
+					// test to see if this segment makes the scan-cut.
+					if ( ( pa.y > pb.y && y < pa.y && y > pb.y ) || ( pa.y < pb.y && y > pa.y && y < pb.y ) )
+					{
+						ImVec2 intersect;
+
+						intersect.y = y;
+						if ( pa.x == pb.x )
+						{
+							intersect.x = pa.x;
+						}
+						else
+						{
+							intersect.x = ( pb.x - pa.x ) / ( pb.y - pa.y ) * ( y - pa.y ) + pa.x;
+						}
+						scanHits.push_back( intersect );
+					}
+				}
+
+				// Sort the scan hits by X, so we have a proper left->right ordering
+				ImQsort( &scanHits[ 0 ], scanHits.size(), sizeof( ImVec2 ), &ImVec2CompX::Comp );
+
+				// generate the line segments.
+				int i = 0;
+				int l = scanHits.size() - 1; // we need pairs of points, this prevents segfault.
+				for ( i = 0; i < l; i += 2 )
+				{
+					ImVec2 a = scanHits[ i ];
+					ImVec2 b = scanHits[ i + 1 ];
+					if ( ImRect( a, b ).ContainsWithPad( p, ImVec2( 0.0f, strokeWidth ) ) )
+					{
+						scanHits.clear();
+						return true;
+					}
+				}
+			}
+			y += gap;
+		}
+
+		return false;
 	}
 
 	bool IsMouseHoveringPolyConvex( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip )
@@ -2909,6 +3072,118 @@ namespace ImWidgets {
 		if ( !ImGui::IsMouseHoveringRect( bb.Min, bb.Max ) )
 			return false;
 		if ( !IsMouseHoveringPolyConcave( bb.Min, bb.Max, pts, pts_count ) )
+			return false;
+
+		if ( g.HoveredId != 0 && g.HoveredId != id && !g.HoveredIdAllowOverlap )
+			return false;
+		if ( g.ActiveId != 0 && g.ActiveId != id && !g.ActiveIdAllowOverlap )
+			if ( !g.ActiveIdFromShortcut )
+				return false;
+
+		// Done with rectangle culling so we can perform heavier checks now.
+		if ( !( item_flags & ImGuiItemFlags_NoWindowHoverableCheck ) && !ImGui::IsWindowContentHoverable( window, ImGuiHoveredFlags_None ) )
+		{
+			g.HoveredIdDisabled = true;
+			return false;
+		}
+
+		// We exceptionally allow this function to be called with id==0 to allow using it for easy high-level
+		// hover test in widgets code. We could also decide to split this function is two.
+		if ( id != 0 )
+		{
+			// Drag source doesn't report as hovered
+			if ( g.DragDropActive && g.DragDropPayload.SourceId == id && !( g.DragDropSourceFlags & ImGuiDragDropFlags_SourceNoDisableHover ) )
+				return false;
+
+			ImGui::SetHoveredID( id );
+
+			// AllowOverlap mode (rarely used) requires previous frame HoveredId to be null or to match.
+			// This allows using patterns where a later submitted widget overlaps a previous one. Generally perceived as a front-to-back hit-test.
+			if ( item_flags & ImGuiItemFlags_AllowOverlap )
+			{
+				g.HoveredIdAllowOverlap = true;
+				if ( g.HoveredIdPreviousFrame != id )
+					return false;
+			}
+
+			// Display shortcut (only works with mouse)
+			if ( id == g.LastItemData.ID && ( g.LastItemData.StatusFlags & ImGuiItemStatusFlags_HasShortcut ) )
+				if ( ImGui::IsItemHovered( ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_DelayNormal ) )
+					ImGui::SetTooltip( "%s", ImGui::GetKeyChordName( g.LastItemData.Shortcut ) );
+		}
+
+		// When disabled we'll return false but still set HoveredId
+		if ( item_flags & ImGuiItemFlags_Disabled )
+		{
+			// Release active id if turning disabled
+			if ( g.ActiveId == id && id != 0 )
+				ImGui::ClearActiveID();
+			g.HoveredIdDisabled = true;
+			return false;
+		}
+
+#ifndef IMGUI_DISABLE_DEBUG_TOOLS
+		if ( id != 0 )
+		{
+			// [DEBUG] Item Picker tool!
+			// We perform the check here because reaching is path is rare (1~ time a frame),
+			// making the cost of this tool near-zero! We could get better call-stack and support picking non-hovered
+			// items if we performed the test in ItemAdd(), but that would incur a bigger runtime cost.
+			if ( g.DebugItemPickerActive && g.HoveredIdPreviousFrame == id )
+				ImGui::GetForegroundDrawList()->AddRect( bb.Min, bb.Max, IM_COL32( 255, 255, 0, 255 ) );
+			if ( g.DebugItemPickerBreakId == id )
+				IM_DEBUG_BREAK();
+		}
+#endif
+
+		if ( g.NavDisableMouseHover )
+			return false;
+
+		return true;
+	}
+
+	bool IsMouseHoveringPolyWithHole( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip )
+	{
+		bool well_form = true;
+		for ( int k = 0; k < pts_count; ++k )
+		{
+			well_form &= ImRect( r_min, r_max ).Contains( pts[ k ] );
+		}
+		IM_ASSERT( well_form );
+
+		ImGuiContext& g = *ImGui::GetCurrentContext();
+
+		// Clip
+		ImRect rect_clipped( r_min, r_max );
+		if ( clip )
+			rect_clipped.ClipWith( g.CurrentWindow->ClipRect );
+
+		// Hit testing, expanded for touch input
+		if ( !rect_clipped.ContainsWithPad( g.IO.MousePos, g.Style.TouchExtraPadding ) )
+			return false;
+		if ( !IsPolyWithHoleContains( pts, pts_count, g.IO.MousePos ) )
+			return false;
+
+		return true;
+	}
+
+	bool ItemHoverablePolyWithHole( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags )
+	{
+		ImGuiContext& g = *GImGui;
+		ImGuiWindow* window = g.CurrentWindow;
+
+		bool well_form = true;
+		for ( int k = 0; k < pts_count; ++k )
+		{
+			well_form &= bb.Contains( pts[ k ] );
+		}
+		IM_ASSERT( well_form );
+
+		if ( g.HoveredWindow != window )
+			return false;
+		if ( !ImGui::IsMouseHoveringRect( bb.Min, bb.Max ) )
+			return false;
+		if ( !IsMouseHoveringPolyWithHole( bb.Min, bb.Max, pts, pts_count ) )
 			return false;
 
 		if ( g.HoveredId != 0 && g.HoveredId != id && !g.HoveredIdAllowOverlap )

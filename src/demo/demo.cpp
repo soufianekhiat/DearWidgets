@@ -486,7 +486,8 @@ namespace ImWidgets {
 					v += pos;
 				}
 
-				DrawShapeWithHole( pDrawList, &pos_norms[ 0 ], 10, IM_COL32( 255 * col.x, 255 * col.y, 255 * col.z, 255 * col.w ), ImRect( pos, pos + ImVec2( size, size ) ), gap, strokeWidth);
+				ImRect bb( pos, pos + ImVec2(size, size) );
+				DrawShapeWithHole( pDrawList, &pos_norms[ 0 ], 10, IM_COL32( 255 * col.x, 255 * col.y, 255 * col.z, 255 * col.w ), &bb, gap, strokeWidth);
 
 				ImGui::Dummy( ImVec2( size, size ) );
 
@@ -657,8 +658,6 @@ namespace ImWidgets {
 				float const size = ImGui::GetContentRegionAvail().x;
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				ImVec2 pos = ImGui::GetCursorScreenPos();
-				//ImVec2 pos_norms[] = { { 0.0f, 0.0f }, { 0.0f, 1.0f }, { 1.0f, 1.0f }, { 1.0f, 0.0f }, { 0.0f, 0.0f },
-				//					   { 0.3f, 0.3f }, { 0.7f, 0.3f }, { 0.7f, 0.7f }, { 0.3f, 0.7f }, { 0.3f, 0.3f } };
 				ImVec2 pos_norms[] = { { 0.0f, 0.0f }, { 0.0f, 1.0f }, { 1.0f, 1.0f } };
 				for ( ImVec2& v : pos_norms )
 				{
@@ -667,8 +666,21 @@ namespace ImWidgets {
 					v += pos;
 				}
 				bool hovered = IsMouseHoveringPolyConvex( pos, pos + ImVec2( size, size ), pos_norms, 3 );
-				//DrawShapeWithHole( pDrawList, &pos_norms[ 0 ], 3, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ), ImRect( pos, pos + ImVec2( size, size ) ), 1, 1 );
 				pDrawList->AddConvexPolyFilled( &pos_norms[ 0 ], 3, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
+				ImGui::Dummy( ImVec2( size, size ) );
+				pos = ImGui::GetCursorScreenPos();
+				ImVector<ImVec2> disk;
+				disk.resize(32);
+				for ( int k = 0; k < 32; ++k )
+				{
+					float angle = ( ( float )k ) * 2.0f * IM_PI / 32.0f;
+					float cos0 = ImCos( angle );
+					float sin0 = ImSin( angle );
+					disk[ k ].x = pos.x + 0.5f * size + cos0 * size * 0.5f;
+					disk[ k ].y = pos.y + 0.5f * size + sin0 * size * 0.5f;
+				}
+				hovered = IsMouseHoveringPolyConvex( pos, pos + ImVec2( size, size ), &disk[0], 32);
+				pDrawList->AddConvexPolyFilled( &disk[ 0 ], 32, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 
 				ImGui::Dummy( ImVec2( size, size ) );
 
@@ -679,23 +691,84 @@ namespace ImWidgets {
 				float const size = ImGui::GetContentRegionAvail().x;
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				ImVec2 pos = ImGui::GetCursorScreenPos();
-				//ImVec2 pos_norms[] = { { 0.0f, 0.0f }, { 0.0f, 1.0f }, { 1.0f, 1.0f }, { 1.0f, 0.0f }, { 0.0f, 0.0f },
-				//					   { 0.3f, 0.3f }, { 0.7f, 0.3f }, { 0.7f, 0.7f }, { 0.3f, 0.7f }, { 0.3f, 0.3f } };
-				//ImVec2 pos_norms[] = { { 0.0f, 0.0f }, { 0.0f, 1.0f }, { 1.0f, 1.0f }, { 1.0f, 0.7f }, { 0.3f, 0.7f },
-				//					   { 0.3f, 0.3f }, { 1.0f, 0.3f }, { 1.0f, 0.0f }, { 0.0f, 0.0f } };
-				ImVec2 pos_norms[] = { { 0.0f, 0.0f }, { 0.0f, 1.0f }, { 1.0f, 1.0f }, { 1.0f, 0.0f }, { 0.0f, 0.0f },
-									   { 0.3f, 0.3f }, { 0.7f, 0.3f }, { 0.7f, 0.7f }, { 0.3f, 0.7f }, { 0.3f, 0.3f } };
-				for ( ImVec2& v : pos_norms )
+				int sz = 8;
+				ImVec2 pos_norms[] = { { 0.0f, 0.0f }, { 0.3f, 0.0f }, { 0.3f, 0.7f }, { 0.7f, 0.7f }, { 0.7f, 0.0f },
+									   { 1.0f, 0.0f }, { 1.0f, 1.0f }, { 0.0f, 1.0f } };
+				for ( int k = 0; k < sz; ++k )
 				{
+					ImVec2& v = pos_norms[ k ];
 					v.x *= size;
 					v.y *= size;
 					v += pos;
 				}
-				bool hovered = IsMouseHoveringPolyConcave( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), pos_norms, 10 );
-				pDrawList->AddConcavePolyFilled( &pos_norms[ 0 ], 10, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
-
+				bool hovered = IsMouseHoveringPolyConcave( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), pos_norms, sz );
+				pDrawList->AddConcavePolyFilled( &pos_norms[ 0 ], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
+				ImGui::Dummy( ImVec2( size, size ) );
+				pos = ImGui::GetCursorScreenPos();
+				ImVector<ImVec2> ring;
+				sz = 64;
+				ring.resize( sz );
+				srand(97);
+				for ( int k = 0; k < sz; ++k )
+				{
+					float angle = -( ( float )k ) * 2.0f * IM_PI / 32.0f;
+					float cos0 = ImCos( angle );
+					float sin0 = ImSin( angle );
+					float r = ( float )( rand() % ( ( int )ImRound( size ) ) );
+					ring[ k ].x = pos.x + size * 0.5f + r * 0.5f * cos0;
+					ring[ k ].y = pos.y + size * 0.5f + r * 0.5f * sin0;
+				}
+				hovered = IsMouseHoveringPolyConcave( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), &ring[ 0 ], sz );
+				pDrawList->AddConcavePolyFilled( &ring[ 0 ], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 
+				ImGui::TreePop();
+			}
+			if ( ImGui::TreeNode( "Poly With Hole Hovered" ) )
+			{
+				float const size = ImGui::GetContentRegionAvail().x;
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+				int sz = 10;
+				ImVec2 pos_norms[] = { { 0.0f, 0.0f }, { 0.0f, 1.0f }, { 1.0f, 1.0f }, { 1.0f, 0.0f }, { 0.0f, 0.0f },
+									   { 0.3f, 0.3f }, { 0.7f, 0.3f }, { 0.7f, 0.7f }, { 0.3f, 0.7f }, { 0.3f, 0.3f } };
+				for ( int k = 0; k < sz; ++k )
+				{
+					ImVec2& v = pos_norms[ k ];
+					v.x *= size;
+					v.y *= size;
+					v += pos;
+				}
+				bool hovered = IsMouseHoveringPolyWithHole( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), pos_norms, sz );
+				DrawShapeWithHole( pDrawList, &pos_norms[ 0 ], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
+				ImGui::Dummy( ImVec2( size, size ) );
+				pos = ImGui::GetCursorScreenPos();
+				ImVector<ImVec2> ring;
+				sz = 64;
+				ring.resize( sz );
+				float r;
+				for ( int k = 0; k < 32; ++k )
+				{
+					float angle = -( ( float )k ) * 2.0f * IM_PI / 31.0f;
+					float cos0 = ImCos( angle );
+					float sin0 = ImSin( angle );
+					r = size * ( ( ( float )( rand() % 1000 ) / 1000.0f ) * 0.25f + 0.75f );
+					ring[ k ].x = pos.x + size * 0.5f + r * 0.5f * cos0;
+					ring[ k ].y = pos.y + size * 0.5f + r * 0.5f * sin0;
+				}
+				srand(97);
+				for ( int k = 32; k < 64; ++k )
+				{
+					float angle = ( ( float )( k - 32 ) ) * 2.0f * IM_PI / 31.0f;
+					float cos0 = ImCos( angle );
+					float sin0 = ImSin( angle );
+					r = size * 0.75f * (((float)(rand() % 1000) / 1000.0f) * 0.5f + 0.5f);
+					ring[ k ].x = pos.x + size * 0.5f + r * 0.5f * cos0;
+					ring[ k ].y = pos.y + size * 0.5f + r * 0.5f * sin0;
+				}
+				hovered = IsMouseHoveringPolyWithHole( pos, pos + ImVec2( size, size ), &ring[ 0 ], sz );
+				DrawShapeWithHole( pDrawList, &ring[ 0 ], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 )  );
+				ImGui::Dummy( ImVec2( size, size ) );
 				ImGui::TreePop();
 			}
 			ImGui::TreePop();

@@ -502,7 +502,7 @@ namespace ImWidgets{
 	IMGUI_API void DrawColorRing( ImDrawList* pDrawList, ImVec2 const curPos, ImVec2 const size, float thickness_, ImColor1DCallback func, void* pUserData, int division, float colorOffset, bool bIsBilinear );
 
 	// poly: Counterclockwise: Positive shape & Clockwise for hole, don't forget to close your shape
-	IMGUI_API void DrawShapeWithHole( ImDrawList* draw, ImVec2* poly, int points_count, ImU32 color, ImRect bb, int gap = 1, int strokeWidth = 1 );
+	IMGUI_API void DrawShapeWithHole( ImDrawList* draw, ImVec2* poly, int points_count, ImU32 color, ImRect* p_bb = NULL, int gap = 1, int strokeWidth = 1 );
 
 	// TODO: find a clean way expose the style of the draws:
 	// Triangle of ColorSpace
@@ -612,11 +612,14 @@ namespace ImWidgets{
 	//////////////////////////////////////////////////////////////////////////
 	IMGUI_API bool IsPolyConvexContains( ImVec2* pts, int pts_count, ImVec2 p );
 	IMGUI_API bool IsPolyConcaveContains( ImVec2* pts, int pts_count, ImVec2 p );
+	IMGUI_API bool IsPolyWithHoleContains( ImVec2* pts, int pts_count, ImVec2 p, ImRect* p_bb = NULL, int gap = 1, int strokeWidth = 1 );
 
 	IMGUI_API bool IsMouseHoveringPolyConvex( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip = true );
 	IMGUI_API bool ItemHoverablePolyConvex( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags );
 	IMGUI_API bool IsMouseHoveringPolyConcave( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip = true );
 	IMGUI_API bool ItemHoverablePolyConcave( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags );
+	IMGUI_API bool IsMouseHoveringPolyWithHole( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip = true );
+	IMGUI_API bool ItemHoverablePolyWithHole( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags );
 
 	//////////////////////////////////////////////////////////////////////////
 	// Widgets
