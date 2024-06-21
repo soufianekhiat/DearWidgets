@@ -460,6 +460,50 @@ namespace ImWidgets{
 				}
 				ImGui::Dummy( ImVec2( width, width ) );
 			}
+			if ( ImGui::CollapsingHeader( "Image Convex Shape" ) )
+			{
+				float const size = ImGui::GetContentRegionAvail().x;
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				static ImVec2 uv_offset( 0.0f, 0.0f );
+				static ImVec2 uv_scale( 1.0f, 1.0f );
+				ImGui::DragFloat2( "Offset##ImageConvexShape", &uv_offset[ 0 ], 0.001f, -3.0f, 3.0f );
+				ImGui::DragFloat2( "Scale##ImageConvexShape", &uv_scale[ 0 ], 0.001f, -3.0f, 3.0f );
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+				ImVector<ImVec2> disk;
+				disk.resize( 32 );
+				for ( int k = 0; k < 32; ++k )
+				{
+					float angle = ( ( float )k ) * 2.0f * IM_PI / 32.0f;
+					float cos0 = ImCos( angle );
+					float sin0 = ImSin( angle );
+					disk[ k ].x = pos.x + 0.5f * size + cos0 * size * 0.5f;
+					disk[ k ].y = pos.y + 0.5f * size + sin0 * size * 0.5f;
+				}
+				DrawImageConvexShape( pDrawList, background, &disk[ 0 ], 32, IM_COL32( 255, 255, 255, 255 ), uv_offset, uv_scale );
+				ImGui::Dummy( ImVec2( size, size ) );
+			}
+			if ( ImGui::CollapsingHeader( "Image Concave Shape" ) )
+			{
+				float const size = ImGui::GetContentRegionAvail().x;
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				static ImVec2 uv_offset( 0.0f, 0.0f );
+				static ImVec2 uv_scale( 1.0f, 1.0f );
+				ImGui::DragFloat2( "Offset##ImageConcaveShape", &uv_offset[ 0 ], 0.001f, -3.0f, 3.0f );
+				ImGui::DragFloat2( "Scale##ImageConcaveShape", &uv_scale[ 0 ], 0.001f, -3.0f, 3.0f );
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+				int sz = 8;
+				ImVec2 pos_norms[] = { { 0.0f, 0.0f }, { 0.3f, 0.0f }, { 0.3f, 0.7f }, { 0.7f, 0.7f }, { 0.7f, 0.0f },
+									   { 1.0f, 0.0f }, { 1.0f, 1.0f }, { 0.0f, 1.0f } };
+				for ( int k = 0; k < sz; ++k )
+				{
+					ImVec2& v = pos_norms[ k ];
+					v.x *= size;
+					v.y *= size;
+					v += pos;
+				}
+				DrawImageConcaveShape( pDrawList, background, &pos_norms[ 0 ], sz, IM_COL32( 255, 255, 255, 255 ), uv_offset, uv_scale );
+				ImGui::Dummy( ImVec2( size, size ) );
+			}
 			if ( ImGui::CollapsingHeader( "Shape with Hole" ) )
 			{
 				static ImVec4 col = { 1, 0, 0, 1 };
@@ -833,7 +877,6 @@ namespace ImWidgets{
 				ImGui::SameLine();
 				if ( ImGui::ColorEdit3( "c1", &colors[ 1 ].x ) )
 					col1 = ImGui::GetColorU32( colors[ 1 ] );
-
 
 				float height = ImMax( heights[ 0 ], heights[ 1 ] );
 				ImVec2 pos = ImGui::GetCursorScreenPos() + ImVec2( 0.0f, height );
