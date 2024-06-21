@@ -638,7 +638,7 @@ namespace ImWidgets{
 
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
-			if ( ImGui::CollapsingHeader( "Linear Graduation" ) )
+			if ( ImGui::CollapsingHeader( "Linear Line Graduation" ) )
 			{
 				float const size = ImGui::GetContentRegionAvail().x;
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
@@ -677,20 +677,20 @@ namespace ImWidgets{
 
 				float height = ImMax( heights[ 0 ], ImMax( heights[ 1 ], heights[ 2 ] ) );
 				ImVec2 pos = ImGui::GetCursorScreenPos() + ImVec2( 0.0f, height );
-				DrawLinearGraduation( pDrawList, pos, pos + ImVec2( size, 0.0f ),
-									  mainLineThickness, mainCol,
-									  divisions[ 0 ], heights[ 0 ], thicknesses[ 0 ], angles[ 0 ], col0,
-									  divisions[ 1 ], heights[ 1 ], thicknesses[ 1 ], angles[ 1 ], col1,
-									  divisions[ 2 ], heights[ 2 ], thicknesses[ 2 ], angles[ 2 ], col2 );
+				DrawLinearLineGraduation( pDrawList, pos, pos + ImVec2( size, 0.0f ),
+										  mainLineThickness, mainCol,
+										  divisions[ 0 ], heights[ 0 ], thicknesses[ 0 ], angles[ 0 ], col0,
+										  divisions[ 1 ], heights[ 1 ], thicknesses[ 1 ], angles[ 1 ], col1,
+										  divisions[ 2 ], heights[ 2 ], thicknesses[ 2 ], angles[ 2 ], col2 );
 				ImGui::Dummy( ImVec2( size, height ) );
-				DrawLinearGraduation( pDrawList, pos, pos + ImVec2( size, size ),
-									  mainLineThickness, mainCol,
-									  divisions[ 0 ], heights[ 0 ], thicknesses[ 0 ], angles[ 0 ], col0,
-									  divisions[ 1 ], heights[ 1 ], thicknesses[ 1 ], angles[ 1 ], col1,
-									  divisions[ 2 ], heights[ 2 ], thicknesses[ 2 ], angles[ 2 ], col2 );
+				DrawLinearLineGraduation( pDrawList, pos, pos + ImVec2( size, size ),
+										  mainLineThickness, mainCol,
+										  divisions[ 0 ], heights[ 0 ], thicknesses[ 0 ], angles[ 0 ], col0,
+										  divisions[ 1 ], heights[ 1 ], thicknesses[ 1 ], angles[ 1 ], col1,
+										  divisions[ 2 ], heights[ 2 ], thicknesses[ 2 ], angles[ 2 ], col2 );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
-			if ( ImGui::CollapsingHeader( "Circular Graduation" ) )
+			if ( ImGui::CollapsingHeader( "Linear Circular Graduation" ) )
 			{
 				float const size = ImGui::GetContentRegionAvail().x;
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
@@ -739,11 +739,108 @@ namespace ImWidgets{
 
 				float height = ImMax( heights[ 0 ], ImMax( heights[ 1 ], heights[ 2 ] ) );
 				ImVec2 pos = ImGui::GetCursorScreenPos() + ImVec2( 0.0f, height );
-				DrawCircularGraduation( pDrawList, pos + ImVec2( size * 0.5f, size * 0.5f ), radius, angles_bound[ 0 ], angles_bound[ 1 ], num_segments,
-										mainLineThickness, mainCol,
-										divisions[ 0 ], heights[ 0 ], thicknesses[ 0 ], angles[ 0 ], col0,
-										divisions[ 1 ], heights[ 1 ], thicknesses[ 1 ], angles[ 1 ], col1,
-										divisions[ 2 ], heights[ 2 ], thicknesses[ 2 ], angles[ 2 ], col2 );
+				DrawLinearCircularGraduation( pDrawList, pos + ImVec2( size * 0.5f, size * 0.5f ), radius, angles_bound[ 0 ], angles_bound[ 1 ], num_segments,
+											  mainLineThickness, mainCol,
+											  divisions[ 0 ], heights[ 0 ], thicknesses[ 0 ], angles[ 0 ], col0,
+											  divisions[ 1 ], heights[ 1 ], thicknesses[ 1 ], angles[ 1 ], col1,
+											  divisions[ 2 ], heights[ 2 ], thicknesses[ 2 ], angles[ 2 ], col2 );
+				ImGui::Dummy( ImVec2( size, size ) );
+			}
+			if ( ImGui::CollapsingHeader( "Log Line Graduation" ) )
+			{
+				float const size = ImGui::GetContentRegionAvail().x;
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				static float mainLineThickness = 1.0f;
+				static ImU32 mainCol = IM_COL32( 255, 255, 255, 255 );
+				static int division0 = 3;  static float height0 = 32.0f; static float thickness0 = 5.0f; static float angle0 = 0; static ImU32 col0 = IM_COL32( 255, 0, 0, 255 );
+				static int division1 = 5;  static float height1 = 16.0f; static float thickness1 = 2.0f; static float angle1 = 0; static ImU32 col1 = IM_COL32( 0, 255, 0, 255 );
+				static int divisions[] = { division0, division1 };
+				static float heights[] = { height0, height1 };
+				static float thicknesses[] = { thickness0, thickness1 };
+				static float angles[] = { angle0, angle1  };
+				static ImVec4 colors[] = { ImGui::ColorConvertU32ToFloat4( col0 ), ImGui::ColorConvertU32ToFloat4( col1 ) };
+
+				ImGui::DragFloat( "Main Thickness", &mainLineThickness, 1.0f, 1.0f, 16.0f );
+				ImVec4 vMainCol = ImGui::ColorConvertU32ToFloat4( mainCol );
+				if ( ImGui::ColorEdit3( "Main", &vMainCol.x ) )
+					mainCol = ImGui::GetColorU32( vMainCol );
+
+				ImGui::DragInt2( "Divisions", &divisions[ 0 ], 1.0f, 1, 10 );
+				ImGui::DragFloat2( "Heights", &heights[ 0 ], 1.0f, 1.0f, 128.0f );
+				ImGui::DragFloat2( "Thicknesses", &thicknesses[ 0 ], 1.0f, 1.0f, 16.0f );
+				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+				ImGui::SliderAngle( "a0", &angles[ 0 ] ); ImGui::SameLine();
+				ImGui::SliderAngle( "a1", &angles[ 1 ] ); ImGui::SameLine();
+				ImGui::SliderAngle( "a2", &angles[ 2 ] );
+				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+				if ( ImGui::ColorEdit3( "c0", &colors[ 0 ].x ) )
+					col0 = ImGui::GetColorU32( colors[ 0 ] );
+				ImGui::SameLine();
+				if ( ImGui::ColorEdit3( "c1", &colors[ 1 ].x ) )
+					col1 = ImGui::GetColorU32( colors[ 1 ] );
+
+				float height = ImMax( heights[ 0 ], ImMax( heights[ 1 ], heights[ 2 ] ) );
+				ImVec2 pos = ImGui::GetCursorScreenPos() + ImVec2( 0.0f, height );
+				DrawLogLineGraduation( pDrawList, pos, pos + ImVec2( size, 0.0f ),
+									   mainLineThickness, mainCol,
+									   divisions[ 0 ], heights[ 0 ], thicknesses[ 0 ], angles[ 0 ], col0,
+									   divisions[ 1 ], heights[ 1 ], thicknesses[ 1 ], angles[ 1 ], col1 );
+				ImGui::Dummy( ImVec2( size, height ) );
+				DrawLogLineGraduation( pDrawList, pos, pos + ImVec2( size, size ),
+									   mainLineThickness, mainCol,
+									   divisions[ 0 ], heights[ 0 ], thicknesses[ 0 ], angles[ 0 ], col0,
+									   divisions[ 1 ], heights[ 1 ], thicknesses[ 1 ], angles[ 1 ], col1 );
+				ImGui::Dummy( ImVec2( size, size ) );
+			}
+			if ( ImGui::CollapsingHeader( "Log Circular Graduation" ) )
+			{
+				float const size = ImGui::GetContentRegionAvail().x;
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				static float mainLineThickness = 1.0f;
+				static ImU32 mainCol = IM_COL32( 255, 255, 255, 255 );
+				static int division0 = 3;  static float height0 = 32.0f; static float thickness0 = 5.0f; static float angle0 = 0; static ImU32 col0 = IM_COL32( 255, 0, 0, 255 );
+				static int division1 = 5;  static float height1 = 16.0f; static float thickness1 = 2.0f; static float angle1 = 0; static ImU32 col1 = IM_COL32( 0, 255, 0, 255 );
+				static int divisions[] = { division0, division1 };
+				static float heights[] = { height0, height1 };
+				static float thicknesses[] = { thickness0, thickness1 };
+				static float angles[] = { angle0, angle1 };
+				static float start_angle = -IM_PI / 3.0f;
+				static float end_angle = 4.0f * IM_PI / 3.0f;
+				static float angles_bound[] = { start_angle, end_angle };
+				static float radius = size * 0.5f - 2.0f * ImMax( height0, height1 );
+				static int num_segments = 0;
+				static ImVec4 colors[] = { ImGui::ColorConvertU32ToFloat4( col0 ), ImGui::ColorConvertU32ToFloat4( col1 ) };
+
+				ImGui::DragFloat( "Main Thickness", &mainLineThickness, 1.0f, 1.0f, 16.0f );
+				ImVec4 vMainCol = ImGui::ColorConvertU32ToFloat4( mainCol );
+				if ( ImGui::ColorEdit3( "Main", &vMainCol.x ) )
+					mainCol = ImGui::GetColorU32( vMainCol );
+
+				ImGui::DragInt2( "Divisions", &divisions[ 0 ], 1.0f, 1, 10 );
+				ImGui::DragFloat2( "Heights", &heights[ 0 ], 1.0f, 1.0f, 128.0f );
+				ImGui::DragFloat2( "Thicknesses", &thicknesses[ 0 ], 1.0f, 1.0f, 16.0f );
+				ImGui::DragFloat( "Radius", &radius, 1.0f, 1.0f, size );
+				ImGui::DragInt( "Segment", &num_segments, 1.0f, 0, 64 );
+				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+				ImGui::SliderAngle( "start angle", &angles_bound[ 0 ], -360.0f, angles_bound[ 1 ] * 180.0f / IM_PI ); ImGui::SameLine();
+				ImGui::SliderAngle( "end angle", &angles_bound[ 1 ], angles_bound[ 0 ] * 180.0f / IM_PI, 360.0f );
+				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+				ImGui::SliderAngle( "a0", &angles[ 0 ] ); ImGui::SameLine();
+				ImGui::SliderAngle( "a1", &angles[ 1 ] );
+				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+				if ( ImGui::ColorEdit3( "c0", &colors[ 0 ].x ) )
+					col0 = ImGui::GetColorU32( colors[ 0 ] );
+				ImGui::SameLine();
+				if ( ImGui::ColorEdit3( "c1", &colors[ 1 ].x ) )
+					col1 = ImGui::GetColorU32( colors[ 1 ] );
+
+
+				float height = ImMax( heights[ 0 ], heights[ 1 ] );
+				ImVec2 pos = ImGui::GetCursorScreenPos() + ImVec2( 0.0f, height );
+				DrawLogCircularGraduation( pDrawList, pos + ImVec2( size * 0.5f, size * 0.5f ), radius, angles_bound[ 0 ], angles_bound[ 1 ], num_segments,
+										   mainLineThickness, mainCol,
+										   divisions[ 0 ], heights[ 0 ], thicknesses[ 0 ], angles[ 0 ], col0,
+										   divisions[ 1 ], heights[ 1 ], thicknesses[ 1 ], angles[ 1 ], col1 );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
 			ImGui::Unindent();

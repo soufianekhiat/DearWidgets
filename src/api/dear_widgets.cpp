@@ -1661,6 +1661,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	//////////////////////////////////////////////////////////////////////////
 	void GetTrianglePointer( ImVec2& a, ImVec2& b, ImVec2& c, ImVec2 targetPoint, float angle, float height )
 	{
+		//// Simple Work around to have approximatively the tip on the target point
+		//// TODO: Find better solution
+		//if ( thickness > 0.0f )
+		//	targetPoint += ImVec2( 0.0f, thickness * 0.5f );
+
 		float cos2pi_3 = ImCos( ( 2.0f / 3.0f ) * IM_PI );
 		float sin2pi_3 = ImSin( ( 2.0f / 3.0f ) * IM_PI );
 
@@ -1709,8 +1714,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 	}
 
-	void ImInternalGetSignetVertices( ImVec2* pts, int pts_count, ImVec2 targetPoint, float width, float height, float height_ratio, float align01, float angle )
+	void ImInternalGetSignetVertices( ImVec2* pts, int pts_count, ImVec2 targetPoint, float width, float height, float height_ratio, float align01, float angle, float thickness )
 	{
+		//// Simple Work around to have approximatively the tip on the target point
+		//// TODO: Find better solution
+		//if ( thickness > 0.0f )
+		//	targetPoint += ImVec2( 0.0f, thickness * 0.5f );
+
 		float left = ImLerp( targetPoint.x - width, targetPoint.x, align01 );
 		float right = left + width;
 		float top = ImLerp( targetPoint.y, targetPoint.y + height, height_ratio );
@@ -1722,21 +1732,21 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		pts[ 3 ] = ImVec2( right, bottom );
 		pts[ 4 ] = ImVec2( right, top );
 
-		GetRotatePoints( &pts[ 0 ], pts_count, targetPoint, angle);
+		GetRotatePoints( &pts[ 0 ], pts_count, targetPoint, angle );
 	}
 
 	void DrawSignetCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float width, float height, float height_ratio, float align01, float angle, float thickness, ImU32 col )
 	{
 		ImVec2 pts[ 5 ];
-		ImInternalGetSignetVertices( &pts[ 0 ], 5, targetPoint, width, height, height_ratio, align01, angle );
+		ImInternalGetSignetVertices( &pts[ 0 ], 5, targetPoint, width, height, height_ratio, align01, angle, thickness );
 
-		pDrawList->AddPolyline( &pts[ 0 ], 5, col, ImDrawFlags_Closed, thickness);
+		pDrawList->AddPolyline( &pts[ 0 ], 5, col, ImDrawFlags_Closed, thickness );
 	}
 
 	void DrawSignetFilledCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float width, float height, float height_ratio, float align01, float angle, ImU32 col )
 	{
 		ImVec2 pts[ 5 ];
-		ImInternalGetSignetVertices( &pts[ 0 ], 5, targetPoint, width, height, height_ratio, align01, angle );
+		ImInternalGetSignetVertices( &pts[ 0 ], 5, targetPoint, width, height, height_ratio, align01, angle, 0.0f );
 
 		pDrawList->AddConvexPolyFilled( &pts[ 0 ], 5, col );
 	}
@@ -2501,7 +2511,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		DrawShapeWithHole( drawlist, pts, pts_count, col );
 	}
 
-	void DrawLinearGraduation( ImDrawList* drawlist, ImVec2 start, ImVec2 end,
+	void DrawLinearLineGraduation( ImDrawList* drawlist, ImVec2 start, ImVec2 end,
 							   float mainLineThickness, ImU32 mainCol,
 							   int division0, float height0, float thickness0, float angle0, ImU32 col0,
 							   int division1, float height1, float thickness1, float angle1, ImU32 col1,
@@ -2510,7 +2520,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( mainLineThickness < 0.5f ||
 			 ( thickness0 < 0.5f &&
 			   thickness1 < 0.5f &&
-			   thickness1 < 0.5f ) )
+			   thickness2 < 0.5f ) )
 			return;
 		if ( ( mainCol & IM_COL32_A_MASK ) == 0 &&
 			 ( col0 & IM_COL32_A_MASK ) == 0 &&
@@ -2616,7 +2626,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		drawlist->AddLine( start, end, mainCol, mainLineThickness );
 	}
 
-	void DrawCircularGraduation( ImDrawList* drawlist, ImVec2 center, float radius, float start_angle, float end_angle, int num_segments,
+	void DrawLinearCircularGraduation( ImDrawList* drawlist, ImVec2 center, float radius, float start_angle, float end_angle, int num_segments,
 							   float mainLineThickness, ImU32 mainCol,
 							   int division0, float height0, float thickness0, float angle0, ImU32 col0,
 							   int division1, float height1, float thickness1, float angle1, ImU32 col1,
@@ -2625,7 +2635,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( radius < 0.5f ||
 			( thickness0 < 0.5f &&
 			 thickness1 < 0.5f &&
-			 thickness1 < 0.5f ) )
+			 thickness2 < 0.5f ) )
 			return;
 		if ( ( mainCol & IM_COL32_A_MASK ) == 0 &&
 			 ( col0 & IM_COL32_A_MASK ) == 0 && 
@@ -2712,6 +2722,156 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 						ImVec2 v = center + up0 * radius;
 						drawlist->AddLine( v, v + up1 * height2, col2, thickness2 );
 					}
+				}
+			}
+		}
+
+		drawlist->PathArcTo( center, radius, -start_angle, -end_angle, num_segments );
+		drawlist->PathStroke( mainCol, ImDrawFlags_None, mainLineThickness );
+	}
+
+	void DrawLogLineGraduation( ImDrawList* drawlist, ImVec2 start, ImVec2 end,
+								float mainLineThickness, ImU32 mainCol,
+								int division0, float height0, float thickness0, float angle0, ImU32 col0,
+								int division1, float height1, float thickness1, float angle1, ImU32 col1 )
+	{
+		if ( mainLineThickness < 0.5f ||
+			 ( thickness0 < 0.5f &&
+			   thickness1 < 0.5f ) )
+			return;
+		if ( ( mainCol & IM_COL32_A_MASK ) == 0 &&
+			 ( col0 & IM_COL32_A_MASK ) == 0 &&
+			 ( col1 & IM_COL32_A_MASK ) == 0 )
+			return;
+
+		ImVec2 delta = end - start;
+		float length = ImLength( delta );
+		ImVec2 forward = ImNormalized( delta );
+		ImVec2 up = ImAntiHalfTurn( forward );
+		if ( division0 > 0 )
+		{
+			float dx0 = length / ( ( float )division0 );
+			float inv_div0 = 1.0f / ( ( float )division0 );
+			ImVec2 up0;
+			if ( angle0 != 0.0f )
+			{
+				float cos0 = ImCos( -angle0 );
+				float sin0 = ImSin( -angle0 );
+				up0 = ImRotate( up, cos0, sin0 );
+			}
+			else
+			{
+				up0 = up;
+			}
+			for ( int k = 0; k <= division0; ++k )
+			{
+				float fk = ( float )k;
+				float t = fk * inv_div0;
+				ImVec2 v = ImLerp( start, end, t );
+				drawlist->AddLine( v, v + up0 * height0, col0, thickness0 );
+			}
+		}
+		if ( division0 > 0 && division1 > 0 )
+		{
+			float dx0 = length / ( ( float )division0 );
+			float inv_div0 = 1.0f / ( ( float )division0 );
+			float dx1 = dx0 / ( ( float )division1 );
+			float inv_div1 = 1.0f / ( ( float )division1 );
+			float scale = 1.0f / ImLog( ( float )( division1 + 1 ) );
+			ImVec2 up1;
+			if ( angle1 != 0.0f )
+			{
+				float cos0 = ImCos( -angle1 );
+				float sin0 = ImSin( -angle1 );
+				up1 = ImRotate( up, cos0, sin0 );
+			}
+			else
+			{
+				up1 = up;
+			}
+			for ( int p = 0; p < division0; ++p )
+			{
+				float fp = ( float )p;
+				float t0 = fp * inv_div0;
+				ImVec2 v0 = ImLerp( start, end, t0 );
+				for ( int k = 2; k < division1 + 1; ++k )
+				{
+					float fk = ImLog( ( float )( k ) ) * scale;
+					ImVec2 v = v0 + forward * ( fk * dx0 );
+					drawlist->AddLine( v, v + up1 * height1, col1, thickness1 );
+				}
+			}
+		}
+
+		drawlist->AddLine( start, end, mainCol, mainLineThickness );
+	}
+
+	void DrawLogCircularGraduation( ImDrawList* drawlist, ImVec2 center, float radius, float start_angle, float end_angle, int num_segments,
+									float mainLineThickness, ImU32 mainCol,
+									int division0, float height0, float thickness0, float angle0, ImU32 col0,
+									int division1, float height1, float thickness1, float angle1, ImU32 col1 )
+	{
+		if ( radius < 0.5f ||
+			 ( thickness0 < 0.5f &&
+			   thickness1 < 0.5f ) )
+			return;
+		if ( ( mainCol & IM_COL32_A_MASK ) == 0 &&
+			 ( col0 & IM_COL32_A_MASK ) == 0 &&
+			 ( col1 & IM_COL32_A_MASK ) == 0 )
+			return;
+
+
+		if ( start_angle > end_angle )
+		{
+			while ( start_angle > end_angle )
+			{
+				start_angle += 2.0f * IM_PI;
+			}
+		}
+		float angle_spread = end_angle - start_angle;
+		ImVec2 up = ImRotate( ImVec2( 1.0f, 0.0f ), ImCos( start_angle ), ImSin( start_angle ) );
+		if ( division0 > 0 )
+		{
+			float da0 = angle_spread / ( ( float )division0 );
+			for ( int k = 0; k <= division0; ++k )
+			{
+				float fk = ( float )k;
+				float a0 = start_angle + fk * da0;
+				float a1 = a0 + angle0;
+				float cos00 = ImCos( -a0 );
+				float sin00 = ImSin( -a0 );
+				float cos01 = ImCos( -a1 );
+				float sin01 = ImSin( -a1 );
+				ImVec2 up0 = ImRotate( ImVec2( 1.0f, 0.0f ), cos00, sin00 );
+				ImVec2 up1 = ImRotate( ImVec2( 1.0f, 0.0f ), cos01, sin01 );
+				ImVec2 v = center + up0 * radius;
+				drawlist->AddLine( v, v + up1 * height0, col0, thickness0 );
+			}
+		}
+		if ( division0 > 0 && division1 > 0 )
+		{
+			float da0 = angle_spread / ( ( float )division0 );
+			float da1 = da0 / ( ( float )division1 );
+			float scale = 1.0f / ImLog( ( float )( division1 + 1 ) );
+			for ( int p = 0; p < division0; ++p )
+			{
+				float fp = ( float )p;
+				float ap = start_angle + fp * da0;
+
+				for ( int k = 2; k <= division1 + 1; ++k )
+				{
+					float fk = ImLog( ( float )( k ) ) * scale;
+					float a0 = ap + fk * da0;
+
+					float a1 = a0 + angle1;
+					float cos00 = ImCos( -a0 );
+					float sin00 = ImSin( -a0 );
+					float cos01 = ImCos( -a1 );
+					float sin01 = ImSin( -a1 );
+					ImVec2 up0 = ImRotate( ImVec2( 1.0f, 0.0f ), cos00, sin00 );
+					ImVec2 up1 = ImRotate( ImVec2( 1.0f, 0.0f ), cos01, sin01 );
+					ImVec2 v = center + up0 * radius;
+					drawlist->AddLine( v, v + up1 * height1, col1, thickness1 );
 				}
 			}
 		}

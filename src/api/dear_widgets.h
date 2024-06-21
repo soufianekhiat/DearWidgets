@@ -644,16 +644,26 @@ namespace ImWidgets{
 										  ImU32 plotColor, ImDrawFlags flags, float thickness,
 										  int colorStride = 4 ); // 4 for rgba,rgba,rgba,...; 3 for rgb,rgb,rgb,... or anything else );
 
-	IMGUI_API void DrawLinearGraduation( ImDrawList* drawlist, ImVec2 start, ImVec2 end,
+	IMGUI_API void DrawLinearLineGraduation( ImDrawList* drawlist, ImVec2 start, ImVec2 end,
 										 float mainLineThickness, ImU32 mainCol,
 										 int division0, float height0, float thickness0, float angle0, ImU32 col0,
 										 int division1 = -1, float height1 = -1.0f, float thickness1 = -1.0f, float angle1 = -1.0f, ImU32 col1 = 0u,
 										 int division2 = -1, float height2 = -1.0f, float thickness2 = -1.0f, float angle2 = -1.0f, ImU32 col2 = 0u );
-	IMGUI_API void DrawCircularGraduation( ImDrawList* drawlist, ImVec2 center, float radius, float start_angle, float end_angle, int num_segments,
-										 float mainLineThickness, ImU32 mainCol,
-										 int division0, float height0, float thickness0, float angle0, ImU32 col0,
-										 int division1 = -1, float height1 = -1.0f, float thickness1 = -1.0f, float angle1 = -1.0f, ImU32 col1 = 0u,
-										 int division2 = -1, float height2 = -1.0f, float thickness2 = -1.0f, float angle2 = -1.0f, ImU32 col2 = 0u );
+	IMGUI_API void DrawLinearCircularGraduation( ImDrawList* drawlist, ImVec2 center, float radius, float start_angle, float end_angle, int num_segments,
+												 float mainLineThickness, ImU32 mainCol,
+												 int division0, float height0, float thickness0, float angle0, ImU32 col0,
+												 int division1 = -1, float height1 = -1.0f, float thickness1 = -1.0f, float angle1 = -1.0f, ImU32 col1 = 0u,
+												 int division2 = -1, float height2 = -1.0f, float thickness2 = -1.0f, float angle2 = -1.0f, ImU32 col2 = 0u );
+
+	IMGUI_API void DrawLogLineGraduation( ImDrawList* drawlist, ImVec2 start, ImVec2 end,
+												float mainLineThickness, ImU32 mainCol,
+												int division0, float height0, float thickness0, float angle0, ImU32 col0,
+												int division1 = -1, float height1 = -1.0f, float thickness1 = -1.0f, float angle1 = -1.0f, ImU32 col1 = 0u );
+
+	IMGUI_API void DrawLogCircularGraduation( ImDrawList* drawlist, ImVec2 center, float radius, float start_angle, float end_angle, int num_segments,
+												float mainLineThickness, ImU32 mainCol,
+												int division0, float height0, float thickness0, float angle0, ImU32 col0,
+												int division1 = -1, float height1 = -1.0f, float thickness1 = -1.0f, float angle1 = -1.0f, ImU32 col1 = 0u );
 
 	typedef void ( *ImDrawShape )( ImDrawList* drawlist, ImVec2* pts, int pts_count, ImU32 col, float thickness );
 	typedef void ( *ImDrawShapeFilled )( ImDrawList* drawlist, ImVec2* pts, int pts_count, ImU32 col );
