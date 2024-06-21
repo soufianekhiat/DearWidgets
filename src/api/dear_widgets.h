@@ -33,6 +33,13 @@
 //		- Color Remap:
 //////////////////////////////////////////////////////////////////////////
 
+//////////////////////////////////////////////////////////////////////////
+// Perf TODO:
+//		Cache the triangulation for concave shape/poly
+//		Find a way to cache shape with hole too
+// Create "Shape" struct
+//////////////////////////////////////////////////////////////////////////
+
 #if !__cpp_if_constexpr
 #define constexpr
 #endif
@@ -392,6 +399,21 @@ namespace ImWidgets{
 		return ImSqrt( ImLengthSqr( v ) );
 	}
 	inline
+	ImVec2 ImNormalized(ImVec2 v)
+	{
+		return v / ImLength( v );
+	}
+	inline
+	ImVec2 ImHalfTurn(ImVec2 v)
+	{
+		return ImVec2(-v.y, v.x);
+	}
+	inline
+	ImVec2 ImAntiHalfTurn(ImVec2 v)
+	{
+		return ImVec2(v.y, -v.x);
+	}
+	inline
 	float ImLength(ImVec4 v)
 	{
 		return ImSqrt( ImLengthSqr( v ) );
@@ -622,6 +644,17 @@ namespace ImWidgets{
 										  ImU32 plotColor, ImDrawFlags flags, float thickness,
 										  int colorStride = 4 ); // 4 for rgba,rgba,rgba,...; 3 for rgb,rgb,rgb,... or anything else );
 
+	IMGUI_API void DrawLinearGraduation( ImDrawList* drawlist, ImVec2 start, ImVec2 end,
+										 float mainLineThickness, ImU32 mainCol,
+										 int division0, float height0, float thickness0, float angle0, ImU32 col0,
+										 int division1 = -1, float height1 = -1.0f, float thickness1 = -1.0f, float angle1 = -1.0f, ImU32 col1 = 0u,
+										 int division2 = -1, float height2 = -1.0f, float thickness2 = -1.0f, float angle2 = -1.0f, ImU32 col2 = 0u );
+	IMGUI_API void DrawCircularGraduation( ImDrawList* drawlist, ImVec2 center, float radius, float start_angle, float end_angle, int num_segments,
+										 float mainLineThickness, ImU32 mainCol,
+										 int division0, float height0, float thickness0, float angle0, ImU32 col0,
+										 int division1 = -1, float height1 = -1.0f, float thickness1 = -1.0f, float angle1 = -1.0f, ImU32 col1 = 0u,
+										 int division2 = -1, float height2 = -1.0f, float thickness2 = -1.0f, float angle2 = -1.0f, ImU32 col2 = 0u );
+
 	typedef void ( *ImDrawShape )( ImDrawList* drawlist, ImVec2* pts, int pts_count, ImU32 col, float thickness );
 	typedef void ( *ImDrawShapeFilled )( ImDrawList* drawlist, ImVec2* pts, int pts_count, ImU32 col );
 	IMGUI_API void RenderNavHighlightShape( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags, ImDrawShape func );
@@ -669,6 +702,8 @@ namespace ImWidgets{
 	IMGUI_API bool Slider2DScalar( char const* pLabel, ImGuiDataType data_type, void* pValueX, void* pValueY, void* p_minX, void* p_maxX, void* p_minY, void* p_maxY );
 	IMGUI_API bool Slider2DFloat( char const* pLabel, float* pValueX, float* pValueY, float v_minX, float v_maxX, float v_minY, float v_maxY );
 	IMGUI_API bool Slider2DInt( char const* pLabel, int* pValueX, void* pValueY, int v_minX, int v_maxX, int v_minY, int v_maxY );
+
+	IMGUI_API bool SliderRingScalar( char const* name, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, float v_angle_min, float v_angle_max, float v_thickness, const char* format, ImGuiSliderFlags flags, ImRect* out_grab_bb );
 
 	//IMGUI_API bool DragFloatPrecise( char const* label, float* value, float v_min, float v_max, ImGuiSliderFlags flags );
 

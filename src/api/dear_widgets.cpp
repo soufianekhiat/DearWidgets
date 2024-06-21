@@ -2501,6 +2501,225 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		DrawShapeWithHole( drawlist, pts, pts_count, col );
 	}
 
+	void DrawLinearGraduation( ImDrawList* drawlist, ImVec2 start, ImVec2 end,
+							   float mainLineThickness, ImU32 mainCol,
+							   int division0, float height0, float thickness0, float angle0, ImU32 col0,
+							   int division1, float height1, float thickness1, float angle1, ImU32 col1,
+							   int division2, float height2, float thickness2, float angle2, ImU32 col2 )
+	{
+		if ( mainLineThickness < 0.5f ||
+			 ( thickness0 < 0.5f &&
+			   thickness1 < 0.5f &&
+			   thickness1 < 0.5f ) )
+			return;
+		if ( ( mainCol & IM_COL32_A_MASK ) == 0 &&
+			 ( col0 & IM_COL32_A_MASK ) == 0 &&
+			 ( col1 & IM_COL32_A_MASK ) == 0 &&
+			 ( col2 & IM_COL32_A_MASK ) == 0 )
+			return;
+
+		ImVec2 delta = end - start;
+		float length = ImLength( delta );
+		ImVec2 forward = ImNormalized( delta );
+		ImVec2 up = ImAntiHalfTurn( forward );
+		if ( division0 > 0 )
+		{
+			float dx0 = length / ( ( float )division0 );
+			float inv_div0 = 1.0f / ( ( float )division0 );
+			ImVec2 up0;
+			if ( angle0 != 0.0f )
+			{
+				float cos0 = ImCos( -angle0 );
+				float sin0 = ImSin( -angle0 );
+				up0 = ImRotate( up, cos0, sin0 );
+			}
+			else
+			{
+				up0 = up;
+			}
+			for ( int k = 0; k <= division0; ++k )
+			{
+				float fk = ( float )k;
+				float t = fk * inv_div0;
+				ImVec2 v = ImLerp( start, end, t );
+				drawlist->AddLine( v, v + up0 * height0, col0, thickness0 );
+			}
+		}
+		if ( division0 > 0 && division1 > 0 )
+		{
+			float dx0 = length / ( ( float )division0 );
+			float inv_div0 = 1.0f / ( ( float )division0 );
+			float dx1 = dx0 / ( ( float )division1 );
+			float inv_div1 = 1.0f / ( ( float )division1 );
+			ImVec2 up1;
+			if ( angle1 != 0.0f )
+			{
+				float cos0 = ImCos( -angle1 );
+				float sin0 = ImSin( -angle1 );
+				up1 = ImRotate( up, cos0, sin0 );
+			}
+			else
+			{
+				up1 = up;
+			}
+			for ( int p = 0; p < division0; ++p )
+			{
+				float fp = ( float )p;
+				float t0 = fp * inv_div0;
+				ImVec2 v0 = ImLerp( start, end, t0 );
+				for ( int k = 1; k < division1; ++k )
+				{
+					float fk = ( float )k;
+					float t1 = fk * inv_div1;
+					ImVec2 v = v0 + forward * (fk * dx1);
+					drawlist->AddLine( v, v + up1 * height1, col1, thickness1 );
+				}
+			}
+		}
+		if ( division0 > 0 && division1 > 0 && division2 > 0 )
+		{
+			float dx0 = length / ( ( float )division0 );
+			float inv_div0 = 1.0f / ( ( float )division0 );
+			float dx1 = dx0 / ( ( float )division1 );
+			float inv_div1 = 1.0f / ( ( float )division1 );
+			float dx2 = dx1 / ( ( float )division2 );
+			float inv_div2 = 1.0f / ( ( float )division2 );
+			ImVec2 up2;
+			if ( angle2 != 0.0f )
+			{
+				float cos0 = ImCos( -angle2 );
+				float sin0 = ImSin( -angle2 );
+				up2 = ImRotate( up, cos0, sin0 );
+			}
+			else
+			{
+				up2 = up;
+			}
+			for ( int p = 0; p < division0; ++p )
+			{
+				float fp = ( float )p;
+				float t0 = fp * inv_div0;
+				ImVec2 v0 = ImLerp( start, end, t0 );
+				for ( int q = 0; q < division1; ++q )
+				{
+					float fk = ( float )q;
+					ImVec2 v1 = v0 + forward * (fk * dx1);
+					for ( int k = 1; k < division2; ++k )
+					{
+						float fk = ( float )k;
+						ImVec2 v = v1 + forward * ( fk * dx2 );
+						drawlist->AddLine( v, v + up2 * height2, col2, thickness2 );
+					}
+				}
+			}
+		}
+		drawlist->AddLine( start, end, mainCol, mainLineThickness );
+	}
+
+	void DrawCircularGraduation( ImDrawList* drawlist, ImVec2 center, float radius, float start_angle, float end_angle, int num_segments,
+							   float mainLineThickness, ImU32 mainCol,
+							   int division0, float height0, float thickness0, float angle0, ImU32 col0,
+							   int division1, float height1, float thickness1, float angle1, ImU32 col1,
+							   int division2, float height2, float thickness2, float angle2, ImU32 col2 )
+	{
+		if ( radius < 0.5f ||
+			( thickness0 < 0.5f &&
+			 thickness1 < 0.5f &&
+			 thickness1 < 0.5f ) )
+			return;
+		if ( ( mainCol & IM_COL32_A_MASK ) == 0 &&
+			 ( col0 & IM_COL32_A_MASK ) == 0 && 
+			 ( col1 & IM_COL32_A_MASK ) == 0 && 
+			 ( col2 & IM_COL32_A_MASK ) == 0 )
+			return;
+
+
+		if ( start_angle > end_angle )
+		{
+			while ( start_angle > end_angle )
+			{
+				start_angle += 2.0f * IM_PI;
+			}
+		}
+		float angle_spread = end_angle - start_angle;
+		ImVec2 up = ImRotate( ImVec2( 1.0f, 0.0f ), ImCos( start_angle ), ImSin( start_angle ) );
+		if ( division0 > 0 )
+		{
+			float da0 = angle_spread / ( ( float )division0 );
+			for ( int k = 0; k <= division0; ++k )
+			{
+				float fk = ( float )k;
+				float a0 = start_angle + fk * da0;
+				float a1 = a0 + angle0;
+				float cos00 = ImCos( -a0 );
+				float sin00 = ImSin( -a0 );
+				float cos01 = ImCos( -a1 );
+				float sin01 = ImSin( -a1 );
+				ImVec2 up0 = ImRotate( ImVec2( 1.0f, 0.0f ), cos00, sin00 );
+				ImVec2 up1 = ImRotate( ImVec2( 1.0f, 0.0f ), cos01, sin01 );
+				ImVec2 v = center + up0 * radius;
+				drawlist->AddLine( v, v + up1 * height0, col0, thickness0 );
+			}
+		}
+		if ( division0 > 0 && division1 > 0 )
+		{
+			float da0 = angle_spread / ( ( float )division0 );
+			float da1 = da0 / ( ( float )division1 );
+			for ( int p = 0; p < division0; ++p )
+			{
+				float fp = ( float )p;
+				float ap = start_angle + fp * da0;
+				for ( int k = 1; k < division1; ++k )
+				{
+					float fk = ( float )k;
+					float a0 = ap + fk * da1;
+					float a1 = a0 + angle1;
+					float cos00 = ImCos( -a0 );
+					float sin00 = ImSin( -a0 );
+					float cos01 = ImCos( -a1 );
+					float sin01 = ImSin( -a1 );
+					ImVec2 up0 = ImRotate( ImVec2( 1.0f, 0.0f ), cos00, sin00 );
+					ImVec2 up1 = ImRotate( ImVec2( 1.0f, 0.0f ), cos01, sin01 );
+					ImVec2 v = center + up0 * radius;
+					drawlist->AddLine( v, v + up1 * height1, col1, thickness1 );
+				}
+			}
+		}
+		if ( division0 > 0 && division1 > 0 && division2 > 0 )
+		{
+			float da0 = angle_spread / ( ( float )division0 );
+			float da1 = da0 / ( ( float )division1 );
+			float da2 = da1 / ( ( float )division2 );
+			for ( int p = 0; p < division0; ++p )
+			{
+				float fp = ( float )p;
+				float ap = start_angle + fp * da0;
+				for ( int q = 0; q < division1; ++q )
+				{
+					float fq = ( float )q;
+					float aq = ap + fq * da1;
+					for ( int k = 1; k < division2; ++k )
+					{
+						float fk = ( float )k;
+						float a0 = aq + fk * da2;
+						float a1 = a0 + angle2;
+						float cos00 = ImCos( -a0 );
+						float sin00 = ImSin( -a0 );
+						float cos01 = ImCos( -a1 );
+						float sin01 = ImSin( -a1 );
+						ImVec2 up0 = ImRotate( ImVec2( 1.0f, 0.0f ), cos00, sin00 );
+						ImVec2 up1 = ImRotate( ImVec2( 1.0f, 0.0f ), cos01, sin01 );
+						ImVec2 v = center + up0 * radius;
+						drawlist->AddLine( v, v + up1 * height2, col2, thickness2 );
+					}
+				}
+			}
+		}
+
+		drawlist->PathArcTo( center, radius, -start_angle, -end_angle, num_segments );
+		drawlist->PathStroke( mainCol, ImDrawFlags_None, mainLineThickness );
+	}
+
 	void RenderNavHighlightShape( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags, ImDrawShape func )
 	{
 		ImGuiContext& g = *GImGui;
@@ -3793,7 +4012,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// Render grab
 		float pos = ImLerp( cursor_bb.Min.x, cursor_bb.Max.x, *hueCenter );
-		DrawTriangleCursorFilled( window->DrawList, ImVec2( pos, cursor_bb.Min.y ), -IM_PI * 0.5f, cursorSize, IM_COL32( 255, 255, 255, 255 ) );
+		DrawTriangleCursorFilled( window->DrawList, ImVec2( pos, cursor_bb.Min.y ), 0.0f, cursorSize, IM_COL32( 255, 255, 255, 255 ) );
 
 		return value_changed;
 	}
@@ -4201,6 +4420,56 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	bool Slider2DInt( char const* pLabel, int* pValueX, void* pValueY, int v_minX, int v_maxX, int v_minY, int v_maxY )
 	{
 		return Slider2DScalar( pLabel, ImGuiDataType_S32, pValueX, pValueY, &v_minX, &v_maxX, &v_minY, &v_maxY );
+	}
+
+	bool SliderRingScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, float v_angle_min, float v_angle_max, float v_thickness, const char* format, ImGuiSliderFlags flags, ImRect* out_grab_bb )
+	{
+
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		IM_ASSERT( ScalarToFloat( data_type, ( ImU64* )p_min ) < ScalarToFloat( data_type, ( ImU64* )p_max ) );
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		const ImGuiID id = window->GetID( label );
+		const float w = ImGui::CalcItemWidth();
+
+		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
+
+		float downScale = 0.75f;
+
+		const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, w ) );
+		const ImRect frame_bb_drag( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w * downScale, w * downScale ) );
+		const ImRect total_bb( frame_bb.Min, frame_bb.Max + ImVec2( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f, 0.0f ) );
+
+		ImGui::ItemSize( total_bb, style.FramePadding.y );
+		if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, 0 ) )
+			return false;
+
+		bool hovered = ImGui::ItemHoverable( frame_bb_drag, id, g.LastItemData.InFlags );
+
+		bool clicked = hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id );
+
+		bool make_active = ( clicked || g.NavActivateId == id );
+		if ( make_active && clicked )
+			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+
+		if ( make_active )
+		{
+			ImGui::SetActiveID( id, window );
+			ImGui::SetFocusID( id, window );
+			ImGui::FocusWindow( window );
+			g.ActiveIdUsingNavDirMask |= ( 1 << ImGuiDir_Left ) | ( 1 << ImGuiDir_Right );
+		}
+
+		// Draw frame
+		ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
+		ImGui::RenderNavHighlight( frame_bb_drag, id );
+		ImGui::RenderFrame( frame_bb_drag.Min, frame_bb_drag.Max, frame_col, true, g.Style.FrameRounding );
+
+		return false;
 	}
 
 #if 0
