@@ -1,6 +1,8 @@
+#ifndef IMGUI_DEFINE_MATH_OPERATORS
+#define IMGUI_DEFINE_MATH_OPERATORS
+#endif
 #include <imgui.h>
 
-//#define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui_internal.h>
 
 #include <algorithm>
@@ -48,7 +50,70 @@
 #define nullptr NULL
 #endif
 
+#define DEAR_WIDGETS_TESSELATION 1
+
 namespace ImWidgets{
+	struct ImVertex
+	{
+		ImVec2 pos;
+		ImVec2 uv;
+		ImU32 col;
+	};
+	struct ImEdgeIdx
+	{
+		ImDrawIdx a, b;
+		constexpr ImEdgeIdx() : a( ( ImDrawIdx )( -1 ) ), b( ( ImDrawIdx )( -1 ) )
+		{}
+		constexpr ImEdgeIdx( ImDrawIdx _a, ImDrawIdx _b ) : a( _a ), b( _b )
+		{}
+		ImEdgeIdx& operator[] ( size_t idx )
+		{
+			IM_ASSERT( idx == 0 || idx == 1 );
+			return ( ( ImEdgeIdx* )( void* )( char* )this )[ idx ];
+		}
+		ImEdgeIdx operator[] ( size_t idx ) const
+		{
+			IM_ASSERT( idx == 0 || idx == 1 );
+			return ( ( const ImEdgeIdx* )( const void* )( const char* )this )[ idx ];
+		}
+		bool operator== ( ImEdgeIdx e ) const
+		{
+			return a == e.a && b == e.a;
+		}
+	};
+	struct ImTriIdx
+	{
+		ImDrawIdx a, b, c;
+		constexpr ImTriIdx() : a( ( ImDrawIdx )( -1 ) ), b( ( ImDrawIdx )( -1 ) ), c( ( ImDrawIdx )( -1 ) )
+		{}
+		constexpr ImTriIdx( ImDrawIdx _a, ImDrawIdx _b, ImDrawIdx _c ) : a( _a ), b( _b ), c( _c )
+		{}
+		ImDrawIdx& operator[] ( size_t idx )
+		{
+			IM_ASSERT( idx == 0 || idx == 1 || idx == 2 );
+			return ( ( ImDrawIdx* )( void* )( char* )this )[ idx ];
+		}
+		ImDrawIdx operator[] ( size_t idx ) const
+		{
+			IM_ASSERT( idx == 0 || idx == 1 || idx == 2 );
+			return ( ( const ImDrawIdx* )( const void* )( const char* )this )[ idx ];
+		}
+		ImTriIdx& operator= ( ImTriIdx const& rhs )
+		{
+			a = rhs.a;
+			b = rhs.b;
+			c = rhs.c;
+
+			return *this;
+		}
+	};
+	struct ImShape
+	{
+		ImVector<ImVertex>	vertices;
+		ImVector<ImTriIdx>	triangles;
+		ImRect				bb;
+	};
+
 	typedef ImU32( *ImColor1DCallback )( float x, void* );
 	typedef ImU32( *ImColor2DCallback )( float x, float y, void* );
 
@@ -493,6 +558,18 @@ namespace ImWidgets{
 	//////////////////////////////////////////////////////////////////////////
 	IMGUI_API ImU32	ImColorFrom_xyz( float x, float y, float z, float* xyzToRGB, float gamma );
 
+	//IMGUI_API void ColorConvertHWBtoRGB( float h, float w, float b, float& r, float& g, float& b );
+
+	IMGUI_API ImU32 ImColorBlendsRGB( ImU32 col0, ImU32 col1, float t );
+	IMGUI_API ImU32 ImColorBlendLinear( ImU32 col0, ImU32 col1, float t );
+	IMGUI_API ImU32 ImColorBlendHSL( ImU32 col0, ImU32 col1, float t );
+	IMGUI_API ImU32 ImColorBlendHSLa( ImU32 col0, ImU32 col1, float t );
+	IMGUI_API ImU32 ImColorBlendHWB( ImU32 col0, ImU32 col1, float t );
+	IMGUI_API ImU32 ImColorBlendLCH( ImU32 col0, ImU32 col1, float t );
+	IMGUI_API ImU32 ImColorBlendLab( ImU32 col0, ImU32 col1, float t );
+	IMGUI_API ImU32 ImColorBlendOklab( ImU32 col0, ImU32 col1, float t );
+	IMGUI_API ImU32 ImColorBlendOkLCH( ImU32 col0, ImU32 col1, float t );
+
 	//////////////////////////////////////////////////////////////////////////
 	// Scalar Helpers
 	//////////////////////////////////////////////////////////////////////////
@@ -517,8 +594,25 @@ namespace ImWidgets{
 	void	MemoryString( std::string& sResult, ImU64 const uMemoryByte );
 
 	//////////////////////////////////////////////////////////////////////////
+	// Geometry Generation
+	//////////////////////////////////////////////////////////////////////////
+#if DEAR_WIDGETS_TESSELATION
+	void	ImShapeTesselationUniform( ImShape& shape );
+
+	void	ImGenShapeRect( ImShape& shape, ImRect const& r );
+	void	ImGenShapeCircle( ImShape& shape, ImVec2 center, float radius, int side_count );
+	void	ImGenShapeCircleArc( ImShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count );
+	void	ImGenShapeCirclePie( ImShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count );
+	void	ImGenShapeRegularNGon( ImShape& shape, ImVec2 center, float radius, int side_count );
+
+	void	ImShapeLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+#endif
+
+	//////////////////////////////////////////////////////////////////////////
 	// DrawList
 	//////////////////////////////////////////////////////////////////////////
+	IMGUI_API void DrawGeometry( ImDrawList* pDrawList, ImShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx = -1 );
+
 	IMGUI_API void DrawTriangleCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float angle, float size, float thickness, ImU32 col );
 	IMGUI_API void DrawTriangleCursorFilled( ImDrawList* pDrawList, ImVec2 targetPoint, float angle, float size, ImU32 col );
 

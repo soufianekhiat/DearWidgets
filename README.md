@@ -1,8 +1,13 @@
 # DearWidgets
-DearWidgets is two collections of helpers:
+DearWidgets aim to produce useful Widgets particulary useful on Graphics (Image Processing, 3D, ...).
+DearWidgets aim to provide helper to simplify creation of custom widgets.
+
+DearWidgets is 3 collections of helpers:
 - DrawLists
+- Interactions
 - Widgets
-- Scalar Math
+- Math Helpers
+- Helpers to have type independent "Scalar"
 
 Dear Widgets is a collection of help to simplify the develoment of application.
 

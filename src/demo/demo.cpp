@@ -228,6 +228,62 @@ namespace ImWidgets{
 		if ( ImGui::CollapsingHeader( "Draw" ) )
 		{
 			ImGui::Indent();
+			if ( ImGui::CollapsingHeader( "Draw Geometry" ) )
+			{
+				float const size = ImGui::GetContentRegionAvail().x;
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				static float edge_thickness = 2.0f;
+				static float vertex_radius = 16.0f;
+				static ImVec4 edge_col_v( 1.0f, 0.0f, 0.0f, 1.0f );
+				static ImVec4 triangle_col_v( 0.0f, 1.0f, 0.0f, 1.0f );
+				static ImVec4 vertex_col_v( 0.0f, 0.0f, 1.0f, 1.0f );
+				static ImU32 edge_col = ImGui::GetColorU32( edge_col_v );
+				static ImU32 triangle_col = ImGui::GetColorU32( triangle_col_v );
+				static ImU32 vertex_col = ImGui::GetColorU32( vertex_col_v );
+				static ImVec2 uv_start( 0.0f, 0.5f );
+				static ImVec2 uv_end( 1.0f, 0.5f );
+				static ImVec4 cola_v( 1.0f, 0.0f, 0.0f, 1.0f );
+				static ImVec4 colb_v( 0.0f, 1.0f, 0.0f, 1.0f );
+				static ImU32 cola = ImGui::GetColorU32( cola_v );
+				static ImU32 colb = ImGui::GetColorU32( colb_v );
+				static int tri_idx = -1;
+				static int side_count = 3;
+				static int tess = 1;
+				ImGui::SliderInt( "Tess", &tess, 0, 16 );
+				ImGui::SliderInt( "Sides", &side_count, 3, 64 );
+				ImGui::SliderFloat( "Thickness", &edge_thickness, 0.0f, 16.0f );
+				ImGui::SliderFloat( "Radius", &vertex_radius, 0.0f, 64.0f );
+				if ( ImGui::ColorEdit4( "Edge##DrawGeometry", &edge_col_v.x ) )
+					edge_col = ImGui::GetColorU32( edge_col_v );
+				if ( ImGui::ColorEdit4( "Triangle##DrawGeometry", &triangle_col_v.x ) )
+					triangle_col = ImGui::GetColorU32( triangle_col_v );
+				if ( ImGui::ColorEdit4( "Vertices##DrawGeometry", &vertex_col_v.x ) )
+					vertex_col = ImGui::GetColorU32( vertex_col_v );
+				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+				Slider2DFloat( "uv0", &uv_start.x, &uv_start.y, 0.0f, 1.0f, 0.0f, 1.0f );
+				ImGui::SameLine();
+				Slider2DFloat( "uv1", &uv_end.x, &uv_end.y, 0.0f, 1.0f, 0.0f, 1.0f );
+				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+				if ( ImGui::ColorEdit4( "ColA##DrawGeometry", &cola_v.x ) )
+					cola = ImGui::GetColorU32( cola_v );
+				ImGui::SameLine();
+				if ( ImGui::ColorEdit4( "ColB##DrawGeometry", &colb_v.x ) )
+					colb = ImGui::GetColorU32( colb_v );
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+				static ImShape shape;
+				//ImGenShapeCircle( shape, pos + ImVec2( size * 0.5f, size * 0.5f ), size * 0.5f, side_count );
+				ImGenShapeRect( shape, ImRect( pos, pos + ImVec2( size, size ) ) );
+				for ( int k = 0; k < tess; ++k )
+					ImShapeTesselationUniform( shape );
+				ImShapeLinearGradient( shape,
+									   uv_start, uv_end,
+									   cola, colb );
+				DrawGeometry( pDrawList, shape, edge_thickness, edge_col, triangle_col, vertex_radius, vertex_col, tri_idx );
+				ImGui::Dummy( ImVec2( size, size ) );
+				ImGui::SliderInt( "tri_idx", &tri_idx, -1, shape.triangles.size() - 1 );
+				ImGui::Text( "Tri: %d", shape.triangles.size() );
+				ImGui::Text( "Vtx: %d", shape.vertices.size() );
+			}
 			if ( ImGui::CollapsingHeader( "Triangles Pointers" ) )
 			{
 				float const width = ImGui::GetContentRegionAvail().x;
@@ -291,13 +347,22 @@ namespace ImWidgets{
 				ImGui::InvisibleButton( "##Zone", ImVec2( widthZone, height * 1.1f ), 0 );
 				ImGui::InvisibleButton( "##Zone", ImVec2( widthZone, height * 1.1f ), 0 );
 				float fPointerLine = 64.0f;
-				pDrawList->AddLine( ImVec2( curPos.x + 0.5f * 32.0f, curPos.y + fPointerLine ), ImVec2( curPos.x + 3.5f * 32.0f, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f );
-				pDrawList->AddCircleFilled( ImVec2( curPos.x + 1.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
-				pDrawList->AddCircleFilled( ImVec2( curPos.x + 3.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				float dx = 64.0f;
+				pDrawList->AddLine( ImVec2( curPos.x + 0.5f * dx, curPos.y + fPointerLine ), ImVec2( curPos.x + 11.5f * dx, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f );
 				ImVec4 vBlue( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
 				ImU32 uBlue = ImGui::GetColorU32( vBlue );
-				ImWidgets::DrawSignetCursor( pDrawList, ImVec2( curPos.x + 1.0f * 32.0f, curPos.y + fPointerLine ), width, height, height_ratio, align01, angle, thickness, uBlue );
-				ImWidgets::DrawSignetFilledCursor( pDrawList, ImVec2( curPos.x + 3.0f * 32.0f, curPos.y + fPointerLine ), width, height, height_ratio, align01, angle, uBlue );
+				ImWidgets::DrawSignetCursor( pDrawList, ImVec2( curPos.x + 1.0f * dx, curPos.y + fPointerLine ), width, height, height_ratio, align01, angle, thickness, uBlue );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 1.0f * dx, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				ImWidgets::DrawSignetFilledCursor( pDrawList, ImVec2( curPos.x + 3.0f * dx, curPos.y + fPointerLine ), width, height, height_ratio, align01, angle, uBlue );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 3.0f * dx, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				ImWidgets::DrawSignetCursor( pDrawList, ImVec2( curPos.x + 5.0f * dx, curPos.y + fPointerLine ), width, height, height_ratio, 0.0f, angle, thickness, uBlue );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 5.0f * dx, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				ImWidgets::DrawSignetFilledCursor( pDrawList, ImVec2( curPos.x + 7.0f * dx, curPos.y + fPointerLine ), width, height, height_ratio, 0.0f, angle, uBlue );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 7.0f * dx, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				ImWidgets::DrawSignetCursor( pDrawList, ImVec2( curPos.x + 9.0f * dx, curPos.y + fPointerLine ), width, height, height_ratio, 1.0f, angle, thickness, uBlue );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 9.0f * dx, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				ImWidgets::DrawSignetFilledCursor( pDrawList, ImVec2( curPos.x + 11.0f * dx, curPos.y + fPointerLine ), width, height, height_ratio, 1.0f, angle, uBlue );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 11.0f * dx, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
 			}
 			if ( ImGui::CollapsingHeader( "Color Bands" ) )
 			{
@@ -466,8 +531,8 @@ namespace ImWidgets{
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				static ImVec2 uv_offset( 0.0f, 0.0f );
 				static ImVec2 uv_scale( 1.0f, 1.0f );
-				ImGui::DragFloat2( "Offset##ImageConvexShape", &uv_offset[ 0 ], 0.001f, -3.0f, 3.0f );
-				ImGui::DragFloat2( "Scale##ImageConvexShape", &uv_scale[ 0 ], 0.001f, -3.0f, 3.0f );
+				ImGui::DragFloat2( "Offset##DrawImageConvexShape", &uv_offset[ 0 ], 0.001f, -3.0f, 3.0f );
+				ImGui::DragFloat2( "Scale##DrawImageConvexShape", &uv_scale[ 0 ], 0.001f, -3.0f, 3.0f );
 				ImVec2 pos = ImGui::GetCursorScreenPos();
 				ImVector<ImVec2> disk;
 				disk.resize( 32 );
@@ -488,8 +553,8 @@ namespace ImWidgets{
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				static ImVec2 uv_offset( 0.0f, 0.0f );
 				static ImVec2 uv_scale( 1.0f, 1.0f );
-				ImGui::DragFloat2( "Offset##ImageConcaveShape", &uv_offset[ 0 ], 0.001f, -3.0f, 3.0f );
-				ImGui::DragFloat2( "Scale##ImageConcaveShape", &uv_scale[ 0 ], 0.001f, -3.0f, 3.0f );
+				ImGui::DragFloat2( "Offset##DrawImageConcaveShape", &uv_offset[ 0 ], 0.001f, -3.0f, 3.0f );
+				ImGui::DragFloat2( "Scale##DrawImageConcaveShape", &uv_scale[ 0 ], 0.001f, -3.0f, 3.0f );
 				ImVec2 pos = ImGui::GetCursorScreenPos();
 				int sz = 8;
 				ImVec2 pos_norms[] = { { 0.0f, 0.0f }, { 0.3f, 0.0f }, { 0.3f, 0.7f }, { 0.7f, 0.7f }, { 0.7f, 0.0f },
@@ -1022,7 +1087,10 @@ namespace ImWidgets{
 					disk[ k ].x = 0.5f * size + cos0 * size * 0.5f;
 					disk[ k ].y = 0.5f * size + sin0 * size * 0.5f;
 				}
-				ImWidgets::ButtonExConvex( "Convex", ImVec2( 0, 0 ), &disk[ 0 ], 32, 0 );
+				static int value = 1;
+				ImGui::Text( "Value: %d", value );
+				if ( ImWidgets::ButtonExConvex( "Convex", ImVec2( 0, 0 ), &disk[ 0 ], 32, 0 ) )
+					++value;
 			}
 			if ( ImGui::CollapsingHeader( "Button Concave" ) )
 			{
@@ -1036,7 +1104,10 @@ namespace ImWidgets{
 					v.x *= size;
 					v.y *= size;
 				}
-				ImWidgets::ButtonExConcave( "Concave", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 );
+				static int value = 1;
+				ImGui::Text( "Value: %d", value );
+				if ( ImWidgets::ButtonExConcave( "Concave", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 ) )
+					++value;
 			}
 			if ( ImGui::CollapsingHeader( "Button With Hole" ) )
 			{
@@ -1050,7 +1121,10 @@ namespace ImWidgets{
 					v.x *= size;
 					v.y *= size;
 				}
-				ImWidgets::ButtonExWithHole( "With Hole", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 );
+				static int value = 1;
+				ImGui::Text( "Value: %d", value );
+				if ( ImWidgets::ButtonExWithHole( "With Hole", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 ) )
+					++value;
 			}
 #if 0
 			if ( ImGui::CollapsingHeader( "DragFloatPrecise" ) )

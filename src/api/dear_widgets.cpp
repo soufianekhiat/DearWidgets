@@ -3,7 +3,10 @@
 #include <chrono>
 #include <algorithm>
 
+#if DEAR_WIDGETS_TESSELATION
 #include <vector>
+#include <map>
+#endif
 
 namespace ImWidgets {
 	//////////////////////////////////////////////////////////////////////////
@@ -901,7 +904,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			return static_cast< ImU64 >( reinterpret_cast< double* >( p_source )[ idx ] );
 		}
 
-		return 0.0f;
+		return ImU64(-1);
 	}
 
 	ImU64	FloatToScalar(ImGuiDataType data_type, float f_value)
@@ -1646,6 +1649,50 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return IM_COL32( r * 255, g * 255, b * 255, 255 );
 	}
 
+	//void ColorConvertHWBtoRGB( float h, float w, float bk, float& r, float& g, float& b )
+	//{
+	//	/**
+ //* @param {number} hue -  Hue as degrees 0..360
+ //* @param {number} white -  Whiteness in reference range [0,100]
+ //* @param {number} black -  Blackness in reference range [0,100]
+ //* @return {number[]} Array of RGB components 0..1
+ //*/
+	//	/*function hwbToRgb( hue, white, black )
+	//	{
+	//		white /= 100;
+	//		black /= 100;
+	//		if ( white + black >= 1 )
+	//		{
+	//			let gray = white / ( white + black );
+	//			return[ gray, gray, gray ];
+	//		}
+	//		let rgb = hslToRgb( hue, 100, 50 );
+	//		for ( let i = 0; i < 3; i++ )
+	//		{
+	//			rgb[ i ] *= ( 1 - white - black );
+	//			rgb[ i ] += white;
+	//		}
+	//		return rgb;
+	//	}*/
+	//	if ( w + bk >= 1.0f )
+	//	{
+	//		float grey = w / ( w + bk );
+	//		r = grey;
+	//		g = grey;
+	//		b = grey;
+	//	}
+	//}
+
+	IMGUI_API ImU32 ImColorBlendsRGB( ImU32 col0, ImU32 col1, float t )
+	{
+		ImVec4 v0 = ImGui::ColorConvertU32ToFloat4( col0 );
+		ImVec4 v1 = ImGui::ColorConvertU32ToFloat4( col1 );
+
+		ImVec4 o = ImLerp( v0, v1, t );
+
+		return ImGui::GetColorU32( o );
+	}
+
 	//-----------------------------------------------------------------------------
 	// [SECTION] ImTriangulator, ImDrawList concave polygon fill
 	// COPY/PASTED FROM IMGUI_DRAW.CPP
@@ -1884,9 +1931,553 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return s_Style;
 	}
 
+	void ImVectorUniqueEdge( int& size, ImVector<ImEdgeIdx>& edges )
+	{
+		size = edges.size();
+		for ( int p = 0; p < size; ++p )
+		{
+			for ( int q = p + 1; q < size; ++q )
+			{
+				if ( edges[ p ].a == edges[ q ].a &&
+					 edges[ p ].b == edges[ q ].b )
+				{
+					while ( edges[ p ].a == edges[ q ].a &&
+							edges[ p ].b == edges[ q ].b )
+					{
+						// Flag non-unique edges with -index of the duplicate edge
+						edges[ q ].a = -p;
+						//edges[ q ].b = -p;
+						//ImEdgeIdx last = vector[ size - 1 ];
+						//vector[ size - 1 ] = vector[ q ];
+						//vector[ q ] = last;
+						--size;
+					}
+				}
+			}
+		}
+		//vector.resize( size );
+	}
+
+	int GetEdgeIndex( ImVector<ImEdgeIdx> const& edges, ImEdgeIdx e )
+	{
+		int edge_count = edges.size();
+		for ( int k = 0; k < edge_count; ++k )
+		{
+			ImEdgeIdx const& cur = edges[ k ];
+			if ( cur.a == e.a && cur.b == e.b )
+				return k;
+		}
+
+		return -1;
+	}
+
+	ImDrawIdx GetOtherIdx( ImDrawIdx a, ImDrawIdx b, ImTriIdx& tri )
+	{
+		if ( a == tri.a )
+		{
+			if ( b == tri.b )
+			{
+				return tri.c;
+			}
+			else if ( b == tri.c )
+			{
+				return tri.b;
+			}
+		}
+		else if ( a == tri.b )
+		{
+			if ( b == tri.a )
+			{
+				return tri.c;
+			}
+			else if ( b == tri.c )
+			{
+				return tri.a;
+			}
+		}
+		else if ( a == tri.c )
+		{
+			if ( b == tri.a )
+			{
+				return tri.b;
+			}
+			else if ( b == tri.b )
+			{
+				return tri.a;
+			}
+		}
+
+		return -1;
+	}
+
+	void GetOtherIdxOrdered( ImDrawIdx& a, ImDrawIdx& b, ImTriIdx& tri, ImDrawIdx p )
+	{
+		if ( p == tri.a )
+		{
+			a = tri.b;
+			b = tri.c;
+			return;
+		}
+		else if ( p == tri.b )
+		{
+			a = tri.c;
+			b = tri.a;
+			return;
+		}
+		else if ( p == tri.c )
+		{
+			a = tri.a;
+			b = tri.b;
+			return;
+		}
+
+		a = (ImDrawIdx)(-1);
+		b = (ImDrawIdx)(-1);
+	}
+
+	float ImCross( ImVec2 v1, ImVec2 v2 )
+	{
+		return v1.x * v2.y - v1.y * v2.x;
+	}
+
+	float ImTriangleSignedArea( ImVec2 va, ImVec2 vb, ImVec2 vc )
+	{
+		return 0.5f * ( va.x * ( vb.y - vc.y ) + vb.x * ( vc.y - va.y ) + vc.x * ( va.y - vb.y ) );
+	}
+
+	int CheckWinding( ImVec2 va, ImVec2 vb, ImVec2 vc )
+	{
+		ImVec2 v1 = { vb.x - va.x, vb.y - va.y };
+		ImVec2 v2 = { vc.x - va.x, vc.y - va.y };
+
+		//float cross = ImCross( v1, v2 );
+		float signed_area = ImTriangleSignedArea( va, vb, vc );
+
+		if ( signed_area > 0.0f )
+		{
+			// Counterclockwise (CCW)
+			return 1;
+		}
+		else if ( signed_area < 0.0f )
+		{
+			// Clockwise (CW)
+			return -1;
+		}
+		else
+		{
+			// Collinear
+			return 0;
+		}
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Geometry Generation
+	//////////////////////////////////////////////////////////////////////////
+#if DEAR_WIDGETS_TESSELATION
+	#pragma optimize( "", off )
+	void	ImShapeTesselationUniform( ImShape& shape )
+	{
+		int vtx_count = shape.vertices.size();
+		int tri_count = shape.triangles.size();
+
+		typedef std::pair<ImDrawIdx, ImDrawIdx> Edge;
+		//std::map<Edge, ImVec2> edge_to_vrtx;
+		std::map<Edge, ImVertex> edge_to_vrtx;
+		for ( int k = 0; k < tri_count; ++k )
+		{
+			ImTriIdx const& tri = shape.triangles[ k ];
+
+			ImDrawIdx a = tri.a;
+			ImDrawIdx b = tri.b;
+			ImDrawIdx c = tri.c;
+
+			ImVec2 va = shape.vertices[ a ].pos;
+			ImVec2 vb = shape.vertices[ b ].pos;
+			ImVec2 vc = shape.vertices[ c ].pos;
+
+			ImVec2 uva = shape.vertices[ a ].uv;
+			ImVec2 uvb = shape.vertices[ b ].uv;
+			ImVec2 uvc = shape.vertices[ c ].uv;
+
+			ImVec4 cola = ImGui::ColorConvertU32ToFloat4( shape.vertices[ a ].col );
+			ImVec4 colb = ImGui::ColorConvertU32ToFloat4( shape.vertices[ b ].col );
+			ImVec4 colc = ImGui::ColorConvertU32ToFloat4( shape.vertices[ c ].col );
+ 
+			Edge ab = { ImMin( a, b ), ImMax( a, b ) };
+			Edge bc = { ImMin( b, c ), ImMax( b, c ) };
+			Edge ca = { ImMin( c, a ), ImMax( c, a ) };
+
+			float ab_sqr = ImLengthSqr( va - vb );
+			float bc_sqr = ImLengthSqr( vb - vc );
+			float ca_sqr = ImLengthSqr( vc - va );
+
+			if ( ab_sqr >= bc_sqr && ab_sqr >= ca_sqr )
+			{
+				ImVec2 v = va * 0.5f + vb * 0.5f;
+				ImVec2 uv = uva * 0.5f + uvb * 0.5f;
+				ImVec4 col = ImLerp( cola, colb, 0.5f );
+				edge_to_vrtx[ ab ] = { v, uv, ImGui::GetColorU32( col ) };
+			}
+			else if ( bc_sqr >= ab_sqr && bc_sqr >= ca_sqr )
+			{
+				ImVec2 v = vb * 0.5f + vc * 0.5f;
+				ImVec2 uv = uvb * 0.5f + uvc * 0.5f;
+				ImVec4 col = ImLerp( colb, colc, 0.5f );
+				edge_to_vrtx[ bc ] = { v, uv, ImGui::GetColorU32( col ) };
+			}
+			else if ( ca_sqr >= ab_sqr && ca_sqr >= bc_sqr )
+			{
+				ImVec2 v = vc * 0.5f + va * 0.5f;
+				ImVec2 uv = uvc * 0.5f + uva * 0.5f;
+				ImVec4 col = ImLerp( colc, cola, 0.5f );
+				edge_to_vrtx[ ca ] = { v, uv, ImGui::GetColorU32( col ) };
+			}
+			else
+			{
+				__debugbreak();
+			}
+		}
+		int new_vrtx_count = 0;
+		std::map<Edge, int> edge_to_idx;
+		for ( auto const& x : edge_to_vrtx )
+		{
+			edge_to_idx[ x.first ] = vtx_count + new_vrtx_count;
+			++new_vrtx_count;
+		}
+		shape.vertices.resize( vtx_count + new_vrtx_count );
+		int vidx = 0;
+		for ( auto const& x : edge_to_vrtx )
+		{
+			shape.vertices[ vtx_count + vidx ] = x.second;
+			++vidx;
+		}
+
+		ImVector<ImTriIdx> new_indices;
+		for ( int k = 0; k < tri_count; ++k )
+		{
+			ImTriIdx const& tri = shape.triangles[ k ];
+
+			ImDrawIdx a = tri.a;
+			ImDrawIdx b = tri.b;
+			ImDrawIdx c = tri.c;
+
+			Edge ab = { ImMin( a, b ), ImMax( a, b ) };
+			Edge bc = { ImMin( b, c ), ImMax( b, c ) };
+			Edge ca = { ImMin( c, a ), ImMax( c, a ) };
+
+			bool is_ab = false;
+			bool is_bc = false;
+			bool is_ca = false;
+			int new_vrtx_count = 0;
+			if ( edge_to_vrtx.find( ab ) != edge_to_vrtx.end() )
+			{
+				++new_vrtx_count;
+				is_ab = true;
+			}
+			if ( edge_to_vrtx.find( bc ) != edge_to_vrtx.end() )
+			{
+				++new_vrtx_count;
+				is_bc = true;
+			}
+			if ( edge_to_vrtx.find( ca ) != edge_to_vrtx.end() )
+			{
+				++new_vrtx_count;
+				is_ca = true;
+			}
+			if ( new_vrtx_count == 0 )
+			{
+				new_indices.push_back( { a, b, c } );
+				__debugbreak();
+			}
+			else if ( new_vrtx_count == 1 )
+			{
+				if ( is_ab )
+				{
+					ImDrawIdx new_ab = edge_to_idx[ ab ];
+					IM_ASSERT( new_ab > vtx_count );
+					new_indices.push_back( { a, new_ab, c } );
+					new_indices.push_back( { c, new_ab, b } );
+				}
+				else if ( is_bc )
+				{
+					ImDrawIdx new_bc = edge_to_idx[ bc ];
+					IM_ASSERT( new_bc > vtx_count );
+					new_indices.push_back( { b, new_bc, a } );
+					new_indices.push_back( { a, new_bc, c } );
+				}
+				else if ( is_ca )
+				{
+					ImDrawIdx new_ca = edge_to_idx[ ca ];
+					IM_ASSERT( new_ca > vtx_count );
+					new_indices.push_back( { c, new_ca, b } );
+					new_indices.push_back( { b, new_ca, a } );
+				}
+				else
+				{
+					__debugbreak();
+				}
+			}
+			else if ( new_vrtx_count == 2 )
+			{
+				if ( is_ab && is_bc )
+				{
+					ImDrawIdx new_ab = edge_to_idx[ ab ];
+					ImDrawIdx new_bc = edge_to_idx[ bc ];
+					IM_ASSERT( new_ab > vtx_count );
+					IM_ASSERT( new_bc > vtx_count );
+					new_indices.push_back( { a, new_ab, new_bc } );
+					new_indices.push_back( { b, new_bc, new_ab } );
+					new_indices.push_back( { c, a, new_bc } );
+				}
+				else if ( is_bc && is_ca )
+				{
+					ImDrawIdx new_bc = edge_to_idx[ bc ];
+					ImDrawIdx new_ca = edge_to_idx[ ca ];
+					IM_ASSERT( new_bc > vtx_count );
+					IM_ASSERT( new_ca > vtx_count );
+					new_indices.push_back( { b, new_bc, new_ca } );
+					new_indices.push_back( { a, b, new_ca } );
+					new_indices.push_back( { c, new_ca, new_bc } );
+				}
+				else if ( is_ca && is_ab )
+				{
+					ImDrawIdx new_ab = edge_to_idx[ ab ];
+					ImDrawIdx new_ca = edge_to_idx[ ca ];
+					IM_ASSERT( new_ab > vtx_count );
+					IM_ASSERT( new_ca > vtx_count );
+					new_indices.push_back( { a, new_ab, new_ca } );
+					new_indices.push_back( { c, new_ca, new_ab } );
+					new_indices.push_back( { b, c, new_ab } );
+				}
+				else
+				{
+					__debugbreak();
+				}
+			}
+			else if ( new_vrtx_count == 3 )
+			{
+				ImDrawIdx new_ab = edge_to_idx[ ab ];
+				ImDrawIdx new_bc = edge_to_idx[ bc ];
+				ImDrawIdx new_ca = edge_to_idx[ ca ];
+				IM_ASSERT( new_ab > vtx_count );
+				IM_ASSERT( new_bc > vtx_count );
+				IM_ASSERT( new_ca > vtx_count );
+
+				new_indices.push_back( { a, new_ab, new_ca } );
+				new_indices.push_back( { b, new_bc, new_ab } );
+				new_indices.push_back( { c, new_ca, new_bc } );
+				new_indices.push_back( { new_ab, new_bc, new_ca } );
+			}
+			else
+			{
+				__debugbreak();
+			}
+		}
+		int new_tri_count = new_indices.size();
+		for ( int k = 0; k < new_tri_count; ++k )
+		{
+			ImTriIdx& tri = new_indices[ k ];
+
+			ImDrawIdx a = tri.a;
+			ImDrawIdx b = tri.b;
+			ImDrawIdx c = tri.c;
+
+			ImVec2 va = shape.vertices[ a ].pos;
+			ImVec2 vb = shape.vertices[ b ].pos;
+			ImVec2 vc = shape.vertices[ c ].pos;
+
+			if ( CheckWinding( va, vb, vc ) == -1 )
+			{
+				//tri.a = a;
+				tri.b = c;
+				tri.c = b;
+			}
+		}
+		shape.triangles = new_indices;
+	}
+
+	void	ImSetDefaultUVCol( ImShape& shape )
+	{
+		int vtx_count = shape.vertices.size();
+		for ( int k = 0; k < vtx_count; ++k )
+		{
+			ImVec2 v = shape.vertices[ k ].pos;
+			shape.vertices[ k ].uv = ImGui::GetFontTexUvWhitePixel();
+			shape.vertices[ k ].col = IM_COL32( 255, 255, 255, 255 );
+		}
+	}
+
+	void	ImGenShapeRect( ImShape& shape, ImRect const& r )
+	{
+		shape.vertices.clear();
+		shape.triangles.clear();
+		shape.vertices.resize( 4 );
+		shape.triangles.resize( 2 );
+		shape.vertices[ 0 ].pos = r.Min;
+		shape.vertices[ 1 ].pos = ImVec2( r.Min.x, r.Max.y );
+		shape.vertices[ 2 ].pos = r.Max;
+		shape.vertices[ 3 ].pos = ImVec2( r.Max.x, r.Min.y );
+		shape.bb = r;
+
+		shape.triangles[ 0 ].a = 0;
+		shape.triangles[ 0 ].b = 1;
+		shape.triangles[ 0 ].c = 3;
+		shape.triangles[ 1 ].a = 3;
+		shape.triangles[ 1 ].b = 1;
+		shape.triangles[ 1 ].c = 2;
+
+		ImSetDefaultUVCol( shape );
+	}
+
+	void	ImGenShapeCircle( ImShape& shape, ImVec2 center, float radius, int side_count )
+	{
+		shape.vertices.clear();
+		shape.triangles.clear();
+		float d0 = 2.0f * IM_PI / ( ( float )( side_count ) );
+		shape.vertices.resize( side_count + 1 );
+		shape.triangles.resize( side_count );
+		shape.vertices[ 0 ].pos = center;
+		for ( int k = 0; k < side_count; ++k )
+		{
+			float _0 = ( ( float )k ) * d0;
+			shape.vertices[ k + 1 ].pos.x = center.x + radius * ImCos( _0 );
+			shape.vertices[ k + 1 ].pos.y = center.y + radius * ImSin( _0 );
+		}
+		for ( int k = 0; k < side_count; ++k )
+		{
+			shape.triangles[ k ].a = 0;
+			shape.triangles[ k ].b = ( k + 1 ) % side_count + 1;
+			shape.triangles[ k ].c = ( k + 2 ) % side_count + 1;
+		}
+		shape.bb.Min = center - ImVec2( radius, radius );
+		shape.bb.Max = center + ImVec2( radius, radius );
+
+		ImSetDefaultUVCol( shape );
+	}
+	void	ImGenShapeCircleArc( ImShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count )
+	{
+		
+	}
+	void	ImGenShapeCirclePie( ImShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count )
+	{
+		
+	}
+	void	ImGenShapeRegularNGon( ImShape& shape, ImVec2 center, float radius, int side_count )
+	{
+		ImGenShapeCircle( shape, center, radius, side_count );
+	}
+	void	ImShapeLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	{
+		ImVec2 delta = uv_end - uv_start;
+		ImVec2 d = ImNormalized( delta );
+		float l = ImLength( d );
+		int vtx_count = shape.vertices.size();
+		for ( int k = 0; k < vtx_count; ++k )
+		{
+			ImVec2 v = shape.vertices[ k ].pos;
+			ImVec2 uv;
+			uv.x = Normalize01( v.x, shape.bb.Min.x, shape.bb.Max.x );
+			uv.y = Normalize01( v.y, shape.bb.Min.y, shape.bb.Max.y );
+			ImVec2 c = uv - uv_start;
+			float t = ImSaturate( ImDot( d, c ) / l );
+			shape.vertices[ k ].col = ImColorBlendsRGB( col0, col1, t );
+		}
+	}
+#endif
+
 	//////////////////////////////////////////////////////////////////////////
 	// DrawList
 	//////////////////////////////////////////////////////////////////////////
+	void DrawGeometry( ImDrawList* pDrawList, ImShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx )
+	{
+		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
+
+		int vtx_count = shape.vertices.size();
+		int tri_count = shape.triangles.size();
+		if ( tri_idx >= 0 && tri_idx < tri_count )
+		{
+			pDrawList->PrimReserve( 3, 3 );
+			ImDrawIdx a = shape.triangles[ tri_idx ].a;
+			ImDrawIdx b = shape.triangles[ tri_idx ].b;
+			ImDrawIdx c = shape.triangles[ tri_idx ].c;
+
+			ImVertex const& va = shape.vertices[ a ];
+			ImVertex const& vb = shape.vertices[ b ];
+			ImVertex const& vc = shape.vertices[ c ];
+
+			pDrawList->_VtxWritePtr[ 0 ].pos = va.pos;
+			pDrawList->_VtxWritePtr[ 0 ].uv = va.uv;
+			pDrawList->_VtxWritePtr[ 0 ].col = va.col;
+			pDrawList->_VtxWritePtr[ 1 ].pos = vb.pos;
+			pDrawList->_VtxWritePtr[ 1 ].uv = vb.uv;
+			pDrawList->_VtxWritePtr[ 1 ].col = vb.col;
+			pDrawList->_VtxWritePtr[ 2 ].pos = vc.pos;
+			pDrawList->_VtxWritePtr[ 2 ].uv = vc.uv;
+			pDrawList->_VtxWritePtr[ 2 ].col = vc.col;
+			pDrawList->_VtxWritePtr += 3;
+			pDrawList->_IdxWritePtr[ 0 ] = ( ImDrawIdx )( pDrawList->_VtxCurrentIdx + 0 );
+			pDrawList->_IdxWritePtr[ 1 ] = ( ImDrawIdx )( pDrawList->_VtxCurrentIdx + 1 );
+			pDrawList->_IdxWritePtr[ 2 ] = ( ImDrawIdx )( pDrawList->_VtxCurrentIdx + 2 );
+			pDrawList->_IdxWritePtr += 3;
+			pDrawList->_VtxCurrentIdx += ( ImDrawIdx )3;
+		}
+		else
+		{
+			pDrawList->PrimReserve( 3 * tri_count, vtx_count );
+			for ( int k = 0; k < vtx_count; k++ )
+			{
+				ImVertex const& v = shape.vertices[ k ];;
+				pDrawList->_VtxWritePtr[ 0 ].pos = v.pos;
+				pDrawList->_VtxWritePtr[ 0 ].uv = v.uv;
+				pDrawList->_VtxWritePtr[ 0 ].col = v.col;
+				pDrawList->_VtxWritePtr++;
+			}
+			for ( int k = 0; k < tri_count; k++ )
+			{
+				pDrawList->_IdxWritePtr[ 0 ] = ( ImDrawIdx )( pDrawList->_VtxCurrentIdx + shape.triangles[ k ].a );
+				pDrawList->_IdxWritePtr[ 1 ] = ( ImDrawIdx )( pDrawList->_VtxCurrentIdx + shape.triangles[ k ].b );
+				pDrawList->_IdxWritePtr[ 2 ] = ( ImDrawIdx )( pDrawList->_VtxCurrentIdx + shape.triangles[ k ].c );
+				pDrawList->_IdxWritePtr += 3;
+			}
+			pDrawList->_VtxCurrentIdx += ( ImDrawIdx )vtx_count;
+		}
+		if ( tri_idx >= 0 && tri_idx < tri_count )
+		{
+			if ( edge_thickness > 0.5f && ( edge_col & IM_COL32_A_MASK ) > 0 )
+			{
+				pDrawList->AddLine( shape.vertices[ shape.triangles[ tri_idx ].a ].pos, shape.vertices[ shape.triangles[ tri_idx ].b ].pos, edge_col, edge_thickness );
+				pDrawList->AddLine( shape.vertices[ shape.triangles[ tri_idx ].b ].pos, shape.vertices[ shape.triangles[ tri_idx ].c ].pos, edge_col, edge_thickness );
+				pDrawList->AddLine( shape.vertices[ shape.triangles[ tri_idx ].c ].pos, shape.vertices[ shape.triangles[ tri_idx ].a ].pos, edge_col, edge_thickness );
+			}
+			if ( vrtx_radius > 0.0f && ( vrtx_col & IM_COL32_A_MASK ) > 0 )
+			{
+				//pDrawList->AddCircleFilled( shape.vertices[ shape.triangles[ tri_idx ].a ].pos, vrtx_radius, vrtx_col, 0 );
+				//pDrawList->AddCircleFilled( shape.vertices[ shape.triangles[ tri_idx ].b ].pos, vrtx_radius, vrtx_col, 0 );
+				//pDrawList->AddCircleFilled( shape.vertices[ shape.triangles[ tri_idx ].c ].pos, vrtx_radius, vrtx_col, 0 );
+				pDrawList->AddText( shape.vertices[ shape.triangles[ tri_idx ].a ].pos, vrtx_col, "A" );
+				pDrawList->AddText( shape.vertices[ shape.triangles[ tri_idx ].b ].pos, vrtx_col, "B" );
+				pDrawList->AddText( shape.vertices[ shape.triangles[ tri_idx ].c ].pos, vrtx_col, "C" );
+			}
+		}
+		else
+		{
+			if ( edge_thickness > 0.5f && ( edge_col & IM_COL32_A_MASK ) > 0 )
+			{
+				for ( int k = 0; k < tri_count; ++k )
+				{
+					pDrawList->AddLine( shape.vertices[ shape.triangles[ k ].a ].pos, shape.vertices[ shape.triangles[ k ].b ].pos, edge_col, edge_thickness );
+					pDrawList->AddLine( shape.vertices[ shape.triangles[ k ].b ].pos, shape.vertices[ shape.triangles[ k ].c ].pos, edge_col, edge_thickness );
+					pDrawList->AddLine( shape.vertices[ shape.triangles[ k ].c ].pos, shape.vertices[ shape.triangles[ k ].a ].pos, edge_col, edge_thickness );
+				}
+			}
+			if ( vrtx_radius > 0.0f && (vrtx_col & IM_COL32_A_MASK) > 0 )
+			{
+				for ( int k = 0; k < vtx_count; ++k )
+					pDrawList->AddCircleFilled( shape.vertices[ k ].pos, vrtx_radius, vrtx_col, 0 );
+			}
+		}
+	}
+
 	void GetTrianglePointer( ImVec2& a, ImVec2& b, ImVec2& c, ImVec2 targetPoint, float angle, float height )
 	{
 		//// Simple Work around to have approximatively the tip on the target point
@@ -2365,7 +2956,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					int l = scanHits.size() - 1; // we need pairs of points, this prevents segfault.
 					for ( i = 0; i < l; i += 2 )
 					{
-						draw->AddLine( scanHits[ i ], scanHits[ i + 1 ], color, strokeWidth );
+						draw->AddLine( scanHits[ i ], scanHits[ i + 1 ], color, ( float )strokeWidth );
 					}
 				}
 			}
@@ -3189,7 +3780,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				float fp = ( float )p;
 				float ap = start_angle + fp * da0;
 
-				for ( int k = 2; k <= division1 + 1; ++k )
+				for ( int k = 2; k < division1 + 1; ++k )
 				{
 					float fk = ImLog( ( float )( k ) ) * scale;
 					float a0 = ap + fk * da0;
@@ -3494,7 +4085,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				{
 					ImVec2 a = scanHits[ i ];
 					ImVec2 b = scanHits[ i + 1 ];
-					if ( ImRect( a, b ).ContainsWithPad( p, ImVec2( 0.0f, strokeWidth ) ) )
+					if ( ImRect( a, b ).ContainsWithPad( p, ImVec2( 0.0f, ( float )strokeWidth ) ) )
 					{
 						scanHits.clear();
 						return true;
