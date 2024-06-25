@@ -19,7 +19,7 @@ namespace DearWidgets
             //                          BuildType.APIOnly | BuildType.DemoOnly | BuildType.Full));
 
             AddTargets(new DearTarget(Platform.win64,// | Platform.mac,
-                                      TargetAPI.OpenGL3 | TargetAPI.D3D9 | TargetAPI.D3D10 | TargetAPI.D3D12,
+                                      TargetAPI.OpenGL3 | TargetAPI.D3D9 | TargetAPI.D3D10 | TargetAPI.D3D11 | TargetAPI.D3D12,
                                       Optimization.Debug | Optimization.Release,
                                       BuildType.APIOnly | BuildType.DemoOnly | BuildType.Full));
         }

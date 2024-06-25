@@ -1,7 +1,7 @@
 ﻿#include <dear_widgets.h>
 
-#include <chrono>
-#include <algorithm>
+//#include <chrono>
+//#include <algorithm>
 
 #if DEAR_WIDGETS_TESSELATION
 #include <vector>
@@ -1398,110 +1398,110 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		*z2 = Dot3(x, y, z, &mat[6]);
 	}
 
-	void		MemoryString(std::string& sResult, ImU64 const uMemoryByte)
-	{
-		if (uMemoryByte < ImWidgets_Kibi)
-		{
-			sResult = std::to_string(static_cast<float>(uMemoryByte)) + " B";
-		}
-		else if (uMemoryByte < ImWidgets_Mibi)
-		{
-			sResult = std::to_string(static_cast<float>(uMemoryByte) / static_cast<float>(ImWidgets_Kibi)) + " KiB";
-		}
-		else if (uMemoryByte < ImWidgets_Gibi)
-		{
-			sResult = std::to_string(static_cast<float>(uMemoryByte) / static_cast<float>(ImWidgets_Mibi)) + " MiB";
-		}
-		else if (uMemoryByte < ImWidgets_Tebi)
-		{
-			sResult = std::to_string(static_cast<float>(uMemoryByte) / static_cast<float>(ImWidgets_Gibi)) + " GiB";
-		}
-		else if (uMemoryByte < ImWidgets_Pebi)
-		{
-			sResult = std::to_string(static_cast<float>(uMemoryByte) / static_cast<float>(ImWidgets_Tebi)) + " TiB";
-		}
-	}
-
-	void		TimeString(std::string& sResult, ImU64 const uNanoseconds)
-	{
-		std::chrono::nanoseconds oDuration( uNanoseconds );
-
-		typedef std::chrono::duration< ImU64, std::ratio_multiply< std::chrono::hours::period, std::ratio< 8 > >::type > Days; // UTC: +8:00
-
-		Days oDays			= std::chrono::duration_cast< Days >( oDuration );
-		oDuration -= oDays;
-		auto oHours			= std::chrono::duration_cast< std::chrono::hours >( oDuration );
-		oDuration -= oHours;
-		auto oMinutes		= std::chrono::duration_cast< std::chrono::minutes >( oDuration );
-		oDuration -= oMinutes;
-		auto oSeconds		= std::chrono::duration_cast< std::chrono::seconds >( oDuration );
-		oDuration -= oSeconds;
-		auto oMilliseconds	= std::chrono::duration_cast< std::chrono::milliseconds >( oDuration );
-		oDuration -= oMilliseconds;
-		auto oMicroseconds	= std::chrono::duration_cast< std::chrono::microseconds >( oDuration );
-		oDuration -= oMicroseconds;
-		auto oNanoseconds	= std::chrono::duration_cast< std::chrono::nanoseconds >( oDuration );
-
-		ImU64 const uNanoSecondsCountRaw	= oNanoseconds.count();
-		ImU64 const uNanoSecondsCount		= uNanoSecondsCountRaw <= 100ull ? 0ull : uNanoSecondsCountRaw;
-
-		sResult.clear();
-		if ( oDays.count() > 0 )
-		{
-			sResult =	std::to_string( oDays.count() )			+ " d : " +
-						std::to_string( oHours.count() )		+ " h : " +
-						std::to_string( oMinutes.count() )		+ " min : " +
-						std::to_string( oSeconds.count() )		+ " s : " +
-						std::to_string( oMilliseconds.count() )	+ " ms : " +
-						//std::to_string( oMicroseconds.count() ) + " \u00B5s : " +
-						std::to_string( oMicroseconds.count() ) + " us";//: " +
-						//std::to_string( uNanoSecondsCount )		+ " ns";
-		}
-		else if ( oHours.count() > 0 )
-		{
-			sResult =	std::to_string( oHours.count() )		+ " h : " +
-						std::to_string( oMinutes.count() )		+ " min : " +
-						std::to_string( oSeconds.count() )		+ " s : " +
-						std::to_string( oMilliseconds.count() )	+ " ms : " +
-						//std::to_string( oMicroseconds.count() ) + " \u00B5s : " +
-						std::to_string( oMicroseconds.count() ) + " us";//: " +
-						//std::to_string( uNanoSecondsCount )		+ " ns";
-		}
-		else if ( oMinutes.count() > 0 )
-		{
-			sResult =	std::to_string( oMinutes.count() )		+ " min : " +
-						std::to_string( oSeconds.count() )		+ " s : " +
-						std::to_string( oMilliseconds.count() )	+ " ms : " +
-						//std::to_string( oMicroseconds.count() ) + " \u00B5s : " +
-						std::to_string( oMicroseconds.count() ) + " us";//: " +
-						//std::to_string( uNanoSecondsCount )		+ " ns";
-		}
-		else if ( oSeconds.count() > 0 )
-		{
-			sResult =	std::to_string( oSeconds.count() )		+ " s : " +
-						std::to_string( oMilliseconds.count() )	+ " ms : " +
-						//std::to_string( oMicroseconds.count() ) + " \u00B5s : " +
-						std::to_string( oMicroseconds.count() ) + " us";//: " +
-						//std::to_string( uNanoSecondsCount )		+ " ns";
-		}
-		else if ( oMilliseconds.count() > 0 )
-		{
-			sResult =	std::to_string( oMilliseconds.count() )	+ " ms : " +
-						//std::to_string( oMicroseconds.count() ) + " \u00B5s : " +
-						std::to_string( oMicroseconds.count() ) + " us";//: " +
-						//std::to_string( uNanoSecondsCount )		+ " ns";
-		}
-		else if ( oMicroseconds.count() > 0 )
-		{
-			sResult =	//std::to_string( oMicroseconds.count() ) + " \u00B5s : " +
-						std::to_string( oMicroseconds.count() ) + " us";//: " +
-						//std::to_string( uNanoSecondsCount )		+ " ns";
-		}
-		else //if ( oNanoseconds.count() > 0 )
-		{
-			sResult =	std::to_string( uNanoSecondsCount )		+ " ns";
-		}
-	}
+//	void		MemoryString(std::string& sResult, ImU64 const uMemoryByte)
+//	{
+//		if (uMemoryByte < ImWidgets_Kibi)
+//		{
+//			sResult = std::to_string(static_cast<float>(uMemoryByte)) + " B";
+//		}
+//		else if (uMemoryByte < ImWidgets_Mibi)
+//		{
+//			sResult = std::to_string(static_cast<float>(uMemoryByte) / static_cast<float>(ImWidgets_Kibi)) + " KiB";
+//		}
+//		else if (uMemoryByte < ImWidgets_Gibi)
+//		{
+//			sResult = std::to_string(static_cast<float>(uMemoryByte) / static_cast<float>(ImWidgets_Mibi)) + " MiB";
+//		}
+//		else if (uMemoryByte < ImWidgets_Tebi)
+//		{
+//			sResult = std::to_string(static_cast<float>(uMemoryByte) / static_cast<float>(ImWidgets_Gibi)) + " GiB";
+//		}
+//		else if (uMemoryByte < ImWidgets_Pebi)
+//		{
+//			sResult = std::to_string(static_cast<float>(uMemoryByte) / static_cast<float>(ImWidgets_Tebi)) + " TiB";
+//		}
+//	}
+//
+//	void		TimeString(std::string& sResult, ImU64 const uNanoseconds)
+//	{
+//		std::chrono::nanoseconds oDuration( uNanoseconds );
+//
+//		typedef std::chrono::duration< ImU64, std::ratio_multiply< std::chrono::hours::period, std::ratio< 8 > >::type > Days; // UTC: +8:00
+//
+//		Days oDays			= std::chrono::duration_cast< Days >( oDuration );
+//		oDuration -= oDays;
+//		auto oHours			= std::chrono::duration_cast< std::chrono::hours >( oDuration );
+//		oDuration -= oHours;
+//		auto oMinutes		= std::chrono::duration_cast< std::chrono::minutes >( oDuration );
+//		oDuration -= oMinutes;
+//		auto oSeconds		= std::chrono::duration_cast< std::chrono::seconds >( oDuration );
+//		oDuration -= oSeconds;
+//		auto oMilliseconds	= std::chrono::duration_cast< std::chrono::milliseconds >( oDuration );
+//		oDuration -= oMilliseconds;
+//		auto oMicroseconds	= std::chrono::duration_cast< std::chrono::microseconds >( oDuration );
+//		oDuration -= oMicroseconds;
+//		auto oNanoseconds	= std::chrono::duration_cast< std::chrono::nanoseconds >( oDuration );
+//
+//		ImU64 const uNanoSecondsCountRaw	= oNanoseconds.count();
+//		ImU64 const uNanoSecondsCount		= uNanoSecondsCountRaw <= 100ull ? 0ull : uNanoSecondsCountRaw;
+//
+//		sResult.clear();
+//		if ( oDays.count() > 0 )
+//		{
+//			sResult =	std::to_string( oDays.count() )			+ " d : " +
+//						std::to_string( oHours.count() )		+ " h : " +
+//						std::to_string( oMinutes.count() )		+ " min : " +
+//						std::to_string( oSeconds.count() )		+ " s : " +
+//						std::to_string( oMilliseconds.count() )	+ " ms : " +
+//						//std::to_string( oMicroseconds.count() ) + " \u00B5s : " +
+//						std::to_string( oMicroseconds.count() ) + " us";//: " +
+//						//std::to_string( uNanoSecondsCount )		+ " ns";
+//		}
+//		else if ( oHours.count() > 0 )
+//		{
+//			sResult =	std::to_string( oHours.count() )		+ " h : " +
+//						std::to_string( oMinutes.count() )		+ " min : " +
+//						std::to_string( oSeconds.count() )		+ " s : " +
+//						std::to_string( oMilliseconds.count() )	+ " ms : " +
+//						//std::to_string( oMicroseconds.count() ) + " \u00B5s : " +
+//						std::to_string( oMicroseconds.count() ) + " us";//: " +
+//						//std::to_string( uNanoSecondsCount )		+ " ns";
+//		}
+//		else if ( oMinutes.count() > 0 )
+//		{
+//			sResult =	std::to_string( oMinutes.count() )		+ " min : " +
+//						std::to_string( oSeconds.count() )		+ " s : " +
+//						std::to_string( oMilliseconds.count() )	+ " ms : " +
+//						//std::to_string( oMicroseconds.count() ) + " \u00B5s : " +
+//						std::to_string( oMicroseconds.count() ) + " us";//: " +
+//						//std::to_string( uNanoSecondsCount )		+ " ns";
+//		}
+//		else if ( oSeconds.count() > 0 )
+//		{
+//			sResult =	std::to_string( oSeconds.count() )		+ " s : " +
+//						std::to_string( oMilliseconds.count() )	+ " ms : " +
+//						//std::to_string( oMicroseconds.count() ) + " \u00B5s : " +
+//						std::to_string( oMicroseconds.count() ) + " us";//: " +
+//						//std::to_string( uNanoSecondsCount )		+ " ns";
+//		}
+//		else if ( oMilliseconds.count() > 0 )
+//		{
+//			sResult =	std::to_string( oMilliseconds.count() )	+ " ms : " +
+//						//std::to_string( oMicroseconds.count() ) + " \u00B5s : " +
+//						std::to_string( oMicroseconds.count() ) + " us";//: " +
+//						//std::to_string( uNanoSecondsCount )		+ " ns";
+//		}
+//		else if ( oMicroseconds.count() > 0 )
+//		{
+//			sResult =	//std::to_string( oMicroseconds.count() ) + " \u00B5s : " +
+//						std::to_string( oMicroseconds.count() ) + " us";//: " +
+//						//std::to_string( uNanoSecondsCount )		+ " ns";
+//		}
+//		else //if ( oNanoseconds.count() > 0 )
+//		{
+//			sResult =	std::to_string( uNanoSecondsCount )		+ " ns";
+//		}
+//	}
 
 	float Dist2(ImVec2 const v, ImVec2 const w)
 	{
@@ -2073,9 +2073,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	//////////////////////////////////////////////////////////////////////////
 	// Geometry Generation
 	//////////////////////////////////////////////////////////////////////////
-#if DEAR_WIDGETS_TESSELATION
+#ifdef DEAR_WIDGETS_TESSELATION
 	#pragma optimize( "", off )
-	void	ImShapeTesselationUniform( ImShape& shape )
+	void	ShapeTesselationUniform( ImShape& shape )
 	{
 		int vtx_count = shape.vertices.size();
 		int tri_count = shape.triangles.size();
@@ -2295,19 +2295,64 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 		shape.triangles = new_indices;
 	}
+#endif
 
-	void	ImSetDefaultUVCol( ImShape& shape )
+	void	ShapeSetDefaultUV( ImShape& shape )
 	{
 		int vtx_count = shape.vertices.size();
 		for ( int k = 0; k < vtx_count; ++k )
 		{
-			ImVec2 v = shape.vertices[ k ].pos;
+			shape.vertices[ k ].uv = ImGui::GetFontTexUvWhitePixel();
+		}
+	}
+
+	void	ShapeSetDefaultUVCol( ImShape& shape )
+	{
+		int vtx_count = shape.vertices.size();
+		for ( int k = 0; k < vtx_count; ++k )
+		{
 			shape.vertices[ k ].uv = ImGui::GetFontTexUvWhitePixel();
 			shape.vertices[ k ].col = IM_COL32( 255, 255, 255, 255 );
 		}
 	}
 
-	void	ImGenShapeRect( ImShape& shape, ImRect const& r )
+	void	ShapeSetDefaultBoundUV( ImShape& shape )
+	{
+		int vtx_count = shape.vertices.size();
+		for ( int k = 0; k < vtx_count; ++k )
+		{
+			ImVec2 v = shape.vertices[ k ].pos;
+			ImVec2 uv;
+			uv.x = Normalize01( v.x, shape.bb.Min.x, shape.bb.Max.x );
+			uv.y = Normalize01( v.y, shape.bb.Min.y, shape.bb.Max.y );
+			shape.vertices[ k ].uv = uv;
+		}
+	}
+
+	void	ShapeSetDefaultBoundUVWhiteCol( ImShape& shape )
+	{
+		int vtx_count = shape.vertices.size();
+		for ( int k = 0; k < vtx_count; ++k )
+		{
+			ImVec2 v = shape.vertices[ k ].pos;
+			ImVec2 uv;
+			uv.x = Normalize01( v.x, shape.bb.Min.x, shape.bb.Max.x );
+			uv.y = Normalize01( v.y, shape.bb.Min.y, shape.bb.Max.y );
+			shape.vertices[ k ].uv = uv;
+			shape.vertices[ k ].col = IM_COL32( 255, 255, 255, 255 );
+		}
+	}
+
+	void	ShapeSetDefaultWhiteCol( ImShape& shape )
+	{
+		int vtx_count = shape.vertices.size();
+		for ( int k = 0; k < vtx_count; ++k )
+		{
+			shape.vertices[ k ].col = IM_COL32( 255, 255, 255, 255 );
+		}
+	}
+
+	void	GenShapeRect( ImShape& shape, ImRect const& r )
 	{
 		shape.vertices.clear();
 		shape.triangles.clear();
@@ -2325,11 +2370,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		shape.triangles[ 1 ].a = 3;
 		shape.triangles[ 1 ].b = 1;
 		shape.triangles[ 1 ].c = 2;
-
-		ImSetDefaultUVCol( shape );
 	}
 
-	void	ImGenShapeCircle( ImShape& shape, ImVec2 center, float radius, int side_count )
+	void	GenShapeCircle( ImShape& shape, ImVec2 center, float radius, int side_count )
 	{
 		shape.vertices.clear();
 		shape.triangles.clear();
@@ -2351,26 +2394,53 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 		shape.bb.Min = center - ImVec2( radius, radius );
 		shape.bb.Max = center + ImVec2( radius, radius );
-
-		ImSetDefaultUVCol( shape );
 	}
-	void	ImGenShapeCircleArc( ImShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count )
+	void	GenShapeCircleArc( ImShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count )
+	{
+		shape.vertices.clear();
+		shape.triangles.clear();
+		float angle_range = angle_max - angle_min;
+		float d0 = angle_range / ( ( float )( side_count ) );
+		shape.vertices.resize( side_count + 2 );
+		shape.triangles.resize( side_count );
+		shape.vertices[ 0 ].pos = center;
+		shape.bb.Min.x =  FLT_MAX;
+		shape.bb.Min.y =  FLT_MAX;
+		shape.bb.Max.x = -FLT_MAX;
+		shape.bb.Max.y = -FLT_MAX;
+		for ( int k = 0; k < side_count + 2; ++k )
+		{
+			float _0 = angle_min + ( ( float )k ) * d0;
+			ImVec2 v;
+			v.x = center.x + radius * ImCos( -_0 );
+			v.y = center.y + radius * ImSin( -_0 );
+			shape.vertices[ k + 1 ].pos.x = v.x;
+			shape.vertices[ k + 1 ].pos.y = v.y;
+			shape.bb.Min.x = ImMin( shape.bb.Min.x, v.x );
+			shape.bb.Min.y = ImMin( shape.bb.Min.y, v.y );
+			shape.bb.Max.x = ImMax( shape.bb.Max.x, v.x );
+			shape.bb.Max.y = ImMax( shape.bb.Max.y, v.y );
+		}
+		for ( int k = 0; k < side_count; ++k )
+		{
+			shape.triangles[ k ].a = 0;
+			shape.triangles[ k ].b = k + 1;
+			shape.triangles[ k ].c = k + 2;
+		}
+	}
+	void	GenShapeCirclePie( ImShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count )
 	{
 		
 	}
-	void	ImGenShapeCirclePie( ImShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count )
+	void	GenShapeRegularNGon( ImShape& shape, ImVec2 center, float radius, int side_count )
 	{
-		
+		GenShapeCircle( shape, center, radius, side_count );
 	}
-	void	ImGenShapeRegularNGon( ImShape& shape, ImVec2 center, float radius, int side_count )
-	{
-		ImGenShapeCircle( shape, center, radius, side_count );
-	}
-	void	ImShapeLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	void	ShapeLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
 		ImVec2 delta = uv_end - uv_start;
 		ImVec2 d = ImNormalized( delta );
-		float l = ImLength( d );
+		float l = 1.0f / ImLength( delta );
 		int vtx_count = shape.vertices.size();
 		for ( int k = 0; k < vtx_count; ++k )
 		{
@@ -2379,18 +2449,50 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			uv.x = Normalize01( v.x, shape.bb.Min.x, shape.bb.Max.x );
 			uv.y = Normalize01( v.y, shape.bb.Min.y, shape.bb.Max.y );
 			ImVec2 c = uv - uv_start;
-			float t = ImSaturate( ImDot( d, c ) / l );
+			float t = ImSaturate( ImDot( d, c ) * l );
 			shape.vertices[ k ].col = ImColorBlendsRGB( col0, col1, t );
 		}
 	}
-#endif
+	void	ShapeRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	{
+		ImVec2 delta = uv_end - uv_start;
+		float l = 1.0f / ImLength( delta );
+		int vtx_count = shape.vertices.size();
+		for ( int k = 0; k < vtx_count; ++k )
+		{
+			ImVec2 v = shape.vertices[ k ].pos;
+			ImVec2 uv;
+			uv.x = Normalize01( v.x, shape.bb.Min.x, shape.bb.Max.x );
+			uv.y = Normalize01( v.y, shape.bb.Min.y, shape.bb.Max.y );
+			float t = ImSaturate( ImLength( uv - uv_start ) * l );
+			shape.vertices[ k ].col = ImColorBlendsRGB( col0, col1, t );
+		}
+	}
+	// Just L1-Norm
+	void	ShapeDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	{
+		ImVec2 delta = uv_end - uv_start;
+		float l = 1.0f / ImLengthL1( delta );
+		int vtx_count = shape.vertices.size();
+		for ( int k = 0; k < vtx_count; ++k )
+		{
+			ImVec2 v = shape.vertices[ k ].pos;
+			ImVec2 uv;
+			uv.x = Normalize01( v.x, shape.bb.Min.x, shape.bb.Max.x );
+			uv.y = Normalize01( v.y, shape.bb.Min.y, shape.bb.Max.y );
+			float t = ImSaturate( ImLengthL1( uv - uv_start ) * l );
+			shape.vertices[ k ].col = ImColorBlendsRGB( col0, col1, t );
+		}
+	}
 
 	//////////////////////////////////////////////////////////////////////////
 	// DrawList
 	//////////////////////////////////////////////////////////////////////////
-	void DrawGeometry( ImDrawList* pDrawList, ImShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx )
+	void DrawShapeDebugEx( ImDrawList* pDrawList, ImTextureID tex, ImShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx )
 	{
-		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
+		const bool push_texture_id = tex != pDrawList->_CmdHeader.TextureId;
+		if ( push_texture_id )
+			pDrawList->PushTextureID( tex );
 
 		int vtx_count = shape.vertices.size();
 		int tri_count = shape.triangles.size();
@@ -2451,12 +2553,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			}
 			if ( vrtx_radius > 0.0f && ( vrtx_col & IM_COL32_A_MASK ) > 0 )
 			{
-				//pDrawList->AddCircleFilled( shape.vertices[ shape.triangles[ tri_idx ].a ].pos, vrtx_radius, vrtx_col, 0 );
-				//pDrawList->AddCircleFilled( shape.vertices[ shape.triangles[ tri_idx ].b ].pos, vrtx_radius, vrtx_col, 0 );
-				//pDrawList->AddCircleFilled( shape.vertices[ shape.triangles[ tri_idx ].c ].pos, vrtx_radius, vrtx_col, 0 );
-				pDrawList->AddText( shape.vertices[ shape.triangles[ tri_idx ].a ].pos, vrtx_col, "A" );
-				pDrawList->AddText( shape.vertices[ shape.triangles[ tri_idx ].b ].pos, vrtx_col, "B" );
-				pDrawList->AddText( shape.vertices[ shape.triangles[ tri_idx ].c ].pos, vrtx_col, "C" );
+				pDrawList->AddCircleFilled( shape.vertices[ shape.triangles[ tri_idx ].a ].pos, vrtx_radius, vrtx_col, 0 );
+				pDrawList->AddCircleFilled( shape.vertices[ shape.triangles[ tri_idx ].b ].pos, vrtx_radius, vrtx_col, 0 );
+				pDrawList->AddCircleFilled( shape.vertices[ shape.triangles[ tri_idx ].c ].pos, vrtx_radius, vrtx_col, 0 );
+				pDrawList->AddText( shape.vertices[ shape.triangles[ tri_idx ].a ].pos, IM_COL32_WHITE, "A" );
+				pDrawList->AddText( shape.vertices[ shape.triangles[ tri_idx ].b ].pos, IM_COL32_WHITE, "B" );
+				pDrawList->AddText( shape.vertices[ shape.triangles[ tri_idx ].c ].pos, IM_COL32_WHITE, "C" );
 			}
 		}
 		else
@@ -2476,6 +2578,56 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					pDrawList->AddCircleFilled( shape.vertices[ k ].pos, vrtx_radius, vrtx_col, 0 );
 			}
 		}
+
+		if ( push_texture_id )
+			pDrawList->PopTextureID();
+	}
+	void DrawShapeEx( ImDrawList* pDrawList, ImTextureID tex, ImShape& shape )
+	{
+		const bool push_texture_id = tex != pDrawList->_CmdHeader.TextureId;
+		if ( push_texture_id )
+			pDrawList->PushTextureID( tex );
+
+		int vtx_count = shape.vertices.size();
+		int tri_count = shape.triangles.size();
+		pDrawList->PrimReserve( 3 * tri_count, vtx_count );
+		for ( int k = 0; k < vtx_count; k++ )
+		{
+			ImVertex const& v = shape.vertices[ k ];
+			pDrawList->_VtxWritePtr[ 0 ].pos = v.pos;
+			pDrawList->_VtxWritePtr[ 0 ].uv = v.uv;
+			pDrawList->_VtxWritePtr[ 0 ].col = v.col;
+			pDrawList->_VtxWritePtr++;
+		}
+		for ( int k = 0; k < tri_count; k++ )
+		{
+			pDrawList->_IdxWritePtr[ 0 ] = ( ImDrawIdx )( pDrawList->_VtxCurrentIdx + shape.triangles[ k ].a );
+			pDrawList->_IdxWritePtr[ 1 ] = ( ImDrawIdx )( pDrawList->_VtxCurrentIdx + shape.triangles[ k ].b );
+			pDrawList->_IdxWritePtr[ 2 ] = ( ImDrawIdx )( pDrawList->_VtxCurrentIdx + shape.triangles[ k ].c );
+			pDrawList->_IdxWritePtr += 3;
+		}
+		pDrawList->_VtxCurrentIdx += ( ImDrawIdx )vtx_count;
+
+		if ( push_texture_id )
+			pDrawList->PopTextureID();
+	}
+	void DrawShapeDebug( ImDrawList* pDrawList, ImShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx )
+	{
+		// If we don't have a texture_id send the one on the header, it will discard the set of texture on DrawShapeEx
+		DrawShapeDebugEx( pDrawList, pDrawList->_CmdHeader.TextureId, shape, edge_thickness, edge_col, triangle_col, vrtx_radius, vrtx_col, tri_idx );
+	}
+	void DrawShape( ImDrawList* pDrawList, ImShape& shape )
+	{
+		// If we don't have a texture_id send the one on the header, it will discard the set of texture on DrawShapeEx
+		DrawShapeEx( pDrawList, pDrawList->_CmdHeader.TextureId, shape );
+	}
+	void DrawImageShapeDebug( ImDrawList* pDrawList, ImTextureID tex, ImShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx )
+	{
+		DrawShapeDebugEx( pDrawList, tex, shape, edge_thickness, edge_col, triangle_col, vrtx_radius, vrtx_col, tri_idx );
+	}
+	void DrawImageShape( ImDrawList* pDrawList, ImTextureID tex, ImShape& shape )
+	{
+		DrawShapeEx( pDrawList, tex, shape );
 	}
 
 	void GetTrianglePointer( ImVec2& a, ImVec2& b, ImVec2& c, ImVec2 targetPoint, float angle, float height )
@@ -2809,10 +2961,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			pDrawList->PrimWriteIdx( ( ImDrawIdx )( pDrawList->_VtxCurrentIdx + 2 ) );
 			pDrawList->PrimWriteIdx( ( ImDrawIdx )( pDrawList->_VtxCurrentIdx + 3 ) );
 
-			float const t0 = std::fmodf( colorOffset + ( ( float )i ) / ( ( float )division ), 1.0f );
+			float const t0 = fmodf( colorOffset + ( ( float )i ) / ( ( float )division ), 1.0f );
 			ImU32 const uCol0 = func( t0, pUserData );
 
-			float const t1 = std::fmodf( colorOffset + ( ( float )( i + 1 ) ) / ( ( float )division ), 1.0f );
+			float const t1 = fmodf( colorOffset + ( ( float )( i + 1 ) ) / ( ( float )division ), 1.0f );
 			ImU32 const uCol1 = bIsBilinear ? func( t1, pUserData ) : uCol0;
 			pDrawList->PrimWriteVtx( offset + ImVec2( x0, y0 ), uv, uCol0 );
 			pDrawList->PrimWriteVtx( offset + ImVec2( x1, y1 ), uv, uCol1 );
@@ -3445,9 +3597,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			   thickness2 < 0.5f ) )
 			return;
 		if ( ( mainCol & IM_COL32_A_MASK ) == 0 &&
-			 ( col0 & IM_COL32_A_MASK ) == 0 &&
-			 ( col1 & IM_COL32_A_MASK ) == 0 &&
-			 ( col2 & IM_COL32_A_MASK ) == 0 )
+			 ( ( col0 | col1 | col2 ) & IM_COL32_A_MASK ) == 0 )
 			return;
 
 		ImVec2 delta = end - start;
@@ -3560,9 +3710,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			 thickness2 < 0.5f ) )
 			return;
 		if ( ( mainCol & IM_COL32_A_MASK ) == 0 &&
-			 ( col0 & IM_COL32_A_MASK ) == 0 && 
-			 ( col1 & IM_COL32_A_MASK ) == 0 && 
-			 ( col2 & IM_COL32_A_MASK ) == 0 )
+			 ( ( col0 | col1 | col2 ) & IM_COL32_A_MASK ) == 0 )
 			return;
 
 
@@ -3662,8 +3810,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			   thickness1 < 0.5f ) )
 			return;
 		if ( ( mainCol & IM_COL32_A_MASK ) == 0 &&
-			 ( col0 & IM_COL32_A_MASK ) == 0 &&
-			 ( col1 & IM_COL32_A_MASK ) == 0 )
+				( ( col0 | col1 ) & IM_COL32_A_MASK ) == 0 )
 			return;
 
 		ImVec2 delta = end - start;
@@ -3738,8 +3885,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			   thickness1 < 0.5f ) )
 			return;
 		if ( ( mainCol & IM_COL32_A_MASK ) == 0 &&
-			 ( col0 & IM_COL32_A_MASK ) == 0 &&
-			 ( col1 & IM_COL32_A_MASK ) == 0 )
+				( ( col0 | col1 ) & IM_COL32_A_MASK ) == 0 )
 			return;
 
 
@@ -4151,7 +4297,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Done with rectangle culling so we can perform heavier checks now.
 		if ( !( item_flags & ImGuiItemFlags_NoWindowHoverableCheck ) && !ImGui::IsWindowContentHoverable( window, ImGuiHoveredFlags_None ) )
 		{
-			g.HoveredIdDisabled = true;
+			g.HoveredIdIsDisabled = true;
 			return false;
 		}
 
@@ -4186,7 +4332,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			// Release active id if turning disabled
 			if ( g.ActiveId == id && id != 0 )
 				ImGui::ClearActiveID();
-			g.HoveredIdDisabled = true;
+			g.HoveredIdIsDisabled = true;
 			return false;
 		}
 
@@ -4263,7 +4409,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Done with rectangle culling so we can perform heavier checks now.
 		if ( !( item_flags & ImGuiItemFlags_NoWindowHoverableCheck ) && !ImGui::IsWindowContentHoverable( window, ImGuiHoveredFlags_None ) )
 		{
-			g.HoveredIdDisabled = true;
+			g.HoveredIdIsDisabled = true;
 			return false;
 		}
 
@@ -4298,7 +4444,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			// Release active id if turning disabled
 			if ( g.ActiveId == id && id != 0 )
 				ImGui::ClearActiveID();
-			g.HoveredIdDisabled = true;
+			g.HoveredIdIsDisabled = true;
 			return false;
 		}
 
@@ -4375,7 +4521,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Done with rectangle culling so we can perform heavier checks now.
 		if ( !( item_flags & ImGuiItemFlags_NoWindowHoverableCheck ) && !ImGui::IsWindowContentHoverable( window, ImGuiHoveredFlags_None ) )
 		{
-			g.HoveredIdDisabled = true;
+			g.HoveredIdIsDisabled = true;
 			return false;
 		}
 
@@ -4410,7 +4556,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			// Release active id if turning disabled
 			if ( g.ActiveId == id && id != 0 )
 				ImGui::ClearActiveID();
-			g.HoveredIdDisabled = true;
+			g.HoveredIdIsDisabled = true;
 			return false;
 		}
 
@@ -5038,6 +5184,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return SliderNScalar( label, ImGuiDataType_S32, ordered_value, value_count, &v_min, &v_max, cursor_width, show_hover_by_region );
 	}
 
+	// TODO: Add bool flipY
 	bool Slider2DScalar( char const* label, ImGuiDataType data_type, void* p_valueX, void* p_valueY, void* p_minX, void* p_maxX, void* p_minY, void* p_maxY )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
@@ -5140,7 +5287,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			g.ActiveIdUsingNavDirMask |= ( 1 << ImGuiDir_Left ) | ( 1 << ImGuiDir_Right );
 		}
 		frame_col = ImGui::GetColorU32( g.ActiveId == idX ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
-		value_changedX = ImGui::SliderBehavior( frame_bb_dragX, idX, data_type, p_valueX, p_minX, p_maxX, NULL, ImGuiSliderFlags_NoInput | ImGuiSliderFlags_NoRoundToFormat, &grab_bbX );
+		bool value_changedXS = ImGui::SliderBehavior( frame_bb_dragX, idX, data_type, p_valueX, p_minX, p_maxX, NULL, ImGuiSliderFlags_NoInput | ImGuiSliderFlags_NoRoundToFormat, &grab_bbX );
 		if ( value_changedX )
 			ImGui::MarkItemEdited( idX );
 
@@ -5169,7 +5316,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImGui::RenderNavHighlight( frame_bb_dragY, idY );
 		ImGui::RenderFrame( frame_bb_dragY.Min, frame_bb_dragY.Max, frame_col, true, g.Style.FrameRounding );
 
-		value_changedY = ImGui::SliderBehavior( frame_bb_dragY, idY, data_type, p_valueY, p_minY, p_maxY, NULL, ImGuiSliderFlags_NoInput | ImGuiSliderFlags_NoRoundToFormat | ImGuiSliderFlags_Vertical, &grab_bbY );
+		bool value_changedYS = ImGui::SliderBehavior( frame_bb_dragY, idY, data_type, p_valueY, p_minY, p_maxY, NULL, ImGuiSliderFlags_NoInput | ImGuiSliderFlags_NoRoundToFormat | ImGuiSliderFlags_Vertical, &grab_bbY );
 
 		if ( label_size.x > 0.0f )
 			ImGui::RenderText( ImVec2( frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + style.FramePadding.y ), label );
@@ -5179,20 +5326,20 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImU64 s_delta_x = SubScalar( data_type, p_maxX, p_minX );
 		ImU64 s_delta_y = SubScalar( data_type, p_maxY, p_minY );
 		float fScaleX = ( ScalarToFloat( data_type, ( ImU64* )p_valueX ) - ScalarToFloat( data_type, ( ImU64* )p_minX ) ) / ScalarToFloat( data_type, &s_delta_x );
-		float fScaleY = 1.0f - ( ScalarToFloat( data_type, ( ImU64* )p_valueY ) - ScalarToFloat( data_type, ( ImU64* )p_minY ) ) / ScalarToFloat( data_type, &s_delta_y );
+		float fScaleY = 1.0 - ( ScalarToFloat( data_type, ( ImU64* )p_valueY ) - ScalarToFloat( data_type, ( ImU64* )p_minY ) ) / ScalarToFloat( data_type, &s_delta_y );
 		ImVec2 vCursorPos( ( frame_bb_drag.Max.x - frame_bb_drag.Min.x ) * fScaleX + frame_bb_drag.Min.x, ( frame_bb_drag.Max.y - frame_bb_drag.Min.y ) * fScaleY + frame_bb_drag.Min.y );
 
-		std::string formatX = ImGui::DataTypeGetInfo( data_type )->PrintFmt;
-		std::string formatY = ImGui::DataTypeGetInfo( data_type )->PrintFmt;
+		char const* formatX = ImGui::DataTypeGetInfo( data_type )->PrintFmt;
+		char const* formatY = ImGui::DataTypeGetInfo( data_type )->PrintFmt;
 
-		if ( IsPositiveScalar( data_type, ( ImU64* )p_valueX ) )
-		{
-			formatX = " " + formatX;
-		}
-		if ( IsPositiveScalar( data_type, ( ImU64* )p_valueY ) )
-		{
-			formatY = " " + formatY;
-		}
+		//if ( IsPositiveScalar( data_type, ( ImU64* )p_valueX ) )
+		//{
+		//	formatX = " " + formatX;
+		//}
+		//if ( IsPositiveScalar( data_type, ( ImU64* )p_valueY ) )
+		//{
+		//	formatY = " " + formatY;
+		//}
 
 		// Cursor
 		pDrawList->AddCircleFilled( vCursorPos, cursor_radius, uBlue, cursor_segments );
@@ -5241,8 +5388,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Add Text
 		char pBufferX[ 64 ];
 		char pBufferY[ 64 ];
-		ImGui::DataTypeFormatString( pBufferX, IM_ARRAYSIZE( pBufferX ), data_type, p_valueX, formatX.c_str() );
-		ImGui::DataTypeFormatString( pBufferY, IM_ARRAYSIZE( pBufferY ), data_type, p_valueY, formatY.c_str() );
+		ImGui::DataTypeFormatString( pBufferX, IM_ARRAYSIZE( pBufferX ), data_type, p_valueX, formatX );
+		ImGui::DataTypeFormatString( pBufferY, IM_ARRAYSIZE( pBufferY ), data_type, p_valueY, formatY );
 
 		ImU32 const uTextCol = ImGui::ColorConvertFloat4ToU32( ImGui::GetStyle().Colors[ ImGuiCol_Text ] );
 
@@ -5264,6 +5411,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			pBufferY );
 
 		ImGui::SetWindowFontScale( 1.0f );
+
+		return value_changedX || value_changedY || value_changedXS || value_changedYS;
 	}
 
 	bool Slider2DFloat( char const* pLabel, float* pValueX, float* pValueY, float v_minX, float v_maxX, float v_minY, float v_maxY )

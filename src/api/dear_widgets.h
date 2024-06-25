@@ -5,10 +5,10 @@
 
 #include <imgui_internal.h>
 
-#include <algorithm>
-#include <string>
-
-#include <cmath>
+//#include <algorithm>
+//#include <string>
+//#include <cmath>
+#include <math.h>
 
 //////////////////////////////////////////////////////////////////////////
 // Style TODO:
@@ -50,9 +50,15 @@
 #define nullptr NULL
 #endif
 
-#define DEAR_WIDGETS_TESSELATION 1
+//#define DEAR_WIDGETS_TESSELATION
 
 namespace ImWidgets{
+	typedef void* ImShaderID;
+	struct ImShader
+	{
+		ImShaderID vs;
+		ImShaderID ps;
+	};
 	struct ImVertex
 	{
 		ImVec2 pos;
@@ -392,7 +398,7 @@ namespace ImWidgets{
 	inline
 	float ImRound(float x)
 	{
-		return round(x);
+		return roundf(x);
 	}
 
 	inline
@@ -462,6 +468,11 @@ namespace ImWidgets{
 	float ImLength(ImVec2 v)
 	{
 		return ImSqrt( ImLengthSqr( v ) );
+	}
+	inline
+	float ImLengthL1(ImVec2 v)
+	{
+		return ImAbs( v.x ) + ImAbs( v.y );
 	}
 	inline
 	ImVec2 ImNormalized(ImVec2 v)
@@ -589,29 +600,45 @@ namespace ImWidgets{
 	ImU64	DivScalar( ImGuiDataType data_type, void* p_a, void* p_b );
 	ImU64	ClampScalar( ImGuiDataType data_type, void* p_value, void* p_min, void* p_max );
 	ImU64	Normalize01( ImGuiDataType data_type, void* p_value, void const* p_min, void const* p_max );
-	void	MemoryString( std::string& sResult, ImU64 const uMemoryByte );
-	void	MemoryString( std::string& sResult, ImU64 const uMemoryByte );
-	void	MemoryString( std::string& sResult, ImU64 const uMemoryByte );
+	//void	MemoryString( std::string& sResult, ImU64 const uMemoryByte );
+	//void	MemoryString( std::string& sResult, ImU64 const uMemoryByte );
+	//void	MemoryString( std::string& sResult, ImU64 const uMemoryByte );
 
 	//////////////////////////////////////////////////////////////////////////
 	// Geometry Generation
 	//////////////////////////////////////////////////////////////////////////
-#if DEAR_WIDGETS_TESSELATION
-	void	ImShapeTesselationUniform( ImShape& shape );
-
-	void	ImGenShapeRect( ImShape& shape, ImRect const& r );
-	void	ImGenShapeCircle( ImShape& shape, ImVec2 center, float radius, int side_count );
-	void	ImGenShapeCircleArc( ImShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count );
-	void	ImGenShapeCirclePie( ImShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count );
-	void	ImGenShapeRegularNGon( ImShape& shape, ImVec2 center, float radius, int side_count );
-
-	void	ImShapeLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+#ifdef DEAR_WIDGETS_TESSELATION
+	void	ShapeTesselationUniform( ImShape& shape );
 #endif
+
+	void	ShapeSetDefaultUV( ImShape& shape );
+	void	ShapeSetDefaultUVCol( ImShape& shape );
+	void	ShapeSetDefaultBoundUV( ImShape& shape );
+	void	ShapeSetDefaultBoundUVWhiteCol( ImShape& shape );
+	void	ShapeSetDefaultWhiteCol( ImShape& shape );
+
+	void	GenShapeRect( ImShape& shape, ImRect const& r );
+	void	GenShapeCircle( ImShape& shape, ImVec2 center, float radius, int side_count );
+	void	GenShapeCircleArc( ImShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count );
+	void	GenShapeCirclePie( ImShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count );
+	void	GenShapeRegularNGon( ImShape& shape, ImVec2 center, float radius, int side_count );
+
+	// TODO Add Color Blend Option (Linear, sRGB, ...) cf. W3C rules
+	void	ShapeLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+	void	ShapeRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+	void	ShapeDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+
+	void	DrawShader( ImShape& shape, ImShader& shader );
 
 	//////////////////////////////////////////////////////////////////////////
 	// DrawList
 	//////////////////////////////////////////////////////////////////////////
-	IMGUI_API void DrawGeometry( ImDrawList* pDrawList, ImShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx = -1 );
+	IMGUI_API void DrawShapeDebugEx( ImDrawList* pDrawList, ImTextureID tex, ImShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx = -1 );
+	IMGUI_API void DrawShapeEx( ImDrawList* pDrawList, ImTextureID tex, ImShape& shape );
+	IMGUI_API void DrawShapeDebug( ImDrawList* pDrawList, ImShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx = -1 );
+	IMGUI_API void DrawShape( ImDrawList* pDrawList, ImShape& shape );
+	IMGUI_API void DrawImageShapeDebug( ImDrawList* pDrawList, ImTextureID tex, ImShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx = -1 );
+	IMGUI_API void DrawImageShape( ImDrawList* pDrawList, ImTextureID tex, ImShape& shape );
 
 	IMGUI_API void DrawTriangleCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float angle, float size, float thickness, ImU32 col );
 	IMGUI_API void DrawTriangleCursorFilled( ImDrawList* pDrawList, ImVec2 targetPoint, float angle, float size, ImU32 col );
@@ -808,6 +835,7 @@ namespace ImWidgets{
 	IMGUI_API bool SliderNScalar( char const* label, ImGuiDataType data_type, void* ordered_value, int value_count, void* p_min, void* p_max, float cursor_width, bool show_hover_by_region );
 	IMGUI_API bool SliderNFloat( char const* label, ImGuiDataType data_type, float* ordered_value, int value_count, float v_min, float v_max, float cursor_width, bool show_hover_by_region );
 	IMGUI_API bool SliderNInt( char const* label, ImGuiDataType data_type, int* ordered_value, int value_count, int v_min, int v_max, float cursor_width, bool show_hover_by_region );
+	// TODO: Add bool flipY
 	IMGUI_API bool Slider2DScalar( char const* pLabel, ImGuiDataType data_type, void* pValueX, void* pValueY, void* p_minX, void* p_maxX, void* p_minY, void* p_maxY );
 	IMGUI_API bool Slider2DFloat( char const* pLabel, float* pValueX, float* pValueY, float v_minX, float v_maxX, float v_minY, float v_maxY );
 	IMGUI_API bool Slider2DInt( char const* pLabel, int* pValueX, void* pValueY, int v_minX, int v_maxX, int v_minY, int v_maxY );

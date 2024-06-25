@@ -75,7 +75,7 @@ namespace DearWidgets
 			CustomProperties.Add( "VcpkgEnabled", "false" );
 
 			AddTargets(new DearTarget(	Platform.win64 | Platform.linux,// | Platform.mac,
-										TargetAPI.OpenGL3 | TargetAPI.D3D9 | TargetAPI.D3D10 | TargetAPI.D3D12,
+										TargetAPI.OpenGL3 | TargetAPI.D3D9 | TargetAPI.D3D10 | TargetAPI.D3D11 | TargetAPI.D3D12,
 										Optimization.Debug | Optimization.Release,
 										BuildType.APIOnly | BuildType.DemoOnly | BuildType.Full ) );
 		}
@@ -99,6 +99,8 @@ namespace DearWidgets
 			conf.Defines.Add("ImDrawIdx=ImU32");
 			conf.Defines.Add("IMGUI_DEFINE_MATH_OPERATORS");
 			conf.Defines.Add("IMGUI_DISABLE_OBSOLETE_FUNCTIONS");
+			conf.Defines.Add( "NOMINMAX" );
+			conf.Defines.Add( "DEAR_WIDGETS_TESSELATION" );
             //conf.IncludePaths.Add(@"[project.ExternPath]/imgui/");
             conf.IncludePaths.Add(@"[project.RootPath]/extern/imgui/");
 			conf.IncludePaths.Add(@"[project.ExternPath]/glad/include");
@@ -125,13 +127,23 @@ namespace DearWidgets
             //    "4324"  // structure was padded due to alignment specifier
             //    ));
 
-			conf.Defines.Add( "NOMINMAX" );
 
 			if (target.Optimization == Optimization.Debug)
 				conf.Defines.Add("__DEAR_DEBUG__");
 			else
 				conf.Defines.Add("__DEAR_RELEASE__");
 			//conf.Defines.Add("ImDrawIdx=unsigned int");
+			if (target.Platform == Platform.win64)
+			{
+				if (target.Optimization == Optimization.Debug)
+					conf.Options.Add(Sharpmake.Options.Vc.Compiler.RuntimeLibrary.MultiThreadedDebug);
+				else
+					conf.Options.Add(Sharpmake.Options.Vc.Compiler.RuntimeLibrary.MultiThreaded);
+			}
+
+			if (target.Platform == Platform.win64)
+				//conf.Options.Add(Sharpmake.Options.Vc.General.NativeEnvironment.Enable);
+				conf.Options.Add(Options.Vc.General.PreferredToolArchitecture.x64);
 		}
 
 		[Configure(Platform.mac)]

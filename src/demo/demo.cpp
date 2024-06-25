@@ -14,6 +14,7 @@
 #elif defined(__DEAR_GFX_DX12__)
 #define IM_CURRENT_TARGET IM_TARGET_WIN32_DX12
 #endif
+//#define IM_PLATFORM_ENABLE_CUSTOM_SHADER
 #define IM_PLATFORM_IMPLEMENTATION
 #include <ImPlatform.h>
 
@@ -228,7 +229,7 @@ namespace ImWidgets{
 		if ( ImGui::CollapsingHeader( "Draw" ) )
 		{
 			ImGui::Indent();
-			if ( ImGui::CollapsingHeader( "Draw Geometry" ) )
+			if ( ImGui::CollapsingHeader( "Draw Shape" ) )
 			{
 				float const size = ImGui::GetContentRegionAvail().x;
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
@@ -248,39 +249,267 @@ namespace ImWidgets{
 				static ImU32 colb = ImGui::GetColorU32( colb_v );
 				static int tri_idx = -1;
 				static int side_count = 3;
+#ifdef DEAR_WIDGETS_TESSELATION
 				static int tess = 1;
 				ImGui::SliderInt( "Tess", &tess, 0, 16 );
+#endif
 				ImGui::SliderInt( "Sides", &side_count, 3, 64 );
 				ImGui::SliderFloat( "Thickness", &edge_thickness, 0.0f, 16.0f );
 				ImGui::SliderFloat( "Radius", &vertex_radius, 0.0f, 64.0f );
-				if ( ImGui::ColorEdit4( "Edge##DrawGeometry", &edge_col_v.x ) )
+				if ( ImGui::ColorEdit4( "Edge##DrawShape", &edge_col_v.x ) )
 					edge_col = ImGui::GetColorU32( edge_col_v );
-				if ( ImGui::ColorEdit4( "Triangle##DrawGeometry", &triangle_col_v.x ) )
+				if ( ImGui::ColorEdit4( "Triangle##DrawShape", &triangle_col_v.x ) )
 					triangle_col = ImGui::GetColorU32( triangle_col_v );
-				if ( ImGui::ColorEdit4( "Vertices##DrawGeometry", &vertex_col_v.x ) )
+				if ( ImGui::ColorEdit4( "Vertices##DrawShape", &vertex_col_v.x ) )
 					vertex_col = ImGui::GetColorU32( vertex_col_v );
 				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
 				Slider2DFloat( "uv0", &uv_start.x, &uv_start.y, 0.0f, 1.0f, 0.0f, 1.0f );
 				ImGui::SameLine();
 				Slider2DFloat( "uv1", &uv_end.x, &uv_end.y, 0.0f, 1.0f, 0.0f, 1.0f );
 				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
-				if ( ImGui::ColorEdit4( "ColA##DrawGeometry", &cola_v.x ) )
+				if ( ImGui::ColorEdit4( "ColA##DrawShape", &cola_v.x ) )
 					cola = ImGui::GetColorU32( cola_v );
 				ImGui::SameLine();
-				if ( ImGui::ColorEdit4( "ColB##DrawGeometry", &colb_v.x ) )
+				if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
 					colb = ImGui::GetColorU32( colb_v );
 				ImVec2 pos = ImGui::GetCursorScreenPos();
 				static ImShape shape;
-				//ImGenShapeCircle( shape, pos + ImVec2( size * 0.5f, size * 0.5f ), size * 0.5f, side_count );
-				ImGenShapeRect( shape, ImRect( pos, pos + ImVec2( size, size ) ) );
+				GenShapeCircle( shape, pos + ImVec2( size * 0.5f, size * 0.5f ), size * 0.5f, side_count );
+				ShapeSetDefaultUV( shape );
+#ifdef DEAR_WIDGETS_TESSELATION
 				for ( int k = 0; k < tess; ++k )
-					ImShapeTesselationUniform( shape );
-				ImShapeLinearGradient( shape,
+					ShapeTesselationUniform( shape );
+#endif
+				ShapeLinearGradient( shape,
 									   uv_start, uv_end,
 									   cola, colb );
-				DrawGeometry( pDrawList, shape, edge_thickness, edge_col, triangle_col, vertex_radius, vertex_col, tri_idx );
+				DrawShapeDebug( pDrawList, shape, edge_thickness, edge_col, triangle_col, vertex_radius, vertex_col, tri_idx );
 				ImGui::Dummy( ImVec2( size, size ) );
 				ImGui::SliderInt( "tri_idx", &tri_idx, -1, shape.triangles.size() - 1 );
+				ImGui::Text( "Tri: %d", shape.triangles.size() );
+				ImGui::Text( "Vtx: %d", shape.vertices.size() );
+			}
+			if ( ImGui::CollapsingHeader( "Linear Gradient" ) )
+			{
+				float const size = ImGui::GetContentRegionAvail().x;
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				static ImVec2 uv_start( 0.0f, 0.0f );
+				static ImVec2 uv_end( 1.0f, 1.0f );
+				static ImVec4 cola_v( 1.0f, 1.0f, 1.0f, 1.0f );
+				static ImVec4 colb_v( 0.0f, 1.0f, 1.0f, 0.0f );
+				static ImU32 cola = ImGui::GetColorU32( cola_v );
+				static ImU32 colb = ImGui::GetColorU32( colb_v );
+#ifdef DEAR_WIDGETS_TESSELATION
+				static int tess = 4;
+				ImGui::SliderInt( "Tess", &tess, 0, 16 );
+#endif
+				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+				Slider2DFloat( "uv0", &uv_start.x, &uv_start.y, 0.0f, 1.0f, -1.0f, 2.0f );
+				ImGui::SameLine();
+				Slider2DFloat( "uv1", &uv_end.x, &uv_end.y, 0.0f, 1.0f, -1.0f, 2.0f );
+				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+				if ( ImGui::ColorEdit4( "ColA##DrawShape", &cola_v.x ) )
+					cola = ImGui::GetColorU32( cola_v );
+				ImGui::SameLine();
+				if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
+					colb = ImGui::GetColorU32( colb_v );
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+				static ImShape shape;
+				GenShapeRect( shape, ImRect( pos, pos + ImVec2( size, size ) ) );
+				ShapeSetDefaultUV( shape );
+#ifdef DEAR_WIDGETS_TESSELATION
+				for ( int k = 0; k < tess; ++k )
+					ShapeTesselationUniform( shape );
+#endif
+				ShapeLinearGradient( shape,
+									   uv_start, uv_end,
+									   cola, colb );
+				DrawShape( pDrawList, shape );
+				ImGui::Dummy( ImVec2( size, size ) );
+				ImGui::Text( "Tri: %d", shape.triangles.size() );
+				ImGui::Text( "Vtx: %d", shape.vertices.size() );
+			}
+			if ( ImGui::CollapsingHeader( "Radial Gradient" ) )
+			{
+				float const size = ImGui::GetContentRegionAvail().x;
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				static ImVec2 uv_start( 0.5f, 0.5f );
+				static ImVec2 uv_end( 0.75f, 0.5f );
+				static ImVec4 cola_v( 1.0f, 1.0f, 1.0f, 1.0f );
+				static ImVec4 colb_v( 0.0f, 1.0f, 1.0f, 0.0f );
+				static ImU32 cola = ImGui::GetColorU32( cola_v );
+				static ImU32 colb = ImGui::GetColorU32( colb_v );
+#ifdef DEAR_WIDGETS_TESSELATION
+				static int tess = 5;
+				ImGui::SliderInt( "Tess", &tess, 0, 16 );
+#endif
+				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+				Slider2DFloat( "uv0", &uv_start.x, &uv_start.y, 0.0f, 1.0f, -1.0f, 2.0f );
+				ImGui::SameLine();
+				Slider2DFloat( "uv1", &uv_end.x, &uv_end.y, 0.0f, 1.0f, -1.0f, 2.0f );
+				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+				if ( ImGui::ColorEdit4( "ColA##DrawShape", &cola_v.x ) )
+					cola = ImGui::GetColorU32( cola_v );
+				ImGui::SameLine();
+				if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
+					colb = ImGui::GetColorU32( colb_v );
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+				static ImShape shape;
+				GenShapeRect( shape, ImRect( pos, pos + ImVec2( size, size ) ) );
+				ShapeSetDefaultUV( shape );
+#ifdef DEAR_WIDGETS_TESSELATION
+				for ( int k = 0; k < tess; ++k )
+					ShapeTesselationUniform( shape );
+#endif
+				ShapeRadialGradient( shape,
+									   uv_start, uv_end,
+									   cola, colb );
+				DrawShape( pDrawList, shape );
+				ImGui::Dummy( ImVec2( size, size ) );
+				ImGui::Text( "Tri: %d", shape.triangles.size() );
+				ImGui::Text( "Vtx: %d", shape.vertices.size() );
+			}
+			if ( ImGui::CollapsingHeader( "Diamond Gradient" ) )
+			{
+				float const size = ImGui::GetContentRegionAvail().x;
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				static ImVec2 uv_start( 0.5f, 0.5f );
+				static ImVec2 uv_end( 0.75f, 0.5f );
+				static ImVec4 cola_v( 1.0f, 1.0f, 1.0f, 1.0f );
+				static ImVec4 colb_v( 0.0f, 1.0f, 1.0f, 0.0f );
+				static ImU32 cola = ImGui::GetColorU32( cola_v );
+				static ImU32 colb = ImGui::GetColorU32( colb_v );
+#ifdef DEAR_WIDGETS_TESSELATION
+				static int tess = 5;
+				ImGui::SliderInt( "Tess", &tess, 0, 16 );
+#endif
+				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+				Slider2DFloat( "uv0", &uv_start.x, &uv_start.y, 0.0f, 1.0f, -1.0f, 2.0f );
+				ImGui::SameLine();
+				Slider2DFloat( "uv1", &uv_end.x, &uv_end.y, 0.0f, 1.0f, -1.0f, 2.0f );
+				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+				if ( ImGui::ColorEdit4( "ColA##DrawShape", &cola_v.x ) )
+					cola = ImGui::GetColorU32( cola_v );
+				ImGui::SameLine();
+				if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
+					colb = ImGui::GetColorU32( colb_v );
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+				static ImShape shape;
+				GenShapeRect( shape, ImRect( pos, pos + ImVec2( size, size ) ) );
+				ShapeSetDefaultUV( shape );
+#ifdef DEAR_WIDGETS_TESSELATION
+				for ( int k = 0; k < tess; ++k )
+					ShapeTesselationUniform( shape );
+#endif
+				ShapeDiamondGradient( shape,
+									   uv_start, uv_end,
+									   cola, colb );
+				DrawShape( pDrawList, shape );
+				ImGui::Dummy( ImVec2( size, size ) );
+				ImGui::Text( "Tri: %d", shape.triangles.size() );
+				ImGui::Text( "Vtx: %d", shape.vertices.size() );
+			}
+			if ( ImGui::CollapsingHeader( "Image Shape" ) )
+			{
+				float const size = ImGui::GetContentRegionAvail().x;
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				static int tri_idx = -1;
+				static float edge_thickness = 2.0f;
+				static float vertex_radius = 16.0f;
+				static ImVec4 edge_col_v( 1.0f, 0.0f, 0.0f, 1.0f );
+				static ImVec4 triangle_col_v( 0.0f, 1.0f, 0.0f, 1.0f );
+				static ImVec4 vertex_col_v( 0.0f, 0.0f, 1.0f, 1.0f );
+				static ImU32 edge_col = ImGui::GetColorU32( edge_col_v );
+				static ImU32 triangle_col = ImGui::GetColorU32( triangle_col_v );
+				static ImU32 vertex_col = ImGui::GetColorU32( vertex_col_v );
+				static float angle_min = -IM_PI / 6.0f;
+				static float angle_max =  IM_PI / 6.0f;
+				static float radius = size * 0.5f;
+				static int division = 3;
+#ifdef DEAR_WIDGETS_TESSELATION
+				static int tess = 0;
+				ImGui::SliderInt( "Tess", &tess, 0, 16 );
+#endif
+				ImGui::SliderFloat( "Thickness", &edge_thickness, 0.0f, 16.0f );
+				ImGui::SliderFloat( "Radius", &vertex_radius, 0.0f, 64.0f );
+				if ( ImGui::ColorEdit4( "Edge##DrawShape", &edge_col_v.x ) )
+					edge_col = ImGui::GetColorU32( edge_col_v );
+				if ( ImGui::ColorEdit4( "Triangle##DrawShape", &triangle_col_v.x ) )
+					triangle_col = ImGui::GetColorU32( triangle_col_v );
+				if ( ImGui::ColorEdit4( "Vertices##DrawShape", &vertex_col_v.x ) )
+					vertex_col = ImGui::GetColorU32( vertex_col_v );
+				ImGui::SliderInt( "Division", &division, 3, 64 );
+				ImGui::SliderFloat( "Radius", &radius, 0.0f, size * 0.5f );
+				ImGui::SliderAngle( "AngleMin", &angle_min, -360.0f, angle_max * 180.0f / IM_PI );
+				ImGui::SliderAngle( "AngleMax", &angle_max, angle_min * 180.0f / IM_PI, 360.0f );
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+				static ImShape shape;
+				GenShapeCircleArc( shape, pos + ImVec2( 0.5f * size, 0.5f * size ), radius, angle_min, angle_max, division );
+				ShapeSetDefaultBoundUVWhiteCol( shape );
+#ifdef DEAR_WIDGETS_TESSELATION
+				for ( int k = 0; k < tess; ++k )
+					ShapeTesselationUniform( shape );
+#endif
+				DrawImageShapeDebug( pDrawList, background, shape, edge_thickness, edge_col, triangle_col, vertex_radius, vertex_col, tri_idx );
+				ImGui::Dummy( ImVec2( size, size ) );
+				ImGui::SliderInt( "tri_idx", &tri_idx, -1, shape.triangles.size() - 1 );
+				ImGui::Text( "Tri: %d", shape.triangles.size() );
+				ImGui::Text( "Vtx: %d", shape.vertices.size() );
+			}
+			if ( ImGui::CollapsingHeader( "Image Shape Gradient" ) )
+			{
+				float const size = ImGui::GetContentRegionAvail().x;
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				static int tri_idx = -1;
+				static float edge_thickness = 2.0f;
+				static float vertex_radius = 16.0f;
+				static ImVec4 edge_col_v( 1.0f, 0.0f, 0.0f, 1.0f );
+				static ImVec4 triangle_col_v( 0.0f, 1.0f, 0.0f, 1.0f );
+				static ImVec4 vertex_col_v( 0.0f, 0.0f, 1.0f, 1.0f );
+				static ImU32 edge_col = ImGui::GetColorU32( edge_col_v );
+				static ImU32 triangle_col = ImGui::GetColorU32( triangle_col_v );
+				static ImU32 vertex_col = ImGui::GetColorU32( vertex_col_v );
+				static ImVec2 uv_start( 0.0f, 0.0f );
+				static ImVec2 uv_end( 0.0f, 1.0f );
+				static ImVec4 cola_v( 1.0f, 1.0f, 1.0f, 1.0f );
+				static ImVec4 colb_v( 0.0f, 0.0f, 0.0f, 0.0f );
+				static ImU32 cola = ImGui::GetColorU32( cola_v );
+				static ImU32 colb = ImGui::GetColorU32( colb_v );
+#ifdef DEAR_WIDGETS_TESSELATION
+				static int tess = 5;
+				ImGui::SliderInt( "Tess", &tess, 0, 16 );
+#endif
+				ImGui::SliderFloat( "Thickness", &edge_thickness, 0.0f, 16.0f );
+				ImGui::SliderFloat( "VRadius", &vertex_radius, 0.0f, 64.0f );
+				if ( ImGui::ColorEdit4( "Edge##DrawShape", &edge_col_v.x ) )
+					edge_col = ImGui::GetColorU32( edge_col_v );
+				if ( ImGui::ColorEdit4( "Triangle##DrawShape", &triangle_col_v.x ) )
+					triangle_col = ImGui::GetColorU32( triangle_col_v );
+				if ( ImGui::ColorEdit4( "Vertices##DrawShape", &vertex_col_v.x ) )
+					vertex_col = ImGui::GetColorU32( vertex_col_v );
+				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+				Slider2DFloat( "uv0", &uv_start.x, &uv_start.y, 0.0f, 1.0f, -1.0f, 2.0f );
+				ImGui::SameLine();
+				Slider2DFloat( "uv1", &uv_end.x, &uv_end.y, 0.0f, 1.0f, -1.0f, 2.0f );
+				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+				if ( ImGui::ColorEdit4( "ColA##DrawShape", &cola_v.x ) )
+					cola = ImGui::GetColorU32( cola_v );
+				ImGui::SameLine();
+				if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
+					colb = ImGui::GetColorU32( colb_v );
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+				static ImShape shape;
+				GenShapeRect( shape, ImRect( pos, pos + ImVec2( size, size ) ) );
+				ShapeSetDefaultBoundUV( shape );
+#ifdef DEAR_WIDGETS_TESSELATION
+				for ( int k = 0; k < tess; ++k )
+					ShapeTesselationUniform( shape );
+#endif
+				ShapeLinearGradient( shape,
+									 uv_start, uv_end,
+									 cola, colb );
+				DrawImageShape( pDrawList, background, shape );
+				ImGui::Dummy( ImVec2( size, size ) );
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
 				ImGui::Text( "Vtx: %d", shape.vertices.size() );
 			}
@@ -475,7 +704,7 @@ namespace ImWidgets{
 					ImVec2 curPos = ImGui::GetCursorScreenPos();
 					ImGui::InvisibleButton( "##Zone", ImVec2( width, width ) * 0.5f, 0 );
 
-					float fFreqValue = frequency;
+					float fFreqValue = (float)frequency;
 					DrawColorRing( pDrawList, curPos, ImVec2( width, width ) * 0.5f, thickness,
 								   []( float t, void* pUserData ){
 									   float fFreq = *( ( float* )pUserData );
@@ -1206,7 +1435,7 @@ namespace ImWidgets{
 		{
 			ImGui::Indent();
 			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 128, 0, 255 ) );
-			ImGui::TextWrapped( "/!\\ Use carefully and at your risk!" );
+			ImGui::TextWrapped( "/!!\\ Use carefully and at your risk!" );
 			ImGui::TextWrapped( "/!\\ API will change, that at 'first draft' stage." );
 			ImGui::TextWrapped( "/!\\ PR are welcome to contribute." );
 			ImGui::PopStyleColor();
