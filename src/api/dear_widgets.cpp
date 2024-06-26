@@ -2412,8 +2412,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			float _0 = angle_min + ( ( float )k ) * d0;
 			ImVec2 v;
-			v.x = center.x + radius * ImCos( -_0 );
-			v.y = center.y + radius * ImSin( -_0 );
+			v.x = center.x + radius * ImCos( _0 );
+			v.y = center.y + radius * ImSin( _0 );
 			shape.vertices[ k + 1 ].pos.x = v.x;
 			shape.vertices[ k + 1 ].pos.y = v.y;
 			shape.bb.Min.x = ImMin( shape.bb.Min.x, v.x );
@@ -2428,14 +2428,19 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			shape.triangles[ k ].c = k + 2;
 		}
 	}
-	void	GenShapeCirclePie( ImShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count )
-	{
-		
-	}
 	void	GenShapeRegularNGon( ImShape& shape, ImVec2 center, float radius, int side_count )
 	{
 		GenShapeCircle( shape, center, radius, side_count );
 	}
+
+	// TODO
+	//void	GenShapeFromBezierCubicCurve( ImShape& sshape, ImVector<ImVec2>& path, float thickness, int num_segments )
+	//{
+	//}
+	//void	GenShapeFromBezierQuadraticCurve( ImShape& sshape, ImVector<ImVec2>& path, float thickness, int num_segments )
+	//{
+	//}
+
 	void	ShapeLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
 		ImVec2 delta = uv_end - uv_start;
@@ -5425,6 +5430,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return Slider2DScalar( pLabel, ImGuiDataType_S32, pValueX, pValueY, &v_minX, &v_maxX, &v_minY, &v_maxY );
 	}
 
+	// TODO
 	bool SliderRingScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, float v_angle_min, float v_angle_max, float v_thickness, const char* format, ImGuiSliderFlags flags, ImRect* out_grab_bb )
 	{
 

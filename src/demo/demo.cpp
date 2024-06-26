@@ -28,74 +28,74 @@ static int grid_rows = 8;
 static int grid_columns = 8;
 static ImVector<float> grid_values;
 
-static ImVector<float> linear_values;
-static ImVector<float> maskShape_values;
-
-std::random_device rd;
-std::mt19937_64 gen( rd() );
-std::uniform_real_distribution<float> dis( -1.0f, 1.0f );
-
-class StaticInit
-{
-public:
-	StaticInit()
-	{
-		for ( int j = 0; j < grid_rows; ++j )
-		{
-			for ( int i = 0; i < grid_columns; ++i )
-			{
-				float x = ( ( float )i ) / ( ( float )( grid_columns - 1 ) );
-				float y = ( ( float )j ) / ( ( float )( grid_rows - 1 ) );
-
-				grid_values.push_back( x );
-				grid_values.push_back( y );
-			}
-
-			linear_values.push_back( dis( gen ) * 0.5f );
-			linear_values.push_back( dis( gen ) );
-		}
-
-		constexpr int ptsCount = 16;
-		float const radius = 0.5f;
-		for ( int i = 0; i < ptsCount; ++i )
-		{
-			float const angle = -2.0f * IM_PI * ( ( float )i ) / ( ( float )( ptsCount - 1 ) );
-
-			float x = radius * ImCos( angle );
-			float y = radius * ImSin( angle );
-
-			maskShape_values.push_back( x );
-			maskShape_values.push_back( y );
-		}
-	}
-};
+//static ImVector<float> linear_values;
+//static ImVector<float> maskShape_values;
+//
+//std::random_device rd;
+//std::mt19937_64 gen( rd() );
+//std::uniform_real_distribution<float> dis( -1.0f, 1.0f );
+//
+//class StaticInit
+//{
+//public:
+//	StaticInit()
+//	{
+//		for ( int j = 0; j < grid_rows; ++j )
+//		{
+//			for ( int i = 0; i < grid_columns; ++i )
+//			{
+//				float x = ( ( float )i ) / ( ( float )( grid_columns - 1 ) );
+//				float y = ( ( float )j ) / ( ( float )( grid_rows - 1 ) );
+//
+//				grid_values.push_back( x );
+//				grid_values.push_back( y );
+//			}
+//
+//			linear_values.push_back( dis( gen ) * 0.5f );
+//			linear_values.push_back( dis( gen ) );
+//		}
+//
+//		constexpr int ptsCount = 16;
+//		float const radius = 0.5f;
+//		for ( int i = 0; i < ptsCount; ++i )
+//		{
+//			float const angle = -2.0f * IM_PI * ( ( float )i ) / ( ( float )( ptsCount - 1 ) );
+//
+//			float x = radius * ImCos( angle );
+//			float y = radius * ImSin( angle );
+//
+//			maskShape_values.push_back( x );
+//			maskShape_values.push_back( y );
+//		}
+//	}
+//};
 
 ImVec2 TemperatureTo_xy( float TT )
 {
-	double T = ( float )TT;
-	double xc, yc;
-	double const invT = 1.0 / T;
-	double const invT2 = 1.0 / ( T * T );
-	double const invT3 = ( 1.0 / ( T * T ) ) / T;
-	double const _10_9 = 1e9 / ( T * T * T );
-	double const _10_6 = 1e6 / ( T * T );
-	double const _10_3 = 1e3 / ( T );
+	float T = TT;
+	float xc, yc;
+	//float const invT = 1.0f / T;
+	//float const invT2 = 1.0f / ( T * T );
+	//float const invT3 = ( 1.0f / ( T * T ) ) / T;
+	float const _10_9 = 1e9f / ( T * T * T );
+	float const _10_6 = 1e6f / ( T * T );
+	float const _10_3 = 1e3f / ( T );
 	if (/*T >= 1667.0f &&*/ T <= 4000.0f )
-		xc = -0.2661239 * _10_9 - 0.2343589 * _10_6 + 0.8776956 * _10_3 + 0.179910;
+		xc = -0.2661239f * _10_9 - 0.2343589f * _10_6 + 0.8776956f * _10_3 + 0.179910f;
 	else //if (x = 25000.0f)
-		xc = -3.0258469 * _10_9 + 2.1070379 * _10_6 + 0.2226347 * _10_3 + 0.240390;
+		xc = -3.0258469f * _10_9 + 2.1070379f * _10_6 + 0.2226347f * _10_3 + 0.240390f;
 
-	double const xc2 = xc * xc;
-	double const xc3 = xc2 * xc;
+	float const xc2 = xc * xc;
+	float const xc3 = xc2 * xc;
 
 	if (/*T >= 1667.0f &&*/ T <= 2222.0f )
-		yc = -1.1063814 * xc3 - 1.34811020 * xc2 + 2.18555832 * xc - 0.20219683;
+		yc = -1.1063814f * xc3 - 1.34811020f * xc2 + 2.18555832f * xc - 0.20219683f;
 	else if ( T < 4000.0f )
-		yc = -0.9549476 * xc3 - 1.37418593 * xc2 + 2.09137015 * xc - 0.16748867;
+		yc = -0.9549476f * xc3 - 1.37418593f * xc2 + 2.09137015f * xc - 0.16748867f;
 	else //if (T <= 25000.0f)
-		yc = +3.0817580 * xc3 - 5.87338670 * xc2 + 3.75112997 * xc - 0.37001483;
+		yc = +3.0817580f * xc3 - 5.87338670f * xc2 + 3.75112997f * xc - 0.37001483f;
 
-	return ImVec2( ( float )xc, ( float )yc );
+	return ImVec2( xc, yc );
 }
 
 static inline ImVec4 operator*( const ImVec4& lhs, const float rhs )
@@ -217,7 +217,7 @@ int main()
 namespace ImWidgets{
 	void	ShowDemo()
 	{
-		static StaticInit s_StaticInit;
+		//static StaticInit s_StaticInit;
 		static float f = 0.0f;
 		static int counter = 0;
 
@@ -355,7 +355,7 @@ namespace ImWidgets{
 					colb = ImGui::GetColorU32( colb_v );
 				ImVec2 pos = ImGui::GetCursorScreenPos();
 				static ImShape shape;
-				GenShapeRect( shape, ImRect( pos, pos + ImVec2( size, size ) ) );
+				GenShapeCircle( shape, pos + ImVec2( 0.5f * size, 0.5f * size ), size * 0.5f, 16 );
 				ShapeSetDefaultUV( shape );
 #ifdef DEAR_WIDGETS_TESSELATION
 				for ( int k = 0; k < tess; ++k )
@@ -431,7 +431,7 @@ namespace ImWidgets{
 				ImGui::SliderInt( "Tess", &tess, 0, 16 );
 #endif
 				ImGui::SliderFloat( "Thickness", &edge_thickness, 0.0f, 16.0f );
-				ImGui::SliderFloat( "Radius", &vertex_radius, 0.0f, 64.0f );
+				ImGui::SliderFloat( "Vrtx Radius", &vertex_radius, 0.0f, 64.0f );
 				if ( ImGui::ColorEdit4( "Edge##DrawShape", &edge_col_v.x ) )
 					edge_col = ImGui::GetColorU32( edge_col_v );
 				if ( ImGui::ColorEdit4( "Triangle##DrawShape", &triangle_col_v.x ) )
@@ -480,7 +480,7 @@ namespace ImWidgets{
 				ImGui::SliderInt( "Tess", &tess, 0, 16 );
 #endif
 				ImGui::SliderFloat( "Thickness", &edge_thickness, 0.0f, 16.0f );
-				ImGui::SliderFloat( "VRadius", &vertex_radius, 0.0f, 64.0f );
+				ImGui::SliderFloat( "Vrtx Radius", &vertex_radius, 0.0f, 64.0f );
 				if ( ImGui::ColorEdit4( "Edge##DrawShape", &edge_col_v.x ) )
 					edge_col = ImGui::GetColorU32( edge_col_v );
 				if ( ImGui::ColorEdit4( "Triangle##DrawShape", &triangle_col_v.x ) )
@@ -694,7 +694,7 @@ namespace ImWidgets{
 									   ImVec2 const v1( ImCos( fCenter * 2.0f * IM_PI ), ImSin( fCenter * 2.0f * IM_PI ) );
 
 									   float const dot = ImDot( v0, v1 );
-									   float const angle = ImAcos( dot ) / IM_PI;// / width;
+									   //float const angle = ImAcos( dot ) / IM_PI;// / width;
 
 									   return IM_COL32( r * 255, g * 255, b * 255, ( dot > fColorDotBound ? 1.0f : 0.0f ) * 255 );
 								   }, &data[ 0 ], division, colorOffset, false );
@@ -888,7 +888,7 @@ namespace ImWidgets{
 									  pos, ImVec2( size, size ),
 									  resX, resY,
 									  maskColor,
-									  waveMin, waveMax,
+									  ( float )waveMin, ( float )waveMax,
 									  vMin.x, vMax.x,
 									  vMin.y, vMax.y,
 									  showColorSpaceTriangle,
@@ -1091,7 +1091,7 @@ namespace ImWidgets{
 				static float mainLineThickness = 1.0f;
 				static ImU32 mainCol = IM_COL32( 255, 255, 255, 255 );
 				static int division0 = 3;  static float height0 = 32.0f; static float thickness0 = 5.0f; static float angle0 = 0; static ImU32 col0 = IM_COL32( 255, 0, 0, 255 );
-				static int division1 = 5;  static float height1 = 16.0f; static float thickness1 = 2.0f; static float angle1 = 0; static ImU32 col1 = IM_COL32( 0, 255, 0, 255 );
+				static int division1 = 10;  static float height1 = 16.0f; static float thickness1 = 2.0f; static float angle1 = 0; static ImU32 col1 = IM_COL32( 0, 255, 0, 255 );
 				static int divisions[] = { division0, division1 };
 				static float heights[] = { height0, height1 };
 				static float thicknesses[] = { thickness0, thickness1 };
@@ -1103,7 +1103,7 @@ namespace ImWidgets{
 				if ( ImGui::ColorEdit3( "Main", &vMainCol.x ) )
 					mainCol = ImGui::GetColorU32( vMainCol );
 
-				ImGui::DragInt2( "Divisions", &divisions[ 0 ], 1.0f, 1, 10 );
+				ImGui::DragInt2( "Divisions", &divisions[ 0 ], 1.0f, 1, 20 );
 				ImGui::DragFloat2( "Heights", &heights[ 0 ], 1.0f, 1.0f, 128.0f );
 				ImGui::DragFloat2( "Thicknesses", &thicknesses[ 0 ], 1.0f, 1.0f, 16.0f );
 				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
@@ -1136,8 +1136,8 @@ namespace ImWidgets{
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				static float mainLineThickness = 1.0f;
 				static ImU32 mainCol = IM_COL32( 255, 255, 255, 255 );
-				static int division0 = 3;  static float height0 = 32.0f; static float thickness0 = 5.0f; static float angle0 = 0; static ImU32 col0 = IM_COL32( 255, 0, 0, 255 );
-				static int division1 = 5;  static float height1 = 16.0f; static float thickness1 = 2.0f; static float angle1 = 0; static ImU32 col1 = IM_COL32( 0, 255, 0, 255 );
+				static int division0 =  3;  static float height0 = 32.0f; static float thickness0 = 5.0f; static float angle0 = 0; static ImU32 col0 = IM_COL32( 255, 0, 0, 255 );
+				static int division1 = 10;  static float height1 = 16.0f; static float thickness1 = 2.0f; static float angle1 = 0; static ImU32 col1 = IM_COL32( 0, 255, 0, 255 );
 				static int divisions[] = { division0, division1 };
 				static float heights[] = { height0, height1 };
 				static float thicknesses[] = { thickness0, thickness1 };
@@ -1154,7 +1154,7 @@ namespace ImWidgets{
 				if ( ImGui::ColorEdit3( "Main", &vMainCol.x ) )
 					mainCol = ImGui::GetColorU32( vMainCol );
 
-				ImGui::DragInt2( "Divisions", &divisions[ 0 ], 1.0f, 1, 10 );
+				ImGui::DragInt2( "Divisions", &divisions[ 0 ], 1.0f, 1, 20 );
 				ImGui::DragFloat2( "Heights", &heights[ 0 ], 1.0f, 1.0f, 128.0f );
 				ImGui::DragFloat2( "Thicknesses", &thicknesses[ 0 ], 1.0f, 1.0f, 16.0f );
 				ImGui::DragFloat( "Radius", &radius, 1.0f, 1.0f, size );
@@ -1380,6 +1380,7 @@ namespace ImWidgets{
 				ImGui::DragFloat( "Focal Planes", &value[ 1 ], 1.0f, value[ 0 ], value[ 2 ] );
 				ImGui::DragFloat( "Far Planes", &value[ 2 ], 1.0f, value[ 1 ], max );
 			}
+#if 0 // TODO
 			if ( ImGui::CollapsingHeader( "SliderRing" ) )
 			{
 				static float min = 0.0f;
@@ -1387,6 +1388,7 @@ namespace ImWidgets{
 				static float value = 0.5f;
 				ImWidgets::SliderRingScalar( "Values##SliderRingScalar", ImGuiDataType_Float, &value, &min, &max, 0.0f, IM_PI, 64.0f, "%.3f", 0, NULL );
 			}
+#endif
 			if ( ImGui::CollapsingHeader( "Hue Selector" ) )
 			{
 				static float offset = 1.0f;
@@ -1428,28 +1430,6 @@ namespace ImWidgets{
 				static int vv[ 2 ];
 				Slider2DInt( "Slider 2D Int", &vv[ 0 ], &vv[ 1 ], -5, 5, -5, 5 );
 				ImGui::InputInt2( "Value", &vv[ 0 ] );
-			}
-			ImGui::Unindent();
-		}
-		if ( ImGui::CollapsingHeader( "Alpha - Draft - Open Ideas mostly WIP" ) )
-		{
-			ImGui::Indent();
-			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 128, 0, 255 ) );
-			ImGui::TextWrapped( "/!!\\ Use carefully and at your risk!" );
-			ImGui::TextWrapped( "/!\\ API will change, that at 'first draft' stage." );
-			ImGui::TextWrapped( "/!\\ PR are welcome to contribute." );
-			ImGui::PopStyleColor();
-
-			if ( ImGui::CollapsingHeader( "Draw" ) )
-			{
-
-			}
-			if ( ImGui::CollapsingHeader( "Widgets" ) )
-			{
-				if ( ImGui::CollapsingHeader( "DragLengthScalar" ) )
-				{
-
-				}
 			}
 			ImGui::Unindent();
 		}

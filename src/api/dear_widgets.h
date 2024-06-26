@@ -248,10 +248,14 @@ namespace ImWidgets{
 		}
 		ImVec2* GetVarVec2Addr( StyleVar idx )
 		{
+			IM_UNUSED( idx );
+
 			return NULL;
 		}
 		ImVec4* GetVarVec4Addr( StyleVar idx )
 		{
+			IM_UNUSED( idx );
+
 			return NULL;
 		}
 
@@ -389,6 +393,12 @@ namespace ImWidgets{
 	//////////////////////////////////////////////////////////////////////////
 	// Helpers
 	//////////////////////////////////////////////////////////////////////////
+	inline
+	float ImTan2( float x, float y )
+	{
+		return atan2f( y, x );
+	}
+
 	inline
 	float ImFract(float x)
 	{
@@ -620,8 +630,11 @@ namespace ImWidgets{
 	void	GenShapeRect( ImShape& shape, ImRect const& r );
 	void	GenShapeCircle( ImShape& shape, ImVec2 center, float radius, int side_count );
 	void	GenShapeCircleArc( ImShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count );
-	void	GenShapeCirclePie( ImShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count );
 	void	GenShapeRegularNGon( ImShape& shape, ImVec2 center, float radius, int side_count );
+
+	// TODO
+	//void	GenShapeFromBezierCubicCurve( ImShape& shape, ImVector<ImVec2>& path, float thickness, int num_segments = 0 );
+	//void	GenShapeFromBezierQuadraticCurve( ImShape& sshape, ImVector<ImVec2>& path, float thickness, int num_segments = 0 );
 
 	// TODO Add Color Blend Option (Linear, sRGB, ...) cf. W3C rules
 	void	ShapeLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
@@ -840,7 +853,12 @@ namespace ImWidgets{
 	IMGUI_API bool Slider2DFloat( char const* pLabel, float* pValueX, float* pValueY, float v_minX, float v_maxX, float v_minY, float v_maxY );
 	IMGUI_API bool Slider2DInt( char const* pLabel, int* pValueX, void* pValueY, int v_minX, int v_maxX, int v_minY, int v_maxY );
 
-	IMGUI_API bool SliderRingScalar( char const* name, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, float v_angle_min, float v_angle_max, float v_thickness, const char* format, ImGuiSliderFlags flags, ImRect* out_grab_bb );
+	//IMGUI_API bool SliderRingScalar( char const* name,
+	//								 ImGuiDataType data_type,
+	//								 void* p_value, void* p_min, void* p_max,
+	//								 float v_angle_min, float v_angle_max,
+	//								 float v_thickness, const char* format,
+	//								 ImGuiSliderFlags flags, ImRect* out_grab_bb );
 
 	//IMGUI_API bool DragFloatPrecise( char const* label, float* value, float v_min, float v_max, ImGuiSliderFlags flags );
 
