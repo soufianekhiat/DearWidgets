@@ -1613,6 +1613,65 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return ImLerp( buffer[ ( int )i0 ], buffer[ ( int )i1 ], ti );
 #endif
 	}
+
+	void          ColorConvertsRGBtosRGB( float r, float g, float b, float& out_r, float& out_g, float& out_b )
+	{
+		out_r = r;
+		out_g = g;
+		out_b = b;
+	}
+	void          ColorConvertRGBtoLinear( float r, float g, float b, float& out_r, float& out_g, float& out_b )
+	{
+		out_r = ImsRGBToLinear( r );
+		out_g = ImsRGBToLinear( g );
+		out_b = ImsRGBToLinear( b );
+		out_r = ImSaturate( out_r );
+		out_g = ImSaturate( out_g );
+		out_b = ImSaturate( out_b );
+	}
+	void          ColorConvertLineartoRGB( float r, float g, float b, float& out_r, float& out_g, float& out_b )
+	{
+		out_r = ImLinearTosRGB( r );
+		out_g = ImLinearTosRGB( g );
+		out_b = ImLinearTosRGB( b );
+		out_r = ImSaturate( out_r );
+		out_g = ImSaturate( out_g );
+		out_b = ImSaturate( out_b );
+	}
+	void          ColorConvertRGBtoOKLAB( float r, float g, float b, float& out_L, float& out_a, float& out_b )
+	{
+		r = ImsRGBToLinear( r );
+		g = ImsRGBToLinear( g );
+		b = ImsRGBToLinear( b );
+		float l = 0.4122214708f * r + 0.5363325363f * g + 0.0514459929f * b;
+		float m = 0.2119034982f * r + 0.6806995451f * g + 0.1073969566f * b;
+		float s = 0.0883024619f * r + 0.2817188376f * g + 0.6299787005f * b;
+		l = ImCbrt( l );
+		m = ImCbrt( m );
+		s = ImCbrt( s );
+		out_L = l * +0.2104542553f + m * +0.7936177850f + s * -0.0040720468f;
+		out_a = l * +1.9779984951f + m * -2.4285922050f + s * +0.4505937099f;
+		out_b = l * +0.0259040371f + m * +0.7827717662f + s * -0.8086757660f;
+	}
+	void          ColorConvertOKLABtoRGB( float L, float a, float b, float& out_r, float& out_g, float& out_b )
+	{
+		float l = L + a * +0.3963377774f + b * +0.2158037573f;
+		float m = L + a * -0.1055613458f + b * -0.0638541728f;
+		float s = L + a * -0.0894841775f + b * -1.2914855480f;
+		l = l * l * l;
+		m = m * m * m;
+		s = s * s * s;
+		out_r = l * +4.0767416621f + m * -3.3077115913f + s * +0.2309699292f;
+		out_g = l * -1.2684380046f + m * +2.6097574011f + s * -0.3413193965f;
+		out_b = l * -0.0041960863f + m * -0.7034186147f + s * +1.7076147010f;
+		out_r = ImLinearTosRGB( out_r );
+		out_g = ImLinearTosRGB( out_g );
+		out_b = ImLinearTosRGB( out_b );
+		out_r = ImSaturate( out_r );
+		out_g = ImSaturate( out_g );
+		out_b = ImSaturate( out_b );
+	}
+
 	ImU32	KelvinTemperatureTosRGBColors( float temperature )
 	{
 		float _r = ImFunctionFromData( temperature, s_min_kelvin_temp, s_max_kelvin_temp, s_kelvin_sRGB_Colors_Red,   s_kelvin_temp_count );
@@ -2296,6 +2355,17 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 #endif
 
+	void	ShapeTranslate( ImShape& shape, ImVec2 t )
+	{
+		int vtx_count = shape.vertices.size();
+		for ( int k = 0; k < vtx_count; ++k )
+		{
+			shape.vertices[ k ].pos += t;
+		}
+		shape.bb.Min += t;
+		shape.bb.Max += t;
+	}
+
 	void	ShapeSetDefaultUV( ImShape& shape )
 	{
 		int vtx_count = shape.vertices.size();
@@ -2440,12 +2510,21 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	//{
 	//}
 
-	void	ShapeLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	void	ShapeLinearGradientGeneric( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space )
 	{
 		ImVec2 delta = uv_end - uv_start;
 		ImVec2 d = ImNormalized( delta );
 		float l = 1.0f / ImLength( delta );
 		int vtx_count = shape.vertices.size();
+		ImVec4 col0v = ImGui::ColorConvertU32ToFloat4( col0 );
+		ImVec4 col1v = ImGui::ColorConvertU32ToFloat4( col1 );
+		ImVec4 col0k;
+		ImVec4 col1k;
+		col0k.w = col0v.w;
+		col1k.w = col1v.w;
+		sRGB2Space( col0v.x, col0v.y, col0v.z, col0k.x, col0k.y, col0k.z );
+		sRGB2Space( col1v.x, col1v.y, col1v.z, col1k.x, col1k.y, col1k.z );
+		ImVec4 vtxCol;
 		for ( int k = 0; k < vtx_count; ++k )
 		{
 			ImVec2 v = shape.vertices[ k ].pos;
@@ -2454,14 +2533,26 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			uv.y = Normalize01( v.y, shape.bb.Min.y, shape.bb.Max.y );
 			ImVec2 c = uv - uv_start;
 			float t = ImSaturate( ImDot( d, c ) * l );
-			shape.vertices[ k ].col = ImColorBlendsRGB( col0, col1, t );
+			ImVec4 curCol = ImLerp( col0k, col1k, t );
+			vtxCol.w = curCol.w;
+			space2sRGB( curCol.x, curCol.y, curCol.z, vtxCol.x, vtxCol.y, vtxCol.z );
+			shape.vertices[ k ].col = ImGui::GetColorU32( vtxCol );
 		}
 	}
-	void	ShapeRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	void	ShapeRadialGradientGeneric( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space )
 	{
 		ImVec2 delta = uv_end - uv_start;
 		float l = 1.0f / ImLength( delta );
 		int vtx_count = shape.vertices.size();
+		ImVec4 col0v = ImGui::ColorConvertU32ToFloat4( col0 );
+		ImVec4 col1v = ImGui::ColorConvertU32ToFloat4( col1 );
+		ImVec4 col0k;
+		ImVec4 col1k;
+		col0k.w = col0v.w;
+		col1k.w = col1v.w;
+		sRGB2Space( col0v.x, col0v.y, col0v.z, col0k.x, col0k.y, col0k.z );
+		sRGB2Space( col1v.x, col1v.y, col1v.z, col1k.x, col1k.y, col1k.z );
+		ImVec4 vtxCol;
 		for ( int k = 0; k < vtx_count; ++k )
 		{
 			ImVec2 v = shape.vertices[ k ].pos;
@@ -2469,15 +2560,27 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			uv.x = Normalize01( v.x, shape.bb.Min.x, shape.bb.Max.x );
 			uv.y = Normalize01( v.y, shape.bb.Min.y, shape.bb.Max.y );
 			float t = ImSaturate( ImLength( uv - uv_start ) * l );
-			shape.vertices[ k ].col = ImColorBlendsRGB( col0, col1, t );
+			ImVec4 curCol = ImLerp( col0k, col1k, t );
+			vtxCol.w = curCol.w;
+			space2sRGB( curCol.x, curCol.y, curCol.z, vtxCol.x, vtxCol.y, vtxCol.z );
+			shape.vertices[ k ].col = ImGui::GetColorU32( vtxCol );
 		}
 	}
 	// Just L1-Norm
-	void	ShapeDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	void	ShapeDiamondGradientGeneric( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space )
 	{
 		ImVec2 delta = uv_end - uv_start;
 		float l = 1.0f / ImLengthL1( delta );
 		int vtx_count = shape.vertices.size();
+		ImVec4 col0v = ImGui::ColorConvertU32ToFloat4( col0 );
+		ImVec4 col1v = ImGui::ColorConvertU32ToFloat4( col1 );
+		ImVec4 col0k;
+		ImVec4 col1k;
+		col0k.w = col0v.w;
+		col1k.w = col1v.w;
+		sRGB2Space( col0v.x, col0v.y, col0v.z, col0k.x, col0k.y, col0k.z );
+		sRGB2Space( col1v.x, col1v.y, col1v.z, col1k.x, col1k.y, col1k.z );
+		ImVec4 vtxCol;
 		for ( int k = 0; k < vtx_count; ++k )
 		{
 			ImVec2 v = shape.vertices[ k ].pos;
@@ -2485,8 +2588,99 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			uv.x = Normalize01( v.x, shape.bb.Min.x, shape.bb.Max.x );
 			uv.y = Normalize01( v.y, shape.bb.Min.y, shape.bb.Max.y );
 			float t = ImSaturate( ImLengthL1( uv - uv_start ) * l );
-			shape.vertices[ k ].col = ImColorBlendsRGB( col0, col1, t );
+			ImVec4 curCol = ImLerp( col0k, col1k, t );
+			vtxCol.w = curCol.w;
+			space2sRGB( curCol.x, curCol.y, curCol.z, vtxCol.x, vtxCol.y, vtxCol.z );
+			shape.vertices[ k ].col = ImGui::GetColorU32( vtxCol );
 		}
+	}
+
+	void	ShapeSRGBLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	{
+		//ImVec2 delta = uv_end - uv_start;
+		//ImVec2 d = ImNormalized( delta );
+		//float l = 1.0f / ImLength( delta );
+		//int vtx_count = shape.vertices.size();
+		//for ( int k = 0; k < vtx_count; ++k )
+		//{
+		//	ImVec2 v = shape.vertices[ k ].pos;
+		//	ImVec2 uv;
+		//	uv.x = Normalize01( v.x, shape.bb.Min.x, shape.bb.Max.x );
+		//	uv.y = Normalize01( v.y, shape.bb.Min.y, shape.bb.Max.y );
+		//	ImVec2 c = uv - uv_start;
+		//	float t = ImSaturate( ImDot( d, c ) * l );
+		//	shape.vertices[ k ].col = ImColorBlendsRGB( col0, col1, t );
+		//}
+		ShapeLinearGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertsRGBtosRGB, &ColorConvertsRGBtosRGB );
+	}
+	void	ShapeSRGBRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	{
+		//ImVec2 delta = uv_end - uv_start;
+		//float l = 1.0f / ImLength( delta );
+		//int vtx_count = shape.vertices.size();
+		//for ( int k = 0; k < vtx_count; ++k )
+		//{
+		//	ImVec2 v = shape.vertices[ k ].pos;
+		//	ImVec2 uv;
+		//	uv.x = Normalize01( v.x, shape.bb.Min.x, shape.bb.Max.x );
+		//	uv.y = Normalize01( v.y, shape.bb.Min.y, shape.bb.Max.y );
+		//	float t = ImSaturate( ImLength( uv - uv_start ) * l );
+		//	shape.vertices[ k ].col = ImColorBlendsRGB( col0, col1, t );
+		//}
+		ShapeRadialGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertsRGBtosRGB, &ColorConvertsRGBtosRGB );
+	}
+	// Just L1-Norm
+	void	ShapeSRGBDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	{
+		//ImVec2 delta = uv_end - uv_start;
+		//float l = 1.0f / ImLengthL1( delta );
+		//int vtx_count = shape.vertices.size();
+		//for ( int k = 0; k < vtx_count; ++k )
+		//{
+		//	ImVec2 v = shape.vertices[ k ].pos;
+		//	ImVec2 uv;
+		//	uv.x = Normalize01( v.x, shape.bb.Min.x, shape.bb.Max.x );
+		//	uv.y = Normalize01( v.y, shape.bb.Min.y, shape.bb.Max.y );
+		//	float t = ImSaturate( ImLengthL1( uv - uv_start ) * l );
+		//	shape.vertices[ k ].col = ImColorBlendsRGB( col0, col1, t );
+		//}
+		ShapeDiamondGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertsRGBtosRGB, &ColorConvertsRGBtosRGB );
+	}
+	void	ShapeOkLabLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	{
+		ShapeLinearGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertOKLABtoRGB, &ColorConvertRGBtoOKLAB );
+	}
+	void	ShapeOkLabRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	{
+		ShapeRadialGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertOKLABtoRGB, &ColorConvertRGBtoOKLAB );
+	}
+	void	ShapeOkLabDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	{
+		ShapeDiamondGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertOKLABtoRGB, &ColorConvertRGBtoOKLAB );
+	}
+	void	ShapeLinearSRGBLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	{
+		ShapeLinearGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertLineartoRGB, &ColorConvertRGBtoLinear );
+	}
+	void	ShapeLinearSRGBRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	{
+		ShapeRadialGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertLineartoRGB, &ColorConvertRGBtoLinear );
+	}
+	void	ShapeLinearSRGBDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	{
+		ShapeDiamondGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertLineartoRGB, &ColorConvertRGBtoLinear );
+	}
+	void	ShapeHSVLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	{
+		ShapeLinearGradientGeneric( shape, uv_start, uv_end, col0, col1, &ImGui::ColorConvertHSVtoRGB, &ImGui::ColorConvertRGBtoHSV );
+	}
+	void	ShapeHSVRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	{
+		ShapeRadialGradientGeneric( shape, uv_start, uv_end, col0, col1, &ImGui::ColorConvertHSVtoRGB, &ImGui::ColorConvertRGBtoHSV );
+	}
+	void	ShapeHSVDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	{
+		ShapeDiamondGradientGeneric( shape, uv_start, uv_end, col0, col1, &ImGui::ColorConvertHSVtoRGB, &ImGui::ColorConvertRGBtoHSV );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -2976,6 +3170,28 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			pDrawList->PrimWriteVtx( offset + ImVec2( x3, y3 ), uv, uCol0 );
 			angle += dAngle;
 		}
+	}
+
+	ImU32 ImColor2DCallbackOkLab( float a, float b, void* pUserData )
+	{
+		float* pL = ( float* )pUserData;
+		float L = *pL;
+
+		float rr, gg, bb;
+		ColorConvertOKLABtoRGB( L, a, b, rr, gg, bb );
+
+		return ImGui::GetColorU32( ImVec4( rr, gg, bb, 1.0f ) );
+	}
+
+	void DrawOkLabQuad( ImDrawList* pDrawList, ImVec2 start, ImVec2 size, float L, int resX, int resY )
+	{
+		DrawProceduralColor2DBilinear(
+			pDrawList,
+			&ImColor2DCallbackOkLab,
+			&L,
+			-1.0f, 1.0f,
+			-1.0f, 1.0f,
+			start, size, resX, resY );
 	}
 
 	// Adapted version from:

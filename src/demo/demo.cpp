@@ -328,9 +328,9 @@ namespace ImWidgets{
 				for ( int k = 0; k < tess; ++k )
 					ShapeTesselationUniform( shape );
 #endif
-				ShapeLinearGradient( shape,
-									   uv_start, uv_end,
-									   cola, colb );
+				ShapeSRGBLinearGradient( shape,
+										 uv_start, uv_end,
+										 cola, colb );
 				DrawShapeDebug( pDrawList, shape, edge_thickness, edge_col, triangle_col, vertex_radius, vertex_col, tri_idx );
 				ImGui::Dummy( ImVec2( size, size ) );
 				ImGui::SliderInt( "tri_idx", &tri_idx, -1, shape.triangles.size() - 1 );
@@ -342,9 +342,9 @@ namespace ImWidgets{
 				float const size = ImGui::GetContentRegionAvail().x;
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				static ImVec2 uv_start( 0.0f, 0.0f );
-				static ImVec2 uv_end( 1.0f, 1.0f );
-				static ImVec4 cola_v( 1.0f, 1.0f, 1.0f, 1.0f );
-				static ImVec4 colb_v( 0.0f, 1.0f, 1.0f, 0.0f );
+				static ImVec2 uv_end( 1.0f, 0.0f );
+				static ImVec4 cola_v( 0.0f, 0.0f, 1.0f, 1.0f );
+				static ImVec4 colb_v( 1.0f, 0.0f, 0.0f, 1.0f );
 				static ImU32 cola = ImGui::GetColorU32( cola_v );
 				static ImU32 colb = ImGui::GetColorU32( colb_v );
 #ifdef DEAR_WIDGETS_TESSELATION
@@ -369,10 +369,36 @@ namespace ImWidgets{
 				for ( int k = 0; k < tess; ++k )
 					ShapeTesselationUniform( shape );
 #endif
-				ShapeLinearGradient( shape,
-									   uv_start, uv_end,
-									   cola, colb );
+				ShapeSRGBLinearGradient( shape,
+									 uv_start, uv_end,
+									 cola, colb );
 				DrawShape( pDrawList, shape );
+				pDrawList->AddText( shape.bb.Min, IM_COL32( 255, 255, 255, 255 ), "sRGB" );
+
+				ShapeTranslate( shape, ImVec2( 0.0f, size ) );
+				ShapeLinearSRGBLinearGradient( shape,
+											   uv_start, uv_end,
+											   cola, colb );
+				DrawShape( pDrawList, shape );
+				pDrawList->AddText( shape.bb.Min, IM_COL32( 255, 255, 255, 255 ), "Linear sRGB" );
+
+				ShapeTranslate( shape, ImVec2( 0.0f, size ) );
+				ShapeHSVLinearGradient( shape,
+										uv_start, uv_end,
+										cola, colb );
+				DrawShape( pDrawList, shape );
+				pDrawList->AddText( shape.bb.Min, IM_COL32( 255, 255, 255, 255 ), "HSV" );
+
+				ShapeTranslate( shape, ImVec2( 0.0f, size ) );
+				ShapeOkLabLinearGradient( shape,
+										  uv_start, uv_end,
+										  cola, colb );
+				DrawShape( pDrawList, shape );
+				pDrawList->AddText( shape.bb.Min, IM_COL32( 255, 255, 255, 255 ), "OkLab" );
+
+				ImGui::Dummy( ImVec2( size, size ) );
+				ImGui::Dummy( ImVec2( size, size ) );
+				ImGui::Dummy( ImVec2( size, size ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
 				ImGui::Text( "Vtx: %d", shape.vertices.size() );
@@ -382,8 +408,8 @@ namespace ImWidgets{
 				float const size = ImGui::GetContentRegionAvail().x;
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				static ImVec2 uv_start( 0.5f, 0.5f );
-				static ImVec2 uv_end( 0.75f, 0.5f );
-				static ImVec4 cola_v( 1.0f, 1.0f, 1.0f, 1.0f );
+				static ImVec2 uv_end( 0.95f, 0.5f );
+				static ImVec4 cola_v( 1.0f, 0.0f, 0.0f, 1.0f );
 				static ImVec4 colb_v( 0.0f, 1.0f, 1.0f, 0.0f );
 				static ImU32 cola = ImGui::GetColorU32( cola_v );
 				static ImU32 colb = ImGui::GetColorU32( colb_v );
@@ -409,9 +435,9 @@ namespace ImWidgets{
 				for ( int k = 0; k < tess; ++k )
 					ShapeTesselationUniform( shape );
 #endif
-				ShapeRadialGradient( shape,
-									   uv_start, uv_end,
-									   cola, colb );
+				ShapeOkLabRadialGradient( shape,
+										  uv_start, uv_end,
+										  cola, colb );
 				DrawShape( pDrawList, shape );
 				ImGui::Dummy( ImVec2( size, size ) );
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
@@ -422,9 +448,9 @@ namespace ImWidgets{
 				float const size = ImGui::GetContentRegionAvail().x;
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				static ImVec2 uv_start( 0.5f, 0.5f );
-				static ImVec2 uv_end( 0.75f, 0.5f );
-				static ImVec4 cola_v( 1.0f, 1.0f, 1.0f, 1.0f );
-				static ImVec4 colb_v( 0.0f, 1.0f, 1.0f, 0.0f );
+				static ImVec2 uv_end( 1.0f, 0.5f );
+				static ImVec4 cola_v( 1.0f, 0.0f, 0.0f, 1.0f );
+				static ImVec4 colb_v( 0.0f, 1.0f, 0.0f, 0.25f );
 				static ImU32 cola = ImGui::GetColorU32( cola_v );
 				static ImU32 colb = ImGui::GetColorU32( colb_v );
 #ifdef DEAR_WIDGETS_TESSELATION
@@ -449,9 +475,9 @@ namespace ImWidgets{
 				for ( int k = 0; k < tess; ++k )
 					ShapeTesselationUniform( shape );
 #endif
-				ShapeDiamondGradient( shape,
-									   uv_start, uv_end,
-									   cola, colb );
+				ShapeOkLabDiamondGradient( shape,
+										   uv_start, uv_end,
+										   cola, colb );
 				DrawShape( pDrawList, shape );
 				ImGui::Dummy( ImVec2( size, size ) );
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
@@ -553,9 +579,9 @@ namespace ImWidgets{
 				for ( int k = 0; k < tess; ++k )
 					ShapeTesselationUniform( shape );
 #endif
-				ShapeLinearGradient( shape,
-									 uv_start, uv_end,
-									 cola, colb );
+				ShapeSRGBLinearGradient( shape,
+										 uv_start, uv_end,
+										 cola, colb );
 				DrawImageShape( pDrawList, illlustration_img, shape );
 				ImGui::Dummy( ImVec2( size, size ) );
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
@@ -761,6 +787,24 @@ namespace ImWidgets{
 									   return IM_COL32( v * 255, v * 255, v * 255, 255 );
 								   }, &fFreqValue, division, colorOffset, true );
 				}
+			}
+			if ( ImGui::CollapsingHeader( "OkLab Color Quad" ) )
+			{
+				float const width = ImGui::GetContentRegionAvail().x;
+
+				static int resX = 16;
+				static int resY = 16;
+				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+				ImGui::SliderInt( "resX", &resX, 4, 64 ); ImGui::SameLine();
+				ImGui::SliderInt( "resY", &resY, 4, 64 );
+				static float L = 1.0f;
+				ImGui::SliderFloat( "L", &L, 0.0f, 1.0f );
+
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				ImVec2 curPos = ImGui::GetCursorScreenPos();
+				float const size = ImGui::GetContentRegionAvail().x;
+				DrawOkLabQuad( pDrawList, curPos, ImVec2( size, size ), L, resX, resY );
+				ImGui::Dummy( ImVec2( size, size ) );
 			}
 			if ( ImGui::CollapsingHeader( "Color2D" ) )
 			{

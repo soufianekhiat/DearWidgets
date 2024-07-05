@@ -168,24 +168,31 @@ Concave
 
 Linear
 ```cpp
-void	ShapeLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+void	ShapeSRGBLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+void	ShapeOkLabLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+void	ShapeLinearSRGBLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+void	ShapeHSVLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 ```
 <img src="https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/LinearGradient.png" alt="LinearGradient" width="300px"/>
+<img src="https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/GradientColorSpace.png" alt="GradientColorSpace" width="200px"/>
 
 Radial
 ```cpp
-void	ShapeRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+void	ShapeSRGBRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+void	ShapeOkLabRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+void	ShapeLinearSRGBRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+void	ShapeHSVRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 ```
 <img src="https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/CircularGraduation.png" alt="CircularGraduation" width="300px"/>
 
 Diamond
 ```cpp
-void	ShapeDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+void	ShapeSRGBDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+void	ShapeOkLabDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+void	ShapeLinearSRGBDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+void	ShapeHSVDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 ```
 <img src="https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/DiamondGradient.png" alt="DiamondGradient" width="300px"/>
-
-With Hole
-// TODO
 
 * Color Ring
 
@@ -312,6 +319,7 @@ C++ features (optionaly) **used** internally:
 
 ## Contributor
 Future feature:
+* Add more color space for gradient such as OkLch
 * Hue Ring select
 * Slider2DWithRingConstraint // Only only a circular region on the 2D selector
 * InputFloatUnit cf. History of Dear Widgets
