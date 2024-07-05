@@ -134,7 +134,7 @@ float mainLineThickness, ImU32 mainCol,
 int division0, float height0, float thickness0, float angle0, ImU32 col0,
 int division1 = -1, float height1 = -1.0f, float thickness1 = -1.0f, float angle1 = -1.0f, ImU32 col1 = 0u );
 ```
-<img src="https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/LogLineGraduation.jpg" alt="LogLineGraduation" width="300px"/>
+<img src="https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/LogLinearGraduation.jpg" alt="LogLinearGraduation" width="300px"/>
 
 Log Circular
 ```cpp
