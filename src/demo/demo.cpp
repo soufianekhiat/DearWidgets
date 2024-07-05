@@ -4,7 +4,7 @@
 
 #if defined(__DEAR_GFX_OGL3__)
 #define IM_GLFW3_AUTO_LINK
-#define IM_CURRENT_TARGET IM_TARGET_GLFW_OPENGL3
+#define IM_CURRENT_TARGET IM_TARGET_WIN32_OPENGL3
 #elif defined(__DEAR_GFX_DX9__)
 #define IM_CURRENT_TARGET IM_TARGET_WIN32_DX9
 #elif defined(__DEAR_GFX_DX10__)
@@ -24,10 +24,13 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-static int grid_rows = 8;
-static int grid_columns = 8;
-static ImVector<float> grid_values;
+#include <IconFontCppHeaders/IconsFontAwesome6.h>
+#include <IconFontCppHeaders/IconsFontAwesome6Brands.h>
 
+//static int grid_rows = 8;
+//static int grid_columns = 8;
+//static ImVector<float> grid_values;
+//
 //static ImVector<float> linear_values;
 //static ImVector<float> maskShape_values;
 //
@@ -134,8 +137,12 @@ ImU32 sdHorseshoeColor( ImVec2 p, float fTime )
 }
 #pragma endregion ShaderToyHelper
 
+void ShowSampleOffscreen00();
+
 ImTextureID background;
 ImVec2 background_size;
+ImTextureID illlustration_img;
+ImVec2 illlustration_size;
 int main()
 {
 	if ( !ImPlatform::ImSimpleStart( "Dear Widgets Demo", ImVec2( 0.0f, 0.0f ), 1024 * 2, 764 * 2 ) )
@@ -145,8 +152,12 @@ int main()
 	ImGuiIO& io = ImGui::GetIO(); ( void )io;
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;		// Enable Keyboard Controls
 	////io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;	// Enable Gamepad Controls
-	//io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;			// Enable Docking
+#ifdef IMGUI_HAS_DOCK
+	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;			// Enable Docking
+#endif
+#ifdef IMGUI_HAS_VIEWPORT
 	//io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;		// Enable Multi-Viewport / Platform Windows
+#endif
 	////io.ConfigViewportsNoAutoMerge = true;
 	////io.ConfigViewportsNoTaskBarIcon = true;
 
@@ -156,8 +167,8 @@ int main()
 
 	io.Fonts->AddFontFromFileTTF( "../extern/FiraCode/distr/ttf/FiraCode-Medium.ttf", 16.0f );
 
-	io.FontGlobalScale = 3.0f;
-	ImGui::GetStyle().ScaleAllSizes( 3.0f );
+	//io.FontGlobalScale = 3.0f;
+	//ImGui::GetStyle().ScaleAllSizes( 3.0f );
 
 	if ( !ImPlatform::ImSimpleInitialize( false ) )
 	{
@@ -166,18 +177,32 @@ int main()
 
 	//ImGui::GetStyle().ScaleAllSizes();
 
+#ifdef IMGUI_HAS_VIEWPORT
 	// When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
-	//ImGuiStyle& style = ImGui::GetStyle();
+	ImGuiStyle& style = ImGui::GetStyle();
 	//if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
 	//{
 	//	style.WindowRounding = 0.0f;
 	//	style.Colors[ImGuiCol_WindowBg].w = 1.0f;
 	//}
+#endif
 
 	int width;
 	int height;
+	// Image from: https://www.pexels.com/fr-fr/photo/framboises-mures-dans-une-tasse-de-the-blanche-en-photographie-a-decalage-d-inclinaison-1152351/
+	stbi_uc* data = stbi_load( "pexels-robert-bogdan-156165-1152351.jpg", &width, &height, NULL, 4 );
+	illlustration_img = ImPlatform::ImCreateTexture2D( ( char* )data, width, height,
+												{
+													ImPlatform::IM_RGBA,
+													ImPlatform::IM_TYPE_UINT8,
+													ImPlatform::IM_FILTERING_LINEAR,
+													ImPlatform::IM_BOUNDARY_CLAMP,
+													ImPlatform::IM_BOUNDARY_CLAMP
+												} );
+	illlustration_size = ImVec2( ( float )width, ( float )height );
+	STBI_FREE( data );
 	// Image from: https://www.pexels.com/fr-fr/photo/deux-chaises-avec-table-en-verre-sur-le-salon-pres-de-la-fenetre-1571453/
-	stbi_uc* data = stbi_load( "pexels-fotoaibe-1571453.jpg", &width, &height, NULL, 4 );
+	data = stbi_load( "pexels-fotoaibe-1571453.jpg", &width, &height, NULL, 4 );
 	background = ImPlatform::ImCreateTexture2D( ( char* )data, width, height,
 												{
 													ImPlatform::IM_RGBA,
@@ -205,6 +230,8 @@ int main()
 
 		ImWidgets::ShowDemo();
 
+		ShowSampleOffscreen00();
+
 		ImPlatform::ImSimpleEnd( clear_color, false );
 	}
 
@@ -212,6 +239,27 @@ int main()
 	ImPlatform::ImReleaseTexture2D( background );
 
 	return 0;
+}
+
+void ShowSampleOffscreen00()
+{
+	ImGui::PushStyleVar( ImGuiStyleVar_WindowRounding, 8 );
+
+	ImGui::Begin( "Off Screen 00" );
+
+	ImDrawList* draw = ImGui::GetBackgroundDrawList();
+
+	ImVec2 cur = ImGui::GetCursorScreenPos();
+	ImVec2 size = ImGui::GetContentRegionAvail();
+
+	draw->AddImageRounded( illlustration_img,
+						   cur + ImVec2( 0.0f - 50.0f, 0.0f ),
+						   cur + ImVec2( 0.0f + 50.0f, 50.0f ),
+						   ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 255), 8);
+
+	ImGui::End();
+
+	ImGui::PopStyleVar( 1 );
 }
 
 namespace ImWidgets{
@@ -222,7 +270,7 @@ namespace ImWidgets{
 		static int counter = 0;
 
 		ImGui::SetNextWindowBgAlpha( 0.75f );
-		ImGui::PushStyleVar( ImGuiStyleVar_WindowRounding, 50 );
+		ImGui::PushStyleVar( ImGuiStyleVar_WindowRounding, 16 );
 		ImGui::Begin( "Dear Widgets", NULL, ImGuiWindowFlags_NoTitleBar );
 		ImWidgets::SetCurrentWindowBackgroundImage( background, background_size, false );
 
@@ -415,17 +463,17 @@ namespace ImWidgets{
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				static int tri_idx = -1;
 				static float edge_thickness = 2.0f;
-				static float vertex_radius = 16.0f;
+				static float vertex_radius = 4.0f;
 				static ImVec4 edge_col_v( 1.0f, 0.0f, 0.0f, 1.0f );
 				static ImVec4 triangle_col_v( 0.0f, 1.0f, 0.0f, 1.0f );
 				static ImVec4 vertex_col_v( 0.0f, 0.0f, 1.0f, 1.0f );
 				static ImU32 edge_col = ImGui::GetColorU32( edge_col_v );
 				static ImU32 triangle_col = ImGui::GetColorU32( triangle_col_v );
 				static ImU32 vertex_col = ImGui::GetColorU32( vertex_col_v );
-				static float angle_min = -IM_PI / 6.0f;
-				static float angle_max =  IM_PI / 6.0f;
+				static float angle_min =  IM_PI / 6.0f;
+				static float angle_max =  11.0f * IM_PI / 6.0f;
 				static float radius = size * 0.5f;
-				static int division = 3;
+				static int division = 12;
 #ifdef DEAR_WIDGETS_TESSELATION
 				static int tess = 0;
 				ImGui::SliderInt( "Tess", &tess, 0, 16 );
@@ -508,7 +556,7 @@ namespace ImWidgets{
 				ShapeLinearGradient( shape,
 									 uv_start, uv_end,
 									 cola, colb );
-				DrawImageShape( pDrawList, background, shape );
+				DrawImageShape( pDrawList, illlustration_img, shape );
 				ImGui::Dummy( ImVec2( size, size ) );
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
 				ImGui::Text( "Vtx: %d", shape.vertices.size() );
@@ -559,8 +607,8 @@ namespace ImWidgets{
 				float const widthZone = ImGui::GetContentRegionAvail().x;
 
 				static float angle = 0.0f;
-				static float width = 32.0f;
-				static float height = 64.0f;
+				static float width = 16.0f;
+				static float height = 21.0f;
 				static float height_ratio = 1.0f / 3.0f;
 				static float align01 = 0.5f;
 				static float thickness = 5.0f;
@@ -575,8 +623,8 @@ namespace ImWidgets{
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				ImGui::InvisibleButton( "##Zone", ImVec2( widthZone, height * 1.1f ), 0 );
 				ImGui::InvisibleButton( "##Zone", ImVec2( widthZone, height * 1.1f ), 0 );
-				float fPointerLine = 64.0f;
-				float dx = 64.0f;
+				float fPointerLine = 32.0f;
+				float dx = 16.0f;
 				pDrawList->AddLine( ImVec2( curPos.x + 0.5f * dx, curPos.y + fPointerLine ), ImVec2( curPos.x + 11.5f * dx, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f );
 				ImVec4 vBlue( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
 				ImU32 uBlue = ImGui::GetColorU32( vBlue );
@@ -598,7 +646,7 @@ namespace ImWidgets{
 				static float col[ 4 ] = { 1, 0, 0, 1 };
 				ImGui::ColorEdit4( "Color##ColorBand", col );
 				float const width = ImGui::GetContentRegionAvail().x;
-				static float height = 64.0f;
+				static float height = 32.0f;
 				static float gamma = 1.0f;
 				ImGui::DragFloat( "Height##ColorBand", &height, 1.0f, 1.0f, 128.0f );
 				ImGui::DragFloat( "Gamma##ColorBand", &gamma, 0.01f, 0.1f, 10.0f );
@@ -850,7 +898,7 @@ namespace ImWidgets{
 				ImGui::Combo( "Observer##Chromaticity", &curObserver, observer, IM_ARRAYSIZE( observer ) );
 				ImGui::Combo( "Illuminance##Chromaticity", &curIllum, illum, IM_ARRAYSIZE( illum ) );
 				ImGui::Combo( "ColorSpace##Chromaticity", &curColorSpace, colorSpace, IM_ARRAYSIZE( colorSpace ) );
-				static ImVec4 vMaskColor( 1.0f, 0.5f, 0.0f, 1.0f );
+				static ImVec4 vMaskColor( 1.0f, 1.0f, 1.0f, 0.5f );
 				ImGui::ColorEdit4( "Mask Color##Chromaticity", &vMaskColor.x );
 				static bool showColorSpaceTriangle = true;
 				ImGui::Checkbox( "Color Space Triangle##Chromaticity", &showColorSpaceTriangle );
@@ -876,7 +924,7 @@ namespace ImWidgets{
 				ImGui::Checkbox( "Show Border##Chromaticity", &showBorder );
 				static ImVec4 borderColor = ( ImVec4 )ImColor( IM_COL32( 0, 0, 0, 255 ) );
 				ImGui::ColorEdit4( "Border Color##Chromaticity", &borderColor.x );
-				static float borderThickness = 5.0f;
+				static float borderThickness = 3.0f;
 				ImGui::SliderFloat( "Border Thickness##Chromaticity", &borderThickness, 0.5f, 10.0f );
 
 				ImVec2 pos = ImGui::GetCursorScreenPos();
@@ -1371,11 +1419,11 @@ namespace ImWidgets{
 				ImGui::SetWindowFontScale( 0.75f );
 				ImGui::Text( "Hover per region of influence" );
 				ImGui::SetWindowFontScale( 1.0f );
-				ImWidgets::SliderNScalar( "Values##SliderNRegions", ImGuiDataType_Float, &value, 3, &min, &max, 16.0f, true );
+				ImWidgets::SliderNScalar( "Values##SliderNRegions", ImGuiDataType_Float, &value, 3, &min, &max, 8.0f, true );
 				ImGui::SetWindowFontScale( 0.75f );
 				ImGui::Text( "Global Hover" );
 				ImGui::SetWindowFontScale( 1.0f );
-				ImWidgets::SliderNScalar( "Values##SliderNGlobal", ImGuiDataType_Float, &value, 3, &min, &max, 16.0f, false );
+				ImWidgets::SliderNScalar( "Values##SliderNGlobal", ImGuiDataType_Float, &value, 3, &min, &max, 8.0f, false );
 				ImGui::DragFloat( "Near Plane", &value[ 0 ], 1.0f, min, value[ 1 ] );
 				ImGui::DragFloat( "Focal Planes", &value[ 1 ], 1.0f, value[ 0 ], value[ 2 ] );
 				ImGui::DragFloat( "Far Planes", &value[ 2 ], 1.0f, value[ 1 ], max );
@@ -1407,8 +1455,8 @@ namespace ImWidgets{
 				ImGui::DragFloat( "Hue Width##HueSelector", &hueWidth, 0.0f, 0.0f, 0.5f );
 				ImGui::DragFloat( "Feather Left##HueSelector", &featherLeft, 0.0f, 0.0f, 0.5f );
 				ImGui::DragFloat( "Feather Right##HueSelector", &featherRight, 0.0f, 0.0f, 0.5f );
-				static float hueHeight = 64.0f;
-				static float cursorHeight = 16.0f;
+				static float hueHeight = 32.0f;
+				static float cursorHeight = 8.0f;
 				ImGui::DragFloat( "Hue Height##HueSelector", &hueHeight, 1.0f, 1.0f, 256.0f );
 				ImGui::DragFloat( "Cursor Height##HueSelector", &cursorHeight, 1.0f, 1.0f, 64.0f );
 

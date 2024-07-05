@@ -50,8 +50,6 @@
 #define nullptr NULL
 #endif
 
-//#define DEAR_WIDGETS_TESSELATION
-
 namespace ImWidgets{
 	typedef void* ImShaderID;
 	struct ImShader
@@ -640,8 +638,6 @@ namespace ImWidgets{
 	void	ShapeLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 	void	ShapeRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 	void	ShapeDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
-
-	void	DrawShader( ImShape& shape, ImShader& shader );
 
 	//////////////////////////////////////////////////////////////////////////
 	// DrawList

@@ -13,3 +13,6 @@
 [submodule "extern/stb"]
 	path = extern/stb
 	url = https://github.com/nothings/stb.git
+[submodule "extern/IconFontCppHeaders"]
+	path = extern/IconFontCppHeaders
+	url = https://github.com/juliettef/IconFontCppHeaders.git

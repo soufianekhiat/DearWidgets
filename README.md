@@ -2,11 +2,12 @@
 DearWidgets aim to produce useful Widgets particulary useful on Graphics (Image Processing, 3D, ...).
 DearWidgets aim to provide helper to simplify creation of custom widgets.
 
-DearWidgets is 3 collections of helpers:
+DearWidgets is 6 collections of helpers:
 - DrawLists
 - Interactions
 - Widgets
 - Math Helpers
+- 'Shape' (2D Geometry)
 - Helpers to have type independent "Scalar"
 
 Dear Widgets is a collection of help to simplify the develoment of application.
@@ -33,13 +34,63 @@ https://www.patreon.com/SoufianeKHIAT
 
 PR & Discussion are open.
 
-## Features
+## What's new?
+
+### More linked to DearImGui styles:
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/WithStyle.gif)
+
+### Interactions
+
+* Is Hovered
+
+Convex
+```cpp
+bool IsPolyConvexContains( ImVec2* pts, int pts_count, ImVec2 p );
+bool IsMouseHoveringPolyConvex( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip = true );
+bool ItemHoverablePolyConvex( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags );
+```
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/IsHoveredConvex.gif)
+
+Concave
+```cpp
+bool IsPolyConcaveContains( ImVec2* pts, int pts_count, ImVec2 p );
+bool IsMouseHoveringPolyConcave( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip = true );
+bool ItemHoverablePolyConcave( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags );
+```
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/IsHoveredConcave.gif)
+
+With Hole (warning rely on 'thick' scanline)
+```cpp
+bool IsPolyWithHoleContains( ImVec2* pts, int pts_count, ImVec2 p, ImRect* p_bb = NULL, int gap = 1, int strokeWidth = 1 );
+bool IsMouseHoveringPolyWithHole( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip = true );
+bool ItemHoverablePolyWithHole( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags );
+```
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/IsHoveredHole.gif)
+
+### Window
+
+* Background
+```cpp
+void SetCurrentWindowBackgroundImage( ImTextureID id, ImVec2 imgSize, bool fixedSize = false, ImU32 col = IM_COL32( 255, 255, 255, 255 ) );
+```
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/Background.png)
+
 ### DrawList
-* Triangle Pointer {Right, Up, Left, Down}
+* Triangle Pointer
 
-Used internally for LineSlider
+Used internally for HueSelector
+```cpp
+void DrawTriangleCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float angle, float size, float thickness, ImU32 col );
+void DrawTriangleCursorFilled( ImDrawList* pDrawList, ImVec2 targetPoint, float angle, float size, ImU32 col );
+```
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/triangle_pointer.png)
 
-![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/dearwidgetsdemo_mRxPnn8bNH.png)
+* Signet Pointer
+```cpp
+void DrawSignetCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float width, float height, float height_ratio, float align01, float angle, float thickness, ImU32 col );
+void DrawSignetFilledCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float width, float height, float height_ratio, float align01, float angle, ImU32 col );
+```
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/signet_pointer.png)
 
 * Hue Band
 * Luminance Band
@@ -47,14 +98,104 @@ Used internally for LineSlider
 
 Used Internally to implement HueSelector.
 
-![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/dearwidgetsdemo_mw6vQsfBi7.png)
-![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/dearwidgetsdemo_4ufS2JkG81.png)
+```cpp
+void DrawHueBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, float alpha, float gamma, float offset );
+void DrawHueBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, float colorStartRGB[ 3 ], float alpha, float gamma );
+void DrawLumianceBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma );
+void DrawSaturationBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma );
+```
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/color_band.png)
+
+* Graduations
+
+Linear Line
+```cpp
+void DrawLinearLineGraduation( ImDrawList* drawlist, ImVec2 start, ImVec2 end, float mainLineThickness, ImU32 mainCol,
+int division0, float height0, float thickness0, float angle0, ImU32 col0,
+int division1 = -1, float height1 = -1.0f, float thickness1 = -1.0f, float angle1 = -1.0f, ImU32 col1 = 0u,
+int division2 = -1, float height2 = -1.0f, float thickness2 = -1.0f, float angle2 = -1.0f, ImU32 col2 = 0u );
+```
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/LinearLineGraduation.jpg)
+
+Linear Circular
+```cpp
+void DrawLinearCircularGraduation( ImDrawList* drawlist, ImVec2 center, float radius, float start_angle, float end_angle, int num_segments,
+float mainLineThickness, ImU32 mainCol,
+int division0, float height0, float thickness0, float angle0, ImU32 col0,
+int division1 = -1, float height1 = -1.0f, float thickness1 = -1.0f, float angle1 = -1.0f, ImU32 col1 = 0u,
+int division2 = -1, float height2 = -1.0f, float thickness2 = -1.0f, float angle2 = -1.0f, ImU32 col2 = 0u );
+```
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/LinearCircularGraduation.jpg)
+
+Log Line
+```cpp
+void DrawLogLineGraduation( ImDrawList* drawlist, ImVec2 start, ImVec2 end,
+float mainLineThickness, ImU32 mainCol,
+int division0, float height0, float thickness0, float angle0, ImU32 col0,
+int division1 = -1, float height1 = -1.0f, float thickness1 = -1.0f, float angle1 = -1.0f, ImU32 col1 = 0u );
+```
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/LogLineGraduation.jpg)
+
+Log Circular
+```cpp
+void DrawLogCircularGraduation( ImDrawList* drawlist, ImVec2 center, float radius, float start_angle, float end_angle, int num_segments,
+float mainLineThickness, ImU32 mainCol,
+int division0, float height0, float thickness0, float angle0, ImU32 col0,
+int division1 = -1, float height1 = -1.0f, float thickness1 = -1.0f, float angle1 = -1.0f, ImU32 col1 = 0u );
+```
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/LogCircularGraduation.jpg)
+
+* Shape
+
+Tesselation:
+```cpp
+#ifdef DEAR_WIDGETS_TESSELATION
+	void	ShapeTesselationUniform( ImShape& shape );
+#endif
+```
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/Shape.gif)
+
+```cpp
+void DrawImageShape( ImDrawList* pDrawList, ImTextureID tex, ImShape& shape );
+```
+Convex
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/ImageConvex.png)
+
+Concave
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/ImageConcave.png)
+
+** Gradients
+
+Linear
+```cpp
+void	ShapeLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+```
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/LinearGradient.png)
+
+Radial
+```cpp
+void	ShapeRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+```
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/CircularGraduation.png)
+
+Diamond
+```cpp
+void	ShapeDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+```
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/DiamondGradient.png)
+
+With Hole
+// TODO
 
 * Color Ring
 
 TODO: Ring HueSelector
-TODO: Add support for 2D (angle, radius) lambda
 
+TODO: Add support for 2D (angle, radius)
+
+```cpp
+void DrawColorRing( ImDrawList* pDrawList, ImVec2 const curPos, ImVec2 const size, float thickness_, ImColor1DCallback func, void* pUserData, int division, float colorOffset, bool bIsBilinear );
+```
 ![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/GQLfC3C7Jk.gif)
 
 * Custom Color Ring
@@ -65,92 +206,113 @@ TODO: Add support for 2D (angle, radius) lambda
     * Chromatic Point
     * Chromatic Line
 
-![](https://media.githubusercontent.com/media/soufianekhiat/DearWidgetsImages/main/Images/ChromaticityPlot_puswCA4lPP.gif)
+```cpp
+void DrawChromaticityPlot( ... );
+```
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/chromaticityplot_0.png)
+![](hhttps://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/chromaticityplot_1.png)
 
-* Convex Mask
-
-Support for ConvexMask, will fail or flip triangle if the shape is not convex. In practice some non-convex shape could work if all vertices are visible from the corner of the BoundingBox Used.
-
-![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/kYA3Dw6TmH.gif)
+```cpp
+void DrawChromaticityPoints( ... );
+void DrawChromaticityLines( ... );
+```
+![](hhttps://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/chromaticityline_0.png)
 
 * DrawColorDensityPlot (aka ShaderToy)
 
 Use carefully that can have impact on your performances for HighRes canvas or/and expensive lambda.
 
+```cpp
+void DrawProceduralColor2DNearest( ImDrawList* pDrawList, ImColor2DCallback func, void* pUserData, float minX, float maxX, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionX, int resolutionY );
+void DrawProceduralColor2DBilinear( ImDrawList* pDrawList, ImColor2DCallback func, void* pUserData, float minX, float maxX, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionX, int resolutionY );
+```
 ![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/us8Fc2jkIh.png)
 ![](hhttps://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/yEGBSzv2F8.gif)
 
 ### Widgets
-* Hue Selector
 
+* Button
+
+Convex
+```cpp
+bool ButtonBehaviorConvex( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
+```
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/ButtonConvex.gif)
+
+Concave
+```cpp
+bool ButtonBehaviorConcave( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
+```
 ![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/W0Q9VXNeGK.gif)
 
-### Draft
+With Hole
+```cpp
+bool ButtonBehaviorWithHole( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
+```
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/ButtonConcave.gif)
 
-Draft means draft.
+* Hue Selector
 
-#### Draw
-
-* ChromaticityPlot
-
-![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/ChromaticityPlot_puswCA4lPP.gif)
-
-#### Widgets
-
-* DragLengthScalar
-
-![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/XQ3kGD9aAW.gif)
+```cpp
+bool HueSelector( char const* label, float hueHeight, float cursorHeight, float* hueCenter, float* hueWidth, float* featherLeft, float* featherRight, int division = 32, float alpha = 1.0f, float hideHueAlpha = 0.75f, float offset = 0.0f );
+```
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/W0Q9VXNeGK.gif)
 
 * Slider 2D Float
 A version for Slider2DScaler is available for (Im{S|U}{8,16,32,64}, Float and Double)
 
+```cpp
+bool Slider2DScalar( char const* pLabel, ImGuiDataType data_type, void* pValueX, void* pValueY, void* p_minX, void* p_maxX, void* p_minY, void* p_maxY );
+bool Slider2DFloat( char const* pLabel, float* pValueX, float* pValueY, float v_minX, float v_maxX, float v_minY, float v_maxY );
+```
 ![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/0dkkSCsb5Y.gif)
 
 * Slider 2D Int
 
+```cpp
+bool Slider2DInt( char const* pLabel, int* pValueX, void* pValueY, int v_minX, int v_maxX, int v_minY, int v_maxY );
+```
 ![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/PGFHy3o6Tg.gif)
 
-* Range Select 2D
-
-![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/RangeSelect2D_EnvhshMO1B.gif)
-
-* Slider 3D
-
-![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/IQZMEeqfx0.gif)
-
-* Grid
-
-![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/Wj5zT2ESJu.gif)
-
-* 2D Move
-
-![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/FoeyB7aWSp.gif)
-
-* Line Slider (TBD)
-
-![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/4haBv2KuX7.gif)
+* SliderN
+```cpp
+bool SliderNScalar( char const* label, ImGuiDataType data_type, void* ordered_value, int value_count, void* p_min, void* p_max, float cursor_width, bool show_hover_by_region );
+bool SliderNFloat( char const* label, ImGuiDataType data_type, float* ordered_value, int value_count, float v_min, float v_max, float cursor_width, bool show_hover_by_region );
+bool SliderNInt( char const* label, ImGuiDataType data_type, int* ordered_value, int value_count, int v_min, int v_max, float cursor_width, bool show_hover_by_region );
+```
+![](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/SliderN.gif)
 
 ## Performance Considerations
 Notice some DrawList are purely calling DrawList from Dear ImGui. So based on your parameters a non-negligeable impact on performance can be notice. Do not put an unreasonable resolution.
 
+The Gradient rely on the vertex blending with the default shader. So to have a smooth gradient it may require lot of vertices via tesselation, that may impact performance and limit of vertices and imply a use of ImDrawIdx in 32 bits.
+
 ## Constrains
-C++ features used internally:
-* std::string
-* (Optionnal) Lambda
+C++ features (optionaly) **used** internally:
+* std::map<T, K> used for ImTesselator can be enabled with #define DEAR_WIDGETS_TESSELATION
 
 ## Legacy
-Removed:
+**Removed** feature:
 * AnalyticalPlotEx
-* AnalyticalPlot
+* AnalyticalPlot Just explode the number of vertices
 * CenterNextItem
-* DragFloatLog
+* DragFloatLog TBD
 * RangeSelect2D didn't find a proper control
 * Slider3D no real use case
 
-Removed C++ feature dependencies:
+**Removed** C++ feature dependencies:
 * template
 * constexpr
 * if constexpr
 * Lambda from template
 * auto
 * std::vector&lt;float&gt;, std::vector&lt;bool&gt; for isoline
+
+## Contributor
+Future feature:
+* Hue Ring select
+* Slider2DWithRingConstraint // Only only a circular region on the 2D selector
+* InputFloatUnit cf. History of Dear Widgets
+* Add Shape from SDF with ImShader cd ImPlatform (only if IM_SUPPORT_CUSTOM_SHADER)
+* Guizmo2D{Translate, Rotate, Scale}
+* Gauge

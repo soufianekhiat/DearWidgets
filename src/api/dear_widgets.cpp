@@ -3,8 +3,8 @@
 //#include <chrono>
 //#include <algorithm>
 
-#if DEAR_WIDGETS_TESSELATION
-#include <vector>
+#ifdef DEAR_WIDGETS_TESSELATION
+//#include <vector>
 #include <map>
 #endif
 
@@ -2081,7 +2081,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		int tri_count = shape.triangles.size();
 
 		typedef std::pair<ImDrawIdx, ImDrawIdx> Edge;
-		//std::map<Edge, ImVec2> edge_to_vrtx;
 		std::map<Edge, ImVertex> edge_to_vrtx;
 		for ( int k = 0; k < tri_count; ++k )
 		{
@@ -2412,8 +2411,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			float _0 = angle_min + ( ( float )k ) * d0;
 			ImVec2 v;
-			v.x = center.x + radius * ImCos( _0 );
-			v.y = center.y + radius * ImSin( _0 );
+			v.x = center.x + radius * ImCos( - _0 );
+			v.y = center.y + radius * ImSin( - _0 );
 			shape.vertices[ k + 1 ].pos.x = v.x;
 			shape.vertices[ k + 1 ].pos.y = v.y;
 			shape.bb.Min.x = ImMin( shape.bb.Min.x, v.x );
@@ -3230,7 +3229,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	//////////////////////////////////////////////////////////////////////////
 	// Widgets
 	//////////////////////////////////////////////////////////////////////////
-#pragma optimize( "", off )
 	void	DrawChromaticityPlotGeneric( ImDrawList* pDrawList,
 										 ImVec2 curPos,
 										 ImVec2 size,
@@ -3311,12 +3309,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		for ( int i = 0; i < ptsCount; ++i )
 		{
 			chromLine[ i ].x = Rescale( chromLine[ i ].x, minX, maxX, curPos.x, curPos.x + size.x );
-			chromLine[ i ].y = Rescale( chromLine[ i ].y, minY, maxY, curPos.y + size.y, curPos.y );
+			chromLine[ i ].y = Rescale( chromLine[ i ].y, minY, maxY, curPos.y + size.y, curPos.y - 1.0f );
 		}
 		// Workaround: Overdraw with strokeWidth of 2. Because we seem to have missing the first and last row of pixel.
 		//			The problem is more visible with alpha < 255.
 		ImRect clipRect( curPos, curPos + size );
-		DrawShapeWithHole( pDrawList, &chromLine[ 0 ], ptsCount, maskColor, &clipRect, 1, 2 );
+		DrawShapeWithHole( pDrawList, &chromLine[ 0 ], ptsCount, maskColor, &clipRect, 1, 1 );
 		if ( borderColor || showColorSpaceTriangle || showWhitePoint )
 		{
 			pDrawList->PushClipRect( clipRect.Min, clipRect.Max, true );
@@ -5212,13 +5210,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float downScale = 0.75f;
 		float dragX_placement = 0.75f;
 		float dragY_placement = 0.75f;
-		float dragX_thickness = 32.0f;
-		float dragY_thickness = 32.0f;
+		float dragX_thickness = 8.0f;
+		float dragY_thickness = 8.0f;
 		float border_thickness = 2.0f;
-		float line_thickness = 3.0f;
+		float line_thickness = 2.0f;
 		float text_lerp_x = 0.5f;
 		float text_lerp_y = 0.5f;
-		float cursor_radius = 8.0f;
+		float cursor_radius = 4.0f;
 		int cursor_segments = 4;
 		//ImVec4 vBlue( 70.0f / 255.0f, 102.0f / 255.0f, 230.0f / 255.0f, 1.0f ); // TODO: choose from style
 		ImVec4 vBlue( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f ); // TODO: choose from style
