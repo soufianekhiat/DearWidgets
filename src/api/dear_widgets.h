@@ -395,6 +395,7 @@ namespace ImWidgets{
 	float ImCbrt( float x )
 	{
 		return cbrtf( x );
+		//return ImPow( x, 1.0f / 3.0f );
 	}
 
 	inline
@@ -543,6 +544,10 @@ namespace ImWidgets{
 	IMGUI_API void          ColorConvertLineartoRGB( float L, float a, float b, float& out_r, float& out_g, float& out_b );
 	IMGUI_API void          ColorConvertRGBtoOKLAB( float r, float g, float b, float& out_L, float& out_a, float& out_b );
 	IMGUI_API void          ColorConvertOKLABtoRGB( float L, float a, float b, float& out_r, float& out_g, float& out_b );
+	IMGUI_API void          ColorConvertOKLCHtoOKLAB( float r, float g, float b, float& out_L, float& out_a, float& out_b );
+	IMGUI_API void          ColorConvertOKLABtoOKLCH( float L, float a, float b, float& out_r, float& out_g, float& out_b );
+	IMGUI_API void          ColorConvertsRGBtoOKLCH( float r, float g, float b, float& out_L, float& out_c, float& out_h );
+	IMGUI_API void          ColorConvertOKLCHtosRGB( float L, float c, float h, float& out_r, float& out_g, float& out_b );
 	ImU32	KelvinTemperatureTosRGBColors( float temperature ); // [ 1000 K; 12000 K ]
 
 	inline
@@ -660,6 +665,9 @@ namespace ImWidgets{
 	void	ShapeOkLabLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 	void	ShapeOkLabRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 	void	ShapeOkLabDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+	void	ShapeOkLchLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+	void	ShapeOkLchRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+	void	ShapeOkLchDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 	void	ShapeLinearSRGBLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 	void	ShapeLinearSRGBRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 	void	ShapeLinearSRGBDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
@@ -697,6 +705,7 @@ namespace ImWidgets{
 	IMGUI_API void DrawColorRing( ImDrawList* pDrawList, ImVec2 const curPos, ImVec2 const size, float thickness_, ImColor1DCallback func, void* pUserData, int division, float colorOffset, bool bIsBilinear );
 
 	IMGUI_API void DrawOkLabQuad( ImDrawList* pDrawList, ImVec2 start, ImVec2 size, float L, int resX = 16, int resY = 16 );
+	IMGUI_API void DrawOkLchQuad( ImDrawList* pDrawList, ImVec2 start, ImVec2 size, float L, int resX = 16, int resY = 16 );
 
 	// poly: Clockwise: Positive shape & Counter-clockwise for hole
 	IMGUI_API void DrawShapeWithHole( ImDrawList* draw, ImVec2* poly, int points_count, ImU32 color, ImRect* p_bb = NULL, int gap = 1, int strokeWidth = 1 );

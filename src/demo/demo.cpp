@@ -348,7 +348,7 @@ namespace ImWidgets{
 				static ImU32 cola = ImGui::GetColorU32( cola_v );
 				static ImU32 colb = ImGui::GetColorU32( colb_v );
 #ifdef DEAR_WIDGETS_TESSELATION
-				static int tess = 4;
+				static int tess = 5;
 				ImGui::SliderInt( "Tess", &tess, 0, 16 );
 #endif
 				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
@@ -363,7 +363,8 @@ namespace ImWidgets{
 					colb = ImGui::GetColorU32( colb_v );
 				ImVec2 pos = ImGui::GetCursorScreenPos();
 				static ImShape shape;
-				GenShapeRect( shape, ImRect( pos, pos + ImVec2( size, size ) ) );
+				float height = size * 0.25f;
+				GenShapeRect( shape, ImRect( pos, pos + ImVec2( size, height ) ) );
 				ShapeSetDefaultUV( shape );
 #ifdef DEAR_WIDGETS_TESSELATION
 				for ( int k = 0; k < tess; ++k )
@@ -375,31 +376,39 @@ namespace ImWidgets{
 				DrawShape( pDrawList, shape );
 				pDrawList->AddText( shape.bb.Min, IM_COL32( 255, 255, 255, 255 ), "sRGB" );
 
-				ShapeTranslate( shape, ImVec2( 0.0f, size ) );
-				ShapeLinearSRGBLinearGradient( shape,
-											   uv_start, uv_end,
-											   cola, colb );
-				DrawShape( pDrawList, shape );
-				pDrawList->AddText( shape.bb.Min, IM_COL32( 255, 255, 255, 255 ), "Linear sRGB" );
-
-				ShapeTranslate( shape, ImVec2( 0.0f, size ) );
+				ShapeTranslate( shape, ImVec2( 0.0f, height ) );
 				ShapeHSVLinearGradient( shape,
 										uv_start, uv_end,
 										cola, colb );
 				DrawShape( pDrawList, shape );
 				pDrawList->AddText( shape.bb.Min, IM_COL32( 255, 255, 255, 255 ), "HSV" );
 
-				ShapeTranslate( shape, ImVec2( 0.0f, size ) );
+				ShapeTranslate( shape, ImVec2( 0.0f, height ) );
+				ShapeLinearSRGBLinearGradient( shape,
+											   uv_start, uv_end,
+											   cola, colb );
+				DrawShape( pDrawList, shape );
+				pDrawList->AddText( shape.bb.Min, IM_COL32( 255, 255, 255, 255 ), "Linear sRGB" );
+
+				ShapeTranslate( shape, ImVec2( 0.0f, height ) );
 				ShapeOkLabLinearGradient( shape,
 										  uv_start, uv_end,
 										  cola, colb );
 				DrawShape( pDrawList, shape );
 				pDrawList->AddText( shape.bb.Min, IM_COL32( 255, 255, 255, 255 ), "OkLab" );
 
-				ImGui::Dummy( ImVec2( size, size ) );
-				ImGui::Dummy( ImVec2( size, size ) );
-				ImGui::Dummy( ImVec2( size, size ) );
-				ImGui::Dummy( ImVec2( size, size ) );
+				ShapeTranslate( shape, ImVec2( 0.0f, height ) );
+				ShapeOkLchLinearGradient( shape,
+										  uv_start, uv_end,
+										  cola, colb );
+				DrawShape( pDrawList, shape );
+				pDrawList->AddText( shape.bb.Min, IM_COL32( 255, 255, 255, 255 ), "OkLch" );
+
+				ImGui::Dummy( ImVec2( size, height ) );
+				ImGui::Dummy( ImVec2( size, height ) );
+				ImGui::Dummy( ImVec2( size, height ) );
+				ImGui::Dummy( ImVec2( size, height ) );
+				ImGui::Dummy( ImVec2( size, height ) );
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
 				ImGui::Text( "Vtx: %d", shape.vertices.size() );
 			}
@@ -788,7 +797,7 @@ namespace ImWidgets{
 								   }, &fFreqValue, division, colorOffset, true );
 				}
 			}
-			if ( ImGui::CollapsingHeader( "OkLab Color Quad" ) )
+			if ( ImGui::CollapsingHeader( "OkLab/OkLch Color Quad" ) )
 			{
 				float const width = ImGui::GetContentRegionAvail().x;
 
@@ -804,6 +813,9 @@ namespace ImWidgets{
 				ImVec2 curPos = ImGui::GetCursorScreenPos();
 				float const size = ImGui::GetContentRegionAvail().x;
 				DrawOkLabQuad( pDrawList, curPos, ImVec2( size, size ), L, resX, resY );
+				ImGui::Dummy( ImVec2( size, size ) );
+				curPos = ImGui::GetCursorScreenPos();
+				DrawOkLchQuad( pDrawList, curPos, ImVec2( size, size ), L, resX, resY );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
 			if ( ImGui::CollapsingHeader( "Color2D" ) )

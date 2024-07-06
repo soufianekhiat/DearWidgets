@@ -1667,9 +1667,36 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		out_r = ImLinearTosRGB( out_r );
 		out_g = ImLinearTosRGB( out_g );
 		out_b = ImLinearTosRGB( out_b );
-		out_r = ImSaturate( out_r );
-		out_g = ImSaturate( out_g );
-		out_b = ImSaturate( out_b );
+	}
+	void          ColorConvertOKLCHtoOKLAB( float L, float c, float h, float& out_L, float& out_a, float& out_b )
+	{
+		out_L = L;
+		out_a = c * ImCos( h * 2.0f * IM_PI );
+		out_b = c * ImSin( h * 2.0f * IM_PI );
+	}
+	void          ColorConvertOKLABtoOKLCH( float L, float a, float b, float& out_L, float& out_c, float& out_h )
+	{
+		out_L = L;
+		out_c = ImSqrt( a * a + b * b );
+		out_h = ImAtan2( b, a );
+		if ( out_h < 0.0f )
+		{
+			out_h += 2.0f * IM_PI;
+		}
+		out_h /= 2.0f * IM_PI;
+		out_h = ImSaturate( out_h );
+	}
+	void          ColorConvertsRGBtoOKLCH( float r, float g, float b, float& out_L, float& out_c, float& out_h )
+	{
+		float lL, la, lb;
+		ColorConvertRGBtoOKLAB( r, g, b, lL, la, lb );
+		ColorConvertOKLABtoOKLCH( lL, la, lb, out_L, out_c, out_h );
+	}
+	void          ColorConvertOKLCHtosRGB( float L, float c, float h, float& out_r, float& out_g, float& out_b )
+	{
+		float lL, la, lb;
+		ColorConvertOKLCHtoOKLAB( L, c, h, lL, la, lb );
+		ColorConvertOKLABtoRGB( lL, la, lb, out_r, out_g, out_b );
 	}
 
 	ImU32	KelvinTemperatureTosRGBColors( float temperature )
@@ -2658,6 +2685,20 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	{
 		ShapeDiamondGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertOKLABtoRGB, &ColorConvertRGBtoOKLAB );
 	}
+
+	void	ShapeOkLchLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	{
+		ShapeLinearGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertOKLCHtosRGB, &ColorConvertsRGBtoOKLCH );
+	}
+	void	ShapeOkLchRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	{
+		ShapeRadialGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertOKLCHtosRGB, &ColorConvertsRGBtoOKLCH );
+	}
+	void	ShapeOkLchDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	{
+		ShapeDiamondGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertOKLCHtosRGB, &ColorConvertsRGBtoOKLCH );
+	}
+
 	void	ShapeLinearSRGBLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
 		ShapeLinearGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertLineartoRGB, &ColorConvertRGBtoLinear );
@@ -2670,6 +2711,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	{
 		ShapeDiamondGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertLineartoRGB, &ColorConvertRGBtoLinear );
 	}
+
 	void	ShapeHSVLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
 		ShapeLinearGradientGeneric( shape, uv_start, uv_end, col0, col1, &ImGui::ColorConvertHSVtoRGB, &ImGui::ColorConvertRGBtoHSV );
@@ -3182,12 +3224,41 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		return ImGui::GetColorU32( ImVec4( rr, gg, bb, 1.0f ) );
 	}
+	ImU32 ImColor2DCallbackOkLch( float x, float y, void* pUserData )
+	{
+		float* pL = ( float* )pUserData;
+		float L = *pL;
+
+		float angle = ImAtan2( y, x );
+		float r = ImSqrt( x * x + y * y );
+
+		if ( angle < 0.0f )
+			angle += 2.0f * IM_PI;
+
+		float c = r;
+		float h = angle / ( 2.0f * IM_PI );
+
+		float rr, gg, bb;
+		ColorConvertOKLCHtosRGB( L, c, h, rr, gg, bb );
+
+		return ImGui::GetColorU32( ImVec4( rr, gg, bb, 1.0f ) );
+	}
 
 	void DrawOkLabQuad( ImDrawList* pDrawList, ImVec2 start, ImVec2 size, float L, int resX, int resY )
 	{
 		DrawProceduralColor2DBilinear(
 			pDrawList,
 			&ImColor2DCallbackOkLab,
+			&L,
+			0.0f, 1.0f,
+			0.0f, 1.0f,
+			start, size, resX, resY );
+	}
+	void DrawOkLchQuad( ImDrawList* pDrawList, ImVec2 start, ImVec2 size, float L, int resX, int resY )
+	{
+		DrawProceduralColor2DBilinear(
+			pDrawList,
+			&ImColor2DCallbackOkLch,
 			&L,
 			-1.0f, 1.0f,
 			-1.0f, 1.0f,
