@@ -14,36 +14,12 @@ namespace DearWidgets
             Name = "DearWidgetsDemo";
             SourceRootPath = RootPath + @"\src\demo";
 
-            //SourceFiles.Add("[project.ExternPath]/glad/src/glad.c");
             SourceFiles.Add("[project.ExternPath]/imgui/imgui.cpp");
             SourceFiles.Add("[project.ExternPath]/imgui/imgui_tables.cpp");
             SourceFiles.Add("[project.ExternPath]/imgui/imgui_widgets.cpp");
             SourceFiles.Add("[project.ExternPath]/imgui/misc/cpp/imgui_stdlib.cpp");
             SourceFiles.Add("[project.ExternPath]/imgui/imgui_draw.cpp");
             SourceFiles.Add("[project.ExternPath]/ImPlatform/ImPlatform/ImPlatform.h");
-
-            // Mains
-            // SourceFiles.Add(@"[project.RootPath]/src/demo/main_dx11.cpp");
-            // SourceFiles.Add(@"[project.RootPath]/src/demo/main_dx12.cpp");
-
-            // Backend
-            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_win32.h");
-            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_win32.cpp");
-
-            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_dx11.h");
-            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_dx11.cpp");
-
-            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_dx12.h");
-            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_dx12.cpp");
-
-            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_opengl3.h");
-            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_opengl3.cpp");
-
-            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_vulkan.h");
-            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_vulkan.cpp");
-
-            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_wgpu.h");
-            // SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_wgpu.cpp");
         }
 
         [Configure()]
@@ -54,16 +30,19 @@ namespace DearWidgets
 			conf.TargetPath = RootPath + "/WorkingDir";
 
             conf.IncludePaths.Add(@"[project.RootPath]/src/demo/");
+            conf.IncludePaths.Add(@"[project.RootPath]/extern/stb/");
+            conf.IncludePaths.Add(@"[project.RootPath]/extern/imgui/");
+            conf.IncludePaths.Add(@"[project.RootPath]/extern/imgui/examples/libs/glfw/include/");
+            conf.LibraryPaths.Add(@"[project.RootPath]/extern/imgui/examples/libs/glfw/");
             conf.IncludePaths.Add(@"[project.RootPath]/extern/imgui/backends/");
             conf.IncludePaths.Add(@"[project.RootPath]/extern/ImPlatform/ImPlatform/");
             //conf.IncludePrivatePaths.Add(@"[project.RootPath]\codebase\SpanMultipleSrcDirs\dir_individual_files");
             //conf.AddPrivateDependency<CoreProject>(target);
 
-            //SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_opengl3.h");
-            //SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_opengl3.cpp");
-            //SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_glfw.h");
-            //SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_glfw.cpp");
-
+            if (target.Api == TargetAPI.D3D9)
+            {
+                conf.LibraryFiles.Add("opengl32.lib");
+            }
             if (target.Api == TargetAPI.D3D9)
             {
                 conf.LibraryFiles.Add("d3d9.lib");
@@ -86,38 +65,6 @@ namespace DearWidgets
                 conf.LibraryFiles.Add("d3dcompiler.lib");
                 conf.LibraryFiles.Add("dxgi.lib");
             }
-            //if (target.Build == BuildType.DemoOnly)
-            //{
-            //    if (target.Api == TargetAPI.D3D11)
-            //    {
-            //        SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_dx11.h");
-            //        SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_dx11.cpp");
-            //    }
-
-            //    if (target.Api == TargetAPI.D3D12)
-            //    {
-            //        SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_dx12.h");
-            //        SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_dx12.cpp");
-            //    }
-
-            //    if (target.Api == TargetAPI.OpenGL3)
-            //    {
-            //        SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_opengl3.h");
-            //        SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_opengl3.cpp");
-            //    }
-
-            //    if (target.Api == TargetAPI.Vulkan)
-            //    {
-            //        SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_vulkan.h");
-            //        SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_vulkan.cpp");
-            //    }
-
-            //    if (target.Api == TargetAPI.WGPU)
-            //    {
-            //        SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_wgpu.h");
-            //        SourceFiles.Add("[project.ExternPath]/imgui/backends/imgui_impl_wgpu.cpp");
-            //    }
-            //}
 
 			conf.VcxprojUserFile = new Configuration.VcxprojUserFileSettings();
 			conf.VcxprojUserFile.LocalDebuggerWorkingDirectory = @"[project.RootPath]/WorkingDir/";

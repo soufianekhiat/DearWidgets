@@ -10,3 +10,9 @@
 [submodule "extern/ImPlatform"]
 	path = extern/ImPlatform
 	url = https://github.com/soufianekhiat/ImPlatform.git
+[submodule "extern/stb"]
+	path = extern/stb
+	url = https://github.com/nothings/stb.git
+[submodule "extern/IconFontCppHeaders"]
+	path = extern/IconFontCppHeaders
+	url = https://github.com/juliettef/IconFontCppHeaders.git

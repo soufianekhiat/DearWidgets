@@ -23,6 +23,7 @@ namespace DearWidgets
             //conf.Defines.Add("IMGUI_DEFINE_MATH_OPERATORS");
             //conf.IncludePaths.Add(@"[project.RootPath]/extern/Clipper/cpp/");
             //conf.IncludePaths.Add(@"[project.ExternPath]/glad/include");
+            conf.IncludePaths.Add(@"[project.RootPath]/extern/ImPlatform/ImPlatform/");
         }
     }
 }
