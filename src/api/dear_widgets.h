@@ -7,8 +7,9 @@
 
 //#include <algorithm>
 //#include <string>
-//#include <cmath>
 #include <math.h>
+
+#include <ImPlatform.h>
 
 //////////////////////////////////////////////////////////////////////////
 // Style TODO:
@@ -51,12 +52,6 @@
 #endif
 
 namespace ImWidgets{
-	typedef void* ImShaderID;
-	struct ImShader
-	{
-		ImShaderID vs;
-		ImShaderID ps;
-	};
 	struct ImVertex
 	{
 		ImVec2 pos;
@@ -111,12 +106,12 @@ namespace ImWidgets{
 			return *this;
 		}
 	};
-	struct ImShape
-	{
-		ImVector<ImVertex>	vertices;
-		ImVector<ImTriIdx>	triangles;
-		ImRect				bb;
-	};
+struct ImShape
+{
+	ImVector<ImVertex>	vertices;
+	ImVector<ImTriIdx>	triangles;
+	ImRect				bb;
+};
 
 	typedef ImU32( *ImColor1DCallback )( float x, void* );
 	typedef ImU32( *ImColor2DCallback )( float x, float y, void* );
@@ -387,6 +382,51 @@ namespace ImWidgets{
 
 		ImWidgetsChromaticPlot_COUNT
 	};
+
+#ifdef IM_SUPPORT_CUSTOM_SHADER
+
+	enum ImWidgetsMarker_
+	{
+		// Style
+		ImWidgetsMarker_Disc,
+		ImWidgetsMarker_Square,
+		ImWidgetsMarker_Triangle,
+		ImWidgetsMarker_Diamond,
+		ImWidgetsMarker_Heart,
+		ImWidgetsMarker_Spade,
+		ImWidgetsMarker_Club,
+		ImWidgetsMarker_Chevron,
+		ImWidgetsMarker_Clover,
+		ImWidgetsMarker_Ring,
+		ImWidgetsMarker_Tag,
+		ImWidgetsMarker_Cross,
+		ImWidgetsMarker_Asterisk,
+		ImWidgetsMarker_Infinity,
+		ImWidgetsMarker_Pin,
+		ImWidgetsMarker_Arrow,
+		ImWidgetsMarker_Ellipse,
+		ImWidgetsMarker_EllipseApprox,
+
+		ImWidgetsMarker_COUNT
+	};
+
+	typedef int ImWidgetsMarker;
+
+	enum ImWidgetsDrawType_
+	{
+		// Style
+		ImWidgetsDrawType_Filled,
+		ImWidgetsDrawType_Stroke,
+		ImWidgetsDrawType_Outline,
+		ImWidgetsDrawType_SignedDistanceField,
+		ImWidgetsDrawType_CutOff,
+
+		ImWidgetsDrawType_COUNT
+	};
+
+	typedef int ImWidgetsDrawType;
+
+#endif
 
 	//////////////////////////////////////////////////////////////////////////
 	// Helpers
@@ -676,6 +716,40 @@ namespace ImWidgets{
 	void	ShapeHSVDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 
 	//////////////////////////////////////////////////////////////////////////
+	// ImWidgets Context
+	//////////////////////////////////////////////////////////////////////////
+#ifdef IM_SUPPORT_CUSTOM_SHADER
+	struct MarkerBuffer
+	{
+		ImVec4	fg_color;
+		ImVec4	bg_color;
+
+		ImVec2	rotation;
+		float	linewidth;
+		float	size;
+
+		float	type;
+		float	antialiasing;
+		float	draw_type;
+		float	pad0;
+	};
+#endif
+
+	struct ImWidgetsContext
+	{
+		ImTextureID blackImg;
+		ImTextureID whiteImg;
+#ifdef IM_SUPPORT_CUSTOM_SHADER
+		ImPlatform::ImDrawShader	markerShader;
+#endif
+	};
+
+	IMGUI_API ImWidgetsContext*	CreateContext();
+	IMGUI_API void	DestroyContext( ImWidgetsContext* );
+
+	IMGUI_API void	SetCurrentContext( ImWidgetsContext* );
+
+	//////////////////////////////////////////////////////////////////////////
 	// DrawList
 	//////////////////////////////////////////////////////////////////////////
 	IMGUI_API void DrawShapeDebugEx( ImDrawList* pDrawList, ImTextureID tex, ImShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx = -1 );
@@ -714,6 +788,18 @@ namespace ImWidgets{
 										 ImVec2 uv_offset = ImVec2( 0.0f, 0.0f ), ImVec2 uv_scale = ImVec2( 1.0f, 1.0f ) );
 	IMGUI_API void DrawImageConcaveShape( ImDrawList* draw, ImTextureID img, ImVec2* poly, int points_count, ImU32 tint,
 										  ImVec2 uv_offset = ImVec2( 0.0f, 0.0f ), ImVec2 uv_scale = ImVec2( 1.0f, 1.0f ) );
+
+#ifdef IM_SUPPORT_CUSTOM_SHADER
+	IMGUI_API void DrawMarker( ImDrawList* pDrawList, ImVec2 start, ImVec2 size,
+							   ImU32 fg_color,
+							   ImU32 bg_color,
+							   float rot_angle_rad,
+							   float shape_size,
+							   float linewidth,
+							   float antialiasing,
+							   ImWidgetsMarker marker,
+							   ImWidgetsDrawType draw_type );
+#endif
 
 	// TODO: find a clean way expose the style of the draws:
 	// Triangle of ColorSpace

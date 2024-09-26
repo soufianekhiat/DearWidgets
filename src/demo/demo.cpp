@@ -1,22 +1,22 @@
 #include <demo.h>
-#include <dear_widgets.h>
-#include <imgui_internal.h>
 
-#if defined(__DEAR_GFX_OGL3__)
-#define IM_GLFW3_AUTO_LINK
-#define IM_CURRENT_TARGET IM_TARGET_WIN32_OPENGL3
-#elif defined(__DEAR_GFX_DX9__)
-#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX9
-#elif defined(__DEAR_GFX_DX10__)
-#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX10
-#elif defined(__DEAR_GFX_DX11__)
-#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX11
-#elif defined(__DEAR_GFX_DX12__)
-#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX12
-#endif
-//#define IM_PLATFORM_ENABLE_CUSTOM_SHADER
+//#if defined(__DEAR_GFX_OGL3__)
+//#define IM_GLFW3_AUTO_LINK
+//#define IM_CURRENT_TARGET IM_TARGET_WIN32_OPENGL3
+//#elif defined(__DEAR_GFX_DX9__)
+//#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX9
+//#elif defined(__DEAR_GFX_DX10__)
+//#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX10
+//#elif defined(__DEAR_GFX_DX11__)
+//#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX11
+//#elif defined(__DEAR_GFX_DX12__)
+//#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX12
+//#endif
 #define IM_PLATFORM_IMPLEMENTATION
 #include <ImPlatform.h>
+
+#include <dear_widgets.h>
+#include <imgui_internal.h>
 
 #include <vector>
 #include <random>
@@ -145,7 +145,7 @@ ImTextureID illlustration_img;
 ImVec2 illlustration_size;
 int main()
 {
-	if ( !ImPlatform::ImSimpleStart( "Dear Widgets Demo", ImVec2( 0.0f, 0.0f ), 1024 * 2, 764 * 2 ) )
+	if ( !ImPlatform::ImSimpleStart( "Dear Widgets Demo", ImVec2( 0.0f, 0.0f ), 1024, 764 * 2 ) )
 		return 1;
 
 	// Setup Dear ImGui context
@@ -174,6 +174,9 @@ int main()
 	{
 		return 0;
 	}
+
+	ImWidgets::ImWidgetsContext* ctx = ImWidgets::CreateContext();
+	ImWidgets::SetCurrentContext( ctx );
 
 	//ImGui::GetStyle().ScaleAllSizes();
 
@@ -235,6 +238,7 @@ int main()
 		ImPlatform::ImSimpleEnd( clear_color, false );
 	}
 
+	ImWidgets::DestroyContext( ctx );
 	ImPlatform::ImSimpleFinish();
 	ImPlatform::ImReleaseTexture2D( background );
 
@@ -243,19 +247,24 @@ int main()
 
 void ShowSampleOffscreen00()
 {
+	return;
+
 	ImGui::PushStyleVar( ImGuiStyleVar_WindowRounding, 8 );
 
 	ImGui::Begin( "Off Screen 00" );
 
-	ImDrawList* draw = ImGui::GetBackgroundDrawList();
+	ImDrawList* draw = ImGui::GetWindowDrawList();
 
 	ImVec2 cur = ImGui::GetCursorScreenPos();
 	ImVec2 size = ImGui::GetContentRegionAvail();
 
-	draw->AddImageRounded( illlustration_img,
-						   cur + ImVec2( 0.0f - 50.0f, 0.0f ),
-						   cur + ImVec2( 0.0f + 50.0f, 50.0f ),
-						   ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 255), 8);
+	//draw->AddImageRounded( illlustration_img,
+	//					   cur + ImVec2( 0.0f - 50.0f, 0.0f ),
+	//					   cur + ImVec2( 0.0f + 50.0f, 50.0f ),
+	//					   ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 255), 8);
+
+	ImWidgets::DrawMarker( draw, cur, size, IM_COL32_WHITE, IM_COL32_BLACK_TRANS, 0.0f, 1.0f, 10.0f, 0.5f, ImWidgets::ImWidgetsMarker_Disc, ImWidgets::ImWidgetsDrawType_Outline );
+	ImGui::Dummy( size );
 
 	ImGui::End();
 
@@ -274,7 +283,7 @@ namespace ImWidgets{
 		ImGui::Begin( "Dear Widgets", NULL, ImGuiWindowFlags_NoTitleBar );
 		ImWidgets::SetCurrentWindowBackgroundImage( background, background_size, false );
 
-		if ( ImGui::CollapsingHeader( "Draw" ) )
+		if ( ImGui::CollapsingHeader( "Draw", ImGuiTreeNodeFlags_DefaultOpen ) )
 		{
 			ImGui::Indent();
 			if ( ImGui::CollapsingHeader( "Draw Shape" ) )
@@ -337,6 +346,81 @@ namespace ImWidgets{
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
 				ImGui::Text( "Vtx: %d", shape.vertices.size() );
 			}
+#ifdef IM_SUPPORT_CUSTOM_SHADER
+			if ( ImGui::CollapsingHeader( "Custom Shader", ImGuiTreeNodeFlags_DefaultOpen ) )
+			{
+				float const size = ImGui::GetContentRegionAvail().x;
+
+				static float shape_size = 1.0f;
+				static float line_width = 5.0f / size;
+				static float angle = 0.0f;
+				static float antialiasing = 1.0f / size;
+
+				ImVec4 vBlue( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f ); // TODO: choose from style
+				ImVec4 vOrange( 255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f ); // TODO: choose from style
+				ImU32 uBlue = ImGui::GetColorU32( vBlue );
+				ImU32 uOrange = ImGui::GetColorU32( vOrange );
+				static ImVec4 fg_color_v( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
+				static ImVec4 bg_color_v( 255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f );
+				static ImU32 fg_color_col = ImGui::GetColorU32( fg_color_v );
+				static ImU32 bg_color_col = ImGui::GetColorU32( bg_color_v );
+				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+				if ( ImGui::ColorEdit4( "ColA##DrawShape", &fg_color_v.x ) )
+					fg_color_col = ImGui::GetColorU32( fg_color_v );
+				ImGui::SameLine();
+				if ( ImGui::ColorEdit4( "ColB##DrawShape", &bg_color_v.x ) )
+					bg_color_col = ImGui::GetColorU32( bg_color_v );
+				ImGui::DragFloat( "shape_size", &shape_size, 0.25f, 0.0f, size );
+				ImGui::DragFloat( "line_width", &line_width, 0.0125f, 0.0f, 0.1f );
+				ImGui::DragFloat( "antialiasing", &antialiasing, 0.0125f, 0.0f, 16.0f );
+				ImGui::SliderAngle( "angle", &angle );
+
+				static int marker_idx = ( int )ImWidgetsMarker_Pin;
+				char const* markers[] = {
+					"Disc", "Square", "Triangle", "Diamond", "Heart",
+					"Spade", "Club", "Chevron", "Clover", "Ring",
+					"Tag", "Cross", "Asterisk", "Infinity", "Pin",
+					"Arrow", "Ellipse", "EllipseApprox"
+				};
+				ImGui::Combo( "Marker", &marker_idx, markers, ImWidgetsMarker_COUNT );
+
+				static int draw_type_idx = ( int )ImWidgetsDrawType_Outline;
+				char const* draw_types[] = {
+					"Filled", "Stroke", "Outline", "Signed Distance Field", "Cut Off"
+				};
+				ImGui::Combo( "Draw Type", &draw_type_idx, draw_types, ImWidgetsDrawType_COUNT );
+
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+				ImGui::Dummy( ImVec2( size, size ) );
+				DrawMarker( pDrawList, pos, ImVec2( size, size ),
+							fg_color_col,
+							bg_color_col,
+							angle,
+							shape_size,
+							line_width,
+							antialiasing,
+							( ImWidgetsMarker )marker_idx,
+							( ImWidgetsDrawType )draw_type_idx );
+			}
+			if ( ImGui::CollapsingHeader( "Thick line" ) )
+			{
+				float const size = ImGui::GetContentRegionAvail().x;
+				ImGui::Dummy( ImVec2( size, 0.25f * size ) );
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+
+				ImShape line;
+				//GenThickLine( line, pos + ImVec2( size * 0.5f, 0.0f ), pos + ImVec2( size * 0.5f, size ), 10.0f, CapType_Round, CapType_Square );
+				ShapeLinearSRGBLinearGradient( line,
+											   ImVec2( 0.0f, 0.0f ), ImVec2( 1.0f, 1.0f ),
+											   IM_COL32( 255, 0, 0, 255 ), IM_COL32( 255, 0, 0, 255 ) );
+				DrawShape( pDrawList, line );
+				ImGui::Dummy( ImVec2( size, size ) );
+				ImGui::Dummy( ImVec2( size, 0.25f * size ) );
+			}
+#endif
 			if ( ImGui::CollapsingHeader( "Linear Gradient" ) )
 			{
 				float const size = ImGui::GetContentRegionAvail().x;

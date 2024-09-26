@@ -193,7 +193,7 @@ namespace DearWidgets
 		[Configure(TargetAPI.D3D9)]
 		public virtual void ConfigureD3D9(Configuration conf, DearTarget target)
 		{
-			conf.Defines.Add("__DEAR_GFX_DX9__");
+            conf.Defines.Add("__DEAR_GFX_DX9__");
         }
 
 		[Configure(TargetAPI.D3D10)]
@@ -205,7 +205,7 @@ namespace DearWidgets
 		[Configure(TargetAPI.D3D11)]
 		public virtual void ConfigureD3D11(Configuration conf, DearTarget target)
 		{
-			conf.Defines.Add("__DEAR_GFX_DX11__");
+            conf.Defines.Add("__DEAR_GFX_DX11__");
         }
 
 		[Configure(TargetAPI.D3D12)]
