@@ -2731,7 +2731,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// ImWidgets Context
 	//////////////////////////////////////////////////////////////////////////
 	static ImWidgetsContext* gs_pContext = NULL;
-	static MarkerBuffer gs_markerParams;
+	//static MarkerBuffer gs_markerParams;
 	ImWidgetsContext* CreateContext()
 	{
 		ImWidgetsContext* ctx = IM_NEW( ImWidgetsContext );
@@ -2792,15 +2792,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			"float	antialiasing;\n"
 			"float	draw_type;\n"
 			"float	pad0;\n";
-		gs_markerParams.fg_color = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
-		gs_markerParams.bg_color = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
-		gs_markerParams.rotation = ImVec2( ImCos( 0.0f ), ImSin( 0.0f ) );
-		gs_markerParams.linewidth = 0.5f;
-		gs_markerParams.size = 0.5f;
-		gs_markerParams.type = (float)ImWidgetsMarker_Disc;
-		gs_markerParams.antialiasing = 0.0f;
-		gs_markerParams.draw_type = 0.0f;
-		gs_markerParams.pad0 = 0.0f;
+		MarkerBuffer markerParams;
+		markerParams.fg_color = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+		markerParams.bg_color = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
+		markerParams.rotation = ImVec2( ImCos( 0.0f ), ImSin( 0.0f ) );
+		markerParams.linewidth = 0.5f;
+		markerParams.size = 0.5f;
+		markerParams.type = (float)ImWidgetsMarker_Disc;
+		markerParams.antialiasing = 0.0f;
+		markerParams.draw_type = 0.0f;
+		markerParams.pad0 = 0.0f;
 
 		std::string sHelpers =
 "#define PI 3.14159265358979323846264f\n\
@@ -3177,7 +3178,7 @@ else if ( draw_type == 4.0f )\n\
 	col_out = lerp(fg_color, bg_color, distance > 0.0f);\n\
 \n";
 
-		ctx->markerShader = ImPlatform::ImCreateShader( sSource.c_str(), sParam.c_str(), sHelpers.c_str(), sizeof( MarkerBuffer ), &gs_markerParams, false );
+		ctx->markerShader = ImPlatform::ImCreateShader( sSource.c_str(), sParam.c_str(), sHelpers.c_str(), sizeof( MarkerBuffer ), &markerParams, false );
 #endif
 
 		return ctx;
@@ -3995,16 +3996,20 @@ else if ( draw_type == 4.0f )\n\
 					 ImWidgetsMarker marker,
 					 ImWidgetsDrawType draw_type )
 	{
-		gs_markerParams.fg_color = ImGui::ColorConvertU32ToFloat4( fg_color );
-		gs_markerParams.bg_color = ImGui::ColorConvertU32ToFloat4( bg_color );
-		gs_markerParams.rotation = ImVec2( ImCos( rot_angle_rad ), ImSin( rot_angle_rad ) );
-		gs_markerParams.linewidth = linewidth;
-		gs_markerParams.size = shape_size;
-		gs_markerParams.type = ( float )marker;
-		gs_markerParams.antialiasing = antialiasing;
-		gs_markerParams.draw_type = ( float )draw_type;
-		gs_markerParams.pad0 = 0.0f;
-		ImPlatform::ImUpdateCustomShaderConstant( gs_pContext->markerShader, &gs_markerParams );
+		MarkerBuffer params;
+		params.fg_color = ImGui::ColorConvertU32ToFloat4( fg_color );
+		params.bg_color = ImGui::ColorConvertU32ToFloat4( bg_color );
+		params.rotation = ImVec2( ImCos( rot_angle_rad ), ImSin( rot_angle_rad ) );
+		params.linewidth = linewidth;
+		params.size = shape_size;
+		params.type = ( float )marker;
+		params.antialiasing = antialiasing;
+		params.draw_type = ( float )draw_type;
+		params.pad0 = 0.0f;
+		if ( memcmp( &params, gs_pContext->markerShader.cpu_data, sizeof( MarkerBuffer ) ) )
+		{
+			ImPlatform::ImUpdateCustomShaderConstant( gs_pContext->markerShader, &params );
+		}
 		ImPlatform::ImBeginCustomShader( pDrawList, gs_pContext->markerShader );
 		ImRect bb( start, start + size );
 		pDrawList->AddImageQuad( (ImTextureID)gs_pContext->whiteImg, bb.GetBL(), bb.GetBR(), bb.GetTR(), bb.GetTL(), ImVec2( 0, 0 ), ImVec2( 1, 0 ), ImVec2( 1, 1 ), ImVec2( 0, 1 ), IM_COL32( 255, 255, 255, 255 ) );
