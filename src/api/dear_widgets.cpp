@@ -68,7 +68,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	static float s_min_kelvin_temp = 1000.0f;
 	static float s_max_kelvin_temp = 12000.0f;
-	static float s_kelvin_temp_count = 111;
+	static int s_kelvin_temp_count = 111;
 	static float s_kelvin_sRGB_Colors_Red[] = {
 		255,
 		255,
@@ -2012,14 +2012,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	//////////////////////////////////////////////////////////////////////////
 	// Style
 	//////////////////////////////////////////////////////////////////////////
-	static Style s_Style;
+	static ImWidgetsStyle s_Style;
 
-	Style& GetStyle()
+	ImWidgetsStyle& GetStyle()
 	{
 		return s_Style;
 	}
 
-	void ImVectorUniqueEdge( int& size, ImVector<ImEdgeIdx>& edges )
+	void ImVectorUniqueEdge( int& size, ImVector<ImWidgetsEdgeIdx>& edges )
 	{
 		size = edges.size();
 		for ( int p = 0; p < size; ++p )
@@ -2046,12 +2046,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		//vector.resize( size );
 	}
 
-	int GetEdgeIndex( ImVector<ImEdgeIdx> const& edges, ImEdgeIdx e )
+	int GetEdgeIndex( ImVector<ImWidgetsEdgeIdx> const& edges, ImWidgetsEdgeIdx e )
 	{
 		int edge_count = edges.size();
 		for ( int k = 0; k < edge_count; ++k )
 		{
-			ImEdgeIdx const& cur = edges[ k ];
+			ImWidgetsEdgeIdx const& cur = edges[ k ];
 			if ( cur.a == e.a && cur.b == e.b )
 				return k;
 		}
@@ -2059,7 +2059,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return -1;
 	}
 
-	ImDrawIdx GetOtherIdx( ImDrawIdx a, ImDrawIdx b, ImTriIdx& tri )
+	ImDrawIdx GetOtherIdx( ImDrawIdx a, ImDrawIdx b, ImWidgetsTriIdx& tri )
 	{
 		if ( a == tri.a )
 		{
@@ -2098,7 +2098,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return ImDrawIdx( -1 );
 	}
 
-	void GetOtherIdxOrdered( ImDrawIdx& a, ImDrawIdx& b, ImTriIdx& tri, ImDrawIdx p )
+	void GetOtherIdxOrdered( ImDrawIdx& a, ImDrawIdx& b, ImWidgetsTriIdx& tri, ImDrawIdx p )
 	{
 		if ( p == tri.a )
 		{
@@ -2163,16 +2163,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	//////////////////////////////////////////////////////////////////////////
 #ifdef DEAR_WIDGETS_TESSELATION
 	#pragma optimize( "", off )
-	void	ShapeTesselationUniform( ImShape& shape )
+	void	ShapeTesselationUniform( ImWidgetsShape& shape )
 	{
 		int vtx_count = shape.vertices.size();
 		int tri_count = shape.triangles.size();
 
 		typedef std::pair<ImDrawIdx, ImDrawIdx> Edge;
-		std::map<Edge, ImVertex> edge_to_vrtx;
+		std::map<Edge, ImWidgetsVertex> edge_to_vrtx;
 		for ( int k = 0; k < tri_count; ++k )
 		{
-			ImTriIdx const& tri = shape.triangles[ k ];
+			ImWidgetsTriIdx const& tri = shape.triangles[ k ];
 
 			ImDrawIdx a = tri.a;
 			ImDrawIdx b = tri.b;
@@ -2239,10 +2239,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			++vidx;
 		}
 
-		ImVector<ImTriIdx> new_indices;
+		ImVector<ImWidgetsTriIdx> new_indices;
 		for ( int k = 0; k < tri_count; ++k )
 		{
-			ImTriIdx const& tri = shape.triangles[ k ];
+			ImWidgetsTriIdx const& tri = shape.triangles[ k ];
 
 			ImDrawIdx a = tri.a;
 			ImDrawIdx b = tri.b;
@@ -2363,7 +2363,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		int new_tri_count = new_indices.size();
 		for ( int k = 0; k < new_tri_count; ++k )
 		{
-			ImTriIdx& tri = new_indices[ k ];
+			ImWidgetsTriIdx& tri = new_indices[ k ];
 
 			ImDrawIdx a = tri.a;
 			ImDrawIdx b = tri.b;
@@ -2384,7 +2384,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 #endif
 
-	void	ShapeTranslate( ImShape& shape, ImVec2 t )
+	void	ShapeTranslate( ImWidgetsShape& shape, ImVec2 t )
 	{
 		int vtx_count = shape.vertices.size();
 		for ( int k = 0; k < vtx_count; ++k )
@@ -2395,7 +2395,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		shape.bb.Max += t;
 	}
 
-	void	ShapeSetDefaultUV( ImShape& shape )
+	void	ShapeSetDefaultUV( ImWidgetsShape& shape )
 	{
 		int vtx_count = shape.vertices.size();
 		for ( int k = 0; k < vtx_count; ++k )
@@ -2404,7 +2404,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 	}
 
-	void	ShapeSetDefaultUVCol( ImShape& shape )
+	void	ShapeSetDefaultUVCol( ImWidgetsShape& shape )
 	{
 		int vtx_count = shape.vertices.size();
 		for ( int k = 0; k < vtx_count; ++k )
@@ -2414,7 +2414,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 	}
 
-	void	ShapeSetDefaultBoundUV( ImShape& shape )
+	void	ShapeSetDefaultBoundUV( ImWidgetsShape& shape )
 	{
 		int vtx_count = shape.vertices.size();
 		for ( int k = 0; k < vtx_count; ++k )
@@ -2427,7 +2427,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 	}
 
-	void	ShapeSetDefaultBoundUVWhiteCol( ImShape& shape )
+	void	ShapeSetDefaultBoundUVWhiteCol( ImWidgetsShape& shape )
 	{
 		int vtx_count = shape.vertices.size();
 		for ( int k = 0; k < vtx_count; ++k )
@@ -2441,7 +2441,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 	}
 
-	void	ShapeSetDefaultWhiteCol( ImShape& shape )
+	void	ShapeSetDefaultWhiteCol( ImWidgetsShape& shape )
 	{
 		int vtx_count = shape.vertices.size();
 		for ( int k = 0; k < vtx_count; ++k )
@@ -2450,7 +2450,35 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 	}
 
-	void	GenShapeRect( ImShape& shape, ImRect const& r )
+	void	ShapeSetBound( ImWidgetsShape& shape )
+	{
+		shape.bb.Min = shape.vertices.front().pos;
+		shape.bb.Max = shape.vertices.front().pos;
+		int vtx_count = shape.vertices.size();
+		for ( int k = 1; k < vtx_count; ++k )
+		{
+			shape.bb.Min.x = ImMin( shape.bb.Min.x, shape.vertices[ k ].pos.x );
+			shape.bb.Min.y = ImMin( shape.bb.Min.y, shape.vertices[ k ].pos.y );
+			shape.bb.Max.x = ImMin( shape.bb.Max.x, shape.vertices[ k ].pos.x );
+			shape.bb.Max.y = ImMin( shape.bb.Max.y, shape.vertices[ k ].pos.y );
+		}
+	}
+
+	void	ShapeLineSetBound( ImWidgetsShapeLine& shape )
+	{
+		shape.bb.Min = shape.vertices.front().pos;
+		shape.bb.Max = shape.vertices.front().pos;
+		int vtx_count = shape.vertices.size();
+		for ( int k = 1; k < vtx_count; ++k )
+		{
+			shape.bb.Min.x = ImMin( shape.bb.Min.x, shape.vertices[ k ].pos.x );
+			shape.bb.Min.y = ImMin( shape.bb.Min.y, shape.vertices[ k ].pos.y );
+			shape.bb.Max.x = ImMin( shape.bb.Max.x, shape.vertices[ k ].pos.x );
+			shape.bb.Max.y = ImMin( shape.bb.Max.y, shape.vertices[ k ].pos.y );
+		}
+	}
+
+	void	GenShapeRect( ImWidgetsShape& shape, ImRect const& r )
 	{
 		shape.vertices.clear();
 		shape.triangles.clear();
@@ -2470,7 +2498,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		shape.triangles[ 1 ].c = 2;
 	}
 
-	void	GenShapeCircle( ImShape& shape, ImVec2 center, float radius, int side_count )
+	void	GenShapeCircle( ImWidgetsShape& shape, ImVec2 center, float radius, int side_count )
 	{
 		shape.vertices.clear();
 		shape.triangles.clear();
@@ -2493,7 +2521,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		shape.bb.Min = center - ImVec2( radius, radius );
 		shape.bb.Max = center + ImVec2( radius, radius );
 	}
-	void	GenShapeCircleArc( ImShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count )
+	void	GenShapeCircleArc( ImWidgetsShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count )
 	{
 		shape.vertices.clear();
 		shape.triangles.clear();
@@ -2526,20 +2554,20 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			shape.triangles[ k ].c = k + 2;
 		}
 	}
-	void	GenShapeRegularNGon( ImShape& shape, ImVec2 center, float radius, int side_count )
+	void	GenShapeRegularNGon( ImWidgetsShape& shape, ImVec2 center, float radius, int side_count )
 	{
 		GenShapeCircle( shape, center, radius, side_count );
 	}
 
 	// TODO
-	//void	GenShapeFromBezierCubicCurve( ImShape& sshape, ImVector<ImVec2>& path, float thickness, int num_segments )
+	//void	GenShapeFromBezierCubicCurve( ImWidgetsShape& sshape, ImVector<ImVec2>& path, float thickness, int num_segments )
 	//{
 	//}
-	//void	GenShapeFromBezierQuadraticCurve( ImShape& sshape, ImVector<ImVec2>& path, float thickness, int num_segments )
+	//void	GenShapeFromBezierQuadraticCurve( ImWidgetsShape& sshape, ImVector<ImVec2>& path, float thickness, int num_segments )
 	//{
 	//}
 
-	void	ShapeLinearGradientGeneric( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space )
+	void	ShapeLinearGradientGeneric( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space )
 	{
 		ImVec2 delta = uv_end - uv_start;
 		ImVec2 d = ImNormalized( delta );
@@ -2568,7 +2596,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			shape.vertices[ k ].col = ImGui::GetColorU32( vtxCol );
 		}
 	}
-	void	ShapeRadialGradientGeneric( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space )
+	void	ShapeRadialGradientGeneric( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space )
 	{
 		ImVec2 delta = uv_end - uv_start;
 		float l = 1.0f / ImLength( delta );
@@ -2596,7 +2624,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 	}
 	// Just L1-Norm
-	void	ShapeDiamondGradientGeneric( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space )
+	void	ShapeDiamondGradientGeneric( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space )
 	{
 		ImVec2 delta = uv_end - uv_start;
 		float l = 1.0f / ImLengthL1( delta );
@@ -2624,7 +2652,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 	}
 
-	void	ShapeSRGBLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	void	ShapeSRGBLinearGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
 		//ImVec2 delta = uv_end - uv_start;
 		//ImVec2 d = ImNormalized( delta );
@@ -2642,7 +2670,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		//}
 		ShapeLinearGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertsRGBtosRGB, &ColorConvertsRGBtosRGB );
 	}
-	void	ShapeSRGBRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	void	ShapeSRGBRadialGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
 		//ImVec2 delta = uv_end - uv_start;
 		//float l = 1.0f / ImLength( delta );
@@ -2659,7 +2687,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ShapeRadialGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertsRGBtosRGB, &ColorConvertsRGBtosRGB );
 	}
 	// Just L1-Norm
-	void	ShapeSRGBDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	void	ShapeSRGBDiamondGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
 		//ImVec2 delta = uv_end - uv_start;
 		//float l = 1.0f / ImLengthL1( delta );
@@ -2675,54 +2703,54 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		//}
 		ShapeDiamondGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertsRGBtosRGB, &ColorConvertsRGBtosRGB );
 	}
-	void	ShapeOkLabLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	void	ShapeOkLabLinearGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
 		ShapeLinearGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertOKLABtoRGB, &ColorConvertRGBtoOKLAB );
 	}
-	void	ShapeOkLabRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	void	ShapeOkLabRadialGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
 		ShapeRadialGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertOKLABtoRGB, &ColorConvertRGBtoOKLAB );
 	}
-	void	ShapeOkLabDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	void	ShapeOkLabDiamondGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
 		ShapeDiamondGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertOKLABtoRGB, &ColorConvertRGBtoOKLAB );
 	}
 
-	void	ShapeOkLchLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	void	ShapeOkLchLinearGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
 		ShapeLinearGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertOKLCHtosRGB, &ColorConvertsRGBtoOKLCH );
 	}
-	void	ShapeOkLchRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	void	ShapeOkLchRadialGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
 		ShapeRadialGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertOKLCHtosRGB, &ColorConvertsRGBtoOKLCH );
 	}
-	void	ShapeOkLchDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	void	ShapeOkLchDiamondGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
 		ShapeDiamondGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertOKLCHtosRGB, &ColorConvertsRGBtoOKLCH );
 	}
 
-	void	ShapeLinearSRGBLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	void	ShapeLinearSRGBLinearGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
 		ShapeLinearGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertLineartoRGB, &ColorConvertRGBtoLinear );
 	}
-	void	ShapeLinearSRGBRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	void	ShapeLinearSRGBRadialGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
 		ShapeRadialGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertLineartoRGB, &ColorConvertRGBtoLinear );
 	}
-	void	ShapeLinearSRGBDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	void	ShapeLinearSRGBDiamondGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
 		ShapeDiamondGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertLineartoRGB, &ColorConvertRGBtoLinear );
 	}
 
-	void	ShapeHSVLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	void	ShapeHSVLinearGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
 		ShapeLinearGradientGeneric( shape, uv_start, uv_end, col0, col1, &ImGui::ColorConvertHSVtoRGB, &ImGui::ColorConvertRGBtoHSV );
 	}
-	void	ShapeHSVRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	void	ShapeHSVRadialGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
 		ShapeRadialGradientGeneric( shape, uv_start, uv_end, col0, col1, &ImGui::ColorConvertHSVtoRGB, &ImGui::ColorConvertRGBtoHSV );
 	}
-	void	ShapeHSVDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	void	ShapeHSVDiamondGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
 		ShapeDiamondGradientGeneric( shape, uv_start, uv_end, col0, col1, &ImGui::ColorConvertHSVtoRGB, &ImGui::ColorConvertRGBtoHSV );
 	}
@@ -2731,10 +2759,433 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// ImWidgets Context
 	//////////////////////////////////////////////////////////////////////////
 	static ImWidgetsContext* gs_pContext = NULL;
+
+	void CreateMarkersShaders( ImWidgetsContext* ctx )
+	{
+		std::string sParam =
+			"float4	fg_color;\n"
+			"float4	bg_color;\n"
+			"float2	rotation;\n"
+			"float	linewidth;\n"
+			"float	size;\n"
+			"float	type;\n"
+			"float	antialiasing;\n"
+			"float	draw_type;\n"
+			"float	pad0;\n";
+		ImWidgetsMarkerBuffer markerParams;
+		markerParams.fg_color = ImVec4( 1.0f, 0.0f, 0.0f, 1.0f );
+		markerParams.bg_color = ImVec4( 0.0f, 1.0f, 0.0f, 1.0f );
+		markerParams.rotation = ImVec2( ImCos( 0.0f ), ImSin( 0.0f ) );
+		markerParams.linewidth = 0.5f;
+		markerParams.size = 0.5f;
+		markerParams.type = ( float )ImWidgetsMarker_Disc;
+		markerParams.antialiasing = 0.0f;
+		markerParams.draw_type = 0.0f;
+		markerParams.pad0 = 0.0f;
+
+		std::string sHelpers =
+	"#define PI 3.14159265358979323846264f\n\
+	#define SQRT_2 1.4142135623730951f\n\
+	\n\
+	// --- disc\n\
+	float disc( float2 P, float size )\n\
+	{\n\
+		return length( P ) - size * 0.5f;\n\
+	}\n\
+	\n\
+	// --- square\n\
+	float square( float2 P, float size )\n\
+	{\n\
+		return max( abs( P.x ), abs( P.y ) ) - size / ( 2.0f * SQRT_2 );\n\
+	}\n\
+	\n\
+	// --- triangle2\n\
+	float triangle2( float2 P, float size )\n\
+	{\n\
+		float x = SQRT_2 / 2.0f * ( P.x - P.y );\n\
+		float y = SQRT_2 / 2.0f * ( P.x + P.y );\n\
+		float r1 = max( abs( x ), abs( y ) ) - size / ( 2.0f * SQRT_2 );\n\
+		float r2 = P.y;\n\
+		return max( r1, r2 );\n\
+	}\n\
+	\n\
+	// --- diamond\n\
+	float diamond( float2 P, float size )\n\
+	{\n\
+		float x = SQRT_2 / 2.0f * ( P.x - P.y );\n\
+		float y = SQRT_2 / 2.0f * ( P.x + P.y );\n\
+		return max( abs( x ), abs( y ) ) - size / ( 2.0f * SQRT_2 );\n\
+	}\n\
+	\n\
+	// --- heart\n\
+	float heart( float2 P, float size )\n\
+	{\n\
+		float x = SQRT_2 / 2.0f * ( P.x - P.y );\n\
+		float y = SQRT_2 / 2.0f * ( P.x + P.y );\n\
+		float r1 = max( abs( x ), abs( y ) ) - size / 3.5f;\n\
+		float r2 = length( P - SQRT_2 / 2.0f * float2( +1.0f, -1.0f ) * size / 3.5f ) - size / 3.5f;\n\
+		float r3 = length( P - SQRT_2 / 2.0f * float2( -1.0f, -1.0f ) * size / 3.5f ) - size / 3.5f;\n\
+		return min( min( r1, r2 ), r3 );\n\
+	}\n\
+	\n\
+	// --- spade\n\
+	float spade( float2 P, float size )\n\
+	{\n\
+		// Reversed heart (diamond + 2 circles)\n\
+		float s = size * 0.85f / 3.5f;\n\
+		float x = SQRT_2 / 2.0f * ( P.x + P.y ) + 0.4f * s;\n\
+		float y = SQRT_2 / 2.0f * ( P.x - P.y ) - 0.4f * s;\n\
+		float r1 = max( abs( x ), abs( y ) ) - s;\n\
+		float r2 = length( P - SQRT_2 / 2.0f * float2( +1.0f, +0.2f ) * s ) - s;\n\
+		float r3 = length( P - SQRT_2 / 2.0f * float2( -1.0f, +0.2f ) * s ) - s;\n\
+		float r4 = min( min( r1, r2 ), r3 );\n\
+	\n\
+		// Root (2 circles and 2 planes)\n\
+		float2 c1 = float2( +0.65f, 0.125f );\n\
+		float2 c2 = float2( -0.65f, 0.125f );\n\
+		float r5 = length( P - c1 * size ) - size / 1.6f;\n\
+		float r6 = length( P - c2 * size ) - size / 1.6f;\n\
+		float r7 = P.y - 0.5f * size;\n\
+		float r8 = 0.1f * size - P.y;\n\
+		float r9 = max( -min( r5, r6 ), max( r7, r8 ) );\n\
+	\n\
+		return min( r4, r9 );\n\
+	}\n\
+	\n\
+	// --- club\n\
+	float club( float2 P, float size )\n\
+	{\n\
+		// clover (3 discs)\n\
+		float t1 = -PI / 2.0f;\n\
+		float2  c1 = 0.225f * float2( cos( t1 ), sin( t1 ) );\n\
+		float t2 = t1 + 2.0f * PI / 3.0;\n\
+		float2  c2 = 0.225f * float2( cos( t2 ), sin( t2 ) );\n\
+		float t3 = t2 + 2.0f * PI / 3.0;\n\
+		float2  c3 = 0.225f * float2( cos( t3 ), sin( t3 ) );\n\
+		float r1 = length( P - c1 * size ) - size / 4.25f;\n\
+		float r2 = length( P - c2 * size ) - size / 4.25f;\n\
+		float r3 = length( P - c3 * size ) - size / 4.25f;\n\
+		float r4 = min( min( r1, r2 ), r3 );\n\
+	\n\
+		// Root (2 circles and 2 planes)\n\
+		float2 c4 = float2( +0.65f, 0.125f );\n\
+		float2 c5 = float2( -0.65f, 0.125f );\n\
+		float r5 = length( P - c4 * size ) - size / 1.6f;\n\
+		float r6 = length( P - c5 * size ) - size / 1.6f;\n\
+		float r7 = P.y - 0.5f * size;\n\
+		float r8 = 0.2f * size - P.y;\n\
+		float r9 = max( -min( r5, r6 ), max( r7, r8 ) );\n\
+	\n\
+		return min( r4, r9 );\n\
+	}\n\
+	\n\
+	// --- chevron\n\
+	float chevron( float2 P, float size )\n\
+	{\n\
+		float x = 1.0f / SQRT_2 * ( P.x - P.y );\n\
+		float y = 1.0f / SQRT_2 * ( P.x + P.y );\n\
+		float r1 = max( abs( x ), abs( y ) ) - size / 3.0f;\n\
+		float r2 = max( abs( x - size / 3 ), abs( y - size / 3.0f ) ) - size / 3.0f;\n\
+		return max( r1, -r2 );\n\
+	}\n\
+	\n\
+	// --- clover\n\
+	float clover( float2 P, float size )\n\
+	{\n\
+		float t1 = -PI / 2.0f; \n\
+		float2  c1 = 0.25f * float2( cos( t1 ), sin( t1 ) );\n\
+		float t2 = t1 + 2.0f * PI / 3.0f;\n\
+		float2  c2 = 0.25f * float2( cos( t2 ), sin( t2 ) );\n\
+		float t3 = t2 + 2.0f * PI / 3.0f;\n\
+		float2  c3 = 0.25f * float2( cos( t3 ), sin( t3 ) );\n\
+	\n\
+		float r1 = length( P - c1 * size ) - size / 3.5f;\n\
+		float r2 = length( P - c2 * size ) - size / 3.5f;\n\
+		float r3 = length( P - c3 * size ) - size / 3.5f;\n\
+		return min( min( r1, r2 ), r3 );\n\
+	}\n\
+	\n\
+	// --- ring\n\
+	float ring( float2 P, float size )\n\
+	{\n\
+		float r1 = length( P ) - size / 2.0f;\n\
+		float r2 = length( P ) - size / 4.0f;\n\
+		return max( r1, -r2 );\n\
+	}\n\
+	\n\
+	// --- tag\n\
+	float tag( float2 P, float size )\n\
+	{\n\
+		float r1 = max( abs( P.x ) - size / 2.0f, abs( P.y ) - size / 6.0f );\n\
+		float r2 = abs( P.x - size / 1.5f ) + abs( P.y ) - size;\n\
+		return max( r1, .75f * r2 );\n\
+	}\n\
+	\n\
+	// --- cross\n\
+	float cross( float2 P, float size )\n\
+	{\n\
+		float x = SQRT_2 / 2.0f * ( P.x - P.y );\n\
+		float y = SQRT_2 / 2.0f * ( P.x + P.y );\n\
+		float r1 = max( abs( x - size / 3.0f ), abs( x + size / 3.0f ) );\n\
+		float r2 = max( abs( y - size / 3.0f ), abs( y + size / 3.0f ) );\n\
+		float r3 = max( abs( x ), abs( y ) );\n\
+		float r = max( min( r1, r2 ), r3 );\n\
+		r -= size / 2.0f;\n\
+		return r;\n\
+	}\n\
+	\n\
+	// --- asterisk\n\
+	float asterisk( float2 P, float size )\n\
+	{\n\
+		float x = SQRT_2 / 2.0f * ( P.x - P.y );\n\
+		float y = SQRT_2 / 2.0f * ( P.x + P.y );\n\
+		float r1 = max( abs( x ) - size / 2.0f, abs( y ) - size / 10.0f );\n\
+		float r2 = max( abs( y ) - size / 2.0f, abs( x ) - size / 10.0f );\n\
+		float r3 = max( abs( P.x ) - size / 2.0f, abs( P.y ) - size / 10.0f );\n\
+		float r4 = max( abs( P.y ) - size / 2.0f, abs( P.x ) - size / 10.0f );\n\
+		return min( min( r1, r2 ), min( r3, r4 ) );\n\
+	}\n\
+	\n\
+	// --- infinity\n\
+	float infinity( float2 P, float size )\n\
+	{\n\
+		float2 c1 = float2( +0.2125f, 0.00f );\n\
+		float2 c2 = float2( -0.2125f, 0.00f );\n\
+		float r1 = length( P - c1 * size ) - size / 3.5f;\n\
+		float r2 = length( P - c1 * size ) - size / 7.5f;\n\
+		float r3 = length( P - c2 * size ) - size / 3.5f;\n\
+		float r4 = length( P - c2 * size ) - size / 7.5f;\n\
+		return min( max( r1, -r2 ), max( r3, -r4 ) );\n\
+	}\n\
+	\n\
+	// --- pin\n\
+	float pin( float2 P, float size )\n\
+	{\n\
+		float2 c1 = float2( 0.0f, -0.15f ) * size;\n\
+		float r1 = length( P - c1 ) - size / 2.675f;\n\
+		float2 c2 = float2( +1.49f, -0.80f ) * size;\n\
+		float r2 = length( P - c2 ) - 2.0f * size;\n\
+		float2 c3 = float2( -1.49f, -0.80f ) * size;\n\
+		float r3 = length( P - c3 ) - 2.0f * size;\n\
+		float r4 = length( P - c1 ) - size / 5.0f;\n\
+		return max( min( r1, max( max( r2, r3 ), -P.y ) ), -r4 );\n\
+	}\n\
+	\n\
+	// --- arrow\n\
+	float arrow( float2 P, float size )\n\
+	{\n\
+		float r1 = abs( P.x ) + abs( P.y ) - size / 2.0f;\n\
+		float r2 = max( abs( P.x + size / 2.0f ), abs( P.y ) ) - size / 2.0f;\n\
+		float r3 = max( abs( P.x - size / 6.0f ) - size / 4.0f, abs( P.y ) - size / 4.0f );\n\
+		return min( r3, max( .75f * r1, r2 ) );\n\
+	}\n\
+	\n\
+	// --- ellipse\n\
+	// Created by Inigo Quilez - iq/2013\n\
+	// License Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License.\n\
+	float ellipse( float2 P, float size )\n\
+	{\n\
+		float2 ab = float2( size / 3.0f, size / 2.0f );\n\
+		float2 p = abs( P );\n\
+		if ( p.x > p.y )\n\
+		{\n\
+			p = p.yx;\n\
+			ab = ab.yx;\n\
+		}\n\
+		float l = ab.y * ab.y - ab.x * ab.x;\n\
+		float m = ab.x * p.x / l;\n\
+		float n = ab.y * p.y / l;\n\
+		float m2 = m * m;\n\
+		float n2 = n * n;\n\
+	\n\
+		float c = ( m2 + n2 - 1.0f ) / 3.0f;\n\
+		float c3 = c * c * c;\n\
+	\n\
+		float q = c3 + m2 * n2 * 2.0f;\n\
+		float d = c3 + m2 * n2;\n\
+		float g = m + m * n2;\n\
+	\n\
+		float co;\n\
+	\n\
+		if ( d < 0.0f )\n\
+		{\n\
+			float p = acos( q / c3 ) / 3.0f;\n\
+			float s = cos( p );\n\
+			float t = sin( p ) * sqrt( 3.0f );\n\
+			float rx = sqrt( -c * ( s + t + 2.0f ) + m2 );\n\
+			float ry = sqrt( -c * ( s - t + 2.0f ) + m2 );\n\
+			co = ( ry + sign( l ) * rx + abs( g ) / ( rx * ry ) - m ) / 2.0f;\n\
+		}\n\
+		else\n\
+		{\n\
+			float h = 2.0f * m * n * sqrt( d );\n\
+			float s = sign( q + h ) * pow( abs( q + h ), 1.0f / 3.0f );\n\
+			float u = sign( q - h ) * pow( abs( q - h ), 1.0f / 3.0f );\n\
+			float rx = -s - u - c * 4.0f + 2.0f * m2;\n\
+			float ry = ( s - u ) * sqrt( 3.0f );\n\
+			float rm = sqrt( rx * rx + ry * ry );\n\
+			float p = ry / sqrt( rm - rx );\n\
+			co = ( p + 2.0f * g / rm - m ) / 2.0f;\n\
+		}\n\
+	\n\
+		float si = sqrt( 1.0f - co * co );\n\
+		float2 closestPoint = float2( ab.x * co, ab.y * si );\n\
+		return length( closestPoint - p ) * sign( p.y - closestPoint.y );\n\
+	}\n\
+	\n\
+	float ellipse_fast( float2 P, float size )\n\
+	{\n\
+		float a = 1.0f;\n\
+		float b = 3.0f;\n\
+		float r = 0.9f;\n\
+		float f = length( P*float2(a,b) );\n\
+		f = length( P*float2(a,b) );\n\
+		f = f*(f-r)/length( P*float2(a*a,b*b) );\n\
+		return f;\n\
+	}\n\
+	\n\
+	float4 stroke(float distance, float linewidth, float antialias, float4 stroke)\n\
+	{\n\
+		float4 frag_color;\n\
+		float t = linewidth / 2.0f - antialias;\n\
+		float signed_distance = distance;\n\
+		float border_distance = abs( signed_distance ) - t;\n\
+		float alpha = border_distance / antialias;\n\
+		alpha = exp( -alpha * alpha );\n\
+	\n\
+		if ( border_distance < 0.0f )\n\
+			frag_color = stroke;\n\
+		else\n\
+			frag_color = float4( stroke.rgb, stroke.a * alpha );\n\
+	\n\
+		return frag_color;\n\
+	}\n\
+	\n\
+	float4 filled(float distance, float linewidth, float antialias, float4 fill)\n\
+	{\n\
+		float4 frag_color;\n\
+		float t = linewidth / 2.0f - antialias;\n\
+		float signed_distance = distance;\n\
+		float border_distance = abs( signed_distance ) - t;\n\
+		float alpha = border_distance / antialias;\n\
+		alpha = exp( -alpha * alpha );\n\
+	\n\
+		if ( border_distance < 0.0f )\n\
+			frag_color = fill;\n\
+		else if ( signed_distance < 0.0f )\n\
+			frag_color = fill;\n\
+		else\n\
+			frag_color = float4( fill.rgb, alpha * fill.a );\n\
+	\n\
+		return frag_color;\n\
+	}\n\
+	\n\
+	float4 outline( float distance, float linewidth, float antialias, float4 stroke, float4 fill )\n\
+	{\n\
+		float4 frag_color;\n\
+		float t = linewidth / 2.0f - antialias;\n\
+		float signed_distance = distance;\n\
+		float border_distance = abs( signed_distance ) - t;\n\
+		float alpha = border_distance / antialias;\n\
+		alpha = exp( -alpha * alpha );\n\
+	\n\
+		if ( border_distance < 0.0f )\n\
+			frag_color = stroke;\n\
+		else if ( signed_distance < 0.0f )\n\
+			frag_color = lerp( fill, stroke, sqrt( alpha ) );\n\
+		else\n\
+			frag_color = float4( stroke.rgb, stroke.a * alpha );\n\
+	\n\
+		return frag_color;\n\
+	}\n";
+
+		std::string sSource =
+			"\n\
+	float2 P = uv - 0.5f;\n\
+	P.y = -P.y;\n\
+	P = float2( rotation.x * P.x - rotation.y * P.y,\n\
+	rotation.y * P.x + rotation.x * P.y );\n\
+	\n\
+	float antialias = antialiasing;\n\
+	float point_size = SQRT_2 * size + 2.0f * ( linewidth + 1.5f * antialias );\n\
+	float distance;\n\
+	if ( type == 0.0f ) // Disc\n\
+		distance = disc( P * point_size, size );\n\
+	else if ( type == 1.0f ) // Square\n\
+		distance = square( P * point_size, size );\n\
+	else if (type ==  2.0f) // Triangle\n\
+		distance = triangle2( P * point_size, size );\n\
+	else if (type ==  3.0f) // Diamond\n\
+		distance = diamond( P * point_size, size );\n\
+	else if (type ==  4.0f) // Heart\n\
+		distance = heart( P * point_size, size );\n\
+	else if (type ==  5.0f) // Spade\n\
+		distance = spade( P * point_size, size );\n\
+	else if (type ==  6.0f) // Club\n\
+		distance = club( P * point_size, size );\n\
+	else if (type ==  7.0f) // Chevron\n\
+		distance = chevron( P * point_size, size );\n\
+	else if (type ==  8.0f) // Clover\n\
+		distance = clover( P * point_size, size );\n\
+	else if (type ==  9.0f) // Ring\n\
+		distance = ring( P * point_size, size );\n\
+	else if (type == 10.0f) // Tag\n\
+		distance = tag( P * point_size, size );\n\
+	else if (type == 11.0f) // Cross\n\
+		distance = cross( P * point_size, size );\n\
+	else if (type == 12.0f) // Asterisk\n\
+		distance = asterisk( P * point_size, size );\n\
+	else if (type == 13.0f) // Infinity\n\
+		distance = infinity( P * point_size, size );\n\
+	else if (type == 14.0f) // Pin\n\
+		distance = pin( P * point_size, size );\n\
+	else if (type == 15.0f) // Arrow\n\
+		distance = arrow( P * point_size, size );\n\
+	else if (type == 16.0f) // Ellipse\n\
+		distance = ellipse( P * point_size, size );\n\
+	else if (type == 17.0f) // EllipseApprox\n\
+		distance = ellipse_fast( P * point_size, size );\n\
+	\n\
+	if ( draw_type == 0.0f )\n\
+		col_out = filled( distance, linewidth, antialias, fg_color ); \n\
+	else if ( draw_type == 1.0f )\n\
+		col_out = stroke(distance, linewidth, antialias, fg_color);\n\
+	else if ( draw_type == 2.0f )\n\
+		col_out = outline( distance, linewidth, antialias, fg_color, bg_color );\n\
+	else if ( draw_type == 3.0f )\n\
+		col_out = float4( pow( abs( distance ), 1.0f / 2.2f ).xxx, 1.0f );\n\
+	else if ( draw_type == 4.0f )\n\
+		col_out = lerp(fg_color, bg_color, distance > 0.0f);\n\
+	\n";
+
+		ctx->markerShader = ImPlatform::CreateShader( sSource.c_str(), sParam.c_str(), sHelpers.c_str(), sizeof( ImWidgetsMarkerBuffer ), &markerParams, false );
+	}
+
 	//static MarkerBuffer gs_markerParams;
+	void SetFeatures( ImWidgetsFeatures features )
+	{
+		PlatformData.features = features;
+	}
+
+	void AddFeatures( ImWidgetsFeatures features )
+	{
+		PlatformData.features |= features;
+	}
+
+	void RemoveFeature( ImWidgetsFeatures features )
+	{
+		PlatformData.features &= ~features;
+	}
+
 	ImWidgetsContext* CreateContext()
 	{
 		ImWidgetsContext* ctx = IM_NEW( ImWidgetsContext );
+		if ( PlatformData.features & ImWidgetsFeatures_Markers ||
+			 PlatformData.features & ImWidgetsFeatures_ThickLines )
+			ImPlatform::SetFeatures( ImPlatformFeatures_CustomShader );
+
+		if ( gs_pContext == NULL )
+			gs_pContext = ctx;
 
 		int width;
 		int height;
@@ -2757,22 +3208,22 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				white_data[ channel * ( j * height + i ) + 3 ] = 0xFFu;
 			}
 		}
-		ImTextureID img_white = ImPlatform::ImCreateTexture2D( ( char* )white_data, width, height,
-															   {
-																  ImPlatform::IM_RGBA,
-																  ImPlatform::IM_TYPE_UINT8,
-																  ImPlatform::IM_FILTERING_LINEAR,
-																  ImPlatform::IM_BOUNDARY_CLAMP,
-																  ImPlatform::IM_BOUNDARY_CLAMP
-															   } );
-		ImTextureID img_black = ImPlatform::ImCreateTexture2D( ( char* )black_data, width, height,
-															   {
-																  ImPlatform::IM_RGBA,
-																  ImPlatform::IM_TYPE_UINT8,
-																  ImPlatform::IM_FILTERING_LINEAR,
-																  ImPlatform::IM_BOUNDARY_CLAMP,
-																  ImPlatform::IM_BOUNDARY_CLAMP
-															   } );
+		ImTextureID img_white = ImPlatform::CreateTexture2D( ( char* )white_data, width, height,
+															 {
+																ImPixelChannel_RGBA,
+																ImPixelType_UInt8,
+																ImTextureFiltering_Linear,
+																ImTextureBoundary_Clamp,
+																ImTextureBoundary_Clamp
+															 } );
+		ImTextureID img_black = ImPlatform::CreateTexture2D( ( char* )black_data, width, height,
+															 {
+																ImPixelChannel_RGBA,
+																ImPixelType_UInt8,
+																ImTextureFiltering_Linear,
+																ImTextureBoundary_Clamp,
+																ImTextureBoundary_Clamp
+															 } );
 
 		IM_FREE( black_data );
 		IM_FREE( white_data );
@@ -2780,406 +3231,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ctx->blackImg = img_black;
 		ctx->whiteImg = img_white;
 
-#ifdef IM_SUPPORT_CUSTOM_SHADER
-
-		std::string sParam =
-			"float4	fg_color;\n"
-			"float4	bg_color;\n"
-			"float2	rotation;\n"
-			"float	linewidth;\n"
-			"float	size;\n"
-			"float	type;\n"
-			"float	antialiasing;\n"
-			"float	draw_type;\n"
-			"float	pad0;\n";
-		MarkerBuffer markerParams;
-		markerParams.fg_color = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
-		markerParams.bg_color = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
-		markerParams.rotation = ImVec2( ImCos( 0.0f ), ImSin( 0.0f ) );
-		markerParams.linewidth = 0.5f;
-		markerParams.size = 0.5f;
-		markerParams.type = (float)ImWidgetsMarker_Disc;
-		markerParams.antialiasing = 0.0f;
-		markerParams.draw_type = 0.0f;
-		markerParams.pad0 = 0.0f;
-
-		std::string sHelpers =
-"#define PI 3.14159265358979323846264f\n\
-#define SQRT_2 1.4142135623730951f\n\
-\n\
-// --- disc\n\
-float disc( float2 P, float size )\n\
-{\n\
-	return length( P ) - size * 0.5f;\n\
-}\n\
-\n\
-// --- square\n\
-float square( float2 P, float size )\n\
-{\n\
-	return max( abs( P.x ), abs( P.y ) ) - size / ( 2.0f * SQRT_2 );\n\
-}\n\
-\n\
-// --- triangle2\n\
-float triangle2( float2 P, float size )\n\
-{\n\
-	float x = SQRT_2 / 2.0f * ( P.x - P.y );\n\
-	float y = SQRT_2 / 2.0f * ( P.x + P.y );\n\
-	float r1 = max( abs( x ), abs( y ) ) - size / ( 2.0f * SQRT_2 );\n\
-	float r2 = P.y;\n\
-	return max( r1, r2 );\n\
-}\n\
-\n\
-// --- diamond\n\
-float diamond( float2 P, float size )\n\
-{\n\
-	float x = SQRT_2 / 2.0f * ( P.x - P.y );\n\
-	float y = SQRT_2 / 2.0f * ( P.x + P.y );\n\
-	return max( abs( x ), abs( y ) ) - size / ( 2.0f * SQRT_2 );\n\
-}\n\
-\n\
-// --- heart\n\
-float heart( float2 P, float size )\n\
-{\n\
-	float x = SQRT_2 / 2.0f * ( P.x - P.y );\n\
-	float y = SQRT_2 / 2.0f * ( P.x + P.y );\n\
-	float r1 = max( abs( x ), abs( y ) ) - size / 3.5f;\n\
-	float r2 = length( P - SQRT_2 / 2.0f * float2( +1.0f, -1.0f ) * size / 3.5f ) - size / 3.5f;\n\
-	float r3 = length( P - SQRT_2 / 2.0f * float2( -1.0f, -1.0f ) * size / 3.5f ) - size / 3.5f;\n\
-	return min( min( r1, r2 ), r3 );\n\
-}\n\
-\n\
-// --- spade\n\
-float spade( float2 P, float size )\n\
-{\n\
-	// Reversed heart (diamond + 2 circles)\n\
-	float s = size * 0.85f / 3.5f;\n\
-	float x = SQRT_2 / 2.0f * ( P.x + P.y ) + 0.4f * s;\n\
-	float y = SQRT_2 / 2.0f * ( P.x - P.y ) - 0.4f * s;\n\
-	float r1 = max( abs( x ), abs( y ) ) - s;\n\
-	float r2 = length( P - SQRT_2 / 2.0f * float2( +1.0f, +0.2f ) * s ) - s;\n\
-	float r3 = length( P - SQRT_2 / 2.0f * float2( -1.0f, +0.2f ) * s ) - s;\n\
-	float r4 = min( min( r1, r2 ), r3 );\n\
-\n\
-	// Root (2 circles and 2 planes)\n\
-	float2 c1 = float2( +0.65f, 0.125f );\n\
-	float2 c2 = float2( -0.65f, 0.125f );\n\
-	float r5 = length( P - c1 * size ) - size / 1.6f;\n\
-	float r6 = length( P - c2 * size ) - size / 1.6f;\n\
-	float r7 = P.y - 0.5f * size;\n\
-	float r8 = 0.1f * size - P.y;\n\
-	float r9 = max( -min( r5, r6 ), max( r7, r8 ) );\n\
-\n\
-	return min( r4, r9 );\n\
-}\n\
-\n\
-// --- club\n\
-float club( float2 P, float size )\n\
-{\n\
-	// clover (3 discs)\n\
-	float t1 = -PI / 2.0f;\n\
-	float2  c1 = 0.225f * float2( cos( t1 ), sin( t1 ) );\n\
-	float t2 = t1 + 2.0f * PI / 3.0;\n\
-	float2  c2 = 0.225f * float2( cos( t2 ), sin( t2 ) );\n\
-	float t3 = t2 + 2.0f * PI / 3.0;\n\
-	float2  c3 = 0.225f * float2( cos( t3 ), sin( t3 ) );\n\
-	float r1 = length( P - c1 * size ) - size / 4.25f;\n\
-	float r2 = length( P - c2 * size ) - size / 4.25f;\n\
-	float r3 = length( P - c3 * size ) - size / 4.25f;\n\
-	float r4 = min( min( r1, r2 ), r3 );\n\
-\n\
-	// Root (2 circles and 2 planes)\n\
-	float2 c4 = float2( +0.65f, 0.125f );\n\
-	float2 c5 = float2( -0.65f, 0.125f );\n\
-	float r5 = length( P - c4 * size ) - size / 1.6f;\n\
-	float r6 = length( P - c5 * size ) - size / 1.6f;\n\
-	float r7 = P.y - 0.5f * size;\n\
-	float r8 = 0.2f * size - P.y;\n\
-	float r9 = max( -min( r5, r6 ), max( r7, r8 ) );\n\
-\n\
-	return min( r4, r9 );\n\
-}\n\
-\n\
-// --- chevron\n\
-float chevron( float2 P, float size )\n\
-{\n\
-	float x = 1.0f / SQRT_2 * ( P.x - P.y );\n\
-	float y = 1.0f / SQRT_2 * ( P.x + P.y );\n\
-	float r1 = max( abs( x ), abs( y ) ) - size / 3.0f;\n\
-	float r2 = max( abs( x - size / 3 ), abs( y - size / 3.0f ) ) - size / 3.0f;\n\
-	return max( r1, -r2 );\n\
-}\n\
-\n\
-// --- clover\n\
-float clover( float2 P, float size )\n\
-{\n\
-	float t1 = -PI / 2.0f; \n\
-	float2  c1 = 0.25f * float2( cos( t1 ), sin( t1 ) );\n\
-	float t2 = t1 + 2.0f * PI / 3.0f;\n\
-	float2  c2 = 0.25f * float2( cos( t2 ), sin( t2 ) );\n\
-	float t3 = t2 + 2.0f * PI / 3.0f;\n\
-	float2  c3 = 0.25f * float2( cos( t3 ), sin( t3 ) );\n\
-\n\
-	float r1 = length( P - c1 * size ) - size / 3.5f;\n\
-	float r2 = length( P - c2 * size ) - size / 3.5f;\n\
-	float r3 = length( P - c3 * size ) - size / 3.5f;\n\
-	return min( min( r1, r2 ), r3 );\n\
-}\n\
-\n\
-// --- ring\n\
-float ring( float2 P, float size )\n\
-{\n\
-	float r1 = length( P ) - size / 2.0f;\n\
-	float r2 = length( P ) - size / 4.0f;\n\
-	return max( r1, -r2 );\n\
-}\n\
-\n\
-// --- tag\n\
-float tag( float2 P, float size )\n\
-{\n\
-	float r1 = max( abs( P.x ) - size / 2.0f, abs( P.y ) - size / 6.0f );\n\
-	float r2 = abs( P.x - size / 1.5f ) + abs( P.y ) - size;\n\
-	return max( r1, .75f * r2 );\n\
-}\n\
-\n\
-// --- cross\n\
-float cross( float2 P, float size )\n\
-{\n\
-	float x = SQRT_2 / 2.0f * ( P.x - P.y );\n\
-	float y = SQRT_2 / 2.0f * ( P.x + P.y );\n\
-	float r1 = max( abs( x - size / 3.0f ), abs( x + size / 3.0f ) );\n\
-	float r2 = max( abs( y - size / 3.0f ), abs( y + size / 3.0f ) );\n\
-	float r3 = max( abs( x ), abs( y ) );\n\
-	float r = max( min( r1, r2 ), r3 );\n\
-	r -= size / 2.0f;\n\
-	return r;\n\
-}\n\
-\n\
-// --- asterisk\n\
-float asterisk( float2 P, float size )\n\
-{\n\
-	float x = SQRT_2 / 2.0f * ( P.x - P.y );\n\
-	float y = SQRT_2 / 2.0f * ( P.x + P.y );\n\
-	float r1 = max( abs( x ) - size / 2.0f, abs( y ) - size / 10.0f );\n\
-	float r2 = max( abs( y ) - size / 2.0f, abs( x ) - size / 10.0f );\n\
-	float r3 = max( abs( P.x ) - size / 2.0f, abs( P.y ) - size / 10.0f );\n\
-	float r4 = max( abs( P.y ) - size / 2.0f, abs( P.x ) - size / 10.0f );\n\
-	return min( min( r1, r2 ), min( r3, r4 ) );\n\
-}\n\
-\n\
-// --- infinity\n\
-float infinity( float2 P, float size )\n\
-{\n\
-	float2 c1 = float2( +0.2125f, 0.00f );\n\
-	float2 c2 = float2( -0.2125f, 0.00f );\n\
-	float r1 = length( P - c1 * size ) - size / 3.5f;\n\
-	float r2 = length( P - c1 * size ) - size / 7.5f;\n\
-	float r3 = length( P - c2 * size ) - size / 3.5f;\n\
-	float r4 = length( P - c2 * size ) - size / 7.5f;\n\
-	return min( max( r1, -r2 ), max( r3, -r4 ) );\n\
-}\n\
-\n\
-// --- pin\n\
-float pin( float2 P, float size )\n\
-{\n\
-	float2 c1 = float2( 0.0f, -0.15f ) * size;\n\
-	float r1 = length( P - c1 ) - size / 2.675f;\n\
-	float2 c2 = float2( +1.49f, -0.80f ) * size;\n\
-	float r2 = length( P - c2 ) - 2.0f * size;\n\
-	float2 c3 = float2( -1.49f, -0.80f ) * size;\n\
-	float r3 = length( P - c3 ) - 2.0f * size;\n\
-	float r4 = length( P - c1 ) - size / 5.0f;\n\
-	return max( min( r1, max( max( r2, r3 ), -P.y ) ), -r4 );\n\
-}\n\
-\n\
-// --- arrow\n\
-float arrow( float2 P, float size )\n\
-{\n\
-	float r1 = abs( P.x ) + abs( P.y ) - size / 2.0f;\n\
-	float r2 = max( abs( P.x + size / 2.0f ), abs( P.y ) ) - size / 2.0f;\n\
-	float r3 = max( abs( P.x - size / 6.0f ) - size / 4.0f, abs( P.y ) - size / 4.0f );\n\
-	return min( r3, max( .75f * r1, r2 ) );\n\
-}\n\
-\n\
-// --- ellipse\n\
-// Created by Inigo Quilez - iq/2013\n\
-// License Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License.\n\
-float ellipse( float2 P, float size )\n\
-{\n\
-	float2 ab = float2( size / 3.0f, size / 2.0f );\n\
-	float2 p = abs( P );\n\
-	if ( p.x > p.y )\n\
-	{\n\
-		p = p.yx;\n\
-		ab = ab.yx;\n\
-	}\n\
-	float l = ab.y * ab.y - ab.x * ab.x;\n\
-	float m = ab.x * p.x / l;\n\
-	float n = ab.y * p.y / l;\n\
-	float m2 = m * m;\n\
-	float n2 = n * n;\n\
-\n\
-	float c = ( m2 + n2 - 1.0f ) / 3.0f;\n\
-	float c3 = c * c * c;\n\
-\n\
-	float q = c3 + m2 * n2 * 2.0f;\n\
-	float d = c3 + m2 * n2;\n\
-	float g = m + m * n2;\n\
-\n\
-	float co;\n\
-\n\
-	if ( d < 0.0f )\n\
-	{\n\
-		float p = acos( q / c3 ) / 3.0f;\n\
-		float s = cos( p );\n\
-		float t = sin( p ) * sqrt( 3.0f );\n\
-		float rx = sqrt( -c * ( s + t + 2.0f ) + m2 );\n\
-		float ry = sqrt( -c * ( s - t + 2.0f ) + m2 );\n\
-		co = ( ry + sign( l ) * rx + abs( g ) / ( rx * ry ) - m ) / 2.0f;\n\
-	}\n\
-	else\n\
-	{\n\
-		float h = 2.0f * m * n * sqrt( d );\n\
-		float s = sign( q + h ) * pow( abs( q + h ), 1.0f / 3.0f );\n\
-		float u = sign( q - h ) * pow( abs( q - h ), 1.0f / 3.0f );\n\
-		float rx = -s - u - c * 4.0f + 2.0f * m2;\n\
-		float ry = ( s - u ) * sqrt( 3.0f );\n\
-		float rm = sqrt( rx * rx + ry * ry );\n\
-		float p = ry / sqrt( rm - rx );\n\
-		co = ( p + 2.0f * g / rm - m ) / 2.0f;\n\
-	}\n\
-\n\
-	float si = sqrt( 1.0f - co * co );\n\
-	float2 closestPoint = float2( ab.x * co, ab.y * si );\n\
-	return length( closestPoint - p ) * sign( p.y - closestPoint.y );\n\
-}\n\
-\n\
-float ellipse_fast( float2 P, float size )\n\
-{\n\
-	float a = 1.0f;\n\
-	float b = 3.0f;\n\
-	float r = 0.9f;\n\
-	float f = length( P*float2(a,b) );\n\
-	f = length( P*float2(a,b) );\n\
-	f = f*(f-r)/length( P*float2(a*a,b*b) );\n\
-	return f;\n\
-}\n\
-\n\
-float4 stroke(float distance, float linewidth, float antialias, float4 stroke)\n\
-{\n\
-	float4 frag_color;\n\
-	float t = linewidth / 2.0f - antialias;\n\
-	float signed_distance = distance;\n\
-	float border_distance = abs( signed_distance ) - t;\n\
-	float alpha = border_distance / antialias;\n\
-	alpha = exp( -alpha * alpha );\n\
-\n\
-	if ( border_distance < 0.0f )\n\
-		frag_color = stroke;\n\
-	else\n\
-		frag_color = float4( stroke.rgb, stroke.a * alpha );\n\
-\n\
-	return frag_color;\n\
-}\n\
-\n\
-float4 filled(float distance, float linewidth, float antialias, float4 fill)\n\
-{\n\
-	float4 frag_color;\n\
-	float t = linewidth / 2.0f - antialias;\n\
-	float signed_distance = distance;\n\
-	float border_distance = abs( signed_distance ) - t;\n\
-	float alpha = border_distance / antialias;\n\
-	alpha = exp( -alpha * alpha );\n\
-\n\
-	if ( border_distance < 0.0f )\n\
-		frag_color = fill;\n\
-	else if ( signed_distance < 0.0f )\n\
-		frag_color = fill;\n\
-	else\n\
-		frag_color = float4( fill.rgb, alpha * fill.a );\n\
-\n\
-	return frag_color;\n\
-}\n\
-\n\
-float4 outline( float distance, float linewidth, float antialias, float4 stroke, float4 fill )\n\
-{\n\
-	float4 frag_color;\n\
-	float t = linewidth / 2.0f - antialias;\n\
-	float signed_distance = distance;\n\
-	float border_distance = abs( signed_distance ) - t;\n\
-	float alpha = border_distance / antialias;\n\
-	alpha = exp( -alpha * alpha );\n\
-\n\
-	if ( border_distance < 0.0f )\n\
-		frag_color = stroke;\n\
-	else if ( signed_distance < 0.0f )\n\
-		frag_color = lerp( fill, stroke, sqrt( alpha ) );\n\
-	else\n\
-		frag_color = float4( stroke.rgb, stroke.a * alpha );\n\
-\n\
-	return frag_color;\n\
-}\n";
-
-		std::string sSource =
-"\n\
-float2 P = uv - 0.5f;\n\
-P.y = -P.y;\n\
-P = float2( rotation.x * P.x - rotation.y * P.y,\n\
-rotation.y * P.x + rotation.x * P.y );\n\
-\n\
-float antialias = antialiasing;\n\
-float point_size = SQRT_2 * size + 2.0f * ( linewidth + 1.5f * antialias );\n\
-float distance;\n\
-if ( type == 0.0f ) // Disc\n\
-	distance = disc( P * point_size, size );\n\
-else if ( type == 1.0f ) // Square\n\
-	distance = square( P * point_size, size );\n\
-else if (type ==  2.0f) // Triangle\n\
-	distance = triangle2( P * point_size, size );\n\
-else if (type ==  3.0f) // Diamond\n\
-	distance = diamond( P * point_size, size );\n\
-else if (type ==  4.0f) // Heart\n\
-	distance = heart( P * point_size, size );\n\
-else if (type ==  5.0f) // Spade\n\
-	distance = spade( P * point_size, size );\n\
-else if (type ==  6.0f) // Club\n\
-	distance = club( P * point_size, size );\n\
-else if (type ==  7.0f) // Chevron\n\
-	distance = chevron( P * point_size, size );\n\
-else if (type ==  8.0f) // Clover\n\
-	distance = clover( P * point_size, size );\n\
-else if (type ==  9.0f) // Ring\n\
-	distance = ring( P * point_size, size );\n\
-else if (type == 10.0f) // Tag\n\
-	distance = tag( P * point_size, size );\n\
-else if (type == 11.0f) // Cross\n\
-	distance = cross( P * point_size, size );\n\
-else if (type == 12.0f) // Asterisk\n\
-	distance = asterisk( P * point_size, size );\n\
-else if (type == 13.0f) // Infinity\n\
-	distance = infinity( P * point_size, size );\n\
-else if (type == 14.0f) // Pin\n\
-	distance = pin( P * point_size, size );\n\
-else if (type == 15.0f) // Arrow\n\
-	distance = arrow( P * point_size, size );\n\
-else if (type == 16.0f) // Ellipse\n\
-	distance = ellipse( P * point_size, size );\n\
-else if (type == 17.0f) // EllipseApprox\n\
-	distance = ellipse_fast( P * point_size, size );\n\
-\n\
-if ( draw_type == 0.0f )\n\
-	col_out = filled( distance, linewidth, antialias, fg_color ); \n\
-else if ( draw_type == 1.0f )\n\
-	col_out = stroke(distance, linewidth, antialias, fg_color);\n\
-else if ( draw_type == 2.0f )\n\
-	col_out = outline( distance, linewidth, antialias, fg_color, bg_color );\n\
-else if ( draw_type == 3.0f )\n\
-	col_out = float4( pow( abs( distance ), 1.0f / 2.2f ).xxx, 1.0f );\n\
-else if ( draw_type == 4.0f )\n\
-	col_out = lerp(fg_color, bg_color, distance > 0.0f);\n\
-\n";
-
-		ctx->markerShader = ImPlatform::ImCreateShader( sSource.c_str(), sParam.c_str(), sHelpers.c_str(), sizeof( MarkerBuffer ), &markerParams, false );
-#endif
+		if ( PlatformData.features & ImWidgetsFeatures_Markers )
+			CreateMarkersShaders( ctx );
 
 		return ctx;
 	}
@@ -3200,7 +3253,7 @@ else if ( draw_type == 4.0f )\n\
 	//////////////////////////////////////////////////////////////////////////
 	// DrawList
 	//////////////////////////////////////////////////////////////////////////
-	void DrawShapeDebugEx( ImDrawList* pDrawList, ImTextureID tex, ImShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx )
+	void DrawShapeDebugEx( ImDrawList* pDrawList, ImTextureID tex, ImWidgetsShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx )
 	{
 		const bool push_texture_id = tex != pDrawList->_CmdHeader.TextureId;
 		if ( push_texture_id )
@@ -3215,9 +3268,9 @@ else if ( draw_type == 4.0f )\n\
 			ImDrawIdx b = shape.triangles[ tri_idx ].b;
 			ImDrawIdx c = shape.triangles[ tri_idx ].c;
 
-			ImVertex const& va = shape.vertices[ a ];
-			ImVertex const& vb = shape.vertices[ b ];
-			ImVertex const& vc = shape.vertices[ c ];
+			ImWidgetsVertex const& va = shape.vertices[ a ];
+			ImWidgetsVertex const& vb = shape.vertices[ b ];
+			ImWidgetsVertex const& vc = shape.vertices[ c ];
 
 			pDrawList->_VtxWritePtr[ 0 ].pos = va.pos;
 			pDrawList->_VtxWritePtr[ 0 ].uv = va.uv;
@@ -3240,7 +3293,7 @@ else if ( draw_type == 4.0f )\n\
 			pDrawList->PrimReserve( 3 * tri_count, vtx_count );
 			for ( int k = 0; k < vtx_count; k++ )
 			{
-				ImVertex const& v = shape.vertices[ k ];;
+				ImWidgetsVertex const& v = shape.vertices[ k ];;
 				pDrawList->_VtxWritePtr[ 0 ].pos = v.pos;
 				pDrawList->_VtxWritePtr[ 0 ].uv = v.uv;
 				pDrawList->_VtxWritePtr[ 0 ].col = v.col;
@@ -3284,7 +3337,7 @@ else if ( draw_type == 4.0f )\n\
 					pDrawList->AddLine( shape.vertices[ shape.triangles[ k ].c ].pos, shape.vertices[ shape.triangles[ k ].a ].pos, edge_col, edge_thickness );
 				}
 			}
-			if ( vrtx_radius > 0.0f && (vrtx_col & IM_COL32_A_MASK) > 0 )
+			if ( vrtx_radius > 0.0f && ( vrtx_col & IM_COL32_A_MASK ) > 0 )
 			{
 				for ( int k = 0; k < vtx_count; ++k )
 					pDrawList->AddCircleFilled( shape.vertices[ k ].pos, vrtx_radius, vrtx_col, 0 );
@@ -3294,7 +3347,7 @@ else if ( draw_type == 4.0f )\n\
 		if ( push_texture_id )
 			pDrawList->PopTextureID();
 	}
-	void DrawShapeEx( ImDrawList* pDrawList, ImTextureID tex, ImShape& shape )
+	void DrawShapeEx( ImDrawList* pDrawList, ImTextureID tex, ImWidgetsShape& shape )
 	{
 		const bool push_texture_id = tex != pDrawList->_CmdHeader.TextureId;
 		if ( push_texture_id )
@@ -3305,7 +3358,7 @@ else if ( draw_type == 4.0f )\n\
 		pDrawList->PrimReserve( 3 * tri_count, vtx_count );
 		for ( int k = 0; k < vtx_count; k++ )
 		{
-			ImVertex const& v = shape.vertices[ k ];
+			ImWidgetsVertex const& v = shape.vertices[ k ];
 			pDrawList->_VtxWritePtr[ 0 ].pos = v.pos;
 			pDrawList->_VtxWritePtr[ 0 ].uv = v.uv;
 			pDrawList->_VtxWritePtr[ 0 ].col = v.col;
@@ -3323,21 +3376,21 @@ else if ( draw_type == 4.0f )\n\
 		if ( push_texture_id )
 			pDrawList->PopTextureID();
 	}
-	void DrawShapeDebug( ImDrawList* pDrawList, ImShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx )
+	void DrawShapeDebug( ImDrawList* pDrawList, ImWidgetsShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx )
 	{
 		// If we don't have a texture_id send the one on the header, it will discard the set of texture on DrawShapeEx
 		DrawShapeDebugEx( pDrawList, pDrawList->_CmdHeader.TextureId, shape, edge_thickness, edge_col, triangle_col, vrtx_radius, vrtx_col, tri_idx );
 	}
-	void DrawShape( ImDrawList* pDrawList, ImShape& shape )
+	void DrawShape( ImDrawList* pDrawList, ImWidgetsShape& shape )
 	{
 		// If we don't have a texture_id send the one on the header, it will discard the set of texture on DrawShapeEx
 		DrawShapeEx( pDrawList, pDrawList->_CmdHeader.TextureId, shape );
 	}
-	void DrawImageShapeDebug( ImDrawList* pDrawList, ImTextureID tex, ImShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx )
+	void DrawImageShapeDebug( ImDrawList* pDrawList, ImTextureID tex, ImWidgetsShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx )
 	{
 		DrawShapeDebugEx( pDrawList, tex, shape, edge_thickness, edge_col, triangle_col, vrtx_radius, vrtx_col, tri_idx );
 	}
-	void DrawImageShape( ImDrawList* pDrawList, ImTextureID tex, ImShape& shape )
+	void DrawImageShape( ImDrawList* pDrawList, ImTextureID tex, ImWidgetsShape& shape )
 	{
 		DrawShapeEx( pDrawList, tex, shape );
 	}
@@ -3434,7 +3487,7 @@ else if ( draw_type == 4.0f )\n\
 		pDrawList->AddConvexPolyFilled( &pts[ 0 ], 5, col );
 	}
 
-	void DrawProceduralColor1DNearest( ImDrawList* pDrawList, ImColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX )
+	void DrawProceduralColor1DNearest( ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX )
 	{
 		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
 
@@ -3456,7 +3509,7 @@ else if ( draw_type == 4.0f )\n\
 		}
 	}
 
-	void DrawProceduralColor1DBilinear( ImDrawList* pDrawList, ImColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX )
+	void DrawProceduralColor1DBilinear( ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX )
 	{
 		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
 
@@ -3482,7 +3535,7 @@ else if ( draw_type == 4.0f )\n\
 		}
 	}
 
-	void DrawProceduralColor2DNearest( ImDrawList* pDrawList, ImColor2DCallback func, void* pUserData, float minX, float maxX, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionX, int resolutionY )
+	void DrawProceduralColor2DNearest( ImDrawList* pDrawList, ImWidgetsColor2DCallback func, void* pUserData, float minX, float maxX, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionX, int resolutionY )
 	{
 		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
 
@@ -3514,7 +3567,7 @@ else if ( draw_type == 4.0f )\n\
 		}
 	}
 
-	void DrawProceduralColor2DBilinear( ImDrawList* pDrawList, ImColor2DCallback func, void* pUserData, float minX, float maxX, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionX, int resolutionY )
+	void DrawProceduralColor2DBilinear( ImDrawList* pDrawList, ImWidgetsColor2DCallback func, void* pUserData, float minX, float maxX, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionX, int resolutionY )
 	{
 		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
 
@@ -3630,7 +3683,7 @@ else if ( draw_type == 4.0f )\n\
 		DrawProceduralColor1DBilinear( pDrawList, &ImInternalSaturationFunc, &data[ 0 ], 0.0f, 1.0f, vpos, size, division );
 	}
 
-	void	DrawColorRing( ImDrawList* pDrawList, ImVec2 const curPos, ImVec2 const size, float thickness_, ImColor1DCallback func, void* pUserData, int division, float colorOffset, bool bIsBilinear )
+	void	DrawColorRing( ImDrawList* pDrawList, ImVec2 const curPos, ImVec2 const size, float thickness_, ImWidgetsColor1DCallback func, void* pUserData, int division, float colorOffset, bool bIsBilinear )
 	{
 		float const radius = ImMin( size.x, size.y ) * 0.5f;
 
@@ -3819,7 +3872,7 @@ else if ( draw_type == 4.0f )\n\
 				int jump = 1;
 				ImVec2 fp = poly[ 0 ];
 
-				for ( size_t i = 0; i < points_count - 1; i++ )
+				for ( int i = 0; i < points_count - 1; i++ )
 				{
 					ImVec2 pa = poly[ i ];
 					ImVec2 pb = poly[ i + 1 ];
@@ -3996,7 +4049,9 @@ else if ( draw_type == 4.0f )\n\
 					 ImWidgetsMarker marker,
 					 ImWidgetsDrawType draw_type )
 	{
-		MarkerBuffer params;
+		IM_ASSERT( ( PlatformData.features & ImWidgetsFeatures_Markers ) != 0 );
+
+		ImWidgetsMarkerBuffer params;
 		params.fg_color = ImGui::ColorConvertU32ToFloat4( fg_color );
 		params.bg_color = ImGui::ColorConvertU32ToFloat4( bg_color );
 		params.rotation = ImVec2( ImCos( rot_angle_rad ), ImSin( rot_angle_rad ) );
@@ -4006,14 +4061,174 @@ else if ( draw_type == 4.0f )\n\
 		params.antialiasing = antialiasing;
 		params.draw_type = ( float )draw_type;
 		params.pad0 = 0.0f;
-		if ( memcmp( &params, gs_pContext->markerShader.cpu_data, sizeof( MarkerBuffer ) ) )
+		if ( memcmp( &params, gs_pContext->markerShader.cpu_data, sizeof( ImWidgetsMarkerBuffer ) ) )
 		{
-			ImPlatform::ImUpdateCustomShaderConstant( gs_pContext->markerShader, &params );
+			ImPlatform::UpdateCustomShaderConstant( gs_pContext->markerShader, &params );
 		}
-		ImPlatform::ImBeginCustomShader( pDrawList, gs_pContext->markerShader );
+		ImPlatform::BeginCustomShader( pDrawList, gs_pContext->markerShader );
 		ImRect bb( start, start + size );
 		pDrawList->AddImageQuad( (ImTextureID)gs_pContext->whiteImg, bb.GetBL(), bb.GetBR(), bb.GetTR(), bb.GetTL(), ImVec2( 0, 0 ), ImVec2( 1, 0 ), ImVec2( 1, 1 ), ImVec2( 0, 1 ), IM_COL32( 255, 255, 255, 255 ) );
-		ImPlatform::ImEndCustomShader( pDrawList );
+		ImPlatform::EndCustomShader( pDrawList );
+	}
+
+	void BakeSolidLine( ImWidgetsShapeLine& shape,
+						ImVec2* vertices,
+						int vertices_count,
+						bool closed = false,
+						float epsilon = 1e-10f )
+	{
+		IM_ASSERT( PlatformData.features & ImWidgetsFeatures_ThickLines );
+
+		//if ( vertices_count < 2 )
+		//	return;
+
+		//int n = vertices_count;
+
+		//ImVector<ImVec2> P;
+		//P.resize( n );
+
+		//for ( int k = 0; k < n; ++k )
+		//	P[ k ] = vertices[ k ];
+
+		//float dx = P[ 0 ].x - P[ n - 1 ].x;
+		//float dy = P[ 0 ].y - P[ n - 1 ].y;
+		//float d = ImSqrt( dx * dx + dy * dy );
+
+		//// If closed, make sure first vertex = last vertex (+/- epsilon=1e-10)
+		//if ( closed && d > epsilon )
+		//{
+		//	P.push_back( P[ 0 ] );
+		//	n += 1;
+		//}
+
+		//ImVector<ImVertexLine> V;
+		//V.resize( n );
+		//for ( int i = 0; i < n; ++i )
+		//{
+		//	V[ i ].pos = P[ i ];
+		//}
+
+		//// Tangents & norms
+		//ImVector<ImVec2> T;
+		//ImVector<float> N;
+		//T.resize( n - 1 );
+		//N.resize( n - 1 );
+
+		//for ( int i = 0; i < n - 1; ++i )
+		//{
+		//	//T[ i ] = { P[ i + 1 ].x - P[ i ].x, P[ i + 1 ].y - P[ i ].y };
+		//	T[ i ] = P[ i + 1 ] - P[ i ];
+		//	N[ i ] = ImSqrt( T[ i ].x * T[ i ].x + T[ i ].y * T[ i ].y );
+		//}
+
+		//for ( int i = 1; i < n; ++i )
+		//{
+		//	V[ i ].tangent = T[ i - 1 ];
+		//}
+		//if ( closed )
+		//	V[ 0 ].tangent = T[ n - 2 ];
+		//else
+		//	V[ 0 ].tangent = T[ 0 ];
+
+		//for ( int i = 0; i < n - 1; ++i )
+		//{
+		//	V[ i ].tangent = T[ i ];
+		//}
+		//if ( closed )
+		//	V[ n - 1 ].tangent = T[ 0 ];
+		//else
+		//	V[ n - 1 ].tangent = T[ n - 2 ];
+
+		//// Angles
+		//ImVector<float> A;
+		//A.resize( n - 1 );
+		//for ( int i = 0; i < n - 1; ++i )
+		//{
+		//	ImVec2 T1 = V[ i ].tangent;
+		//	ImVec2 T2 = V[ i + 1 ].tangent;
+		//	A[ i ] = ImAtan2( T1.x * T2.y - T1.y * T2.x,
+		//					  T1.x * T2.x + T1.y * T2.y );
+		//}
+
+		//// Fill angles
+		//for ( int i = 0; i < n - 1; ++i )
+		//{
+		//	V[ i ].angle = { A[ i ], 0.0f }; // Store angle in x component for now
+		//	V[ i + 1 ].angle = { A[ i ], 0.0f }; // Store next angle in y component
+		//}
+
+		//// Cumulative Segment Lengths
+		//ImVector<float> L;
+		//L.resize( n );
+		//L[ 0 ] = 0.0f; // Starting length
+		//for ( size_t i = 1; i < n; ++i )
+		//{
+		//	L[ i ] = L[ i - 1 ] + N[ i - 1 ]; // Cumulative length
+		//}
+
+		//// Fill the segment information
+		//for ( size_t i = 0; i < n - 1; ++i )
+		//{
+		//	V[ i ].segment = { L[ i ], L[ i + 1 ] }; // Segment length for this and next vertex
+		//}
+
+		//// Step 1: A -- B -- C  =>  A -- B, B' -- C
+		//ImVector<ImVertexLine> tempV;
+		//for ( size_t i = 0; i < V.size(); ++i )
+		//{
+		//	tempV.push_back( V[ i ] );
+		//	if ( i < n - 1 )
+		//	{
+		//		tempV.push_back( V[ i ] ); // Duplicate the vertex
+		//	}
+		//}
+		//V = tempV; // Replace original with duplicated version
+
+		//// Step 2: A -- B, B' -- C  -> A0/A1 -- B0/B1, B'0/B'1 -- C0/C1
+		//tempV.clear();
+		//for ( int i = 0; i < V.size(); ++i )
+		//{
+		//	tempV.push_back( V[ i ] );
+		//	tempV.push_back( V[ i ] ); // Duplicate again
+		//}
+		//V = std::move( tempV );
+
+		//// Create index array using ImTriIdx
+		//ImVector<ImTriIdx> I;
+		//for ( size_t i = 0; i < n - 1; ++i )
+		//{
+		//	size_t baseIndex = 4 * i;
+		//	I.push_back( { baseIndex, baseIndex + 1, baseIndex + 2 } );
+		//	I.push_back( { baseIndex + 1, baseIndex + 2, baseIndex + 3 } );
+		//}
+
+		//// Return the shape
+		//ImWidgetsShapeLine shape;
+		//shape.vertices = V;
+		//shape.triangles = I; // Note: This will need a proper conversion to ImTriIdx if necessary
+		//ImWidgets::ShapeLineSetBound( shape );
+	}
+
+	void DrawThickLine( ImDrawList* pDrawList,
+						ImVec2* pts, int pts_count,
+						float thickness,
+						ImU32 col,
+						float antialiasing,
+						ImWidgetsCap start_cap,
+						ImWidgetsCap end_cap,
+						ImWidgetsJoin join )
+	{
+		ImWidgetsShapeLine shape;
+		BakeSolidLine( shape,
+					   pts,
+					   pts_count,
+					   false,
+					   1e-10f );
+
+		//ImPlatform::UpdateCustomShaderConstant( gs_pContext->markerShader, &params );
+		//ImPlatform::BeginCustomShader( pDrawList, gs_pContext->markerShader );
+		//
+		//ImPlatform::EndCustomShader( pDrawList );
 	}
 #endif
 
@@ -4972,7 +5187,7 @@ else if ( draw_type == 4.0f )\n\
 				int jump = 1;
 				ImVec2 fp = pts[ 0 ];
 
-				for ( size_t i = 0; i < pts_count - 1; i++ )
+				for ( int i = 0; i < pts_count - 1; i++ )
 				{
 					ImVec2 pa = pts[ i ];
 					ImVec2 pb = pts[ i + 1 ];
@@ -5788,7 +6003,7 @@ else if ( draw_type == 4.0f )\n\
 		float featherL = ImClamp( *featherLeft, 0.0f, 0.5f - 1e-4f );
 		float featherR = ImClamp( *featherRight, 0.0f, 0.5f - 1e-4f );
 
-		ImWidgets::Style& dwstyle = ImWidgets::GetStyle();
+		ImWidgetsStyle& dwstyle = ImWidgets::GetStyle();
 
 		float xCenter = curPos.x + center * w;
 		if ( width == 0.0f )
@@ -5968,12 +6183,12 @@ else if ( draw_type == 4.0f )\n\
 		return false;
 	}
 
-	bool SliderNFloat( char const* label, ImGuiDataType data_type, float* ordered_value, int value_count, float v_min, float v_max, float cursor_width, bool show_hover_by_region )
+	bool SliderNFloat( char const* label, float* ordered_value, int value_count, float v_min, float v_max, float cursor_width, bool show_hover_by_region )
 	{
 		return SliderNScalar( label, ImGuiDataType_Float, ordered_value, value_count, &v_min, &v_max, cursor_width, show_hover_by_region );
 	}
 
-	bool SliderNInt( char const* label, ImGuiDataType data_type, int* ordered_value, int value_count, int v_min, int v_max, float cursor_width, bool show_hover_by_region )
+	bool SliderNInt( char const* label, int* ordered_value, int value_count, int v_min, int v_max, float cursor_width, bool show_hover_by_region )
 	{
 		return SliderNScalar( label, ImGuiDataType_S32, ordered_value, value_count, &v_min, &v_max, cursor_width, show_hover_by_region );
 	}
@@ -6219,10 +6434,10 @@ else if ( draw_type == 4.0f )\n\
 		return Slider2DScalar( pLabel, ImGuiDataType_S32, pValueX, pValueY, &v_minX, &v_maxX, &v_minY, &v_maxY );
 	}
 
+#if 0
 	// TODO
 	bool SliderRingScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, float v_angle_min, float v_angle_max, float v_thickness, const char* format, ImGuiSliderFlags flags, ImRect* out_grab_bb )
 	{
-
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
 			return false;
@@ -6396,6 +6611,7 @@ else if ( draw_type == 4.0f )\n\
 
 		return value_changed;
 	}
+#endif
 #endif
 
 	//////////////////////////////////////////////////////////////////////////

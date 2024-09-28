@@ -145,7 +145,7 @@ ImTextureID illlustration_img;
 ImVec2 illlustration_size;
 int main()
 {
-	if ( !ImPlatform::ImSimpleStart( "Dear Widgets Demo", ImVec2( 0.0f, 0.0f ), 1024, 764 * 2 ) )
+	if ( !ImPlatform::SimpleStart( "Dear Widgets Demo", ImVec2( 0.0f, 0.0f ), 1024, 764 * 2 ) )
 		return 1;
 
 	// Setup Dear ImGui context
@@ -170,13 +170,17 @@ int main()
 	//io.FontGlobalScale = 3.0f;
 	//ImGui::GetStyle().ScaleAllSizes( 3.0f );
 
-	if ( !ImPlatform::ImSimpleInitialize( false ) )
+	if ( !ImPlatform::SimpleInitialize( false ) )
 	{
 		return 0;
 	}
-
-	ImWidgets::ImWidgetsContext* ctx = ImWidgets::CreateContext();
-	ImWidgets::SetCurrentContext( ctx );
+	
+	//ImWidgetsFeatures features	= ImWidgetsFeatures_Markers
+	//							| ImWidgetsFeatures_ThickLines;
+	//ImWidgets::SetFeatures( features );
+	ImWidgets::AddFeatures( ImWidgetsFeatures_Markers );
+	ImWidgets::AddFeatures( ImWidgetsFeatures_ThickLines );
+	ImWidgetsContext* ctx = ImWidgets::CreateContext();
 
 	//ImGui::GetStyle().ScaleAllSizes();
 
@@ -194,53 +198,53 @@ int main()
 	int height;
 	// Image from: https://www.pexels.com/fr-fr/photo/framboises-mures-dans-une-tasse-de-the-blanche-en-photographie-a-decalage-d-inclinaison-1152351/
 	stbi_uc* data = stbi_load( "pexels-robert-bogdan-156165-1152351.jpg", &width, &height, NULL, 4 );
-	illlustration_img = ImPlatform::ImCreateTexture2D( ( char* )data, width, height,
+	illlustration_img = ImPlatform::CreateTexture2D( ( char* )data, width, height,
 												{
-													ImPlatform::IM_RGBA,
-													ImPlatform::IM_TYPE_UINT8,
-													ImPlatform::IM_FILTERING_LINEAR,
-													ImPlatform::IM_BOUNDARY_CLAMP,
-													ImPlatform::IM_BOUNDARY_CLAMP
+													ImPixelChannel_RGBA,
+													ImPixelType_UInt8,
+													ImTextureFiltering_Linear,
+													ImTextureBoundary_Clamp,
+													ImTextureBoundary_Clamp
 												} );
 	illlustration_size = ImVec2( ( float )width, ( float )height );
 	STBI_FREE( data );
 	// Image from: https://www.pexels.com/fr-fr/photo/deux-chaises-avec-table-en-verre-sur-le-salon-pres-de-la-fenetre-1571453/
 	data = stbi_load( "pexels-fotoaibe-1571453.jpg", &width, &height, NULL, 4 );
-	background = ImPlatform::ImCreateTexture2D( ( char* )data, width, height,
+	background = ImPlatform::CreateTexture2D( ( char* )data, width, height,
 												{
-													ImPlatform::IM_RGBA,
-													ImPlatform::IM_TYPE_UINT8,
-													ImPlatform::IM_FILTERING_LINEAR,
-													ImPlatform::IM_BOUNDARY_CLAMP,
-													ImPlatform::IM_BOUNDARY_CLAMP
+													ImPixelChannel_RGBA,
+													ImPixelType_UInt8,
+													ImTextureFiltering_Linear,
+													ImTextureBoundary_Clamp,
+													ImTextureBoundary_Clamp
 												} );
 	background_size = ImVec2( ( float )width, ( float )height );
 	STBI_FREE( data );
 
 	ImVec4 clear_color = ImVec4( 0.461f, 0.461f, 0.461f, 1.0f );
-	while ( ImPlatform::ImPlatformContinue() )
+	while ( ImPlatform::PlatformContinue() )
 	{
-		bool quit = ImPlatform::ImPlatformEvents();
+		bool quit = ImPlatform::PlatformEvents();
 		if ( quit )
 			break;
 
-		if ( !ImPlatform::ImGfxCheck() )
+		if ( !ImPlatform::GfxCheck() )
 		{
 			continue;
 		}
 
-		ImPlatform::ImSimpleBegin();
+		ImPlatform::SimpleBegin();
 
 		ImWidgets::ShowDemo();
 
 		ShowSampleOffscreen00();
 
-		ImPlatform::ImSimpleEnd( clear_color, false );
+		ImPlatform::SimpleEnd( clear_color, false );
 	}
 
 	ImWidgets::DestroyContext( ctx );
-	ImPlatform::ImSimpleFinish();
-	ImPlatform::ImReleaseTexture2D( background );
+	ImPlatform::SimpleFinish();
+	ImPlatform::ReleaseTexture2D( background );
 
 	return 0;
 }
@@ -263,7 +267,7 @@ void ShowSampleOffscreen00()
 	//					   cur + ImVec2( 0.0f + 50.0f, 50.0f ),
 	//					   ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 255), 8);
 
-	ImWidgets::DrawMarker( draw, cur, size, IM_COL32_WHITE, IM_COL32_BLACK_TRANS, 0.0f, 1.0f, 10.0f, 0.5f, ImWidgets::ImWidgetsMarker_Disc, ImWidgets::ImWidgetsDrawType_Outline );
+	ImWidgets::DrawMarker( draw, cur, size, IM_COL32_WHITE, IM_COL32_BLACK_TRANS, 0.0f, 1.0f, 10.0f, 0.5f, ImWidgetsMarker_Disc, ImWidgetsDrawType_Outline );
 	ImGui::Dummy( size );
 
 	ImGui::End();
@@ -330,7 +334,7 @@ namespace ImWidgets{
 				if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
 					colb = ImGui::GetColorU32( colb_v );
 				ImVec2 pos = ImGui::GetCursorScreenPos();
-				static ImShape shape;
+				static ImWidgetsShape shape;
 				GenShapeCircle( shape, pos + ImVec2( size * 0.5f, size * 0.5f ), size * 0.5f, side_count );
 				ShapeSetDefaultUV( shape );
 #ifdef DEAR_WIDGETS_TESSELATION
@@ -411,7 +415,7 @@ namespace ImWidgets{
 
 				ImVec2 pos = ImGui::GetCursorScreenPos();
 
-				ImShape line;
+				ImWidgetsShape line;
 				//GenThickLine( line, pos + ImVec2( size * 0.5f, 0.0f ), pos + ImVec2( size * 0.5f, size ), 10.0f, CapType_Round, CapType_Square );
 				ShapeLinearSRGBLinearGradient( line,
 											   ImVec2( 0.0f, 0.0f ), ImVec2( 1.0f, 1.0f ),
@@ -446,7 +450,7 @@ namespace ImWidgets{
 				if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
 					colb = ImGui::GetColorU32( colb_v );
 				ImVec2 pos = ImGui::GetCursorScreenPos();
-				static ImShape shape;
+				static ImWidgetsShape shape;
 				float height = size * 0.25f;
 				GenShapeRect( shape, ImRect( pos, pos + ImVec2( size, height ) ) );
 				ShapeSetDefaultUV( shape );
@@ -521,7 +525,7 @@ namespace ImWidgets{
 				if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
 					colb = ImGui::GetColorU32( colb_v );
 				ImVec2 pos = ImGui::GetCursorScreenPos();
-				static ImShape shape;
+				static ImWidgetsShape shape;
 				GenShapeCircle( shape, pos + ImVec2( 0.5f * size, 0.5f * size ), size * 0.5f, 16 );
 				ShapeSetDefaultUV( shape );
 #ifdef DEAR_WIDGETS_TESSELATION
@@ -561,7 +565,7 @@ namespace ImWidgets{
 				if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
 					colb = ImGui::GetColorU32( colb_v );
 				ImVec2 pos = ImGui::GetCursorScreenPos();
-				static ImShape shape;
+				static ImWidgetsShape shape;
 				GenShapeRect( shape, ImRect( pos, pos + ImVec2( size, size ) ) );
 				ShapeSetDefaultUV( shape );
 #ifdef DEAR_WIDGETS_TESSELATION
@@ -610,7 +614,7 @@ namespace ImWidgets{
 				ImGui::SliderAngle( "AngleMin", &angle_min, -360.0f, angle_max * 180.0f / IM_PI );
 				ImGui::SliderAngle( "AngleMax", &angle_max, angle_min * 180.0f / IM_PI, 360.0f );
 				ImVec2 pos = ImGui::GetCursorScreenPos();
-				static ImShape shape;
+				static ImWidgetsShape shape;
 				GenShapeCircleArc( shape, pos + ImVec2( 0.5f * size, 0.5f * size ), radius, angle_min, angle_max, division );
 				ShapeSetDefaultBoundUVWhiteCol( shape );
 #ifdef DEAR_WIDGETS_TESSELATION
@@ -665,7 +669,7 @@ namespace ImWidgets{
 				if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
 					colb = ImGui::GetColorU32( colb_v );
 				ImVec2 pos = ImGui::GetCursorScreenPos();
-				static ImShape shape;
+				static ImWidgetsShape shape;
 				GenShapeRect( shape, ImRect( pos, pos + ImVec2( size, size ) ) );
 				ShapeSetDefaultBoundUV( shape );
 #ifdef DEAR_WIDGETS_TESSELATION
@@ -926,7 +930,7 @@ namespace ImWidgets{
 					usedTime = fTime;
 				}
 				float timeCopy = usedTime;
-				ImColor2DCallback func = []( float x, float y, void* pUserData ) -> ImU32{
+				ImWidgetsColor2DCallback func = []( float x, float y, void* pUserData ) -> ImU32{
 					float timeCopy = *( ( float* )pUserData );
 					return sdHorseshoeColor( ImVec2( x, y ), timeCopy );
 					};
