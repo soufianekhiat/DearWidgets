@@ -1,16 +1,12 @@
 ﻿#include <dear_widgets.h>
 
-//#include <chrono>
-//#include <algorithm>
-
 #ifdef DEAR_WIDGETS_TESSELATION
-//#include <vector>
 #include <map>
 #endif
 
-#include <string>
+namespace ImWidgets{
+	ImGlobalData GlobalData;
 
-namespace ImWidgets {
 	//////////////////////////////////////////////////////////////////////////
 	// Data
 	//////////////////////////////////////////////////////////////////////////
@@ -2762,7 +2758,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	void CreateMarkersShaders( ImWidgetsContext* ctx )
 	{
-		std::string sParam =
+		char const* sParam =
 			"float4	fg_color;\n"
 			"float4	bg_color;\n"
 			"float2	rotation;\n"
@@ -2783,7 +2779,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		markerParams.draw_type = 0.0f;
 		markerParams.pad0 = 0.0f;
 
-		std::string sHelpers =
+		char const* sHelpers =
 	"#define PI 3.14159265358979323846264f\n\
 	#define SQRT_2 1.4142135623730951f\n\
 	\n\
@@ -3099,7 +3095,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return frag_color;\n\
 	}\n";
 
-		std::string sSource =
+		char const* sSource =
 			"\n\
 	float2 P = uv - 0.5f;\n\
 	P.y = -P.y;\n\
@@ -3158,30 +3154,55 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		col_out = lerp(fg_color, bg_color, distance > 0.0f);\n\
 	\n";
 
-		ctx->markerShader = ImPlatform::CreateShader( sSource.c_str(), sParam.c_str(), sHelpers.c_str(), sizeof( ImWidgetsMarkerBuffer ), &markerParams, false );
+		//ctx->markerShader = ImPlatform::CreateShader(
+		//	sSource,
+		//	sParam,
+		//	sHelpers,
+		//	0, NULL,
+		//	sizeof( ImWidgetsMarkerBuffer ), &markerParams,
+		//	false );
+		char* vs_source;
+		char* ps_source;
+		ImPlatform::CreateDefaultPixelShaderSource( &vs_source, &ps_source, sHelpers, sParam, sSource, false );
+		ctx->markerShader = ImPlatform::CreateShader( vs_source, ps_source, 0, NULL, sizeof( ImWidgetsMarkerBuffer ), &markerParams );
+		IM_FREE( vs_source );
+		IM_FREE( ps_source );
 	}
 
-	//static MarkerBuffer gs_markerParams;
+	void CreateThickLineBuffers()
+	{
+		ImPlatform::CreateVertexBuffer( gs_pContext->thickLinesGPUVertexBuffer,
+										sizeof( ImWidgetsVertexLine ),
+										gs_ImWidgetsDefaultThickLinesBufferGrowth );
+		ImPlatform::CreateIndexBuffer( gs_pContext->thickLinesGPUIndexBuffer,
+									   gs_ImWidgetsDefaultThickLinesBufferGrowth );
+	}
+
+	void CreateThickLineShaders( ImWidgetsContext* ctx )
+	{
+
+	}
+
 	void SetFeatures( ImWidgetsFeatures features )
 	{
-		PlatformData.features = features;
+		GlobalData.features = features;
 	}
 
 	void AddFeatures( ImWidgetsFeatures features )
 	{
-		PlatformData.features |= features;
+		GlobalData.features |= features;
 	}
 
 	void RemoveFeature( ImWidgetsFeatures features )
 	{
-		PlatformData.features &= ~features;
+		GlobalData.features &= ~features;
 	}
 
 	ImWidgetsContext* CreateContext()
 	{
 		ImWidgetsContext* ctx = IM_NEW( ImWidgetsContext );
-		if ( PlatformData.features & ImWidgetsFeatures_Markers ||
-			 PlatformData.features & ImWidgetsFeatures_ThickLines )
+		if ( GlobalData.features & ImWidgetsFeatures_Markers ||
+			 GlobalData.features & ImWidgetsFeatures_ThickLines )
 			ImPlatform::SetFeatures( ImPlatformFeatures_CustomShader );
 
 		if ( gs_pContext == NULL )
@@ -3224,15 +3245,22 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 																ImTextureBoundary_Clamp,
 																ImTextureBoundary_Clamp
 															 } );
-
 		IM_FREE( black_data );
 		IM_FREE( white_data );
 
 		ctx->blackImg = img_black;
 		ctx->whiteImg = img_white;
 
-		if ( PlatformData.features & ImWidgetsFeatures_Markers )
+		ctx->thickLinesGPUVertexBuffer = NULL;
+		ctx->thickLinesGPUIndexBuffer = NULL;
+
+		if ( GlobalData.features & ImWidgetsFeatures_ThickLines )
+			CreateThickLineBuffers();
+
+		if ( GlobalData.features & ImWidgetsFeatures_Markers )
 			CreateMarkersShaders( ctx );
+		if ( GlobalData.features & ImWidgetsFeatures_ThickLines )
+			CreateThickLineShaders( ctx );
 
 		return ctx;
 	}
@@ -4061,9 +4089,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		params.antialiasing = antialiasing;
 		params.draw_type = ( float )draw_type;
 		params.pad0 = 0.0f;
-		if ( memcmp( &params, gs_pContext->markerShader.cpu_data, sizeof( ImWidgetsMarkerBuffer ) ) )
+		if ( memcmp( &params, gs_pContext->markerShader.cpu_ps_data, sizeof( ImWidgetsMarkerBuffer ) ) )
 		{
-			ImPlatform::UpdateCustomShaderConstant( gs_pContext->markerShader, &params );
+			ImPlatform::UpdateCustomPixelShaderConstants( gs_pContext->markerShader, &params );
 		}
 		ImPlatform::BeginCustomShader( pDrawList, gs_pContext->markerShader );
 		ImRect bb( start, start + size );
@@ -4225,10 +4253,32 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					   false,
 					   1e-10f );
 
-		//ImPlatform::UpdateCustomShaderConstant( gs_pContext->markerShader, &params );
-		//ImPlatform::BeginCustomShader( pDrawList, gs_pContext->markerShader );
-		//
-		//ImPlatform::EndCustomShader( pDrawList );
+		int triangles_count = shape.triangles.size();
+		int indices_count = triangles_count * 3;
+		int vertices_count = shape.vertices.size();
+		ImDrawIdx idx = ( ImDrawIdx )pDrawList->_VtxCurrentIdx;
+		gs_pContext->thickLinesCPUIndexBuffer.reserve( gs_pContext->thickLinesCPUIndexBuffer.size() + indices_count );
+		for ( int k = 0; k < triangles_count; ++k )
+		{
+			gs_pContext->thickLinesCPUIndexBuffer.push_back( shape.triangles[ k ].a );
+			gs_pContext->thickLinesCPUIndexBuffer.push_back( shape.triangles[ k ].b );
+			gs_pContext->thickLinesCPUIndexBuffer.push_back( shape.triangles[ k ].c );
+		}
+		gs_pContext->thickLinesCPUVertexBuffer.reserve( gs_pContext->thickLinesCPUVertexBuffer.size() + vertices_count );
+		for ( int k = 0; k < vertices_count; ++k )
+		{
+			gs_pContext->thickLinesCPUVertexBuffer.push_back( shape.vertices[ k ] );
+		}
+
+		ImPlatform::UpdateVertexBuffer( &gs_pContext->thickLinesGPUVertexBuffer,
+										sizeof( ImWidgetsVertexLine ),
+										gs_pContext->thickLinesCPUVertexBuffer.size(),
+										gs_pContext->thickLinesCPUVertexBuffer.Data );
+		ImPlatform::BeginCustomShader( pDrawList, gs_pContext->markerShader );
+
+		//pDrawList->AddCallback( &InternalDrawThickLine, &shader );
+
+		ImPlatform::EndCustomShader( pDrawList );
 	}
 #endif
 

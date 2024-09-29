@@ -51,6 +51,12 @@
 #define nullptr NULL
 #endif
 
+#ifndef DEAR_WIDGETS_DEFAULT_THICKLINES_BUFFER_GROWTH
+static int gs_ImWidgetsDefaultThickLinesBufferGrowth = 4096;
+#else
+static int gs_ImWidgetsDefaultThickLinesBufferGrowth = DEAR_WIDGETS_DEFAULT_THICKLINES_BUFFER_GROWTH;
+#endif
+
 struct ImWidgetsMarkerBuffer
 {
 	ImVec4	fg_color;
@@ -75,14 +81,6 @@ enum ImWidgetsFeatures_
 	ImWidgetsFeatures_COUNT
 };
 typedef int ImWidgetsFeatures;
-
-struct ImWidgetsContext
-{
-	ImTextureID			blackImg;
-	ImTextureID			whiteImg;
-	ImDrawShader		markerShader;
-	ImWidgetsFeatures	features;
-};
 
 struct ImWidgetsVertex
 {
@@ -152,18 +150,32 @@ struct ImWidgetsShape
 {
 	ImVector<ImWidgetsVertex>	vertices;
 	ImVector<ImWidgetsTriIdx>	triangles;
-	ImRect				bb;
+	ImRect						bb;
 };
 struct ImWidgetsShapeLine
 {
 	ImVector<ImWidgetsVertexLine>	vertices;
 	ImVector<ImWidgetsTriIdx>		triangles;
-	ImRect					bb;
+	ImRect							bb;
 };
 
 typedef ImU32( *ImWidgetsColor1DCallback )( float x, void* );
 typedef ImU32( *ImWidgetsColor2DCallback )( float x, float y, void* );
 
+struct ImWidgetsContext
+{
+	ImTextureID						blackImg; // 4x4 RGBA UInt8 Black Image: { Linear, Clamp }
+	ImTextureID						whiteImg; // 4x4 RGBA UInt8 White Image: { Linear, Clamp }
+	ImWidgetsFeatures				features;
+
+	ImDrawShader					markerShader;
+
+	ImDrawShader					thickLinesShader;
+	ImVector<ImDrawIdx>				thickLinesCPUIndexBuffer;
+	ImVector<ImWidgetsVertexLine>	thickLinesCPUVertexBuffer;
+	ImVertexBuffer*					thickLinesGPUVertexBuffer;
+	ImIndexBuffer*					thickLinesGPUIndexBuffer;
+};
 
 enum ImWidgetsStyleColor
 {
@@ -305,7 +317,6 @@ private:
 	ImVector<VarModifier>	m_VarStack;
 };
 
-
 #define ImWidgets_Kibi (1024ull)
 #define ImWidgets_Mibi (ImWidgets_Kibi*1024ull)
 #define ImWidgets_Gibi (ImWidgets_Mibi*1024ull)
@@ -432,6 +443,7 @@ enum ImWidgetsDrawType_
 
 	ImWidgetsDrawType_COUNT
 };
+typedef int ImWidgetsDrawType;
 
 enum ImWidgetsCap_
 {
@@ -456,9 +468,13 @@ enum ImWidgetsJoin_
 };
 typedef int ImWidgetsJoin;
 
-typedef int ImWidgetsDrawType;
+struct ImGlobalData
+{
+	ImWidgetsFeatures features;
+};
 
 namespace ImWidgets{
+	extern ImGlobalData GlobalData;
 
 	ImWidgetsStyle& GetStyle();
 
@@ -649,15 +665,15 @@ namespace ImWidgets{
 		else
 			return 1.055f * ImPow( x, 1.0f / 2.4f) - 0.055f;
 	}
-	IMGUI_API void          ColorConvertsRGBtosRGB( float r, float g, float b, float& out_r, float& out_g, float& out_b );
-	IMGUI_API void          ColorConvertRGBtoLinear( float r, float g, float b, float& out_L, float& out_a, float& out_b );
-	IMGUI_API void          ColorConvertLineartoRGB( float L, float a, float b, float& out_r, float& out_g, float& out_b );
-	IMGUI_API void          ColorConvertRGBtoOKLAB( float r, float g, float b, float& out_L, float& out_a, float& out_b );
-	IMGUI_API void          ColorConvertOKLABtoRGB( float L, float a, float b, float& out_r, float& out_g, float& out_b );
-	IMGUI_API void          ColorConvertOKLCHtoOKLAB( float r, float g, float b, float& out_L, float& out_a, float& out_b );
-	IMGUI_API void          ColorConvertOKLABtoOKLCH( float L, float a, float b, float& out_r, float& out_g, float& out_b );
-	IMGUI_API void          ColorConvertsRGBtoOKLCH( float r, float g, float b, float& out_L, float& out_c, float& out_h );
-	IMGUI_API void          ColorConvertOKLCHtosRGB( float L, float c, float h, float& out_r, float& out_g, float& out_b );
+	IMGUI_API void	ColorConvertsRGBtosRGB( float r, float g, float b, float& out_r, float& out_g, float& out_b );
+	IMGUI_API void	ColorConvertRGBtoLinear( float r, float g, float b, float& out_L, float& out_a, float& out_b );
+	IMGUI_API void	ColorConvertLineartoRGB( float L, float a, float b, float& out_r, float& out_g, float& out_b );
+	IMGUI_API void	ColorConvertRGBtoOKLAB( float r, float g, float b, float& out_L, float& out_a, float& out_b );
+	IMGUI_API void	ColorConvertOKLABtoRGB( float L, float a, float b, float& out_r, float& out_g, float& out_b );
+	IMGUI_API void	ColorConvertOKLCHtoOKLAB( float r, float g, float b, float& out_L, float& out_a, float& out_b );
+	IMGUI_API void	ColorConvertOKLABtoOKLCH( float L, float a, float b, float& out_r, float& out_g, float& out_b );
+	IMGUI_API void	ColorConvertsRGBtoOKLCH( float r, float g, float b, float& out_L, float& out_c, float& out_h );
+	IMGUI_API void	ColorConvertOKLCHtosRGB( float L, float c, float h, float& out_r, float& out_g, float& out_b );
 	ImU32	KelvinTemperatureTosRGBColors( float temperature ); // [ 1000 K; 12000 K ]
 
 	inline
