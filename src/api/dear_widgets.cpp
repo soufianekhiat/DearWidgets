@@ -5146,7 +5146,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 	bool IsPolyConvexContains( ImVec2 p, void* data )
-		//( ImVec2* pts, int pts_count, ImVec2 p )
 	{
 		ImPolyShapeData* value = ( ImPolyShapeData* )data;
 		ImVec2* pts = value->pts;
@@ -5167,7 +5166,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 	bool IsPolyConcaveContains( ImVec2 p, void* data )
-		//( ImVec2* pts, int pts_count, ImVec2 p )
 	{
 		ImPolyShapeData* value = ( ImPolyShapeData* )data;
 		ImVec2* pts = value->pts;
@@ -5208,7 +5206,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 	bool IsPolyWithHoleContains( ImVec2 p, void* data )
-		//( ImVec2* pts, int pts_count, ImVec2 p, ImRect* p_bb, int gap, int strokeWidth )
 	{
 		ImPolyHoleShapeData* value = ( ImPolyHoleShapeData* )data;
 		ImVec2* pts = value->pts;
@@ -5374,34 +5371,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return true;
 	}
 
-	//bool IsMouseHoveringPolyConvex( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip )
-	//{
-	//	bool well_form = true;
-	//	for ( int k = 0; k < pts_count; ++k )
-	//	{
-	//		well_form &= ImRect( r_min, r_max ).Contains( pts[ k ] );
-	//	}
-	//	IM_ASSERT( well_form );
-
-	//	ImGuiContext& g = *ImGui::GetCurrentContext();
-
-	//	// Clip
-	//	ImRect rect_clipped( r_min, r_max );
-	//	if ( clip )
-	//		rect_clipped.ClipWith( g.CurrentWindow->ClipRect );
-
-	//	// Hit testing, expanded for touch input
-	//	if ( !rect_clipped.ContainsWithPad( g.IO.MousePos, g.Style.TouchExtraPadding ) )
-	//		return false;
-	//	PolyShapeData data;
-	//	data.pts = pts;
-	//	data.pts_count = pts_count;
-	//	if ( !IsPolyConvexContains( g.IO.MousePos, &data ) )
-	//		return false;
-
-	//	return true;
-	//}
-
 	bool ItemHoverablePolyConvex( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags, void* extra_data )
 	{
 		IM_UNUSED( extra_data );
@@ -5420,7 +5389,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			return false;
 		if ( !ImGui::IsMouseHoveringRect( bb.Min, bb.Max ) )
 			return false;
-		//if ( !IsMouseHoveringPolyConvex( bb.Min, bb.Max, pts, pts_count ) )
 		IM_ASSERT( IsBoundingBoxWellFormed( bb.Min, bb.Max, pts, pts_count ) );
 		ImPolyShapeData data = { pts, pts_count };
 		if ( !IsMouseHovering( bb.Min, bb.Max, IsPolyConvexContains, &data ) )
@@ -5494,34 +5462,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return true;
 	}
 
-	//bool IsMouseHoveringPolyConcave( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip )
-	//{
-	//	bool well_form = true;
-	//	for ( int k = 0; k < pts_count; ++k )
-	//	{
-	//		well_form &= ImRect( r_min, r_max ).Contains( pts[ k ] );
-	//	}
-	//	IM_ASSERT( well_form );
-
-	//	ImGuiContext& g = *ImGui::GetCurrentContext();
-
-	//	// Clip
-	//	ImRect rect_clipped( r_min, r_max );
-	//	if ( clip )
-	//		rect_clipped.ClipWith( g.CurrentWindow->ClipRect );
-
-	//	// Hit testing, expanded for touch input
-	//	if ( !rect_clipped.ContainsWithPad( g.IO.MousePos, g.Style.TouchExtraPadding ) )
-	//		return false;
-	//	PolyShapeData data;
-	//	data.pts = pts;
-	//	data.pts_count = pts_count;
-	//	if ( !IsPolyConcaveContains( g.IO.MousePos, &data ) )
-	//		return false;
-
-	//	return true;
-	//}
-
 	bool ItemHoverablePolyConcave( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags, void* extra_data )
 	{
 		IM_UNUSED( extra_data );
@@ -5540,7 +5480,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			return false;
 		if ( !ImGui::IsMouseHoveringRect( bb.Min, bb.Max ) )
 			return false;
-		//if ( !IsMouseHoveringPolyConcave( bb.Min, bb.Max, pts, pts_count ) )
 		IM_ASSERT( IsBoundingBoxWellFormed( bb.Min, bb.Max, pts, pts_count ) );
 		ImPolyShapeData data = { pts, pts_count };
 		if ( !IsMouseHovering( bb.Min, bb.Max, IsPolyConcaveContains, &data ) )
@@ -5614,37 +5553,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return true;
 	}
 
-	//bool IsMouseHoveringPolyWithHole( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip )
-	//{
-	//	bool well_form = true;
-	//	for ( int k = 0; k < pts_count; ++k )
-	//	{
-	//		well_form &= ImRect( r_min, r_max ).Contains( pts[ k ] );
-	//	}
-	//	IM_ASSERT( well_form );
-
-	//	ImGuiContext& g = *ImGui::GetCurrentContext();
-
-	//	// Clip
-	//	ImRect rect_clipped( r_min, r_max );
-	//	if ( clip )
-	//		rect_clipped.ClipWith( g.CurrentWindow->ClipRect );
-
-	//	// Hit testing, expanded for touch input
-	//	if ( !rect_clipped.ContainsWithPad( g.IO.MousePos, g.Style.TouchExtraPadding ) )
-	//		return false;
-	//	PolyHoleShapeData data;
-	//	data.pts = pts;
-	//	data.pts_count = pts_count;
-	//	data.p_bb = NULL;
-	//	data.gap = 1;
-	//	data.strokeWidth = 1;
-	//	if ( !IsPolyWithHoleContains( g.IO.MousePos, &data ) )
-	//		return false;
-
-	//	return true;
-	//}
-
 	bool ItemHoverablePolyWithHole( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags, void* extra_data )
 	{
 		IM_UNUSED( extra_data );
@@ -5663,7 +5571,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			return false;
 		if ( !ImGui::IsMouseHoveringRect( bb.Min, bb.Max ) )
 			return false;
-		//if ( !IsMouseHoveringPolyWithHole( bb.Min, bb.Max, pts, pts_count ) )
 		IM_ASSERT( IsBoundingBoxWellFormed( bb.Min, bb.Max, pts, pts_count ) );
 		ImPolyHoleShapeData data = { pts, pts_count, NULL, 1, 1 };
 		if ( !IsMouseHovering( bb.Min, bb.Max, IsPolyWithHoleContains, &data ) )

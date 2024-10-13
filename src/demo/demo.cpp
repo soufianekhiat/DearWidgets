@@ -73,6 +73,30 @@
 //	}
 //};
 
+ImTextureID TextureFromFile(	char const* filename, ImVec2* img_size,
+								ImTextureFiltering const filtering = ImTextureFiltering_Linear,
+								ImTextureBoundary const boundarires = ImTextureBoundary_Clamp )
+{
+	int width;
+	int height;
+	ImTextureID img;
+
+	stbi_uc* data = stbi_load( filename, &width, &height, NULL, 4 );
+	img = ImPlatform::CreateTexture2D(	( char* )data, width, height,
+										{
+											ImPixelChannel_RGBA,
+											ImPixelType_UInt8,
+											filtering,
+											boundarires,
+											boundarires
+										} );
+	img_size->x = ( float )width;
+	img_size->y = ( float )height;
+	STBI_FREE( data );
+
+	return img;
+}
+
 ImVec2 TemperatureTo_xy( float TT )
 {
 	float T = TT;
@@ -156,6 +180,7 @@ int main()
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;			// Enable Docking
 #endif
 #ifdef IMGUI_HAS_VIEWPORT
+	// TODO: Fix cf. ImPlatform
 	//io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;		// Enable Multi-Viewport / Platform Windows
 #endif
 	////io.ConfigViewportsNoAutoMerge = true;
@@ -194,32 +219,13 @@ int main()
 	//}
 #endif
 
-	int width;
-	int height;
-	// Image from: https://www.pexels.com/fr-fr/photo/framboises-mures-dans-une-tasse-de-the-blanche-en-photographie-a-decalage-d-inclinaison-1152351/
-	stbi_uc* data = stbi_load( "pexels-robert-bogdan-156165-1152351.jpg", &width, &height, NULL, 4 );
-	illlustration_img = ImPlatform::CreateTexture2D( ( char* )data, width, height,
-												{
-													ImPixelChannel_RGBA,
-													ImPixelType_UInt8,
-													ImTextureFiltering_Linear,
-													ImTextureBoundary_Clamp,
-													ImTextureBoundary_Clamp
-												} );
-	illlustration_size = ImVec2( ( float )width, ( float )height );
-	STBI_FREE( data );
+	//// Image from: https://www.pexels.com/fr-fr/photo/framboises-mures-dans-une-tasse-de-the-blanche-en-photographie-a-decalage-d-inclinaison-1152351/
+	illlustration_img = TextureFromFile( "pexels-robert-bogdan-156165-1152351.jpg", &illlustration_size );
 	// Image from: https://www.pexels.com/fr-fr/photo/deux-chaises-avec-table-en-verre-sur-le-salon-pres-de-la-fenetre-1571453/
-	data = stbi_load( "pexels-fotoaibe-1571453.jpg", &width, &height, NULL, 4 );
-	background = ImPlatform::CreateTexture2D( ( char* )data, width, height,
-												{
-													ImPixelChannel_RGBA,
-													ImPixelType_UInt8,
-													ImTextureFiltering_Linear,
-													ImTextureBoundary_Clamp,
-													ImTextureBoundary_Clamp
-												} );
-	background_size = ImVec2( ( float )width, ( float )height );
-	STBI_FREE( data );
+	background = TextureFromFile( "pexels-fotoaibe-1571453.jpg", &background_size );
+
+	ImWidgets::OwnTexture( illlustration_img );
+	ImWidgets::OwnTexture( background );
 
 	ImVec4 clear_color = ImVec4( 0.461f, 0.461f, 0.461f, 1.0f );
 	while ( ImPlatform::PlatformContinue() )
@@ -244,7 +250,6 @@ int main()
 
 	ImWidgets::DestroyContext( ctx );
 	ImPlatform::SimpleFinish();
-	ImPlatform::ReleaseTexture2D( background );
 
 	return 0;
 }
@@ -1389,7 +1394,8 @@ namespace ImWidgets{
 					v.y *= size;
 					v += pos;
 				}
-				bool hovered = IsMouseHoveringPolyConvex( pos, pos + ImVec2( size, size ), pos_norms, 3 );
+				ImPolyShapeData data = { &pos_norms[ 0 ], 3 };
+				bool hovered = IsMouseHovering( pos, pos + ImVec2( size, size ), IsPolyConvexContains, &data );
 				pDrawList->AddConvexPolyFilled( &pos_norms[ 0 ], 3, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 				pos = ImGui::GetCursorScreenPos();
@@ -1403,7 +1409,8 @@ namespace ImWidgets{
 					disk[ k ].x = pos.x + 0.5f * size + cos0 * size * 0.5f;
 					disk[ k ].y = pos.y + 0.5f * size + sin0 * size * 0.5f;
 				}
-				hovered = IsMouseHoveringPolyConvex( pos, pos + ImVec2( size, size ), &disk[ 0 ], 32 );
+				data = { &disk[ 0 ], 32 };
+				hovered = IsMouseHovering( pos, pos + ImVec2( size, size ), IsPolyConvexContains, &data );
 				pDrawList->AddConvexPolyFilled( &disk[ 0 ], 32, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 
 				ImGui::Dummy( ImVec2( size, size ) );
@@ -1423,7 +1430,8 @@ namespace ImWidgets{
 					v.y *= size;
 					v += pos;
 				}
-				bool hovered = IsMouseHoveringPolyConcave( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), pos_norms, sz );
+				ImPolyShapeData data = { &pos_norms[ 0 ], sz };
+				bool hovered = IsMouseHovering( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), IsPolyConcaveContains, &data );
 				pDrawList->AddConcavePolyFilled( &pos_norms[ 0 ], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 				pos = ImGui::GetCursorScreenPos();
@@ -1440,7 +1448,8 @@ namespace ImWidgets{
 					ring[ k ].x = pos.x + size * 0.5f + r * 0.5f * cos0;
 					ring[ k ].y = pos.y + size * 0.5f + r * 0.5f * sin0;
 				}
-				hovered = IsMouseHoveringPolyConcave( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), &ring[ 0 ], sz );
+				data = { &ring[ 0 ], sz };
+				hovered = IsMouseHovering( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), IsPolyConcaveContains, &data );
 				pDrawList->AddConcavePolyFilled( &ring[ 0 ], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
@@ -1459,7 +1468,8 @@ namespace ImWidgets{
 					v.y *= size;
 					v += pos;
 				}
-				bool hovered = IsMouseHoveringPolyWithHole( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), pos_norms, sz );
+				ImPolyHoleShapeData data = { &pos_norms[ 0 ], sz, NULL, 1, 1 };
+				bool hovered = IsMouseHovering( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), IsPolyWithHoleContains, &data );
 				DrawShapeWithHole( pDrawList, &pos_norms[ 0 ], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 				pos = ImGui::GetCursorScreenPos();
@@ -1486,7 +1496,8 @@ namespace ImWidgets{
 					ring[ k ].x = pos.x + size * 0.5f + r * 0.5f * cos0;
 					ring[ k ].y = pos.y + size * 0.5f + r * 0.5f * sin0;
 				}
-				hovered = IsMouseHoveringPolyWithHole( pos, pos + ImVec2( size, size ), &ring[ 0 ], sz );
+				data = { &ring[ 0 ], sz, NULL, 1, 1 };
+				hovered = IsMouseHovering( pos, pos + ImVec2( size, size ), IsPolyWithHoleContains, &data );
 				DrawShapeWithHole( pDrawList, &ring[ 0 ], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
