@@ -166,6 +166,7 @@ struct ImWidgetsContext
 {
 	ImTextureID						blackImg; // 4x4 RGBA UInt8 Black Image: { Linear, Clamp }
 	ImTextureID						whiteImg; // 4x4 RGBA UInt8 White Image: { Linear, Clamp }
+	ImVector<ImTextureID>			ressources;
 	ImWidgetsFeatures				features;
 
 	ImDrawShader					markerShader;
@@ -473,6 +474,20 @@ struct ImGlobalData
 	ImWidgetsFeatures features;
 };
 
+struct ImPolyShapeData
+{
+	ImVec2* pts;
+	int pts_count;
+};
+struct ImPolyHoleShapeData
+{
+	ImVec2* pts;
+	int pts_count;
+	ImRect* p_bb;
+	int gap;
+	int strokeWidth;
+};
+
 namespace ImWidgets{
 	extern ImGlobalData GlobalData;
 
@@ -665,15 +680,18 @@ namespace ImWidgets{
 		else
 			return 1.055f * ImPow( x, 1.0f / 2.4f) - 0.055f;
 	}
-	IMGUI_API void	ColorConvertsRGBtosRGB( float r, float g, float b, float& out_r, float& out_g, float& out_b );
-	IMGUI_API void	ColorConvertRGBtoLinear( float r, float g, float b, float& out_L, float& out_a, float& out_b );
-	IMGUI_API void	ColorConvertLineartoRGB( float L, float a, float b, float& out_r, float& out_g, float& out_b );
-	IMGUI_API void	ColorConvertRGBtoOKLAB( float r, float g, float b, float& out_L, float& out_a, float& out_b );
-	IMGUI_API void	ColorConvertOKLABtoRGB( float L, float a, float b, float& out_r, float& out_g, float& out_b );
-	IMGUI_API void	ColorConvertOKLCHtoOKLAB( float r, float g, float b, float& out_L, float& out_a, float& out_b );
-	IMGUI_API void	ColorConvertOKLABtoOKLCH( float L, float a, float b, float& out_r, float& out_g, float& out_b );
-	IMGUI_API void	ColorConvertsRGBtoOKLCH( float r, float g, float b, float& out_L, float& out_c, float& out_h );
-	IMGUI_API void	ColorConvertOKLCHtosRGB( float L, float c, float h, float& out_r, float& out_g, float& out_b );
+	// Right-to-Left, like operator '=' or like standard function in C, memcpy, ...
+	IMGUI_API void	ColorConvertsRGBtosRGB( float& out_r, float& out_g, float& out_b, float r, float g, float b );
+	IMGUI_API void	ColorConvertRGBtoLinear( float& out_L, float& out_a, float& out_b, float r, float g, float b );
+	IMGUI_API void	ColorConvertLineartoRGB( float& out_r, float& out_g, float& out_b, float L, float a, float b );
+	IMGUI_API void	ColorConvertRGBtoOKLAB( float& out_L, float& out_a, float& out_b, float r, float g, float b );
+	IMGUI_API void	ColorConvertOKLABtoRGB( float& out_r, float& out_g, float& out_b, float L, float a, float b );
+	IMGUI_API void	ColorConvertOKLCHtoOKLAB( float& out_L, float& out_a, float& out_b, float r, float g, float b );
+	IMGUI_API void	ColorConvertOKLABtoOKLCH( float& out_r, float& out_g, float& out_b, float L, float a, float b );
+	IMGUI_API void	ColorConvertsRGBtoOKLCH( float& out_L, float& out_c, float& out_h, float r, float g, float b );
+	IMGUI_API void	ColorConvertOKLCHtosRGB( float& out_r, float& out_g, float& out_b, float L, float c, float h );
+	IMGUI_API void	ColorConvertRGBtoHSV( float& out_h, float& out_s, float& out_v, float r, float g, float b );
+	IMGUI_API void	ColorConvertHSVtoRGB( float& out_r, float& out_g, float& out_b, float h, float s, float v );
 	ImU32	KelvinTemperatureTosRGBColors( float temperature ); // [ 1000 K; 12000 K ]
 
 	inline
@@ -781,8 +799,8 @@ namespace ImWidgets{
 	//void	GenShapeFromBezierQuadraticCurve( ImShape& sshape, ImVector<ImVec2>& path, float thickness, int num_segments = 0 );
 
 	// TODO Add Color Blend Option (Linear, sRGB, ...) cf. W3C rules
-	typedef void	( *pfSpace2sRGB )( float, float, float, float&, float&, float& );
-	typedef void	( *pfsRGB2Space )( float, float, float, float&, float&, float& );
+	typedef void	( *pfSpace2sRGB )( float&, float&, float&, float, float, float );
+	typedef void	( *pfsRGB2Space )( float&, float&, float&, float, float, float );
 	void	ShapeLinearGradientGeneric( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space );
 	void	ShapeRadialGradientGeneric( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space );
 	void	ShapeDiamondGradientGeneric( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space );
@@ -813,9 +831,11 @@ namespace ImWidgets{
 	IMGUI_API void AddFeatures( ImWidgetsFeatures features );
 	IMGUI_API void RemoveFeature( ImWidgetsFeatures features );
 	IMGUI_API ImWidgetsContext*	CreateContext();
-	IMGUI_API void	DestroyContext( ImWidgetsContext* );
+	IMGUI_API void DestroyContext( ImWidgetsContext* );
 
-	IMGUI_API void	SetCurrentContext( ImWidgetsContext* );
+	IMGUI_API void SetCurrentContext( ImWidgetsContext* );
+
+	IMGUI_API void OwnTexture( ImTextureID tex );
 
 	//////////////////////////////////////////////////////////////////////////
 	// DrawList
@@ -1017,19 +1037,25 @@ namespace ImWidgets{
 	//////////////////////////////////////////////////////////////////////////
 	// Interactions
 	//////////////////////////////////////////////////////////////////////////
-	IMGUI_API bool IsPolyConvexContains( ImVec2* pts, int pts_count, ImVec2 p );
-	IMGUI_API bool IsPolyConcaveContains( ImVec2* pts, int pts_count, ImVec2 p );
-	IMGUI_API bool IsPolyWithHoleContains( ImVec2* pts, int pts_count, ImVec2 p, ImRect* p_bb = NULL, int gap = 1, int strokeWidth = 1 );
+	IMGUI_API bool IsBoundingBoxWellFormed( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count );
 
-	IMGUI_API bool IsMouseHoveringPolyConvex( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip = true );
-	IMGUI_API bool ItemHoverablePolyConvex( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags );
-	IMGUI_API bool IsMouseHoveringPolyConcave( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip = true );
-	IMGUI_API bool ItemHoverablePolyConcave( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags );
-	IMGUI_API bool IsMouseHoveringPolyWithHole( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip = true );
-	IMGUI_API bool ItemHoverablePolyWithHole( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags );
+	typedef bool ( *IsContains )( ImVec2 p, void* data );
+	IMGUI_API bool IsPolyConvexContains( ImVec2 p, void* data );
+	IMGUI_API bool IsPolyConcaveContains( ImVec2 p, void* data );
+	IMGUI_API bool IsPolyWithHoleContains( ImVec2 p, void* data );
 
-	typedef bool (*ImItemHoverablePolyConvexFunc)( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags );
-	IMGUI_API bool ButtonBehaviorShape( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags, ImItemHoverablePolyConvexFunc func );
+	IMGUI_API bool IsMouseHovering( const ImVec2& r_min, const ImVec2& r_max, IsContains contains, void* data, bool clip = true );
+
+	//IMGUI_API bool IsMouseHoveringPolyConvex( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip = true );
+	IMGUI_API bool ItemHoverablePolyConvex( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags, void* extra_data );
+	//IMGUI_API bool IsMouseHoveringPolyConcave( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip = true );
+	IMGUI_API bool ItemHoverablePolyConcave( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags, void* extra_data );
+	//IMGUI_API bool IsMouseHoveringPolyWithHole( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip = true );
+	IMGUI_API bool ItemHoverablePolyWithHole( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags, void* extra_data );
+
+	typedef bool (*ImItemHoverablePolyConvexFunc)( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags, void* extra_data );
+	IMGUI_API bool ButtonBehaviorShape( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags, ImItemHoverablePolyConvexFunc func, void* extra_data );
+	IMGUI_API bool ButtonBehaviorDisc( ImVec2 center, float radius, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
 	IMGUI_API bool ButtonBehaviorConvex( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
 	IMGUI_API bool ButtonBehaviorConcave( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
 	IMGUI_API bool ButtonBehaviorWithHole( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );

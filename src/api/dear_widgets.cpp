@@ -1612,31 +1612,31 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 #endif
 	}
 
-	void          ColorConvertsRGBtosRGB( float r, float g, float b, float& out_r, float& out_g, float& out_b )
+	void ColorConvertsRGBtosRGB( float& out_r, float& out_g, float& out_b, float r, float g, float b )
 	{
 		out_r = r;
 		out_g = g;
 		out_b = b;
 	}
-	void          ColorConvertRGBtoLinear( float r, float g, float b, float& out_r, float& out_g, float& out_b )
+	void ColorConvertRGBtoLinear( float& out_L, float& out_a, float& out_b, float r, float g, float b )
 	{
-		out_r = ImsRGBToLinear( r );
-		out_g = ImsRGBToLinear( g );
+		out_L = ImsRGBToLinear( r );
+		out_a = ImsRGBToLinear( g );
 		out_b = ImsRGBToLinear( b );
-		out_r = ImSaturate( out_r );
-		out_g = ImSaturate( out_g );
+		out_L = ImSaturate( out_L );
+		out_a = ImSaturate( out_a );
 		out_b = ImSaturate( out_b );
 	}
-	void          ColorConvertLineartoRGB( float r, float g, float b, float& out_r, float& out_g, float& out_b )
+	void ColorConvertLineartoRGB( float& out_r, float& out_g, float& out_b, float L, float a, float b )
 	{
-		out_r = ImLinearTosRGB( r );
-		out_g = ImLinearTosRGB( g );
+		out_r = ImLinearTosRGB( L );
+		out_g = ImLinearTosRGB( a );
 		out_b = ImLinearTosRGB( b );
 		out_r = ImSaturate( out_r );
 		out_g = ImSaturate( out_g );
 		out_b = ImSaturate( out_b );
 	}
-	void          ColorConvertRGBtoOKLAB( float r, float g, float b, float& out_L, float& out_a, float& out_b )
+	void ColorConvertRGBtoOKLAB( float& out_L, float& out_a, float& out_b, float r, float g, float b )
 	{
 		r = ImsRGBToLinear( r );
 		g = ImsRGBToLinear( g );
@@ -1651,7 +1651,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		out_a = l * +1.9779984951f + m * -2.4285922050f + s * +0.4505937099f;
 		out_b = l * +0.0259040371f + m * +0.7827717662f + s * -0.8086757660f;
 	}
-	void          ColorConvertOKLABtoRGB( float L, float a, float b, float& out_r, float& out_g, float& out_b )
+	void ColorConvertOKLABtoRGB( float& out_r, float& out_g, float& out_b, float L, float a, float b )
 	{
 		float l = L + a * +0.3963377774f + b * +0.2158037573f;
 		float m = L + a * -0.1055613458f + b * -0.0638541728f;
@@ -1666,35 +1666,45 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		out_g = ImLinearTosRGB( out_g );
 		out_b = ImLinearTosRGB( out_b );
 	}
-	void          ColorConvertOKLCHtoOKLAB( float L, float c, float h, float& out_L, float& out_a, float& out_b )
+	void ColorConvertOKLCHtoOKLAB( float& out_L, float& out_a, float& out_b, float r, float g, float b )
 	{
-		out_L = L;
-		out_a = c * ImCos( h * 2.0f * IM_PI );
-		out_b = c * ImSin( h * 2.0f * IM_PI );
+		out_L = r;
+		out_a = g * ImCos( b * 2.0f * IM_PI );
+		out_b = g * ImSin( b * 2.0f * IM_PI );
 	}
-	void          ColorConvertOKLABtoOKLCH( float L, float a, float b, float& out_L, float& out_c, float& out_h )
+	void ColorConvertOKLABtoOKLCH( float& out_r, float& out_g, float& out_b, float L, float a, float b )
 	{
-		out_L = L;
-		out_c = ImSqrt( a * a + b * b );
-		out_h = ImAtan2( b, a );
-		if ( out_h < 0.0f )
+		out_r = L;
+		out_g = ImSqrt( a * a + b * b );
+		out_b = ImAtan2( b, a );
+		if ( out_b < 0.0f )
 		{
-			out_h += 2.0f * IM_PI;
+			out_b += 2.0f * IM_PI;
 		}
-		out_h /= 2.0f * IM_PI;
-		out_h = ImSaturate( out_h );
+		out_b /= 2.0f * IM_PI;
+		out_b = ImSaturate( out_b );
 	}
-	void          ColorConvertsRGBtoOKLCH( float r, float g, float b, float& out_L, float& out_c, float& out_h )
+	void ColorConvertsRGBtoOKLCH( float& out_L, float& out_c, float& out_h, float r, float g, float b )
 	{
 		float lL, la, lb;
-		ColorConvertRGBtoOKLAB( r, g, b, lL, la, lb );
-		ColorConvertOKLABtoOKLCH( lL, la, lb, out_L, out_c, out_h );
+		ColorConvertRGBtoOKLAB( lL, la, lb, r, g, b );
+		ColorConvertOKLABtoOKLCH( out_L, out_c, out_h, lL, la, lb );
 	}
-	void          ColorConvertOKLCHtosRGB( float L, float c, float h, float& out_r, float& out_g, float& out_b )
+	void ColorConvertOKLCHtosRGB( float& out_r, float& out_g, float& out_b, float L, float c, float h )
 	{
 		float lL, la, lb;
-		ColorConvertOKLCHtoOKLAB( L, c, h, lL, la, lb );
-		ColorConvertOKLABtoRGB( lL, la, lb, out_r, out_g, out_b );
+		ColorConvertOKLCHtoOKLAB( lL, la, lb, L, c, h );
+		ColorConvertOKLABtoRGB( out_r, out_g, out_b, lL, la, lb );
+	}
+
+	void ColorConvertRGBtoHSV( float& out_h, float& out_s, float& out_v, float r, float g, float b )
+	{
+		ImGui::ColorConvertRGBtoHSV( r, g, b, out_h, out_s, out_v );
+	}
+
+	void ColorConvertHSVtoRGB( float& out_r, float& out_g, float& out_b, float h, float s, float v )
+	{
+		ImGui::ColorConvertHSVtoRGB( h, s, v, out_r, out_g, out_b );
 	}
 
 	ImU32	KelvinTemperatureTosRGBColors( float temperature )
@@ -2455,8 +2465,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			shape.bb.Min.x = ImMin( shape.bb.Min.x, shape.vertices[ k ].pos.x );
 			shape.bb.Min.y = ImMin( shape.bb.Min.y, shape.vertices[ k ].pos.y );
-			shape.bb.Max.x = ImMin( shape.bb.Max.x, shape.vertices[ k ].pos.x );
-			shape.bb.Max.y = ImMin( shape.bb.Max.y, shape.vertices[ k ].pos.y );
+			shape.bb.Max.x = ImMax( shape.bb.Max.x, shape.vertices[ k ].pos.x );
+			shape.bb.Max.y = ImMax( shape.bb.Max.y, shape.vertices[ k ].pos.y );
 		}
 	}
 
@@ -2464,7 +2474,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	{
 		shape.bb.Min = shape.vertices.front().pos;
 		shape.bb.Max = shape.vertices.front().pos;
+		//shape.bb.Min = shape.vertices->pos;
+		//shape.bb.Max = shape.vertices->pos;
 		int vtx_count = shape.vertices.size();
+		//int vtx_count = shape.vertices_count;
 		for ( int k = 1; k < vtx_count; ++k )
 		{
 			shape.bb.Min.x = ImMin( shape.bb.Min.x, shape.vertices[ k ].pos.x );
@@ -2575,8 +2588,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImVec4 col1k;
 		col0k.w = col0v.w;
 		col1k.w = col1v.w;
-		sRGB2Space( col0v.x, col0v.y, col0v.z, col0k.x, col0k.y, col0k.z );
-		sRGB2Space( col1v.x, col1v.y, col1v.z, col1k.x, col1k.y, col1k.z );
+		sRGB2Space( col0k.x, col0k.y, col0k.z, col0v.x, col0v.y, col0v.z );
+		sRGB2Space( col1k.x, col1k.y, col1k.z, col1v.x, col1v.y, col1v.z );
 		ImVec4 vtxCol;
 		for ( int k = 0; k < vtx_count; ++k )
 		{
@@ -2588,7 +2601,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float t = ImSaturate( ImDot( d, c ) * l );
 			ImVec4 curCol = ImLerp( col0k, col1k, t );
 			vtxCol.w = curCol.w;
-			space2sRGB( curCol.x, curCol.y, curCol.z, vtxCol.x, vtxCol.y, vtxCol.z );
+			space2sRGB( vtxCol.x, vtxCol.y, vtxCol.z, curCol.x, curCol.y, curCol.z );
 			shape.vertices[ k ].col = ImGui::GetColorU32( vtxCol );
 		}
 	}
@@ -2603,8 +2616,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImVec4 col1k;
 		col0k.w = col0v.w;
 		col1k.w = col1v.w;
-		sRGB2Space( col0v.x, col0v.y, col0v.z, col0k.x, col0k.y, col0k.z );
-		sRGB2Space( col1v.x, col1v.y, col1v.z, col1k.x, col1k.y, col1k.z );
+		sRGB2Space( col0k.x, col0k.y, col0k.z, col0v.x, col0v.y, col0v.z );
+		sRGB2Space( col1k.x, col1k.y, col1k.z, col1v.x, col1v.y, col1v.z );
 		ImVec4 vtxCol;
 		for ( int k = 0; k < vtx_count; ++k )
 		{
@@ -2615,7 +2628,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float t = ImSaturate( ImLength( uv - uv_start ) * l );
 			ImVec4 curCol = ImLerp( col0k, col1k, t );
 			vtxCol.w = curCol.w;
-			space2sRGB( curCol.x, curCol.y, curCol.z, vtxCol.x, vtxCol.y, vtxCol.z );
+			space2sRGB( vtxCol.x, vtxCol.y, vtxCol.z, curCol.x, curCol.y, curCol.z );
 			shape.vertices[ k ].col = ImGui::GetColorU32( vtxCol );
 		}
 	}
@@ -2631,8 +2644,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImVec4 col1k;
 		col0k.w = col0v.w;
 		col1k.w = col1v.w;
-		sRGB2Space( col0v.x, col0v.y, col0v.z, col0k.x, col0k.y, col0k.z );
-		sRGB2Space( col1v.x, col1v.y, col1v.z, col1k.x, col1k.y, col1k.z );
+		sRGB2Space( col0k.x, col0k.y, col0k.z, col0v.x, col0v.y, col0v.z );
+		sRGB2Space( col1k.x, col1k.y, col1k.z, col1v.x, col1v.y, col1v.z );
 		ImVec4 vtxCol;
 		for ( int k = 0; k < vtx_count; ++k )
 		{
@@ -2643,7 +2656,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float t = ImSaturate( ImLengthL1( uv - uv_start ) * l );
 			ImVec4 curCol = ImLerp( col0k, col1k, t );
 			vtxCol.w = curCol.w;
-			space2sRGB( curCol.x, curCol.y, curCol.z, vtxCol.x, vtxCol.y, vtxCol.z );
+			space2sRGB( vtxCol.x, vtxCol.y, vtxCol.z, curCol.x, curCol.y, curCol.z );
 			shape.vertices[ k ].col = ImGui::GetColorU32( vtxCol );
 		}
 	}
@@ -2740,15 +2753,15 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	void	ShapeHSVLinearGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
-		ShapeLinearGradientGeneric( shape, uv_start, uv_end, col0, col1, &ImGui::ColorConvertHSVtoRGB, &ImGui::ColorConvertRGBtoHSV );
+		ShapeLinearGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertHSVtoRGB, &ColorConvertRGBtoHSV );
 	}
 	void	ShapeHSVRadialGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
-		ShapeRadialGradientGeneric( shape, uv_start, uv_end, col0, col1, &ImGui::ColorConvertHSVtoRGB, &ImGui::ColorConvertRGBtoHSV );
+		ShapeRadialGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertHSVtoRGB, &ColorConvertRGBtoHSV );
 	}
 	void	ShapeHSVDiamondGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
 	{
-		ShapeDiamondGradientGeneric( shape, uv_start, uv_end, col0, col1, &ImGui::ColorConvertHSVtoRGB, &ImGui::ColorConvertRGBtoHSV );
+		ShapeDiamondGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertHSVtoRGB, &ColorConvertRGBtoHSV );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -3251,6 +3264,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ctx->blackImg = img_black;
 		ctx->whiteImg = img_white;
 
+		OwnTexture( img_black );
+		OwnTexture( img_white );
+
 		ctx->thickLinesGPUVertexBuffer = NULL;
 		ctx->thickLinesGPUIndexBuffer = NULL;
 
@@ -3264,12 +3280,21 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		return ctx;
 	}
+	void	OwnTexture( ImTextureID tex )
+	{
+		gs_pContext->ressources.push_back( tex );
+	}
 
 	void	DestroyContext( ImWidgetsContext* ctx )
 	{
 		if ( ctx != NULL )
 		{
 			IM_DELETE( ctx );
+		}
+		int img_count = gs_pContext->ressources.size();
+		for ( int k = 0; k < img_count; ++k )
+		{
+			ImPlatform::ReleaseTexture2D( gs_pContext->ressources[ k ] );
 		}
 	}
 
@@ -3530,7 +3555,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float x1; ( void )x1;
 			x0 = ScaleFromNormalized( ( ( float )i + 0 ) * dx + hdx, minX, maxX );
 
-			ImU32 const col00 = func( x0 , pUserData );
+			ImU32 const col00 = func( x0, pUserData );
 			pDrawList->AddRectFilledMultiColor( position + ImVec2( sx * ( i + 0 ), 0.0f ),
 												position + ImVec2( sx * ( i + 1 ), size.y ),
 												col00, col00, col00, col00 );
@@ -3773,7 +3798,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float L = *pL;
 
 		float rr, gg, bb;
-		ColorConvertOKLABtoRGB( L, a, b, rr, gg, bb );
+		ColorConvertOKLABtoRGB( rr, gg, bb, L, a, b );
 
 		return ImGui::GetColorU32( ImVec4( rr, gg, bb, 1.0f ) );
 	}
@@ -3792,7 +3817,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float h = angle / ( 2.0f * IM_PI );
 
 		float rr, gg, bb;
-		ColorConvertOKLCHtosRGB( L, c, h, rr, gg, bb );
+		ColorConvertOKLCHtosRGB( rr, gg, bb, L, c, h );
 
 		return ImGui::GetColorU32( ImVec4( rr, gg, bb, 1.0f ) );
 	}
@@ -5110,8 +5135,23 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return ( u >= 0.0f ) && ( v >= 0.0f ) && ( u + v < 1.0f );
 	}
 
-	bool IsPolyConvexContains( ImVec2* pts, int pts_count, ImVec2 p )
+	bool IsBoundingBoxWellFormed( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count )
 	{
+		bool well_form = true;
+		for ( int k = 0; k < pts_count; ++k )
+		{
+			well_form &= ImRect( r_min, r_max ).Contains( pts[ k ] );
+		}
+		return well_form;
+	}
+
+	bool IsPolyConvexContains( ImVec2 p, void* data )
+		//( ImVec2* pts, int pts_count, ImVec2 p )
+	{
+		ImPolyShapeData* value = ( ImPolyShapeData* )data;
+		ImVec2* pts = value->pts;
+		int pts_count = value->pts_count;
+
 		IM_ASSERT( pts_count >= 3 );
 
 		for ( int k = 2; k < pts_count; ++k )
@@ -5126,8 +5166,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return false;
 	}
 
-	bool IsPolyConcaveContains( ImVec2* pts, int pts_count, ImVec2 p )
+	bool IsPolyConcaveContains( ImVec2 p, void* data )
+		//( ImVec2* pts, int pts_count, ImVec2 p )
 	{
+		ImPolyShapeData* value = ( ImPolyShapeData* )data;
+		ImVec2* pts = value->pts;
+		int pts_count = value->pts_count;
+
 		IM_ASSERT( pts_count >= 3 );
 
 		ImRect bb;
@@ -5162,8 +5207,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return false;
 	}
 
-	bool IsPolyWithHoleContains( ImVec2* pts, int pts_count, ImVec2 p, ImRect* p_bb, int gap, int strokeWidth )
+	bool IsPolyWithHoleContains( ImVec2 p, void* data )
+		//( ImVec2* pts, int pts_count, ImVec2 p, ImRect* p_bb, int gap, int strokeWidth )
 	{
+		ImPolyHoleShapeData* value = ( ImPolyHoleShapeData* )data;
+		ImVec2* pts = value->pts;
+		int pts_count = value->pts_count;
+		ImRect* p_bb = value->p_bb;
+		int gap = value->gap;
+		int strokeWidth = value->strokeWidth;
+
 		ImVector<ImVec2> scanHits;
 		ImVec2 min, max; // polygon min/max points
 		float y;
@@ -5303,15 +5356,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return false;
 	}
 
-	bool IsMouseHoveringPolyConvex( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip )
+	bool IsMouseHovering( const ImVec2& r_min, const ImVec2& r_max, IsContains contains, void* data, bool clip )
 	{
-		bool well_form = true;
-		for ( int k = 0; k < pts_count; ++k )
-		{
-			well_form &= ImRect( r_min, r_max ).Contains( pts[ k ] );
-		}
-		IM_ASSERT( well_form );
-
 		ImGuiContext& g = *ImGui::GetCurrentContext();
 
 		// Clip
@@ -5322,14 +5368,44 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Hit testing, expanded for touch input
 		if ( !rect_clipped.ContainsWithPad( g.IO.MousePos, g.Style.TouchExtraPadding ) )
 			return false;
-		if ( !IsPolyConvexContains( pts, pts_count, g.IO.MousePos ) )
+		if ( !contains( g.IO.MousePos, data ) )
 			return false;
 
 		return true;
 	}
 
-	bool ItemHoverablePolyConvex( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags )
+	//bool IsMouseHoveringPolyConvex( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip )
+	//{
+	//	bool well_form = true;
+	//	for ( int k = 0; k < pts_count; ++k )
+	//	{
+	//		well_form &= ImRect( r_min, r_max ).Contains( pts[ k ] );
+	//	}
+	//	IM_ASSERT( well_form );
+
+	//	ImGuiContext& g = *ImGui::GetCurrentContext();
+
+	//	// Clip
+	//	ImRect rect_clipped( r_min, r_max );
+	//	if ( clip )
+	//		rect_clipped.ClipWith( g.CurrentWindow->ClipRect );
+
+	//	// Hit testing, expanded for touch input
+	//	if ( !rect_clipped.ContainsWithPad( g.IO.MousePos, g.Style.TouchExtraPadding ) )
+	//		return false;
+	//	PolyShapeData data;
+	//	data.pts = pts;
+	//	data.pts_count = pts_count;
+	//	if ( !IsPolyConvexContains( g.IO.MousePos, &data ) )
+	//		return false;
+
+	//	return true;
+	//}
+
+	bool ItemHoverablePolyConvex( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags, void* extra_data )
 	{
+		IM_UNUSED( extra_data );
+
 		ImGuiContext& g = *GImGui;
 		ImGuiWindow* window = g.CurrentWindow;
 
@@ -5344,7 +5420,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			return false;
 		if ( !ImGui::IsMouseHoveringRect( bb.Min, bb.Max ) )
 			return false;
-		if ( !IsMouseHoveringPolyConvex( bb.Min, bb.Max, pts, pts_count ) )
+		//if ( !IsMouseHoveringPolyConvex( bb.Min, bb.Max, pts, pts_count ) )
+		IM_ASSERT( IsBoundingBoxWellFormed( bb.Min, bb.Max, pts, pts_count ) );
+		ImPolyShapeData data = { pts, pts_count };
+		if ( !IsMouseHovering( bb.Min, bb.Max, IsPolyConvexContains, &data ) )
 			return false;
 
 		if ( g.HoveredId != 0 && g.HoveredId != id && !g.HoveredIdAllowOverlap )
@@ -5415,33 +5494,38 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return true;
 	}
 
-	bool IsMouseHoveringPolyConcave( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip )
+	//bool IsMouseHoveringPolyConcave( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip )
+	//{
+	//	bool well_form = true;
+	//	for ( int k = 0; k < pts_count; ++k )
+	//	{
+	//		well_form &= ImRect( r_min, r_max ).Contains( pts[ k ] );
+	//	}
+	//	IM_ASSERT( well_form );
+
+	//	ImGuiContext& g = *ImGui::GetCurrentContext();
+
+	//	// Clip
+	//	ImRect rect_clipped( r_min, r_max );
+	//	if ( clip )
+	//		rect_clipped.ClipWith( g.CurrentWindow->ClipRect );
+
+	//	// Hit testing, expanded for touch input
+	//	if ( !rect_clipped.ContainsWithPad( g.IO.MousePos, g.Style.TouchExtraPadding ) )
+	//		return false;
+	//	PolyShapeData data;
+	//	data.pts = pts;
+	//	data.pts_count = pts_count;
+	//	if ( !IsPolyConcaveContains( g.IO.MousePos, &data ) )
+	//		return false;
+
+	//	return true;
+	//}
+
+	bool ItemHoverablePolyConcave( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags, void* extra_data )
 	{
-		bool well_form = true;
-		for ( int k = 0; k < pts_count; ++k )
-		{
-			well_form &= ImRect( r_min, r_max ).Contains( pts[ k ] );
-		}
-		IM_ASSERT( well_form );
+		IM_UNUSED( extra_data );
 
-		ImGuiContext& g = *ImGui::GetCurrentContext();
-
-		// Clip
-		ImRect rect_clipped( r_min, r_max );
-		if ( clip )
-			rect_clipped.ClipWith( g.CurrentWindow->ClipRect );
-
-		// Hit testing, expanded for touch input
-		if ( !rect_clipped.ContainsWithPad( g.IO.MousePos, g.Style.TouchExtraPadding ) )
-			return false;
-		if ( !IsPolyConcaveContains( pts, pts_count, g.IO.MousePos ) )
-			return false;
-
-		return true;
-	}
-
-	bool ItemHoverablePolyConcave( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags )
-	{
 		ImGuiContext& g = *GImGui;
 		ImGuiWindow* window = g.CurrentWindow;
 
@@ -5456,7 +5540,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			return false;
 		if ( !ImGui::IsMouseHoveringRect( bb.Min, bb.Max ) )
 			return false;
-		if ( !IsMouseHoveringPolyConcave( bb.Min, bb.Max, pts, pts_count ) )
+		//if ( !IsMouseHoveringPolyConcave( bb.Min, bb.Max, pts, pts_count ) )
+		IM_ASSERT( IsBoundingBoxWellFormed( bb.Min, bb.Max, pts, pts_count ) );
+		ImPolyShapeData data = { pts, pts_count };
+		if ( !IsMouseHovering( bb.Min, bb.Max, IsPolyConcaveContains, &data ) )
 			return false;
 
 		if ( g.HoveredId != 0 && g.HoveredId != id && !g.HoveredIdAllowOverlap )
@@ -5527,33 +5614,41 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return true;
 	}
 
-	bool IsMouseHoveringPolyWithHole( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip )
+	//bool IsMouseHoveringPolyWithHole( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip )
+	//{
+	//	bool well_form = true;
+	//	for ( int k = 0; k < pts_count; ++k )
+	//	{
+	//		well_form &= ImRect( r_min, r_max ).Contains( pts[ k ] );
+	//	}
+	//	IM_ASSERT( well_form );
+
+	//	ImGuiContext& g = *ImGui::GetCurrentContext();
+
+	//	// Clip
+	//	ImRect rect_clipped( r_min, r_max );
+	//	if ( clip )
+	//		rect_clipped.ClipWith( g.CurrentWindow->ClipRect );
+
+	//	// Hit testing, expanded for touch input
+	//	if ( !rect_clipped.ContainsWithPad( g.IO.MousePos, g.Style.TouchExtraPadding ) )
+	//		return false;
+	//	PolyHoleShapeData data;
+	//	data.pts = pts;
+	//	data.pts_count = pts_count;
+	//	data.p_bb = NULL;
+	//	data.gap = 1;
+	//	data.strokeWidth = 1;
+	//	if ( !IsPolyWithHoleContains( g.IO.MousePos, &data ) )
+	//		return false;
+
+	//	return true;
+	//}
+
+	bool ItemHoverablePolyWithHole( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags, void* extra_data )
 	{
-		bool well_form = true;
-		for ( int k = 0; k < pts_count; ++k )
-		{
-			well_form &= ImRect( r_min, r_max ).Contains( pts[ k ] );
-		}
-		IM_ASSERT( well_form );
+		IM_UNUSED( extra_data );
 
-		ImGuiContext& g = *ImGui::GetCurrentContext();
-
-		// Clip
-		ImRect rect_clipped( r_min, r_max );
-		if ( clip )
-			rect_clipped.ClipWith( g.CurrentWindow->ClipRect );
-
-		// Hit testing, expanded for touch input
-		if ( !rect_clipped.ContainsWithPad( g.IO.MousePos, g.Style.TouchExtraPadding ) )
-			return false;
-		if ( !IsPolyWithHoleContains( pts, pts_count, g.IO.MousePos ) )
-			return false;
-
-		return true;
-	}
-
-	bool ItemHoverablePolyWithHole( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags )
-	{
 		ImGuiContext& g = *GImGui;
 		ImGuiWindow* window = g.CurrentWindow;
 
@@ -5568,7 +5663,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			return false;
 		if ( !ImGui::IsMouseHoveringRect( bb.Min, bb.Max ) )
 			return false;
-		if ( !IsMouseHoveringPolyWithHole( bb.Min, bb.Max, pts, pts_count ) )
+		//if ( !IsMouseHoveringPolyWithHole( bb.Min, bb.Max, pts, pts_count ) )
+		IM_ASSERT( IsBoundingBoxWellFormed( bb.Min, bb.Max, pts, pts_count ) );
+		ImPolyHoleShapeData data = { pts, pts_count, NULL, 1, 1 };
+		if ( !IsMouseHovering( bb.Min, bb.Max, IsPolyWithHoleContains, &data ) )
 			return false;
 
 		if ( g.HoveredId != 0 && g.HoveredId != id && !g.HoveredIdAllowOverlap )
@@ -5639,7 +5737,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return true;
 	}
 
-	bool ButtonBehaviorShape( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags, ImItemHoverablePolyConvexFunc func )
+	bool ButtonBehaviorShape( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags, ImItemHoverablePolyConvexFunc func, void* extra_data )
 	{
 		// Copy Past from ImGui::ButtonBehavior to only change ItemHovered
 		ImGuiContext& g = *GImGui;
@@ -5676,7 +5774,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImComputeRect( &bb, pts, pts_count );
 
 		bool pressed = false;
-		bool hovered = func( bb, id, pts, pts_count, item_flags );
+		bool hovered = func( bb, id, pts, pts_count, item_flags, extra_data );
 
 		// Special mode for Drag and Drop where holding button pressed for a long time while dragging another item triggers the button
 		if ( g.DragDropActive && ( flags & ImGuiButtonFlags_PressedOnDragDropHold ) && !( g.DragDropSourceFlags & ImGuiDragDropFlags_SourceNoHoldToOpenOthers ) )
@@ -5861,19 +5959,25 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return pressed;
 	}
 
+	bool ButtonBehaviorDisc( ImVec2 center, float radius, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags )
+	{
+		float data[ 3 ] = { center.x, center.y, radius };
+		return ButtonBehaviorShape( NULL, -1, id, out_hovered, out_held, flags, &ItemHoverablePolyConvex, &data[ 0 ] );
+	}
+
 	bool ButtonBehaviorConvex( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags )
 	{
-		return ButtonBehaviorShape( pts, pts_count, id, out_hovered, out_held, flags, &ItemHoverablePolyConvex );
+		return ButtonBehaviorShape( pts, pts_count, id, out_hovered, out_held, flags, &ItemHoverablePolyConvex, NULL );
 	}
 
 	bool ButtonBehaviorConcave( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags )
 	{
-		return ButtonBehaviorShape( pts, pts_count, id, out_hovered, out_held, flags, &ItemHoverablePolyConcave );
+		return ButtonBehaviorShape( pts, pts_count, id, out_hovered, out_held, flags, &ItemHoverablePolyConcave, NULL );
 	}
 
 	bool ButtonBehaviorWithHole( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags )
 	{
-		return ButtonBehaviorShape( pts, pts_count, id, out_hovered, out_held, flags, &ItemHoverablePolyWithHole );
+		return ButtonBehaviorShape( pts, pts_count, id, out_hovered, out_held, flags, &ItemHoverablePolyWithHole, NULL );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -5916,7 +6020,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			return false;
 
 		bool hovered, held;
-		bool pressed = ButtonBehaviorShape( pts, pts_count, id, &hovered, &held, flags, func );
+		bool pressed = ButtonBehaviorShape( pts, pts_count, id, &hovered, &held, flags, func, NULL );
 
 		// Render
 		const ImU32 col = ImGui::GetColorU32( ( held && hovered ) ? ImGuiCol_ButtonActive : hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button );
