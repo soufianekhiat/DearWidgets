@@ -418,16 +418,43 @@ namespace ImWidgets{
 				ImGui::Dummy( ImVec2( size, 0.25f * size ) );
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 
+				static float line_width = 5.0f;
+				static float mitter_limit = 0.0f;
+				static float antialiasing = 1.0f / size;
+
+				ImVec4 vBlue( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f ); // TODO: choose from style
+				ImVec4 vOrange( 255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f ); // TODO: choose from style
+				ImU32 uBlue = ImGui::GetColorU32( vBlue );
+				ImU32 uOrange = ImGui::GetColorU32( vOrange );
+				static ImVec4 color_v( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
+				static ImU32 color_col = ImGui::GetColorU32( color_v );
+				if ( ImGui::ColorEdit4( "ColA##DrawShape", &color_v.x ) )
+					color_col = ImGui::GetColorU32( color_v );
+				ImGui::DragFloat( "line_width", &line_width, 0.0125f, 0.0f, 16.0f );
+				ImGui::DragFloat( "antialiasing", &antialiasing, 0.0125f, 0.0f, 16.0f );
+				ImGui::SliderAngle( "mitter_limit", &mitter_limit );
+
 				ImVec2 pos = ImGui::GetCursorScreenPos();
 
-				ImWidgetsShape line;
-				//GenThickLine( line, pos + ImVec2( size * 0.5f, 0.0f ), pos + ImVec2( size * 0.5f, size ), 10.0f, CapType_Round, CapType_Square );
-				ShapeLinearSRGBLinearGradient( line,
-											   ImVec2( 0.0f, 0.0f ), ImVec2( 1.0f, 1.0f ),
-											   IM_COL32( 255, 0, 0, 255 ), IM_COL32( 255, 0, 0, 255 ) );
-				DrawShape( pDrawList, line );
+				ImVec2 pts[] = {
+					pos + ImVec2( size * 0.25f, size * 0.25f ),
+					pos + ImVec2( size * 0.72f, size * 0.25f ),
+					pos + ImVec2( size * 0.72f, size * 0.75f )
+				};
+
+				DrawThickLine( pDrawList,
+							   pts, 3,
+							   line_width,
+							   color_col,
+							   antialiasing,
+							   ImWidgetsCap_Round,
+							   ImWidgetsCap_Round,
+							   ImWidgetsJoin_Round,
+							   mitter_limit );
+
+				//pDrawList->AddLine( pts[ 0 ], pts[ 1 ], color_col, line_width );
+
 				ImGui::Dummy( ImVec2( size, size ) );
-				ImGui::Dummy( ImVec2( size, 0.25f * size ) );
 			}
 #endif
 			if ( ImGui::CollapsingHeader( "Linear Gradient" ) )
@@ -645,8 +672,8 @@ namespace ImWidgets{
 				static ImU32 edge_col = ImGui::GetColorU32( edge_col_v );
 				static ImU32 triangle_col = ImGui::GetColorU32( triangle_col_v );
 				static ImU32 vertex_col = ImGui::GetColorU32( vertex_col_v );
-				static ImVec2 uv_start( 0.0f, 0.0f );
-				static ImVec2 uv_end( 0.0f, 1.0f );
+				static ImVec2 uv_start( 0.0f, 0.5f );
+				static ImVec2 uv_end( 0.0f, 0.75f );
 				static ImVec4 cola_v( 1.0f, 1.0f, 1.0f, 1.0f );
 				static ImVec4 colb_v( 0.0f, 0.0f, 0.0f, 0.0f );
 				static ImU32 cola = ImGui::GetColorU32( cola_v );
@@ -1506,6 +1533,14 @@ namespace ImWidgets{
 		if ( ImGui::CollapsingHeader( "Widgets" ) )
 		{
 			ImGui::Indent();
+			if ( ImGui::CollapsingHeader( "Button Circle" ) )
+			{
+				float const half_size = 0.5f * ImGui::GetContentRegionAvail().x;
+				static int value = 0;
+				ImGui::Text( "Value: %d", value );
+				if ( ImWidgets::ButtonExCircle( "Convex", ImVec2( 0, 0 ), ImVec2( half_size, half_size ), half_size, 0 ) )
+					++value;
+			}
 			if ( ImGui::CollapsingHeader( "Button Convex" ) )
 			{
 				float const size = ImGui::GetContentRegionAvail().x;
@@ -1519,7 +1554,7 @@ namespace ImWidgets{
 					disk[ k ].x = 0.5f * size + cos0 * size * 0.5f;
 					disk[ k ].y = 0.5f * size + sin0 * size * 0.5f;
 				}
-				static int value = 1;
+				static int value = 0;
 				ImGui::Text( "Value: %d", value );
 				if ( ImWidgets::ButtonExConvex( "Convex", ImVec2( 0, 0 ), &disk[ 0 ], 32, 0 ) )
 					++value;
@@ -1536,7 +1571,7 @@ namespace ImWidgets{
 					v.x *= size;
 					v.y *= size;
 				}
-				static int value = 1;
+				static int value = 0;
 				ImGui::Text( "Value: %d", value );
 				if ( ImWidgets::ButtonExConcave( "Concave", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 ) )
 					++value;
@@ -1553,7 +1588,7 @@ namespace ImWidgets{
 					v.x *= size;
 					v.y *= size;
 				}
-				static int value = 1;
+				static int value = 0;
 				ImGui::Text( "Value: %d", value );
 				if ( ImWidgets::ButtonExWithHole( "With Hole", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 ) )
 					++value;

@@ -4130,137 +4130,501 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 						bool closed = false,
 						float epsilon = 1e-10f )
 	{
+#if 1
 		IM_ASSERT( PlatformData.features & ImWidgetsFeatures_ThickLines );
 
-		//if ( vertices_count < 2 )
-		//	return;
+		if ( vertices_count < 2 )
+			return;
 
-		//int n = vertices_count;
+		int n = vertices_count;
 
-		//ImVector<ImVec2> P;
-		//P.resize( n );
-
-		//for ( int k = 0; k < n; ++k )
+		ImVector<ImVec2> P;
+		P.resize( n );
+		memcpy( &P[ 0 ], &vertices->x, vertices_count * sizeof( ImVec2 ) );
+		//for ( int k = 0; k < vertices_count; ++k )
+		//{
 		//	P[ k ] = vertices[ k ];
-
-		//float dx = P[ 0 ].x - P[ n - 1 ].x;
-		//float dy = P[ 0 ].y - P[ n - 1 ].y;
-		//float d = ImSqrt( dx * dx + dy * dy );
-
-		//// If closed, make sure first vertex = last vertex (+/- epsilon=1e-10)
-		//if ( closed && d > epsilon )
-		//{
-		//	P.push_back( P[ 0 ] );
-		//	n += 1;
 		//}
 
-		//ImVector<ImVertexLine> V;
-		//V.resize( n );
-		//for ( int i = 0; i < n; ++i )
-		//{
-		//	V[ i ].pos = P[ i ];
-		//}
+		ImVec2 delta = P.front() - P.back();
+		float d = ImLength( delta );
 
-		//// Tangents & norms
-		//ImVector<ImVec2> T;
-		//ImVector<float> N;
-		//T.resize( n - 1 );
-		//N.resize( n - 1 );
+		if ( closed && d > epsilon )
+		{
+			P.push_back( P.front() );
+			++n;
+		}
 
-		//for ( int i = 0; i < n - 1; ++i )
-		//{
-		//	//T[ i ] = { P[ i + 1 ].x - P[ i ].x, P[ i + 1 ].y - P[ i ].y };
-		//	T[ i ] = P[ i + 1 ] - P[ i ];
-		//	N[ i ] = ImSqrt( T[ i ].x * T[ i ].x + T[ i ].y * T[ i ].y );
-		//}
+		//shape.vertices.resize( n );
+		ImVector<ImWidgetsVertexLine> V = shape.vertices;
+		V.resize( n );
+		for ( int k = 0; k < n; ++k )
+		{
+			V[ k ].pos = P[ k ];
+		}
 
-		//for ( int i = 1; i < n; ++i )
-		//{
-		//	V[ i ].tangent = T[ i - 1 ];
-		//}
-		//if ( closed )
-		//	V[ 0 ].tangent = T[ n - 2 ];
-		//else
-		//	V[ 0 ].tangent = T[ 0 ];
+		ImVector<ImVec2> T;
+		ImVector<float> N;
+		T.resize( n - 1 );
+		N.resize( n - 1 );
+		for ( int k = 0; k < n - 1; ++k )
+		{
+			ImVec2 t = P[ k + 1 ] - P[ k ];
+			T[ k ] = t;
+			N[ k ] = ImLength( t );
+		}
+		P.clear();
+		for ( int k = 1; k < n; ++k )
+		{
+			V[ k ].tangent.x = T[ k - 1 ].x;
+			V[ k ].tangent.y = T[ k - 1 ].y;
+		}
+		if ( closed )
+		{
+			V.front().tangent.x = T.back().x;
+			V.front().tangent.y = T.back().y;
+		}
+		else
+		{
+			V.front().tangent.x = T.front().x;
+			V.front().tangent.y = T.front().y;
+		}
+		for ( int k = 0; k < n - 1; ++k )
+		{
+			V[ k ].tangent.z = T[ k ].x;
+			V[ k ].tangent.y = T[ k ].y;
+		}
+		if ( closed )
+		{
+			V.back().tangent.z = T.front().x;
+			V.back().tangent.w = T.front().y;
+		}
+		else
+		{
+			V.back().tangent.x = T.back().x;
+			V.back().tangent.y = T.back().y;
+		}
+		T.clear();
 
-		//for ( int i = 0; i < n - 1; ++i )
-		//{
-		//	V[ i ].tangent = T[ i ];
-		//}
-		//if ( closed )
-		//	V[ n - 1 ].tangent = T[ 0 ];
-		//else
-		//	V[ n - 1 ].tangent = T[ n - 2 ];
+		ImVector<ImVec2> T1;
+		ImVector<ImVec2> T2;
+		T1.resize( n );
+		T2.resize( n );
+		for ( int k = 0; k < n; ++k )
+		{
+			T1[ k ] = { V[ k ].tangent.x, V[ k ].tangent.y };
+			T2[ k ] = { V[ k ].tangent.z, V[ k ].tangent.w };
+		}
+		ImVector<float> A;
+		A.resize( n );
+		for ( int k = 0; k < n; ++k )
+		{
+			A[ k ] = ImAtan2( T1[ k ].x * T2[ k ].y - T1[ k ].y * T2[ k ].x,
+							  T1[ k ].x * T2[ k ].x + T1[ k ].y * T2[ k ].y );
+		}
+		T1.clear();
+		T2.clear();
+		for ( int k = 0; k < n - 1; ++k )
+		{
+			V[ k ].angle.x = A[ k ];
+			V[ k ].angle.y = A[ k + 1 ];
+		}
+		A.clear();
+		ImVector<float> L;
+		L.resize( n );
+		//L[ 0 ] = N[ 0 ];
+		L[ 0 ] = 0.0f;
+		for ( int k = 1; k < n - 1; ++k )
+		{
+			L[ k ] = L[ k - 1 ] + N[ k - 1 ];
+		}
+		for ( int k = 0; k < n - 1; ++k )
+		{
+			V[ k + 1 ].segment.x = L[ k ];
+			V[ k + 0 ].segment.y = L[ k ];
+		}
+		N.clear();
+		L.clear();
 
-		//// Angles
-		//ImVector<float> A;
-		//A.resize( n - 1 );
-		//for ( int i = 0; i < n - 1; ++i )
-		//{
-		//	ImVec2 T1 = V[ i ].tangent;
-		//	ImVec2 T2 = V[ i + 1 ].tangent;
-		//	A[ i ] = ImAtan2( T1.x * T2.y - T1.y * T2.x,
-		//					  T1.x * T2.x + T1.y * T2.y );
-		//}
+		ImVector<ImWidgetsVertexLine> Vcopy;
+		Vcopy.reserve( 2 * n );
+		for ( int k = 1; k < n; ++k )
+		{
+			Vcopy.push_back( V[ k - 1 ] );
+			Vcopy.push_back( V[ k + 0 ] );
+		}
+		V.clear();
 
-		//// Fill angles
-		//for ( int i = 0; i < n - 1; ++i )
-		//{
-		//	V[ i ].angle = { A[ i ], 0.0f }; // Store angle in x component for now
-		//	V[ i + 1 ].angle = { A[ i ], 0.0f }; // Store next angle in y component
-		//}
+		int sz = Vcopy.size();
+		for ( int k = 1; k < sz - 1; ++k )
+		{
+			Vcopy[ k ].segment = Vcopy[ k ].segment;
+			Vcopy[ k ].angle = Vcopy[ k ].angle;
+		}
+		for ( int k = 0; k < sz; k += 2 )
+		{
+			Vcopy[ k ].uv.x = -1.0f;
+			Vcopy[ k ].uv.y =  1.0f;
+		}
+		ImVector<ImWidgetsVertexLine> V2;// = Vcopy;
 
-		//// Cumulative Segment Lengths
-		//ImVector<float> L;
-		//L.resize( n );
-		//L[ 0 ] = 0.0f; // Starting length
-		//for ( size_t i = 1; i < n; ++i )
-		//{
-		//	L[ i ] = L[ i - 1 ] + N[ i - 1 ]; // Cumulative length
-		//}
+		V2.reserve( 2 * V.size() );
+		for ( int k = 0; k < sz; ++k )
+		{
+			V2.push_back( Vcopy[ k ] );
+			V2.back().uv.x = -1.0f;
+			V2.push_back( Vcopy[ k ] );
+			V2.back().uv.x =  1.0f;
+		}
+		shape.vertices = V2;
+		V2.clear();
+		Vcopy.clear();
 
-		//// Fill the segment information
-		//for ( size_t i = 0; i < n - 1; ++i )
-		//{
-		//	V[ i ].segment = { L[ i ], L[ i + 1 ] }; // Segment length for this and next vertex
-		//}
+		sz = ( n - 1 ) * ( 2 * 3 ) / 3;
+		shape.triangles.reserve( sz );
+		sz /= 2;
+		ImDrawIdx off = 0;
+		for ( ImDrawIdx k = 0; k < sz; ++k )
+		{
+			shape.triangles.push_back( { 0 + off, 1 + off, 2 + off } );
+			shape.triangles.push_back( { 1 + off, 2 + off, 3 + off } );
+			off += 4;
+		}
+#endif
 
-		//// Step 1: A -- B -- C  =>  A -- B, B' -- C
-		//ImVector<ImVertexLine> tempV;
-		//for ( size_t i = 0; i < V.size(); ++i )
-		//{
-		//	tempV.push_back( V[ i ] );
-		//	if ( i < n - 1 )
-		//	{
-		//		tempV.push_back( V[ i ] ); // Duplicate the vertex
-		//	}
-		//}
-		//V = tempV; // Replace original with duplicated version
+#if 0
+		if ( vertices_count < 2 )
+			return;
 
-		//// Step 2: A -- B, B' -- C  -> A0/A1 -- B0/B1, B'0/B'1 -- C0/C1
-		//tempV.clear();
-		//for ( int i = 0; i < V.size(); ++i )
-		//{
-		//	tempV.push_back( V[ i ] );
-		//	tempV.push_back( V[ i ] ); // Duplicate again
-		//}
-		//V = std::move( tempV );
+		int n = vertices_count;
 
-		//// Create index array using ImTriIdx
-		//ImVector<ImTriIdx> I;
-		//for ( size_t i = 0; i < n - 1; ++i )
-		//{
-		//	size_t baseIndex = 4 * i;
-		//	I.push_back( { baseIndex, baseIndex + 1, baseIndex + 2 } );
-		//	I.push_back( { baseIndex + 1, baseIndex + 2, baseIndex + 3 } );
-		//}
+		ImVector<ImVec2> P;
+		P.resize( n );
 
-		//// Return the shape
+		for ( int k = 0; k < n; ++k )
+			P[ k ] = vertices[ k ];
+
+		float dx = P[ 0 ].x - P[ n - 1 ].x;
+		float dy = P[ 0 ].y - P[ n - 1 ].y;
+		float d = ImSqrt( dx * dx + dy * dy );
+
+		// If closed, make sure first vertex = last vertex (+/- epsilon=1e-10)
+		if ( closed && d > epsilon )
+		{
+			P.push_back( P[ 0 ] );
+			n += 1;
+		}
+
+		ImVector<ImWidgetsVertexLine> V;
+		V.resize( n );
+		for ( int i = 0; i < n; ++i )
+		{
+			V[ i ].pos = P[ i ];
+		}
+
+		// Tangents & norms
+		ImVector<ImVec2> T;
+		ImVector<float> N;
+		T.resize( n - 1 );
+		N.resize( n - 1 );
+
+		for ( int i = 0; i < n - 1; ++i )
+		{
+			//T[ i ] = { P[ i + 1 ].x - P[ i ].x, P[ i + 1 ].y - P[ i ].y };
+			T[ i ] = P[ i + 1 ] - P[ i ];
+			N[ i ] = ImSqrt( T[ i ].x * T[ i ].x + T[ i ].y * T[ i ].y );
+		}
+
+		for ( int i = 1; i < n; ++i )
+		{
+			V[ i ].tangent = T[ i - 1 ];
+		}
+		if ( closed )
+			V[ 0 ].tangent = T[ n - 2 ];
+		else
+			V[ 0 ].tangent = T[ 0 ];
+
+		for ( int i = 0; i < n - 1; ++i )
+		{
+			V[ i ].tangent = T[ i ];
+		}
+		if ( closed )
+			V[ n - 1 ].tangent = T[ 0 ];
+		else
+			V[ n - 1 ].tangent = T[ n - 2 ];
+
+		// Angles
+		ImVector<float> A;
+		A.resize( n - 1 );
+		for ( int i = 0; i < n - 1; ++i )
+		{
+			ImVec2 T1 = V[ i ].tangent;
+			ImVec2 T2 = V[ i + 1 ].tangent;
+			A[ i ] = ImAtan2( T1.x * T2.y - T1.y * T2.x,
+							  T1.x * T2.x + T1.y * T2.y );
+		}
+
+		// Fill angles
+		for ( int i = 0; i < n - 1; ++i )
+		{
+			V[ i ].angle = { A[ i ], 0.0f }; // Store angle in x component for now
+			V[ i + 1 ].angle = { A[ i ], 0.0f }; // Store next angle in y component
+		}
+
+		// Cumulative Segment Lengths
+		ImVector<float> L;
+		L.resize( n );
+		L[ 0 ] = 0.0f; // Starting length
+		for ( size_t i = 1; i < n; ++i )
+		{
+			L[ i ] = L[ i - 1 ] + N[ i - 1 ]; // Cumulative length
+		}
+
+		// Fill the segment information
+		for ( size_t i = 0; i < n - 1; ++i )
+		{
+			V[ i ].segment = { L[ i ], L[ i + 1 ] }; // Segment length for this and next vertex
+		}
+
+		// Step 1: A -- B -- C  =>  A -- B, B' -- C
+		ImVector<ImWidgetsVertexLine> tempV;
+		for ( size_t i = 0; i < V.size(); ++i )
+		{
+			tempV.push_back( V[ i ] );
+			if ( i < n - 1 )
+			{
+				tempV.push_back( V[ i ] ); // Duplicate the vertex
+			}
+		}
+		V = tempV; // Replace original with duplicated version
+
+		// Step 2: A -- B, B' -- C  -> A0/A1 -- B0/B1, B'0/B'1 -- C0/C1
+		tempV.clear();
+		for ( int i = 0; i < V.size(); ++i )
+		{
+			tempV.push_back( V[ i ] );
+			tempV.push_back( V[ i ] ); // Duplicate again
+		}
+		V = std::move( tempV );
+
+		// Create index array using ImTriIdx
+		ImVector<ImWidgetsTriIdx> I;
+		for ( int i = 0; i < n - 1; ++i )
+		{
+			ImDrawIdx baseIndex = 4 * i;
+			I.push_back( { baseIndex, baseIndex + 1, baseIndex + 2 } );
+			I.push_back( { baseIndex + 1, baseIndex + 2, baseIndex + 3 } );
+		}
+
+		// Return the shape
 		//ImWidgetsShapeLine shape;
-		//shape.vertices = V;
-		//shape.triangles = I; // Note: This will need a proper conversion to ImTriIdx if necessary
+		shape.vertices = V;
+		shape.triangles = I; // Note: This will need a proper conversion to ImTriIdx if necessary
 		//ImWidgets::ShapeLineSetBound( shape );
+#endif
 	}
+
+	//// Function to calculate distance between two points
+	//float distance( float x1, float y1, float x2, float y2 )
+	//{
+	//	float dx = x2 - x1;
+	//	float dy = y2 - y1;
+	//	return sqrt( dx * dx + dy * dy );
+	//}
+
+	//// Main baking function
+	//// Returns 0 on success, -1 on failure
+	//// Output parameters: vertices, indices, total_length
+	//int bake( float* input_vertices, int n_vertices, int closed,
+	//		  ImWidgetsVertexLine** output_vertices, unsigned int** output_indices,
+	//		  int* n_output_vertices, int* n_indices, float* total_length )
+	//{
+
+	//	// Initial checks
+	//	if ( !input_vertices || n_vertices < 2 ) return -1;
+
+	//	// Adjust n_vertices if closed and endpoints don't match
+	//	int n = n_vertices;
+	//	float* P = ( float* )malloc( 2 * ( n + 1 ) * sizeof( float ) );
+	//	if ( !P ) return -1;
+
+	//	// Copy input vertices
+	//	memcpy( P, input_vertices, 2 * n * sizeof( float ) );
+
+	//	// Check if we need to close the loop
+	//	if ( closed )
+	//	{
+	//		float dx = P[ 0 ] - P[ ( n - 1 ) * 2 ];
+	//		float dy = P[ 1 ] - P[ ( n - 1 ) * 2 + 1 ];
+	//		float d = sqrt( dx * dx + dy * dy );
+	//		if ( d > 1e-10 )
+	//		{
+	//			P[ n * 2 ] = P[ 0 ];
+	//			P[ n * 2 + 1 ] = P[ 1 ];
+	//			n++;
+	//		}
+	//	}
+
+	//	// Allocate initial vertex array
+	//	ImWidgetsVertexLine* V = ( ImWidgetsVertexLine* )calloc( n, sizeof( ImWidgetsVertexLine ) );
+	//	if ( !V )
+	//	{
+	//		free( P );
+	//		return -1;
+	//	}
+
+	//	// Copy positions
+	//	for ( int i = 0; i < n; i++ )
+	//	{
+	//		V[ i ].pos.x = P[ i * 2 ];
+	//		V[ i ].pos.y = P[ i * 2 + 1 ];
+	//	}
+
+	//	// Calculate tangents
+	//	float* T = ( float* )malloc( 2 * ( n - 1 ) * sizeof( float ) );
+	//	float* N = ( float* )malloc( ( n - 1 ) * sizeof( float ) );
+	//	if ( !T || !N )
+	//	{
+	//		free( P );
+	//		free( V );
+	//		free( T );
+	//		free( N );
+	//		return -1;
+	//	}
+
+	//	for ( int i = 0; i < n - 1; i++ )
+	//	{
+	//		T[ i * 2 ] = P[ ( i + 1 ) * 2 ] - P[ i * 2 ];
+	//		T[ i * 2 + 1 ] = P[ ( i + 1 ) * 2 + 1 ] - P[ i * 2 + 1 ];
+	//		N[ i ] = sqrt( T[ i * 2 ] * T[ i * 2 ] + T[ i * 2 + 1 ] * T[ i * 2 + 1 ] );
+	//	}
+
+	//	// Set tangents
+	//	for ( int i = 1; i < n; i++ )
+	//	{
+	//		V[ i ].tangent.x = T[ ( i - 1 ) * 2 ];
+	//		V[ i ].tangent.y = T[ ( i - 1 ) * 2 + 1 ];
+	//	}
+
+	//	if ( closed )
+	//	{
+	//		V[ 0 ].tangent.x = T[ ( n - 2 ) * 2 ];
+	//		V[ 0 ].tangent.y = T[ ( n - 2 ) * 2 + 1 ];
+	//	}
+	//	else
+	//	{
+	//		V[ 0 ].tangent.x = T[ 0 ];
+	//		V[ 0 ].tangent.y = T[ 1 ];
+	//	}
+
+	//	for ( int i = 0; i < n - 1; i++ )
+	//	{
+	//		V[ i ].tangent.z = T[ i * 2 ];
+	//		V[ i ].tangent.w = T[ i * 2 + 1 ];
+	//	}
+
+	//	if ( closed )
+	//	{
+	//		V[ n - 1 ].tangent.z = T[ 0 ];
+	//		V[ n - 1 ].tangent.w = T[ 1 ];
+	//	}
+	//	else
+	//	{
+	//		V[ n - 1 ].tangent.z = T[ ( n - 2 ) * 2 ];
+	//		V[ n - 1 ].tangent.w = T[ ( n - 2 ) * 2 + 1 ];
+	//	}
+
+	//	// Calculate angles
+	//	for ( int i = 0; i < n; i++ )
+	//	{
+	//		float T1x = V[ i ].tangent.x;
+	//		float T1y = V[ i ].tangent.y;
+	//		float T2x = V[ i ].tangent.z;
+	//		float T2y = V[ i ].tangent.x;
+
+	//		float angle = atan2( T1x * T2y - T1y * T2x, T1x * T2x + T1y * T2y );
+
+	//		if ( i < n - 1 )
+	//		{
+	//			V[ i ].angle.x = angle;
+	//			V[ i ].angle.y = angle;  // Will be updated in next iteration
+	//		}
+	//	}
+
+	//	// Calculate cumulative lengths
+	//	float cumul_length = 0;
+	//	for ( int i = 0; i < n - 1; i++ )
+	//	{
+	//		cumul_length += N[ i ];
+	//		if ( i < n - 1 )
+	//		{
+	//			V[ i + 1 ].segment.x = cumul_length;
+	//			V[ i ].segment.y = cumul_length;
+	//		}
+	//	}
+	//	*total_length = cumul_length;
+
+	//	// Create final vertex array with duplications
+	//	int final_n_vertices = ( n - 1 ) * 4;
+	//	ImWidgetsVertexLine* final_V = ( ImWidgetsVertexLine* )malloc( final_n_vertices * sizeof( ImWidgetsVertexLine ) );
+	//	if ( !final_V )
+	//	{
+	//		free( P );
+	//		free( V );
+	//		free( T );
+	//		free( N );
+	//		return -1;
+	//	}
+
+	//	// Duplicate vertices and set texture coordinates
+	//	for ( int i = 0; i < n - 1; i++ )
+	//	{
+	//		for ( int j = 0; j < 4; j++ )
+	//		{
+	//			//final_V[ i * 4 + j ] = V[ i ];
+	//			memcpy( &final_V[ i * 4 + j ], &V[ i ], sizeof( ImWidgetsVertexLine ) );
+	//			final_V[ i * 4 + j ].uv.x = ( j < 2 ) ? -1.0f : 1.0f;
+	//			final_V[ i * 4 + j ].uv.y = ( j % 2 == 0 ) ? -1.0f : 1.0f;
+	//		}
+	//	}
+
+	//	// Create index array
+	//	int n_triangles = ( n - 1 ) * 2;
+	//	unsigned int* indices = ( unsigned int* )malloc( n_triangles * 3 * sizeof( unsigned int ) );
+	//	if ( !indices )
+	//	{
+	//		free( P );
+	//		free( V );
+	//		free( T );
+	//		free( N );
+	//		free( final_V );
+	//		return -1;
+	//	}
+
+	//	for ( int i = 0; i < n - 1; i++ )
+	//	{
+	//		indices[ i * 6 + 0 ] = i * 4 + 0;
+	//		indices[ i * 6 + 1 ] = i * 4 + 1;
+	//		indices[ i * 6 + 2 ] = i * 4 + 2;
+	//		indices[ i * 6 + 3 ] = i * 4 + 1;
+	//		indices[ i * 6 + 4 ] = i * 4 + 2;
+	//		indices[ i * 6 + 5 ] = i * 4 + 3;
+	//	}
+
+	//	// Set output parameters
+	//	*output_vertices = final_V;
+	//	*output_indices = indices;
+	//	*n_output_vertices = final_n_vertices;
+	//	*n_indices = n_triangles * 3;
+
+	//	// Clean up temporary arrays
+	//	free( P );
+	//	free( V );
+	//	free( T );
+	//	free( N );
+
+	//	return 0;
+	//}
 
 	void DrawThickLine( ImDrawList* pDrawList,
 						ImVec2* pts, int pts_count,
@@ -4269,7 +4633,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 						float antialiasing,
 						ImWidgetsCap start_cap,
 						ImWidgetsCap end_cap,
-						ImWidgetsJoin join )
+						ImWidgetsJoin join,
+						float mitter_limit )
 	{
 		ImWidgetsShapeLine shape;
 		BakeSolidLine( shape,
@@ -4278,32 +4643,44 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					   false,
 					   1e-10f );
 
-		int triangles_count = shape.triangles.size();
-		int indices_count = triangles_count * 3;
-		int vertices_count = shape.vertices.size();
-		ImDrawIdx idx = ( ImDrawIdx )pDrawList->_VtxCurrentIdx;
-		gs_pContext->thickLinesCPUIndexBuffer.reserve( gs_pContext->thickLinesCPUIndexBuffer.size() + indices_count );
-		for ( int k = 0; k < triangles_count; ++k )
-		{
-			gs_pContext->thickLinesCPUIndexBuffer.push_back( shape.triangles[ k ].a );
-			gs_pContext->thickLinesCPUIndexBuffer.push_back( shape.triangles[ k ].b );
-			gs_pContext->thickLinesCPUIndexBuffer.push_back( shape.triangles[ k ].c );
-		}
-		gs_pContext->thickLinesCPUVertexBuffer.reserve( gs_pContext->thickLinesCPUVertexBuffer.size() + vertices_count );
-		for ( int k = 0; k < vertices_count; ++k )
-		{
-			gs_pContext->thickLinesCPUVertexBuffer.push_back( shape.vertices[ k ] );
-		}
+		//ImPlatform::UpdateCustomVertexShaderConstants();
 
-		ImPlatform::UpdateVertexBuffer( &gs_pContext->thickLinesGPUVertexBuffer,
-										sizeof( ImWidgetsVertexLine ),
-										gs_pContext->thickLinesCPUVertexBuffer.size(),
-										gs_pContext->thickLinesCPUVertexBuffer.Data );
-		ImPlatform::BeginCustomShader( pDrawList, gs_pContext->markerShader );
+		//ImPlatform::UpdateVertexBuffer( &gs_pContext->thickLinesGPUVertexBuffer,
+		//								sizeof( ImWidgetsVertexLine ),
+		//								gs_pContext->thickLinesCPUVertexBuffer.size(),
+		//								gs_pContext->thickLinesCPUVertexBuffer.Data );
+		//ImPlatform::BeginCustomShader( pDrawList, gs_pContext->markerShader );
 
-		//pDrawList->AddCallback( &InternalDrawThickLine, &shader );
+		////pDrawList->AddCallback( &InternalDrawThickLine, &shader );
 
-		ImPlatform::EndCustomShader( pDrawList );
+		//ImPlatform::EndCustomShader( pDrawList );
+
+		//int triangles_count = shape.triangles.size();
+		//int indices_count = triangles_count * 3;
+		//int vertices_count = shape.vertices.size();
+		//ImDrawIdx idx = ( ImDrawIdx )pDrawList->_VtxCurrentIdx;
+		//gs_pContext->thickLinesCPUIndexBuffer.reserve( gs_pContext->thickLinesCPUIndexBuffer.size() + indices_count );
+		//for ( int k = 0; k < triangles_count; ++k )
+		//{
+		//	gs_pContext->thickLinesCPUIndexBuffer.push_back( shape.triangles[ k ].a );
+		//	gs_pContext->thickLinesCPUIndexBuffer.push_back( shape.triangles[ k ].b );
+		//	gs_pContext->thickLinesCPUIndexBuffer.push_back( shape.triangles[ k ].c );
+		//}
+		//gs_pContext->thickLinesCPUVertexBuffer.reserve( gs_pContext->thickLinesCPUVertexBuffer.size() + vertices_count );
+		//for ( int k = 0; k < vertices_count; ++k )
+		//{
+		//	gs_pContext->thickLinesCPUVertexBuffer.push_back( shape.vertices[ k ] );
+		//}
+
+		//ImPlatform::UpdateVertexBuffer( &gs_pContext->thickLinesGPUVertexBuffer,
+		//								sizeof( ImWidgetsVertexLine ),
+		//								gs_pContext->thickLinesCPUVertexBuffer.size(),
+		//								gs_pContext->thickLinesCPUVertexBuffer.Data );
+		//ImPlatform::BeginCustomShader( pDrawList, gs_pContext->markerShader );
+
+		////pDrawList->AddCallback( &InternalDrawThickLine, &shader );
+
+		//ImPlatform::EndCustomShader( pDrawList );
 	}
 #endif
 
@@ -4640,33 +5017,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			minY, maxY,
 			plotColor, flags, thickness,
 			colorStride );
-	}
-
-	void ImDrawShapeConvex( ImDrawList* drawlist, ImVec2* pts, int pts_count, ImU32 col, float thickness )
-	{
-		drawlist->AddPolyline( pts, pts_count, col, 0, thickness );
-	}
-	void ImDrawShapeConcave( ImDrawList* drawlist, ImVec2* pts, int pts_count, ImU32 col, float thickness )
-	{
-		drawlist->AddPolyline( pts, pts_count, col, 0, thickness );
-	}
-	// TODO
-	void ImDrawShapeWithHole( ImDrawList* drawlist, ImVec2* pts, int pts_count, ImU32 col, float thickness )
-	{
-		drawlist->AddPolyline( pts, pts_count, col, 0, thickness );
-	}
-
-	void ImDrawShapeConvexFilled( ImDrawList* drawlist, ImVec2* pts, int pts_count, ImU32 col )
-	{
-		drawlist->AddConvexPolyFilled( pts, pts_count, col );
-	}
-	void ImDrawShapeConcaveFilled( ImDrawList* drawlist, ImVec2* pts, int pts_count, ImU32 col  )
-	{
-		drawlist->AddConcavePolyFilled( pts, pts_count, col );
-	}
-	void ImDrawShapeWithHoleFilled( ImDrawList* drawlist, ImVec2* pts, int pts_count, ImU32 col )
-	{
-		DrawShapeWithHole( drawlist, pts, pts_count, col );
 	}
 
 	void DrawLinearLineGraduation( ImDrawList* drawlist, ImVec2 start, ImVec2 end,
@@ -5032,117 +5382,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		drawlist->PathStroke( mainCol, ImDrawFlags_None, mainLineThickness );
 	}
 
-	void RenderNavHighlightShape( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags, ImDrawShape func )
-	{
-		ImGuiContext& g = *GImGui;
-		if ( id != g.NavId )
-			return;
-		if ( g.NavDisableHighlight && !( flags & ImGuiNavHighlightFlags_AlwaysDraw ) )
-			return;
-		ImGuiWindow* window = g.CurrentWindow;
-		if ( window->DC.NavHideHighlightOneFrame )
-			return;
 
-		float rounding = ( flags & ImGuiNavHighlightFlags_NoRounding ) ? 0.0f : g.Style.FrameRounding;
-		ImRect display_rect;
-		ImComputeRect( &display_rect, pts, pts_count );
-		display_rect.ClipWith( window->ClipRect );
-		const float thickness = 2.0f;
-		if ( flags & ImGuiNavHighlightFlags_Compact )
-		{
-			func( window->DrawList, pts, pts_count, ImGui::GetColorU32( ImGuiCol_NavHighlight ), thickness );
-		}
-		else
-		{
-			const float distance = 3.0f + thickness * 0.5f;
-			display_rect.Expand( ImVec2( distance, distance ) );
-			bool fully_visible = window->ClipRect.Contains( display_rect );
-			if ( !fully_visible )
-				window->DrawList->PushClipRect( display_rect.Min, display_rect.Max );
-			func( window->DrawList, pts, pts_count, ImGui::GetColorU32( ImGuiCol_NavHighlight ), thickness );
-			if ( !fully_visible )
-				window->DrawList->PopClipRect();
-		}
-	}
-	void RenderNavHighlightConvex( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags )
+	bool IsCircleContains( ImVec2 p, void* data )
 	{
-		RenderNavHighlightShape( pts, pts_count, id, flags, &ImDrawShapeConvex );
-	}
-	void RenderNavHighlightConcave( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags )
-	{
-		RenderNavHighlightShape( pts, pts_count, id, flags, &ImDrawShapeConcave );
-	}
-	void RenderNavHighlightWithHole( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags )
-	{
-		RenderNavHighlightShape( pts, pts_count, id, flags, &ImDrawShapeWithHole );
-	}
+		ImCircle* value = ( ImCircle* )data;
 
-	void RenderFrameShape( ImVec2* pts, int pts_count, ImU32 fill_col, bool border, ImDrawShape outline, ImDrawShapeFilled fill )
-	{
-		ImGuiContext& g = *GImGui;
-		ImGuiWindow* window = g.CurrentWindow;
-		fill( window->DrawList, pts, pts_count, fill_col );
-		const float border_size = g.Style.FrameBorderSize;
-		if ( border && border_size > 0.0f )
-		{
-			// TODO add offset to the draw functions or "WithOffset" functions
-			ImVector<ImVec2> shadow;
-			shadow.resize(pts_count);
-			for ( int k = 0; k < pts_count; ++k )
-			{
-				shadow[ k ] = pts[ k ] + ImVec2( 1.0f, 1.0f );
-			}
-			outline( window->DrawList, &shadow[ 0 ], pts_count, ImGui::GetColorU32(ImGuiCol_BorderShadow), border_size);
-			//
-			outline( window->DrawList, pts, pts_count, ImGui::GetColorU32( ImGuiCol_Border ), border_size );
-		}
-	}
-	void RenderFrameConcave( ImVec2* pts, int pts_count, ImU32 fill_col, bool border )
-	{
-		RenderFrameShape( pts, pts_count, fill_col, border, ImDrawShapeConvex, ImDrawShapeConvexFilled );
-	}
-	void RenderFrameConvex( ImVec2* pts, int pts_count, ImU32 fill_col, bool border )
-	{
-		RenderFrameShape( pts, pts_count, fill_col, border, ImDrawShapeConcave, ImDrawShapeConcaveFilled );
-	}
-	void RenderFrameWithHole( ImVec2* pts, int pts_count, ImU32 fill_col, bool border )
-	{
-		RenderFrameShape( pts, pts_count, fill_col, border, ImDrawShapeWithHole, ImDrawShapeWithHoleFilled );
-	}
-	//////////////////////////////////////////////////////////////////////////
-	// Interactions
-	//////////////////////////////////////////////////////////////////////////
-	bool IsTriangleContains( ImVec2 a, ImVec2 b, ImVec2 c, ImVec2 p )
-	{
-		// Compute vectors
-		ImVec2 v0 = { c.x - a.x, c.y - a.y };
-		ImVec2 v1 = { b.x - a.x, b.y - a.y };
-		ImVec2 v2 = { p.x - a.x, p.y - a.y };
+		ImVec2 dx = value->center - p;
 
-		// Compute dot products
-		float dot00 = v0.x * v0.y + v0.y * v0.y;
-		float dot01 = v0.x * v1.x + v0.y * v1.y;
-		float dot02 = v0.x * v2.x + v0.y * v2.y;
-		float dot11 = v1.x * v1.x + v1.y * v1.y;
-		float dot12 = v1.x * v2.x + v1.y * v2.y;
-
-		// Compute barycentric coordinates
-		float invDenom = 1.0f / ( dot00 * dot11 - dot01 * dot01 );
-		float u = ( dot11 * dot02 - dot01 * dot12 ) * invDenom;
-		float v = ( dot00 * dot12 - dot01 * dot02 ) * invDenom;
-
-		// Check if point is in triangle
-		return ( u >= 0.0f ) && ( v >= 0.0f ) && ( u + v < 1.0f );
-	}
-
-	bool IsBoundingBoxWellFormed( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count )
-	{
-		bool well_form = true;
-		for ( int k = 0; k < pts_count; ++k )
-		{
-			well_form &= ImRect( r_min, r_max ).Contains( pts[ k ] );
-		}
-		return well_form;
+		return ImDot( dx, dx ) < value->radius * value->radius;
 	}
 
 	bool IsPolyConvexContains( ImVec2 p, void* data )
@@ -5353,6 +5600,249 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return false;
 	}
 
+	void Im_InlineOffsetCircle( void* data, ImVec2 offset )
+	{
+		ImCircle* values = ( ImCircle* )data;
+		values->center += offset;
+	}
+	void Im_InlineOffsetConvex( void* data, ImVec2 offset )
+	{
+		ImPolyShapeData* values = ( ImPolyShapeData* )data;
+		int pts_count = values->pts_count;
+		for ( int k = 0; k < pts_count; ++k )
+		{
+			values->pts[ k ] += offset;
+		}
+	}
+	void Im_InlineOffsetConcave( void* data, ImVec2 offset )
+	{
+		ImPolyShapeData* values = ( ImPolyShapeData* )data;
+		int pts_count = values->pts_count;
+		for ( int k = 0; k < pts_count; ++k )
+		{
+			values->pts[ k ] += offset;
+		}
+	}
+	void Im_InlineOffsetWithHole( void* data, ImVec2 offset )
+	{
+		ImPolyHoleShapeData* values = ( ImPolyHoleShapeData* )data;
+		int pts_count = values->pts_count;
+		for ( int k = 0; k < pts_count; ++k )
+		{
+			values->pts[ k ] += offset;
+		}
+	}
+	void Im_DrawCircle( ImDrawList* drawlist, ImU32 col, float thickness, void* data )
+	{
+		ImCircle* values = ( ImCircle* )data;
+		drawlist->AddCircle( values->center, values->radius, col, 0, thickness );
+	}
+	void Im_DrawShapeConvex( ImDrawList* drawlist, ImU32 col, float thickness, void* data )
+	{
+		ImPolyShapeData* values = ( ImPolyShapeData* )data;
+		drawlist->AddPolyline( values->pts, values->pts_count, col, 0, thickness );
+	}
+	void Im_DrawShapeConcave( ImDrawList* drawlist, ImU32 col, float thickness, void* data )
+	{
+		ImPolyShapeData* values = ( ImPolyShapeData* )data;
+		drawlist->AddPolyline( values->pts, values->pts_count, col, 0, thickness );
+	}
+	// TODO
+	void Im_DrawShapeWithHole( ImDrawList* drawlist, ImU32 col, float thickness, void* data )
+	{
+		ImPolyHoleShapeData* values = ( ImPolyHoleShapeData* )data;
+		drawlist->AddPolyline( values->pts, values->pts_count, col, 0, thickness );
+	}
+
+	void Im_DrawCircleFilled( ImDrawList* drawlist, ImU32 col, void* data )
+	{
+		ImCircle* values = ( ImCircle* )data;
+		drawlist->AddCircleFilled( values->center, values->radius, col, 0 );
+	}
+	void Im_DrawShapeConvexFilled( ImDrawList* drawlist, ImU32 col, void* data )
+	{
+		ImPolyShapeData* values = ( ImPolyShapeData* )data;
+		drawlist->AddConvexPolyFilled( values->pts, values->pts_count, col );
+	}
+	void Im_DrawShapeConcaveFilled( ImDrawList* drawlist, ImU32 col, void* data )
+	{
+		ImPolyShapeData* values = ( ImPolyShapeData* )data;
+		drawlist->AddConcavePolyFilled( values->pts, values->pts_count, col );
+	}
+	void Im_DrawShapeWithHoleFilled( ImDrawList* drawlist, ImU32 col, void* data )
+	{
+		ImPolyHoleShapeData* values = ( ImPolyHoleShapeData* )data;
+		DrawShapeWithHole( drawlist, values->pts, values->pts_count, col );
+	}
+
+	void RenderNavHighlightEx( ImGuiID id, ImGuiNavHighlightFlags flags, ImDrawShape func, void* data, ImRect display_rect )
+	{
+		ImGuiContext& g = *GImGui;
+		if ( id != g.NavId )
+			return;
+		if ( g.NavDisableHighlight && !( flags & ImGuiNavHighlightFlags_AlwaysDraw ) )
+			return;
+		ImGuiWindow* window = g.CurrentWindow;
+		if ( window->DC.NavHideHighlightOneFrame )
+			return;
+
+		float rounding = ( flags & ImGuiNavHighlightFlags_NoRounding ) ? 0.0f : g.Style.FrameRounding;
+		display_rect.ClipWith( window->ClipRect );
+		const float thickness = 2.0f;
+		if ( flags & ImGuiNavHighlightFlags_Compact )
+		{
+			func( window->DrawList, ImGui::GetColorU32( ImGuiCol_NavHighlight ), thickness, data );
+		}
+		else
+		{
+			const float distance = 3.0f + thickness * 0.5f;
+			display_rect.Expand( ImVec2( distance, distance ) );
+			bool fully_visible = window->ClipRect.Contains( display_rect );
+			if ( !fully_visible )
+				window->DrawList->PushClipRect( display_rect.Min, display_rect.Max );
+			func( window->DrawList, ImGui::GetColorU32( ImGuiCol_NavHighlight ), thickness, data );
+			if ( !fully_visible )
+				window->DrawList->PopClipRect();
+		}
+	}
+	void RenderNavHighlightCircle( ImVec2 center, float radius, ImGuiID id, ImGuiNavHighlightFlags flags )
+	{
+		ImCircle data = { center, radius };
+		ImRect display_rect;
+		display_rect.Min = center - ImVec2( radius, radius );
+		display_rect.Max = center + ImVec2( radius, radius );
+		RenderNavHighlightEx( id, flags, &Im_DrawCircle, &data, display_rect );
+	}
+	void RenderNavHighlightConvex( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags )
+	{
+		ImPolyShapeData data = { pts, pts_count };
+		ImRect display_rect;
+		ImComputeRect( &display_rect, pts, pts_count );
+		RenderNavHighlightEx( id, flags, &Im_DrawShapeConvex, &data, display_rect );
+	}
+	void RenderNavHighlightConcave( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags )
+	{
+		ImPolyShapeData data = { pts, pts_count };
+		ImRect display_rect;
+		ImComputeRect( &display_rect, pts, pts_count );
+		RenderNavHighlightEx( id, flags, &Im_DrawShapeConcave, &data, display_rect );
+	}
+	void RenderNavHighlightWithHole( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags )
+	{
+		ImPolyHoleShapeData data = { pts, pts_count, NULL, 1, 1 };
+		ImRect display_rect;
+		ImComputeRect( &display_rect, pts, pts_count );
+		RenderNavHighlightEx( id, flags, &Im_DrawShapeWithHole, &data, display_rect );
+	}
+
+	void RenderFrameEx( ImU32 fill_col, bool border, ImDrawShape outline, ImDrawShapeFilled fill, void* data )
+	{
+		ImGuiContext& g = *GImGui;
+		ImGuiWindow* window = g.CurrentWindow;
+		fill( window->DrawList, fill_col, data );
+		const float border_size = g.Style.FrameBorderSize;
+		if ( border && border_size > 0.0f )
+		{
+			outline( window->DrawList, ImGui::GetColorU32( ImGuiCol_BorderShadow ), border_size, data );
+			//
+			outline( window->DrawList, ImGui::GetColorU32( ImGuiCol_Border ), border_size, data );
+		}
+	}
+	void RenderFrameCircle( ImVec2 center, float radius, ImU32 fill_col, bool border )
+	{
+		ImCircle data = { center, radius };
+		ImVector<ImVec2> shadow;
+		if ( border )
+		{
+			data.center.x += 1.0f;
+			data.center.y += 1.0f;
+		}
+		RenderFrameEx( fill_col, border, Im_DrawShapeConvex, Im_DrawShapeConvexFilled, &data );
+	}
+	void RenderFrameConcave( ImVec2* pts, int pts_count, ImU32 fill_col, bool border )
+	{
+		ImPolyShapeData data = { pts, pts_count };
+		ImVector<ImVec2> shadow;
+		if ( border )
+		{
+			// TODO add offset to the draw functions or "WithOffset" functions
+			shadow.resize( pts_count );
+			for ( int k = 0; k < pts_count; ++k )
+			{
+				shadow[ k ] = pts[ k ] + ImVec2( 1.0f, 1.0f );
+			}
+			data.pts = &shadow[ 0 ];
+		}
+		RenderFrameEx( fill_col, border, Im_DrawShapeConvex, Im_DrawShapeConvexFilled, &data );
+	}
+	void RenderFrameConvex( ImVec2* pts, int pts_count, ImU32 fill_col, bool border )
+	{
+		ImPolyShapeData data = { pts, pts_count };
+		ImVector<ImVec2> shadow;
+		if ( border )
+		{
+			// TODO add offset to the draw functions or "WithOffset" functions
+			shadow.resize( pts_count );
+			for ( int k = 0; k < pts_count; ++k )
+			{
+				shadow[ k ] = pts[ k ] + ImVec2( 1.0f, 1.0f );
+			}
+			data.pts = &shadow[ 0 ];
+		}
+		RenderFrameEx( fill_col, border, Im_DrawShapeConcave, Im_DrawShapeConcaveFilled, &data );
+	}
+	void RenderFrameWithHole( ImVec2* pts, int pts_count, ImU32 fill_col, bool border )
+	{
+		ImPolyHoleShapeData data = { pts, pts_count, NULL, 1, 1 };
+		ImVector<ImVec2> shadow;
+		if ( border )
+		{
+			// TODO add offset to the draw functions or "WithOffset" functions
+			shadow.resize( pts_count );
+			for ( int k = 0; k < pts_count; ++k )
+			{
+				shadow[ k ] = pts[ k ] + ImVec2( 1.0f, 1.0f );
+			}
+			data.pts = &shadow[ 0 ];
+		}
+		RenderFrameEx( fill_col, border, Im_DrawShapeWithHole, Im_DrawShapeWithHoleFilled, &data );
+	}
+	//////////////////////////////////////////////////////////////////////////
+	// Interactions
+	//////////////////////////////////////////////////////////////////////////
+	bool IsTriangleContains( ImVec2 a, ImVec2 b, ImVec2 c, ImVec2 p )
+	{
+		// Compute vectors
+		ImVec2 v0 = { c.x - a.x, c.y - a.y };
+		ImVec2 v1 = { b.x - a.x, b.y - a.y };
+		ImVec2 v2 = { p.x - a.x, p.y - a.y };
+
+		// Compute dot products
+		float dot00 = v0.x * v0.y + v0.y * v0.y;
+		float dot01 = v0.x * v1.x + v0.y * v1.y;
+		float dot02 = v0.x * v2.x + v0.y * v2.y;
+		float dot11 = v1.x * v1.x + v1.y * v1.y;
+		float dot12 = v1.x * v2.x + v1.y * v2.y;
+
+		// Compute barycentric coordinates
+		float invDenom = 1.0f / ( dot00 * dot11 - dot01 * dot01 );
+		float u = ( dot11 * dot02 - dot01 * dot12 ) * invDenom;
+		float v = ( dot00 * dot12 - dot01 * dot02 ) * invDenom;
+
+		// Check if point is in triangle
+		return ( u >= 0.0f ) && ( v >= 0.0f ) && ( u + v < 1.0f );
+	}
+
+	bool IsBoundingBoxWellFormed( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count )
+	{
+		bool well_form = true;
+		for ( int k = 0; k < pts_count; ++k )
+		{
+			well_form &= ImRect( r_min, r_max ).Contains( pts[ k ] );
+		}
+		return well_form;
+	}
+
 	bool IsMouseHovering( const ImVec2& r_min, const ImVec2& r_max, IsContains contains, void* data, bool clip )
 	{
 		ImGuiContext& g = *ImGui::GetCurrentContext();
@@ -5371,27 +5861,21 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return true;
 	}
 
-	bool ItemHoverablePolyConvex( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags, void* extra_data )
+	bool ItemHoverable( const ImRect& bb, ImGuiID id, ImGuiItemFlags item_flags, IsContains isContains, void* extra_data )
 	{
 		IM_UNUSED( extra_data );
 
 		ImGuiContext& g = *GImGui;
 		ImGuiWindow* window = g.CurrentWindow;
 
-		bool well_form = true;
-		for ( int k = 0; k < pts_count; ++k )
-		{
-			well_form &= bb.Contains( pts[ k ] );
-		}
-		IM_ASSERT( well_form );
+		IM_ASSERT( IsBoundingBoxWellFormed( bb.Min, bb.Max, pts, pts_count ) );
 
 		if ( g.HoveredWindow != window )
 			return false;
 		if ( !ImGui::IsMouseHoveringRect( bb.Min, bb.Max ) )
 			return false;
 		IM_ASSERT( IsBoundingBoxWellFormed( bb.Min, bb.Max, pts, pts_count ) );
-		ImPolyShapeData data = { pts, pts_count };
-		if ( !IsMouseHovering( bb.Min, bb.Max, IsPolyConvexContains, &data ) )
+		if ( !IsMouseHovering( bb.Min, bb.Max, isContains, extra_data ) )
 			return false;
 
 		if ( g.HoveredId != 0 && g.HoveredId != id && !g.HoveredIdAllowOverlap )
@@ -5462,189 +5946,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return true;
 	}
 
-	bool ItemHoverablePolyConcave( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags, void* extra_data )
-	{
-		IM_UNUSED( extra_data );
-
-		ImGuiContext& g = *GImGui;
-		ImGuiWindow* window = g.CurrentWindow;
-
-		bool well_form = true;
-		for ( int k = 0; k < pts_count; ++k )
-		{
-			well_form &= bb.Contains( pts[ k ] );
-		}
-		IM_ASSERT( well_form );
-
-		if ( g.HoveredWindow != window )
-			return false;
-		if ( !ImGui::IsMouseHoveringRect( bb.Min, bb.Max ) )
-			return false;
-		IM_ASSERT( IsBoundingBoxWellFormed( bb.Min, bb.Max, pts, pts_count ) );
-		ImPolyShapeData data = { pts, pts_count };
-		if ( !IsMouseHovering( bb.Min, bb.Max, IsPolyConcaveContains, &data ) )
-			return false;
-
-		if ( g.HoveredId != 0 && g.HoveredId != id && !g.HoveredIdAllowOverlap )
-			return false;
-		if ( g.ActiveId != 0 && g.ActiveId != id && !g.ActiveIdAllowOverlap )
-			if ( !g.ActiveIdFromShortcut )
-				return false;
-
-		// Done with rectangle culling so we can perform heavier checks now.
-		if ( !( item_flags & ImGuiItemFlags_NoWindowHoverableCheck ) && !ImGui::IsWindowContentHoverable( window, ImGuiHoveredFlags_None ) )
-		{
-			g.HoveredIdIsDisabled = true;
-			return false;
-		}
-
-		// We exceptionally allow this function to be called with id==0 to allow using it for easy high-level
-		// hover test in widgets code. We could also decide to split this function is two.
-		if ( id != 0 )
-		{
-			// Drag source doesn't report as hovered
-			if ( g.DragDropActive && g.DragDropPayload.SourceId == id && !( g.DragDropSourceFlags & ImGuiDragDropFlags_SourceNoDisableHover ) )
-				return false;
-
-			ImGui::SetHoveredID( id );
-
-			// AllowOverlap mode (rarely used) requires previous frame HoveredId to be null or to match.
-			// This allows using patterns where a later submitted widget overlaps a previous one. Generally perceived as a front-to-back hit-test.
-			if ( item_flags & ImGuiItemFlags_AllowOverlap )
-			{
-				g.HoveredIdAllowOverlap = true;
-				if ( g.HoveredIdPreviousFrame != id )
-					return false;
-			}
-
-			// Display shortcut (only works with mouse)
-			if ( id == g.LastItemData.ID && ( g.LastItemData.StatusFlags & ImGuiItemStatusFlags_HasShortcut ) )
-				if ( ImGui::IsItemHovered( ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_DelayNormal ) )
-					ImGui::SetTooltip( "%s", ImGui::GetKeyChordName( g.LastItemData.Shortcut ) );
-		}
-
-		// When disabled we'll return false but still set HoveredId
-		if ( item_flags & ImGuiItemFlags_Disabled )
-		{
-			// Release active id if turning disabled
-			if ( g.ActiveId == id && id != 0 )
-				ImGui::ClearActiveID();
-			g.HoveredIdIsDisabled = true;
-			return false;
-		}
-
-#ifndef IMGUI_DISABLE_DEBUG_TOOLS
-		if ( id != 0 )
-		{
-			// [DEBUG] Item Picker tool!
-			// We perform the check here because reaching is path is rare (1~ time a frame),
-			// making the cost of this tool near-zero! We could get better call-stack and support picking non-hovered
-			// items if we performed the test in ItemAdd(), but that would incur a bigger runtime cost.
-			if ( g.DebugItemPickerActive && g.HoveredIdPreviousFrame == id )
-				ImGui::GetForegroundDrawList()->AddRect( bb.Min, bb.Max, IM_COL32( 255, 255, 0, 255 ) );
-			if ( g.DebugItemPickerBreakId == id )
-				IM_DEBUG_BREAK();
-		}
-#endif
-
-		if ( g.NavDisableMouseHover )
-			return false;
-
-		return true;
-	}
-
-	bool ItemHoverablePolyWithHole( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags, void* extra_data )
-	{
-		IM_UNUSED( extra_data );
-
-		ImGuiContext& g = *GImGui;
-		ImGuiWindow* window = g.CurrentWindow;
-
-		bool well_form = true;
-		for ( int k = 0; k < pts_count; ++k )
-		{
-			well_form &= bb.Contains( pts[ k ] );
-		}
-		IM_ASSERT( well_form );
-
-		if ( g.HoveredWindow != window )
-			return false;
-		if ( !ImGui::IsMouseHoveringRect( bb.Min, bb.Max ) )
-			return false;
-		IM_ASSERT( IsBoundingBoxWellFormed( bb.Min, bb.Max, pts, pts_count ) );
-		ImPolyHoleShapeData data = { pts, pts_count, NULL, 1, 1 };
-		if ( !IsMouseHovering( bb.Min, bb.Max, IsPolyWithHoleContains, &data ) )
-			return false;
-
-		if ( g.HoveredId != 0 && g.HoveredId != id && !g.HoveredIdAllowOverlap )
-			return false;
-		if ( g.ActiveId != 0 && g.ActiveId != id && !g.ActiveIdAllowOverlap )
-			if ( !g.ActiveIdFromShortcut )
-				return false;
-
-		// Done with rectangle culling so we can perform heavier checks now.
-		if ( !( item_flags & ImGuiItemFlags_NoWindowHoverableCheck ) && !ImGui::IsWindowContentHoverable( window, ImGuiHoveredFlags_None ) )
-		{
-			g.HoveredIdIsDisabled = true;
-			return false;
-		}
-
-		// We exceptionally allow this function to be called with id==0 to allow using it for easy high-level
-		// hover test in widgets code. We could also decide to split this function is two.
-		if ( id != 0 )
-		{
-			// Drag source doesn't report as hovered
-			if ( g.DragDropActive && g.DragDropPayload.SourceId == id && !( g.DragDropSourceFlags & ImGuiDragDropFlags_SourceNoDisableHover ) )
-				return false;
-
-			ImGui::SetHoveredID( id );
-
-			// AllowOverlap mode (rarely used) requires previous frame HoveredId to be null or to match.
-			// This allows using patterns where a later submitted widget overlaps a previous one. Generally perceived as a front-to-back hit-test.
-			if ( item_flags & ImGuiItemFlags_AllowOverlap )
-			{
-				g.HoveredIdAllowOverlap = true;
-				if ( g.HoveredIdPreviousFrame != id )
-					return false;
-			}
-
-			// Display shortcut (only works with mouse)
-			if ( id == g.LastItemData.ID && ( g.LastItemData.StatusFlags & ImGuiItemStatusFlags_HasShortcut ) )
-				if ( ImGui::IsItemHovered( ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_DelayNormal ) )
-					ImGui::SetTooltip( "%s", ImGui::GetKeyChordName( g.LastItemData.Shortcut ) );
-		}
-
-		// When disabled we'll return false but still set HoveredId
-		if ( item_flags & ImGuiItemFlags_Disabled )
-		{
-			// Release active id if turning disabled
-			if ( g.ActiveId == id && id != 0 )
-				ImGui::ClearActiveID();
-			g.HoveredIdIsDisabled = true;
-			return false;
-		}
-
-#ifndef IMGUI_DISABLE_DEBUG_TOOLS
-		if ( id != 0 )
-		{
-			// [DEBUG] Item Picker tool!
-			// We perform the check here because reaching is path is rare (1~ time a frame),
-			// making the cost of this tool near-zero! We could get better call-stack and support picking non-hovered
-			// items if we performed the test in ItemAdd(), but that would incur a bigger runtime cost.
-			if ( g.DebugItemPickerActive && g.HoveredIdPreviousFrame == id )
-				ImGui::GetForegroundDrawList()->AddRect( bb.Min, bb.Max, IM_COL32( 255, 255, 0, 255 ) );
-			if ( g.DebugItemPickerBreakId == id )
-				IM_DEBUG_BREAK();
-		}
-#endif
-
-		if ( g.NavDisableMouseHover )
-			return false;
-
-		return true;
-	}
-
-	bool ButtonBehaviorShape( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags, ImItemHoverablePolyConvexFunc func, void* extra_data )
+	bool ButtonBehaviorEx( const ImRect& bb, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags, IsContains isContains, void* extra_data )
 	{
 		// Copy Past from ImGui::ButtonBehavior to only change ItemHovered
 		ImGuiContext& g = *GImGui;
@@ -5677,11 +5979,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			IMGUI_TEST_ENGINE_ITEM_ADD( id, bb, NULL );
 #endif
 
-		ImRect bb;
-		ImComputeRect( &bb, pts, pts_count );
-
 		bool pressed = false;
-		bool hovered = func( bb, id, pts, pts_count, item_flags, extra_data );
+		//bool hovered = func( bb, id, item_flags, extra_data );
+		bool hovered = ItemHoverable( bb, id, item_flags, isContains, extra_data );
 
 		// Special mode for Drag and Drop where holding button pressed for a long time while dragging another item triggers the button
 		if ( g.DragDropActive && ( flags & ImGuiButtonFlags_PressedOnDragDropHold ) && !( g.DragDropSourceFlags & ImGuiDragDropFlags_SourceNoHoldToOpenOthers ) )
@@ -5781,6 +6081,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( g.NavId == id && !g.NavDisableHighlight && g.NavDisableMouseHover )
 			if ( !( flags & ImGuiButtonFlags_NoHoveredOnFocus ) )
 				hovered = true;
+
 		if ( g.NavActivateDownId == id )
 		{
 			bool nav_activated_by_code = ( g.NavActivateId == id );
@@ -5866,31 +6167,43 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return pressed;
 	}
 
-	bool ButtonBehaviorDisc( ImVec2 center, float radius, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags )
+	bool ButtonBehaviorCircle( ImVec2 center, float radius, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags )
 	{
-		float data[ 3 ] = { center.x, center.y, radius };
-		return ButtonBehaviorShape( NULL, -1, id, out_hovered, out_held, flags, &ItemHoverablePolyConvex, &data[ 0 ] );
+		ImRect bb;
+		bb.Min = center - ImVec2( radius, radius );
+		bb.Max = center + ImVec2( radius, radius );
+		ImCircle circle = { center, radius };
+		return ButtonBehaviorEx( bb, id, out_hovered, out_held, flags, &IsCircleContains, &circle );
 	}
 
 	bool ButtonBehaviorConvex( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags )
 	{
-		return ButtonBehaviorShape( pts, pts_count, id, out_hovered, out_held, flags, &ItemHoverablePolyConvex, NULL );
+		ImRect bb;
+		ImComputeRect( &bb, pts, pts_count );
+		ImPolyShapeData data = { pts, pts_count };
+		return ButtonBehaviorEx( bb, id, out_hovered, out_held, flags, &IsPolyConvexContains, &data );
 	}
 
 	bool ButtonBehaviorConcave( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags )
 	{
-		return ButtonBehaviorShape( pts, pts_count, id, out_hovered, out_held, flags, &ItemHoverablePolyConcave, NULL );
+		ImRect bb;
+		ImComputeRect( &bb, pts, pts_count );
+		ImPolyShapeData data = { pts, pts_count };
+		return ButtonBehaviorEx( bb, id, out_hovered, out_held, flags, &IsPolyConcaveContains, &data );
 	}
 
 	bool ButtonBehaviorWithHole( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags )
 	{
-		return ButtonBehaviorShape( pts, pts_count, id, out_hovered, out_held, flags, &ItemHoverablePolyWithHole, NULL );
+		ImRect bb;
+		ImComputeRect( &bb, pts, pts_count );
+		ImPolyHoleShapeData data = { pts, pts_count, NULL, 1, 1 };
+		return ButtonBehaviorEx( bb, id, out_hovered, out_held, flags, &IsPolyWithHoleContains, &data );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
 	// Widgets
 	//////////////////////////////////////////////////////////////////////////
-	bool ButtonExShape( const char* label, const ImVec2& size_arg, ImVec2* pts0, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags, ImItemHoverablePolyConvexFunc func, ImDrawShape draw_outline, ImDrawShapeFilled draw_fill )
+	bool ButtonEx( const char* label, const ImVec2& size_arg, ImRect src_bb, ImVec2 text_offset, ImGuiButtonFlags flags, IsContains isContains, ImDrawShape draw_outline, ImDrawShapeFilled draw_fill, ImInlineOffset offset, void* extra_data )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
@@ -5906,17 +6219,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			pos.y += window->DC.CurrLineTextBaseOffset - style.FramePadding.y;
 		ImVec2 size = ImGui::CalcItemSize( size_arg, label_size.x + style.FramePadding.x * 2.0f, label_size.y + style.FramePadding.y * 2.0f );
 
-		// Hmm... Lot of copies
-		ImVector<ImVec2> points;
-		points.resize(pts_count);
-		for ( int k = 0; k < pts_count; ++k )
-		{
-			points[ k ] = pos + pts0[ k ];
-		}
-		ImVec2* pts = &points[ 0 ];
+		ImPolyShapeData* remapped_data = ( ImPolyShapeData* )extra_data;
 
-		ImRect shape_bb;
-		ImComputeRect( &shape_bb, pts, pts_count );
+		int pts_count = remapped_data->pts_count;
+
+		offset( extra_data, pos );
+
+		ImRect shape_bb = src_bb;
+		shape_bb.Translate( pos );
 
 		ImRect bb( pos, pos + size );
 		bb.Add( shape_bb );
@@ -5927,12 +6237,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			return false;
 
 		bool hovered, held;
-		bool pressed = ButtonBehaviorShape( pts, pts_count, id, &hovered, &held, flags, func, NULL );
+		bool pressed = ButtonBehaviorEx( shape_bb, id, &hovered, &held, flags, isContains, remapped_data );
 
 		// Render
 		const ImU32 col = ImGui::GetColorU32( ( held && hovered ) ? ImGuiCol_ButtonActive : hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button );
-		RenderNavHighlightShape( pts, pts_count, id, 0, draw_outline );
-		RenderFrameShape( pts, pts_count, col, true, draw_outline, draw_fill );
+		RenderNavHighlightEx( id, 0, draw_outline, extra_data, bb );
+		RenderFrameEx( col, true, draw_outline, draw_fill, extra_data );
 
 		if ( g.LogEnabled )
 			ImGui::LogSetNextTextDecoration( "[", "]" );
@@ -5945,17 +6255,34 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		IMGUI_TEST_ENGINE_ITEM_INFO( id, label, g.LastItemData.StatusFlags );
 		return pressed;
 	}
+	bool ButtonExCircle( const char* label, const ImVec2& size_arg, ImVec2 center, float radius, ImGuiButtonFlags flags )
+	{
+		ImCircle data = { center, radius };
+		ImRect bb;
+		bb.Min = center - ImVec2( radius, radius );
+		bb.Max = center + ImVec2( radius, radius );
+		return ButtonEx( label, size_arg, bb, ImVec2( 0.0f, 0.0f ), flags, &IsCircleContains, &Im_DrawCircle, &Im_DrawCircleFilled, &Im_InlineOffsetCircle, &data );
+	}
 	bool ButtonExConvex( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImGuiButtonFlags flags )
 	{
-		return ButtonExShape( label, size_arg, pts, pts_count, ImVec2( 0.0f, 0.0f ), flags, &ItemHoverablePolyConvex, &ImDrawShapeConvex, &ImDrawShapeConvexFilled );
+		ImPolyShapeData data = { pts, pts_count };
+		ImRect bb;
+		ImComputeRect( &bb, pts, pts_count );
+		return ButtonEx( label, size_arg, bb, ImVec2( 0.0f, 0.0f ), flags, &IsPolyConvexContains, &Im_DrawShapeConvex, &Im_DrawShapeConvexFilled, &Im_InlineOffsetConvex, &data );
 	}
 	bool ButtonExConcave( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags )
 	{
-		return ButtonExShape( label, size_arg, pts, pts_count, text_offset, flags, &ItemHoverablePolyConcave, &ImDrawShapeConcave, &ImDrawShapeConcaveFilled );
+		ImPolyShapeData data = { pts, pts_count };
+		ImRect bb;
+		ImComputeRect( &bb, pts, pts_count );
+		return ButtonEx( label, size_arg, bb, text_offset, flags, &IsPolyConcaveContains, &Im_DrawShapeConcave, &Im_DrawShapeConcaveFilled, &Im_InlineOffsetConcave, &data );
 	}
 	bool ButtonExWithHole( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags )
 	{
-		return ButtonExShape( label, size_arg, pts, pts_count, text_offset, flags, &ItemHoverablePolyWithHole, &ImDrawShapeWithHole, &ImDrawShapeWithHoleFilled );
+		ImPolyHoleShapeData data = { pts, pts_count, NULL, 1, 1 };
+		ImRect bb;
+		ImComputeRect( &bb, pts, pts_count );
+		return ButtonEx( label, size_arg, bb, text_offset, flags, &IsPolyWithHoleContains, &Im_DrawShapeWithHole, &Im_DrawShapeWithHoleFilled, &Im_InlineOffsetWithHole, &data );
 	}
 
 	ImU32 ImInternalHueMaskingFunc( float const xx, void* pUserData )
