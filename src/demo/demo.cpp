@@ -17,6 +17,7 @@
 
 #include <dear_widgets.h>
 #include <imgui_internal.h>
+#include <imgui/misc/cpp/imgui_stdlib.h>
 
 #include <vector>
 #include <random>
@@ -167,6 +168,14 @@ ImTextureID background;
 ImVec2 background_size;
 ImTextureID illlustration_img;
 ImVec2 illlustration_size;
+ImTextureID bike_img;
+ImVec2 bike_size;
+ImTextureID astro_img;
+ImVec2 astro_size;
+ImTextureID clock_img;
+ImVec2 clock_size;
+ImTextureID man_img;
+ImVec2 man_size;
 int main()
 {
 	if ( !ImPlatform::SimpleStart( "Dear Widgets Demo", ImVec2( 0.0f, 0.0f ), 1024, 764 * 2 ) )
@@ -175,13 +184,13 @@ int main()
 	// Setup Dear ImGui context
 	ImGuiIO& io = ImGui::GetIO(); ( void )io;
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;		// Enable Keyboard Controls
-	////io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;	// Enable Gamepad Controls
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;	// Enable Gamepad Controls
 #ifdef IMGUI_HAS_DOCK
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;			// Enable Docking
 #endif
 #ifdef IMGUI_HAS_VIEWPORT
 	// TODO: Fix cf. ImPlatform
-	//io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;		// Enable Multi-Viewport / Platform Windows
+	io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;		// Enable Multi-Viewport / Platform Windows
 #endif
 	////io.ConfigViewportsNoAutoMerge = true;
 	////io.ConfigViewportsNoTaskBarIcon = true;
@@ -195,7 +204,7 @@ int main()
 	//io.FontGlobalScale = 3.0f;
 	//ImGui::GetStyle().ScaleAllSizes( 3.0f );
 
-	if ( !ImPlatform::SimpleInitialize( false ) )
+	if ( !ImPlatform::SimpleInitialize( io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable ) )
 	{
 		return 0;
 	}
@@ -223,9 +232,17 @@ int main()
 	illlustration_img = TextureFromFile( "pexels-robert-bogdan-156165-1152351.jpg", &illlustration_size );
 	// Image from: https://www.pexels.com/fr-fr/photo/deux-chaises-avec-table-en-verre-sur-le-salon-pres-de-la-fenetre-1571453/
 	background = TextureFromFile( "pexels-fotoaibe-1571453.jpg", &background_size );
+	bike_img = TextureFromFile( "camera-542784_1280.png", &bike_size );
+	astro_img = TextureFromFile( "astro.png", &astro_size );
+	clock_img = TextureFromFile( "clock.png", &clock_size );
+	man_img = TextureFromFile( "man.png", &man_size );
 
 	ImWidgets::OwnTexture( illlustration_img );
 	ImWidgets::OwnTexture( background );
+	ImWidgets::OwnTexture( bike_img );
+	ImWidgets::OwnTexture( astro_img );
+	ImWidgets::OwnTexture( clock_img );
+	ImWidgets::OwnTexture( man_img );
 
 	ImVec4 clear_color = ImVec4( 0.461f, 0.461f, 0.461f, 1.0f );
 	while ( ImPlatform::PlatformContinue() )
@@ -241,11 +258,14 @@ int main()
 
 		ImPlatform::SimpleBegin();
 
-		ImWidgets::ShowDemo();
+		ImWidgets::ShowSamples();
+		//ImWidgets::ShowDemo();
 
-		ShowSampleOffscreen00();
+		ImGui::ShowDemoWindow();
 
-		ImPlatform::SimpleEnd( clear_color, false );
+		//ShowSampleOffscreen00();
+
+		ImPlatform::SimpleEnd( clear_color, io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable );
 	}
 
 	ImWidgets::DestroyContext( ctx );
@@ -281,6 +301,97 @@ void ShowSampleOffscreen00()
 }
 
 namespace ImWidgets{
+
+	extern void Im_DrawCapsuleHFilledTex( ImDrawList* drawlist, ImU32 col, void* data, ImTextureID tex );
+
+	static void AspectRatio_6_2( ImGuiSizeCallbackData* data )
+	{
+		float aspect_ratio = *( float* )data->UserData;
+		data->DesiredSize.y = ( float )( int )( data->DesiredSize.x / aspect_ratio );
+	}
+
+	void ShowSamples()
+	{
+		static const float _6_2 = 6.0f / 2.0f;
+		ImGui::SetNextWindowSizeConstraints( ImVec2( 0, 0 ), ImVec2( FLT_MAX, FLT_MAX ), AspectRatio_6_2, ( void* )&_6_2 );
+		if ( ImGui::Begin( "Shop 00" ) )
+		{
+			ImVec2 size = ImGui::GetContentRegionAvail();
+			ImGui::BeginChild( "Left", ImVec2( size.x * 2.0f / 6.0f, 0.0f ) );
+			{
+				size = ImGui::GetContentRegionAvail();
+				ImGui::BeginChild( "Left_Left", ImVec2( size.x * 0.5f, 0.0f ) );
+					size = ImGui::GetContentRegionAvail();
+					ImGui::BeginChild( "Left_Left_Top", ImVec2( 0.0f, size.y * 0.5f ) );
+						size = ImGui::GetContentRegionAvail();
+						ImWidgets::ImageButtonExCircle( "X", clock_img, size.y * 0.5f, 0 );
+					ImGui::EndChild();
+					ImGui::BeginChild( "Left_Left_Bottom" );
+						size = ImGui::GetContentRegionAvail();
+						ImWidgets::ButtonExCircle( "Y", size.y * 0.5f, 0 );
+					ImGui::EndChild();
+				ImGui::EndChild();
+
+				ImGui::SameLine();
+
+				ImGui::BeginChild( "Left_Right" );
+					size = ImGui::GetContentRegionAvail();
+					ImWidgets::ImageButtonExCapsuleV( "Y", man_img, size.y, size.x, 0 );
+				ImGui::EndChild();
+			}
+			ImGui::EndChild();
+
+			ImGui::SameLine();
+
+			ImGui::BeginChild( "Right" );
+			{
+				size = ImGui::GetContentRegionAvail();
+				ImGui::BeginChild( "Right_Top", ImVec2( 0.0f, size.y * 0.5f ) );
+					size = ImGui::GetContentRegionAvail();
+					ImGui::BeginChild( "Right_Top_Left", ImVec2( size.x * 3.0f / 4.0f, 0.0f ) );
+						size = ImGui::GetContentRegionAvail();
+						ImageButtonExCapsuleH( "X", astro_img, size.x, size.y, 0,
+											   IM_COL32_WHITE,
+											   { 0.0f, 0.0f },
+											   { 1.0f, 1.0f } );
+					ImGui::EndChild();
+					ImGui::SameLine();
+					ImGui::BeginChild( "Right_Top_Right" );
+						size = ImGui::GetContentRegionAvail();
+						ButtonExCircle( "Y", size.y * 0.5f, 0 );
+					ImGui::EndChild();
+				ImGui::EndChild();
+				ImGui::BeginChild( "Right_Bottom" );
+					size = ImGui::GetContentRegionAvail();
+					ButtonExCircle( "A", size.y * 0.5f, 0 );
+					ImGui::SameLine();
+					ButtonExCircle( "B", size.y * 0.5f, 0 );
+					ImGui::SameLine();
+					size = ImGui::GetContentRegionAvail();
+					ButtonExCapsuleH( "C", size.x, size.y, 0 );
+				ImGui::EndChild();
+			}
+			ImGui::EndChild();
+		}
+		ImGui::End();
+	}
+
+	//void DrawCapsuleH( ImDrawList* drawlist, ImU32 col, float thickness, void* data )
+	//{
+	//	ImCapsule* values = ( ImCapsule* )data;
+	//	drawlist->PathArcToFast( values->pos, values->radius, 9, 3 );
+	//	drawlist->PathArcToFast( values->pos + ImVec2( values->length, 0.0f ), values->radius, 3, -3 );
+	//	drawlist->PathFillConvex( col );
+	//}
+	//
+	//void DrawCapsuleV( ImDrawList* drawlist, ImU32 col, float thickness, void* data )
+	//{
+	//	ImCapsule* values = ( ImCapsule* )data;
+	//	drawlist->PathArcToFast( values->pos, values->radius, 0, -6 );
+	//	drawlist->PathArcToFast( values->pos + ImVec2( 0.0f, values->length ), values->radius, 6, 0 );
+	//	drawlist->PathFillConvex( col );
+	//}
+
 	void	ShowDemo()
 	{
 		//static StaticInit s_StaticInit;
@@ -292,7 +403,7 @@ namespace ImWidgets{
 		ImGui::Begin( "Dear Widgets", NULL, ImGuiWindowFlags_NoTitleBar );
 		ImWidgets::SetCurrentWindowBackgroundImage( background, background_size, false );
 
-		if ( ImGui::CollapsingHeader( "Draw", ImGuiTreeNodeFlags_DefaultOpen ) )
+		if ( ImGui::CollapsingHeader( "Draw" ) )
 		{
 			ImGui::Indent();
 			if ( ImGui::CollapsingHeader( "Draw Shape" ) )
@@ -356,7 +467,7 @@ namespace ImWidgets{
 				ImGui::Text( "Vtx: %d", shape.vertices.size() );
 			}
 #ifdef IM_SUPPORT_CUSTOM_SHADER
-			if ( ImGui::CollapsingHeader( "Custom Shader", ImGuiTreeNodeFlags_DefaultOpen ) )
+			if ( ImGui::CollapsingHeader( "Custom Shader" ) )
 			{
 				float const size = ImGui::GetContentRegionAvail().x;
 
@@ -412,7 +523,7 @@ namespace ImWidgets{
 							( ImWidgetsMarker )marker_idx,
 							( ImWidgetsDrawType )draw_type_idx );
 			}
-			if ( ImGui::CollapsingHeader( "Thick line" ) )
+			if ( ImGui::CollapsingHeader( "Thick line", ImGuiTreeNodeFlags_DefaultOpen ) )
 			{
 				float const size = ImGui::GetContentRegionAvail().x;
 				ImGui::Dummy( ImVec2( size, 0.25f * size ) );
@@ -1422,7 +1533,7 @@ namespace ImWidgets{
 					v += pos;
 				}
 				ImPolyShapeData data = { &pos_norms[ 0 ], 3 };
-				bool hovered = IsMouseHovering( pos, pos + ImVec2( size, size ), IsPolyConvexContains, &data );
+				bool hovered = IsMouseHovering( pos, pos + ImVec2( size, size ), Im_IsPolyConvexContains, &data );
 				pDrawList->AddConvexPolyFilled( &pos_norms[ 0 ], 3, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 				pos = ImGui::GetCursorScreenPos();
@@ -1437,7 +1548,7 @@ namespace ImWidgets{
 					disk[ k ].y = pos.y + 0.5f * size + sin0 * size * 0.5f;
 				}
 				data = { &disk[ 0 ], 32 };
-				hovered = IsMouseHovering( pos, pos + ImVec2( size, size ), IsPolyConvexContains, &data );
+				hovered = IsMouseHovering( pos, pos + ImVec2( size, size ), Im_IsPolyConvexContains, &data );
 				pDrawList->AddConvexPolyFilled( &disk[ 0 ], 32, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 
 				ImGui::Dummy( ImVec2( size, size ) );
@@ -1458,7 +1569,7 @@ namespace ImWidgets{
 					v += pos;
 				}
 				ImPolyShapeData data = { &pos_norms[ 0 ], sz };
-				bool hovered = IsMouseHovering( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), IsPolyConcaveContains, &data );
+				bool hovered = IsMouseHovering( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), Im_IsPolyConcaveContains, &data );
 				pDrawList->AddConcavePolyFilled( &pos_norms[ 0 ], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 				pos = ImGui::GetCursorScreenPos();
@@ -1476,7 +1587,7 @@ namespace ImWidgets{
 					ring[ k ].y = pos.y + size * 0.5f + r * 0.5f * sin0;
 				}
 				data = { &ring[ 0 ], sz };
-				hovered = IsMouseHovering( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), IsPolyConcaveContains, &data );
+				hovered = IsMouseHovering( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), Im_IsPolyConcaveContains, &data );
 				pDrawList->AddConcavePolyFilled( &ring[ 0 ], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
@@ -1495,8 +1606,8 @@ namespace ImWidgets{
 					v.y *= size;
 					v += pos;
 				}
-				ImPolyHoleShapeData data = { &pos_norms[ 0 ], sz, NULL, 1, 1 };
-				bool hovered = IsMouseHovering( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), IsPolyWithHoleContains, &data );
+				ImPolyHoleShapeData data = { &pos_norms[ 0 ], NULL, sz, 1, 1 };
+				bool hovered = IsMouseHovering( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), Im_IsPolyWithHoleContains, &data );
 				DrawShapeWithHole( pDrawList, &pos_norms[ 0 ], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 				pos = ImGui::GetCursorScreenPos();
@@ -1523,23 +1634,39 @@ namespace ImWidgets{
 					ring[ k ].x = pos.x + size * 0.5f + r * 0.5f * cos0;
 					ring[ k ].y = pos.y + size * 0.5f + r * 0.5f * sin0;
 				}
-				data = { &ring[ 0 ], sz, NULL, 1, 1 };
-				hovered = IsMouseHovering( pos, pos + ImVec2( size, size ), IsPolyWithHoleContains, &data );
+				data = { &ring[ 0 ], NULL, sz, 1, 1 };
+				hovered = IsMouseHovering( pos, pos + ImVec2( size, size ), Im_IsPolyWithHoleContains, &data );
 				DrawShapeWithHole( pDrawList, &ring[ 0 ], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
 			ImGui::Unindent();
 		}
-		if ( ImGui::CollapsingHeader( "Widgets" ) )
+		if ( ImGui::CollapsingHeader( "Widgets", ImGuiTreeNodeFlags_DefaultOpen ) )
 		{
 			ImGui::Indent();
 			if ( ImGui::CollapsingHeader( "Button Circle" ) )
 			{
 				float const half_size = 0.5f * ImGui::GetContentRegionAvail().x;
 				static int value = 0;
+				static float radius = half_size;
+				static std::string caption = "Circle";
+				ImGui::InputText( "value", &caption );
+				ImGui::DragFloat( "radius", &radius, 1.0f, 0.0f, 2.0f * half_size );
 				ImGui::Text( "Value: %d", value );
-				if ( ImWidgets::ButtonExCircle( "Convex", ImVec2( 0, 0 ), ImVec2( half_size, half_size ), half_size, 0 ) )
-					++value;
+				value += ( int )ImWidgets::ButtonExCircle( caption.c_str(), radius, 0 );
+			}
+			if ( ImGui::CollapsingHeader( "Button Capsule", ImGuiTreeNodeFlags_DefaultOpen ) )
+			{
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				float const size = ImGui::GetContentRegionAvail().x;
+				static int value = 0;
+				static float length = size;
+				static float thickness = size * 0.25f;
+				ImGui::DragFloat( "length", &length, 1.0f, 0.0f, 2.0f * size );
+				ImGui::DragFloat( "thickness", &thickness, 1.0f, 0.0f, 2.0f * size );
+				ImGui::Text( "Value: %d", value );
+				value += ( int )ButtonExCapsuleH( "CapsuleH", length, thickness, 0 );
+				value += ( int )ButtonExCapsuleV( "CapsuleV", length, thickness, 0 );
 			}
 			if ( ImGui::CollapsingHeader( "Button Convex" ) )
 			{
@@ -1556,8 +1683,7 @@ namespace ImWidgets{
 				}
 				static int value = 0;
 				ImGui::Text( "Value: %d", value );
-				if ( ImWidgets::ButtonExConvex( "Convex", ImVec2( 0, 0 ), &disk[ 0 ], 32, 0 ) )
-					++value;
+				value += ( int )ImWidgets::ButtonExConvex( "Convex", ImVec2( 0, 0 ), &disk[ 0 ], 32, 0 );
 			}
 			if ( ImGui::CollapsingHeader( "Button Concave" ) )
 			{
@@ -1573,8 +1699,7 @@ namespace ImWidgets{
 				}
 				static int value = 0;
 				ImGui::Text( "Value: %d", value );
-				if ( ImWidgets::ButtonExConcave( "Concave", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 ) )
-					++value;
+				value += ( int )ImWidgets::ButtonExConcave( "Concave", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 );
 			}
 			if ( ImGui::CollapsingHeader( "Button With Hole" ) )
 			{
@@ -1590,8 +1715,7 @@ namespace ImWidgets{
 				}
 				static int value = 0;
 				ImGui::Text( "Value: %d", value );
-				if ( ImWidgets::ButtonExWithHole( "With Hole", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 ) )
-					++value;
+				value += ( int )ImWidgets::ButtonExWithHole( "With Hole", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 );
 			}
 #if 0
 			if ( ImGui::CollapsingHeader( "DragFloatPrecise" ) )

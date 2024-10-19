@@ -484,6 +484,12 @@ struct ImCircle
 	ImVec2 center;
 	float radius;
 };
+struct ImCapsule
+{
+	ImVec2 pos;
+	float length;
+	float thickness;
+};
 struct ImPolyShapeData
 {
 	ImVec2* pts;
@@ -492,8 +498,8 @@ struct ImPolyShapeData
 struct ImPolyHoleShapeData
 {
 	ImVec2* pts;
-	int pts_count;
 	ImRect* p_bb;
+	int pts_count;
 	int gap;
 	int strokeWidth;
 };
@@ -910,11 +916,11 @@ namespace ImWidgets{
 
 	// TODO: find a clean way expose the style of the draws:
 	// Triangle of ColorSpace
-	// White Point
+	// White PointDrawChromaticityPlotGeneric( ImDrawList* pDrawList,
 	IMGUI_API
 	void	DrawChromaticityPlotGeneric( ImDrawList* pDrawList,
-										 ImVec2 const curPos,
-										 float width, float height,
+										 ImVec2 curPos,
+										 ImVec2 size,
 										 ImVec2 primR, ImVec2 primG, ImVec2 primB,
 										 ImVec2 whitePoint,
 										 float* xyzToRGB,
@@ -1035,7 +1041,9 @@ namespace ImWidgets{
 	typedef void ( *ImInlineOffset )( void* data, ImVec2 offset );
 	typedef void ( *ImDrawShape )( ImDrawList* drawlist, ImU32 col, float thickness, void* data );
 	typedef void ( *ImDrawShapeFilled )( ImDrawList* drawlist, ImU32 col, void* data );
+	typedef void ( *ImDrawShapeFilledTex )( ImDrawList* drawlist, ImU32 col, void* data, ImTextureID tex, ImVec2 uv_min, ImVec2 uv_max );
 	typedef bool ( *IsContains )( ImVec2 p, void* data );
+	typedef void ( *FromRect )( ImRect r, void* data );
 
 	IMGUI_API void RenderNavHighlightEx( ImGuiID id, ImGuiNavHighlightFlags flags, ImDrawShape func, void* data, ImRect display_rect );
 	IMGUI_API void RenderNavHighlightCircle( ImVec2 center, float radius, ImGuiID id, ImGuiNavHighlightFlags flags );
@@ -1043,7 +1051,7 @@ namespace ImWidgets{
 	IMGUI_API void RenderNavHighlightConcave( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags );
 	IMGUI_API void RenderNavHighlightWithHole( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags );
 
-	IMGUI_API void RenderFrameEx( ImU32 fill_col, bool border, ImDrawShape outline, ImDrawShapeFilled fill, void* data );
+	IMGUI_API void RenderFrameEx( ImU32 fill_col, bool border, ImDrawShape outline, ImDrawShapeFilled fill, ImDrawShapeFilledTex fill_tex, void* data, ImTextureID* tex = NULL, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
 	IMGUI_API void RenderFrameCircle( ImVec2 center, float radius, ImU32 fill_col, bool border );
 	IMGUI_API void RenderFrameConcave( ImVec2* pts, int pts_count, ImU32 fill_col, bool border );
 	IMGUI_API void RenderFrameConvex( ImVec2* pts, int pts_count, ImU32 fill_col, bool border );
@@ -1054,10 +1062,12 @@ namespace ImWidgets{
 	//////////////////////////////////////////////////////////////////////////
 	IMGUI_API bool IsBoundingBoxWellFormed( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count );
 
-	IMGUI_API bool IsCircleContains( ImVec2 p, void* data );
-	IMGUI_API bool IsPolyConvexContains( ImVec2 p, void* data );
-	IMGUI_API bool IsPolyConcaveContains( ImVec2 p, void* data );
-	IMGUI_API bool IsPolyWithHoleContains( ImVec2 p, void* data );
+	IMGUI_API bool Im_IsCircleContains( ImVec2 p, void* data );
+	IMGUI_API bool Im_IsCapsuleHContains( ImVec2 p, void* data );
+	IMGUI_API bool Im_IsCapsuleVContains( ImVec2 p, void* data );
+	IMGUI_API bool Im_IsPolyConvexContains( ImVec2 p, void* data );
+	IMGUI_API bool Im_IsPolyConcaveContains( ImVec2 p, void* data );
+	IMGUI_API bool Im_IsPolyWithHoleContains( ImVec2 p, void* data );
 
 	IMGUI_API bool IsMouseHovering( const ImVec2& r_min, const ImVec2& r_max, IsContains contains, void* data, bool clip = true );
 	IMGUI_API bool ItemHoverable( const ImRect& bb, ImGuiID id, ImGuiItemFlags item_flags, IsContains isContains, void* extra_data );
@@ -1065,6 +1075,8 @@ namespace ImWidgets{
 	//typedef bool ( *ImItemHoverableFunc )( const ImRect& bb, ImGuiID id, ImGuiItemFlags item_flags, void* extra_data );
 	IMGUI_API bool ButtonBehaviorEx( const ImRect& bb, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags, IsContains isContains, void* extra_data );
 	IMGUI_API bool ButtonBehaviorCircle( ImVec2 center, float radius, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
+	IMGUI_API bool ButtonBehaviorCapsuleH( ImVec2 pos, float length, float radius, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
+	IMGUI_API bool ButtonBehaviorCapsuleV( ImVec2 pos, float length, float radius, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
 	IMGUI_API bool ButtonBehaviorConvex( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
 	IMGUI_API bool ButtonBehaviorConcave( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
 	IMGUI_API bool ButtonBehaviorWithHole( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
@@ -1072,11 +1084,22 @@ namespace ImWidgets{
 	//////////////////////////////////////////////////////////////////////////
 	// Widgets
 	//////////////////////////////////////////////////////////////////////////
-	IMGUI_API bool ButtonEx( const char* label, const ImVec2& size_arg, ImRect bb, ImVec2 text_offset, ImGuiButtonFlags flags, IsContains isContains, ImDrawShape outline, ImDrawShapeFilled fill, ImInlineOffset offset, void* extra_data );
-	IMGUI_API bool ButtonExCircle( const char* label, const ImVec2& size_arg, ImVec2 center, float radius, ImGuiButtonFlags flags );
+	IMGUI_API bool ButtonEx( const char* label, const ImVec2& size_arg, ImRect bb, ImVec2 text_offset, ImGuiButtonFlags flags,
+							 IsContains isContains, ImDrawShape outline, ImDrawShapeFilled fill, ImDrawShapeFilledTex fill_tex, ImInlineOffset offset, FromRect from_rect,
+							 void* extra_data,
+							 ImTextureID* tex = NULL, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
+	IMGUI_API bool ButtonExCircle( const char* label, float radius, ImGuiButtonFlags flags );
+	IMGUI_API bool ButtonExCapsuleH( const char* label, float length, float thickness, ImGuiButtonFlags flags );
+	IMGUI_API bool ButtonExCapsuleV( const char* label, float length, float thickness, ImGuiButtonFlags flags );
 	IMGUI_API bool ButtonExConvex( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImGuiButtonFlags flags );
 	IMGUI_API bool ButtonExConcave( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags );
 	IMGUI_API bool ButtonExWithHole( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags );
+
+	IMGUI_API bool ImageButtonExCircle( const char* label, ImTextureID tex, float radius, ImGuiButtonFlags flags, ImU32 col = IM_COL32_WHITE, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
+	IMGUI_API bool ImageButtonExCapsuleH( const char* label, ImTextureID tex, float length, float thickness, ImGuiButtonFlags flags, ImU32 col = IM_COL32_WHITE, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
+	IMGUI_API bool ImageButtonExCapsuleV( const char* label, ImTextureID tex, float length, float thickness, ImGuiButtonFlags flags, ImU32 col = IM_COL32_WHITE, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
+	IMGUI_API bool ImageButtonExConvex( const char* label, ImTextureID tex, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImGuiButtonFlags flags, ImU32 col = IM_COL32_WHITE, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
+	IMGUI_API bool ImageButtonExConcave( const char* label, ImTextureID tex, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags, ImU32 col = IM_COL32_WHITE, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
 
 	IMGUI_API bool HueSelector( char const* label, float hueHeight, float cursorHeight, float* hueCenter, float* hueWidth, float* featherLeft, float* featherRight, int division = 32, float alpha = 1.0f, float hideHueAlpha = 0.75f, float offset = 0.0f );
 	IMGUI_API bool SliderNScalar( char const* label, ImGuiDataType data_type, void* ordered_value, int value_count, void* p_min, void* p_max, float cursor_width, bool show_hover_by_region );

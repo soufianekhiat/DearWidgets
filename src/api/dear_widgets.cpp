@@ -4016,12 +4016,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			draw->PrimReserve( idx_count, vtx_count );
 			for ( int i = 0; i < vtx_count; i++ )
 			{
-				draw->_VtxWritePtr[ 0 ].pos = poly[ i ];
+				draw->_VtxWritePtr->pos = poly[ i ];
 				ImVec2 uv;
 				uv.x = ImRescale( poly[ i ].x, bb.Min.x, bb.Max.x, 0.0f, 1.0f ) * uv_scale.x + uv_offset.x;
 				uv.y = ImRescale( poly[ i ].y, bb.Min.y, bb.Max.y, 0.0f, 1.0f ) * uv_scale.y + uv_offset.y;
-				draw->_VtxWritePtr[ 0 ].uv = uv;
-				draw->_VtxWritePtr[ 0 ].col = tint;
+				draw->_VtxWritePtr->uv = uv;
+				draw->_VtxWritePtr->col = tint;
 				draw->_VtxWritePtr++;
 			}
 			for ( int i = 2; i < points_count; i++ )
@@ -5382,8 +5382,30 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		drawlist->PathStroke( mainCol, ImDrawFlags_None, mainLineThickness );
 	}
 
+	void Im_CircleFromRect( ImRect r, void* data )
+	{
+		ImCircle* c = ( ImCircle* )data;
+		c->center = r.GetCenter();
+		c->radius = ImMin( r.GetWidth(), r.GetHeight() ) * 0.5f;
+	}
+	void Im_CapsuleHFromRect( ImRect r, void* data )
+	{
+		ImCapsule* c = ( ImCapsule* )data;
+		float half_height = r.GetHeight() * 0.5f;
+		c->pos = r.Min + ImVec2( half_height, half_height );
+		c->length = r.GetWidth() - 2.0f * half_height;
+		c->thickness = half_height;
+	}
+	void Im_CapsuleVFromRect(ImRect r, void* data)
+	{
+		ImCapsule* c = ( ImCapsule* )data;
+		float half_width = r.GetWidth() * 0.5f;
+		c->pos = r.Min + ImVec2( half_width, half_width );
+		c->length = r.GetHeight() - 2.0f * half_width;
+		c->thickness = half_width;
+	}
 
-	bool IsCircleContains( ImVec2 p, void* data )
+	bool Im_IsCircleContains( ImVec2 p, void* data )
 	{
 		ImCircle* value = ( ImCircle* )data;
 
@@ -5391,8 +5413,38 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		return ImDot( dx, dx ) < value->radius * value->radius;
 	}
+	bool Im_IsCapsuleHContains( ImVec2 p, void* data )
+	{
+		ImCapsule* value = ( ImCapsule* )data;
 
-	bool IsPolyConvexContains( ImVec2 p, void* data )
+		// SDF From Inigo Quilez: https://iquilezles.org/articles/distfunctions2d/
+		// "Rounded Exact Line"
+		ImVec2 a = value->pos;
+		ImVec2 b = { a.x + value->length, a.y };
+
+		ImVec2 pa = p - a;
+		ImVec2 ba = b - a;
+		float h = ImClamp( ImDot( pa, ba ) / ImDot( ba, ba ), 0.0f, 1.0f );
+
+		return ( ImLength( pa - ba * h ) - value->thickness ) < 0.0f;
+	}
+	bool Im_IsCapsuleVContains( ImVec2 p, void* data )
+	{
+		ImCapsule* value = ( ImCapsule* )data;
+
+		// SDF From Inigo Quilez: https://iquilezles.org/articles/distfunctions2d/
+		// "Rounded Exact Line"
+		ImVec2 a = value->pos;
+		ImVec2 b = { a.x, a.y + value->length };
+
+		ImVec2 pa = p - a;
+		ImVec2 ba = b - a;
+		float h = ImClamp( ImDot( pa, ba ) / ImDot( ba, ba ), 0.0f, 1.0f );
+
+		return ( ImLength( pa - ba * h ) - value->thickness ) < 0.0f;
+	}
+
+	bool Im_IsPolyConvexContains( ImVec2 p, void* data )
 	{
 		ImPolyShapeData* value = ( ImPolyShapeData* )data;
 		ImVec2* pts = value->pts;
@@ -5412,7 +5464,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return false;
 	}
 
-	bool IsPolyConcaveContains( ImVec2 p, void* data )
+	bool Im_IsPolyConcaveContains( ImVec2 p, void* data )
 	{
 		ImPolyShapeData* value = ( ImPolyShapeData* )data;
 		ImVec2* pts = value->pts;
@@ -5452,7 +5504,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return false;
 	}
 
-	bool IsPolyWithHoleContains( ImVec2 p, void* data )
+	bool Im_IsPolyWithHoleContains( ImVec2 p, void* data )
 	{
 		ImPolyHoleShapeData* value = ( ImPolyHoleShapeData* )data;
 		ImVec2* pts = value->pts;
@@ -5605,6 +5657,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImCircle* values = ( ImCircle* )data;
 		values->center += offset;
 	}
+	void Im_InlineOffsetCapsuleH( void* data, ImVec2 offset )
+	{
+		ImCapsule* values = ( ImCapsule* )data;
+		values->pos += offset;
+	}
+	void Im_InlineOffsetCapsuleV( void* data, ImVec2 offset )
+	{
+		ImCapsule* values = ( ImCapsule* )data;
+		values->pos += offset;
+	}
 	void Im_InlineOffsetConvex( void* data, ImVec2 offset )
 	{
 		ImPolyShapeData* values = ( ImPolyShapeData* )data;
@@ -5632,10 +5694,29 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			values->pts[ k ] += offset;
 		}
 	}
+
 	void Im_DrawCircle( ImDrawList* drawlist, ImU32 col, float thickness, void* data )
 	{
 		ImCircle* values = ( ImCircle* )data;
 		drawlist->AddCircle( values->center, values->radius, col, 0, thickness );
+	}
+	void Im_DrawCapsuleH( ImDrawList* drawlist, ImU32 col, float thickness, void* data )
+	{
+		ImCapsule* values = ( ImCapsule* )data;
+		//drawlist->PathArcToFast( values->pos, values->thickness, 9, 3 );
+		//drawlist->PathArcToFast( values->pos + ImVec2( values->length, 0.0f ), values->thickness, 3, -3 );
+		//drawlist->PathStroke( col );
+		ImVec2 t = { values->thickness, values->thickness };
+		drawlist->AddRect( values->pos - t, values->pos + t + ImVec2( values->length, 0.0f ), col, values->thickness, ImDrawFlags_RoundCornersAll );
+	}
+	void Im_DrawCapsuleV( ImDrawList* drawlist, ImU32 col, float thickness, void* data )
+	{
+		ImCapsule* values = ( ImCapsule* )data;
+		//drawlist->PathArcToFast( values->pos, values->thickness, 0, -6 );
+		//drawlist->PathArcToFast( values->pos + ImVec2( 0.0f, values->length ), values->thickness, 6, 0 );
+		//drawlist->PathStroke( col );
+		ImVec2 t = { values->thickness, values->thickness };
+		drawlist->AddRect( values->pos - t, values->pos + t + ImVec2( 0.0f, values->length ), col, values->thickness, ImDrawFlags_RoundCornersAll );
 	}
 	void Im_DrawShapeConvex( ImDrawList* drawlist, ImU32 col, float thickness, void* data )
 	{
@@ -5659,15 +5740,104 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImCircle* values = ( ImCircle* )data;
 		drawlist->AddCircleFilled( values->center, values->radius, col, 0 );
 	}
+	void Im_DrawCircleFilledTex( ImDrawList* drawlist, ImU32 col, void* data, ImTextureID tex, ImVec2 uv_min, ImVec2 uv_max )
+	{
+		ImCircle* values = ( ImCircle* )data;
+		//if ( ( col & IM_COL32_A_MASK ) == 0 || values->radius < 0.5f )
+		//	return;
+		//drawlist->_PathArcToFastEx( values->center, values->radius, 0, IM_DRAWLIST_ARCFAST_SAMPLE_MAX, 0 );
+		//drawlist->_Path.Size--;
+		//DrawImageConvexShape( drawlist, tex, drawlist->_Path.Data, drawlist->_Path.Size, col,
+		//					   ImVec2( 0.0f, 0.0f ), ImVec2( 1.0f, 1.0f ) );
+		//drawlist->_Path.Size = 0;
+		drawlist->AddImageRounded( tex,
+								   values->center - ImVec2( values->radius, values->radius ),
+								   values->center + ImVec2( values->radius, values->radius ),
+								   uv_min, uv_max,
+								   col,
+								   values->radius, ImDrawFlags_RoundCornersAll );
+	}
+	void Im_DrawCapsuleHFilled( ImDrawList* drawlist, ImU32 col, void* data )
+	{
+		ImCapsule* values = ( ImCapsule* )data;
+		//drawlist->PathArcToFast( values->pos, values->thickness, 9, 3 );
+		//drawlist->PathArcToFast( values->pos + ImVec2( values->length, 0.0f ), values->thickness, 3, -3 );
+		//drawlist->PathFillConvex( col );
+		ImVec2 t = { values->thickness, values->thickness };
+		drawlist->AddRectFilled( values->pos - t, values->pos + t + ImVec2( values->length, 0.0f ), col, values->thickness, ImDrawFlags_RoundCornersAll );
+	}
+	void Im_DrawCapsuleHFilledTex( ImDrawList* drawlist, ImU32 col, void* data, ImTextureID tex, ImVec2 uv_min, ImVec2 uv_max )
+	{
+		//const bool push_texture_id = tex != drawlist->_CmdHeader.TextureId;
+		//if ( push_texture_id )
+		//	drawlist->PushTextureID( tex );
+
+		ImCapsule* values = ( ImCapsule* )data;
+
+		ImVec2 t = { values->thickness, values->thickness };
+		//drawlist->AddRectFilled( values->pos - t, values->pos + t + ImVec2( values->length, 0.0f ), col, values->thickness, ImDrawFlags_RoundCornersAll );
+		drawlist->AddImageRounded( tex,
+								   values->pos - t,
+								   values->pos + t + ImVec2( values->length, 0.0f ),
+								   uv_min, uv_max,
+								   col, values->thickness, ImDrawFlags_RoundCornersAll );
+		//drawlist->AddImage( tex, values->pos - t, values->pos + t + ImVec2( values->length, 0.0f ), { 0.0f, 0.0f }, { 1.0f, 1.0f }, col );
+
+		//int vert_start_idx = drawlist->VtxBuffer.Size;
+		//drawlist->PathArcToFast( values->pos, values->thickness, 9, 3 );
+		//drawlist->PathArcToFast( values->pos + ImVec2( values->length, 0.0f ), values->thickness, 3, -3 );
+		//drawlist->PathFillConvex( col );
+		//int vert_end_idx = drawlist->VtxBuffer.Size;
+		//ImVec2 t = { values->thickness, values->thickness };
+		//ImGui::ShadeVertsLinearUV(
+		//	drawlist,
+		//	vert_start_idx, vert_end_idx,
+		//	values->pos - t, values->pos + t + ImVec2( values->length, 0.0f ),
+		//	{ 0.0f, 0.0f }, { 1.0f, 1.0f },
+		//	true );
+
+		//if ( push_texture_id )
+		//	drawlist->PopTextureID();
+	}
+	void Im_DrawCapsuleVFilled( ImDrawList* drawlist, ImU32 col, void* data )
+	{
+		ImCapsule* values = ( ImCapsule* )data;
+		//drawlist->PathArcToFast( values->pos, values->thickness, 0, -6 );
+		//drawlist->PathArcToFast( values->pos + ImVec2( 0.0f, values->length ), values->thickness, 6, 0 );
+		//drawlist->PathFillConvex( col );
+		ImVec2 t = { values->thickness, values->thickness };
+		drawlist->AddRectFilled( values->pos - t, values->pos + t + ImVec2( 0.0f, values->length ), col, values->thickness, ImDrawFlags_RoundCornersAll );
+	}
+	void Im_DrawCapsuleVFilledTex( ImDrawList* drawlist, ImU32 col, void* data, ImTextureID tex, ImVec2 uv_min, ImVec2 uv_max )
+	{
+		ImCapsule* values = ( ImCapsule* )data;
+		drawlist->PathArcToFast( values->pos, values->thickness, 0, -6 );
+		drawlist->PathArcToFast( values->pos + ImVec2( 0.0f, values->length ), values->thickness, 6, 0 );
+		DrawImageConvexShape( drawlist, tex, drawlist->_Path.Data, drawlist->_Path.Size, col,
+							  uv_min, uv_max );
+		drawlist->_Path.Size = 0;
+	}
 	void Im_DrawShapeConvexFilled( ImDrawList* drawlist, ImU32 col, void* data )
 	{
 		ImPolyShapeData* values = ( ImPolyShapeData* )data;
 		drawlist->AddConvexPolyFilled( values->pts, values->pts_count, col );
 	}
+	void Im_DrawShapeConvexFilledTex( ImDrawList* drawlist, ImU32 col, void* data, ImTextureID tex, ImVec2 uv_min, ImVec2 uv_max )
+	{
+		ImPolyShapeData* values = ( ImPolyShapeData* )data;
+		DrawImageConvexShape( drawlist, tex, values->pts, values->pts_count, col,
+							  uv_min, uv_max );
+	}
 	void Im_DrawShapeConcaveFilled( ImDrawList* drawlist, ImU32 col, void* data )
 	{
 		ImPolyShapeData* values = ( ImPolyShapeData* )data;
 		drawlist->AddConcavePolyFilled( values->pts, values->pts_count, col );
+	}
+	void Im_DrawShapeConcaveFilledTex( ImDrawList* drawlist, ImU32 col, void* data, ImTextureID tex, ImVec2 uv_min, ImVec2 uv_max )
+	{
+		ImPolyShapeData* values = ( ImPolyShapeData* )data;
+		DrawImageConcaveShape( drawlist, tex, values->pts, values->pts_count, col,
+							   uv_min, uv_max );
 	}
 	void Im_DrawShapeWithHoleFilled( ImDrawList* drawlist, ImU32 col, void* data )
 	{
@@ -5713,6 +5883,22 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		display_rect.Max = center + ImVec2( radius, radius );
 		RenderNavHighlightEx( id, flags, &Im_DrawCircle, &data, display_rect );
 	}
+	void RenderNavHighlightCapsuleH( ImVec2 pos, float length, float radius, ImGuiID id, ImGuiNavHighlightFlags flags )
+	{
+		ImCapsule data = { pos, length, radius };
+		ImRect display_rect;
+		display_rect.Min = pos - ImVec2( radius, radius );
+		display_rect.Max = pos + ImVec2( radius, radius );
+		RenderNavHighlightEx( id, flags, &Im_DrawCapsuleH, &data, display_rect );
+	}
+	void RenderNavHighlightCapsuleV( ImVec2 pos, float length, float radius, ImGuiID id, ImGuiNavHighlightFlags flags )
+	{
+		ImCapsule data = { pos, length, radius };
+		ImRect display_rect;
+		display_rect.Min = pos - ImVec2( radius, radius );
+		display_rect.Max = pos + ImVec2( radius, radius );
+		RenderNavHighlightEx( id, flags, &Im_DrawCapsuleV, &data, display_rect );
+	}
 	void RenderNavHighlightConvex( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags )
 	{
 		ImPolyShapeData data = { pts, pts_count };
@@ -5729,17 +5915,20 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 	void RenderNavHighlightWithHole( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags )
 	{
-		ImPolyHoleShapeData data = { pts, pts_count, NULL, 1, 1 };
+		ImPolyHoleShapeData data = { pts, NULL, pts_count, 1, 1 };
 		ImRect display_rect;
 		ImComputeRect( &display_rect, pts, pts_count );
 		RenderNavHighlightEx( id, flags, &Im_DrawShapeWithHole, &data, display_rect );
 	}
 
-	void RenderFrameEx( ImU32 fill_col, bool border, ImDrawShape outline, ImDrawShapeFilled fill, void* data )
+	void RenderFrameEx( ImU32 fill_col, bool border, ImDrawShape outline, ImDrawShapeFilled fill, ImDrawShapeFilledTex fill_tex, void* data, ImTextureID* tex, ImVec2 uv_min, ImVec2 uv_max )
 	{
 		ImGuiContext& g = *GImGui;
 		ImGuiWindow* window = g.CurrentWindow;
-		fill( window->DrawList, fill_col, data );
+		if ( tex )
+			fill_tex( window->DrawList, fill_col, data, *tex, uv_min, uv_max );
+		else
+			fill( window->DrawList, fill_col, data );
 		const float border_size = g.Style.FrameBorderSize;
 		if ( border && border_size > 0.0f )
 		{
@@ -5747,65 +5936,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			//
 			outline( window->DrawList, ImGui::GetColorU32( ImGuiCol_Border ), border_size, data );
 		}
-	}
-	void RenderFrameCircle( ImVec2 center, float radius, ImU32 fill_col, bool border )
-	{
-		ImCircle data = { center, radius };
-		ImVector<ImVec2> shadow;
-		if ( border )
-		{
-			data.center.x += 1.0f;
-			data.center.y += 1.0f;
-		}
-		RenderFrameEx( fill_col, border, Im_DrawShapeConvex, Im_DrawShapeConvexFilled, &data );
-	}
-	void RenderFrameConcave( ImVec2* pts, int pts_count, ImU32 fill_col, bool border )
-	{
-		ImPolyShapeData data = { pts, pts_count };
-		ImVector<ImVec2> shadow;
-		if ( border )
-		{
-			// TODO add offset to the draw functions or "WithOffset" functions
-			shadow.resize( pts_count );
-			for ( int k = 0; k < pts_count; ++k )
-			{
-				shadow[ k ] = pts[ k ] + ImVec2( 1.0f, 1.0f );
-			}
-			data.pts = &shadow[ 0 ];
-		}
-		RenderFrameEx( fill_col, border, Im_DrawShapeConvex, Im_DrawShapeConvexFilled, &data );
-	}
-	void RenderFrameConvex( ImVec2* pts, int pts_count, ImU32 fill_col, bool border )
-	{
-		ImPolyShapeData data = { pts, pts_count };
-		ImVector<ImVec2> shadow;
-		if ( border )
-		{
-			// TODO add offset to the draw functions or "WithOffset" functions
-			shadow.resize( pts_count );
-			for ( int k = 0; k < pts_count; ++k )
-			{
-				shadow[ k ] = pts[ k ] + ImVec2( 1.0f, 1.0f );
-			}
-			data.pts = &shadow[ 0 ];
-		}
-		RenderFrameEx( fill_col, border, Im_DrawShapeConcave, Im_DrawShapeConcaveFilled, &data );
-	}
-	void RenderFrameWithHole( ImVec2* pts, int pts_count, ImU32 fill_col, bool border )
-	{
-		ImPolyHoleShapeData data = { pts, pts_count, NULL, 1, 1 };
-		ImVector<ImVec2> shadow;
-		if ( border )
-		{
-			// TODO add offset to the draw functions or "WithOffset" functions
-			shadow.resize( pts_count );
-			for ( int k = 0; k < pts_count; ++k )
-			{
-				shadow[ k ] = pts[ k ] + ImVec2( 1.0f, 1.0f );
-			}
-			data.pts = &shadow[ 0 ];
-		}
-		RenderFrameEx( fill_col, border, Im_DrawShapeWithHole, Im_DrawShapeWithHoleFilled, &data );
 	}
 	//////////////////////////////////////////////////////////////////////////
 	// Interactions
@@ -5868,13 +5998,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImGuiContext& g = *GImGui;
 		ImGuiWindow* window = g.CurrentWindow;
 
-		IM_ASSERT( IsBoundingBoxWellFormed( bb.Min, bb.Max, pts, pts_count ) );
+		//IM_ASSERT( IsBoundingBoxWellFormed( bb.Min, bb.Max, pts, pts_count ) );
 
 		if ( g.HoveredWindow != window )
 			return false;
 		if ( !ImGui::IsMouseHoveringRect( bb.Min, bb.Max ) )
 			return false;
-		IM_ASSERT( IsBoundingBoxWellFormed( bb.Min, bb.Max, pts, pts_count ) );
+		//IM_ASSERT( IsBoundingBoxWellFormed( bb.Min, bb.Max, pts, pts_count ) );
 		if ( !IsMouseHovering( bb.Min, bb.Max, isContains, extra_data ) )
 			return false;
 
@@ -5980,7 +6110,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 #endif
 
 		bool pressed = false;
-		//bool hovered = func( bb, id, item_flags, extra_data );
 		bool hovered = ItemHoverable( bb, id, item_flags, isContains, extra_data );
 
 		// Special mode for Drag and Drop where holding button pressed for a long time while dragging another item triggers the button
@@ -6173,7 +6302,25 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		bb.Min = center - ImVec2( radius, radius );
 		bb.Max = center + ImVec2( radius, radius );
 		ImCircle circle = { center, radius };
-		return ButtonBehaviorEx( bb, id, out_hovered, out_held, flags, &IsCircleContains, &circle );
+		return ButtonBehaviorEx( bb, id, out_hovered, out_held, flags, &Im_IsCircleContains, &circle );
+	}
+
+	bool ButtonBehaviorCapsuleH( ImVec2 pos, float length, float radius, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags )
+	{
+		ImRect bb;
+		bb.Min = pos - ImVec2( radius, radius );
+		bb.Max = pos + ImVec2( radius + length, radius );
+		ImCapsule capsule = { pos, length, radius };
+		return ButtonBehaviorEx( bb, id, out_hovered, out_held, flags, &Im_IsCapsuleHContains, &capsule );
+	}
+
+	bool ButtonBehaviorCapsuleV( ImVec2 pos, float length, float radius, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags )
+	{
+		ImRect bb;
+		bb.Min = pos - ImVec2( radius, radius );
+		bb.Max = pos + ImVec2( radius, radius + length );
+		ImCapsule capsule = { pos, length, radius };
+		return ButtonBehaviorEx( bb, id, out_hovered, out_held, flags, &Im_IsCapsuleVContains, &capsule );
 	}
 
 	bool ButtonBehaviorConvex( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags )
@@ -6181,7 +6328,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImRect bb;
 		ImComputeRect( &bb, pts, pts_count );
 		ImPolyShapeData data = { pts, pts_count };
-		return ButtonBehaviorEx( bb, id, out_hovered, out_held, flags, &IsPolyConvexContains, &data );
+		return ButtonBehaviorEx( bb, id, out_hovered, out_held, flags, &Im_IsPolyConvexContains, &data );
 	}
 
 	bool ButtonBehaviorConcave( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags )
@@ -6189,21 +6336,23 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImRect bb;
 		ImComputeRect( &bb, pts, pts_count );
 		ImPolyShapeData data = { pts, pts_count };
-		return ButtonBehaviorEx( bb, id, out_hovered, out_held, flags, &IsPolyConcaveContains, &data );
+		return ButtonBehaviorEx( bb, id, out_hovered, out_held, flags, &Im_IsPolyConcaveContains, &data );
 	}
 
 	bool ButtonBehaviorWithHole( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags )
 	{
 		ImRect bb;
 		ImComputeRect( &bb, pts, pts_count );
-		ImPolyHoleShapeData data = { pts, pts_count, NULL, 1, 1 };
-		return ButtonBehaviorEx( bb, id, out_hovered, out_held, flags, &IsPolyWithHoleContains, &data );
+		ImPolyHoleShapeData data = { pts, NULL, pts_count, 1, 1 };
+		return ButtonBehaviorEx( bb, id, out_hovered, out_held, flags, &Im_IsPolyWithHoleContains, &data );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
 	// Widgets
 	//////////////////////////////////////////////////////////////////////////
-	bool ButtonEx( const char* label, const ImVec2& size_arg, ImRect src_bb, ImVec2 text_offset, ImGuiButtonFlags flags, IsContains isContains, ImDrawShape draw_outline, ImDrawShapeFilled draw_fill, ImInlineOffset offset, void* extra_data )
+	bool ButtonEx( const char* label, const ImVec2& size_arg, ImRect src_bb, ImVec2 text_offset, ImGuiButtonFlags flags,
+				   IsContains isContains, ImDrawShape draw_outline, ImDrawShapeFilled draw_fill, ImDrawShapeFilledTex draw_fill_tex, ImInlineOffset offset, FromRect from_rect,
+				   void* extra_data, ImTextureID* tex, ImVec2 uv_min, ImVec2 uv_max )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
@@ -6219,30 +6368,42 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			pos.y += window->DC.CurrLineTextBaseOffset - style.FramePadding.y;
 		ImVec2 size = ImGui::CalcItemSize( size_arg, label_size.x + style.FramePadding.x * 2.0f, label_size.y + style.FramePadding.y * 2.0f );
 
-		ImPolyShapeData* remapped_data = ( ImPolyShapeData* )extra_data;
-
-		int pts_count = remapped_data->pts_count;
-
-		offset( extra_data, pos );
-
-		ImRect shape_bb = src_bb;
-		shape_bb.Translate( pos );
-
 		ImRect bb( pos, pos + size );
-		bb.Add( shape_bb );
-		size.x = ImMax( size.x, bb.GetWidth() );
-		size.y = ImMax( size.y, bb.GetHeight() );
+
+		ImPolyHoleShapeData data; // Largest struct. Not really an ImPolyHoleShapeData
+		if ( extra_data )
+		{
+			offset( extra_data, pos );
+		}
+		else
+		{
+			from_rect( bb, &data );
+		}
+		void* used_data = extra_data ? extra_data : &data;
+
+		if ( extra_data )
+		{
+			ImRect shape_bb = src_bb;
+			shape_bb.Translate( pos );
+			bb.Add( shape_bb );
+			size.x = ImMax( size.x, bb.GetWidth() );
+			size.y = ImMax( size.y, bb.GetHeight() );
+		}
+
 		ImGui::ItemSize( size, style.FramePadding.y );
 		if ( !ImGui::ItemAdd( bb, id ) )
 			return false;
 
 		bool hovered, held;
-		bool pressed = ButtonBehaviorEx( shape_bb, id, &hovered, &held, flags, isContains, remapped_data );
+		bool pressed = ButtonBehaviorEx( bb, id, &hovered, &held, flags, isContains, used_data );
 
 		// Render
 		const ImU32 col = ImGui::GetColorU32( ( held && hovered ) ? ImGuiCol_ButtonActive : hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button );
-		RenderNavHighlightEx( id, 0, draw_outline, extra_data, bb );
-		RenderFrameEx( col, true, draw_outline, draw_fill, extra_data );
+		RenderNavHighlightEx( id, 0, draw_outline, used_data, bb );
+		if ( tex )
+			draw_fill_tex( window->DrawList, IM_COL32_WHITE, used_data, tex, uv_min, uv_max );
+		else
+			RenderFrameEx( col, true, draw_outline, draw_fill, draw_fill_tex, used_data, tex, uv_min, uv_max );
 
 		if ( g.LogEnabled )
 			ImGui::LogSetNextTextDecoration( "[", "]" );
@@ -6255,34 +6416,102 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		IMGUI_TEST_ENGINE_ITEM_INFO( id, label, g.LastItemData.StatusFlags );
 		return pressed;
 	}
-	bool ButtonExCircle( const char* label, const ImVec2& size_arg, ImVec2 center, float radius, ImGuiButtonFlags flags )
+	bool ButtonExCircle( const char* label, float radius, ImGuiButtonFlags flags )
 	{
-		ImCircle data = { center, radius };
-		ImRect bb;
-		bb.Min = center - ImVec2( radius, radius );
-		bb.Max = center + ImVec2( radius, radius );
-		return ButtonEx( label, size_arg, bb, ImVec2( 0.0f, 0.0f ), flags, &IsCircleContains, &Im_DrawCircle, &Im_DrawCircleFilled, &Im_InlineOffsetCircle, &data );
+		return ButtonEx( label, { 2.0f * radius, 2.0f * radius }, {}, ImVec2( 0.0f, 0.0f ), flags,
+						 &Im_IsCircleContains, &Im_DrawCircle, &Im_DrawCircleFilled, &Im_DrawCircleFilledTex, &Im_InlineOffsetCircle, &Im_CircleFromRect,
+						 NULL );
+	}
+	bool ButtonExCapsuleH( const char* label, float length, float thickness, ImGuiButtonFlags flags )
+	{
+		return ButtonEx( label, { length, ImMin( thickness, length ) }, {}, ImVec2(0.0f, 0.0f), flags,
+						 &Im_IsCapsuleHContains, &Im_DrawCapsuleH, &Im_DrawCapsuleHFilled, &Im_DrawCapsuleHFilledTex, &Im_InlineOffsetCapsuleH, &Im_CapsuleHFromRect,
+						 NULL );
+	}
+	bool ButtonExCapsuleV( const char* label, float length, float thickness, ImGuiButtonFlags flags )
+	{
+		return ButtonEx( label, { ImMin( thickness, length ), length }, {}, ImVec2(0.0f, 0.0f), flags,
+						 &Im_IsCapsuleVContains, &Im_DrawCapsuleV, &Im_DrawCapsuleVFilled, &Im_DrawCapsuleVFilledTex, &Im_InlineOffsetCapsuleV, &Im_CapsuleVFromRect,
+						 NULL );
 	}
 	bool ButtonExConvex( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImGuiButtonFlags flags )
 	{
 		ImPolyShapeData data = { pts, pts_count };
 		ImRect bb;
 		ImComputeRect( &bb, pts, pts_count );
-		return ButtonEx( label, size_arg, bb, ImVec2( 0.0f, 0.0f ), flags, &IsPolyConvexContains, &Im_DrawShapeConvex, &Im_DrawShapeConvexFilled, &Im_InlineOffsetConvex, &data );
+		return ButtonEx( label, size_arg, bb, ImVec2( 0.0f, 0.0f ), flags,
+						 &Im_IsPolyConvexContains, &Im_DrawShapeConvex, &Im_DrawShapeConvexFilled, &Im_DrawShapeConvexFilledTex, &Im_InlineOffsetConvex,
+						 NULL, &data );
 	}
 	bool ButtonExConcave( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags )
 	{
 		ImPolyShapeData data = { pts, pts_count };
 		ImRect bb;
 		ImComputeRect( &bb, pts, pts_count );
-		return ButtonEx( label, size_arg, bb, text_offset, flags, &IsPolyConcaveContains, &Im_DrawShapeConcave, &Im_DrawShapeConcaveFilled, &Im_InlineOffsetConcave, &data );
+		return ButtonEx( label, size_arg, bb, text_offset, flags,
+						 &Im_IsPolyConcaveContains, &Im_DrawShapeConcave, &Im_DrawShapeConcaveFilled, &Im_DrawShapeConcaveFilledTex, &Im_InlineOffsetConcave,
+						 NULL, &data );
 	}
 	bool ButtonExWithHole( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags )
 	{
-		ImPolyHoleShapeData data = { pts, pts_count, NULL, 1, 1 };
+		ImPolyHoleShapeData data = { pts, NULL, pts_count, 1, 1 };
 		ImRect bb;
 		ImComputeRect( &bb, pts, pts_count );
-		return ButtonEx( label, size_arg, bb, text_offset, flags, &IsPolyWithHoleContains, &Im_DrawShapeWithHole, &Im_DrawShapeWithHoleFilled, &Im_InlineOffsetWithHole, &data );
+		return ButtonEx( label, size_arg, bb, text_offset, flags,
+						 &Im_IsPolyWithHoleContains, &Im_DrawShapeWithHole, &Im_DrawShapeWithHoleFilled, NULL, &Im_InlineOffsetWithHole,
+						 NULL, &data );
+	}
+
+	bool ImageButtonExCircle( const char* label, ImTextureID tex, float radius, ImGuiButtonFlags flags, ImU32 col, ImVec2 uv_min, ImVec2 uv_max )
+	{
+		ImVec2 pos = ImGui::GetCursorScreenPos();
+		bool out =  ImWidgets::ButtonExCircle( label, radius, 0 );
+
+		ImCircle circle = { pos + ImVec2( radius, radius ), radius };
+		Im_DrawCircleFilledTex( ImGui::GetWindowDrawList(), IM_COL32_WHITE, &circle, tex, uv_min, uv_max );
+
+		return out;
+		//return ButtonEx( label, { 2.0f * radius, 2.0f * radius }, {}, ImVec2( 0.0f, 0.0f ), flags,
+		//				 &Im_IsCircleContains, &Im_DrawCircle, &Im_DrawCircleFilled, &Im_DrawCircleFilledTex, &Im_InlineOffsetCircle, &Im_CircleFromRect,
+		//				 NULL, &tex );
+	}
+	bool ImageButtonExCapsuleH( const char* label, ImTextureID tex, float length, float thickness, ImGuiButtonFlags flags, ImU32 col, ImVec2 uv_min, ImVec2 uv_max )
+	{
+		ImVec2 pos = ImGui::GetCursorScreenPos();
+		bool out = ButtonExCapsuleH( label, length, thickness, 0 );
+
+		ImCapsule cap = { pos + ImVec2( thickness * 0.5f, thickness * 0.5f ), length - thickness, thickness * 0.5f };
+		Im_DrawCapsuleHFilledTex( ImGui::GetWindowDrawList(), IM_COL32_WHITE, &cap, tex, uv_min, uv_max );
+
+		return out;
+	}
+	bool ImageButtonExCapsuleV( const char* label, ImTextureID tex, float length, float thickness, ImGuiButtonFlags flags, ImU32 col, ImVec2 uv_min, ImVec2 uv_max )
+	{
+		ImVec2 pos = ImGui::GetCursorScreenPos();
+		bool out = ButtonExCapsuleV( label, length, thickness, flags );
+
+		ImCapsule cap = { pos + ImVec2( thickness * 0.5f, thickness * 0.5f ), length - thickness, thickness * 0.5f };
+		Im_DrawCapsuleVFilledTex( ImGui::GetWindowDrawList(), IM_COL32_WHITE, &cap, tex, uv_min, uv_max );
+
+		return out;
+	}
+	bool ImageButtonExConvex( const char* label, ImTextureID tex, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImGuiButtonFlags flags, ImU32 col, ImVec2 uv_min, ImVec2 uv_max )
+	{
+		ImPolyShapeData data = { pts, pts_count };
+		ImRect bb;
+		ImComputeRect( &bb, pts, pts_count );
+		return ButtonEx( label, size_arg, bb, ImVec2( 0.0f, 0.0f ), flags,
+						 &Im_IsPolyConvexContains, &Im_DrawShapeConvex, &Im_DrawShapeConvexFilled, &Im_DrawShapeConvexFilledTex, &Im_InlineOffsetConvex,
+						 NULL, &data, &tex );
+	}
+	bool ImageButtonExConcave( const char* label, ImTextureID tex, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags, ImU32 col, ImVec2 uv_min, ImVec2 uv_max )
+	{
+		ImPolyShapeData data = { pts, pts_count };
+		ImRect bb;
+		ImComputeRect( &bb, pts, pts_count );
+		return ButtonEx( label, size_arg, bb, text_offset, flags,
+						 &Im_IsPolyConcaveContains, &Im_DrawShapeConcave, &Im_DrawShapeConcaveFilled, &Im_DrawShapeConcaveFilledTex, &Im_InlineOffsetConcave,
+						 NULL, &data, &tex );
 	}
 
 	ImU32 ImInternalHueMaskingFunc( float const xx, void* pUserData )
