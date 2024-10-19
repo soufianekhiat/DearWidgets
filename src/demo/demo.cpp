@@ -259,11 +259,11 @@ int main()
 		ImPlatform::SimpleBegin();
 
 		ImWidgets::ShowSamples();
-		//ImWidgets::ShowDemo();
+		ImWidgets::ShowDemo();
 
 		ImGui::ShowDemoWindow();
 
-		//ShowSampleOffscreen00();
+		ShowSampleOffscreen00();
 
 		ImPlatform::SimpleEnd( clear_color, io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable );
 	}
@@ -301,8 +301,6 @@ void ShowSampleOffscreen00()
 }
 
 namespace ImWidgets{
-
-	extern void Im_DrawCapsuleHFilledTex( ImDrawList* drawlist, ImU32 col, void* data, ImTextureID tex );
 
 	static void AspectRatio_6_2( ImGuiSizeCallbackData* data )
 	{
@@ -376,25 +374,8 @@ namespace ImWidgets{
 		ImGui::End();
 	}
 
-	//void DrawCapsuleH( ImDrawList* drawlist, ImU32 col, float thickness, void* data )
-	//{
-	//	ImCapsule* values = ( ImCapsule* )data;
-	//	drawlist->PathArcToFast( values->pos, values->radius, 9, 3 );
-	//	drawlist->PathArcToFast( values->pos + ImVec2( values->length, 0.0f ), values->radius, 3, -3 );
-	//	drawlist->PathFillConvex( col );
-	//}
-	//
-	//void DrawCapsuleV( ImDrawList* drawlist, ImU32 col, float thickness, void* data )
-	//{
-	//	ImCapsule* values = ( ImCapsule* )data;
-	//	drawlist->PathArcToFast( values->pos, values->radius, 0, -6 );
-	//	drawlist->PathArcToFast( values->pos + ImVec2( 0.0f, values->length ), values->radius, 6, 0 );
-	//	drawlist->PathFillConvex( col );
-	//}
-
 	void	ShowDemo()
 	{
-		//static StaticInit s_StaticInit;
 		static float f = 0.0f;
 		static int counter = 0;
 
