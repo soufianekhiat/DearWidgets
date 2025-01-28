@@ -5743,19 +5743,17 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	void Im_DrawCircleFilledTex( ImDrawList* drawlist, ImU32 col, void* data, ImTextureID tex, ImVec2 uv_min, ImVec2 uv_max )
 	{
 		ImCircle* values = ( ImCircle* )data;
-		//if ( ( col & IM_COL32_A_MASK ) == 0 || values->radius < 0.5f )
-		//	return;
-		//drawlist->_PathArcToFastEx( values->center, values->radius, 0, IM_DRAWLIST_ARCFAST_SAMPLE_MAX, 0 );
-		//drawlist->_Path.Size--;
-		//DrawImageConvexShape( drawlist, tex, drawlist->_Path.Data, drawlist->_Path.Size, col,
-		//					   ImVec2( 0.0f, 0.0f ), ImVec2( 1.0f, 1.0f ) );
-		//drawlist->_Path.Size = 0;
+		//int vert_start_idx = drawlist->VtxBuffer.Size;
+		ImVec2 min = values->center - ImVec2( values->radius, values->radius );
+		ImVec2 max = values->center + ImVec2( values->radius, values->radius );
 		drawlist->AddImageRounded( tex,
-								   values->center - ImVec2( values->radius, values->radius ),
-								   values->center + ImVec2( values->radius, values->radius ),
+								   min,
+								   max,
 								   uv_min, uv_max,
 								   col,
 								   values->radius, ImDrawFlags_RoundCornersAll );
+		//int vert_end_idx = drawlist->VtxBuffer.Size;
+		//ImGui::ShadeVertsLinearUV( drawlist, vert_start_idx, vert_end_idx, min, max, uv_min, uv_max, true );
 	}
 	void Im_DrawCapsuleHFilled( ImDrawList* drawlist, ImU32 col, void* data )
 	{
@@ -6480,7 +6478,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImVec2 pos = ImGui::GetCursorScreenPos();
 		bool out = ButtonExCapsuleH( label, length, thickness, 0 );
 
-		ImCapsule cap = { pos + ImVec2( thickness * 0.5f, thickness * 0.5f ), length - thickness, thickness * 0.5f };
+		ImCapsule cap = { pos + ImVec2( thickness * 0.5f, thickness * 0.5f ), length - thickness, thickness * 0.5f * 0.9f };
 		Im_DrawCapsuleHFilledTex( ImGui::GetWindowDrawList(), IM_COL32_WHITE, &cap, tex, uv_min, uv_max );
 
 		return out;
@@ -6490,7 +6488,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImVec2 pos = ImGui::GetCursorScreenPos();
 		bool out = ButtonExCapsuleV( label, length, thickness, flags );
 
-		ImCapsule cap = { pos + ImVec2( thickness * 0.5f, thickness * 0.5f ), length - thickness, thickness * 0.5f };
+		ImCapsule cap = { pos + ImVec2( thickness * 0.5f, thickness * 0.5f ), length - thickness, thickness * 0.5f * 0.9f };
 		Im_DrawCapsuleVFilledTex( ImGui::GetWindowDrawList(), IM_COL32_WHITE, &cap, tex, uv_min, uv_max );
 
 		return out;

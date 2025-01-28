@@ -261,6 +261,7 @@ int main()
 		ImWidgets::ShowSamples();
 		ImWidgets::ShowDemo();
 
+		ImGui::ShowMetricsWindow();
 		ImGui::ShowDemoWindow();
 
 		ShowSampleOffscreen00();
@@ -300,7 +301,7 @@ void ShowSampleOffscreen00()
 	ImGui::PopStyleVar( 1 );
 }
 
-namespace ImWidgets{
+namespace ImWidgets {
 
 	static void AspectRatio_6_2( ImGuiSizeCallbackData* data )
 	{
@@ -312,6 +313,7 @@ namespace ImWidgets{
 	{
 		static const float _6_2 = 6.0f / 2.0f;
 		ImGui::SetNextWindowSizeConstraints( ImVec2( 0, 0 ), ImVec2( FLT_MAX, FLT_MAX ), AspectRatio_6_2, ( void* )&_6_2 );
+
 		if ( ImGui::Begin( "Shop 00" ) )
 		{
 			ImVec2 size = ImGui::GetContentRegionAvail();
@@ -322,7 +324,13 @@ namespace ImWidgets{
 					size = ImGui::GetContentRegionAvail();
 					ImGui::BeginChild( "Left_Left_Top", ImVec2( 0.0f, size.y * 0.5f ) );
 						size = ImGui::GetContentRegionAvail();
-						ImWidgets::ImageButtonExCircle( "X", clock_img, size.y * 0.5f, 0 );
+						ImWidgets::ImageButtonExCapsuleH( "X",
+														  clock_img,
+														  size.y, size.y,
+														  ImGuiButtonFlags_None,
+														  IM_COL32_WHITE,
+														  ImVec2( 0.16f, 0.16f ),
+														  ImVec2( 1.0f - 0.16f, 1.0f - 0.16f ) );
 					ImGui::EndChild();
 					ImGui::BeginChild( "Left_Left_Bottom" );
 						size = ImGui::GetContentRegionAvail();
@@ -348,10 +356,11 @@ namespace ImWidgets{
 					size = ImGui::GetContentRegionAvail();
 					ImGui::BeginChild( "Right_Top_Left", ImVec2( size.x * 3.0f / 4.0f, 0.0f ) );
 						size = ImGui::GetContentRegionAvail();
-						ImageButtonExCapsuleH( "X", astro_img, size.x, size.y, 0,
+						ImageButtonExCapsuleH( "X", astro_img, size.x, size.y,
+											   ImGuiButtonFlags_None,
 											   IM_COL32_WHITE,
-											   { 0.0f, 0.0f },
-											   { 1.0f, 1.0f } );
+											   { 0.16f, 0.16f },
+											   { 1.0f - 0.16f, 1.0f - 0.16f});
 					ImGui::EndChild();
 					ImGui::SameLine();
 					ImGui::BeginChild( "Right_Top_Right" );
@@ -1779,10 +1788,6 @@ namespace ImWidgets{
 
 		ImGui::End();
 		ImGui::PopStyleVar();
-
-		bool show = true;
-		ImGui::ShowMetricsWindow( &show );
-		ImGui::ShowDemoWindow( &show );
 	}
 }
 
