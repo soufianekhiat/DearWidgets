@@ -1,0 +1,56 @@
+#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 1972 "core.meta.slang"
+struct _MatrixStorage_float4x4_ColMajornatural_0
+{
+    array<float4, int(4)> data_0;
+};
+
+
+#line 1972
+matrix<float,int(4),int(4)>  unpackStorage_0(_MatrixStorage_float4x4_ColMajornatural_0 _S1)
+{
+
+#line 1972
+    return matrix<float,int(4),int(4)> (_S1.data_0[int(0)][int(0)], _S1.data_0[int(1)][int(0)], _S1.data_0[int(2)][int(0)], _S1.data_0[int(3)][int(0)], _S1.data_0[int(0)][int(1)], _S1.data_0[int(1)][int(1)], _S1.data_0[int(2)][int(1)], _S1.data_0[int(3)][int(1)], _S1.data_0[int(0)][int(2)], _S1.data_0[int(1)][int(2)], _S1.data_0[int(2)][int(2)], _S1.data_0[int(3)][int(2)], _S1.data_0[int(0)][int(3)], _S1.data_0[int(1)][int(3)], _S1.data_0[int(2)][int(3)], _S1.data_0[int(3)][int(3)]);
+}
+
+
+#line 28 "C:/git/DearWidgets/workingdir/shaders/hlsl_src/markers.hlsl"
+struct PS_INPUT_0
+{
+    float4 pos_0 [[position]];
+    float4 col_0 [[user(COLOR)]];
+    float2 uv_0 [[user(TEXCOORD)]];
+};
+
+
+#line 28
+struct vertexInput_0
+{
+    float2 pos_1 [[attribute(0)]];
+    float4 col_1 [[attribute(1)]];
+    float2 uv_1 [[attribute(2)]];
+};
+
+
+#line 28
+struct SLANG_ParameterGroup_vertexBuffer_natural_0
+{
+    _MatrixStorage_float4x4_ColMajornatural_0 ProjectionMatrix_0;
+};
+
+
+#line 353
+[[vertex]] PS_INPUT_0 main_vs(vertexInput_0 _S2 [[stage_in]], SLANG_ParameterGroup_vertexBuffer_natural_0 constant* vertexBuffer_0 [[buffer(1)]])
+{
+    thread PS_INPUT_0 output_0;
+    (&output_0)->pos_0 = (((float4(_S2.pos_1.xy, 0.0, 1.0)) * (unpackStorage_0(vertexBuffer_0->ProjectionMatrix_0))));
+    (&output_0)->col_0 = _S2.col_1;
+    (&output_0)->uv_0 = _S2.uv_1;
+    return output_0;
+}
+

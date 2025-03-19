@@ -170,6 +170,7 @@ Linear
 ```cpp
 void	ShapeSRGBLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 void	ShapeOkLabLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+void	ShapeOkLchLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 void	ShapeLinearSRGBLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 void	ShapeHSVLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 ```
@@ -180,6 +181,7 @@ Radial
 ```cpp
 void	ShapeSRGBRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 void	ShapeOkLabRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+void	ShapeOkLchRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 void	ShapeLinearSRGBRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 void	ShapeHSVRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 ```
@@ -189,6 +191,7 @@ Diamond
 ```cpp
 void	ShapeSRGBDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 void	ShapeOkLabDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+void	ShapeOkLchDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 void	ShapeLinearSRGBDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 void	ShapeHSVDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
 ```
@@ -274,14 +277,14 @@ A version for Slider2DScaler is available for (Im{S|U}{8,16,32,64}, Float and Do
 bool Slider2DScalar( char const* pLabel, ImGuiDataType data_type, void* pValueX, void* pValueY, void* p_minX, void* p_maxX, void* p_minY, void* p_maxY );
 bool Slider2DFloat( char const* pLabel, float* pValueX, float* pValueY, float v_minX, float v_maxX, float v_minY, float v_maxY );
 ```
-<img src="https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/Slider2DFloat.gif" alt="Slider2DFloat"/>
+<img src="https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/Slider2DFloat.gif" alt="Slider2DFloat" width="512px"/>
 
 * Slider 2D Int
 
 ```cpp
 bool Slider2DInt( char const* pLabel, int* pValueX, void* pValueY, int v_minX, int v_maxX, int v_minY, int v_maxY );
 ```
-<img src="https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/Slider2DInt.gif" alt="Slider2DInt"/>
+<img src="https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/Slider2DInt.gif" alt="Slider2DInt" width="512px"/>
 
 * SliderN
 ```cpp
@@ -319,7 +322,7 @@ C++ features (optionaly) **used** internally:
 
 ## Contributor
 Future feature:
-* Add more color space for gradient such as OkLch
+* Add more color space for gradient
 * Hue Ring select
 * Slider2DWithRingConstraint // Only only a circular region on the 2D selector
 * InputFloatUnit cf. History of Dear Widgets

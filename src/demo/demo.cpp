@@ -1,22 +1,23 @@
 #include <demo.h>
-#include <dear_widgets.h>
-#include <imgui_internal.h>
 
-#if defined(__DEAR_GFX_OGL3__)
-#define IM_GLFW3_AUTO_LINK
-#define IM_CURRENT_TARGET IM_TARGET_WIN32_OPENGL3
-#elif defined(__DEAR_GFX_DX9__)
-#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX9
-#elif defined(__DEAR_GFX_DX10__)
-#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX10
-#elif defined(__DEAR_GFX_DX11__)
-#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX11
-#elif defined(__DEAR_GFX_DX12__)
-#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX12
-#endif
-//#define IM_PLATFORM_ENABLE_CUSTOM_SHADER
+//#if defined(__DEAR_GFX_OGL3__)
+//#define IM_GLFW3_AUTO_LINK
+//#define IM_CURRENT_TARGET IM_TARGET_WIN32_OPENGL3
+//#elif defined(__DEAR_GFX_DX9__)
+//#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX9
+//#elif defined(__DEAR_GFX_DX10__)
+//#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX10
+//#elif defined(__DEAR_GFX_DX11__)
+//#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX11
+//#elif defined(__DEAR_GFX_DX12__)
+//#define IM_CURRENT_TARGET IM_TARGET_WIN32_DX12
+//#endif
 #define IM_PLATFORM_IMPLEMENTATION
 #include <ImPlatform.h>
+
+#include <dear_widgets.h>
+#include <imgui_internal.h>
+#include <imgui/misc/cpp/imgui_stdlib.h>
 
 #include <vector>
 #include <random>
@@ -72,6 +73,30 @@
 //		}
 //	}
 //};
+
+ImTextureID TextureFromFile(	char const* filename, ImVec2* img_size,
+								ImTextureFiltering const filtering = ImTextureFiltering_Linear,
+								ImTextureBoundary const boundarires = ImTextureBoundary_Clamp )
+{
+	int width;
+	int height;
+	ImTextureID img;
+
+	stbi_uc* data = stbi_load( filename, &width, &height, NULL, 4 );
+	img = ImPlatform::CreateTexture2D(	( char* )data, width, height,
+										{
+											ImPixelChannel_RGBA,
+											ImPixelType_UInt8,
+											filtering,
+											boundarires,
+											boundarires
+										} );
+	img_size->x = ( float )width;
+	img_size->y = ( float )height;
+	STBI_FREE( data );
+
+	return img;
+}
 
 ImVec2 TemperatureTo_xy( float TT )
 {
@@ -143,20 +168,29 @@ ImTextureID background;
 ImVec2 background_size;
 ImTextureID illlustration_img;
 ImVec2 illlustration_size;
+ImTextureID bike_img;
+ImVec2 bike_size;
+ImTextureID astro_img;
+ImVec2 astro_size;
+ImTextureID clock_img;
+ImVec2 clock_size;
+ImTextureID man_img;
+ImVec2 man_size;
 int main()
 {
-	if ( !ImPlatform::ImSimpleStart( "Dear Widgets Demo", ImVec2( 0.0f, 0.0f ), 1024 * 2, 764 * 2 ) )
+	if ( !ImPlatform::SimpleStart( "Dear Widgets Demo", ImVec2( 0.0f, 0.0f ), 1024, 764 * 2 ) )
 		return 1;
 
 	// Setup Dear ImGui context
 	ImGuiIO& io = ImGui::GetIO(); ( void )io;
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;		// Enable Keyboard Controls
-	////io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;	// Enable Gamepad Controls
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;	// Enable Gamepad Controls
 #ifdef IMGUI_HAS_DOCK
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;			// Enable Docking
 #endif
 #ifdef IMGUI_HAS_VIEWPORT
-	//io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;		// Enable Multi-Viewport / Platform Windows
+	// TODO: Fix cf. ImPlatform
+	io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;		// Enable Multi-Viewport / Platform Windows
 #endif
 	////io.ConfigViewportsNoAutoMerge = true;
 	////io.ConfigViewportsNoTaskBarIcon = true;
@@ -170,10 +204,13 @@ int main()
 	//io.FontGlobalScale = 3.0f;
 	//ImGui::GetStyle().ScaleAllSizes( 3.0f );
 
-	if ( !ImPlatform::ImSimpleInitialize( false ) )
+	if ( !ImPlatform::SimpleInitialize( io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable ) )
 	{
 		return 0;
 	}
+	
+	ImWidgets::AddFeatures( ImWidgetsFeatures_Markers );
+	ImWidgetsContext* ctx = ImWidgets::CreateContext();
 
 	//ImGui::GetStyle().ScaleAllSizes();
 
@@ -187,92 +224,193 @@ int main()
 	//}
 #endif
 
-	int width;
-	int height;
-	// Image from: https://www.pexels.com/fr-fr/photo/framboises-mures-dans-une-tasse-de-the-blanche-en-photographie-a-decalage-d-inclinaison-1152351/
-	stbi_uc* data = stbi_load( "pexels-robert-bogdan-156165-1152351.jpg", &width, &height, NULL, 4 );
-	illlustration_img = ImPlatform::ImCreateTexture2D( ( char* )data, width, height,
-												{
-													ImPlatform::IM_RGBA,
-													ImPlatform::IM_TYPE_UINT8,
-													ImPlatform::IM_FILTERING_LINEAR,
-													ImPlatform::IM_BOUNDARY_CLAMP,
-													ImPlatform::IM_BOUNDARY_CLAMP
-												} );
-	illlustration_size = ImVec2( ( float )width, ( float )height );
-	STBI_FREE( data );
+	//// Image from: https://www.pexels.com/fr-fr/photo/framboises-mures-dans-une-tasse-de-the-blanche-en-photographie-a-decalage-d-inclinaison-1152351/
+	illlustration_img = TextureFromFile( "pexels-robert-bogdan-156165-1152351.jpg", &illlustration_size );
 	// Image from: https://www.pexels.com/fr-fr/photo/deux-chaises-avec-table-en-verre-sur-le-salon-pres-de-la-fenetre-1571453/
-	data = stbi_load( "pexels-fotoaibe-1571453.jpg", &width, &height, NULL, 4 );
-	background = ImPlatform::ImCreateTexture2D( ( char* )data, width, height,
-												{
-													ImPlatform::IM_RGBA,
-													ImPlatform::IM_TYPE_UINT8,
-													ImPlatform::IM_FILTERING_LINEAR,
-													ImPlatform::IM_BOUNDARY_CLAMP,
-													ImPlatform::IM_BOUNDARY_CLAMP
-												} );
-	background_size = ImVec2( ( float )width, ( float )height );
-	STBI_FREE( data );
+	background = TextureFromFile( "pexels-fotoaibe-1571453.jpg", &background_size );
+	bike_img = TextureFromFile( "camera-542784_1280.png", &bike_size );
+	astro_img = TextureFromFile( "astro.png", &astro_size );
+	clock_img = TextureFromFile( "clock.png", &clock_size );
+	man_img = TextureFromFile( "man.png", &man_size );
+
+	ImWidgets::OwnTexture( illlustration_img );
+	ImWidgets::OwnTexture( background );
+	ImWidgets::OwnTexture( bike_img );
+	ImWidgets::OwnTexture( astro_img );
+	ImWidgets::OwnTexture( clock_img );
+	ImWidgets::OwnTexture( man_img );
 
 	ImVec4 clear_color = ImVec4( 0.461f, 0.461f, 0.461f, 1.0f );
-	while ( ImPlatform::ImPlatformContinue() )
+	while ( ImPlatform::PlatformContinue() )
 	{
-		bool quit = ImPlatform::ImPlatformEvents();
+		bool quit = ImPlatform::PlatformEvents();
 		if ( quit )
 			break;
 
-		if ( !ImPlatform::ImGfxCheck() )
+		if ( !ImPlatform::GfxCheck() )
 		{
 			continue;
 		}
 
-		ImPlatform::ImSimpleBegin();
+		ImPlatform::SimpleBegin();
 
+		ImWidgets::ShowSamples();
 		ImWidgets::ShowDemo();
+
+		ImGui::ShowMetricsWindow();
+		ImGui::ShowDemoWindow();
 
 		ShowSampleOffscreen00();
 
-		ImPlatform::ImSimpleEnd( clear_color, false );
+		ImPlatform::SimpleEnd( clear_color, io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable );
 	}
 
-	ImPlatform::ImSimpleFinish();
-	ImPlatform::ImReleaseTexture2D( background );
+	ImWidgets::DestroyContext( ctx );
+	ImPlatform::SimpleFinish();
 
 	return 0;
 }
 
 void ShowSampleOffscreen00()
 {
+	return;
+
 	ImGui::PushStyleVar( ImGuiStyleVar_WindowRounding, 8 );
 
 	ImGui::Begin( "Off Screen 00" );
 
-	ImDrawList* draw = ImGui::GetBackgroundDrawList();
+	ImDrawList* draw = ImGui::GetWindowDrawList();
 
 	ImVec2 cur = ImGui::GetCursorScreenPos();
 	ImVec2 size = ImGui::GetContentRegionAvail();
 
-	draw->AddImageRounded( illlustration_img,
-						   cur + ImVec2( 0.0f - 50.0f, 0.0f ),
-						   cur + ImVec2( 0.0f + 50.0f, 50.0f ),
-						   ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 255), 8);
+	//draw->AddImageRounded( illlustration_img,
+	//					   cur + ImVec2( 0.0f - 50.0f, 0.0f ),
+	//					   cur + ImVec2( 0.0f + 50.0f, 50.0f ),
+	//					   ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 255), 8);
+
+	ImWidgets::DrawMarker( draw, cur, size, IM_COL32_WHITE, IM_COL32_BLACK_TRANS, 0.0f, 1.0f, 10.0f, 0.5f, ImWidgetsMarker_Disc, ImWidgetsDrawType_Outline );
+	ImGui::Dummy( size );
 
 	ImGui::End();
 
 	ImGui::PopStyleVar( 1 );
 }
 
-namespace ImWidgets{
+namespace ImWidgets {
+
+	static void AspectRatio_6_2( ImGuiSizeCallbackData* data )
+	{
+		float aspect_ratio = *( float* )data->UserData;
+		data->DesiredSize.y = ( float )( int )( data->DesiredSize.x / aspect_ratio );
+	}
+
+	void ShowSamples()
+	{
+		if ( ImGui::Begin( "Tiles" ) )
+		{
+			ImVec2 size = ImGui::GetContentRegionAvail();
+			ImWidgets::ImageButtonExCapsuleV( "A",
+											  clock_img,
+											  size.x, size.y * 0.5f,
+											  ImGuiButtonFlags_None,
+											  IM_COL32_WHITE );
+			ImGui::SameLine();
+			ImWidgets::ImageButtonExCapsuleV( "B",
+											  clock_img,
+											  size.x, size.y * 0.5f,
+											  ImGuiButtonFlags_None,
+											  IM_COL32_WHITE );
+			ImGui::SameLine();
+			ImWidgets::ImageButtonExCapsuleV( "C",
+											  clock_img,
+											  size.x, size.y * 0.5f,
+											  ImGuiButtonFlags_None,
+											  IM_COL32_WHITE );
+		}
+		ImGui::End();
+
+		static const float _6_2 = 6.0f / 2.0f;
+		ImGui::SetNextWindowSizeConstraints( ImVec2( 0, 0 ), ImVec2( FLT_MAX, FLT_MAX ), AspectRatio_6_2, ( void* )&_6_2 );
+
+		if ( ImGui::Begin( "Shop 00", 0, ImGuiWindowFlags_NoTitleBar ) )
+		{
+			ImVec2 size = ImGui::GetContentRegionAvail();
+			ImGui::BeginChild( "Left", ImVec2( size.x * 2.0f / 6.0f, 0.0f ) );
+			{
+				size = ImGui::GetContentRegionAvail();
+				ImGui::BeginChild( "Left_Left", ImVec2( size.x * 0.5f, 0.0f ) );
+					size = ImGui::GetContentRegionAvail();
+					ImGui::BeginChild( "Left_Left_Top", ImVec2( 0.0f, size.y * 0.5f ) );
+						size = ImGui::GetContentRegionAvail();
+						ImWidgets::ImageButtonExCapsuleH( "X",
+														  clock_img,
+														  size.y, size.y,
+														  ImGuiButtonFlags_None,
+														  IM_COL32_WHITE,
+														  ImVec2( 0.16f, 0.16f ),
+														  ImVec2( 1.0f - 0.16f, 1.0f - 0.16f ) );
+					ImGui::EndChild();
+					ImGui::BeginChild( "Left_Left_Bottom" );
+						size = ImGui::GetContentRegionAvail();
+						ImWidgets::ButtonExCircle( "Y", size.y * 0.5f, 0 );
+					ImGui::EndChild();
+				ImGui::EndChild();
+
+				ImGui::SameLine();
+
+				ImGui::BeginChild( "Left_Right" );
+					size = ImGui::GetContentRegionAvail();
+					ImWidgets::ImageButtonExCapsuleV( "Y", man_img, size.y, size.x, 0 );
+				ImGui::EndChild();
+			}
+			ImGui::EndChild();
+
+			ImGui::SameLine();
+
+			ImGui::BeginChild( "Right" );
+			{
+				size = ImGui::GetContentRegionAvail();
+				ImGui::BeginChild( "Right_Top", ImVec2( 0.0f, size.y * 0.5f ) );
+					size = ImGui::GetContentRegionAvail();
+					ImGui::BeginChild( "Right_Top_Left", ImVec2( size.x * 3.0f / 4.0f, 0.0f ) );
+						size = ImGui::GetContentRegionAvail();
+						ImageButtonExCapsuleH( "X", astro_img, size.x, size.y,
+											   ImGuiButtonFlags_None,
+											   IM_COL32_WHITE,
+											   { 0.16f, 0.16f },
+											   { 1.0f - 0.16f, 1.0f - 0.16f});
+					ImGui::EndChild();
+					ImGui::SameLine();
+					ImGui::BeginChild( "Right_Top_Right" );
+						size = ImGui::GetContentRegionAvail();
+						ButtonExCircle( "Y", size.y * 0.5f, 0 );
+					ImGui::EndChild();
+				ImGui::EndChild();
+				ImGui::BeginChild( "Right_Bottom" );
+					size = ImGui::GetContentRegionAvail();
+					ButtonExCircle( "A", size.y * 0.5f, 0 );
+					ImGui::SameLine();
+					ButtonExCircle( "B", size.y * 0.5f, 0 );
+					ImGui::SameLine();
+					size = ImGui::GetContentRegionAvail();
+					ButtonExCapsuleH( "C", size.x, size.y, 0 );
+				ImGui::EndChild();
+			}
+			ImGui::EndChild();
+		}
+		ImGui::End();
+	}
+
 	void	ShowDemo()
 	{
-		//static StaticInit s_StaticInit;
 		static float f = 0.0f;
 		static int counter = 0;
 
 		ImGui::SetNextWindowBgAlpha( 0.75f );
 		ImGui::PushStyleVar( ImGuiStyleVar_WindowRounding, 16 );
 		ImGui::Begin( "Dear Widgets", NULL, ImGuiWindowFlags_NoTitleBar );
-		ImWidgets::SetCurrentWindowBackgroundImage( background, background_size, false );
+		ImWidgets::SetCurrentWindowBackgroundImage( background, background_size, false, IM_COL32(255, 255, 255, 128) );
 
 		if ( ImGui::CollapsingHeader( "Draw" ) )
 		{
@@ -321,7 +459,7 @@ namespace ImWidgets{
 				if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
 					colb = ImGui::GetColorU32( colb_v );
 				ImVec2 pos = ImGui::GetCursorScreenPos();
-				static ImShape shape;
+				static ImWidgetsShape shape;
 				GenShapeCircle( shape, pos + ImVec2( size * 0.5f, size * 0.5f ), size * 0.5f, side_count );
 				ShapeSetDefaultUV( shape );
 #ifdef DEAR_WIDGETS_TESSELATION
@@ -337,6 +475,98 @@ namespace ImWidgets{
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
 				ImGui::Text( "Vtx: %d", shape.vertices.size() );
 			}
+#ifdef IM_SUPPORT_CUSTOM_SHADER
+			if ( ImGui::CollapsingHeader( "Custom Shader" ) )
+			{
+				float const size = ImGui::GetContentRegionAvail().x;
+
+				static float shape_size = 1.0f;
+				static float line_width = 5.0f / size;
+				static float angle = 0.0f;
+				static float antialiasing = 1.0f / size;
+
+				ImVec4 vBlue( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f ); // TODO: choose from style
+				ImVec4 vOrange( 255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f ); // TODO: choose from style
+				ImU32 uBlue = ImGui::GetColorU32( vBlue );
+				ImU32 uOrange = ImGui::GetColorU32( vOrange );
+				static ImVec4 fg_color_v( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
+				static ImVec4 bg_color_v( 255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f );
+				static ImU32 fg_color_col = ImGui::GetColorU32( fg_color_v );
+				static ImU32 bg_color_col = ImGui::GetColorU32( bg_color_v );
+				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+				if ( ImGui::ColorEdit4( "ColA##DrawShape", &fg_color_v.x ) )
+					fg_color_col = ImGui::GetColorU32( fg_color_v );
+				ImGui::SameLine();
+				if ( ImGui::ColorEdit4( "ColB##DrawShape", &bg_color_v.x ) )
+					bg_color_col = ImGui::GetColorU32( bg_color_v );
+				ImGui::DragFloat( "shape_size", &shape_size, 0.25f, 0.0f, size );
+				ImGui::DragFloat( "line_width", &line_width, 0.0125f, 0.0f, 0.1f );
+				ImGui::DragFloat( "antialiasing", &antialiasing, 0.0125f, 0.0f, 16.0f );
+				ImGui::SliderAngle( "angle", &angle );
+
+				static int marker_idx = ( int )ImWidgetsMarker_Pin;
+				char const* markers[] = {
+					"Disc", "Square", "Triangle", "Diamond", "Heart",
+					"Spade", "Club", "Chevron", "Clover", "Ring",
+					"Tag", "Cross", "Asterisk", "Infinity", "Pin",
+					"Arrow", "Ellipse", "EllipseApprox"
+				};
+				ImGui::Combo( "Marker", &marker_idx, markers, ImWidgetsMarker_COUNT );
+
+				static int draw_type_idx = ( int )ImWidgetsDrawType_Outline;
+				char const* draw_types[] = {
+					"Filled", "Stroke", "Outline", "Signed Distance Field", "Cut Off"
+				};
+				ImGui::Combo( "Draw Type", &draw_type_idx, draw_types, ImWidgetsDrawType_COUNT );
+
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+				ImGui::Dummy( ImVec2( size, size ) );
+				DrawMarker( pDrawList, pos, ImVec2( size, size ),
+							fg_color_col,
+							bg_color_col,
+							angle,
+							shape_size,
+							line_width,
+							antialiasing,
+							( ImWidgetsMarker )marker_idx,
+							( ImWidgetsDrawType )draw_type_idx );
+			}
+			if ( ImGui::CollapsingHeader( "Thick line", ImGuiTreeNodeFlags_DefaultOpen ) )
+			{
+				float const size = ImGui::GetContentRegionAvail().x;
+				ImGui::Dummy( ImVec2( size, 0.25f * size ) );
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+
+				static float line_width = 5.0f;
+				static float mitter_limit = 0.0f;
+				static float antialiasing = 1.0f / size;
+
+				ImVec4 vBlue( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f ); // TODO: choose from style
+				ImVec4 vOrange( 255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f ); // TODO: choose from style
+				ImU32 uBlue = ImGui::GetColorU32( vBlue );
+				ImU32 uOrange = ImGui::GetColorU32( vOrange );
+				static ImVec4 color_v( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
+				static ImU32 color_col = ImGui::GetColorU32( color_v );
+				if ( ImGui::ColorEdit4( "ColA##DrawShape", &color_v.x ) )
+					color_col = ImGui::GetColorU32( color_v );
+				ImGui::DragFloat( "line_width", &line_width, 0.0125f, 0.0f, 16.0f );
+				ImGui::DragFloat( "antialiasing", &antialiasing, 0.0125f, 0.0f, 16.0f );
+				ImGui::SliderAngle( "mitter_limit", &mitter_limit );
+
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+
+				ImVec2 pts[] = {
+					pos + ImVec2( size * 0.25f, size * 0.25f ),
+					pos + ImVec2( size * 0.72f, size * 0.25f ),
+					pos + ImVec2( size * 0.72f, size * 0.75f )
+				};
+
+				//pDrawList->AddLine( pts[ 0 ], pts[ 1 ], color_col, line_width );
+
+				ImGui::Dummy( ImVec2( size, size ) );
+			}
+#endif
 			if ( ImGui::CollapsingHeader( "Linear Gradient" ) )
 			{
 				float const size = ImGui::GetContentRegionAvail().x;
@@ -362,7 +592,7 @@ namespace ImWidgets{
 				if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
 					colb = ImGui::GetColorU32( colb_v );
 				ImVec2 pos = ImGui::GetCursorScreenPos();
-				static ImShape shape;
+				static ImWidgetsShape shape;
 				float height = size * 0.25f;
 				GenShapeRect( shape, ImRect( pos, pos + ImVec2( size, height ) ) );
 				ShapeSetDefaultUV( shape );
@@ -437,7 +667,7 @@ namespace ImWidgets{
 				if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
 					colb = ImGui::GetColorU32( colb_v );
 				ImVec2 pos = ImGui::GetCursorScreenPos();
-				static ImShape shape;
+				static ImWidgetsShape shape;
 				GenShapeCircle( shape, pos + ImVec2( 0.5f * size, 0.5f * size ), size * 0.5f, 16 );
 				ShapeSetDefaultUV( shape );
 #ifdef DEAR_WIDGETS_TESSELATION
@@ -477,7 +707,7 @@ namespace ImWidgets{
 				if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
 					colb = ImGui::GetColorU32( colb_v );
 				ImVec2 pos = ImGui::GetCursorScreenPos();
-				static ImShape shape;
+				static ImWidgetsShape shape;
 				GenShapeRect( shape, ImRect( pos, pos + ImVec2( size, size ) ) );
 				ShapeSetDefaultUV( shape );
 #ifdef DEAR_WIDGETS_TESSELATION
@@ -526,7 +756,7 @@ namespace ImWidgets{
 				ImGui::SliderAngle( "AngleMin", &angle_min, -360.0f, angle_max * 180.0f / IM_PI );
 				ImGui::SliderAngle( "AngleMax", &angle_max, angle_min * 180.0f / IM_PI, 360.0f );
 				ImVec2 pos = ImGui::GetCursorScreenPos();
-				static ImShape shape;
+				static ImWidgetsShape shape;
 				GenShapeCircleArc( shape, pos + ImVec2( 0.5f * size, 0.5f * size ), radius, angle_min, angle_max, division );
 				ShapeSetDefaultBoundUVWhiteCol( shape );
 #ifdef DEAR_WIDGETS_TESSELATION
@@ -552,8 +782,8 @@ namespace ImWidgets{
 				static ImU32 edge_col = ImGui::GetColorU32( edge_col_v );
 				static ImU32 triangle_col = ImGui::GetColorU32( triangle_col_v );
 				static ImU32 vertex_col = ImGui::GetColorU32( vertex_col_v );
-				static ImVec2 uv_start( 0.0f, 0.0f );
-				static ImVec2 uv_end( 0.0f, 1.0f );
+				static ImVec2 uv_start( 0.0f, 0.5f );
+				static ImVec2 uv_end( 0.0f, 0.75f );
 				static ImVec4 cola_v( 1.0f, 1.0f, 1.0f, 1.0f );
 				static ImVec4 colb_v( 0.0f, 0.0f, 0.0f, 0.0f );
 				static ImU32 cola = ImGui::GetColorU32( cola_v );
@@ -581,7 +811,7 @@ namespace ImWidgets{
 				if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
 					colb = ImGui::GetColorU32( colb_v );
 				ImVec2 pos = ImGui::GetCursorScreenPos();
-				static ImShape shape;
+				static ImWidgetsShape shape;
 				GenShapeRect( shape, ImRect( pos, pos + ImVec2( size, size ) ) );
 				ShapeSetDefaultBoundUV( shape );
 #ifdef DEAR_WIDGETS_TESSELATION
@@ -842,7 +1072,7 @@ namespace ImWidgets{
 					usedTime = fTime;
 				}
 				float timeCopy = usedTime;
-				ImColor2DCallback func = []( float x, float y, void* pUserData ) -> ImU32{
+				ImWidgetsColor2DCallback func = []( float x, float y, void* pUserData ) -> ImU32{
 					float timeCopy = *( ( float* )pUserData );
 					return sdHorseshoeColor( ImVec2( x, y ), timeCopy );
 					};
@@ -1301,7 +1531,8 @@ namespace ImWidgets{
 					v.y *= size;
 					v += pos;
 				}
-				bool hovered = IsMouseHoveringPolyConvex( pos, pos + ImVec2( size, size ), pos_norms, 3 );
+				ImPolyShapeData data = { &pos_norms[ 0 ], 3 };
+				bool hovered = IsMouseHovering( pos, pos + ImVec2( size, size ), Im_IsPolyConvexContains, &data );
 				pDrawList->AddConvexPolyFilled( &pos_norms[ 0 ], 3, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 				pos = ImGui::GetCursorScreenPos();
@@ -1315,7 +1546,8 @@ namespace ImWidgets{
 					disk[ k ].x = pos.x + 0.5f * size + cos0 * size * 0.5f;
 					disk[ k ].y = pos.y + 0.5f * size + sin0 * size * 0.5f;
 				}
-				hovered = IsMouseHoveringPolyConvex( pos, pos + ImVec2( size, size ), &disk[ 0 ], 32 );
+				data = { &disk[ 0 ], 32 };
+				hovered = IsMouseHovering( pos, pos + ImVec2( size, size ), Im_IsPolyConvexContains, &data );
 				pDrawList->AddConvexPolyFilled( &disk[ 0 ], 32, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 
 				ImGui::Dummy( ImVec2( size, size ) );
@@ -1335,7 +1567,8 @@ namespace ImWidgets{
 					v.y *= size;
 					v += pos;
 				}
-				bool hovered = IsMouseHoveringPolyConcave( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), pos_norms, sz );
+				ImPolyShapeData data = { &pos_norms[ 0 ], sz };
+				bool hovered = IsMouseHovering( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), Im_IsPolyConcaveContains, &data );
 				pDrawList->AddConcavePolyFilled( &pos_norms[ 0 ], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 				pos = ImGui::GetCursorScreenPos();
@@ -1352,7 +1585,8 @@ namespace ImWidgets{
 					ring[ k ].x = pos.x + size * 0.5f + r * 0.5f * cos0;
 					ring[ k ].y = pos.y + size * 0.5f + r * 0.5f * sin0;
 				}
-				hovered = IsMouseHoveringPolyConcave( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), &ring[ 0 ], sz );
+				data = { &ring[ 0 ], sz };
+				hovered = IsMouseHovering( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), Im_IsPolyConcaveContains, &data );
 				pDrawList->AddConcavePolyFilled( &ring[ 0 ], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
@@ -1371,7 +1605,8 @@ namespace ImWidgets{
 					v.y *= size;
 					v += pos;
 				}
-				bool hovered = IsMouseHoveringPolyWithHole( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), pos_norms, sz );
+				ImPolyHoleShapeData data = { &pos_norms[ 0 ], NULL, sz, 1, 1 };
+				bool hovered = IsMouseHovering( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), Im_IsPolyWithHoleContains, &data );
 				DrawShapeWithHole( pDrawList, &pos_norms[ 0 ], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 				pos = ImGui::GetCursorScreenPos();
@@ -1398,15 +1633,40 @@ namespace ImWidgets{
 					ring[ k ].x = pos.x + size * 0.5f + r * 0.5f * cos0;
 					ring[ k ].y = pos.y + size * 0.5f + r * 0.5f * sin0;
 				}
-				hovered = IsMouseHoveringPolyWithHole( pos, pos + ImVec2( size, size ), &ring[ 0 ], sz );
+				data = { &ring[ 0 ], NULL, sz, 1, 1 };
+				hovered = IsMouseHovering( pos, pos + ImVec2( size, size ), Im_IsPolyWithHoleContains, &data );
 				DrawShapeWithHole( pDrawList, &ring[ 0 ], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
 			ImGui::Unindent();
 		}
-		if ( ImGui::CollapsingHeader( "Widgets" ) )
+		if ( ImGui::CollapsingHeader( "Widgets", ImGuiTreeNodeFlags_DefaultOpen ) )
 		{
 			ImGui::Indent();
+			if ( ImGui::CollapsingHeader( "Button Circle" ) )
+			{
+				float const half_size = 0.5f * ImGui::GetContentRegionAvail().x;
+				static int value = 0;
+				static float radius = half_size;
+				static std::string caption = "Circle";
+				ImGui::InputText( "value", &caption );
+				ImGui::DragFloat( "radius", &radius, 1.0f, 0.0f, 2.0f * half_size );
+				ImGui::Text( "Value: %d", value );
+				value += ( int )ImWidgets::ButtonExCircle( caption.c_str(), radius, 0 );
+			}
+			if ( ImGui::CollapsingHeader( "Button Capsule", ImGuiTreeNodeFlags_DefaultOpen ) )
+			{
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				float const size = ImGui::GetContentRegionAvail().x;
+				static int value = 0;
+				static float length = size;
+				static float thickness = size * 0.25f;
+				ImGui::DragFloat( "length", &length, 1.0f, 0.0f, 2.0f * size );
+				ImGui::DragFloat( "thickness", &thickness, 1.0f, 0.0f, 2.0f * size );
+				ImGui::Text( "Value: %d", value );
+				value += ( int )ButtonExCapsuleH( "CapsuleH", length, thickness, 0 );
+				value += ( int )ButtonExCapsuleV( "CapsuleV", length, thickness, 0 );
+			}
 			if ( ImGui::CollapsingHeader( "Button Convex" ) )
 			{
 				float const size = ImGui::GetContentRegionAvail().x;
@@ -1420,10 +1680,9 @@ namespace ImWidgets{
 					disk[ k ].x = 0.5f * size + cos0 * size * 0.5f;
 					disk[ k ].y = 0.5f * size + sin0 * size * 0.5f;
 				}
-				static int value = 1;
+				static int value = 0;
 				ImGui::Text( "Value: %d", value );
-				if ( ImWidgets::ButtonExConvex( "Convex", ImVec2( 0, 0 ), &disk[ 0 ], 32, 0 ) )
-					++value;
+				value += ( int )ImWidgets::ButtonExConvex( "Convex", ImVec2( 0, 0 ), &disk[ 0 ], 32, 0 );
 			}
 			if ( ImGui::CollapsingHeader( "Button Concave" ) )
 			{
@@ -1437,10 +1696,9 @@ namespace ImWidgets{
 					v.x *= size;
 					v.y *= size;
 				}
-				static int value = 1;
+				static int value = 0;
 				ImGui::Text( "Value: %d", value );
-				if ( ImWidgets::ButtonExConcave( "Concave", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 ) )
-					++value;
+				value += ( int )ImWidgets::ButtonExConcave( "Concave", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 );
 			}
 			if ( ImGui::CollapsingHeader( "Button With Hole" ) )
 			{
@@ -1454,10 +1712,9 @@ namespace ImWidgets{
 					v.x *= size;
 					v.y *= size;
 				}
-				static int value = 1;
+				static int value = 0;
 				ImGui::Text( "Value: %d", value );
-				if ( ImWidgets::ButtonExWithHole( "With Hole", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 ) )
-					++value;
+				value += ( int )ImWidgets::ButtonExWithHole( "With Hole", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 );
 			}
 #if 0
 			if ( ImGui::CollapsingHeader( "DragFloatPrecise" ) )
@@ -1540,10 +1797,6 @@ namespace ImWidgets{
 
 		ImGui::End();
 		ImGui::PopStyleVar();
-
-		bool show = true;
-		ImGui::ShowMetricsWindow( &show );
-		ImGui::ShowDemoWindow( &show );
 	}
 }
 

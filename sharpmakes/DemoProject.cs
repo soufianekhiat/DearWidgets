@@ -39,32 +39,32 @@ namespace DearWidgets
             //conf.IncludePrivatePaths.Add(@"[project.RootPath]\codebase\SpanMultipleSrcDirs\dir_individual_files");
             //conf.AddPrivateDependency<CoreProject>(target);
 
-            if (target.Api == TargetAPI.D3D9)
-            {
-                conf.LibraryFiles.Add("opengl32.lib");
-            }
-            if (target.Api == TargetAPI.D3D9)
-            {
-                conf.LibraryFiles.Add("d3d9.lib");
-            }
-            if (target.Api == TargetAPI.D3D10)
-            {
-                conf.LibraryFiles.Add("d3d10.lib");
-                conf.LibraryFiles.Add("d3dcompiler.lib");
-                conf.LibraryFiles.Add("dxgi.lib");
-            }
-            if (target.Api == TargetAPI.D3D11)
-            {
-                conf.LibraryFiles.Add("d3d11.lib");
-                conf.LibraryFiles.Add("d3dcompiler.lib");
-                conf.LibraryFiles.Add("dxgi.lib");
-            }
-            if (target.Api == TargetAPI.D3D11)
-            {
-                conf.LibraryFiles.Add("d3d12.lib");
-                conf.LibraryFiles.Add("d3dcompiler.lib");
-                conf.LibraryFiles.Add("dxgi.lib");
-            }
+            //if (target.Api == TargetAPI.D3D9)
+            //{
+            //    conf.LibraryFiles.Add("opengl32.lib");
+            //}
+            //if (target.Api == TargetAPI.D3D9)
+            //{
+            //    conf.LibraryFiles.Add("d3d9.lib");
+            //}
+            //if (target.Api == TargetAPI.D3D10)
+            //{
+            //    conf.LibraryFiles.Add("d3d10.lib");
+            //    conf.LibraryFiles.Add("d3dcompiler.lib");
+            //    conf.LibraryFiles.Add("dxgi.lib");
+            //}
+            //if (target.Api == TargetAPI.D3D11)
+            //{
+            //    conf.LibraryFiles.Add("d3d11.lib");
+            //    conf.LibraryFiles.Add("d3dcompiler.lib");
+            //    conf.LibraryFiles.Add("dxgi.lib");
+            //}
+            //if (target.Api == TargetAPI.D3D11)
+            //{
+            //    conf.LibraryFiles.Add("d3d12.lib");
+            //    conf.LibraryFiles.Add("d3dcompiler.lib");
+            //    conf.LibraryFiles.Add("dxgi.lib");
+            //}
 
 			conf.VcxprojUserFile = new Configuration.VcxprojUserFileSettings();
 			conf.VcxprojUserFile.LocalDebuggerWorkingDirectory = @"[project.RootPath]/WorkingDir/";

@@ -7,8 +7,9 @@
 
 //#include <algorithm>
 //#include <string>
-//#include <cmath>
 #include <math.h>
+
+#include <ImPlatform.h>
 
 //////////////////////////////////////////////////////////////////////////
 // Style TODO:
@@ -50,226 +51,458 @@
 #define nullptr NULL
 #endif
 
+struct ImWidgetsMarkerBuffer
+{
+	ImVec4	fg_color;
+	ImVec4	bg_color;
+
+	ImVec2	rotation;
+	float	linewidth;
+	float	size;
+
+	float	type;
+	float	antialiasing;
+	float	draw_type;
+	float	pad0;
+};
+
+enum ImWidgetsFeatures_
+{
+	ImWidgetsFeatures_None,
+	ImWidgetsFeatures_Markers,
+
+	ImWidgetsFeatures_COUNT
+};
+typedef int ImWidgetsFeatures;
+
+struct ImWidgetsVertex
+{
+	ImVec2 pos;
+	ImVec2 uv;
+	ImU32 col;
+};
+struct ImWidgetsVertexLine
+{
+	ImVec2 pos;
+	ImVec4 tangent;
+	ImVec2 segment;
+	ImVec2 uv;
+	ImVec2 angle;
+	ImU32 col;
+};
+struct ImWidgetsEdgeIdx
+{
+	ImDrawIdx a, b;
+	constexpr ImWidgetsEdgeIdx() : a( ( ImDrawIdx )( -1 ) ), b( ( ImDrawIdx )( -1 ) )
+	{}
+	constexpr ImWidgetsEdgeIdx( ImDrawIdx _a, ImDrawIdx _b ) : a( _a ), b( _b )
+	{}
+	ImWidgetsEdgeIdx& operator[] ( size_t idx )
+	{
+		IM_ASSERT( idx == 0 || idx == 1 );
+		return ( ( ImWidgetsEdgeIdx* )( void* )( char* )this )[ idx ];
+	}
+	ImWidgetsEdgeIdx operator[] ( size_t idx ) const
+	{
+		IM_ASSERT( idx == 0 || idx == 1 );
+		return ( ( const ImWidgetsEdgeIdx* )( const void* )( const char* )this )[ idx ];
+	}
+	bool operator== ( ImWidgetsEdgeIdx e ) const
+	{
+		return a == e.a && b == e.a;
+	}
+};
+struct ImWidgetsTriIdx
+{
+	ImDrawIdx a, b, c;
+	constexpr ImWidgetsTriIdx() : a( ( ImDrawIdx )( -1 ) ), b( ( ImDrawIdx )( -1 ) ), c( ( ImDrawIdx )( -1 ) )
+	{}
+	constexpr ImWidgetsTriIdx( ImDrawIdx _a, ImDrawIdx _b, ImDrawIdx _c ) : a( _a ), b( _b ), c( _c )
+	{}
+	ImDrawIdx& operator[] ( size_t idx )
+	{
+		IM_ASSERT( idx == 0 || idx == 1 || idx == 2 );
+		return ( ( ImDrawIdx* )( void* )( char* )this )[ idx ];
+	}
+	ImDrawIdx operator[] ( size_t idx ) const
+	{
+		IM_ASSERT( idx == 0 || idx == 1 || idx == 2 );
+		return ( ( const ImDrawIdx* )( const void* )( const char* )this )[ idx ];
+	}
+	ImWidgetsTriIdx& operator= ( ImWidgetsTriIdx const& rhs )
+	{
+		a = rhs.a;
+		b = rhs.b;
+		c = rhs.c;
+
+		return *this;
+	}
+};
+
+struct ImWidgetsShape
+{
+	ImVector<ImWidgetsVertex>	vertices;
+	ImVector<ImWidgetsTriIdx>	triangles;
+	ImRect						bb;
+};
+struct ImWidgetsShapeLine
+{
+	ImVector<ImWidgetsVertexLine>	vertices;
+	//ImWidgetsVertexLine*			vertices;
+	//int vertices_count;
+	ImVector<ImWidgetsTriIdx>		triangles;
+	//ImDrawIdx*						triangles;
+	//int triangles_count;
+	float total_length;
+	ImRect							bb;
+};
+
+typedef ImU32( *ImWidgetsColor1DCallback )( float x, void* );
+typedef ImU32( *ImWidgetsColor2DCallback )( float x, float y, void* );
+
+struct ImWidgetsContext
+{
+	ImTextureID						blackImg; // 4x4 RGBA UInt8 Black Image: { Linear, Clamp }
+	ImTextureID						whiteImg; // 4x4 RGBA UInt8 White Image: { Linear, Clamp }
+	ImVector<ImTextureID>			ressources;
+	ImWidgetsFeatures				features;
+
+	ImDrawShader					markerShader;
+};
+
+enum ImWidgetsStyleColor
+{
+	StyleColor_Value,
+
+	StyleColor_Count
+};
+
+enum ImWidgetsStyleVar
+{
+	StyleVar_HueSelector_Thickness_ZeroWidth,
+
+	StyleVar_Count
+};
+
+struct ImWidgetsStyle
+{
+	float	HueSelector_Thickness_ZeroWidth;
+	ImVec4  Colors[ StyleColor_Count ];
+
+	ImWidgetsStyle()
+	{
+		HueSelector_Thickness_ZeroWidth = 2.0f;
+		Colors[ StyleColor_Value ] = ImVec4( 1.0f, 0.0f, 0.0f, 1.0f );
+	}
+
+	void PushColor( ImWidgetsStyleColor colorIndex, const ImVec4& color )
+	{
+		ColorModifier modifier;
+		modifier.Index = colorIndex;
+		modifier.Value = Colors[ colorIndex ];
+		m_ColorStack.push_back( modifier );
+		Colors[ colorIndex ] = color;
+	}
+	void PopColor( int count = 1 )
+	{
+		while ( count > 0 )
+		{
+			auto& modifier = m_ColorStack.back();
+			Colors[ modifier.Index ] = modifier.Value;
+			m_ColorStack.pop_back();
+			--count;
+		}
+	}
+
+	void PushVar( ImWidgetsStyleVar varIndex, float value )
+	{
+		auto* var = GetVarFloatAddr( varIndex );
+		IM_ASSERT( var != nullptr );
+		VarModifier modifier;
+		modifier.Index = varIndex;
+		modifier.Value = ImVec4( *var, 0, 0, 0 );
+		*var = value;
+		m_VarStack.push_back( modifier );
+	}
+	void PushVar( ImWidgetsStyleVar varIndex, const ImVec2& value )
+	{
+		auto* var = GetVarVec2Addr( varIndex );
+		IM_ASSERT( var != nullptr );
+		VarModifier modifier;
+		modifier.Index = varIndex;
+		modifier.Value = ImVec4( var->x, var->y, 0, 0 );
+		*var = value;
+		m_VarStack.push_back( modifier );
+	}
+	void PushVar( ImWidgetsStyleVar varIndex, const ImVec4& value )
+	{
+		auto* var = GetVarVec4Addr( varIndex );
+		IM_ASSERT( var != nullptr );
+		VarModifier modifier;
+		modifier.Index = varIndex;
+		modifier.Value = *var;
+		*var = value;
+		m_VarStack.push_back( modifier );
+	}
+	void PopVar( int count = 1 )
+	{
+		while ( count > 0 )
+		{
+			auto& modifier = m_VarStack.back();
+			if ( auto floatValue = GetVarFloatAddr( modifier.Index ) )
+				*floatValue = modifier.Value.x;
+			else if ( auto vec2Value = GetVarVec2Addr( modifier.Index ) )
+				*vec2Value = ImVec2( modifier.Value.x, modifier.Value.y );
+			else if ( auto vec4Value = GetVarVec4Addr( modifier.Index ) )
+				*vec4Value = modifier.Value;
+			m_VarStack.pop_back();
+			--count;
+		}
+	}
+
+	const char* GetColorName( ImWidgetsStyleColor colorIndex ) const
+	{
+		switch ( colorIndex )
+		{
+		case StyleColor_Value: return "Value";
+		case StyleColor_Count: break;
+		}
+
+		IM_ASSERT( 0 );
+		return "Unknown";
+	}
+
+private:
+	struct ColorModifier
+	{
+		ImWidgetsStyleColor  Index;
+		ImVec4      Value;
+	};
+
+	struct VarModifier
+	{
+		ImWidgetsStyleVar Index;
+		ImVec4   Value;
+	};
+
+	float* GetVarFloatAddr( ImWidgetsStyleVar idx )
+	{
+		switch ( idx )
+		{
+		case StyleVar_HueSelector_Thickness_ZeroWidth:	return &HueSelector_Thickness_ZeroWidth;
+		default:				return nullptr;
+		}
+	}
+	ImVec2* GetVarVec2Addr( ImWidgetsStyleVar idx )
+	{
+		IM_UNUSED( idx );
+
+		return NULL;
+	}
+	ImVec4* GetVarVec4Addr( ImWidgetsStyleVar idx )
+	{
+		IM_UNUSED( idx );
+
+		return NULL;
+	}
+
+	ImVector<ColorModifier>	m_ColorStack;
+	ImVector<VarModifier>	m_VarStack;
+};
+
+#define ImWidgets_Kibi (1024ull)
+#define ImWidgets_Mibi (ImWidgets_Kibi*1024ull)
+#define ImWidgets_Gibi (ImWidgets_Mibi*1024ull)
+#define ImWidgets_Tebi (ImWidgets_Gibi*1024ull)
+#define ImWidgets_Pebi (ImWidgets_Tebi*1024ull)
+
+typedef int ImWidgetsLengthUnit;
+typedef int ImWidgetsChromaticPlot;
+typedef int ImWidgetsObserver;
+typedef int ImWidgetsIlluminance;
+typedef int ImWidgetsColorSpace;
+typedef int ImWidgetsPointer;
+
+enum ImWidgetsLengthUnit_
+{
+	ImWidgetsLengthUnit_Metric = 0,
+	ImWidgetsLengthUnit_Imperial,
+	ImWidgetsLengthUnit_COUNT
+};
+
+enum ImWidgetsObserver_
+{
+	// Standard
+	ImWidgetsObserverChromaticPlot_1931_2deg = 0,
+	ImWidgetsObserverChromaticPlot_1964_10deg,
+	ImWidgetsObserverChromaticPlot_COUNT
+};
+
+enum ImWidgetsIlluminance_
+{
+	// White Points
+	ImWidgetsWhitePointChromaticPlot_A = 0,
+	ImWidgetsWhitePointChromaticPlot_B,
+	ImWidgetsWhitePointChromaticPlot_C,
+	ImWidgetsWhitePointChromaticPlot_D50,
+	ImWidgetsWhitePointChromaticPlot_D55,
+	ImWidgetsWhitePointChromaticPlot_D65,
+	ImWidgetsWhitePointChromaticPlot_D75,
+	ImWidgetsWhitePointChromaticPlot_D93,
+	ImWidgetsWhitePointChromaticPlot_E,
+	ImWidgetsWhitePointChromaticPlot_F1,
+	ImWidgetsWhitePointChromaticPlot_F2,
+	ImWidgetsWhitePointChromaticPlot_F3,
+	ImWidgetsWhitePointChromaticPlot_F4,
+	ImWidgetsWhitePointChromaticPlot_F5,
+	ImWidgetsWhitePointChromaticPlot_F6,
+	ImWidgetsWhitePointChromaticPlot_F7,
+	ImWidgetsWhitePointChromaticPlot_F8,
+	ImWidgetsWhitePointChromaticPlot_F9,
+	ImWidgetsWhitePointChromaticPlot_F10,
+	ImWidgetsWhitePointChromaticPlot_F11,
+	ImWidgetsWhitePointChromaticPlot_F12,
+	ImWidgetsWhitePointChromaticPlot_COUNT
+};
+
+enum ImWidgetsColorSpace_
+{
+	// Color Spaces
+	ImWidgetsColorSpace_AdobeRGB = 0,	// D65
+	ImWidgetsColorSpace_AppleRGB,		// D65
+	ImWidgetsColorSpace_Best,			// D50
+	ImWidgetsColorSpace_Beta,			// D50
+	ImWidgetsColorSpace_Bruce,			// D65
+	ImWidgetsColorSpace_CIERGB,			// E
+	ImWidgetsColorSpace_ColorMatch,		// D50
+	ImWidgetsColorSpace_Don_RGB_4,		// D50
+	ImWidgetsColorSpace_ECI,			// D50
+	ImWidgetsColorSpace_Ekta_Space_PS5,	// D50
+	ImWidgetsColorSpace_NTSC,			// C
+	ImWidgetsColorSpace_PAL_SECAM,		// D65
+	ImWidgetsColorSpace_ProPhoto,		// D50
+	ImWidgetsColorSpace_SMPTE_C,		// D65
+	ImWidgetsColorSpace_sRGB,			// D65
+	ImWidgetsColorSpace_WideGamutRGB,	// D50
+	ImWidgetsColorSpace_Rec2020,		// D65
+	ImWidgetsColorSpace_COUNT
+};
+
+enum ImWidgetsChromaticPlot_
+{
+	// Style
+	ImWidgetsChromaticPlot_ShowWavelength,
+	ImWidgetsChromaticPlot_ShowGrid,
+	ImWidgetsChromaticPlot_ShowPrimaries,
+	ImWidgetsChromaticPlot_ShowWhitePoint,
+
+	ImWidgetsChromaticPlot_COUNT
+};
+
+enum ImWidgetsMarker_
+{
+	// Style
+	ImWidgetsMarker_Disc,
+	ImWidgetsMarker_Square,
+	ImWidgetsMarker_Triangle,
+	ImWidgetsMarker_Diamond,
+	ImWidgetsMarker_Heart,
+	ImWidgetsMarker_Spade,
+	ImWidgetsMarker_Club,
+	ImWidgetsMarker_Chevron,
+	ImWidgetsMarker_Clover,
+	ImWidgetsMarker_Ring,
+	ImWidgetsMarker_Tag,
+	ImWidgetsMarker_Cross,
+	ImWidgetsMarker_Asterisk,
+	ImWidgetsMarker_Infinity,
+	ImWidgetsMarker_Pin,
+	ImWidgetsMarker_Arrow,
+	ImWidgetsMarker_Ellipse,
+	ImWidgetsMarker_EllipseApprox,
+
+	ImWidgetsMarker_COUNT
+};
+typedef int ImWidgetsMarker;
+
+enum ImWidgetsDrawType_
+{
+	// Style
+	ImWidgetsDrawType_Filled,
+	ImWidgetsDrawType_Stroke,
+	ImWidgetsDrawType_Outline,
+	ImWidgetsDrawType_SignedDistanceField,
+	ImWidgetsDrawType_CutOff,
+
+	ImWidgetsDrawType_COUNT
+};
+typedef int ImWidgetsDrawType;
+
+enum ImWidgetsCap_
+{
+	ImWidgetsCap_None,
+	ImWidgetsCap_Butt,
+	ImWidgetsCap_Square,
+	ImWidgetsCap_Round,
+	ImWidgetsCap_TriangleOut,
+	ImWidgetsCap_TriangleIn,
+
+	ImWidgetsCap_COUNT
+};
+typedef int ImWidgetsCap;
+
+enum ImWidgetsJoin_
+{
+	ImWidgetsJoin_Round,
+	ImWidgetsJoin_Mitter,
+	ImWidgetsJoin_Bevel,
+
+	ImWidgetsJoin_COUNT
+};
+typedef int ImWidgetsJoin;
+
+struct ImGlobalData
+{
+	ImWidgetsFeatures features;
+};
+
+struct ImCircle
+{
+	ImVec2 center;
+	float radius;
+};
+struct ImCapsule
+{
+	ImVec2 pos;
+	float length;
+	float thickness;
+};
+struct ImPolyShapeData
+{
+	ImVec2* pts;
+	int pts_count;
+};
+struct ImPolyHoleShapeData
+{
+	ImVec2* pts;
+	ImRect* p_bb;
+	int pts_count;
+	int gap;
+	int strokeWidth;
+};
+
 namespace ImWidgets{
-	typedef void* ImShaderID;
-	struct ImShader
-	{
-		ImShaderID vs;
-		ImShaderID ps;
-	};
-	struct ImVertex
-	{
-		ImVec2 pos;
-		ImVec2 uv;
-		ImU32 col;
-	};
-	struct ImEdgeIdx
-	{
-		ImDrawIdx a, b;
-		constexpr ImEdgeIdx() : a( ( ImDrawIdx )( -1 ) ), b( ( ImDrawIdx )( -1 ) )
-		{}
-		constexpr ImEdgeIdx( ImDrawIdx _a, ImDrawIdx _b ) : a( _a ), b( _b )
-		{}
-		ImEdgeIdx& operator[] ( size_t idx )
-		{
-			IM_ASSERT( idx == 0 || idx == 1 );
-			return ( ( ImEdgeIdx* )( void* )( char* )this )[ idx ];
-		}
-		ImEdgeIdx operator[] ( size_t idx ) const
-		{
-			IM_ASSERT( idx == 0 || idx == 1 );
-			return ( ( const ImEdgeIdx* )( const void* )( const char* )this )[ idx ];
-		}
-		bool operator== ( ImEdgeIdx e ) const
-		{
-			return a == e.a && b == e.a;
-		}
-	};
-	struct ImTriIdx
-	{
-		ImDrawIdx a, b, c;
-		constexpr ImTriIdx() : a( ( ImDrawIdx )( -1 ) ), b( ( ImDrawIdx )( -1 ) ), c( ( ImDrawIdx )( -1 ) )
-		{}
-		constexpr ImTriIdx( ImDrawIdx _a, ImDrawIdx _b, ImDrawIdx _c ) : a( _a ), b( _b ), c( _c )
-		{}
-		ImDrawIdx& operator[] ( size_t idx )
-		{
-			IM_ASSERT( idx == 0 || idx == 1 || idx == 2 );
-			return ( ( ImDrawIdx* )( void* )( char* )this )[ idx ];
-		}
-		ImDrawIdx operator[] ( size_t idx ) const
-		{
-			IM_ASSERT( idx == 0 || idx == 1 || idx == 2 );
-			return ( ( const ImDrawIdx* )( const void* )( const char* )this )[ idx ];
-		}
-		ImTriIdx& operator= ( ImTriIdx const& rhs )
-		{
-			a = rhs.a;
-			b = rhs.b;
-			c = rhs.c;
+	extern ImGlobalData GlobalData;
 
-			return *this;
-		}
-	};
-	struct ImShape
-	{
-		ImVector<ImVertex>	vertices;
-		ImVector<ImTriIdx>	triangles;
-		ImRect				bb;
-	};
-
-	typedef ImU32( *ImColor1DCallback )( float x, void* );
-	typedef ImU32( *ImColor2DCallback )( float x, float y, void* );
-
-	enum StyleColor
-	{
-		StyleColor_Value,
-
-		StyleColor_Count
-	};
-
-	enum StyleVar
-	{
-		StyleVar_HueSelector_Thickness_ZeroWidth,
-
-		StyleVar_Count
-	};
-
-	struct Style
-	{
-		float	HueSelector_Thickness_ZeroWidth;
-		ImVec4  Colors[ StyleColor_Count ];
-
-		Style()
-		{
-			HueSelector_Thickness_ZeroWidth = 2.0f;
-			Colors[ StyleColor_Value ] = ImVec4( 1.0f, 0.0f, 0.0f, 1.0f );
-		}
-
-		void PushColor( StyleColor colorIndex, const ImVec4& color )
-		{
-			ColorModifier modifier;
-			modifier.Index = colorIndex;
-			modifier.Value = Colors[ colorIndex ];
-			m_ColorStack.push_back( modifier );
-			Colors[ colorIndex ] = color;
-		}
-		void PopColor( int count = 1 )
-		{
-			while ( count > 0 )
-			{
-				auto& modifier = m_ColorStack.back();
-				Colors[ modifier.Index ] = modifier.Value;
-				m_ColorStack.pop_back();
-				--count;
-			}
-		}
-
-		void PushVar( StyleVar varIndex, float value )
-		{
-			auto* var = GetVarFloatAddr( varIndex );
-			IM_ASSERT( var != nullptr );
-			VarModifier modifier;
-			modifier.Index = varIndex;
-			modifier.Value = ImVec4( *var, 0, 0, 0 );
-			*var = value;
-			m_VarStack.push_back( modifier );
-		}
-		void PushVar( StyleVar varIndex, const ImVec2& value )
-		{
-			auto* var = GetVarVec2Addr( varIndex );
-			IM_ASSERT( var != nullptr );
-			VarModifier modifier;
-			modifier.Index = varIndex;
-			modifier.Value = ImVec4( var->x, var->y, 0, 0 );
-			*var = value;
-			m_VarStack.push_back( modifier );
-		}
-		void PushVar( StyleVar varIndex, const ImVec4& value )
-		{
-			auto* var = GetVarVec4Addr( varIndex );
-			IM_ASSERT( var != nullptr );
-			VarModifier modifier;
-			modifier.Index = varIndex;
-			modifier.Value = *var;
-			*var = value;
-			m_VarStack.push_back( modifier );
-		}
-		void PopVar( int count = 1 )
-		{
-			while ( count > 0 )
-			{
-				auto& modifier = m_VarStack.back();
-				if ( auto floatValue = GetVarFloatAddr( modifier.Index ) )
-					*floatValue = modifier.Value.x;
-				else if ( auto vec2Value = GetVarVec2Addr( modifier.Index ) )
-					*vec2Value = ImVec2( modifier.Value.x, modifier.Value.y );
-				else if ( auto vec4Value = GetVarVec4Addr( modifier.Index ) )
-					*vec4Value = modifier.Value;
-				m_VarStack.pop_back();
-				--count;
-			}
-		}
-
-		const char* GetColorName( StyleColor colorIndex ) const
-		{
-			switch ( colorIndex )
-			{
-			case StyleColor_Value: return "Value";
-			case StyleColor_Count: break;
-			}
-
-			IM_ASSERT( 0 );
-			return "Unknown";
-		}
-
-	private:
-		struct ColorModifier
-		{
-			StyleColor  Index;
-			ImVec4      Value;
-		};
-
-		struct VarModifier
-		{
-			StyleVar Index;
-			ImVec4   Value;
-		};
-
-		float* GetVarFloatAddr( StyleVar idx )
-		{
-			switch ( idx )
-			{
-			case StyleVar_HueSelector_Thickness_ZeroWidth:	return &HueSelector_Thickness_ZeroWidth;
-			default:				return nullptr;
-			}
-		}
-		ImVec2* GetVarVec2Addr( StyleVar idx )
-		{
-			IM_UNUSED( idx );
-
-			return NULL;
-		}
-		ImVec4* GetVarVec4Addr( StyleVar idx )
-		{
-			IM_UNUSED( idx );
-
-			return NULL;
-		}
-
-		ImVector<ColorModifier>	m_ColorStack;
-		ImVector<VarModifier>	m_VarStack	;
-	};
-
-	Style& GetStyle();
+	ImWidgetsStyle& GetStyle();
 
 	inline
-	const char* GetStyleColorName( StyleColor colorIndex )
+	const char* GetStyleColorName( ImWidgetsStyleColor colorIndex )
 	{
 		GetStyle().GetColorName( colorIndex );
 	}
 	inline
-	void PushStyleColor( StyleColor colorIndex, const ImVec4& color )
+	void PushStyleColor( ImWidgetsStyleColor colorIndex, const ImVec4& color )
 	{
 		GetStyle().PushColor( colorIndex, color );
 	}
@@ -279,17 +512,17 @@ namespace ImWidgets{
 		GetStyle().PopColor( count );
 	}
 	inline
-	void PushStyleVar( StyleVar varIndex, float value )
+	void PushStyleVar( ImWidgetsStyleVar varIndex, float value )
 	{
 		GetStyle().PushVar( varIndex, value );
 	}
 	inline
-	void PushStyleVar( StyleVar varIndex, const ImVec2& value )
+	void PushStyleVar( ImWidgetsStyleVar varIndex, const ImVec2& value )
 	{
 		GetStyle().PushVar( varIndex, value );
 	}
 	inline
-	void PushStyleVar( StyleVar varIndex, const ImVec4& value )
+	void PushStyleVar( ImWidgetsStyleVar varIndex, const ImVec4& value )
 	{
 		GetStyle().PushVar( varIndex, value );
 	}
@@ -298,95 +531,6 @@ namespace ImWidgets{
 	{
 		GetStyle().PopVar( count );
 	}
-
-#define ImWidgets_Kibi (1024ull)
-#define ImWidgets_Mibi (ImWidgets_Kibi*1024ull)
-#define ImWidgets_Gibi (ImWidgets_Mibi*1024ull)
-#define ImWidgets_Tebi (ImWidgets_Gibi*1024ull)
-#define ImWidgets_Pebi (ImWidgets_Tebi*1024ull)
-
-	typedef int ImWidgetsLengthUnit;
-	typedef int ImWidgetsChromaticPlot;
-	typedef int ImWidgetsObserver;
-	typedef int ImWidgetsIlluminance;
-	typedef int ImWidgetsColorSpace;
-	typedef int ImWidgetsPointer;
-
-	enum ImWidgetsLengthUnit_
-	{
-		ImWidgetsLengthUnit_Metric = 0,
-		ImWidgetsLengthUnit_Imperial,
-		ImWidgetsLengthUnit_COUNT
-	};
-
-	enum ImWidgetsObserver_
-	{
-		// Standard
-		ImWidgetsObserverChromaticPlot_1931_2deg = 0,
-		ImWidgetsObserverChromaticPlot_1964_10deg,
-		ImWidgetsObserverChromaticPlot_COUNT
-	};
-
-	enum ImWidgetsIlluminance_
-	{
-		// White Points
-		ImWidgetsWhitePointChromaticPlot_A = 0,
-		ImWidgetsWhitePointChromaticPlot_B,
-		ImWidgetsWhitePointChromaticPlot_C,
-		ImWidgetsWhitePointChromaticPlot_D50,
-		ImWidgetsWhitePointChromaticPlot_D55,
-		ImWidgetsWhitePointChromaticPlot_D65,
-		ImWidgetsWhitePointChromaticPlot_D75,
-		ImWidgetsWhitePointChromaticPlot_D93,
-		ImWidgetsWhitePointChromaticPlot_E,
-		ImWidgetsWhitePointChromaticPlot_F1,
-		ImWidgetsWhitePointChromaticPlot_F2,
-		ImWidgetsWhitePointChromaticPlot_F3,
-		ImWidgetsWhitePointChromaticPlot_F4,
-		ImWidgetsWhitePointChromaticPlot_F5,
-		ImWidgetsWhitePointChromaticPlot_F6,
-		ImWidgetsWhitePointChromaticPlot_F7,
-		ImWidgetsWhitePointChromaticPlot_F8,
-		ImWidgetsWhitePointChromaticPlot_F9,
-		ImWidgetsWhitePointChromaticPlot_F10,
-		ImWidgetsWhitePointChromaticPlot_F11,
-		ImWidgetsWhitePointChromaticPlot_F12,
-		ImWidgetsWhitePointChromaticPlot_COUNT
-	};
-
-	enum ImWidgetsColorSpace_
-	{
-		// Color Spaces
-		ImWidgetsColorSpace_AdobeRGB = 0,	// D65
-		ImWidgetsColorSpace_AppleRGB,		// D65
-		ImWidgetsColorSpace_Best,			// D50
-		ImWidgetsColorSpace_Beta,			// D50
-		ImWidgetsColorSpace_Bruce,			// D65
-		ImWidgetsColorSpace_CIERGB,			// E
-		ImWidgetsColorSpace_ColorMatch,		// D50
-		ImWidgetsColorSpace_Don_RGB_4,		// D50
-		ImWidgetsColorSpace_ECI,			// D50
-		ImWidgetsColorSpace_Ekta_Space_PS5,	// D50
-		ImWidgetsColorSpace_NTSC,			// C
-		ImWidgetsColorSpace_PAL_SECAM,		// D65
-		ImWidgetsColorSpace_ProPhoto,		// D50
-		ImWidgetsColorSpace_SMPTE_C,		// D65
-		ImWidgetsColorSpace_sRGB,			// D65
-		ImWidgetsColorSpace_WideGamutRGB,	// D50
-		ImWidgetsColorSpace_Rec2020,		// D65
-		ImWidgetsColorSpace_COUNT
-	};
-
-	enum ImWidgetsChromaticPlot_
-	{
-		// Style
-		ImWidgetsChromaticPlot_ShowWavelength,
-		ImWidgetsChromaticPlot_ShowGrid,
-		ImWidgetsChromaticPlot_ShowPrimaries,
-		ImWidgetsChromaticPlot_ShowWhitePoint,
-
-		ImWidgetsChromaticPlot_COUNT
-	};
 
 	//////////////////////////////////////////////////////////////////////////
 	// Helpers
@@ -423,6 +567,17 @@ namespace ImWidgets{
 		x = ImClamp((x - edge0) / (edge1 - edge0), 0.0f, 1.0f);
 		// Evaluate polynomial
 		return x * x * (3.0f - 2.0f * x);
+	}
+
+	inline
+	int LoadShaderFile( size_t* file_data_size, char** file_data, char const* filename )
+	{
+		*file_data_size = 0;
+		*file_data = ( char* )ImFileLoadToMemory( filename, "rb", file_data_size );
+		if ( !*file_data )
+			return 0;
+
+		return 1;
 	}
 
 	inline
@@ -539,15 +694,18 @@ namespace ImWidgets{
 		else
 			return 1.055f * ImPow( x, 1.0f / 2.4f) - 0.055f;
 	}
-	IMGUI_API void          ColorConvertsRGBtosRGB( float r, float g, float b, float& out_r, float& out_g, float& out_b );
-	IMGUI_API void          ColorConvertRGBtoLinear( float r, float g, float b, float& out_L, float& out_a, float& out_b );
-	IMGUI_API void          ColorConvertLineartoRGB( float L, float a, float b, float& out_r, float& out_g, float& out_b );
-	IMGUI_API void          ColorConvertRGBtoOKLAB( float r, float g, float b, float& out_L, float& out_a, float& out_b );
-	IMGUI_API void          ColorConvertOKLABtoRGB( float L, float a, float b, float& out_r, float& out_g, float& out_b );
-	IMGUI_API void          ColorConvertOKLCHtoOKLAB( float r, float g, float b, float& out_L, float& out_a, float& out_b );
-	IMGUI_API void          ColorConvertOKLABtoOKLCH( float L, float a, float b, float& out_r, float& out_g, float& out_b );
-	IMGUI_API void          ColorConvertsRGBtoOKLCH( float r, float g, float b, float& out_L, float& out_c, float& out_h );
-	IMGUI_API void          ColorConvertOKLCHtosRGB( float L, float c, float h, float& out_r, float& out_g, float& out_b );
+	// Right-to-Left, like operator '=' or like standard function in C, memcpy, ...
+	IMGUI_API void	ColorConvertsRGBtosRGB( float& out_r, float& out_g, float& out_b, float r, float g, float b );
+	IMGUI_API void	ColorConvertRGBtoLinear( float& out_L, float& out_a, float& out_b, float r, float g, float b );
+	IMGUI_API void	ColorConvertLineartoRGB( float& out_r, float& out_g, float& out_b, float L, float a, float b );
+	IMGUI_API void	ColorConvertRGBtoOKLAB( float& out_L, float& out_a, float& out_b, float r, float g, float b );
+	IMGUI_API void	ColorConvertOKLABtoRGB( float& out_r, float& out_g, float& out_b, float L, float a, float b );
+	IMGUI_API void	ColorConvertOKLCHtoOKLAB( float& out_L, float& out_a, float& out_b, float r, float g, float b );
+	IMGUI_API void	ColorConvertOKLABtoOKLCH( float& out_r, float& out_g, float& out_b, float L, float a, float b );
+	IMGUI_API void	ColorConvertsRGBtoOKLCH( float& out_L, float& out_c, float& out_h, float r, float g, float b );
+	IMGUI_API void	ColorConvertOKLCHtosRGB( float& out_r, float& out_g, float& out_b, float L, float c, float h );
+	IMGUI_API void	ColorConvertRGBtoHSV( float& out_h, float& out_s, float& out_v, float r, float g, float b );
+	IMGUI_API void	ColorConvertHSVtoRGB( float& out_r, float& out_g, float& out_b, float h, float s, float v );
 	ImU32	KelvinTemperatureTosRGBColors( float temperature ); // [ 1000 K; 12000 K ]
 
 	inline
@@ -632,58 +790,76 @@ namespace ImWidgets{
 	// Geometry Generation
 	//////////////////////////////////////////////////////////////////////////
 #ifdef DEAR_WIDGETS_TESSELATION
-	void	ShapeTesselationUniform( ImShape& shape );
+	void	ShapeTesselationUniform( ImWidgetsShape& shape );
 #endif
 
-	void	ShapeTranslate( ImShape& shape, ImVec2 t );
+	void	ShapeTranslate( ImWidgetsShape& shape, ImVec2 t );
 
-	void	ShapeSetDefaultUV( ImShape& shape );
-	void	ShapeSetDefaultUVCol( ImShape& shape );
-	void	ShapeSetDefaultBoundUV( ImShape& shape );
-	void	ShapeSetDefaultBoundUVWhiteCol( ImShape& shape );
-	void	ShapeSetDefaultWhiteCol( ImShape& shape );
+	void	ShapeSetDefaultUV( ImWidgetsShape& shape );
+	void	ShapeSetDefaultUVCol( ImWidgetsShape& shape );
+	void	ShapeSetDefaultBoundUV( ImWidgetsShape& shape );
+	void	ShapeSetDefaultBoundUVWhiteCol( ImWidgetsShape& shape );
+	void	ShapeSetDefaultWhiteCol( ImWidgetsShape& shape );
+	void	ShapeSetBound( ImWidgetsShape& shape );
+	void	ShapeLineSetBound( ImWidgetsShapeLine& shape );
 
-	void	GenShapeRect( ImShape& shape, ImRect const& r );
-	void	GenShapeCircle( ImShape& shape, ImVec2 center, float radius, int side_count );
-	void	GenShapeCircleArc( ImShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count );
-	void	GenShapeRegularNGon( ImShape& shape, ImVec2 center, float radius, int side_count );
+	void	GenShapeRect( ImWidgetsShape& shape, ImRect const& r );
+	void	GenShapeCircle( ImWidgetsShape& shape, ImVec2 center, float radius, int side_count );
+	void	GenShapeCircleArc( ImWidgetsShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count );
+	void	GenShapeRegularNGon( ImWidgetsShape& shape, ImVec2 center, float radius, int side_count );
 
 	// TODO
 	//void	GenShapeFromBezierCubicCurve( ImShape& shape, ImVector<ImVec2>& path, float thickness, int num_segments = 0 );
 	//void	GenShapeFromBezierQuadraticCurve( ImShape& sshape, ImVector<ImVec2>& path, float thickness, int num_segments = 0 );
 
 	// TODO Add Color Blend Option (Linear, sRGB, ...) cf. W3C rules
-	typedef void	( *pfSpace2sRGB )( float, float, float, float&, float&, float& );
-	typedef void	( *pfsRGB2Space )( float, float, float, float&, float&, float& );
-	void	ShapeLinearGradientGeneric( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space );
-	void	ShapeRadialGradientGeneric( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space );
-	void	ShapeDiamondGradientGeneric( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space );
+	typedef void	( *pfSpace2sRGB )( float&, float&, float&, float, float, float );
+	typedef void	( *pfsRGB2Space )( float&, float&, float&, float, float, float );
+	void	ShapeLinearGradientGeneric( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space );
+	void	ShapeRadialGradientGeneric( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space );
+	void	ShapeDiamondGradientGeneric( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space );
 
-	void	ShapeSRGBLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
-	void	ShapeSRGBRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
-	void	ShapeSRGBDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
-	void	ShapeOkLabLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
-	void	ShapeOkLabRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
-	void	ShapeOkLabDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
-	void	ShapeOkLchLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
-	void	ShapeOkLchRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
-	void	ShapeOkLchDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
-	void	ShapeLinearSRGBLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
-	void	ShapeLinearSRGBRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
-	void	ShapeLinearSRGBDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
-	void	ShapeHSVLinearGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
-	void	ShapeHSVRadialGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
-	void	ShapeHSVDiamondGradient( ImShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+	void	ShapeSRGBLinearGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+	void	ShapeSRGBRadialGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+	void	ShapeSRGBDiamondGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+	void	ShapeOkLabLinearGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+	void	ShapeOkLabRadialGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+	void	ShapeOkLabDiamondGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+	void	ShapeOkLchLinearGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+	void	ShapeOkLchRadialGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+	void	ShapeOkLchDiamondGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+	void	ShapeLinearSRGBLinearGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+	void	ShapeLinearSRGBRadialGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+	void	ShapeLinearSRGBDiamondGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+	void	ShapeHSVLinearGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+	void	ShapeHSVRadialGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+	void	ShapeHSVDiamondGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 );
+
+	//////////////////////////////////////////////////////////////////////////
+	// ImWidgets Context
+	//////////////////////////////////////////////////////////////////////////
+
+	// Had to be called after ImPlatform::InitGfx or after ImPlatform::SimpleInitialize
+
+	IMGUI_API void SetFeatures( ImWidgetsFeatures features );
+	IMGUI_API void AddFeatures( ImWidgetsFeatures features );
+	IMGUI_API void RemoveFeature( ImWidgetsFeatures features );
+	IMGUI_API ImWidgetsContext*	CreateContext();
+	IMGUI_API void DestroyContext( ImWidgetsContext* );
+
+	IMGUI_API void SetCurrentContext( ImWidgetsContext* );
+
+	IMGUI_API void OwnTexture( ImTextureID tex );
 
 	//////////////////////////////////////////////////////////////////////////
 	// DrawList
 	//////////////////////////////////////////////////////////////////////////
-	IMGUI_API void DrawShapeDebugEx( ImDrawList* pDrawList, ImTextureID tex, ImShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx = -1 );
-	IMGUI_API void DrawShapeEx( ImDrawList* pDrawList, ImTextureID tex, ImShape& shape );
-	IMGUI_API void DrawShapeDebug( ImDrawList* pDrawList, ImShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx = -1 );
-	IMGUI_API void DrawShape( ImDrawList* pDrawList, ImShape& shape );
-	IMGUI_API void DrawImageShapeDebug( ImDrawList* pDrawList, ImTextureID tex, ImShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx = -1 );
-	IMGUI_API void DrawImageShape( ImDrawList* pDrawList, ImTextureID tex, ImShape& shape );
+	IMGUI_API void DrawShapeDebugEx( ImDrawList* pDrawList, ImTextureID tex, ImWidgetsShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx = -1 );
+	IMGUI_API void DrawShapeEx( ImDrawList* pDrawList, ImTextureID tex, ImWidgetsShape& shape );
+	IMGUI_API void DrawShapeDebug( ImDrawList* pDrawList, ImWidgetsShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx = -1 );
+	IMGUI_API void DrawShape( ImDrawList* pDrawList, ImWidgetsShape& shape );
+	IMGUI_API void DrawImageShapeDebug( ImDrawList* pDrawList, ImTextureID tex, ImWidgetsShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx = -1 );
+	IMGUI_API void DrawImageShape( ImDrawList* pDrawList, ImTextureID tex, ImWidgetsShape& shape );
 
 	IMGUI_API void DrawTriangleCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float angle, float size, float thickness, ImU32 col );
 	IMGUI_API void DrawTriangleCursorFilled( ImDrawList* pDrawList, ImVec2 targetPoint, float angle, float size, ImU32 col );
@@ -691,18 +867,18 @@ namespace ImWidgets{
 	IMGUI_API void DrawSignetCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float width, float height, float height_ratio, float align01, float angle, float thickness, ImU32 col );
 	IMGUI_API void DrawSignetFilledCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float width, float height, float height_ratio, float align01, float angle, ImU32 col );
 
-	IMGUI_API void DrawProceduralColor1DNearest( ImDrawList* pDrawList, ImColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX );
-	IMGUI_API void DrawProceduralColor1DBilinear( ImDrawList* pDrawList, ImColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX );
+	IMGUI_API void DrawProceduralColor1DNearest( ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX );
+	IMGUI_API void DrawProceduralColor1DBilinear( ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX );
 
-	IMGUI_API void DrawProceduralColor2DNearest( ImDrawList* pDrawList, ImColor2DCallback func, void* pUserData, float minX, float maxX, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionX, int resolutionY );
-	IMGUI_API void DrawProceduralColor2DBilinear( ImDrawList* pDrawList, ImColor2DCallback func, void* pUserData, float minX, float maxX, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionX, int resolutionY );
+	IMGUI_API void DrawProceduralColor2DNearest( ImDrawList* pDrawList, ImWidgetsColor2DCallback func, void* pUserData, float minX, float maxX, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionX, int resolutionY );
+	IMGUI_API void DrawProceduralColor2DBilinear( ImDrawList* pDrawList, ImWidgetsColor2DCallback func, void* pUserData, float minX, float maxX, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionX, int resolutionY );
 
 	IMGUI_API void DrawHueBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, float alpha, float gamma, float offset );
 	IMGUI_API void DrawHueBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, float colorStartRGB[ 3 ], float alpha, float gamma );
 	IMGUI_API void DrawLumianceBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma );
 	IMGUI_API void DrawSaturationBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma );
 
-	IMGUI_API void DrawColorRing( ImDrawList* pDrawList, ImVec2 const curPos, ImVec2 const size, float thickness_, ImColor1DCallback func, void* pUserData, int division, float colorOffset, bool bIsBilinear );
+	IMGUI_API void DrawColorRing( ImDrawList* pDrawList, ImVec2 const curPos, ImVec2 const size, float thickness_, ImWidgetsColor1DCallback func, void* pUserData, int division, float colorOffset, bool bIsBilinear );
 
 	IMGUI_API void DrawOkLabQuad( ImDrawList* pDrawList, ImVec2 start, ImVec2 size, float L, int resX = 16, int resY = 16 );
 	IMGUI_API void DrawOkLchQuad( ImDrawList* pDrawList, ImVec2 start, ImVec2 size, float L, int resX = 16, int resY = 16 );
@@ -715,13 +891,27 @@ namespace ImWidgets{
 	IMGUI_API void DrawImageConcaveShape( ImDrawList* draw, ImTextureID img, ImVec2* poly, int points_count, ImU32 tint,
 										  ImVec2 uv_offset = ImVec2( 0.0f, 0.0f ), ImVec2 uv_scale = ImVec2( 1.0f, 1.0f ) );
 
+#ifdef IM_SUPPORT_CUSTOM_SHADER
+	IMGUI_API void CreateInternalShader( ImDrawShader* shaders_out, char const* shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer );
+
+	IMGUI_API void DrawMarker( ImDrawList* pDrawList, ImVec2 start, ImVec2 size,
+							   ImU32 fg_color,
+							   ImU32 bg_color,
+							   float rot_angle_rad,
+							   float shape_size,
+							   float linewidth,
+							   float antialiasing,
+							   ImWidgetsMarker marker,
+							   ImWidgetsDrawType draw_type );
+#endif
+
 	// TODO: find a clean way expose the style of the draws:
 	// Triangle of ColorSpace
-	// White Point
+	// White PointDrawChromaticityPlotGeneric( ImDrawList* pDrawList,
 	IMGUI_API
 	void	DrawChromaticityPlotGeneric( ImDrawList* pDrawList,
-										 ImVec2 const curPos,
-										 float width, float height,
+										 ImVec2 curPos,
+										 ImVec2 size,
 										 ImVec2 primR, ImVec2 primG, ImVec2 primB,
 										 ImVec2 whitePoint,
 										 float* xyzToRGB,
@@ -839,14 +1029,21 @@ namespace ImWidgets{
 												int division0, float height0, float thickness0, float angle0, ImU32 col0,
 												int division1 = -1, float height1 = -1.0f, float thickness1 = -1.0f, float angle1 = -1.0f, ImU32 col1 = 0u );
 
-	typedef void ( *ImDrawShape )( ImDrawList* drawlist, ImVec2* pts, int pts_count, ImU32 col, float thickness );
-	typedef void ( *ImDrawShapeFilled )( ImDrawList* drawlist, ImVec2* pts, int pts_count, ImU32 col );
-	IMGUI_API void RenderNavHighlightShape( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags, ImDrawShape func );
+	typedef void ( *ImInlineOffset )( void* data, ImVec2 offset );
+	typedef void ( *ImDrawShape )( ImDrawList* drawlist, ImU32 col, float thickness, void* data );
+	typedef void ( *ImDrawShapeFilled )( ImDrawList* drawlist, ImU32 col, void* data );
+	typedef void ( *ImDrawShapeFilledTex )( ImDrawList* drawlist, ImU32 col, void* data, ImTextureID tex, ImVec2 uv_min, ImVec2 uv_max );
+	typedef bool ( *IsContains )( ImVec2 p, void* data );
+	typedef void ( *FromRect )( ImRect r, void* data );
+
+	IMGUI_API void RenderNavHighlightEx( ImGuiID id, ImGuiNavHighlightFlags flags, ImDrawShape func, void* data, ImRect display_rect );
+	IMGUI_API void RenderNavHighlightCircle( ImVec2 center, float radius, ImGuiID id, ImGuiNavHighlightFlags flags );
 	IMGUI_API void RenderNavHighlightConvex( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags );
 	IMGUI_API void RenderNavHighlightConcave( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags );
 	IMGUI_API void RenderNavHighlightWithHole( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags );
 
-	IMGUI_API void RenderFrameShape( ImVec2* pts, int pts_count, ImU32 fill_col, bool border, ImDrawShape outline, ImDrawShapeFilled fill );
+	IMGUI_API void RenderFrameEx( ImU32 fill_col, bool border, ImDrawShape outline, ImDrawShapeFilled fill, ImDrawShapeFilledTex fill_tex, void* data, ImTextureID* tex = NULL, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
+	IMGUI_API void RenderFrameCircle( ImVec2 center, float radius, ImU32 fill_col, bool border );
 	IMGUI_API void RenderFrameConcave( ImVec2* pts, int pts_count, ImU32 fill_col, bool border );
 	IMGUI_API void RenderFrameConvex( ImVec2* pts, int pts_count, ImU32 fill_col, bool border );
 	IMGUI_API void RenderFrameWithHole( ImVec2* pts, int pts_count, ImU32 fill_col, bool border );
@@ -854,19 +1051,23 @@ namespace ImWidgets{
 	//////////////////////////////////////////////////////////////////////////
 	// Interactions
 	//////////////////////////////////////////////////////////////////////////
-	IMGUI_API bool IsPolyConvexContains( ImVec2* pts, int pts_count, ImVec2 p );
-	IMGUI_API bool IsPolyConcaveContains( ImVec2* pts, int pts_count, ImVec2 p );
-	IMGUI_API bool IsPolyWithHoleContains( ImVec2* pts, int pts_count, ImVec2 p, ImRect* p_bb = NULL, int gap = 1, int strokeWidth = 1 );
+	IMGUI_API bool IsBoundingBoxWellFormed( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count );
 
-	IMGUI_API bool IsMouseHoveringPolyConvex( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip = true );
-	IMGUI_API bool ItemHoverablePolyConvex( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags );
-	IMGUI_API bool IsMouseHoveringPolyConcave( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip = true );
-	IMGUI_API bool ItemHoverablePolyConcave( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags );
-	IMGUI_API bool IsMouseHoveringPolyWithHole( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count, bool clip = true );
-	IMGUI_API bool ItemHoverablePolyWithHole( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags );
+	IMGUI_API bool Im_IsCircleContains( ImVec2 p, void* data );
+	IMGUI_API bool Im_IsCapsuleHContains( ImVec2 p, void* data );
+	IMGUI_API bool Im_IsCapsuleVContains( ImVec2 p, void* data );
+	IMGUI_API bool Im_IsPolyConvexContains( ImVec2 p, void* data );
+	IMGUI_API bool Im_IsPolyConcaveContains( ImVec2 p, void* data );
+	IMGUI_API bool Im_IsPolyWithHoleContains( ImVec2 p, void* data );
 
-	typedef bool (*ImItemHoverablePolyConvexFunc)( const ImRect& bb, ImGuiID id, ImVec2* pts, int pts_count, ImGuiItemFlags item_flags );
-	IMGUI_API bool ButtonBehaviorShape( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags, ImItemHoverablePolyConvexFunc func );
+	IMGUI_API bool IsMouseHovering( const ImVec2& r_min, const ImVec2& r_max, IsContains contains, void* data, bool clip = true );
+	IMGUI_API bool ItemHoverable( const ImRect& bb, ImGuiID id, ImGuiItemFlags item_flags, IsContains isContains, void* extra_data );
+
+	//typedef bool ( *ImItemHoverableFunc )( const ImRect& bb, ImGuiID id, ImGuiItemFlags item_flags, void* extra_data );
+	IMGUI_API bool ButtonBehaviorEx( const ImRect& bb, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags, IsContains isContains, void* extra_data );
+	IMGUI_API bool ButtonBehaviorCircle( ImVec2 center, float radius, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
+	IMGUI_API bool ButtonBehaviorCapsuleH( ImVec2 pos, float length, float radius, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
+	IMGUI_API bool ButtonBehaviorCapsuleV( ImVec2 pos, float length, float radius, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
 	IMGUI_API bool ButtonBehaviorConvex( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
 	IMGUI_API bool ButtonBehaviorConcave( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
 	IMGUI_API bool ButtonBehaviorWithHole( ImVec2* pts, int pts_count, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
@@ -874,15 +1075,27 @@ namespace ImWidgets{
 	//////////////////////////////////////////////////////////////////////////
 	// Widgets
 	//////////////////////////////////////////////////////////////////////////
-	IMGUI_API bool ButtonExShape( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags, ImItemHoverablePolyConvexFunc func, ImDrawShape outline, ImDrawShapeFilled fill );
+	IMGUI_API bool ButtonEx( const char* label, const ImVec2& size_arg, ImRect bb, ImVec2 text_offset, ImGuiButtonFlags flags,
+							 IsContains isContains, ImDrawShape outline, ImDrawShapeFilled fill, ImDrawShapeFilledTex fill_tex, ImInlineOffset offset, FromRect from_rect,
+							 void* extra_data,
+							 ImTextureID* tex = NULL, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
+	IMGUI_API bool ButtonExCircle( const char* label, float radius, ImGuiButtonFlags flags );
+	IMGUI_API bool ButtonExCapsuleH( const char* label, float length, float thickness, ImGuiButtonFlags flags );
+	IMGUI_API bool ButtonExCapsuleV( const char* label, float length, float thickness, ImGuiButtonFlags flags );
 	IMGUI_API bool ButtonExConvex( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImGuiButtonFlags flags );
 	IMGUI_API bool ButtonExConcave( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags );
 	IMGUI_API bool ButtonExWithHole( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags );
 
+	IMGUI_API bool ImageButtonExCircle( const char* label, ImTextureID tex, float radius, ImGuiButtonFlags flags, ImU32 col = IM_COL32_WHITE, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
+	IMGUI_API bool ImageButtonExCapsuleH( const char* label, ImTextureID tex, float length, float thickness, ImGuiButtonFlags flags, ImU32 col = IM_COL32_WHITE, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
+	IMGUI_API bool ImageButtonExCapsuleV( const char* label, ImTextureID tex, float length, float thickness, ImGuiButtonFlags flags, ImU32 col = IM_COL32_WHITE, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
+	IMGUI_API bool ImageButtonExConvex( const char* label, ImTextureID tex, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImGuiButtonFlags flags, ImU32 col = IM_COL32_WHITE, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
+	IMGUI_API bool ImageButtonExConcave( const char* label, ImTextureID tex, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags, ImU32 col = IM_COL32_WHITE, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
+
 	IMGUI_API bool HueSelector( char const* label, float hueHeight, float cursorHeight, float* hueCenter, float* hueWidth, float* featherLeft, float* featherRight, int division = 32, float alpha = 1.0f, float hideHueAlpha = 0.75f, float offset = 0.0f );
 	IMGUI_API bool SliderNScalar( char const* label, ImGuiDataType data_type, void* ordered_value, int value_count, void* p_min, void* p_max, float cursor_width, bool show_hover_by_region );
-	IMGUI_API bool SliderNFloat( char const* label, ImGuiDataType data_type, float* ordered_value, int value_count, float v_min, float v_max, float cursor_width, bool show_hover_by_region );
-	IMGUI_API bool SliderNInt( char const* label, ImGuiDataType data_type, int* ordered_value, int value_count, int v_min, int v_max, float cursor_width, bool show_hover_by_region );
+	IMGUI_API bool SliderNFloat( char const* label, float* ordered_value, int value_count, float v_min, float v_max, float cursor_width, bool show_hover_by_region );
+	IMGUI_API bool SliderNInt( char const* label, int* ordered_value, int value_count, int v_min, int v_max, float cursor_width, bool show_hover_by_region );
 	// TODO: Add bool flipY
 	IMGUI_API bool Slider2DScalar( char const* pLabel, ImGuiDataType data_type, void* pValueX, void* pValueY, void* p_minX, void* p_maxX, void* p_minY, void* p_maxY );
 	IMGUI_API bool Slider2DFloat( char const* pLabel, float* pValueX, float* pValueY, float v_minX, float v_maxX, float v_minY, float v_maxY );

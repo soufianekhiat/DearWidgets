@@ -2,4 +2,5 @@
 
 namespace ImWidgets {
 	void	ShowDemo();
+	void	ShowSamples();
 }
