@@ -277,14 +277,14 @@ A version for Slider2DScaler is available for (Im{S|U}{8,16,32,64}, Float and Do
 bool Slider2DScalar( char const* pLabel, ImGuiDataType data_type, void* pValueX, void* pValueY, void* p_minX, void* p_maxX, void* p_minY, void* p_maxY );
 bool Slider2DFloat( char const* pLabel, float* pValueX, float* pValueY, float v_minX, float v_maxX, float v_minY, float v_maxY );
 ```
-<img src="https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/Slider2DFloat.gif" alt="Slider2DFloat"/>
+<img src="https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/Slider2DFloat.gif" alt="Slider2DFloat" width="512px"/>
 
 * Slider 2D Int
 
 ```cpp
 bool Slider2DInt( char const* pLabel, int* pValueX, void* pValueY, int v_minX, int v_maxX, int v_minY, int v_maxY );
 ```
-<img src="https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/Slider2DInt.gif" alt="Slider2DInt"/>
+<img src="https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/Slider2DInt.gif" alt="Slider2DInt" width="512px"/>
 
 * SliderN
 ```cpp

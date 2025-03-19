@@ -209,11 +209,7 @@ int main()
 		return 0;
 	}
 	
-	//ImWidgetsFeatures features	= ImWidgetsFeatures_Markers
-	//							| ImWidgetsFeatures_ThickLines;
-	//ImWidgets::SetFeatures( features );
 	ImWidgets::AddFeatures( ImWidgetsFeatures_Markers );
-	ImWidgets::AddFeatures( ImWidgetsFeatures_ThickLines );
 	ImWidgetsContext* ctx = ImWidgets::CreateContext();
 
 	//ImGui::GetStyle().ScaleAllSizes();
@@ -311,10 +307,33 @@ namespace ImWidgets {
 
 	void ShowSamples()
 	{
+		if ( ImGui::Begin( "Tiles" ) )
+		{
+			ImVec2 size = ImGui::GetContentRegionAvail();
+			ImWidgets::ImageButtonExCapsuleV( "A",
+											  clock_img,
+											  size.x, size.y * 0.5f,
+											  ImGuiButtonFlags_None,
+											  IM_COL32_WHITE );
+			ImGui::SameLine();
+			ImWidgets::ImageButtonExCapsuleV( "B",
+											  clock_img,
+											  size.x, size.y * 0.5f,
+											  ImGuiButtonFlags_None,
+											  IM_COL32_WHITE );
+			ImGui::SameLine();
+			ImWidgets::ImageButtonExCapsuleV( "C",
+											  clock_img,
+											  size.x, size.y * 0.5f,
+											  ImGuiButtonFlags_None,
+											  IM_COL32_WHITE );
+		}
+		ImGui::End();
+
 		static const float _6_2 = 6.0f / 2.0f;
 		ImGui::SetNextWindowSizeConstraints( ImVec2( 0, 0 ), ImVec2( FLT_MAX, FLT_MAX ), AspectRatio_6_2, ( void* )&_6_2 );
 
-		if ( ImGui::Begin( "Shop 00" ) )
+		if ( ImGui::Begin( "Shop 00", 0, ImGuiWindowFlags_NoTitleBar ) )
 		{
 			ImVec2 size = ImGui::GetContentRegionAvail();
 			ImGui::BeginChild( "Left", ImVec2( size.x * 2.0f / 6.0f, 0.0f ) );
@@ -391,7 +410,7 @@ namespace ImWidgets {
 		ImGui::SetNextWindowBgAlpha( 0.75f );
 		ImGui::PushStyleVar( ImGuiStyleVar_WindowRounding, 16 );
 		ImGui::Begin( "Dear Widgets", NULL, ImGuiWindowFlags_NoTitleBar );
-		ImWidgets::SetCurrentWindowBackgroundImage( background, background_size, false );
+		ImWidgets::SetCurrentWindowBackgroundImage( background, background_size, false, IM_COL32(255, 255, 255, 128) );
 
 		if ( ImGui::CollapsingHeader( "Draw" ) )
 		{
@@ -542,16 +561,6 @@ namespace ImWidgets {
 					pos + ImVec2( size * 0.72f, size * 0.25f ),
 					pos + ImVec2( size * 0.72f, size * 0.75f )
 				};
-
-				DrawThickLine( pDrawList,
-							   pts, 3,
-							   line_width,
-							   color_col,
-							   antialiasing,
-							   ImWidgetsCap_Round,
-							   ImWidgetsCap_Round,
-							   ImWidgetsJoin_Round,
-							   mitter_limit );
 
 				//pDrawList->AddLine( pts[ 0 ], pts[ 1 ], color_col, line_width );
 

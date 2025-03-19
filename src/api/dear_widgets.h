@@ -51,12 +51,6 @@
 #define nullptr NULL
 #endif
 
-#ifndef DEAR_WIDGETS_DEFAULT_THICKLINES_BUFFER_GROWTH
-static int gs_ImWidgetsDefaultThickLinesBufferGrowth = 4096;
-#else
-static int gs_ImWidgetsDefaultThickLinesBufferGrowth = DEAR_WIDGETS_DEFAULT_THICKLINES_BUFFER_GROWTH;
-#endif
-
 struct ImWidgetsMarkerBuffer
 {
 	ImVec4	fg_color;
@@ -76,7 +70,6 @@ enum ImWidgetsFeatures_
 {
 	ImWidgetsFeatures_None,
 	ImWidgetsFeatures_Markers,
-	ImWidgetsFeatures_ThickLines,
 
 	ImWidgetsFeatures_COUNT
 };
@@ -175,12 +168,6 @@ struct ImWidgetsContext
 	ImWidgetsFeatures				features;
 
 	ImDrawShader					markerShader;
-
-	ImDrawShader					thickLinesShader;
-	ImVector<ImDrawIdx>				thickLinesCPUIndexBuffer;
-	ImVector<ImWidgetsVertexLine>	thickLinesCPUVertexBuffer;
-	ImVertexBuffer*					thickLinesGPUVertexBuffer;
-	ImIndexBuffer*					thickLinesGPUIndexBuffer;
 };
 
 enum ImWidgetsStyleColor
@@ -583,6 +570,17 @@ namespace ImWidgets{
 	}
 
 	inline
+	int LoadShaderFile( size_t* file_data_size, char** file_data, char const* filename )
+	{
+		*file_data_size = 0;
+		*file_data = ( char* )ImFileLoadToMemory( filename, "rb", file_data_size );
+		if ( !*file_data )
+			return 0;
+
+		return 1;
+	}
+
+	inline
 	float ImDot( ImVec4 const& a, ImVec4 const& b )
 	{
 		return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
@@ -894,6 +892,8 @@ namespace ImWidgets{
 										  ImVec2 uv_offset = ImVec2( 0.0f, 0.0f ), ImVec2 uv_scale = ImVec2( 1.0f, 1.0f ) );
 
 #ifdef IM_SUPPORT_CUSTOM_SHADER
+	IMGUI_API void CreateInternalShader( ImDrawShader* shaders_out, char const* shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer );
+
 	IMGUI_API void DrawMarker( ImDrawList* pDrawList, ImVec2 start, ImVec2 size,
 							   ImU32 fg_color,
 							   ImU32 bg_color,
@@ -903,15 +903,6 @@ namespace ImWidgets{
 							   float antialiasing,
 							   ImWidgetsMarker marker,
 							   ImWidgetsDrawType draw_type );
-	IMGUI_API void DrawThickLine( ImDrawList* pDrawList,
-								  ImVec2* pts, int pts_count,
-								  float thickness,
-								  ImU32 col,
-								  float antialiasing,
-								  ImWidgetsCap start_cap,
-								  ImWidgetsCap end_cap,
-								  ImWidgetsJoin join,
-								  float mitter_limit );
 #endif
 
 	// TODO: find a clean way expose the style of the draws:

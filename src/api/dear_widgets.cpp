@@ -2771,16 +2771,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	void CreateMarkersShaders( ImWidgetsContext* ctx )
 	{
-		char const* sParam =
-			"float4	fg_color;\n"
-			"float4	bg_color;\n"
-			"float2	rotation;\n"
-			"float	linewidth;\n"
-			"float	size;\n"
-			"float	type;\n"
-			"float	antialiasing;\n"
-			"float	draw_type;\n"
-			"float	pad0;\n";
 		ImWidgetsMarkerBuffer markerParams;
 		markerParams.fg_color = ImVec4( 1.0f, 0.0f, 0.0f, 1.0f );
 		markerParams.bg_color = ImVec4( 0.0f, 1.0f, 0.0f, 1.0f );
@@ -2792,408 +2782,34 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		markerParams.draw_type = 0.0f;
 		markerParams.pad0 = 0.0f;
 
-		char const* sHelpers =
-	"#define PI 3.14159265358979323846264f\n\
-	#define SQRT_2 1.4142135623730951f\n\
-	\n\
-	// --- disc\n\
-	float disc( float2 P, float size )\n\
-	{\n\
-		return length( P ) - size * 0.5f;\n\
-	}\n\
-	\n\
-	// --- square\n\
-	float square( float2 P, float size )\n\
-	{\n\
-		return max( abs( P.x ), abs( P.y ) ) - size / ( 2.0f * SQRT_2 );\n\
-	}\n\
-	\n\
-	// --- triangle2\n\
-	float triangle2( float2 P, float size )\n\
-	{\n\
-		float x = SQRT_2 / 2.0f * ( P.x - P.y );\n\
-		float y = SQRT_2 / 2.0f * ( P.x + P.y );\n\
-		float r1 = max( abs( x ), abs( y ) ) - size / ( 2.0f * SQRT_2 );\n\
-		float r2 = P.y;\n\
-		return max( r1, r2 );\n\
-	}\n\
-	\n\
-	// --- diamond\n\
-	float diamond( float2 P, float size )\n\
-	{\n\
-		float x = SQRT_2 / 2.0f * ( P.x - P.y );\n\
-		float y = SQRT_2 / 2.0f * ( P.x + P.y );\n\
-		return max( abs( x ), abs( y ) ) - size / ( 2.0f * SQRT_2 );\n\
-	}\n\
-	\n\
-	// --- heart\n\
-	float heart( float2 P, float size )\n\
-	{\n\
-		float x = SQRT_2 / 2.0f * ( P.x - P.y );\n\
-		float y = SQRT_2 / 2.0f * ( P.x + P.y );\n\
-		float r1 = max( abs( x ), abs( y ) ) - size / 3.5f;\n\
-		float r2 = length( P - SQRT_2 / 2.0f * float2( +1.0f, -1.0f ) * size / 3.5f ) - size / 3.5f;\n\
-		float r3 = length( P - SQRT_2 / 2.0f * float2( -1.0f, -1.0f ) * size / 3.5f ) - size / 3.5f;\n\
-		return min( min( r1, r2 ), r3 );\n\
-	}\n\
-	\n\
-	// --- spade\n\
-	float spade( float2 P, float size )\n\
-	{\n\
-		// Reversed heart (diamond + 2 circles)\n\
-		float s = size * 0.85f / 3.5f;\n\
-		float x = SQRT_2 / 2.0f * ( P.x + P.y ) + 0.4f * s;\n\
-		float y = SQRT_2 / 2.0f * ( P.x - P.y ) - 0.4f * s;\n\
-		float r1 = max( abs( x ), abs( y ) ) - s;\n\
-		float r2 = length( P - SQRT_2 / 2.0f * float2( +1.0f, +0.2f ) * s ) - s;\n\
-		float r3 = length( P - SQRT_2 / 2.0f * float2( -1.0f, +0.2f ) * s ) - s;\n\
-		float r4 = min( min( r1, r2 ), r3 );\n\
-	\n\
-		// Root (2 circles and 2 planes)\n\
-		float2 c1 = float2( +0.65f, 0.125f );\n\
-		float2 c2 = float2( -0.65f, 0.125f );\n\
-		float r5 = length( P - c1 * size ) - size / 1.6f;\n\
-		float r6 = length( P - c2 * size ) - size / 1.6f;\n\
-		float r7 = P.y - 0.5f * size;\n\
-		float r8 = 0.1f * size - P.y;\n\
-		float r9 = max( -min( r5, r6 ), max( r7, r8 ) );\n\
-	\n\
-		return min( r4, r9 );\n\
-	}\n\
-	\n\
-	// --- club\n\
-	float club( float2 P, float size )\n\
-	{\n\
-		// clover (3 discs)\n\
-		float t1 = -PI / 2.0f;\n\
-		float2  c1 = 0.225f * float2( cos( t1 ), sin( t1 ) );\n\
-		float t2 = t1 + 2.0f * PI / 3.0;\n\
-		float2  c2 = 0.225f * float2( cos( t2 ), sin( t2 ) );\n\
-		float t3 = t2 + 2.0f * PI / 3.0;\n\
-		float2  c3 = 0.225f * float2( cos( t3 ), sin( t3 ) );\n\
-		float r1 = length( P - c1 * size ) - size / 4.25f;\n\
-		float r2 = length( P - c2 * size ) - size / 4.25f;\n\
-		float r3 = length( P - c3 * size ) - size / 4.25f;\n\
-		float r4 = min( min( r1, r2 ), r3 );\n\
-	\n\
-		// Root (2 circles and 2 planes)\n\
-		float2 c4 = float2( +0.65f, 0.125f );\n\
-		float2 c5 = float2( -0.65f, 0.125f );\n\
-		float r5 = length( P - c4 * size ) - size / 1.6f;\n\
-		float r6 = length( P - c5 * size ) - size / 1.6f;\n\
-		float r7 = P.y - 0.5f * size;\n\
-		float r8 = 0.2f * size - P.y;\n\
-		float r9 = max( -min( r5, r6 ), max( r7, r8 ) );\n\
-	\n\
-		return min( r4, r9 );\n\
-	}\n\
-	\n\
-	// --- chevron\n\
-	float chevron( float2 P, float size )\n\
-	{\n\
-		float x = 1.0f / SQRT_2 * ( P.x - P.y );\n\
-		float y = 1.0f / SQRT_2 * ( P.x + P.y );\n\
-		float r1 = max( abs( x ), abs( y ) ) - size / 3.0f;\n\
-		float r2 = max( abs( x - size / 3 ), abs( y - size / 3.0f ) ) - size / 3.0f;\n\
-		return max( r1, -r2 );\n\
-	}\n\
-	\n\
-	// --- clover\n\
-	float clover( float2 P, float size )\n\
-	{\n\
-		float t1 = -PI / 2.0f; \n\
-		float2  c1 = 0.25f * float2( cos( t1 ), sin( t1 ) );\n\
-		float t2 = t1 + 2.0f * PI / 3.0f;\n\
-		float2  c2 = 0.25f * float2( cos( t2 ), sin( t2 ) );\n\
-		float t3 = t2 + 2.0f * PI / 3.0f;\n\
-		float2  c3 = 0.25f * float2( cos( t3 ), sin( t3 ) );\n\
-	\n\
-		float r1 = length( P - c1 * size ) - size / 3.5f;\n\
-		float r2 = length( P - c2 * size ) - size / 3.5f;\n\
-		float r3 = length( P - c3 * size ) - size / 3.5f;\n\
-		return min( min( r1, r2 ), r3 );\n\
-	}\n\
-	\n\
-	// --- ring\n\
-	float ring( float2 P, float size )\n\
-	{\n\
-		float r1 = length( P ) - size / 2.0f;\n\
-		float r2 = length( P ) - size / 4.0f;\n\
-		return max( r1, -r2 );\n\
-	}\n\
-	\n\
-	// --- tag\n\
-	float tag( float2 P, float size )\n\
-	{\n\
-		float r1 = max( abs( P.x ) - size / 2.0f, abs( P.y ) - size / 6.0f );\n\
-		float r2 = abs( P.x - size / 1.5f ) + abs( P.y ) - size;\n\
-		return max( r1, .75f * r2 );\n\
-	}\n\
-	\n\
-	// --- cross\n\
-	float cross( float2 P, float size )\n\
-	{\n\
-		float x = SQRT_2 / 2.0f * ( P.x - P.y );\n\
-		float y = SQRT_2 / 2.0f * ( P.x + P.y );\n\
-		float r1 = max( abs( x - size / 3.0f ), abs( x + size / 3.0f ) );\n\
-		float r2 = max( abs( y - size / 3.0f ), abs( y + size / 3.0f ) );\n\
-		float r3 = max( abs( x ), abs( y ) );\n\
-		float r = max( min( r1, r2 ), r3 );\n\
-		r -= size / 2.0f;\n\
-		return r;\n\
-	}\n\
-	\n\
-	// --- asterisk\n\
-	float asterisk( float2 P, float size )\n\
-	{\n\
-		float x = SQRT_2 / 2.0f * ( P.x - P.y );\n\
-		float y = SQRT_2 / 2.0f * ( P.x + P.y );\n\
-		float r1 = max( abs( x ) - size / 2.0f, abs( y ) - size / 10.0f );\n\
-		float r2 = max( abs( y ) - size / 2.0f, abs( x ) - size / 10.0f );\n\
-		float r3 = max( abs( P.x ) - size / 2.0f, abs( P.y ) - size / 10.0f );\n\
-		float r4 = max( abs( P.y ) - size / 2.0f, abs( P.x ) - size / 10.0f );\n\
-		return min( min( r1, r2 ), min( r3, r4 ) );\n\
-	}\n\
-	\n\
-	// --- infinity\n\
-	float infinity( float2 P, float size )\n\
-	{\n\
-		float2 c1 = float2( +0.2125f, 0.00f );\n\
-		float2 c2 = float2( -0.2125f, 0.00f );\n\
-		float r1 = length( P - c1 * size ) - size / 3.5f;\n\
-		float r2 = length( P - c1 * size ) - size / 7.5f;\n\
-		float r3 = length( P - c2 * size ) - size / 3.5f;\n\
-		float r4 = length( P - c2 * size ) - size / 7.5f;\n\
-		return min( max( r1, -r2 ), max( r3, -r4 ) );\n\
-	}\n\
-	\n\
-	// --- pin\n\
-	float pin( float2 P, float size )\n\
-	{\n\
-		float2 c1 = float2( 0.0f, -0.15f ) * size;\n\
-		float r1 = length( P - c1 ) - size / 2.675f;\n\
-		float2 c2 = float2( +1.49f, -0.80f ) * size;\n\
-		float r2 = length( P - c2 ) - 2.0f * size;\n\
-		float2 c3 = float2( -1.49f, -0.80f ) * size;\n\
-		float r3 = length( P - c3 ) - 2.0f * size;\n\
-		float r4 = length( P - c1 ) - size / 5.0f;\n\
-		return max( min( r1, max( max( r2, r3 ), -P.y ) ), -r4 );\n\
-	}\n\
-	\n\
-	// --- arrow\n\
-	float arrow( float2 P, float size )\n\
-	{\n\
-		float r1 = abs( P.x ) + abs( P.y ) - size / 2.0f;\n\
-		float r2 = max( abs( P.x + size / 2.0f ), abs( P.y ) ) - size / 2.0f;\n\
-		float r3 = max( abs( P.x - size / 6.0f ) - size / 4.0f, abs( P.y ) - size / 4.0f );\n\
-		return min( r3, max( .75f * r1, r2 ) );\n\
-	}\n\
-	\n\
-	// --- ellipse\n\
-	// Created by Inigo Quilez - iq/2013\n\
-	// License Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License.\n\
-	float ellipse( float2 P, float size )\n\
-	{\n\
-		float2 ab = float2( size / 3.0f, size / 2.0f );\n\
-		float2 p = abs( P );\n\
-		if ( p.x > p.y )\n\
-		{\n\
-			p = p.yx;\n\
-			ab = ab.yx;\n\
-		}\n\
-		float l = ab.y * ab.y - ab.x * ab.x;\n\
-		float m = ab.x * p.x / l;\n\
-		float n = ab.y * p.y / l;\n\
-		float m2 = m * m;\n\
-		float n2 = n * n;\n\
-	\n\
-		float c = ( m2 + n2 - 1.0f ) / 3.0f;\n\
-		float c3 = c * c * c;\n\
-	\n\
-		float q = c3 + m2 * n2 * 2.0f;\n\
-		float d = c3 + m2 * n2;\n\
-		float g = m + m * n2;\n\
-	\n\
-		float co;\n\
-	\n\
-		if ( d < 0.0f )\n\
-		{\n\
-			float p = acos( q / c3 ) / 3.0f;\n\
-			float s = cos( p );\n\
-			float t = sin( p ) * sqrt( 3.0f );\n\
-			float rx = sqrt( -c * ( s + t + 2.0f ) + m2 );\n\
-			float ry = sqrt( -c * ( s - t + 2.0f ) + m2 );\n\
-			co = ( ry + sign( l ) * rx + abs( g ) / ( rx * ry ) - m ) / 2.0f;\n\
-		}\n\
-		else\n\
-		{\n\
-			float h = 2.0f * m * n * sqrt( d );\n\
-			float s = sign( q + h ) * pow( abs( q + h ), 1.0f / 3.0f );\n\
-			float u = sign( q - h ) * pow( abs( q - h ), 1.0f / 3.0f );\n\
-			float rx = -s - u - c * 4.0f + 2.0f * m2;\n\
-			float ry = ( s - u ) * sqrt( 3.0f );\n\
-			float rm = sqrt( rx * rx + ry * ry );\n\
-			float p = ry / sqrt( rm - rx );\n\
-			co = ( p + 2.0f * g / rm - m ) / 2.0f;\n\
-		}\n\
-	\n\
-		float si = sqrt( 1.0f - co * co );\n\
-		float2 closestPoint = float2( ab.x * co, ab.y * si );\n\
-		return length( closestPoint - p ) * sign( p.y - closestPoint.y );\n\
-	}\n\
-	\n\
-	float ellipse_fast( float2 P, float size )\n\
-	{\n\
-		float a = 1.0f;\n\
-		float b = 3.0f;\n\
-		float r = 0.9f;\n\
-		float f = length( P*float2(a,b) );\n\
-		f = length( P*float2(a,b) );\n\
-		f = f*(f-r)/length( P*float2(a*a,b*b) );\n\
-		return f;\n\
-	}\n\
-	\n\
-	float4 stroke(float distance, float linewidth, float antialias, float4 stroke)\n\
-	{\n\
-		float4 frag_color;\n\
-		float t = linewidth / 2.0f - antialias;\n\
-		float signed_distance = distance;\n\
-		float border_distance = abs( signed_distance ) - t;\n\
-		float alpha = border_distance / antialias;\n\
-		alpha = exp( -alpha * alpha );\n\
-	\n\
-		if ( border_distance < 0.0f )\n\
-			frag_color = stroke;\n\
-		else\n\
-			frag_color = float4( stroke.rgb, stroke.a * alpha );\n\
-	\n\
-		return frag_color;\n\
-	}\n\
-	\n\
-	float4 filled(float distance, float linewidth, float antialias, float4 fill)\n\
-	{\n\
-		float4 frag_color;\n\
-		float t = linewidth / 2.0f - antialias;\n\
-		float signed_distance = distance;\n\
-		float border_distance = abs( signed_distance ) - t;\n\
-		float alpha = border_distance / antialias;\n\
-		alpha = exp( -alpha * alpha );\n\
-	\n\
-		if ( border_distance < 0.0f )\n\
-			frag_color = fill;\n\
-		else if ( signed_distance < 0.0f )\n\
-			frag_color = fill;\n\
-		else\n\
-			frag_color = float4( fill.rgb, alpha * fill.a );\n\
-	\n\
-		return frag_color;\n\
-	}\n\
-	\n\
-	float4 outline( float distance, float linewidth, float antialias, float4 stroke, float4 fill )\n\
-	{\n\
-		float4 frag_color;\n\
-		float t = linewidth / 2.0f - antialias;\n\
-		float signed_distance = distance;\n\
-		float border_distance = abs( signed_distance ) - t;\n\
-		float alpha = border_distance / antialias;\n\
-		alpha = exp( -alpha * alpha );\n\
-	\n\
-		if ( border_distance < 0.0f )\n\
-			frag_color = stroke;\n\
-		else if ( signed_distance < 0.0f )\n\
-			frag_color = lerp( fill, stroke, sqrt( alpha ) );\n\
-		else\n\
-			frag_color = float4( stroke.rgb, stroke.a * alpha );\n\
-	\n\
-		return frag_color;\n\
-	}\n";
+		CreateInternalShader( &ctx->markerShader, "markers", 0, NULL, sizeof( ImWidgetsMarkerBuffer ), &markerParams );
 
-		char const* sSource =
-			"\n\
-	float2 P = uv - 0.5f;\n\
-	P.y = -P.y;\n\
-	P = float2( rotation.x * P.x - rotation.y * P.y,\n\
-	rotation.y * P.x + rotation.x * P.y );\n\
-	\n\
-	float antialias = antialiasing;\n\
-	float point_size = SQRT_2 * size + 2.0f * ( linewidth + 1.5f * antialias );\n\
-	float distance;\n\
-	if ( type == 0.0f ) // Disc\n\
-		distance = disc( P * point_size, size );\n\
-	else if ( type == 1.0f ) // Square\n\
-		distance = square( P * point_size, size );\n\
-	else if (type ==  2.0f) // Triangle\n\
-		distance = triangle2( P * point_size, size );\n\
-	else if (type ==  3.0f) // Diamond\n\
-		distance = diamond( P * point_size, size );\n\
-	else if (type ==  4.0f) // Heart\n\
-		distance = heart( P * point_size, size );\n\
-	else if (type ==  5.0f) // Spade\n\
-		distance = spade( P * point_size, size );\n\
-	else if (type ==  6.0f) // Club\n\
-		distance = club( P * point_size, size );\n\
-	else if (type ==  7.0f) // Chevron\n\
-		distance = chevron( P * point_size, size );\n\
-	else if (type ==  8.0f) // Clover\n\
-		distance = clover( P * point_size, size );\n\
-	else if (type ==  9.0f) // Ring\n\
-		distance = ring( P * point_size, size );\n\
-	else if (type == 10.0f) // Tag\n\
-		distance = tag( P * point_size, size );\n\
-	else if (type == 11.0f) // Cross\n\
-		distance = cross( P * point_size, size );\n\
-	else if (type == 12.0f) // Asterisk\n\
-		distance = asterisk( P * point_size, size );\n\
-	else if (type == 13.0f) // Infinity\n\
-		distance = infinity( P * point_size, size );\n\
-	else if (type == 14.0f) // Pin\n\
-		distance = pin( P * point_size, size );\n\
-	else if (type == 15.0f) // Arrow\n\
-		distance = arrow( P * point_size, size );\n\
-	else if (type == 16.0f) // Ellipse\n\
-		distance = ellipse( P * point_size, size );\n\
-	else if (type == 17.0f) // EllipseApprox\n\
-		distance = ellipse_fast( P * point_size, size );\n\
-	\n\
-	if ( draw_type == 0.0f )\n\
-		col_out = filled( distance, linewidth, antialias, fg_color ); \n\
-	else if ( draw_type == 1.0f )\n\
-		col_out = stroke(distance, linewidth, antialias, fg_color);\n\
-	else if ( draw_type == 2.0f )\n\
-		col_out = outline( distance, linewidth, antialias, fg_color, bg_color );\n\
-	else if ( draw_type == 3.0f )\n\
-		col_out = float4( pow( abs( distance ), 1.0f / 2.2f ).xxx, 1.0f );\n\
-	else if ( draw_type == 4.0f )\n\
-		col_out = lerp(fg_color, bg_color, distance > 0.0f);\n\
-	\n";
-
-		//ctx->markerShader = ImPlatform::CreateShader(
-		//	sSource,
-		//	sParam,
-		//	sHelpers,
-		//	0, NULL,
-		//	sizeof( ImWidgetsMarkerBuffer ), &markerParams,
-		//	false );
-		char* vs_source;
-		char* ps_source;
-		ImPlatform::CreateDefaultPixelShaderSource( &vs_source, &ps_source, sHelpers, sParam, sSource, false );
-		ctx->markerShader = ImPlatform::CreateShader( vs_source, ps_source, 0, NULL, sizeof( ImWidgetsMarkerBuffer ), &markerParams );
-		IM_FREE( vs_source );
-		IM_FREE( ps_source );
-	}
-
-	void CreateThickLineBuffers()
-	{
-		ImPlatform::CreateVertexBuffer( gs_pContext->thickLinesGPUVertexBuffer,
-										sizeof( ImWidgetsVertexLine ),
-										gs_ImWidgetsDefaultThickLinesBufferGrowth );
-		ImPlatform::CreateIndexBuffer( gs_pContext->thickLinesGPUIndexBuffer,
-									   gs_ImWidgetsDefaultThickLinesBufferGrowth );
-	}
-
-	void CreateThickLineShaders( ImWidgetsContext* ctx )
-	{
-
+//		char* vs_source;
+//		char* ps_source;
+//
+//#define FILENAME_BUF 512
+//		char filename_vs[ FILENAME_BUF ];
+//		char filename_ps[ FILENAME_BUF ];
+//
+//#if IM_CURRENT_GFX == IM_GFX_OPENGL3 || IM_CURRENT_GFX == IM_GFX_VULKAN
+//		ImFormatString( filename_vs, FILENAME_BUF, "./shaders/%s/markers_vs.%s", "glsl", "glsl" );
+//		ImFormatString( filename_ps, FILENAME_BUF, "./shaders/%s/markers_ps.%s", "glsl", "glsl" );
+//#elif IM_CURRENT_GFX == IM_GFX_DIRECTX9 || IM_CURRENT_GFX == IM_GFX_DIRECTX10 || IM_CURRENT_GFX == IM_GFX_DIRECTX11 || IM_CURRENT_GFX == IM_GFX_DIRECTX12
+//		ImFormatString( filename_vs, FILENAME_BUF, "./shaders/%s/markers.%s", "hlsl_src", "hlsl" );
+//		ImFormatString( filename_ps, FILENAME_BUF, "./shaders/%s/markers.%s", "hlsl_src", "hlsl" );
+//#elif IM_CURRENT_GFX == IM_GFX_METAL
+//		ImFormatString( filename_vs, FILENAME_BUF, "./shaders/%s/markers_vs.%s", "msl", "msl" );
+//		ImFormatString( filename_ps, FILENAME_BUF, "./shaders/%s/markers_ps.%s", "msl", "msl" );
+//#endif
+//
+//		size_t file_data_size_vs;
+//		size_t file_data_size_ps;
+//		LoadShaderFile( &file_data_size_vs, &vs_source, filename_vs );
+//		LoadShaderFile( &file_data_size_ps, &ps_source, filename_ps );
+//
+//		ctx->markerShader = ImPlatform::CreateShader( vs_source, ps_source, 0, NULL, sizeof( ImWidgetsMarkerBuffer ), &markerParams );
+//		IM_FREE( vs_source );
+//		IM_FREE( ps_source );
 	}
 
 	void SetFeatures( ImWidgetsFeatures features )
@@ -3214,8 +2830,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	ImWidgetsContext* CreateContext()
 	{
 		ImWidgetsContext* ctx = IM_NEW( ImWidgetsContext );
-		if ( GlobalData.features & ImWidgetsFeatures_Markers ||
-			 GlobalData.features & ImWidgetsFeatures_ThickLines )
+		if ( GlobalData.features & ImWidgetsFeatures_Markers )
 			ImPlatform::SetFeatures( ImPlatformFeatures_CustomShader );
 
 		if ( gs_pContext == NULL )
@@ -3267,16 +2882,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		OwnTexture( img_black );
 		OwnTexture( img_white );
 
-		ctx->thickLinesGPUVertexBuffer = NULL;
-		ctx->thickLinesGPUIndexBuffer = NULL;
-
-		if ( GlobalData.features & ImWidgetsFeatures_ThickLines )
-			CreateThickLineBuffers();
-
 		if ( GlobalData.features & ImWidgetsFeatures_Markers )
 			CreateMarkersShaders( ctx );
-		if ( GlobalData.features & ImWidgetsFeatures_ThickLines )
-			CreateThickLineShaders( ctx );
 
 		return ctx;
 	}
@@ -4092,6 +3699,54 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 #ifdef IM_SUPPORT_CUSTOM_SHADER
+	void CreateInternalShader( ImDrawShader *shaders_out, char const *shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer )
+	{
+#ifndef IM_SUPPORT_CUSTOM_SHADER
+		IM_ASSERT( false && "Custom Shader not available on this platform" );
+
+		shaders_out = NULL;
+
+		return;
+#endif
+
+		IM_ASSERT( shaders_out != NULL );
+
+#define FILENAME_BUF 128
+		char filename_ps[ FILENAME_BUF ];
+		char filename_vs[ FILENAME_BUF ];
+
+#ifdef IM_GFX_HLSL
+		ImFormatString( filename_vs, FILENAME_BUF, "./shaders/%s/%s.%s", "hlsl_src", shader_name, "hlsl" );
+		ImFormatString( filename_ps, FILENAME_BUF, "./shaders/%s/%s.%s", "hlsl_src", shader_name, "hlsl" );
+#elif defined( IM_GFX_GLSL )
+		ImFormatString( filename_vs, FILENAME_BUF, "./shaders/%s/%s_vs.%s", "glsl", shader_name, "glsl" );
+		ImFormatString( filename_ps, FILENAME_BUF, "./shaders/%s/%s_ps.%s", "glsl", shader_name, "glsl" );
+#elif defined( IM_GFX_MSL )
+		ImFormatString( filename_vs, FILENAME_BUF, "./shaders/%s/%s_vs.%s", "msl", shader_name, "msl" );
+		ImFormatString( filename_ps, FILENAME_BUF, "./shaders/%s/%s_ps.%s", "msl", shader_name, "msl" );
+#elif defined( IM_GFX_WGPU )
+		ImFormatString( filename_vs, FILENAME_BUF, "./shaders/%s/%s_vs.%s", "wgpu", shader_name, "wgpu" );
+		ImFormatString( filename_ps, FILENAME_BUF, "./shaders/%s/%s_ps.%s", "wgpu", shader_name, "wgpu" );
+#endif
+
+		char *vs_source;
+		char *ps_source;
+		size_t file_data_size_vs;
+		size_t file_data_size_ps;
+		LoadShaderFile( &file_data_size_vs, &vs_source, filename_vs );
+		LoadShaderFile( &file_data_size_ps, &ps_source, filename_ps );
+
+		IM_ASSERT( vs_source && ps_source );
+		IM_ASSERT( file_data_size_vs != 0 && file_data_size_ps != 0 );
+
+		ImDrawShader shader = ImPlatform::CreateShader( vs_source, ps_source, sizeof_vs_const_buffer, vs_const_buffer, sizeof_ps_const_buffer, ps_const_buffer );
+
+		memcpy( shaders_out, &shader, sizeof( ImDrawShader ) );
+
+		IM_FREE( vs_source );
+		IM_FREE( ps_source );
+	}
+
 	void DrawMarker( ImDrawList* pDrawList, ImVec2 start, ImVec2 size,
 					 ImU32 fg_color,
 					 ImU32 bg_color,
@@ -4122,565 +3777,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImRect bb( start, start + size );
 		pDrawList->AddImageQuad( (ImTextureID)gs_pContext->whiteImg, bb.GetBL(), bb.GetBR(), bb.GetTR(), bb.GetTL(), ImVec2( 0, 0 ), ImVec2( 1, 0 ), ImVec2( 1, 1 ), ImVec2( 0, 1 ), IM_COL32( 255, 255, 255, 255 ) );
 		ImPlatform::EndCustomShader( pDrawList );
-	}
-
-	void BakeSolidLine( ImWidgetsShapeLine& shape,
-						ImVec2* vertices,
-						int vertices_count,
-						bool closed = false,
-						float epsilon = 1e-10f )
-	{
-#if 1
-		IM_ASSERT( PlatformData.features & ImWidgetsFeatures_ThickLines );
-
-		if ( vertices_count < 2 )
-			return;
-
-		int n = vertices_count;
-
-		ImVector<ImVec2> P;
-		P.resize( n );
-		memcpy( &P[ 0 ], &vertices->x, vertices_count * sizeof( ImVec2 ) );
-		//for ( int k = 0; k < vertices_count; ++k )
-		//{
-		//	P[ k ] = vertices[ k ];
-		//}
-
-		ImVec2 delta = P.front() - P.back();
-		float d = ImLength( delta );
-
-		if ( closed && d > epsilon )
-		{
-			P.push_back( P.front() );
-			++n;
-		}
-
-		//shape.vertices.resize( n );
-		ImVector<ImWidgetsVertexLine> V = shape.vertices;
-		V.resize( n );
-		for ( int k = 0; k < n; ++k )
-		{
-			V[ k ].pos = P[ k ];
-		}
-
-		ImVector<ImVec2> T;
-		ImVector<float> N;
-		T.resize( n - 1 );
-		N.resize( n - 1 );
-		for ( int k = 0; k < n - 1; ++k )
-		{
-			ImVec2 t = P[ k + 1 ] - P[ k ];
-			T[ k ] = t;
-			N[ k ] = ImLength( t );
-		}
-		P.clear();
-		for ( int k = 1; k < n; ++k )
-		{
-			V[ k ].tangent.x = T[ k - 1 ].x;
-			V[ k ].tangent.y = T[ k - 1 ].y;
-		}
-		if ( closed )
-		{
-			V.front().tangent.x = T.back().x;
-			V.front().tangent.y = T.back().y;
-		}
-		else
-		{
-			V.front().tangent.x = T.front().x;
-			V.front().tangent.y = T.front().y;
-		}
-		for ( int k = 0; k < n - 1; ++k )
-		{
-			V[ k ].tangent.z = T[ k ].x;
-			V[ k ].tangent.y = T[ k ].y;
-		}
-		if ( closed )
-		{
-			V.back().tangent.z = T.front().x;
-			V.back().tangent.w = T.front().y;
-		}
-		else
-		{
-			V.back().tangent.x = T.back().x;
-			V.back().tangent.y = T.back().y;
-		}
-		T.clear();
-
-		ImVector<ImVec2> T1;
-		ImVector<ImVec2> T2;
-		T1.resize( n );
-		T2.resize( n );
-		for ( int k = 0; k < n; ++k )
-		{
-			T1[ k ] = { V[ k ].tangent.x, V[ k ].tangent.y };
-			T2[ k ] = { V[ k ].tangent.z, V[ k ].tangent.w };
-		}
-		ImVector<float> A;
-		A.resize( n );
-		for ( int k = 0; k < n; ++k )
-		{
-			A[ k ] = ImAtan2( T1[ k ].x * T2[ k ].y - T1[ k ].y * T2[ k ].x,
-							  T1[ k ].x * T2[ k ].x + T1[ k ].y * T2[ k ].y );
-		}
-		T1.clear();
-		T2.clear();
-		for ( int k = 0; k < n - 1; ++k )
-		{
-			V[ k ].angle.x = A[ k ];
-			V[ k ].angle.y = A[ k + 1 ];
-		}
-		A.clear();
-		ImVector<float> L;
-		L.resize( n );
-		//L[ 0 ] = N[ 0 ];
-		L[ 0 ] = 0.0f;
-		for ( int k = 1; k < n - 1; ++k )
-		{
-			L[ k ] = L[ k - 1 ] + N[ k - 1 ];
-		}
-		for ( int k = 0; k < n - 1; ++k )
-		{
-			V[ k + 1 ].segment.x = L[ k ];
-			V[ k + 0 ].segment.y = L[ k ];
-		}
-		N.clear();
-		L.clear();
-
-		ImVector<ImWidgetsVertexLine> Vcopy;
-		Vcopy.reserve( 2 * n );
-		for ( int k = 1; k < n; ++k )
-		{
-			Vcopy.push_back( V[ k - 1 ] );
-			Vcopy.push_back( V[ k + 0 ] );
-		}
-		V.clear();
-
-		int sz = Vcopy.size();
-		for ( int k = 1; k < sz - 1; ++k )
-		{
-			Vcopy[ k ].segment = Vcopy[ k ].segment;
-			Vcopy[ k ].angle = Vcopy[ k ].angle;
-		}
-		for ( int k = 0; k < sz; k += 2 )
-		{
-			Vcopy[ k ].uv.x = -1.0f;
-			Vcopy[ k ].uv.y =  1.0f;
-		}
-		ImVector<ImWidgetsVertexLine> V2;// = Vcopy;
-
-		V2.reserve( 2 * V.size() );
-		for ( int k = 0; k < sz; ++k )
-		{
-			V2.push_back( Vcopy[ k ] );
-			V2.back().uv.x = -1.0f;
-			V2.push_back( Vcopy[ k ] );
-			V2.back().uv.x =  1.0f;
-		}
-		shape.vertices = V2;
-		V2.clear();
-		Vcopy.clear();
-
-		sz = ( n - 1 ) * ( 2 * 3 ) / 3;
-		shape.triangles.reserve( sz );
-		sz /= 2;
-		ImDrawIdx off = 0;
-		for ( ImDrawIdx k = 0; k < sz; ++k )
-		{
-			shape.triangles.push_back( { 0 + off, 1 + off, 2 + off } );
-			shape.triangles.push_back( { 1 + off, 2 + off, 3 + off } );
-			off += 4;
-		}
-#endif
-
-#if 0
-		if ( vertices_count < 2 )
-			return;
-
-		int n = vertices_count;
-
-		ImVector<ImVec2> P;
-		P.resize( n );
-
-		for ( int k = 0; k < n; ++k )
-			P[ k ] = vertices[ k ];
-
-		float dx = P[ 0 ].x - P[ n - 1 ].x;
-		float dy = P[ 0 ].y - P[ n - 1 ].y;
-		float d = ImSqrt( dx * dx + dy * dy );
-
-		// If closed, make sure first vertex = last vertex (+/- epsilon=1e-10)
-		if ( closed && d > epsilon )
-		{
-			P.push_back( P[ 0 ] );
-			n += 1;
-		}
-
-		ImVector<ImWidgetsVertexLine> V;
-		V.resize( n );
-		for ( int i = 0; i < n; ++i )
-		{
-			V[ i ].pos = P[ i ];
-		}
-
-		// Tangents & norms
-		ImVector<ImVec2> T;
-		ImVector<float> N;
-		T.resize( n - 1 );
-		N.resize( n - 1 );
-
-		for ( int i = 0; i < n - 1; ++i )
-		{
-			//T[ i ] = { P[ i + 1 ].x - P[ i ].x, P[ i + 1 ].y - P[ i ].y };
-			T[ i ] = P[ i + 1 ] - P[ i ];
-			N[ i ] = ImSqrt( T[ i ].x * T[ i ].x + T[ i ].y * T[ i ].y );
-		}
-
-		for ( int i = 1; i < n; ++i )
-		{
-			V[ i ].tangent = T[ i - 1 ];
-		}
-		if ( closed )
-			V[ 0 ].tangent = T[ n - 2 ];
-		else
-			V[ 0 ].tangent = T[ 0 ];
-
-		for ( int i = 0; i < n - 1; ++i )
-		{
-			V[ i ].tangent = T[ i ];
-		}
-		if ( closed )
-			V[ n - 1 ].tangent = T[ 0 ];
-		else
-			V[ n - 1 ].tangent = T[ n - 2 ];
-
-		// Angles
-		ImVector<float> A;
-		A.resize( n - 1 );
-		for ( int i = 0; i < n - 1; ++i )
-		{
-			ImVec2 T1 = V[ i ].tangent;
-			ImVec2 T2 = V[ i + 1 ].tangent;
-			A[ i ] = ImAtan2( T1.x * T2.y - T1.y * T2.x,
-							  T1.x * T2.x + T1.y * T2.y );
-		}
-
-		// Fill angles
-		for ( int i = 0; i < n - 1; ++i )
-		{
-			V[ i ].angle = { A[ i ], 0.0f }; // Store angle in x component for now
-			V[ i + 1 ].angle = { A[ i ], 0.0f }; // Store next angle in y component
-		}
-
-		// Cumulative Segment Lengths
-		ImVector<float> L;
-		L.resize( n );
-		L[ 0 ] = 0.0f; // Starting length
-		for ( size_t i = 1; i < n; ++i )
-		{
-			L[ i ] = L[ i - 1 ] + N[ i - 1 ]; // Cumulative length
-		}
-
-		// Fill the segment information
-		for ( size_t i = 0; i < n - 1; ++i )
-		{
-			V[ i ].segment = { L[ i ], L[ i + 1 ] }; // Segment length for this and next vertex
-		}
-
-		// Step 1: A -- B -- C  =>  A -- B, B' -- C
-		ImVector<ImWidgetsVertexLine> tempV;
-		for ( size_t i = 0; i < V.size(); ++i )
-		{
-			tempV.push_back( V[ i ] );
-			if ( i < n - 1 )
-			{
-				tempV.push_back( V[ i ] ); // Duplicate the vertex
-			}
-		}
-		V = tempV; // Replace original with duplicated version
-
-		// Step 2: A -- B, B' -- C  -> A0/A1 -- B0/B1, B'0/B'1 -- C0/C1
-		tempV.clear();
-		for ( int i = 0; i < V.size(); ++i )
-		{
-			tempV.push_back( V[ i ] );
-			tempV.push_back( V[ i ] ); // Duplicate again
-		}
-		V = std::move( tempV );
-
-		// Create index array using ImTriIdx
-		ImVector<ImWidgetsTriIdx> I;
-		for ( int i = 0; i < n - 1; ++i )
-		{
-			ImDrawIdx baseIndex = 4 * i;
-			I.push_back( { baseIndex, baseIndex + 1, baseIndex + 2 } );
-			I.push_back( { baseIndex + 1, baseIndex + 2, baseIndex + 3 } );
-		}
-
-		// Return the shape
-		//ImWidgetsShapeLine shape;
-		shape.vertices = V;
-		shape.triangles = I; // Note: This will need a proper conversion to ImTriIdx if necessary
-		//ImWidgets::ShapeLineSetBound( shape );
-#endif
-	}
-
-	//// Function to calculate distance between two points
-	//float distance( float x1, float y1, float x2, float y2 )
-	//{
-	//	float dx = x2 - x1;
-	//	float dy = y2 - y1;
-	//	return sqrt( dx * dx + dy * dy );
-	//}
-
-	//// Main baking function
-	//// Returns 0 on success, -1 on failure
-	//// Output parameters: vertices, indices, total_length
-	//int bake( float* input_vertices, int n_vertices, int closed,
-	//		  ImWidgetsVertexLine** output_vertices, unsigned int** output_indices,
-	//		  int* n_output_vertices, int* n_indices, float* total_length )
-	//{
-
-	//	// Initial checks
-	//	if ( !input_vertices || n_vertices < 2 ) return -1;
-
-	//	// Adjust n_vertices if closed and endpoints don't match
-	//	int n = n_vertices;
-	//	float* P = ( float* )malloc( 2 * ( n + 1 ) * sizeof( float ) );
-	//	if ( !P ) return -1;
-
-	//	// Copy input vertices
-	//	memcpy( P, input_vertices, 2 * n * sizeof( float ) );
-
-	//	// Check if we need to close the loop
-	//	if ( closed )
-	//	{
-	//		float dx = P[ 0 ] - P[ ( n - 1 ) * 2 ];
-	//		float dy = P[ 1 ] - P[ ( n - 1 ) * 2 + 1 ];
-	//		float d = sqrt( dx * dx + dy * dy );
-	//		if ( d > 1e-10 )
-	//		{
-	//			P[ n * 2 ] = P[ 0 ];
-	//			P[ n * 2 + 1 ] = P[ 1 ];
-	//			n++;
-	//		}
-	//	}
-
-	//	// Allocate initial vertex array
-	//	ImWidgetsVertexLine* V = ( ImWidgetsVertexLine* )calloc( n, sizeof( ImWidgetsVertexLine ) );
-	//	if ( !V )
-	//	{
-	//		free( P );
-	//		return -1;
-	//	}
-
-	//	// Copy positions
-	//	for ( int i = 0; i < n; i++ )
-	//	{
-	//		V[ i ].pos.x = P[ i * 2 ];
-	//		V[ i ].pos.y = P[ i * 2 + 1 ];
-	//	}
-
-	//	// Calculate tangents
-	//	float* T = ( float* )malloc( 2 * ( n - 1 ) * sizeof( float ) );
-	//	float* N = ( float* )malloc( ( n - 1 ) * sizeof( float ) );
-	//	if ( !T || !N )
-	//	{
-	//		free( P );
-	//		free( V );
-	//		free( T );
-	//		free( N );
-	//		return -1;
-	//	}
-
-	//	for ( int i = 0; i < n - 1; i++ )
-	//	{
-	//		T[ i * 2 ] = P[ ( i + 1 ) * 2 ] - P[ i * 2 ];
-	//		T[ i * 2 + 1 ] = P[ ( i + 1 ) * 2 + 1 ] - P[ i * 2 + 1 ];
-	//		N[ i ] = sqrt( T[ i * 2 ] * T[ i * 2 ] + T[ i * 2 + 1 ] * T[ i * 2 + 1 ] );
-	//	}
-
-	//	// Set tangents
-	//	for ( int i = 1; i < n; i++ )
-	//	{
-	//		V[ i ].tangent.x = T[ ( i - 1 ) * 2 ];
-	//		V[ i ].tangent.y = T[ ( i - 1 ) * 2 + 1 ];
-	//	}
-
-	//	if ( closed )
-	//	{
-	//		V[ 0 ].tangent.x = T[ ( n - 2 ) * 2 ];
-	//		V[ 0 ].tangent.y = T[ ( n - 2 ) * 2 + 1 ];
-	//	}
-	//	else
-	//	{
-	//		V[ 0 ].tangent.x = T[ 0 ];
-	//		V[ 0 ].tangent.y = T[ 1 ];
-	//	}
-
-	//	for ( int i = 0; i < n - 1; i++ )
-	//	{
-	//		V[ i ].tangent.z = T[ i * 2 ];
-	//		V[ i ].tangent.w = T[ i * 2 + 1 ];
-	//	}
-
-	//	if ( closed )
-	//	{
-	//		V[ n - 1 ].tangent.z = T[ 0 ];
-	//		V[ n - 1 ].tangent.w = T[ 1 ];
-	//	}
-	//	else
-	//	{
-	//		V[ n - 1 ].tangent.z = T[ ( n - 2 ) * 2 ];
-	//		V[ n - 1 ].tangent.w = T[ ( n - 2 ) * 2 + 1 ];
-	//	}
-
-	//	// Calculate angles
-	//	for ( int i = 0; i < n; i++ )
-	//	{
-	//		float T1x = V[ i ].tangent.x;
-	//		float T1y = V[ i ].tangent.y;
-	//		float T2x = V[ i ].tangent.z;
-	//		float T2y = V[ i ].tangent.x;
-
-	//		float angle = atan2( T1x * T2y - T1y * T2x, T1x * T2x + T1y * T2y );
-
-	//		if ( i < n - 1 )
-	//		{
-	//			V[ i ].angle.x = angle;
-	//			V[ i ].angle.y = angle;  // Will be updated in next iteration
-	//		}
-	//	}
-
-	//	// Calculate cumulative lengths
-	//	float cumul_length = 0;
-	//	for ( int i = 0; i < n - 1; i++ )
-	//	{
-	//		cumul_length += N[ i ];
-	//		if ( i < n - 1 )
-	//		{
-	//			V[ i + 1 ].segment.x = cumul_length;
-	//			V[ i ].segment.y = cumul_length;
-	//		}
-	//	}
-	//	*total_length = cumul_length;
-
-	//	// Create final vertex array with duplications
-	//	int final_n_vertices = ( n - 1 ) * 4;
-	//	ImWidgetsVertexLine* final_V = ( ImWidgetsVertexLine* )malloc( final_n_vertices * sizeof( ImWidgetsVertexLine ) );
-	//	if ( !final_V )
-	//	{
-	//		free( P );
-	//		free( V );
-	//		free( T );
-	//		free( N );
-	//		return -1;
-	//	}
-
-	//	// Duplicate vertices and set texture coordinates
-	//	for ( int i = 0; i < n - 1; i++ )
-	//	{
-	//		for ( int j = 0; j < 4; j++ )
-	//		{
-	//			//final_V[ i * 4 + j ] = V[ i ];
-	//			memcpy( &final_V[ i * 4 + j ], &V[ i ], sizeof( ImWidgetsVertexLine ) );
-	//			final_V[ i * 4 + j ].uv.x = ( j < 2 ) ? -1.0f : 1.0f;
-	//			final_V[ i * 4 + j ].uv.y = ( j % 2 == 0 ) ? -1.0f : 1.0f;
-	//		}
-	//	}
-
-	//	// Create index array
-	//	int n_triangles = ( n - 1 ) * 2;
-	//	unsigned int* indices = ( unsigned int* )malloc( n_triangles * 3 * sizeof( unsigned int ) );
-	//	if ( !indices )
-	//	{
-	//		free( P );
-	//		free( V );
-	//		free( T );
-	//		free( N );
-	//		free( final_V );
-	//		return -1;
-	//	}
-
-	//	for ( int i = 0; i < n - 1; i++ )
-	//	{
-	//		indices[ i * 6 + 0 ] = i * 4 + 0;
-	//		indices[ i * 6 + 1 ] = i * 4 + 1;
-	//		indices[ i * 6 + 2 ] = i * 4 + 2;
-	//		indices[ i * 6 + 3 ] = i * 4 + 1;
-	//		indices[ i * 6 + 4 ] = i * 4 + 2;
-	//		indices[ i * 6 + 5 ] = i * 4 + 3;
-	//	}
-
-	//	// Set output parameters
-	//	*output_vertices = final_V;
-	//	*output_indices = indices;
-	//	*n_output_vertices = final_n_vertices;
-	//	*n_indices = n_triangles * 3;
-
-	//	// Clean up temporary arrays
-	//	free( P );
-	//	free( V );
-	//	free( T );
-	//	free( N );
-
-	//	return 0;
-	//}
-
-	void DrawThickLine( ImDrawList* pDrawList,
-						ImVec2* pts, int pts_count,
-						float thickness,
-						ImU32 col,
-						float antialiasing,
-						ImWidgetsCap start_cap,
-						ImWidgetsCap end_cap,
-						ImWidgetsJoin join,
-						float mitter_limit )
-	{
-		ImWidgetsShapeLine shape;
-		BakeSolidLine( shape,
-					   pts,
-					   pts_count,
-					   false,
-					   1e-10f );
-
-		//ImPlatform::UpdateCustomVertexShaderConstants();
-
-		//ImPlatform::UpdateVertexBuffer( &gs_pContext->thickLinesGPUVertexBuffer,
-		//								sizeof( ImWidgetsVertexLine ),
-		//								gs_pContext->thickLinesCPUVertexBuffer.size(),
-		//								gs_pContext->thickLinesCPUVertexBuffer.Data );
-		//ImPlatform::BeginCustomShader( pDrawList, gs_pContext->markerShader );
-
-		////pDrawList->AddCallback( &InternalDrawThickLine, &shader );
-
-		//ImPlatform::EndCustomShader( pDrawList );
-
-		//int triangles_count = shape.triangles.size();
-		//int indices_count = triangles_count * 3;
-		//int vertices_count = shape.vertices.size();
-		//ImDrawIdx idx = ( ImDrawIdx )pDrawList->_VtxCurrentIdx;
-		//gs_pContext->thickLinesCPUIndexBuffer.reserve( gs_pContext->thickLinesCPUIndexBuffer.size() + indices_count );
-		//for ( int k = 0; k < triangles_count; ++k )
-		//{
-		//	gs_pContext->thickLinesCPUIndexBuffer.push_back( shape.triangles[ k ].a );
-		//	gs_pContext->thickLinesCPUIndexBuffer.push_back( shape.triangles[ k ].b );
-		//	gs_pContext->thickLinesCPUIndexBuffer.push_back( shape.triangles[ k ].c );
-		//}
-		//gs_pContext->thickLinesCPUVertexBuffer.reserve( gs_pContext->thickLinesCPUVertexBuffer.size() + vertices_count );
-		//for ( int k = 0; k < vertices_count; ++k )
-		//{
-		//	gs_pContext->thickLinesCPUVertexBuffer.push_back( shape.vertices[ k ] );
-		//}
-
-		//ImPlatform::UpdateVertexBuffer( &gs_pContext->thickLinesGPUVertexBuffer,
-		//								sizeof( ImWidgetsVertexLine ),
-		//								gs_pContext->thickLinesCPUVertexBuffer.size(),
-		//								gs_pContext->thickLinesCPUVertexBuffer.Data );
-		//ImPlatform::BeginCustomShader( pDrawList, gs_pContext->markerShader );
-
-		////pDrawList->AddCallback( &InternalDrawThickLine, &shader );
-
-		//ImPlatform::EndCustomShader( pDrawList );
 	}
 #endif
 
@@ -7236,7 +6332,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	{
 		float ar = imgSize.x / imgSize.y;
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
-		ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+		//ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+		ImDrawList* drawList = ImGui::GetWindowDrawList();
 		ImVec2 cur = window->InnerRect.Min;
 		ImVec2 uv;
 		ImVec2 winSize = ImGui::GetWindowSize();
