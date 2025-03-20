@@ -4939,23 +4939,27 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		DrawShapeWithHole( drawlist, values->pts, values->pts_count, col );
 	}
 
-	void RenderNavHighlightEx( ImGuiID id, ImGuiNavHighlightFlags flags, ImDrawShape func, void* data, ImRect display_rect )
+	void RenderNavCursorEx( ImGuiID id, ImDrawShape func, void* data, ImRect display_rect, ImGuiNavRenderCursorFlags flags /*= ImGuiNavRenderCursorFlags_None */ )
 	{
-		ImGuiContext& g = *GImGui;
+		ImGuiContext &g = *GImGui;
 		if ( id != g.NavId )
 			return;
-		if ( g.NavDisableHighlight && !( flags & ImGuiNavHighlightFlags_AlwaysDraw ) )
+		if ( !g.NavCursorVisible && !( flags & ImGuiNavRenderCursorFlags_AlwaysDraw ) )
 			return;
-		ImGuiWindow* window = g.CurrentWindow;
+		if ( id == g.LastItemData.ID && ( g.LastItemData.ItemFlags & ImGuiItemFlags_NoNav ) )
+			return;
+		ImGuiWindow *window = g.CurrentWindow;
 		if ( window->DC.NavHideHighlightOneFrame )
 			return;
 
-		float rounding = ( flags & ImGuiNavHighlightFlags_NoRounding ) ? 0.0f : g.Style.FrameRounding;
+		float rounding = ( flags & ImGuiNavRenderCursorFlags_NoRounding ) ? 0.0f : g.Style.FrameRounding;
+		//ImRect display_rect = bb;
 		display_rect.ClipWith( window->ClipRect );
 		const float thickness = 2.0f;
-		if ( flags & ImGuiNavHighlightFlags_Compact )
+		if ( flags & ImGuiNavRenderCursorFlags_Compact )
 		{
-			func( window->DrawList, ImGui::GetColorU32( ImGuiCol_NavHighlight ), thickness, data );
+			func( window->DrawList, ImGui::GetColorU32( ImGuiCol_NavCursor ), thickness, data );
+			//window->DrawList->AddRect( display_rect.Min, display_rect.Max, GetColorU32( ImGuiCol_NavCursor ), rounding, 0, thickness );
 		}
 		else
 		{
@@ -4964,55 +4968,83 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			bool fully_visible = window->ClipRect.Contains( display_rect );
 			if ( !fully_visible )
 				window->DrawList->PushClipRect( display_rect.Min, display_rect.Max );
-			func( window->DrawList, ImGui::GetColorU32( ImGuiCol_NavHighlight ), thickness, data );
+			//window->DrawList->AddRect( display_rect.Min, display_rect.Max, GetColorU32( ImGuiCol_NavCursor ), rounding, 0, thickness );
+			func( window->DrawList, ImGui::GetColorU32( ImGuiCol_NavCursor ), thickness, data );
 			if ( !fully_visible )
 				window->DrawList->PopClipRect();
 		}
+		//ImGuiContext& g = *GImGui;
+		//if ( id != g.NavId )
+		//	return;
+		//if ( g.NavDisableHighlight && !( flags & ImGuiNavHighlightFlags_AlwaysDraw ) )
+		//	return;
+		//ImGuiWindow* window = g.CurrentWindow;
+		//if ( window->DC.NavHideHighlightOneFrame )
+		//	return;
+
+		//float rounding = ( flags & ImGuiNavHighlightFlags_NoRounding ) ? 0.0f : g.Style.FrameRounding;
+		//display_rect.ClipWith( window->ClipRect );
+		//const float thickness = 2.0f;
+		//if ( flags & ImGuiNavHighlightFlags_Compact )
+		//{
+		//	func( window->DrawList, ImGui::GetColorU32( ImGuiCol_NavHighlight ), thickness, data );
+		//}
+		//else
+		//{
+		//	const float distance = 3.0f + thickness * 0.5f;
+		//	display_rect.Expand( ImVec2( distance, distance ) );
+		//	bool fully_visible = window->ClipRect.Contains( display_rect );
+		//	if ( !fully_visible )
+		//		window->DrawList->PushClipRect( display_rect.Min, display_rect.Max );
+		//	func( window->DrawList, ImGui::GetColorU32( ImGuiCol_NavHighlight ), thickness, data );
+		//	if ( !fully_visible )
+		//		window->DrawList->PopClipRect();
+		//}
 	}
-	void RenderNavHighlightCircle( ImVec2 center, float radius, ImGuiID id, ImGuiNavHighlightFlags flags )
+	void RenderNavCursorCircle( ImVec2 center, float radius, ImGuiID id, ImGuiNavRenderCursorFlags flags /*= ImGuiNavRenderCursorFlags_None */ )
 	{
 		ImCircle data = { center, radius };
 		ImRect display_rect;
 		display_rect.Min = center - ImVec2( radius, radius );
 		display_rect.Max = center + ImVec2( radius, radius );
-		RenderNavHighlightEx( id, flags, &Im_DrawCircle, &data, display_rect );
+		RenderNavCursorEx( id, &Im_DrawCircle, &data, display_rect, flags );
 	}
-	void RenderNavHighlightCapsuleH( ImVec2 pos, float length, float radius, ImGuiID id, ImGuiNavHighlightFlags flags )
+	void RenderNavHighlightCapsuleH( ImVec2 pos, float length, float radius, ImGuiID id, ImGuiNavRenderCursorFlags flags = ImGuiNavRenderCursorFlags_None )
 	{
 		ImCapsule data = { pos, length, radius };
 		ImRect display_rect;
 		display_rect.Min = pos - ImVec2( radius, radius );
 		display_rect.Max = pos + ImVec2( radius, radius );
-		RenderNavHighlightEx( id, flags, &Im_DrawCapsuleH, &data, display_rect );
+		RenderNavCursorEx( id, &Im_DrawCapsuleH, &data, display_rect, flags );
 	}
-	void RenderNavHighlightCapsuleV( ImVec2 pos, float length, float radius, ImGuiID id, ImGuiNavHighlightFlags flags )
+	void RenderNavHighlightCapsuleV( ImVec2 pos, float length, float radius, ImGuiID id, ImGuiNavRenderCursorFlags flags = ImGuiNavRenderCursorFlags_None )
 	{
 		ImCapsule data = { pos, length, radius };
 		ImRect display_rect;
 		display_rect.Min = pos - ImVec2( radius, radius );
 		display_rect.Max = pos + ImVec2( radius, radius );
-		RenderNavHighlightEx( id, flags, &Im_DrawCapsuleV, &data, display_rect );
+		RenderNavCursorEx( id, &Im_DrawCapsuleV, &data, display_rect, flags );
 	}
-	void RenderNavHighlightConvex( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags )
+	void RenderNavCursorConvex( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavRenderCursorFlags flags /*= ImGuiNavRenderCursorFlags_None */ )
 	{
 		ImPolyShapeData data = { pts, pts_count };
 		ImRect display_rect;
 		ImComputeRect( &display_rect, pts, pts_count );
-		RenderNavHighlightEx( id, flags, &Im_DrawShapeConvex, &data, display_rect );
+		RenderNavCursorEx( id, &Im_DrawShapeConvex, &data, display_rect, flags );
 	}
-	void RenderNavHighlightConcave( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags )
+	void RenderNavCursorConcave( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavRenderCursorFlags flags /*= ImGuiNavRenderCursorFlags_None */ )
 	{
 		ImPolyShapeData data = { pts, pts_count };
 		ImRect display_rect;
 		ImComputeRect( &display_rect, pts, pts_count );
-		RenderNavHighlightEx( id, flags, &Im_DrawShapeConcave, &data, display_rect );
+		RenderNavCursorEx( id, &Im_DrawShapeConcave, &data, display_rect, flags );
 	}
-	void RenderNavHighlightWithHole( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags )
+	void RenderCursorWithHole( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavRenderCursorFlags flags /*= ImGuiNavRenderCursorFlags_None */ )
 	{
 		ImPolyHoleShapeData data = { pts, NULL, pts_count, 1, 1 };
 		ImRect display_rect;
 		ImComputeRect( &display_rect, pts, pts_count );
-		RenderNavHighlightEx( id, flags, &Im_DrawShapeWithHole, &data, display_rect );
+		RenderNavCursorEx( id, &Im_DrawShapeWithHole, &data, display_rect, flags );
 	}
 
 	void RenderFrameEx( ImU32 fill_col, bool border, ImDrawShape outline, ImDrawShapeFilled fill, ImDrawShapeFilledTex fill_tex, void* data, ImTextureID* tex, ImVec2 uv_min, ImVec2 uv_max )
@@ -5164,7 +5196,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 #endif
 
-		if ( g.NavDisableMouseHover )
+		if ( g.NavHighlightItemUnderNav && ( item_flags & ImGuiItemFlags_NoNavDisableMouseHover ) == 0 )
 			return false;
 
 		return true;
@@ -5172,9 +5204,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ButtonBehaviorEx( const ImRect& bb, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags, IsContains isContains, void* extra_data )
 	{
-		// Copy Past from ImGui::ButtonBehavior to only change ItemHovered
-		ImGuiContext& g = *GImGui;
-		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		ImGuiContext &g = *GImGui;
+		ImGuiWindow *window = ImGui::GetCurrentWindow();
+
+		// Default behavior inherited from item flags
+		// Note that _both_ ButtonFlags and ItemFlags are valid sources, so copy one into the item_flags and only check that.
+		ImGuiItemFlags item_flags = ( g.LastItemData.ID == id ? g.LastItemData.ItemFlags : g.CurrentItemFlags );
+		if ( flags & ImGuiButtonFlags_AllowOverlap )
+			item_flags |= ImGuiItemFlags_AllowOverlap;
 
 		// Default only reacts to left mouse button
 		if ( ( flags & ImGuiButtonFlags_MouseButtonMask_ ) == 0 )
@@ -5182,18 +5219,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// Default behavior requires click + release inside bounding box
 		if ( ( flags & ImGuiButtonFlags_PressedOnMask_ ) == 0 )
-			flags |= ImGuiButtonFlags_PressedOnDefault_;
+			flags |= ( item_flags & ImGuiItemFlags_ButtonRepeat ) ? ImGuiButtonFlags_PressedOnClick : ImGuiButtonFlags_PressedOnDefault_;
 
-		// Default behavior inherited from item flags
-		// Note that _both_ ButtonFlags and ItemFlags are valid sources, so copy one into the item_flags and only check that.
-		ImGuiItemFlags item_flags = ( g.LastItemData.ID == id ? g.LastItemData.InFlags : g.CurrentItemFlags );
-		if ( flags & ImGuiButtonFlags_AllowOverlap )
-			item_flags |= ImGuiItemFlags_AllowOverlap;
-		if ( flags & ImGuiButtonFlags_Repeat )
-			item_flags |= ImGuiItemFlags_ButtonRepeat;
-
-		ImGuiWindow* backup_hovered_window = g.HoveredWindow;
-		const bool flatten_hovered_children = ( flags & ImGuiButtonFlags_FlattenChildren ) && g.HoveredWindow && g.HoveredWindow->RootWindow == window;
+		ImGuiWindow *backup_hovered_window = g.HoveredWindow;
+		const bool flatten_hovered_children = ( flags & ImGuiButtonFlags_FlattenChildren ) && g.HoveredWindow && g.HoveredWindow->RootWindowDockTree == window->RootWindowDockTree;
 		if ( flatten_hovered_children )
 			g.HoveredWindow = window;
 
@@ -5248,7 +5277,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				}
 
 			// Process initial action
-			if ( !( flags & ImGuiButtonFlags_NoKeyModifiers ) || ( !g.IO.KeyCtrl && !g.IO.KeyShift && !g.IO.KeyAlt ) )
+			const bool mods_ok = !( flags & ImGuiButtonFlags_NoKeyModsAllowed ) || ( !g.IO.KeyCtrl && !g.IO.KeyShift && !g.IO.KeyAlt );
+			if ( mods_ok )
 			{
 				if ( mouse_button_clicked != -1 && g.ActiveId != id )
 				{
@@ -5259,8 +5289,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 						ImGui::SetActiveID( id, window );
 						g.ActiveIdMouseButton = mouse_button_clicked;
 						if ( !( flags & ImGuiButtonFlags_NoNavFocus ) )
+						{
 							ImGui::SetFocusID( id, window );
-						ImGui::FocusWindow( window );
+							ImGui::FocusWindow( window );
+						}
+						else
+						{
+							ImGui::FocusWindow( window, ImGuiFocusRequestFlags_RestoreFocusedChild ); // Still need to focus and bring to front, but try to avoid losing NavId when navigating a child
+						}
 					}
 					if ( ( flags & ImGuiButtonFlags_PressedOnClick ) || ( ( flags & ImGuiButtonFlags_PressedOnDoubleClick ) && g.IO.MouseClickedCount[ mouse_button_clicked ] == 2 ) )
 					{
@@ -5269,10 +5305,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 							ImGui::ClearActiveID();
 						else
 							ImGui::SetActiveID( id, window ); // Hold on ID
-						if ( !( flags & ImGuiButtonFlags_NoNavFocus ) )
-							ImGui::SetFocusID( id, window );
 						g.ActiveIdMouseButton = mouse_button_clicked;
-						ImGui::FocusWindow( window );
+						if ( !( flags & ImGuiButtonFlags_NoNavFocus ) )
+						{
+							ImGui::SetFocusID( id, window );
+							ImGui::FocusWindow( window );
+						}
+						else
+						{
+							ImGui::FocusWindow( window, ImGuiFocusRequestFlags_RestoreFocusedChild ); // Still need to focus and bring to front, but try to avoid losing NavId when navigating a child
+						}
 					}
 				}
 				if ( flags & ImGuiButtonFlags_PressedOnRelease )
@@ -5283,7 +5325,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 						if ( !has_repeated_at_least_once )
 							pressed = true;
 						if ( !( flags & ImGuiButtonFlags_NoNavFocus ) )
-							ImGui::SetFocusID( id, window );
+							ImGui::SetFocusID( id, window ); // FIXME: Lack of FocusWindow() call here is inconsistent with other paths. Research why.
 						ImGui::ClearActiveID();
 					}
 				}
@@ -5295,16 +5337,15 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 						pressed = true;
 			}
 
-			if ( pressed )
-				g.NavDisableHighlight = true;
+			if ( pressed && g.IO.ConfigNavCursorVisibleAuto )
+				g.NavCursorVisible = false;
 		}
 
-		// Gamepad/Keyboard handling
+		// Keyboard/Gamepad navigation handling
 		// We report navigated and navigation-activated items as hovered but we don't set g.HoveredId to not interfere with mouse.
-		if ( g.NavId == id && !g.NavDisableHighlight && g.NavDisableMouseHover )
+		if ( g.NavId == id && g.NavCursorVisible && g.NavHighlightItemUnderNav )
 			if ( !( flags & ImGuiButtonFlags_NoHoveredOnFocus ) )
 				hovered = true;
-
 		if ( g.NavActivateDownId == id )
 		{
 			bool nav_activated_by_code = ( g.NavActivateId == id );
@@ -5312,9 +5353,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			if ( !nav_activated_by_inputs && ( item_flags & ImGuiItemFlags_ButtonRepeat ) )
 			{
 				// Avoid pressing multiple keys from triggering excessive amount of repeat events
-				const ImGuiKeyData* key1 = ImGui::GetKeyData( ImGuiKey_Space );
-				const ImGuiKeyData* key2 = ImGui::GetKeyData( ImGuiKey_Enter );
-				const ImGuiKeyData* key3 = ImGui::GetKeyData( ImGuiKey_NavGamepadActivate );
+				const ImGuiKeyData *key1 = ImGui::GetKeyData( ImGuiKey_Space );
+				const ImGuiKeyData *key2 = ImGui::GetKeyData( ImGuiKey_Enter );
+				const ImGuiKeyData *key3 = ImGui::GetKeyData( ImGuiKey_NavGamepadActivate );
 				const float t1 = ImMax( ImMax( key1->DownDuration, key2->DownDuration ), key3->DownDuration );
 				nav_activated_by_inputs = ImGui::CalcTypematicRepeatAmount( t1 - g.IO.DeltaTime, t1, g.IO.KeyRepeatDelay, g.IO.KeyRepeatRate ) > 0;
 			}
@@ -5365,8 +5406,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					}
 					ImGui::ClearActiveID();
 				}
-				if ( !( flags & ImGuiButtonFlags_NoNavFocus ) )
-					g.NavDisableHighlight = true;
+				if ( !( flags & ImGuiButtonFlags_NoNavFocus ) && g.IO.ConfigNavCursorVisibleAuto )
+					g.NavCursorVisible = false;
 			}
 			else if ( g.ActiveIdSource == ImGuiInputSource_Keyboard || g.ActiveIdSource == ImGuiInputSource_Gamepad )
 			{
@@ -5493,9 +5534,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// Render
 		const ImU32 col = ImGui::GetColorU32( ( held && hovered ) ? ImGuiCol_ButtonActive : hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button );
-		RenderNavHighlightEx( id, 0, draw_outline, used_data, bb );
+		RenderNavCursorEx( id, draw_outline, used_data, bb, 0 );
 		if ( tex )
-			draw_fill_tex( window->DrawList, IM_COL32_WHITE, used_data, tex, uv_min, uv_max );
+			draw_fill_tex( window->DrawList, IM_COL32_WHITE, used_data, *tex, uv_min, uv_max );
 		else
 			RenderFrameEx( col, true, draw_outline, draw_fill, draw_fill_tex, used_data, tex, uv_min, uv_max );
 
@@ -5674,7 +5715,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, 0 ) )
 			return false;
 
-		const bool hovered = ImGui::ItemHoverable( full_bb, id, g.LastItemData.InFlags );
+		const bool hovered = ImGui::ItemHoverable( full_bb, id, g.LastItemData.ItemFlags );
 
 		// Tabbing or CTRL-clicking on Slider turns it into an input box
 		const bool clicked = hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id );
@@ -5692,7 +5733,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// Draw frame
 		const ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
-		ImGui::RenderNavHighlight( full_bb, id );
+		ImGui::RenderNavCursor( full_bb, id );
 		ImGui::RenderFrame( full_bb.Min, full_bb.Max, frame_col, true, g.Style.FrameRounding );
 
 		// Slider behavior
@@ -5817,7 +5858,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			if ( !ImGui::ItemAdd( total_bb, ids[ k ], &bb, 0) )
 				return false;
 
-			const bool hovered = ImGui::ItemHoverable( bb, ids[ k ], g.LastItemData.InFlags );
+			const bool hovered = ImGui::ItemHoverable( bb, ids[ k ], g.LastItemData.ItemFlags );
 			full_hovered |= hovered;
 
 			// Tabbing or CTRL-clicking on Slider turns it into an input box
@@ -5839,7 +5880,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			{
 				// Draw frame
 				const ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == ids[ k ] ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
-				ImGui::RenderNavHighlight( bb, ids[ k ] );
+				ImGui::RenderNavCursor( bb, ids[ k ] );
 				ImGui::RenderFrame( bb.Min, bb.Max, frame_col, true, g.Style.FrameRounding );
 			}
 
@@ -5870,7 +5911,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( !show_hover_by_region )
 		{
 			const ImU32 frame_col = ImGui::GetColorU32( is_active ? ImGuiCol_FrameBgActive : full_hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
-			ImGui::RenderNavHighlight( frame_bb, id );
+			ImGui::RenderNavCursor( frame_bb, id );
 			ImGui::RenderFrame( frame_bb.Min, frame_bb.Max, frame_col, true, g.Style.FrameRounding );
 		}
 		for ( int k = 0; k < value_count; ++k )
@@ -5959,7 +6000,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, 0 ) )
 			return false;
 
-		bool hovered = ImGui::ItemHoverable( frame_bb_drag, id, g.LastItemData.InFlags );
+		bool hovered = ImGui::ItemHoverable( frame_bb_drag, id, g.LastItemData.ItemFlags );
 
 		bool clicked = hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id );
 		bool make_active = ( clicked || g.NavActivateId == id );
@@ -5976,7 +6017,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// Draw frame
 		ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
-		ImGui::RenderNavHighlight( frame_bb_drag, id );
+		ImGui::RenderNavCursor( frame_bb_drag, id );
 		ImGui::RenderFrame( frame_bb_drag.Min, frame_bb_drag.Max, frame_col, true, g.Style.FrameRounding );
 
 		// Slider behavior
@@ -5992,7 +6033,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( !ImGui::ItemAdd( total_bb, idX, &frame_bb_dragX, 0 ) )
 			return false;
 
-		hovered = ImGui::ItemHoverable( frame_bb_dragX, idX, g.LastItemData.InFlags );
+		hovered = ImGui::ItemHoverable( frame_bb_dragX, idX, g.LastItemData.ItemFlags );
 
 		clicked = hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, idX );
 		make_active = ( clicked || g.NavActivateId == idX );
@@ -6011,13 +6052,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( value_changedX )
 			ImGui::MarkItemEdited( idX );
 
-		ImGui::RenderNavHighlight( frame_bb_dragX, idX );
+		ImGui::RenderNavCursor( frame_bb_dragX, idX );
 		ImGui::RenderFrame( frame_bb_dragX.Min, frame_bb_dragX.Max, frame_col, true, g.Style.FrameRounding );
 
 		if ( !ImGui::ItemAdd( total_bb, idY, &frame_bb_dragX, 0 ) )
 			return false;
 
-		hovered = ImGui::ItemHoverable( frame_bb_dragY, idY, g.LastItemData.InFlags );
+		hovered = ImGui::ItemHoverable( frame_bb_dragY, idY, g.LastItemData.ItemFlags );
 
 		clicked = hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, idY );
 		make_active = ( clicked || g.NavActivateId == idY );
@@ -6033,7 +6074,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 		frame_col = ImGui::GetColorU32( g.ActiveId == idY ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
 
-		ImGui::RenderNavHighlight( frame_bb_dragY, idY );
+		ImGui::RenderNavCursor( frame_bb_dragY, idY );
 		ImGui::RenderFrame( frame_bb_dragY.Min, frame_bb_dragY.Max, frame_col, true, g.Style.FrameRounding );
 
 		bool value_changedYS = ImGui::SliderBehavior( frame_bb_dragY, idY, data_type, p_valueY, p_minY, p_maxY, NULL, ImGuiSliderFlags_NoInput | ImGuiSliderFlags_NoRoundToFormat | ImGuiSliderFlags_Vertical, &grab_bbY );

@@ -1036,11 +1036,11 @@ namespace ImWidgets{
 	typedef bool ( *IsContains )( ImVec2 p, void* data );
 	typedef void ( *FromRect )( ImRect r, void* data );
 
-	IMGUI_API void RenderNavHighlightEx( ImGuiID id, ImGuiNavHighlightFlags flags, ImDrawShape func, void* data, ImRect display_rect );
-	IMGUI_API void RenderNavHighlightCircle( ImVec2 center, float radius, ImGuiID id, ImGuiNavHighlightFlags flags );
-	IMGUI_API void RenderNavHighlightConvex( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags );
-	IMGUI_API void RenderNavHighlightConcave( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags );
-	IMGUI_API void RenderNavHighlightWithHole( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavHighlightFlags flags );
+	IMGUI_API void RenderNavCursorEx( ImGuiID id, ImDrawShape func, void* data, ImRect display_rect, ImGuiNavRenderCursorFlags flags = ImGuiNavRenderCursorFlags_None );
+	IMGUI_API void RenderNavCursorCircle( ImVec2 center, float radius, ImGuiID id, ImGuiNavRenderCursorFlags flags = ImGuiNavRenderCursorFlags_None );
+	IMGUI_API void RenderNavCursorConvex( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavRenderCursorFlags flags = ImGuiNavRenderCursorFlags_None );
+	IMGUI_API void RenderNavCursorConcave( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavRenderCursorFlags flags = ImGuiNavRenderCursorFlags_None );
+	IMGUI_API void RenderCursorWithHole( ImVec2* pts, int pts_count, ImGuiID id, ImGuiNavRenderCursorFlags flags = ImGuiNavRenderCursorFlags_None );
 
 	IMGUI_API void RenderFrameEx( ImU32 fill_col, bool border, ImDrawShape outline, ImDrawShapeFilled fill, ImDrawShapeFilledTex fill_tex, void* data, ImTextureID* tex = NULL, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
 	IMGUI_API void RenderFrameCircle( ImVec2 center, float radius, ImU32 fill_col, bool border );
