@@ -307,6 +307,7 @@ namespace ImWidgets {
 
 	void ShowSamples()
 	{
+#if 0
 		if ( ImGui::Begin( "Tiles" ) )
 		{
 			ImVec2 size = ImGui::GetContentRegionAvail();
@@ -329,6 +330,7 @@ namespace ImWidgets {
 											  IM_COL32_WHITE );
 		}
 		ImGui::End();
+#endif
 
 		static const float _6_2 = 6.0f / 2.0f;
 		ImGui::SetNextWindowSizeConstraints( ImVec2( 0, 0 ), ImVec2( FLT_MAX, FLT_MAX ), AspectRatio_6_2, ( void* )&_6_2 );
