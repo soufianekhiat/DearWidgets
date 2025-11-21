@@ -25,5 +25,12 @@ namespace DearWidgets
             //conf.IncludePaths.Add(@"[project.ExternPath]/glad/include");
             conf.IncludePaths.Add(@"[project.RootPath]/extern/ImPlatform/ImPlatform/");
         }
+
+        [Configure(BuildType.Full | BuildType.DemoOnly)]
+        public void ConfigureFullBuild(Configuration conf, DearTarget target)
+        {
+            // For Full and DemoOnly builds, exclude implatform_impl.cpp since the demo provides IMPLATFORM_IMPLEMENTATION
+            conf.SourceFilesBuildExclude.Add(@"[project.SourceRootPath]\implatform_impl.cpp");
+        }
     }
 }

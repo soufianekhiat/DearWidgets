@@ -1,9 +1,5 @@
 ﻿#include <dear_widgets.h>
 
-#ifdef DEAR_WIDGETS_TESSELATION
-#include <map>
-#endif
-
 namespace ImWidgets{
     ImGlobalData GlobalData;
 
@@ -2168,14 +2164,76 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// Geometry Generation
 	//////////////////////////////////////////////////////////////////////////
 #ifdef DEAR_WIDGETS_TESSELATION
+	// Helper structures for tessellation (STL-free implementation)
+	struct ImWidgetsEdge
+	{
+		ImDrawIdx a;
+		ImDrawIdx b;
+
+		bool operator==( const ImWidgetsEdge& other ) const
+		{
+			return a == other.a && b == other.b;
+		}
+	};
+
+	struct ImWidgetsEdgeToVertex
+	{
+		ImWidgetsEdge edge;
+		ImWidgetsVertex vertex;
+	};
+
+	struct ImWidgetsEdgeToIndex
+	{
+		ImWidgetsEdge edge;
+		int index;
+	};
+
+	// Helper function to find edge in edge-to-vertex array
+	static int FindEdgeToVertex( const ImVector<ImWidgetsEdgeToVertex>& arr, const ImWidgetsEdge& edge )
+	{
+		for ( int i = 0; i < arr.Size; ++i )
+		{
+			if ( arr[ i ].edge == edge )
+				return i;
+		}
+		return -1;
+	}
+
+	// Helper function to find edge in edge-to-index array
+	static int FindEdgeToIndex( const ImVector<ImWidgetsEdgeToIndex>& arr, const ImWidgetsEdge& edge )
+	{
+		for ( int i = 0; i < arr.Size; ++i )
+		{
+			if ( arr[ i ].edge == edge )
+				return i;
+		}
+		return -1;
+	}
+
+	// Helper function to get or add edge-to-vertex mapping
+	static void SetEdgeToVertex( ImVector<ImWidgetsEdgeToVertex>& arr, const ImWidgetsEdge& edge, const ImWidgetsVertex& vertex )
+	{
+		int idx = FindEdgeToVertex( arr, edge );
+		if ( idx >= 0 )
+		{
+			arr[ idx ].vertex = vertex;
+		}
+		else
+		{
+			ImWidgetsEdgeToVertex ev;
+			ev.edge = edge;
+			ev.vertex = vertex;
+			arr.push_back( ev );
+		}
+	}
+
 	#pragma optimize( "", off )
 	void	ShapeTesselationUniform( ImWidgetsShape& shape )
 	{
 		int vtx_count = shape.vertices.size();
 		int tri_count = shape.triangles.size();
 
-		typedef std::pair<ImDrawIdx, ImDrawIdx> Edge;
-		std::map<Edge, ImWidgetsVertex> edge_to_vrtx;
+		ImVector<ImWidgetsEdgeToVertex> edge_to_vrtx;
 		for ( int k = 0; k < tri_count; ++k )
 		{
 			ImWidgetsTriIdx const& tri = shape.triangles[ k ];
@@ -2195,10 +2253,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImVec4 cola = ImGui::ColorConvertU32ToFloat4( shape.vertices[ a ].col );
 			ImVec4 colb = ImGui::ColorConvertU32ToFloat4( shape.vertices[ b ].col );
 			ImVec4 colc = ImGui::ColorConvertU32ToFloat4( shape.vertices[ c ].col );
- 
-			Edge ab = { ImMin( a, b ), ImMax( a, b ) };
-			Edge bc = { ImMin( b, c ), ImMax( b, c ) };
-			Edge ca = { ImMin( c, a ), ImMax( c, a ) };
+
+			ImWidgetsEdge ab = { ImMin( a, b ), ImMax( a, b ) };
+			ImWidgetsEdge bc = { ImMin( b, c ), ImMax( b, c ) };
+			ImWidgetsEdge ca = { ImMin( c, a ), ImMax( c, a ) };
 
 			float ab_sqr = ImLengthSqr( va - vb );
 			float bc_sqr = ImLengthSqr( vb - vc );
@@ -2209,40 +2267,44 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				ImVec2 v = va * 0.5f + vb * 0.5f;
 				ImVec2 uv = uva * 0.5f + uvb * 0.5f;
 				ImVec4 col = ImLerp( cola, colb, 0.5f );
-				edge_to_vrtx[ ab ] = { v, uv, ImGui::GetColorU32( col ) };
+				ImWidgetsVertex vtx = { v, uv, ImGui::GetColorU32( col ) };
+				SetEdgeToVertex( edge_to_vrtx, ab, vtx );
 			}
 			else if ( bc_sqr >= ab_sqr && bc_sqr >= ca_sqr )
 			{
 				ImVec2 v = vb * 0.5f + vc * 0.5f;
 				ImVec2 uv = uvb * 0.5f + uvc * 0.5f;
 				ImVec4 col = ImLerp( colb, colc, 0.5f );
-				edge_to_vrtx[ bc ] = { v, uv, ImGui::GetColorU32( col ) };
+				ImWidgetsVertex vtx = { v, uv, ImGui::GetColorU32( col ) };
+				SetEdgeToVertex( edge_to_vrtx, bc, vtx );
 			}
 			else if ( ca_sqr >= ab_sqr && ca_sqr >= bc_sqr )
 			{
 				ImVec2 v = vc * 0.5f + va * 0.5f;
 				ImVec2 uv = uvc * 0.5f + uva * 0.5f;
 				ImVec4 col = ImLerp( colc, cola, 0.5f );
-				edge_to_vrtx[ ca ] = { v, uv, ImGui::GetColorU32( col ) };
+				ImWidgetsVertex vtx = { v, uv, ImGui::GetColorU32( col ) };
+				SetEdgeToVertex( edge_to_vrtx, ca, vtx );
 			}
 			else
 			{
 				__debugbreak();
 			}
 		}
-		int new_vrtx_count = 0;
-		std::map<Edge, int> edge_to_idx;
-		for ( auto const& x : edge_to_vrtx )
+		int new_vrtx_count = edge_to_vrtx.Size;
+		ImVector<ImWidgetsEdgeToIndex> edge_to_idx;
+		edge_to_idx.reserve( new_vrtx_count );
+		for ( int i = 0; i < edge_to_vrtx.Size; ++i )
 		{
-			edge_to_idx[ x.first ] = vtx_count + new_vrtx_count;
-			++new_vrtx_count;
+			ImWidgetsEdgeToIndex ei;
+			ei.edge = edge_to_vrtx[ i ].edge;
+			ei.index = vtx_count + i;
+			edge_to_idx.push_back( ei );
 		}
 		shape.vertices.resize( vtx_count + new_vrtx_count );
-		int vidx = 0;
-		for ( auto const& x : edge_to_vrtx )
+		for ( int i = 0; i < edge_to_vrtx.Size; ++i )
 		{
-			shape.vertices[ vtx_count + vidx ] = x.second;
-			++vidx;
+			shape.vertices[ vtx_count + i ] = edge_to_vrtx[ i ].vertex;
 		}
 
 		ImVector<ImWidgetsTriIdx> new_indices;
@@ -2254,29 +2316,19 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImDrawIdx b = tri.b;
 			ImDrawIdx c = tri.c;
 
-			Edge ab = { ImMin( a, b ), ImMax( a, b ) };
-			Edge bc = { ImMin( b, c ), ImMax( b, c ) };
-			Edge ca = { ImMin( c, a ), ImMax( c, a ) };
+			ImWidgetsEdge ab = { ImMin( a, b ), ImMax( a, b ) };
+			ImWidgetsEdge bc = { ImMin( b, c ), ImMax( b, c ) };
+			ImWidgetsEdge ca = { ImMin( c, a ), ImMax( c, a ) };
 
-			bool is_ab = false;
-			bool is_bc = false;
-			bool is_ca = false;
-			int new_vrtx_count = 0;
-			if ( edge_to_vrtx.find( ab ) != edge_to_vrtx.end() )
-			{
-				++new_vrtx_count;
-				is_ab = true;
-			}
-			if ( edge_to_vrtx.find( bc ) != edge_to_vrtx.end() )
-			{
-				++new_vrtx_count;
-				is_bc = true;
-			}
-			if ( edge_to_vrtx.find( ca ) != edge_to_vrtx.end() )
-			{
-				++new_vrtx_count;
-				is_ca = true;
-			}
+			int idx_ab = FindEdgeToVertex( edge_to_vrtx, ab );
+			int idx_bc = FindEdgeToVertex( edge_to_vrtx, bc );
+			int idx_ca = FindEdgeToVertex( edge_to_vrtx, ca );
+
+			bool is_ab = ( idx_ab >= 0 );
+			bool is_bc = ( idx_bc >= 0 );
+			bool is_ca = ( idx_ca >= 0 );
+			int new_vrtx_count = ( is_ab ? 1 : 0 ) + ( is_bc ? 1 : 0 ) + ( is_ca ? 1 : 0 );
+
 			if ( new_vrtx_count == 0 )
 			{
 				new_indices.push_back( { a, b, c } );
@@ -2286,21 +2338,27 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			{
 				if ( is_ab )
 				{
-					ImDrawIdx new_ab = edge_to_idx[ ab ];
+					int edge_idx = FindEdgeToIndex( edge_to_idx, ab );
+					IM_ASSERT( edge_idx >= 0 );
+					ImDrawIdx new_ab = edge_to_idx[ edge_idx ].index;
 					IM_ASSERT( new_ab >= vtx_count );
 					new_indices.push_back( { a, new_ab, c } );
 					new_indices.push_back( { c, new_ab, b } );
 				}
 				else if ( is_bc )
 				{
-					ImDrawIdx new_bc = edge_to_idx[ bc ];
+					int edge_idx = FindEdgeToIndex( edge_to_idx, bc );
+					IM_ASSERT( edge_idx >= 0 );
+					ImDrawIdx new_bc = edge_to_idx[ edge_idx ].index;
 					IM_ASSERT( new_bc >= vtx_count );
 					new_indices.push_back( { b, new_bc, a } );
 					new_indices.push_back( { a, new_bc, c } );
 				}
 				else if ( is_ca )
 				{
-					ImDrawIdx new_ca = edge_to_idx[ ca ];
+					int edge_idx = FindEdgeToIndex( edge_to_idx, ca );
+					IM_ASSERT( edge_idx >= 0 );
+					ImDrawIdx new_ca = edge_to_idx[ edge_idx ].index;
 					IM_ASSERT( new_ca >= vtx_count );
 					new_indices.push_back( { c, new_ca, b } );
 					new_indices.push_back( { b, new_ca, a } );
@@ -2314,8 +2372,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			{
 				if ( is_ab && is_bc )
 				{
-					ImDrawIdx new_ab = edge_to_idx[ ab ];
-					ImDrawIdx new_bc = edge_to_idx[ bc ];
+					int edge_idx_ab = FindEdgeToIndex( edge_to_idx, ab );
+					int edge_idx_bc = FindEdgeToIndex( edge_to_idx, bc );
+					IM_ASSERT( edge_idx_ab >= 0 && edge_idx_bc >= 0 );
+					ImDrawIdx new_ab = edge_to_idx[ edge_idx_ab ].index;
+					ImDrawIdx new_bc = edge_to_idx[ edge_idx_bc ].index;
 					IM_ASSERT( new_ab >= vtx_count );
 					IM_ASSERT( new_bc >= vtx_count );
 					new_indices.push_back( { a, new_ab, new_bc } );
@@ -2324,8 +2385,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				}
 				else if ( is_bc && is_ca )
 				{
-					ImDrawIdx new_bc = edge_to_idx[ bc ];
-					ImDrawIdx new_ca = edge_to_idx[ ca ];
+					int edge_idx_bc = FindEdgeToIndex( edge_to_idx, bc );
+					int edge_idx_ca = FindEdgeToIndex( edge_to_idx, ca );
+					IM_ASSERT( edge_idx_bc >= 0 && edge_idx_ca >= 0 );
+					ImDrawIdx new_bc = edge_to_idx[ edge_idx_bc ].index;
+					ImDrawIdx new_ca = edge_to_idx[ edge_idx_ca ].index;
 					IM_ASSERT( new_bc >= vtx_count );
 					IM_ASSERT( new_ca >= vtx_count );
 					new_indices.push_back( { b, new_bc, new_ca } );
@@ -2334,8 +2398,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				}
 				else if ( is_ca && is_ab )
 				{
-					ImDrawIdx new_ab = edge_to_idx[ ab ];
-					ImDrawIdx new_ca = edge_to_idx[ ca ];
+					int edge_idx_ab = FindEdgeToIndex( edge_to_idx, ab );
+					int edge_idx_ca = FindEdgeToIndex( edge_to_idx, ca );
+					IM_ASSERT( edge_idx_ab >= 0 && edge_idx_ca >= 0 );
+					ImDrawIdx new_ab = edge_to_idx[ edge_idx_ab ].index;
+					ImDrawIdx new_ca = edge_to_idx[ edge_idx_ca ].index;
 					IM_ASSERT( new_ab >= vtx_count );
 					IM_ASSERT( new_ca >= vtx_count );
 					new_indices.push_back( { a, new_ab, new_ca } );
@@ -2349,9 +2416,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			}
 			else if ( new_vrtx_count == 3 )
 			{
-				ImDrawIdx new_ab = edge_to_idx[ ab ];
-				ImDrawIdx new_bc = edge_to_idx[ bc ];
-				ImDrawIdx new_ca = edge_to_idx[ ca ];
+				int edge_idx_ab = FindEdgeToIndex( edge_to_idx, ab );
+				int edge_idx_bc = FindEdgeToIndex( edge_to_idx, bc );
+				int edge_idx_ca = FindEdgeToIndex( edge_to_idx, ca );
+				IM_ASSERT( edge_idx_ab >= 0 && edge_idx_bc >= 0 && edge_idx_ca >= 0 );
+				ImDrawIdx new_ab = edge_to_idx[ edge_idx_ab ].index;
+				ImDrawIdx new_bc = edge_to_idx[ edge_idx_bc ].index;
+				ImDrawIdx new_ca = edge_to_idx[ edge_idx_ca ].index;
 				IM_ASSERT( new_ab >= vtx_count );
 				IM_ASSERT( new_bc >= vtx_count );
 				IM_ASSERT( new_ca >= vtx_count );

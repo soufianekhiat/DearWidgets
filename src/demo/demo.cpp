@@ -26,7 +26,8 @@
 #endif
 
 // Define Implementation and include ImPlatform
-// This will include the ImPlatform backend code which references the ImGui backends above
+// Note: implatform_impl.cpp in API library provides this for API-only builds
+// For full builds with demo, this provides the app functions the demo needs
 #define IMPLATFORM_IMPLEMENTATION
 #include <ImPlatform.h>
 
