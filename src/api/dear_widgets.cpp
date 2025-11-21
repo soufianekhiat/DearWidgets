@@ -2812,6 +2812,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	void CreateMarkersShaders( ImWidgetsContext* ctx )
 	{
+#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 		ImWidgetsMarkerBuffer markerParams;
 		markerParams.fg_color = ImVec4( 1.0f, 0.0f, 0.0f, 1.0f );
 		markerParams.bg_color = ImVec4( 0.0f, 1.0f, 0.0f, 1.0f );
@@ -2823,9 +2824,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		markerParams.draw_type = 0.0f;
 		markerParams.pad0 = 0.0f;
 
-		// TODO: Re-implement with new ImPlatform shader API
-		// CreateInternalShader( &ctx->markerShader, "markers", 0, NULL, sizeof( ImWidgetsMarkerBuffer ), &markerParams );
-		(void)markerParams; // Suppress unused variable warning
+		// Create marker shader using new ImPlatform API
+		// Note: Initial uniforms (markerParams) are no longer set at creation time.
+		// They will be set per-draw using ImPlatform_SetShaderUniform.
+		(void)markerParams; // Initial params no longer used at shader creation
+		CreateInternalShader( &ctx->markerShader, "markers", 0, NULL, 0, NULL );
+#else
+		(void)ctx; // Suppress unused parameter warning when shaders not supported
+#endif
 
 //		char* vs_source;
 //		char* ps_source;
@@ -2873,15 +2879,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	ImWidgetsContext* CreateContext()
 	{
 		ImWidgetsContext* ctx = IM_NEW( ImWidgetsContext );
-		// Default config: focus on CPU path
+		// Default config: focus on CPU path initially (user can enable GPU path later)
 		GlobalData.dashedLinesUseGPU = false;
 		// Ensure shader handles are zero-initialized to avoid random garbage checks
 		memset(&ctx->markerShader, 0, sizeof(ImDrawShader));
 		memset(&ctx->lineShader, 0, sizeof(ImDrawShader));
-		// TODO: Re-implement custom shader support with new ImPlatform shader API
-		// Custom shaders need to be created using ImPlatform_CreateShader() and ImPlatform_CreateShaderProgram()
-		// if ( GlobalData.features & ImWidgetsFeatures_Markers )
-		// 	Custom shader initialization would go here
 
 		if ( gs_pContext == NULL )
 			gs_pContext = ctx;
@@ -2920,6 +2922,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		OwnTexture( img_black );
 		OwnTexture( img_white );
 
+		// Note: Marker shaders are now lazily initialized on first DrawMarker() call
+		// This ensures they're created regardless of when AddFeatures() is called
+		// The code below is kept for backwards compatibility if features are pre-set
 		if ( GlobalData.features & ImWidgetsFeatures_Markers )
 			CreateMarkersShaders( ctx );
 
@@ -3743,16 +3748,15 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 	}
 
-#ifdef IM_SUPPORT_CUSTOM_SHADER
+#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 	void CreateInternalShader( ImDrawShader *shaders_out, char const *shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer )
 	{
-#ifndef IM_SUPPORT_CUSTOM_SHADER
-		IM_ASSERT( false && "Custom Shader not available on this platform" );
-
-		shaders_out = NULL;
-
-		return;
-#endif
+		// Note: sizeof_vs_const_buffer, vs_const_buffer, sizeof_ps_const_buffer, ps_const_buffer
+		// are no longer used with the new ImPlatform API. Uniforms are set per-draw via ImPlatform_SetShaderUniform.
+		(void)sizeof_vs_const_buffer;
+		(void)vs_const_buffer;
+		(void)sizeof_ps_const_buffer;
+		(void)ps_const_buffer;
 
 		IM_ASSERT( shaders_out != NULL );
 
@@ -3760,51 +3764,165 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		char filename_ps[ FILENAME_BUF ];
 		char filename_vs[ FILENAME_BUF ];
 
-#ifdef IM_GFX_HLSL
+		// Determine shader format and filenames based on current graphics API
+		ImPlatform_ShaderFormat format;
+#if (IM_CURRENT_GFX == IM_GFX_DIRECTX9) || (IM_CURRENT_GFX == IM_GFX_DIRECTX10) || (IM_CURRENT_GFX == IM_GFX_DIRECTX11) || (IM_CURRENT_GFX == IM_GFX_DIRECTX12)
+		// DirectX uses HLSL
+		format = ImPlatform_ShaderFormat_HLSL;
 		ImFormatString( filename_vs, FILENAME_BUF, "./shaders/%s/%s.%s", "hlsl_src", shader_name, "hlsl" );
 		ImFormatString( filename_ps, FILENAME_BUF, "./shaders/%s/%s.%s", "hlsl_src", shader_name, "hlsl" );
-#elif defined( IM_GFX_GLSL )
+#elif (IM_CURRENT_GFX == IM_GFX_OPENGL3)
+		// OpenGL uses GLSL
+		format = ImPlatform_ShaderFormat_GLSL;
 		ImFormatString( filename_vs, FILENAME_BUF, "./shaders/%s/%s_vs.%s", "glsl", shader_name, "glsl" );
 		ImFormatString( filename_ps, FILENAME_BUF, "./shaders/%s/%s_ps.%s", "glsl", shader_name, "glsl" );
-#elif defined( IM_GFX_MSL )
+#elif (IM_CURRENT_GFX == IM_GFX_METAL)
+		// Metal uses MSL
+		format = ImPlatform_ShaderFormat_MSL;
 		ImFormatString( filename_vs, FILENAME_BUF, "./shaders/%s/%s_vs.%s", "msl", shader_name, "msl" );
 		ImFormatString( filename_ps, FILENAME_BUF, "./shaders/%s/%s_ps.%s", "msl", shader_name, "msl" );
-#elif defined( IM_GFX_WGPU )
-		ImFormatString( filename_vs, FILENAME_BUF, "./shaders/%s/%s_vs.%s", "wgpu", shader_name, "wgpu" );
-		ImFormatString( filename_ps, FILENAME_BUF, "./shaders/%s/%s_ps.%s", "wgpu", shader_name, "wgpu" );
+#elif (IM_CURRENT_GFX == IM_GFX_WGPU)
+		// WebGPU uses WGSL
+		format = ImPlatform_ShaderFormat_WGSL;
+		ImFormatString( filename_vs, FILENAME_BUF, "./shaders/%s/%s_vs.%s", "wgsl", shader_name, "wgsl" );
+		ImFormatString( filename_ps, FILENAME_BUF, "./shaders/%s/%s_ps.%s", "wgsl", shader_name, "wgsl" );
+#elif (IM_CURRENT_GFX == IM_GFX_VULKAN)
+		// Vulkan uses SPIRV (but we can compile from GLSL)
+		format = ImPlatform_ShaderFormat_GLSL;
+		ImFormatString( filename_vs, FILENAME_BUF, "./shaders/%s/%s_vs.%s", "glsl", shader_name, "glsl" );
+		ImFormatString( filename_ps, FILENAME_BUF, "./shaders/%s/%s_ps.%s", "glsl", shader_name, "glsl" );
+#else
+		#error "Unknown graphics API - cannot determine shader format"
 #endif
 
+		// Load shader source files
 		char *vs_source = NULL;
 		char *ps_source = NULL;
 		size_t file_data_size_vs = 0;
 		size_t file_data_size_ps = 0;
 		int ok_vs = LoadShaderFile( &file_data_size_vs, &vs_source, filename_vs );
 		int ok_ps = LoadShaderFile( &file_data_size_ps, &ps_source, filename_ps );
+
+		// Fallback: Working directory is already set to workingdir, so use relative path from there
 		if ( !ok_vs || file_data_size_vs == 0 )
 		{
 			char alt_vs[ FILENAME_BUF * 2 ];
-			ImFormatString( alt_vs, sizeof(alt_vs), "./workingdir/shaders/%s/%s.%s", "hlsl_src", shader_name, "hlsl" );
+#if (IM_CURRENT_GFX == IM_GFX_DIRECTX9) || (IM_CURRENT_GFX == IM_GFX_DIRECTX10) || (IM_CURRENT_GFX == IM_GFX_DIRECTX11) || (IM_CURRENT_GFX == IM_GFX_DIRECTX12)
+			ImFormatString( alt_vs, sizeof(alt_vs), "shaders/%s/%s.%s", "hlsl_src", shader_name, "hlsl" );
+#elif (IM_CURRENT_GFX == IM_GFX_OPENGL3) || (IM_CURRENT_GFX == IM_GFX_VULKAN)
+			ImFormatString( alt_vs, sizeof(alt_vs), "shaders/%s/%s_vs.%s", "glsl", shader_name, "glsl" );
+#elif (IM_CURRENT_GFX == IM_GFX_METAL)
+			ImFormatString( alt_vs, sizeof(alt_vs), "shaders/%s/%s_vs.%s", "msl", shader_name, "msl" );
+#elif (IM_CURRENT_GFX == IM_GFX_WGPU)
+			ImFormatString( alt_vs, sizeof(alt_vs), "shaders/%s/%s_vs.%s", "wgsl", shader_name, "wgsl" );
+#endif
 			LoadShaderFile( &file_data_size_vs, &vs_source, alt_vs );
 		}
 		if ( !ok_ps || file_data_size_ps == 0 )
 		{
 			char alt_ps[ FILENAME_BUF * 2 ];
-			ImFormatString( alt_ps, sizeof(alt_ps), "./workingdir/shaders/%s/%s.%s", "hlsl_src", shader_name, "hlsl" );
+#if (IM_CURRENT_GFX == IM_GFX_DIRECTX9) || (IM_CURRENT_GFX == IM_GFX_DIRECTX10) || (IM_CURRENT_GFX == IM_GFX_DIRECTX11) || (IM_CURRENT_GFX == IM_GFX_DIRECTX12)
+			ImFormatString( alt_ps, sizeof(alt_ps), "shaders/%s/%s.%s", "hlsl_src", shader_name, "hlsl" );
+#elif (IM_CURRENT_GFX == IM_GFX_OPENGL3) || (IM_CURRENT_GFX == IM_GFX_VULKAN)
+			ImFormatString( alt_ps, sizeof(alt_ps), "shaders/%s/%s_ps.%s", "glsl", shader_name, "glsl" );
+#elif (IM_CURRENT_GFX == IM_GFX_METAL)
+			ImFormatString( alt_ps, sizeof(alt_ps), "shaders/%s/%s_ps.%s", "msl", shader_name, "msl" );
+#elif (IM_CURRENT_GFX == IM_GFX_WGPU)
+			ImFormatString( alt_ps, sizeof(alt_ps), "shaders/%s/%s_ps.%s", "wgsl", shader_name, "wgsl" );
+#endif
 			LoadShaderFile( &file_data_size_ps, &ps_source, alt_ps );
 		}
 
+		// Check if we successfully loaded the shader sources
 		if ( vs_source == NULL || ps_source == NULL || file_data_size_vs == 0 || file_data_size_ps == 0 )
 		{
+			char error_msg[512];
+			ImFormatString(error_msg, sizeof(error_msg), "Failed to load shader files for '%s': vs_source=%p (%d bytes), ps_source=%p (%d bytes)",
+				shader_name, vs_source, (int)file_data_size_vs, ps_source, (int)file_data_size_ps);
+			IM_ASSERT(false && error_msg);
 			ImDrawShader zero = {};
 			memset( &zero, 0, sizeof( ImDrawShader ) );
 			memcpy( shaders_out, &zero, sizeof( ImDrawShader ) );
+			if ( vs_source ) IM_FREE( vs_source );
+			if ( ps_source ) IM_FREE( ps_source );
 			return;
 		}
 
-		ImDrawShader shader = ImPlatform::CreateShader( vs_source, ps_source, sizeof_vs_const_buffer, vs_const_buffer, sizeof_ps_const_buffer, ps_const_buffer );
+		// Debug: Log successful load
+		IM_ASSERT(vs_source != NULL && file_data_size_vs > 0);
+		IM_ASSERT(ps_source != NULL && file_data_size_vs > 0);
 
-		memcpy( shaders_out, &shader, sizeof( ImDrawShader ) );
+		// Create vertex shader using new ImPlatform API
+		ImPlatform_ShaderDesc vs_desc = {};
+		vs_desc.stage = ImPlatform_ShaderStage_Vertex;
+		vs_desc.format = format;
+		vs_desc.source_code = vs_source;
+		vs_desc.bytecode = NULL;
+		vs_desc.bytecode_size = 0;
+		vs_desc.entry_point = "main_vs"; // Standard entry point name in our shaders
 
+		ImPlatform_Shader vertex_shader = ImPlatform_CreateShader( &vs_desc );
+		if (vertex_shader == NULL)
+		{
+			// Shader compilation failed - error message printed to stderr by ImPlatform
+			// Check console output for D3DCompile error message
+			char error_msg[256];
+			ImFormatString(error_msg, sizeof(error_msg), "Failed to create vertex shader for '%s' - check console for D3DCompile errors", shader_name);
+			IM_ASSERT(false && error_msg);
+
+			// Clean up and return empty shader
+			if (vs_source) IM_FREE(vs_source);
+			if (ps_source) IM_FREE(ps_source);
+			ImDrawShader zero = {};
+			memset(&zero, 0, sizeof(ImDrawShader));
+			memcpy(shaders_out, &zero, sizeof(ImDrawShader));
+			return;
+		}
+
+		// Create pixel/fragment shader using new ImPlatform API
+		ImPlatform_ShaderDesc ps_desc = {};
+		ps_desc.stage = ImPlatform_ShaderStage_Fragment;
+		ps_desc.format = format;
+		ps_desc.source_code = ps_source;
+		ps_desc.bytecode = NULL;
+		ps_desc.bytecode_size = 0;
+		ps_desc.entry_point = "main_ps"; // Standard entry point name in our shaders
+
+		ImPlatform_Shader pixel_shader = ImPlatform_CreateShader( &ps_desc );
+		if (pixel_shader == NULL)
+		{
+			// Shader compilation failed - error message printed to stderr by ImPlatform
+			char error_msg[256];
+			ImFormatString(error_msg, sizeof(error_msg), "Failed to create pixel shader for '%s' - check console for D3DCompile errors", shader_name);
+			IM_ASSERT(false && error_msg);
+
+			// Clean up and return empty shader
+			if (vertex_shader) ImPlatform_DestroyShader(vertex_shader);
+			if (vs_source) IM_FREE(vs_source);
+			if (ps_source) IM_FREE(ps_source);
+			ImDrawShader zero = {};
+			memset(&zero, 0, sizeof(ImDrawShader));
+			memcpy(shaders_out, &zero, sizeof(ImDrawShader));
+			return;
+		}
+
+		// Create shader program by linking vertex and fragment shaders
+		ImPlatform_ShaderProgram program = NULL;
+		if ( vertex_shader != NULL && pixel_shader != NULL )
+		{
+			program = ImPlatform_CreateShaderProgram( vertex_shader, pixel_shader );
+			if (program == NULL)
+			{
+				IM_ASSERT(false && "Failed to link shader program");
+			}
+		}
+
+		// Fill output structure
+		shaders_out->vs = vertex_shader;
+		shaders_out->ps = pixel_shader;
+		shaders_out->program = program;
+
+		// Clean up source code
 		IM_FREE( vs_source );
 		IM_FREE( ps_source );
 	}
@@ -3819,13 +3937,58 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					 ImWidgetsMarker marker,
 					 ImWidgetsDrawType draw_type )
 	{
-		// TODO: Re-implement marker drawing with new ImPlatform shader API
-		// For now, this function is disabled pending shader system migration
-		// The new API requires using ImPlatform_CreateShader, ImPlatform_CreateShaderProgram,
-		// ImPlatform_BeginCustomShader, and ImPlatform_SetUniform
-		(void)pDrawList; (void)start; (void)size; (void)fg_color; (void)bg_color;
-		(void)rot_angle_rad; (void)shape_size; (void)linewidth; (void)antialiasing;
-		(void)marker; (void)draw_type;
+		if (!pDrawList || !gs_pContext)
+			return;
+
+		// Lazy initialization of marker shader (once per context)
+		if (gs_pContext->markerShader.program == NULL)
+		{
+			CreateMarkersShaders(gs_pContext);
+			// If shader creation failed, skip drawing
+			if (gs_pContext->markerShader.program == NULL)
+				return;
+		}
+
+		// Prepare marker shader parameters
+		ImWidgetsMarkerBuffer params;
+		params.fg_color = ImGui::ColorConvertU32ToFloat4(fg_color);
+		params.bg_color = ImGui::ColorConvertU32ToFloat4(bg_color);
+		params.rotation = ImVec2(ImCos(rot_angle_rad), ImSin(rot_angle_rad));
+		params.linewidth = linewidth;
+		params.size = shape_size;
+		params.type = (float)marker;
+		params.antialiasing = antialiasing;
+		params.draw_type = (float)draw_type;
+		params.pad0 = 0.0f;
+
+		// Set shader uniforms using new ImPlatform API
+		ImPlatform_ShaderProgram program = gs_pContext->markerShader.program;
+		ImPlatform_BeginUniformBlock(program);
+		ImPlatform_SetUniform("fg_color", &params.fg_color, sizeof(params.fg_color));
+		ImPlatform_SetUniform("bg_color", &params.bg_color, sizeof(params.bg_color));
+		ImPlatform_SetUniform("rotation", &params.rotation, sizeof(params.rotation));
+		ImPlatform_SetUniform("linewidth", &params.linewidth, sizeof(params.linewidth));
+		ImPlatform_SetUniform("size", &params.size, sizeof(params.size));
+		ImPlatform_SetUniform("type", &params.type, sizeof(params.type));
+		ImPlatform_SetUniform("antialiasing", &params.antialiasing, sizeof(params.antialiasing));
+		ImPlatform_SetUniform("draw_type", &params.draw_type, sizeof(params.draw_type));
+		ImPlatform_EndUniformBlock(program);
+
+		// Begin custom shader rendering
+		ImPlatform_BeginCustomShader(pDrawList, program);
+
+		// Draw the marker as a quad at the specified position and size
+		ImVec2 p_min = start;
+		ImVec2 p_max = ImVec2(start.x + size.x, start.y + size.y);
+		pDrawList->AddImageQuad((ImTextureID)gs_pContext->whiteImg,
+		                        p_min, ImVec2(p_max.x, p_min.y),
+		                        p_max, ImVec2(p_min.x, p_max.y),
+		                        ImVec2(0,0), ImVec2(1,0),
+		                        ImVec2(1,1), ImVec2(0,1),
+		                        IM_COL32(255,255,255,255));
+
+		// End custom shader and restore ImGui state
+		ImPlatform_EndCustomShader(pDrawList);
 	}
 #endif
 
@@ -6014,7 +6177,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
 
-		// TODO: Move those to style
+		// Get style colors for cursors
+		ImWidgetsStyle& widgetStyle = GetStyle();
+		ImVec4 vBlue = widgetStyle.Colors[ StyleColor_Slider2D_CursorX ];
+		ImVec4 vOrange = widgetStyle.Colors[ StyleColor_Slider2D_CursorY ];
+		ImU32 uBlue = ImGui::GetColorU32( vBlue );
+		ImU32 uOrange = ImGui::GetColorU32( vOrange );
+
+		// TODO: Move these layout parameters to style variables
 		float downScale = 0.75f;
 		float dragX_placement = 0.75f;
 		float dragY_placement = 0.75f;
@@ -6026,11 +6196,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float text_lerp_y = 0.5f;
 		float cursor_radius = 4.0f;
 		int cursor_segments = 4;
-		//ImVec4 vBlue( 70.0f / 255.0f, 102.0f / 255.0f, 230.0f / 255.0f, 1.0f ); // TODO: choose from style
-		ImVec4 vBlue( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f ); // TODO: choose from style
-		ImVec4 vOrange( 255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f ); // TODO: choose from style
-		ImU32 uBlue = ImGui::GetColorU32( vBlue );
-		ImU32 uOrange = ImGui::GetColorU32( vOrange );
 		float fCursorOff = 16.0f;
 
 		const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, w ) );
@@ -6206,9 +6371,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		ImU32 const uTextCol = ImGui::ColorConvertFloat4ToU32( ImGui::GetStyle().Colors[ ImGuiCol_Text ] );
 
-		// TODO: SetWindowFontScale removed in new ImGui, need to use scaled fonts
-		// ImGui::SetWindowFontScale( 0.75f );
-
+		// Note: Text scaling removed - ImGui::SetWindowFontScale() deprecated
+		// If smaller text is needed, use ImGui::PushFont() with a pre-scaled font
 		ImVec2 const vXSize = ImGui::CalcTextSize( pBufferX );
 		ImVec2 const vYSize = ImGui::CalcTextSize( pBufferY );
 
@@ -6223,8 +6387,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					ImClamp( vCursorPos.y - vXSize.y * 0.5f, frame_bb_drag.Min.y, frame_bb_drag.Min.y + frame_bb_drag.GetHeight() - vYSize.y ) ),
 			uTextCol,
 			pBufferY );
-
-		// ImGui::SetWindowFontScale( 1.0f );
 
 		return value_changedX || value_changedY || value_changedXS || value_changedYS;
 	}
@@ -6489,6 +6651,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
     }
 }
 
+#if 0
 namespace ImWidgets
 {
     // -------------------------------
@@ -6774,26 +6937,16 @@ namespace ImWidgets
         const float aa = 1.0f;
         const int seg_count = closed ? points_count : (points_count - 1);
 
-#ifdef IM_SUPPORT_CUSTOM_SHADER
-        // TODO: Re-implement custom shader creation with new ImPlatform shader API
-        // Shader initialization disabled pending migration
-        // if (gs_pContext->lineShader.vs == NULL && gs_pContext->lineShader.ps == NULL)
-        // {
-        //     ImWidgetsDashedLineBuffer init = {};
-        //     init.p0 = ImVec2(0, 0);
-        //     init.p1 = ImVec2(1, 0);
-        //     init.thickness = 1.0f;
-        //     init.aa = 1.0f;
-        //     init.dash = ImVec2(4.0f, 4.0f);
-        //     init.dash_offset = 0.0f;
-        //     init.cap = (float)ImWidgetsCap_Butt;
-        //     init.join = 0.0f;
-        //     init.miter_limit = 4.0f;
-        //     init.color = ImGui::ColorConvertU32ToFloat4(IM_COL32(255,255,255,255));
-        //     CreateInternalShader(&gs_pContext->lineShader, "lines", 0, NULL, sizeof(ImWidgetsDashedLineBuffer), &init);
-        // }
+#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+        // Lazy initialization of line shader (once per context)
+        if (gs_pContext->lineShader.program == NULL)
+        {
+            CreateInternalShader(&gs_pContext->lineShader, "lines", 0, NULL, 0, NULL);
+        }
 
-        bool shader_ok = (gs_pContext->lineShader.vs != NULL && gs_pContext->lineShader.ps != NULL && gs_pContext->lineShader.ps_cst != NULL);
+        bool shader_ok = (gs_pContext->lineShader.vs != NULL &&
+                          gs_pContext->lineShader.ps != NULL &&
+                          gs_pContext->lineShader.program != NULL);
         const bool enable_gpu_path = GlobalData.dashedLinesUseGPU; // user-configurable
         bool gpu_drew_any = false;
         if (enable_gpu_path && shader_ok)
@@ -6837,16 +6990,39 @@ namespace ImWidgets
                 params.rect_min = minv;
                 params.rect_max = maxv;
                 params.color = colf;
+                // Padding for DirectX constant buffer alignment (pad to 16-byte multiple)
+                params.pad_cb[0] = params.pad_cb[1] = params.pad_cb[2] = 0.0f;
 
-                // TODO: Re-implement with new ImPlatform shader API
-                // Temporarily disabled pending shader system migration
-                (void)params;
-                // ImPlatform::UpdateCustomPixelShaderConstants(gs_pContext->lineShader, &params);
-                // ImPlatform::BeginCustomShader(drawlist, gs_pContext->lineShader);
-                // drawlist->AddImageQuad((ImTextureID)gs_pContext->whiteImg,
-                //                        ImVec2(minv.x, minv.y), ImVec2(maxv.x, minv.y), ImVec2(maxv.x, maxv.y), ImVec2(minv.x, maxv.y),
-                //                        ImVec2(0,0), ImVec2(1,0), ImVec2(1,1), ImVec2(0,1), IM_COL32(255,255,255,255));
-                // ImPlatform::EndCustomShader(drawlist);
+                // Set shader uniforms using new ImPlatform API
+                // Use uniform block API for batched upload
+                ImPlatform_ShaderProgram program = gs_pContext->lineShader.program;
+                ImPlatform_BeginUniformBlock(program);
+                ImPlatform_SetUniform("p0", &params.p0, sizeof(params.p0));
+                ImPlatform_SetUniform("p1", &params.p1, sizeof(params.p1));
+                ImPlatform_SetUniform("thickness", &params.thickness, sizeof(params.thickness));
+                ImPlatform_SetUniform("aa", &params.aa, sizeof(params.aa));
+                ImPlatform_SetUniform("dash", &params.dash, sizeof(params.dash));
+                ImPlatform_SetUniform("dash_offset", &params.dash_offset, sizeof(params.dash_offset));
+                ImPlatform_SetUniform("cap", &params.cap, sizeof(params.cap));
+                ImPlatform_SetUniform("join", &params.join, sizeof(params.join));
+                ImPlatform_SetUniform("miter_limit", &params.miter_limit, sizeof(params.miter_limit));
+                ImPlatform_SetUniform("rect_min", &params.rect_min, sizeof(params.rect_min));
+                ImPlatform_SetUniform("rect_max", &params.rect_max, sizeof(params.rect_max));
+                ImPlatform_SetUniform("color", &params.color, sizeof(params.color));
+                ImPlatform_EndUniformBlock(program);
+
+                // Begin custom shader rendering
+                ImPlatform_BeginCustomShader(drawlist, program);
+
+                // Draw quad covering the line segment with padding for AA and caps
+                drawlist->AddImageQuad((ImTextureID)gs_pContext->whiteImg,
+                                       ImVec2(minv.x, minv.y), ImVec2(maxv.x, minv.y),
+                                       ImVec2(maxv.x, maxv.y), ImVec2(minv.x, maxv.y),
+                                       ImVec2(0,0), ImVec2(1,0), ImVec2(1,1), ImVec2(0,1),
+                                       IM_COL32(255,255,255,255));
+
+                // End custom shader and restore ImGui state
+                ImPlatform_EndCustomShader(drawlist);
                 gpu_drew_any = true;
 
                 acc_len += len;
@@ -6857,11 +7033,11 @@ namespace ImWidgets
             // For other caps, skip CPU base fallback to avoid double drawing.
             // Mark via a local flag (outside of ifdef) using a static boolean
         }
-#endif // IM_SUPPORT_CUSTOM_SHADER
+#endif // IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 
         // CPU fallback/overlay: dashed polyline and/or extra caps
         bool gpu_used = false;
-#ifdef IM_SUPPORT_CUSTOM_SHADER
+#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
         gpu_used = enable_gpu_path && shader_ok && gpu_drew_any;
 #endif
         // Draw CPU base only if GPU wasn't used
@@ -7048,3 +7224,4 @@ namespace ImWidgets
         DrawDashedPolylineAA(drawlist, points, points_count, col, thickness, pats, 2, dash_offset, closed, cap, join, miter_limit);
     }
 }
+#endif

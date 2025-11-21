@@ -1,4 +1,4 @@
-cbuffer PS_CONSTANT_BUFFER
+cbuffer PS_CONSTANT_BUFFER : register(b0)
 {
     float2 p0;            // screen-space start
     float2 p1;            // screen-space end
@@ -15,9 +15,12 @@ cbuffer PS_CONSTANT_BUFFER
     float4 color;         // RGBA
 };
 
-cbuffer vertexBuffer
+// Vertex shader constant buffer at register b0
+// DirectX: ImGui backend automatically provides this
+// OpenGL: Converted to "uniform mat4 ProjMtx" in GLSL (manual edit required)
+cbuffer vertexBuffer : register(b0)
 {
-    float4x4 ProjectionMatrix;
+	float4x4 ProjMtx;
 };
 
 struct VS_INPUT
@@ -37,7 +40,7 @@ struct PS_INPUT
 PS_INPUT main_vs(VS_INPUT input)
 {
     PS_INPUT output;
-    output.pos = mul(ProjectionMatrix, float4(input.pos.xy, 0.f, 1.f));
+    output.pos = mul(ProjMtx, float4(input.pos.xy, 0.f, 1.f));
     output.col = input.col;
     output.uv  = input.uv;
     return output;

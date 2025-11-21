@@ -9,6 +9,28 @@
 //#include <string>
 #include <math.h>
 
+// Map project-specific graphics API defines to ImPlatform defines
+// This must be done BEFORE including ImPlatform.h so it can properly set IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+#if defined(__DEAR_GFX_DX9__)
+	#define IM_CURRENT_PLATFORM IM_PLATFORM_WIN32
+	#define IM_CURRENT_GFX IM_GFX_DIRECTX9
+#elif defined(__DEAR_GFX_DX10__)
+	#define IM_CURRENT_PLATFORM IM_PLATFORM_WIN32
+	#define IM_CURRENT_GFX IM_GFX_DIRECTX10
+#elif defined(__DEAR_GFX_DX11__)
+	#define IM_CURRENT_PLATFORM IM_PLATFORM_WIN32
+	#define IM_CURRENT_GFX IM_GFX_DIRECTX11
+#elif defined(__DEAR_GFX_DX12__)
+	#define IM_CURRENT_PLATFORM IM_PLATFORM_WIN32
+	#define IM_CURRENT_GFX IM_GFX_DIRECTX12
+#elif defined(__DEAR_GFX_OGL3__)
+	#define IM_CURRENT_PLATFORM IM_PLATFORM_WIN32
+	#define IM_CURRENT_GFX IM_GFX_OPENGL3
+#elif defined(__DEAR_GFX_VULKAN__)
+	#define IM_CURRENT_PLATFORM IM_PLATFORM_WIN32
+	#define IM_CURRENT_GFX IM_GFX_VULKAN
+#endif
+
 #include <ImPlatform.h>
 
 //////////////////////////////////////////////////////////////////////////
@@ -51,18 +73,14 @@
 #define nullptr NULL
 #endif
 
-// Forward declare ImPlatform shader types
+// ImPlatform shader types
 struct ImDrawShader
 {
-	void* vs; // Vertex shader handle (ImPlatform_Shader)
-	void* ps; // Pixel shader handle (ImPlatform_Shader)
-	void* program; // Shader program handle (ImPlatform_ShaderProgram)
-	void* vs_cst; // Vertex shader constant buffer
-	void* ps_cst; // Pixel shader constant buffer
-	void* cpu_vs_data; // CPU copy of vertex shader constants
-	unsigned int cpu_vs_data_size;
-	void* cpu_ps_data; // CPU copy of pixel shader constants
-	unsigned int cpu_ps_data_size;
+	ImPlatform_Shader vs; // Vertex shader handle
+	ImPlatform_Shader ps; // Pixel shader handle
+	ImPlatform_ShaderProgram program; // Shader program handle
+	// Note: New ImPlatform API handles constant buffers internally via ImPlatform_SetShaderUniform
+	// The old vs_cst/ps_cst/cpu_*_data fields are no longer needed
 };
 
 struct ImWidgetsMarkerBuffer
@@ -188,6 +206,8 @@ struct ImWidgetsContext
 enum ImWidgetsStyleColor
 {
 	StyleColor_Value,
+	StyleColor_Slider2D_CursorX,    // Color for Slider2D X-axis cursor
+	StyleColor_Slider2D_CursorY,    // Color for Slider2D Y-axis cursor
 
 	StyleColor_Count
 };
@@ -208,6 +228,8 @@ struct ImWidgetsStyle
 	{
 		HueSelector_Thickness_ZeroWidth = 2.0f;
 		Colors[ StyleColor_Value ] = ImVec4( 1.0f, 0.0f, 0.0f, 1.0f );
+		Colors[ StyleColor_Slider2D_CursorX ] = ImVec4( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f ); // Blue
+		Colors[ StyleColor_Slider2D_CursorY ] = ImVec4( 255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f ); // Orange
 	}
 
 	void PushColor( ImWidgetsStyleColor colorIndex, const ImVec4& color )
@@ -929,7 +951,7 @@ namespace ImWidgets{
 	IMGUI_API void DrawImageConcaveShape( ImDrawList* draw, ImTextureID img, ImVec2* poly, int points_count, ImU32 tint,
 										  ImVec2 uv_offset = ImVec2( 0.0f, 0.0f ), ImVec2 uv_scale = ImVec2( 1.0f, 1.0f ) );
 
-#ifdef IM_SUPPORT_CUSTOM_SHADER
+#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 	IMGUI_API void CreateInternalShader( ImDrawShader* shaders_out, char const* shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer );
 
 	IMGUI_API void DrawMarker( ImDrawList* pDrawList, ImVec2 start, ImVec2 size,
@@ -1057,15 +1079,15 @@ namespace ImWidgets{
 												 int division1 = -1, float height1 = -1.0f, float thickness1 = -1.0f, float angle1 = -1.0f, ImU32 col1 = 0u,
 												 int division2 = -1, float height2 = -1.0f, float thickness2 = -1.0f, float angle2 = -1.0f, ImU32 col2 = 0u );
 
-    IMGUI_API void DrawLogLineGraduation( ImDrawList* drawlist, ImVec2 start, ImVec2 end,
-                                        float mainLineThickness, ImU32 mainCol,
-                                        int division0, float height0, float thickness0, float angle0, ImU32 col0,
-                                        int division1 = -1, float height1 = -1.0f, float thickness1 = -1.0f, float angle1 = -1.0f, ImU32 col1 = 0u );
+	IMGUI_API void DrawLogLineGraduation( ImDrawList *drawlist, ImVec2 start, ImVec2 end,
+										  float mainLineThickness, ImU32 mainCol,
+										  int division0, float height0, float thickness0, float angle0, ImU32 col0,
+										  int division1 = -1, float height1 = -1.0f, float thickness1 = -1.0f, float angle1 = -1.0f, ImU32 col1 = 0u );
 
-	IMGUI_API void DrawLogCircularGraduation( ImDrawList* drawlist, ImVec2 center, float radius, float start_angle, float end_angle, int num_segments,
-												float mainLineThickness, ImU32 mainCol,
-												int division0, float height0, float thickness0, float angle0, ImU32 col0,
-												int division1 = -1, float height1 = -1.0f, float thickness1 = -1.0f, float angle1 = -1.0f, ImU32 col1 = 0u );
+	IMGUI_API void DrawLogCircularGraduation( ImDrawList *drawlist, ImVec2 center, float radius, float start_angle, float end_angle, int num_segments,
+											  float mainLineThickness, ImU32 mainCol,
+											  int division0, float height0, float thickness0, float angle0, ImU32 col0,
+											  int division1 = -1, float height1 = -1.0f, float thickness1 = -1.0f, float angle1 = -1.0f, ImU32 col1 = 0u );
 
 	typedef void ( *ImInlineOffset )( void* data, ImVec2 offset );
 	typedef void ( *ImDrawShape )( ImDrawList* drawlist, ImU32 col, float thickness, void* data );
@@ -1160,6 +1182,7 @@ namespace ImWidgets{
     IMGUI_API void SetDashedLinesDebugJoins(bool enable);
     IMGUI_API bool GetDashedLinesDebugJoins();
 
+#if 0
     //////////////////////////////////////////////////////////////////////////
     // Polylines (Dashed/Stroked)
     //////////////////////////////////////////////////////////////////////////
@@ -1189,4 +1212,5 @@ namespace ImWidgets{
         ImWidgetsCap cap = ImWidgetsCap_Butt,
         ImWidgetsJoin join = ImWidgetsJoin_Mitter,
         float miter_limit = 4.0f);
+#endif
 }

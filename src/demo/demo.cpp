@@ -379,8 +379,10 @@ void ShowSampleOffscreen00()
 	//					   cur + ImVec2( 0.0f + 50.0f, 50.0f ),
 	//					   ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 255), 8);
 
-	// TODO: Re-enable when DrawMarker is re-implemented with new ImPlatform shader API
-	// ImWidgets::DrawMarker( draw, cur, size, IM_COL32_WHITE, IM_COL32_BLACK_TRANS, 0.0f, 1.0f, 10.0f, 0.5f, ImWidgetsMarker_Disc, ImWidgetsDrawType_Outline );
+#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+	// DrawMarker now fully functional with new ImPlatform shader API
+	ImWidgets::DrawMarker( draw, cur, size, IM_COL32_WHITE, IM_COL32_BLACK_TRANS, 0.0f, 1.0f, 10.0f, 0.5f, ImWidgetsMarker_Disc, ImWidgetsDrawType_Outline );
+#endif
 	ImGui::Dummy( size );
 
 	ImGui::End();
@@ -568,7 +570,7 @@ namespace ImWidgets {
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
 				ImGui::Text( "Vtx: %d", shape.vertices.size() );
 			}
-#ifdef IM_SUPPORT_CUSTOM_SHADER
+#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 			if ( ImGui::CollapsingHeader( "Custom Shader" ) )
 			{
 				float const size = ImGui::GetContentRegionAvail().x;
@@ -578,8 +580,9 @@ namespace ImWidgets {
 				static float angle = 0.0f;
 				static float antialiasing = 1.0f / size;
 
-				ImVec4 vBlue( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f ); // TODO: choose from style
-				ImVec4 vOrange( 255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f ); // TODO: choose from style
+				ImWidgetsStyle& widgetStyle = ImWidgets::GetStyle();
+				ImVec4 vBlue = widgetStyle.Colors[ StyleColor_Slider2D_CursorX ];
+				ImVec4 vOrange = widgetStyle.Colors[ StyleColor_Slider2D_CursorY ];
 				ImU32 uBlue = ImGui::GetColorU32( vBlue );
 				ImU32 uOrange = ImGui::GetColorU32( vOrange );
 				static ImVec4 fg_color_v( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
@@ -615,19 +618,16 @@ namespace ImWidgets {
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				ImVec2 pos = ImGui::GetCursorScreenPos();
 				ImGui::Dummy( ImVec2( size, size ) );
-				// TODO: Re-enable when DrawMarker is re-implemented with new ImPlatform shader API
-				// DrawMarker( pDrawList, pos, ImVec2( size, size ),
-				// 			fg_color_col,
-				// 			bg_color_col,
-				// 			angle,
-				// 			shape_size,
-				// 			line_width,
-				// 			antialiasing,
-				// 			( ImWidgetsMarker )marker_idx,
-				// 			( ImWidgetsDrawType )draw_type_idx );
-				(void)pDrawList; (void)pos; (void)fg_color_col; (void)bg_color_col;
-				(void)angle; (void)shape_size; (void)line_width; (void)antialiasing;
-				(void)marker_idx; (void)draw_type_idx;
+				// DrawMarker now fully functional with new ImPlatform shader API
+				DrawMarker( pDrawList, pos, ImVec2( size, size ),
+							fg_color_col,
+							bg_color_col,
+							angle,
+							shape_size,
+							line_width,
+							antialiasing,
+							( ImWidgetsMarker )marker_idx,
+							( ImWidgetsDrawType )draw_type_idx );
 			}
 			if ( ImGui::CollapsingHeader( "Thick line", ImGuiTreeNodeFlags_DefaultOpen ) )
 			{
@@ -639,8 +639,9 @@ namespace ImWidgets {
 				static float mitter_limit = 0.0f;
 				static float antialiasing = 1.0f / size;
 
-				ImVec4 vBlue( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f ); // TODO: choose from style
-				ImVec4 vOrange( 255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f ); // TODO: choose from style
+				ImWidgetsStyle& widgetStyle = ImWidgets::GetStyle();
+				ImVec4 vBlue = widgetStyle.Colors[ StyleColor_Slider2D_CursorX ];
+				ImVec4 vOrange = widgetStyle.Colors[ StyleColor_Slider2D_CursorY ];
 				ImU32 uBlue = ImGui::GetColorU32( vBlue );
 				ImU32 uOrange = ImGui::GetColorU32( vOrange );
 				static ImVec4 color_v( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
@@ -1888,20 +1889,15 @@ namespace ImWidgets {
 				static float value[ 3 ] = { 0.25f, 10.0f, 100.0f };
 				static float min = 0.1f;
 				static float max = 150.0f;
-				// TODO: SetWindowFontScale removed in new ImGui
-				// ImGui::SetWindowFontScale( 0.75f );
 				ImGui::Text( "Hover per region of influence" );
-				// ImGui::SetWindowFontScale( 1.0f );
 				ImWidgets::SliderNScalar( "Values##SliderNRegions", ImGuiDataType_Float, &value, 3, &min, &max, 8.0f, true );
-				// TODO: SetWindowFontScale removed in new ImGui
-				// ImGui::SetWindowFontScale( 0.75f );
 				ImGui::Text( "Global Hover" );
-				// ImGui::SetWindowFontScale( 1.0f );
 				ImWidgets::SliderNScalar( "Values##SliderNGlobal", ImGuiDataType_Float, &value, 3, &min, &max, 8.0f, false );
 				ImGui::DragFloat( "Near Plane", &value[ 0 ], 1.0f, min, value[ 1 ] );
 				ImGui::DragFloat( "Focal Planes", &value[ 1 ], 1.0f, value[ 0 ], value[ 2 ] );
 				ImGui::DragFloat( "Far Planes", &value[ 2 ], 1.0f, value[ 1 ], max );
 			}
+#if 0
 			if ( ImGui::CollapsingHeader( "Dashed Polylines", ImGuiTreeNodeFlags_DefaultOpen ) )
 			{
 				ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -2162,6 +2158,7 @@ namespace ImWidgets {
 				if (ImGui::Checkbox("Debug Joins (CPU)##dashed", &debug_joins))
 					ImWidgets::SetDashedLinesDebugJoins(debug_joins);
 			}
+#endif
 #if 0 // TODO
 			if ( ImGui::CollapsingHeader( "SliderRing" ) )
 			{
