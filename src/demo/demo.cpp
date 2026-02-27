@@ -278,6 +278,16 @@ ImVec2 clock_size;
 ImTextureID man_img;
 ImVec2 man_size;
 
+static void OnDpiChanged( float new_scale, void* /*user_data*/ )
+{
+	ImGuiStyle& style = ImGui::GetStyle();
+	style = ImGuiStyle();
+	style.ScaleAllSizes( new_scale );
+	style.FontScaleDpi = new_scale;
+	ImWidgets::GetStyle() = ImWidgetsStyle();
+	ImWidgets::GetStyle().ScaleAllSizes( new_scale );
+}
+
 int main()
 {
 	// Using the new ImPlatform C API - following ImPlatform demo pattern
@@ -333,22 +343,25 @@ int main()
 	ImGui::StyleColorsDark();
 	//ImGui::StyleColorsClassic();
 
-	// Load fonts
+	// Setup DPI scaling (cross-platform)
+	float dpi_scale = ImPlatform_GetDpiScale();
+
+	// Load fonts (FontScaleDpi handles DPI scaling at render time)
 	io.Fonts->AddFontFromFileTTF( "../extern/FiraCode/distr/ttf/FiraCode-Medium.ttf", 16.0f );
 
-	// Setup DPI scaling (Win32 only) - following ImPlatform demo pattern
 	ImGuiStyle& style = ImGui::GetStyle();
-#if defined(IM_CURRENT_PLATFORM) && (IM_CURRENT_PLATFORM == IM_PLATFORM_WIN32)
-	float dpi_scale = ImPlatform_App_GetDpiScale_Win32();
 	style.ScaleAllSizes( dpi_scale );
 	style.FontScaleDpi = dpi_scale;
+	ImWidgets::GetStyle().ScaleAllSizes( dpi_scale );
 #ifdef IMGUI_HAS_DOCK
-	//io.ConfigDpiScaleFonts = true;
+	io.ConfigDpiScaleFonts = true;
 #endif
 #ifdef IMGUI_HAS_VIEWPORT
-	//io.ConfigDpiScaleViewports = true;
+	io.ConfigDpiScaleViewports = true;
 #endif
-#endif
+
+	// Register DPI change callback for runtime monitor changes
+	ImPlatform_SetDpiChangeCallback( OnDpiChanged, nullptr );
 
 	// When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones
 #ifdef IMGUI_HAS_VIEWPORT
@@ -614,8 +627,9 @@ namespace ImWidgets {
 	//////////////////////////////////////////////////////////////////////////
 	void RenderShowcaseHero()
 	{
+		const float S = ImPlatform_GetDpiScale();
 		ImVec2 size = ImGui::GetContentRegionAvail();
-		float header_height = 80.0f;
+		float header_height = 80.0f * S;
 		ImVec2 header_size( size.x, header_height );
 
 		ImDrawList* draw_list = ImGui::GetWindowDrawList();
@@ -624,16 +638,16 @@ namespace ImWidgets {
 		// Dark navy header bar
 		ImWidgetsShape header_shape;
 		ImWidgets::GenShapeSquircle( header_shape, pos + header_size * 0.5f,
-			ImMin( header_size.x, header_size.y ) * 0.48f, 64, 2.5f );
+			ImMin( header_size.x, header_size.y ) * 0.48f, 64, 2.5f * S );
 		ImWidgets::ShapeSetDefaultWhiteCol( header_shape );
 		for ( auto& v : header_shape.vertices )
 			v.col = IM_COL32( 30, 35, 48, 255 );
 		ImWidgets::DrawShape( draw_list, header_shape );
 
 		// Logo circle (left side)
-		ImVec2 logo_center = pos + ImVec2( 50.0f, header_height * 0.5f );
+		ImVec2 logo_center = pos + ImVec2( 50.0f * S, header_height * 0.5f );
 		ImWidgetsShape logo_circle;
-		ImWidgets::GenShapeCircle( logo_circle, logo_center, 22.0f, 48 );
+		ImWidgets::GenShapeCircle( logo_circle, logo_center, 22.0f * S, 48 );
 		ImWidgets::ShapeSetDefaultWhiteCol( logo_circle );
 		for ( auto& v : logo_circle.vertices )
 			v.col = IM_COL32( 255, 107, 129, 255 );
@@ -641,22 +655,22 @@ namespace ImWidgets {
 
 		// Inner logo accent
 		ImWidgetsShape logo_inner;
-		ImWidgets::GenShapeCircle( logo_inner, logo_center, 12.0f, 48 );
+		ImWidgets::GenShapeCircle( logo_inner, logo_center, 12.0f * S, 48 );
 		ImWidgets::ShapeSetDefaultWhiteCol( logo_inner );
 		for ( auto& v : logo_inner.vertices )
 			v.col = IM_COL32( 255, 180, 195, 255 );
 		ImWidgets::DrawShape( draw_list, logo_inner );
 
 		// Brand name
-		ImGui::SetCursorScreenPos( pos + ImVec2( 85.0f, header_height * 0.5f - 10.0f ) );
+		ImGui::SetCursorScreenPos( pos + ImVec2( 85.0f * S, header_height * 0.5f - 10.0f * S ) );
 		ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 255 ) );
 		ImGui::Text( "Creative Studio" );
 		ImGui::PopStyleColor();
 
 		// Navigation items (centered)
-		float nav_y = header_height * 0.5f - 8.0f;
+		float nav_y = header_height * 0.5f - 8.0f * S;
 		float nav_start_x = size.x * 0.35f;
-		float nav_spacing = 100.0f;
+		float nav_spacing = 100.0f * S;
 
 		const char* nav_items[] = { "Dashboard", "Projects", "Team", "Analytics" };
 		ImU32 nav_colors[] = {
@@ -677,10 +691,10 @@ namespace ImWidgets {
 			if ( i == 0 )
 			{
 				float text_width = ImGui::CalcTextSize( nav_items[ i ] ).x;
-				ImVec2 indicator_pos = pos + ImVec2( nav_start_x, nav_y + 22.0f );
+				ImVec2 indicator_pos = pos + ImVec2( nav_start_x, nav_y + 22.0f * S );
 				ImWidgetsShape indicator;
 				ImWidgets::GenShapeRect( indicator,
-					ImRect( indicator_pos, indicator_pos + ImVec2( text_width, 3.0f ) ) );
+					ImRect( indicator_pos, indicator_pos + ImVec2( text_width, 3.0f * S ) ) );
 				ImWidgets::ShapeSetDefaultWhiteCol( indicator );
 				for ( auto& v : indicator.vertices )
 					v.col = IM_COL32( 255, 107, 129, 255 );
@@ -689,9 +703,9 @@ namespace ImWidgets {
 		}
 
 		// Notification badge (right side)
-		ImVec2 notif_center = pos + ImVec2( size.x - 100.0f, header_height * 0.5f );
+		ImVec2 notif_center = pos + ImVec2( size.x - 100.0f * S, header_height * 0.5f );
 		ImWidgetsShape notif_circle;
-		ImWidgets::GenShapeCircle( notif_circle, notif_center, 18.0f, 48 );
+		ImWidgets::GenShapeCircle( notif_circle, notif_center, 18.0f * S, 48 );
 		ImWidgets::ShapeSetDefaultWhiteCol( notif_circle );
 		for ( auto& v : notif_circle.vertices )
 			v.col = IM_COL32( 60, 70, 90, 255 );
@@ -699,16 +713,16 @@ namespace ImWidgets {
 
 		// Notification dot
 		ImWidgetsShape notif_dot;
-		ImWidgets::GenShapeCircle( notif_dot, notif_center + ImVec2( 8.0f, -8.0f ), 5.0f, 24 );
+		ImWidgets::GenShapeCircle( notif_dot, notif_center + ImVec2( 8.0f * S, -8.0f * S ), 5.0f * S, 24 );
 		ImWidgets::ShapeSetDefaultWhiteCol( notif_dot );
 		for ( auto& v : notif_dot.vertices )
 			v.col = IM_COL32( 255, 90, 95, 255 );
 		ImWidgets::DrawShape( draw_list, notif_dot );
 
 		// Profile avatar (rightmost)
-		ImVec2 avatar_center = pos + ImVec2( size.x - 50.0f, header_height * 0.5f );
+		ImVec2 avatar_center = pos + ImVec2( size.x - 50.0f * S, header_height * 0.5f );
 		ImWidgetsShape avatar;
-		ImWidgets::GenShapeCircle( avatar, avatar_center, 20.0f, 48 );
+		ImWidgets::GenShapeCircle( avatar, avatar_center, 20.0f * S, 48 );
 		ImWidgets::ShapeSetDefaultBoundUV( avatar );
 		ImWidgets::ShapeLinearSRGBLinearGradient( avatar,
 			ImVec2( 0.5f, 0.0f ), ImVec2( 0.5f, 1.0f ),
@@ -717,17 +731,18 @@ namespace ImWidgets {
 
 		// Avatar inner circle
 		ImWidgetsShape avatar_inner;
-		ImWidgets::GenShapeCircle( avatar_inner, avatar_center, 12.0f, 48 );
+		ImWidgets::GenShapeCircle( avatar_inner, avatar_center, 12.0f * S, 48 );
 		ImWidgets::ShapeSetDefaultWhiteCol( avatar_inner );
 		for ( auto& v : avatar_inner.vertices )
 			v.col = IM_COL32( 255, 255, 255, 100 );
 		ImWidgets::DrawShape( draw_list, avatar_inner );
 
-		ImGui::SetCursorScreenPos( pos + ImVec2( 0.0f, header_height + 30.0f ) );
+		ImGui::SetCursorScreenPos( pos + ImVec2( 0.0f, header_height + 30.0f * S ) );
 	}
 
 	void RenderShowcaseFeatureCard( const char* title, const char* desc, ImU32 color, ImVec2 card_size )
 	{
+		const float S = ImPlatform_GetDpiScale();
 		ImDrawList* draw_list = ImGui::GetWindowDrawList();
 		ImVec2 pos = ImGui::GetCursorScreenPos();
 
@@ -735,23 +750,23 @@ namespace ImWidgets {
 		ImWidgetsShape card_shape;
 		ImVec2 center = pos + card_size * 0.5f;
 		ImWidgets::GenShapeSquircle( card_shape, center,
-			ImMin( card_size.x, card_size.y ) * 0.48f, 64, 4.0f );
+			ImMin( card_size.x, card_size.y ) * 0.48f, 64, 4.0f * S );
 		ImWidgets::ShapeSetDefaultWhiteCol( card_shape );
 		for ( auto& v : card_shape.vertices )
 			v.col = color;
 		ImWidgets::DrawShape( draw_list, card_shape );
 
 		// Large decorative circle icon at top
-		ImVec2 icon_pos = pos + ImVec2( card_size.x * 0.5f, 70.0f );
+		ImVec2 icon_pos = pos + ImVec2( card_size.x * 0.5f, 70.0f * S );
 		ImWidgetsShape icon_circle;
-		ImWidgets::GenShapeCircle( icon_circle, icon_pos, 40.0f, 48 );
+		ImWidgets::GenShapeCircle( icon_circle, icon_pos, 40.0f * S, 48 );
 		ImWidgets::ShapeSetDefaultWhiteCol( icon_circle );
 		for ( auto& v : icon_circle.vertices )
 			v.col = IM_COL32( 255, 255, 255, 200 );
 		ImWidgets::DrawShape( draw_list, icon_circle );
 
 		// Card content
-		float content_y = 140.0f;
+		float content_y = 140.0f * S;
 		ImVec2 title_pos = pos + ImVec2( card_size.x * 0.5f, content_y );
 
 		// Center the title text
@@ -762,18 +777,19 @@ namespace ImWidgets {
 		ImGui::PopStyleColor();
 
 		// Description text
-		ImGui::SetCursorScreenPos( pos + ImVec2( 20.0f, content_y + 30.0f ) );
+		ImGui::SetCursorScreenPos( pos + ImVec2( 20.0f * S, content_y + 30.0f * S ) );
 		ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 230 ) );
-		ImGui::PushTextWrapPos( pos.x + card_size.x - 20.0f );
+		ImGui::PushTextWrapPos( pos.x + card_size.x - 20.0f * S );
 		ImGui::TextWrapped( "%s", desc );
 		ImGui::PopTextWrapPos();
 		ImGui::PopStyleColor();
 
-		ImGui::SetCursorScreenPos( pos + ImVec2( card_size.x + 20.0f, 0.0f ) );
+		ImGui::SetCursorScreenPos( pos + ImVec2( card_size.x + 20.0f * S, 0.0f ) );
 	}
 
 	void RenderShowcaseFeatures()
 	{
+		const float S = ImPlatform_GetDpiScale();
 		ImDrawList* draw_list = ImGui::GetWindowDrawList();
 		ImVec2 size = ImGui::GetContentRegionAvail();
 
@@ -793,20 +809,20 @@ namespace ImWidgets {
 			{ "Client Rating", "4.9", "Based on 47 reviews", IM_COL32( 255, 200, 100, 255 ), 0.98f }
 		};
 
-		float card_width = ( size.x - 60.0f ) / 4.0f;
-		float card_height = 140.0f;
+		float card_width = ( size.x - 60.0f * S ) / 4.0f;
+		float card_height = 140.0f * S;
 		ImVec2 start_pos = ImGui::GetCursorScreenPos();
 
 		for ( int i = 0; i < 4; ++i )
 		{
-			ImVec2 card_pos = start_pos + ImVec2( i * ( card_width + 20.0f ), 0.0f );
+			ImVec2 card_pos = start_pos + ImVec2( i * ( card_width + 20.0f * S ), 0.0f );
 			ImVec2 card_size( card_width, card_height );
 
 			// Card background - dark with slight gradient
 			ImWidgetsShape card_bg;
 			ImVec2 card_center = card_pos + card_size * 0.5f;
 			ImWidgets::GenShapeSquircle( card_bg, card_center,
-				ImMin( card_size.x, card_size.y ) * 0.48f, 64, 3.5f );
+				ImMin( card_size.x, card_size.y ) * 0.48f, 64, 3.5f * S );
 			ImWidgets::ShapeSetDefaultBoundUV( card_bg );
 			ImWidgets::ShapeLinearSRGBLinearGradient( card_bg,
 				ImVec2( 0.5f, 0.0f ), ImVec2( 0.5f, 1.0f ),
@@ -816,16 +832,16 @@ namespace ImWidgets {
 			// Accent top border
 			ImWidgetsShape accent;
 			ImWidgets::GenShapeRect( accent,
-				ImRect( card_pos + ImVec2( 15.0f, 0.0f ), card_pos + ImVec2( card_width - 15.0f, 4.0f ) ) );
+				ImRect( card_pos + ImVec2( 15.0f * S, 0.0f ), card_pos + ImVec2( card_width - 15.0f * S, 4.0f * S ) ) );
 			ImWidgets::ShapeSetDefaultWhiteCol( accent );
 			for ( auto& v : accent.vertices )
 				v.col = stats[ i ].accent_color;
 			ImWidgets::DrawShape( draw_list, accent );
 
 			// Decorative circle
-			ImVec2 circle_pos = card_pos + ImVec2( card_width - 30.0f, 25.0f );
+			ImVec2 circle_pos = card_pos + ImVec2( card_width - 30.0f * S, 25.0f * S );
 			ImWidgetsShape decor_circle;
-			ImWidgets::GenShapeCircle( decor_circle, circle_pos, 35.0f, 48 );
+			ImWidgets::GenShapeCircle( decor_circle, circle_pos, 35.0f * S, 48 );
 			ImWidgets::ShapeSetDefaultWhiteCol( decor_circle );
 			ImU32 circle_col = IM_COL32(
 				( stats[ i ].accent_color >> 0 ) & 0xFF,
@@ -836,31 +852,31 @@ namespace ImWidgets {
 			ImWidgets::DrawShape( draw_list, decor_circle );
 
 			// Value (large number)
-			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f, 25.0f ) );
+			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f * S, 25.0f * S ) );
 			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 255 ) );
 			ImGui::Text( "%s", stats[ i ].value );
 			ImGui::PopStyleColor();
 
 			// Label
-			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f, 55.0f ) );
+			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f * S, 55.0f * S ) );
 			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 180, 190, 210, 255 ) );
 			ImGui::Text( "%s", stats[ i ].label );
 			ImGui::PopStyleColor();
 
 			// Subtitle
-			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f, 75.0f ) );
+			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f * S, 75.0f * S ) );
 			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 140, 150, 170, 255 ) );
 			ImGui::Text( "%s", stats[ i ].subtitle );
 			ImGui::PopStyleColor();
 
 			// Progress bar
-			float bar_width = card_width - 40.0f;
-			ImVec2 bar_pos = card_pos + ImVec2( 20.0f, card_height - 25.0f );
+			float bar_width = card_width - 40.0f * S;
+			ImVec2 bar_pos = card_pos + ImVec2( 20.0f * S, card_height - 25.0f * S );
 
 			// Background
 			ImWidgetsShape bar_bg;
 			ImWidgets::GenShapeRect( bar_bg,
-				ImRect( bar_pos, bar_pos + ImVec2( bar_width, 6.0f ) ) );
+				ImRect( bar_pos, bar_pos + ImVec2( bar_width, 6.0f * S ) ) );
 			ImWidgets::ShapeSetDefaultWhiteCol( bar_bg );
 			for ( auto& v : bar_bg.vertices )
 				v.col = IM_COL32( 60, 70, 90, 255 );
@@ -870,18 +886,19 @@ namespace ImWidgets {
 			ImWidgetsShape bar_fill;
 			float fill_width = bar_width * stats[ i ].progress;
 			ImWidgets::GenShapeRect( bar_fill,
-				ImRect( bar_pos, bar_pos + ImVec2( fill_width, 6.0f ) ) );
+				ImRect( bar_pos, bar_pos + ImVec2( fill_width, 6.0f * S ) ) );
 			ImWidgets::ShapeSetDefaultWhiteCol( bar_fill );
 			for ( auto& v : bar_fill.vertices )
 				v.col = stats[ i ].accent_color;
 			ImWidgets::DrawShape( draw_list, bar_fill );
 		}
 
-		ImGui::Dummy( ImVec2( size.x, card_height + 40.0f ) );
+		ImGui::Dummy( ImVec2( size.x, card_height + 40.0f * S ) );
 	}
 
 	void RenderShowcaseColorPalette()
 	{
+		const float S = ImPlatform_GetDpiScale();
 		ImDrawList* draw_list = ImGui::GetWindowDrawList();
 		ImVec2 size = ImGui::GetContentRegionAvail();
 
@@ -909,31 +926,31 @@ namespace ImWidgets {
 			{ "Web Platform", "Review", IM_COL32( 150, 255, 150, 255 ), IM_COL32( 100, 230, 180, 255 ), 6, 0.92f }
 		};
 
-		float card_width = ( size.x - 40.0f ) / 3.0f;
-		float card_height = 240.0f;
+		float card_width = ( size.x - 40.0f * S ) / 3.0f;
+		float card_height = 240.0f * S;
 		ImVec2 start_pos = ImGui::GetCursorScreenPos();
 
 		for ( int i = 0; i < 3; ++i )
 		{
-			ImVec2 card_pos = start_pos + ImVec2( i * ( card_width + 20.0f ), 0.0f );
+			ImVec2 card_pos = start_pos + ImVec2( i * ( card_width + 20.0f * S ), 0.0f );
 			ImVec2 card_size( card_width, card_height );
 
 			// Card background
 			ImWidgetsShape card_bg;
 			ImVec2 card_center = card_pos + card_size * 0.5f;
 			ImWidgets::GenShapeSquircle( card_bg, card_center,
-				ImMin( card_size.x, card_size.y ) * 0.48f, 64, 4.0f );
+				ImMin( card_size.x, card_size.y ) * 0.48f, 64, 4.0f * S );
 			ImWidgets::ShapeSetDefaultWhiteCol( card_bg );
 			for ( auto& v : card_bg.vertices )
 				v.col = IM_COL32( 42, 48, 65, 255 );
 			ImWidgets::DrawShape( draw_list, card_bg );
 
 			// Gradient header area
-			float header_height = 120.0f;
+			float header_height = 120.0f * S;
 			ImWidgetsShape header_gradient;
 			ImVec2 header_center = card_pos + ImVec2( card_width * 0.5f, header_height * 0.5f );
 			ImWidgets::GenShapeSquircle( header_gradient, header_center,
-				ImMin( card_width, header_height ) * 0.48f, 64, 4.0f );
+				ImMin( card_width, header_height ) * 0.48f, 64, 4.0f * S );
 			ImWidgets::ShapeSetDefaultBoundUV( header_gradient );
 			ImWidgets::ShapeLinearSRGBLinearGradient( header_gradient,
 				ImVec2( 0.0f, 0.5f ), ImVec2( 1.0f, 0.5f ),
@@ -943,10 +960,10 @@ namespace ImWidgets {
 			// Decorative circles in header
 			for ( int j = 0; j < 3; ++j )
 			{
-				float x = 30.0f + j * 40.0f;
-				float y = 30.0f + j * 15.0f;
+				float x = ( 30.0f + j * 40.0f ) * S;
+				float y = ( 30.0f + j * 15.0f ) * S;
 				ImWidgetsShape decor;
-				ImWidgets::GenShapeCircle( decor, card_pos + ImVec2( x, y ), 15.0f + j * 5.0f, 48 );
+				ImWidgets::GenShapeCircle( decor, card_pos + ImVec2( x, y ), ( 15.0f + j * 5.0f ) * S, 48 );
 				ImWidgets::ShapeSetDefaultWhiteCol( decor );
 				for ( auto& v : decor.vertices )
 					v.col = IM_COL32( 255, 255, 255, 30 - j * 10 );
@@ -954,38 +971,38 @@ namespace ImWidgets {
 			}
 
 			// Project name
-			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f, header_height + 20.0f ) );
+			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f * S, header_height + 20.0f * S ) );
 			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 255 ) );
 			ImGui::Text( "%s", projects[ i ].name );
 			ImGui::PopStyleColor();
 
 			// Status badge
-			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f, header_height + 45.0f ) );
+			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f * S, header_height + 45.0f * S ) );
 			ImVec2 badge_pos = ImGui::GetCursorScreenPos();
-			float badge_width = ImGui::CalcTextSize( projects[ i ].status ).x + 16.0f;
+			float badge_width = ImGui::CalcTextSize( projects[ i ].status ).x + 16.0f * S;
 
 			ImWidgetsShape badge;
 			ImWidgets::GenShapeRect( badge,
-				ImRect( badge_pos, badge_pos + ImVec2( badge_width, 20.0f ) ) );
+				ImRect( badge_pos, badge_pos + ImVec2( badge_width, 20.0f * S ) ) );
 			ImWidgets::ShapeSetDefaultWhiteCol( badge );
 			for ( auto& v : badge.vertices )
 				v.col = IM_COL32( 60, 70, 90, 255 );
 			ImWidgets::DrawShape( draw_list, badge );
 
-			ImGui::SetCursorScreenPos( badge_pos + ImVec2( 8.0f, 3.0f ) );
+			ImGui::SetCursorScreenPos( badge_pos + ImVec2( 8.0f * S, 3.0f * S ) );
 			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 180, 190, 210, 255 ) );
 			ImGui::Text( "%s", projects[ i ].status );
 			ImGui::PopStyleColor();
 
 			// Team avatars
-			float avatar_y = header_height + 80.0f;
+			float avatar_y = header_height + 80.0f * S;
 			for ( int j = 0; j < projects[ i ].team_size; ++j )
 			{
-				ImVec2 avatar_pos = card_pos + ImVec2( 20.0f + j * 22.0f, avatar_y );
+				ImVec2 avatar_pos = card_pos + ImVec2( 20.0f * S + j * 22.0f * S, avatar_y );
 
 				// Avatar circle
 				ImWidgetsShape avatar;
-				ImWidgets::GenShapeCircle( avatar, avatar_pos, 12.0f, 48 );
+				ImWidgets::GenShapeCircle( avatar, avatar_pos, 12.0f * S, 48 );
 				ImWidgets::ShapeSetDefaultBoundUV( avatar );
 
 				// Different gradient for each avatar
@@ -1004,22 +1021,22 @@ namespace ImWidgets {
 				ImWidgets::DrawShape( draw_list, avatar );
 
 				// Border
-				draw_list->AddCircle( avatar_pos, 12.0f, IM_COL32( 42, 48, 65, 255 ), 48, 2.0f );
+				draw_list->AddCircle( avatar_pos, 12.0f * S, IM_COL32( 42, 48, 65, 255 ), 48, 2.0f * S );
 			}
 
 			// Progress label
-			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f, avatar_y + 35.0f ) );
+			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f * S, avatar_y + 35.0f * S ) );
 			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 140, 150, 170, 255 ) );
 			ImGui::Text( "%.0f%% Complete", projects[ i ].completion * 100.0f );
 			ImGui::PopStyleColor();
 
 			// Progress bar
-			float bar_width = card_width - 40.0f;
-			ImVec2 bar_pos = card_pos + ImVec2( 20.0f, card_height - 20.0f );
+			float bar_width = card_width - 40.0f * S;
+			ImVec2 bar_pos = card_pos + ImVec2( 20.0f * S, card_height - 20.0f * S );
 
 			ImWidgetsShape bar_bg;
 			ImWidgets::GenShapeRect( bar_bg,
-				ImRect( bar_pos, bar_pos + ImVec2( bar_width, 8.0f ) ) );
+				ImRect( bar_pos, bar_pos + ImVec2( bar_width, 8.0f * S ) ) );
 			ImWidgets::ShapeSetDefaultWhiteCol( bar_bg );
 			for ( auto& v : bar_bg.vertices )
 				v.col = IM_COL32( 30, 35, 48, 255 );
@@ -1028,7 +1045,7 @@ namespace ImWidgets {
 			ImWidgetsShape bar_fill;
 			float fill_width = bar_width * projects[ i ].completion;
 			ImWidgets::GenShapeRect( bar_fill,
-				ImRect( bar_pos, bar_pos + ImVec2( fill_width, 8.0f ) ) );
+				ImRect( bar_pos, bar_pos + ImVec2( fill_width, 8.0f * S ) ) );
 			ImWidgets::ShapeSetDefaultBoundUV( bar_fill );
 			ImWidgets::ShapeLinearSRGBLinearGradient( bar_fill,
 				ImVec2( 0.0f, 0.5f ), ImVec2( 1.0f, 0.5f ),
@@ -1036,11 +1053,12 @@ namespace ImWidgets {
 			ImWidgets::DrawShape( draw_list, bar_fill );
 		}
 
-		ImGui::Dummy( ImVec2( size.x, card_height + 20.0f ) );
+		ImGui::Dummy( ImVec2( size.x, card_height + 20.0f * S ) );
 	}
 
 	void RenderShowcaseGradients()
 	{
+		const float S = ImPlatform_GetDpiScale();
 		ImGui::Spacing();
 		ImGui::Spacing();
 		ImGui::Spacing();
@@ -1053,9 +1071,9 @@ namespace ImWidgets {
 		ImGui::PopStyleColor();
 
 		// Accent line under header
-		ImVec2 line_start = header_pos + ImVec2( 0.0f, 42.0f );
-		ImVec2 line_end = line_start + ImVec2( 100.0f, 0.0f );
-		draw_list->AddRectFilledMultiColor( line_start, line_end + ImVec2( 0.0f, 3.0f ),
+		ImVec2 line_start = header_pos + ImVec2( 0.0f, 42.0f * S );
+		ImVec2 line_end = line_start + ImVec2( 100.0f * S, 0.0f );
+		draw_list->AddRectFilledMultiColor( line_start, line_end + ImVec2( 0.0f, 3.0f * S ),
 			IM_COL32( 140, 70, 255, 255 ), IM_COL32( 230, 90, 200, 0 ),
 			IM_COL32( 230, 90, 200, 0 ), IM_COL32( 140, 70, 255, 255 ) );
 
@@ -1089,8 +1107,8 @@ namespace ImWidgets {
 			},
 		};
 
-		float bar_height = 100.0f;
-		float bar_spacing = 30.0f;
+		float bar_height = 100.0f * S;
+		float bar_spacing = 30.0f * S;
 
 		ImU32 color_a = IM_COL32( 255, 107, 107, 255 );
 		ImU32 color_b = IM_COL32( 107, 168, 255, 255 );
@@ -1101,7 +1119,7 @@ namespace ImWidgets {
 			ImVec2 bar_size( size.x, bar_height );
 
 			// Shadow for depth
-			ImVec2 shadow_offset( 0.0f, 4.0f );
+			ImVec2 shadow_offset( 0.0f, 4.0f * S );
 			ImWidgetsShape shadow_shape;
 			ImWidgets::GenShapeRect( shadow_shape,
 				ImRect( bar_pos + shadow_offset, bar_pos + bar_size + shadow_offset ) );
@@ -1122,16 +1140,16 @@ namespace ImWidgets {
 
 			// Border
 			draw_list->AddRect( bar_pos, bar_pos + bar_size,
-				IM_COL32( 255, 255, 255, 50 ), 8.0f, 0, 1.5f );
+				IM_COL32( 255, 255, 255, 50 ), 8.0f * S, 0, 1.5f * S );
 
 			// Label overlay
-			ImVec2 label_pos = bar_pos + ImVec2( 24.0f, 20.0f );
+			ImVec2 label_pos = bar_pos + ImVec2( 24.0f * S, 20.0f * S );
 			ImGui::SetCursorScreenPos( label_pos );
 			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 255 ) );
 			ImGui::Text( "%s", gradients[ i ].name );
 			ImGui::PopStyleColor();
 
-			ImGui::SetCursorScreenPos( label_pos + ImVec2( 0.0f, 28.0f ) );
+			ImGui::SetCursorScreenPos( label_pos + ImVec2( 0.0f, 28.0f * S ) );
 			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 220 ) );
 			ImGui::Text( "%s", gradients[ i ].description );
 			ImGui::PopStyleColor();
@@ -1142,13 +1160,14 @@ namespace ImWidgets {
 
 	void RenderShowcaseInteractive()
 	{
+		const float S = ImPlatform_GetDpiScale();
 		ImGui::Spacing();
 		ImGui::Text( "Interactive Elements" );
 		ImGui::Spacing();
 
 		ImVec2 size = ImGui::GetContentRegionAvail();
-		float button_size = 80.0f;
-		float spacing_x = 100.0f;
+		float button_size = 80.0f * S;
+		float spacing_x = 100.0f * S;
 
 		ImVec2 start_pos = ImGui::GetCursorPos();
 
@@ -1168,11 +1187,12 @@ namespace ImWidgets {
 		}
 
 		ImGui::SetCursorPos( start_pos );
-		ImGui::SetCursorPosY( ImGui::GetCursorPosY() + button_size + 20.0f );
+		ImGui::SetCursorPosY( ImGui::GetCursorPosY() + button_size + 20.0f * S );
 	}
 
 	void RenderShowcaseStats()
 	{
+		const float S = ImPlatform_GetDpiScale();
 		ImGui::Spacing();
 		ImGui::Spacing();
 		ImGui::Spacing();
@@ -1185,9 +1205,9 @@ namespace ImWidgets {
 		ImGui::PopStyleColor();
 
 		// Accent line under header
-		ImVec2 line_start = header_pos + ImVec2( 0.0f, 42.0f );
-		ImVec2 line_end = line_start + ImVec2( 100.0f, 0.0f );
-		draw_list->AddRectFilledMultiColor( line_start, line_end + ImVec2( 0.0f, 3.0f ),
+		ImVec2 line_start = header_pos + ImVec2( 0.0f, 42.0f * S );
+		ImVec2 line_end = line_start + ImVec2( 100.0f * S, 0.0f );
+		draw_list->AddRectFilledMultiColor( line_start, line_end + ImVec2( 0.0f, 3.0f * S ),
 			IM_COL32( 140, 70, 255, 255 ), IM_COL32( 230, 90, 200, 0 ),
 			IM_COL32( 230, 90, 200, 0 ), IM_COL32( 140, 70, 255, 255 ) );
 
@@ -1209,19 +1229,19 @@ namespace ImWidgets {
 			{ "Draw Calls", "Optimized", IM_COL32( 255, 200, 100, 255 ) },
 		};
 
-		float stat_width = ( size.x - 40.0f ) / 3.0f;
-		float stat_height = 130.0f;
+		float stat_width = ( size.x - 40.0f * S ) / 3.0f;
+		float stat_height = 130.0f * S;
 		ImVec2 start_pos = ImGui::GetCursorScreenPos();
 
 		for ( int i = 0; i < IM_ARRAYSIZE( stats ); ++i )
 		{
-			ImVec2 pos = start_pos + ImVec2( i * ( stat_width + 20.0f ), 0.0f );
+			ImVec2 pos = start_pos + ImVec2( i * ( stat_width + 20.0f * S ), 0.0f );
 			ImVec2 card_size( stat_width, stat_height );
 
 			// Multi-layer shadow for depth
 			for ( int j = 0; j < 2; ++j )
 			{
-				float shadow_offset = ( j + 1 ) * 3.0f;
+				float shadow_offset = ( j + 1 ) * 3.0f * S;
 				float shadow_alpha = 30 - j * 10;
 				ImVec2 shadow_pos = pos + ImVec2( shadow_offset, shadow_offset );
 
@@ -1248,7 +1268,7 @@ namespace ImWidgets {
 			// Top accent bar
 			ImWidgetsShape accent_bar;
 			ImWidgets::GenShapeRect( accent_bar,
-				ImRect( pos, pos + ImVec2( stat_width, 4.0f ) ) );
+				ImRect( pos, pos + ImVec2( stat_width, 4.0f * S ) ) );
 			ImWidgets::ShapeSetDefaultWhiteCol( accent_bar );
 			for ( auto& v : accent_bar.vertices )
 				v.col = stats[ i ].color;
@@ -1256,12 +1276,12 @@ namespace ImWidgets {
 
 			// Border with rounded corners
 			draw_list->AddRect( pos, pos + card_size,
-				IM_COL32( 255, 255, 255, 30 ), 8.0f, 0, 1.5f );
+				IM_COL32( 255, 255, 255, 30 ), 8.0f * S, 0, 1.5f * S );
 
 			// Decorative accent circle
 			ImVec2 circle_pos = pos + ImVec2( stat_width * 0.85f, stat_height * 0.3f );
 			ImWidgetsShape circle_shape;
-			ImWidgets::GenShapeCircle( circle_shape, circle_pos, 35.0f, 48 );
+			ImWidgets::GenShapeCircle( circle_shape, circle_pos, 35.0f * S, 48 );
 			ImWidgets::ShapeSetDefaultWhiteCol( circle_shape );
 			ImU32 circle_col = IM_COL32(
 				( stats[ i ].color >> 0 ) & 0xFF,
@@ -1273,24 +1293,24 @@ namespace ImWidgets {
 			ImWidgets::DrawShape( draw_list, circle_shape );
 
 			// Text content
-			ImVec2 text_pos = pos + ImVec2( 24.0f, 24.0f );
+			ImVec2 text_pos = pos + ImVec2( 24.0f * S, 24.0f * S );
 			ImGui::SetCursorScreenPos( text_pos );
 			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 180, 180, 190, 255 ) );
 			ImGui::Text( "%s", stats[ i ].label );
 			ImGui::PopStyleColor();
 
-			ImGui::SetCursorScreenPos( text_pos + ImVec2( 0.0f, 35.0f ) );
+			ImGui::SetCursorScreenPos( text_pos + ImVec2( 0.0f, 35.0f * S ) );
 			ImGui::PushStyleColor( ImGuiCol_Text, stats[ i ].color );
 			ImGui::Text( "%s", stats[ i ].value );
 			ImGui::PopStyleColor();
 		}
 
-		ImGui::Dummy( ImVec2( size.x, stat_height + 20.0f ) );
+		ImGui::Dummy( ImVec2( size.x, stat_height + 20.0f * S ) );
 	}
 
 	void ShowShowcase()
 	{
-		ImGui::SetNextWindowSize( ImVec2( 1200, 800 ), ImGuiCond_FirstUseEver );
+		ImGui::SetNextWindowSize( ImVec2( 1200 * ImPlatform_GetDpiScale(), 800 * ImPlatform_GetDpiScale() ), ImGuiCond_FirstUseEver );
 
 		// Golden background #CCAA24
 		ImGui::PushStyleColor( ImGuiCol_WindowBg, IM_COL32( 204, 170, 36, 255 ) );
@@ -1762,6 +1782,7 @@ namespace ImWidgets {
 			}
 			if ( ImGui::CollapsingHeader( "Triangles Pointers" ) )
 			{
+				const float S = ImPlatform_GetDpiScale();
 				float const width = ImGui::GetContentRegionAvail().x;
 
 				static float angle = 0.0f;
@@ -1773,36 +1794,38 @@ namespace ImWidgets {
 
 				ImVec2 curPos = ImGui::GetCursorScreenPos();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-				ImGui::InvisibleButton( "##Zone", ImVec2( width, 96.0f ), 0 );
-				ImGui::InvisibleButton( "##Zone", ImVec2( width, 96.0f ), 0 );
-				float fPointerLine = 64.0f;
-				pDrawList->AddLine( ImVec2( curPos.x + 0.5f * 32.0f, curPos.y + fPointerLine ), ImVec2( curPos.x + 3.5f * 32.0f, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f );
-				pDrawList->AddLine( ImVec2( curPos.x + 5.0f * 32.0f, curPos.y ), ImVec2( curPos.x + 5.0f * 32.0f, curPos.y + 72.0f ), IM_COL32( 0, 255, 0, 255 ), 2.0f );
-				pDrawList->AddLine( ImVec2( curPos.x + 7.0f * 32.0f, curPos.y ), ImVec2( curPos.x + 7.0f * 32.0f, curPos.y + 72.0f ), IM_COL32( 0, 255, 0, 255 ), 2.0f );
-				pDrawList->AddCircleFilled( ImVec2( curPos.x + 1.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
-				pDrawList->AddCircleFilled( ImVec2( curPos.x + 3.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
-				pDrawList->AddCircleFilled( ImVec2( curPos.x + 5.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
-				pDrawList->AddCircleFilled( ImVec2( curPos.x + 7.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
-				ImWidgets::DrawTriangleCursor( pDrawList, ImVec2( curPos.x + 1.0f * 32.0f, curPos.y + fPointerLine ), angle, size, thickness, IM_COL32( 255, 0, 0, 255 ) );
-				ImWidgets::DrawTriangleCursor( pDrawList, ImVec2( curPos.x + 3.0f * 32.0f, curPos.y + fPointerLine ), angle, size, thickness, IM_COL32( 255, 0, 0, 255 ) );
-				ImWidgets::DrawTriangleCursor( pDrawList, ImVec2( curPos.x + 5.0f * 32.0f, curPos.y + fPointerLine ), angle, size, thickness, IM_COL32( 255, 0, 0, 255 ) );
-				ImWidgets::DrawTriangleCursor( pDrawList, ImVec2( curPos.x + 7.0f * 32.0f, curPos.y + fPointerLine ), angle, size, thickness, IM_COL32( 255, 0, 0, 255 ) );
+				float dx = 32.0f * S;
+				ImGui::InvisibleButton( "##Zone", ImVec2( width, 96.0f * S ), 0 );
+				ImGui::InvisibleButton( "##Zone", ImVec2( width, 96.0f * S ), 0 );
+				float fPointerLine = 64.0f * S;
+				pDrawList->AddLine( ImVec2( curPos.x + 0.5f * dx, curPos.y + fPointerLine ), ImVec2( curPos.x + 3.5f * dx, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f * S );
+				pDrawList->AddLine( ImVec2( curPos.x + 5.0f * dx, curPos.y ), ImVec2( curPos.x + 5.0f * dx, curPos.y + 72.0f * S ), IM_COL32( 0, 255, 0, 255 ), 2.0f * S );
+				pDrawList->AddLine( ImVec2( curPos.x + 7.0f * dx, curPos.y ), ImVec2( curPos.x + 7.0f * dx, curPos.y + 72.0f * S ), IM_COL32( 0, 255, 0, 255 ), 2.0f * S );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 1.0f * dx, curPos.y + fPointerLine ), 4.0f * S, IM_COL32( 255, 128, 0, 255 ), 16 );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 3.0f * dx, curPos.y + fPointerLine ), 4.0f * S, IM_COL32( 255, 128, 0, 255 ), 16 );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 5.0f * dx, curPos.y + fPointerLine ), 4.0f * S, IM_COL32( 255, 128, 0, 255 ), 16 );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 7.0f * dx, curPos.y + fPointerLine ), 4.0f * S, IM_COL32( 255, 128, 0, 255 ), 16 );
+				ImWidgets::DrawTriangleCursor( pDrawList, ImVec2( curPos.x + 1.0f * dx, curPos.y + fPointerLine ), angle, size, thickness, IM_COL32( 255, 0, 0, 255 ) );
+				ImWidgets::DrawTriangleCursor( pDrawList, ImVec2( curPos.x + 3.0f * dx, curPos.y + fPointerLine ), angle, size, thickness, IM_COL32( 255, 0, 0, 255 ) );
+				ImWidgets::DrawTriangleCursor( pDrawList, ImVec2( curPos.x + 5.0f * dx, curPos.y + fPointerLine ), angle, size, thickness, IM_COL32( 255, 0, 0, 255 ) );
+				ImWidgets::DrawTriangleCursor( pDrawList, ImVec2( curPos.x + 7.0f * dx, curPos.y + fPointerLine ), angle, size, thickness, IM_COL32( 255, 0, 0, 255 ) );
 
 				fPointerLine *= 3.0f;
-				pDrawList->AddLine( ImVec2( curPos.x + 0.5f * 32.0f, curPos.y + fPointerLine ), ImVec2( curPos.x + 3.5f * 32.0f, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f );
-				pDrawList->AddLine( ImVec2( curPos.x + 5.0f * 32.0f, curPos.y ), ImVec2( curPos.x + 5.0f * 32.0f, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f );
-				pDrawList->AddLine( ImVec2( curPos.x + 7.0f * 32.0f, curPos.y ), ImVec2( curPos.x + 7.0f * 32.0f, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f );
-				pDrawList->AddCircleFilled( ImVec2( curPos.x + 1.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
-				pDrawList->AddCircleFilled( ImVec2( curPos.x + 3.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
-				pDrawList->AddCircleFilled( ImVec2( curPos.x + 5.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
-				pDrawList->AddCircleFilled( ImVec2( curPos.x + 7.0f * 32.0f, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
-				ImWidgets::DrawTriangleCursorFilled( pDrawList, ImVec2( curPos.x + 1.0f * 32.0f, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
-				ImWidgets::DrawTriangleCursorFilled( pDrawList, ImVec2( curPos.x + 3.0f * 32.0f, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
-				ImWidgets::DrawTriangleCursorFilled( pDrawList, ImVec2( curPos.x + 5.0f * 32.0f, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
-				ImWidgets::DrawTriangleCursorFilled( pDrawList, ImVec2( curPos.x + 7.0f * 32.0f, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
+				pDrawList->AddLine( ImVec2( curPos.x + 0.5f * dx, curPos.y + fPointerLine ), ImVec2( curPos.x + 3.5f * dx, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f * S );
+				pDrawList->AddLine( ImVec2( curPos.x + 5.0f * dx, curPos.y ), ImVec2( curPos.x + 5.0f * dx, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f * S );
+				pDrawList->AddLine( ImVec2( curPos.x + 7.0f * dx, curPos.y ), ImVec2( curPos.x + 7.0f * dx, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f * S );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 1.0f * dx, curPos.y + fPointerLine ), 4.0f * S, IM_COL32( 255, 128, 0, 255 ), 16 );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 3.0f * dx, curPos.y + fPointerLine ), 4.0f * S, IM_COL32( 255, 128, 0, 255 ), 16 );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 5.0f * dx, curPos.y + fPointerLine ), 4.0f * S, IM_COL32( 255, 128, 0, 255 ), 16 );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 7.0f * dx, curPos.y + fPointerLine ), 4.0f * S, IM_COL32( 255, 128, 0, 255 ), 16 );
+				ImWidgets::DrawTriangleCursorFilled( pDrawList, ImVec2( curPos.x + 1.0f * dx, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
+				ImWidgets::DrawTriangleCursorFilled( pDrawList, ImVec2( curPos.x + 3.0f * dx, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
+				ImWidgets::DrawTriangleCursorFilled( pDrawList, ImVec2( curPos.x + 5.0f * dx, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
+				ImWidgets::DrawTriangleCursorFilled( pDrawList, ImVec2( curPos.x + 7.0f * dx, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
 			}
 			if ( ImGui::CollapsingHeader( "Signet Pointer" ) )
 			{
+				const float S = ImPlatform_GetDpiScale();
 				float const widthZone = ImGui::GetContentRegionAvail().x;
 
 				static float angle = 0.0f;
@@ -1822,23 +1845,23 @@ namespace ImWidgets {
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				ImGui::InvisibleButton( "##Zone", ImVec2( widthZone, height * 1.1f ), 0 );
 				ImGui::InvisibleButton( "##Zone", ImVec2( widthZone, height * 1.1f ), 0 );
-				float fPointerLine = 32.0f;
-				float dx = 16.0f;
-				pDrawList->AddLine( ImVec2( curPos.x + 0.5f * dx, curPos.y + fPointerLine ), ImVec2( curPos.x + 11.5f * dx, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f );
+				float fPointerLine = 32.0f * S;
+				float dx = 16.0f * S;
+				pDrawList->AddLine( ImVec2( curPos.x + 0.5f * dx, curPos.y + fPointerLine ), ImVec2( curPos.x + 11.5f * dx, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f * S );
 				ImVec4 vBlue( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
 				ImU32 uBlue = ImGui::GetColorU32( vBlue );
 				ImWidgets::DrawSignetCursor( pDrawList, ImVec2( curPos.x + 1.0f * dx, curPos.y + fPointerLine ), width, height, height_ratio, align01, angle, thickness, uBlue );
-				pDrawList->AddCircleFilled( ImVec2( curPos.x + 1.0f * dx, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 1.0f * dx, curPos.y + fPointerLine ), 4.0f * S, IM_COL32( 255, 128, 0, 255 ), 16 );
 				ImWidgets::DrawSignetFilledCursor( pDrawList, ImVec2( curPos.x + 3.0f * dx, curPos.y + fPointerLine ), width, height, height_ratio, align01, angle, uBlue );
-				pDrawList->AddCircleFilled( ImVec2( curPos.x + 3.0f * dx, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 3.0f * dx, curPos.y + fPointerLine ), 4.0f * S, IM_COL32( 255, 128, 0, 255 ), 16 );
 				ImWidgets::DrawSignetCursor( pDrawList, ImVec2( curPos.x + 5.0f * dx, curPos.y + fPointerLine ), width, height, height_ratio, 0.0f, angle, thickness, uBlue );
-				pDrawList->AddCircleFilled( ImVec2( curPos.x + 5.0f * dx, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 5.0f * dx, curPos.y + fPointerLine ), 4.0f * S, IM_COL32( 255, 128, 0, 255 ), 16 );
 				ImWidgets::DrawSignetFilledCursor( pDrawList, ImVec2( curPos.x + 7.0f * dx, curPos.y + fPointerLine ), width, height, height_ratio, 0.0f, angle, uBlue );
-				pDrawList->AddCircleFilled( ImVec2( curPos.x + 7.0f * dx, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 7.0f * dx, curPos.y + fPointerLine ), 4.0f * S, IM_COL32( 255, 128, 0, 255 ), 16 );
 				ImWidgets::DrawSignetCursor( pDrawList, ImVec2( curPos.x + 9.0f * dx, curPos.y + fPointerLine ), width, height, height_ratio, 1.0f, angle, thickness, uBlue );
-				pDrawList->AddCircleFilled( ImVec2( curPos.x + 9.0f * dx, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 9.0f * dx, curPos.y + fPointerLine ), 4.0f * S, IM_COL32( 255, 128, 0, 255 ), 16 );
 				ImWidgets::DrawSignetFilledCursor( pDrawList, ImVec2( curPos.x + 11.0f * dx, curPos.y + fPointerLine ), width, height, height_ratio, 1.0f, angle, uBlue );
-				pDrawList->AddCircleFilled( ImVec2( curPos.x + 11.0f * dx, curPos.y + fPointerLine ), 4.0f, IM_COL32( 255, 128, 0, 255 ), 16 );
+				pDrawList->AddCircleFilled( ImVec2( curPos.x + 11.0f * dx, curPos.y + fPointerLine ), 4.0f * S, IM_COL32( 255, 128, 0, 255 ), 16 );
 			}
 			if ( ImGui::CollapsingHeader( "Color Bands" ) )
 			{
@@ -2671,7 +2694,7 @@ namespace ImWidgets {
 				ImGui::DragFloat( "Focal Planes", &value[ 1 ], 1.0f, value[ 0 ], value[ 2 ] );
 				ImGui::DragFloat( "Far Planes", &value[ 2 ], 1.0f, value[ 1 ], max );
 			}
-#if 0
+#if 1
 			if ( ImGui::CollapsingHeader( "Dashed Polylines", ImGuiTreeNodeFlags_DefaultOpen ) )
 			{
 				ImDrawList* dl = ImGui::GetWindowDrawList();

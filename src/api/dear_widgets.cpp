@@ -4331,7 +4331,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImVec2 vWhitePoint = whitePoint;
 			vWhitePoint.x = curPos.x + ImRescale( vWhitePoint.x, minX, maxX, 0.0f, size.x );
 			vWhitePoint.y = curPos.y + ImRescale( vWhitePoint.y, minY, maxY, size.y, 0.0f );
-			pDrawList->AddCircleFilled( vWhitePoint, 5.0f, IM_COL32( 0, 0, 0, 255 ), 4 );
+			pDrawList->AddCircleFilled( vWhitePoint, GetStyle().WhitePoint_Radius, IM_COL32( 0, 0, 0, 255 ), 4 );
 		}
 
 		if ( borderColor || showColorSpaceTriangle || showWhitePoint )
@@ -5390,7 +5390,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float rounding = ( flags & ImGuiNavRenderCursorFlags_NoRounding ) ? 0.0f : g.Style.FrameRounding;
 		//ImRect display_rect = bb;
 		display_rect.ClipWith( window->ClipRect );
-		const float thickness = 2.0f;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		const float thickness = dwStyle.NavCursor_Thickness;
 		if ( flags & ImGuiNavRenderCursorFlags_Compact )
 		{
 			func( window->DrawList, ImGui::GetColorU32( ImGuiCol_NavCursor ), thickness, data );
@@ -5398,7 +5399,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 		else
 		{
-			const float distance = 3.0f + thickness * 0.5f;
+			const float distance = dwStyle.NavCursor_Distance + thickness * 0.5f;
 			display_rect.Expand( ImVec2( distance, distance ) );
 			bool fully_visible = window->ClipRect.Contains( display_rect );
 			if ( !fully_visible )
@@ -6406,19 +6407,18 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImU32 uBlue = ImGui::GetColorU32( vBlue );
 		ImU32 uOrange = ImGui::GetColorU32( vOrange );
 
-		// TODO: Move these layout parameters to style variables
 		float downScale = 0.75f;
 		float dragX_placement = 0.75f;
 		float dragY_placement = 0.75f;
-		float dragX_thickness = 8.0f;
-		float dragY_thickness = 8.0f;
-		float border_thickness = 2.0f;
-		float line_thickness = 2.0f;
+		float dragX_thickness = widgetStyle.Slider2D_DragThickness;
+		float dragY_thickness = widgetStyle.Slider2D_DragThickness;
+		float border_thickness = widgetStyle.Slider2D_BorderThickness;
+		float line_thickness = widgetStyle.Slider2D_LineThickness;
 		float text_lerp_x = 0.5f;
 		float text_lerp_y = 0.5f;
-		float cursor_radius = 4.0f;
+		float cursor_radius = widgetStyle.Slider2D_CursorRadius;
 		int cursor_segments = 4;
-		float fCursorOff = 16.0f;
+		float fCursorOff = widgetStyle.Slider2D_CursorOffset;
 
 		const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, w ) );
 		const ImRect frame_bb_drag( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w * downScale, w * downScale ) );
@@ -6557,7 +6557,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			pDrawList->AddLine( ImVec2( frame_bb_drag.Max.x - fCursorOff, vCursorPos.y ), ImVec2( vCursorPos.x + fCursorOff, vCursorPos.y ), uOrange, line_thickness );
 
 		// Borders::Right
-		pDrawList->AddCircleFilled( ImVec2( frame_bb_drag.Max.x, vCursorPos.y ), 2.0f, uOrange, 3 );
+		pDrawList->AddCircleFilled( ImVec2( frame_bb_drag.Max.x, vCursorPos.y ), widgetStyle.Slider2D_CornerRadius, uOrange, 3 );
 		// Handle Right::Y
 		pDrawList->AddNgonFilled( ImVec2( frame_bb_dragY.GetCenter().x, vCursorPos.y ), dragY_thickness * 0.5f, uOrange, 4 );
 		if ( fScaleY > fYLimit )
@@ -6565,19 +6565,19 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( fScaleY < 1.0f - fYLimit )
 			pDrawList->AddLine( ImVec2( frame_bb_drag.Max.x, frame_bb_drag.Max.y ), ImVec2( frame_bb_drag.Max.x, vCursorPos.y + fCursorOff ), uBlue, border_thickness );
 		// Borders::Top
-		pDrawList->AddCircleFilled( ImVec2( vCursorPos.x, frame_bb_drag.Min.y ), 2.0f, uOrange, 3 );
+		pDrawList->AddCircleFilled( ImVec2( vCursorPos.x, frame_bb_drag.Min.y ), widgetStyle.Slider2D_CornerRadius, uOrange, 3 );
 		if ( fScaleX > fXLimit )
 			pDrawList->AddLine( ImVec2( frame_bb_drag.Min.x, frame_bb_drag.Min.y ), ImVec2( vCursorPos.x - fCursorOff, frame_bb_drag.Min.y ), uBlue, border_thickness );
 		if ( fScaleX < 1.0f - fXLimit )
 			pDrawList->AddLine( ImVec2( frame_bb_drag.Max.x, frame_bb_drag.Min.y ), ImVec2( vCursorPos.x + fCursorOff, frame_bb_drag.Min.y ), uBlue, border_thickness );
 		// Borders::Left
-		pDrawList->AddCircleFilled( ImVec2( frame_bb_drag.Min.x, vCursorPos.y ), 2.0f, uOrange, 3 );
+		pDrawList->AddCircleFilled( ImVec2( frame_bb_drag.Min.x, vCursorPos.y ), widgetStyle.Slider2D_CornerRadius, uOrange, 3 );
 		if ( fScaleY > fYLimit )
 			pDrawList->AddLine( ImVec2( frame_bb_drag.Min.x, frame_bb_drag.Min.y ), ImVec2( frame_bb_drag.Min.x, vCursorPos.y - fCursorOff ), uBlue, border_thickness );
 		if ( fScaleY < 1.0f - fYLimit )
 			pDrawList->AddLine( ImVec2( frame_bb_drag.Min.x, frame_bb_drag.Max.y ), ImVec2( frame_bb_drag.Min.x, vCursorPos.y + fCursorOff ), uBlue, border_thickness );
 		// Borders::Bottom
-		pDrawList->AddCircleFilled( ImVec2( vCursorPos.x, frame_bb_drag.Max.y ), 2.0f, uOrange, 3 );
+		pDrawList->AddCircleFilled( ImVec2( vCursorPos.x, frame_bb_drag.Max.y ), widgetStyle.Slider2D_CornerRadius, uOrange, 3 );
 		// Handle Bottom::X
 		pDrawList->AddNgonFilled( ImVec2( vCursorPos.x, frame_bb_dragX.GetCenter().y ), dragX_thickness * 0.5f, uOrange, 4 );
 		if ( fScaleX > fXLimit )
@@ -6691,7 +6691,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, label_size.y + style.FramePadding.y * 2.0f ) );
 		const ImRect total_bb( frame_bb.Min, frame_bb.Max + ImVec2( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f, 0.0f ) );
 
-		float precision_block_size = 128.0f;
+		float precision_block_size = GetStyle().PrecisionDrag_BlockSize;
 
 		const bool temp_input_allowed = ( flags & ImGuiSliderFlags_NoInput ) == 0;
 		ImGui::ItemSize( total_bb, style.FramePadding.y );
@@ -6873,7 +6873,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
     }
 }
 
-#if 0
+#if 1
 namespace ImWidgets
 {
     // -------------------------------

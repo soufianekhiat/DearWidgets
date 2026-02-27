@@ -38,3 +38,4 @@ WorkingDir/dearwidgetsdemo.map
 tmp
 sharpmakes/bin
 workingdir/bin/slang
+*.txt

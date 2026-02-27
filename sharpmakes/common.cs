@@ -168,7 +168,7 @@ namespace DearWidgets
 			conf.LibraryFiles.Add("Wtsapi32"); // Enables applications to receive WTS messages from windows
 			conf.AdditionalLinkerOptions.Add("/ignore:4098,4099,4217,4221");
 			conf.Defines.Add("WINAPI_FAMILY=WINAPI_FAMILY_DESKTOP_APP");
-			conf.Defines.Add("_WIN32_WINNT=0x0600");
+			conf.Defines.Add("_WIN32_WINNT=0x0603");
 			conf.Options.Add(Sharpmake.Options.Vc.Linker.RandomizedBaseAddress.Disable);
 			conf.LibraryFiles.Add("winmm.lib");
 			conf.LibraryFiles.Add("comctl32.lib");

@@ -235,20 +235,77 @@ enum ImWidgetsStyleVar
 {
 	StyleVar_HueSelector_Thickness_ZeroWidth,
 
+	// Slider2D
+	StyleVar_Slider2D_DragThickness,
+	StyleVar_Slider2D_BorderThickness,
+	StyleVar_Slider2D_LineThickness,
+	StyleVar_Slider2D_CursorRadius,
+	StyleVar_Slider2D_CursorOffset,
+	StyleVar_Slider2D_CornerRadius,
+
+	// General
+	StyleVar_NavCursor_Thickness,
+	StyleVar_NavCursor_Distance,
+	StyleVar_WhitePoint_Radius,
+	StyleVar_PrecisionDrag_BlockSize,
+
 	StyleVar_Count
 };
 
 struct ImWidgetsStyle
 {
 	float	HueSelector_Thickness_ZeroWidth;
+
+	// Slider2D
+	float	Slider2D_DragThickness;
+	float	Slider2D_BorderThickness;
+	float	Slider2D_LineThickness;
+	float	Slider2D_CursorRadius;
+	float	Slider2D_CursorOffset;
+	float	Slider2D_CornerRadius;
+
+	// General
+	float	NavCursor_Thickness;
+	float	NavCursor_Distance;
+	float	WhitePoint_Radius;
+	float	PrecisionDrag_BlockSize;
+
 	ImVec4  Colors[ StyleColor_Count ];
 
 	ImWidgetsStyle()
 	{
 		HueSelector_Thickness_ZeroWidth = 2.0f;
+
+		Slider2D_DragThickness   = 8.0f;
+		Slider2D_BorderThickness = 2.0f;
+		Slider2D_LineThickness   = 2.0f;
+		Slider2D_CursorRadius    = 4.0f;
+		Slider2D_CursorOffset    = 16.0f;
+		Slider2D_CornerRadius    = 2.0f;
+
+		NavCursor_Thickness      = 2.0f;
+		NavCursor_Distance       = 3.0f;
+		WhitePoint_Radius        = 5.0f;
+		PrecisionDrag_BlockSize  = 128.0f;
+
 		Colors[ StyleColor_Value ] = ImVec4( 1.0f, 0.0f, 0.0f, 1.0f );
 		Colors[ StyleColor_Slider2D_CursorX ] = ImVec4( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f ); // Blue
 		Colors[ StyleColor_Slider2D_CursorY ] = ImVec4( 255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f ); // Orange
+	}
+
+	void ScaleAllSizes( float scale_factor )
+	{
+		HueSelector_Thickness_ZeroWidth = ImTrunc( HueSelector_Thickness_ZeroWidth * scale_factor );
+		Slider2D_DragThickness   = ImTrunc( Slider2D_DragThickness * scale_factor );
+		Slider2D_BorderThickness = ImTrunc( Slider2D_BorderThickness * scale_factor );
+		Slider2D_LineThickness   = ImTrunc( Slider2D_LineThickness * scale_factor );
+		Slider2D_CursorRadius    = ImTrunc( Slider2D_CursorRadius * scale_factor );
+		Slider2D_CursorOffset    = ImTrunc( Slider2D_CursorOffset * scale_factor );
+		Slider2D_CornerRadius    = ImTrunc( Slider2D_CornerRadius * scale_factor );
+		NavCursor_Thickness      = ImTrunc( NavCursor_Thickness * scale_factor );
+		NavCursor_Distance       = ImTrunc( NavCursor_Distance * scale_factor );
+		WhitePoint_Radius        = ImTrunc( WhitePoint_Radius * scale_factor );
+		PrecisionDrag_BlockSize  = ImTrunc( PrecisionDrag_BlockSize * scale_factor );
 	}
 
 	void PushColor( ImWidgetsStyleColor colorIndex, const ImVec4& color )
@@ -346,7 +403,17 @@ private:
 		switch ( idx )
 		{
 		case StyleVar_HueSelector_Thickness_ZeroWidth:	return &HueSelector_Thickness_ZeroWidth;
-		default:				return nullptr;
+		case StyleVar_Slider2D_DragThickness:			return &Slider2D_DragThickness;
+		case StyleVar_Slider2D_BorderThickness:			return &Slider2D_BorderThickness;
+		case StyleVar_Slider2D_LineThickness:			return &Slider2D_LineThickness;
+		case StyleVar_Slider2D_CursorRadius:			return &Slider2D_CursorRadius;
+		case StyleVar_Slider2D_CursorOffset:			return &Slider2D_CursorOffset;
+		case StyleVar_Slider2D_CornerRadius:			return &Slider2D_CornerRadius;
+		case StyleVar_NavCursor_Thickness:				return &NavCursor_Thickness;
+		case StyleVar_NavCursor_Distance:				return &NavCursor_Distance;
+		case StyleVar_WhitePoint_Radius:				return &WhitePoint_Radius;
+		case StyleVar_PrecisionDrag_BlockSize:			return &PrecisionDrag_BlockSize;
+		default:										return nullptr;
 		}
 	}
 	ImVec2* GetVarVec2Addr( ImWidgetsStyleVar idx )
@@ -1204,7 +1271,7 @@ namespace ImWidgets{
     IMGUI_API void SetDashedLinesDebugJoins(bool enable);
     IMGUI_API bool GetDashedLinesDebugJoins();
 
-#if 0
+#if 1
     //////////////////////////////////////////////////////////////////////////
     // Polylines (Dashed/Stroked)
     //////////////////////////////////////////////////////////////////////////
