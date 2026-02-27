@@ -1,26 +1,27 @@
-cbuffer PS_CONSTANT_BUFFER : register(b0)
-{
-    float2 p0;            // screen-space start
-    float2 p1;            // screen-space end
-    float  thickness;     // stroke width in pixels
-    float  aa;            // AA fringe in pixels
-    float2 dash;          // x=dash length, y=gap length
-    float  dash_offset;   // offset in pixels
-    float  cap;           // 0=butt, 1=square, 2=round
-    float  join;          // reserved
-    float  miter_limit;   // reserved
-    float  pad0;          // padding
-    float2 rect_min;      // quad min in screen space
-    float2 rect_max;      // quad max in screen space
-    float4 color;         // RGBA
-};
-
 // Vertex shader constant buffer at register b0
 // DirectX: ImGui backend automatically provides this
-// OpenGL: Converted to "uniform mat4 ProjMtx" in GLSL (manual edit required)
 cbuffer vertexBuffer : register(b0)
 {
 	float4x4 ProjMtx;
+};
+
+// Pixel shader constant buffer at register b1
+// Note: Must be b1 because b0 is used by vertex shader (ImPlatform binds PS cbuffer to slot 1)
+// Layout: 5 registers (80 bytes), must match ImWidgetsDashedLineBuffer in dear_widgets.h
+cbuffer PS_CONSTANT_BUFFER : register(b1)
+{
+    float2 p0;            // reg0: screen-space start
+    float2 p1;            //       screen-space end
+    float  thickness;     // reg1: stroke width in pixels
+    float  aa;            //       AA fringe in pixels
+    float2 dash;          //       x=dash length, y=gap length
+    float  dash_offset;   // reg2: offset in pixels
+    float  cap;           //       0=butt, 1=square, 2=round
+    float  join;          //       reserved
+    float  miter_limit;   //       reserved
+    float2 rect_min;      // reg3: quad min in screen space
+    float2 rect_max;      //       quad max in screen space
+    float4 color;         // reg4: RGBA
 };
 
 struct VS_INPUT

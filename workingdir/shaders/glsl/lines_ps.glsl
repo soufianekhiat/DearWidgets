@@ -2,42 +2,39 @@
 layout(row_major) uniform;
 layout(row_major) buffer;
 
-#line 1972 0
+// Layout: 80 bytes, must match ImWidgetsDashedLineBuffer in dear_widgets.h
+// std140 packing: vec2 aligned to 8, vec4 aligned to 16
 struct SLANG_ParameterGroup_PS_CONSTANT_BUFFER_std140_0
 {
-    vec2 p0_0;
-    vec2 p1_0;
-    float thickness_0;
-    float aa_0;
-    vec2 dash_0;
-    float dash_offset_0;
-    float cap_0;
-    float join_0;
-    float miter_limit_0;
-    float pad0_0;
-    vec2 rect_min_0;
-    vec2 rect_max_0;
-    vec4 color_0;
+    vec2 p0_0;            // offset 0
+    vec2 p1_0;            // offset 8
+    float thickness_0;    // offset 16
+    float aa_0;           // offset 20
+    vec2 dash_0;          // offset 24
+    float dash_offset_0;  // offset 32
+    float cap_0;          // offset 36
+    float join_0;         // offset 40
+    float miter_limit_0;  // offset 44
+    vec2 rect_min_0;      // offset 48
+    vec2 rect_max_0;      // offset 56
+    vec4 color_0;         // offset 64
 };
 
-
-#line 1 1
 layout(binding = 1)
 layout(std140) uniform block_SLANG_ParameterGroup_PS_CONSTANT_BUFFER_std140_0
 {
-    vec2 p0_0;
-    vec2 p1_0;
-    float thickness_0;
-    float aa_0;
-    vec2 dash_0;
-    float dash_offset_0;
-    float cap_0;
-    float join_0;
-    float miter_limit_0;
-    float pad0_0;
-    vec2 rect_min_0;
-    vec2 rect_max_0;
-    vec4 color_0;
+    vec2 p0_0;            // offset 0
+    vec2 p1_0;            // offset 8
+    float thickness_0;    // offset 16
+    float aa_0;           // offset 20
+    vec2 dash_0;          // offset 24
+    float dash_offset_0;  // offset 32
+    float cap_0;          // offset 36
+    float join_0;         // offset 40
+    float miter_limit_0;  // offset 44
+    vec2 rect_min_0;      // offset 48
+    vec2 rect_max_0;      // offset 56
+    vec4 color_0;         // offset 64
 }PS_CONSTANT_BUFFER_0;
 
 #line 63

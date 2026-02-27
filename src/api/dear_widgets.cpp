@@ -7157,6 +7157,30 @@ namespace ImWidgets
         }
     }
 
+    // Per-segment callback data for GPU dashed lines.
+    // Stores a snapshot of uniform params so each segment's callback uploads its own data.
+    struct DW_LineSegmentCBData
+    {
+        ImPlatform_ShaderProgram program;
+        ImWidgetsDashedLineBuffer params;
+    };
+
+    // Frame-persistent pool for per-segment callback data.
+    // Cleared once per frame (detected via frame count change).
+    static ImVector<DW_LineSegmentCBData> s_lineSegmentPool;
+    static int s_lineSegmentPoolFrame = -1;
+
+    // Callback inserted before ImPlatform's shader activation callback.
+    // Sets this segment's specific uniform data + dirty flag so the next
+    // ImPlatform callback uploads the correct params.
+    static void DW_PrepareLineUniforms(const ImDrawList*, const ImDrawCmd* cmd)
+    {
+        DW_LineSegmentCBData* data = (DW_LineSegmentCBData*)cmd->UserCallbackData;
+        if (!data || !data->program)
+            return;
+        ImPlatform_SetShaderUniform(data->program, "pixelBuffer", &data->params, sizeof(data->params));
+    }
+
     void DrawDashedPolylineAA(
         ImDrawList* drawlist,
         const ImVec2* points, int points_count,
@@ -7190,8 +7214,23 @@ namespace ImWidgets
         bool gpu_drew_any = false;
         if (enable_gpu_path && shader_ok)
         {
+            // Clear per-frame pool on first use each frame
+            int current_frame = ImGui::GetFrameCount();
+            if (current_frame != s_lineSegmentPoolFrame)
+            {
+                s_lineSegmentPool.resize(0);
+                s_lineSegmentPoolFrame = current_frame;
+            }
+
+            // Reserve pool space upfront so pointers remain stable
+            int pool_base = s_lineSegmentPool.Size;
+            s_lineSegmentPool.resize(pool_base + seg_count);
+
+            ImPlatform_ShaderProgram program = gs_pContext->lineShader.program;
+
             // Precompute cumulative lengths for dash continuity across segments
             float acc_len = 0.0f;
+            int pool_idx = pool_base;
             for (int i = 0; i < seg_count; ++i)
             {
                 int i0 = i;
@@ -7222,35 +7261,22 @@ namespace ImWidgets
                 params.cap = (float)cap;
                 params.join = (float)join;
                 params.miter_limit = miter_limit;
-                params.pad0 = 0.0f;
                 float pad = 0.5f * thickness + 2.0f * aa + 2.0f;
                 ImVec2 minv(ImMin(a.x, b.x) - pad, ImMin(a.y, b.y) - pad);
                 ImVec2 maxv(ImMax(a.x, b.x) + pad, ImMax(a.y, b.y) + pad);
                 params.rect_min = minv;
                 params.rect_max = maxv;
                 params.color = colf;
-                // Padding for DirectX constant buffer alignment (pad to 16-byte multiple)
-                params.pad_cb[0] = params.pad_cb[1] = params.pad_cb[2] = 0.0f;
 
-                // Set shader uniforms using new ImPlatform API
-                // Use uniform block API for batched upload
-                ImPlatform_ShaderProgram program = gs_pContext->lineShader.program;
-                ImPlatform_BeginUniformBlock(program);
-                ImPlatform_SetUniform("p0", &params.p0, sizeof(params.p0));
-                ImPlatform_SetUniform("p1", &params.p1, sizeof(params.p1));
-                ImPlatform_SetUniform("thickness", &params.thickness, sizeof(params.thickness));
-                ImPlatform_SetUniform("aa", &params.aa, sizeof(params.aa));
-                ImPlatform_SetUniform("dash", &params.dash, sizeof(params.dash));
-                ImPlatform_SetUniform("dash_offset", &params.dash_offset, sizeof(params.dash_offset));
-                ImPlatform_SetUniform("cap", &params.cap, sizeof(params.cap));
-                ImPlatform_SetUniform("join", &params.join, sizeof(params.join));
-                ImPlatform_SetUniform("miter_limit", &params.miter_limit, sizeof(params.miter_limit));
-                ImPlatform_SetUniform("rect_min", &params.rect_min, sizeof(params.rect_min));
-                ImPlatform_SetUniform("rect_max", &params.rect_max, sizeof(params.rect_max));
-                ImPlatform_SetUniform("color", &params.color, sizeof(params.color));
-                ImPlatform_EndUniformBlock(program);
+                // Store params in frame-persistent pool so the deferred callback
+                // can upload THIS segment's data (not the last segment's)
+                DW_LineSegmentCBData& cb = s_lineSegmentPool[pool_idx++];
+                cb.program = program;
+                cb.params = params;
 
-                // Begin custom shader rendering
+                // 1) Prep callback: sets this segment's uniforms + dirty flag
+                drawlist->AddCallback(DW_PrepareLineUniforms, &cb);
+                // 2) ImPlatform callback: sees dirty=true, uploads to GPU, binds shader
                 ImPlatform_BeginCustomShader(drawlist, program);
 
                 // Draw quad covering the line segment with padding for AA and caps
@@ -7417,7 +7443,7 @@ namespace ImWidgets
         }
 
         // Safety net: if nothing was drawn (e.g., degenerate dash pattern), draw a solid polyline
-        if (!any_drawn && points_count >= 2)
+        if (!any_drawn && !gpu_used && points_count >= 2)
         {
             ImDrawFlags flags = closed ? ImDrawFlags_Closed : 0;
             drawlist->AddPolyline(points, points_count, col, flags, thickness);

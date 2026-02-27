@@ -433,23 +433,25 @@ private:
 	ImVector<VarModifier>	m_VarStack;
 };
 
-// Shader constant buffer for dashed line rendering
+// Shader constant buffer for dashed line rendering.
+// Layout must match HLSL cbuffer packing (no field spans a 16-byte register boundary)
+// and GLSL std140 layout (vec2 aligned to 8, vec4 aligned to 16).
+// Registers: [0-15] p0+p1, [16-31] thickness+aa+dash, [32-47] dash_offset+cap+join+miter_limit,
+//            [48-63] rect_min+rect_max, [64-79] color.  Total: 80 bytes.
 struct ImWidgetsDashedLineBuffer
 {
-    ImVec2  p0;            // segment start (screen space)
-    ImVec2  p1;            // segment end   (screen space)
-    float   thickness;     // stroke width in pixels
-    float   aa;            // aa fringe in pixels
-    ImVec2  dash;          // x=dash length, y=gap length (pixels)
-    float   dash_offset;   // offset along path (pixels)
-    float   cap;           // 0=butt,1=square,2=round
-    float   join;          // reserved
-    float   miter_limit;   // reserved
-    float   pad0;          // padding
-    ImVec2  rect_min;      // bounding quad min (screen space)
-    ImVec2  rect_max;      // bounding quad max (screen space)
-    ImVec4  color;         // RGBA
-    float   pad_cb[3];     // pad to 16-byte multiple for D3D constant buffer
+    ImVec2  p0;            // offset 0  - segment start (screen space)
+    ImVec2  p1;            // offset 8  - segment end   (screen space)
+    float   thickness;     // offset 16 - stroke width in pixels
+    float   aa;            // offset 20 - aa fringe in pixels
+    ImVec2  dash;          // offset 24 - x=dash length, y=gap length (pixels)
+    float   dash_offset;   // offset 32 - offset along path (pixels)
+    float   cap;           // offset 36 - 0=butt,1=square,2=round
+    float   join;          // offset 40 - reserved
+    float   miter_limit;   // offset 44 - reserved
+    ImVec2  rect_min;      // offset 48 - bounding quad min (screen space)
+    ImVec2  rect_max;      // offset 56 - bounding quad max (screen space)
+    ImVec4  color;         // offset 64 - RGBA
 };
 
 #define ImWidgets_Kibi (1024ull)
