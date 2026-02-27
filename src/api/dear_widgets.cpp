@@ -2520,9 +2520,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	void	ShapeSetDefaultWhiteCol( ImWidgetsShape& shape )
 	{
+		// Use ImGui's font atlas white pixel UV for solid colors (same as ImGui uses internally)
+		ImVec2 uv_white = ImGui::GetFontTexUvWhitePixel();
 		int vtx_count = shape.vertices.size();
 		for ( int k = 0; k < vtx_count; ++k )
 		{
+			shape.vertices[ k ].uv = uv_white;
 			shape.vertices[ k ].col = IM_COL32( 255, 255, 255, 255 );
 		}
 	}
@@ -2558,58 +2561,171 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 	}
 
+	//////////////////////////////////////////////////////////////////////////
+	// Shape Cache
+	//////////////////////////////////////////////////////////////////////////
+	static ImWidgetsShapeCache g_ShapeCache;
+
+	ImWidgetsShapeCache& GetShapeCache()
+	{
+		return g_ShapeCache;
+	}
+
+	ImWidgetsShape* ShapeCacheGet( ImWidgetsShapeCache& cache, ImU64 key )
+	{
+		for ( int i = 0; i < cache.entries.Size; ++i )
+			if ( cache.entries[ i ].key == key )
+				return cache.entries[ i ].shape;
+		return nullptr;
+	}
+
+	void ShapeCacheInsert( ImWidgetsShapeCache& cache, ImU64 key, const ImWidgetsShape& shape )
+	{
+		// Allocate shape on heap to avoid shallow copy issues
+		ImWidgetsShape* heap_shape = IM_NEW(ImWidgetsShape)();
+
+		*heap_shape = shape; // Deep copy via ImVector's assignment operator
+
+		ImWidgetsShapeCacheEntry entry;
+		entry.key = key;
+		entry.shape = heap_shape;
+		cache.entries.push_back( entry );
+	}
+
+	void ShapeCacheInvalidate( ImWidgetsShapeCache& cache, ImU64 key )
+	{
+		for ( int i = 0; i < cache.entries.Size; ++i )
+			if ( cache.entries[ i ].key == key )
+			{
+				IM_DELETE(cache.entries[ i ].shape);  // Free heap memory
+				cache.entries.erase( cache.entries.Data + i );
+				break;
+			}
+	}
+
+	void ShapeCacheClear( ImWidgetsShapeCache& cache )
+	{
+		// Free all heap-allocated shapes
+		for ( int i = 0; i < cache.entries.Size; ++i )
+			IM_DELETE(cache.entries[ i ].shape);
+		cache.entries.clear();
+	}
+
+	void ClearShapeCache()
+	{
+		ShapeCacheClear( GetShapeCache() );
+	}
+
 	void	GenShapeRect( ImWidgetsShape& shape, ImRect const& r )
 	{
+		ImVec2 size = r.Max - r.Min;
+#ifdef DEAR_WIDGETS_SHAPE_CACHING
+		struct { int type; ImVec2 size; } key_data = {};
+		key_data.type = 0;
+		key_data.size = size;
+		ImU64 key = ImHashData( &key_data, sizeof( key_data ) );
+		ImWidgetsShapeCache& cache = GetShapeCache();
+		if ( ImWidgetsShape* cached = ShapeCacheGet( cache, key ) )
+		{
+			shape = *cached;
+			ShapeTranslate( shape, r.Min );
+			return;
+		}
+#endif
 		shape.vertices.clear();
 		shape.triangles.clear();
 		shape.vertices.resize( 4 );
 		shape.triangles.resize( 2 );
-		shape.vertices[ 0 ].pos = r.Min;
-		shape.vertices[ 1 ].pos = ImVec2( r.Min.x, r.Max.y );
-		shape.vertices[ 2 ].pos = r.Max;
-		shape.vertices[ 3 ].pos = ImVec2( r.Max.x, r.Min.y );
-		shape.bb = r;
-
+		// Zero-initialize all vertex data to avoid garbage values
+		memset( shape.vertices.Data, 0, sizeof( ImWidgetsVertex ) * 4 );
+		shape.vertices[ 0 ].pos = ImVec2( 0.0f, 0.0f );
+		shape.vertices[ 1 ].pos = ImVec2( 0.0f, size.y );
+		shape.vertices[ 2 ].pos = size;
+		shape.vertices[ 3 ].pos = ImVec2( size.x, 0.0f );
+		shape.bb.Min = ImVec2( 0.0f, 0.0f );
+		shape.bb.Max = size;
 		shape.triangles[ 0 ].a = 0;
 		shape.triangles[ 0 ].b = 1;
 		shape.triangles[ 0 ].c = 3;
 		shape.triangles[ 1 ].a = 3;
 		shape.triangles[ 1 ].b = 1;
 		shape.triangles[ 1 ].c = 2;
+#ifdef DEAR_WIDGETS_SHAPE_CACHING
+		ShapeCacheInsert( cache, key, shape );
+#endif
+		ShapeTranslate( shape, r.Min );
 	}
 
 	void	GenShapeCircle( ImWidgetsShape& shape, ImVec2 center, float radius, int side_count )
 	{
+#ifdef DEAR_WIDGETS_SHAPE_CACHING
+		struct { int type; float radius; int side_count; } key_data = {};
+		key_data.type = 1;
+		key_data.radius = radius;
+		key_data.side_count = side_count;
+		ImU64 key = ImHashData( &key_data, sizeof( key_data ) );
+		ImWidgetsShapeCache& cache = GetShapeCache();
+		if ( ImWidgetsShape* cached = ShapeCacheGet( cache, key ) )
+		{
+			shape = *cached;
+			ShapeTranslate( shape, center );
+			return;
+		}
+#endif
 		shape.vertices.clear();
 		shape.triangles.clear();
 		float d0 = 2.0f * IM_PI / ( ( float )( side_count ) );
 		shape.vertices.resize( side_count + 1 );
 		shape.triangles.resize( side_count );
-		shape.vertices[ 0 ].pos = center;
+		// Zero-initialize all vertex data to avoid garbage values
+		memset( shape.vertices.Data, 0, sizeof( ImWidgetsVertex ) * ( side_count + 1 ) );
+		shape.vertices[ 0 ].pos = ImVec2( 0.0f, 0.0f );
 		for ( int k = 0; k < side_count; ++k )
 		{
 			float _0 = ( ( float )k ) * d0;
-			shape.vertices[ k + 1 ].pos.x = center.x + radius * ImCos( _0 );
-			shape.vertices[ k + 1 ].pos.y = center.y + radius * ImSin( _0 );
+			shape.vertices[ k + 1 ].pos.x = radius * ImCos( _0 );
+			shape.vertices[ k + 1 ].pos.y = radius * ImSin( _0 );
 		}
 		for ( int k = 0; k < side_count; ++k )
 		{
 			shape.triangles[ k ].a = 0;
-			shape.triangles[ k ].b = ( k + 1 ) % side_count + 1;
-			shape.triangles[ k ].c = ( k + 2 ) % side_count + 1;
+			shape.triangles[ k ].b = k + 1;
+			shape.triangles[ k ].c = (k + 1) % side_count + 1;
 		}
-		shape.bb.Min = center - ImVec2( radius, radius );
-		shape.bb.Max = center + ImVec2( radius, radius );
+		shape.bb.Min = ImVec2( -radius, -radius );
+		shape.bb.Max = ImVec2( radius, radius );
+#ifdef DEAR_WIDGETS_SHAPE_CACHING
+		ShapeCacheInsert( cache, key, shape );
+#endif
+		ShapeTranslate( shape, center );
 	}
 	void	GenShapeCircleArc( ImWidgetsShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count )
 	{
+#ifdef DEAR_WIDGETS_SHAPE_CACHING
+		struct { int type; float radius; float angle_min; float angle_max; int side_count; } key_data = {};
+		key_data.type = 2;
+		key_data.radius = radius;
+		key_data.angle_min = angle_min;
+		key_data.angle_max = angle_max;
+		key_data.side_count = side_count;
+		ImU64 key = ImHashData( &key_data, sizeof( key_data ) );
+		ImWidgetsShapeCache& cache = GetShapeCache();
+		if ( ImWidgetsShape* cached = ShapeCacheGet( cache, key ) )
+		{
+			shape = *cached;
+			ShapeTranslate( shape, center );
+			return;
+		}
+#endif
 		shape.vertices.clear();
 		shape.triangles.clear();
 		float angle_range = angle_max - angle_min;
 		float d0 = angle_range / ( ( float )( side_count ) );
 		shape.vertices.resize( side_count + 2 );
 		shape.triangles.resize( side_count );
-		shape.vertices[ 0 ].pos = center;
+		// Zero-initialize all vertex data to avoid garbage values
+		memset( shape.vertices.Data, 0, sizeof( ImWidgetsVertex ) * ( side_count + 2 ) );
+		shape.vertices[ 0 ].pos = ImVec2( 0.0f, 0.0f );
 		shape.bb.Min.x =  FLT_MAX;
 		shape.bb.Min.y =  FLT_MAX;
 		shape.bb.Max.x = -FLT_MAX;
@@ -2618,8 +2734,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			float _0 = angle_min + ( ( float )k ) * d0;
 			ImVec2 v;
-			v.x = center.x + radius * ImCos( - _0 );
-			v.y = center.y + radius * ImSin( - _0 );
+			v.x = radius * ImCos( - _0 );
+			v.y = radius * ImSin( - _0 );
 			shape.vertices[ k + 1 ].pos.x = v.x;
 			shape.vertices[ k + 1 ].pos.y = v.y;
 			shape.bb.Min.x = ImMin( shape.bb.Min.x, v.x );
@@ -2633,6 +2749,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			shape.triangles[ k ].b = k + 1;
 			shape.triangles[ k ].c = k + 2;
 		}
+#ifdef DEAR_WIDGETS_SHAPE_CACHING
+		ShapeCacheInsert( cache, key, shape );
+#endif
+		ShapeTranslate( shape, center );
 	}
 	void	GenShapeRegularNGon( ImWidgetsShape& shape, ImVec2 center, float radius, int side_count )
 	{
@@ -2640,6 +2760,21 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 	void	GenShapeSquircle( ImWidgetsShape& shape, ImVec2 center, float radius, int side_count, float n )
 	{
+#ifdef DEAR_WIDGETS_SHAPE_CACHING
+		struct { int type; float radius; int side_count; float n; } key_data = {};
+		key_data.type = 4;
+		key_data.radius = radius;
+		key_data.side_count = side_count;
+		key_data.n = n;
+		ImU64 key = ImHashData( &key_data, sizeof( key_data ) );
+		ImWidgetsShapeCache& cache = GetShapeCache();
+		if ( ImWidgetsShape* cached = ShapeCacheGet( cache, key ) )
+		{
+			shape = *cached;
+			ShapeTranslate( shape, center );
+			return;
+		}
+#endif
 		shape.vertices.clear();
 		shape.triangles.clear();
 
@@ -2648,7 +2783,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float d0 = 2.0f * IM_PI / ( ( float )( side_count ) );
 		shape.vertices.resize( side_count + 1 );
 		shape.triangles.resize( side_count );
-		shape.vertices[ 0 ].pos = center;
+		// Zero-initialize all vertex data to avoid garbage values
+		memset( shape.vertices.Data, 0, sizeof( ImWidgetsVertex ) * ( side_count + 1 ) );
+		shape.vertices[ 0 ].pos = ImVec2( 0.0f, 0.0f );
 
 		// Generate vertices using parametric form of superellipse
 		for ( int k = 0; k < side_count; ++k )
@@ -2664,20 +2801,24 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float x = ImPow( ImFabs( cos_angle ), exp ) * ( cos_angle >= 0 ? 1.0f : -1.0f );
 			float y = ImPow( ImFabs( sin_angle ), exp ) * ( sin_angle >= 0 ? 1.0f : -1.0f );
 
-			shape.vertices[ k + 1 ].pos.x = center.x + radius * x;
-			shape.vertices[ k + 1 ].pos.y = center.y + radius * y;
+			shape.vertices[ k + 1 ].pos.x = radius * x;
+			shape.vertices[ k + 1 ].pos.y = radius * y;
 		}
 
 		// Generate triangles as a fan from center
 		for ( int k = 0; k < side_count; ++k )
 		{
 			shape.triangles[ k ].a = 0;
-			shape.triangles[ k ].b = ( k + 1 ) % side_count + 1;
-			shape.triangles[ k ].c = ( k + 2 ) % side_count + 1;
+			shape.triangles[ k ].b = k + 1;
+			shape.triangles[ k ].c = (k + 1) % side_count + 1;
 		}
 
-		shape.bb.Min = center - ImVec2( radius, radius );
-		shape.bb.Max = center + ImVec2( radius, radius );
+		shape.bb.Min = ImVec2( -radius, -radius );
+		shape.bb.Max = ImVec2( radius, radius );
+#ifdef DEAR_WIDGETS_SHAPE_CACHING
+		ShapeCacheInsert( cache, key, shape );
+#endif
+		ShapeTranslate( shape, center );
 	}
 
 	// TODO
@@ -3030,6 +3171,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		gs_pContext = ctx;
 	}
 
+	ImWidgetsContext* GetCurrentContext()
+	{
+		return gs_pContext;
+	}
+
+	ImTextureID GetWhiteTexture()
+	{
+		return gs_pContext ? gs_pContext->whiteImg : NULL;
+	}
+
 	//////////////////////////////////////////////////////////////////////////
 	// DrawList
 	//////////////////////////////////////////////////////////////////////////
@@ -3163,7 +3314,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 	void DrawShape( ImDrawList* pDrawList, ImWidgetsShape& shape )
 	{
-		// If we don't have a texture_id send the one on the header, it will discard the set of texture on DrawShapeEx
+		// Use font atlas texture (with white pixel UV for solid colors)
 		DrawShapeEx( pDrawList, pDrawList->_CmdHeader.TexRef.GetTexID(), shape );
 	}
 	void DrawImageShapeDebug( ImDrawList* pDrawList, ImTextureID tex, ImWidgetsShape& shape, float edge_thickness, ImU32 edge_col, ImU32 triangle_col, float vrtx_radius, ImU32 vrtx_col, int tri_idx )

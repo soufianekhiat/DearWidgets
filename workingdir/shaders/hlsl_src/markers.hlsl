@@ -1,4 +1,14 @@
-cbuffer PS_CONSTANT_BUFFER : register(b0)
+// Vertex shader constant buffer at register b0
+// DirectX: ImGui backend automatically provides this
+// OpenGL: Converted to "uniform mat4 ProjMtx" in GLSL (manual edit required)
+cbuffer vertexBuffer : register(b0)
+{
+	float4x4 ProjMtx;
+};
+
+// Pixel shader constant buffer at register b1
+// Note: Must be b1 because b0 is used by vertex shader
+cbuffer PS_CONSTANT_BUFFER : register(b1)
 {
 	float4	fg_color;
 	float4	bg_color;
@@ -11,14 +21,6 @@ cbuffer PS_CONSTANT_BUFFER : register(b0)
 	float	antialiasing;
 	float	draw_type;
 	float	pad0;
-};
-
-// Vertex shader constant buffer at register b0
-// DirectX: ImGui backend automatically provides this
-// OpenGL: Converted to "uniform mat4 ProjMtx" in GLSL (manual edit required)
-cbuffer vertexBuffer : register(b0)
-{
-	float4x4 ProjMtx;
 };
 
 struct VS_INPUT

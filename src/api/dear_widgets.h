@@ -9,6 +9,14 @@
 //#include <string>
 #include <math.h>
 
+//-----------------------------------------------------------------------------
+// [SECTION] Shape Caching Configuration
+//-----------------------------------------------------------------------------
+// Enable shape caching to improve performance by caching generated geometry
+// Shapes cache only positions and topology - UVs are set fresh each frame
+// This avoids font atlas timing issues and keeps cache simple
+//#define DEAR_WIDGETS_SHAPE_CACHING // Done by the build system cf. Common.cs
+
 // Map project-specific graphics API defines to ImPlatform defines
 // This must be done BEFORE including ImPlatform.h so it can properly set IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 #if defined(__DEAR_GFX_DX9__)
@@ -187,6 +195,17 @@ struct ImWidgetsShapeLine
 	//int triangles_count;
 	float total_length;
 	ImRect							bb;
+};
+
+struct ImWidgetsShapeCacheEntry
+{
+	ImU64				key;
+	ImWidgetsShape*		shape;  // Use pointer to avoid shallow copy issues with ImVector
+};
+
+struct ImWidgetsShapeCache
+{
+	ImVector<ImWidgetsShapeCacheEntry>	entries;
 };
 
 typedef ImU32( *ImWidgetsColor1DCallback )( float x, void* );
@@ -859,6 +878,7 @@ namespace ImWidgets{
 	void	ShapeSetDefaultBoundUV( ImWidgetsShape& shape );
 	void	ShapeSetDefaultBoundUVWhiteCol( ImWidgetsShape& shape );
 	void	ShapeSetDefaultWhiteCol( ImWidgetsShape& shape );
+	void	ClearShapeCache();
 	void	ShapeSetBound( ImWidgetsShape& shape );
 	void	ShapeLineSetBound( ImWidgetsShapeLine& shape );
 
@@ -908,6 +928,8 @@ namespace ImWidgets{
 	IMGUI_API void DestroyContext( ImWidgetsContext* );
 
 	IMGUI_API void SetCurrentContext( ImWidgetsContext* );
+	IMGUI_API ImWidgetsContext* GetCurrentContext();
+	IMGUI_API ImTextureID GetWhiteTexture();
 
 	IMGUI_API void OwnTexture( ImTextureID tex );
 

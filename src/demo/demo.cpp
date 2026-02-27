@@ -176,6 +176,93 @@ ImU32 sdHorseshoeColor( ImVec2 p, float fTime )
 }
 #pragma endregion ShaderToyHelper
 
+//////////////////////////////////////////////////////////////////////////
+// Demo Helper Structures
+//////////////////////////////////////////////////////////////////////////
+namespace LayoutConstants {
+	constexpr float HALF = 0.5f;
+	constexpr float LEFT_PANEL_RATIO = 2.0f / 6.0f;
+	constexpr float RIGHT_PANEL_RATIO = 4.0f / 6.0f;
+	constexpr float THREE_QUARTERS = 3.0f / 4.0f;
+}
+
+struct DemoColor {
+	ImVec4 v;
+	ImU32 u;
+
+	DemoColor( float r, float g, float b, float a = 1.0f )
+		: v( r, g, b, a ), u( ImGui::GetColorU32( v ) ) {}
+
+	bool Edit( const char* label ) {
+		if ( ImGui::ColorEdit4( label, &v.x ) ) {
+			u = ImGui::GetColorU32( v );
+			return true;
+		}
+		return false;
+	}
+};
+
+struct GradientParams {
+	ImVec2 uv_start;
+	ImVec2 uv_end;
+	DemoColor cola;
+	DemoColor colb;
+
+	GradientParams()
+		: uv_start( 0.0f, 0.5f ), uv_end( 1.0f, 0.5f ),
+		  cola( 1.0f, 0.0f, 0.0f ), colb( 0.0f, 1.0f, 0.0f ) {}
+
+	void RenderControls( const char* suffix = "" ) {
+		char label_a[ 64 ], label_b[ 64 ], label_uv0[ 64 ], label_uv1[ 64 ];
+		snprintf( label_a, sizeof( label_a ), "ColA##%s", suffix );
+		snprintf( label_b, sizeof( label_b ), "ColB##%s", suffix );
+		snprintf( label_uv0, sizeof( label_uv0 ), "uv0##%s", suffix );
+		snprintf( label_uv1, sizeof( label_uv1 ), "uv1##%s", suffix );
+
+		ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+		ImWidgets::Slider2DFloat( label_uv0, &uv_start.x, &uv_start.y, 0.0f, 1.0f, 0.0f, 1.0f );
+		ImGui::SameLine();
+		ImWidgets::Slider2DFloat( label_uv1, &uv_end.x, &uv_end.y, 0.0f, 1.0f, 0.0f, 1.0f );
+		ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+		cola.Edit( label_a );
+		ImGui::SameLine();
+		colb.Edit( label_b );
+	}
+};
+
+struct ShapeDebugState {
+	float edge_thickness;
+	float vertex_radius;
+	DemoColor edge_col;
+	DemoColor triangle_col;
+	DemoColor vertex_col;
+	int tri_idx;
+	int side_count;
+
+	ShapeDebugState( int default_sides = 3 )
+		: edge_thickness( 2.0f ), vertex_radius( 16.0f ),
+		  edge_col( 1.0f, 0.0f, 0.0f ), triangle_col( 0.0f, 1.0f, 0.0f ),
+		  vertex_col( 0.0f, 0.0f, 1.0f ), tri_idx( -1 ), side_count( default_sides ) {}
+
+	void RenderControls( const char* suffix = "", int min_sides = 3, int max_sides = 64 ) {
+		char label_sides[ 64 ], label_thick[ 64 ], label_radius[ 64 ];
+		char label_edge[ 64 ], label_tri[ 64 ], label_vtx[ 64 ];
+		snprintf( label_sides, sizeof( label_sides ), "Sides##%s", suffix );
+		snprintf( label_thick, sizeof( label_thick ), "Thickness##%s", suffix );
+		snprintf( label_radius, sizeof( label_radius ), "Radius##%s", suffix );
+		snprintf( label_edge, sizeof( label_edge ), "Edge##%s", suffix );
+		snprintf( label_tri, sizeof( label_tri ), "Triangle##%s", suffix );
+		snprintf( label_vtx, sizeof( label_vtx ), "Vertices##%s", suffix );
+
+		ImGui::SliderInt( label_sides, &side_count, min_sides, max_sides );
+		ImGui::SliderFloat( label_thick, &edge_thickness, 0.0f, 16.0f );
+		ImGui::SliderFloat( label_radius, &vertex_radius, 0.0f, 64.0f );
+		edge_col.Edit( label_edge );
+		triangle_col.Edit( label_tri );
+		vertex_col.Edit( label_vtx );
+	}
+};
+
 void ShowSampleOffscreen00();
 
 ImTextureID background;
@@ -190,6 +277,7 @@ ImTextureID clock_img;
 ImVec2 clock_size;
 ImTextureID man_img;
 ImVec2 man_size;
+
 int main()
 {
 	// Using the new ImPlatform C API - following ImPlatform demo pattern
@@ -233,10 +321,10 @@ int main()
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;		// Enable Keyboard Controls
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;		// Enable Gamepad Controls
 #ifdef IMGUI_HAS_DOCK
-	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;			// Enable Docking
+	//io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;			// Enable Docking
 #endif
 #ifdef IMGUI_HAS_VIEWPORT
-	io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;			// Enable Multi-Viewport / Platform Windows
+	//io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;			// Enable Multi-Viewport / Platform Windows
 	//io.ConfigViewportsNoAutoMerge = true;
 	//io.ConfigViewportsNoTaskBarIcon = true;
 #endif
@@ -255,10 +343,10 @@ int main()
 	style.ScaleAllSizes( dpi_scale );
 	style.FontScaleDpi = dpi_scale;
 #ifdef IMGUI_HAS_DOCK
-	io.ConfigDpiScaleFonts = true;
+	//io.ConfigDpiScaleFonts = true;
 #endif
 #ifdef IMGUI_HAS_VIEWPORT
-	io.ConfigDpiScaleViewports = true;
+	//io.ConfigDpiScaleViewports = true;
 #endif
 #endif
 
@@ -325,6 +413,7 @@ int main()
 		// Render UI
 		ImWidgets::ShowSamples();
 		ImWidgets::ShowDemo();
+		ImWidgets::ShowShowcase();
 
 		ImGui::ShowMetricsWindow();
 		ImGui::ShowDemoWindow();
@@ -399,103 +488,964 @@ namespace ImWidgets {
 		data->DesiredSize.y = ( float )( int )( data->DesiredSize.x / aspect_ratio );
 	}
 
+	//////////////////////////////////////////////////////////////////////////
+	// ShowSamples Layout Helper Functions
+	//////////////////////////////////////////////////////////////////////////
+	void RenderLeftLeftPanel()
+	{
+		ImVec2 size = ImGui::GetContentRegionAvail();
+
+		// Top section with clock image button
+		ImGui::BeginChild( "Left_Left_Top", ImVec2( 0.0f, size.y * LayoutConstants::HALF ) );
+		{
+			size = ImGui::GetContentRegionAvail();
+			ImWidgets::ImageButtonExCapsuleH( "X", clock_img, size.y, size.y,
+				ImGuiButtonFlags_None, IM_COL32_WHITE,
+				ImVec2( 0.16f, 0.16f ), ImVec2( 0.84f, 0.84f ) );
+		}
+		ImGui::EndChild();
+
+		// Bottom section with circle button
+		ImGui::BeginChild( "Left_Left_Bottom" );
+		{
+			size = ImGui::GetContentRegionAvail();
+			ImWidgets::ButtonExCircle( "Y", size.y * LayoutConstants::HALF, 0 );
+		}
+		ImGui::EndChild();
+	}
+
+	void RenderLeftPanel()
+	{
+		ImVec2 size = ImGui::GetContentRegionAvail();
+
+		// Left half of left panel
+		ImGui::BeginChild( "Left_Left", ImVec2( size.x * LayoutConstants::HALF, 0.0f ) );
+		RenderLeftLeftPanel();
+		ImGui::EndChild();
+
+		ImGui::SameLine();
+
+		// Right half of left panel with vertical capsule
+		ImGui::BeginChild( "Left_Right" );
+		{
+			size = ImGui::GetContentRegionAvail();
+			ImWidgets::ImageButtonExCapsuleV( "Y", man_img, size.y, size.x, 0 );
+		}
+		ImGui::EndChild();
+	}
+
+	void RenderRightTopPanel()
+	{
+		ImVec2 size = ImGui::GetContentRegionAvail();
+
+		// Left side with astronaut image
+		ImGui::BeginChild( "Right_Top_Left", ImVec2( size.x * LayoutConstants::THREE_QUARTERS, 0.0f ) );
+		{
+			size = ImGui::GetContentRegionAvail();
+			ImWidgets::ImageButtonExCapsuleH( "X", astro_img, size.x, size.y,
+				ImGuiButtonFlags_None, IM_COL32_WHITE,
+				ImVec2( 0.16f, 0.16f ), ImVec2( 0.84f, 0.84f ) );
+		}
+		ImGui::EndChild();
+
+		ImGui::SameLine();
+
+		// Right side with circle button
+		ImGui::BeginChild( "Right_Top_Right" );
+		{
+			size = ImGui::GetContentRegionAvail();
+			ImWidgets::ButtonExCircle( "Y", size.y * LayoutConstants::HALF, 0 );
+		}
+		ImGui::EndChild();
+	}
+
+	void RenderRightBottomPanel()
+	{
+		ImVec2 size = ImGui::GetContentRegionAvail();
+		ImWidgets::ButtonExCircle( "A", size.y * LayoutConstants::HALF, 0 );
+		ImGui::SameLine();
+		ImWidgets::ButtonExCircle( "B", size.y * LayoutConstants::HALF, 0 );
+		ImGui::SameLine();
+		size = ImGui::GetContentRegionAvail();
+		ImWidgets::ButtonExCapsuleH( "C", size.x, size.y, 0 );
+	}
+
+	void RenderRightPanel()
+	{
+		ImVec2 size = ImGui::GetContentRegionAvail();
+
+		// Top half
+		ImGui::BeginChild( "Right_Top", ImVec2( 0.0f, size.y * LayoutConstants::HALF ) );
+		RenderRightTopPanel();
+		ImGui::EndChild();
+
+		// Bottom half
+		ImGui::BeginChild( "Right_Bottom" );
+		RenderRightBottomPanel();
+		ImGui::EndChild();
+	}
+
 	void ShowSamples()
 	{
-#if 0
-		if ( ImGui::Begin( "Tiles" ) )
-		{
-			ImVec2 size = ImGui::GetContentRegionAvail();
-			ImWidgets::ImageButtonExCapsuleV( "A",
-											  clock_img,
-											  size.x, size.y * 0.5f,
-											  ImGuiButtonFlags_None,
-											  IM_COL32_WHITE );
-			ImGui::SameLine();
-			ImWidgets::ImageButtonExCapsuleV( "B",
-											  clock_img,
-											  size.x, size.y * 0.5f,
-											  ImGuiButtonFlags_None,
-											  IM_COL32_WHITE );
-			ImGui::SameLine();
-			ImWidgets::ImageButtonExCapsuleV( "C",
-											  clock_img,
-											  size.x, size.y * 0.5f,
-											  ImGuiButtonFlags_None,
-											  IM_COL32_WHITE );
-		}
-		ImGui::End();
-#endif
-
 		static const float _6_2 = 6.0f / 2.0f;
 		ImGui::SetNextWindowSizeConstraints( ImVec2( 0, 0 ), ImVec2( FLT_MAX, FLT_MAX ), AspectRatio_6_2, ( void* )&_6_2 );
 
 		if ( ImGui::Begin( "Shop 00", 0, ImGuiWindowFlags_NoTitleBar ) )
 		{
 			ImVec2 size = ImGui::GetContentRegionAvail();
-			ImGui::BeginChild( "Left", ImVec2( size.x * 2.0f / 6.0f, 0.0f ) );
-			{
-				size = ImGui::GetContentRegionAvail();
-				ImGui::BeginChild( "Left_Left", ImVec2( size.x * 0.5f, 0.0f ) );
-					size = ImGui::GetContentRegionAvail();
-					ImGui::BeginChild( "Left_Left_Top", ImVec2( 0.0f, size.y * 0.5f ) );
-						size = ImGui::GetContentRegionAvail();
-						ImWidgets::ImageButtonExCapsuleH( "X",
-														  clock_img,
-														  size.y, size.y,
-														  ImGuiButtonFlags_None,
-														  IM_COL32_WHITE,
-														  ImVec2( 0.16f, 0.16f ),
-														  ImVec2( 1.0f - 0.16f, 1.0f - 0.16f ) );
-					ImGui::EndChild();
-					ImGui::BeginChild( "Left_Left_Bottom" );
-						size = ImGui::GetContentRegionAvail();
-						ImWidgets::ButtonExCircle( "Y", size.y * 0.5f, 0 );
-					ImGui::EndChild();
-				ImGui::EndChild();
 
-				ImGui::SameLine();
-
-				ImGui::BeginChild( "Left_Right" );
-					size = ImGui::GetContentRegionAvail();
-					ImWidgets::ImageButtonExCapsuleV( "Y", man_img, size.y, size.x, 0 );
-				ImGui::EndChild();
-			}
+			// Left panel (2/6 of width)
+			ImGui::BeginChild( "Left", ImVec2( size.x * LayoutConstants::LEFT_PANEL_RATIO, 0.0f ) );
+			RenderLeftPanel();
 			ImGui::EndChild();
 
 			ImGui::SameLine();
 
+			// Right panel (4/6 of width)
 			ImGui::BeginChild( "Right" );
-			{
-				size = ImGui::GetContentRegionAvail();
-				ImGui::BeginChild( "Right_Top", ImVec2( 0.0f, size.y * 0.5f ) );
-					size = ImGui::GetContentRegionAvail();
-					ImGui::BeginChild( "Right_Top_Left", ImVec2( size.x * 3.0f / 4.0f, 0.0f ) );
-						size = ImGui::GetContentRegionAvail();
-						ImageButtonExCapsuleH( "X", astro_img, size.x, size.y,
-											   ImGuiButtonFlags_None,
-											   IM_COL32_WHITE,
-											   { 0.16f, 0.16f },
-											   { 1.0f - 0.16f, 1.0f - 0.16f});
-					ImGui::EndChild();
-					ImGui::SameLine();
-					ImGui::BeginChild( "Right_Top_Right" );
-						size = ImGui::GetContentRegionAvail();
-						ButtonExCircle( "Y", size.y * 0.5f, 0 );
-					ImGui::EndChild();
-				ImGui::EndChild();
-				ImGui::BeginChild( "Right_Bottom" );
-					size = ImGui::GetContentRegionAvail();
-					ButtonExCircle( "A", size.y * 0.5f, 0 );
-					ImGui::SameLine();
-					ButtonExCircle( "B", size.y * 0.5f, 0 );
-					ImGui::SameLine();
-					size = ImGui::GetContentRegionAvail();
-					ButtonExCapsuleH( "C", size.x, size.y, 0 );
-				ImGui::EndChild();
-			}
+			RenderRightPanel();
 			ImGui::EndChild();
 		}
 		ImGui::End();
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Showcase - Modern Web-Inspired UI (Enhanced)
+	//////////////////////////////////////////////////////////////////////////
+	void RenderShowcaseHero()
+	{
+		ImVec2 size = ImGui::GetContentRegionAvail();
+		float header_height = 80.0f;
+		ImVec2 header_size( size.x, header_height );
+
+		ImDrawList* draw_list = ImGui::GetWindowDrawList();
+		ImVec2 pos = ImGui::GetCursorScreenPos();
+
+		// Dark navy header bar
+		ImWidgetsShape header_shape;
+		ImWidgets::GenShapeSquircle( header_shape, pos + header_size * 0.5f,
+			ImMin( header_size.x, header_size.y ) * 0.48f, 64, 2.5f );
+		ImWidgets::ShapeSetDefaultWhiteCol( header_shape );
+		for ( auto& v : header_shape.vertices )
+			v.col = IM_COL32( 30, 35, 48, 255 );
+		ImWidgets::DrawShape( draw_list, header_shape );
+
+		// Logo circle (left side)
+		ImVec2 logo_center = pos + ImVec2( 50.0f, header_height * 0.5f );
+		ImWidgetsShape logo_circle;
+		ImWidgets::GenShapeCircle( logo_circle, logo_center, 22.0f, 48 );
+		ImWidgets::ShapeSetDefaultWhiteCol( logo_circle );
+		for ( auto& v : logo_circle.vertices )
+			v.col = IM_COL32( 255, 107, 129, 255 );
+		ImWidgets::DrawShape( draw_list, logo_circle );
+
+		// Inner logo accent
+		ImWidgetsShape logo_inner;
+		ImWidgets::GenShapeCircle( logo_inner, logo_center, 12.0f, 48 );
+		ImWidgets::ShapeSetDefaultWhiteCol( logo_inner );
+		for ( auto& v : logo_inner.vertices )
+			v.col = IM_COL32( 255, 180, 195, 255 );
+		ImWidgets::DrawShape( draw_list, logo_inner );
+
+		// Brand name
+		ImGui::SetCursorScreenPos( pos + ImVec2( 85.0f, header_height * 0.5f - 10.0f ) );
+		ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 255 ) );
+		ImGui::Text( "Creative Studio" );
+		ImGui::PopStyleColor();
+
+		// Navigation items (centered)
+		float nav_y = header_height * 0.5f - 8.0f;
+		float nav_start_x = size.x * 0.35f;
+		float nav_spacing = 100.0f;
+
+		const char* nav_items[] = { "Dashboard", "Projects", "Team", "Analytics" };
+		ImU32 nav_colors[] = {
+			IM_COL32( 255, 255, 255, 255 ),
+			IM_COL32( 200, 200, 210, 255 ),
+			IM_COL32( 200, 200, 210, 255 ),
+			IM_COL32( 200, 200, 210, 255 )
+		};
+
+		for ( int i = 0; i < 4; ++i )
+		{
+			ImGui::SetCursorScreenPos( pos + ImVec2( nav_start_x + i * nav_spacing, nav_y ) );
+			ImGui::PushStyleColor( ImGuiCol_Text, nav_colors[ i ] );
+			ImGui::Text( "%s", nav_items[ i ] );
+			ImGui::PopStyleColor();
+
+			// Active indicator under first item
+			if ( i == 0 )
+			{
+				float text_width = ImGui::CalcTextSize( nav_items[ i ] ).x;
+				ImVec2 indicator_pos = pos + ImVec2( nav_start_x, nav_y + 22.0f );
+				ImWidgetsShape indicator;
+				ImWidgets::GenShapeRect( indicator,
+					ImRect( indicator_pos, indicator_pos + ImVec2( text_width, 3.0f ) ) );
+				ImWidgets::ShapeSetDefaultWhiteCol( indicator );
+				for ( auto& v : indicator.vertices )
+					v.col = IM_COL32( 255, 107, 129, 255 );
+				ImWidgets::DrawShape( draw_list, indicator );
+			}
+		}
+
+		// Notification badge (right side)
+		ImVec2 notif_center = pos + ImVec2( size.x - 100.0f, header_height * 0.5f );
+		ImWidgetsShape notif_circle;
+		ImWidgets::GenShapeCircle( notif_circle, notif_center, 18.0f, 48 );
+		ImWidgets::ShapeSetDefaultWhiteCol( notif_circle );
+		for ( auto& v : notif_circle.vertices )
+			v.col = IM_COL32( 60, 70, 90, 255 );
+		ImWidgets::DrawShape( draw_list, notif_circle );
+
+		// Notification dot
+		ImWidgetsShape notif_dot;
+		ImWidgets::GenShapeCircle( notif_dot, notif_center + ImVec2( 8.0f, -8.0f ), 5.0f, 24 );
+		ImWidgets::ShapeSetDefaultWhiteCol( notif_dot );
+		for ( auto& v : notif_dot.vertices )
+			v.col = IM_COL32( 255, 90, 95, 255 );
+		ImWidgets::DrawShape( draw_list, notif_dot );
+
+		// Profile avatar (rightmost)
+		ImVec2 avatar_center = pos + ImVec2( size.x - 50.0f, header_height * 0.5f );
+		ImWidgetsShape avatar;
+		ImWidgets::GenShapeCircle( avatar, avatar_center, 20.0f, 48 );
+		ImWidgets::ShapeSetDefaultBoundUV( avatar );
+		ImWidgets::ShapeLinearSRGBLinearGradient( avatar,
+			ImVec2( 0.5f, 0.0f ), ImVec2( 0.5f, 1.0f ),
+			IM_COL32( 120, 100, 255, 255 ), IM_COL32( 200, 80, 255, 255 ) );
+		ImWidgets::DrawShape( draw_list, avatar );
+
+		// Avatar inner circle
+		ImWidgetsShape avatar_inner;
+		ImWidgets::GenShapeCircle( avatar_inner, avatar_center, 12.0f, 48 );
+		ImWidgets::ShapeSetDefaultWhiteCol( avatar_inner );
+		for ( auto& v : avatar_inner.vertices )
+			v.col = IM_COL32( 255, 255, 255, 100 );
+		ImWidgets::DrawShape( draw_list, avatar_inner );
+
+		ImGui::SetCursorScreenPos( pos + ImVec2( 0.0f, header_height + 30.0f ) );
+	}
+
+	void RenderShowcaseFeatureCard( const char* title, const char* desc, ImU32 color, ImVec2 card_size )
+	{
+		ImDrawList* draw_list = ImGui::GetWindowDrawList();
+		ImVec2 pos = ImGui::GetCursorScreenPos();
+
+		// Flat card background with bright color
+		ImWidgetsShape card_shape;
+		ImVec2 center = pos + card_size * 0.5f;
+		ImWidgets::GenShapeSquircle( card_shape, center,
+			ImMin( card_size.x, card_size.y ) * 0.48f, 64, 4.0f );
+		ImWidgets::ShapeSetDefaultWhiteCol( card_shape );
+		for ( auto& v : card_shape.vertices )
+			v.col = color;
+		ImWidgets::DrawShape( draw_list, card_shape );
+
+		// Large decorative circle icon at top
+		ImVec2 icon_pos = pos + ImVec2( card_size.x * 0.5f, 70.0f );
+		ImWidgetsShape icon_circle;
+		ImWidgets::GenShapeCircle( icon_circle, icon_pos, 40.0f, 48 );
+		ImWidgets::ShapeSetDefaultWhiteCol( icon_circle );
+		for ( auto& v : icon_circle.vertices )
+			v.col = IM_COL32( 255, 255, 255, 200 );
+		ImWidgets::DrawShape( draw_list, icon_circle );
+
+		// Card content
+		float content_y = 140.0f;
+		ImVec2 title_pos = pos + ImVec2( card_size.x * 0.5f, content_y );
+
+		// Center the title text
+		float title_width = ImGui::CalcTextSize( title ).x;
+		ImGui::SetCursorScreenPos( title_pos - ImVec2( title_width * 0.5f, 0.0f ) );
+		ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 255 ) );
+		ImGui::Text( "%s", title );
+		ImGui::PopStyleColor();
+
+		// Description text
+		ImGui::SetCursorScreenPos( pos + ImVec2( 20.0f, content_y + 30.0f ) );
+		ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 230 ) );
+		ImGui::PushTextWrapPos( pos.x + card_size.x - 20.0f );
+		ImGui::TextWrapped( "%s", desc );
+		ImGui::PopTextWrapPos();
+		ImGui::PopStyleColor();
+
+		ImGui::SetCursorScreenPos( pos + ImVec2( card_size.x + 20.0f, 0.0f ) );
+	}
+
+	void RenderShowcaseFeatures()
+	{
+		ImDrawList* draw_list = ImGui::GetWindowDrawList();
+		ImVec2 size = ImGui::GetContentRegionAvail();
+
+		// Stats cards
+		struct StatCard {
+			const char* label;
+			const char* value;
+			const char* subtitle;
+			ImU32 accent_color;
+			float progress;
+		};
+
+		StatCard stats[] = {
+			{ "Active Projects", "24", "+12% from last month", IM_COL32( 100, 200, 255, 255 ), 0.75f },
+			{ "Team Members", "18", "5 online now", IM_COL32( 150, 255, 150, 255 ), 0.60f },
+			{ "Tasks Completed", "156", "This week", IM_COL32( 255, 150, 100, 255 ), 0.85f },
+			{ "Client Rating", "4.9", "Based on 47 reviews", IM_COL32( 255, 200, 100, 255 ), 0.98f }
+		};
+
+		float card_width = ( size.x - 60.0f ) / 4.0f;
+		float card_height = 140.0f;
+		ImVec2 start_pos = ImGui::GetCursorScreenPos();
+
+		for ( int i = 0; i < 4; ++i )
+		{
+			ImVec2 card_pos = start_pos + ImVec2( i * ( card_width + 20.0f ), 0.0f );
+			ImVec2 card_size( card_width, card_height );
+
+			// Card background - dark with slight gradient
+			ImWidgetsShape card_bg;
+			ImVec2 card_center = card_pos + card_size * 0.5f;
+			ImWidgets::GenShapeSquircle( card_bg, card_center,
+				ImMin( card_size.x, card_size.y ) * 0.48f, 64, 3.5f );
+			ImWidgets::ShapeSetDefaultBoundUV( card_bg );
+			ImWidgets::ShapeLinearSRGBLinearGradient( card_bg,
+				ImVec2( 0.5f, 0.0f ), ImVec2( 0.5f, 1.0f ),
+				IM_COL32( 45, 52, 70, 255 ), IM_COL32( 35, 42, 60, 255 ) );
+			ImWidgets::DrawShape( draw_list, card_bg );
+
+			// Accent top border
+			ImWidgetsShape accent;
+			ImWidgets::GenShapeRect( accent,
+				ImRect( card_pos + ImVec2( 15.0f, 0.0f ), card_pos + ImVec2( card_width - 15.0f, 4.0f ) ) );
+			ImWidgets::ShapeSetDefaultWhiteCol( accent );
+			for ( auto& v : accent.vertices )
+				v.col = stats[ i ].accent_color;
+			ImWidgets::DrawShape( draw_list, accent );
+
+			// Decorative circle
+			ImVec2 circle_pos = card_pos + ImVec2( card_width - 30.0f, 25.0f );
+			ImWidgetsShape decor_circle;
+			ImWidgets::GenShapeCircle( decor_circle, circle_pos, 35.0f, 48 );
+			ImWidgets::ShapeSetDefaultWhiteCol( decor_circle );
+			ImU32 circle_col = IM_COL32(
+				( stats[ i ].accent_color >> 0 ) & 0xFF,
+				( stats[ i ].accent_color >> 8 ) & 0xFF,
+				( stats[ i ].accent_color >> 16 ) & 0xFF, 25 );
+			for ( auto& v : decor_circle.vertices )
+				v.col = circle_col;
+			ImWidgets::DrawShape( draw_list, decor_circle );
+
+			// Value (large number)
+			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f, 25.0f ) );
+			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 255 ) );
+			ImGui::Text( "%s", stats[ i ].value );
+			ImGui::PopStyleColor();
+
+			// Label
+			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f, 55.0f ) );
+			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 180, 190, 210, 255 ) );
+			ImGui::Text( "%s", stats[ i ].label );
+			ImGui::PopStyleColor();
+
+			// Subtitle
+			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f, 75.0f ) );
+			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 140, 150, 170, 255 ) );
+			ImGui::Text( "%s", stats[ i ].subtitle );
+			ImGui::PopStyleColor();
+
+			// Progress bar
+			float bar_width = card_width - 40.0f;
+			ImVec2 bar_pos = card_pos + ImVec2( 20.0f, card_height - 25.0f );
+
+			// Background
+			ImWidgetsShape bar_bg;
+			ImWidgets::GenShapeRect( bar_bg,
+				ImRect( bar_pos, bar_pos + ImVec2( bar_width, 6.0f ) ) );
+			ImWidgets::ShapeSetDefaultWhiteCol( bar_bg );
+			for ( auto& v : bar_bg.vertices )
+				v.col = IM_COL32( 60, 70, 90, 255 );
+			ImWidgets::DrawShape( draw_list, bar_bg );
+
+			// Progress fill
+			ImWidgetsShape bar_fill;
+			float fill_width = bar_width * stats[ i ].progress;
+			ImWidgets::GenShapeRect( bar_fill,
+				ImRect( bar_pos, bar_pos + ImVec2( fill_width, 6.0f ) ) );
+			ImWidgets::ShapeSetDefaultWhiteCol( bar_fill );
+			for ( auto& v : bar_fill.vertices )
+				v.col = stats[ i ].accent_color;
+			ImWidgets::DrawShape( draw_list, bar_fill );
+		}
+
+		ImGui::Dummy( ImVec2( size.x, card_height + 40.0f ) );
+	}
+
+	void RenderShowcaseColorPalette()
+	{
+		ImDrawList* draw_list = ImGui::GetWindowDrawList();
+		ImVec2 size = ImGui::GetContentRegionAvail();
+
+		// Section title
+		ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 50, 60, 80, 255 ) );
+		ImGui::Text( "Recent Projects" );
+		ImGui::PopStyleColor();
+
+		ImGui::Spacing();
+		ImGui::Spacing();
+
+		// Project cards
+		struct Project {
+			const char* name;
+			const char* status;
+			ImU32 gradient_start;
+			ImU32 gradient_end;
+			int team_size;
+			float completion;
+		};
+
+		Project projects[] = {
+			{ "Brand Redesign", "In Progress", IM_COL32( 255, 107, 129, 255 ), IM_COL32( 255, 175, 123, 255 ), 5, 0.68f },
+			{ "Mobile App", "Active", IM_COL32( 100, 200, 255, 255 ), IM_COL32( 120, 100, 255, 255 ), 4, 0.42f },
+			{ "Web Platform", "Review", IM_COL32( 150, 255, 150, 255 ), IM_COL32( 100, 230, 180, 255 ), 6, 0.92f }
+		};
+
+		float card_width = ( size.x - 40.0f ) / 3.0f;
+		float card_height = 240.0f;
+		ImVec2 start_pos = ImGui::GetCursorScreenPos();
+
+		for ( int i = 0; i < 3; ++i )
+		{
+			ImVec2 card_pos = start_pos + ImVec2( i * ( card_width + 20.0f ), 0.0f );
+			ImVec2 card_size( card_width, card_height );
+
+			// Card background
+			ImWidgetsShape card_bg;
+			ImVec2 card_center = card_pos + card_size * 0.5f;
+			ImWidgets::GenShapeSquircle( card_bg, card_center,
+				ImMin( card_size.x, card_size.y ) * 0.48f, 64, 4.0f );
+			ImWidgets::ShapeSetDefaultWhiteCol( card_bg );
+			for ( auto& v : card_bg.vertices )
+				v.col = IM_COL32( 42, 48, 65, 255 );
+			ImWidgets::DrawShape( draw_list, card_bg );
+
+			// Gradient header area
+			float header_height = 120.0f;
+			ImWidgetsShape header_gradient;
+			ImVec2 header_center = card_pos + ImVec2( card_width * 0.5f, header_height * 0.5f );
+			ImWidgets::GenShapeSquircle( header_gradient, header_center,
+				ImMin( card_width, header_height ) * 0.48f, 64, 4.0f );
+			ImWidgets::ShapeSetDefaultBoundUV( header_gradient );
+			ImWidgets::ShapeLinearSRGBLinearGradient( header_gradient,
+				ImVec2( 0.0f, 0.5f ), ImVec2( 1.0f, 0.5f ),
+				projects[ i ].gradient_start, projects[ i ].gradient_end );
+			ImWidgets::DrawShape( draw_list, header_gradient );
+
+			// Decorative circles in header
+			for ( int j = 0; j < 3; ++j )
+			{
+				float x = 30.0f + j * 40.0f;
+				float y = 30.0f + j * 15.0f;
+				ImWidgetsShape decor;
+				ImWidgets::GenShapeCircle( decor, card_pos + ImVec2( x, y ), 15.0f + j * 5.0f, 48 );
+				ImWidgets::ShapeSetDefaultWhiteCol( decor );
+				for ( auto& v : decor.vertices )
+					v.col = IM_COL32( 255, 255, 255, 30 - j * 10 );
+				ImWidgets::DrawShape( draw_list, decor );
+			}
+
+			// Project name
+			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f, header_height + 20.0f ) );
+			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 255 ) );
+			ImGui::Text( "%s", projects[ i ].name );
+			ImGui::PopStyleColor();
+
+			// Status badge
+			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f, header_height + 45.0f ) );
+			ImVec2 badge_pos = ImGui::GetCursorScreenPos();
+			float badge_width = ImGui::CalcTextSize( projects[ i ].status ).x + 16.0f;
+
+			ImWidgetsShape badge;
+			ImWidgets::GenShapeRect( badge,
+				ImRect( badge_pos, badge_pos + ImVec2( badge_width, 20.0f ) ) );
+			ImWidgets::ShapeSetDefaultWhiteCol( badge );
+			for ( auto& v : badge.vertices )
+				v.col = IM_COL32( 60, 70, 90, 255 );
+			ImWidgets::DrawShape( draw_list, badge );
+
+			ImGui::SetCursorScreenPos( badge_pos + ImVec2( 8.0f, 3.0f ) );
+			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 180, 190, 210, 255 ) );
+			ImGui::Text( "%s", projects[ i ].status );
+			ImGui::PopStyleColor();
+
+			// Team avatars
+			float avatar_y = header_height + 80.0f;
+			for ( int j = 0; j < projects[ i ].team_size; ++j )
+			{
+				ImVec2 avatar_pos = card_pos + ImVec2( 20.0f + j * 22.0f, avatar_y );
+
+				// Avatar circle
+				ImWidgetsShape avatar;
+				ImWidgets::GenShapeCircle( avatar, avatar_pos, 12.0f, 48 );
+				ImWidgets::ShapeSetDefaultBoundUV( avatar );
+
+				// Different gradient for each avatar
+				ImU32 avatar_colors[][2] = {
+					{ IM_COL32( 255, 100, 150, 255 ), IM_COL32( 255, 150, 100, 255 ) },
+					{ IM_COL32( 100, 150, 255, 255 ), IM_COL32( 150, 100, 255, 255 ) },
+					{ IM_COL32( 150, 255, 100, 255 ), IM_COL32( 100, 255, 200, 255 ) },
+					{ IM_COL32( 255, 200, 100, 255 ), IM_COL32( 255, 150, 150, 255 ) },
+					{ IM_COL32( 200, 100, 255, 255 ), IM_COL32( 255, 100, 200, 255 ) },
+					{ IM_COL32( 100, 255, 255, 255 ), IM_COL32( 100, 200, 255, 255 ) }
+				};
+
+				ImWidgets::ShapeLinearSRGBLinearGradient( avatar,
+					ImVec2( 0.5f, 0.0f ), ImVec2( 0.5f, 1.0f ),
+					avatar_colors[ j % 6 ][ 0 ], avatar_colors[ j % 6 ][ 1 ] );
+				ImWidgets::DrawShape( draw_list, avatar );
+
+				// Border
+				draw_list->AddCircle( avatar_pos, 12.0f, IM_COL32( 42, 48, 65, 255 ), 48, 2.0f );
+			}
+
+			// Progress label
+			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f, avatar_y + 35.0f ) );
+			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 140, 150, 170, 255 ) );
+			ImGui::Text( "%.0f%% Complete", projects[ i ].completion * 100.0f );
+			ImGui::PopStyleColor();
+
+			// Progress bar
+			float bar_width = card_width - 40.0f;
+			ImVec2 bar_pos = card_pos + ImVec2( 20.0f, card_height - 20.0f );
+
+			ImWidgetsShape bar_bg;
+			ImWidgets::GenShapeRect( bar_bg,
+				ImRect( bar_pos, bar_pos + ImVec2( bar_width, 8.0f ) ) );
+			ImWidgets::ShapeSetDefaultWhiteCol( bar_bg );
+			for ( auto& v : bar_bg.vertices )
+				v.col = IM_COL32( 30, 35, 48, 255 );
+			ImWidgets::DrawShape( draw_list, bar_bg );
+
+			ImWidgetsShape bar_fill;
+			float fill_width = bar_width * projects[ i ].completion;
+			ImWidgets::GenShapeRect( bar_fill,
+				ImRect( bar_pos, bar_pos + ImVec2( fill_width, 8.0f ) ) );
+			ImWidgets::ShapeSetDefaultBoundUV( bar_fill );
+			ImWidgets::ShapeLinearSRGBLinearGradient( bar_fill,
+				ImVec2( 0.0f, 0.5f ), ImVec2( 1.0f, 0.5f ),
+				projects[ i ].gradient_start, projects[ i ].gradient_end );
+			ImWidgets::DrawShape( draw_list, bar_fill );
+		}
+
+		ImGui::Dummy( ImVec2( size.x, card_height + 20.0f ) );
+	}
+
+	void RenderShowcaseGradients()
+	{
+		ImGui::Spacing();
+		ImGui::Spacing();
+		ImGui::Spacing();
+
+		// Section header with accent line
+		ImDrawList* draw_list = ImGui::GetWindowDrawList();
+		ImVec2 header_pos = ImGui::GetCursorScreenPos();
+		ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 255 ) );
+		ImGui::Text( "GRADIENT SHOWCASE" );
+		ImGui::PopStyleColor();
+
+		// Accent line under header
+		ImVec2 line_start = header_pos + ImVec2( 0.0f, 42.0f );
+		ImVec2 line_end = line_start + ImVec2( 100.0f, 0.0f );
+		draw_list->AddRectFilledMultiColor( line_start, line_end + ImVec2( 0.0f, 3.0f ),
+			IM_COL32( 140, 70, 255, 255 ), IM_COL32( 230, 90, 200, 0 ),
+			IM_COL32( 230, 90, 200, 0 ), IM_COL32( 140, 70, 255, 255 ) );
+
+		ImGui::Spacing();
+		ImGui::Spacing();
+		ImGui::Spacing();
+
+		ImVec2 size = ImGui::GetContentRegionAvail();
+
+		struct GradientDemo {
+			const char* name;
+			const char* description;
+			void ( *apply_gradient )( ImWidgetsShape&, ImVec2, ImVec2, ImU32, ImU32 );
+		};
+
+		static const GradientDemo gradients[] = {
+			{ "OkLab Perceptual", "Perceptually uniform color blending",
+				[]( ImWidgetsShape& s, ImVec2 uv0, ImVec2 uv1, ImU32 c0, ImU32 c1 ) {
+					ImWidgets::ShapeOkLchLinearGradient( s, uv0, uv1, c0, c1 );
+				}
+			},
+			{ "sRGB Linear", "Standard RGB gamma-corrected blending",
+				[]( ImWidgetsShape& s, ImVec2 uv0, ImVec2 uv1, ImU32 c0, ImU32 c1 ) {
+					ImWidgets::ShapeLinearSRGBLinearGradient( s, uv0, uv1, c0, c1 );
+				}
+			},
+			{ "HSV Hue Shift", "Smooth hue transitions in HSV space",
+				[]( ImWidgetsShape& s, ImVec2 uv0, ImVec2 uv1, ImU32 c0, ImU32 c1 ) {
+					ImWidgets::ShapeHSVLinearGradient( s, uv0, uv1, c0, c1 );
+				}
+			},
+		};
+
+		float bar_height = 100.0f;
+		float bar_spacing = 30.0f;
+
+		ImU32 color_a = IM_COL32( 255, 107, 107, 255 );
+		ImU32 color_b = IM_COL32( 107, 168, 255, 255 );
+
+		for ( int i = 0; i < IM_ARRAYSIZE( gradients ); ++i )
+		{
+			ImVec2 bar_pos = ImGui::GetCursorScreenPos();
+			ImVec2 bar_size( size.x, bar_height );
+
+			// Shadow for depth
+			ImVec2 shadow_offset( 0.0f, 4.0f );
+			ImWidgetsShape shadow_shape;
+			ImWidgets::GenShapeRect( shadow_shape,
+				ImRect( bar_pos + shadow_offset, bar_pos + bar_size + shadow_offset ) );
+			ImWidgets::ShapeSetDefaultWhiteCol( shadow_shape );
+			for ( auto& v : shadow_shape.vertices )
+				v.col = IM_COL32( 0, 0, 0, 40 );
+			ImWidgets::DrawShape( draw_list, shadow_shape );
+
+			// Gradient bar background
+			ImWidgetsShape bar_shape;
+			ImWidgets::GenShapeRect( bar_shape, ImRect( bar_pos, bar_pos + bar_size ) );
+			ImWidgets::ShapeSetDefaultBoundUV( bar_shape );
+
+			// Apply specific gradient type
+			gradients[ i ].apply_gradient( bar_shape, ImVec2( 0.0f, 0.5f ), ImVec2( 1.0f, 0.5f ),
+				color_a, color_b );
+			ImWidgets::DrawShape( draw_list, bar_shape );
+
+			// Border
+			draw_list->AddRect( bar_pos, bar_pos + bar_size,
+				IM_COL32( 255, 255, 255, 50 ), 8.0f, 0, 1.5f );
+
+			// Label overlay
+			ImVec2 label_pos = bar_pos + ImVec2( 24.0f, 20.0f );
+			ImGui::SetCursorScreenPos( label_pos );
+			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 255 ) );
+			ImGui::Text( "%s", gradients[ i ].name );
+			ImGui::PopStyleColor();
+
+			ImGui::SetCursorScreenPos( label_pos + ImVec2( 0.0f, 28.0f ) );
+			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 220 ) );
+			ImGui::Text( "%s", gradients[ i ].description );
+			ImGui::PopStyleColor();
+
+			ImGui::Dummy( ImVec2( size.x, bar_height + bar_spacing ) );
+		}
+	}
+
+	void RenderShowcaseInteractive()
+	{
+		ImGui::Spacing();
+		ImGui::Text( "Interactive Elements" );
+		ImGui::Spacing();
+
+		ImVec2 size = ImGui::GetContentRegionAvail();
+		float button_size = 80.0f;
+		float spacing_x = 100.0f;
+
+		ImVec2 start_pos = ImGui::GetCursorPos();
+
+		// Circle button
+		ImGui::SetCursorPos( start_pos );
+		if ( ImWidgets::ButtonExCircle( "Circle\nButton", button_size * 0.5f, 0 ) )
+		{
+			// Action
+		}
+
+		// Capsule button
+		ImGui::SetCursorPos( start_pos );
+		ImGui::SetCursorPosX( ImGui::GetCursorPosX() + spacing_x );
+		if ( ImWidgets::ButtonExCapsuleH( "Capsule Button", button_size * 1.5f, button_size, 0 ) )
+		{
+			// Action
+		}
+
+		ImGui::SetCursorPos( start_pos );
+		ImGui::SetCursorPosY( ImGui::GetCursorPosY() + button_size + 20.0f );
+	}
+
+	void RenderShowcaseStats()
+	{
+		ImGui::Spacing();
+		ImGui::Spacing();
+		ImGui::Spacing();
+
+		// Section header with accent line
+		ImDrawList* draw_list = ImGui::GetWindowDrawList();
+		ImVec2 header_pos = ImGui::GetCursorScreenPos();
+		ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 255 ) );
+		ImGui::Text( "PERFORMANCE METRICS" );
+		ImGui::PopStyleColor();
+
+		// Accent line under header
+		ImVec2 line_start = header_pos + ImVec2( 0.0f, 42.0f );
+		ImVec2 line_end = line_start + ImVec2( 100.0f, 0.0f );
+		draw_list->AddRectFilledMultiColor( line_start, line_end + ImVec2( 0.0f, 3.0f ),
+			IM_COL32( 140, 70, 255, 255 ), IM_COL32( 230, 90, 200, 0 ),
+			IM_COL32( 230, 90, 200, 0 ), IM_COL32( 140, 70, 255, 255 ) );
+
+		ImGui::Spacing();
+		ImGui::Spacing();
+		ImGui::Spacing();
+
+		ImVec2 size = ImGui::GetContentRegionAvail();
+
+		struct Stat {
+			const char* label;
+			const char* value;
+			ImU32 color;
+		};
+
+		static Stat stats[] = {
+			{ "Frame Rate", "60+ FPS", IM_COL32( 100, 255, 150, 255 ) },
+			{ "Cache Hit", "~100%", IM_COL32( 107, 234, 255, 255 ) },
+			{ "Draw Calls", "Optimized", IM_COL32( 255, 200, 100, 255 ) },
+		};
+
+		float stat_width = ( size.x - 40.0f ) / 3.0f;
+		float stat_height = 130.0f;
+		ImVec2 start_pos = ImGui::GetCursorScreenPos();
+
+		for ( int i = 0; i < IM_ARRAYSIZE( stats ); ++i )
+		{
+			ImVec2 pos = start_pos + ImVec2( i * ( stat_width + 20.0f ), 0.0f );
+			ImVec2 card_size( stat_width, stat_height );
+
+			// Multi-layer shadow for depth
+			for ( int j = 0; j < 2; ++j )
+			{
+				float shadow_offset = ( j + 1 ) * 3.0f;
+				float shadow_alpha = 30 - j * 10;
+				ImVec2 shadow_pos = pos + ImVec2( shadow_offset, shadow_offset );
+
+				ImWidgetsShape shadow_shape;
+				ImWidgets::GenShapeRect( shadow_shape,
+					ImRect( shadow_pos, shadow_pos + card_size ) );
+				ImWidgets::ShapeSetDefaultWhiteCol( shadow_shape );
+				for ( auto& v : shadow_shape.vertices )
+					v.col = IM_COL32( 0, 0, 0, shadow_alpha );
+				ImWidgets::DrawShape( draw_list, shadow_shape );
+			}
+
+			// Stat card background with gradient
+			ImWidgetsShape stat_shape;
+			ImWidgets::GenShapeRect( stat_shape, ImRect( pos, pos + card_size ) );
+			ImWidgets::ShapeSetDefaultBoundUV( stat_shape );
+			ImU32 bg_top = IM_COL32( 50, 50, 58, 255 );
+			ImU32 bg_bottom = IM_COL32( 38, 38, 45, 255 );
+			ImWidgets::ShapeLinearSRGBLinearGradient( stat_shape,
+				ImVec2( 0.5f, 0.0f ), ImVec2( 0.5f, 1.0f ),
+				bg_top, bg_bottom );
+			ImWidgets::DrawShape( draw_list, stat_shape );
+
+			// Top accent bar
+			ImWidgetsShape accent_bar;
+			ImWidgets::GenShapeRect( accent_bar,
+				ImRect( pos, pos + ImVec2( stat_width, 4.0f ) ) );
+			ImWidgets::ShapeSetDefaultWhiteCol( accent_bar );
+			for ( auto& v : accent_bar.vertices )
+				v.col = stats[ i ].color;
+			ImWidgets::DrawShape( draw_list, accent_bar );
+
+			// Border with rounded corners
+			draw_list->AddRect( pos, pos + card_size,
+				IM_COL32( 255, 255, 255, 30 ), 8.0f, 0, 1.5f );
+
+			// Decorative accent circle
+			ImVec2 circle_pos = pos + ImVec2( stat_width * 0.85f, stat_height * 0.3f );
+			ImWidgetsShape circle_shape;
+			ImWidgets::GenShapeCircle( circle_shape, circle_pos, 35.0f, 48 );
+			ImWidgets::ShapeSetDefaultWhiteCol( circle_shape );
+			ImU32 circle_col = IM_COL32(
+				( stats[ i ].color >> 0 ) & 0xFF,
+				( stats[ i ].color >> 8 ) & 0xFF,
+				( stats[ i ].color >> 16 ) & 0xFF,
+				20 );
+			for ( auto& v : circle_shape.vertices )
+				v.col = circle_col;
+			ImWidgets::DrawShape( draw_list, circle_shape );
+
+			// Text content
+			ImVec2 text_pos = pos + ImVec2( 24.0f, 24.0f );
+			ImGui::SetCursorScreenPos( text_pos );
+			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 180, 180, 190, 255 ) );
+			ImGui::Text( "%s", stats[ i ].label );
+			ImGui::PopStyleColor();
+
+			ImGui::SetCursorScreenPos( text_pos + ImVec2( 0.0f, 35.0f ) );
+			ImGui::PushStyleColor( ImGuiCol_Text, stats[ i ].color );
+			ImGui::Text( "%s", stats[ i ].value );
+			ImGui::PopStyleColor();
+		}
+
+		ImGui::Dummy( ImVec2( size.x, stat_height + 20.0f ) );
+	}
+
+	void ShowShowcase()
+	{
+		ImGui::SetNextWindowSize( ImVec2( 1200, 800 ), ImGuiCond_FirstUseEver );
+
+		// Golden background #CCAA24
+		ImGui::PushStyleColor( ImGuiCol_WindowBg, IM_COL32( 204, 170, 36, 255 ) );
+
+		if ( ImGui::Begin( "Showcase - Creative Dashboard", nullptr, ImGuiWindowFlags_NoCollapse ) )
+		{
+			// Header / Navigation
+			RenderShowcaseHero();
+
+			// Stats cards
+			RenderShowcaseFeatures();
+
+			// Project cards
+			RenderShowcaseColorPalette();
+		}
+		ImGui::End();
+
+		ImGui::PopStyleColor();
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// ShowDemo Section Functions
+	//////////////////////////////////////////////////////////////////////////
+	void ShowDrawShapeDemo()
+	{
+		if ( !ImGui::CollapsingHeader( "Draw Shape" ) )
+			return;
+
+		float const size = ImGui::GetContentRegionAvail().x;
+		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+
+		static ShapeDebugState debug_state;
+		static GradientParams gradient;
+		static ImWidgetsShape shape;
+#ifdef DEAR_WIDGETS_TESSELATION
+		static int tess = 1;
+		ImGui::SliderInt( "Tess", &tess, 0, 16 );
+#endif
+
+		// Render debug controls
+		debug_state.RenderControls( "DrawShape" );
+
+		// Render gradient controls
+		gradient.RenderControls( "DrawShape" );
+
+		// Generate and render shape
+		ImVec2 pos = ImGui::GetCursorScreenPos();
+		ImWidgets::GenShapeCircle( shape, pos + ImVec2( size * LayoutConstants::HALF, size * LayoutConstants::HALF ),
+			size * LayoutConstants::HALF, debug_state.side_count );
+		ImWidgets::ShapeSetDefaultUV( shape );
+#ifdef DEAR_WIDGETS_TESSELATION
+		for ( int k = 0; k < tess; ++k )
+			ImWidgets::ShapeTesselationUniform( shape );
+#endif
+		ImWidgets::ShapeSRGBLinearGradient( shape, gradient.uv_start, gradient.uv_end,
+			gradient.cola.u, gradient.colb.u );
+		ImWidgets::DrawShapeDebug( pDrawList, shape, debug_state.edge_thickness,
+			debug_state.edge_col.u, debug_state.triangle_col.u,
+			debug_state.vertex_radius, debug_state.vertex_col.u, debug_state.tri_idx );
+
+		ImGui::Dummy( ImVec2( size, size ) );
+		ImGui::SliderInt( "tri_idx", &debug_state.tri_idx, -1, shape.triangles.size() - 1 );
+		ImGui::Text( "Tri: %d", shape.triangles.size() );
+		ImGui::Text( "Vtx: %d", shape.vertices.size() );
+	}
+
+	void ShowCustomShaderDemo()
+	{
+		if ( !ImGui::CollapsingHeader( "Custom Shader" ) )
+			return;
+
+		float const size = ImGui::GetContentRegionAvail().x;
+
+		static float shape_size = 1.0f;
+		static float line_width = 5.0f;
+		static float angle = 0.0f;
+		static float antialiasing = 1.0f;
+		static DemoColor fg_color( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f );
+		static DemoColor bg_color( 1.0f, 128.0f / 255.0f, 64.0f / 255.0f );
+
+		ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
+		fg_color.Edit( "ColA##CustomShader" );
+		ImGui::SameLine();
+		bg_color.Edit( "ColB##CustomShader" );
+		ImGui::DragFloat( "shape_size", &shape_size, 0.25f, 0.0f, 1.0f );
+		ImGui::DragFloat( "line_width", &line_width, 0.0125f, 0.0f, 0.1f );
+		ImGui::DragFloat( "antialiasing", &antialiasing, 0.0125f, 0.0f, 16.0f );
+		ImGui::SliderAngle( "angle", &angle );
+
+		static int marker_idx = ( int )ImWidgetsMarker_Pin;
+		static const char* markers[] = {
+			"Disc", "Square", "Triangle", "Diamond", "Heart",
+			"Spade", "Club", "Chevron", "Clover", "Ring",
+			"Tag", "Cross", "Asterisk", "Infinity", "Pin",
+			"Arrow", "Ellipse", "EllipseApprox"
+		};
+		ImGui::Combo( "Marker", &marker_idx, markers, ImWidgetsMarker_COUNT );
+
+		static int draw_type_idx = ( int )ImWidgetsDrawType_Outline;
+		static const char* draw_types[] = {
+			"Filled", "Stroke", "Outline", "Signed Distance Field", "Cut Off"
+		};
+		ImGui::Combo( "Draw Type", &draw_type_idx, draw_types, ImWidgetsDrawType_COUNT );
+
+		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+		ImVec2 pos = ImGui::GetCursorScreenPos();
+		ImWidgets::DrawMarker( pDrawList, pos, ImVec2( size, size ),
+			fg_color.u, bg_color.u, angle, shape_size, line_width, antialiasing,
+			( ImWidgetsMarker )marker_idx, ( ImWidgetsDrawType )draw_type_idx );
+		ImGui::Dummy( ImVec2( size, size ) );
+	}
+
+	void ShowDrawSquircleDemo()
+	{
+		if ( !ImGui::CollapsingHeader( "Draw Squircle" ) )
+			return;
+
+		float const size = ImGui::GetContentRegionAvail().x;
+		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+
+		static ShapeDebugState debug_state( 32 );
+		static GradientParams gradient;
+		static ImWidgetsShape shape;
+		static float squircle_n = 4.0f;
+#ifdef DEAR_WIDGETS_TESSELATION
+		static int tess = 1;
+		ImGui::SliderInt( "Tess", &tess, 0, 16 );
+#endif
+
+		// Render debug controls
+		debug_state.RenderControls( "DrawSquircle", 8, 128 );
+		ImGui::SliderFloat( "Squircle n", &squircle_n, 2.0f, 10.0f );
+
+		// Render gradient controls
+		gradient.RenderControls( "DrawSquircle" );
+
+		// Generate and render shape
+		ImVec2 pos = ImGui::GetCursorScreenPos();
+		ImWidgets::GenShapeSquircle( shape, pos + ImVec2( size * LayoutConstants::HALF, size * LayoutConstants::HALF ),
+			size * 0.4f, debug_state.side_count, squircle_n );
+		ImWidgets::ShapeSetDefaultUV( shape );
+#ifdef DEAR_WIDGETS_TESSELATION
+		for ( int k = 0; k < tess; ++k )
+			ImWidgets::ShapeTesselationUniform( shape );
+#endif
+		ImWidgets::ShapeSRGBLinearGradient( shape, gradient.uv_start, gradient.uv_end,
+			gradient.cola.u, gradient.colb.u );
+		ImWidgets::DrawShapeDebug( pDrawList, shape, debug_state.edge_thickness,
+			debug_state.edge_col.u, debug_state.triangle_col.u,
+			debug_state.vertex_radius, debug_state.vertex_col.u, debug_state.tri_idx );
+
+		ImGui::Dummy( ImVec2( size, size ) );
+		ImGui::SliderInt( "tri_idx", &debug_state.tri_idx, -1, shape.triangles.size() - 1 );
+		ImGui::Text( "Tri: %d", shape.triangles.size() );
+		ImGui::Text( "Vtx: %d", shape.vertices.size() );
 	}
 
 	void	ShowDemo()
@@ -511,125 +1461,9 @@ namespace ImWidgets {
 		if ( ImGui::CollapsingHeader( "Draw" ) )
 		{
 			ImGui::Indent();
-			if ( ImGui::CollapsingHeader( "Draw Shape" ) )
-			{
-				float const size = ImGui::GetContentRegionAvail().x;
-				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-				static float edge_thickness = 2.0f;
-				static float vertex_radius = 16.0f;
-				static ImVec4 edge_col_v( 1.0f, 0.0f, 0.0f, 1.0f );
-				static ImVec4 triangle_col_v( 0.0f, 1.0f, 0.0f, 1.0f );
-				static ImVec4 vertex_col_v( 0.0f, 0.0f, 1.0f, 1.0f );
-				static ImU32 edge_col = ImGui::GetColorU32( edge_col_v );
-				static ImU32 triangle_col = ImGui::GetColorU32( triangle_col_v );
-				static ImU32 vertex_col = ImGui::GetColorU32( vertex_col_v );
-				static ImVec2 uv_start( 0.0f, 0.5f );
-				static ImVec2 uv_end( 1.0f, 0.5f );
-				static ImVec4 cola_v( 1.0f, 0.0f, 0.0f, 1.0f );
-				static ImVec4 colb_v( 0.0f, 1.0f, 0.0f, 1.0f );
-				static ImU32 cola = ImGui::GetColorU32( cola_v );
-				static ImU32 colb = ImGui::GetColorU32( colb_v );
-				static int tri_idx = -1;
-				static int side_count = 3;
-#ifdef DEAR_WIDGETS_TESSELATION
-				static int tess = 1;
-				ImGui::SliderInt( "Tess", &tess, 0, 16 );
-#endif
-				ImGui::SliderInt( "Sides", &side_count, 3, 64 );
-				ImGui::SliderFloat( "Thickness", &edge_thickness, 0.0f, 16.0f );
-				ImGui::SliderFloat( "Radius", &vertex_radius, 0.0f, 64.0f );
-				if ( ImGui::ColorEdit4( "Edge##DrawShape", &edge_col_v.x ) )
-					edge_col = ImGui::GetColorU32( edge_col_v );
-				if ( ImGui::ColorEdit4( "Triangle##DrawShape", &triangle_col_v.x ) )
-					triangle_col = ImGui::GetColorU32( triangle_col_v );
-				if ( ImGui::ColorEdit4( "Vertices##DrawShape", &vertex_col_v.x ) )
-					vertex_col = ImGui::GetColorU32( vertex_col_v );
-				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
-				Slider2DFloat( "uv0", &uv_start.x, &uv_start.y, 0.0f, 1.0f, 0.0f, 1.0f );
-				ImGui::SameLine();
-				Slider2DFloat( "uv1", &uv_end.x, &uv_end.y, 0.0f, 1.0f, 0.0f, 1.0f );
-				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
-				if ( ImGui::ColorEdit4( "ColA##DrawShape", &cola_v.x ) )
-					cola = ImGui::GetColorU32( cola_v );
-				ImGui::SameLine();
-				if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
-					colb = ImGui::GetColorU32( colb_v );
-				ImVec2 pos = ImGui::GetCursorScreenPos();
-				static ImWidgetsShape shape;
-				GenShapeCircle( shape, pos + ImVec2( size * 0.5f, size * 0.5f ), size * 0.5f, side_count );
-				ShapeSetDefaultUV( shape );
-#ifdef DEAR_WIDGETS_TESSELATION
-				for ( int k = 0; k < tess; ++k )
-					ShapeTesselationUniform( shape );
-#endif
-				ShapeSRGBLinearGradient( shape,
-										 uv_start, uv_end,
-										 cola, colb );
-				DrawShapeDebug( pDrawList, shape, edge_thickness, edge_col, triangle_col, vertex_radius, vertex_col, tri_idx );
-				ImGui::Dummy( ImVec2( size, size ) );
-				ImGui::SliderInt( "tri_idx", &tri_idx, -1, shape.triangles.size() - 1 );
-				ImGui::Text( "Tri: %d", shape.triangles.size() );
-				ImGui::Text( "Vtx: %d", shape.vertices.size() );
-			}
+			ShowDrawShapeDemo();
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
-			if ( ImGui::CollapsingHeader( "Custom Shader" ) )
-			{
-				float const size = ImGui::GetContentRegionAvail().x;
-
-				static float shape_size = 1.0f;
-				static float line_width = 5.0f / size;
-				static float angle = 0.0f;
-				static float antialiasing = 1.0f / size;
-
-				ImWidgetsStyle& widgetStyle = ImWidgets::GetStyle();
-				ImVec4 vBlue = widgetStyle.Colors[ StyleColor_Slider2D_CursorX ];
-				ImVec4 vOrange = widgetStyle.Colors[ StyleColor_Slider2D_CursorY ];
-				ImU32 uBlue = ImGui::GetColorU32( vBlue );
-				ImU32 uOrange = ImGui::GetColorU32( vOrange );
-				static ImVec4 fg_color_v( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
-				static ImVec4 bg_color_v( 255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f );
-				static ImU32 fg_color_col = ImGui::GetColorU32( fg_color_v );
-				static ImU32 bg_color_col = ImGui::GetColorU32( bg_color_v );
-				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
-				if ( ImGui::ColorEdit4( "ColA##DrawShape", &fg_color_v.x ) )
-					fg_color_col = ImGui::GetColorU32( fg_color_v );
-				ImGui::SameLine();
-				if ( ImGui::ColorEdit4( "ColB##DrawShape", &bg_color_v.x ) )
-					bg_color_col = ImGui::GetColorU32( bg_color_v );
-				ImGui::DragFloat( "shape_size", &shape_size, 0.25f, 0.0f, size );
-				ImGui::DragFloat( "line_width", &line_width, 0.0125f, 0.0f, 0.1f );
-				ImGui::DragFloat( "antialiasing", &antialiasing, 0.0125f, 0.0f, 16.0f );
-				ImGui::SliderAngle( "angle", &angle );
-
-				static int marker_idx = ( int )ImWidgetsMarker_Pin;
-				char const* markers[] = {
-					"Disc", "Square", "Triangle", "Diamond", "Heart",
-					"Spade", "Club", "Chevron", "Clover", "Ring",
-					"Tag", "Cross", "Asterisk", "Infinity", "Pin",
-					"Arrow", "Ellipse", "EllipseApprox"
-				};
-				ImGui::Combo( "Marker", &marker_idx, markers, ImWidgetsMarker_COUNT );
-
-				static int draw_type_idx = ( int )ImWidgetsDrawType_Outline;
-				char const* draw_types[] = {
-					"Filled", "Stroke", "Outline", "Signed Distance Field", "Cut Off"
-				};
-				ImGui::Combo( "Draw Type", &draw_type_idx, draw_types, ImWidgetsDrawType_COUNT );
-
-				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-				ImVec2 pos = ImGui::GetCursorScreenPos();
-				ImGui::Dummy( ImVec2( size, size ) );
-				// DrawMarker now fully functional with new ImPlatform shader API
-				DrawMarker( pDrawList, pos, ImVec2( size, size ),
-							fg_color_col,
-							bg_color_col,
-							angle,
-							shape_size,
-							line_width,
-							antialiasing,
-							( ImWidgetsMarker )marker_idx,
-							( ImWidgetsDrawType )draw_type_idx );
-			}
+			ShowCustomShaderDemo();
 			if ( ImGui::CollapsingHeader( "Thick line", ImGuiTreeNodeFlags_DefaultOpen ) )
 			{
 				float const size = ImGui::GetContentRegionAvail().x;
@@ -666,68 +1500,7 @@ namespace ImWidgets {
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
 #endif
-			if ( ImGui::CollapsingHeader( "Draw Squircle" ) )
-			{
-				float const size = ImGui::GetContentRegionAvail().x;
-				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-				static float edge_thickness = 2.0f;
-				static float vertex_radius = 16.0f;
-				static ImVec4 edge_col_v( 1.0f, 0.0f, 0.0f, 1.0f );
-				static ImVec4 triangle_col_v( 0.0f, 1.0f, 0.0f, 1.0f );
-				static ImVec4 vertex_col_v( 0.0f, 0.0f, 1.0f, 1.0f );
-				static ImU32 edge_col = ImGui::GetColorU32( edge_col_v );
-				static ImU32 triangle_col = ImGui::GetColorU32( triangle_col_v );
-				static ImU32 vertex_col = ImGui::GetColorU32( vertex_col_v );
-				static ImVec2 uv_start( 0.0f, 0.5f );
-				static ImVec2 uv_end( 1.0f, 0.5f );
-				static ImVec4 cola_v( 1.0f, 0.0f, 0.0f, 1.0f );
-				static ImVec4 colb_v( 0.0f, 1.0f, 0.0f, 1.0f );
-				static ImU32 cola = ImGui::GetColorU32( cola_v );
-				static ImU32 colb = ImGui::GetColorU32( colb_v );
-				static int tri_idx = -1;
-				static int side_count = 32;
-				static float squircle_n = 4.0f;
-#ifdef DEAR_WIDGETS_TESSELATION
-				static int tess = 1;
-				ImGui::SliderInt( "Tess", &tess, 0, 16 );
-#endif
-				ImGui::SliderInt( "Sides", &side_count, 8, 128 );
-				ImGui::SliderFloat( "Squircle n", &squircle_n, 2.0f, 10.0f );
-				ImGui::SliderFloat( "Thickness", &edge_thickness, 0.0f, 16.0f );
-				ImGui::SliderFloat( "Radius", &vertex_radius, 0.0f, 64.0f );
-				if ( ImGui::ColorEdit4( "Edge##DrawSquircle", &edge_col_v.x ) )
-					edge_col = ImGui::GetColorU32( edge_col_v );
-				if ( ImGui::ColorEdit4( "Triangle##DrawSquircle", &triangle_col_v.x ) )
-					triangle_col = ImGui::GetColorU32( triangle_col_v );
-				if ( ImGui::ColorEdit4( "Vertices##DrawSquircle", &vertex_col_v.x ) )
-					vertex_col = ImGui::GetColorU32( vertex_col_v );
-				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
-				Slider2DFloat( "uv0", &uv_start.x, &uv_start.y, 0.0f, 1.0f, 0.0f, 1.0f );
-				ImGui::SameLine();
-				Slider2DFloat( "uv1", &uv_end.x, &uv_end.y, 0.0f, 1.0f, 0.0f, 1.0f );
-				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
-				if ( ImGui::ColorEdit4( "ColA##DrawSquircle", &cola_v.x ) )
-					cola = ImGui::GetColorU32( cola_v );
-				ImGui::SameLine();
-				if ( ImGui::ColorEdit4( "ColB##DrawSquircle", &colb_v.x ) )
-					colb = ImGui::GetColorU32( colb_v );
-				ImVec2 pos = ImGui::GetCursorScreenPos();
-				static ImWidgetsShape shape;
-				GenShapeSquircle( shape, pos + ImVec2( size * 0.5f, size * 0.5f ), size * 0.4f, side_count, squircle_n );
-				ShapeSetDefaultUV( shape );
-#ifdef DEAR_WIDGETS_TESSELATION
-				for ( int k = 0; k < tess; ++k )
-					ShapeTesselationUniform( shape );
-#endif
-				ShapeSRGBLinearGradient( shape,
-										 uv_start, uv_end,
-										 cola, colb );
-				DrawShapeDebug( pDrawList, shape, edge_thickness, edge_col, triangle_col, vertex_radius, vertex_col, tri_idx );
-				ImGui::Dummy( ImVec2( size, size ) );
-				ImGui::SliderInt( "tri_idx", &tri_idx, -1, shape.triangles.size() - 1 );
-				ImGui::Text( "Tri: %d", shape.triangles.size() );
-				ImGui::Text( "Vtx: %d", shape.vertices.size() );
-			}
+			ShowDrawSquircleDemo();
 			if ( ImGui::CollapsingHeader( "Linear Gradient" ) )
 			{
 				float const size = ImGui::GetContentRegionAvail().x;

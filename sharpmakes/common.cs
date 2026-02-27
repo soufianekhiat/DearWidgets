@@ -102,6 +102,7 @@ namespace DearWidgets
 			conf.Defines.Add("IMGUI_DEFINE_MATH_OPERATORS");
 			conf.Defines.Add("IMGUI_DISABLE_OBSOLETE_FUNCTIONS");
 			conf.Defines.Add( "NOMINMAX" );
+			conf.Defines.Add( "DEAR_WIDGETS_SHAPE_CACHING=1" );
 			conf.Defines.Add( "DEAR_WIDGETS_TESSELATION" );
             // Use ImPlatform's bundled ImGui for compatibility
             conf.IncludePaths.Add(@"[project.RootPath]/extern/ImPlatform/imgui/");
