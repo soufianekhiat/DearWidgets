@@ -6410,8 +6410,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float downScale = 0.75f;
 		float dragX_placement = 0.75f;
 		float dragY_placement = 0.75f;
-		float dragX_thickness = widgetStyle.Slider2D_DragThickness;
-		float dragY_thickness = widgetStyle.Slider2D_DragThickness;
+		float dragX_thickness = ImTrunc( widgetStyle.Slider2D_DragThickness );
+		float dragY_thickness = ImTrunc( widgetStyle.Slider2D_DragThickness );
 		float border_thickness = widgetStyle.Slider2D_BorderThickness;
 		float line_thickness = widgetStyle.Slider2D_LineThickness;
 		float text_lerp_x = 0.5f;
@@ -6420,13 +6420,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		int cursor_segments = 4;
 		float fCursorOff = widgetStyle.Slider2D_CursorOffset;
 
-		const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, w ) );
-		const ImRect frame_bb_drag( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w * downScale, w * downScale ) );
+		// Snap all rects to integer pixel boundaries for crisp borders
+		const ImRect frame_bb( ImTrunc( window->DC.CursorPos ), ImTrunc( window->DC.CursorPos + ImVec2( w, w ) ) );
+		const ImRect frame_bb_drag( ImTrunc( window->DC.CursorPos ), ImTrunc( window->DC.CursorPos + ImVec2( w * downScale, w * downScale ) ) );
 		const ImRect total_bb( frame_bb.Min, frame_bb.Max + ImVec2( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f, 0.0f ) );
-		const ImRect frame_bb_dragX( ImVec2( frame_bb_drag.Min.x, ImLerp( frame_bb_drag.Max.y, frame_bb.Max.y, dragX_placement ) ),
-									 ImVec2( frame_bb_drag.Max.x, ImLerp( frame_bb_drag.Max.y, frame_bb.Max.y, dragX_placement ) + dragX_thickness ) );
-		const ImRect frame_bb_dragY( ImVec2( ImLerp( frame_bb_drag.Max.x, frame_bb.Max.x, dragY_placement ), frame_bb_drag.Min.y ),
-									 ImVec2( ImLerp( frame_bb_drag.Max.x, frame_bb.Max.x, dragY_placement ) + dragY_thickness, frame_bb_drag.Max.y ) );
+		float dragX_y = ImTrunc( ImLerp( frame_bb_drag.Max.y, frame_bb.Max.y, dragX_placement ) );
+		float dragY_x = ImTrunc( ImLerp( frame_bb_drag.Max.x, frame_bb.Max.x, dragY_placement ) );
+		const ImRect frame_bb_dragX( ImVec2( frame_bb_drag.Min.x, dragX_y ),
+									 ImVec2( frame_bb_drag.Max.x, dragX_y + dragX_thickness ) );
+		const ImRect frame_bb_dragY( ImVec2( dragY_x, frame_bb_drag.Min.y ),
+									 ImVec2( dragY_x + dragY_thickness, frame_bb_drag.Max.y ) );
 
 		float fXLimit = fCursorOff / frame_bb_drag.GetWidth();
 		float fYLimit = fCursorOff / frame_bb_drag.GetHeight();
@@ -6525,9 +6528,23 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		ImU64 s_delta_x = SubScalar( data_type, p_maxX, p_minX );
 		ImU64 s_delta_y = SubScalar( data_type, p_maxY, p_minY );
-		float fScaleX = ( ScalarToFloat( data_type, ( ImU64* )p_valueX ) - ScalarToFloat( data_type, ( ImU64* )p_minX ) ) / ScalarToFloat( data_type, &s_delta_x );
-		float fScaleY = 1.0f - ( ScalarToFloat( data_type, ( ImU64* )p_valueY ) - ScalarToFloat( data_type, ( ImU64* )p_minY ) ) / ScalarToFloat( data_type, &s_delta_y );
-		ImVec2 vCursorPos( ( frame_bb_drag.Max.x - frame_bb_drag.Min.x ) * fScaleX + frame_bb_drag.Min.x, ( frame_bb_drag.Max.y - frame_bb_drag.Min.y ) * fScaleY + frame_bb_drag.Min.y );
+		float fDeltaX = ScalarToFloat( data_type, &s_delta_x );
+		float fDeltaY = ScalarToFloat( data_type, &s_delta_y );
+		float fScaleX = ( ScalarToFloat( data_type, ( ImU64* )p_valueX ) - ScalarToFloat( data_type, ( ImU64* )p_minX ) ) / fDeltaX;
+		float fScaleY = 1.0f - ( ScalarToFloat( data_type, ( ImU64* )p_valueY ) - ScalarToFloat( data_type, ( ImU64* )p_minY ) ) / fDeltaY;
+
+		// For integer types, snap cursor to pixel boundaries for crisp rendering
+		// Min/max values touch the frame edges; intermediate values are pixel-rounded
+		bool is_integer = ( data_type == ImGuiDataType_S8 || data_type == ImGuiDataType_U8 ||
+							data_type == ImGuiDataType_S16 || data_type == ImGuiDataType_U16 ||
+							data_type == ImGuiDataType_S32 || data_type == ImGuiDataType_U32 ||
+							data_type == ImGuiDataType_S64 || data_type == ImGuiDataType_U64 );
+		float drag_w = frame_bb_drag.GetWidth();
+		float drag_h = frame_bb_drag.GetHeight();
+		ImVec2 vCursorPos( frame_bb_drag.Min.x + drag_w * fScaleX,
+						   frame_bb_drag.Min.y + drag_h * fScaleY );
+		if ( is_integer )
+			vCursorPos = ImVec2( ImTrunc( vCursorPos.x + 0.5f ), ImTrunc( vCursorPos.y + 0.5f ) );
 
 		char const* formatX = ImGui::DataTypeGetInfo( data_type )->PrintFmt;
 		char const* formatY = ImGui::DataTypeGetInfo( data_type )->PrintFmt;

@@ -240,9 +240,9 @@ struct ShapeDebugState {
 	int side_count;
 
 	ShapeDebugState( int default_sides = 3 )
-		: edge_thickness( 2.0f ), vertex_radius( 16.0f ),
-		  edge_col( 1.0f, 0.0f, 0.0f ), triangle_col( 0.0f, 1.0f, 0.0f ),
-		  vertex_col( 0.0f, 0.0f, 1.0f ), tri_idx( -1 ), side_count( default_sides ) {}
+		: edge_thickness( 3.0f ), vertex_radius( 5.0f ),
+		  edge_col( 0.0f, 0.0f, 1.0f ), triangle_col( 0.0f, 1.0f, 0.0f ),
+		  vertex_col( 1.0f, 0.5f, 0.0f ), tri_idx( -1 ), side_count( default_sides ) {}
 
 	void RenderControls( const char* suffix = "", int min_sides = 3, int max_sides = 64 ) {
 		char label_sides[ 64 ], label_thick[ 64 ], label_radius[ 64 ];
@@ -426,8 +426,6 @@ int main()
 		// Render UI
 		ImWidgets::ShowSamples();
 		ImWidgets::ShowDemo();
-		ImWidgets::ShowShowcase();
-
 		ImGui::ShowMetricsWindow();
 		ImGui::ShowDemoWindow();
 
@@ -623,715 +621,6 @@ namespace ImWidgets {
 	}
 
 	//////////////////////////////////////////////////////////////////////////
-	// Showcase - Modern Web-Inspired UI (Enhanced)
-	//////////////////////////////////////////////////////////////////////////
-	void RenderShowcaseHero()
-	{
-		const float S = ImPlatform_GetDpiScale();
-		ImVec2 size = ImGui::GetContentRegionAvail();
-		float header_height = 80.0f * S;
-		ImVec2 header_size( size.x, header_height );
-
-		ImDrawList* draw_list = ImGui::GetWindowDrawList();
-		ImVec2 pos = ImGui::GetCursorScreenPos();
-
-		// Dark navy header bar
-		ImWidgetsShape header_shape;
-		ImWidgets::GenShapeSquircle( header_shape, pos + header_size * 0.5f,
-			ImMin( header_size.x, header_size.y ) * 0.48f, 64, 2.5f * S );
-		ImWidgets::ShapeSetDefaultWhiteCol( header_shape );
-		for ( auto& v : header_shape.vertices )
-			v.col = IM_COL32( 30, 35, 48, 255 );
-		ImWidgets::DrawShape( draw_list, header_shape );
-
-		// Logo circle (left side)
-		ImVec2 logo_center = pos + ImVec2( 50.0f * S, header_height * 0.5f );
-		ImWidgetsShape logo_circle;
-		ImWidgets::GenShapeCircle( logo_circle, logo_center, 22.0f * S, 48 );
-		ImWidgets::ShapeSetDefaultWhiteCol( logo_circle );
-		for ( auto& v : logo_circle.vertices )
-			v.col = IM_COL32( 255, 107, 129, 255 );
-		ImWidgets::DrawShape( draw_list, logo_circle );
-
-		// Inner logo accent
-		ImWidgetsShape logo_inner;
-		ImWidgets::GenShapeCircle( logo_inner, logo_center, 12.0f * S, 48 );
-		ImWidgets::ShapeSetDefaultWhiteCol( logo_inner );
-		for ( auto& v : logo_inner.vertices )
-			v.col = IM_COL32( 255, 180, 195, 255 );
-		ImWidgets::DrawShape( draw_list, logo_inner );
-
-		// Brand name
-		ImGui::SetCursorScreenPos( pos + ImVec2( 85.0f * S, header_height * 0.5f - 10.0f * S ) );
-		ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 255 ) );
-		ImGui::Text( "Creative Studio" );
-		ImGui::PopStyleColor();
-
-		// Navigation items (centered)
-		float nav_y = header_height * 0.5f - 8.0f * S;
-		float nav_start_x = size.x * 0.35f;
-		float nav_spacing = 100.0f * S;
-
-		const char* nav_items[] = { "Dashboard", "Projects", "Team", "Analytics" };
-		ImU32 nav_colors[] = {
-			IM_COL32( 255, 255, 255, 255 ),
-			IM_COL32( 200, 200, 210, 255 ),
-			IM_COL32( 200, 200, 210, 255 ),
-			IM_COL32( 200, 200, 210, 255 )
-		};
-
-		for ( int i = 0; i < 4; ++i )
-		{
-			ImGui::SetCursorScreenPos( pos + ImVec2( nav_start_x + i * nav_spacing, nav_y ) );
-			ImGui::PushStyleColor( ImGuiCol_Text, nav_colors[ i ] );
-			ImGui::Text( "%s", nav_items[ i ] );
-			ImGui::PopStyleColor();
-
-			// Active indicator under first item
-			if ( i == 0 )
-			{
-				float text_width = ImGui::CalcTextSize( nav_items[ i ] ).x;
-				ImVec2 indicator_pos = pos + ImVec2( nav_start_x, nav_y + 22.0f * S );
-				ImWidgetsShape indicator;
-				ImWidgets::GenShapeRect( indicator,
-					ImRect( indicator_pos, indicator_pos + ImVec2( text_width, 3.0f * S ) ) );
-				ImWidgets::ShapeSetDefaultWhiteCol( indicator );
-				for ( auto& v : indicator.vertices )
-					v.col = IM_COL32( 255, 107, 129, 255 );
-				ImWidgets::DrawShape( draw_list, indicator );
-			}
-		}
-
-		// Notification badge (right side)
-		ImVec2 notif_center = pos + ImVec2( size.x - 100.0f * S, header_height * 0.5f );
-		ImWidgetsShape notif_circle;
-		ImWidgets::GenShapeCircle( notif_circle, notif_center, 18.0f * S, 48 );
-		ImWidgets::ShapeSetDefaultWhiteCol( notif_circle );
-		for ( auto& v : notif_circle.vertices )
-			v.col = IM_COL32( 60, 70, 90, 255 );
-		ImWidgets::DrawShape( draw_list, notif_circle );
-
-		// Notification dot
-		ImWidgetsShape notif_dot;
-		ImWidgets::GenShapeCircle( notif_dot, notif_center + ImVec2( 8.0f * S, -8.0f * S ), 5.0f * S, 24 );
-		ImWidgets::ShapeSetDefaultWhiteCol( notif_dot );
-		for ( auto& v : notif_dot.vertices )
-			v.col = IM_COL32( 255, 90, 95, 255 );
-		ImWidgets::DrawShape( draw_list, notif_dot );
-
-		// Profile avatar (rightmost)
-		ImVec2 avatar_center = pos + ImVec2( size.x - 50.0f * S, header_height * 0.5f );
-		ImWidgetsShape avatar;
-		ImWidgets::GenShapeCircle( avatar, avatar_center, 20.0f * S, 48 );
-		ImWidgets::ShapeSetDefaultBoundUV( avatar );
-		ImWidgets::ShapeLinearSRGBLinearGradient( avatar,
-			ImVec2( 0.5f, 0.0f ), ImVec2( 0.5f, 1.0f ),
-			IM_COL32( 120, 100, 255, 255 ), IM_COL32( 200, 80, 255, 255 ) );
-		ImWidgets::DrawShape( draw_list, avatar );
-
-		// Avatar inner circle
-		ImWidgetsShape avatar_inner;
-		ImWidgets::GenShapeCircle( avatar_inner, avatar_center, 12.0f * S, 48 );
-		ImWidgets::ShapeSetDefaultWhiteCol( avatar_inner );
-		for ( auto& v : avatar_inner.vertices )
-			v.col = IM_COL32( 255, 255, 255, 100 );
-		ImWidgets::DrawShape( draw_list, avatar_inner );
-
-		ImGui::SetCursorScreenPos( pos + ImVec2( 0.0f, header_height + 30.0f * S ) );
-	}
-
-	void RenderShowcaseFeatureCard( const char* title, const char* desc, ImU32 color, ImVec2 card_size )
-	{
-		const float S = ImPlatform_GetDpiScale();
-		ImDrawList* draw_list = ImGui::GetWindowDrawList();
-		ImVec2 pos = ImGui::GetCursorScreenPos();
-
-		// Flat card background with bright color
-		ImWidgetsShape card_shape;
-		ImVec2 center = pos + card_size * 0.5f;
-		ImWidgets::GenShapeSquircle( card_shape, center,
-			ImMin( card_size.x, card_size.y ) * 0.48f, 64, 4.0f * S );
-		ImWidgets::ShapeSetDefaultWhiteCol( card_shape );
-		for ( auto& v : card_shape.vertices )
-			v.col = color;
-		ImWidgets::DrawShape( draw_list, card_shape );
-
-		// Large decorative circle icon at top
-		ImVec2 icon_pos = pos + ImVec2( card_size.x * 0.5f, 70.0f * S );
-		ImWidgetsShape icon_circle;
-		ImWidgets::GenShapeCircle( icon_circle, icon_pos, 40.0f * S, 48 );
-		ImWidgets::ShapeSetDefaultWhiteCol( icon_circle );
-		for ( auto& v : icon_circle.vertices )
-			v.col = IM_COL32( 255, 255, 255, 200 );
-		ImWidgets::DrawShape( draw_list, icon_circle );
-
-		// Card content
-		float content_y = 140.0f * S;
-		ImVec2 title_pos = pos + ImVec2( card_size.x * 0.5f, content_y );
-
-		// Center the title text
-		float title_width = ImGui::CalcTextSize( title ).x;
-		ImGui::SetCursorScreenPos( title_pos - ImVec2( title_width * 0.5f, 0.0f ) );
-		ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 255 ) );
-		ImGui::Text( "%s", title );
-		ImGui::PopStyleColor();
-
-		// Description text
-		ImGui::SetCursorScreenPos( pos + ImVec2( 20.0f * S, content_y + 30.0f * S ) );
-		ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 230 ) );
-		ImGui::PushTextWrapPos( pos.x + card_size.x - 20.0f * S );
-		ImGui::TextWrapped( "%s", desc );
-		ImGui::PopTextWrapPos();
-		ImGui::PopStyleColor();
-
-		ImGui::SetCursorScreenPos( pos + ImVec2( card_size.x + 20.0f * S, 0.0f ) );
-	}
-
-	void RenderShowcaseFeatures()
-	{
-		const float S = ImPlatform_GetDpiScale();
-		ImDrawList* draw_list = ImGui::GetWindowDrawList();
-		ImVec2 size = ImGui::GetContentRegionAvail();
-
-		// Stats cards
-		struct StatCard {
-			const char* label;
-			const char* value;
-			const char* subtitle;
-			ImU32 accent_color;
-			float progress;
-		};
-
-		StatCard stats[] = {
-			{ "Active Projects", "24", "+12% from last month", IM_COL32( 100, 200, 255, 255 ), 0.75f },
-			{ "Team Members", "18", "5 online now", IM_COL32( 150, 255, 150, 255 ), 0.60f },
-			{ "Tasks Completed", "156", "This week", IM_COL32( 255, 150, 100, 255 ), 0.85f },
-			{ "Client Rating", "4.9", "Based on 47 reviews", IM_COL32( 255, 200, 100, 255 ), 0.98f }
-		};
-
-		float card_width = ( size.x - 60.0f * S ) / 4.0f;
-		float card_height = 140.0f * S;
-		ImVec2 start_pos = ImGui::GetCursorScreenPos();
-
-		for ( int i = 0; i < 4; ++i )
-		{
-			ImVec2 card_pos = start_pos + ImVec2( i * ( card_width + 20.0f * S ), 0.0f );
-			ImVec2 card_size( card_width, card_height );
-
-			// Card background - dark with slight gradient
-			ImWidgetsShape card_bg;
-			ImVec2 card_center = card_pos + card_size * 0.5f;
-			ImWidgets::GenShapeSquircle( card_bg, card_center,
-				ImMin( card_size.x, card_size.y ) * 0.48f, 64, 3.5f * S );
-			ImWidgets::ShapeSetDefaultBoundUV( card_bg );
-			ImWidgets::ShapeLinearSRGBLinearGradient( card_bg,
-				ImVec2( 0.5f, 0.0f ), ImVec2( 0.5f, 1.0f ),
-				IM_COL32( 45, 52, 70, 255 ), IM_COL32( 35, 42, 60, 255 ) );
-			ImWidgets::DrawShape( draw_list, card_bg );
-
-			// Accent top border
-			ImWidgetsShape accent;
-			ImWidgets::GenShapeRect( accent,
-				ImRect( card_pos + ImVec2( 15.0f * S, 0.0f ), card_pos + ImVec2( card_width - 15.0f * S, 4.0f * S ) ) );
-			ImWidgets::ShapeSetDefaultWhiteCol( accent );
-			for ( auto& v : accent.vertices )
-				v.col = stats[ i ].accent_color;
-			ImWidgets::DrawShape( draw_list, accent );
-
-			// Decorative circle
-			ImVec2 circle_pos = card_pos + ImVec2( card_width - 30.0f * S, 25.0f * S );
-			ImWidgetsShape decor_circle;
-			ImWidgets::GenShapeCircle( decor_circle, circle_pos, 35.0f * S, 48 );
-			ImWidgets::ShapeSetDefaultWhiteCol( decor_circle );
-			ImU32 circle_col = IM_COL32(
-				( stats[ i ].accent_color >> 0 ) & 0xFF,
-				( stats[ i ].accent_color >> 8 ) & 0xFF,
-				( stats[ i ].accent_color >> 16 ) & 0xFF, 25 );
-			for ( auto& v : decor_circle.vertices )
-				v.col = circle_col;
-			ImWidgets::DrawShape( draw_list, decor_circle );
-
-			// Value (large number)
-			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f * S, 25.0f * S ) );
-			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 255 ) );
-			ImGui::Text( "%s", stats[ i ].value );
-			ImGui::PopStyleColor();
-
-			// Label
-			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f * S, 55.0f * S ) );
-			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 180, 190, 210, 255 ) );
-			ImGui::Text( "%s", stats[ i ].label );
-			ImGui::PopStyleColor();
-
-			// Subtitle
-			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f * S, 75.0f * S ) );
-			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 140, 150, 170, 255 ) );
-			ImGui::Text( "%s", stats[ i ].subtitle );
-			ImGui::PopStyleColor();
-
-			// Progress bar
-			float bar_width = card_width - 40.0f * S;
-			ImVec2 bar_pos = card_pos + ImVec2( 20.0f * S, card_height - 25.0f * S );
-
-			// Background
-			ImWidgetsShape bar_bg;
-			ImWidgets::GenShapeRect( bar_bg,
-				ImRect( bar_pos, bar_pos + ImVec2( bar_width, 6.0f * S ) ) );
-			ImWidgets::ShapeSetDefaultWhiteCol( bar_bg );
-			for ( auto& v : bar_bg.vertices )
-				v.col = IM_COL32( 60, 70, 90, 255 );
-			ImWidgets::DrawShape( draw_list, bar_bg );
-
-			// Progress fill
-			ImWidgetsShape bar_fill;
-			float fill_width = bar_width * stats[ i ].progress;
-			ImWidgets::GenShapeRect( bar_fill,
-				ImRect( bar_pos, bar_pos + ImVec2( fill_width, 6.0f * S ) ) );
-			ImWidgets::ShapeSetDefaultWhiteCol( bar_fill );
-			for ( auto& v : bar_fill.vertices )
-				v.col = stats[ i ].accent_color;
-			ImWidgets::DrawShape( draw_list, bar_fill );
-		}
-
-		ImGui::Dummy( ImVec2( size.x, card_height + 40.0f * S ) );
-	}
-
-	void RenderShowcaseColorPalette()
-	{
-		const float S = ImPlatform_GetDpiScale();
-		ImDrawList* draw_list = ImGui::GetWindowDrawList();
-		ImVec2 size = ImGui::GetContentRegionAvail();
-
-		// Section title
-		ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 50, 60, 80, 255 ) );
-		ImGui::Text( "Recent Projects" );
-		ImGui::PopStyleColor();
-
-		ImGui::Spacing();
-		ImGui::Spacing();
-
-		// Project cards
-		struct Project {
-			const char* name;
-			const char* status;
-			ImU32 gradient_start;
-			ImU32 gradient_end;
-			int team_size;
-			float completion;
-		};
-
-		Project projects[] = {
-			{ "Brand Redesign", "In Progress", IM_COL32( 255, 107, 129, 255 ), IM_COL32( 255, 175, 123, 255 ), 5, 0.68f },
-			{ "Mobile App", "Active", IM_COL32( 100, 200, 255, 255 ), IM_COL32( 120, 100, 255, 255 ), 4, 0.42f },
-			{ "Web Platform", "Review", IM_COL32( 150, 255, 150, 255 ), IM_COL32( 100, 230, 180, 255 ), 6, 0.92f }
-		};
-
-		float card_width = ( size.x - 40.0f * S ) / 3.0f;
-		float card_height = 240.0f * S;
-		ImVec2 start_pos = ImGui::GetCursorScreenPos();
-
-		for ( int i = 0; i < 3; ++i )
-		{
-			ImVec2 card_pos = start_pos + ImVec2( i * ( card_width + 20.0f * S ), 0.0f );
-			ImVec2 card_size( card_width, card_height );
-
-			// Card background
-			ImWidgetsShape card_bg;
-			ImVec2 card_center = card_pos + card_size * 0.5f;
-			ImWidgets::GenShapeSquircle( card_bg, card_center,
-				ImMin( card_size.x, card_size.y ) * 0.48f, 64, 4.0f * S );
-			ImWidgets::ShapeSetDefaultWhiteCol( card_bg );
-			for ( auto& v : card_bg.vertices )
-				v.col = IM_COL32( 42, 48, 65, 255 );
-			ImWidgets::DrawShape( draw_list, card_bg );
-
-			// Gradient header area
-			float header_height = 120.0f * S;
-			ImWidgetsShape header_gradient;
-			ImVec2 header_center = card_pos + ImVec2( card_width * 0.5f, header_height * 0.5f );
-			ImWidgets::GenShapeSquircle( header_gradient, header_center,
-				ImMin( card_width, header_height ) * 0.48f, 64, 4.0f * S );
-			ImWidgets::ShapeSetDefaultBoundUV( header_gradient );
-			ImWidgets::ShapeLinearSRGBLinearGradient( header_gradient,
-				ImVec2( 0.0f, 0.5f ), ImVec2( 1.0f, 0.5f ),
-				projects[ i ].gradient_start, projects[ i ].gradient_end );
-			ImWidgets::DrawShape( draw_list, header_gradient );
-
-			// Decorative circles in header
-			for ( int j = 0; j < 3; ++j )
-			{
-				float x = ( 30.0f + j * 40.0f ) * S;
-				float y = ( 30.0f + j * 15.0f ) * S;
-				ImWidgetsShape decor;
-				ImWidgets::GenShapeCircle( decor, card_pos + ImVec2( x, y ), ( 15.0f + j * 5.0f ) * S, 48 );
-				ImWidgets::ShapeSetDefaultWhiteCol( decor );
-				for ( auto& v : decor.vertices )
-					v.col = IM_COL32( 255, 255, 255, 30 - j * 10 );
-				ImWidgets::DrawShape( draw_list, decor );
-			}
-
-			// Project name
-			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f * S, header_height + 20.0f * S ) );
-			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 255 ) );
-			ImGui::Text( "%s", projects[ i ].name );
-			ImGui::PopStyleColor();
-
-			// Status badge
-			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f * S, header_height + 45.0f * S ) );
-			ImVec2 badge_pos = ImGui::GetCursorScreenPos();
-			float badge_width = ImGui::CalcTextSize( projects[ i ].status ).x + 16.0f * S;
-
-			ImWidgetsShape badge;
-			ImWidgets::GenShapeRect( badge,
-				ImRect( badge_pos, badge_pos + ImVec2( badge_width, 20.0f * S ) ) );
-			ImWidgets::ShapeSetDefaultWhiteCol( badge );
-			for ( auto& v : badge.vertices )
-				v.col = IM_COL32( 60, 70, 90, 255 );
-			ImWidgets::DrawShape( draw_list, badge );
-
-			ImGui::SetCursorScreenPos( badge_pos + ImVec2( 8.0f * S, 3.0f * S ) );
-			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 180, 190, 210, 255 ) );
-			ImGui::Text( "%s", projects[ i ].status );
-			ImGui::PopStyleColor();
-
-			// Team avatars
-			float avatar_y = header_height + 80.0f * S;
-			for ( int j = 0; j < projects[ i ].team_size; ++j )
-			{
-				ImVec2 avatar_pos = card_pos + ImVec2( 20.0f * S + j * 22.0f * S, avatar_y );
-
-				// Avatar circle
-				ImWidgetsShape avatar;
-				ImWidgets::GenShapeCircle( avatar, avatar_pos, 12.0f * S, 48 );
-				ImWidgets::ShapeSetDefaultBoundUV( avatar );
-
-				// Different gradient for each avatar
-				ImU32 avatar_colors[][2] = {
-					{ IM_COL32( 255, 100, 150, 255 ), IM_COL32( 255, 150, 100, 255 ) },
-					{ IM_COL32( 100, 150, 255, 255 ), IM_COL32( 150, 100, 255, 255 ) },
-					{ IM_COL32( 150, 255, 100, 255 ), IM_COL32( 100, 255, 200, 255 ) },
-					{ IM_COL32( 255, 200, 100, 255 ), IM_COL32( 255, 150, 150, 255 ) },
-					{ IM_COL32( 200, 100, 255, 255 ), IM_COL32( 255, 100, 200, 255 ) },
-					{ IM_COL32( 100, 255, 255, 255 ), IM_COL32( 100, 200, 255, 255 ) }
-				};
-
-				ImWidgets::ShapeLinearSRGBLinearGradient( avatar,
-					ImVec2( 0.5f, 0.0f ), ImVec2( 0.5f, 1.0f ),
-					avatar_colors[ j % 6 ][ 0 ], avatar_colors[ j % 6 ][ 1 ] );
-				ImWidgets::DrawShape( draw_list, avatar );
-
-				// Border
-				draw_list->AddCircle( avatar_pos, 12.0f * S, IM_COL32( 42, 48, 65, 255 ), 48, 2.0f * S );
-			}
-
-			// Progress label
-			ImGui::SetCursorScreenPos( card_pos + ImVec2( 20.0f * S, avatar_y + 35.0f * S ) );
-			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 140, 150, 170, 255 ) );
-			ImGui::Text( "%.0f%% Complete", projects[ i ].completion * 100.0f );
-			ImGui::PopStyleColor();
-
-			// Progress bar
-			float bar_width = card_width - 40.0f * S;
-			ImVec2 bar_pos = card_pos + ImVec2( 20.0f * S, card_height - 20.0f * S );
-
-			ImWidgetsShape bar_bg;
-			ImWidgets::GenShapeRect( bar_bg,
-				ImRect( bar_pos, bar_pos + ImVec2( bar_width, 8.0f * S ) ) );
-			ImWidgets::ShapeSetDefaultWhiteCol( bar_bg );
-			for ( auto& v : bar_bg.vertices )
-				v.col = IM_COL32( 30, 35, 48, 255 );
-			ImWidgets::DrawShape( draw_list, bar_bg );
-
-			ImWidgetsShape bar_fill;
-			float fill_width = bar_width * projects[ i ].completion;
-			ImWidgets::GenShapeRect( bar_fill,
-				ImRect( bar_pos, bar_pos + ImVec2( fill_width, 8.0f * S ) ) );
-			ImWidgets::ShapeSetDefaultBoundUV( bar_fill );
-			ImWidgets::ShapeLinearSRGBLinearGradient( bar_fill,
-				ImVec2( 0.0f, 0.5f ), ImVec2( 1.0f, 0.5f ),
-				projects[ i ].gradient_start, projects[ i ].gradient_end );
-			ImWidgets::DrawShape( draw_list, bar_fill );
-		}
-
-		ImGui::Dummy( ImVec2( size.x, card_height + 20.0f * S ) );
-	}
-
-	void RenderShowcaseGradients()
-	{
-		const float S = ImPlatform_GetDpiScale();
-		ImGui::Spacing();
-		ImGui::Spacing();
-		ImGui::Spacing();
-
-		// Section header with accent line
-		ImDrawList* draw_list = ImGui::GetWindowDrawList();
-		ImVec2 header_pos = ImGui::GetCursorScreenPos();
-		ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 255 ) );
-		ImGui::Text( "GRADIENT SHOWCASE" );
-		ImGui::PopStyleColor();
-
-		// Accent line under header
-		ImVec2 line_start = header_pos + ImVec2( 0.0f, 42.0f * S );
-		ImVec2 line_end = line_start + ImVec2( 100.0f * S, 0.0f );
-		draw_list->AddRectFilledMultiColor( line_start, line_end + ImVec2( 0.0f, 3.0f * S ),
-			IM_COL32( 140, 70, 255, 255 ), IM_COL32( 230, 90, 200, 0 ),
-			IM_COL32( 230, 90, 200, 0 ), IM_COL32( 140, 70, 255, 255 ) );
-
-		ImGui::Spacing();
-		ImGui::Spacing();
-		ImGui::Spacing();
-
-		ImVec2 size = ImGui::GetContentRegionAvail();
-
-		struct GradientDemo {
-			const char* name;
-			const char* description;
-			void ( *apply_gradient )( ImWidgetsShape&, ImVec2, ImVec2, ImU32, ImU32 );
-		};
-
-		static const GradientDemo gradients[] = {
-			{ "OkLab Perceptual", "Perceptually uniform color blending",
-				[]( ImWidgetsShape& s, ImVec2 uv0, ImVec2 uv1, ImU32 c0, ImU32 c1 ) {
-					ImWidgets::ShapeOkLchLinearGradient( s, uv0, uv1, c0, c1 );
-				}
-			},
-			{ "sRGB Linear", "Standard RGB gamma-corrected blending",
-				[]( ImWidgetsShape& s, ImVec2 uv0, ImVec2 uv1, ImU32 c0, ImU32 c1 ) {
-					ImWidgets::ShapeLinearSRGBLinearGradient( s, uv0, uv1, c0, c1 );
-				}
-			},
-			{ "HSV Hue Shift", "Smooth hue transitions in HSV space",
-				[]( ImWidgetsShape& s, ImVec2 uv0, ImVec2 uv1, ImU32 c0, ImU32 c1 ) {
-					ImWidgets::ShapeHSVLinearGradient( s, uv0, uv1, c0, c1 );
-				}
-			},
-		};
-
-		float bar_height = 100.0f * S;
-		float bar_spacing = 30.0f * S;
-
-		ImU32 color_a = IM_COL32( 255, 107, 107, 255 );
-		ImU32 color_b = IM_COL32( 107, 168, 255, 255 );
-
-		for ( int i = 0; i < IM_ARRAYSIZE( gradients ); ++i )
-		{
-			ImVec2 bar_pos = ImGui::GetCursorScreenPos();
-			ImVec2 bar_size( size.x, bar_height );
-
-			// Shadow for depth
-			ImVec2 shadow_offset( 0.0f, 4.0f * S );
-			ImWidgetsShape shadow_shape;
-			ImWidgets::GenShapeRect( shadow_shape,
-				ImRect( bar_pos + shadow_offset, bar_pos + bar_size + shadow_offset ) );
-			ImWidgets::ShapeSetDefaultWhiteCol( shadow_shape );
-			for ( auto& v : shadow_shape.vertices )
-				v.col = IM_COL32( 0, 0, 0, 40 );
-			ImWidgets::DrawShape( draw_list, shadow_shape );
-
-			// Gradient bar background
-			ImWidgetsShape bar_shape;
-			ImWidgets::GenShapeRect( bar_shape, ImRect( bar_pos, bar_pos + bar_size ) );
-			ImWidgets::ShapeSetDefaultBoundUV( bar_shape );
-
-			// Apply specific gradient type
-			gradients[ i ].apply_gradient( bar_shape, ImVec2( 0.0f, 0.5f ), ImVec2( 1.0f, 0.5f ),
-				color_a, color_b );
-			ImWidgets::DrawShape( draw_list, bar_shape );
-
-			// Border
-			draw_list->AddRect( bar_pos, bar_pos + bar_size,
-				IM_COL32( 255, 255, 255, 50 ), 8.0f * S, 0, 1.5f * S );
-
-			// Label overlay
-			ImVec2 label_pos = bar_pos + ImVec2( 24.0f * S, 20.0f * S );
-			ImGui::SetCursorScreenPos( label_pos );
-			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 255 ) );
-			ImGui::Text( "%s", gradients[ i ].name );
-			ImGui::PopStyleColor();
-
-			ImGui::SetCursorScreenPos( label_pos + ImVec2( 0.0f, 28.0f * S ) );
-			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 220 ) );
-			ImGui::Text( "%s", gradients[ i ].description );
-			ImGui::PopStyleColor();
-
-			ImGui::Dummy( ImVec2( size.x, bar_height + bar_spacing ) );
-		}
-	}
-
-	void RenderShowcaseInteractive()
-	{
-		const float S = ImPlatform_GetDpiScale();
-		ImGui::Spacing();
-		ImGui::Text( "Interactive Elements" );
-		ImGui::Spacing();
-
-		ImVec2 size = ImGui::GetContentRegionAvail();
-		float button_size = 80.0f * S;
-		float spacing_x = 100.0f * S;
-
-		ImVec2 start_pos = ImGui::GetCursorPos();
-
-		// Circle button
-		ImGui::SetCursorPos( start_pos );
-		if ( ImWidgets::ButtonExCircle( "Circle\nButton", button_size * 0.5f, 0 ) )
-		{
-			// Action
-		}
-
-		// Capsule button
-		ImGui::SetCursorPos( start_pos );
-		ImGui::SetCursorPosX( ImGui::GetCursorPosX() + spacing_x );
-		if ( ImWidgets::ButtonExCapsuleH( "Capsule Button", button_size * 1.5f, button_size, 0 ) )
-		{
-			// Action
-		}
-
-		ImGui::SetCursorPos( start_pos );
-		ImGui::SetCursorPosY( ImGui::GetCursorPosY() + button_size + 20.0f * S );
-	}
-
-	void RenderShowcaseStats()
-	{
-		const float S = ImPlatform_GetDpiScale();
-		ImGui::Spacing();
-		ImGui::Spacing();
-		ImGui::Spacing();
-
-		// Section header with accent line
-		ImDrawList* draw_list = ImGui::GetWindowDrawList();
-		ImVec2 header_pos = ImGui::GetCursorScreenPos();
-		ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 255, 255, 255, 255 ) );
-		ImGui::Text( "PERFORMANCE METRICS" );
-		ImGui::PopStyleColor();
-
-		// Accent line under header
-		ImVec2 line_start = header_pos + ImVec2( 0.0f, 42.0f * S );
-		ImVec2 line_end = line_start + ImVec2( 100.0f * S, 0.0f );
-		draw_list->AddRectFilledMultiColor( line_start, line_end + ImVec2( 0.0f, 3.0f * S ),
-			IM_COL32( 140, 70, 255, 255 ), IM_COL32( 230, 90, 200, 0 ),
-			IM_COL32( 230, 90, 200, 0 ), IM_COL32( 140, 70, 255, 255 ) );
-
-		ImGui::Spacing();
-		ImGui::Spacing();
-		ImGui::Spacing();
-
-		ImVec2 size = ImGui::GetContentRegionAvail();
-
-		struct Stat {
-			const char* label;
-			const char* value;
-			ImU32 color;
-		};
-
-		static Stat stats[] = {
-			{ "Frame Rate", "60+ FPS", IM_COL32( 100, 255, 150, 255 ) },
-			{ "Cache Hit", "~100%", IM_COL32( 107, 234, 255, 255 ) },
-			{ "Draw Calls", "Optimized", IM_COL32( 255, 200, 100, 255 ) },
-		};
-
-		float stat_width = ( size.x - 40.0f * S ) / 3.0f;
-		float stat_height = 130.0f * S;
-		ImVec2 start_pos = ImGui::GetCursorScreenPos();
-
-		for ( int i = 0; i < IM_ARRAYSIZE( stats ); ++i )
-		{
-			ImVec2 pos = start_pos + ImVec2( i * ( stat_width + 20.0f * S ), 0.0f );
-			ImVec2 card_size( stat_width, stat_height );
-
-			// Multi-layer shadow for depth
-			for ( int j = 0; j < 2; ++j )
-			{
-				float shadow_offset = ( j + 1 ) * 3.0f * S;
-				float shadow_alpha = 30 - j * 10;
-				ImVec2 shadow_pos = pos + ImVec2( shadow_offset, shadow_offset );
-
-				ImWidgetsShape shadow_shape;
-				ImWidgets::GenShapeRect( shadow_shape,
-					ImRect( shadow_pos, shadow_pos + card_size ) );
-				ImWidgets::ShapeSetDefaultWhiteCol( shadow_shape );
-				for ( auto& v : shadow_shape.vertices )
-					v.col = IM_COL32( 0, 0, 0, shadow_alpha );
-				ImWidgets::DrawShape( draw_list, shadow_shape );
-			}
-
-			// Stat card background with gradient
-			ImWidgetsShape stat_shape;
-			ImWidgets::GenShapeRect( stat_shape, ImRect( pos, pos + card_size ) );
-			ImWidgets::ShapeSetDefaultBoundUV( stat_shape );
-			ImU32 bg_top = IM_COL32( 50, 50, 58, 255 );
-			ImU32 bg_bottom = IM_COL32( 38, 38, 45, 255 );
-			ImWidgets::ShapeLinearSRGBLinearGradient( stat_shape,
-				ImVec2( 0.5f, 0.0f ), ImVec2( 0.5f, 1.0f ),
-				bg_top, bg_bottom );
-			ImWidgets::DrawShape( draw_list, stat_shape );
-
-			// Top accent bar
-			ImWidgetsShape accent_bar;
-			ImWidgets::GenShapeRect( accent_bar,
-				ImRect( pos, pos + ImVec2( stat_width, 4.0f * S ) ) );
-			ImWidgets::ShapeSetDefaultWhiteCol( accent_bar );
-			for ( auto& v : accent_bar.vertices )
-				v.col = stats[ i ].color;
-			ImWidgets::DrawShape( draw_list, accent_bar );
-
-			// Border with rounded corners
-			draw_list->AddRect( pos, pos + card_size,
-				IM_COL32( 255, 255, 255, 30 ), 8.0f * S, 0, 1.5f * S );
-
-			// Decorative accent circle
-			ImVec2 circle_pos = pos + ImVec2( stat_width * 0.85f, stat_height * 0.3f );
-			ImWidgetsShape circle_shape;
-			ImWidgets::GenShapeCircle( circle_shape, circle_pos, 35.0f * S, 48 );
-			ImWidgets::ShapeSetDefaultWhiteCol( circle_shape );
-			ImU32 circle_col = IM_COL32(
-				( stats[ i ].color >> 0 ) & 0xFF,
-				( stats[ i ].color >> 8 ) & 0xFF,
-				( stats[ i ].color >> 16 ) & 0xFF,
-				20 );
-			for ( auto& v : circle_shape.vertices )
-				v.col = circle_col;
-			ImWidgets::DrawShape( draw_list, circle_shape );
-
-			// Text content
-			ImVec2 text_pos = pos + ImVec2( 24.0f * S, 24.0f * S );
-			ImGui::SetCursorScreenPos( text_pos );
-			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 180, 180, 190, 255 ) );
-			ImGui::Text( "%s", stats[ i ].label );
-			ImGui::PopStyleColor();
-
-			ImGui::SetCursorScreenPos( text_pos + ImVec2( 0.0f, 35.0f * S ) );
-			ImGui::PushStyleColor( ImGuiCol_Text, stats[ i ].color );
-			ImGui::Text( "%s", stats[ i ].value );
-			ImGui::PopStyleColor();
-		}
-
-		ImGui::Dummy( ImVec2( size.x, stat_height + 20.0f * S ) );
-	}
-
-	void ShowShowcase()
-	{
-		ImGui::SetNextWindowSize( ImVec2( 1200 * ImPlatform_GetDpiScale(), 800 * ImPlatform_GetDpiScale() ), ImGuiCond_FirstUseEver );
-
-		// Golden background #CCAA24
-		ImGui::PushStyleColor( ImGuiCol_WindowBg, IM_COL32( 204, 170, 36, 255 ) );
-
-		if ( ImGui::Begin( "Showcase - Creative Dashboard", nullptr, ImGuiWindowFlags_NoCollapse ) )
-		{
-			// Header / Navigation
-			RenderShowcaseHero();
-
-			// Stats cards
-			RenderShowcaseFeatures();
-
-			// Project cards
-			RenderShowcaseColorPalette();
-		}
-		ImGui::End();
-
-		ImGui::PopStyleColor();
-	}
-
-	//////////////////////////////////////////////////////////////////////////
 	// ShowDemo Section Functions
 	//////////////////////////////////////////////////////////////////////////
 	void ShowDrawShapeDemo()
@@ -1346,7 +635,7 @@ namespace ImWidgets {
 		static GradientParams gradient;
 		static ImWidgetsShape shape;
 #ifdef DEAR_WIDGETS_TESSELATION
-		static int tess = 1;
+		static int tess = 2;
 		ImGui::SliderInt( "Tess", &tess, 0, 16 );
 #endif
 
@@ -1385,9 +674,9 @@ namespace ImWidgets {
 		float const size = ImGui::GetContentRegionAvail().x;
 
 		static float shape_size = 1.0f;
-		static float line_width = 5.0f;
+		static float line_width = 0.05f;
 		static float angle = 0.0f;
-		static float antialiasing = 1.0f;
+		static float antialiasing = 0.001f;
 		static DemoColor fg_color( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f );
 		static DemoColor bg_color( 1.0f, 128.0f / 255.0f, 64.0f / 255.0f );
 
@@ -1785,9 +1074,9 @@ namespace ImWidgets {
 				const float S = ImPlatform_GetDpiScale();
 				float const width = ImGui::GetContentRegionAvail().x;
 
-				static float angle = 0.0f;
-				static float size = 16.0f;
-				static float thickness = 1.0f;
+				static float angle = 3.1415926535987932f;
+				static float size = 64.0f;
+				static float thickness = 5.0f;
 				ImGui::SliderAngle( "Angle##Triangle", &angle );
 				ImGui::SliderFloat( "Size##Triangle", &size, 1.0f, 64.0f );
 				ImGui::SliderFloat( "Thickness##Triangle", &thickness, 1.0f, 5.0f );
@@ -1795,8 +1084,8 @@ namespace ImWidgets {
 				ImVec2 curPos = ImGui::GetCursorScreenPos();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				float dx = 32.0f * S;
-				ImGui::InvisibleButton( "##Zone", ImVec2( width, 96.0f * S ), 0 );
-				ImGui::InvisibleButton( "##Zone", ImVec2( width, 96.0f * S ), 0 );
+				ImGui::InvisibleButton( "##Zone0", ImVec2( width, 96.0f * S ), 0 );
+				ImGui::InvisibleButton( "##Zone1", ImVec2( width, 96.0f * S ), 0 );
 				float fPointerLine = 64.0f * S;
 				pDrawList->AddLine( ImVec2( curPos.x + 0.5f * dx, curPos.y + fPointerLine ), ImVec2( curPos.x + 3.5f * dx, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f * S );
 				pDrawList->AddLine( ImVec2( curPos.x + 5.0f * dx, curPos.y ), ImVec2( curPos.x + 5.0f * dx, curPos.y + 72.0f * S ), IM_COL32( 0, 255, 0, 255 ), 2.0f * S );
@@ -1829,9 +1118,9 @@ namespace ImWidgets {
 				float const widthZone = ImGui::GetContentRegionAvail().x;
 
 				static float angle = 0.0f;
-				static float width = 16.0f;
-				static float height = 21.0f;
-				static float height_ratio = 1.0f / 3.0f;
+				static float width = 32.0f;
+				static float height = 64.0f;
+				static float height_ratio = 0.25f;
 				static float align01 = 0.5f;
 				static float thickness = 5.0f;
 				ImGui::SliderAngle( "Angle##Triangle", &angle );
@@ -1843,8 +1132,8 @@ namespace ImWidgets {
 
 				ImVec2 curPos = ImGui::GetCursorScreenPos();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-				ImGui::InvisibleButton( "##Zone", ImVec2( widthZone, height * 1.1f ), 0 );
-				ImGui::InvisibleButton( "##Zone", ImVec2( widthZone, height * 1.1f ), 0 );
+				ImGui::InvisibleButton( "##Zone00", ImVec2( widthZone, height * 1.1f ), 0 );
+				ImGui::InvisibleButton( "##Zone01", ImVec2( widthZone, height * 1.1f ), 0 );
 				float fPointerLine = 32.0f * S;
 				float dx = 16.0f * S;
 				pDrawList->AddLine( ImVec2( curPos.x + 0.5f * dx, curPos.y + fPointerLine ), ImVec2( curPos.x + 11.5f * dx, curPos.y + fPointerLine ), IM_COL32( 0, 255, 0, 255 ), 2.0f * S );
@@ -1930,7 +1219,7 @@ namespace ImWidgets {
 				{
 					//float const width = ImGui::GetContentRegionAvail().x;
 					ImVec2 curPos = ImGui::GetCursorScreenPos();
-					ImGui::InvisibleButton( "##Zone", ImVec2( width, width ), 0 );
+					ImGui::InvisibleButton( "##ZoneColorRing0", ImVec2( width, width ), 0 );
 
 					DrawColorRing( pDrawList, curPos, ImVec2( width, width ), thickness,
 								   []( float t, void* ){
@@ -1950,7 +1239,7 @@ namespace ImWidgets {
 					ImGui::Text( "Nearest" );
 					//float const width = ImGui::GetContentRegionAvail().x;
 					ImVec2 curPos = ImGui::GetCursorScreenPos();
-					ImGui::InvisibleButton( "##Zone", ImVec2( width, width ) * 0.5f, 0 );
+					ImGui::InvisibleButton( "##ZoneColorRing1", ImVec2( width, width ) * 0.5f, 0 );
 
 					float data[] = { center, colorDotBound };
 					DrawColorRing( pDrawList, curPos, ImVec2( width, width * 0.5f ), thickness,
@@ -1972,7 +1261,7 @@ namespace ImWidgets {
 				{
 					ImGui::Text( "Custom" );
 					ImVec2 curPos = ImGui::GetCursorScreenPos();
-					ImGui::InvisibleButton( "##Zone", ImVec2( width, width ) * 0.5f, 0 );
+					ImGui::InvisibleButton( "##ZoneColorRing2", ImVec2( width, width ) * 0.5f, 0 );
 
 					float fFreqValue = (float)frequency;
 					DrawColorRing( pDrawList, curPos, ImVec2( width, width ) * 0.5f, thickness,
