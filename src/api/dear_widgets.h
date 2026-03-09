@@ -676,6 +676,140 @@ struct ImGradientData
 	}
 };
 
+typedef int ImCurveEditorSeg;
+enum ImCurveEditorSeg_
+{
+	// Step (piecewise constant)
+	ImCurveEditorSeg_StepStart = 0,	// Hold left value, jump at right key
+	ImCurveEditorSeg_StepEnd,		// Jump to right value immediately
+	ImCurveEditorSeg_StepCenter,	// Jump at midpoint
+
+	// Linear (piecewise linear)
+	ImCurveEditorSeg_Linear,
+
+	// Quadratic
+	ImCurveEditorSeg_InQuad,
+	ImCurveEditorSeg_OutQuad,
+	ImCurveEditorSeg_InOutQuad,
+
+	// Cubic
+	ImCurveEditorSeg_InCubic,
+	ImCurveEditorSeg_OutCubic,
+	ImCurveEditorSeg_InOutCubic,
+
+	// Quartic
+	ImCurveEditorSeg_InQuart,
+	ImCurveEditorSeg_OutQuart,
+	ImCurveEditorSeg_InOutQuart,
+
+	// Quintic
+	ImCurveEditorSeg_InQuint,
+	ImCurveEditorSeg_OutQuint,
+	ImCurveEditorSeg_InOutQuint,
+
+	// Sine
+	ImCurveEditorSeg_InSine,
+	ImCurveEditorSeg_OutSine,
+	ImCurveEditorSeg_InOutSine,
+
+	// Exponential
+	ImCurveEditorSeg_InExpo,
+	ImCurveEditorSeg_OutExpo,
+	ImCurveEditorSeg_InOutExpo,
+
+	// Circular
+	ImCurveEditorSeg_InCirc,
+	ImCurveEditorSeg_OutCirc,
+	ImCurveEditorSeg_InOutCirc,
+
+	// Back (overshoot)
+	ImCurveEditorSeg_InBack,
+	ImCurveEditorSeg_OutBack,
+	ImCurveEditorSeg_InOutBack,
+
+	// Elastic
+	ImCurveEditorSeg_InElastic,
+	ImCurveEditorSeg_OutElastic,
+	ImCurveEditorSeg_InOutElastic,
+
+	// Bounce
+	ImCurveEditorSeg_InBounce,
+	ImCurveEditorSeg_OutBounce,
+	ImCurveEditorSeg_InOutBounce,
+
+	// Cubic Bezier (with tangent handles)
+	ImCurveEditorSeg_CubicBezier,
+
+	ImCurveEditorSeg_COUNT
+};
+
+struct ImCurveEditorKey
+{
+	ImVec2				Pos;			// (x=time, y=value)
+	ImCurveEditorSeg	Segment;		// Interpolation to next key
+	ImVec2				TangentLeft;	// Incoming tangent handle offset (typically negative x)
+	ImVec2				TangentRight;	// Outgoing tangent handle offset (typically positive x)
+
+	ImCurveEditorKey() : Pos( 0.0f, 0.0f ), Segment( ImCurveEditorSeg_Linear ),
+		TangentLeft( -0.1f, 0.0f ), TangentRight( 0.1f, 0.0f ) {}
+	ImCurveEditorKey( ImVec2 pos, ImCurveEditorSeg seg = ImCurveEditorSeg_Linear )
+		: Pos( pos ), Segment( seg ),
+		TangentLeft( -0.1f, 0.0f ), TangentRight( 0.1f, 0.0f ) {}
+};
+
+struct ImCurveEditorData
+{
+	ImVector<ImCurveEditorKey>	Keys;
+	ImVec2						RangeMin;		// Visible range min (x=time, y=value)
+	ImVec2						RangeMax;		// Visible range max
+	int							SelectedIdx;	// Selected key, -1 = none
+	int							DragTarget;		// 0 = key, -1 = left tangent, 1 = right tangent
+
+	ImCurveEditorData()
+		: RangeMin( 0.0f, 0.0f ), RangeMax( 1.0f, 1.0f ),
+		SelectedIdx( -1 ), DragTarget( 0 )
+	{
+		Keys.resize( 2 );
+		Keys[ 0 ] = ImCurveEditorKey( ImVec2( 0.0f, 0.0f ) );
+		Keys[ 1 ] = ImCurveEditorKey( ImVec2( 1.0f, 1.0f ) );
+	}
+
+	void SortKeys()
+	{
+		for ( int i = 1; i < Keys.Size; ++i )
+		{
+			ImCurveEditorKey key = Keys[ i ];
+			int j = i - 1;
+			while ( j >= 0 && Keys[ j ].Pos.x > key.Pos.x )
+			{
+				Keys[ j + 1 ] = Keys[ j ];
+				--j;
+			}
+			Keys[ j + 1 ] = key;
+		}
+	}
+
+	int AddKey( ImVec2 pos, ImCurveEditorSeg seg = ImCurveEditorSeg_Linear )
+	{
+		Keys.push_back( ImCurveEditorKey( pos, seg ) );
+		SortKeys();
+		for ( int i = 0; i < Keys.Size; ++i )
+		{
+			if ( Keys[ i ].Pos.x == pos.x && Keys[ i ].Pos.y == pos.y )
+				return i;
+		}
+		return Keys.Size - 1;
+	}
+
+	bool RemoveKey( int idx )
+	{
+		if ( Keys.Size <= 2 || idx < 0 || idx >= Keys.Size )
+			return false;
+		Keys.erase( Keys.Data + idx );
+		return true;
+	}
+};
+
 struct ImGlobalData
 {
     ImWidgetsFeatures features;
@@ -1106,6 +1240,10 @@ namespace ImWidgets{
 	IMGUI_API void DrawCheckerboard( ImDrawList* pDrawList, ImVec2 position, ImVec2 size, float cellSize, ImU32 col1, ImU32 col2 );
 	IMGUI_API void DrawGradientBar( ImDrawList* pDrawList, ImGradientData const& gradient, ImVec2 position, ImVec2 size, int resolution );
 
+	IMGUI_API float CurveEditorEvalEasing( ImCurveEditorSeg seg, float t );
+	IMGUI_API float CurveEditorSample( ImCurveEditorData const& curve, float x );
+	IMGUI_API const char* CurveEditorSegName( ImCurveEditorSeg seg );
+
 	IMGUI_API void DrawOkLabQuad( ImDrawList* pDrawList, ImVec2 start, ImVec2 size, float L, int resX = 16, int resY = 16 );
 	IMGUI_API void DrawOkLchQuad( ImDrawList* pDrawList, ImVec2 start, ImVec2 size, float L, int resX = 16, int resY = 16 );
 
@@ -1328,6 +1466,7 @@ namespace ImWidgets{
 	IMGUI_API bool Slider2DInt( char const* pLabel, int* pValueX, void* pValueY, int v_minX, int v_maxX, int v_minY, int v_maxY );
 
 	IMGUI_API bool GradientEditor( char const* label, ImGradientData* gradient, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool CurveEditor( char const* label, ImCurveEditorData* curve, ImVec2 size = ImVec2( 0, 0 ) );
 
 	//IMGUI_API bool SliderRingScalar( char const* name,
 	//								 ImGuiDataType data_type,

@@ -2351,6 +2351,74 @@ namespace ImWidgets {
 				}
 				GradientEditor( "Black to White (OkLab)##Grad2", &gradient2 );
 			}
+			if ( ImGui::CollapsingHeader( "Curve Editor", ImGuiTreeNodeFlags_DefaultOpen ) )
+			{
+				static ImCurveEditorData curve;
+				static bool curveInitialized = false;
+				if ( !curveInitialized )
+				{
+					curve.Keys.clear();
+					curve.AddKey( ImVec2( 0.0f, 0.0f ), ImCurveEditorSeg_InOutCubic );
+					curve.AddKey( ImVec2( 0.5f, 1.0f ), ImCurveEditorSeg_InOutCubic );
+					curve.AddKey( ImVec2( 1.0f, 0.0f ) );
+					curve.RangeMin = ImVec2( -0.1f, -0.2f );
+					curve.RangeMax = ImVec2( 1.1f, 1.2f );
+					curveInitialized = true;
+				}
+
+				CurveEditor( "##CurveMain", &curve, ImVec2( 0, 200 ) );
+
+				// Edit selected key
+				if ( curve.SelectedIdx >= 0 && curve.SelectedIdx < curve.Keys.Size )
+				{
+					ImCurveEditorKey& key = curve.Keys[ curve.SelectedIdx ];
+					ImGui::DragFloat2( "Position##CurveKey", &key.Pos.x, 0.01f );
+
+					// Segment type combo
+					int currentSeg = key.Segment;
+					if ( ImGui::BeginCombo( "Segment##CurveKey", ImWidgets::CurveEditorSegName( ( ImCurveEditorSeg )currentSeg ) ) )
+					{
+						for ( int s = 0; s < ImCurveEditorSeg_COUNT; ++s )
+						{
+							bool isSelected = ( currentSeg == s );
+							if ( ImGui::Selectable( ImWidgets::CurveEditorSegName( ( ImCurveEditorSeg )s ), isSelected ) )
+								key.Segment = ( ImCurveEditorSeg )s;
+							if ( isSelected )
+								ImGui::SetItemDefaultFocus();
+						}
+						ImGui::EndCombo();
+					}
+				}
+				else
+				{
+					ImGui::TextDisabled( "No key selected" );
+				}
+
+				ImGui::TextWrapped( "Click to add key. Drag to move. Right-click key to change segment type or delete." );
+
+				// Sample
+				static float curveSampleX = 0.5f;
+				ImGui::SliderFloat( "Sample x##Curve", &curveSampleX, 0.0f, 1.0f );
+				float sampledY = ImWidgets::CurveEditorSample( curve, curveSampleX );
+				ImGui::Text( "y = %.4f", sampledY );
+
+				// Second curve with step demo
+				static ImCurveEditorData curve2;
+				static bool curve2Initialized = false;
+				if ( !curve2Initialized )
+				{
+					curve2.Keys.clear();
+					curve2.AddKey( ImVec2( 0.0f, 0.0f ), ImCurveEditorSeg_StepCenter );
+					curve2.AddKey( ImVec2( 0.25f, 0.5f ), ImCurveEditorSeg_StepStart );
+					curve2.AddKey( ImVec2( 0.5f, 1.0f ), ImCurveEditorSeg_StepEnd );
+					curve2.AddKey( ImVec2( 0.75f, 0.25f ), ImCurveEditorSeg_Linear );
+					curve2.AddKey( ImVec2( 1.0f, 0.75f ) );
+					curve2.RangeMin = ImVec2( -0.05f, -0.1f );
+					curve2.RangeMax = ImVec2( 1.05f, 1.1f );
+					curve2Initialized = true;
+				}
+				CurveEditor( "Steps & Linear##Curve2", &curve2, ImVec2( 0, 150 ) );
+			}
 			ImGui::Unindent();
 		}
 

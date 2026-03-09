@@ -7035,6 +7035,806 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return value_changed;
 	}
 
+	//////////////////////////////////////////////////////////////////////////
+	// Curve Editor - Easing Functions
+	//////////////////////////////////////////////////////////////////////////
+
+	static float ImEaseOutBounce( float t )
+	{
+		if ( t < 1.0f / 2.75f )
+			return 7.5625f * t * t;
+		if ( t < 2.0f / 2.75f )
+		{
+			t -= 1.5f / 2.75f;
+			return 7.5625f * t * t + 0.75f;
+		}
+		if ( t < 2.5f / 2.75f )
+		{
+			t -= 2.25f / 2.75f;
+			return 7.5625f * t * t + 0.9375f;
+		}
+		t -= 2.625f / 2.75f;
+		return 7.5625f * t * t + 0.984375f;
+	}
+
+	float CurveEditorEvalEasing( ImCurveEditorSeg seg, float t )
+	{
+		t = ImClamp( t, 0.0f, 1.0f );
+		float u;
+		switch ( seg )
+		{
+		// Linear
+		case ImCurveEditorSeg_Linear:
+			return t;
+
+		// Quad
+		case ImCurveEditorSeg_InQuad:
+			return t * t;
+		case ImCurveEditorSeg_OutQuad:
+			return t * ( 2.0f - t );
+		case ImCurveEditorSeg_InOutQuad:
+			return t < 0.5f ? 2.0f * t * t : -1.0f + ( 4.0f - 2.0f * t ) * t;
+
+		// Cubic
+		case ImCurveEditorSeg_InCubic:
+			return t * t * t;
+		case ImCurveEditorSeg_OutCubic:
+			u = t - 1.0f;
+			return u * u * u + 1.0f;
+		case ImCurveEditorSeg_InOutCubic:
+			return t < 0.5f ? 4.0f * t * t * t : ( t - 1.0f ) * ( 2.0f * t - 2.0f ) * ( 2.0f * t - 2.0f ) + 1.0f;
+
+		// Quart
+		case ImCurveEditorSeg_InQuart:
+			return t * t * t * t;
+		case ImCurveEditorSeg_OutQuart:
+			u = t - 1.0f;
+			return 1.0f - u * u * u * u;
+		case ImCurveEditorSeg_InOutQuart:
+			u = t - 1.0f;
+			return t < 0.5f ? 8.0f * t * t * t * t : 1.0f - 8.0f * u * u * u * u;
+
+		// Quint
+		case ImCurveEditorSeg_InQuint:
+			return t * t * t * t * t;
+		case ImCurveEditorSeg_OutQuint:
+			u = t - 1.0f;
+			return 1.0f + u * u * u * u * u;
+		case ImCurveEditorSeg_InOutQuint:
+			u = t - 1.0f;
+			return t < 0.5f ? 16.0f * t * t * t * t * t : 1.0f + 16.0f * u * u * u * u * u;
+
+		// Sine
+		case ImCurveEditorSeg_InSine:
+			return 1.0f - ImCos( t * IM_PI * 0.5f );
+		case ImCurveEditorSeg_OutSine:
+			return ImSin( t * IM_PI * 0.5f );
+		case ImCurveEditorSeg_InOutSine:
+			return 0.5f * ( 1.0f - ImCos( IM_PI * t ) );
+
+		// Expo
+		case ImCurveEditorSeg_InExpo:
+			return t == 0.0f ? 0.0f : ImPow( 2.0f, 10.0f * ( t - 1.0f ) );
+		case ImCurveEditorSeg_OutExpo:
+			return t == 1.0f ? 1.0f : 1.0f - ImPow( 2.0f, -10.0f * t );
+		case ImCurveEditorSeg_InOutExpo:
+			if ( t == 0.0f ) return 0.0f;
+			if ( t == 1.0f ) return 1.0f;
+			return t < 0.5f ? 0.5f * ImPow( 2.0f, 20.0f * t - 10.0f ) : 1.0f - 0.5f * ImPow( 2.0f, -20.0f * t + 10.0f );
+
+		// Circ
+		case ImCurveEditorSeg_InCirc:
+			return 1.0f - ImSqrt( 1.0f - t * t );
+		case ImCurveEditorSeg_OutCirc:
+			u = t - 1.0f;
+			return ImSqrt( 1.0f - u * u );
+		case ImCurveEditorSeg_InOutCirc:
+			u = 2.0f * t - 2.0f;
+			return t < 0.5f ? 0.5f * ( 1.0f - ImSqrt( 1.0f - 4.0f * t * t ) ) : 0.5f * ( ImSqrt( 1.0f - u * u ) + 1.0f );
+
+		// Back
+		case ImCurveEditorSeg_InBack:
+		{
+			const float s = 1.70158f;
+			return t * t * ( ( s + 1.0f ) * t - s );
+		}
+		case ImCurveEditorSeg_OutBack:
+		{
+			const float s = 1.70158f;
+			u = t - 1.0f;
+			return u * u * ( ( s + 1.0f ) * u + s ) + 1.0f;
+		}
+		case ImCurveEditorSeg_InOutBack:
+		{
+			const float s = 1.70158f * 1.525f;
+			u = t * 2.0f;
+			if ( u < 1.0f ) return 0.5f * u * u * ( ( s + 1.0f ) * u - s );
+			u -= 2.0f;
+			return 0.5f * ( u * u * ( ( s + 1.0f ) * u + s ) + 2.0f );
+		}
+
+		// Elastic
+		case ImCurveEditorSeg_InElastic:
+			if ( t == 0.0f || t == 1.0f ) return t;
+			return -ImPow( 2.0f, 10.0f * ( t - 1.0f ) ) * ImSin( ( t - 1.1f ) * 5.0f * IM_PI );
+		case ImCurveEditorSeg_OutElastic:
+			if ( t == 0.0f || t == 1.0f ) return t;
+			return ImPow( 2.0f, -10.0f * t ) * ImSin( ( t - 0.1f ) * 5.0f * IM_PI ) + 1.0f;
+		case ImCurveEditorSeg_InOutElastic:
+			if ( t == 0.0f || t == 1.0f ) return t;
+			u = t * 2.0f;
+			if ( u < 1.0f ) return -0.5f * ImPow( 2.0f, 10.0f * ( u - 1.0f ) ) * ImSin( ( u - 1.1f ) * 5.0f * IM_PI );
+			return 0.5f * ImPow( 2.0f, -10.0f * ( u - 1.0f ) ) * ImSin( ( u - 1.1f ) * 5.0f * IM_PI ) + 1.0f;
+
+		// Bounce
+		case ImCurveEditorSeg_InBounce:
+			return 1.0f - ImEaseOutBounce( 1.0f - t );
+		case ImCurveEditorSeg_OutBounce:
+			return ImEaseOutBounce( t );
+		case ImCurveEditorSeg_InOutBounce:
+			return t < 0.5f ? 0.5f * ( 1.0f - ImEaseOutBounce( 1.0f - 2.0f * t ) ) : 0.5f * ImEaseOutBounce( 2.0f * t - 1.0f ) + 0.5f;
+
+		default:
+			return t;
+		}
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Curve Editor - Sampling
+	//////////////////////////////////////////////////////////////////////////
+
+	static float ImBezierCubicEval1D( float p0, float p1, float p2, float p3, float t )
+	{
+		float u = 1.0f - t;
+		return u * u * u * p0 + 3.0f * u * u * t * p1 + 3.0f * u * t * t * p2 + t * t * t * p3;
+	}
+
+	static float ImBezierSolveForX( float p0x, float p1x, float p2x, float p3x, float targetX )
+	{
+		float lo = 0.0f, hi = 1.0f;
+		for ( int i = 0; i < 24; ++i )
+		{
+			float mid = ( lo + hi ) * 0.5f;
+			float x = ImBezierCubicEval1D( p0x, p1x, p2x, p3x, mid );
+			if ( x < targetX )
+				lo = mid;
+			else
+				hi = mid;
+		}
+		return ( lo + hi ) * 0.5f;
+	}
+
+	float CurveEditorSample( ImCurveEditorData const& curve, float x )
+	{
+		if ( curve.Keys.Size == 0 )
+			return 0.0f;
+		if ( curve.Keys.Size == 1 )
+			return curve.Keys[ 0 ].Pos.y;
+
+		// Clamp to key range
+		if ( x <= curve.Keys[ 0 ].Pos.x )
+			return curve.Keys[ 0 ].Pos.y;
+		if ( x >= curve.Keys[ curve.Keys.Size - 1 ].Pos.x )
+			return curve.Keys[ curve.Keys.Size - 1 ].Pos.y;
+
+		// Find segment
+		int rightIdx = 0;
+		for ( int i = 0; i < curve.Keys.Size; ++i )
+		{
+			if ( curve.Keys[ i ].Pos.x >= x )
+			{
+				rightIdx = i;
+				break;
+			}
+		}
+		int leftIdx = rightIdx - 1;
+		if ( leftIdx < 0 )
+			leftIdx = 0;
+
+		ImCurveEditorKey const& k0 = curve.Keys[ leftIdx ];
+		ImCurveEditorKey const& k1 = curve.Keys[ rightIdx ];
+
+		float dx = k1.Pos.x - k0.Pos.x;
+		float t = ( dx > 1e-6f ) ? ( x - k0.Pos.x ) / dx : 0.0f;
+
+		ImCurveEditorSeg seg = k0.Segment;
+
+		// Step modes
+		if ( seg == ImCurveEditorSeg_StepStart )
+			return k0.Pos.y;
+		if ( seg == ImCurveEditorSeg_StepEnd )
+			return k1.Pos.y;
+		if ( seg == ImCurveEditorSeg_StepCenter )
+			return t < 0.5f ? k0.Pos.y : k1.Pos.y;
+
+		// Cubic Bezier with tangent handles
+		if ( seg == ImCurveEditorSeg_CubicBezier )
+		{
+			ImVec2 p0 = k0.Pos;
+			ImVec2 p1 = k0.Pos + k0.TangentRight;
+			ImVec2 p2 = k1.Pos + k1.TangentLeft;
+			ImVec2 p3 = k1.Pos;
+
+			float bt = ImBezierSolveForX( p0.x, p1.x, p2.x, p3.x, x );
+			return ImBezierCubicEval1D( p0.y, p1.y, p2.y, p3.y, bt );
+		}
+
+		// Easing: apply easing to t, then lerp y
+		float easedT = CurveEditorEvalEasing( seg, t );
+		return ImLerp( k0.Pos.y, k1.Pos.y, easedT );
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Curve Editor - Widget
+	//////////////////////////////////////////////////////////////////////////
+
+	const char* CurveEditorSegName( ImCurveEditorSeg seg )
+	{
+		switch ( seg )
+		{
+		case ImCurveEditorSeg_StepStart:     return "Step Start";
+		case ImCurveEditorSeg_StepEnd:       return "Step End";
+		case ImCurveEditorSeg_StepCenter:    return "Step Center";
+		case ImCurveEditorSeg_Linear:        return "Linear";
+		case ImCurveEditorSeg_InQuad:        return "In Quad";
+		case ImCurveEditorSeg_OutQuad:       return "Out Quad";
+		case ImCurveEditorSeg_InOutQuad:     return "InOut Quad";
+		case ImCurveEditorSeg_InCubic:       return "In Cubic";
+		case ImCurveEditorSeg_OutCubic:      return "Out Cubic";
+		case ImCurveEditorSeg_InOutCubic:    return "InOut Cubic";
+		case ImCurveEditorSeg_InQuart:       return "In Quart";
+		case ImCurveEditorSeg_OutQuart:      return "Out Quart";
+		case ImCurveEditorSeg_InOutQuart:    return "InOut Quart";
+		case ImCurveEditorSeg_InQuint:       return "In Quint";
+		case ImCurveEditorSeg_OutQuint:      return "Out Quint";
+		case ImCurveEditorSeg_InOutQuint:    return "InOut Quint";
+		case ImCurveEditorSeg_InSine:        return "In Sine";
+		case ImCurveEditorSeg_OutSine:       return "Out Sine";
+		case ImCurveEditorSeg_InOutSine:     return "InOut Sine";
+		case ImCurveEditorSeg_InExpo:        return "In Expo";
+		case ImCurveEditorSeg_OutExpo:       return "Out Expo";
+		case ImCurveEditorSeg_InOutExpo:     return "InOut Expo";
+		case ImCurveEditorSeg_InCirc:        return "In Circ";
+		case ImCurveEditorSeg_OutCirc:       return "Out Circ";
+		case ImCurveEditorSeg_InOutCirc:     return "InOut Circ";
+		case ImCurveEditorSeg_InBack:        return "In Back";
+		case ImCurveEditorSeg_OutBack:       return "Out Back";
+		case ImCurveEditorSeg_InOutBack:     return "InOut Back";
+		case ImCurveEditorSeg_InElastic:     return "In Elastic";
+		case ImCurveEditorSeg_OutElastic:    return "Out Elastic";
+		case ImCurveEditorSeg_InOutElastic:  return "InOut Elastic";
+		case ImCurveEditorSeg_InBounce:      return "In Bounce";
+		case ImCurveEditorSeg_OutBounce:     return "Out Bounce";
+		case ImCurveEditorSeg_InOutBounce:   return "InOut Bounce";
+		case ImCurveEditorSeg_CubicBezier:   return "Cubic Bezier";
+		default:                             return "Unknown";
+		}
+	}
+
+	static ImVec2 CurveToScreen( ImVec2 curvePos, ImRect const& bb, ImVec2 rangeMin, ImVec2 rangeMax )
+	{
+		float sx = ( curvePos.x - rangeMin.x ) / ( rangeMax.x - rangeMin.x );
+		float sy = 1.0f - ( curvePos.y - rangeMin.y ) / ( rangeMax.y - rangeMin.y ); // Y flipped
+		return ImVec2( ImLerp( bb.Min.x, bb.Max.x, sx ), ImLerp( bb.Min.y, bb.Max.y, sy ) );
+	}
+
+	static ImVec2 ScreenToCurve( ImVec2 screenPos, ImRect const& bb, ImVec2 rangeMin, ImVec2 rangeMax )
+	{
+		float sx = ( screenPos.x - bb.Min.x ) / ( bb.Max.x - bb.Min.x );
+		float sy = 1.0f - ( screenPos.y - bb.Min.y ) / ( bb.Max.y - bb.Min.y ); // Y flipped
+		return ImVec2( ImLerp( rangeMin.x, rangeMax.x, sx ), ImLerp( rangeMin.y, rangeMax.y, sy ) );
+	}
+
+	static ImVec2 CurveVecToScreen( ImVec2 curveVec, ImRect const& bb, ImVec2 rangeMin, ImVec2 rangeMax )
+	{
+		float scaleX = bb.GetWidth() / ( rangeMax.x - rangeMin.x );
+		float scaleY = -bb.GetHeight() / ( rangeMax.y - rangeMin.y ); // Y flipped
+		return ImVec2( curveVec.x * scaleX, curveVec.y * scaleY );
+	}
+
+	static ImVec2 ScreenVecToCurve( ImVec2 screenVec, ImRect const& bb, ImVec2 rangeMin, ImVec2 rangeMax )
+	{
+		float scaleX = ( rangeMax.x - rangeMin.x ) / bb.GetWidth();
+		float scaleY = -( rangeMax.y - rangeMin.y ) / bb.GetHeight(); // Y flipped
+		return ImVec2( screenVec.x * scaleX, screenVec.y * scaleY );
+	}
+
+	// Context menu helper: submenu for easing families
+	static bool ImCurveEditorSegmentMenu( ImCurveEditorSeg* outSeg, ImCurveEditorSeg currentSeg )
+	{
+		bool changed = false;
+
+		#define IM_CURVE_SEG_ITEM( name, val ) \
+			if ( ImGui::MenuItem( name, NULL, currentSeg == val ) ) { *outSeg = val; changed = true; }
+
+		if ( ImGui::BeginMenu( "Step" ) )
+		{
+			IM_CURVE_SEG_ITEM( "Start", ImCurveEditorSeg_StepStart )
+			IM_CURVE_SEG_ITEM( "End", ImCurveEditorSeg_StepEnd )
+			IM_CURVE_SEG_ITEM( "Center", ImCurveEditorSeg_StepCenter )
+			ImGui::EndMenu();
+		}
+		IM_CURVE_SEG_ITEM( "Linear", ImCurveEditorSeg_Linear )
+		if ( ImGui::BeginMenu( "Quad" ) )
+		{
+			IM_CURVE_SEG_ITEM( "In", ImCurveEditorSeg_InQuad )
+			IM_CURVE_SEG_ITEM( "Out", ImCurveEditorSeg_OutQuad )
+			IM_CURVE_SEG_ITEM( "InOut", ImCurveEditorSeg_InOutQuad )
+			ImGui::EndMenu();
+		}
+		if ( ImGui::BeginMenu( "Cubic" ) )
+		{
+			IM_CURVE_SEG_ITEM( "In", ImCurveEditorSeg_InCubic )
+			IM_CURVE_SEG_ITEM( "Out", ImCurveEditorSeg_OutCubic )
+			IM_CURVE_SEG_ITEM( "InOut", ImCurveEditorSeg_InOutCubic )
+			ImGui::EndMenu();
+		}
+		if ( ImGui::BeginMenu( "Quart" ) )
+		{
+			IM_CURVE_SEG_ITEM( "In", ImCurveEditorSeg_InQuart )
+			IM_CURVE_SEG_ITEM( "Out", ImCurveEditorSeg_OutQuart )
+			IM_CURVE_SEG_ITEM( "InOut", ImCurveEditorSeg_InOutQuart )
+			ImGui::EndMenu();
+		}
+		if ( ImGui::BeginMenu( "Quint" ) )
+		{
+			IM_CURVE_SEG_ITEM( "In", ImCurveEditorSeg_InQuint )
+			IM_CURVE_SEG_ITEM( "Out", ImCurveEditorSeg_OutQuint )
+			IM_CURVE_SEG_ITEM( "InOut", ImCurveEditorSeg_InOutQuint )
+			ImGui::EndMenu();
+		}
+		if ( ImGui::BeginMenu( "Sine" ) )
+		{
+			IM_CURVE_SEG_ITEM( "In", ImCurveEditorSeg_InSine )
+			IM_CURVE_SEG_ITEM( "Out", ImCurveEditorSeg_OutSine )
+			IM_CURVE_SEG_ITEM( "InOut", ImCurveEditorSeg_InOutSine )
+			ImGui::EndMenu();
+		}
+		if ( ImGui::BeginMenu( "Expo" ) )
+		{
+			IM_CURVE_SEG_ITEM( "In", ImCurveEditorSeg_InExpo )
+			IM_CURVE_SEG_ITEM( "Out", ImCurveEditorSeg_OutExpo )
+			IM_CURVE_SEG_ITEM( "InOut", ImCurveEditorSeg_InOutExpo )
+			ImGui::EndMenu();
+		}
+		if ( ImGui::BeginMenu( "Circ" ) )
+		{
+			IM_CURVE_SEG_ITEM( "In", ImCurveEditorSeg_InCirc )
+			IM_CURVE_SEG_ITEM( "Out", ImCurveEditorSeg_OutCirc )
+			IM_CURVE_SEG_ITEM( "InOut", ImCurveEditorSeg_InOutCirc )
+			ImGui::EndMenu();
+		}
+		if ( ImGui::BeginMenu( "Back" ) )
+		{
+			IM_CURVE_SEG_ITEM( "In", ImCurveEditorSeg_InBack )
+			IM_CURVE_SEG_ITEM( "Out", ImCurveEditorSeg_OutBack )
+			IM_CURVE_SEG_ITEM( "InOut", ImCurveEditorSeg_InOutBack )
+			ImGui::EndMenu();
+		}
+		if ( ImGui::BeginMenu( "Elastic" ) )
+		{
+			IM_CURVE_SEG_ITEM( "In", ImCurveEditorSeg_InElastic )
+			IM_CURVE_SEG_ITEM( "Out", ImCurveEditorSeg_OutElastic )
+			IM_CURVE_SEG_ITEM( "InOut", ImCurveEditorSeg_InOutElastic )
+			ImGui::EndMenu();
+		}
+		if ( ImGui::BeginMenu( "Bounce" ) )
+		{
+			IM_CURVE_SEG_ITEM( "In", ImCurveEditorSeg_InBounce )
+			IM_CURVE_SEG_ITEM( "Out", ImCurveEditorSeg_OutBounce )
+			IM_CURVE_SEG_ITEM( "InOut", ImCurveEditorSeg_InOutBounce )
+			ImGui::EndMenu();
+		}
+		IM_CURVE_SEG_ITEM( "Cubic Bezier", ImCurveEditorSeg_CubicBezier )
+
+		#undef IM_CURVE_SEG_ITEM
+
+		return changed;
+	}
+
+	bool CurveEditor( char const* label, ImCurveEditorData* curve, ImVec2 size )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		const ImGuiID id = window->GetID( label );
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
+		const float h = ( size.y > 0.0f ) ? size.y : 200.0f;
+
+		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
+
+		const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, h ) );
+		const ImRect total_bb( frame_bb.Min, ImVec2( frame_bb.Max.x + ( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f ), frame_bb.Max.y ) );
+
+		ImGui::ItemSize( total_bb, style.FramePadding.y );
+		if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, 0 ) )
+			return false;
+
+		const bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.ItemFlags );
+
+		bool value_changed = false;
+		int& selected = curve->SelectedIdx;
+		int& dragTarget = curve->DragTarget;
+		ImVec2 const& rangeMin = curve->RangeMin;
+		ImVec2 const& rangeMax = curve->RangeMax;
+
+		const float keyRadius = 5.0f;
+		const float tangentRadius = 4.0f;
+		const float hitRadius = 8.0f;
+
+		// --- HIT TESTING (before drawing for hover feedback) ---
+		ImDrawList* dl = window->DrawList;
+		bool frame_contains_mouse = frame_bb.Contains( g.IO.MousePos );
+
+		// Find hovered key
+		int hovered_key = -1;
+		float closest_dist_sq = hitRadius * hitRadius;
+		for ( int i = 0; i < curve->Keys.Size; ++i )
+		{
+			ImVec2 kScreen = CurveToScreen( curve->Keys[ i ].Pos, frame_bb, rangeMin, rangeMax );
+			float dSq = ImLengthSqr( g.IO.MousePos - kScreen );
+			if ( dSq < closest_dist_sq )
+			{
+				closest_dist_sq = dSq;
+				hovered_key = i;
+			}
+		}
+
+		// Find hovered tangent handle (only for selected key)
+		int hovered_tangent = 0; // -1 = left, 1 = right, 0 = none
+		if ( selected >= 0 && selected < curve->Keys.Size )
+		{
+			ImCurveEditorKey const& sk = curve->Keys[ selected ];
+
+			bool showRight = ( sk.Segment == ImCurveEditorSeg_CubicBezier && selected < curve->Keys.Size - 1 );
+			bool showLeft = ( selected > 0 && curve->Keys[ selected - 1 ].Segment == ImCurveEditorSeg_CubicBezier );
+
+			float tanHitSq = ( hitRadius + 2.0f ) * ( hitRadius + 2.0f );
+			if ( showLeft )
+			{
+				ImVec2 tanScreen = CurveToScreen( sk.Pos + sk.TangentLeft, frame_bb, rangeMin, rangeMax );
+				float dSq = ImLengthSqr( g.IO.MousePos - tanScreen );
+				if ( dSq < tanHitSq )
+				{
+					hovered_tangent = -1;
+					tanHitSq = dSq;
+				}
+			}
+			if ( showRight )
+			{
+				ImVec2 tanScreen = CurveToScreen( sk.Pos + sk.TangentRight, frame_bb, rangeMin, rangeMax );
+				float dSq = ImLengthSqr( g.IO.MousePos - tanScreen );
+				if ( dSq < tanHitSq )
+				{
+					hovered_tangent = 1;
+					tanHitSq = dSq;
+				}
+			}
+		}
+
+		// --- DRAWING ---
+
+		// Frame background
+		ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
+		ImGui::RenderFrame( frame_bb.Min, frame_bb.Max, frame_col, true, g.Style.FrameRounding );
+
+		dl->PushClipRect( frame_bb.Min, frame_bb.Max, true );
+
+		// Grid lines
+		ImU32 gridCol = IM_COL32( 200, 200, 200, 40 );
+		ImU32 gridColMajor = IM_COL32( 200, 200, 200, 80 );
+		int gridDivX = 10;
+		int gridDivY = 10;
+		for ( int i = 0; i <= gridDivX; ++i )
+		{
+			float sx = frame_bb.Min.x + ( frame_bb.GetWidth() * i / ( float )gridDivX );
+			dl->AddLine( ImVec2( sx, frame_bb.Min.y ), ImVec2( sx, frame_bb.Max.y ), ( i == 0 || i == gridDivX ) ? gridColMajor : gridCol );
+		}
+		for ( int i = 0; i <= gridDivY; ++i )
+		{
+			float sy = frame_bb.Min.y + ( frame_bb.GetHeight() * i / ( float )gridDivY );
+			dl->AddLine( ImVec2( frame_bb.Min.x, sy ), ImVec2( frame_bb.Max.x, sy ), ( i == 0 || i == gridDivY ) ? gridColMajor : gridCol );
+		}
+
+		// Zero lines (if visible)
+		{
+			ImVec2 zeroScreen = CurveToScreen( ImVec2( 0.0f, 0.0f ), frame_bb, rangeMin, rangeMax );
+			if ( zeroScreen.x > frame_bb.Min.x && zeroScreen.x < frame_bb.Max.x )
+				dl->AddLine( ImVec2( zeroScreen.x, frame_bb.Min.y ), ImVec2( zeroScreen.x, frame_bb.Max.y ), IM_COL32( 255, 255, 255, 60 ) );
+			if ( zeroScreen.y > frame_bb.Min.y && zeroScreen.y < frame_bb.Max.y )
+				dl->AddLine( ImVec2( frame_bb.Min.x, zeroScreen.y ), ImVec2( frame_bb.Max.x, zeroScreen.y ), IM_COL32( 255, 255, 255, 60 ) );
+		}
+
+		// Draw curve segments
+		ImU32 curveCol = IM_COL32( 91, 194, 231, 255 );
+		float curveThickness = 2.0f;
+
+		for ( int seg = 0; seg < curve->Keys.Size - 1; ++seg )
+		{
+			ImCurveEditorKey const& k0 = curve->Keys[ seg ];
+			ImCurveEditorKey const& k1 = curve->Keys[ seg + 1 ];
+			ImCurveEditorSeg segType = k0.Segment;
+
+			if ( segType == ImCurveEditorSeg_StepStart )
+			{
+				ImVec2 a = CurveToScreen( k0.Pos, frame_bb, rangeMin, rangeMax );
+				ImVec2 b = CurveToScreen( ImVec2( k1.Pos.x, k0.Pos.y ), frame_bb, rangeMin, rangeMax );
+				ImVec2 c = CurveToScreen( k1.Pos, frame_bb, rangeMin, rangeMax );
+				dl->AddLine( a, b, curveCol, curveThickness );
+				dl->AddLine( b, c, curveCol, curveThickness );
+			}
+			else if ( segType == ImCurveEditorSeg_StepEnd )
+			{
+				ImVec2 a = CurveToScreen( k0.Pos, frame_bb, rangeMin, rangeMax );
+				ImVec2 b = CurveToScreen( ImVec2( k0.Pos.x, k1.Pos.y ), frame_bb, rangeMin, rangeMax );
+				ImVec2 c = CurveToScreen( k1.Pos, frame_bb, rangeMin, rangeMax );
+				dl->AddLine( a, b, curveCol, curveThickness );
+				dl->AddLine( b, c, curveCol, curveThickness );
+			}
+			else if ( segType == ImCurveEditorSeg_StepCenter )
+			{
+				float midX = ( k0.Pos.x + k1.Pos.x ) * 0.5f;
+				ImVec2 a = CurveToScreen( k0.Pos, frame_bb, rangeMin, rangeMax );
+				ImVec2 b = CurveToScreen( ImVec2( midX, k0.Pos.y ), frame_bb, rangeMin, rangeMax );
+				ImVec2 c = CurveToScreen( ImVec2( midX, k1.Pos.y ), frame_bb, rangeMin, rangeMax );
+				ImVec2 d = CurveToScreen( k1.Pos, frame_bb, rangeMin, rangeMax );
+				dl->AddLine( a, b, curveCol, curveThickness );
+				dl->AddLine( b, c, curveCol, curveThickness );
+				dl->AddLine( c, d, curveCol, curveThickness );
+			}
+			else if ( segType == ImCurveEditorSeg_Linear )
+			{
+				ImVec2 a = CurveToScreen( k0.Pos, frame_bb, rangeMin, rangeMax );
+				ImVec2 b = CurveToScreen( k1.Pos, frame_bb, rangeMin, rangeMax );
+				dl->AddLine( a, b, curveCol, curveThickness );
+			}
+			else
+			{
+				// Easing or Bezier: sample polyline
+				int sampleCount = 64;
+				ImVec2 prev = CurveToScreen( k0.Pos, frame_bb, rangeMin, rangeMax );
+				for ( int s = 1; s <= sampleCount; ++s )
+				{
+					float lx = ImLerp( k0.Pos.x, k1.Pos.x, ( float )s / ( float )sampleCount );
+					float ly = CurveEditorSample( *curve, lx );
+					ImVec2 cur = CurveToScreen( ImVec2( lx, ly ), frame_bb, rangeMin, rangeMax );
+					dl->AddLine( prev, cur, curveCol, curveThickness );
+					prev = cur;
+				}
+			}
+		}
+
+		// Draw tangent handles for selected bezier key
+		if ( selected >= 0 && selected < curve->Keys.Size )
+		{
+			ImCurveEditorKey const& sk = curve->Keys[ selected ];
+
+			bool showRight = ( sk.Segment == ImCurveEditorSeg_CubicBezier && selected < curve->Keys.Size - 1 );
+			bool showLeft = ( selected > 0 && curve->Keys[ selected - 1 ].Segment == ImCurveEditorSeg_CubicBezier );
+
+			ImVec2 keyScreen = CurveToScreen( sk.Pos, frame_bb, rangeMin, rangeMax );
+			ImU32 tangentCol = IM_COL32( 255, 180, 50, 200 );
+			ImU32 tangentHovCol = IM_COL32( 255, 220, 100, 255 );
+
+			if ( showLeft )
+			{
+				ImVec2 tanScreen = CurveToScreen( sk.Pos + sk.TangentLeft, frame_bb, rangeMin, rangeMax );
+				bool tanHov = ( hovered_tangent == -1 );
+				dl->AddLine( keyScreen, tanScreen, tanHov ? tangentHovCol : tangentCol, tanHov ? 2.0f : 1.0f );
+				dl->AddCircleFilled( tanScreen, tanHov ? tangentRadius + 1.5f : tangentRadius, tanHov ? tangentHovCol : tangentCol );
+			}
+			if ( showRight )
+			{
+				ImVec2 tanScreen = CurveToScreen( sk.Pos + sk.TangentRight, frame_bb, rangeMin, rangeMax );
+				bool tanHov = ( hovered_tangent == 1 );
+				dl->AddLine( keyScreen, tanScreen, tanHov ? tangentHovCol : tangentCol, tanHov ? 2.0f : 1.0f );
+				dl->AddCircleFilled( tanScreen, tanHov ? tangentRadius + 1.5f : tangentRadius, tanHov ? tangentHovCol : tangentCol );
+			}
+		}
+
+		// Draw keys with hover feedback
+		for ( int i = 0; i < curve->Keys.Size; ++i )
+		{
+			ImVec2 kScreen = CurveToScreen( curve->Keys[ i ].Pos, frame_bb, rangeMin, rangeMax );
+			bool isSelected = ( i == selected );
+			bool isHovered = ( i == hovered_key );
+			float radius = isHovered ? keyRadius + 2.0f : keyRadius;
+			ImU32 keyCol = isSelected ? IM_COL32( 255, 255, 0, 255 ) : ( isHovered ? IM_COL32( 230, 230, 230, 255 ) : IM_COL32( 255, 255, 255, 255 ) );
+			ImU32 outCol = isSelected ? IM_COL32( 180, 180, 0, 255 ) : ( isHovered ? IM_COL32( 91, 194, 231, 255 ) : IM_COL32( 0, 0, 0, 255 ) );
+			dl->AddCircleFilled( kScreen, radius, keyCol );
+			dl->AddCircle( kScreen, radius, outCol, 0, isSelected ? 2.0f : 1.5f );
+		}
+
+		// Hover feedback: crosshair + "add" indicator when hovering empty space
+		if ( hovered && frame_contains_mouse && g.ActiveId != id )
+		{
+			ImVec2 mp = g.IO.MousePos;
+			if ( hovered_key >= 0 || hovered_tangent != 0 )
+			{
+				// Over a key or tangent: show move arrows cursor
+				ImGui::SetMouseCursor( ImGuiMouseCursor_Hand );
+			}
+			else
+			{
+				// Over empty area: show crosshair and "+" to indicate add
+				ImU32 crossCol = IM_COL32( 255, 255, 255, 100 );
+				dl->AddLine( ImVec2( mp.x, frame_bb.Min.y ), ImVec2( mp.x, frame_bb.Max.y ), crossCol, 1.0f );
+				dl->AddLine( ImVec2( frame_bb.Min.x, mp.y ), ImVec2( frame_bb.Max.x, mp.y ), crossCol, 1.0f );
+
+				// "+" sign near cursor
+				float plusSize = 5.0f;
+				float plusOffset = 12.0f;
+				ImVec2 pc( mp.x + plusOffset, mp.y - plusOffset );
+				ImU32 plusCol = IM_COL32( 91, 194, 231, 220 );
+				dl->AddLine( ImVec2( pc.x - plusSize, pc.y ), ImVec2( pc.x + plusSize, pc.y ), plusCol, 2.0f );
+				dl->AddLine( ImVec2( pc.x, pc.y - plusSize ), ImVec2( pc.x, pc.y + plusSize ), plusCol, 2.0f );
+
+				ImGui::SetMouseCursor( ImGuiMouseCursor_Arrow );
+			}
+		}
+
+		dl->PopClipRect();
+
+		// Border
+		dl->AddRect( frame_bb.Min, frame_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+
+		// Label
+		if ( label_size.x > 0.0f )
+			ImGui::RenderText( ImVec2( frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + style.FramePadding.y ), label );
+
+		// --- INTERACTIONS ---
+		ImGui::PushID( id );
+
+		// Click on tangent handle: select and start drag
+		if ( hovered_tangent != 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
+		{
+			dragTarget = hovered_tangent;
+			ImGui::SetActiveID( id, window );
+			ImGui::SetFocusID( id, window );
+			ImGui::FocusWindow( window );
+			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+		}
+		// Click on key: select and start drag
+		else if ( hovered_key >= 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
+		{
+			selected = hovered_key;
+			dragTarget = 0;
+			ImGui::SetActiveID( id, window );
+			ImGui::SetFocusID( id, window );
+			ImGui::FocusWindow( window );
+			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+		}
+		// Click on empty area: add key
+		else if ( hovered_key == -1 && hovered_tangent == 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
+		{
+			ImVec2 curvePos = ScreenToCurve( g.IO.MousePos, frame_bb, rangeMin, rangeMax );
+			// Inherit segment type from the left neighbor
+			ImCurveEditorSeg newSeg = ImCurveEditorSeg_Linear;
+			for ( int i = 0; i < curve->Keys.Size; ++i )
+			{
+				if ( curve->Keys[ i ].Pos.x < curvePos.x )
+					newSeg = curve->Keys[ i ].Segment;
+			}
+			int newIdx = curve->AddKey( curvePos, newSeg );
+			selected = newIdx;
+			dragTarget = 0;
+			value_changed = true;
+			ImGui::SetActiveID( id, window );
+			ImGui::SetFocusID( id, window );
+			ImGui::FocusWindow( window );
+			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+		}
+
+		// Drag
+		if ( g.ActiveId == id && ImGui::IsMouseDragging( ImGuiMouseButton_Left ) && selected >= 0 && selected < curve->Keys.Size )
+		{
+			ImVec2 delta = ScreenVecToCurve( g.IO.MouseDelta, frame_bb, rangeMin, rangeMax );
+
+			if ( dragTarget == 0 )
+			{
+				// Drag key
+				ImVec2 newPos = curve->Keys[ selected ].Pos + delta;
+				// Constrain X to not cross adjacent keys
+				if ( selected > 0 )
+					newPos.x = ImMax( newPos.x, curve->Keys[ selected - 1 ].Pos.x + 1e-4f );
+				if ( selected < curve->Keys.Size - 1 )
+					newPos.x = ImMin( newPos.x, curve->Keys[ selected + 1 ].Pos.x - 1e-4f );
+				curve->Keys[ selected ].Pos = newPos;
+				value_changed = true;
+			}
+			else if ( dragTarget == -1 )
+			{
+				// Drag left tangent
+				curve->Keys[ selected ].TangentLeft = curve->Keys[ selected ].TangentLeft + delta;
+				// Constrain: left tangent x must be <= 0
+				if ( curve->Keys[ selected ].TangentLeft.x > 0.0f )
+					curve->Keys[ selected ].TangentLeft.x = 0.0f;
+				value_changed = true;
+			}
+			else if ( dragTarget == 1 )
+			{
+				// Drag right tangent
+				curve->Keys[ selected ].TangentRight = curve->Keys[ selected ].TangentRight + delta;
+				// Constrain: right tangent x must be >= 0
+				if ( curve->Keys[ selected ].TangentRight.x < 0.0f )
+					curve->Keys[ selected ].TangentRight.x = 0.0f;
+				value_changed = true;
+			}
+		}
+
+		// Release
+		if ( g.ActiveId == id && ImGui::IsMouseReleased( ImGuiMouseButton_Left ) )
+		{
+			ImGui::ClearActiveID();
+		}
+
+		// Right-click on key: context menu
+		if ( hovered_key >= 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) && hovered && frame_contains_mouse )
+		{
+			selected = hovered_key;
+			ImGui::OpenPopup( "##CurveKeyCtx" );
+		}
+
+		// Context menu
+		if ( ImGui::BeginPopup( "##CurveKeyCtx" ) )
+		{
+			if ( selected >= 0 && selected < curve->Keys.Size )
+			{
+				ImGui::Text( "Key %d: (%.3f, %.3f)", selected, curve->Keys[ selected ].Pos.x, curve->Keys[ selected ].Pos.y );
+				ImGui::Separator();
+
+				ImGui::Text( "Segment: %s", CurveEditorSegName( curve->Keys[ selected ].Segment ) );
+				if ( ImCurveEditorSegmentMenu( &curve->Keys[ selected ].Segment, curve->Keys[ selected ].Segment ) )
+				{
+					// When switching to bezier, set reasonable default tangents
+					if ( curve->Keys[ selected ].Segment == ImCurveEditorSeg_CubicBezier )
+					{
+						float segWidth = 0.1f;
+						if ( selected < curve->Keys.Size - 1 )
+							segWidth = ( curve->Keys[ selected + 1 ].Pos.x - curve->Keys[ selected ].Pos.x ) * 0.33f;
+						curve->Keys[ selected ].TangentRight = ImVec2( segWidth, 0.0f );
+						if ( selected < curve->Keys.Size - 1 )
+						{
+							float leftWidth = segWidth;
+							curve->Keys[ selected + 1 ].TangentLeft = ImVec2( -leftWidth, 0.0f );
+						}
+					}
+					value_changed = true;
+				}
+				ImGui::Separator();
+				if ( ImGui::MenuItem( "Remove Key", NULL, false, curve->Keys.Size > 2 ) )
+				{
+					if ( curve->RemoveKey( selected ) )
+					{
+						selected = -1;
+						value_changed = true;
+					}
+				}
+			}
+			ImGui::EndPopup();
+		}
+
+		// Delete key
+		if ( selected >= 0 && ImGui::IsKeyPressed( ImGuiKey_Delete ) && hovered )
+		{
+			if ( curve->RemoveKey( selected ) )
+			{
+				selected = -1;
+				value_changed = true;
+			}
+		}
+
+		ImGui::PopID();
+
+		if ( value_changed )
+			ImGui::MarkItemEdited( id );
+
+		return value_changed;
+	}
+
 #if 0
 	// TODO
 	bool SliderRingScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, float v_angle_min, float v_angle_max, float v_thickness, const char* format, ImGuiSliderFlags flags, ImRect* out_grab_bb )
