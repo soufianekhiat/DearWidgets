@@ -2296,6 +2296,61 @@ namespace ImWidgets {
 				Slider2DInt( "Slider 2D Int", &vv[ 0 ], &vv[ 1 ], -5, 5, -5, 5 );
 				ImGui::InputInt2( "Value", &vv[ 0 ] );
 			}
+			if ( ImGui::CollapsingHeader( "Gradient Editor", ImGuiTreeNodeFlags_DefaultOpen ) )
+			{
+				static ImGradientData gradient;
+				static bool gradInitialized = false;
+				if ( !gradInitialized )
+				{
+					gradient.Stops.clear();
+					gradient.AddStop( 0.0f, ImVec4( 1.0f, 0.0f, 0.0f, 1.0f ) );
+					gradient.AddStop( 0.5f, ImVec4( 0.0f, 1.0f, 0.0f, 0.5f ) );
+					gradient.AddStop( 1.0f, ImVec4( 0.0f, 0.0f, 1.0f, 1.0f ) );
+					gradInitialized = true;
+				}
+
+				GradientEditor( "##GradientMain", &gradient, ImVec2( 0, 32 ) );
+
+				static char const* interpNames[] = { "sRGB", "Linear sRGB", "OkLab", "OkLCH", "HSV" };
+				ImGui::Combo( "Interpolation##GradEditor", &gradient.Interpolation, interpNames, ImWidgetsGradientInterp_COUNT );
+
+				// Edit selected stop color
+				if ( gradient.SelectedIdx >= 0 && gradient.SelectedIdx < gradient.Stops.Size )
+				{
+					ImGradientStop& stop = gradient.Stops[ gradient.SelectedIdx ];
+					ImGui::Text( "Stop %d  Position: %.3f", gradient.SelectedIdx, stop.Position );
+					ImGui::ColorEdit4( "Stop Color##GradEditor", &stop.Color.x, ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf );
+				}
+				else
+				{
+					ImGui::TextDisabled( "No stop selected" );
+				}
+
+				ImGui::TextWrapped( "Click bar to add stop. Drag to move. Double-click to edit color. Right-click to delete. Drag far below to remove." );
+
+				// Show sampled output
+				static float sampleT = 0.5f;
+				ImGui::SliderFloat( "Sample t##GradEditor", &sampleT, 0.0f, 1.0f );
+				ImVec4 sampled = ImWidgets::GradientSample( gradient, sampleT );
+				ImGui::ColorButton( "Sampled##GradEditor", sampled, ImGuiColorEditFlags_AlphaPreviewHalf, ImVec2( 40, 40 ) );
+				ImGui::SameLine();
+				ImGui::Text( "RGBA: %.3f, %.3f, %.3f, %.3f", sampled.x, sampled.y, sampled.z, sampled.w );
+
+				ImGui::Text( "Stops: %d, Selected: %d", gradient.Stops.Size, gradient.SelectedIdx );
+
+				// Second gradient editor with different defaults
+				static ImGradientData gradient2;
+				static bool grad2Initialized = false;
+				if ( !grad2Initialized )
+				{
+					gradient2.Stops.clear();
+					gradient2.Interpolation = ImWidgetsGradientInterp_OkLab;
+					gradient2.AddStop( 0.0f, ImVec4( 0.0f, 0.0f, 0.0f, 1.0f ) );
+					gradient2.AddStop( 1.0f, ImVec4( 1.0f, 1.0f, 1.0f, 1.0f ) );
+					grad2Initialized = true;
+				}
+				GradientEditor( "Black to White (OkLab)##Grad2", &gradient2 );
+			}
 			ImGui::Unindent();
 		}
 

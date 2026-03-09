@@ -6640,6 +6640,401 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return Slider2DScalar( pLabel, ImGuiDataType_S32, pValueX, pValueY, &v_minX, &v_maxX, &v_minY, &v_maxY );
 	}
 
+	//////////////////////////////////////////////////////////////////////////
+	// Gradient Editor
+	//////////////////////////////////////////////////////////////////////////
+
+	static void ImGradientInterpGetFunctions( ImWidgetsGradientInterp interp, pfSpace2sRGB* out_toRGB, pfsRGB2Space* out_fromRGB )
+	{
+		switch ( interp )
+		{
+		case ImWidgetsGradientInterp_LinearSRGB:
+			*out_toRGB  = &ColorConvertLineartoRGB;
+			*out_fromRGB = &ColorConvertRGBtoLinear;
+			break;
+		case ImWidgetsGradientInterp_OkLab:
+			*out_toRGB  = &ColorConvertOKLABtoRGB;
+			*out_fromRGB = &ColorConvertRGBtoOKLAB;
+			break;
+		case ImWidgetsGradientInterp_OkLCH:
+			*out_toRGB  = &ColorConvertOKLCHtosRGB;
+			*out_fromRGB = &ColorConvertsRGBtoOKLCH;
+			break;
+		case ImWidgetsGradientInterp_HSV:
+			*out_toRGB  = &ColorConvertHSVtoRGB;
+			*out_fromRGB = &ColorConvertRGBtoHSV;
+			break;
+		default: // sRGB
+			*out_toRGB  = &ColorConvertsRGBtosRGB;
+			*out_fromRGB = &ColorConvertsRGBtosRGB;
+			break;
+		}
+	}
+
+	static bool ImGradientInterpHasHue( ImWidgetsGradientInterp interp )
+	{
+		return interp == ImWidgetsGradientInterp_OkLCH || interp == ImWidgetsGradientInterp_HSV;
+	}
+
+	// Hue component index in the converted space (2 for OkLCH h, 0 for HSV h)
+	static int ImGradientInterpHueIdx( ImWidgetsGradientInterp interp )
+	{
+		if ( interp == ImWidgetsGradientInterp_HSV )
+			return 0;
+		return 2; // OkLCH: L, C, H
+	}
+
+	ImVec4 GradientSample( ImGradientData const& gradient, float t )
+	{
+		if ( gradient.Stops.Size == 0 )
+			return ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
+		if ( gradient.Stops.Size == 1 )
+			return gradient.Stops[ 0 ].Color;
+
+		t = ImClamp( t, 0.0f, 1.0f );
+
+		// Find surrounding stops
+		if ( t <= gradient.Stops[ 0 ].Position )
+			return gradient.Stops[ 0 ].Color;
+		if ( t >= gradient.Stops[ gradient.Stops.Size - 1 ].Position )
+			return gradient.Stops[ gradient.Stops.Size - 1 ].Color;
+
+		int rightIdx = 0;
+		for ( int i = 0; i < gradient.Stops.Size; ++i )
+		{
+			if ( gradient.Stops[ i ].Position >= t )
+			{
+				rightIdx = i;
+				break;
+			}
+		}
+		int leftIdx = rightIdx - 1;
+		if ( leftIdx < 0 )
+			leftIdx = 0;
+
+		float segLen = gradient.Stops[ rightIdx ].Position - gradient.Stops[ leftIdx ].Position;
+		float f = ( segLen > 1e-6f ) ? ( t - gradient.Stops[ leftIdx ].Position ) / segLen : 0.0f;
+
+		ImVec4 const& colL = gradient.Stops[ leftIdx ].Color;
+		ImVec4 const& colR = gradient.Stops[ rightIdx ].Color;
+
+		// Get conversion functions
+		pfSpace2sRGB toRGB = NULL;
+		pfsRGB2Space fromRGB = NULL;
+		ImGradientInterpGetFunctions( gradient.Interpolation, &toRGB, &fromRGB );
+
+		// Convert to interpolation space
+		float lComp[ 3 ], rComp[ 3 ];
+		fromRGB( lComp[ 0 ], lComp[ 1 ], lComp[ 2 ], colL.x, colL.y, colL.z );
+		fromRGB( rComp[ 0 ], rComp[ 1 ], rComp[ 2 ], colR.x, colR.y, colR.z );
+
+		// Interpolate
+		float result[ 3 ];
+		if ( ImGradientInterpHasHue( gradient.Interpolation ) )
+		{
+			int hIdx = ImGradientInterpHueIdx( gradient.Interpolation );
+			// Shortest-arc hue interpolation
+			float h0 = lComp[ hIdx ];
+			float h1 = rComp[ hIdx ];
+			float delta = h1 - h0;
+			if ( delta > 0.5f ) delta -= 1.0f;
+			if ( delta < -0.5f ) delta += 1.0f;
+			float hResult = h0 + delta * f;
+			if ( hResult < 0.0f ) hResult += 1.0f;
+			if ( hResult > 1.0f ) hResult -= 1.0f;
+
+			for ( int c = 0; c < 3; ++c )
+			{
+				if ( c == hIdx )
+					result[ c ] = hResult;
+				else
+					result[ c ] = ImLerp( lComp[ c ], rComp[ c ], f );
+			}
+		}
+		else
+		{
+			for ( int c = 0; c < 3; ++c )
+				result[ c ] = ImLerp( lComp[ c ], rComp[ c ], f );
+		}
+
+		// Convert back to sRGB
+		ImVec4 out;
+		toRGB( out.x, out.y, out.z, result[ 0 ], result[ 1 ], result[ 2 ] );
+		out.x = ImClamp( out.x, 0.0f, 1.0f );
+		out.y = ImClamp( out.y, 0.0f, 1.0f );
+		out.z = ImClamp( out.z, 0.0f, 1.0f );
+		out.w = ImLerp( colL.w, colR.w, f ); // Alpha always linear
+
+		return out;
+	}
+
+	void DrawCheckerboard( ImDrawList* pDrawList, ImVec2 position, ImVec2 size, float cellSize, ImU32 col1, ImU32 col2 )
+	{
+		int cellsX = ( int )ImCeil( size.x / cellSize );
+		int cellsY = ( int )ImCeil( size.y / cellSize );
+
+		pDrawList->PushClipRect( position, position + size, true );
+		for ( int cy = 0; cy < cellsY; ++cy )
+		{
+			for ( int cx = 0; cx < cellsX; ++cx )
+			{
+				ImU32 col = ( ( cx + cy ) % 2 == 0 ) ? col1 : col2;
+				ImVec2 rMin( position.x + cx * cellSize, position.y + cy * cellSize );
+				ImVec2 rMax( rMin.x + cellSize, rMin.y + cellSize );
+				pDrawList->AddRectFilled( rMin, rMax, col );
+			}
+		}
+		pDrawList->PopClipRect();
+	}
+
+	void DrawGradientBar( ImDrawList* pDrawList, ImGradientData const& gradient, ImVec2 position, ImVec2 size, int resolution )
+	{
+		if ( resolution < 1 )
+			resolution = 1;
+
+		float sx = size.x / ( float )resolution;
+
+		for ( int i = 0; i < resolution; ++i )
+		{
+			float t0 = ( float )i / ( float )resolution;
+			float t1 = ( float )( i + 1 ) / ( float )resolution;
+
+			ImVec4 c0 = GradientSample( gradient, t0 );
+			ImVec4 c1 = GradientSample( gradient, t1 );
+
+			ImU32 col0 = ImGui::GetColorU32( c0 );
+			ImU32 col1 = ImGui::GetColorU32( c1 );
+
+			pDrawList->AddRectFilledMultiColor(
+				position + ImVec2( sx * i, 0.0f ),
+				position + ImVec2( sx * ( i + 1 ), size.y ),
+				col0, col1, col1, col0 );
+		}
+	}
+
+	bool GradientEditor( char const* label, ImGradientData* gradient, ImVec2 size )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		const ImGuiID id = window->GetID( label );
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
+		const float barHeight = ( size.y > 0.0f ) ? size.y : ImGui::GetFrameHeight();
+		const float markerHeight = 12.0f;
+
+		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
+
+		const ImRect bar_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, barHeight ) );
+		const ImRect marker_bb( ImVec2( bar_bb.Min.x, bar_bb.Max.y ), ImVec2( bar_bb.Max.x, bar_bb.Max.y + markerHeight ) );
+		const ImRect total_bb( bar_bb.Min, ImVec2( bar_bb.Max.x + ( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f ), marker_bb.Max.y ) );
+
+		ImGui::ItemSize( total_bb, style.FramePadding.y );
+		if ( !ImGui::ItemAdd( total_bb, id, &bar_bb, 0 ) )
+			return false;
+
+		const bool hovered = ImGui::ItemHoverable( total_bb, id, g.LastItemData.ItemFlags );
+
+		bool value_changed = false;
+		int& selected = gradient->SelectedIdx;
+
+		// --- Find hovered marker ---
+		int hovered_marker = -1;
+		float closest_dist = FLT_MAX;
+		for ( int i = 0; i < gradient->Stops.Size; ++i )
+		{
+			float x = ImLerp( bar_bb.Min.x, bar_bb.Max.x, gradient->Stops[ i ].Position );
+			float dist = ImAbs( g.IO.MousePos.x - x );
+			if ( dist < closest_dist && dist < markerHeight * 1.5f )
+			{
+				closest_dist = dist;
+				hovered_marker = i;
+			}
+		}
+
+		// --- DRAWING ---
+		// Frame background
+		const ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
+		ImGui::RenderFrame( bar_bb.Min, bar_bb.Max, frame_col, true, g.Style.FrameRounding );
+
+		// Checkerboard for transparency
+		DrawCheckerboard( window->DrawList, bar_bb.Min, bar_bb.GetSize(), 6.0f,
+						  IM_COL32( 204, 204, 204, 255 ), IM_COL32( 255, 255, 255, 255 ) );
+
+		// Gradient bar
+		int resolution = ImMax( ( int )( w * 0.5f ), 16 );
+		DrawGradientBar( window->DrawList, *gradient, bar_bb.Min, bar_bb.GetSize(), resolution );
+
+		// Border
+		window->DrawList->AddRect( bar_bb.Min, bar_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+
+		// Markers
+		for ( int i = 0; i < gradient->Stops.Size; ++i )
+		{
+			float x = ImLerp( bar_bb.Min.x, bar_bb.Max.x, gradient->Stops[ i ].Position );
+			ImVec2 tip( x, marker_bb.Min.y );
+
+			bool isSelected = ( i == selected );
+			bool isHovered = ( i == hovered_marker );
+
+			// Draw triangle marker
+			ImVec2 p0( x, marker_bb.Min.y );
+			ImVec2 p1( x - markerHeight * 0.5f, marker_bb.Max.y );
+			ImVec2 p2( x + markerHeight * 0.5f, marker_bb.Max.y );
+
+			// Fill with stop color (opaque preview)
+			ImVec4 stopCol = gradient->Stops[ i ].Color;
+			stopCol.w = 1.0f; // Show opaque in marker
+			window->DrawList->AddTriangleFilled( p0, p1, p2, ImGui::GetColorU32( stopCol ) );
+
+			// Outline
+			ImU32 outlineCol = isSelected ? IM_COL32( 255, 255, 0, 255 ) : ( isHovered ? IM_COL32( 200, 200, 200, 255 ) : IM_COL32( 40, 40, 40, 255 ) );
+			float outlineThick = isSelected ? 2.0f : 1.0f;
+			window->DrawList->AddTriangle( p0, p1, p2, outlineCol, outlineThick );
+
+			// Alpha indicator: small horizontal line across marker proportional to alpha
+			if ( gradient->Stops[ i ].Color.w < 1.0f )
+			{
+				float alphaY = ImLerp( marker_bb.Min.y + 2.0f, marker_bb.Max.y - 1.0f, 1.0f - gradient->Stops[ i ].Color.w );
+				float halfW = markerHeight * 0.3f;
+				window->DrawList->AddLine( ImVec2( x - halfW, alphaY ), ImVec2( x + halfW, alphaY ), IM_COL32( 0, 0, 0, 180 ), 1.0f );
+			}
+		}
+
+		// Label
+		if ( label_size.x > 0.0f )
+			ImGui::RenderText( ImVec2( bar_bb.Max.x + style.ItemInnerSpacing.x, bar_bb.Min.y + style.FramePadding.y ), label );
+
+		// --- INTERACTIONS ---
+		ImGui::PushID( id );
+
+		bool bar_contains_mouse = bar_bb.Contains( g.IO.MousePos );
+		bool marker_contains_mouse = marker_bb.Contains( g.IO.MousePos );
+
+		// Double-click on marker: open color picker
+		if ( hovered_marker >= 0 && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) && hovered )
+		{
+			selected = hovered_marker;
+			ImGui::OpenPopup( "##GradStopPicker" );
+		}
+		// Click on marker: select and start drag
+		else if ( hovered_marker >= 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered )
+		{
+			selected = hovered_marker;
+			ImGui::SetActiveID( id, window );
+			ImGui::SetFocusID( id, window );
+			ImGui::FocusWindow( window );
+			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+		}
+		// Click on empty bar: add new stop
+		else if ( bar_contains_mouse && hovered_marker == -1 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered )
+		{
+			float t = ImClamp( ( g.IO.MousePos.x - bar_bb.Min.x ) / bar_bb.GetWidth(), 0.0f, 1.0f );
+			ImVec4 col = GradientSample( *gradient, t );
+			int newIdx = gradient->AddStop( t, col );
+			selected = newIdx;
+			value_changed = true;
+			ImGui::SetActiveID( id, window );
+			ImGui::SetFocusID( id, window );
+			ImGui::FocusWindow( window );
+			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+		}
+
+		// Drag: reposition selected stop
+		if ( g.ActiveId == id && selected >= 0 && selected < gradient->Stops.Size && ImGui::IsMouseDragging( ImGuiMouseButton_Left ) )
+		{
+			float t = ImClamp( ( g.IO.MousePos.x - bar_bb.Min.x ) / bar_bb.GetWidth(), 0.0f, 1.0f );
+			ImVec4 draggedColor = gradient->Stops[ selected ].Color;
+			gradient->Stops[ selected ].Position = t;
+			gradient->SortStops();
+			// Re-find selected by matching color pointer (position may match others, color is unique during drag)
+			for ( int i = 0; i < gradient->Stops.Size; ++i )
+			{
+				if ( gradient->Stops[ i ].Position == t && gradient->Stops[ i ].Color.x == draggedColor.x
+					 && gradient->Stops[ i ].Color.y == draggedColor.y && gradient->Stops[ i ].Color.z == draggedColor.z
+					 && gradient->Stops[ i ].Color.w == draggedColor.w )
+				{
+					selected = i;
+					break;
+				}
+			}
+			value_changed = true;
+
+			// Drag far below the marker area: delete the stop
+			if ( g.IO.MousePos.y > marker_bb.Max.y + markerHeight * 3.0f && gradient->Stops.Size > 2 )
+			{
+				gradient->RemoveStop( selected );
+				selected = -1;
+				ImGui::ClearActiveID();
+				value_changed = true;
+			}
+		}
+
+		// Release
+		if ( g.ActiveId == id && ImGui::IsMouseReleased( ImGuiMouseButton_Left ) )
+		{
+			ImGui::ClearActiveID();
+		}
+
+		// Right-click context menu
+		if ( hovered_marker >= 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) && hovered )
+		{
+			selected = hovered_marker;
+			ImGui::OpenPopup( "##GradStopCtx" );
+		}
+
+		// Color picker popup
+		if ( ImGui::BeginPopup( "##GradStopPicker" ) )
+		{
+			if ( selected >= 0 && selected < gradient->Stops.Size )
+			{
+				if ( ImGui::ColorPicker4( "##picker", &gradient->Stops[ selected ].Color.x,
+					 ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf ) )
+				{
+					value_changed = true;
+				}
+			}
+			ImGui::EndPopup();
+		}
+
+		// Context menu popup
+		if ( ImGui::BeginPopup( "##GradStopCtx" ) )
+		{
+			if ( ImGui::MenuItem( "Edit Color" ) )
+			{
+				ImGui::OpenPopup( "##GradStopPicker" );
+			}
+			if ( ImGui::MenuItem( "Remove Stop", NULL, false, gradient->Stops.Size > 2 ) )
+			{
+				if ( gradient->RemoveStop( selected ) )
+				{
+					selected = -1;
+					value_changed = true;
+				}
+			}
+			ImGui::EndPopup();
+		}
+
+		// Delete key
+		if ( selected >= 0 && ImGui::IsKeyPressed( ImGuiKey_Delete ) && hovered )
+		{
+			if ( gradient->RemoveStop( selected ) )
+			{
+				selected = -1;
+				value_changed = true;
+			}
+		}
+
+		ImGui::PopID();
+
+		if ( value_changed )
+			ImGui::MarkItemEdited( id );
+
+		return value_changed;
+	}
+
 #if 0
 	// TODO
 	bool SliderRingScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, float v_angle_min, float v_angle_max, float v_thickness, const char* format, ImGuiSliderFlags flags, ImRect* out_grab_bb )

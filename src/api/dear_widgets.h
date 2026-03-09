@@ -605,6 +605,77 @@ enum ImWidgetsJoin_
 };
 typedef int ImWidgetsJoin;
 
+typedef int ImWidgetsGradientInterp;
+enum ImWidgetsGradientInterp_
+{
+	ImWidgetsGradientInterp_sRGB = 0,
+	ImWidgetsGradientInterp_LinearSRGB,
+	ImWidgetsGradientInterp_OkLab,
+	ImWidgetsGradientInterp_OkLCH,
+	ImWidgetsGradientInterp_HSV,
+
+	ImWidgetsGradientInterp_COUNT
+};
+
+struct ImGradientStop
+{
+	float	Position;	// [0, 1]
+	ImVec4	Color;		// RGBA in sRGB, float [0,1]
+
+	ImGradientStop() : Position( 0.0f ), Color( 1.0f, 1.0f, 1.0f, 1.0f ) {}
+	ImGradientStop( float pos, ImVec4 col ) : Position( pos ), Color( col ) {}
+};
+
+struct ImGradientData
+{
+	ImVector<ImGradientStop>	Stops;
+	ImWidgetsGradientInterp		Interpolation;
+	int							SelectedIdx;	// Runtime state for editor, -1 = none
+
+	ImGradientData() : Interpolation( ImWidgetsGradientInterp_sRGB ), SelectedIdx( -1 )
+	{
+		Stops.resize( 2 );
+		Stops[ 0 ] = ImGradientStop( 0.0f, ImVec4( 0.0f, 0.0f, 0.0f, 1.0f ) );
+		Stops[ 1 ] = ImGradientStop( 1.0f, ImVec4( 1.0f, 1.0f, 1.0f, 1.0f ) );
+	}
+
+	void SortStops()
+	{
+		// Insertion sort (small N, no STL)
+		for ( int i = 1; i < Stops.Size; ++i )
+		{
+			ImGradientStop key = Stops[ i ];
+			int j = i - 1;
+			while ( j >= 0 && Stops[ j ].Position > key.Position )
+			{
+				Stops[ j + 1 ] = Stops[ j ];
+				--j;
+			}
+			Stops[ j + 1 ] = key;
+		}
+	}
+
+	int AddStop( float pos, ImVec4 col )
+	{
+		Stops.push_back( ImGradientStop( pos, col ) );
+		SortStops();
+		for ( int i = 0; i < Stops.Size; ++i )
+		{
+			if ( Stops[ i ].Position == pos )
+				return i;
+		}
+		return Stops.Size - 1;
+	}
+
+	bool RemoveStop( int idx )
+	{
+		if ( Stops.Size <= 2 || idx < 0 || idx >= Stops.Size )
+			return false;
+		Stops.erase( Stops.Data + idx );
+		return true;
+	}
+};
+
 struct ImGlobalData
 {
     ImWidgetsFeatures features;
@@ -1031,6 +1102,10 @@ namespace ImWidgets{
 
 	IMGUI_API void DrawColorRing( ImDrawList* pDrawList, ImVec2 const curPos, ImVec2 const size, float thickness_, ImWidgetsColor1DCallback func, void* pUserData, int division, float colorOffset, bool bIsBilinear );
 
+	IMGUI_API ImVec4 GradientSample( ImGradientData const& gradient, float t );
+	IMGUI_API void DrawCheckerboard( ImDrawList* pDrawList, ImVec2 position, ImVec2 size, float cellSize, ImU32 col1, ImU32 col2 );
+	IMGUI_API void DrawGradientBar( ImDrawList* pDrawList, ImGradientData const& gradient, ImVec2 position, ImVec2 size, int resolution );
+
 	IMGUI_API void DrawOkLabQuad( ImDrawList* pDrawList, ImVec2 start, ImVec2 size, float L, int resX = 16, int resY = 16 );
 	IMGUI_API void DrawOkLchQuad( ImDrawList* pDrawList, ImVec2 start, ImVec2 size, float L, int resX = 16, int resY = 16 );
 
@@ -1251,6 +1326,8 @@ namespace ImWidgets{
 	IMGUI_API bool Slider2DScalar( char const* pLabel, ImGuiDataType data_type, void* pValueX, void* pValueY, void* p_minX, void* p_maxX, void* p_minY, void* p_maxY );
 	IMGUI_API bool Slider2DFloat( char const* pLabel, float* pValueX, float* pValueY, float v_minX, float v_maxX, float v_minY, float v_maxY );
 	IMGUI_API bool Slider2DInt( char const* pLabel, int* pValueX, void* pValueY, int v_minX, int v_maxX, int v_minY, int v_maxY );
+
+	IMGUI_API bool GradientEditor( char const* label, ImGradientData* gradient, ImVec2 size = ImVec2( 0, 0 ) );
 
 	//IMGUI_API bool SliderRingScalar( char const* name,
 	//								 ImGuiDataType data_type,
