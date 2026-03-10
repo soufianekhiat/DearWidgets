@@ -3006,6 +3006,178 @@ namespace ImWidgets {
 					ImGui::TextDisabled( "Failed to load image" );
 			}
 
+			if ( ImGui::CollapsingHeader( "CIE Chromaticity", ImGuiTreeNodeFlags_DefaultOpen ) )
+			{
+				static ImCIEChromaticityData cieData;
+				static int cieSource = 0;
+				static bool cieNeedsUpdate = true;
+				static stbi_uc* cieImgData = NULL;
+				static int cieImgW = 0;
+				static int cieImgH = 0;
+				static int cieImgCh = 0;
+				static int cieGamut = ImCIEChromaticityGamut_sRGB_Rec709;
+				static bool cieShowBackground = false;
+				static int cieSignalColor = ImCIEChromaticitySignalColor_PixelColor;
+				static float cieSignalAlpha = 0.6f;
+				static float cieSignalRadius = 1.5f;
+				static ImTextureID cieThumbnail = ImTextureID_Invalid;
+				static ImVec2 cieThumbnailSize( 0, 0 );
+
+				bool sourceChanged = ImGui::Combo( "Source##CIE", &cieSource,
+					"Color Bars\0Gradient Ramp\0Random Noise\0"
+					"Berries (photo)\0Interior (photo)\0Man (photo)\0Astronaut (photo)\0" );
+				ImGui::Combo( "Gamut##CIE", &cieGamut,
+					"sRGB / Rec.709\0Rec.2020\0DCI-P3\0ACEScg\0Adobe RGB\0ProPhoto\0" );
+				ImGui::Checkbox( "Show Background##CIE", &cieShowBackground );
+				ImGui::Combo( "Signal Color##CIE", &cieSignalColor, "Flat\0Pixel Color\0" );
+				ImGui::SliderFloat( "Signal Alpha##CIE", &cieSignalAlpha, 0.0f, 1.0f, "%.2f" );
+				ImGui::SliderFloat( "Signal Radius##CIE", &cieSignalRadius, 0.5f, 6.0f, "%.1f" );
+				if ( sourceChanged )
+					cieNeedsUpdate = true;
+
+				if ( cieNeedsUpdate )
+				{
+					if ( cieImgData )
+					{
+						STBI_FREE( cieImgData );
+						cieImgData = NULL;
+					}
+					if ( cieThumbnail != ImTextureID_Invalid )
+					{
+						ImPlatform_DestroyTexture( cieThumbnail );
+						cieThumbnail = ImTextureID_Invalid;
+					}
+
+					static int const kTestW = 1920;
+					static int const kTestH = 1080;
+					static ImVector<ImU8> testImage;
+
+					if ( cieSource <= 2 )
+					{
+						testImage.resize( kTestW * kTestH * 3 );
+						ImU32 rng = 0xDEADBEEFu;
+
+						if ( cieSource == 0 )
+						{
+							static ImU8 const bars[ 7 ][ 3 ] = {
+								{ 191, 191, 191 }, { 191, 191,  17 }, {  17, 191, 191 }, {  17, 191,  17 },
+								{ 191,  17, 191 }, { 191,  17,  17 }, {  17,  17, 191 }
+							};
+							for ( int y = 0; y < kTestH; ++y )
+							{
+								for ( int x = 0; x < kTestW; ++x )
+								{
+									int barIdx = x * 7 / kTestW;
+									int off = ( y * kTestW + x ) * 3;
+									rng = rng * 1664525u + 1013904223u;
+									int noise = ( int )( rng >> 28 ) - 8;
+									testImage[ off + 0 ] = ( ImU8 )ImClamp( bars[ barIdx ][ 0 ] + noise, 0, 255 );
+									testImage[ off + 1 ] = ( ImU8 )ImClamp( bars[ barIdx ][ 1 ] + noise, 0, 255 );
+									testImage[ off + 2 ] = ( ImU8 )ImClamp( bars[ barIdx ][ 2 ] + noise, 0, 255 );
+								}
+							}
+						}
+						else if ( cieSource == 1 )
+						{
+							for ( int y = 0; y < kTestH; ++y )
+							{
+								for ( int x = 0; x < kTestW; ++x )
+								{
+									float t = ( float )x / ( float )( kTestW - 1 );
+									int off = ( y * kTestW + x ) * 3;
+									int third = y * 3 / kTestH;
+									rng = rng * 1664525u + 1013904223u;
+									int noise = ( int )( rng >> 29 ) - 4;
+									testImage[ off + 0 ] = ( ImU8 )ImClamp( ( third == 0 ? ( int )( t * 255.0f ) : 0 ) + noise, 0, 255 );
+									testImage[ off + 1 ] = ( ImU8 )ImClamp( ( third == 1 ? ( int )( t * 255.0f ) : 0 ) + noise, 0, 255 );
+									testImage[ off + 2 ] = ( ImU8 )ImClamp( ( third == 2 ? ( int )( t * 255.0f ) : 0 ) + noise, 0, 255 );
+								}
+							}
+						}
+						else
+						{
+							for ( int i = 0; i < kTestW * kTestH * 3; ++i )
+							{
+								rng = rng * 1664525u + 1013904223u;
+								testImage[ i ] = ( ImU8 )( rng >> 24 );
+							}
+						}
+
+						cieData.Accumulate( testImage.Data, kTestW, kTestH, 3,
+							ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved,
+							50000 );
+
+						// Create thumbnail texture (RGB -> RGBA)
+						{
+							static ImVector<ImU8> rgba;
+							rgba.resize( kTestW * kTestH * 4 );
+							for ( int i = 0; i < kTestW * kTestH; ++i )
+							{
+								rgba[ i * 4 + 0 ] = testImage[ i * 3 + 0 ];
+								rgba[ i * 4 + 1 ] = testImage[ i * 3 + 1 ];
+								rgba[ i * 4 + 2 ] = testImage[ i * 3 + 2 ];
+								rgba[ i * 4 + 3 ] = 255;
+							}
+							ImPlatform_TextureDesc td = ImPlatform_TextureDesc_Default( kTestW, kTestH );
+							cieThumbnail = ImPlatform_CreateTexture( rgba.Data, &td );
+							cieThumbnailSize = ImVec2( ( float )kTestW, ( float )kTestH );
+						}
+					}
+					else
+					{
+						char const* filenames[] = {
+							"pexels-robert-bogdan-156165-1152351.jpg",
+							"pexels-fotoaibe-1571453.jpg",
+							"man.png",
+							"astro.png"
+						};
+						int fileIdx = cieSource - 3;
+						cieImgData = stbi_load( filenames[ fileIdx ], &cieImgW, &cieImgH, &cieImgCh, 0 );
+						if ( cieImgData )
+						{
+							int ch = ( cieImgCh >= 3 ) ? cieImgCh : 3;
+							cieData.Accumulate( cieImgData, cieImgW, cieImgH, ch,
+								ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved,
+								50000 );
+						}
+					}
+
+					cieNeedsUpdate = false;
+				}
+
+				// Thumbnail
+				{
+					ImTextureID thumbTex = ImTextureID_Invalid;
+					ImVec2 thumbSize( 0, 0 );
+					if ( cieSource <= 2 && cieThumbnail != ImTextureID_Invalid )
+					{
+						thumbTex = cieThumbnail;
+						thumbSize = cieThumbnailSize;
+					}
+					else if ( cieSource == 3 ) { thumbTex = illlustration_img; thumbSize = illlustration_size; }
+					else if ( cieSource == 4 ) { thumbTex = background;        thumbSize = background_size; }
+					else if ( cieSource == 5 ) { thumbTex = man_img;           thumbSize = man_size; }
+					else if ( cieSource == 6 ) { thumbTex = astro_img;         thumbSize = astro_size; }
+					if ( thumbTex != ImTextureID_Invalid && thumbSize.x > 0.0f )
+					{
+						float thumbH = 120.0f;
+						float thumbW = thumbH * thumbSize.x / thumbSize.y;
+						ImGui::Image( thumbTex, ImVec2( thumbW, thumbH ) );
+					}
+				}
+
+				ImWidgets::PushStyleVar( StyleVar_CIEChromaticity_SignalAlpha, cieSignalAlpha );
+				ImWidgets::PushStyleVar( StyleVar_CIEChromaticity_SignalRadius, cieSignalRadius );
+				ImWidgets::CIEChromaticity( "##CIEMain", cieData, ( ImCIEChromaticityGamut )cieGamut, cieShowBackground, ( ImCIEChromaticitySignalColor )cieSignalColor, ImVec2( 0, 0 ) );
+				ImWidgets::PopStyleVar( 2 );
+				if ( cieSource <= 2 )
+					ImGui::Text( "Source: 1920x1080 (generated)  Samples: %d", cieData.SampleCount );
+				else if ( cieImgData )
+					ImGui::Text( "Source: %dx%d (%d ch)  Samples: %d", cieImgW, cieImgH, cieImgCh, cieData.SampleCount );
+				else
+					ImGui::TextDisabled( "Failed to load image" );
+			}
+
 			if ( ImGui::CollapsingHeader( "Color Wheel", ImGuiTreeNodeFlags_DefaultOpen ) )
 			{
 				static ImVec4 wheelColor( 0.8f, 0.2f, 0.3f, 1.0f );

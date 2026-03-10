@@ -301,6 +301,15 @@ enum ImWidgetsStyleColor
 	StyleColor_Histogram_GradTick,
 	StyleColor_Histogram_GradLabel,
 
+	// CIE Chromaticity
+	StyleColor_CIEChromaticity_Background,
+	StyleColor_CIEChromaticity_Grid,
+	StyleColor_CIEChromaticity_Signal,
+	StyleColor_CIEChromaticity_GamutLine,
+	StyleColor_CIEChromaticity_WhitePoint,
+	StyleColor_CIEChromaticity_GradTick,
+	StyleColor_CIEChromaticity_GradLabel,
+
 	StyleColor_Count
 };
 
@@ -363,6 +372,14 @@ enum ImWidgetsStyleVar
 	StyleVar_Histogram_GradTickThickness,
 	StyleVar_Histogram_GradMarginLeft,
 	StyleVar_Histogram_GradMarginBottom,
+
+	// CIE Chromaticity
+	StyleVar_CIEChromaticity_DefaultSize,
+	StyleVar_CIEChromaticity_SignalRadius,
+	StyleVar_CIEChromaticity_GamutLineThickness,
+	StyleVar_CIEChromaticity_WhitePointRadius,
+	StyleVar_CIEChromaticity_GradMargin,
+	StyleVar_CIEChromaticity_SignalAlpha,
 
 	StyleVar_Count
 };
@@ -427,6 +444,14 @@ struct ImWidgetsStyle
 	float	Histogram_GradMarginLeft;		// Left margin for Y-axis labels (px)
 	float	Histogram_GradMarginBottom;		// Bottom margin for X-axis labels (px)
 
+	// CIE Chromaticity
+	float	CIEChromaticity_DefaultSize;		// Default square side (px)
+	float	CIEChromaticity_SignalRadius;		// Signal dot radius (px)
+	float	CIEChromaticity_GamutLineThickness;	// Gamut triangle line thickness (px)
+	float	CIEChromaticity_WhitePointRadius;	// White point marker radius (px)
+	float	CIEChromaticity_GradMargin;			// Margin for graduation labels (px)
+	float	CIEChromaticity_SignalAlpha;			// Signal point alpha (0..1)
+
 	ImVec4  Colors[ StyleColor_Count ];
 
 	ImWidgetsStyle()
@@ -486,6 +511,14 @@ struct ImWidgetsStyle
 		Histogram_GradTickThickness  = 1.0f;
 		Histogram_GradMarginLeft     = 40.0f;
 		Histogram_GradMarginBottom   = 20.0f;
+
+		// CIE Chromaticity
+		CIEChromaticity_DefaultSize        = 300.0f;
+		CIEChromaticity_SignalRadius       = 1.5f;
+		CIEChromaticity_GamutLineThickness = 1.5f;
+		CIEChromaticity_WhitePointRadius   = 4.0f;
+		CIEChromaticity_GradMargin         = 30.0f;
+		CIEChromaticity_SignalAlpha        = 0.6f;
 
 		Colors[ StyleColor_Value ] = ImVec4( 1.0f, 0.0f, 0.0f, 1.0f );
 		Colors[ StyleColor_Slider2D_CursorX ] = ImVec4( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f ); // Blue
@@ -563,6 +596,15 @@ struct ImWidgetsStyle
 		Colors[ StyleColor_Histogram_ChannelOkH ]           = ImVec4( 1.0f, 0.6f, 0.3f, 1.0f );
 		Colors[ StyleColor_Histogram_GradTick ]             = ImVec4( 1.0f, 1.0f, 1.0f, 0.4f );
 		Colors[ StyleColor_Histogram_GradLabel ]            = ImVec4( 1.0f, 1.0f, 1.0f, 0.7f );
+
+		// CIE Chromaticity Colors
+		Colors[ StyleColor_CIEChromaticity_Background ]     = ImVec4( 0.06f, 0.06f, 0.06f, 1.0f );
+		Colors[ StyleColor_CIEChromaticity_Grid ]           = ImVec4( 1.0f, 1.0f, 1.0f, 0.12f );
+		Colors[ StyleColor_CIEChromaticity_Signal ]         = ImVec4( 1.0f, 1.0f, 1.0f, 0.6f );
+		Colors[ StyleColor_CIEChromaticity_GamutLine ]      = ImVec4( 1.0f, 1.0f, 1.0f, 0.8f );
+		Colors[ StyleColor_CIEChromaticity_WhitePoint ]     = ImVec4( 1.0f, 1.0f, 1.0f, 0.9f );
+		Colors[ StyleColor_CIEChromaticity_GradTick ]       = ImVec4( 1.0f, 1.0f, 1.0f, 0.4f );
+		Colors[ StyleColor_CIEChromaticity_GradLabel ]      = ImVec4( 1.0f, 1.0f, 1.0f, 0.7f );
 	}
 
 	void ScaleAllSizes( float scale_factor )
@@ -610,6 +652,12 @@ struct ImWidgetsStyle
 		Histogram_GradTickThickness  = ImTrunc( Histogram_GradTickThickness * scale_factor );
 		Histogram_GradMarginLeft     = ImTrunc( Histogram_GradMarginLeft * scale_factor );
 		Histogram_GradMarginBottom   = ImTrunc( Histogram_GradMarginBottom * scale_factor );
+
+		CIEChromaticity_DefaultSize        = ImTrunc( CIEChromaticity_DefaultSize * scale_factor );
+		CIEChromaticity_SignalRadius       = ImTrunc( CIEChromaticity_SignalRadius * scale_factor );
+		CIEChromaticity_GamutLineThickness = ImTrunc( CIEChromaticity_GamutLineThickness * scale_factor );
+		CIEChromaticity_WhitePointRadius   = ImTrunc( CIEChromaticity_WhitePointRadius * scale_factor );
+		CIEChromaticity_GradMargin         = ImTrunc( CIEChromaticity_GradMargin * scale_factor );
 	}
 
 	void PushColor( ImWidgetsStyleColor colorIndex, const ImVec4& color )
@@ -785,6 +833,12 @@ private:
 		case StyleVar_Histogram_GradTickThickness:		return &Histogram_GradTickThickness;
 		case StyleVar_Histogram_GradMarginLeft:			return &Histogram_GradMarginLeft;
 		case StyleVar_Histogram_GradMarginBottom:		return &Histogram_GradMarginBottom;
+		case StyleVar_CIEChromaticity_DefaultSize:		return &CIEChromaticity_DefaultSize;
+		case StyleVar_CIEChromaticity_SignalRadius:		return &CIEChromaticity_SignalRadius;
+		case StyleVar_CIEChromaticity_GamutLineThickness: return &CIEChromaticity_GamutLineThickness;
+		case StyleVar_CIEChromaticity_WhitePointRadius:	return &CIEChromaticity_WhitePointRadius;
+		case StyleVar_CIEChromaticity_GradMargin:		return &CIEChromaticity_GradMargin;
+		case StyleVar_CIEChromaticity_SignalAlpha:		return &CIEChromaticity_SignalAlpha;
 		default:										return nullptr;
 		}
 	}
@@ -1392,6 +1446,47 @@ struct ImHistogramData
 	void Accumulate( void const* data, int width, int height, int channels,
 					 ImParadeBitDepth bitDepth, ImParadeLayout layout, ImHistogramMode mode,
 					 int binCount = 256, int maxSamples = 1000000 );
+};
+
+// ---- CIE Chromaticity ----
+
+typedef int ImCIEChromaticitySignalColor;
+enum ImCIEChromaticitySignalColor_
+{
+	ImCIEChromaticitySignalColor_Flat = 0,		// Use style color for all points
+	ImCIEChromaticitySignalColor_PixelColor,	// Use each pixel's own RGB color
+	ImCIEChromaticitySignalColor_COUNT
+};
+
+typedef int ImCIEChromaticityGamut;
+enum ImCIEChromaticityGamut_
+{
+	ImCIEChromaticityGamut_sRGB_Rec709 = 0,	// sRGB / Rec.709 (D65)
+	ImCIEChromaticityGamut_Rec2020,				// Rec.2020 / UHDTV (D65)
+	ImCIEChromaticityGamut_DCI_P3,				// DCI-P3 (D65 variant)
+	ImCIEChromaticityGamut_ACEScg,				// ACEScg (D60)
+	ImCIEChromaticityGamut_AdobeRGB,			// Adobe RGB (D65)
+	ImCIEChromaticityGamut_ProPhoto,			// ProPhoto / ROMM (D50)
+	ImCIEChromaticityGamut_COUNT
+};
+
+struct ImCIEChromaticityData
+{
+	ImVector<float>	SampledRGB;		// [i*3 + 0..2] = r, g, b (normalized [0,1])
+	int				SampleCount;
+
+	ImCIEChromaticityData() : SampleCount( 0 ) {}
+
+	void Clear()
+	{
+		SampledRGB.clear();
+		SampleCount = 0;
+	}
+
+	// Sample RGB pixels from raw image data for chromaticity plotting.
+	void Accumulate( void const* data, int width, int height, int channels,
+					 ImParadeBitDepth bitDepth, ImParadeLayout layout,
+					 int maxSamples = 50000 );
 };
 
 struct ImGlobalData
@@ -2069,6 +2164,9 @@ namespace ImWidgets{
 
 	IMGUI_API const char* HistogramModeName( ImHistogramMode mode );
 	IMGUI_API void  Histogram( char const* label, ImHistogramData const& data, ImHistogramLayout layout = ImHistogramLayout_Overlapped, ImParadeScale xScale = ImParadeScale_Linear, ImParadeScale yScale = ImParadeScale_Linear, ImVec2 size = ImVec2( 0, 0 ) );
+
+	IMGUI_API const char* CIEChromaticityGamutName( ImCIEChromaticityGamut gamut );
+	IMGUI_API void  CIEChromaticity( char const* label, ImCIEChromaticityData const& data, ImCIEChromaticityGamut gamut = ImCIEChromaticityGamut_sRGB_Rec709, bool showBackground = false, ImCIEChromaticitySignalColor signalColor = ImCIEChromaticitySignalColor_Flat, ImVec2 size = ImVec2( 0, 0 ) );
 
 	//IMGUI_API bool SliderRingScalar( char const* name,
 	//								 ImGuiDataType data_type,

@@ -10030,6 +10030,328 @@ namespace ImWidgets {
 			ImGui::RenderText( ImVec2( scope_bb.Max.x + style.ItemInnerSpacing.x, scope_bb.Min.y + style.FramePadding.y ), label );
 	}
 
+	// ========================================================================
+	// CIE Chromaticity
+	// ========================================================================
+
+} // close namespace ImWidgets for global-scope struct method
+
+void ImCIEChromaticityData::Accumulate( void const* data, int width, int height, int channels,
+										ImParadeBitDepth bitDepth, ImParadeLayout layout,
+										int maxSamples )
+{
+	int maxVal;
+	switch ( bitDepth )
+	{
+	case ImParadeBitDepth_UInt8:  maxVal = 255; break;
+	case ImParadeBitDepth_UInt10: maxVal = 1023; break;
+	case ImParadeBitDepth_UInt16: maxVal = 65535; break;
+	default:                      maxVal = 255; break;
+	}
+	float invMaxVal = 1.0f / ( float )maxVal;
+	int mask16 = ( bitDepth == ImParadeBitDepth_UInt10 ) ? 0x3FF : 0xFFFF;
+
+	int totalPixels = width * height;
+	int actualSamples = ( maxSamples > 0 && totalPixels > maxSamples ) ? maxSamples : totalPixels;
+
+	SampledRGB.resize( actualSamples * 3 );
+	SampleCount = 0;
+
+	ImU32 rng = 0x12345678u;
+	bool subsample = ( maxSamples > 0 && totalPixels > maxSamples );
+	ImU32 threshold = subsample ? ( ImU32 )( ( double )maxSamples / ( double )totalPixels * 4294967295.0 ) : 0xFFFFFFFF;
+
+	int planeStride = width * height;
+
+	for ( int pixIdx = 0; pixIdx < totalPixels && SampleCount < actualSamples; ++pixIdx )
+	{
+		if ( subsample )
+		{
+			rng = rng * 1664525u + 1013904223u;
+			if ( rng > threshold )
+				continue;
+		}
+
+		int px = pixIdx % width;
+		int py = pixIdx / width;
+
+		float r, g, b;
+		if ( layout == ImParadeLayout_Interleaved )
+		{
+			int offset = ( py * width + px ) * channels;
+			if ( bitDepth == ImParadeBitDepth_UInt8 )
+			{
+				ImU8 const* p = ( ImU8 const* )data + offset;
+				r = p[ 0 ] * invMaxVal;
+				g = p[ 1 ] * invMaxVal;
+				b = p[ 2 ] * invMaxVal;
+			}
+			else
+			{
+				ImU16 const* p = ( ImU16 const* )data + offset;
+				r = ( float )( p[ 0 ] & mask16 ) * invMaxVal;
+				g = ( float )( p[ 1 ] & mask16 ) * invMaxVal;
+				b = ( float )( p[ 2 ] & mask16 ) * invMaxVal;
+			}
+		}
+		else
+		{
+			int pixOffset = py * width + px;
+			if ( bitDepth == ImParadeBitDepth_UInt8 )
+			{
+				ImU8 const* p = ( ImU8 const* )data;
+				r = p[ pixOffset ] * invMaxVal;
+				g = p[ pixOffset + planeStride ] * invMaxVal;
+				b = p[ pixOffset + planeStride * 2 ] * invMaxVal;
+			}
+			else
+			{
+				ImU16 const* p = ( ImU16 const* )data;
+				r = ( float )( p[ pixOffset ] & mask16 ) * invMaxVal;
+				g = ( float )( p[ pixOffset + planeStride ] & mask16 ) * invMaxVal;
+				b = ( float )( p[ pixOffset + planeStride * 2 ] & mask16 ) * invMaxVal;
+			}
+		}
+
+		int idx = SampleCount * 3;
+		SampledRGB[ idx + 0 ] = r;
+		SampledRGB[ idx + 1 ] = g;
+		SampledRGB[ idx + 2 ] = b;
+		++SampleCount;
+	}
+}
+
+namespace ImWidgets {
+
+	const char* CIEChromaticityGamutName( ImCIEChromaticityGamut gamut )
+	{
+		switch ( gamut )
+		{
+		case ImCIEChromaticityGamut_sRGB_Rec709: return "sRGB / Rec.709";
+		case ImCIEChromaticityGamut_Rec2020:     return "Rec.2020";
+		case ImCIEChromaticityGamut_DCI_P3:      return "DCI-P3";
+		case ImCIEChromaticityGamut_ACEScg:      return "ACEScg";
+		case ImCIEChromaticityGamut_AdobeRGB:    return "Adobe RGB";
+		case ImCIEChromaticityGamut_ProPhoto:    return "ProPhoto";
+		default:                                  return "Unknown";
+		}
+	}
+
+	void CIEChromaticity( char const* label, ImCIEChromaticityData const& data, ImCIEChromaticityGamut gamut, bool showBackground, ImCIEChromaticitySignalColor signalColor, ImVec2 size )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return;
+
+		ImGuiContext& g = *GImGui;
+		ImGuiStyle const& style = g.Style;
+		ImWidgetsStyle const& dwStyle = GetStyle();
+
+		ImGuiID const id = window->GetID( label );
+
+		float gradMargin = dwStyle.CIEChromaticity_GradMargin;
+
+		// Square aspect ratio
+		float side = size.x > 0.0f ? size.x : ( size.y > 0.0f ? size.y : dwStyle.CIEChromaticity_DefaultSize );
+		size = ImVec2( side + gradMargin, side + gradMargin );
+
+		ImRect const total_bb( window->DC.CursorPos, window->DC.CursorPos + size );
+		ImRect const scope_bb( ImVec2( total_bb.Min.x + gradMargin, total_bb.Min.y ),
+							   ImVec2( total_bb.Max.x, total_bb.Max.y - gradMargin ) );
+
+		ImGui::ItemSize( total_bb, style.FramePadding.y );
+		if ( !ImGui::ItemAdd( total_bb, id ) )
+			return;
+
+		ImDrawList* dl = window->DrawList;
+
+		// CIE xy range: x [0, 0.8], y [0, 0.9]
+		float const minX = 0.0f, maxX = 0.8f;
+		float const minY = 0.0f, maxY = 0.9f;
+
+		float scopeW = scope_bb.GetWidth();
+		float scopeH = scope_bb.GetHeight();
+
+		// Background
+		ImU32 bgCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_Background ] );
+		dl->AddRectFilled( scope_bb.Min, scope_bb.Max, bgCol );
+
+		// Optional: Draw CIE chromaticity diagram background (spectral locus + colors)
+		if ( showBackground )
+		{
+			DrawChromaticityPlot( dl,
+				ImWidgetsWhitePointChromaticPlot_D65,
+				ImWidgetsObserverChromaticPlot_1931_2deg,
+				ImWidgetsColorSpace_sRGB,
+				64, // chrome line samples
+				scope_bb.Min, ImVec2( scopeW, scopeH ),
+				32, 32, // resolution
+				ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_Background ] ),
+				400.0f, 700.0f,
+				minX, maxX, minY, maxY,
+				false, false, false );
+		}
+
+		// Grid
+		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_Grid ] );
+		ImU32 tickCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_GradTick ] );
+		ImU32 labelCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_GradLabel ] );
+
+		// Grid lines and labels
+		{
+			// X-axis (bottom)
+			for ( int k = 0; k <= 8; ++k )
+			{
+				float xVal = k * 0.1f;
+				float sx = scope_bb.Min.x + ( xVal - minX ) / ( maxX - minX ) * scopeW;
+				dl->AddLine( ImVec2( sx, scope_bb.Min.y ), ImVec2( sx, scope_bb.Max.y ), gridCol );
+
+				char buf[ 8 ];
+				ImFormatString( buf, sizeof( buf ), "%.1f", xVal );
+				ImVec2 ts = ImGui::CalcTextSize( buf );
+				dl->AddText( ImVec2( sx - ts.x * 0.5f, scope_bb.Max.y + 2.0f ), labelCol, buf );
+			}
+			// Y-axis (left)
+			for ( int k = 0; k <= 9; ++k )
+			{
+				float yVal = k * 0.1f;
+				float sy = scope_bb.Max.y - ( yVal - minY ) / ( maxY - minY ) * scopeH;
+				dl->AddLine( ImVec2( scope_bb.Min.x, sy ), ImVec2( scope_bb.Max.x, sy ), gridCol );
+
+				char buf[ 8 ];
+				ImFormatString( buf, sizeof( buf ), "%.1f", yVal );
+				ImVec2 ts = ImGui::CalcTextSize( buf );
+				dl->AddText( ImVec2( scope_bb.Min.x - ts.x - 4.0f, sy - ts.y * 0.5f ), labelCol, buf );
+			}
+		}
+
+		// Gamut triangle primaries and white points
+		struct GamutDef { ImVec2 r, g, b, w; };
+		static GamutDef const s_Gamuts[] = {
+			// sRGB / Rec.709 (D65)
+			{ ImVec2( 0.6400f, 0.3300f ), ImVec2( 0.3000f, 0.6000f ), ImVec2( 0.1500f, 0.0600f ), ImVec2( 0.3127f, 0.3290f ) },
+			// Rec.2020 (D65)
+			{ ImVec2( 0.7080f, 0.2920f ), ImVec2( 0.1700f, 0.7970f ), ImVec2( 0.1310f, 0.0460f ), ImVec2( 0.3127f, 0.3290f ) },
+			// DCI-P3 (D65)
+			{ ImVec2( 0.6800f, 0.3200f ), ImVec2( 0.2650f, 0.6900f ), ImVec2( 0.1500f, 0.0600f ), ImVec2( 0.3127f, 0.3290f ) },
+			// ACEScg (D60)
+			{ ImVec2( 0.7130f, 0.2930f ), ImVec2( 0.1650f, 0.8300f ), ImVec2( 0.1280f, 0.0440f ), ImVec2( 0.32168f, 0.33767f ) },
+			// Adobe RGB (D65)
+			{ ImVec2( 0.6400f, 0.3300f ), ImVec2( 0.2100f, 0.7100f ), ImVec2( 0.1500f, 0.0600f ), ImVec2( 0.3127f, 0.3290f ) },
+			// ProPhoto (D50)
+			{ ImVec2( 0.7347f, 0.2653f ), ImVec2( 0.1596f, 0.8404f ), ImVec2( 0.0366f, 0.0001f ), ImVec2( 0.3457f, 0.3585f ) },
+		};
+
+		GamutDef const& gd = s_Gamuts[ gamut ];
+		float gamutThk = dwStyle.CIEChromaticity_GamutLineThickness;
+		ImU32 gamutCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_GamutLine ] );
+
+		// Map xy chromaticity to screen
+		auto xyToScreen = [&]( ImVec2 xy ) -> ImVec2
+		{
+			return ImVec2(
+				scope_bb.Min.x + ( xy.x - minX ) / ( maxX - minX ) * scopeW,
+				scope_bb.Max.y - ( xy.y - minY ) / ( maxY - minY ) * scopeH );
+		};
+
+		// Draw gamut triangle
+		ImVec2 sR = xyToScreen( gd.r );
+		ImVec2 sG = xyToScreen( gd.g );
+		ImVec2 sB = xyToScreen( gd.b );
+		dl->AddLine( sR, sG, gamutCol, gamutThk );
+		dl->AddLine( sG, sB, gamutCol, gamutThk );
+		dl->AddLine( sB, sR, gamutCol, gamutThk );
+
+		// Primary labels
+		{
+			ImVec2 ts;
+			ts = ImGui::CalcTextSize( "R" );
+			dl->AddText( ImVec2( sR.x + 4.0f, sR.y - ts.y * 0.5f ), IM_COL32( 255, 100, 100, 220 ), "R" );
+			ts = ImGui::CalcTextSize( "G" );
+			dl->AddText( ImVec2( sG.x - ts.x * 0.5f, sG.y - ts.y - 4.0f ), IM_COL32( 100, 255, 100, 220 ), "G" );
+			ts = ImGui::CalcTextSize( "B" );
+			dl->AddText( ImVec2( sB.x - ts.x - 4.0f, sB.y - ts.y * 0.5f ), IM_COL32( 100, 100, 255, 220 ), "B" );
+		}
+
+		// White point
+		{
+			float wpR = dwStyle.CIEChromaticity_WhitePointRadius;
+			ImU32 wpCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_WhitePoint ] );
+			ImVec2 wp = xyToScreen( gd.w );
+			dl->AddCircle( wp, wpR, wpCol, 12, gamutThk );
+			dl->AddLine( ImVec2( wp.x - wpR - 2.0f, wp.y ), ImVec2( wp.x + wpR + 2.0f, wp.y ), wpCol, gamutThk * 0.5f );
+			dl->AddLine( ImVec2( wp.x, wp.y - wpR - 2.0f ), ImVec2( wp.x, wp.y + wpR + 2.0f ), wpCol, gamutThk * 0.5f );
+		}
+
+		// Plot image pixels as chromaticity points
+		if ( data.SampleCount > 0 )
+		{
+			dl->PushClipRect( scope_bb.Min, scope_bb.Max, true );
+
+			float dotR = dwStyle.CIEChromaticity_SignalRadius;
+			float signalAlpha = ImClamp( dwStyle.CIEChromaticity_SignalAlpha, 0.0f, 1.0f );
+			ImU8 alphaU8 = ( ImU8 )( signalAlpha * 255.0f );
+
+			if ( signalColor == ImCIEChromaticitySignalColor_PixelColor )
+			{
+				// Draw each point with its own pixel color
+				float* rgbToXYZ = s_ColorSpace_RGB2XYZ[ ImWidgetsColorSpace_sRGB ];
+				float const* rgb = data.SampledRGB.Data;
+				for ( int i = 0; i < data.SampleCount; ++i )
+				{
+					float r = rgb[ i * 3 + 0 ];
+					float g = rgb[ i * 3 + 1 ];
+					float b = rgb[ i * 3 + 2 ];
+
+					float X, Y, Z;
+					float vec3[ 3 ] = { r, g, b };
+					Mat33RowMajorMulVec3( X, Y, Z, rgbToXYZ, vec3 );
+					float sum = X + Y + Z;
+					if ( sum < 1e-6f )
+						continue;
+					float cx = X / sum;
+					float cy = Y / sum;
+
+					ImVec2 pt;
+					pt.x = scope_bb.Min.x + ImRescale( cx, minX, maxX, 0.0f, scopeW );
+					pt.y = scope_bb.Min.y + ImRescale( cy, minY, maxY, scopeH, 0.0f );
+
+					ImU8 pR = ( ImU8 )( ImClamp( r, 0.0f, 1.0f ) * 255.0f );
+					ImU8 pG = ( ImU8 )( ImClamp( g, 0.0f, 1.0f ) * 255.0f );
+					ImU8 pB = ( ImU8 )( ImClamp( b, 0.0f, 1.0f ) * 255.0f );
+					ImU32 col = IM_COL32( pR, pG, pB, alphaU8 );
+
+					dl->AddCircleFilled( pt, dotR, col, 6 );
+				}
+			}
+			else
+			{
+				// Flat style color with alpha override
+				ImVec4 sigF = dwStyle.Colors[ StyleColor_CIEChromaticity_Signal ];
+				sigF.w = signalAlpha;
+				ImU32 signalCol = ImGui::GetColorU32( sigF );
+
+				DrawChromaticityPointsGeneric( dl,
+					scope_bb.Min, ImVec2( scopeW, scopeH ),
+					s_ColorSpace_RGB2XYZ[ ImWidgetsColorSpace_sRGB ],
+					const_cast<float*>( data.SampledRGB.Data ),
+					data.SampleCount,
+					minX, maxX, minY, maxY,
+					signalCol, dotR, 6,
+					3 );
+			}
+
+			dl->PopClipRect();
+		}
+
+		// Border
+		dl->AddRect( scope_bb.Min, scope_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+
+		// Label
+		if ( label[ 0 ] != '#' || label[ 1 ] != '#' )
+			ImGui::RenderText( ImVec2( scope_bb.Max.x + style.ItemInnerSpacing.x, scope_bb.Min.y + style.FramePadding.y ), label );
+	}
+
 #if 0
 	// TODO
 	bool SliderRingScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, float v_angle_min, float v_angle_max, float v_thickness, const char* format, ImGuiSliderFlags flags, ImRect* out_grab_bb )
