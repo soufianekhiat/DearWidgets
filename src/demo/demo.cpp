@@ -426,6 +426,7 @@ int main()
 		// Render UI
 		ImWidgets::ShowSamples();
 		ImWidgets::ShowDemo();
+		ImWidgets::ShowStyleEditor();
 		ImGui::ShowMetricsWindow();
 		ImGui::ShowDemoWindow();
 

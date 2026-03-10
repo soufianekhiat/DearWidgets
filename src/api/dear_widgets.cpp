@@ -10898,6 +10898,198 @@ namespace ImWidgets {
 		return value_changed;
 	}
 
+	//////////////////////////////////////////////////////////////////////////
+	// Style Editor
+	//////////////////////////////////////////////////////////////////////////
+	void ShowStyleEditor( ImWidgetsStyle* ref )
+	{
+		ImWidgetsStyle& style = GetStyle();
+		static ImWidgetsStyle ref_saved_style;
+
+		// Default to current style
+		static bool init = true;
+		if ( init && ref == NULL )
+			ref_saved_style = style;
+		init = false;
+
+		ImGui::Begin( "Dear Widgets Style Editor" );
+
+		if ( ImGui::Button( "Save Ref" ) )
+			ref_saved_style = ref ? *ref : style;
+		ImGui::SameLine();
+		if ( ImGui::Button( "Revert Ref" ) )
+			style = ref ? *ref : ref_saved_style;
+		ImGui::SameLine();
+		ImGui::TextDisabled( "(?)" );
+		if ( ImGui::IsItemHovered() )
+			ImGui::SetTooltip(
+				"Save/Revert in local non-persistent storage. "
+				"Default DearWidgets style is used as Ref." );
+
+		if ( ImGui::BeginTabBar( "##tabs" ) )
+		{
+			if ( ImGui::BeginTabItem( "Sizes" ) )
+			{
+				ImGui::Text( "Main" );
+				static float scale = 1.0f;
+				if ( ImGui::DragFloat( "Scale All Sizes", &scale, 0.005f, 0.3f, 5.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp ) )
+				{
+					ImWidgetsStyle tmp = ref_saved_style;
+					tmp.ScaleAllSizes( scale );
+					style = tmp;
+				}
+				ImGui::Separator();
+
+				ImGui::SliderFloat( "HueSelector ZeroWidth", &style.HueSelector_Thickness_ZeroWidth, 0.0f, 10.0f );
+
+				if ( ImGui::TreeNode( "Slider2D" ) )
+				{
+					ImGui::SliderFloat( "DragThickness##S2D", &style.Slider2D_DragThickness, 1.0f, 20.0f );
+					ImGui::SliderFloat( "BorderThickness##S2D", &style.Slider2D_BorderThickness, 0.0f, 10.0f );
+					ImGui::SliderFloat( "LineThickness##S2D", &style.Slider2D_LineThickness, 0.5f, 10.0f );
+					ImGui::SliderFloat( "CursorRadius##S2D", &style.Slider2D_CursorRadius, 1.0f, 20.0f );
+					ImGui::SliderFloat( "CursorOffset##S2D", &style.Slider2D_CursorOffset, 0.0f, 40.0f );
+					ImGui::SliderFloat( "CornerRadius##S2D", &style.Slider2D_CornerRadius, 0.0f, 20.0f );
+					ImGui::TreePop();
+				}
+				if ( ImGui::TreeNode( "General" ) )
+				{
+					ImGui::SliderFloat( "NavCursor Thickness", &style.NavCursor_Thickness, 0.5f, 10.0f );
+					ImGui::SliderFloat( "NavCursor Distance", &style.NavCursor_Distance, 0.0f, 20.0f );
+					ImGui::SliderFloat( "WhitePoint Radius", &style.WhitePoint_Radius, 1.0f, 20.0f );
+					ImGui::SliderFloat( "PrecisionDrag BlockSize", &style.PrecisionDrag_BlockSize, 16.0f, 512.0f );
+					ImGui::TreePop();
+				}
+				if ( ImGui::TreeNode( "Gradient Editor" ) )
+				{
+					ImGui::SliderFloat( "MarkerHeight", &style.Gradient_MarkerHeight, 2.0f, 40.0f );
+					ImGui::SliderFloat( "CheckerboardCellSize", &style.Gradient_CheckerboardCellSize, 2.0f, 20.0f );
+					ImGui::SliderFloat( "MarkerThickness", &style.Gradient_MarkerThickness, 0.5f, 5.0f );
+					ImGui::TreePop();
+				}
+				if ( ImGui::TreeNode( "Curve Editor" ) )
+				{
+					ImGui::SliderFloat( "KeyRadius##CE", &style.CurveEditor_KeyRadius, 1.0f, 20.0f );
+					ImGui::SliderFloat( "TangentRadius##CE", &style.CurveEditor_TangentRadius, 1.0f, 20.0f );
+					ImGui::SliderFloat( "HitRadius##CE", &style.CurveEditor_HitRadius, 2.0f, 30.0f );
+					ImGui::SliderFloat( "LineThickness##CE", &style.CurveEditor_LineThickness, 0.5f, 10.0f );
+					ImGui::SliderFloat( "KeyOutlineThickness##CE", &style.CurveEditor_KeyOutlineThickness, 0.5f, 5.0f );
+					ImGui::TreePop();
+				}
+				if ( ImGui::TreeNode( "Color Wheel" ) )
+				{
+					ImGui::SliderFloat( "DotRadius##CW", &style.ColorWheel_DotRadius, 1.0f, 20.0f );
+					ImGui::SliderFloat( "RingThickness##CW", &style.ColorWheel_RingThickness, 2.0f, 40.0f );
+					ImGui::SliderFloat( "DiscSectors##CW", &style.ColorWheel_DiscSectors, 12.0f, 256.0f );
+					ImGui::SliderFloat( "DiscRings##CW", &style.ColorWheel_DiscRings, 4.0f, 64.0f );
+					ImGui::SliderFloat( "SliderHeight##CW", &style.ColorWheel_SliderHeight, 8.0f, 60.0f );
+					ImGui::TreePop();
+				}
+				if ( ImGui::TreeNode( "Color Curve" ) )
+				{
+					ImGui::SliderFloat( "KeyRadius##CC", &style.ColorCurve_KeyRadius, 1.0f, 20.0f );
+					ImGui::SliderFloat( "LineThickness##CC", &style.ColorCurve_LineThickness, 0.5f, 10.0f );
+					ImGui::TreePop();
+				}
+				if ( ImGui::TreeNode( "Parade Scope" ) )
+				{
+					ImGui::SliderFloat( "OverlayAlpha##PS", &style.ParadeScope_OverlayAlpha, 0.0f, 1.0f );
+					ImGui::SliderFloat( "GradTickLength##PS", &style.ParadeScope_GradTickLength, 1.0f, 20.0f );
+					ImGui::SliderFloat( "GradTickThickness##PS", &style.ParadeScope_GradTickThickness, 0.5f, 5.0f );
+					ImGui::SliderFloat( "GradMargin##PS", &style.ParadeScope_GradMargin, 0.0f, 80.0f );
+					ImGui::TreePop();
+				}
+				if ( ImGui::TreeNode( "Vector Scope" ) )
+				{
+					ImGui::SliderFloat( "SignalAlpha##VS", &style.VectorScope_SignalAlpha, 0.0f, 1.0f );
+					ImGui::SliderFloat( "GraticuleThickness##VS", &style.VectorScope_GraticuleThickness, 0.5f, 5.0f );
+					ImGui::TreePop();
+				}
+				if ( ImGui::TreeNode( "Histogram" ) )
+				{
+					ImGui::SliderFloat( "OverlayAlpha##HI", &style.Histogram_OverlayAlpha, 0.0f, 1.0f );
+					ImGui::SliderFloat( "GradTickLength##HI", &style.Histogram_GradTickLength, 1.0f, 20.0f );
+					ImGui::SliderFloat( "GradTickThickness##HI", &style.Histogram_GradTickThickness, 0.5f, 5.0f );
+					ImGui::SliderFloat( "GradMarginLeft##HI", &style.Histogram_GradMarginLeft, 0.0f, 80.0f );
+					ImGui::SliderFloat( "GradMarginBottom##HI", &style.Histogram_GradMarginBottom, 0.0f, 60.0f );
+					ImGui::TreePop();
+				}
+				if ( ImGui::TreeNode( "CIE Chromaticity" ) )
+				{
+					ImGui::SliderFloat( "SignalRadius##CIE", &style.CIEChromaticity_SignalRadius, 0.5f, 10.0f );
+					ImGui::SliderFloat( "GamutLineThickness##CIE", &style.CIEChromaticity_GamutLineThickness, 0.5f, 5.0f );
+					ImGui::SliderFloat( "WhitePointRadius##CIE", &style.CIEChromaticity_WhitePointRadius, 1.0f, 20.0f );
+					ImGui::SliderFloat( "GradMargin##CIE", &style.CIEChromaticity_GradMargin, 0.0f, 80.0f );
+					ImGui::SliderFloat( "SignalAlpha##CIE", &style.CIEChromaticity_SignalAlpha, 0.0f, 1.0f );
+					ImGui::TreePop();
+				}
+				if ( ImGui::TreeNode( "Tone Curve" ) )
+				{
+					ImGui::SliderFloat( "KeyRadius##TC", &style.ToneCurve_KeyRadius, 1.0f, 20.0f );
+					ImGui::SliderFloat( "LineThickness##TC", &style.ToneCurve_LineThickness, 0.5f, 10.0f );
+					ImGui::SliderFloat( "GradMarginLeft##TC", &style.ToneCurve_GradMarginLeft, 0.0f, 80.0f );
+					ImGui::SliderFloat( "GradMarginBottom##TC", &style.ToneCurve_GradMarginBottom, 0.0f, 60.0f );
+					ImGui::SliderFloat( "BandThickness##TC", &style.ToneCurve_BandThickness, 1.0f, 30.0f );
+					ImGui::SliderFloat( "BandGap##TC", &style.ToneCurve_BandGap, 0.0f, 10.0f );
+					ImGui::TreePop();
+				}
+
+				ImGui::EndTabItem();
+			}
+
+			if ( ImGui::BeginTabItem( "Colors" ) )
+			{
+				static ImGuiTextFilter filter;
+				filter.Draw( "Filter colors", ImGui::GetFontSize() * 16 );
+
+				static ImGuiColorEditFlags alpha_flags = 0;
+				if ( ImGui::RadioButton( "Opaque", alpha_flags == ImGuiColorEditFlags_None ) )				alpha_flags = ImGuiColorEditFlags_None;
+				ImGui::SameLine();
+				if ( ImGui::RadioButton( "Alpha",  alpha_flags == ImGuiColorEditFlags_AlphaBar ) )			alpha_flags = ImGuiColorEditFlags_AlphaBar;
+				ImGui::SameLine();
+				if ( ImGui::RadioButton( "Both",   alpha_flags == ImGuiColorEditFlags_AlphaPreviewHalf ) )	alpha_flags = ImGuiColorEditFlags_AlphaPreviewHalf;
+				ImGui::SameLine();
+				ImGui::TextDisabled( "(?)" );
+				if ( ImGui::IsItemHovered() )
+					ImGui::SetTooltip(
+						"In the color list:\n"
+						"Left-click on color square to open color picker,\n"
+						"Right-click to open edit options menu." );
+
+				ImGui::BeginChild( "##colors", ImVec2( 0, 0 ), ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_AlwaysVerticalScrollbar );
+				ImGui::PushItemWidth( -160 );
+				for ( int i = 0; i < StyleColor_Count; i++ )
+				{
+					const char* name = style.GetColorName( ( ImWidgetsStyleColor )i );
+					if ( !filter.PassFilter( name ) )
+						continue;
+					ImGui::PushID( i );
+					ImGui::ColorEdit4( "##color", ( float* )&style.Colors[ i ], ImGuiColorEditFlags_AlphaBar | alpha_flags );
+					if ( memcmp( &style.Colors[ i ], &ref_saved_style.Colors[ i ], sizeof( ImVec4 ) ) != 0 )
+					{
+						ImGui::SameLine( 0.0f, style.Slider2D_CursorOffset );
+						if ( ImGui::Button( "Save" ) )
+							ref_saved_style.Colors[ i ] = style.Colors[ i ];
+						ImGui::SameLine();
+						if ( ImGui::Button( "Revert" ) )
+							style.Colors[ i ] = ref_saved_style.Colors[ i ];
+					}
+					ImGui::SameLine( 0.0f, style.Slider2D_CursorOffset );
+					ImGui::TextUnformatted( name );
+					ImGui::PopID();
+				}
+				ImGui::PopItemWidth();
+				ImGui::EndChild();
+
+				ImGui::EndTabItem();
+			}
+
+			ImGui::EndTabBar();
+		}
+
+		ImGui::End();
+	}
+
 #if 0
 	// TODO
 	bool SliderRingScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, float v_angle_min, float v_angle_max, float v_thickness, const char* format, ImGuiSliderFlags flags, ImRect* out_grab_bb )

@@ -829,6 +829,39 @@ struct ImWidgetsStyle
 		case StyleColor_ParadeScope_ChannelCr: return "ParadeScopeChannelCr";
 		case StyleColor_ParadeScope_GradTick: return "ParadeScopeGradTick";
 		case StyleColor_ParadeScope_GradLabel: return "ParadeScopeGradLabel";
+		case StyleColor_VectorScope_Background: return "VectorScopeBackground";
+		case StyleColor_VectorScope_Grid: return "VectorScopeGrid";
+		case StyleColor_VectorScope_Graticule: return "VectorScopeGraticule";
+		case StyleColor_VectorScope_Signal: return "VectorScopeSignal";
+		case StyleColor_VectorScope_SkinToneLine: return "VectorScopeSkinToneLine";
+		case StyleColor_Histogram_Background: return "HistogramBackground";
+		case StyleColor_Histogram_Grid: return "HistogramGrid";
+		case StyleColor_Histogram_ChannelR: return "HistogramChannelR";
+		case StyleColor_Histogram_ChannelG: return "HistogramChannelG";
+		case StyleColor_Histogram_ChannelB: return "HistogramChannelB";
+		case StyleColor_Histogram_ChannelLuma: return "HistogramChannelLuma";
+		case StyleColor_Histogram_ChannelCb: return "HistogramChannelCb";
+		case StyleColor_Histogram_ChannelCr: return "HistogramChannelCr";
+		case StyleColor_Histogram_ChannelH: return "HistogramChannelH";
+		case StyleColor_Histogram_ChannelS: return "HistogramChannelS";
+		case StyleColor_Histogram_ChannelV: return "HistogramChannelV";
+		case StyleColor_Histogram_ChannelOkL: return "HistogramChannelOkL";
+		case StyleColor_Histogram_ChannelOkC: return "HistogramChannelOkC";
+		case StyleColor_Histogram_ChannelOkH: return "HistogramChannelOkH";
+		case StyleColor_Histogram_GradTick: return "HistogramGradTick";
+		case StyleColor_Histogram_GradLabel: return "HistogramGradLabel";
+		case StyleColor_CIEChromaticity_Background: return "CIEChromaticityBackground";
+		case StyleColor_CIEChromaticity_Grid: return "CIEChromaticityGrid";
+		case StyleColor_CIEChromaticity_Signal: return "CIEChromaticitySignal";
+		case StyleColor_CIEChromaticity_GamutLine: return "CIEChromaticityGamutLine";
+		case StyleColor_CIEChromaticity_WhitePoint: return "CIEChromaticityWhitePoint";
+		case StyleColor_CIEChromaticity_GradTick: return "CIEChromaticityGradTick";
+		case StyleColor_CIEChromaticity_GradLabel: return "CIEChromaticityGradLabel";
+		case StyleColor_ToneCurve_Background: return "ToneCurveBackground";
+		case StyleColor_ToneCurve_Grid: return "ToneCurveGrid";
+		case StyleColor_ToneCurve_NeutralLine: return "ToneCurveNeutralLine";
+		case StyleColor_ToneCurve_GradTick: return "ToneCurveGradTick";
+		case StyleColor_ToneCurve_GradLabel: return "ToneCurveGradLabel";
 		case StyleColor_Count: break;
 		}
 
@@ -1624,6 +1657,7 @@ namespace ImWidgets{
 	extern ImGlobalData GlobalData;
 
 	ImWidgetsStyle& GetStyle();
+	IMGUI_API void  ShowStyleEditor( ImWidgetsStyle* ref = NULL );
 
 	inline
 	const char* GetStyleColorName( ImWidgetsStyleColor colorIndex )
