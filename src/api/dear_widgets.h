@@ -228,6 +228,18 @@ enum ImWidgetsStyleColor
 	StyleColor_Slider2D_CursorX,    // Color for Slider2D X-axis cursor
 	StyleColor_Slider2D_CursorY,    // Color for Slider2D Y-axis cursor
 
+	// SliderRing
+	StyleColor_SliderRing_Track,           // Track arc color
+	StyleColor_SliderRing_TrackActive,     // Track arc fill from min to current value
+	StyleColor_SliderRing_Grab,            // Grab handle fill
+	StyleColor_SliderRing_GrabActive,      // Grab handle fill while dragging
+
+	// SliderSpline
+	StyleColor_SliderSpline_Track,         // Spline track color
+	StyleColor_SliderSpline_TrackActive,   // Spline track fill from min to current value
+	StyleColor_SliderSpline_Grab,          // Grab handle fill
+	StyleColor_SliderSpline_GrabActive,    // Grab handle fill while dragging
+
 	// Gradient Editor
 	StyleColor_Gradient_MarkerOutline,
 	StyleColor_Gradient_MarkerOutlineHovered,
@@ -255,14 +267,29 @@ enum ImWidgetsStyleColor
 	// Color Wheel
 	StyleColor_ColorWheel_DotOutline,
 	StyleColor_ColorWheel_DotOutlineActive,
+	StyleColor_ColorWheel_Crosshair,
+	StyleColor_ColorWheel_SliderOutline,
+
+	// Color Warper
+	StyleColor_ColorWarper_GridLine,
+	StyleColor_ColorWarper_GridLineHovered,
+	StyleColor_ColorWarper_PointOutline,
+	StyleColor_ColorWarper_PointOutlineActive,
+	StyleColor_ColorWarper_PointFill,
+	StyleColor_ColorWarper_PointFillMoved,
+	StyleColor_ColorWarper_Crosshair,
 
 	// Color Curve
+	StyleColor_ColorCurve_Background,
+	StyleColor_ColorCurve_Grid,
 	StyleColor_ColorCurve_Line,
 	StyleColor_ColorCurve_NeutralLine,
 	StyleColor_ColorCurve_Key,
 	StyleColor_ColorCurve_KeyHovered,
 	StyleColor_ColorCurve_KeySelected,
 	StyleColor_ColorCurve_KeyOutline,
+	StyleColor_ColorCurve_Crosshair,
+	StyleColor_ColorCurve_HistogramOverlay,
 
 	// Parade Scope
 	StyleColor_ParadeScope_Background,
@@ -282,6 +309,12 @@ enum ImWidgetsStyleColor
 	StyleColor_VectorScope_Graticule,
 	StyleColor_VectorScope_Signal,
 	StyleColor_VectorScope_SkinToneLine,
+	StyleColor_VectorScope_TargetR,
+	StyleColor_VectorScope_TargetG,
+	StyleColor_VectorScope_TargetB,
+	StyleColor_VectorScope_TargetCy,
+	StyleColor_VectorScope_TargetMg,
+	StyleColor_VectorScope_TargetYl,
 
 	// Histogram
 	StyleColor_Histogram_Background,
@@ -307,6 +340,9 @@ enum ImWidgetsStyleColor
 	StyleColor_CIEChromaticity_Signal,
 	StyleColor_CIEChromaticity_GamutLine,
 	StyleColor_CIEChromaticity_WhitePoint,
+	StyleColor_CIEChromaticity_PrimaryR,
+	StyleColor_CIEChromaticity_PrimaryG,
+	StyleColor_CIEChromaticity_PrimaryB,
 	StyleColor_CIEChromaticity_GradTick,
 	StyleColor_CIEChromaticity_GradLabel,
 
@@ -314,6 +350,11 @@ enum ImWidgetsStyleColor
 	StyleColor_ToneCurve_Background,
 	StyleColor_ToneCurve_Grid,
 	StyleColor_ToneCurve_NeutralLine,
+	StyleColor_ToneCurve_Key,
+	StyleColor_ToneCurve_KeySelected,
+	StyleColor_ToneCurve_KeyOutline,
+	StyleColor_ToneCurve_Crosshair,
+	StyleColor_ToneCurve_HistogramOverlay,
 	StyleColor_ToneCurve_GradTick,
 	StyleColor_ToneCurve_GradLabel,
 
@@ -331,6 +372,14 @@ enum ImWidgetsStyleVar
 	StyleVar_Slider2D_CursorRadius,
 	StyleVar_Slider2D_CursorOffset,
 	StyleVar_Slider2D_CornerRadius,
+
+	// SliderRing
+	StyleVar_SliderRing_TrackThickness,
+	StyleVar_SliderRing_GrabRadius,
+
+	// SliderSpline
+	StyleVar_SliderSpline_TrackThickness,
+	StyleVar_SliderSpline_GrabRadius,
 
 	// General
 	StyleVar_NavCursor_Thickness,
@@ -357,6 +406,13 @@ enum ImWidgetsStyleVar
 	StyleVar_ColorWheel_DiscSectors,
 	StyleVar_ColorWheel_DiscRings,
 	StyleVar_ColorWheel_SliderHeight,
+
+	// Color Warper
+	StyleVar_ColorWarper_PointRadius,
+	StyleVar_ColorWarper_HitRadius,
+	StyleVar_ColorWarper_GridThickness,
+	StyleVar_ColorWarper_DiscSectors,
+	StyleVar_ColorWarper_DiscRings,
 
 	// Color Curve (Hue vs, Lum vs, Sat vs)
 	StyleVar_ColorCurve_DefaultHeight,
@@ -415,6 +471,14 @@ struct ImWidgetsStyle
 	float	Slider2D_CursorOffset;
 	float	Slider2D_CornerRadius;
 
+	// SliderRing
+	float	SliderRing_TrackThickness;			// Track arc thickness (px)
+	float	SliderRing_GrabRadius;				// Grab handle radius (px)
+
+	// SliderSpline
+	float	SliderSpline_TrackThickness;		// Spline track thickness (px)
+	float	SliderSpline_GrabRadius;			// Grab handle radius (px)
+
 	// General
 	float	NavCursor_Thickness;
 	float	NavCursor_Distance;
@@ -440,6 +504,13 @@ struct ImWidgetsStyle
 	float	ColorWheel_DiscSectors;				// Disc angular resolution
 	float	ColorWheel_DiscRings;				// Disc radial resolution
 	float	ColorWheel_SliderHeight;			// Master slider height (px)
+
+	// Color Warper
+	float	ColorWarper_PointRadius;			// Control point dot radius (px)
+	float	ColorWarper_HitRadius;				// Hit testing radius for points (px)
+	float	ColorWarper_GridThickness;			// Mesh grid line thickness (px)
+	float	ColorWarper_DiscSectors;			// Background disc angular resolution
+	float	ColorWarper_DiscRings;				// Background disc radial resolution
 
 	// Color Curve
 	float	ColorCurve_DefaultHeight;
@@ -521,6 +592,21 @@ struct ImWidgetsStyle
 		ColorWheel_DiscRings     = 24.0f;
 		ColorWheel_SliderHeight  = 20.0f;
 
+		// Slider Ring
+		SliderRing_TrackThickness = 8.0f;
+		SliderRing_GrabRadius     = 7.0f;
+
+		// Slider Spline
+		SliderSpline_TrackThickness = 4.0f;
+		SliderSpline_GrabRadius     = 7.0f;
+
+		// Color Warper
+		ColorWarper_PointRadius  = 4.0f;
+		ColorWarper_HitRadius    = 8.0f;
+		ColorWarper_GridThickness = 1.0f;
+		ColorWarper_DiscSectors  = 96.0f;
+		ColorWarper_DiscRings    = 24.0f;
+
 		// Color Curve
 		ColorCurve_DefaultHeight = 150.0f;
 		ColorCurve_KeyRadius     = 5.0f;
@@ -594,14 +680,41 @@ struct ImWidgetsStyle
 		// Color Wheel Colors
 		Colors[ StyleColor_ColorWheel_DotOutline ]          = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
 		Colors[ StyleColor_ColorWheel_DotOutlineActive ]    = ImVec4( 1.0f, 1.0f, 0.0f, 1.0f );
+		Colors[ StyleColor_ColorWheel_Crosshair ]           = ImVec4( 1.0f, 1.0f, 1.0f, 40.0f / 255.0f );
+		Colors[ StyleColor_ColorWheel_SliderOutline ]       = ImVec4( 0.0f, 0.0f, 0.0f, 150.0f / 255.0f );
+
+		// Slider Ring Colors
+		Colors[ StyleColor_SliderRing_Track ]               = ImVec4( 1.0f, 1.0f, 1.0f, 60.0f / 255.0f );
+		Colors[ StyleColor_SliderRing_TrackActive ]         = ImVec4( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 200.0f / 255.0f );
+		Colors[ StyleColor_SliderRing_Grab ]                = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
+		Colors[ StyleColor_SliderRing_GrabActive ]          = ImVec4( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
+
+		// Slider Spline Colors
+		Colors[ StyleColor_SliderSpline_Track ]              = ImVec4( 1.0f, 1.0f, 1.0f, 60.0f / 255.0f );
+		Colors[ StyleColor_SliderSpline_TrackActive ]        = ImVec4( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 200.0f / 255.0f );
+		Colors[ StyleColor_SliderSpline_Grab ]               = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
+		Colors[ StyleColor_SliderSpline_GrabActive ]         = ImVec4( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
+
+		// Color Warper Colors
+		Colors[ StyleColor_ColorWarper_GridLine ]            = ImVec4( 1.0f, 1.0f, 1.0f, 40.0f / 255.0f );
+		Colors[ StyleColor_ColorWarper_GridLineHovered ]     = ImVec4( 1.0f, 1.0f, 1.0f, 100.0f / 255.0f );
+		Colors[ StyleColor_ColorWarper_PointOutline ]        = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
+		Colors[ StyleColor_ColorWarper_PointOutlineActive ]  = ImVec4( 1.0f, 1.0f, 0.0f, 1.0f );
+		Colors[ StyleColor_ColorWarper_PointFill ]           = ImVec4( 0.5f, 0.5f, 0.5f, 0.8f );
+		Colors[ StyleColor_ColorWarper_PointFillMoved ]      = ImVec4( 1.0f, 0.6f, 0.0f, 0.9f );
+		Colors[ StyleColor_ColorWarper_Crosshair ]           = ImVec4( 1.0f, 1.0f, 1.0f, 40.0f / 255.0f );
 
 		// Color Curve Colors
+		Colors[ StyleColor_ColorCurve_Background ]          = ImVec4( 0.0f, 0.0f, 0.0f, 1.0f );
+		Colors[ StyleColor_ColorCurve_Grid ]                = ImVec4( 200.0f / 255.0f, 200.0f / 255.0f, 200.0f / 255.0f, 25.0f / 255.0f );
 		Colors[ StyleColor_ColorCurve_Line ]                = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
 		Colors[ StyleColor_ColorCurve_NeutralLine ]         = ImVec4( 1.0f, 1.0f, 1.0f, 80.0f / 255.0f );
 		Colors[ StyleColor_ColorCurve_Key ]                 = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
 		Colors[ StyleColor_ColorCurve_KeyHovered ]          = ImVec4( 230.0f / 255.0f, 230.0f / 255.0f, 230.0f / 255.0f, 1.0f );
 		Colors[ StyleColor_ColorCurve_KeySelected ]         = ImVec4( 1.0f, 1.0f, 0.0f, 1.0f );
 		Colors[ StyleColor_ColorCurve_KeyOutline ]          = ImVec4( 0.0f, 0.0f, 0.0f, 1.0f );
+		Colors[ StyleColor_ColorCurve_Crosshair ]           = ImVec4( 1.0f, 1.0f, 1.0f, 50.0f / 255.0f );
+		Colors[ StyleColor_ColorCurve_HistogramOverlay ]    = ImVec4( 1.0f, 1.0f, 1.0f, 40.0f / 255.0f );
 
 		// Parade Scope Colors
 		Colors[ StyleColor_ParadeScope_Background ]         = ImVec4( 0.0f, 0.0f, 0.0f, 1.0f );
@@ -621,6 +734,12 @@ struct ImWidgetsStyle
 		Colors[ StyleColor_VectorScope_Graticule ]          = ImVec4( 1.0f, 1.0f, 1.0f, 0.35f );
 		Colors[ StyleColor_VectorScope_Signal ]             = ImVec4( 0.2f, 1.0f, 0.3f, 1.0f );
 		Colors[ StyleColor_VectorScope_SkinToneLine ]       = ImVec4( 1.0f, 0.7f, 0.3f, 0.5f );
+		Colors[ StyleColor_VectorScope_TargetR ]            = ImVec4( 1.0f, 64.0f / 255.0f, 64.0f / 255.0f, 200.0f / 255.0f );
+		Colors[ StyleColor_VectorScope_TargetG ]            = ImVec4( 64.0f / 255.0f, 1.0f, 64.0f / 255.0f, 200.0f / 255.0f );
+		Colors[ StyleColor_VectorScope_TargetB ]            = ImVec4( 80.0f / 255.0f, 80.0f / 255.0f, 1.0f, 200.0f / 255.0f );
+		Colors[ StyleColor_VectorScope_TargetCy ]           = ImVec4( 64.0f / 255.0f, 1.0f, 1.0f, 200.0f / 255.0f );
+		Colors[ StyleColor_VectorScope_TargetMg ]           = ImVec4( 1.0f, 64.0f / 255.0f, 1.0f, 200.0f / 255.0f );
+		Colors[ StyleColor_VectorScope_TargetYl ]           = ImVec4( 1.0f, 1.0f, 64.0f / 255.0f, 200.0f / 255.0f );
 
 		// Histogram Colors
 		Colors[ StyleColor_Histogram_Background ]           = ImVec4( 0.0f, 0.0f, 0.0f, 1.0f );
@@ -646,6 +765,9 @@ struct ImWidgetsStyle
 		Colors[ StyleColor_CIEChromaticity_Signal ]         = ImVec4( 1.0f, 1.0f, 1.0f, 0.6f );
 		Colors[ StyleColor_CIEChromaticity_GamutLine ]      = ImVec4( 1.0f, 1.0f, 1.0f, 0.8f );
 		Colors[ StyleColor_CIEChromaticity_WhitePoint ]     = ImVec4( 1.0f, 1.0f, 1.0f, 0.9f );
+		Colors[ StyleColor_CIEChromaticity_PrimaryR ]       = ImVec4( 1.0f, 100.0f / 255.0f, 100.0f / 255.0f, 220.0f / 255.0f );
+		Colors[ StyleColor_CIEChromaticity_PrimaryG ]       = ImVec4( 100.0f / 255.0f, 1.0f, 100.0f / 255.0f, 220.0f / 255.0f );
+		Colors[ StyleColor_CIEChromaticity_PrimaryB ]       = ImVec4( 100.0f / 255.0f, 100.0f / 255.0f, 1.0f, 220.0f / 255.0f );
 		Colors[ StyleColor_CIEChromaticity_GradTick ]       = ImVec4( 1.0f, 1.0f, 1.0f, 0.4f );
 		Colors[ StyleColor_CIEChromaticity_GradLabel ]      = ImVec4( 1.0f, 1.0f, 1.0f, 0.7f );
 
@@ -653,6 +775,11 @@ struct ImWidgetsStyle
 		Colors[ StyleColor_ToneCurve_Background ]           = ImVec4( 0.06f, 0.06f, 0.06f, 1.0f );
 		Colors[ StyleColor_ToneCurve_Grid ]                 = ImVec4( 1.0f, 1.0f, 1.0f, 0.12f );
 		Colors[ StyleColor_ToneCurve_NeutralLine ]          = ImVec4( 0.5f, 0.5f, 0.5f, 0.5f );
+		Colors[ StyleColor_ToneCurve_Key ]                  = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
+		Colors[ StyleColor_ToneCurve_KeySelected ]          = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
+		Colors[ StyleColor_ToneCurve_KeyOutline ]           = ImVec4( 0.0f, 0.0f, 0.0f, 200.0f / 255.0f );
+		Colors[ StyleColor_ToneCurve_Crosshair ]            = ImVec4( 1.0f, 1.0f, 1.0f, 50.0f / 255.0f );
+		Colors[ StyleColor_ToneCurve_HistogramOverlay ]     = ImVec4( 1.0f, 1.0f, 1.0f, 40.0f / 255.0f );
 		Colors[ StyleColor_ToneCurve_GradTick ]             = ImVec4( 1.0f, 1.0f, 1.0f, 0.4f );
 		Colors[ StyleColor_ToneCurve_GradLabel ]            = ImVec4( 1.0f, 1.0f, 1.0f, 0.7f );
 	}
@@ -685,6 +812,16 @@ struct ImWidgetsStyle
 		ColorWheel_DotRadius     = ImTrunc( ColorWheel_DotRadius * scale_factor );
 		ColorWheel_RingThickness = ImTrunc( ColorWheel_RingThickness * scale_factor );
 		ColorWheel_SliderHeight  = ImTrunc( ColorWheel_SliderHeight * scale_factor );
+
+		SliderRing_TrackThickness = ImTrunc( SliderRing_TrackThickness * scale_factor );
+		SliderRing_GrabRadius     = ImTrunc( SliderRing_GrabRadius * scale_factor );
+
+		SliderSpline_TrackThickness = ImTrunc( SliderSpline_TrackThickness * scale_factor );
+		SliderSpline_GrabRadius     = ImTrunc( SliderSpline_GrabRadius * scale_factor );
+
+		ColorWarper_PointRadius   = ImTrunc( ColorWarper_PointRadius * scale_factor );
+		ColorWarper_HitRadius    = ImTrunc( ColorWarper_HitRadius * scale_factor );
+		ColorWarper_GridThickness = ImTrunc( ColorWarper_GridThickness * scale_factor );
 
 		ColorCurve_DefaultHeight = ImTrunc( ColorCurve_DefaultHeight * scale_factor );
 		ColorCurve_KeyRadius     = ImTrunc( ColorCurve_KeyRadius * scale_factor );
@@ -813,12 +950,33 @@ struct ImWidgetsStyle
 		case StyleColor_CurveEditor_AddIndicator: return "CurveEditorAddIndicator";
 		case StyleColor_ColorWheel_DotOutline: return "ColorWheelDotOutline";
 		case StyleColor_ColorWheel_DotOutlineActive: return "ColorWheelDotOutlineActive";
+		case StyleColor_ColorWheel_Crosshair: return "ColorWheelCrosshair";
+		case StyleColor_ColorWheel_SliderOutline: return "ColorWheelSliderOutline";
+		case StyleColor_SliderRing_Track: return "SliderRingTrack";
+		case StyleColor_SliderRing_TrackActive: return "SliderRingTrackActive";
+		case StyleColor_SliderRing_Grab: return "SliderRingGrab";
+		case StyleColor_SliderRing_GrabActive: return "SliderRingGrabActive";
+		case StyleColor_SliderSpline_Track: return "SliderSplineTrack";
+		case StyleColor_SliderSpline_TrackActive: return "SliderSplineTrackActive";
+		case StyleColor_SliderSpline_Grab: return "SliderSplineGrab";
+		case StyleColor_SliderSpline_GrabActive: return "SliderSplineGrabActive";
+		case StyleColor_ColorWarper_GridLine: return "ColorWarperGridLine";
+		case StyleColor_ColorWarper_GridLineHovered: return "ColorWarperGridLineHovered";
+		case StyleColor_ColorWarper_PointOutline: return "ColorWarperPointOutline";
+		case StyleColor_ColorWarper_PointOutlineActive: return "ColorWarperPointOutlineActive";
+		case StyleColor_ColorWarper_PointFill: return "ColorWarperPointFill";
+		case StyleColor_ColorWarper_PointFillMoved: return "ColorWarperPointFillMoved";
+		case StyleColor_ColorWarper_Crosshair: return "ColorWarperCrosshair";
+		case StyleColor_ColorCurve_Background: return "ColorCurveBackground";
+		case StyleColor_ColorCurve_Grid: return "ColorCurveGrid";
 		case StyleColor_ColorCurve_Line: return "ColorCurveLine";
 		case StyleColor_ColorCurve_NeutralLine: return "ColorCurveNeutralLine";
 		case StyleColor_ColorCurve_Key: return "ColorCurveKey";
 		case StyleColor_ColorCurve_KeyHovered: return "ColorCurveKeyHovered";
 		case StyleColor_ColorCurve_KeySelected: return "ColorCurveKeySelected";
 		case StyleColor_ColorCurve_KeyOutline: return "ColorCurveKeyOutline";
+		case StyleColor_ColorCurve_Crosshair: return "ColorCurveCrosshair";
+		case StyleColor_ColorCurve_HistogramOverlay: return "ColorCurveHistogramOverlay";
 		case StyleColor_ParadeScope_Background: return "ParadeScopeBackground";
 		case StyleColor_ParadeScope_Grid: return "ParadeScopeGrid";
 		case StyleColor_ParadeScope_ChannelR: return "ParadeScopeChannelR";
@@ -834,6 +992,12 @@ struct ImWidgetsStyle
 		case StyleColor_VectorScope_Graticule: return "VectorScopeGraticule";
 		case StyleColor_VectorScope_Signal: return "VectorScopeSignal";
 		case StyleColor_VectorScope_SkinToneLine: return "VectorScopeSkinToneLine";
+		case StyleColor_VectorScope_TargetR: return "VectorScopeTargetR";
+		case StyleColor_VectorScope_TargetG: return "VectorScopeTargetG";
+		case StyleColor_VectorScope_TargetB: return "VectorScopeTargetB";
+		case StyleColor_VectorScope_TargetCy: return "VectorScopeTargetCy";
+		case StyleColor_VectorScope_TargetMg: return "VectorScopeTargetMg";
+		case StyleColor_VectorScope_TargetYl: return "VectorScopeTargetYl";
 		case StyleColor_Histogram_Background: return "HistogramBackground";
 		case StyleColor_Histogram_Grid: return "HistogramGrid";
 		case StyleColor_Histogram_ChannelR: return "HistogramChannelR";
@@ -855,11 +1019,19 @@ struct ImWidgetsStyle
 		case StyleColor_CIEChromaticity_Signal: return "CIEChromaticitySignal";
 		case StyleColor_CIEChromaticity_GamutLine: return "CIEChromaticityGamutLine";
 		case StyleColor_CIEChromaticity_WhitePoint: return "CIEChromaticityWhitePoint";
+		case StyleColor_CIEChromaticity_PrimaryR: return "CIEChromaticityPrimaryR";
+		case StyleColor_CIEChromaticity_PrimaryG: return "CIEChromaticityPrimaryG";
+		case StyleColor_CIEChromaticity_PrimaryB: return "CIEChromaticityPrimaryB";
 		case StyleColor_CIEChromaticity_GradTick: return "CIEChromaticityGradTick";
 		case StyleColor_CIEChromaticity_GradLabel: return "CIEChromaticityGradLabel";
 		case StyleColor_ToneCurve_Background: return "ToneCurveBackground";
 		case StyleColor_ToneCurve_Grid: return "ToneCurveGrid";
 		case StyleColor_ToneCurve_NeutralLine: return "ToneCurveNeutralLine";
+		case StyleColor_ToneCurve_Key: return "ToneCurveKey";
+		case StyleColor_ToneCurve_KeySelected: return "ToneCurveKeySelected";
+		case StyleColor_ToneCurve_KeyOutline: return "ToneCurveKeyOutline";
+		case StyleColor_ToneCurve_Crosshair: return "ToneCurveCrosshair";
+		case StyleColor_ToneCurve_HistogramOverlay: return "ToneCurveHistogramOverlay";
 		case StyleColor_ToneCurve_GradTick: return "ToneCurveGradTick";
 		case StyleColor_ToneCurve_GradLabel: return "ToneCurveGradLabel";
 		case StyleColor_Count: break;
@@ -911,6 +1083,15 @@ private:
 		case StyleVar_ColorWheel_DiscSectors:			return &ColorWheel_DiscSectors;
 		case StyleVar_ColorWheel_DiscRings:				return &ColorWheel_DiscRings;
 		case StyleVar_ColorWheel_SliderHeight:			return &ColorWheel_SliderHeight;
+		case StyleVar_SliderRing_TrackThickness:		return &SliderRing_TrackThickness;
+		case StyleVar_SliderRing_GrabRadius:			return &SliderRing_GrabRadius;
+		case StyleVar_SliderSpline_TrackThickness:		return &SliderSpline_TrackThickness;
+		case StyleVar_SliderSpline_GrabRadius:			return &SliderSpline_GrabRadius;
+		case StyleVar_ColorWarper_PointRadius:			return &ColorWarper_PointRadius;
+		case StyleVar_ColorWarper_HitRadius:			return &ColorWarper_HitRadius;
+		case StyleVar_ColorWarper_GridThickness:		return &ColorWarper_GridThickness;
+		case StyleVar_ColorWarper_DiscSectors:			return &ColorWarper_DiscSectors;
+		case StyleVar_ColorWarper_DiscRings:			return &ColorWarper_DiscRings;
 		case StyleVar_ColorCurve_DefaultHeight:			return &ColorCurve_DefaultHeight;
 		case StyleVar_ColorCurve_KeyRadius:				return &ColorCurve_KeyRadius;
 		case StyleVar_ColorCurve_LineThickness:			return &ColorCurve_LineThickness;
@@ -1354,6 +1535,88 @@ enum ImColorWheelMode_
 	ImColorWheelMode_HSV = 0,	// Hue-Saturation disc, Value on master slider
 	ImColorWheelMode_OkLCH,		// Perceptually uniform: Hue-Chroma disc, Lightness on master slider
 	ImColorWheelMode_COUNT
+};
+
+typedef int ImColorWarperMode;
+enum ImColorWarperMode_
+{
+	ImColorWarperMode_Circular = 0,		// Hue/Sat disc layout (polar mesh)
+	ImColorWarperMode_Square,			// Square grid layout (cartesian mesh)
+	ImColorWarperMode_COUNT
+};
+
+typedef int ImColorWarperSpace;
+enum ImColorWarperSpace_
+{
+	ImColorWarperSpace_HSV = 0,			// Hue-Saturation-Value
+	ImColorWarperSpace_HSL,				// Hue-Saturation-Lightness
+	ImColorWarperSpace_HSY,				// Hue-Saturation-Luma (BT.709)
+	ImColorWarperSpace_HSP,				// Hue-Saturation-Perceived brightness
+	ImColorWarperSpace_OkLab,			// OkLab (perceptually uniform, L on third axis)
+	ImColorWarperSpace_OkLCH,			// OkLCH (perceptually uniform, L on third axis)
+	ImColorWarperSpace_COUNT
+};
+
+struct ImColorWarperData
+{
+	int		HueDivisions;		// Number of divisions around hue (6, 12, or 24)
+	int		SatDivisions;		// Number of divisions along saturation
+	ImVector<ImVec2> Offsets;	// Per-point (hue_shift, sat_shift) offsets
+								// Size = (SatDivisions+1) * HueDivisions
+								// Index: satIdx * HueDivisions + hueIdx
+								// satIdx=0 is center, satIdx=SatDivisions is outer edge
+	ImVector<bool>   Pinned;	// Per-point pin state (locked in place)
+	int		SelectedIdx;		// Currently selected/dragged point, -1 = none
+
+	ImColorWarperData() : HueDivisions( 12 ), SatDivisions( 6 ), SelectedIdx( -1 ) {}
+
+	void Init( int hueDivs = 12, int satDivs = 6 )
+	{
+		HueDivisions = hueDivs;
+		SatDivisions = satDivs;
+		int count = ( SatDivisions + 1 ) * HueDivisions;
+		Offsets.resize( count );
+		Pinned.resize( count );
+		Reset();
+	}
+
+	void Reset()
+	{
+		for ( int i = 0; i < Offsets.Size; ++i )
+		{
+			Offsets[ i ] = ImVec2( 0.0f, 0.0f );
+			Pinned[ i ] = false;
+		}
+		SelectedIdx = -1;
+	}
+
+	int PointCount() const { return ( SatDivisions + 1 ) * HueDivisions; }
+
+	int PointIndex( int hueIdx, int satIdx ) const
+	{
+		return satIdx * HueDivisions + ( hueIdx % HueDivisions );
+	}
+
+	// Identity (unwarped) position: (hue 0..1, sat 0..1)
+	ImVec2 GetIdentityPos( int hueIdx, int satIdx ) const
+	{
+		float h = ( float )( hueIdx % HueDivisions ) / ( float )HueDivisions;
+		float s = ( float )satIdx / ( float )SatDivisions;
+		return ImVec2( h, s );
+	}
+
+	// Warped position for a grid point
+	ImVec2 GetWarpedPos( int hueIdx, int satIdx ) const
+	{
+		int idx = PointIndex( hueIdx, satIdx );
+		ImVec2 id = GetIdentityPos( hueIdx, satIdx );
+		float h = id.x + Offsets[ idx ].x;
+		float s = ImClamp( id.y + Offsets[ idx ].y, 0.0f, 1.0f );
+		// Wrap hue
+		h = h - ImFloor( h );
+		if ( h < 0.0f ) h += 1.0f;
+		return ImVec2( h, s );
+	}
 };
 
 typedef int ImColorCurveMode;
@@ -2284,6 +2547,15 @@ namespace ImWidgets{
 	IMGUI_API void DrawColorDisc( ImDrawList* pDrawList, ImVec2 center, float radius, ImColorWheelMode mode, float thirdAxis, int numSectors = 64, int numRings = 16 );
 	IMGUI_API bool ColorWheel( char const* label, ImVec4* color, ImColorWheelMode mode = ImColorWheelMode_HSV, float hdr_max = 1.0f, ImVec2 size = ImVec2( 0, 0 ) );
 
+	// Color Warper
+	IMGUI_API void ColorConvertRGBtoHSL( float r, float g, float b, float& out_h, float& out_s, float& out_l );
+	IMGUI_API void ColorConvertHSLtoRGB( float h, float s, float l, float& out_r, float& out_g, float& out_b );
+	IMGUI_API void ColorConvertRGBtoHSY( float r, float g, float b, float& out_h, float& out_s, float& out_y );
+	IMGUI_API void ColorConvertHSYtoRGB( float h, float s, float y, float& out_r, float& out_g, float& out_b );
+	IMGUI_API void ColorConvertRGBtoHSP( float r, float g, float b, float& out_h, float& out_s, float& out_p );
+	IMGUI_API void ColorConvertHSPtoRGB( float h, float s, float p, float& out_r, float& out_g, float& out_b );
+	IMGUI_API bool ColorWarper( char const* label, ImColorWarperData* data, ImColorWarperMode mode = ImColorWarperMode_Circular, ImColorWarperSpace space = ImColorWarperSpace_HSV, float thirdAxis = 1.0f, ImVec2 size = ImVec2( 0, 0 ) );
+
 	IMGUI_API float ColorCurveDefaultValue( ImColorCurveMode mode );
 	IMGUI_API void  ColorCurveRange( ImColorCurveMode mode, float* out_min, float* out_max );
 	IMGUI_API const char* ColorCurveModeName( ImColorCurveMode mode );
@@ -2306,12 +2578,28 @@ namespace ImWidgets{
 	IMGUI_API float ToneCurveSample( ImColorCurveData const& curve, float x );
 	IMGUI_API bool  ToneCurve( char const* label, ImToneCurveData* curve, ImHistogramMode mode, ImHistogramData const* histogramOverlay = NULL, ImVec2 size = ImVec2( 0, 0 ) );
 
-	//IMGUI_API bool SliderRingScalar( char const* name,
-	//								 ImGuiDataType data_type,
-	//								 void* p_value, void* p_min, void* p_max,
-	//								 float v_angle_min, float v_angle_max,
-	//								 float v_thickness, const char* format,
-	//								 ImGuiSliderFlags flags, ImRect* out_grab_bb );
+	IMGUI_API bool SliderRingScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max,
+									float v_angle_min = -0.75f * IM_PI, float v_angle_max = 0.75f * IM_PI,
+									float v_thickness = 0.0f, const char* format = NULL, ImGuiSliderFlags flags = 0 );
+	IMGUI_API bool SliderRingFloat( char const* label, float* value, float v_min, float v_max,
+									float v_angle_min = -0.75f * IM_PI, float v_angle_max = 0.75f * IM_PI,
+									float v_thickness = 0.0f, const char* format = "%.3f", ImGuiSliderFlags flags = 0 );
+	IMGUI_API bool SliderRingInt( char const* label, int* value, int v_min, int v_max,
+								  float v_angle_min = -0.75f * IM_PI, float v_angle_max = 0.75f * IM_PI,
+								  float v_thickness = 0.0f, const char* format = "%d", ImGuiSliderFlags flags = 0 );
+
+	// Spline Slider: slider whose track follows cubic bezier curve(s).
+	// control_points: ImVec2 array in normalized [0,1]x[0,1] space mapped to widget rect. NULL = default S-curve.
+	// num_points: 4 for single bezier, 7 for two chained segments, 3N+1 for N segments.
+	IMGUI_API bool SliderSplineScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max,
+									   const ImVec2* control_points = NULL, int num_points = 4, float v_height = 0.0f,
+									   float v_thickness = 0.0f, const char* format = NULL, ImGuiSliderFlags flags = 0 );
+	IMGUI_API bool SliderSplineFloat( char const* label, float* value, float v_min, float v_max,
+									  const ImVec2* control_points = NULL, int num_points = 4, float v_height = 0.0f,
+									  float v_thickness = 0.0f, const char* format = "%.3f", ImGuiSliderFlags flags = 0 );
+	IMGUI_API bool SliderSplineInt( char const* label, int* value, int v_min, int v_max,
+									const ImVec2* control_points = NULL, int num_points = 4, float v_height = 0.0f,
+									float v_thickness = 0.0f, const char* format = "%d", ImGuiSliderFlags flags = 0 );
 
 	//IMGUI_API bool DragFloatPrecise( char const* label, float* value, float v_min, float v_max, ImGuiSliderFlags flags );
 

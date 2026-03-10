@@ -2246,15 +2246,82 @@ namespace ImWidgets {
 					ImWidgets::SetDashedLinesDebugJoins(debug_joins);
 			}
 #endif
-#if 0 // TODO
 			if ( ImGui::CollapsingHeader( "SliderRing" ) )
 			{
-				static float min = 0.0f;
-				static float max = 1.0f;
-				static float value = 0.5f;
-				ImWidgets::SliderRingScalar( "Values##SliderRingScalar", ImGuiDataType_Float, &value, &min, &max, 0.0f, IM_PI, 64.0f, "%.3f", 0, NULL );
+				static float fval = 0.5f;
+				ImWidgets::SliderRingFloat( "Float##SR", &fval, 0.0f, 1.0f );
+
+				static int ival = 50;
+				ImWidgets::SliderRingInt( "Int##SR", &ival, 0, 100 );
+
+				ImGui::Separator();
+				ImGui::Text( "Custom angles & thickness:" );
+				static float fval2 = 0.25f;
+				ImWidgets::SliderRingFloat( "Half##SR2", &fval2, 0.0f, 1.0f, -IM_PI, 0.0f, 12.0f );
+
+				static float fval3 = 0.75f;
+				ImWidgets::SliderRingFloat( "Full##SR3", &fval3, 0.0f, 1.0f, -IM_PI, IM_PI, 6.0f );
 			}
-#endif
+			if ( ImGui::CollapsingHeader( "SliderSpline" ) )
+			{
+				static float fval = 0.5f;
+				ImWidgets::SliderSplineFloat( "S-Curve##SS1", &fval, 0.0f, 1.0f );
+
+				static int ival = 50;
+				ImWidgets::SliderSplineInt( "Int##SS2", &ival, 0, 100 );
+
+				ImGui::Separator();
+				ImGui::Text( "Custom curves:" );
+
+				// Arc up
+				static const ImVec2 arcUp[ 4 ] = { ImVec2( 0.0f, 0.8f ), ImVec2( 0.25f, 0.0f ), ImVec2( 0.75f, 0.0f ), ImVec2( 1.0f, 0.8f ) };
+				static float fval2 = 0.3f;
+				ImWidgets::SliderSplineFloat( "Arc Up##SS3", &fval2, 0.0f, 1.0f, arcUp );
+
+				// Arc down
+				static const ImVec2 arcDown[ 4 ] = { ImVec2( 0.0f, 0.2f ), ImVec2( 0.25f, 1.0f ), ImVec2( 0.75f, 1.0f ), ImVec2( 1.0f, 0.2f ) };
+				static float fval3 = 0.7f;
+				ImWidgets::SliderSplineFloat( "Arc Down##SS4", &fval3, 0.0f, 1.0f, arcDown );
+
+				// Straight line
+				static const ImVec2 straight[ 4 ] = { ImVec2( 0.0f, 0.5f ), ImVec2( 0.33f, 0.5f ), ImVec2( 0.66f, 0.5f ), ImVec2( 1.0f, 0.5f ) };
+				static float fval4 = 0.5f;
+				ImWidgets::SliderSplineFloat( "Straight##SS5", &fval4, -10.0f, 10.0f, straight );
+
+				// Wave
+				static const ImVec2 wave[ 4 ] = { ImVec2( 0.0f, 0.5f ), ImVec2( 0.15f, 0.0f ), ImVec2( 0.85f, 1.0f ), ImVec2( 1.0f, 0.5f ) };
+				static float fval5 = 0.5f;
+				ImWidgets::SliderSplineFloat( "Wave##SS6", &fval5, 0.0f, 100.0f, wave, 4, 80.0f, 6.0f );
+
+				ImGui::Separator();
+				ImGui::Text( "Loops:" );
+
+				// Closed loop (circle-like, 2 bezier segments = 7 points)
+				static const ImVec2 closedLoop[ 7 ] = {
+					ImVec2( 0.5f, 0.0f ),   // top center
+					ImVec2( 1.1f, 0.0f ),   // cp: pull right
+					ImVec2( 1.1f, 1.0f ),   // cp: pull right-bottom
+					ImVec2( 0.5f, 1.0f ),   // bottom center
+					ImVec2( -0.1f, 1.0f ),  // cp: pull left-bottom
+					ImVec2( -0.1f, 0.0f ),  // cp: pull left
+					ImVec2( 0.5f, 0.0f ),   // back to top
+				};
+				static float fval6 = 0.25f;
+				ImWidgets::SliderSplineFloat( "Closed Loop##SS7", &fval6, 0.0f, 1.0f, closedLoop, 7, 200.0f );
+
+				// Infinity sign (2 bezier segments = 7 points): right lobe then left lobe
+				static const ImVec2 infinity[ 7 ] = {
+					ImVec2( 0.5f, 0.5f ),    // center crossing
+					ImVec2( 0.85f, -0.15f ), // cp: pull upper-right
+					ImVec2( 1.15f, 1.15f ),  // cp: pull lower-right
+					ImVec2( 0.5f, 0.5f ),    // back to center
+					ImVec2( -0.15f, -0.15f ),// cp: pull upper-left
+					ImVec2( 0.15f, 1.15f ),  // cp: pull lower-left
+					ImVec2( 0.5f, 0.5f ),    // back to center
+				};
+				static float fval7 = 0.5f;
+				ImWidgets::SliderSplineFloat( "Infinity##SS8", &fval7, 0.0f, 1.0f, infinity, 7, 200.0f );
+			}
 			if ( ImGui::CollapsingHeader( "Hue Selector" ) )
 			{
 				static float offset = 1.0f;
@@ -3385,6 +3452,37 @@ namespace ImWidgets {
 				else
 					ImGui::TextDisabled( "Failed to load image" );
 				ImGui::TextWrapped( "Click to add key. Drag to move. Drag far outside to delete. Right-click for options." );
+			}
+
+			if ( ImGui::CollapsingHeader( "Color Warper", ImGuiTreeNodeFlags_DefaultOpen ) )
+			{
+				static ImColorWarperData warperData;
+				static bool warperInited = false;
+				if ( !warperInited ) { warperData.Init( 12, 6 ); warperInited = true; }
+
+				static int warperMode = ImColorWarperMode_Circular;
+				static int warperSpace = ImColorWarperSpace_HSV;
+				static float warperThirdAxis = 1.0f;
+				static int warperGrid = 1; // 0=6, 1=12, 2=24
+
+				ImGui::Combo( "Shape##Warper", &warperMode, "Circular\0Square\0" );
+				ImGui::Combo( "Color Space##Warper", &warperSpace, "HSV\0HSL\0HSY\0HSP\0OkLab\0OkLCH\0" );
+				ImGui::SliderFloat( "Value/Lightness##Warper", &warperThirdAxis, 0.0f, 1.0f );
+
+				if ( ImGui::Combo( "Grid##Warper", &warperGrid, "6x6\0" "12x6\0" "24x12\0" ) )
+				{
+					int hueDivs[] = { 6, 12, 24 };
+					int satDivs[] = { 6, 6, 12 };
+					warperData.Init( hueDivs[ warperGrid ], satDivs[ warperGrid ] );
+				}
+
+				ColorWarper( "##WarperMain", &warperData,
+					( ImColorWarperMode )warperMode, ( ImColorWarperSpace )warperSpace, warperThirdAxis );
+
+				if ( ImGui::Button( "Reset##Warper" ) )
+					warperData.Reset();
+				ImGui::SameLine();
+				ImGui::Text( "Points: %d (%dx%d)", warperData.PointCount(), warperData.HueDivisions, warperData.SatDivisions );
 			}
 
 			if ( ImGui::CollapsingHeader( "Color Wheel", ImGuiTreeNodeFlags_DefaultOpen ) )

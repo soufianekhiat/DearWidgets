@@ -8131,7 +8131,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// Crosshair guide lines from dot to disc edges
 		{
-			ImU32 crossCol = IM_COL32( 255, 255, 255, 40 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorWheel_Crosshair ] );
 			// Horizontal line through dot
 			float clampY = ImClamp( dotPos.y, discCenter.y - innerDiscRadius, discCenter.y + innerDiscRadius );
 			float halfChord = ImSqrt( ImMax( innerDiscRadius * innerDiscRadius - ( clampY - discCenter.y ) * ( clampY - discCenter.y ), 0.0f ) );
@@ -8229,7 +8229,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 			dl->AddRectFilled( handleMin, handleMax, handleFill, 2.0f );
 			dl->AddRect( handleMin, handleMax, IM_COL32_WHITE, 2.0f, 0, 1.5f );
-			dl->AddRect( ImVec2( handleMin.x - 0.5f, handleMin.y - 0.5f ), ImVec2( handleMax.x + 0.5f, handleMax.y + 0.5f ), IM_COL32( 0, 0, 0, 150 ), 2.0f );
+			dl->AddRect( ImVec2( handleMin.x - 0.5f, handleMin.y - 0.5f ), ImVec2( handleMax.x + 0.5f, handleMax.y + 0.5f ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorWheel_SliderOutline ] ), 2.0f );
 		}
 
 		// Label
@@ -8325,6 +8325,542 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			color->w = alpha;
 			ImGui::MarkItemEdited( id );
 		}
+
+		return value_changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Color Warper
+	//////////////////////////////////////////////////////////////////////////
+
+	// ---- HSL conversion ----
+	void ColorConvertRGBtoHSL( float r, float g, float b, float& out_h, float& out_s, float& out_l )
+	{
+		float mx = ImMax( r, ImMax( g, b ) );
+		float mn = ImMin( r, ImMin( g, b ) );
+		float d = mx - mn;
+		out_l = ( mx + mn ) * 0.5f;
+		if ( d < 1e-6f )
+		{
+			out_h = 0.0f;
+			out_s = 0.0f;
+			return;
+		}
+		out_s = d / ( 1.0f - ImAbs( 2.0f * out_l - 1.0f ) + 1e-6f );
+		if ( mx == r )		out_h = ImFmod( ( g - b ) / d, 6.0f );
+		else if ( mx == g )	out_h = ( b - r ) / d + 2.0f;
+		else				out_h = ( r - g ) / d + 4.0f;
+		out_h /= 6.0f;
+		if ( out_h < 0.0f ) out_h += 1.0f;
+	}
+
+	static float HslHueToRgb( float p, float q, float t )
+	{
+		if ( t < 0.0f ) t += 1.0f;
+		if ( t > 1.0f ) t -= 1.0f;
+		if ( t < 1.0f / 6.0f ) return p + ( q - p ) * 6.0f * t;
+		if ( t < 1.0f / 2.0f ) return q;
+		if ( t < 2.0f / 3.0f ) return p + ( q - p ) * ( 2.0f / 3.0f - t ) * 6.0f;
+		return p;
+	}
+
+	void ColorConvertHSLtoRGB( float h, float s, float l, float& out_r, float& out_g, float& out_b )
+	{
+		if ( s < 1e-6f )
+		{
+			out_r = out_g = out_b = l;
+			return;
+		}
+		float q = l < 0.5f ? l * ( 1.0f + s ) : l + s - l * s;
+		float p = 2.0f * l - q;
+		out_r = HslHueToRgb( p, q, h + 1.0f / 3.0f );
+		out_g = HslHueToRgb( p, q, h );
+		out_b = HslHueToRgb( p, q, h - 1.0f / 3.0f );
+	}
+
+	// ---- HSY conversion (BT.709 luma) ----
+	void ColorConvertRGBtoHSY( float r, float g, float b, float& out_h, float& out_s, float& out_y )
+	{
+		out_y = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+		// Use HSV hue
+		float mx = ImMax( r, ImMax( g, b ) );
+		float mn = ImMin( r, ImMin( g, b ) );
+		float d = mx - mn;
+		if ( d < 1e-6f )
+		{
+			out_h = 0.0f;
+			out_s = 0.0f;
+			return;
+		}
+		if ( mx == r )		out_h = ImFmod( ( g - b ) / d, 6.0f );
+		else if ( mx == g )	out_h = ( b - r ) / d + 2.0f;
+		else				out_h = ( r - g ) / d + 4.0f;
+		out_h /= 6.0f;
+		if ( out_h < 0.0f ) out_h += 1.0f;
+		// Saturation as chroma relative to max possible
+		out_s = ( mx > 1e-6f ) ? d / mx : 0.0f;
+	}
+
+	void ColorConvertHSYtoRGB( float h, float s, float y, float& out_r, float& out_g, float& out_b )
+	{
+		// Convert through HSV: use hue, approximate V from Y
+		ImGui::ColorConvertHSVtoRGB( h, s, ImClamp( y, 0.0f, 1.0f ), out_r, out_g, out_b );
+		// Scale to approximate target luma
+		float curY = 0.2126f * out_r + 0.7152f * out_g + 0.0722f * out_b;
+		if ( curY > 1e-6f )
+		{
+			float scale = y / curY;
+			out_r = ImClamp( out_r * scale, 0.0f, 1.0f );
+			out_g = ImClamp( out_g * scale, 0.0f, 1.0f );
+			out_b = ImClamp( out_b * scale, 0.0f, 1.0f );
+		}
+		else
+		{
+			out_r = out_g = out_b = ImClamp( y, 0.0f, 1.0f );
+		}
+	}
+
+	// ---- HSP conversion (perceived brightness) ----
+	void ColorConvertRGBtoHSP( float r, float g, float b, float& out_h, float& out_s, float& out_p )
+	{
+		out_p = ImSqrt( 0.299f * r * r + 0.587f * g * g + 0.114f * b * b );
+		float mx = ImMax( r, ImMax( g, b ) );
+		float mn = ImMin( r, ImMin( g, b ) );
+		float d = mx - mn;
+		if ( d < 1e-6f )
+		{
+			out_h = 0.0f;
+			out_s = 0.0f;
+			return;
+		}
+		if ( mx == r )		out_h = ImFmod( ( g - b ) / d, 6.0f );
+		else if ( mx == g )	out_h = ( b - r ) / d + 2.0f;
+		else				out_h = ( r - g ) / d + 4.0f;
+		out_h /= 6.0f;
+		if ( out_h < 0.0f ) out_h += 1.0f;
+		out_s = ( mx > 1e-6f ) ? d / mx : 0.0f;
+	}
+
+	void ColorConvertHSPtoRGB( float h, float s, float p, float& out_r, float& out_g, float& out_b )
+	{
+		// Convert through HSV, then scale to target perceived brightness
+		ImGui::ColorConvertHSVtoRGB( h, s, ImClamp( p, 0.0f, 1.0f ), out_r, out_g, out_b );
+		float curP = ImSqrt( 0.299f * out_r * out_r + 0.587f * out_g * out_g + 0.114f * out_b * out_b );
+		if ( curP > 1e-6f )
+		{
+			float scale = p / curP;
+			out_r = ImClamp( out_r * scale, 0.0f, 1.0f );
+			out_g = ImClamp( out_g * scale, 0.0f, 1.0f );
+			out_b = ImClamp( out_b * scale, 0.0f, 1.0f );
+		}
+		else
+		{
+			out_r = out_g = out_b = ImClamp( p, 0.0f, 1.0f );
+		}
+	}
+
+	// Sample disc color for the warper background
+	static ImU32 ColorWarperSampleDisc( ImColorWarperSpace space, float normRadius, float angle, float thirdAxis )
+	{
+		float r, g, b;
+		float h = angle / ( 2.0f * IM_PI );
+		if ( h < 0.0f ) h += 1.0f;
+		if ( h > 1.0f ) h -= 1.0f;
+
+		switch ( space )
+		{
+		default:
+		case ImColorWarperSpace_HSV: ImGui::ColorConvertHSVtoRGB( h, normRadius, thirdAxis, r, g, b ); break;
+		case ImColorWarperSpace_HSL: ColorConvertHSLtoRGB( h, normRadius, thirdAxis, r, g, b ); break;
+		case ImColorWarperSpace_HSY: ColorConvertHSYtoRGB( h, normRadius, thirdAxis, r, g, b ); break;
+		case ImColorWarperSpace_HSP: ColorConvertHSPtoRGB( h, normRadius, thirdAxis, r, g, b ); break;
+		case ImColorWarperSpace_OkLCH:
+		{
+			float c = normRadius * kOkLCHMaxChroma;
+			ColorConvertOKLCHtosRGB( r, g, b, thirdAxis, c, h );
+			break;
+		}
+		case ImColorWarperSpace_OkLab:
+		{
+			// Disc maps a/b plane; normRadius = distance from neutral, angle = direction
+			float labA = normRadius * kOkLCHMaxChroma * ImCos( angle );
+			float labB = normRadius * kOkLCHMaxChroma * ImSin( angle );
+			ColorConvertOKLABtoRGB( r, g, b, thirdAxis, labA, labB );
+			break;
+		}
+		}
+
+		r = ImClamp( r, 0.0f, 1.0f );
+		g = ImClamp( g, 0.0f, 1.0f );
+		b = ImClamp( b, 0.0f, 1.0f );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	// Draw warper background disc (circular mode)
+	static void DrawColorWarperDisc( ImDrawList* dl, ImVec2 center, float radius, ImColorWarperSpace space, float thirdAxis, int numSectors, int numRings )
+	{
+		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
+		int totalQuads = numSectors * numRings;
+		dl->PrimReserve( totalQuads * 6, totalQuads * 4 );
+
+		float const sectorAngle = 2.0f * IM_PI / ( float )numSectors;
+
+		for ( int ring = 0; ring < numRings; ++ring )
+		{
+			float innerR = ( float )ring / numRings * radius;
+			float outerR = ( float )( ring + 1 ) / numRings * radius;
+			float innerNorm = ( float )ring / numRings;
+			float outerNorm = ( float )( ring + 1 ) / numRings;
+
+			for ( int sector = 0; sector < numSectors; ++sector )
+			{
+				float a0 = sector * sectorAngle;
+				float a1 = ( sector + 1 ) * sectorAngle;
+
+				ImVec2 p00 = center + ImVec2( ImCos( a0 ) * innerR, ImSin( a0 ) * innerR );
+				ImVec2 p10 = center + ImVec2( ImCos( a0 ) * outerR, ImSin( a0 ) * outerR );
+				ImVec2 p11 = center + ImVec2( ImCos( a1 ) * outerR, ImSin( a1 ) * outerR );
+				ImVec2 p01 = center + ImVec2( ImCos( a1 ) * innerR, ImSin( a1 ) * innerR );
+
+				ImU32 c00 = ColorWarperSampleDisc( space, innerNorm, a0, thirdAxis );
+				ImU32 c10 = ColorWarperSampleDisc( space, outerNorm, a0, thirdAxis );
+				ImU32 c11 = ColorWarperSampleDisc( space, outerNorm, a1, thirdAxis );
+				ImU32 c01 = ColorWarperSampleDisc( space, innerNorm, a1, thirdAxis );
+
+				ImDrawIdx idx = ( ImDrawIdx )dl->_VtxCurrentIdx;
+				dl->PrimWriteIdx( idx + 0 ); dl->PrimWriteIdx( idx + 1 ); dl->PrimWriteIdx( idx + 2 );
+				dl->PrimWriteIdx( idx + 0 ); dl->PrimWriteIdx( idx + 2 ); dl->PrimWriteIdx( idx + 3 );
+				dl->PrimWriteVtx( p00, uv, c00 ); dl->PrimWriteVtx( p10, uv, c10 );
+				dl->PrimWriteVtx( p11, uv, c11 ); dl->PrimWriteVtx( p01, uv, c01 );
+			}
+		}
+	}
+
+	// Draw warper background square (square mode)
+	static void DrawColorWarperSquare( ImDrawList* dl, ImRect bb, ImColorWarperSpace space, float thirdAxis, int numH, int numS )
+	{
+		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
+		int totalQuads = numH * numS;
+		dl->PrimReserve( totalQuads * 6, totalQuads * 4 );
+		float w = bb.GetWidth();
+		float h = bb.GetHeight();
+
+		for ( int si = 0; si < numS; ++si )
+		{
+			float s0 = ( float )si / numS;
+			float s1 = ( float )( si + 1 ) / numS;
+			float y0 = bb.Max.y - s0 * h; // bottom = sat 0, top = sat 1
+			float y1 = bb.Max.y - s1 * h;
+
+			for ( int hi = 0; hi < numH; ++hi )
+			{
+				float h0 = ( float )hi / numH;
+				float h1 = ( float )( hi + 1 ) / numH;
+				float x0 = bb.Min.x + h0 * w;
+				float x1 = bb.Min.x + h1 * w;
+
+				float a0 = h0 * 2.0f * IM_PI;
+				float a1 = h1 * 2.0f * IM_PI;
+
+				ImU32 c00 = ColorWarperSampleDisc( space, s0, a0, thirdAxis );
+				ImU32 c10 = ColorWarperSampleDisc( space, s0, a1, thirdAxis );
+				ImU32 c11 = ColorWarperSampleDisc( space, s1, a1, thirdAxis );
+				ImU32 c01 = ColorWarperSampleDisc( space, s1, a0, thirdAxis );
+
+				ImDrawIdx idx = ( ImDrawIdx )dl->_VtxCurrentIdx;
+				dl->PrimWriteIdx( idx + 0 ); dl->PrimWriteIdx( idx + 1 ); dl->PrimWriteIdx( idx + 2 );
+				dl->PrimWriteIdx( idx + 0 ); dl->PrimWriteIdx( idx + 2 ); dl->PrimWriteIdx( idx + 3 );
+				dl->PrimWriteVtx( ImVec2( x0, y0 ), uv, c00 ); dl->PrimWriteVtx( ImVec2( x1, y0 ), uv, c10 );
+				dl->PrimWriteVtx( ImVec2( x1, y1 ), uv, c11 ); dl->PrimWriteVtx( ImVec2( x0, y1 ), uv, c01 );
+			}
+		}
+	}
+
+	// Convert (hue 0..1, sat 0..1) to screen position
+	static ImVec2 WarperHueSatToScreenCircular( float hue, float sat, ImVec2 center, float radius )
+	{
+		float a = hue * 2.0f * IM_PI;
+		return ImVec2( center.x + ImCos( a ) * sat * radius, center.y + ImSin( a ) * sat * radius );
+	}
+
+	static ImVec2 WarperHueSatToScreenSquare( float hue, float sat, ImRect bb )
+	{
+		return ImVec2( bb.Min.x + hue * bb.GetWidth(), bb.Max.y - sat * bb.GetHeight() );
+	}
+
+	bool ColorWarper( char const* label, ImColorWarperData* data, ImColorWarperMode mode, ImColorWarperSpace space, float thirdAxis, ImVec2 size )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		ImGuiStyle const& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImGuiID const id = window->GetID( label );
+		ImVec2 const label_size = ImGui::CalcTextSize( label, NULL, true );
+
+		if ( data->Offsets.Size == 0 )
+			data->Init( data->HueDivisions, data->SatDivisions );
+
+		float pointRadius = dwStyle.ColorWarper_PointRadius;
+		float hitRadius = dwStyle.ColorWarper_HitRadius;
+		float gridThick = dwStyle.ColorWarper_GridThickness;
+		int discSectors = ( int )dwStyle.ColorWarper_DiscSectors;
+		int discRings = ( int )dwStyle.ColorWarper_DiscRings;
+
+		// Layout
+		float side = size.x > 0.0f ? size.x : ( size.y > 0.0f ? size.y : ImGui::GetContentRegionAvail().x );
+		if ( side < 50.0f ) side = 200.0f;
+		ImVec2 frameSize( side, side );
+		if ( label_size.x > 0.0f )
+			frameSize.x += style.ItemInnerSpacing.x + label_size.x;
+
+		ImRect const frame_bb( window->DC.CursorPos, window->DC.CursorPos + frameSize );
+		ImRect const content_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( side, side ) );
+		ImGui::ItemSize( frameSize, style.FramePadding.y );
+		if ( !ImGui::ItemAdd( frame_bb, id ) )
+			return false;
+
+		bool hovered = ImGui::ItemHoverable( content_bb, id, ImGuiItemFlags_None );
+		bool value_changed = false;
+
+		ImDrawList* dl = window->DrawList;
+		ImVec2 center = content_bb.GetCenter();
+		float radius = side * 0.5f - 1.0f;
+
+		// Background
+		if ( mode == ImColorWarperMode_Circular )
+		{
+			dl->AddCircleFilled( center, radius, IM_COL32( 0, 0, 0, 255 ) );
+			DrawColorWarperDisc( dl, center, radius, space, thirdAxis, discSectors, discRings );
+			dl->AddCircle( center, radius, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		else // Square
+		{
+			dl->AddRectFilled( content_bb.Min, content_bb.Max, IM_COL32( 0, 0, 0, 255 ) );
+			DrawColorWarperSquare( dl, content_bb, space, thirdAxis, discSectors, discRings );
+			dl->AddRect( content_bb.Min, content_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+
+		// Clip
+		dl->PushClipRect( content_bb.Min, content_bb.Max, true );
+
+		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorWarper_GridLine ] );
+		ImU32 pointOutCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorWarper_PointOutline ] );
+		ImU32 pointActCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorWarper_PointOutlineActive ] );
+		ImU32 pointFillCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorWarper_PointFill ] );
+		ImU32 pointMovedCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorWarper_PointFillMoved ] );
+
+		int hueDivs = data->HueDivisions;
+		int satDivs = data->SatDivisions;
+
+		// Helper: get screen pos for a grid point
+		auto getScreenPos = [&]( int hi, int si ) -> ImVec2
+		{
+			ImVec2 wp = data->GetWarpedPos( hi, si );
+			if ( mode == ImColorWarperMode_Circular )
+				return WarperHueSatToScreenCircular( wp.x, wp.y, center, radius );
+			else
+				return WarperHueSatToScreenSquare( wp.x, wp.y, content_bb );
+		};
+
+		// Draw mesh grid lines
+		// Saturation rings (connect hue points at same saturation)
+		for ( int si = 0; si <= satDivs; ++si )
+		{
+			for ( int hi = 0; hi < hueDivs; ++hi )
+			{
+				ImVec2 p0 = getScreenPos( hi, si );
+				ImVec2 p1 = getScreenPos( hi + 1, si ); // wraps via %HueDivisions
+				dl->AddLine( p0, p1, gridCol, gridThick );
+			}
+		}
+		// Hue spokes (connect saturation points at same hue)
+		for ( int hi = 0; hi < hueDivs; ++hi )
+		{
+			for ( int si = 0; si < satDivs; ++si )
+			{
+				ImVec2 p0 = getScreenPos( hi, si );
+				ImVec2 p1 = getScreenPos( hi, si + 1 );
+				dl->AddLine( p0, p1, gridCol, gridThick );
+			}
+		}
+
+		// Hit testing: find closest point to mouse
+		int hovered_point = -1;
+		ImVec2 mp = g.IO.MousePos;
+		if ( hovered )
+		{
+			float bestDistSq = hitRadius * hitRadius;
+			for ( int si = 0; si <= satDivs; ++si )
+			{
+				for ( int hi = 0; hi < hueDivs; ++hi )
+				{
+					int idx = data->PointIndex( hi, si );
+					if ( data->Pinned[ idx ] )
+						continue;
+					ImVec2 sp = getScreenPos( hi, si );
+					float dsq = ( sp.x - mp.x ) * ( sp.x - mp.x ) + ( sp.y - mp.y ) * ( sp.y - mp.y );
+					if ( dsq < bestDistSq )
+					{
+						bestDistSq = dsq;
+						hovered_point = idx;
+					}
+				}
+			}
+		}
+
+		// Draw control points
+		for ( int si = 0; si <= satDivs; ++si )
+		{
+			for ( int hi = 0; hi < hueDivs; ++hi )
+			{
+				int idx = data->PointIndex( hi, si );
+				ImVec2 sp = getScreenPos( hi, si );
+				bool hasMoved = ( ImLengthSqr( data->Offsets[ idx ] ) > 1e-6f );
+				bool isPinned = data->Pinned[ idx ];
+				bool isSelected = ( idx == data->SelectedIdx );
+				bool isHovered = ( idx == hovered_point );
+
+				ImU32 fillCol = isPinned ? ImGui::GetColorU32( ImVec4( 0.2f, 0.2f, 0.8f, 0.9f ) ) :
+							   ( hasMoved ? pointMovedCol : pointFillCol );
+				ImU32 outCol = isSelected ? pointActCol : pointOutCol;
+				float r = isHovered ? pointRadius + 2.0f : pointRadius;
+
+				dl->AddCircleFilled( sp, r, fillCol );
+				dl->AddCircle( sp, r, outCol, 0, isSelected ? 2.0f : 1.0f );
+			}
+		}
+
+		dl->PopClipRect();
+
+		// Interaction
+		int* pDragIdx = ( int* )ImGui::GetStateStorage()->GetIntRef( id, -1 );
+
+		if ( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) )
+		{
+			if ( hovered_point >= 0 )
+			{
+				*pDragIdx = hovered_point;
+				data->SelectedIdx = hovered_point;
+				ImGui::SetActiveID( id, window );
+				ImGui::SetFocusID( id, window );
+				ImGui::FocusWindow( window );
+				ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+			}
+		}
+
+		// Double-click to reset point
+		if ( hovered && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
+		{
+			if ( hovered_point >= 0 )
+			{
+				data->Offsets[ hovered_point ] = ImVec2( 0.0f, 0.0f );
+				value_changed = true;
+			}
+		}
+
+		// Right-click context menu
+		if ( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) && hovered_point >= 0 )
+		{
+			data->SelectedIdx = hovered_point;
+			ImGui::OpenPopupOnItemClick( "##warper_ctx", ImGuiPopupFlags_MouseButtonRight );
+		}
+
+		if ( ImGui::BeginPopup( "##warper_ctx" ) )
+		{
+			int sel = data->SelectedIdx;
+			if ( sel >= 0 && sel < data->Offsets.Size )
+			{
+				if ( ImGui::MenuItem( "Reset Point" ) )
+				{
+					data->Offsets[ sel ] = ImVec2( 0.0f, 0.0f );
+					value_changed = true;
+				}
+				bool pinned = data->Pinned[ sel ];
+				if ( ImGui::MenuItem( pinned ? "Unpin" : "Pin" ) )
+					data->Pinned[ sel ] = !pinned;
+				ImGui::Separator();
+				if ( ImGui::MenuItem( "Reset All" ) )
+				{
+					data->Reset();
+					value_changed = true;
+				}
+			}
+			ImGui::EndPopup();
+		}
+
+		// Dragging
+		if ( g.ActiveId == id && ImGui::IsMouseDragging( ImGuiMouseButton_Left ) )
+		{
+			int dragIdx = *pDragIdx;
+			if ( dragIdx >= 0 && dragIdx < data->Offsets.Size && !data->Pinned[ dragIdx ] )
+			{
+				ImVec2 delta = g.IO.MouseDelta;
+				if ( mode == ImColorWarperMode_Circular )
+				{
+					// Convert screen delta to (hue, sat) delta in polar space
+					// Get current screen position of the dragged point
+					int si = dragIdx / hueDivs;
+					int hi = dragIdx % hueDivs;
+					ImVec2 curScreen = getScreenPos( hi, si );
+					ImVec2 newScreen = curScreen + delta;
+
+					// Convert both to hue/sat
+					ImVec2 relCur = ImVec2( curScreen.x - center.x, curScreen.y - center.y );
+					ImVec2 relNew = ImVec2( newScreen.x - center.x, newScreen.y - center.y );
+
+					float curAngle = atan2f( relCur.y, relCur.x ) / ( 2.0f * IM_PI );
+					float newAngle = atan2f( relNew.y, relNew.x ) / ( 2.0f * IM_PI );
+					float curDist = ImSqrt( relCur.x * relCur.x + relCur.y * relCur.y ) / radius;
+					float newDist = ImSqrt( relNew.x * relNew.x + relNew.y * relNew.y ) / radius;
+
+					float dH = newAngle - curAngle;
+					if ( dH > 0.5f ) dH -= 1.0f;
+					if ( dH < -0.5f ) dH += 1.0f;
+					float dS = newDist - curDist;
+
+					data->Offsets[ dragIdx ].x += dH;
+					data->Offsets[ dragIdx ].y += dS;
+
+					// Sync center points (all points at satIdx=0 share same offset)
+					if ( si == 0 )
+					{
+						for ( int h = 0; h < hueDivs; ++h )
+						{
+							int cIdx = data->PointIndex( h, 0 );
+							data->Offsets[ cIdx ] = data->Offsets[ dragIdx ];
+						}
+					}
+				}
+				else // Square
+				{
+					float dH = delta.x / content_bb.GetWidth();
+					float dS = -delta.y / content_bb.GetHeight();
+					data->Offsets[ dragIdx ].x += dH;
+					data->Offsets[ dragIdx ].y += dS;
+				}
+				value_changed = true;
+			}
+		}
+
+		if ( g.ActiveId == id && !ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+		{
+			*pDragIdx = -1;
+			ImGui::ClearActiveID();
+		}
+
+		// Hover cursor
+		if ( hovered && hovered_point >= 0 && g.ActiveId != id )
+			ImGui::SetMouseCursor( ImGuiMouseCursor_Hand );
+
+		// Label
+		if ( label_size.x > 0.0f )
+			ImGui::RenderText( ImVec2( content_bb.Max.x + style.ItemInnerSpacing.x, content_bb.Min.y + style.FramePadding.y ), label );
+
+		if ( value_changed )
+			ImGui::MarkItemEdited( id );
 
 		return value_changed;
 	}
@@ -8601,7 +9137,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Optional luminance histogram overlay
 		if ( histogramOverlay && histogramOverlay->BinCount > 0 && histogramOverlay->PeakCount > 0 )
 		{
-			ImU32 histCol = IM_COL32( 255, 255, 255, 40 );
+			ImU32 histCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorCurve_HistogramOverlay ] );
 			int binCount = histogramOverlay->BinCount;
 			float frameW = frame_bb.GetWidth();
 			float frameH = frame_bb.GetHeight();
@@ -8623,7 +9159,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// Grid lines
 		{
-			ImU32 gridCol = IM_COL32( 200, 200, 200, 25 );
+			ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorCurve_Grid ] );
 			int gridDivX = 10;
 			int gridDivY = 4;
 			for ( int i = 1; i < gridDivX; ++i )
@@ -8705,7 +9241,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			{
 				// Crosshair for "add" hint
 				ImVec2 mp = g.IO.MousePos;
-				ImU32 crossCol = IM_COL32( 255, 255, 255, 50 );
+				ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorCurve_Crosshair ] );
 				dl->AddLine( ImVec2( mp.x, frame_bb.Min.y ), ImVec2( mp.x, frame_bb.Max.y ), crossCol );
 				dl->AddLine( ImVec2( frame_bb.Min.x, mp.y ), ImVec2( frame_bb.Max.x, mp.y ), crossCol );
 			}
@@ -9439,14 +9975,14 @@ namespace ImWidgets {
 
 		// 75% color bar reference targets
 		{
-			struct Target { float r, g, b; ImU32 col; char const* name; };
+			struct Target { float r, g, b; ImWidgetsStyleColor styleIdx; char const* name; };
 			Target const targets[] = {
-				{ 0.75f, 0.0f,  0.0f,  IM_COL32( 255, 64, 64, 200 ),  "R"  },
-				{ 0.0f,  0.75f, 0.0f,  IM_COL32( 64, 255, 64, 200 ),  "G"  },
-				{ 0.0f,  0.0f,  0.75f, IM_COL32( 80, 80, 255, 200 ),  "B"  },
-				{ 0.0f,  0.75f, 0.75f, IM_COL32( 64, 255, 255, 200 ), "Cy" },
-				{ 0.75f, 0.0f,  0.75f, IM_COL32( 255, 64, 255, 200 ), "Mg" },
-				{ 0.75f, 0.75f, 0.0f,  IM_COL32( 255, 255, 64, 200 ), "Yl" },
+				{ 0.75f, 0.0f,  0.0f,  StyleColor_VectorScope_TargetR,  "R"  },
+				{ 0.0f,  0.75f, 0.0f,  StyleColor_VectorScope_TargetG,  "G"  },
+				{ 0.0f,  0.0f,  0.75f, StyleColor_VectorScope_TargetB,  "B"  },
+				{ 0.0f,  0.75f, 0.75f, StyleColor_VectorScope_TargetCy, "Cy" },
+				{ 0.75f, 0.0f,  0.75f, StyleColor_VectorScope_TargetMg, "Mg" },
+				{ 0.75f, 0.75f, 0.0f,  StyleColor_VectorScope_TargetYl, "Yl" },
 			};
 			float targetSize = ImMax( 6.0f, radius * 0.06f );
 
@@ -9458,12 +9994,13 @@ namespace ImWidgets {
 				float cr = ( t.r - y ) / crScale;
 				// Map Cb/Cr [-0.5,0.5] to screen (right=+Cb, up=+Cr)
 				ImVec2 pos( center.x + cb * scopeW, center.y - cr * scopeH );
+				ImU32 tCol = ImGui::GetColorU32( dwStyle.Colors[ t.styleIdx ] );
 
 				dl->AddRect( ImVec2( pos.x - targetSize, pos.y - targetSize ),
 							 ImVec2( pos.x + targetSize, pos.y + targetSize ),
-							 t.col, 0.0f, 0, gratThk );
+							 tCol, 0.0f, 0, gratThk );
 				ImVec2 textSize = ImGui::CalcTextSize( t.name );
-				dl->AddText( ImVec2( pos.x + targetSize + 2.0f, pos.y - textSize.y * 0.5f ), t.col, t.name );
+				dl->AddText( ImVec2( pos.x + targetSize + 2.0f, pos.y - textSize.y * 0.5f ), tCol, t.name );
 			}
 		}
 
@@ -10335,13 +10872,16 @@ namespace ImWidgets {
 
 		// Primary labels
 		{
+			ImU32 colR = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_PrimaryR ] );
+			ImU32 colG = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_PrimaryG ] );
+			ImU32 colB = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_PrimaryB ] );
 			ImVec2 ts;
 			ts = ImGui::CalcTextSize( "R" );
-			dl->AddText( ImVec2( sR.x + 4.0f, sR.y - ts.y * 0.5f ), IM_COL32( 255, 100, 100, 220 ), "R" );
+			dl->AddText( ImVec2( sR.x + 4.0f, sR.y - ts.y * 0.5f ), colR, "R" );
 			ts = ImGui::CalcTextSize( "G" );
-			dl->AddText( ImVec2( sG.x - ts.x * 0.5f, sG.y - ts.y - 4.0f ), IM_COL32( 100, 255, 100, 220 ), "G" );
+			dl->AddText( ImVec2( sG.x - ts.x * 0.5f, sG.y - ts.y - 4.0f ), colG, "G" );
 			ts = ImGui::CalcTextSize( "B" );
-			dl->AddText( ImVec2( sB.x - ts.x - 4.0f, sB.y - ts.y * 0.5f ), IM_COL32( 100, 100, 255, 220 ), "B" );
+			dl->AddText( ImVec2( sB.x - ts.x - 4.0f, sB.y - ts.y * 0.5f ), colB, "B" );
 		}
 
 		// White point
@@ -10640,11 +11180,12 @@ namespace ImWidgets {
 			ImVec4 histChColors[ 4 ];
 			ToneCurveGetChannelColors( histogramOverlay->Mode, dwStyle, histChColors, 4 );
 
+			float histOverlayAlpha = dwStyle.Colors[ StyleColor_ToneCurve_HistogramOverlay ].w;
 			for ( int ch = 0; ch < chCount; ++ch )
 			{
 				ImU32 const* bins = histogramOverlay->Bins.Data + ch * binCount;
 				ImVec4 cf = histChColors[ ch ];
-				ImU32 histCol = IM_COL32( ( ImU8 )( cf.x * 255 ), ( ImU8 )( cf.y * 255 ), ( ImU8 )( cf.z * 255 ), 40 );
+				ImU32 histCol = ImGui::GetColorU32( ImVec4( cf.x, cf.y, cf.z, histOverlayAlpha ) );
 
 				for ( int i = 0; i < binCount; ++i )
 				{
@@ -10712,9 +11253,9 @@ namespace ImWidgets {
 		// Keys (active channel only)
 		{
 			ImVec4 cf = channelColorsF[ active ];
-			ImU32 keyCol = ImGui::GetColorU32( cf );
-			ImU32 outCol = IM_COL32( 0, 0, 0, 200 );
-			ImU32 selCol = IM_COL32( 255, 255, 255, 255 );
+			ImU32 keyCol = ImGui::GetColorU32( ImVec4( cf.x, cf.y, cf.z, dwStyle.Colors[ StyleColor_ToneCurve_Key ].w ) );
+			ImU32 outCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ToneCurve_KeyOutline ] );
+			ImU32 selCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ToneCurve_KeySelected ] );
 
 			for ( int i = 0; i < activeCurve.Keys.Size; ++i )
 			{
@@ -10738,7 +11279,7 @@ namespace ImWidgets {
 			else
 			{
 				ImVec2 mp = g.IO.MousePos;
-				ImU32 crossCol = IM_COL32( 255, 255, 255, 50 );
+				ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ToneCurve_Crosshair ] );
 				dl->AddLine( ImVec2( mp.x, scope_bb.Min.y ), ImVec2( mp.x, scope_bb.Max.y ), crossCol );
 				dl->AddLine( ImVec2( scope_bb.Min.x, mp.y ), ImVec2( scope_bb.Max.x, mp.y ), crossCol );
 			}
@@ -10985,6 +11526,27 @@ namespace ImWidgets {
 					ImGui::SliderFloat( "SliderHeight##CW", &style.ColorWheel_SliderHeight, 8.0f, 60.0f );
 					ImGui::TreePop();
 				}
+				if ( ImGui::TreeNode( "Slider Ring" ) )
+				{
+					ImGui::SliderFloat( "TrackThickness##SR", &style.SliderRing_TrackThickness, 1.0f, 20.0f );
+					ImGui::SliderFloat( "GrabRadius##SR", &style.SliderRing_GrabRadius, 2.0f, 20.0f );
+					ImGui::TreePop();
+				}
+				if ( ImGui::TreeNode( "Slider Spline" ) )
+				{
+					ImGui::SliderFloat( "TrackThickness##SS", &style.SliderSpline_TrackThickness, 1.0f, 20.0f );
+					ImGui::SliderFloat( "GrabRadius##SS", &style.SliderSpline_GrabRadius, 2.0f, 20.0f );
+					ImGui::TreePop();
+				}
+				if ( ImGui::TreeNode( "Color Warper" ) )
+				{
+					ImGui::SliderFloat( "PointRadius##CWa", &style.ColorWarper_PointRadius, 1.0f, 20.0f );
+					ImGui::SliderFloat( "HitRadius##CWa", &style.ColorWarper_HitRadius, 2.0f, 30.0f );
+					ImGui::SliderFloat( "GridThickness##CWa", &style.ColorWarper_GridThickness, 0.5f, 5.0f );
+					ImGui::SliderFloat( "DiscSectors##CWa", &style.ColorWarper_DiscSectors, 12.0f, 256.0f );
+					ImGui::SliderFloat( "DiscRings##CWa", &style.ColorWarper_DiscRings, 4.0f, 64.0f );
+					ImGui::TreePop();
+				}
 				if ( ImGui::TreeNode( "Color Curve" ) )
 				{
 					ImGui::SliderFloat( "KeyRadius##CC", &style.ColorCurve_KeyRadius, 1.0f, 20.0f );
@@ -11090,41 +11652,38 @@ namespace ImWidgets {
 		ImGui::End();
 	}
 
-#if 0
-	// TODO
-	bool SliderRingScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, float v_angle_min, float v_angle_max, float v_thickness, const char* format, ImGuiSliderFlags flags, ImRect* out_grab_bb )
+	bool SliderRingScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, float v_angle_min, float v_angle_max, float v_thickness, const char* format, ImGuiSliderFlags flags )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
 			return false;
 
-		IM_ASSERT( ScalarToFloat( data_type, ( ImU64* )p_min ) < ScalarToFloat( data_type, ( ImU64* )p_max ) );
-
 		ImGuiContext& g = *GImGui;
-		const ImGuiStyle& style = g.Style;
+		const ImGuiStyle& imStyle = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
 		const ImGuiID id = window->GetID( label );
+
+		// Determine format string
+		if ( format == NULL )
+			format = ImGui::DataTypeGetInfo( data_type )->PrintFmt;
+
+		// Layout: square widget
 		const float w = ImGui::CalcItemWidth();
-
-		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
-
-		float downScale = 0.75f;
+		const ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
 
 		const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, w ) );
-		const ImRect frame_bb_drag( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w * downScale, w * downScale ) );
-		const ImRect total_bb( frame_bb.Min, frame_bb.Max + ImVec2( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f, 0.0f ) );
+		const ImRect total_bb( frame_bb.Min, frame_bb.Max + ImVec2( label_size.x > 0.0f ? imStyle.ItemInnerSpacing.x + label_size.x : 0.0f, 0.0f ) );
 
-		ImGui::ItemSize( total_bb, style.FramePadding.y );
+		ImGui::ItemSize( total_bb, imStyle.FramePadding.y );
 		if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, 0 ) )
 			return false;
 
-		bool hovered = ImGui::ItemHoverable( frame_bb_drag, id, g.LastItemData.InFlags );
-
+		// Interaction
+		bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.ItemFlags );
 		bool clicked = hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id );
-
 		bool make_active = ( clicked || g.NavActivateId == id );
 		if ( make_active && clicked )
 			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
-
 		if ( make_active )
 		{
 			ImGui::SetActiveID( id, window );
@@ -11133,12 +11692,453 @@ namespace ImWidgets {
 			g.ActiveIdUsingNavDirMask |= ( 1 << ImGuiDir_Left ) | ( 1 << ImGuiDir_Right );
 		}
 
-		// Draw frame
-		ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
-		ImGui::RenderNavHighlight( frame_bb_drag, id );
-		ImGui::RenderFrame( frame_bb_drag.Min, frame_bb_drag.Max, frame_col, true, g.Style.FrameRounding );
+		// Geometry
+		const ImVec2 center = frame_bb.GetCenter();
+		const float trackThickness = ( v_thickness > 0.0f ) ? v_thickness : dwStyle.SliderRing_TrackThickness;
+		const float grabRadius = dwStyle.SliderRing_GrabRadius;
+		const float outerRadius = ( w * 0.5f ) - grabRadius;
+		const float innerRadius = outerRadius - trackThickness;
+		const float midRadius = ( outerRadius + innerRadius ) * 0.5f;
 
-		return false;
+		// Normalize value to [0..1]
+		float v_min_f = ScalarToFloat( data_type, ( ImU64* )p_min );
+		float v_max_f = ScalarToFloat( data_type, ( ImU64* )p_max );
+		float v_cur_f = ScalarToFloat( data_type, ( ImU64* )p_value );
+		float t = ( v_max_f > v_min_f ) ? ImClamp( ( v_cur_f - v_min_f ) / ( v_max_f - v_min_f ), 0.0f, 1.0f ) : 0.0f;
+
+		// Drag interaction
+		bool value_changed = false;
+		if ( g.ActiveId == id )
+		{
+			if ( ImGui::IsMouseDown( 0 ) )
+			{
+				ImVec2 mouse = ImGui::GetIO().MousePos;
+				float dx = mouse.x - center.x;
+				float dy = mouse.y - center.y;
+				float angle = ImAtan2( dy, dx );
+
+				// Clamp angle to arc range
+				// Normalize angles to a consistent range
+				float arc_start = v_angle_min;
+				float arc_end   = v_angle_max;
+
+				// Handle wrapping: ensure arc_end > arc_start
+				if ( arc_end < arc_start )
+					arc_end += 2.0f * IM_PI;
+
+				// Normalize mouse angle relative to arc_start
+				float rel = angle - arc_start;
+				// Bring rel into [0, 2*PI) range
+				while ( rel < 0.0f )       rel += 2.0f * IM_PI;
+				while ( rel >= 2.0f * IM_PI ) rel -= 2.0f * IM_PI;
+
+				float arc_span = arc_end - arc_start;
+				if ( rel > arc_span )
+				{
+					// Mouse is in the dead zone — snap to nearest endpoint
+					float dist_to_start = rel;
+					float dist_to_end   = 2.0f * IM_PI - rel + arc_span;
+					if ( dist_to_end < 0.0f ) dist_to_end += 2.0f * IM_PI;
+					t = ( dist_to_start < ( 2.0f * IM_PI - rel ) ) ? 0.0f : 1.0f;
+				}
+				else
+				{
+					t = rel / arc_span;
+				}
+				t = ImClamp( t, 0.0f, 1.0f );
+
+				// Apply new value
+				float new_val_f = v_min_f + t * ( v_max_f - v_min_f );
+
+				// Convert back to the proper data type
+				switch ( data_type )
+				{
+				case ImGuiDataType_S8:
+				{
+					ImS8 v = ( ImS8 )ImClamp( ( int )ImRound( new_val_f ), -128, 127 );
+					if ( v != *( ImS8* )p_value ) { *( ImS8* )p_value = v; value_changed = true; }
+				} break;
+				case ImGuiDataType_U8:
+				{
+					ImU8 v = ( ImU8 )ImClamp( ( int )ImRound( new_val_f ), 0, 255 );
+					if ( v != *( ImU8* )p_value ) { *( ImU8* )p_value = v; value_changed = true; }
+				} break;
+				case ImGuiDataType_S16:
+				{
+					ImS16 v = ( ImS16 )ImClamp( ( int )ImRound( new_val_f ), -32768, 32767 );
+					if ( v != *( ImS16* )p_value ) { *( ImS16* )p_value = v; value_changed = true; }
+				} break;
+				case ImGuiDataType_U16:
+				{
+					ImU16 v = ( ImU16 )ImClamp( ( int )ImRound( new_val_f ), 0, 65535 );
+					if ( v != *( ImU16* )p_value ) { *( ImU16* )p_value = v; value_changed = true; }
+				} break;
+				case ImGuiDataType_S32:
+				{
+					int v = ( int )ImRound( new_val_f );
+					if ( v != *( int* )p_value ) { *( int* )p_value = v; value_changed = true; }
+				} break;
+				case ImGuiDataType_U32:
+				{
+					ImU32 v = ( ImU32 )ImMax( ImRound( new_val_f ), 0.0f );
+					if ( v != *( ImU32* )p_value ) { *( ImU32* )p_value = v; value_changed = true; }
+				} break;
+				case ImGuiDataType_S64:
+				{
+					ImS64 v = ( ImS64 )ImRound( new_val_f );
+					if ( v != *( ImS64* )p_value ) { *( ImS64* )p_value = v; value_changed = true; }
+				} break;
+				case ImGuiDataType_U64:
+				{
+					ImU64 v = ( ImU64 )ImMax( ImRound( new_val_f ), 0.0f );
+					if ( v != *( ImU64* )p_value ) { *( ImU64* )p_value = v; value_changed = true; }
+				} break;
+				case ImGuiDataType_Float:
+				{
+					if ( new_val_f != *( float* )p_value ) { *( float* )p_value = new_val_f; value_changed = true; }
+				} break;
+				case ImGuiDataType_Double:
+				{
+					double dv = ( double )( v_min_f + t * ( v_max_f - v_min_f ) );
+					if ( dv != *( double* )p_value ) { *( double* )p_value = dv; value_changed = true; }
+				} break;
+				default: break;
+				}
+
+				// Recompute t after clamping
+				v_cur_f = ScalarToFloat( data_type, ( ImU64* )p_value );
+				t = ( v_max_f > v_min_f ) ? ImClamp( ( v_cur_f - v_min_f ) / ( v_max_f - v_min_f ), 0.0f, 1.0f ) : 0.0f;
+			}
+			else
+			{
+				ImGui::ClearActiveID();
+			}
+		}
+
+		// --- Drawing ---
+		ImDrawList* draw_list = ImGui::GetWindowDrawList();
+		const bool is_active = ( g.ActiveId == id );
+
+		const ImU32 col_track       = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_SliderRing_Track ] );
+		const ImU32 col_track_fill  = ImGui::GetColorU32( dwStyle.Colors[ is_active ? StyleColor_SliderRing_GrabActive : StyleColor_SliderRing_TrackActive ] );
+		const ImU32 col_grab        = ImGui::GetColorU32( dwStyle.Colors[ is_active ? StyleColor_SliderRing_GrabActive : StyleColor_SliderRing_Grab ] );
+
+		// Draw background track arc
+		const int arc_segments = 64;
+		draw_list->PathArcTo( center, midRadius, v_angle_min, v_angle_max, arc_segments );
+		draw_list->PathStroke( col_track, 0, trackThickness );
+
+		// Draw filled portion (from min angle to current value angle)
+		float grab_angle = v_angle_min + t * ( v_angle_max - v_angle_min );
+		if ( t > 0.001f )
+		{
+			draw_list->PathArcTo( center, midRadius, v_angle_min, grab_angle, ( int )( arc_segments * t ) + 2 );
+			draw_list->PathStroke( col_track_fill, 0, trackThickness );
+		}
+
+		// Draw grab handle
+		ImVec2 grab_pos;
+		grab_pos.x = center.x + midRadius * ImCos( grab_angle );
+		grab_pos.y = center.y + midRadius * ImSin( grab_angle );
+		draw_list->AddCircleFilled( grab_pos, grabRadius, col_grab );
+		draw_list->AddCircle( grab_pos, grabRadius, ImGui::GetColorU32( ImGuiCol_Border ), 0, 1.5f );
+
+		// Draw value text in center
+		char value_buf[ 64 ];
+		const char* value_buf_end = value_buf + ImGui::DataTypeFormatString( value_buf, IM_ARRAYSIZE( value_buf ), data_type, p_value, format );
+		ImVec2 text_size = ImGui::CalcTextSize( value_buf, value_buf_end );
+		ImVec2 text_pos = ImVec2( center.x - text_size.x * 0.5f, center.y - text_size.y * 0.5f );
+		draw_list->AddText( text_pos, ImGui::GetColorU32( ImGuiCol_Text ), value_buf, value_buf_end );
+
+		// Draw label
+		if ( label_size.x > 0.0f )
+			ImGui::RenderText( ImVec2( frame_bb.Max.x + imStyle.ItemInnerSpacing.x, frame_bb.Min.y + imStyle.FramePadding.y ), label );
+
+		return value_changed;
+	}
+
+	bool SliderRingFloat( char const* label, float* value, float v_min, float v_max, float v_angle_min, float v_angle_max, float v_thickness, const char* format, ImGuiSliderFlags flags )
+	{
+		return SliderRingScalar( label, ImGuiDataType_Float, value, &v_min, &v_max, v_angle_min, v_angle_max, v_thickness, format, flags );
+	}
+
+	bool SliderRingInt( char const* label, int* value, int v_min, int v_max, float v_angle_min, float v_angle_max, float v_thickness, const char* format, ImGuiSliderFlags flags )
+	{
+		return SliderRingScalar( label, ImGuiDataType_S32, value, &v_min, &v_max, v_angle_min, v_angle_max, v_thickness, format, flags );
+	}
+
+	// -----------------------------------------------------------------------
+	// SliderSpline: slider whose track follows cubic bezier curve(s)
+	// Supports chained segments: 4 pts = 1 segment, 7 = 2, 3N+1 = N
+	// -----------------------------------------------------------------------
+
+	// Evaluate position along a multi-segment spline. global_t in [0,1] spans all segments.
+	static ImVec2 SplineEval( const ImVec2* sp, int num_segments, float global_t )
+	{
+		float s = ImClamp( global_t, 0.0f, 1.0f ) * num_segments;
+		int seg = ImMin( ( int )s, num_segments - 1 );
+		float local_t = s - ( float )seg;
+		int base = seg * 3;
+		return ImBezierCubicCalc( sp[ base ], sp[ base + 1 ], sp[ base + 2 ], sp[ base + 3 ], local_t );
+	}
+
+	// Find closest global_t on a multi-segment spline to target point
+	static float SplineFindClosestT( const ImVec2* sp, int num_segments, const ImVec2& target )
+	{
+		const int samples_per_seg = 48;
+		const int total_samples = samples_per_seg * num_segments;
+		float best_t = 0.0f;
+		float best_dist_sq = FLT_MAX;
+
+		// Coarse search
+		for ( int i = 0; i <= total_samples; i++ )
+		{
+			float gt = ( float )i / ( float )total_samples;
+			ImVec2 pt = SplineEval( sp, num_segments, gt );
+			float dx = pt.x - target.x;
+			float dy = pt.y - target.y;
+			float dist_sq = dx * dx + dy * dy;
+			if ( dist_sq < best_dist_sq )
+			{
+				best_dist_sq = dist_sq;
+				best_t = gt;
+			}
+		}
+
+		// Refine with ternary search
+		float step = 1.0f / ( float )total_samples;
+		float lo = ImMax( best_t - step, 0.0f );
+		float hi = ImMin( best_t + step, 1.0f );
+		for ( int iter = 0; iter < 16; iter++ )
+		{
+			float t_a = lo + ( hi - lo ) * ( 1.0f / 3.0f );
+			float t_b = lo + ( hi - lo ) * ( 2.0f / 3.0f );
+			ImVec2 pa = SplineEval( sp, num_segments, t_a );
+			ImVec2 pb = SplineEval( sp, num_segments, t_b );
+			float da = ( pa.x - target.x ) * ( pa.x - target.x ) + ( pa.y - target.y ) * ( pa.y - target.y );
+			float db = ( pb.x - target.x ) * ( pb.x - target.x ) + ( pb.y - target.y ) * ( pb.y - target.y );
+			if ( da < db )
+				hi = t_b;
+			else
+				lo = t_a;
+		}
+
+		return ( lo + hi ) * 0.5f;
+	}
+
+	bool SliderSplineScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, const ImVec2* control_points, int num_points, float v_height, float v_thickness, const char* format, ImGuiSliderFlags flags )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& imStyle = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		const ImGuiID id = window->GetID( label );
+
+		if ( format == NULL )
+			format = ImGui::DataTypeGetInfo( data_type )->PrintFmt;
+
+		// Default S-curve control points in [0,1]x[0,1] normalized space
+		static const ImVec2 defaultCP[ 4 ] = {
+			ImVec2( 0.0f, 0.5f ),
+			ImVec2( 0.33f, 0.0f ),
+			ImVec2( 0.66f, 1.0f ),
+			ImVec2( 1.0f, 0.5f )
+		};
+		const ImVec2* cp = control_points ? control_points : defaultCP;
+		if ( !control_points )
+			num_points = 4;
+
+		// Compute number of bezier segments: num_points = 3*N + 1
+		IM_ASSERT( num_points >= 4 && ( ( num_points - 1 ) % 3 ) == 0 );
+		const int num_segments = ( num_points - 1 ) / 3;
+
+		// Layout
+		const float w = ImGui::CalcItemWidth();
+		const float h = ( v_height > 0.0f ) ? v_height : w * 0.35f;
+		const ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
+		const float grabRadius = dwStyle.SliderSpline_GrabRadius;
+		const float padding = grabRadius + 2.0f;
+
+		const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, h + padding * 2.0f ) );
+		const ImRect total_bb( frame_bb.Min, frame_bb.Max + ImVec2( label_size.x > 0.0f ? imStyle.ItemInnerSpacing.x + label_size.x : 0.0f, 0.0f ) );
+
+		ImGui::ItemSize( total_bb, imStyle.FramePadding.y );
+		if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, 0 ) )
+			return false;
+
+		// Interaction
+		bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.ItemFlags );
+		bool clicked = hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id );
+		bool make_active = ( clicked || g.NavActivateId == id );
+		if ( make_active && clicked )
+			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+		if ( make_active )
+		{
+			ImGui::SetActiveID( id, window );
+			ImGui::SetFocusID( id, window );
+			ImGui::FocusWindow( window );
+			g.ActiveIdUsingNavDirMask |= ( 1 << ImGuiDir_Left ) | ( 1 << ImGuiDir_Right );
+		}
+
+		// Map all control points from normalized space to screen space
+		const ImVec2 spline_min = ImVec2( frame_bb.Min.x + padding, frame_bb.Min.y + padding );
+		const ImVec2 spline_size = ImVec2( w - padding * 2.0f, h );
+
+		ImVec2 sp[ 32 ]; // max ~10 segments (31 points)
+		int sp_count = ImMin( num_points, 31 );
+		for ( int i = 0; i < sp_count; i++ )
+			sp[ i ] = ImVec2( spline_min.x + cp[ i ].x * spline_size.x, spline_min.y + cp[ i ].y * spline_size.y );
+
+		// Normalize value to [0..1]
+		float v_min_f = ScalarToFloat( data_type, ( ImU64* )p_min );
+		float v_max_f = ScalarToFloat( data_type, ( ImU64* )p_max );
+		float v_cur_f = ScalarToFloat( data_type, ( ImU64* )p_value );
+		float t = ( v_max_f > v_min_f ) ? ImClamp( ( v_cur_f - v_min_f ) / ( v_max_f - v_min_f ), 0.0f, 1.0f ) : 0.0f;
+
+		// Drag interaction
+		bool value_changed = false;
+		if ( g.ActiveId == id )
+		{
+			if ( ImGui::IsMouseDown( 0 ) )
+			{
+				ImVec2 mouse = ImGui::GetIO().MousePos;
+				t = SplineFindClosestT( sp, num_segments, mouse );
+				t = ImClamp( t, 0.0f, 1.0f );
+
+				float new_val_f = v_min_f + t * ( v_max_f - v_min_f );
+
+				switch ( data_type )
+				{
+				case ImGuiDataType_S8:
+				{
+					ImS8 v = ( ImS8 )ImClamp( ( int )ImRound( new_val_f ), -128, 127 );
+					if ( v != *( ImS8* )p_value ) { *( ImS8* )p_value = v; value_changed = true; }
+				} break;
+				case ImGuiDataType_U8:
+				{
+					ImU8 v = ( ImU8 )ImClamp( ( int )ImRound( new_val_f ), 0, 255 );
+					if ( v != *( ImU8* )p_value ) { *( ImU8* )p_value = v; value_changed = true; }
+				} break;
+				case ImGuiDataType_S16:
+				{
+					ImS16 v = ( ImS16 )ImClamp( ( int )ImRound( new_val_f ), -32768, 32767 );
+					if ( v != *( ImS16* )p_value ) { *( ImS16* )p_value = v; value_changed = true; }
+				} break;
+				case ImGuiDataType_U16:
+				{
+					ImU16 v = ( ImU16 )ImClamp( ( int )ImRound( new_val_f ), 0, 65535 );
+					if ( v != *( ImU16* )p_value ) { *( ImU16* )p_value = v; value_changed = true; }
+				} break;
+				case ImGuiDataType_S32:
+				{
+					int v = ( int )ImRound( new_val_f );
+					if ( v != *( int* )p_value ) { *( int* )p_value = v; value_changed = true; }
+				} break;
+				case ImGuiDataType_U32:
+				{
+					ImU32 v = ( ImU32 )ImMax( ImRound( new_val_f ), 0.0f );
+					if ( v != *( ImU32* )p_value ) { *( ImU32* )p_value = v; value_changed = true; }
+				} break;
+				case ImGuiDataType_S64:
+				{
+					ImS64 v = ( ImS64 )ImRound( new_val_f );
+					if ( v != *( ImS64* )p_value ) { *( ImS64* )p_value = v; value_changed = true; }
+				} break;
+				case ImGuiDataType_U64:
+				{
+					ImU64 v = ( ImU64 )ImMax( ImRound( new_val_f ), 0.0f );
+					if ( v != *( ImU64* )p_value ) { *( ImU64* )p_value = v; value_changed = true; }
+				} break;
+				case ImGuiDataType_Float:
+				{
+					if ( new_val_f != *( float* )p_value ) { *( float* )p_value = new_val_f; value_changed = true; }
+				} break;
+				case ImGuiDataType_Double:
+				{
+					double dv = ( double )( v_min_f + t * ( v_max_f - v_min_f ) );
+					if ( dv != *( double* )p_value ) { *( double* )p_value = dv; value_changed = true; }
+				} break;
+				default: break;
+				}
+
+				v_cur_f = ScalarToFloat( data_type, ( ImU64* )p_value );
+				t = ( v_max_f > v_min_f ) ? ImClamp( ( v_cur_f - v_min_f ) / ( v_max_f - v_min_f ), 0.0f, 1.0f ) : 0.0f;
+			}
+			else
+			{
+				ImGui::ClearActiveID();
+			}
+		}
+
+		// --- Drawing ---
+		ImDrawList* draw_list = ImGui::GetWindowDrawList();
+		const bool is_active = ( g.ActiveId == id );
+		const float trackThickness = ( v_thickness > 0.0f ) ? v_thickness : dwStyle.SliderSpline_TrackThickness;
+
+		const ImU32 col_track      = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_SliderSpline_Track ] );
+		const ImU32 col_track_fill = ImGui::GetColorU32( dwStyle.Colors[ is_active ? StyleColor_SliderSpline_GrabActive : StyleColor_SliderSpline_TrackActive ] );
+		const ImU32 col_grab       = ImGui::GetColorU32( dwStyle.Colors[ is_active ? StyleColor_SliderSpline_GrabActive : StyleColor_SliderSpline_Grab ] );
+
+		// Draw background spline track (all segments)
+		const int segs_per_bezier = 32;
+		draw_list->PathClear();
+		for ( int seg = 0; seg < num_segments; seg++ )
+		{
+			int base = seg * 3;
+			for ( int i = ( seg == 0 ? 0 : 1 ); i <= segs_per_bezier; i++ )
+			{
+				float lt = ( float )i / ( float )segs_per_bezier;
+				ImVec2 pt = ImBezierCubicCalc( sp[ base ], sp[ base + 1 ], sp[ base + 2 ], sp[ base + 3 ], lt );
+				draw_list->PathLineTo( pt );
+			}
+		}
+		draw_list->PathStroke( col_track, 0, trackThickness );
+
+		// Draw filled portion from start to current t
+		if ( t > 0.001f )
+		{
+			int total_fill_segs = ( int )( segs_per_bezier * num_segments * t ) + 2;
+			draw_list->PathClear();
+			for ( int i = 0; i <= total_fill_segs; i++ )
+			{
+				float gt = t * ( float )i / ( float )total_fill_segs;
+				ImVec2 pt = SplineEval( sp, num_segments, gt );
+				draw_list->PathLineTo( pt );
+			}
+			draw_list->PathStroke( col_track_fill, 0, trackThickness );
+		}
+
+		// Draw grab handle at current position
+		ImVec2 grab_pos = SplineEval( sp, num_segments, t );
+		draw_list->AddCircleFilled( grab_pos, grabRadius, col_grab );
+		draw_list->AddCircle( grab_pos, grabRadius, ImGui::GetColorU32( ImGuiCol_Border ), 0, 1.5f );
+
+		// Draw value text below the spline
+		char value_buf[ 64 ];
+		const char* value_buf_end = value_buf + ImGui::DataTypeFormatString( value_buf, IM_ARRAYSIZE( value_buf ), data_type, p_value, format );
+		ImVec2 text_size = ImGui::CalcTextSize( value_buf, value_buf_end );
+		ImVec2 text_pos = ImVec2( grab_pos.x - text_size.x * 0.5f, frame_bb.Max.y - text_size.y - 1.0f );
+		text_pos.x = ImClamp( text_pos.x, frame_bb.Min.x, frame_bb.Max.x - text_size.x );
+		draw_list->AddText( text_pos, ImGui::GetColorU32( ImGuiCol_Text ), value_buf, value_buf_end );
+
+		// Draw label
+		if ( label_size.x > 0.0f )
+			ImGui::RenderText( ImVec2( frame_bb.Max.x + imStyle.ItemInnerSpacing.x, frame_bb.Min.y + imStyle.FramePadding.y ), label );
+
+		return value_changed;
+	}
+
+	bool SliderSplineFloat( char const* label, float* value, float v_min, float v_max, const ImVec2* control_points, int num_points, float v_height, float v_thickness, const char* format, ImGuiSliderFlags flags )
+	{
+		return SliderSplineScalar( label, ImGuiDataType_Float, value, &v_min, &v_max, control_points, num_points, v_height, v_thickness, format, flags );
+	}
+
+	bool SliderSplineInt( char const* label, int* value, int v_min, int v_max, const ImVec2* control_points, int num_points, float v_height, float v_thickness, const char* format, ImGuiSliderFlags flags )
+	{
+		return SliderSplineScalar( label, ImGuiDataType_S32, value, &v_min, &v_max, control_points, num_points, v_height, v_thickness, format, flags );
 	}
 
 #if 0
@@ -11267,7 +12267,6 @@ namespace ImWidgets {
 
 		return value_changed;
 	}
-#endif
 #endif
 
 	//////////////////////////////////////////////////////////////////////////
