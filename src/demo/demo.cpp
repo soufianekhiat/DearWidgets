@@ -2504,6 +2504,134 @@ namespace ImWidgets {
 				ImGui::TextWrapped( "Click to add key. Drag to move. Drag far outside to delete. Right-click for options." );
 			}
 
+			if ( ImGui::CollapsingHeader( "Parade Scope", ImGuiTreeNodeFlags_DefaultOpen ) )
+			{
+				static ImParadeScopeData paradeData;
+				static int paradeMode = ImParadeMode_RGB;
+				static int paradeSource = 0;
+				static bool paradeNeedsUpdate = true;
+				static stbi_uc* paradeImgData = NULL;
+				static int paradeImgW = 0;
+				static int paradeImgH = 0;
+				static int paradeImgCh = 0;
+
+				static bool paradeOverlay = false;
+
+				bool sourceChanged = ImGui::Combo( "Source##Parade", &paradeSource,
+					"Color Bars\0Gradient Ramp\0Random Noise\0"
+					"Berries (photo)\0Interior (photo)\0Man (photo)\0Astronaut (photo)\0" );
+				bool modeChanged = ImGui::Combo( "Mode##Parade", &paradeMode, "Luminance\0RGB\0YRGB\0YCbCr\0" );
+				static int paradeScale = ImParadeScale_Linear;
+				ImGui::Checkbox( "Overlay##Parade", &paradeOverlay );
+				ImGui::SameLine();
+				ImGui::Combo( "Scale##Parade", &paradeScale, "Linear\0Log (Shadows)\0Inv Log (Highlights)\0" );
+				if ( sourceChanged || modeChanged )
+					paradeNeedsUpdate = true;
+
+				if ( paradeNeedsUpdate )
+				{
+					// Free previous file-loaded image
+					if ( paradeImgData )
+					{
+						STBI_FREE( paradeImgData );
+						paradeImgData = NULL;
+					}
+
+					static int const kTestW = 1920;
+					static int const kTestH = 1080;
+					static ImVector<ImU8> testImage;
+
+					if ( paradeSource <= 2 )
+					{
+						// Synthetic test patterns
+						testImage.resize( kTestW * kTestH * 3 );
+						ImU32 rng = 0xDEADBEEFu;
+
+						if ( paradeSource == 0 )
+						{
+							// SMPTE color bars with slight noise
+							static ImU8 const bars[ 7 ][ 3 ] = {
+								{ 191, 191, 191 }, { 191, 191,  17 }, {  17, 191, 191 }, {  17, 191,  17 },
+								{ 191,  17, 191 }, { 191,  17,  17 }, {  17,  17, 191 }
+							};
+							for ( int y = 0; y < kTestH; ++y )
+							{
+								for ( int x = 0; x < kTestW; ++x )
+								{
+									int barIdx = x * 7 / kTestW;
+									int off = ( y * kTestW + x ) * 3;
+									rng = rng * 1664525u + 1013904223u;
+									int noise = ( int )( rng >> 28 ) - 8;
+									testImage[ off + 0 ] = ( ImU8 )ImClamp( bars[ barIdx ][ 0 ] + noise, 0, 255 );
+									testImage[ off + 1 ] = ( ImU8 )ImClamp( bars[ barIdx ][ 1 ] + noise, 0, 255 );
+									testImage[ off + 2 ] = ( ImU8 )ImClamp( bars[ barIdx ][ 2 ] + noise, 0, 255 );
+								}
+							}
+						}
+						else if ( paradeSource == 1 )
+						{
+							// Horizontal RGB gradient ramps (R top third, G middle, B bottom)
+							for ( int y = 0; y < kTestH; ++y )
+							{
+								for ( int x = 0; x < kTestW; ++x )
+								{
+									float t = ( float )x / ( float )( kTestW - 1 );
+									int off = ( y * kTestW + x ) * 3;
+									int third = y * 3 / kTestH;
+									rng = rng * 1664525u + 1013904223u;
+									int noise = ( int )( rng >> 29 ) - 4;
+									testImage[ off + 0 ] = ( ImU8 )ImClamp( ( third == 0 ? ( int )( t * 255.0f ) : 0 ) + noise, 0, 255 );
+									testImage[ off + 1 ] = ( ImU8 )ImClamp( ( third == 1 ? ( int )( t * 255.0f ) : 0 ) + noise, 0, 255 );
+									testImage[ off + 2 ] = ( ImU8 )ImClamp( ( third == 2 ? ( int )( t * 255.0f ) : 0 ) + noise, 0, 255 );
+								}
+							}
+						}
+						else
+						{
+							// Random noise
+							for ( int i = 0; i < kTestW * kTestH * 3; ++i )
+							{
+								rng = rng * 1664525u + 1013904223u;
+								testImage[ i ] = ( ImU8 )( rng >> 24 );
+							}
+						}
+
+						paradeData.Accumulate( testImage.Data, kTestW, kTestH, 3,
+							ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved, ( ImParadeMode )paradeMode,
+							128, 128, 500000 );
+					}
+					else
+					{
+						// Load real image from file
+						char const* filenames[] = {
+							"pexels-robert-bogdan-156165-1152351.jpg",
+							"pexels-fotoaibe-1571453.jpg",
+							"man.png",
+							"astro.png"
+						};
+						int fileIdx = paradeSource - 3;
+						paradeImgData = stbi_load( filenames[ fileIdx ], &paradeImgW, &paradeImgH, &paradeImgCh, 0 );
+						if ( paradeImgData )
+						{
+							int ch = ( paradeImgCh >= 3 ) ? paradeImgCh : 3;
+							paradeData.Accumulate( paradeImgData, paradeImgW, paradeImgH, ch,
+								ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved, ( ImParadeMode )paradeMode,
+								128, 128, 1000000 );
+						}
+					}
+
+					paradeNeedsUpdate = false;
+				}
+
+				ImWidgets::ParadeScope( "##ParadeMain", paradeData, paradeOverlay, ( ImParadeScale )paradeScale, ImVec2( 0, 250 ) );
+				if ( paradeSource <= 2 )
+					ImGui::Text( "Source: 1920x1080 (generated)  Peak: %u", paradeData.PeakCount );
+				else if ( paradeImgData )
+					ImGui::Text( "Source: %dx%d (%d ch)  Peak: %u", paradeImgW, paradeImgH, paradeImgCh, paradeData.PeakCount );
+				else
+					ImGui::TextDisabled( "Failed to load image" );
+			}
+
 			if ( ImGui::CollapsingHeader( "Color Wheel", ImGuiTreeNodeFlags_DefaultOpen ) )
 			{
 				static ImVec4 wheelColor( 0.8f, 0.2f, 0.3f, 1.0f );

@@ -264,6 +264,18 @@ enum ImWidgetsStyleColor
 	StyleColor_ColorCurve_KeySelected,
 	StyleColor_ColorCurve_KeyOutline,
 
+	// Parade Scope
+	StyleColor_ParadeScope_Background,
+	StyleColor_ParadeScope_Grid,
+	StyleColor_ParadeScope_ChannelR,
+	StyleColor_ParadeScope_ChannelG,
+	StyleColor_ParadeScope_ChannelB,
+	StyleColor_ParadeScope_ChannelLuma,
+	StyleColor_ParadeScope_ChannelCb,
+	StyleColor_ParadeScope_ChannelCr,
+	StyleColor_ParadeScope_GradTick,
+	StyleColor_ParadeScope_GradLabel,
+
 	StyleColor_Count
 };
 
@@ -306,6 +318,13 @@ enum ImWidgetsStyleVar
 	StyleVar_ColorCurve_DefaultHeight,
 	StyleVar_ColorCurve_KeyRadius,
 	StyleVar_ColorCurve_LineThickness,
+
+	// Parade Scope
+	StyleVar_ParadeScope_DefaultHeight,
+	StyleVar_ParadeScope_OverlayAlpha,
+	StyleVar_ParadeScope_GradTickLength,
+	StyleVar_ParadeScope_GradTickThickness,
+	StyleVar_ParadeScope_GradMargin,
 
 	StyleVar_Count
 };
@@ -350,6 +369,13 @@ struct ImWidgetsStyle
 	float	ColorCurve_KeyRadius;
 	float	ColorCurve_LineThickness;
 
+	// Parade Scope
+	float	ParadeScope_DefaultHeight;
+	float	ParadeScope_OverlayAlpha;		// Max alpha in overlay mode (0..1)
+	float	ParadeScope_GradTickLength;		// Graduation tick mark length (px)
+	float	ParadeScope_GradTickThickness;	// Graduation tick line thickness
+	float	ParadeScope_GradMargin;			// Left margin for graduation labels (px)
+
 	ImVec4  Colors[ StyleColor_Count ];
 
 	ImWidgetsStyle()
@@ -390,6 +416,13 @@ struct ImWidgetsStyle
 		ColorCurve_KeyRadius     = 5.0f;
 		ColorCurve_LineThickness = 2.0f;
 
+		// Parade Scope
+		ParadeScope_DefaultHeight    = 200.0f;
+		ParadeScope_OverlayAlpha     = 0.6f;
+		ParadeScope_GradTickLength   = 6.0f;
+		ParadeScope_GradTickThickness = 1.0f;
+		ParadeScope_GradMargin       = 40.0f;
+
 		Colors[ StyleColor_Value ] = ImVec4( 1.0f, 0.0f, 0.0f, 1.0f );
 		Colors[ StyleColor_Slider2D_CursorX ] = ImVec4( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f ); // Blue
 		Colors[ StyleColor_Slider2D_CursorY ] = ImVec4( 255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f ); // Orange
@@ -429,6 +462,18 @@ struct ImWidgetsStyle
 		Colors[ StyleColor_ColorCurve_KeyHovered ]          = ImVec4( 230.0f / 255.0f, 230.0f / 255.0f, 230.0f / 255.0f, 1.0f );
 		Colors[ StyleColor_ColorCurve_KeySelected ]         = ImVec4( 1.0f, 1.0f, 0.0f, 1.0f );
 		Colors[ StyleColor_ColorCurve_KeyOutline ]          = ImVec4( 0.0f, 0.0f, 0.0f, 1.0f );
+
+		// Parade Scope Colors
+		Colors[ StyleColor_ParadeScope_Background ]         = ImVec4( 0.0f, 0.0f, 0.0f, 1.0f );
+		Colors[ StyleColor_ParadeScope_Grid ]               = ImVec4( 1.0f, 1.0f, 1.0f, 0.12f );
+		Colors[ StyleColor_ParadeScope_ChannelR ]           = ImVec4( 1.0f, 0.25f, 0.25f, 1.0f );
+		Colors[ StyleColor_ParadeScope_ChannelG ]           = ImVec4( 0.25f, 1.0f, 0.25f, 1.0f );
+		Colors[ StyleColor_ParadeScope_ChannelB ]           = ImVec4( 0.35f, 0.35f, 1.0f, 1.0f );
+		Colors[ StyleColor_ParadeScope_ChannelLuma ]        = ImVec4( 0.9f, 0.9f, 0.9f, 1.0f );
+		Colors[ StyleColor_ParadeScope_ChannelCb ]          = ImVec4( 0.3f, 0.5f, 1.0f, 1.0f );
+		Colors[ StyleColor_ParadeScope_ChannelCr ]          = ImVec4( 1.0f, 0.4f, 0.3f, 1.0f );
+		Colors[ StyleColor_ParadeScope_GradTick ]           = ImVec4( 1.0f, 1.0f, 1.0f, 0.4f );
+		Colors[ StyleColor_ParadeScope_GradLabel ]          = ImVec4( 1.0f, 1.0f, 1.0f, 0.7f );
 	}
 
 	void ScaleAllSizes( float scale_factor )
@@ -462,6 +507,11 @@ struct ImWidgetsStyle
 		ColorCurve_DefaultHeight = ImTrunc( ColorCurve_DefaultHeight * scale_factor );
 		ColorCurve_KeyRadius     = ImTrunc( ColorCurve_KeyRadius * scale_factor );
 		ColorCurve_LineThickness = ImTrunc( ColorCurve_LineThickness * scale_factor );
+
+		ParadeScope_DefaultHeight     = ImTrunc( ParadeScope_DefaultHeight * scale_factor );
+		ParadeScope_GradTickLength    = ImTrunc( ParadeScope_GradTickLength * scale_factor );
+		ParadeScope_GradTickThickness = ImTrunc( ParadeScope_GradTickThickness * scale_factor );
+		ParadeScope_GradMargin        = ImTrunc( ParadeScope_GradMargin * scale_factor );
 	}
 
 	void PushColor( ImWidgetsStyleColor colorIndex, const ImVec4& color )
@@ -564,6 +614,16 @@ struct ImWidgetsStyle
 		case StyleColor_ColorCurve_KeyHovered: return "ColorCurveKeyHovered";
 		case StyleColor_ColorCurve_KeySelected: return "ColorCurveKeySelected";
 		case StyleColor_ColorCurve_KeyOutline: return "ColorCurveKeyOutline";
+		case StyleColor_ParadeScope_Background: return "ParadeScopeBackground";
+		case StyleColor_ParadeScope_Grid: return "ParadeScopeGrid";
+		case StyleColor_ParadeScope_ChannelR: return "ParadeScopeChannelR";
+		case StyleColor_ParadeScope_ChannelG: return "ParadeScopeChannelG";
+		case StyleColor_ParadeScope_ChannelB: return "ParadeScopeChannelB";
+		case StyleColor_ParadeScope_ChannelLuma: return "ParadeScopeChannelLuma";
+		case StyleColor_ParadeScope_ChannelCb: return "ParadeScopeChannelCb";
+		case StyleColor_ParadeScope_ChannelCr: return "ParadeScopeChannelCr";
+		case StyleColor_ParadeScope_GradTick: return "ParadeScopeGradTick";
+		case StyleColor_ParadeScope_GradLabel: return "ParadeScopeGradLabel";
 		case StyleColor_Count: break;
 		}
 
@@ -613,6 +673,11 @@ private:
 		case StyleVar_ColorCurve_DefaultHeight:			return &ColorCurve_DefaultHeight;
 		case StyleVar_ColorCurve_KeyRadius:				return &ColorCurve_KeyRadius;
 		case StyleVar_ColorCurve_LineThickness:			return &ColorCurve_LineThickness;
+		case StyleVar_ParadeScope_DefaultHeight:		return &ParadeScope_DefaultHeight;
+		case StyleVar_ParadeScope_OverlayAlpha:			return &ParadeScope_OverlayAlpha;
+		case StyleVar_ParadeScope_GradTickLength:		return &ParadeScope_GradTickLength;
+		case StyleVar_ParadeScope_GradTickThickness:	return &ParadeScope_GradTickThickness;
+		case StyleVar_ParadeScope_GradMargin:			return &ParadeScope_GradMargin;
 		default:										return nullptr;
 		}
 	}
@@ -1089,6 +1154,68 @@ struct ImColorCurveData
 		Keys.erase( Keys.Data + idx );
 		return true;
 	}
+};
+
+// ---- Parade Scope ----
+
+typedef int ImParadeBitDepth;
+enum ImParadeBitDepth_
+{
+	ImParadeBitDepth_UInt8 = 0,		// 8-bit  [0, 255]
+	ImParadeBitDepth_UInt10,		// 10-bit stored in uint16 [0, 1023]
+	ImParadeBitDepth_UInt16,		// 16-bit [0, 65535]
+	ImParadeBitDepth_COUNT
+};
+
+typedef int ImParadeMode;
+enum ImParadeMode_
+{
+	ImParadeMode_Luma = 0,			// Single luminance waveform
+	ImParadeMode_RGB,				// R, G, B side by side
+	ImParadeMode_YRGB,				// Y, R, G, B side by side
+	ImParadeMode_YCbCr,			// Y, Cb, Cr side by side
+	ImParadeMode_COUNT
+};
+
+typedef int ImParadeLayout;
+enum ImParadeLayout_
+{
+	ImParadeLayout_Interleaved = 0,	// RGBRGB... or RGBARGBA...
+	ImParadeLayout_Planar,			// RRR...GGG...BBB...
+	ImParadeLayout_COUNT
+};
+
+typedef int ImParadeScale;
+enum ImParadeScale_
+{
+	ImParadeScale_Linear = 0,		// Linear mapping
+	ImParadeScale_Log,				// Log2 — expands shadows / darks
+	ImParadeScale_InvLog,			// Inverse log2 — expands highlights / brights
+	ImParadeScale_COUNT
+};
+
+struct ImParadeScopeData
+{
+	ImVector<ImU32>	Bins;			// [ch * XBins * YBins + x * YBins + y]
+	int				XBins;
+	int				YBins;
+	int				ChannelCount;	// Display channels (1..4 depending on mode)
+	ImU32			PeakCount;		// Max bin value (for normalization)
+	ImParadeMode	Mode;
+	ImParadeBitDepth BitDepth;
+
+	ImParadeScopeData() : XBins( 0 ), YBins( 0 ), ChannelCount( 0 ), PeakCount( 0 ), Mode( ImParadeMode_RGB ), BitDepth( ImParadeBitDepth_UInt8 ) {}
+
+	void Clear()
+	{
+		Bins.clear();
+		XBins = YBins = ChannelCount = 0;
+		PeakCount = 0;
+	}
+
+	void Accumulate( void const* data, int width, int height, int channels,
+					 ImParadeBitDepth bitDepth, ImParadeLayout layout, ImParadeMode mode,
+					 int xBins = 128, int yBins = 128, int maxSamples = 1000000 );
 };
 
 struct ImGlobalData
@@ -1758,6 +1885,9 @@ namespace ImWidgets{
 	IMGUI_API const char* ColorCurveModeName( ImColorCurveMode mode );
 	IMGUI_API float ColorCurveSample( ImColorCurveData const& curve, ImColorCurveMode mode, float x );
 	IMGUI_API bool  ColorCurve( char const* label, ImColorCurveData* curve, ImColorCurveMode mode, ImVec2 size = ImVec2( 0, 0 ) );
+
+	IMGUI_API const char* ParadeModeName( ImParadeMode mode );
+	IMGUI_API void  ParadeScope( char const* label, ImParadeScopeData const& data, bool overlay = false, ImParadeScale scale = ImParadeScale_Linear, ImVec2 size = ImVec2( 0, 0 ) );
 
 	//IMGUI_API bool SliderRingScalar( char const* name,
 	//								 ImGuiDataType data_type,

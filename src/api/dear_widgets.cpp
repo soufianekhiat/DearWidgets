@@ -8767,6 +8767,446 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return value_changed;
 	}
 
+	// ========================================================================
+	// Parade Scope
+	// ========================================================================
+
+} // close namespace ImWidgets for global-scope struct method
+
+void ImParadeScopeData::Accumulate( void const* data, int width, int height, int channels,
+									ImParadeBitDepth bitDepth, ImParadeLayout layout, ImParadeMode mode,
+									int xBins, int yBins, int maxSamples )
+{
+	Mode = mode;
+	BitDepth = bitDepth;
+	XBins = xBins;
+	YBins = yBins;
+
+	switch ( mode )
+	{
+	case ImParadeMode_Luma:  ChannelCount = 1; break;
+	case ImParadeMode_RGB:   ChannelCount = 3; break;
+	case ImParadeMode_YRGB:  ChannelCount = 4; break;
+	case ImParadeMode_YCbCr: ChannelCount = 3; break;
+	default:                 ChannelCount = 3; break;
+	}
+
+	Bins.resize( ChannelCount * XBins * YBins );
+	memset( Bins.Data, 0, Bins.Size * sizeof( ImU32 ) );
+	PeakCount = 0;
+
+	int maxVal;
+	switch ( bitDepth )
+	{
+	case ImParadeBitDepth_UInt8:  maxVal = 255; break;
+	case ImParadeBitDepth_UInt10: maxVal = 1023; break;
+	case ImParadeBitDepth_UInt16: maxVal = 65535; break;
+	default:                      maxVal = 255; break;
+	}
+	float invMaxVal = 1.0f / ( float )maxVal;
+	int mask16 = ( bitDepth == ImParadeBitDepth_UInt10 ) ? 0x3FF : 0xFFFF;
+
+	int totalPixels = width * height;
+	bool subsample = ( maxSamples > 0 && totalPixels > maxSamples );
+	ImU32 rng = 0x12345678u;
+	ImU32 threshold = subsample ? ( ImU32 )( ( double )maxSamples / ( double )totalPixels * 4294967295.0 ) : 0xFFFFFFFF;
+
+	int planeStride = width * height;
+
+	for ( int pixIdx = 0; pixIdx < totalPixels; ++pixIdx )
+	{
+		if ( subsample )
+		{
+			rng = rng * 1664525u + 1013904223u;
+			if ( rng > threshold )
+				continue;
+		}
+
+		int px = pixIdx % width;
+		int py = pixIdx / width;
+
+		// Read RGB normalized to [0,1]
+		float r, g, b;
+		if ( layout == ImParadeLayout_Interleaved )
+		{
+			int offset = ( py * width + px ) * channels;
+			if ( bitDepth == ImParadeBitDepth_UInt8 )
+			{
+				ImU8 const* p = ( ImU8 const* )data + offset;
+				r = p[ 0 ] * invMaxVal;
+				g = p[ 1 ] * invMaxVal;
+				b = p[ 2 ] * invMaxVal;
+			}
+			else
+			{
+				ImU16 const* p = ( ImU16 const* )data + offset;
+				r = ( float )( p[ 0 ] & mask16 ) * invMaxVal;
+				g = ( float )( p[ 1 ] & mask16 ) * invMaxVal;
+				b = ( float )( p[ 2 ] & mask16 ) * invMaxVal;
+			}
+		}
+		else // Planar
+		{
+			int pixOffset = py * width + px;
+			if ( bitDepth == ImParadeBitDepth_UInt8 )
+			{
+				ImU8 const* p = ( ImU8 const* )data;
+				r = p[ pixOffset ] * invMaxVal;
+				g = p[ pixOffset + planeStride ] * invMaxVal;
+				b = p[ pixOffset + planeStride * 2 ] * invMaxVal;
+			}
+			else
+			{
+				ImU16 const* p = ( ImU16 const* )data;
+				r = ( float )( p[ pixOffset ] & mask16 ) * invMaxVal;
+				g = ( float )( p[ pixOffset + planeStride ] & mask16 ) * invMaxVal;
+				b = ( float )( p[ pixOffset + planeStride * 2 ] & mask16 ) * invMaxVal;
+			}
+		}
+
+		// Compute display channel values
+		float values[ 4 ];
+		switch ( mode )
+		{
+		case ImParadeMode_Luma:
+			values[ 0 ] = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+			break;
+		case ImParadeMode_RGB:
+			values[ 0 ] = r;
+			values[ 1 ] = g;
+			values[ 2 ] = b;
+			break;
+		case ImParadeMode_YRGB:
+			values[ 0 ] = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+			values[ 1 ] = r;
+			values[ 2 ] = g;
+			values[ 3 ] = b;
+			break;
+		case ImParadeMode_YCbCr:
+		{
+			float y = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+			values[ 0 ] = y;
+			values[ 1 ] = ( b - y ) / 1.8556f + 0.5f;
+			values[ 2 ] = ( r - y ) / 1.5748f + 0.5f;
+			break;
+		}
+		default: break;
+		}
+
+		int xBin = ImClamp( px * XBins / width, 0, XBins - 1 );
+		for ( int ch = 0; ch < ChannelCount; ++ch )
+		{
+			float v = ImClamp( values[ ch ], 0.0f, 1.0f );
+			int yBin = ImClamp( ( int )( v * ( YBins - 1 ) + 0.5f ), 0, YBins - 1 );
+			ImU32& bin = Bins[ ch * XBins * YBins + xBin * YBins + yBin ];
+			++bin;
+			if ( bin > PeakCount )
+				PeakCount = bin;
+		}
+	}
+}
+
+namespace ImWidgets {
+
+	const char* ParadeModeName( ImParadeMode mode )
+	{
+		switch ( mode )
+		{
+		case ImParadeMode_Luma:  return "Luminance";
+		case ImParadeMode_RGB:   return "RGB";
+		case ImParadeMode_YRGB:  return "YRGB";
+		case ImParadeMode_YCbCr: return "YCbCr";
+		default:                 return "Unknown";
+		}
+	}
+
+	// Helper: map normalized [0,1] value to screen Y inside scope area
+	static float ParadeScopeValueToY( float v01, float yTop, float yBot, ImParadeScale scale, float logMaxBits )
+	{
+		float h = yBot - yTop;
+		if ( scale == ImParadeScale_Log && logMaxBits > 0.0f )
+		{
+			// Log2: expands shadows — more screen space for low values
+			float maxRange = ImPow( 2.0f, logMaxBits ) - 1.0f;
+			float mapped = ImLog( v01 * maxRange + 1.0f ) / ( logMaxBits * 0.693147f );
+			return yBot - mapped * h;
+		}
+		if ( scale == ImParadeScale_InvLog && logMaxBits > 0.0f )
+		{
+			// Inverse log2: expands highlights — more screen space for high values
+			// Mirror: apply log to (1-v), then flip back
+			float maxRange = ImPow( 2.0f, logMaxBits ) - 1.0f;
+			float mapped = 1.0f - ImLog( ( 1.0f - v01 ) * maxRange + 1.0f ) / ( logMaxBits * 0.693147f );
+			return yBot - mapped * h;
+		}
+		return yBot - v01 * h;
+	}
+
+	void ParadeScope( char const* label, ImParadeScopeData const& data, bool overlay, ImParadeScale scale, ImVec2 size )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return;
+
+		ImGuiContext& g = *GImGui;
+		ImGuiStyle const& style = g.Style;
+		ImWidgetsStyle const& dwStyle = GetStyle();
+
+		ImGuiID const id = window->GetID( label );
+
+		float gradMargin = dwStyle.ParadeScope_GradMargin;
+
+		if ( size.x <= 0.0f ) size.x = ImGui::GetContentRegionAvail().x;
+		if ( size.y <= 0.0f ) size.y = dwStyle.ParadeScope_DefaultHeight;
+
+		ImRect const total_bb( window->DC.CursorPos, window->DC.CursorPos + size );
+		// Scope area is to the right of the graduation margin
+		ImRect const scope_bb( ImVec2( total_bb.Min.x + gradMargin, total_bb.Min.y ), total_bb.Max );
+
+		ImGui::ItemSize( total_bb, style.FramePadding.y );
+		if ( !ImGui::ItemAdd( total_bb, id ) )
+			return;
+
+		ImDrawList* dl = window->DrawList;
+
+		// Bit depth range
+		int maxVal;
+		float logMaxBits;
+		switch ( data.BitDepth )
+		{
+		case ImParadeBitDepth_UInt8:  maxVal = 255;   logMaxBits = 8.0f;  break;
+		case ImParadeBitDepth_UInt10: maxVal = 1023;  logMaxBits = 10.0f; break;
+		case ImParadeBitDepth_UInt16: maxVal = 65535; logMaxBits = 16.0f; break;
+		default:                      maxVal = 255;   logMaxBits = 8.0f;  break;
+		}
+
+		// Background
+		ImU32 bgCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ParadeScope_Background ] );
+		dl->AddRectFilled( scope_bb.Min, scope_bb.Max, bgCol );
+
+		// --- Left graduation using DrawLinearLineGraduation / DrawLogLineGraduation ---
+		ImU32 tickCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ParadeScope_GradTick ] );
+		ImU32 labelCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ParadeScope_GradLabel ] );
+		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ParadeScope_Grid ] );
+		float tickLen = dwStyle.ParadeScope_GradTickLength;
+		float tickThk = dwStyle.ParadeScope_GradTickThickness;
+
+		float scopeH = scope_bb.GetHeight();
+		float scopeW = scope_bb.GetWidth();
+
+		// Graduation line: bottom-left to top-left of scope
+		// Forward = (0,-1) → up = ImAntiHalfTurn = (-1,0) → positive height = ticks go left into margin
+		ImVec2 gradStart( scope_bb.Min.x, scope_bb.Max.y ); // bottom
+		ImVec2 gradEnd( scope_bb.Min.x, scope_bb.Min.y );   // top
+
+		int majorDiv, minorDiv;
+		if ( scale == ImParadeScale_Log )
+		{
+			// Log: major divs = number of bits (octaves), log sub-ticks within each
+			majorDiv = ( int )logMaxBits;
+			minorDiv = 9;
+			DrawLogLineGraduation( dl, gradStart, gradEnd,
+				tickThk, tickCol,
+				majorDiv, tickLen, tickThk, 0.0f, tickCol,
+				minorDiv, tickLen * 0.5f, tickThk * 0.5f, 0.0f, tickCol );
+		}
+		else if ( scale == ImParadeScale_InvLog )
+		{
+			// Inverse log: same structure but graduation drawn from top to bottom (reversed)
+			// so log sub-ticks cluster near highlights
+			majorDiv = ( int )logMaxBits;
+			minorDiv = 9;
+			DrawLogLineGraduation( dl, gradEnd, gradStart,
+				tickThk, tickCol,
+				majorDiv, tickLen, tickThk, 0.0f, tickCol,
+				minorDiv, tickLen * 0.5f, tickThk * 0.5f, 0.0f, tickCol );
+		}
+		else
+		{
+			// Linear: 4 major divisions with 4 minor sub-ticks each
+			majorDiv = 4;
+			minorDiv = 4;
+			DrawLinearLineGraduation( dl, gradStart, gradEnd,
+				tickThk, tickCol,
+				majorDiv, tickLen, tickThk, 0.0f, tickCol,
+				minorDiv, tickLen * 0.5f, tickThk * 0.5f, 0.0f, tickCol );
+		}
+
+		// Labels and horizontal grid lines at major tick positions
+		for ( int k = 0; k <= majorDiv; ++k )
+		{
+			float t = ( float )k / ( float )majorDiv;
+			float sy = ImLerp( gradStart.y, gradEnd.y, t ); // screen Y (bottom to top)
+
+			int labelVal;
+			if ( scale == ImParadeScale_Log )
+			{
+				// Log: screen t maps to value = (2^(t*bits) - 1) / maxVal
+				labelVal = ImClamp( ( int )( ImPow( 2.0f, t * logMaxBits ) - 1.0f + 0.5f ), 0, maxVal );
+			}
+			else if ( scale == ImParadeScale_InvLog )
+			{
+				// Inverse log: mirror — screen t maps to maxVal - (2^((1-t)*bits) - 1)
+				labelVal = ImClamp( maxVal - ( int )( ImPow( 2.0f, ( 1.0f - t ) * logMaxBits ) - 1.0f + 0.5f ), 0, maxVal );
+			}
+			else
+			{
+				labelVal = ImClamp( ( int )( t * maxVal + 0.5f ), 0, maxVal );
+			}
+
+			// Horizontal grid line across scope
+			dl->AddLine( ImVec2( scope_bb.Min.x, sy ), ImVec2( scope_bb.Max.x, sy ), gridCol );
+
+			// Label text
+			char buf[ 16 ];
+			ImFormatString( buf, sizeof( buf ), "%d", labelVal );
+			ImVec2 textSize = ImGui::CalcTextSize( buf );
+			float labelX = scope_bb.Min.x - tickLen - 2.0f - textSize.x;
+			dl->AddText( ImVec2( labelX, sy - textSize.y * 0.5f ), labelCol, buf );
+		}
+
+		if ( data.ChannelCount <= 0 || data.PeakCount == 0 || data.XBins <= 0 || data.YBins <= 0 )
+		{
+			dl->AddRect( scope_bb.Min, scope_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+			return;
+		}
+
+		dl->PushClipRect( scope_bb.Min, scope_bb.Max, true );
+
+		// Channel separator lines (parade mode only)
+		if ( !overlay && data.ChannelCount > 1 )
+		{
+			for ( int ch = 1; ch < data.ChannelCount; ++ch )
+			{
+				float sx = scope_bb.Min.x + ( scopeW * ch / ( float )data.ChannelCount );
+				dl->AddLine( ImVec2( sx, scope_bb.Min.y ), ImVec2( sx, scope_bb.Max.y ), gridCol );
+			}
+		}
+
+		// Channel colors based on mode
+		ImVec4 channelColorsF[ 4 ];
+		switch ( data.Mode )
+		{
+		case ImParadeMode_Luma:
+			channelColorsF[ 0 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelLuma ];
+			break;
+		case ImParadeMode_RGB:
+			channelColorsF[ 0 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelR ];
+			channelColorsF[ 1 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelG ];
+			channelColorsF[ 2 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelB ];
+			break;
+		case ImParadeMode_YRGB:
+			channelColorsF[ 0 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelLuma ];
+			channelColorsF[ 1 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelR ];
+			channelColorsF[ 2 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelG ];
+			channelColorsF[ 3 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelB ];
+			break;
+		case ImParadeMode_YCbCr:
+			channelColorsF[ 0 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelLuma ];
+			channelColorsF[ 1 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelCb ];
+			channelColorsF[ 2 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelCr ];
+			break;
+		default: break;
+		}
+
+		float logPeak = ImLog( ( float )data.PeakCount + 1.0f );
+		float overlayAlpha = dwStyle.ParadeScope_OverlayAlpha;
+
+		// In overlay mode all channels share full width; in parade mode each gets a slice
+		int layoutCount = overlay ? 1 : data.ChannelCount;
+		float channelWidth = scopeW / layoutCount;
+		float gap = overlay ? 0.0f : 2.0f;
+
+		for ( int ch = 0; ch < data.ChannelCount; ++ch )
+		{
+			int layoutIdx = overlay ? 0 : ch;
+			float x0 = scope_bb.Min.x + layoutIdx * channelWidth + gap * 0.5f;
+			float x1 = x0 + channelWidth - gap;
+			float binW = ( x1 - x0 ) / data.XBins;
+
+			ImU8 baseR = ( ImU8 )( channelColorsF[ ch ].x * 255.0f );
+			ImU8 baseG = ( ImU8 )( channelColorsF[ ch ].y * 255.0f );
+			ImU8 baseB = ( ImU8 )( channelColorsF[ ch ].z * 255.0f );
+
+			ImU32 const* chBins = data.Bins.Data + ch * data.XBins * data.YBins;
+
+			// Count non-zero bins for PrimReserve
+			int nonZero = 0;
+			for ( int i = 0; i < data.XBins * data.YBins; ++i )
+			{
+				if ( chBins[ i ] > 0 )
+					++nonZero;
+			}
+			if ( nonZero == 0 )
+				continue;
+
+			// Render in chunks to stay within 16-bit index limits
+			int const kMaxQuadsPerBatch = 16000;
+			int quadsDone = 0;
+			int quadsInBatch = 0;
+			int batchSize = ImMin( nonZero, kMaxQuadsPerBatch );
+			dl->PrimReserve( batchSize * 6, batchSize * 4 );
+			ImVec2 uv = dl->_Data->TexUvWhitePixel;
+
+			for ( int xb = 0; xb < data.XBins; ++xb )
+			{
+				float rx0 = x0 + xb * binW;
+				float rx1 = rx0 + binW;
+
+				for ( int yb = 0; yb < data.YBins; ++yb )
+				{
+					ImU32 count = chBins[ xb * data.YBins + yb ];
+					if ( count == 0 )
+						continue;
+
+					// Map bin index to normalized value [0,1]
+					float v0 = ( float )yb / ( float )data.YBins;
+					float v1 = ( float )( yb + 1 ) / ( float )data.YBins;
+
+					// Map to screen Y (higher values at top)
+					float ry0 = ParadeScopeValueToY( v1, scope_bb.Min.y, scope_bb.Max.y, scale, logMaxBits );
+					float ry1 = ParadeScopeValueToY( v0, scope_bb.Min.y, scope_bb.Max.y, scale, logMaxBits );
+
+					float alpha = ImLog( ( float )count + 1.0f ) / logPeak;
+					alpha = ImClamp( alpha, 0.06f, 1.0f );
+					if ( overlay )
+						alpha *= overlayAlpha;
+					ImU8 a = ( ImU8 )( alpha * 255.0f );
+					ImU32 col = IM_COL32( baseR, baseG, baseB, a );
+
+					ImDrawIdx idx = ( ImDrawIdx )dl->_VtxCurrentIdx;
+					dl->PrimWriteIdx( idx ); dl->PrimWriteIdx( ( ImDrawIdx )( idx + 1 ) ); dl->PrimWriteIdx( ( ImDrawIdx )( idx + 2 ) );
+					dl->PrimWriteIdx( idx ); dl->PrimWriteIdx( ( ImDrawIdx )( idx + 2 ) ); dl->PrimWriteIdx( ( ImDrawIdx )( idx + 3 ) );
+					dl->PrimWriteVtx( ImVec2( rx0, ry0 ), uv, col );
+					dl->PrimWriteVtx( ImVec2( rx1, ry0 ), uv, col );
+					dl->PrimWriteVtx( ImVec2( rx1, ry1 ), uv, col );
+					dl->PrimWriteVtx( ImVec2( rx0, ry1 ), uv, col );
+
+					++quadsInBatch;
+					++quadsDone;
+
+					// Start new batch if needed
+					if ( quadsInBatch >= kMaxQuadsPerBatch && quadsDone < nonZero )
+					{
+						int remaining = nonZero - quadsDone;
+						batchSize = ImMin( remaining, kMaxQuadsPerBatch );
+						dl->PrimReserve( batchSize * 6, batchSize * 4 );
+						quadsInBatch = 0;
+					}
+				}
+			}
+		}
+
+		dl->PopClipRect();
+
+		// Border
+		dl->AddRect( scope_bb.Min, scope_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+
+		// Label
+		if ( label[ 0 ] != '#' || label[ 1 ] != '#' )
+			ImGui::RenderText( ImVec2( scope_bb.Max.x + style.ItemInnerSpacing.x, scope_bb.Min.y + style.FramePadding.y ), label );
+	}
+
 #if 0
 	// TODO
 	bool SliderRingScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, float v_angle_min, float v_angle_max, float v_thickness, const char* format, ImGuiSliderFlags flags, ImRect* out_grab_bb )
