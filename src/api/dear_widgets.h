@@ -228,6 +228,42 @@ enum ImWidgetsStyleColor
 	StyleColor_Slider2D_CursorX,    // Color for Slider2D X-axis cursor
 	StyleColor_Slider2D_CursorY,    // Color for Slider2D Y-axis cursor
 
+	// Gradient Editor
+	StyleColor_Gradient_MarkerOutline,
+	StyleColor_Gradient_MarkerOutlineHovered,
+	StyleColor_Gradient_MarkerOutlineSelected,
+	StyleColor_Gradient_AlphaIndicator,
+	StyleColor_Gradient_Checkerboard1,
+	StyleColor_Gradient_Checkerboard2,
+
+	// Curve Editor
+	StyleColor_CurveEditor_Line,
+	StyleColor_CurveEditor_GridMinor,
+	StyleColor_CurveEditor_GridMajor,
+	StyleColor_CurveEditor_ZeroLine,
+	StyleColor_CurveEditor_Key,
+	StyleColor_CurveEditor_KeyHovered,
+	StyleColor_CurveEditor_KeySelected,
+	StyleColor_CurveEditor_KeyOutline,
+	StyleColor_CurveEditor_KeyOutlineHovered,
+	StyleColor_CurveEditor_KeyOutlineSelected,
+	StyleColor_CurveEditor_TangentLine,
+	StyleColor_CurveEditor_TangentHovered,
+	StyleColor_CurveEditor_Crosshair,
+	StyleColor_CurveEditor_AddIndicator,
+
+	// Color Wheel
+	StyleColor_ColorWheel_DotOutline,
+	StyleColor_ColorWheel_DotOutlineActive,
+
+	// Color Curve
+	StyleColor_ColorCurve_Line,
+	StyleColor_ColorCurve_NeutralLine,
+	StyleColor_ColorCurve_Key,
+	StyleColor_ColorCurve_KeyHovered,
+	StyleColor_ColorCurve_KeySelected,
+	StyleColor_ColorCurve_KeyOutline,
+
 	StyleColor_Count
 };
 
@@ -248,6 +284,28 @@ enum ImWidgetsStyleVar
 	StyleVar_NavCursor_Distance,
 	StyleVar_WhitePoint_Radius,
 	StyleVar_PrecisionDrag_BlockSize,
+
+	// Gradient Editor
+	StyleVar_Gradient_MarkerHeight,
+	StyleVar_Gradient_CheckerboardCellSize,
+	StyleVar_Gradient_MarkerThickness,
+
+	// Curve Editor
+	StyleVar_CurveEditor_DefaultHeight,
+	StyleVar_CurveEditor_KeyRadius,
+	StyleVar_CurveEditor_TangentRadius,
+	StyleVar_CurveEditor_HitRadius,
+	StyleVar_CurveEditor_LineThickness,
+	StyleVar_CurveEditor_KeyOutlineThickness,
+
+	// Color Wheel
+	StyleVar_ColorWheel_DotRadius,
+	StyleVar_ColorWheel_RingThickness,
+
+	// Color Curve (Hue vs, Lum vs, Sat vs)
+	StyleVar_ColorCurve_DefaultHeight,
+	StyleVar_ColorCurve_KeyRadius,
+	StyleVar_ColorCurve_LineThickness,
 
 	StyleVar_Count
 };
@@ -270,6 +328,28 @@ struct ImWidgetsStyle
 	float	WhitePoint_Radius;
 	float	PrecisionDrag_BlockSize;
 
+	// Gradient Editor
+	float	Gradient_MarkerHeight;
+	float	Gradient_CheckerboardCellSize;
+	float	Gradient_MarkerThickness;
+
+	// Curve Editor
+	float	CurveEditor_DefaultHeight;
+	float	CurveEditor_KeyRadius;
+	float	CurveEditor_TangentRadius;
+	float	CurveEditor_HitRadius;
+	float	CurveEditor_LineThickness;
+	float	CurveEditor_KeyOutlineThickness;
+
+	// Color Wheel
+	float	ColorWheel_DotRadius;
+	float	ColorWheel_RingThickness;
+
+	// Color Curve
+	float	ColorCurve_DefaultHeight;
+	float	ColorCurve_KeyRadius;
+	float	ColorCurve_LineThickness;
+
 	ImVec4  Colors[ StyleColor_Count ];
 
 	ImWidgetsStyle()
@@ -288,9 +368,67 @@ struct ImWidgetsStyle
 		WhitePoint_Radius        = 5.0f;
 		PrecisionDrag_BlockSize  = 128.0f;
 
+		// Gradient Editor
+		Gradient_MarkerHeight        = 12.0f;
+		Gradient_CheckerboardCellSize = 6.0f;
+		Gradient_MarkerThickness     = 1.0f;
+
+		// Curve Editor
+		CurveEditor_DefaultHeight    = 200.0f;
+		CurveEditor_KeyRadius        = 5.0f;
+		CurveEditor_TangentRadius    = 4.0f;
+		CurveEditor_HitRadius        = 8.0f;
+		CurveEditor_LineThickness    = 2.0f;
+		CurveEditor_KeyOutlineThickness = 1.5f;
+
+		// Color Wheel
+		ColorWheel_DotRadius     = 5.0f;
+		ColorWheel_RingThickness = 3.0f;
+
+		// Color Curve
+		ColorCurve_DefaultHeight = 150.0f;
+		ColorCurve_KeyRadius     = 5.0f;
+		ColorCurve_LineThickness = 2.0f;
+
 		Colors[ StyleColor_Value ] = ImVec4( 1.0f, 0.0f, 0.0f, 1.0f );
 		Colors[ StyleColor_Slider2D_CursorX ] = ImVec4( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f ); // Blue
 		Colors[ StyleColor_Slider2D_CursorY ] = ImVec4( 255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f ); // Orange
+
+		// Gradient Editor Colors
+		Colors[ StyleColor_Gradient_MarkerOutline ]         = ImVec4( 40.0f / 255.0f, 40.0f / 255.0f, 40.0f / 255.0f, 1.0f );
+		Colors[ StyleColor_Gradient_MarkerOutlineHovered ]  = ImVec4( 200.0f / 255.0f, 200.0f / 255.0f, 200.0f / 255.0f, 1.0f );
+		Colors[ StyleColor_Gradient_MarkerOutlineSelected ] = ImVec4( 1.0f, 1.0f, 0.0f, 1.0f );
+		Colors[ StyleColor_Gradient_AlphaIndicator ]        = ImVec4( 0.0f, 0.0f, 0.0f, 180.0f / 255.0f );
+		Colors[ StyleColor_Gradient_Checkerboard1 ]         = ImVec4( 204.0f / 255.0f, 204.0f / 255.0f, 204.0f / 255.0f, 1.0f );
+		Colors[ StyleColor_Gradient_Checkerboard2 ]         = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
+
+		// Curve Editor Colors
+		Colors[ StyleColor_CurveEditor_Line ]               = ImVec4( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
+		Colors[ StyleColor_CurveEditor_GridMinor ]          = ImVec4( 200.0f / 255.0f, 200.0f / 255.0f, 200.0f / 255.0f, 40.0f / 255.0f );
+		Colors[ StyleColor_CurveEditor_GridMajor ]          = ImVec4( 200.0f / 255.0f, 200.0f / 255.0f, 200.0f / 255.0f, 80.0f / 255.0f );
+		Colors[ StyleColor_CurveEditor_ZeroLine ]           = ImVec4( 1.0f, 1.0f, 1.0f, 60.0f / 255.0f );
+		Colors[ StyleColor_CurveEditor_Key ]                = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
+		Colors[ StyleColor_CurveEditor_KeyHovered ]         = ImVec4( 230.0f / 255.0f, 230.0f / 255.0f, 230.0f / 255.0f, 1.0f );
+		Colors[ StyleColor_CurveEditor_KeySelected ]        = ImVec4( 1.0f, 1.0f, 0.0f, 1.0f );
+		Colors[ StyleColor_CurveEditor_KeyOutline ]         = ImVec4( 0.0f, 0.0f, 0.0f, 1.0f );
+		Colors[ StyleColor_CurveEditor_KeyOutlineHovered ]  = ImVec4( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
+		Colors[ StyleColor_CurveEditor_KeyOutlineSelected ] = ImVec4( 180.0f / 255.0f, 180.0f / 255.0f, 0.0f, 1.0f );
+		Colors[ StyleColor_CurveEditor_TangentLine ]        = ImVec4( 1.0f, 180.0f / 255.0f, 50.0f / 255.0f, 200.0f / 255.0f );
+		Colors[ StyleColor_CurveEditor_TangentHovered ]     = ImVec4( 1.0f, 220.0f / 255.0f, 100.0f / 255.0f, 1.0f );
+		Colors[ StyleColor_CurveEditor_Crosshair ]          = ImVec4( 1.0f, 1.0f, 1.0f, 100.0f / 255.0f );
+		Colors[ StyleColor_CurveEditor_AddIndicator ]       = ImVec4( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 220.0f / 255.0f );
+
+		// Color Wheel Colors
+		Colors[ StyleColor_ColorWheel_DotOutline ]          = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
+		Colors[ StyleColor_ColorWheel_DotOutlineActive ]    = ImVec4( 1.0f, 1.0f, 0.0f, 1.0f );
+
+		// Color Curve Colors
+		Colors[ StyleColor_ColorCurve_Line ]                = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
+		Colors[ StyleColor_ColorCurve_NeutralLine ]         = ImVec4( 1.0f, 1.0f, 1.0f, 80.0f / 255.0f );
+		Colors[ StyleColor_ColorCurve_Key ]                 = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
+		Colors[ StyleColor_ColorCurve_KeyHovered ]          = ImVec4( 230.0f / 255.0f, 230.0f / 255.0f, 230.0f / 255.0f, 1.0f );
+		Colors[ StyleColor_ColorCurve_KeySelected ]         = ImVec4( 1.0f, 1.0f, 0.0f, 1.0f );
+		Colors[ StyleColor_ColorCurve_KeyOutline ]          = ImVec4( 0.0f, 0.0f, 0.0f, 1.0f );
 	}
 
 	void ScaleAllSizes( float scale_factor )
@@ -306,6 +444,24 @@ struct ImWidgetsStyle
 		NavCursor_Distance       = ImTrunc( NavCursor_Distance * scale_factor );
 		WhitePoint_Radius        = ImTrunc( WhitePoint_Radius * scale_factor );
 		PrecisionDrag_BlockSize  = ImTrunc( PrecisionDrag_BlockSize * scale_factor );
+
+		Gradient_MarkerHeight         = ImTrunc( Gradient_MarkerHeight * scale_factor );
+		Gradient_CheckerboardCellSize = ImTrunc( Gradient_CheckerboardCellSize * scale_factor );
+		Gradient_MarkerThickness      = ImTrunc( Gradient_MarkerThickness * scale_factor );
+
+		CurveEditor_DefaultHeight     = ImTrunc( CurveEditor_DefaultHeight * scale_factor );
+		CurveEditor_KeyRadius         = ImTrunc( CurveEditor_KeyRadius * scale_factor );
+		CurveEditor_TangentRadius     = ImTrunc( CurveEditor_TangentRadius * scale_factor );
+		CurveEditor_HitRadius         = ImTrunc( CurveEditor_HitRadius * scale_factor );
+		CurveEditor_LineThickness     = ImTrunc( CurveEditor_LineThickness * scale_factor );
+		CurveEditor_KeyOutlineThickness = ImTrunc( CurveEditor_KeyOutlineThickness * scale_factor );
+
+		ColorWheel_DotRadius     = ImTrunc( ColorWheel_DotRadius * scale_factor );
+		ColorWheel_RingThickness = ImTrunc( ColorWheel_RingThickness * scale_factor );
+
+		ColorCurve_DefaultHeight = ImTrunc( ColorCurve_DefaultHeight * scale_factor );
+		ColorCurve_KeyRadius     = ImTrunc( ColorCurve_KeyRadius * scale_factor );
+		ColorCurve_LineThickness = ImTrunc( ColorCurve_LineThickness * scale_factor );
 	}
 
 	void PushColor( ImWidgetsStyleColor colorIndex, const ImVec4& color )
@@ -378,6 +534,36 @@ struct ImWidgetsStyle
 		switch ( colorIndex )
 		{
 		case StyleColor_Value: return "Value";
+		case StyleColor_Slider2D_CursorX: return "Slider2DCursorX";
+		case StyleColor_Slider2D_CursorY: return "Slider2DCursorY";
+		case StyleColor_Gradient_MarkerOutline: return "GradientMarkerOutline";
+		case StyleColor_Gradient_MarkerOutlineHovered: return "GradientMarkerOutlineHovered";
+		case StyleColor_Gradient_MarkerOutlineSelected: return "GradientMarkerOutlineSelected";
+		case StyleColor_Gradient_AlphaIndicator: return "GradientAlphaIndicator";
+		case StyleColor_Gradient_Checkerboard1: return "GradientCheckerboard1";
+		case StyleColor_Gradient_Checkerboard2: return "GradientCheckerboard2";
+		case StyleColor_CurveEditor_Line: return "CurveEditorLine";
+		case StyleColor_CurveEditor_GridMinor: return "CurveEditorGridMinor";
+		case StyleColor_CurveEditor_GridMajor: return "CurveEditorGridMajor";
+		case StyleColor_CurveEditor_ZeroLine: return "CurveEditorZeroLine";
+		case StyleColor_CurveEditor_Key: return "CurveEditorKey";
+		case StyleColor_CurveEditor_KeyHovered: return "CurveEditorKeyHovered";
+		case StyleColor_CurveEditor_KeySelected: return "CurveEditorKeySelected";
+		case StyleColor_CurveEditor_KeyOutline: return "CurveEditorKeyOutline";
+		case StyleColor_CurveEditor_KeyOutlineHovered: return "CurveEditorKeyOutlineHovered";
+		case StyleColor_CurveEditor_KeyOutlineSelected: return "CurveEditorKeyOutlineSelected";
+		case StyleColor_CurveEditor_TangentLine: return "CurveEditorTangentLine";
+		case StyleColor_CurveEditor_TangentHovered: return "CurveEditorTangentHovered";
+		case StyleColor_CurveEditor_Crosshair: return "CurveEditorCrosshair";
+		case StyleColor_CurveEditor_AddIndicator: return "CurveEditorAddIndicator";
+		case StyleColor_ColorWheel_DotOutline: return "ColorWheelDotOutline";
+		case StyleColor_ColorWheel_DotOutlineActive: return "ColorWheelDotOutlineActive";
+		case StyleColor_ColorCurve_Line: return "ColorCurveLine";
+		case StyleColor_ColorCurve_NeutralLine: return "ColorCurveNeutralLine";
+		case StyleColor_ColorCurve_Key: return "ColorCurveKey";
+		case StyleColor_ColorCurve_KeyHovered: return "ColorCurveKeyHovered";
+		case StyleColor_ColorCurve_KeySelected: return "ColorCurveKeySelected";
+		case StyleColor_ColorCurve_KeyOutline: return "ColorCurveKeyOutline";
 		case StyleColor_Count: break;
 		}
 
@@ -413,6 +599,20 @@ private:
 		case StyleVar_NavCursor_Distance:				return &NavCursor_Distance;
 		case StyleVar_WhitePoint_Radius:				return &WhitePoint_Radius;
 		case StyleVar_PrecisionDrag_BlockSize:			return &PrecisionDrag_BlockSize;
+		case StyleVar_Gradient_MarkerHeight:			return &Gradient_MarkerHeight;
+		case StyleVar_Gradient_CheckerboardCellSize:	return &Gradient_CheckerboardCellSize;
+		case StyleVar_Gradient_MarkerThickness:			return &Gradient_MarkerThickness;
+		case StyleVar_CurveEditor_DefaultHeight:		return &CurveEditor_DefaultHeight;
+		case StyleVar_CurveEditor_KeyRadius:			return &CurveEditor_KeyRadius;
+		case StyleVar_CurveEditor_TangentRadius:		return &CurveEditor_TangentRadius;
+		case StyleVar_CurveEditor_HitRadius:			return &CurveEditor_HitRadius;
+		case StyleVar_CurveEditor_LineThickness:		return &CurveEditor_LineThickness;
+		case StyleVar_CurveEditor_KeyOutlineThickness:	return &CurveEditor_KeyOutlineThickness;
+		case StyleVar_ColorWheel_DotRadius:				return &ColorWheel_DotRadius;
+		case StyleVar_ColorWheel_RingThickness:			return &ColorWheel_RingThickness;
+		case StyleVar_ColorCurve_DefaultHeight:			return &ColorCurve_DefaultHeight;
+		case StyleVar_ColorCurve_KeyRadius:				return &ColorCurve_KeyRadius;
+		case StyleVar_ColorCurve_LineThickness:			return &ColorCurve_LineThickness;
 		default:										return nullptr;
 		}
 	}
@@ -743,18 +943,28 @@ enum ImCurveEditorSeg_
 	ImCurveEditorSeg_COUNT
 };
 
+typedef int ImCurveEditorTangentMode;
+enum ImCurveEditorTangentMode_
+{
+	ImCurveEditorTangentMode_Free = 0,		// Left and right handles move independently
+	ImCurveEditorTangentMode_Aligned,		// Handles stay collinear but can have different lengths
+	ImCurveEditorTangentMode_Mirrored,		// Handles stay collinear and same length (symmetric)
+	ImCurveEditorTangentMode_COUNT
+};
+
 struct ImCurveEditorKey
 {
-	ImVec2				Pos;			// (x=time, y=value)
-	ImCurveEditorSeg	Segment;		// Interpolation to next key
-	ImVec2				TangentLeft;	// Incoming tangent handle offset (typically negative x)
-	ImVec2				TangentRight;	// Outgoing tangent handle offset (typically positive x)
+	ImVec2						Pos;			// (x=time, y=value)
+	ImCurveEditorSeg			Segment;		// Interpolation to next key
+	ImVec2						TangentLeft;	// Incoming tangent handle offset (typically negative x)
+	ImVec2						TangentRight;	// Outgoing tangent handle offset (typically positive x)
+	ImCurveEditorTangentMode	TangentMode;	// How left/right handles relate
 
 	ImCurveEditorKey() : Pos( 0.0f, 0.0f ), Segment( ImCurveEditorSeg_Linear ),
-		TangentLeft( -0.1f, 0.0f ), TangentRight( 0.1f, 0.0f ) {}
+		TangentLeft( -0.1f, 0.0f ), TangentRight( 0.1f, 0.0f ), TangentMode( ImCurveEditorTangentMode_Free ) {}
 	ImCurveEditorKey( ImVec2 pos, ImCurveEditorSeg seg = ImCurveEditorSeg_Linear )
 		: Pos( pos ), Segment( seg ),
-		TangentLeft( -0.1f, 0.0f ), TangentRight( 0.1f, 0.0f ) {}
+		TangentLeft( -0.1f, 0.0f ), TangentRight( 0.1f, 0.0f ), TangentMode( ImCurveEditorTangentMode_Free ) {}
 };
 
 struct ImCurveEditorData
@@ -804,6 +1014,77 @@ struct ImCurveEditorData
 	bool RemoveKey( int idx )
 	{
 		if ( Keys.Size <= 2 || idx < 0 || idx >= Keys.Size )
+			return false;
+		Keys.erase( Keys.Data + idx );
+		return true;
+	}
+};
+
+typedef int ImColorWheelMode;
+enum ImColorWheelMode_
+{
+	ImColorWheelMode_HSV = 0,	// Hue-Saturation disc, Value on master slider
+	ImColorWheelMode_OkLCH,		// Perceptually uniform: Hue-Chroma disc, Lightness on master slider
+	ImColorWheelMode_COUNT
+};
+
+typedef int ImColorCurveMode;
+enum ImColorCurveMode_
+{
+	ImColorCurveMode_HueVsHue = 0,	// X=Hue, Y=Hue shift (-0.5..0.5)
+	ImColorCurveMode_HueVsSat,		// X=Hue, Y=Saturation multiplier (0..2)
+	ImColorCurveMode_HueVsLum,		// X=Hue, Y=Luminance offset (-1..1)
+	ImColorCurveMode_LumVsSat,		// X=Luminance, Y=Saturation multiplier (0..2)
+	ImColorCurveMode_SatVsSat,		// X=Saturation, Y=Saturation multiplier (0..2)
+	ImColorCurveMode_COUNT
+};
+
+struct ImColorCurveKey
+{
+	float Position;		// X position (0-1)
+	float Value;		// Y value (meaning depends on mode)
+
+	ImColorCurveKey() : Position( 0.0f ), Value( 0.0f ) {}
+	ImColorCurveKey( float pos, float val ) : Position( pos ), Value( val ) {}
+};
+
+struct ImColorCurveData
+{
+	ImVector<ImColorCurveKey>	Keys;
+	int							SelectedIdx;
+
+	ImColorCurveData() : SelectedIdx( -1 ) {}
+
+	void SortKeys()
+	{
+		for ( int i = 1; i < Keys.Size; ++i )
+		{
+			ImColorCurveKey key = Keys[ i ];
+			int j = i - 1;
+			while ( j >= 0 && Keys[ j ].Position > key.Position )
+			{
+				Keys[ j + 1 ] = Keys[ j ];
+				--j;
+			}
+			Keys[ j + 1 ] = key;
+		}
+	}
+
+	int AddKey( float pos, float val )
+	{
+		Keys.push_back( ImColorCurveKey( pos, val ) );
+		SortKeys();
+		for ( int i = 0; i < Keys.Size; ++i )
+		{
+			if ( Keys[ i ].Position == pos )
+				return i;
+		}
+		return Keys.Size - 1;
+	}
+
+	bool RemoveKey( int idx )
+	{
+		if ( Keys.Size <= 0 || idx < 0 || idx >= Keys.Size )
 			return false;
 		Keys.erase( Keys.Data + idx );
 		return true;
@@ -1243,6 +1524,7 @@ namespace ImWidgets{
 	IMGUI_API float CurveEditorEvalEasing( ImCurveEditorSeg seg, float t );
 	IMGUI_API float CurveEditorSample( ImCurveEditorData const& curve, float x );
 	IMGUI_API const char* CurveEditorSegName( ImCurveEditorSeg seg );
+	IMGUI_API const char* CurveEditorTangentModeName( ImCurveEditorTangentMode mode );
 
 	IMGUI_API void DrawOkLabQuad( ImDrawList* pDrawList, ImVec2 start, ImVec2 size, float L, int resX = 16, int resY = 16 );
 	IMGUI_API void DrawOkLchQuad( ImDrawList* pDrawList, ImVec2 start, ImVec2 size, float L, int resX = 16, int resY = 16 );
@@ -1467,6 +1749,15 @@ namespace ImWidgets{
 
 	IMGUI_API bool GradientEditor( char const* label, ImGradientData* gradient, ImVec2 size = ImVec2( 0, 0 ) );
 	IMGUI_API bool CurveEditor( char const* label, ImCurveEditorData* curve, ImVec2 size = ImVec2( 0, 0 ) );
+
+	IMGUI_API void DrawColorDisc( ImDrawList* pDrawList, ImVec2 center, float radius, ImColorWheelMode mode, float thirdAxis, int numSectors = 64, int numRings = 16 );
+	IMGUI_API bool ColorWheel( char const* label, ImVec4* color, ImColorWheelMode mode = ImColorWheelMode_HSV, float hdr_max = 1.0f, ImVec2 size = ImVec2( 0, 0 ) );
+
+	IMGUI_API float ColorCurveDefaultValue( ImColorCurveMode mode );
+	IMGUI_API void  ColorCurveRange( ImColorCurveMode mode, float* out_min, float* out_max );
+	IMGUI_API const char* ColorCurveModeName( ImColorCurveMode mode );
+	IMGUI_API float ColorCurveSample( ImColorCurveData const& curve, ImColorCurveMode mode, float x );
+	IMGUI_API bool  ColorCurve( char const* label, ImColorCurveData* curve, ImColorCurveMode mode, ImVec2 size = ImVec2( 0, 0 ) );
 
 	//IMGUI_API bool SliderRingScalar( char const* name,
 	//								 ImGuiDataType data_type,

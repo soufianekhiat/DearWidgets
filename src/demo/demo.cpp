@@ -2372,7 +2372,10 @@ namespace ImWidgets {
 				if ( curve.SelectedIdx >= 0 && curve.SelectedIdx < curve.Keys.Size )
 				{
 					ImCurveEditorKey& key = curve.Keys[ curve.SelectedIdx ];
+					float cePosMin = ( curve.SelectedIdx > 0 ) ? curve.Keys[ curve.SelectedIdx - 1 ].Pos.x : curve.RangeMin.x;
+					float cePosMax = ( curve.SelectedIdx < curve.Keys.Size - 1 ) ? curve.Keys[ curve.SelectedIdx + 1 ].Pos.x : curve.RangeMax.x;
 					ImGui::DragFloat2( "Position##CurveKey", &key.Pos.x, 0.01f );
+					key.Pos.x = ImClamp( key.Pos.x, cePosMin, cePosMax );
 
 					// Segment type combo
 					int currentSeg = key.Segment;
@@ -2387,6 +2390,39 @@ namespace ImWidgets {
 								ImGui::SetItemDefaultFocus();
 						}
 						ImGui::EndCombo();
+					}
+
+					// Tangent mode combo (only when bezier handles are relevant)
+					bool hasBezier = ( key.Segment == ImCurveEditorSeg_CubicBezier )
+						|| ( curve.SelectedIdx > 0 && curve.Keys[ curve.SelectedIdx - 1 ].Segment == ImCurveEditorSeg_CubicBezier );
+					if ( hasBezier )
+					{
+						int currentMode = key.TangentMode;
+						if ( ImGui::BeginCombo( "Tangent Mode##CurveKey", ImWidgets::CurveEditorTangentModeName( ( ImCurveEditorTangentMode )currentMode ) ) )
+						{
+							for ( int m = 0; m < ImCurveEditorTangentMode_COUNT; ++m )
+							{
+								bool isSelected = ( currentMode == m );
+								if ( ImGui::Selectable( ImWidgets::CurveEditorTangentModeName( ( ImCurveEditorTangentMode )m ), isSelected ) )
+								{
+									key.TangentMode = ( ImCurveEditorTangentMode )m;
+									if ( m == ImCurveEditorTangentMode_Mirrored )
+									{
+										key.TangentRight = ImVec2( -key.TangentLeft.x, -key.TangentLeft.y );
+										if ( key.TangentRight.x < 0.0f )
+											key.TangentRight.x = 0.0f;
+									}
+								}
+								if ( isSelected )
+									ImGui::SetItemDefaultFocus();
+							}
+							ImGui::EndCombo();
+						}
+
+						ImGui::DragFloat2( "In Handle##CurveKey", &key.TangentLeft.x, 0.005f );
+						key.TangentLeft.x = ImMin( key.TangentLeft.x, 0.0f );
+						ImGui::DragFloat2( "Out Handle##CurveKey", &key.TangentRight.x, 0.005f );
+						key.TangentRight.x = ImMax( key.TangentRight.x, 0.0f );
 					}
 				}
 				else
@@ -2419,6 +2455,75 @@ namespace ImWidgets {
 				}
 				CurveEditor( "Steps & Linear##Curve2", &curve2, ImVec2( 0, 150 ) );
 			}
+
+			if ( ImGui::CollapsingHeader( "Color Curve", ImGuiTreeNodeFlags_DefaultOpen ) )
+			{
+				static int ccMode = ImColorCurveMode_HueVsHue;
+				ImGui::Combo( "Mode##CC", &ccMode, "Hue vs Hue\0Hue vs Sat\0Hue vs Lum\0Lum vs Sat\0Sat vs Sat\0" );
+
+				static ImColorCurveData ccData[ ImColorCurveMode_COUNT ];
+				static bool ccInit = false;
+				if ( !ccInit )
+				{
+					// Hue vs Hue: shift reds toward orange
+					ccData[ ImColorCurveMode_HueVsHue ].AddKey( 0.0f, 0.05f );
+					ccData[ ImColorCurveMode_HueVsHue ].AddKey( 0.15f, 0.0f );
+
+					// Hue vs Sat: boost greens
+					ccData[ ImColorCurveMode_HueVsSat ].AddKey( 0.25f, 1.0f );
+					ccData[ ImColorCurveMode_HueVsSat ].AddKey( 0.33f, 1.5f );
+					ccData[ ImColorCurveMode_HueVsSat ].AddKey( 0.42f, 1.0f );
+
+					ccInit = true;
+				}
+
+				ImColorCurveData& curData = ccData[ ccMode ];
+				ColorCurve( "##CCMain", &curData, ( ImColorCurveMode )ccMode, ImVec2( 0, 150 ) );
+
+				if ( curData.SelectedIdx >= 0 && curData.SelectedIdx < curData.Keys.Size )
+				{
+					ImColorCurveKey& key = curData.Keys[ curData.SelectedIdx ];
+					float posMin = ( curData.SelectedIdx > 0 ) ? curData.Keys[ curData.SelectedIdx - 1 ].Position : 0.0f;
+					float posMax = ( curData.SelectedIdx < curData.Keys.Size - 1 ) ? curData.Keys[ curData.SelectedIdx + 1 ].Position : 1.0f;
+					ImGui::DragFloat( "Position##CCKey", &key.Position, 0.005f, posMin, posMax, "%.3f" );
+					float rMin, rMax;
+					ImWidgets::ColorCurveRange( ( ImColorCurveMode )ccMode, &rMin, &rMax );
+					ImGui::DragFloat( "Value##CCKey", &key.Value, 0.01f, rMin, rMax, "%.3f" );
+				}
+				else
+				{
+					ImGui::TextDisabled( "No key selected" );
+				}
+
+				// Sample readout
+				static float ccSampleX = 0.5f;
+				ImGui::SliderFloat( "Sample x##CC", &ccSampleX, 0.0f, 1.0f );
+				float ccVal = ImWidgets::ColorCurveSample( curData, ( ImColorCurveMode )ccMode, ccSampleX );
+				ImGui::Text( "y = %.4f", ccVal );
+
+				ImGui::TextWrapped( "Click to add key. Drag to move. Drag far outside to delete. Right-click for options." );
+			}
+
+			if ( ImGui::CollapsingHeader( "Color Wheel", ImGuiTreeNodeFlags_DefaultOpen ) )
+			{
+				static ImVec4 wheelColor( 0.8f, 0.2f, 0.3f, 1.0f );
+				static int wheelMode = ImColorWheelMode_HSV;
+
+				ImGui::Combo( "Mode##Wheel", &wheelMode, "HSV\0OkLCH\0" );
+
+				ColorWheel( "##WheelMain", &wheelColor, ( ImColorWheelMode )wheelMode );
+
+				ImGui::ColorEdit4( "Color##Wheel", &wheelColor.x, ImGuiColorEditFlags_Float );
+
+				ImGui::Separator();
+
+				// Second wheel: OkLCH with HDR slider
+				static ImVec4 wheelColor2( 0.5f, 0.7f, 0.2f, 1.0f );
+				ImGui::Text( "OkLCH Wheel (HDR max = 2.0)" );
+				ColorWheel( "##WheelHDR", &wheelColor2, ImColorWheelMode_OkLCH, 2.0f );
+				ImGui::ColorEdit4( "HDR Color##Wheel2", &wheelColor2.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR );
+			}
+
 			ImGui::Unindent();
 		}
 

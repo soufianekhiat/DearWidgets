@@ -6820,10 +6820,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		ImGuiContext& g = *GImGui;
 		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
 		const ImGuiID id = window->GetID( label );
 		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float barHeight = ( size.y > 0.0f ) ? size.y : ImGui::GetFrameHeight();
-		const float markerHeight = 12.0f;
+		const float markerHeight = dwStyle.Gradient_MarkerHeight;
+		const float markerThickness = dwStyle.Gradient_MarkerThickness;
 
 		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
 
@@ -6860,8 +6862,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImGui::RenderFrame( bar_bb.Min, bar_bb.Max, frame_col, true, g.Style.FrameRounding );
 
 		// Checkerboard for transparency
-		DrawCheckerboard( window->DrawList, bar_bb.Min, bar_bb.GetSize(), 6.0f,
-						  IM_COL32( 204, 204, 204, 255 ), IM_COL32( 255, 255, 255, 255 ) );
+		DrawCheckerboard( window->DrawList, bar_bb.Min, bar_bb.GetSize(), dwStyle.Gradient_CheckerboardCellSize,
+						  ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gradient_Checkerboard1 ] ),
+						  ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gradient_Checkerboard2 ] ) );
 
 		// Gradient bar
 		int resolution = ImMax( ( int )( w * 0.5f ), 16 );
@@ -6890,8 +6893,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			window->DrawList->AddTriangleFilled( p0, p1, p2, ImGui::GetColorU32( stopCol ) );
 
 			// Outline
-			ImU32 outlineCol = isSelected ? IM_COL32( 255, 255, 0, 255 ) : ( isHovered ? IM_COL32( 200, 200, 200, 255 ) : IM_COL32( 40, 40, 40, 255 ) );
-			float outlineThick = isSelected ? 2.0f : 1.0f;
+			ImU32 outlineCol = ImGui::GetColorU32( dwStyle.Colors[ isSelected ? StyleColor_Gradient_MarkerOutlineSelected : ( isHovered ? StyleColor_Gradient_MarkerOutlineHovered : StyleColor_Gradient_MarkerOutline ) ] );
+			float outlineThick = isSelected ? markerThickness * 2.0f : markerThickness;
 			window->DrawList->AddTriangle( p0, p1, p2, outlineCol, outlineThick );
 
 			// Alpha indicator: small horizontal line across marker proportional to alpha
@@ -6899,7 +6902,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			{
 				float alphaY = ImLerp( marker_bb.Min.y + 2.0f, marker_bb.Max.y - 1.0f, 1.0f - gradient->Stops[ i ].Color.w );
 				float halfW = markerHeight * 0.3f;
-				window->DrawList->AddLine( ImVec2( x - halfW, alphaY ), ImVec2( x + halfW, alphaY ), IM_COL32( 0, 0, 0, 180 ), 1.0f );
+				window->DrawList->AddLine( ImVec2( x - halfW, alphaY ), ImVec2( x + halfW, alphaY ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gradient_AlphaIndicator ] ), markerThickness );
 			}
 		}
 
@@ -7311,6 +7314,17 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 	}
 
+	const char* CurveEditorTangentModeName( ImCurveEditorTangentMode mode )
+	{
+		switch ( mode )
+		{
+		case ImCurveEditorTangentMode_Free:     return "Free";
+		case ImCurveEditorTangentMode_Aligned:  return "Aligned";
+		case ImCurveEditorTangentMode_Mirrored: return "Mirrored";
+		default:                                return "Unknown";
+		}
+	}
+
 	static ImVec2 CurveToScreen( ImVec2 curvePos, ImRect const& bb, ImVec2 rangeMin, ImVec2 rangeMax )
 	{
 		float sx = ( curvePos.x - rangeMin.x ) / ( rangeMax.x - rangeMin.x );
@@ -7441,8 +7455,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImGuiContext& g = *GImGui;
 		const ImGuiStyle& style = g.Style;
 		const ImGuiID id = window->GetID( label );
+		ImWidgetsStyle& dwStyle = GetStyle();
 		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
-		const float h = ( size.y > 0.0f ) ? size.y : 200.0f;
+		const float h = ( size.y > 0.0f ) ? size.y : dwStyle.CurveEditor_DefaultHeight;
 
 		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
 
@@ -7461,9 +7476,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImVec2 const& rangeMin = curve->RangeMin;
 		ImVec2 const& rangeMax = curve->RangeMax;
 
-		const float keyRadius = 5.0f;
-		const float tangentRadius = 4.0f;
-		const float hitRadius = 8.0f;
+		const float keyRadius = dwStyle.CurveEditor_KeyRadius;
+		const float tangentRadius = dwStyle.CurveEditor_TangentRadius;
+		const float hitRadius = dwStyle.CurveEditor_HitRadius;
 
 		// --- HIT TESTING (before drawing for hover feedback) ---
 		ImDrawList* dl = window->DrawList;
@@ -7524,8 +7539,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		dl->PushClipRect( frame_bb.Min, frame_bb.Max, true );
 
 		// Grid lines
-		ImU32 gridCol = IM_COL32( 200, 200, 200, 40 );
-		ImU32 gridColMajor = IM_COL32( 200, 200, 200, 80 );
+		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_GridMinor ] );
+		ImU32 gridColMajor = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_GridMajor ] );
 		int gridDivX = 10;
 		int gridDivY = 10;
 		for ( int i = 0; i <= gridDivX; ++i )
@@ -7542,15 +7557,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Zero lines (if visible)
 		{
 			ImVec2 zeroScreen = CurveToScreen( ImVec2( 0.0f, 0.0f ), frame_bb, rangeMin, rangeMax );
+			ImU32 zeroCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_ZeroLine ] );
 			if ( zeroScreen.x > frame_bb.Min.x && zeroScreen.x < frame_bb.Max.x )
-				dl->AddLine( ImVec2( zeroScreen.x, frame_bb.Min.y ), ImVec2( zeroScreen.x, frame_bb.Max.y ), IM_COL32( 255, 255, 255, 60 ) );
+				dl->AddLine( ImVec2( zeroScreen.x, frame_bb.Min.y ), ImVec2( zeroScreen.x, frame_bb.Max.y ), zeroCol );
 			if ( zeroScreen.y > frame_bb.Min.y && zeroScreen.y < frame_bb.Max.y )
-				dl->AddLine( ImVec2( frame_bb.Min.x, zeroScreen.y ), ImVec2( frame_bb.Max.x, zeroScreen.y ), IM_COL32( 255, 255, 255, 60 ) );
+				dl->AddLine( ImVec2( frame_bb.Min.x, zeroScreen.y ), ImVec2( frame_bb.Max.x, zeroScreen.y ), zeroCol );
 		}
 
 		// Draw curve segments
-		ImU32 curveCol = IM_COL32( 91, 194, 231, 255 );
-		float curveThickness = 2.0f;
+		ImU32 curveCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_Line ] );
+		float curveThickness = dwStyle.CurveEditor_LineThickness;
 
 		for ( int seg = 0; seg < curve->Keys.Size - 1; ++seg )
 		{
@@ -7616,21 +7632,21 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			bool showLeft = ( selected > 0 && curve->Keys[ selected - 1 ].Segment == ImCurveEditorSeg_CubicBezier );
 
 			ImVec2 keyScreen = CurveToScreen( sk.Pos, frame_bb, rangeMin, rangeMax );
-			ImU32 tangentCol = IM_COL32( 255, 180, 50, 200 );
-			ImU32 tangentHovCol = IM_COL32( 255, 220, 100, 255 );
+			ImU32 tangentCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_TangentLine ] );
+			ImU32 tangentHovCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_TangentHovered ] );
 
 			if ( showLeft )
 			{
 				ImVec2 tanScreen = CurveToScreen( sk.Pos + sk.TangentLeft, frame_bb, rangeMin, rangeMax );
 				bool tanHov = ( hovered_tangent == -1 );
-				dl->AddLine( keyScreen, tanScreen, tanHov ? tangentHovCol : tangentCol, tanHov ? 2.0f : 1.0f );
+				dl->AddLine( keyScreen, tanScreen, tanHov ? tangentHovCol : tangentCol, tanHov ? curveThickness : curveThickness * 0.5f );
 				dl->AddCircleFilled( tanScreen, tanHov ? tangentRadius + 1.5f : tangentRadius, tanHov ? tangentHovCol : tangentCol );
 			}
 			if ( showRight )
 			{
 				ImVec2 tanScreen = CurveToScreen( sk.Pos + sk.TangentRight, frame_bb, rangeMin, rangeMax );
 				bool tanHov = ( hovered_tangent == 1 );
-				dl->AddLine( keyScreen, tanScreen, tanHov ? tangentHovCol : tangentCol, tanHov ? 2.0f : 1.0f );
+				dl->AddLine( keyScreen, tanScreen, tanHov ? tangentHovCol : tangentCol, tanHov ? curveThickness : curveThickness * 0.5f );
 				dl->AddCircleFilled( tanScreen, tanHov ? tangentRadius + 1.5f : tangentRadius, tanHov ? tangentHovCol : tangentCol );
 			}
 		}
@@ -7642,10 +7658,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			bool isSelected = ( i == selected );
 			bool isHovered = ( i == hovered_key );
 			float radius = isHovered ? keyRadius + 2.0f : keyRadius;
-			ImU32 keyCol = isSelected ? IM_COL32( 255, 255, 0, 255 ) : ( isHovered ? IM_COL32( 230, 230, 230, 255 ) : IM_COL32( 255, 255, 255, 255 ) );
-			ImU32 outCol = isSelected ? IM_COL32( 180, 180, 0, 255 ) : ( isHovered ? IM_COL32( 91, 194, 231, 255 ) : IM_COL32( 0, 0, 0, 255 ) );
+			ImU32 keyCol = ImGui::GetColorU32( dwStyle.Colors[ isSelected ? StyleColor_CurveEditor_KeySelected : ( isHovered ? StyleColor_CurveEditor_KeyHovered : StyleColor_CurveEditor_Key ) ] );
+			ImU32 outCol = ImGui::GetColorU32( dwStyle.Colors[ isSelected ? StyleColor_CurveEditor_KeyOutlineSelected : ( isHovered ? StyleColor_CurveEditor_KeyOutlineHovered : StyleColor_CurveEditor_KeyOutline ) ] );
 			dl->AddCircleFilled( kScreen, radius, keyCol );
-			dl->AddCircle( kScreen, radius, outCol, 0, isSelected ? 2.0f : 1.5f );
+			dl->AddCircle( kScreen, radius, outCol, 0, isSelected ? dwStyle.CurveEditor_KeyOutlineThickness * 1.33f : dwStyle.CurveEditor_KeyOutlineThickness );
 		}
 
 		// Hover feedback: crosshair + "add" indicator when hovering empty space
@@ -7660,17 +7676,17 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			else
 			{
 				// Over empty area: show crosshair and "+" to indicate add
-				ImU32 crossCol = IM_COL32( 255, 255, 255, 100 );
+				ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_Crosshair ] );
 				dl->AddLine( ImVec2( mp.x, frame_bb.Min.y ), ImVec2( mp.x, frame_bb.Max.y ), crossCol, 1.0f );
 				dl->AddLine( ImVec2( frame_bb.Min.x, mp.y ), ImVec2( frame_bb.Max.x, mp.y ), crossCol, 1.0f );
 
 				// "+" sign near cursor
-				float plusSize = 5.0f;
-				float plusOffset = 12.0f;
+				float plusSize = keyRadius;
+				float plusOffset = keyRadius * 2.4f;
 				ImVec2 pc( mp.x + plusOffset, mp.y - plusOffset );
-				ImU32 plusCol = IM_COL32( 91, 194, 231, 220 );
-				dl->AddLine( ImVec2( pc.x - plusSize, pc.y ), ImVec2( pc.x + plusSize, pc.y ), plusCol, 2.0f );
-				dl->AddLine( ImVec2( pc.x, pc.y - plusSize ), ImVec2( pc.x, pc.y + plusSize ), plusCol, 2.0f );
+				ImU32 plusCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_AddIndicator ] );
+				dl->AddLine( ImVec2( pc.x - plusSize, pc.y ), ImVec2( pc.x + plusSize, pc.y ), plusCol, curveThickness );
+				dl->AddLine( ImVec2( pc.x, pc.y - plusSize ), ImVec2( pc.x, pc.y + plusSize ), plusCol, curveThickness );
 
 				ImGui::SetMouseCursor( ImGuiMouseCursor_Arrow );
 			}
@@ -7748,19 +7764,47 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			else if ( dragTarget == -1 )
 			{
 				// Drag left tangent
-				curve->Keys[ selected ].TangentLeft = curve->Keys[ selected ].TangentLeft + delta;
-				// Constrain: left tangent x must be <= 0
-				if ( curve->Keys[ selected ].TangentLeft.x > 0.0f )
-					curve->Keys[ selected ].TangentLeft.x = 0.0f;
+				ImCurveEditorKey& k = curve->Keys[ selected ];
+				k.TangentLeft = k.TangentLeft + delta;
+				if ( k.TangentLeft.x > 0.0f )
+					k.TangentLeft.x = 0.0f;
+				// Enforce tangent mode on the opposite handle
+				if ( k.TangentMode == ImCurveEditorTangentMode_Mirrored )
+				{
+					k.TangentRight = ImVec2( -k.TangentLeft.x, -k.TangentLeft.y );
+				}
+				else if ( k.TangentMode == ImCurveEditorTangentMode_Aligned )
+				{
+					float lenL = ImSqrt( ImLengthSqr( k.TangentLeft ) );
+					float lenR = ImSqrt( ImLengthSqr( k.TangentRight ) );
+					if ( lenL > 1e-6f )
+						k.TangentRight = ImVec2( -k.TangentLeft.x, -k.TangentLeft.y ) * ( lenR / lenL );
+				}
+				if ( k.TangentRight.x < 0.0f )
+					k.TangentRight.x = 0.0f;
 				value_changed = true;
 			}
 			else if ( dragTarget == 1 )
 			{
 				// Drag right tangent
-				curve->Keys[ selected ].TangentRight = curve->Keys[ selected ].TangentRight + delta;
-				// Constrain: right tangent x must be >= 0
-				if ( curve->Keys[ selected ].TangentRight.x < 0.0f )
-					curve->Keys[ selected ].TangentRight.x = 0.0f;
+				ImCurveEditorKey& k = curve->Keys[ selected ];
+				k.TangentRight = k.TangentRight + delta;
+				if ( k.TangentRight.x < 0.0f )
+					k.TangentRight.x = 0.0f;
+				// Enforce tangent mode on the opposite handle
+				if ( k.TangentMode == ImCurveEditorTangentMode_Mirrored )
+				{
+					k.TangentLeft = ImVec2( -k.TangentRight.x, -k.TangentRight.y );
+				}
+				else if ( k.TangentMode == ImCurveEditorTangentMode_Aligned )
+				{
+					float lenR = ImSqrt( ImLengthSqr( k.TangentRight ) );
+					float lenL = ImSqrt( ImLengthSqr( k.TangentLeft ) );
+					if ( lenR > 1e-6f )
+						k.TangentLeft = ImVec2( -k.TangentRight.x, -k.TangentRight.y ) * ( lenL / lenR );
+				}
+				if ( k.TangentLeft.x > 0.0f )
+					k.TangentLeft.x = 0.0f;
 				value_changed = true;
 			}
 		}
@@ -7804,6 +7848,32 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					}
 					value_changed = true;
 				}
+				// Tangent mode submenu (only relevant for bezier keys)
+				bool hasBezier = ( curve->Keys[ selected ].Segment == ImCurveEditorSeg_CubicBezier )
+					|| ( selected > 0 && curve->Keys[ selected - 1 ].Segment == ImCurveEditorSeg_CubicBezier );
+				if ( hasBezier )
+				{
+					ImGui::Separator();
+					ImGui::Text( "Tangent: %s", CurveEditorTangentModeName( curve->Keys[ selected ].TangentMode ) );
+					for ( int m = 0; m < ImCurveEditorTangentMode_COUNT; ++m )
+					{
+						bool isCur = ( curve->Keys[ selected ].TangentMode == m );
+						if ( ImGui::MenuItem( CurveEditorTangentModeName( ( ImCurveEditorTangentMode )m ), NULL, isCur ) )
+						{
+							curve->Keys[ selected ].TangentMode = ( ImCurveEditorTangentMode )m;
+							// When switching to mirrored, sync right to match left
+							if ( m == ImCurveEditorTangentMode_Mirrored )
+							{
+								ImVec2& tL = curve->Keys[ selected ].TangentLeft;
+								curve->Keys[ selected ].TangentRight = ImVec2( -tL.x, -tL.y );
+								if ( curve->Keys[ selected ].TangentRight.x < 0.0f )
+									curve->Keys[ selected ].TangentRight.x = 0.0f;
+							}
+							value_changed = true;
+						}
+					}
+				}
+
 				ImGui::Separator();
 				if ( ImGui::MenuItem( "Remove Key", NULL, false, curve->Keys.Size > 2 ) )
 				{
@@ -7812,6 +7882,868 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 						selected = -1;
 						value_changed = true;
 					}
+				}
+			}
+			ImGui::EndPopup();
+		}
+
+		// Delete key
+		if ( selected >= 0 && ImGui::IsKeyPressed( ImGuiKey_Delete ) && hovered )
+		{
+			if ( curve->RemoveKey( selected ) )
+			{
+				selected = -1;
+				value_changed = true;
+			}
+		}
+
+		ImGui::PopID();
+
+		if ( value_changed )
+			ImGui::MarkItemEdited( id );
+
+		return value_changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Color Wheel
+	//////////////////////////////////////////////////////////////////////////
+
+	static const float kOkLCHMaxChroma = 0.37f;
+
+	static ImU32 ColorWheelSampleDisc( ImColorWheelMode mode, float normRadius, float angle, float thirdAxis )
+	{
+		float r, g, b;
+
+		if ( mode == ImColorWheelMode_HSV )
+		{
+			float h = angle / ( 2.0f * IM_PI );
+			if ( h < 0.0f ) h += 1.0f;
+			if ( h > 1.0f ) h -= 1.0f;
+			ImGui::ColorConvertHSVtoRGB( h, normRadius, thirdAxis, r, g, b );
+		}
+		else // OkLCH
+		{
+			float h = angle / ( 2.0f * IM_PI );
+			if ( h < 0.0f ) h += 1.0f;
+			if ( h > 1.0f ) h -= 1.0f;
+			float c = normRadius * kOkLCHMaxChroma;
+			ColorConvertOKLCHtosRGB( r, g, b, thirdAxis, c, h );
+		}
+
+		r = ImClamp( r, 0.0f, 1.0f );
+		g = ImClamp( g, 0.0f, 1.0f );
+		b = ImClamp( b, 0.0f, 1.0f );
+
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	void DrawColorDisc( ImDrawList* pDrawList, ImVec2 center, float radius, ImColorWheelMode mode, float thirdAxis, int numSectors, int numRings )
+	{
+		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
+		int totalQuads = numSectors * numRings;
+		pDrawList->PrimReserve( totalQuads * 6, totalQuads * 4 );
+
+		float const sectorAngle = 2.0f * IM_PI / ( float )numSectors;
+
+		for ( int ring = 0; ring < numRings; ++ring )
+		{
+			float innerR = ( float )ring / numRings * radius;
+			float outerR = ( float )( ring + 1 ) / numRings * radius;
+			float innerNorm = ( float )ring / numRings;
+			float outerNorm = ( float )( ring + 1 ) / numRings;
+
+			for ( int sector = 0; sector < numSectors; ++sector )
+			{
+				float a0 = sector * sectorAngle;
+				float a1 = ( sector + 1 ) * sectorAngle;
+
+				ImVec2 p00 = center + ImVec2( ImCos( a0 ) * innerR, ImSin( a0 ) * innerR );
+				ImVec2 p10 = center + ImVec2( ImCos( a0 ) * outerR, ImSin( a0 ) * outerR );
+				ImVec2 p11 = center + ImVec2( ImCos( a1 ) * outerR, ImSin( a1 ) * outerR );
+				ImVec2 p01 = center + ImVec2( ImCos( a1 ) * innerR, ImSin( a1 ) * innerR );
+
+				ImU32 c00 = ColorWheelSampleDisc( mode, innerNorm, a0, thirdAxis );
+				ImU32 c10 = ColorWheelSampleDisc( mode, outerNorm, a0, thirdAxis );
+				ImU32 c11 = ColorWheelSampleDisc( mode, outerNorm, a1, thirdAxis );
+				ImU32 c01 = ColorWheelSampleDisc( mode, innerNorm, a1, thirdAxis );
+
+				ImDrawIdx idx = ( ImDrawIdx )pDrawList->_VtxCurrentIdx;
+				pDrawList->PrimWriteIdx( idx + 0 );
+				pDrawList->PrimWriteIdx( idx + 1 );
+				pDrawList->PrimWriteIdx( idx + 2 );
+				pDrawList->PrimWriteIdx( idx + 0 );
+				pDrawList->PrimWriteIdx( idx + 2 );
+				pDrawList->PrimWriteIdx( idx + 3 );
+
+				pDrawList->PrimWriteVtx( p00, uv, c00 );
+				pDrawList->PrimWriteVtx( p10, uv, c10 );
+				pDrawList->PrimWriteVtx( p11, uv, c11 );
+				pDrawList->PrimWriteVtx( p01, uv, c01 );
+			}
+		}
+	}
+
+	bool ColorWheel( char const* label, ImVec4* color, ImColorWheelMode mode, float hdr_max, ImVec2 size )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		const ImGuiID id = window->GetID( label );
+
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
+		const float sliderHeight = ImGui::GetFrameHeight();
+		const float spacing = style.ItemInnerSpacing.y;
+		const float discDiameter = w;
+		const float discRadius = discDiameter * 0.5f;
+		const float totalH = ( size.y > 0.0f ) ? size.y : ( discDiameter + spacing + sliderHeight );
+
+		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
+
+		const ImVec2 discCenter( window->DC.CursorPos.x + discRadius, window->DC.CursorPos.y + discRadius );
+		const ImRect disc_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( discDiameter, discDiameter ) );
+		const ImRect slider_bb( ImVec2( window->DC.CursorPos.x, window->DC.CursorPos.y + discDiameter + spacing ),
+								ImVec2( window->DC.CursorPos.x + w, window->DC.CursorPos.y + discDiameter + spacing + sliderHeight ) );
+		const ImRect total_bb( window->DC.CursorPos,
+							   ImVec2( window->DC.CursorPos.x + w + ( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f ), window->DC.CursorPos.y + totalH ) );
+
+		ImGui::ItemSize( total_bb, style.FramePadding.y );
+		if ( !ImGui::ItemAdd( total_bb, id, &total_bb, 0 ) )
+			return false;
+
+		const bool hovered = ImGui::ItemHoverable( total_bb, id, g.LastItemData.ItemFlags );
+
+		bool value_changed = false;
+		float alpha = color->w;
+
+		// --- Convert input color to working space ---
+		float hue, sat, thirdAxis;
+
+		if ( mode == ImColorWheelMode_HSV )
+		{
+			ImGui::ColorConvertRGBtoHSV( color->x, color->y, color->z, hue, sat, thirdAxis );
+		}
+		else // OkLCH
+		{
+			float L, C, H;
+			ColorConvertsRGBtoOKLCH( L, C, H, color->x, color->y, color->z );
+			hue = H;
+			sat = ImClamp( C / kOkLCHMaxChroma, 0.0f, 1.0f );
+			thirdAxis = L;
+		}
+
+		// --- Dot position ---
+		float dotAngle = hue * 2.0f * IM_PI;
+		float dotRadius = dwStyle.ColorWheel_DotRadius;
+		float ringThick = dwStyle.ColorWheel_RingThickness;
+		float innerDiscRadius = ringThick > 0.0f ? discRadius - ringThick - 1.0f : discRadius;
+		ImVec2 dotPos = discCenter + ImVec2( ImCos( dotAngle ) * sat * innerDiscRadius, ImSin( dotAngle ) * sat * innerDiscRadius );
+
+		// --- HIT TESTING ---
+		ImVec2 mp = g.IO.MousePos;
+		float dxDisc = mp.x - discCenter.x;
+		float dyDisc = mp.y - discCenter.y;
+		float distFromCenter = ImSqrt( dxDisc * dxDisc + dyDisc * dyDisc );
+		bool mouseInDisc = ( distFromCenter <= discRadius );
+		bool mouseInSlider = slider_bb.Contains( mp );
+
+		float dxDot = mp.x - dotPos.x;
+		float dyDot = mp.y - dotPos.y;
+		float dotDistSq = dxDot * dxDot + dyDot * dyDot;
+		float dotHitRadius = dotRadius * 2.0f;
+		bool mouseNearDot = ( dotDistSq < dotHitRadius * dotHitRadius );
+
+		// --- Drag state: 0=none, 1=disc, 2=slider ---
+		int* pDragMode = ImGui::GetStateStorage()->GetIntRef( id, 0 );
+
+		ImDrawList* dl = window->DrawList;
+
+		// --- DRAWING ---
+
+		// Disc background
+		ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
+		dl->AddCircleFilled( discCenter, discRadius + 1.0f, frame_col );
+
+		// Outer hue ring
+		if ( ringThick > 0.0f )
+		{
+			int ringDivs = 64;
+			float ringAngleStep = 2.0f * IM_PI / ( float )ringDivs;
+			ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
+			dl->PrimReserve( ringDivs * 6, ringDivs * 4 );
+
+			for ( int i = 0; i < ringDivs; ++i )
+			{
+				float a0 = i * ringAngleStep;
+				float a1 = ( i + 1 ) * ringAngleStep;
+
+				ImVec2 outer0 = discCenter + ImVec2( ImCos( a0 ) * discRadius, ImSin( a0 ) * discRadius );
+				ImVec2 outer1 = discCenter + ImVec2( ImCos( a1 ) * discRadius, ImSin( a1 ) * discRadius );
+				ImVec2 inner0 = discCenter + ImVec2( ImCos( a0 ) * ( innerDiscRadius + 1.0f ), ImSin( a0 ) * ( innerDiscRadius + 1.0f ) );
+				ImVec2 inner1 = discCenter + ImVec2( ImCos( a1 ) * ( innerDiscRadius + 1.0f ), ImSin( a1 ) * ( innerDiscRadius + 1.0f ) );
+
+				float h0 = a0 / ( 2.0f * IM_PI );
+				float h1 = a1 / ( 2.0f * IM_PI );
+
+				float r0, g0, b0, r1, g1, b1;
+				ImGui::ColorConvertHSVtoRGB( h0, 1.0f, 1.0f, r0, g0, b0 );
+				ImGui::ColorConvertHSVtoRGB( h1, 1.0f, 1.0f, r1, g1, b1 );
+
+				ImU32 col0 = IM_COL32( ( int )( r0 * 255.0f + 0.5f ), ( int )( g0 * 255.0f + 0.5f ), ( int )( b0 * 255.0f + 0.5f ), 255 );
+				ImU32 col1 = IM_COL32( ( int )( r1 * 255.0f + 0.5f ), ( int )( g1 * 255.0f + 0.5f ), ( int )( b1 * 255.0f + 0.5f ), 255 );
+
+				ImDrawIdx idx = ( ImDrawIdx )dl->_VtxCurrentIdx;
+				dl->PrimWriteIdx( idx + 0 );
+				dl->PrimWriteIdx( idx + 1 );
+				dl->PrimWriteIdx( idx + 2 );
+				dl->PrimWriteIdx( idx + 0 );
+				dl->PrimWriteIdx( idx + 2 );
+				dl->PrimWriteIdx( idx + 3 );
+
+				dl->PrimWriteVtx( outer0, uv, col0 );
+				dl->PrimWriteVtx( outer1, uv, col1 );
+				dl->PrimWriteVtx( inner1, uv, col1 );
+				dl->PrimWriteVtx( inner0, uv, col0 );
+			}
+		}
+
+		// Color disc
+		DrawColorDisc( dl, discCenter, innerDiscRadius, mode, thirdAxis, 64, 16 );
+
+		// Disc outline
+		dl->AddCircle( discCenter, discRadius, ImGui::GetColorU32( ImGuiCol_Border ) );
+		if ( ringThick > 0.0f )
+			dl->AddCircle( discCenter, innerDiscRadius, ImGui::GetColorU32( ImGuiCol_Border ), 0, 0.5f );
+
+		// Control dot
+		bool isDraggingDisc = ( g.ActiveId == id && *pDragMode == 1 );
+		ImU32 dotOutCol = ImGui::GetColorU32( dwStyle.Colors[ isDraggingDisc ? StyleColor_ColorWheel_DotOutlineActive : StyleColor_ColorWheel_DotOutline ] );
+		dl->AddCircleFilled( dotPos, dotRadius, IM_COL32( 0, 0, 0, 100 ) ); // Shadow
+		dl->AddCircleFilled( dotPos, dotRadius - 1.0f, IM_COL32_WHITE );
+		dl->AddCircle( dotPos, dotRadius, dotOutCol, 0, isDraggingDisc ? 2.5f : 1.5f );
+
+		// Crosshair lines through center (subtle guide)
+		ImU32 crossCol = IM_COL32( 255, 255, 255, 30 );
+		dl->AddLine( ImVec2( discCenter.x - innerDiscRadius, discCenter.y ), ImVec2( discCenter.x + innerDiscRadius, discCenter.y ), crossCol );
+		dl->AddLine( ImVec2( discCenter.x, discCenter.y - innerDiscRadius ), ImVec2( discCenter.x, discCenter.y + innerDiscRadius ), crossCol );
+
+		// Master slider background
+		ImGui::RenderFrame( slider_bb.Min, slider_bb.Max, ImGui::GetColorU32( ImGuiCol_FrameBg ), true, g.Style.FrameRounding );
+
+		// Master slider gradient
+		{
+			int sliderSegs = 16;
+			float segW = slider_bb.GetWidth() / ( float )sliderSegs;
+			for ( int i = 0; i < sliderSegs; ++i )
+			{
+				float t0 = ( float )i / ( float )sliderSegs;
+				float t1 = ( float )( i + 1 ) / ( float )sliderSegs;
+
+				float v0 = t0 * hdr_max;
+				float v1 = t1 * hdr_max;
+
+				float r0, g0, b0, r1, g1, b1;
+				if ( mode == ImColorWheelMode_HSV )
+				{
+					ImGui::ColorConvertHSVtoRGB( hue, sat, v0, r0, g0, b0 );
+					ImGui::ColorConvertHSVtoRGB( hue, sat, v1, r1, g1, b1 );
+				}
+				else
+				{
+					float c = sat * kOkLCHMaxChroma;
+					ColorConvertOKLCHtosRGB( r0, g0, b0, v0, c, hue );
+					ColorConvertOKLCHtosRGB( r1, g1, b1, v1, c, hue );
+				}
+
+				r0 = ImClamp( r0, 0.0f, 1.0f ); g0 = ImClamp( g0, 0.0f, 1.0f ); b0 = ImClamp( b0, 0.0f, 1.0f );
+				r1 = ImClamp( r1, 0.0f, 1.0f ); g1 = ImClamp( g1, 0.0f, 1.0f ); b1 = ImClamp( b1, 0.0f, 1.0f );
+
+				ImU32 col0 = IM_COL32( ( int )( r0 * 255.0f + 0.5f ), ( int )( g0 * 255.0f + 0.5f ), ( int )( b0 * 255.0f + 0.5f ), 255 );
+				ImU32 col1 = IM_COL32( ( int )( r1 * 255.0f + 0.5f ), ( int )( g1 * 255.0f + 0.5f ), ( int )( b1 * 255.0f + 0.5f ), 255 );
+
+				ImVec2 segMin( slider_bb.Min.x + segW * i, slider_bb.Min.y );
+				ImVec2 segMax( slider_bb.Min.x + segW * ( i + 1 ), slider_bb.Max.y );
+				dl->AddRectFilledMultiColor( segMin, segMax, col0, col1, col1, col0 );
+			}
+		}
+
+		// Slider border
+		dl->AddRect( slider_bb.Min, slider_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ), g.Style.FrameRounding );
+
+		// Slider handle
+		{
+			float handleT = ImClamp( thirdAxis / hdr_max, 0.0f, 1.0f );
+			float handleX = ImLerp( slider_bb.Min.x, slider_bb.Max.x, handleT );
+			ImVec2 handleMin( handleX - 3.0f, slider_bb.Min.y );
+			ImVec2 handleMax( handleX + 3.0f, slider_bb.Max.y );
+			dl->AddRectFilled( handleMin, handleMax, IM_COL32_WHITE, 2.0f );
+			dl->AddRect( handleMin, handleMax, IM_COL32( 0, 0, 0, 200 ), 2.0f );
+		}
+
+		// Label
+		if ( label_size.x > 0.0f )
+			ImGui::RenderText( ImVec2( disc_bb.Max.x + style.ItemInnerSpacing.x, disc_bb.Min.y + style.FramePadding.y ), label );
+
+		// Hover feedback
+		if ( hovered && g.ActiveId != id )
+		{
+			if ( mouseNearDot || mouseInDisc )
+				ImGui::SetMouseCursor( ImGuiMouseCursor_Hand );
+		}
+
+		// --- INTERACTIONS ---
+		ImGui::PushID( id );
+
+		// Click to start drag
+		if ( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) )
+		{
+			if ( mouseNearDot || mouseInDisc )
+			{
+				*pDragMode = 1;
+				ImGui::SetActiveID( id, window );
+				ImGui::SetFocusID( id, window );
+				ImGui::FocusWindow( window );
+				ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+			}
+			else if ( mouseInSlider )
+			{
+				*pDragMode = 2;
+				ImGui::SetActiveID( id, window );
+				ImGui::SetFocusID( id, window );
+				ImGui::FocusWindow( window );
+				ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+
+				// Immediate jump to click position
+				thirdAxis = ImClamp( ( mp.x - slider_bb.Min.x ) / slider_bb.GetWidth() * hdr_max, 0.0f, hdr_max );
+				value_changed = true;
+			}
+		}
+
+		// Update during drag
+		if ( g.ActiveId == id && ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+		{
+			if ( *pDragMode == 1 )
+			{
+				float angle = ImAtan2( mp.y - discCenter.y, mp.x - discCenter.x );
+				float radius = ImMin( ImSqrt( ( mp.x - discCenter.x ) * ( mp.x - discCenter.x ) + ( mp.y - discCenter.y ) * ( mp.y - discCenter.y ) ) / innerDiscRadius, 1.0f );
+				hue = angle / ( 2.0f * IM_PI );
+				if ( hue < 0.0f ) hue += 1.0f;
+				sat = radius;
+				value_changed = true;
+			}
+			else if ( *pDragMode == 2 )
+			{
+				thirdAxis = ImClamp( ( mp.x - slider_bb.Min.x ) / slider_bb.GetWidth() * hdr_max, 0.0f, hdr_max );
+				value_changed = true;
+			}
+		}
+
+		// Release
+		if ( g.ActiveId == id && ImGui::IsMouseReleased( ImGuiMouseButton_Left ) )
+		{
+			ImGui::ClearActiveID();
+			*pDragMode = 0;
+		}
+
+		// Double-click on disc center to reset
+		if ( hovered && mouseInDisc && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
+		{
+			sat = 0.0f;
+			if ( mode == ImColorWheelMode_HSV )
+				thirdAxis = 1.0f;
+			else
+				thirdAxis = 0.5f;
+			value_changed = true;
+		}
+
+		ImGui::PopID();
+
+		// Convert back to sRGB
+		if ( value_changed )
+		{
+			if ( mode == ImColorWheelMode_HSV )
+			{
+				ImGui::ColorConvertHSVtoRGB( hue, sat, thirdAxis, color->x, color->y, color->z );
+			}
+			else // OkLCH
+			{
+				float c = sat * kOkLCHMaxChroma;
+				ColorConvertOKLCHtosRGB( color->x, color->y, color->z, thirdAxis, c, hue );
+			}
+			color->w = alpha;
+			ImGui::MarkItemEdited( id );
+		}
+
+		return value_changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Color Curve (Hue vs Hue, Hue vs Sat, etc.)
+	//////////////////////////////////////////////////////////////////////////
+
+	float ColorCurveDefaultValue( ImColorCurveMode mode )
+	{
+		switch ( mode )
+		{
+		case ImColorCurveMode_HueVsHue:  return 0.0f;
+		case ImColorCurveMode_HueVsSat:  return 1.0f;
+		case ImColorCurveMode_HueVsLum:  return 0.0f;
+		case ImColorCurveMode_LumVsSat:  return 1.0f;
+		case ImColorCurveMode_SatVsSat:  return 1.0f;
+		default: return 0.0f;
+		}
+	}
+
+	void ColorCurveRange( ImColorCurveMode mode, float* out_min, float* out_max )
+	{
+		switch ( mode )
+		{
+		case ImColorCurveMode_HueVsHue:  *out_min = -0.5f; *out_max = 0.5f;  break;
+		case ImColorCurveMode_HueVsSat:  *out_min = 0.0f;  *out_max = 2.0f;  break;
+		case ImColorCurveMode_HueVsLum:  *out_min = -1.0f; *out_max = 1.0f;  break;
+		case ImColorCurveMode_LumVsSat:  *out_min = 0.0f;  *out_max = 2.0f;  break;
+		case ImColorCurveMode_SatVsSat:  *out_min = 0.0f;  *out_max = 2.0f;  break;
+		default: *out_min = 0.0f; *out_max = 1.0f; break;
+		}
+	}
+
+	const char* ColorCurveModeName( ImColorCurveMode mode )
+	{
+		switch ( mode )
+		{
+		case ImColorCurveMode_HueVsHue:  return "Hue vs Hue";
+		case ImColorCurveMode_HueVsSat:  return "Hue vs Sat";
+		case ImColorCurveMode_HueVsLum:  return "Hue vs Lum";
+		case ImColorCurveMode_LumVsSat:  return "Lum vs Sat";
+		case ImColorCurveMode_SatVsSat:  return "Sat vs Sat";
+		default: return "Unknown";
+		}
+	}
+
+	static bool ColorCurveIsCyclic( ImColorCurveMode mode )
+	{
+		return mode <= ImColorCurveMode_HueVsLum;
+	}
+
+	static float CatmullRom( float p0, float p1, float p2, float p3, float t )
+	{
+		float t2 = t * t;
+		float t3 = t2 * t;
+		return 0.5f * (
+			( 2.0f * p1 ) +
+			( -p0 + p2 ) * t +
+			( 2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3 ) * t2 +
+			( -p0 + 3.0f * p1 - 3.0f * p2 + p3 ) * t3 );
+	}
+
+	float ColorCurveSample( ImColorCurveData const& curve, ImColorCurveMode mode, float x )
+	{
+		bool cyclic = ColorCurveIsCyclic( mode );
+		float defaultY = ColorCurveDefaultValue( mode );
+		int n = curve.Keys.Size;
+
+		if ( n == 0 ) return defaultY;
+		if ( n == 1 ) return curve.Keys[ 0 ].Value;
+
+		if ( cyclic )
+			x = x - ImFloor( x );
+
+		// Find segment
+		int seg = -1;
+		float segStart = 0.0f, segEnd = 0.0f;
+
+		for ( int i = 0; i < n - 1; ++i )
+		{
+			if ( x >= curve.Keys[ i ].Position && x < curve.Keys[ i + 1 ].Position )
+			{
+				seg = i;
+				segStart = curve.Keys[ i ].Position;
+				segEnd = curve.Keys[ i + 1 ].Position;
+				break;
+			}
+		}
+
+		if ( seg == -1 )
+		{
+			if ( cyclic )
+			{
+				seg = n - 1;
+				segStart = curve.Keys[ n - 1 ].Position;
+				segEnd = curve.Keys[ 0 ].Position + 1.0f;
+				if ( x < curve.Keys[ 0 ].Position )
+					x += 1.0f;
+			}
+			else
+			{
+				if ( x <= curve.Keys[ 0 ].Position ) return curve.Keys[ 0 ].Value;
+				return curve.Keys[ n - 1 ].Value;
+			}
+		}
+
+		float span = segEnd - segStart;
+		if ( span < 1e-6f ) return curve.Keys[ seg % n ].Value;
+
+		float t = ( x - segStart ) / span;
+
+		float v0, v1, v2, v3;
+
+		if ( cyclic )
+		{
+			int i1 = seg % n;
+			int i2 = ( seg + 1 ) % n;
+			int i0 = ( seg - 1 + n ) % n;
+			int i3 = ( seg + 2 ) % n;
+			v0 = curve.Keys[ i0 ].Value;
+			v1 = curve.Keys[ i1 ].Value;
+			v2 = curve.Keys[ i2 ].Value;
+			v3 = curve.Keys[ i3 ].Value;
+		}
+		else
+		{
+			v1 = curve.Keys[ seg ].Value;
+			v2 = curve.Keys[ seg + 1 ].Value;
+			v0 = ( seg > 0 ) ? curve.Keys[ seg - 1 ].Value : ( 2.0f * v1 - v2 );
+			v3 = ( seg + 2 < n ) ? curve.Keys[ seg + 2 ].Value : ( 2.0f * v2 - v1 );
+		}
+
+		return CatmullRom( v0, v1, v2, v3, t );
+	}
+
+	// Background color for a given X position depending on mode
+	static ImU32 ColorCurveBgSample( ImColorCurveMode mode, float t, float alpha )
+	{
+		float r, g, b;
+
+		switch ( mode )
+		{
+		case ImColorCurveMode_HueVsHue:
+		case ImColorCurveMode_HueVsSat:
+		case ImColorCurveMode_HueVsLum:
+			ImGui::ColorConvertHSVtoRGB( t, 0.85f, 0.85f, r, g, b );
+			break;
+		case ImColorCurveMode_LumVsSat:
+			r = g = b = t;
+			break;
+		case ImColorCurveMode_SatVsSat:
+			ImGui::ColorConvertHSVtoRGB( 0.0f, t, 1.0f, r, g, b );
+			break;
+		default:
+			r = g = b = 0.5f;
+			break;
+		}
+
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), ( int )( alpha * 255.0f + 0.5f ) );
+	}
+
+	// Coordinate transforms
+	static ImVec2 ColorCurveToScreen( float pos, float val, ImRect const& bb, float yMin, float yMax )
+	{
+		float sx = ImLerp( bb.Min.x, bb.Max.x, pos );
+		float sy = ImLerp( bb.Max.y, bb.Min.y, ( val - yMin ) / ( yMax - yMin ) );
+		return ImVec2( sx, sy );
+	}
+
+	static ImVec2 ScreenToColorCurve( ImVec2 screenPos, ImRect const& bb, float yMin, float yMax )
+	{
+		float pos = ( screenPos.x - bb.Min.x ) / bb.GetWidth();
+		float val = yMin + ( 1.0f - ( screenPos.y - bb.Min.y ) / bb.GetHeight() ) * ( yMax - yMin );
+		return ImVec2( pos, val );
+	}
+
+	bool ColorCurve( char const* label, ImColorCurveData* curve, ImColorCurveMode mode, ImVec2 size )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		const ImGuiID id = window->GetID( label );
+
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
+		const float h = ( size.y > 0.0f ) ? size.y : dwStyle.ColorCurve_DefaultHeight;
+
+		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
+
+		const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, h ) );
+		const ImRect total_bb( frame_bb.Min, ImVec2( frame_bb.Max.x + ( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f ), frame_bb.Max.y ) );
+
+		ImGui::ItemSize( total_bb, style.FramePadding.y );
+		if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, 0 ) )
+			return false;
+
+		const bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.ItemFlags );
+
+		bool value_changed = false;
+		int& selected = curve->SelectedIdx;
+		bool cyclic = ColorCurveIsCyclic( mode );
+
+		float yMin, yMax;
+		ColorCurveRange( mode, &yMin, &yMax );
+		float defaultY = ColorCurveDefaultValue( mode );
+
+		float keyRadius = dwStyle.ColorCurve_KeyRadius;
+		float lineThick = dwStyle.ColorCurve_LineThickness;
+		float hitRadius = keyRadius * 1.6f;
+
+		ImDrawList* dl = window->DrawList;
+
+		// --- HIT TESTING ---
+		bool frame_contains_mouse = frame_bb.Contains( g.IO.MousePos );
+
+		int hovered_key = -1;
+		float closest_dist_sq = hitRadius * hitRadius;
+		for ( int i = 0; i < curve->Keys.Size; ++i )
+		{
+			ImVec2 kScreen = ColorCurveToScreen( curve->Keys[ i ].Position, curve->Keys[ i ].Value, frame_bb, yMin, yMax );
+			float dSq = ImLengthSqr( g.IO.MousePos - kScreen );
+			if ( dSq < closest_dist_sq )
+			{
+				closest_dist_sq = dSq;
+				hovered_key = i;
+			}
+		}
+
+		// --- DRAWING ---
+
+		// Frame background
+		ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
+		ImGui::RenderFrame( frame_bb.Min, frame_bb.Max, frame_col, true, g.Style.FrameRounding );
+
+		dl->PushClipRect( frame_bb.Min, frame_bb.Max, true );
+
+		// Background color tint (low opacity across full area)
+		{
+			int bgSegs = 32;
+			float segW = frame_bb.GetWidth() / ( float )bgSegs;
+			for ( int i = 0; i < bgSegs; ++i )
+			{
+				float t0 = ( float )i / ( float )bgSegs;
+				float t1 = ( float )( i + 1 ) / ( float )bgSegs;
+				ImU32 c0 = ColorCurveBgSample( mode, t0, 0.15f );
+				ImU32 c1 = ColorCurveBgSample( mode, t1, 0.15f );
+				ImVec2 rMin( frame_bb.Min.x + segW * i, frame_bb.Min.y );
+				ImVec2 rMax( frame_bb.Min.x + segW * ( i + 1 ), frame_bb.Max.y );
+				dl->AddRectFilledMultiColor( rMin, rMax, c0, c1, c1, c0 );
+			}
+		}
+
+		// Bottom color reference strip
+		{
+			float stripH = 6.0f;
+			int stripSegs = 32;
+			float segW = frame_bb.GetWidth() / ( float )stripSegs;
+			for ( int i = 0; i < stripSegs; ++i )
+			{
+				float t0 = ( float )i / ( float )stripSegs;
+				float t1 = ( float )( i + 1 ) / ( float )stripSegs;
+				ImU32 c0 = ColorCurveBgSample( mode, t0, 1.0f );
+				ImU32 c1 = ColorCurveBgSample( mode, t1, 1.0f );
+				ImVec2 rMin( frame_bb.Min.x + segW * i, frame_bb.Max.y - stripH );
+				ImVec2 rMax( frame_bb.Min.x + segW * ( i + 1 ), frame_bb.Max.y );
+				dl->AddRectFilledMultiColor( rMin, rMax, c0, c1, c1, c0 );
+			}
+		}
+
+		// Grid lines
+		{
+			ImU32 gridCol = IM_COL32( 200, 200, 200, 25 );
+			int gridDivX = 10;
+			int gridDivY = 4;
+			for ( int i = 1; i < gridDivX; ++i )
+			{
+				float sx = frame_bb.Min.x + ( frame_bb.GetWidth() * i / ( float )gridDivX );
+				dl->AddLine( ImVec2( sx, frame_bb.Min.y ), ImVec2( sx, frame_bb.Max.y ), gridCol );
+			}
+			for ( int i = 1; i < gridDivY; ++i )
+			{
+				float sy = frame_bb.Min.y + ( frame_bb.GetHeight() * i / ( float )gridDivY );
+				dl->AddLine( ImVec2( frame_bb.Min.x, sy ), ImVec2( frame_bb.Max.x, sy ), gridCol );
+			}
+		}
+
+		// Neutral / default line
+		{
+			ImU32 neutralCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorCurve_NeutralLine ] );
+			ImVec2 nLeft = ColorCurveToScreen( 0.0f, defaultY, frame_bb, yMin, yMax );
+			ImVec2 nRight = ColorCurveToScreen( 1.0f, defaultY, frame_bb, yMin, yMax );
+			dl->AddLine( nLeft, nRight, neutralCol, 1.5f );
+		}
+
+		// Curve polyline
+		{
+			ImU32 curveCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorCurve_Line ] );
+			int sampleCount = ( int )( w * 0.5f );
+			if ( sampleCount < 64 ) sampleCount = 64;
+
+			ImVec2 prev = ColorCurveToScreen( 0.0f,
+				curve->Keys.Size > 0 ? ColorCurveSample( *curve, mode, 0.0f ) : defaultY,
+				frame_bb, yMin, yMax );
+
+			for ( int s = 1; s <= sampleCount; ++s )
+			{
+				float t = ( float )s / ( float )sampleCount;
+				float val = curve->Keys.Size > 0 ? ColorCurveSample( *curve, mode, t ) : defaultY;
+				ImVec2 cur = ColorCurveToScreen( t, val, frame_bb, yMin, yMax );
+				dl->AddLine( prev, cur, curveCol, lineThick );
+				prev = cur;
+			}
+		}
+
+		// Keys
+		for ( int i = 0; i < curve->Keys.Size; ++i )
+		{
+			ImVec2 kScreen = ColorCurveToScreen( curve->Keys[ i ].Position, curve->Keys[ i ].Value, frame_bb, yMin, yMax );
+			bool isSelected = ( i == selected );
+			bool isHovered = ( i == hovered_key );
+			float radius = isHovered ? keyRadius + 2.0f : keyRadius;
+
+			// For hue modes, tint key with the hue at its position
+			ImU32 keyCol;
+			if ( mode <= ImColorCurveMode_HueVsLum )
+			{
+				float hr, hg, hb;
+				ImGui::ColorConvertHSVtoRGB( curve->Keys[ i ].Position, 0.9f, 1.0f, hr, hg, hb );
+				keyCol = isSelected
+					? ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorCurve_KeySelected ] )
+					: IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
+			}
+			else
+			{
+				keyCol = ImGui::GetColorU32( dwStyle.Colors[ isSelected ? StyleColor_ColorCurve_KeySelected : ( isHovered ? StyleColor_ColorCurve_KeyHovered : StyleColor_ColorCurve_Key ) ] );
+			}
+			ImU32 outCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorCurve_KeyOutline ] );
+
+			dl->AddCircleFilled( kScreen, radius, keyCol );
+			dl->AddCircle( kScreen, radius, outCol, 0, isSelected ? 2.0f : 1.5f );
+		}
+
+		// Hover feedback
+		if ( hovered && frame_contains_mouse && g.ActiveId != id )
+		{
+			if ( hovered_key >= 0 )
+			{
+				ImGui::SetMouseCursor( ImGuiMouseCursor_Hand );
+			}
+			else
+			{
+				// Crosshair for "add" hint
+				ImVec2 mp = g.IO.MousePos;
+				ImU32 crossCol = IM_COL32( 255, 255, 255, 50 );
+				dl->AddLine( ImVec2( mp.x, frame_bb.Min.y ), ImVec2( mp.x, frame_bb.Max.y ), crossCol );
+				dl->AddLine( ImVec2( frame_bb.Min.x, mp.y ), ImVec2( frame_bb.Max.x, mp.y ), crossCol );
+			}
+		}
+
+		dl->PopClipRect();
+
+		// Border
+		dl->AddRect( frame_bb.Min, frame_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+
+		// Label
+		if ( label_size.x > 0.0f )
+			ImGui::RenderText( ImVec2( frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + style.FramePadding.y ), label );
+
+		// --- INTERACTIONS ---
+		ImGui::PushID( id );
+
+		// Click on key: select and start drag
+		if ( hovered_key >= 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
+		{
+			selected = hovered_key;
+			ImGui::SetActiveID( id, window );
+			ImGui::SetFocusID( id, window );
+			ImGui::FocusWindow( window );
+			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+		}
+		// Click on empty area: add key
+		else if ( hovered_key == -1 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
+		{
+			ImVec2 curvePos = ScreenToColorCurve( g.IO.MousePos, frame_bb, yMin, yMax );
+			float pos = ImClamp( curvePos.x, 0.0f, 1.0f );
+			float val = ImClamp( curvePos.y, yMin, yMax );
+			int newIdx = curve->AddKey( pos, val );
+			selected = newIdx;
+			value_changed = true;
+			ImGui::SetActiveID( id, window );
+			ImGui::SetFocusID( id, window );
+			ImGui::FocusWindow( window );
+			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+		}
+
+		// Drag
+		if ( g.ActiveId == id && ImGui::IsMouseDragging( ImGuiMouseButton_Left ) && selected >= 0 && selected < curve->Keys.Size )
+		{
+			ImVec2 curvePos = ScreenToColorCurve( g.IO.MousePos, frame_bb, yMin, yMax );
+
+			float newPos = curvePos.x;
+			if ( cyclic )
+				newPos = newPos - floorf( newPos );
+			else
+				newPos = ImClamp( newPos, 0.0f, 1.0f );
+
+			float newVal = ImClamp( curvePos.y, yMin, yMax );
+
+			curve->Keys[ selected ].Position = newPos;
+			curve->Keys[ selected ].Value = newVal;
+			curve->SortKeys();
+
+			// Re-find selected after sort
+			for ( int i = 0; i < curve->Keys.Size; ++i )
+			{
+				if ( curve->Keys[ i ].Position == newPos && curve->Keys[ i ].Value == newVal )
+				{
+					selected = i;
+					break;
+				}
+			}
+
+			value_changed = true;
+
+			// Drag far below/above: delete
+			if ( ( g.IO.MousePos.y > frame_bb.Max.y + 30.0f || g.IO.MousePos.y < frame_bb.Min.y - 30.0f ) && curve->Keys.Size > 0 )
+			{
+				curve->RemoveKey( selected );
+				selected = -1;
+				ImGui::ClearActiveID();
+				value_changed = true;
+			}
+		}
+
+		// Release
+		if ( g.ActiveId == id && ImGui::IsMouseReleased( ImGuiMouseButton_Left ) )
+		{
+			ImGui::ClearActiveID();
+		}
+
+		// Right-click: context menu
+		if ( hovered_key >= 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) && hovered && frame_contains_mouse )
+		{
+			selected = hovered_key;
+			ImGui::OpenPopup( "##ColorCurveCtx" );
+		}
+
+		if ( ImGui::BeginPopup( "##ColorCurveCtx" ) )
+		{
+			if ( selected >= 0 && selected < curve->Keys.Size )
+			{
+				ImGui::Text( "Key %d: pos=%.3f val=%.3f", selected, curve->Keys[ selected ].Position, curve->Keys[ selected ].Value );
+				ImGui::Separator();
+				if ( ImGui::MenuItem( "Reset to Default" ) )
+				{
+					curve->Keys[ selected ].Value = defaultY;
+					value_changed = true;
+				}
+				if ( ImGui::MenuItem( "Remove Key" ) )
+				{
+					curve->RemoveKey( selected );
+					selected = -1;
+					value_changed = true;
 				}
 			}
 			ImGui::EndPopup();
