@@ -2840,6 +2840,172 @@ namespace ImWidgets {
 					ImGui::TextDisabled( "Failed to load image" );
 			}
 
+			if ( ImGui::CollapsingHeader( "Histogram", ImGuiTreeNodeFlags_DefaultOpen ) )
+			{
+				static ImHistogramData histData;
+				static int histMode = ImHistogramMode_RGB;
+				static int histSource = 0;
+				static bool histNeedsUpdate = true;
+				static stbi_uc* histImgData = NULL;
+				static int histImgW = 0;
+				static int histImgH = 0;
+				static int histImgCh = 0;
+				static ImTextureID histThumbnail = ImTextureID_Invalid;
+				static ImVec2 histThumbnailSize( 0, 0 );
+
+				bool sourceChanged = ImGui::Combo( "Source##Hist", &histSource,
+					"Color Bars\0Gradient Ramp\0Random Noise\0"
+					"Berries (photo)\0Interior (photo)\0Man (photo)\0Astronaut (photo)\0" );
+				bool modeChanged = ImGui::Combo( "Mode##Hist", &histMode, "Luminance\0RGB\0YRGB\0YCbCr\0HSV\0OkLCH\0" );
+				static int histLayout = ImHistogramLayout_Overlapped;
+				static int histXScale = ImParadeScale_Linear;
+				static int histYScale = ImParadeScale_Linear;
+				ImGui::Combo( "Layout##Hist", &histLayout, "Overlapped\0Stacked\0" );
+				ImGui::Combo( "X Scale##Hist", &histXScale, "Linear\0Log (Shadows)\0Inv Log (Highlights)\0" );
+				ImGui::Combo( "Y Scale##Hist", &histYScale, "Linear\0Log\0Inv Log\0" );
+				if ( sourceChanged || modeChanged )
+					histNeedsUpdate = true;
+
+				if ( histNeedsUpdate )
+				{
+					if ( histImgData )
+					{
+						STBI_FREE( histImgData );
+						histImgData = NULL;
+					}
+					if ( histThumbnail != ImTextureID_Invalid )
+					{
+						ImPlatform_DestroyTexture( histThumbnail );
+						histThumbnail = ImTextureID_Invalid;
+					}
+
+					static int const kTestW = 1920;
+					static int const kTestH = 1080;
+					static ImVector<ImU8> testImage;
+
+					if ( histSource <= 2 )
+					{
+						testImage.resize( kTestW * kTestH * 3 );
+						ImU32 rng = 0xDEADBEEFu;
+
+						if ( histSource == 0 )
+						{
+							static ImU8 const bars[ 7 ][ 3 ] = {
+								{ 191, 191, 191 }, { 191, 191,  17 }, {  17, 191, 191 }, {  17, 191,  17 },
+								{ 191,  17, 191 }, { 191,  17,  17 }, {  17,  17, 191 }
+							};
+							for ( int y = 0; y < kTestH; ++y )
+							{
+								for ( int x = 0; x < kTestW; ++x )
+								{
+									int barIdx = x * 7 / kTestW;
+									int off = ( y * kTestW + x ) * 3;
+									rng = rng * 1664525u + 1013904223u;
+									int noise = ( int )( rng >> 28 ) - 8;
+									testImage[ off + 0 ] = ( ImU8 )ImClamp( bars[ barIdx ][ 0 ] + noise, 0, 255 );
+									testImage[ off + 1 ] = ( ImU8 )ImClamp( bars[ barIdx ][ 1 ] + noise, 0, 255 );
+									testImage[ off + 2 ] = ( ImU8 )ImClamp( bars[ barIdx ][ 2 ] + noise, 0, 255 );
+								}
+							}
+						}
+						else if ( histSource == 1 )
+						{
+							for ( int y = 0; y < kTestH; ++y )
+							{
+								for ( int x = 0; x < kTestW; ++x )
+								{
+									float t = ( float )x / ( float )( kTestW - 1 );
+									int off = ( y * kTestW + x ) * 3;
+									int third = y * 3 / kTestH;
+									rng = rng * 1664525u + 1013904223u;
+									int noise = ( int )( rng >> 29 ) - 4;
+									testImage[ off + 0 ] = ( ImU8 )ImClamp( ( third == 0 ? ( int )( t * 255.0f ) : 0 ) + noise, 0, 255 );
+									testImage[ off + 1 ] = ( ImU8 )ImClamp( ( third == 1 ? ( int )( t * 255.0f ) : 0 ) + noise, 0, 255 );
+									testImage[ off + 2 ] = ( ImU8 )ImClamp( ( third == 2 ? ( int )( t * 255.0f ) : 0 ) + noise, 0, 255 );
+								}
+							}
+						}
+						else
+						{
+							for ( int i = 0; i < kTestW * kTestH * 3; ++i )
+							{
+								rng = rng * 1664525u + 1013904223u;
+								testImage[ i ] = ( ImU8 )( rng >> 24 );
+							}
+						}
+
+						histData.Accumulate( testImage.Data, kTestW, kTestH, 3,
+							ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved, ( ImHistogramMode )histMode,
+							256, 500000 );
+
+						// Create thumbnail texture (RGB -> RGBA)
+						{
+							static ImVector<ImU8> rgba;
+							rgba.resize( kTestW * kTestH * 4 );
+							for ( int i = 0; i < kTestW * kTestH; ++i )
+							{
+								rgba[ i * 4 + 0 ] = testImage[ i * 3 + 0 ];
+								rgba[ i * 4 + 1 ] = testImage[ i * 3 + 1 ];
+								rgba[ i * 4 + 2 ] = testImage[ i * 3 + 2 ];
+								rgba[ i * 4 + 3 ] = 255;
+							}
+							ImPlatform_TextureDesc td = ImPlatform_TextureDesc_Default( kTestW, kTestH );
+							histThumbnail = ImPlatform_CreateTexture( rgba.Data, &td );
+							histThumbnailSize = ImVec2( ( float )kTestW, ( float )kTestH );
+						}
+					}
+					else
+					{
+						char const* filenames[] = {
+							"pexels-robert-bogdan-156165-1152351.jpg",
+							"pexels-fotoaibe-1571453.jpg",
+							"man.png",
+							"astro.png"
+						};
+						int fileIdx = histSource - 3;
+						histImgData = stbi_load( filenames[ fileIdx ], &histImgW, &histImgH, &histImgCh, 0 );
+						if ( histImgData )
+						{
+							int ch = ( histImgCh >= 3 ) ? histImgCh : 3;
+							histData.Accumulate( histImgData, histImgW, histImgH, ch,
+								ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved, ( ImHistogramMode )histMode,
+								256, 1000000 );
+						}
+					}
+
+					histNeedsUpdate = false;
+				}
+
+				// Thumbnail
+				{
+					ImTextureID thumbTex = ImTextureID_Invalid;
+					ImVec2 thumbSize( 0, 0 );
+					if ( histSource <= 2 && histThumbnail != ImTextureID_Invalid )
+					{
+						thumbTex = histThumbnail;
+						thumbSize = histThumbnailSize;
+					}
+					else if ( histSource == 3 ) { thumbTex = illlustration_img; thumbSize = illlustration_size; }
+					else if ( histSource == 4 ) { thumbTex = background;        thumbSize = background_size; }
+					else if ( histSource == 5 ) { thumbTex = man_img;           thumbSize = man_size; }
+					else if ( histSource == 6 ) { thumbTex = astro_img;         thumbSize = astro_size; }
+					if ( thumbTex != ImTextureID_Invalid && thumbSize.x > 0.0f )
+					{
+						float thumbH = 120.0f;
+						float thumbW = thumbH * thumbSize.x / thumbSize.y;
+						ImGui::Image( thumbTex, ImVec2( thumbW, thumbH ) );
+					}
+				}
+
+				ImWidgets::Histogram( "##HistMain", histData, ( ImHistogramLayout )histLayout, ( ImParadeScale )histXScale, ( ImParadeScale )histYScale, ImVec2( 0, 300 ) );
+				if ( histSource <= 2 )
+					ImGui::Text( "Source: 1920x1080 (generated)  Peak: %u", histData.PeakCount );
+				else if ( histImgData )
+					ImGui::Text( "Source: %dx%d (%d ch)  Peak: %u", histImgW, histImgH, histImgCh, histData.PeakCount );
+				else
+					ImGui::TextDisabled( "Failed to load image" );
+			}
+
 			if ( ImGui::CollapsingHeader( "Color Wheel", ImGuiTreeNodeFlags_DefaultOpen ) )
 			{
 				static ImVec4 wheelColor( 0.8f, 0.2f, 0.3f, 1.0f );

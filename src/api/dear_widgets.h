@@ -283,6 +283,24 @@ enum ImWidgetsStyleColor
 	StyleColor_VectorScope_Signal,
 	StyleColor_VectorScope_SkinToneLine,
 
+	// Histogram
+	StyleColor_Histogram_Background,
+	StyleColor_Histogram_Grid,
+	StyleColor_Histogram_ChannelR,
+	StyleColor_Histogram_ChannelG,
+	StyleColor_Histogram_ChannelB,
+	StyleColor_Histogram_ChannelLuma,
+	StyleColor_Histogram_ChannelCb,
+	StyleColor_Histogram_ChannelCr,
+	StyleColor_Histogram_ChannelH,
+	StyleColor_Histogram_ChannelS,
+	StyleColor_Histogram_ChannelV,
+	StyleColor_Histogram_ChannelOkL,
+	StyleColor_Histogram_ChannelOkC,
+	StyleColor_Histogram_ChannelOkH,
+	StyleColor_Histogram_GradTick,
+	StyleColor_Histogram_GradLabel,
+
 	StyleColor_Count
 };
 
@@ -337,6 +355,14 @@ enum ImWidgetsStyleVar
 	StyleVar_VectorScope_DefaultSize,
 	StyleVar_VectorScope_SignalAlpha,
 	StyleVar_VectorScope_GraticuleThickness,
+
+	// Histogram
+	StyleVar_Histogram_DefaultHeight,
+	StyleVar_Histogram_OverlayAlpha,
+	StyleVar_Histogram_GradTickLength,
+	StyleVar_Histogram_GradTickThickness,
+	StyleVar_Histogram_GradMarginLeft,
+	StyleVar_Histogram_GradMarginBottom,
 
 	StyleVar_Count
 };
@@ -393,6 +419,14 @@ struct ImWidgetsStyle
 	float	VectorScope_SignalAlpha;		// Max alpha for signal dots (0..1)
 	float	VectorScope_GraticuleThickness;	// Graticule line thickness (px)
 
+	// Histogram
+	float	Histogram_DefaultHeight;		// Default widget height (px)
+	float	Histogram_OverlayAlpha;			// Max alpha in overlay mode (0..1)
+	float	Histogram_GradTickLength;		// Graduation tick mark length (px)
+	float	Histogram_GradTickThickness;	// Graduation tick line thickness
+	float	Histogram_GradMarginLeft;		// Left margin for Y-axis labels (px)
+	float	Histogram_GradMarginBottom;		// Bottom margin for X-axis labels (px)
+
 	ImVec4  Colors[ StyleColor_Count ];
 
 	ImWidgetsStyle()
@@ -444,6 +478,14 @@ struct ImWidgetsStyle
 		VectorScope_DefaultSize        = 200.0f;
 		VectorScope_SignalAlpha        = 0.8f;
 		VectorScope_GraticuleThickness = 1.0f;
+
+		// Histogram
+		Histogram_DefaultHeight      = 200.0f;
+		Histogram_OverlayAlpha       = 0.6f;
+		Histogram_GradTickLength     = 6.0f;
+		Histogram_GradTickThickness  = 1.0f;
+		Histogram_GradMarginLeft     = 40.0f;
+		Histogram_GradMarginBottom   = 20.0f;
 
 		Colors[ StyleColor_Value ] = ImVec4( 1.0f, 0.0f, 0.0f, 1.0f );
 		Colors[ StyleColor_Slider2D_CursorX ] = ImVec4( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f ); // Blue
@@ -503,6 +545,24 @@ struct ImWidgetsStyle
 		Colors[ StyleColor_VectorScope_Graticule ]          = ImVec4( 1.0f, 1.0f, 1.0f, 0.35f );
 		Colors[ StyleColor_VectorScope_Signal ]             = ImVec4( 0.2f, 1.0f, 0.3f, 1.0f );
 		Colors[ StyleColor_VectorScope_SkinToneLine ]       = ImVec4( 1.0f, 0.7f, 0.3f, 0.5f );
+
+		// Histogram Colors
+		Colors[ StyleColor_Histogram_Background ]           = ImVec4( 0.0f, 0.0f, 0.0f, 1.0f );
+		Colors[ StyleColor_Histogram_Grid ]                 = ImVec4( 1.0f, 1.0f, 1.0f, 0.12f );
+		Colors[ StyleColor_Histogram_ChannelR ]             = ImVec4( 1.0f, 0.25f, 0.25f, 1.0f );
+		Colors[ StyleColor_Histogram_ChannelG ]             = ImVec4( 0.25f, 1.0f, 0.25f, 1.0f );
+		Colors[ StyleColor_Histogram_ChannelB ]             = ImVec4( 0.35f, 0.35f, 1.0f, 1.0f );
+		Colors[ StyleColor_Histogram_ChannelLuma ]          = ImVec4( 0.9f, 0.9f, 0.9f, 1.0f );
+		Colors[ StyleColor_Histogram_ChannelCb ]            = ImVec4( 0.3f, 0.5f, 1.0f, 1.0f );
+		Colors[ StyleColor_Histogram_ChannelCr ]            = ImVec4( 1.0f, 0.4f, 0.3f, 1.0f );
+		Colors[ StyleColor_Histogram_ChannelH ]             = ImVec4( 1.0f, 0.5f, 0.8f, 1.0f );
+		Colors[ StyleColor_Histogram_ChannelS ]             = ImVec4( 0.3f, 0.9f, 0.9f, 1.0f );
+		Colors[ StyleColor_Histogram_ChannelV ]             = ImVec4( 0.85f, 0.85f, 0.85f, 1.0f );
+		Colors[ StyleColor_Histogram_ChannelOkL ]           = ImVec4( 0.9f, 0.9f, 0.9f, 1.0f );
+		Colors[ StyleColor_Histogram_ChannelOkC ]           = ImVec4( 0.8f, 0.4f, 1.0f, 1.0f );
+		Colors[ StyleColor_Histogram_ChannelOkH ]           = ImVec4( 1.0f, 0.6f, 0.3f, 1.0f );
+		Colors[ StyleColor_Histogram_GradTick ]             = ImVec4( 1.0f, 1.0f, 1.0f, 0.4f );
+		Colors[ StyleColor_Histogram_GradLabel ]            = ImVec4( 1.0f, 1.0f, 1.0f, 0.7f );
 	}
 
 	void ScaleAllSizes( float scale_factor )
@@ -544,6 +604,12 @@ struct ImWidgetsStyle
 
 		VectorScope_DefaultSize        = ImTrunc( VectorScope_DefaultSize * scale_factor );
 		VectorScope_GraticuleThickness = ImTrunc( VectorScope_GraticuleThickness * scale_factor );
+
+		Histogram_DefaultHeight      = ImTrunc( Histogram_DefaultHeight * scale_factor );
+		Histogram_GradTickLength     = ImTrunc( Histogram_GradTickLength * scale_factor );
+		Histogram_GradTickThickness  = ImTrunc( Histogram_GradTickThickness * scale_factor );
+		Histogram_GradMarginLeft     = ImTrunc( Histogram_GradMarginLeft * scale_factor );
+		Histogram_GradMarginBottom   = ImTrunc( Histogram_GradMarginBottom * scale_factor );
 	}
 
 	void PushColor( ImWidgetsStyleColor colorIndex, const ImVec4& color )
@@ -713,6 +779,12 @@ private:
 		case StyleVar_VectorScope_DefaultSize:			return &VectorScope_DefaultSize;
 		case StyleVar_VectorScope_SignalAlpha:			return &VectorScope_SignalAlpha;
 		case StyleVar_VectorScope_GraticuleThickness:	return &VectorScope_GraticuleThickness;
+		case StyleVar_Histogram_DefaultHeight:			return &Histogram_DefaultHeight;
+		case StyleVar_Histogram_OverlayAlpha:			return &Histogram_OverlayAlpha;
+		case StyleVar_Histogram_GradTickLength:			return &Histogram_GradTickLength;
+		case StyleVar_Histogram_GradTickThickness:		return &Histogram_GradTickThickness;
+		case StyleVar_Histogram_GradMarginLeft:			return &Histogram_GradMarginLeft;
+		case StyleVar_Histogram_GradMarginBottom:		return &Histogram_GradMarginBottom;
 		default:										return nullptr;
 		}
 	}
@@ -1275,6 +1347,51 @@ struct ImVectorScopeData
 	void Accumulate( void const* data, int width, int height, int channels,
 					 ImParadeBitDepth bitDepth, ImParadeLayout layout,
 					 int resolution = 256, int maxSamples = 1000000 );
+};
+
+// ---- Histogram ----
+
+typedef int ImHistogramMode;
+enum ImHistogramMode_
+{
+	ImHistogramMode_Luma = 0,		// Single luminance channel
+	ImHistogramMode_RGB,			// R, G, B
+	ImHistogramMode_YRGB,			// Y, R, G, B
+	ImHistogramMode_YCbCr,			// Y, Cb, Cr
+	ImHistogramMode_HSV,			// H, S, V
+	ImHistogramMode_OkLCH,			// Lightness, Chroma, Hue
+	ImHistogramMode_COUNT
+};
+
+typedef int ImHistogramLayout;
+enum ImHistogramLayout_
+{
+	ImHistogramLayout_Overlapped = 0,	// All channels in same area
+	ImHistogramLayout_Stacked,			// Channels stacked vertically
+	ImHistogramLayout_COUNT
+};
+
+struct ImHistogramData
+{
+	ImVector<ImU32>	Bins;			// [ch * BinCount + bin]
+	int				BinCount;		// Number of bins per channel
+	int				ChannelCount;	// Display channels (1..4 depending on mode)
+	ImU32			PeakCount;		// Max bin value (for normalization)
+	ImHistogramMode	Mode;
+	ImParadeBitDepth BitDepth;
+
+	ImHistogramData() : BinCount( 0 ), ChannelCount( 0 ), PeakCount( 0 ), Mode( ImHistogramMode_RGB ), BitDepth( ImParadeBitDepth_UInt8 ) {}
+
+	void Clear()
+	{
+		Bins.clear();
+		BinCount = ChannelCount = 0;
+		PeakCount = 0;
+	}
+
+	void Accumulate( void const* data, int width, int height, int channels,
+					 ImParadeBitDepth bitDepth, ImParadeLayout layout, ImHistogramMode mode,
+					 int binCount = 256, int maxSamples = 1000000 );
 };
 
 struct ImGlobalData
@@ -1949,6 +2066,9 @@ namespace ImWidgets{
 	IMGUI_API void  ParadeScope( char const* label, ImParadeScopeData const& data, bool overlay = false, ImParadeScale scale = ImParadeScale_Linear, ImVec2 size = ImVec2( 0, 0 ) );
 
 	IMGUI_API void  VectorScope( char const* label, ImVectorScopeData const& data, bool showSkinToneLine = true, ImVec2 size = ImVec2( 0, 0 ) );
+
+	IMGUI_API const char* HistogramModeName( ImHistogramMode mode );
+	IMGUI_API void  Histogram( char const* label, ImHistogramData const& data, ImHistogramLayout layout = ImHistogramLayout_Overlapped, ImParadeScale xScale = ImParadeScale_Linear, ImParadeScale yScale = ImParadeScale_Linear, ImVec2 size = ImVec2( 0, 0 ) );
 
 	//IMGUI_API bool SliderRingScalar( char const* name,
 	//								 ImGuiDataType data_type,

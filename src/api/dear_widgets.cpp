@@ -9497,6 +9497,539 @@ namespace ImWidgets {
 			ImGui::RenderText( ImVec2( total_bb.Max.x + style.ItemInnerSpacing.x, total_bb.Min.y + style.FramePadding.y ), label );
 	}
 
+	// ========================================================================
+	// Histogram
+	// ========================================================================
+
+} // close namespace ImWidgets for global-scope struct method
+
+void ImHistogramData::Accumulate( void const* data, int width, int height, int channels,
+								  ImParadeBitDepth bitDepth, ImParadeLayout layout, ImHistogramMode mode,
+								  int binCount, int maxSamples )
+{
+	Mode = mode;
+	BitDepth = bitDepth;
+	BinCount = binCount;
+
+	switch ( mode )
+	{
+	case ImHistogramMode_Luma:  ChannelCount = 1; break;
+	case ImHistogramMode_RGB:   ChannelCount = 3; break;
+	case ImHistogramMode_YRGB:  ChannelCount = 4; break;
+	case ImHistogramMode_YCbCr: ChannelCount = 3; break;
+	case ImHistogramMode_HSV:   ChannelCount = 3; break;
+	case ImHistogramMode_OkLCH: ChannelCount = 3; break;
+	default:                    ChannelCount = 3; break;
+	}
+
+	Bins.resize( ChannelCount * BinCount );
+	memset( Bins.Data, 0, Bins.Size * sizeof( ImU32 ) );
+	PeakCount = 0;
+
+	int maxVal;
+	switch ( bitDepth )
+	{
+	case ImParadeBitDepth_UInt8:  maxVal = 255; break;
+	case ImParadeBitDepth_UInt10: maxVal = 1023; break;
+	case ImParadeBitDepth_UInt16: maxVal = 65535; break;
+	default:                      maxVal = 255; break;
+	}
+	float invMaxVal = 1.0f / ( float )maxVal;
+	int mask16 = ( bitDepth == ImParadeBitDepth_UInt10 ) ? 0x3FF : 0xFFFF;
+
+	int totalPixels = width * height;
+	bool subsample = ( maxSamples > 0 && totalPixels > maxSamples );
+	ImU32 rng = 0x12345678u;
+	ImU32 threshold = subsample ? ( ImU32 )( ( double )maxSamples / ( double )totalPixels * 4294967295.0 ) : 0xFFFFFFFF;
+
+	int planeStride = width * height;
+	static float const kOkLCHMaxChroma = 0.37f;
+
+	for ( int pixIdx = 0; pixIdx < totalPixels; ++pixIdx )
+	{
+		if ( subsample )
+		{
+			rng = rng * 1664525u + 1013904223u;
+			if ( rng > threshold )
+				continue;
+		}
+
+		int px = pixIdx % width;
+		int py = pixIdx / width;
+
+		// Read RGB normalized to [0,1]
+		float r, g, b;
+		if ( layout == ImParadeLayout_Interleaved )
+		{
+			int offset = ( py * width + px ) * channels;
+			if ( bitDepth == ImParadeBitDepth_UInt8 )
+			{
+				ImU8 const* p = ( ImU8 const* )data + offset;
+				r = p[ 0 ] * invMaxVal;
+				g = p[ 1 ] * invMaxVal;
+				b = p[ 2 ] * invMaxVal;
+			}
+			else
+			{
+				ImU16 const* p = ( ImU16 const* )data + offset;
+				r = ( float )( p[ 0 ] & mask16 ) * invMaxVal;
+				g = ( float )( p[ 1 ] & mask16 ) * invMaxVal;
+				b = ( float )( p[ 2 ] & mask16 ) * invMaxVal;
+			}
+		}
+		else // Planar
+		{
+			int pixOffset = py * width + px;
+			if ( bitDepth == ImParadeBitDepth_UInt8 )
+			{
+				ImU8 const* p = ( ImU8 const* )data;
+				r = p[ pixOffset ] * invMaxVal;
+				g = p[ pixOffset + planeStride ] * invMaxVal;
+				b = p[ pixOffset + planeStride * 2 ] * invMaxVal;
+			}
+			else
+			{
+				ImU16 const* p = ( ImU16 const* )data;
+				r = ( float )( p[ pixOffset ] & mask16 ) * invMaxVal;
+				g = ( float )( p[ pixOffset + planeStride ] & mask16 ) * invMaxVal;
+				b = ( float )( p[ pixOffset + planeStride * 2 ] & mask16 ) * invMaxVal;
+			}
+		}
+
+		// Compute display channel values (all normalized to [0,1])
+		float values[ 4 ];
+		switch ( mode )
+		{
+		case ImHistogramMode_Luma:
+			values[ 0 ] = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+			break;
+		case ImHistogramMode_RGB:
+			values[ 0 ] = r;
+			values[ 1 ] = g;
+			values[ 2 ] = b;
+			break;
+		case ImHistogramMode_YRGB:
+			values[ 0 ] = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+			values[ 1 ] = r;
+			values[ 2 ] = g;
+			values[ 3 ] = b;
+			break;
+		case ImHistogramMode_YCbCr:
+		{
+			float y = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+			values[ 0 ] = y;
+			values[ 1 ] = ( b - y ) / 1.8556f + 0.5f;
+			values[ 2 ] = ( r - y ) / 1.5748f + 0.5f;
+			break;
+		}
+		case ImHistogramMode_HSV:
+		{
+			float h, s, v;
+			ImGui::ColorConvertRGBtoHSV( r, g, b, h, s, v );
+			values[ 0 ] = h;
+			values[ 1 ] = s;
+			values[ 2 ] = v;
+			break;
+		}
+		case ImHistogramMode_OkLCH:
+		{
+			float L, C, H;
+			ImWidgets::ColorConvertsRGBtoOKLCH( L, C, H, r, g, b );
+			values[ 0 ] = ImClamp( L, 0.0f, 1.0f );
+			values[ 1 ] = ImClamp( C / kOkLCHMaxChroma, 0.0f, 1.0f );
+			values[ 2 ] = H; // already [0,1]
+			break;
+		}
+		default: break;
+		}
+
+		for ( int ch = 0; ch < ChannelCount; ++ch )
+		{
+			float v = ImClamp( values[ ch ], 0.0f, 1.0f );
+			int bin = ImClamp( ( int )( v * ( BinCount - 1 ) + 0.5f ), 0, BinCount - 1 );
+			ImU32& b = Bins[ ch * BinCount + bin ];
+			++b;
+			if ( b > PeakCount )
+				PeakCount = b;
+		}
+	}
+}
+
+namespace ImWidgets {
+
+	const char* HistogramModeName( ImHistogramMode mode )
+	{
+		switch ( mode )
+		{
+		case ImHistogramMode_Luma:  return "Luminance";
+		case ImHistogramMode_RGB:   return "RGB";
+		case ImHistogramMode_YRGB:  return "YRGB";
+		case ImHistogramMode_YCbCr: return "YCbCr";
+		case ImHistogramMode_HSV:   return "HSV";
+		case ImHistogramMode_OkLCH: return "OkLCH";
+		default:                    return "Unknown";
+		}
+	}
+
+	// Helper: map normalized [0,1] value to screen X inside scope area
+	static float HistogramValueToX( float v01, float xLeft, float xRight, ImParadeScale scale, float logMaxBits )
+	{
+		float w = xRight - xLeft;
+		if ( scale == ImParadeScale_Log && logMaxBits > 0.0f )
+		{
+			float maxRange = ImPow( 2.0f, logMaxBits ) - 1.0f;
+			float mapped = ImLog( v01 * maxRange + 1.0f ) / ( logMaxBits * 0.693147f );
+			return xLeft + mapped * w;
+		}
+		if ( scale == ImParadeScale_InvLog && logMaxBits > 0.0f )
+		{
+			float maxRange = ImPow( 2.0f, logMaxBits ) - 1.0f;
+			float mapped = 1.0f - ImLog( ( 1.0f - v01 ) * maxRange + 1.0f ) / ( logMaxBits * 0.693147f );
+			return xLeft + mapped * w;
+		}
+		return xLeft + v01 * w;
+	}
+
+	// Helper: map normalized count [0,1] to screen Y inside scope area
+	static float HistogramCountToY( float n01, float yTop, float yBot, ImParadeScale scale )
+	{
+		float h = yBot - yTop;
+		if ( scale == ImParadeScale_Log )
+		{
+			// Use log1p for count axis: log(n01 * 1000 + 1) / log(1001)
+			float mapped = ImLog( n01 * 1000.0f + 1.0f ) / ImLog( 1001.0f );
+			return yBot - mapped * h;
+		}
+		if ( scale == ImParadeScale_InvLog )
+		{
+			float mapped = 1.0f - ImLog( ( 1.0f - n01 ) * 1000.0f + 1.0f ) / ImLog( 1001.0f );
+			return yBot - mapped * h;
+		}
+		return yBot - n01 * h;
+	}
+
+	void Histogram( char const* label, ImHistogramData const& data, ImHistogramLayout layout, ImParadeScale xScale, ImParadeScale yScale, ImVec2 size )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return;
+
+		ImGuiContext& g = *GImGui;
+		ImGuiStyle const& style = g.Style;
+		ImWidgetsStyle const& dwStyle = GetStyle();
+
+		ImGuiID const id = window->GetID( label );
+
+		float gradMarginL = dwStyle.Histogram_GradMarginLeft;
+		float gradMarginB = dwStyle.Histogram_GradMarginBottom;
+
+		if ( size.x <= 0.0f ) size.x = ImGui::GetContentRegionAvail().x;
+		if ( size.y <= 0.0f ) size.y = dwStyle.Histogram_DefaultHeight;
+
+		ImRect const total_bb( window->DC.CursorPos, window->DC.CursorPos + size );
+		// Scope area: right of left margin, above bottom margin
+		ImRect const scope_bb( ImVec2( total_bb.Min.x + gradMarginL, total_bb.Min.y ),
+							   ImVec2( total_bb.Max.x, total_bb.Max.y - gradMarginB ) );
+
+		ImGui::ItemSize( total_bb, style.FramePadding.y );
+		if ( !ImGui::ItemAdd( total_bb, id ) )
+			return;
+
+		ImDrawList* dl = window->DrawList;
+
+		// Bit depth range
+		int maxVal;
+		float logMaxBits;
+		switch ( data.BitDepth )
+		{
+		case ImParadeBitDepth_UInt8:  maxVal = 255;   logMaxBits = 8.0f;  break;
+		case ImParadeBitDepth_UInt10: maxVal = 1023;  logMaxBits = 10.0f; break;
+		case ImParadeBitDepth_UInt16: maxVal = 65535; logMaxBits = 16.0f; break;
+		default:                      maxVal = 255;   logMaxBits = 8.0f;  break;
+		}
+
+		// Background
+		ImU32 bgCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Histogram_Background ] );
+		dl->AddRectFilled( scope_bb.Min, scope_bb.Max, bgCol );
+
+		// Style
+		ImU32 tickCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Histogram_GradTick ] );
+		ImU32 labelCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Histogram_GradLabel ] );
+		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Histogram_Grid ] );
+		float tickLen = dwStyle.Histogram_GradTickLength;
+		float tickThk = dwStyle.Histogram_GradTickThickness;
+
+		float scopeH = scope_bb.GetHeight();
+		float scopeW = scope_bb.GetWidth();
+
+		// --- Left graduation (Y-axis: count) ---
+		{
+			ImVec2 gradStart( scope_bb.Min.x, scope_bb.Max.y ); // bottom
+			ImVec2 gradEnd( scope_bb.Min.x, scope_bb.Min.y );   // top
+
+			int majorDiv, minorDiv;
+			if ( yScale == ImParadeScale_Log || yScale == ImParadeScale_InvLog )
+			{
+				majorDiv = 3;
+				minorDiv = 9;
+				ImVec2 gS = ( yScale == ImParadeScale_InvLog ) ? gradEnd : gradStart;
+				ImVec2 gE = ( yScale == ImParadeScale_InvLog ) ? gradStart : gradEnd;
+				DrawLogLineGraduation( dl, gS, gE,
+					tickThk, tickCol,
+					majorDiv, tickLen, tickThk, 0.0f, tickCol,
+					minorDiv, tickLen * 0.5f, tickThk * 0.5f, 0.0f, tickCol );
+			}
+			else
+			{
+				majorDiv = 4;
+				minorDiv = 4;
+				DrawLinearLineGraduation( dl, gradStart, gradEnd,
+					tickThk, tickCol,
+					majorDiv, tickLen, tickThk, 0.0f, tickCol,
+					minorDiv, tickLen * 0.5f, tickThk * 0.5f, 0.0f, tickCol );
+			}
+
+			// Horizontal grid lines and labels at major Y ticks
+			for ( int k = 0; k <= majorDiv; ++k )
+			{
+				float t = ( float )k / ( float )majorDiv;
+				float sy = ImLerp( gradStart.y, gradEnd.y, t );
+
+				// Grid line
+				dl->AddLine( ImVec2( scope_bb.Min.x, sy ), ImVec2( scope_bb.Max.x, sy ), gridCol );
+
+				// Y-axis label (percentage of peak)
+				int pct;
+				if ( yScale == ImParadeScale_Log )
+					pct = ImClamp( ( int )( ( ImPow( 10.0f, t * 3.0f ) - 1.0f ) / 999.0f * 100.0f + 0.5f ), 0, 100 );
+				else if ( yScale == ImParadeScale_InvLog )
+					pct = ImClamp( 100 - ( int )( ( ImPow( 10.0f, ( 1.0f - t ) * 3.0f ) - 1.0f ) / 999.0f * 100.0f + 0.5f ), 0, 100 );
+				else
+					pct = ImClamp( ( int )( t * 100.0f + 0.5f ), 0, 100 );
+
+				char buf[ 16 ];
+				ImFormatString( buf, sizeof( buf ), "%d%%", pct );
+				ImVec2 textSize = ImGui::CalcTextSize( buf );
+				float labelX = scope_bb.Min.x - tickLen - 2.0f - textSize.x;
+				dl->AddText( ImVec2( labelX, sy - textSize.y * 0.5f ), labelCol, buf );
+			}
+		}
+
+		// --- Bottom graduation (X-axis: value) ---
+		{
+			ImVec2 gradStart( scope_bb.Min.x, scope_bb.Max.y ); // left
+			ImVec2 gradEnd( scope_bb.Max.x, scope_bb.Max.y );   // right
+
+			int majorDiv, minorDiv;
+			if ( xScale == ImParadeScale_Log )
+			{
+				majorDiv = ( int )logMaxBits;
+				minorDiv = 9;
+				DrawLogLineGraduation( dl, gradStart, gradEnd,
+					tickThk, tickCol,
+					majorDiv, tickLen, tickThk, 0.0f, tickCol,
+					minorDiv, tickLen * 0.5f, tickThk * 0.5f, 0.0f, tickCol );
+			}
+			else if ( xScale == ImParadeScale_InvLog )
+			{
+				majorDiv = ( int )logMaxBits;
+				minorDiv = 9;
+				DrawLogLineGraduation( dl, gradEnd, gradStart,
+					tickThk, tickCol,
+					majorDiv, tickLen, tickThk, 0.0f, tickCol,
+					minorDiv, tickLen * 0.5f, tickThk * 0.5f, 0.0f, tickCol );
+			}
+			else
+			{
+				majorDiv = 4;
+				minorDiv = 4;
+				DrawLinearLineGraduation( dl, gradStart, gradEnd,
+					tickThk, tickCol,
+					majorDiv, tickLen, tickThk, 0.0f, tickCol,
+					minorDiv, tickLen * 0.5f, tickThk * 0.5f, 0.0f, tickCol );
+			}
+
+			// X-axis labels and vertical grid lines
+			for ( int k = 0; k <= majorDiv; ++k )
+			{
+				float t = ( float )k / ( float )majorDiv;
+				float sx = ImLerp( gradStart.x, gradEnd.x, t );
+
+				int labelVal;
+				if ( xScale == ImParadeScale_Log )
+					labelVal = ImClamp( ( int )( ImPow( 2.0f, t * logMaxBits ) - 1.0f + 0.5f ), 0, maxVal );
+				else if ( xScale == ImParadeScale_InvLog )
+					labelVal = ImClamp( maxVal - ( int )( ImPow( 2.0f, ( 1.0f - t ) * logMaxBits ) - 1.0f + 0.5f ), 0, maxVal );
+				else
+					labelVal = ImClamp( ( int )( t * maxVal + 0.5f ), 0, maxVal );
+
+				// Vertical grid line
+				dl->AddLine( ImVec2( sx, scope_bb.Min.y ), ImVec2( sx, scope_bb.Max.y ), gridCol );
+
+				// Label below scope
+				char buf[ 16 ];
+				ImFormatString( buf, sizeof( buf ), "%d", labelVal );
+				ImVec2 textSize = ImGui::CalcTextSize( buf );
+				dl->AddText( ImVec2( sx - textSize.x * 0.5f, scope_bb.Max.y + tickLen + 2.0f ), labelCol, buf );
+			}
+		}
+
+		if ( data.ChannelCount <= 0 || data.PeakCount == 0 || data.BinCount <= 0 )
+		{
+			dl->AddRect( scope_bb.Min, scope_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+			return;
+		}
+
+		dl->PushClipRect( scope_bb.Min, scope_bb.Max, true );
+
+		// Channel separator lines (stacked mode only)
+		bool stacked = ( layout == ImHistogramLayout_Stacked && data.ChannelCount > 1 );
+		if ( stacked )
+		{
+			for ( int ch = 1; ch < data.ChannelCount; ++ch )
+			{
+				float sy = scope_bb.Min.y + ( scopeH * ch / ( float )data.ChannelCount );
+				dl->AddLine( ImVec2( scope_bb.Min.x, sy ), ImVec2( scope_bb.Max.x, sy ), gridCol );
+			}
+		}
+
+		// Channel colors based on mode
+		ImVec4 channelColorsF[ 4 ];
+		switch ( data.Mode )
+		{
+		case ImHistogramMode_Luma:
+			channelColorsF[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelLuma ];
+			break;
+		case ImHistogramMode_RGB:
+			channelColorsF[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelR ];
+			channelColorsF[ 1 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelG ];
+			channelColorsF[ 2 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelB ];
+			break;
+		case ImHistogramMode_YRGB:
+			channelColorsF[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelLuma ];
+			channelColorsF[ 1 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelR ];
+			channelColorsF[ 2 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelG ];
+			channelColorsF[ 3 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelB ];
+			break;
+		case ImHistogramMode_YCbCr:
+			channelColorsF[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelLuma ];
+			channelColorsF[ 1 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelCb ];
+			channelColorsF[ 2 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelCr ];
+			break;
+		case ImHistogramMode_HSV:
+			channelColorsF[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelH ];
+			channelColorsF[ 1 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelS ];
+			channelColorsF[ 2 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelV ];
+			break;
+		case ImHistogramMode_OkLCH:
+			channelColorsF[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelOkL ];
+			channelColorsF[ 1 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelOkC ];
+			channelColorsF[ 2 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelOkH ];
+			break;
+		default: break;
+		}
+
+		float overlayAlpha = dwStyle.Histogram_OverlayAlpha;
+
+		int layoutCount = stacked ? data.ChannelCount : 1;
+		float channelH = scopeH / layoutCount;
+
+		for ( int ch = 0; ch < data.ChannelCount; ++ch )
+		{
+			int layoutIdx = stacked ? ch : 0;
+			float yTop = scope_bb.Min.y + layoutIdx * channelH;
+			float yBot = yTop + channelH;
+
+			ImU8 baseR = ( ImU8 )( channelColorsF[ ch ].x * 255.0f );
+			ImU8 baseG = ( ImU8 )( channelColorsF[ ch ].y * 255.0f );
+			ImU8 baseB = ( ImU8 )( channelColorsF[ ch ].z * 255.0f );
+
+			ImU32 const* chBins = data.Bins.Data + ch * data.BinCount;
+
+			// Find per-channel peak for stacked mode, or use global peak
+			ImU32 peak = data.PeakCount;
+			if ( stacked )
+			{
+				peak = 0;
+				for ( int i = 0; i < data.BinCount; ++i )
+				{
+					if ( chBins[ i ] > peak )
+						peak = chBins[ i ];
+				}
+				if ( peak == 0 )
+					continue;
+			}
+
+			// Count non-zero bins
+			int nonZero = 0;
+			for ( int i = 0; i < data.BinCount; ++i )
+			{
+				if ( chBins[ i ] > 0 )
+					++nonZero;
+			}
+			if ( nonZero == 0 )
+				continue;
+
+			// Render bins as filled quads
+			int const kMaxQuadsPerBatch = 16000;
+			int quadsDone = 0;
+			int quadsInBatch = 0;
+			int batchSize = ImMin( nonZero, kMaxQuadsPerBatch );
+			dl->PrimReserve( batchSize * 6, batchSize * 4 );
+			ImVec2 uv = dl->_Data->TexUvWhitePixel;
+
+			for ( int bin = 0; bin < data.BinCount; ++bin )
+			{
+				ImU32 count = chBins[ bin ];
+				if ( count == 0 )
+					continue;
+
+				// Map bin to X position (value axis)
+				float v0 = ( float )bin / ( float )data.BinCount;
+				float v1 = ( float )( bin + 1 ) / ( float )data.BinCount;
+				float rx0 = HistogramValueToX( v0, scope_bb.Min.x, scope_bb.Max.x, xScale, logMaxBits );
+				float rx1 = HistogramValueToX( v1, scope_bb.Min.x, scope_bb.Max.x, xScale, logMaxBits );
+
+				// Map count to Y (height axis)
+				float n01 = ( float )count / ( float )peak;
+				float ry0 = HistogramCountToY( n01, yTop, yBot, yScale );
+				float ry1 = yBot;
+
+				float alpha = stacked ? 0.9f : overlayAlpha;
+				ImU8 a = ( ImU8 )( alpha * 255.0f );
+				ImU32 col = IM_COL32( baseR, baseG, baseB, a );
+
+				ImDrawIdx idx = ( ImDrawIdx )dl->_VtxCurrentIdx;
+				dl->PrimWriteIdx( idx ); dl->PrimWriteIdx( ( ImDrawIdx )( idx + 1 ) ); dl->PrimWriteIdx( ( ImDrawIdx )( idx + 2 ) );
+				dl->PrimWriteIdx( idx ); dl->PrimWriteIdx( ( ImDrawIdx )( idx + 2 ) ); dl->PrimWriteIdx( ( ImDrawIdx )( idx + 3 ) );
+				dl->PrimWriteVtx( ImVec2( rx0, ry0 ), uv, col );
+				dl->PrimWriteVtx( ImVec2( rx1, ry0 ), uv, col );
+				dl->PrimWriteVtx( ImVec2( rx1, ry1 ), uv, col );
+				dl->PrimWriteVtx( ImVec2( rx0, ry1 ), uv, col );
+
+				++quadsInBatch;
+				++quadsDone;
+
+				if ( quadsInBatch >= kMaxQuadsPerBatch && quadsDone < nonZero )
+				{
+					int remaining = nonZero - quadsDone;
+					batchSize = ImMin( remaining, kMaxQuadsPerBatch );
+					dl->PrimReserve( batchSize * 6, batchSize * 4 );
+					quadsInBatch = 0;
+				}
+			}
+		}
+
+		dl->PopClipRect();
+
+		// Border
+		dl->AddRect( scope_bb.Min, scope_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+
+		// Label
+		if ( label[ 0 ] != '#' || label[ 1 ] != '#' )
+			ImGui::RenderText( ImVec2( scope_bb.Max.x + style.ItemInnerSpacing.x, scope_bb.Min.y + style.FramePadding.y ), label );
+	}
+
 #if 0
 	// TODO
 	bool SliderRingScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, float v_angle_min, float v_angle_max, float v_thickness, const char* format, ImGuiSliderFlags flags, ImRect* out_grab_bb )
