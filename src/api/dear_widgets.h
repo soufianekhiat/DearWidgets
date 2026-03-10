@@ -276,6 +276,13 @@ enum ImWidgetsStyleColor
 	StyleColor_ParadeScope_GradTick,
 	StyleColor_ParadeScope_GradLabel,
 
+	// Vector Scope
+	StyleColor_VectorScope_Background,
+	StyleColor_VectorScope_Grid,
+	StyleColor_VectorScope_Graticule,
+	StyleColor_VectorScope_Signal,
+	StyleColor_VectorScope_SkinToneLine,
+
 	StyleColor_Count
 };
 
@@ -325,6 +332,11 @@ enum ImWidgetsStyleVar
 	StyleVar_ParadeScope_GradTickLength,
 	StyleVar_ParadeScope_GradTickThickness,
 	StyleVar_ParadeScope_GradMargin,
+
+	// Vector Scope
+	StyleVar_VectorScope_DefaultSize,
+	StyleVar_VectorScope_SignalAlpha,
+	StyleVar_VectorScope_GraticuleThickness,
 
 	StyleVar_Count
 };
@@ -376,6 +388,11 @@ struct ImWidgetsStyle
 	float	ParadeScope_GradTickThickness;	// Graduation tick line thickness
 	float	ParadeScope_GradMargin;			// Left margin for graduation labels (px)
 
+	// Vector Scope
+	float	VectorScope_DefaultSize;		// Default square side length (px)
+	float	VectorScope_SignalAlpha;		// Max alpha for signal dots (0..1)
+	float	VectorScope_GraticuleThickness;	// Graticule line thickness (px)
+
 	ImVec4  Colors[ StyleColor_Count ];
 
 	ImWidgetsStyle()
@@ -422,6 +439,11 @@ struct ImWidgetsStyle
 		ParadeScope_GradTickLength   = 6.0f;
 		ParadeScope_GradTickThickness = 1.0f;
 		ParadeScope_GradMargin       = 40.0f;
+
+		// Vector Scope
+		VectorScope_DefaultSize        = 200.0f;
+		VectorScope_SignalAlpha        = 0.8f;
+		VectorScope_GraticuleThickness = 1.0f;
 
 		Colors[ StyleColor_Value ] = ImVec4( 1.0f, 0.0f, 0.0f, 1.0f );
 		Colors[ StyleColor_Slider2D_CursorX ] = ImVec4( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f ); // Blue
@@ -474,6 +496,13 @@ struct ImWidgetsStyle
 		Colors[ StyleColor_ParadeScope_ChannelCr ]          = ImVec4( 1.0f, 0.4f, 0.3f, 1.0f );
 		Colors[ StyleColor_ParadeScope_GradTick ]           = ImVec4( 1.0f, 1.0f, 1.0f, 0.4f );
 		Colors[ StyleColor_ParadeScope_GradLabel ]          = ImVec4( 1.0f, 1.0f, 1.0f, 0.7f );
+
+		// Vector Scope Colors
+		Colors[ StyleColor_VectorScope_Background ]         = ImVec4( 0.0f, 0.0f, 0.0f, 1.0f );
+		Colors[ StyleColor_VectorScope_Grid ]               = ImVec4( 1.0f, 1.0f, 1.0f, 0.12f );
+		Colors[ StyleColor_VectorScope_Graticule ]          = ImVec4( 1.0f, 1.0f, 1.0f, 0.35f );
+		Colors[ StyleColor_VectorScope_Signal ]             = ImVec4( 0.2f, 1.0f, 0.3f, 1.0f );
+		Colors[ StyleColor_VectorScope_SkinToneLine ]       = ImVec4( 1.0f, 0.7f, 0.3f, 0.5f );
 	}
 
 	void ScaleAllSizes( float scale_factor )
@@ -512,6 +541,9 @@ struct ImWidgetsStyle
 		ParadeScope_GradTickLength    = ImTrunc( ParadeScope_GradTickLength * scale_factor );
 		ParadeScope_GradTickThickness = ImTrunc( ParadeScope_GradTickThickness * scale_factor );
 		ParadeScope_GradMargin        = ImTrunc( ParadeScope_GradMargin * scale_factor );
+
+		VectorScope_DefaultSize        = ImTrunc( VectorScope_DefaultSize * scale_factor );
+		VectorScope_GraticuleThickness = ImTrunc( VectorScope_GraticuleThickness * scale_factor );
 	}
 
 	void PushColor( ImWidgetsStyleColor colorIndex, const ImVec4& color )
@@ -678,6 +710,9 @@ private:
 		case StyleVar_ParadeScope_GradTickLength:		return &ParadeScope_GradTickLength;
 		case StyleVar_ParadeScope_GradTickThickness:	return &ParadeScope_GradTickThickness;
 		case StyleVar_ParadeScope_GradMargin:			return &ParadeScope_GradMargin;
+		case StyleVar_VectorScope_DefaultSize:			return &VectorScope_DefaultSize;
+		case StyleVar_VectorScope_SignalAlpha:			return &VectorScope_SignalAlpha;
+		case StyleVar_VectorScope_GraticuleThickness:	return &VectorScope_GraticuleThickness;
 		default:										return nullptr;
 		}
 	}
@@ -1216,6 +1251,30 @@ struct ImParadeScopeData
 	void Accumulate( void const* data, int width, int height, int channels,
 					 ImParadeBitDepth bitDepth, ImParadeLayout layout, ImParadeMode mode,
 					 int xBins = 128, int yBins = 128, int maxSamples = 1000000 );
+};
+
+// ---- Vector Scope ----
+
+struct ImVectorScopeData
+{
+	ImVector<ImU32>	Bins;			// [xBin * Resolution + yBin] — 2D chrominance histogram
+	int				Resolution;		// Square grid resolution (N x N)
+	ImU32			PeakCount;		// Max bin value (for normalization)
+	ImParadeBitDepth BitDepth;
+
+	ImVectorScopeData() : Resolution( 0 ), PeakCount( 0 ), BitDepth( ImParadeBitDepth_UInt8 ) {}
+
+	void Clear()
+	{
+		Bins.clear();
+		Resolution = 0;
+		PeakCount = 0;
+	}
+
+	// Accumulate chrominance (Cb/Cr BT.709) from raw image data into 2D histogram.
+	void Accumulate( void const* data, int width, int height, int channels,
+					 ImParadeBitDepth bitDepth, ImParadeLayout layout,
+					 int resolution = 256, int maxSamples = 1000000 );
 };
 
 struct ImGlobalData
@@ -1888,6 +1947,8 @@ namespace ImWidgets{
 
 	IMGUI_API const char* ParadeModeName( ImParadeMode mode );
 	IMGUI_API void  ParadeScope( char const* label, ImParadeScopeData const& data, bool overlay = false, ImParadeScale scale = ImParadeScale_Linear, ImVec2 size = ImVec2( 0, 0 ) );
+
+	IMGUI_API void  VectorScope( char const* label, ImVectorScopeData const& data, bool showSkinToneLine = true, ImVec2 size = ImVec2( 0, 0 ) );
 
 	//IMGUI_API bool SliderRingScalar( char const* name,
 	//								 ImGuiDataType data_type,

@@ -9207,6 +9207,296 @@ namespace ImWidgets {
 			ImGui::RenderText( ImVec2( scope_bb.Max.x + style.ItemInnerSpacing.x, scope_bb.Min.y + style.FramePadding.y ), label );
 	}
 
+	// ========================================================================
+	// Vector Scope
+	// ========================================================================
+
+} // close namespace ImWidgets for global-scope struct method
+
+void ImVectorScopeData::Accumulate( void const* data, int width, int height, int channels,
+									ImParadeBitDepth bitDepth, ImParadeLayout layout,
+									int resolution, int maxSamples )
+{
+	BitDepth = bitDepth;
+	Resolution = resolution;
+
+	Bins.resize( Resolution * Resolution );
+	memset( Bins.Data, 0, Bins.Size * sizeof( ImU32 ) );
+	PeakCount = 0;
+
+	int maxVal;
+	switch ( bitDepth )
+	{
+	case ImParadeBitDepth_UInt8:  maxVal = 255; break;
+	case ImParadeBitDepth_UInt10: maxVal = 1023; break;
+	case ImParadeBitDepth_UInt16: maxVal = 65535; break;
+	default:                      maxVal = 255; break;
+	}
+	float invMaxVal = 1.0f / ( float )maxVal;
+	int mask16 = ( bitDepth == ImParadeBitDepth_UInt10 ) ? 0x3FF : 0xFFFF;
+
+	int totalPixels = width * height;
+	bool subsample = ( maxSamples > 0 && totalPixels > maxSamples );
+	ImU32 rng = 0x12345678u;
+	ImU32 threshold = subsample ? ( ImU32 )( ( double )maxSamples / ( double )totalPixels * 4294967295.0 ) : 0xFFFFFFFF;
+
+	int planeStride = width * height;
+
+	for ( int pixIdx = 0; pixIdx < totalPixels; ++pixIdx )
+	{
+		if ( subsample )
+		{
+			rng = rng * 1664525u + 1013904223u;
+			if ( rng > threshold )
+				continue;
+		}
+
+		int px = pixIdx % width;
+		int py = pixIdx / width;
+
+		// Read RGB normalized to [0,1]
+		float r, g, b;
+		if ( layout == ImParadeLayout_Interleaved )
+		{
+			int offset = ( py * width + px ) * channels;
+			if ( bitDepth == ImParadeBitDepth_UInt8 )
+			{
+				ImU8 const* p = ( ImU8 const* )data + offset;
+				r = p[ 0 ] * invMaxVal;
+				g = p[ 1 ] * invMaxVal;
+				b = p[ 2 ] * invMaxVal;
+			}
+			else
+			{
+				ImU16 const* p = ( ImU16 const* )data + offset;
+				r = ( float )( p[ 0 ] & mask16 ) * invMaxVal;
+				g = ( float )( p[ 1 ] & mask16 ) * invMaxVal;
+				b = ( float )( p[ 2 ] & mask16 ) * invMaxVal;
+			}
+		}
+		else // Planar
+		{
+			int pixOffset = py * width + px;
+			if ( bitDepth == ImParadeBitDepth_UInt8 )
+			{
+				ImU8 const* p = ( ImU8 const* )data;
+				r = p[ pixOffset ] * invMaxVal;
+				g = p[ pixOffset + planeStride ] * invMaxVal;
+				b = p[ pixOffset + planeStride * 2 ] * invMaxVal;
+			}
+			else
+			{
+				ImU16 const* p = ( ImU16 const* )data;
+				r = ( float )( p[ pixOffset ] & mask16 ) * invMaxVal;
+				g = ( float )( p[ pixOffset + planeStride ] & mask16 ) * invMaxVal;
+				b = ( float )( p[ pixOffset + planeStride * 2 ] & mask16 ) * invMaxVal;
+			}
+		}
+
+		// BT.709 luma
+		float y = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+
+		// Cb, Cr normalized to [0,1] (center = 0.5)
+		float cb = ( b - y ) / 1.8556f + 0.5f;
+		float cr = ( r - y ) / 1.5748f + 0.5f;
+
+		int xBin = ImClamp( ( int )( cb * ( Resolution - 1 ) + 0.5f ), 0, Resolution - 1 );
+		int yBin = ImClamp( ( int )( cr * ( Resolution - 1 ) + 0.5f ), 0, Resolution - 1 );
+		ImU32& bin = Bins[ xBin * Resolution + yBin ];
+		++bin;
+		if ( bin > PeakCount )
+			PeakCount = bin;
+	}
+}
+
+namespace ImWidgets {
+
+	void VectorScope( char const* label, ImVectorScopeData const& data, bool showSkinToneLine, ImVec2 size )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return;
+
+		ImGuiContext& g = *GImGui;
+		ImGuiStyle const& style = g.Style;
+		ImWidgetsStyle const& dwStyle = GetStyle();
+
+		ImGuiID const id = window->GetID( label );
+
+		// Force square aspect ratio
+		float side = size.x > 0.0f ? size.x : ( size.y > 0.0f ? size.y : dwStyle.VectorScope_DefaultSize );
+		size = ImVec2( side, side );
+
+		ImRect const total_bb( window->DC.CursorPos, window->DC.CursorPos + size );
+
+		ImGui::ItemSize( total_bb, style.FramePadding.y );
+		if ( !ImGui::ItemAdd( total_bb, id ) )
+			return;
+
+		ImDrawList* dl = window->DrawList;
+
+		float scopeW = total_bb.GetWidth();
+		float scopeH = total_bb.GetHeight();
+		ImVec2 center( total_bb.Min.x + scopeW * 0.5f, total_bb.Min.y + scopeH * 0.5f );
+		float radius = scopeW * 0.5f;
+
+		// Background
+		ImU32 bgCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_VectorScope_Background ] );
+		dl->AddRectFilled( total_bb.Min, total_bb.Max, bgCol );
+
+		// Graticule
+		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_VectorScope_Grid ] );
+		ImU32 gratCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_VectorScope_Graticule ] ); IM_UNUSED( gratCol );
+		float gratThk = dwStyle.VectorScope_GraticuleThickness;
+
+		// Center crosshair
+		dl->AddLine( ImVec2( total_bb.Min.x, center.y ), ImVec2( total_bb.Max.x, center.y ), gridCol );
+		dl->AddLine( ImVec2( center.x, total_bb.Min.y ), ImVec2( center.x, total_bb.Max.y ), gridCol );
+
+		// Concentric circles at 25%, 50%, 75%, 100%
+		for ( int i = 1; i <= 4; ++i )
+		{
+			float r = radius * ( float )i / 4.0f;
+			dl->AddCircle( center, r, gridCol, 64, gratThk );
+		}
+
+		// BT.709 luma coefficients
+		float const kr = 0.2126f;
+		float const kb = 0.0722f;
+		float const cbScale = 2.0f * ( 1.0f - kb ); // 1.8556
+		float const crScale = 2.0f * ( 1.0f - kr ); // 1.5748
+
+		// 75% color bar reference targets
+		{
+			struct Target { float r, g, b; ImU32 col; char const* name; };
+			Target const targets[] = {
+				{ 0.75f, 0.0f,  0.0f,  IM_COL32( 255, 64, 64, 200 ),  "R"  },
+				{ 0.0f,  0.75f, 0.0f,  IM_COL32( 64, 255, 64, 200 ),  "G"  },
+				{ 0.0f,  0.0f,  0.75f, IM_COL32( 80, 80, 255, 200 ),  "B"  },
+				{ 0.0f,  0.75f, 0.75f, IM_COL32( 64, 255, 255, 200 ), "Cy" },
+				{ 0.75f, 0.0f,  0.75f, IM_COL32( 255, 64, 255, 200 ), "Mg" },
+				{ 0.75f, 0.75f, 0.0f,  IM_COL32( 255, 255, 64, 200 ), "Yl" },
+			};
+			float targetSize = ImMax( 6.0f, radius * 0.06f );
+
+			for ( int i = 0; i < IM_ARRAYSIZE( targets ); ++i )
+			{
+				Target const& t = targets[ i ];
+				float y = kr * t.r + ( 1.0f - kr - kb ) * t.g + kb * t.b;
+				float cb = ( t.b - y ) / cbScale;
+				float cr = ( t.r - y ) / crScale;
+				// Map Cb/Cr [-0.5,0.5] to screen (right=+Cb, up=+Cr)
+				ImVec2 pos( center.x + cb * scopeW, center.y - cr * scopeH );
+
+				dl->AddRect( ImVec2( pos.x - targetSize, pos.y - targetSize ),
+							 ImVec2( pos.x + targetSize, pos.y + targetSize ),
+							 t.col, 0.0f, 0, gratThk );
+				ImVec2 textSize = ImGui::CalcTextSize( t.name );
+				dl->AddText( ImVec2( pos.x + targetSize + 2.0f, pos.y - textSize.y * 0.5f ), t.col, t.name );
+			}
+		}
+
+		// Skin tone line (~123 degrees from positive Cb axis)
+		if ( showSkinToneLine )
+		{
+			ImU32 skinCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_VectorScope_SkinToneLine ] );
+			float angle = 123.0f * 3.14159265f / 180.0f;
+			float dx = ImCos( angle ) * radius;
+			float dy = ImSin( angle ) * radius;
+			// Cb on X, Cr on Y (screen Y inverted)
+			dl->AddLine( ImVec2( center.x - dx, center.y + dy ),
+						 ImVec2( center.x + dx, center.y - dy ), skinCol, gratThk );
+		}
+
+		// Signal rendering
+		if ( data.Resolution <= 0 || data.PeakCount == 0 )
+		{
+			dl->AddRect( total_bb.Min, total_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+			return;
+		}
+
+		dl->PushClipRect( total_bb.Min, total_bb.Max, true );
+
+		float logPeak = ImLog( ( float )data.PeakCount + 1.0f );
+		float signalAlpha = dwStyle.VectorScope_SignalAlpha;
+		ImVec4 const& signalColorF = dwStyle.Colors[ StyleColor_VectorScope_Signal ];
+		ImU8 sigR = ( ImU8 )( signalColorF.x * 255.0f );
+		ImU8 sigG = ( ImU8 )( signalColorF.y * 255.0f );
+		ImU8 sigB = ( ImU8 )( signalColorF.z * 255.0f );
+
+		float binSize = scopeW / data.Resolution;
+
+		// Count non-zero bins for PrimReserve
+		int nonZero = 0;
+		for ( int i = 0; i < data.Resolution * data.Resolution; ++i )
+		{
+			if ( data.Bins[ i ] > 0 )
+				++nonZero;
+		}
+
+		if ( nonZero > 0 )
+		{
+			// Render in chunks to stay within 16-bit index limits
+			int const kMaxQuadsPerBatch = 16000;
+			int quadsDone = 0;
+			int quadsInBatch = 0;
+			int batchSize = ImMin( nonZero, kMaxQuadsPerBatch );
+			dl->PrimReserve( batchSize * 6, batchSize * 4 );
+			ImVec2 uv = dl->_Data->TexUvWhitePixel;
+
+			for ( int xb = 0; xb < data.Resolution; ++xb )
+			{
+				float sx0 = total_bb.Min.x + xb * binSize;
+				float sx1 = sx0 + binSize;
+
+				for ( int yb = 0; yb < data.Resolution; ++yb )
+				{
+					ImU32 count = data.Bins[ xb * data.Resolution + yb ];
+					if ( count == 0 )
+						continue;
+
+					// Y axis: higher Cr (higher yb) at top of screen
+					float sy1 = total_bb.Max.y - yb * binSize;
+					float sy0 = sy1 - binSize;
+
+					float alpha = ImLog( ( float )count + 1.0f ) / logPeak;
+					alpha = ImClamp( alpha, 0.06f, 1.0f ) * signalAlpha;
+					ImU8 a = ( ImU8 )( alpha * 255.0f );
+					ImU32 col = IM_COL32( sigR, sigG, sigB, a );
+
+					ImDrawIdx idx = ( ImDrawIdx )dl->_VtxCurrentIdx;
+					dl->PrimWriteIdx( idx ); dl->PrimWriteIdx( ( ImDrawIdx )( idx + 1 ) ); dl->PrimWriteIdx( ( ImDrawIdx )( idx + 2 ) );
+					dl->PrimWriteIdx( idx ); dl->PrimWriteIdx( ( ImDrawIdx )( idx + 2 ) ); dl->PrimWriteIdx( ( ImDrawIdx )( idx + 3 ) );
+					dl->PrimWriteVtx( ImVec2( sx0, sy0 ), uv, col );
+					dl->PrimWriteVtx( ImVec2( sx1, sy0 ), uv, col );
+					dl->PrimWriteVtx( ImVec2( sx1, sy1 ), uv, col );
+					dl->PrimWriteVtx( ImVec2( sx0, sy1 ), uv, col );
+
+					++quadsInBatch;
+					++quadsDone;
+
+					// Start new batch if needed
+					if ( quadsInBatch >= kMaxQuadsPerBatch && quadsDone < nonZero )
+					{
+						int remaining = nonZero - quadsDone;
+						batchSize = ImMin( remaining, kMaxQuadsPerBatch );
+						dl->PrimReserve( batchSize * 6, batchSize * 4 );
+						quadsInBatch = 0;
+					}
+				}
+			}
+		}
+
+		dl->PopClipRect();
+
+		// Border
+		dl->AddRect( total_bb.Min, total_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+
+		// Label
+		if ( label[ 0 ] != '#' || label[ 1 ] != '#' )
+			ImGui::RenderText( ImVec2( total_bb.Max.x + style.ItemInnerSpacing.x, total_bb.Min.y + style.FramePadding.y ), label );
+	}
+
 #if 0
 	// TODO
 	bool SliderRingScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, float v_angle_min, float v_angle_max, float v_thickness, const char* format, ImGuiSliderFlags flags, ImRect* out_grab_bb )
