@@ -10385,6 +10385,481 @@ namespace ImWidgets {
 			ImGui::RenderText( ImVec2( scope_bb.Max.x + style.ItemInnerSpacing.x, scope_bb.Min.y + style.FramePadding.y ), label );
 	}
 
+	// ========================================================================
+	// Tone Curve
+	// ========================================================================
+
+	int ToneCurveChannelCount( ImHistogramMode mode )
+	{
+		switch ( mode )
+		{
+		case ImHistogramMode_Luma:  return 1;
+		case ImHistogramMode_RGB:   return 3;
+		case ImHistogramMode_YRGB:  return 4;
+		case ImHistogramMode_YCbCr: return 3;
+		case ImHistogramMode_HSV:   return 3;
+		case ImHistogramMode_OkLCH: return 3;
+		default:                    return 3;
+		}
+	}
+
+	const char* ToneCurveChannelName( ImHistogramMode mode, int channel )
+	{
+		switch ( mode )
+		{
+		case ImHistogramMode_Luma:
+			return "Y";
+		case ImHistogramMode_RGB:
+		{
+			static char const* names[] = { "R", "G", "B" };
+			return ( channel >= 0 && channel < 3 ) ? names[ channel ] : "?";
+		}
+		case ImHistogramMode_YRGB:
+		{
+			static char const* names[] = { "Y", "R", "G", "B" };
+			return ( channel >= 0 && channel < 4 ) ? names[ channel ] : "?";
+		}
+		case ImHistogramMode_YCbCr:
+		{
+			static char const* names[] = { "Y", "Cb", "Cr" };
+			return ( channel >= 0 && channel < 3 ) ? names[ channel ] : "?";
+		}
+		case ImHistogramMode_HSV:
+		{
+			static char const* names[] = { "H", "S", "V" };
+			return ( channel >= 0 && channel < 3 ) ? names[ channel ] : "?";
+		}
+		case ImHistogramMode_OkLCH:
+		{
+			static char const* names[] = { "L", "C", "H" };
+			return ( channel >= 0 && channel < 3 ) ? names[ channel ] : "?";
+		}
+		default: return "?";
+		}
+	}
+
+	float ToneCurveSample( ImColorCurveData const& curve, float x )
+	{
+		int n = curve.Keys.Size;
+		if ( n == 0 ) return x; // identity
+		if ( n == 1 ) return curve.Keys[ 0 ].Value;
+
+		// Before first key: hold first value
+		if ( x <= curve.Keys[ 0 ].Position ) return curve.Keys[ 0 ].Value;
+		// After last key: hold last value
+		if ( x >= curve.Keys[ n - 1 ].Position ) return curve.Keys[ n - 1 ].Value;
+
+		// Find segment
+		int seg = 0;
+		for ( int i = 0; i < n - 1; ++i )
+		{
+			if ( x >= curve.Keys[ i ].Position && x < curve.Keys[ i + 1 ].Position )
+			{
+				seg = i;
+				break;
+			}
+		}
+
+		float span = curve.Keys[ seg + 1 ].Position - curve.Keys[ seg ].Position;
+		if ( span < 1e-6f ) return curve.Keys[ seg ].Value;
+
+		float t = ( x - curve.Keys[ seg ].Position ) / span;
+
+		float v1 = curve.Keys[ seg ].Value;
+		float v2 = curve.Keys[ seg + 1 ].Value;
+		float v0 = ( seg > 0 ) ? curve.Keys[ seg - 1 ].Value : ( 2.0f * v1 - v2 );
+		float v3 = ( seg + 2 < n ) ? curve.Keys[ seg + 2 ].Value : ( 2.0f * v2 - v1 );
+
+		return CatmullRom( v0, v1, v2, v3, t );
+	}
+
+	static ImVec2 ToneCurveToScreen( float pos, float val, ImRect const& bb )
+	{
+		float sx = ImLerp( bb.Min.x, bb.Max.x, pos );
+		float sy = ImLerp( bb.Max.y, bb.Min.y, val );
+		return ImVec2( sx, sy );
+	}
+
+	static ImVec2 ScreenToToneCurve( ImVec2 screenPos, ImRect const& bb )
+	{
+		float pos = ( screenPos.x - bb.Min.x ) / bb.GetWidth();
+		float val = 1.0f - ( screenPos.y - bb.Min.y ) / bb.GetHeight();
+		return ImVec2( pos, val );
+	}
+
+	static void ToneCurveGetChannelColors( ImHistogramMode mode, ImWidgetsStyle const& dwStyle, ImVec4* out, int maxChannels )
+	{
+		IM_UNUSED( maxChannels );
+		switch ( mode )
+		{
+		case ImHistogramMode_Luma:
+			out[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelLuma ];
+			break;
+		case ImHistogramMode_RGB:
+			out[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelR ];
+			out[ 1 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelG ];
+			out[ 2 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelB ];
+			break;
+		case ImHistogramMode_YRGB:
+			out[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelLuma ];
+			out[ 1 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelR ];
+			out[ 2 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelG ];
+			out[ 3 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelB ];
+			break;
+		case ImHistogramMode_YCbCr:
+			out[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelLuma ];
+			out[ 1 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelCb ];
+			out[ 2 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelCr ];
+			break;
+		case ImHistogramMode_HSV:
+			out[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelH ];
+			out[ 1 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelS ];
+			out[ 2 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelV ];
+			break;
+		case ImHistogramMode_OkLCH:
+			out[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelOkL ];
+			out[ 1 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelOkC ];
+			out[ 2 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelOkH ];
+			break;
+		default: break;
+		}
+	}
+
+	bool ToneCurve( char const* label, ImToneCurveData* curve, ImHistogramMode mode, ImHistogramData const* histogramOverlay, ImVec2 size )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		ImGuiStyle const& style = g.Style;
+		ImWidgetsStyle const& dwStyle = GetStyle();
+		ImGuiID const id = window->GetID( label );
+
+		int channelCount = ToneCurveChannelCount( mode );
+		int active = ImClamp( curve->ActiveChannel, 0, channelCount - 1 );
+
+		float gradMarginL = dwStyle.ToneCurve_GradMarginLeft;
+		float gradMarginB = dwStyle.ToneCurve_GradMarginBottom;
+
+		if ( size.x <= 0.0f ) size.x = ImGui::GetContentRegionAvail().x;
+		if ( size.y <= 0.0f ) size.y = ( size.x - gradMarginL ) + gradMarginB; // 1:1 scope area
+
+		ImRect const total_bb( window->DC.CursorPos, window->DC.CursorPos + size );
+		ImRect const scope_bb( ImVec2( total_bb.Min.x + gradMarginL, total_bb.Min.y ),
+							   ImVec2( total_bb.Max.x, total_bb.Max.y - gradMarginB ) );
+
+		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
+
+		ImGui::ItemSize( total_bb, style.FramePadding.y );
+		if ( !ImGui::ItemAdd( total_bb, id, &total_bb, 0 ) )
+			return false;
+
+		bool const hovered = ImGui::ItemHoverable( total_bb, id, g.LastItemData.ItemFlags );
+		bool value_changed = false;
+
+		float keyRadius = dwStyle.ToneCurve_KeyRadius;
+		float lineThick = dwStyle.ToneCurve_LineThickness;
+		float hitRadius = keyRadius * 1.6f;
+		float scopeW = scope_bb.GetWidth();
+		float scopeH = scope_bb.GetHeight();
+
+		ImDrawList* dl = window->DrawList;
+
+		ImColorCurveData& activeCurve = curve->Channels[ active ];
+
+		// --- HIT TESTING (active channel only) ---
+		bool frame_contains_mouse = scope_bb.Contains( g.IO.MousePos );
+
+		int hovered_key = -1;
+		float closest_dist_sq = hitRadius * hitRadius;
+		for ( int i = 0; i < activeCurve.Keys.Size; ++i )
+		{
+			ImVec2 kScreen = ToneCurveToScreen( activeCurve.Keys[ i ].Position, activeCurve.Keys[ i ].Value, scope_bb );
+			float dSq = ImLengthSqr( g.IO.MousePos - kScreen );
+			if ( dSq < closest_dist_sq )
+			{
+				closest_dist_sq = dSq;
+				hovered_key = i;
+			}
+		}
+
+		// --- DRAWING ---
+
+		// Background
+		ImU32 bgCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ToneCurve_Background ] );
+		dl->AddRectFilled( scope_bb.Min, scope_bb.Max, bgCol );
+
+		dl->PushClipRect( scope_bb.Min, scope_bb.Max, true );
+
+		// Optional histogram overlay
+		if ( histogramOverlay && histogramOverlay->BinCount > 0 && histogramOverlay->PeakCount > 0 )
+		{
+			int binCount = histogramOverlay->BinCount;
+			int chCount = histogramOverlay->ChannelCount;
+			float invPeak = 1.0f / ( float )histogramOverlay->PeakCount;
+
+			ImVec4 histChColors[ 4 ];
+			ToneCurveGetChannelColors( histogramOverlay->Mode, dwStyle, histChColors, 4 );
+
+			for ( int ch = 0; ch < chCount; ++ch )
+			{
+				ImU32 const* bins = histogramOverlay->Bins.Data + ch * binCount;
+				ImVec4 cf = histChColors[ ch ];
+				ImU32 histCol = IM_COL32( ( ImU8 )( cf.x * 255 ), ( ImU8 )( cf.y * 255 ), ( ImU8 )( cf.z * 255 ), 40 );
+
+				for ( int i = 0; i < binCount; ++i )
+				{
+					float t0 = ( float )i / ( float )binCount;
+					float t1 = ( float )( i + 1 ) / ( float )binCount;
+					float barH = ( float )bins[ i ] * invPeak;
+
+					ImVec2 rMin( scope_bb.Min.x + t0 * scopeW, scope_bb.Max.y - barH * scopeH );
+					ImVec2 rMax( scope_bb.Min.x + t1 * scopeW, scope_bb.Max.y );
+					dl->AddRectFilled( rMin, rMax, histCol );
+				}
+			}
+		}
+
+		// Grid
+		{
+			ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ToneCurve_Grid ] );
+			int gridDiv = 4;
+			for ( int i = 1; i < gridDiv; ++i )
+			{
+				float t = ( float )i / ( float )gridDiv;
+				float sx = scope_bb.Min.x + t * scopeW;
+				float sy = scope_bb.Min.y + t * scopeH;
+				dl->AddLine( ImVec2( sx, scope_bb.Min.y ), ImVec2( sx, scope_bb.Max.y ), gridCol );
+				dl->AddLine( ImVec2( scope_bb.Min.x, sy ), ImVec2( scope_bb.Max.x, sy ), gridCol );
+			}
+		}
+
+		// Identity / neutral diagonal line
+		{
+			ImU32 neutralCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ToneCurve_NeutralLine ] );
+			dl->AddLine( ImVec2( scope_bb.Min.x, scope_bb.Max.y ), ImVec2( scope_bb.Max.x, scope_bb.Min.y ), neutralCol, 1.0f );
+		}
+
+		// Channel colors
+		ImVec4 channelColorsF[ 4 ];
+		ToneCurveGetChannelColors( mode, dwStyle, channelColorsF, 4 );
+
+		// Draw all channel curves
+		int sampleCount = ( int )( scopeW * 0.5f );
+		if ( sampleCount < 64 ) sampleCount = 64;
+
+		for ( int ch = 0; ch < channelCount; ++ch )
+		{
+			ImColorCurveData const& chCurve = curve->Channels[ ch ];
+			float alpha = ( ch == active ) ? 1.0f : 0.35f;
+			float thick = ( ch == active ) ? lineThick : lineThick * 0.6f;
+
+			ImVec4 cf = channelColorsF[ ch ];
+			cf.w = alpha;
+			ImU32 curveCol = ImGui::GetColorU32( cf );
+
+			ImVec2 prev = ToneCurveToScreen( 0.0f, ToneCurveSample( chCurve, 0.0f ), scope_bb );
+
+			for ( int s = 1; s <= sampleCount; ++s )
+			{
+				float t = ( float )s / ( float )sampleCount;
+				float val = ToneCurveSample( chCurve, t );
+				ImVec2 cur = ToneCurveToScreen( t, val, scope_bb );
+				dl->AddLine( prev, cur, curveCol, thick );
+				prev = cur;
+			}
+		}
+
+		// Keys (active channel only)
+		{
+			ImVec4 cf = channelColorsF[ active ];
+			ImU32 keyCol = ImGui::GetColorU32( cf );
+			ImU32 outCol = IM_COL32( 0, 0, 0, 200 );
+			ImU32 selCol = IM_COL32( 255, 255, 255, 255 );
+
+			for ( int i = 0; i < activeCurve.Keys.Size; ++i )
+			{
+				ImVec2 kScreen = ToneCurveToScreen( activeCurve.Keys[ i ].Position, activeCurve.Keys[ i ].Value, scope_bb );
+				bool isSelected = ( i == activeCurve.SelectedIdx );
+				bool isHovered = ( i == hovered_key );
+				float radius = isHovered ? keyRadius + 2.0f : keyRadius;
+
+				dl->AddCircleFilled( kScreen, radius, isSelected ? selCol : keyCol );
+				dl->AddCircle( kScreen, radius, outCol, 0, isSelected ? 2.0f : 1.5f );
+			}
+		}
+
+		// Hover feedback
+		if ( hovered && frame_contains_mouse && g.ActiveId != id )
+		{
+			if ( hovered_key >= 0 )
+			{
+				ImGui::SetMouseCursor( ImGuiMouseCursor_Hand );
+			}
+			else
+			{
+				ImVec2 mp = g.IO.MousePos;
+				ImU32 crossCol = IM_COL32( 255, 255, 255, 50 );
+				dl->AddLine( ImVec2( mp.x, scope_bb.Min.y ), ImVec2( mp.x, scope_bb.Max.y ), crossCol );
+				dl->AddLine( ImVec2( scope_bb.Min.x, mp.y ), ImVec2( scope_bb.Max.x, mp.y ), crossCol );
+			}
+		}
+
+		dl->PopClipRect();
+
+		// Gradient bands (input/output axis indicators)
+		{
+			float bandThick = dwStyle.ToneCurve_BandThickness;
+			float bandGap = dwStyle.ToneCurve_BandGap;
+			int bandDiv = 32;
+
+			auto grayscaleFunc = []( float t, void* ) -> ImU32
+			{
+				ImU8 v = ( ImU8 )( ImClamp( t, 0.0f, 1.0f ) * 255.0f );
+				return IM_COL32( v, v, v, 255 );
+			};
+
+			// X axis: horizontal black-to-white band (input)
+			DrawProceduralColor1DBilinear( dl, grayscaleFunc, nullptr, 0.0f, 1.0f,
+				ImVec2( scope_bb.Min.x, scope_bb.Max.y + bandGap ), ImVec2( scopeW, bandThick ), bandDiv );
+
+			// Y axis: vertical black-to-white band (output, black at bottom, white at top)
+			// DrawProceduralColor1DBilinear is horizontal-only, so draw vertically with manual segments
+			float bandRight = scope_bb.Min.x - bandGap;
+			float segH = scopeH / ( float )bandDiv;
+			for ( int i = 0; i < bandDiv; ++i )
+			{
+				float t0 = 1.0f - ( float )i / ( float )bandDiv;
+				float t1 = 1.0f - ( float )( i + 1 ) / ( float )bandDiv;
+				ImU32 c0 = grayscaleFunc( t0, nullptr );
+				ImU32 c1 = grayscaleFunc( t1, nullptr );
+				ImVec2 rMin( bandRight - bandThick, scope_bb.Min.y + segH * i );
+				ImVec2 rMax( bandRight, scope_bb.Min.y + segH * ( i + 1 ) );
+				dl->AddRectFilledMultiColor( rMin, rMax, c0, c0, c1, c1 );
+			}
+		}
+
+		// Border
+		dl->AddRect( scope_bb.Min, scope_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+
+		// Label
+		if ( label[ 0 ] != '#' || label[ 1 ] != '#' )
+			ImGui::RenderText( ImVec2( total_bb.Max.x + style.ItemInnerSpacing.x, total_bb.Min.y + style.FramePadding.y ), label );
+
+		// --- INTERACTIONS (active channel only) ---
+		ImGui::PushID( id );
+
+		// Click on key: select and start drag
+		if ( hovered_key >= 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
+		{
+			activeCurve.SelectedIdx = hovered_key;
+			ImGui::SetActiveID( id, window );
+			ImGui::SetFocusID( id, window );
+			ImGui::FocusWindow( window );
+			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+		}
+		// Click on empty area: add key
+		else if ( hovered_key == -1 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
+		{
+			ImVec2 curvePos = ScreenToToneCurve( g.IO.MousePos, scope_bb );
+			float pos = ImClamp( curvePos.x, 0.0f, 1.0f );
+			float val = ImClamp( curvePos.y, 0.0f, 1.0f );
+			int newIdx = activeCurve.AddKey( pos, val );
+			activeCurve.SelectedIdx = newIdx;
+			value_changed = true;
+			ImGui::SetActiveID( id, window );
+			ImGui::SetFocusID( id, window );
+			ImGui::FocusWindow( window );
+			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+		}
+
+		// Drag
+		if ( g.ActiveId == id && ImGui::IsMouseDragging( ImGuiMouseButton_Left ) && activeCurve.SelectedIdx >= 0 && activeCurve.SelectedIdx < activeCurve.Keys.Size )
+		{
+			ImVec2 curvePos = ScreenToToneCurve( g.IO.MousePos, scope_bb );
+
+			float newPos = ImClamp( curvePos.x, 0.0f, 1.0f );
+			float newVal = ImClamp( curvePos.y, 0.0f, 1.0f );
+
+			activeCurve.Keys[ activeCurve.SelectedIdx ].Position = newPos;
+			activeCurve.Keys[ activeCurve.SelectedIdx ].Value = newVal;
+			activeCurve.SortKeys();
+
+			// Re-find selected after sort
+			for ( int i = 0; i < activeCurve.Keys.Size; ++i )
+			{
+				if ( activeCurve.Keys[ i ].Position == newPos && activeCurve.Keys[ i ].Value == newVal )
+				{
+					activeCurve.SelectedIdx = i;
+					break;
+				}
+			}
+
+			value_changed = true;
+
+			// Drag far outside: delete
+			if ( ( g.IO.MousePos.y > scope_bb.Max.y + 30.0f || g.IO.MousePos.y < scope_bb.Min.y - 30.0f ) && activeCurve.Keys.Size > 0 )
+			{
+				activeCurve.RemoveKey( activeCurve.SelectedIdx );
+				activeCurve.SelectedIdx = -1;
+				ImGui::ClearActiveID();
+				value_changed = true;
+			}
+		}
+
+		// Release
+		if ( g.ActiveId == id && ImGui::IsMouseReleased( ImGuiMouseButton_Left ) )
+			ImGui::ClearActiveID();
+
+		// Right-click context menu
+		if ( hovered_key >= 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) && hovered && frame_contains_mouse )
+		{
+			activeCurve.SelectedIdx = hovered_key;
+			ImGui::OpenPopup( "##ToneCurveCtx" );
+		}
+
+		if ( ImGui::BeginPopup( "##ToneCurveCtx" ) )
+		{
+			if ( activeCurve.SelectedIdx >= 0 && activeCurve.SelectedIdx < activeCurve.Keys.Size )
+			{
+				ImGui::Text( "Key %d: in=%.3f out=%.3f", activeCurve.SelectedIdx,
+					activeCurve.Keys[ activeCurve.SelectedIdx ].Position,
+					activeCurve.Keys[ activeCurve.SelectedIdx ].Value );
+				ImGui::Separator();
+				if ( ImGui::MenuItem( "Reset to Identity" ) )
+				{
+					activeCurve.Keys[ activeCurve.SelectedIdx ].Value = activeCurve.Keys[ activeCurve.SelectedIdx ].Position;
+					value_changed = true;
+				}
+				if ( ImGui::MenuItem( "Remove Key" ) )
+				{
+					activeCurve.RemoveKey( activeCurve.SelectedIdx );
+					activeCurve.SelectedIdx = -1;
+					value_changed = true;
+				}
+			}
+			ImGui::EndPopup();
+		}
+
+		// Delete key
+		if ( activeCurve.SelectedIdx >= 0 && ImGui::IsKeyPressed( ImGuiKey_Delete ) && hovered )
+		{
+			if ( activeCurve.RemoveKey( activeCurve.SelectedIdx ) )
+			{
+				activeCurve.SelectedIdx = -1;
+				value_changed = true;
+			}
+		}
+
+		ImGui::PopID();
+
+		if ( value_changed )
+			ImGui::MarkItemEdited( id );
+
+		return value_changed;
+	}
+
 #if 0
 	// TODO
 	bool SliderRingScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, float v_angle_min, float v_angle_max, float v_thickness, const char* format, ImGuiSliderFlags flags, ImRect* out_grab_bb )

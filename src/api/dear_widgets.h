@@ -310,6 +310,13 @@ enum ImWidgetsStyleColor
 	StyleColor_CIEChromaticity_GradTick,
 	StyleColor_CIEChromaticity_GradLabel,
 
+	// Tone Curve
+	StyleColor_ToneCurve_Background,
+	StyleColor_ToneCurve_Grid,
+	StyleColor_ToneCurve_NeutralLine,
+	StyleColor_ToneCurve_GradTick,
+	StyleColor_ToneCurve_GradLabel,
+
 	StyleColor_Count
 };
 
@@ -380,6 +387,15 @@ enum ImWidgetsStyleVar
 	StyleVar_CIEChromaticity_WhitePointRadius,
 	StyleVar_CIEChromaticity_GradMargin,
 	StyleVar_CIEChromaticity_SignalAlpha,
+
+	// Tone Curve
+	StyleVar_ToneCurve_DefaultHeight,
+	StyleVar_ToneCurve_KeyRadius,
+	StyleVar_ToneCurve_LineThickness,
+	StyleVar_ToneCurve_GradMarginLeft,
+	StyleVar_ToneCurve_GradMarginBottom,
+	StyleVar_ToneCurve_BandThickness,
+	StyleVar_ToneCurve_BandGap,
 
 	StyleVar_Count
 };
@@ -452,6 +468,15 @@ struct ImWidgetsStyle
 	float	CIEChromaticity_GradMargin;			// Margin for graduation labels (px)
 	float	CIEChromaticity_SignalAlpha;			// Signal point alpha (0..1)
 
+	// Tone Curve
+	float	ToneCurve_DefaultHeight;			// Default widget height (px)
+	float	ToneCurve_KeyRadius;				// Key dot radius (px)
+	float	ToneCurve_LineThickness;			// Curve line thickness (px)
+	float	ToneCurve_GradMarginLeft;			// Left margin for Y-axis labels (px)
+	float	ToneCurve_GradMarginBottom;			// Bottom margin for X-axis labels (px)
+	float	ToneCurve_BandThickness;			// Gradient band thickness (px)
+	float	ToneCurve_BandGap;					// Gap between scope and band (px)
+
 	ImVec4  Colors[ StyleColor_Count ];
 
 	ImWidgetsStyle()
@@ -519,6 +544,15 @@ struct ImWidgetsStyle
 		CIEChromaticity_WhitePointRadius   = 4.0f;
 		CIEChromaticity_GradMargin         = 30.0f;
 		CIEChromaticity_SignalAlpha        = 0.6f;
+
+		// Tone Curve
+		ToneCurve_DefaultHeight     = 200.0f;
+		ToneCurve_KeyRadius         = 5.0f;
+		ToneCurve_LineThickness     = 2.0f;
+		ToneCurve_GradMarginLeft    = 30.0f;
+		ToneCurve_GradMarginBottom  = 20.0f;
+		ToneCurve_BandThickness     = 8.0f;
+		ToneCurve_BandGap           = 2.0f;
 
 		Colors[ StyleColor_Value ] = ImVec4( 1.0f, 0.0f, 0.0f, 1.0f );
 		Colors[ StyleColor_Slider2D_CursorX ] = ImVec4( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f ); // Blue
@@ -605,6 +639,13 @@ struct ImWidgetsStyle
 		Colors[ StyleColor_CIEChromaticity_WhitePoint ]     = ImVec4( 1.0f, 1.0f, 1.0f, 0.9f );
 		Colors[ StyleColor_CIEChromaticity_GradTick ]       = ImVec4( 1.0f, 1.0f, 1.0f, 0.4f );
 		Colors[ StyleColor_CIEChromaticity_GradLabel ]      = ImVec4( 1.0f, 1.0f, 1.0f, 0.7f );
+
+		// Tone Curve Colors
+		Colors[ StyleColor_ToneCurve_Background ]           = ImVec4( 0.06f, 0.06f, 0.06f, 1.0f );
+		Colors[ StyleColor_ToneCurve_Grid ]                 = ImVec4( 1.0f, 1.0f, 1.0f, 0.12f );
+		Colors[ StyleColor_ToneCurve_NeutralLine ]          = ImVec4( 0.5f, 0.5f, 0.5f, 0.5f );
+		Colors[ StyleColor_ToneCurve_GradTick ]             = ImVec4( 1.0f, 1.0f, 1.0f, 0.4f );
+		Colors[ StyleColor_ToneCurve_GradLabel ]            = ImVec4( 1.0f, 1.0f, 1.0f, 0.7f );
 	}
 
 	void ScaleAllSizes( float scale_factor )
@@ -658,6 +699,14 @@ struct ImWidgetsStyle
 		CIEChromaticity_GamutLineThickness = ImTrunc( CIEChromaticity_GamutLineThickness * scale_factor );
 		CIEChromaticity_WhitePointRadius   = ImTrunc( CIEChromaticity_WhitePointRadius * scale_factor );
 		CIEChromaticity_GradMargin         = ImTrunc( CIEChromaticity_GradMargin * scale_factor );
+
+		ToneCurve_DefaultHeight     = ImTrunc( ToneCurve_DefaultHeight * scale_factor );
+		ToneCurve_KeyRadius         = ImTrunc( ToneCurve_KeyRadius * scale_factor );
+		ToneCurve_LineThickness     = ImTrunc( ToneCurve_LineThickness * scale_factor );
+		ToneCurve_GradMarginLeft    = ImTrunc( ToneCurve_GradMarginLeft * scale_factor );
+		ToneCurve_GradMarginBottom  = ImTrunc( ToneCurve_GradMarginBottom * scale_factor );
+		ToneCurve_BandThickness     = ImTrunc( ToneCurve_BandThickness * scale_factor );
+		ToneCurve_BandGap           = ImTrunc( ToneCurve_BandGap * scale_factor );
 	}
 
 	void PushColor( ImWidgetsStyleColor colorIndex, const ImVec4& color )
@@ -839,6 +888,13 @@ private:
 		case StyleVar_CIEChromaticity_WhitePointRadius:	return &CIEChromaticity_WhitePointRadius;
 		case StyleVar_CIEChromaticity_GradMargin:		return &CIEChromaticity_GradMargin;
 		case StyleVar_CIEChromaticity_SignalAlpha:		return &CIEChromaticity_SignalAlpha;
+		case StyleVar_ToneCurve_DefaultHeight:			return &ToneCurve_DefaultHeight;
+		case StyleVar_ToneCurve_KeyRadius:				return &ToneCurve_KeyRadius;
+		case StyleVar_ToneCurve_LineThickness:			return &ToneCurve_LineThickness;
+		case StyleVar_ToneCurve_GradMarginLeft:			return &ToneCurve_GradMarginLeft;
+		case StyleVar_ToneCurve_GradMarginBottom:		return &ToneCurve_GradMarginBottom;
+		case StyleVar_ToneCurve_BandThickness:			return &ToneCurve_BandThickness;
+		case StyleVar_ToneCurve_BandGap:				return &ToneCurve_BandGap;
 		default:										return nullptr;
 		}
 	}
@@ -1487,6 +1543,36 @@ struct ImCIEChromaticityData
 	void Accumulate( void const* data, int width, int height, int channels,
 					 ImParadeBitDepth bitDepth, ImParadeLayout layout,
 					 int maxSamples = 50000 );
+};
+
+// ---- Tone Curve ----
+
+struct ImToneCurveData
+{
+	ImColorCurveData	Channels[ 4 ];	// Per-channel curves (up to 4)
+	int					ActiveChannel;	// Which channel is being edited (0..N-1)
+
+	ImToneCurveData() : ActiveChannel( 0 )
+	{
+		for ( int i = 0; i < 4; ++i )
+		{
+			Channels[ i ].AddKey( 0.0f, 0.0f );
+			Channels[ i ].AddKey( 1.0f, 1.0f );
+		}
+	}
+
+	void Reset( int channelCount )
+	{
+		IM_UNUSED( channelCount );
+		for ( int i = 0; i < 4; ++i )
+		{
+			Channels[ i ].Keys.clear();
+			Channels[ i ].SelectedIdx = -1;
+			Channels[ i ].AddKey( 0.0f, 0.0f );
+			Channels[ i ].AddKey( 1.0f, 1.0f );
+		}
+		ActiveChannel = 0;
+	}
 };
 
 struct ImGlobalData
@@ -2167,6 +2253,11 @@ namespace ImWidgets{
 
 	IMGUI_API const char* CIEChromaticityGamutName( ImCIEChromaticityGamut gamut );
 	IMGUI_API void  CIEChromaticity( char const* label, ImCIEChromaticityData const& data, ImCIEChromaticityGamut gamut = ImCIEChromaticityGamut_sRGB_Rec709, bool showBackground = false, ImCIEChromaticitySignalColor signalColor = ImCIEChromaticitySignalColor_Flat, ImVec2 size = ImVec2( 0, 0 ) );
+
+	IMGUI_API int   ToneCurveChannelCount( ImHistogramMode mode );
+	IMGUI_API const char* ToneCurveChannelName( ImHistogramMode mode, int channel );
+	IMGUI_API float ToneCurveSample( ImColorCurveData const& curve, float x );
+	IMGUI_API bool  ToneCurve( char const* label, ImToneCurveData* curve, ImHistogramMode mode, ImHistogramData const* histogramOverlay = NULL, ImVec2 size = ImVec2( 0, 0 ) );
 
 	//IMGUI_API bool SliderRingScalar( char const* name,
 	//								 ImGuiDataType data_type,

@@ -3199,6 +3199,193 @@ namespace ImWidgets {
 					ImGui::TextDisabled( "Failed to load image" );
 			}
 
+			if ( ImGui::CollapsingHeader( "Tone Curve", ImGuiTreeNodeFlags_DefaultOpen ) )
+			{
+				static ImToneCurveData tcData;
+				static ImHistogramData tcHistData;
+				static int tcMode = ImHistogramMode_RGB;
+				static int tcSource = 4;
+				static bool tcNeedsUpdate = true;
+				static bool tcShowHistogram = true;
+				static stbi_uc* tcImgData = NULL;
+				static int tcImgW = 0;
+				static int tcImgH = 0;
+				static int tcImgCh = 0;
+				static ImTextureID tcThumbnail = ImTextureID_Invalid;
+				static ImVec2 tcThumbnailSize( 0, 0 );
+
+				bool sourceChanged = ImGui::Combo( "Source##TC", &tcSource,
+					"Color Bars\0Gradient Ramp\0Random Noise\0"
+					"Berries (photo)\0Interior (photo)\0Man (photo)\0Astronaut (photo)\0" );
+				bool modeChanged = ImGui::Combo( "Mode##TC", &tcMode, "Luminance\0RGB\0YRGB\0YCbCr\0HSV\0OkLCH\0" );
+				ImGui::Checkbox( "Show Histogram##TC", &tcShowHistogram );
+
+				// Channel selector buttons
+				{
+					int channelCount = ImWidgets::ToneCurveChannelCount( ( ImHistogramMode )tcMode );
+					for ( int ch = 0; ch < channelCount; ++ch )
+					{
+						if ( ch > 0 ) ImGui::SameLine();
+						bool isActive = ( tcData.ActiveChannel == ch );
+						if ( isActive )
+							ImGui::PushStyleColor( ImGuiCol_Button, ImGui::GetStyleColorVec4( ImGuiCol_ButtonActive ) );
+						char btnLabel[ 16 ];
+						ImFormatString( btnLabel, sizeof( btnLabel ), "%s##TC_ch", ImWidgets::ToneCurveChannelName( ( ImHistogramMode )tcMode, ch ) );
+						if ( ImGui::Button( btnLabel ) )
+							tcData.ActiveChannel = ch;
+						if ( isActive )
+							ImGui::PopStyleColor();
+					}
+				}
+
+				if ( sourceChanged || modeChanged )
+					tcNeedsUpdate = true;
+
+				if ( modeChanged )
+					tcData.Reset( ImWidgets::ToneCurveChannelCount( ( ImHistogramMode )tcMode ) );
+
+				if ( tcNeedsUpdate )
+				{
+					if ( tcImgData )
+					{
+						STBI_FREE( tcImgData );
+						tcImgData = NULL;
+					}
+					if ( tcThumbnail != ImTextureID_Invalid )
+					{
+						ImPlatform_DestroyTexture( tcThumbnail );
+						tcThumbnail = ImTextureID_Invalid;
+					}
+
+					static int const kTestW = 1920;
+					static int const kTestH = 1080;
+					static ImVector<ImU8> testImage;
+
+					if ( tcSource <= 2 )
+					{
+						testImage.resize( kTestW * kTestH * 3 );
+						ImU32 rng = 0xDEADBEEFu;
+
+						if ( tcSource == 0 )
+						{
+							static ImU8 const bars[ 7 ][ 3 ] = {
+								{ 191, 191, 191 }, { 191, 191,  17 }, {  17, 191, 191 }, {  17, 191,  17 },
+								{ 191,  17, 191 }, { 191,  17,  17 }, {  17,  17, 191 }
+							};
+							for ( int y = 0; y < kTestH; ++y )
+							{
+								for ( int x = 0; x < kTestW; ++x )
+								{
+									int barIdx = x * 7 / kTestW;
+									int off = ( y * kTestW + x ) * 3;
+									rng = rng * 1664525u + 1013904223u;
+									int noise = ( int )( rng >> 28 ) - 8;
+									testImage[ off + 0 ] = ( ImU8 )ImClamp( bars[ barIdx ][ 0 ] + noise, 0, 255 );
+									testImage[ off + 1 ] = ( ImU8 )ImClamp( bars[ barIdx ][ 1 ] + noise, 0, 255 );
+									testImage[ off + 2 ] = ( ImU8 )ImClamp( bars[ barIdx ][ 2 ] + noise, 0, 255 );
+								}
+							}
+						}
+						else if ( tcSource == 1 )
+						{
+							for ( int y = 0; y < kTestH; ++y )
+							{
+								for ( int x = 0; x < kTestW; ++x )
+								{
+									float t = ( float )x / ( float )( kTestW - 1 );
+									int off = ( y * kTestW + x ) * 3;
+									int third = y * 3 / kTestH;
+									rng = rng * 1664525u + 1013904223u;
+									int noise = ( int )( rng >> 29 ) - 4;
+									testImage[ off + 0 ] = ( ImU8 )ImClamp( ( third == 0 ? ( int )( t * 255.0f ) : 0 ) + noise, 0, 255 );
+									testImage[ off + 1 ] = ( ImU8 )ImClamp( ( third == 1 ? ( int )( t * 255.0f ) : 0 ) + noise, 0, 255 );
+									testImage[ off + 2 ] = ( ImU8 )ImClamp( ( third == 2 ? ( int )( t * 255.0f ) : 0 ) + noise, 0, 255 );
+								}
+							}
+						}
+						else
+						{
+							for ( int i = 0; i < kTestW * kTestH * 3; ++i )
+							{
+								rng = rng * 1664525u + 1013904223u;
+								testImage[ i ] = ( ImU8 )( rng >> 24 );
+							}
+						}
+
+						tcHistData.Accumulate( testImage.Data, kTestW, kTestH, 3,
+							ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved, ( ImHistogramMode )tcMode,
+							256, 500000 );
+
+						// Create thumbnail texture (RGB -> RGBA)
+						{
+							static ImVector<ImU8> rgba;
+							rgba.resize( kTestW * kTestH * 4 );
+							for ( int i = 0; i < kTestW * kTestH; ++i )
+							{
+								rgba[ i * 4 + 0 ] = testImage[ i * 3 + 0 ];
+								rgba[ i * 4 + 1 ] = testImage[ i * 3 + 1 ];
+								rgba[ i * 4 + 2 ] = testImage[ i * 3 + 2 ];
+								rgba[ i * 4 + 3 ] = 255;
+							}
+							ImPlatform_TextureDesc td = ImPlatform_TextureDesc_Default( kTestW, kTestH );
+							tcThumbnail = ImPlatform_CreateTexture( rgba.Data, &td );
+							tcThumbnailSize = ImVec2( ( float )kTestW, ( float )kTestH );
+						}
+					}
+					else
+					{
+						char const* filenames[] = {
+							"pexels-robert-bogdan-156165-1152351.jpg",
+							"pexels-fotoaibe-1571453.jpg",
+							"man.png",
+							"astro.png"
+						};
+						int fileIdx = tcSource - 3;
+						tcImgData = stbi_load( filenames[ fileIdx ], &tcImgW, &tcImgH, &tcImgCh, 0 );
+						if ( tcImgData )
+						{
+							int ch = ( tcImgCh >= 3 ) ? tcImgCh : 3;
+							tcHistData.Accumulate( tcImgData, tcImgW, tcImgH, ch,
+								ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved, ( ImHistogramMode )tcMode,
+								256, 1000000 );
+						}
+					}
+
+					tcNeedsUpdate = false;
+				}
+
+				// Thumbnail
+				{
+					ImTextureID thumbTex = ImTextureID_Invalid;
+					ImVec2 thumbSize( 0, 0 );
+					if ( tcSource <= 2 && tcThumbnail != ImTextureID_Invalid )
+					{
+						thumbTex = tcThumbnail;
+						thumbSize = tcThumbnailSize;
+					}
+					else if ( tcSource == 3 ) { thumbTex = illlustration_img; thumbSize = illlustration_size; }
+					else if ( tcSource == 4 ) { thumbTex = background;        thumbSize = background_size; }
+					else if ( tcSource == 5 ) { thumbTex = man_img;           thumbSize = man_size; }
+					else if ( tcSource == 6 ) { thumbTex = astro_img;         thumbSize = astro_size; }
+					if ( thumbTex != ImTextureID_Invalid && thumbSize.x > 0.0f )
+					{
+						float thumbH = 120.0f;
+						float thumbW = thumbH * thumbSize.x / thumbSize.y;
+						ImGui::Image( thumbTex, ImVec2( thumbW, thumbH ) );
+					}
+				}
+
+				ImHistogramData const* histPtr = ( tcShowHistogram && tcHistData.BinCount > 0 ) ? &tcHistData : NULL;
+				ImWidgets::ToneCurve( "##ToneCurveMain", &tcData, ( ImHistogramMode )tcMode, histPtr );
+				if ( tcSource <= 2 )
+					ImGui::Text( "Source: 1920x1080 (generated)" );
+				else if ( tcImgData )
+					ImGui::Text( "Source: %dx%d (%d ch)", tcImgW, tcImgH, tcImgCh );
+				else
+					ImGui::TextDisabled( "Failed to load image" );
+				ImGui::TextWrapped( "Click to add key. Drag to move. Drag far outside to delete. Right-click for options." );
+			}
+
 			if ( ImGui::CollapsingHeader( "Color Wheel", ImGuiTreeNodeFlags_DefaultOpen ) )
 			{
 				static ImVec4 wheelColor( 0.8f, 0.2f, 0.3f, 1.0f );
