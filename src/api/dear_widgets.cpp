@@ -7996,7 +7996,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const ImGuiID id = window->GetID( label );
 
 		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
-		const float sliderHeight = ImGui::GetFrameHeight();
+		const float sliderHeight = dwStyle.ColorWheel_SliderHeight;
 		const float spacing = style.ItemInnerSpacing.y;
 		const float discDiameter = w;
 		const float discRadius = discDiameter * 0.5f;
@@ -8071,7 +8071,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Outer hue ring
 		if ( ringThick > 0.0f )
 		{
-			int ringDivs = 64;
+			int ringDivs = 128;
 			float ringAngleStep = 2.0f * IM_PI / ( float )ringDivs;
 			ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
 			dl->PrimReserve( ringDivs * 6, ringDivs * 4 );
@@ -8122,24 +8122,47 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 
 		// Color disc
-		DrawColorDisc( dl, discCenter, innerDiscRadius, mode, thirdAxis, 64, 16 );
+		DrawColorDisc( dl, discCenter, innerDiscRadius, mode, thirdAxis, ( int )dwStyle.ColorWheel_DiscSectors, ( int )dwStyle.ColorWheel_DiscRings );
 
 		// Disc outline
 		dl->AddCircle( discCenter, discRadius, ImGui::GetColorU32( ImGuiCol_Border ) );
 		if ( ringThick > 0.0f )
 			dl->AddCircle( discCenter, innerDiscRadius, ImGui::GetColorU32( ImGuiCol_Border ), 0, 0.5f );
 
-		// Control dot
+		// Crosshair guide lines from dot to disc edges
+		{
+			ImU32 crossCol = IM_COL32( 255, 255, 255, 40 );
+			// Horizontal line through dot
+			float clampY = ImClamp( dotPos.y, discCenter.y - innerDiscRadius, discCenter.y + innerDiscRadius );
+			float halfChord = ImSqrt( ImMax( innerDiscRadius * innerDiscRadius - ( clampY - discCenter.y ) * ( clampY - discCenter.y ), 0.0f ) );
+			dl->AddLine( ImVec2( discCenter.x - halfChord, dotPos.y ), ImVec2( discCenter.x + halfChord, dotPos.y ), crossCol );
+			// Vertical line through dot
+			float clampX = ImClamp( dotPos.x, discCenter.x - innerDiscRadius, discCenter.x + innerDiscRadius );
+			float halfChordV = ImSqrt( ImMax( innerDiscRadius * innerDiscRadius - ( clampX - discCenter.x ) * ( clampX - discCenter.x ), 0.0f ) );
+			dl->AddLine( ImVec2( dotPos.x, discCenter.y - halfChordV ), ImVec2( dotPos.x, discCenter.y + halfChordV ), crossCol );
+		}
+
+		// Control dot (filled with current color)
 		bool isDraggingDisc = ( g.ActiveId == id && *pDragMode == 1 );
 		ImU32 dotOutCol = ImGui::GetColorU32( dwStyle.Colors[ isDraggingDisc ? StyleColor_ColorWheel_DotOutlineActive : StyleColor_ColorWheel_DotOutline ] );
-		dl->AddCircleFilled( dotPos, dotRadius, IM_COL32( 0, 0, 0, 100 ) ); // Shadow
-		dl->AddCircleFilled( dotPos, dotRadius - 1.0f, IM_COL32_WHITE );
-		dl->AddCircle( dotPos, dotRadius, dotOutCol, 0, isDraggingDisc ? 2.5f : 1.5f );
+		{
+			// Current selected color for dot fill
+			float dr, dg, db;
+			if ( mode == ImColorWheelMode_HSV )
+				ImGui::ColorConvertHSVtoRGB( hue, sat, thirdAxis, dr, dg, db );
+			else
+			{
+				float c = sat * kOkLCHMaxChroma;
+				ColorConvertOKLCHtosRGB( dr, dg, db, thirdAxis, c, hue );
+			}
+			dr = ImClamp( dr, 0.0f, 1.0f ); dg = ImClamp( dg, 0.0f, 1.0f ); db = ImClamp( db, 0.0f, 1.0f );
+			ImU32 dotFillCol = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
 
-		// Crosshair lines through center (subtle guide)
-		ImU32 crossCol = IM_COL32( 255, 255, 255, 30 );
-		dl->AddLine( ImVec2( discCenter.x - innerDiscRadius, discCenter.y ), ImVec2( discCenter.x + innerDiscRadius, discCenter.y ), crossCol );
-		dl->AddLine( ImVec2( discCenter.x, discCenter.y - innerDiscRadius ), ImVec2( discCenter.x, discCenter.y + innerDiscRadius ), crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + 1.0f, IM_COL32( 0, 0, 0, 120 ) ); // Shadow
+			dl->AddCircleFilled( dotPos, dotRadius, dotFillCol );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, 2.0f ); // White border
+			dl->AddCircle( dotPos, dotRadius + 1.0f, dotOutCol, 0, isDraggingDisc ? 2.0f : 1.0f );
+		}
 
 		// Master slider background
 		ImGui::RenderFrame( slider_bb.Min, slider_bb.Max, ImGui::GetColorU32( ImGuiCol_FrameBg ), true, g.Style.FrameRounding );
@@ -8188,10 +8211,25 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			float handleT = ImClamp( thirdAxis / hdr_max, 0.0f, 1.0f );
 			float handleX = ImLerp( slider_bb.Min.x, slider_bb.Max.x, handleT );
-			ImVec2 handleMin( handleX - 3.0f, slider_bb.Min.y );
-			ImVec2 handleMax( handleX + 3.0f, slider_bb.Max.y );
-			dl->AddRectFilled( handleMin, handleMax, IM_COL32_WHITE, 2.0f );
-			dl->AddRect( handleMin, handleMax, IM_COL32( 0, 0, 0, 200 ), 2.0f );
+			float handleHalf = 4.0f;
+			ImVec2 handleMin( handleX - handleHalf, slider_bb.Min.y - 1.0f );
+			ImVec2 handleMax( handleX + handleHalf, slider_bb.Max.y + 1.0f );
+
+			// Fill handle with the current color at this position
+			float hr, hg, hb;
+			if ( mode == ImColorWheelMode_HSV )
+				ImGui::ColorConvertHSVtoRGB( hue, sat, thirdAxis, hr, hg, hb );
+			else
+			{
+				float c = sat * kOkLCHMaxChroma;
+				ColorConvertOKLCHtosRGB( hr, hg, hb, thirdAxis, c, hue );
+			}
+			hr = ImClamp( hr, 0.0f, 1.0f ); hg = ImClamp( hg, 0.0f, 1.0f ); hb = ImClamp( hb, 0.0f, 1.0f );
+			ImU32 handleFill = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
+
+			dl->AddRectFilled( handleMin, handleMax, handleFill, 2.0f );
+			dl->AddRect( handleMin, handleMax, IM_COL32_WHITE, 2.0f, 0, 1.5f );
+			dl->AddRect( ImVec2( handleMin.x - 0.5f, handleMin.y - 0.5f ), ImVec2( handleMax.x + 0.5f, handleMax.y + 0.5f ), IM_COL32( 0, 0, 0, 150 ), 2.0f );
 		}
 
 		// Label

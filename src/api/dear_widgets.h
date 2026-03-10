@@ -354,6 +354,9 @@ enum ImWidgetsStyleVar
 	// Color Wheel
 	StyleVar_ColorWheel_DotRadius,
 	StyleVar_ColorWheel_RingThickness,
+	StyleVar_ColorWheel_DiscSectors,
+	StyleVar_ColorWheel_DiscRings,
+	StyleVar_ColorWheel_SliderHeight,
 
 	// Color Curve (Hue vs, Lum vs, Sat vs)
 	StyleVar_ColorCurve_DefaultHeight,
@@ -434,6 +437,9 @@ struct ImWidgetsStyle
 	// Color Wheel
 	float	ColorWheel_DotRadius;
 	float	ColorWheel_RingThickness;
+	float	ColorWheel_DiscSectors;				// Disc angular resolution
+	float	ColorWheel_DiscRings;				// Disc radial resolution
+	float	ColorWheel_SliderHeight;			// Master slider height (px)
 
 	// Color Curve
 	float	ColorCurve_DefaultHeight;
@@ -509,8 +515,11 @@ struct ImWidgetsStyle
 		CurveEditor_KeyOutlineThickness = 1.5f;
 
 		// Color Wheel
-		ColorWheel_DotRadius     = 5.0f;
-		ColorWheel_RingThickness = 3.0f;
+		ColorWheel_DotRadius     = 6.0f;
+		ColorWheel_RingThickness = 12.0f;
+		ColorWheel_DiscSectors   = 96.0f;
+		ColorWheel_DiscRings     = 24.0f;
+		ColorWheel_SliderHeight  = 20.0f;
 
 		// Color Curve
 		ColorCurve_DefaultHeight = 150.0f;
@@ -675,6 +684,7 @@ struct ImWidgetsStyle
 
 		ColorWheel_DotRadius     = ImTrunc( ColorWheel_DotRadius * scale_factor );
 		ColorWheel_RingThickness = ImTrunc( ColorWheel_RingThickness * scale_factor );
+		ColorWheel_SliderHeight  = ImTrunc( ColorWheel_SliderHeight * scale_factor );
 
 		ColorCurve_DefaultHeight = ImTrunc( ColorCurve_DefaultHeight * scale_factor );
 		ColorCurve_KeyRadius     = ImTrunc( ColorCurve_KeyRadius * scale_factor );
@@ -865,6 +875,9 @@ private:
 		case StyleVar_CurveEditor_KeyOutlineThickness:	return &CurveEditor_KeyOutlineThickness;
 		case StyleVar_ColorWheel_DotRadius:				return &ColorWheel_DotRadius;
 		case StyleVar_ColorWheel_RingThickness:			return &ColorWheel_RingThickness;
+		case StyleVar_ColorWheel_DiscSectors:			return &ColorWheel_DiscSectors;
+		case StyleVar_ColorWheel_DiscRings:				return &ColorWheel_DiscRings;
+		case StyleVar_ColorWheel_SliderHeight:			return &ColorWheel_SliderHeight;
 		case StyleVar_ColorCurve_DefaultHeight:			return &ColorCurve_DefaultHeight;
 		case StyleVar_ColorCurve_KeyRadius:				return &ColorCurve_KeyRadius;
 		case StyleVar_ColorCurve_LineThickness:			return &ColorCurve_LineThickness;
