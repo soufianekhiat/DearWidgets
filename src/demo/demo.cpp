@@ -2459,7 +2459,27 @@ namespace ImWidgets {
 			if ( ImGui::CollapsingHeader( "Color Curve", ImGuiTreeNodeFlags_DefaultOpen ) )
 			{
 				static int ccMode = ImColorCurveMode_HueVsHue;
+				static bool ccShowHistogram = true;
+				static ImHistogramData ccHistData;
+				static bool ccHistInit = false;
+
 				ImGui::Combo( "Mode##CC", &ccMode, "Hue vs Hue\0Hue vs Sat\0Hue vs Lum\0Lum vs Sat\0Sat vs Sat\0" );
+				ImGui::Checkbox( "Luminance Histogram##CC", &ccShowHistogram );
+
+				if ( !ccHistInit )
+				{
+					int imgW, imgH, imgCh;
+					stbi_uc* imgData = stbi_load( "pexels-fotoaibe-1571453.jpg", &imgW, &imgH, &imgCh, 0 );
+					if ( imgData )
+					{
+						int ch = ( imgCh >= 3 ) ? imgCh : 3;
+						ccHistData.Accumulate( imgData, imgW, imgH, ch,
+							ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved, ImHistogramMode_Luma,
+							256, 1000000 );
+						STBI_FREE( imgData );
+					}
+					ccHistInit = true;
+				}
 
 				static ImColorCurveData ccData[ ImColorCurveMode_COUNT ];
 				static bool ccInit = false;
@@ -2478,7 +2498,8 @@ namespace ImWidgets {
 				}
 
 				ImColorCurveData& curData = ccData[ ccMode ];
-				ColorCurve( "##CCMain", &curData, ( ImColorCurveMode )ccMode, ImVec2( 0, 150 ) );
+				ImHistogramData const* histPtr = ( ccShowHistogram && ccHistData.BinCount > 0 ) ? &ccHistData : NULL;
+				ColorCurve( "##CCMain", &curData, ( ImColorCurveMode )ccMode, histPtr, ImVec2( 0, 150 ) );
 
 				if ( curData.SelectedIdx >= 0 && curData.SelectedIdx < curData.Keys.Size )
 				{
@@ -2508,7 +2529,7 @@ namespace ImWidgets {
 			{
 				static ImParadeScopeData paradeData;
 				static int paradeMode = ImParadeMode_RGB;
-				static int paradeSource = 0;
+				static int paradeSource = 4;
 				static bool paradeNeedsUpdate = true;
 				static stbi_uc* paradeImgData = NULL;
 				static int paradeImgW = 0;
@@ -2680,7 +2701,7 @@ namespace ImWidgets {
 			if ( ImGui::CollapsingHeader( "Vector Scope", ImGuiTreeNodeFlags_DefaultOpen ) )
 			{
 				static ImVectorScopeData vectorData;
-				static int vectorSource = 0;
+				static int vectorSource = 4;
 				static bool vectorNeedsUpdate = true;
 				static stbi_uc* vectorImgData = NULL;
 				static int vectorImgW = 0;
@@ -2844,7 +2865,7 @@ namespace ImWidgets {
 			{
 				static ImHistogramData histData;
 				static int histMode = ImHistogramMode_RGB;
-				static int histSource = 0;
+				static int histSource = 4;
 				static bool histNeedsUpdate = true;
 				static stbi_uc* histImgData = NULL;
 				static int histImgW = 0;
@@ -3009,7 +3030,7 @@ namespace ImWidgets {
 			if ( ImGui::CollapsingHeader( "CIE Chromaticity", ImGuiTreeNodeFlags_DefaultOpen ) )
 			{
 				static ImCIEChromaticityData cieData;
-				static int cieSource = 0;
+				static int cieSource = 4;
 				static bool cieNeedsUpdate = true;
 				static stbi_uc* cieImgData = NULL;
 				static int cieImgW = 0;

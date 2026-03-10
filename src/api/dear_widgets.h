@@ -2155,7 +2155,7 @@ namespace ImWidgets{
 	IMGUI_API void  ColorCurveRange( ImColorCurveMode mode, float* out_min, float* out_max );
 	IMGUI_API const char* ColorCurveModeName( ImColorCurveMode mode );
 	IMGUI_API float ColorCurveSample( ImColorCurveData const& curve, ImColorCurveMode mode, float x );
-	IMGUI_API bool  ColorCurve( char const* label, ImColorCurveData* curve, ImColorCurveMode mode, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool  ColorCurve( char const* label, ImColorCurveData* curve, ImColorCurveMode mode, ImHistogramData const* histogramOverlay = NULL, ImVec2 size = ImVec2( 0, 0 ) );
 
 	IMGUI_API const char* ParadeModeName( ImParadeMode mode );
 	IMGUI_API void  ParadeScope( char const* label, ImParadeScopeData const& data, bool overlay = false, ImParadeScale scale = ImParadeScale_Linear, ImVec2 size = ImVec2( 0, 0 ) );

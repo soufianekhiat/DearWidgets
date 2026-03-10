@@ -8090,8 +8090,18 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				float h1 = a1 / ( 2.0f * IM_PI );
 
 				float r0, g0, b0, r1, g1, b1;
-				ImGui::ColorConvertHSVtoRGB( h0, 1.0f, 1.0f, r0, g0, b0 );
-				ImGui::ColorConvertHSVtoRGB( h1, 1.0f, 1.0f, r1, g1, b1 );
+				if ( mode == ImColorWheelMode_OkLCH )
+				{
+					ColorConvertOKLCHtosRGB( r0, g0, b0, 0.75f, kOkLCHMaxChroma, h0 );
+					ColorConvertOKLCHtosRGB( r1, g1, b1, 0.75f, kOkLCHMaxChroma, h1 );
+					r0 = ImClamp( r0, 0.0f, 1.0f ); g0 = ImClamp( g0, 0.0f, 1.0f ); b0 = ImClamp( b0, 0.0f, 1.0f );
+					r1 = ImClamp( r1, 0.0f, 1.0f ); g1 = ImClamp( g1, 0.0f, 1.0f ); b1 = ImClamp( b1, 0.0f, 1.0f );
+				}
+				else
+				{
+					ImGui::ColorConvertHSVtoRGB( h0, 1.0f, 1.0f, r0, g0, b0 );
+					ImGui::ColorConvertHSVtoRGB( h1, 1.0f, 1.0f, r1, g1, b1 );
+				}
 
 				ImU32 col0 = IM_COL32( ( int )( r0 * 255.0f + 0.5f ), ( int )( g0 * 255.0f + 0.5f ), ( int )( b0 * 255.0f + 0.5f ), 255 );
 				ImU32 col1 = IM_COL32( ( int )( r1 * 255.0f + 0.5f ), ( int )( g1 * 255.0f + 0.5f ), ( int )( b1 * 255.0f + 0.5f ), 255 );
@@ -8454,7 +8464,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return ImVec2( pos, val );
 	}
 
-	bool ColorCurve( char const* label, ImColorCurveData* curve, ImColorCurveMode mode, ImVec2 size )
+	bool ColorCurve( char const* label, ImColorCurveData* curve, ImColorCurveMode mode, ImHistogramData const* histogramOverlay, ImVec2 size )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
@@ -8547,6 +8557,29 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				ImVec2 rMin( frame_bb.Min.x + segW * i, frame_bb.Max.y - stripH );
 				ImVec2 rMax( frame_bb.Min.x + segW * ( i + 1 ), frame_bb.Max.y );
 				dl->AddRectFilledMultiColor( rMin, rMax, c0, c1, c1, c0 );
+			}
+		}
+
+		// Optional luminance histogram overlay
+		if ( histogramOverlay && histogramOverlay->BinCount > 0 && histogramOverlay->PeakCount > 0 )
+		{
+			ImU32 histCol = IM_COL32( 255, 255, 255, 40 );
+			int binCount = histogramOverlay->BinCount;
+			float frameW = frame_bb.GetWidth();
+			float frameH = frame_bb.GetHeight();
+			ImU32 const* bins = histogramOverlay->Bins.Data; // first channel only (luminance)
+
+			float invPeak = 1.0f / ( float )histogramOverlay->PeakCount;
+
+			for ( int i = 0; i < binCount; ++i )
+			{
+				float t0 = ( float )i / ( float )binCount;
+				float t1 = ( float )( i + 1 ) / ( float )binCount;
+				float barH = ( float )bins[ i ] * invPeak;
+
+				ImVec2 rMin( frame_bb.Min.x + t0 * frameW, frame_bb.Max.y - barH * frameH );
+				ImVec2 rMax( frame_bb.Min.x + t1 * frameW, frame_bb.Max.y );
+				dl->AddRectFilled( rMin, rMax, histCol );
 			}
 		}
 
