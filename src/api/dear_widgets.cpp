@@ -7053,7 +7053,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 
 		// Tooltip
-		if ( hovered_marker >= 0 && hovered && g.ActiveId != id )
+		if ( hovered_marker >= 0 && hovered_marker < gradient->Stops.Size && hovered && g.ActiveId != id )
 		{
 			ImGui::SetTooltip( "Stop %d: pos=%.3f RGBA=(%.2f, %.2f, %.2f, %.2f)",
 				hovered_marker, gradient->Stops[ hovered_marker ].Position,
@@ -7384,6 +7384,124 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return ImVec2( screenVec.x * scaleX, screenVec.y * scaleY );
 	}
 
+	// ========================================================================
+	// Shared Bezier Tangent Helpers
+	// ========================================================================
+
+	// Enforce tangent mode constraint after one handle changes.
+	// 'side' indicates which handle was modified: -1 = left, +1 = right.
+	static void EnforceTangentMode( ImVec2& tangentLeft, ImVec2& tangentRight, ImCurveEditorTangentMode mode, int side )
+	{
+		if ( mode == ImCurveEditorTangentMode_Mirrored )
+		{
+			if ( side == -1 )
+			{
+				tangentRight = ImVec2( -tangentLeft.x, -tangentLeft.y );
+				if ( tangentRight.x < 0.0f ) tangentRight.x = 0.0f;
+			}
+			else
+			{
+				tangentLeft = ImVec2( -tangentRight.x, -tangentRight.y );
+				if ( tangentLeft.x > 0.0f ) tangentLeft.x = 0.0f;
+			}
+		}
+		else if ( mode == ImCurveEditorTangentMode_Aligned )
+		{
+			float lenL = ImSqrt( ImLengthSqr( tangentLeft ) );
+			float lenR = ImSqrt( ImLengthSqr( tangentRight ) );
+			if ( side == -1 && lenL > 1e-6f )
+			{
+				tangentRight = ImVec2( -tangentLeft.x, -tangentLeft.y ) * ( lenR / lenL );
+				if ( tangentRight.x < 0.0f ) tangentRight.x = 0.0f;
+			}
+			else if ( side == 1 && lenR > 1e-6f )
+			{
+				tangentLeft = ImVec2( -tangentRight.x, -tangentRight.y ) * ( lenL / lenR );
+				if ( tangentLeft.x > 0.0f ) tangentLeft.x = 0.0f;
+			}
+		}
+	}
+
+	// Hit-test bezier tangent handles for a selected key.
+	// keyScreen: key position in screen coords.
+	// tanLeftScreen, tanRightScreen: tangent endpoint in screen coords.
+	// showLeft, showRight: whether each handle exists.
+	// Returns -1 (left), +1 (right), or 0 (none).
+	static int HitTestBezierHandles( ImVec2 mousePos, ImVec2 tanLeftScreen, ImVec2 tanRightScreen,
+									  bool showLeft, bool showRight, float hitRadiusSq )
+	{
+		int result = 0;
+		float bestSq = hitRadiusSq;
+		if ( showLeft )
+		{
+			float dSq = ImLengthSqr( mousePos - tanLeftScreen );
+			if ( dSq < bestSq ) { bestSq = dSq; result = -1; }
+		}
+		if ( showRight )
+		{
+			float dSq = ImLengthSqr( mousePos - tanRightScreen );
+			if ( dSq < bestSq ) { bestSq = dSq; result = 1; }
+		}
+		return result;
+	}
+
+	// Draw bezier tangent handles (lines + circles) for a selected key.
+	static void DrawBezierHandles( ImDrawList* dl, ImVec2 keyScreen,
+									ImVec2 tanLeftScreen, ImVec2 tanRightScreen,
+									bool showLeft, bool showRight,
+									int hoveredTangent,
+									ImU32 tangentCol, ImU32 tangentHovCol,
+									float lineThick, float handleRadius )
+	{
+		if ( showLeft )
+		{
+			bool hov = ( hoveredTangent == -1 );
+			dl->AddLine( keyScreen, tanLeftScreen, hov ? tangentHovCol : tangentCol, hov ? lineThick : lineThick * 0.5f );
+			dl->AddCircleFilled( tanLeftScreen, hov ? handleRadius + 1.5f : handleRadius, hov ? tangentHovCol : tangentCol );
+		}
+		if ( showRight )
+		{
+			bool hov = ( hoveredTangent == 1 );
+			dl->AddLine( keyScreen, tanRightScreen, hov ? tangentHovCol : tangentCol, hov ? lineThick : lineThick * 0.5f );
+			dl->AddCircleFilled( tanRightScreen, hov ? handleRadius + 1.5f : handleRadius, hov ? tangentHovCol : tangentCol );
+		}
+	}
+
+	// UI helper: draw tangent mode + handle editing controls in expanded window panels.
+	// Returns true if value_changed.
+	static bool TangentModeUI( ImVec2& tangentLeft, ImVec2& tangentRight, ImCurveEditorTangentMode& tangentMode )
+	{
+		bool changed = false;
+		ImGui::Spacing();
+		ImGui::TextUnformatted( "Tangent" );
+		ImGui::SetNextItemWidth( -FLT_MIN );
+		int tm = ( int )tangentMode;
+		if ( ImGui::Combo( "##tangent", &tm, "Free\0Aligned\0Mirrored\0" ) )
+		{
+			tangentMode = ( ImCurveEditorTangentMode )tm;
+			EnforceTangentMode( tangentLeft, tangentRight, tangentMode, -1 );
+			changed = true;
+		}
+		ImGui::Spacing();
+		ImGui::TextUnformatted( "Left Tangent" );
+		ImGui::SetNextItemWidth( -FLT_MIN );
+		if ( ImGui::DragFloat2( "##tanL", &tangentLeft.x, 0.001f, 0.0f, 0.0f, "%.3f" ) )
+		{
+			if ( tangentLeft.x > 0.0f ) tangentLeft.x = 0.0f;
+			EnforceTangentMode( tangentLeft, tangentRight, tangentMode, -1 );
+			changed = true;
+		}
+		ImGui::TextUnformatted( "Right Tangent" );
+		ImGui::SetNextItemWidth( -FLT_MIN );
+		if ( ImGui::DragFloat2( "##tanR", &tangentRight.x, 0.001f, 0.0f, 0.0f, "%.3f" ) )
+		{
+			if ( tangentRight.x < 0.0f ) tangentRight.x = 0.0f;
+			EnforceTangentMode( tangentLeft, tangentRight, tangentMode, 1 );
+			changed = true;
+		}
+		return changed;
+	}
+
 	// Context menu helper: submenu for easing families
 	static bool ImCurveEditorSegmentMenu( ImCurveEditorSeg* outSeg, ImCurveEditorSeg currentSeg )
 	{
@@ -7477,6 +7595,77 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return changed;
 	}
 
+	// ========================================================================
+	// Expand-to-window infrastructure
+	// ========================================================================
+
+	static bool s_InsideExpandedWidget = false;
+
+	// Draw a small expand button at the top-right corner of a widget.
+	// Returns pointer to the expanded-state bool, or NULL if inside an expanded window.
+	static bool* WidgetExpandButton( ImGuiID widget_id, ImRect const& bb )
+	{
+		if ( s_InsideExpandedWidget )
+			return NULL;
+
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		ImDrawList* dl = window->DrawList;
+
+		ImGuiID expandKey = widget_id ^ 0x1F2E3D4C;
+		bool* pOpen = window->StateStorage.GetBoolRef( expandKey, false );
+
+		float btnSize = 32.0f;
+		float margin = 3.0f;
+		ImVec2 btnMin( bb.Max.x - btnSize - margin, bb.Min.y + margin );
+		ImVec2 btnMax( bb.Max.x - margin, bb.Min.y + btnSize + margin );
+
+		bool hov = ImGui::IsMouseHoveringRect( btnMin, btnMax ) && ImGui::IsWindowHovered( ImGuiHoveredFlags_AllowWhenBlockedByActiveItem );
+		if ( hov && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) )
+			*pOpen = !( *pOpen );
+
+		ImU32 bg = hov ? IM_COL32( 80, 80, 80, 200 ) : IM_COL32( 40, 40, 40, 128 );
+		ImU32 fg = hov ? IM_COL32_WHITE : IM_COL32( 180, 180, 180, 180 );
+		dl->AddRectFilled( btnMin, btnMax, bg, 2.0f );
+
+		// Icon: small window with title bar
+		float p = 4.0f;
+		ImVec2 a( btnMin.x + p, btnMin.y + p );
+		ImVec2 b( btnMax.x - p, btnMax.y - p );
+		dl->AddRect( a, b, fg, 0.0f, 0, 1.0f );
+		dl->AddLine( ImVec2( a.x, a.y + 2.5f ), ImVec2( b.x, a.y + 2.5f ), fg, 1.0f );
+
+		return pOpen;
+	}
+
+	// Returns true if the mouse is over the expand button area (to suppress widget interaction).
+	static bool IsMouseOverExpandButton( ImGuiID widget_id, ImRect const& bb )
+	{
+		if ( s_InsideExpandedWidget )
+			return false;
+
+		float btnSize = 32.0f;
+		float margin = 3.0f;
+		ImVec2 btnMin( bb.Max.x - btnSize - margin, bb.Min.y + margin );
+		ImVec2 btnMax( bb.Max.x - margin, bb.Min.y + btnSize + margin );
+		return ImGui::IsMouseHoveringRect( btnMin, btnMax );
+	}
+
+	static bool BeginExpandedWindow( char const* label, ImGuiID widget_id, bool* pOpen, ImVec2 defaultSize = ImVec2( 600, 500 ) )
+	{
+		char title[ 256 ];
+		char const* displayLabel = ( label[ 0 ] == '#' && label[ 1 ] == '#' ) ? label + 2 : label;
+		ImFormatString( title, sizeof( title ), "%s###ExpandWdg_%08X", displayLabel, widget_id );
+		ImGui::SetNextWindowSize( defaultSize, ImGuiCond_FirstUseEver );
+		s_InsideExpandedWidget = true;
+		return ImGui::Begin( title, pOpen, ImGuiWindowFlags_NoCollapse );
+	}
+
+	static void EndExpandedWindow()
+	{
+		ImGui::End();
+		s_InsideExpandedWidget = false;
+	}
+
 	bool CurveEditor( char const* label, ImCurveEditorData* curve, ImVec2 size )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
@@ -7491,15 +7680,19 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const float h = ( size.y > 0.0f ) ? size.y : dwStyle.CurveEditor_DefaultHeight;
 
 		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
+		float fontH = ImGui::GetFontSize();
+		float axisLabelMarginLeft = ImGui::CalcTextSize( "-0.00" ).x + 4.0f;
+		float axisLabelMarginBottom = fontH + 2.0f;
 
-		const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, h ) );
-		const ImRect total_bb( frame_bb.Min, ImVec2( frame_bb.Max.x + ( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f ), frame_bb.Max.y ) );
+		const ImRect frame_bb( window->DC.CursorPos + ImVec2( axisLabelMarginLeft, 0.0f ), window->DC.CursorPos + ImVec2( w, h - axisLabelMarginBottom ) );
+		const ImRect total_bb( window->DC.CursorPos, ImVec2( frame_bb.Max.x + ( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f ), window->DC.CursorPos.y + h ) );
 
 		ImGui::ItemSize( total_bb, style.FramePadding.y );
 		if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, 0 ) )
 			return false;
 
-		const bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.ItemFlags );
+		bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.ItemFlags );
+		if ( IsMouseOverExpandButton( id, frame_bb ) ) hovered = false;
 
 		bool value_changed = false;
 		int& selected = curve->SelectedIdx;
@@ -7510,6 +7703,23 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const float keyRadius = dwStyle.CurveEditor_KeyRadius;
 		const float tangentRadius = dwStyle.CurveEditor_TangentRadius;
 		const float hitRadius = dwStyle.CurveEditor_HitRadius;
+
+		// --- PAN (apply before drawing so range is up-to-date) ---
+		ImGuiID panKey = id + ImHashStr( "##pan" );
+		int* pPanActive = ImGui::GetStateStorage()->GetIntRef( panKey, 0 );
+		if ( *pPanActive )
+		{
+			if ( ImGui::IsMouseDragging( ImGuiMouseButton_Right ) )
+			{
+				ImVec2 delta = ScreenVecToCurve( g.IO.MouseDelta, frame_bb, rangeMin, rangeMax );
+				curve->RangeMin.x -= delta.x;
+				curve->RangeMax.x -= delta.x;
+				curve->RangeMin.y -= delta.y;
+				curve->RangeMax.y -= delta.y;
+			}
+			if ( ImGui::IsMouseReleased( ImGuiMouseButton_Right ) )
+				*pPanActive = 0;
+		}
 
 		// --- HIT TESTING (before drawing for hover feedback) ---
 		ImDrawList* dl = window->DrawList;
@@ -7534,31 +7744,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( selected >= 0 && selected < curve->Keys.Size )
 		{
 			ImCurveEditorKey const& sk = curve->Keys[ selected ];
-
 			bool showRight = ( sk.Segment == ImCurveEditorSeg_CubicBezier && selected < curve->Keys.Size - 1 );
 			bool showLeft = ( selected > 0 && curve->Keys[ selected - 1 ].Segment == ImCurveEditorSeg_CubicBezier );
-
 			float tanHitSq = ( hitRadius + 2.0f ) * ( hitRadius + 2.0f );
-			if ( showLeft )
-			{
-				ImVec2 tanScreen = CurveToScreen( sk.Pos + sk.TangentLeft, frame_bb, rangeMin, rangeMax );
-				float dSq = ImLengthSqr( g.IO.MousePos - tanScreen );
-				if ( dSq < tanHitSq )
-				{
-					hovered_tangent = -1;
-					tanHitSq = dSq;
-				}
-			}
-			if ( showRight )
-			{
-				ImVec2 tanScreen = CurveToScreen( sk.Pos + sk.TangentRight, frame_bb, rangeMin, rangeMax );
-				float dSq = ImLengthSqr( g.IO.MousePos - tanScreen );
-				if ( dSq < tanHitSq )
-				{
-					hovered_tangent = 1;
-					tanHitSq = dSq;
-				}
-			}
+			ImVec2 tanLScreen = showLeft ? CurveToScreen( sk.Pos + sk.TangentLeft, frame_bb, rangeMin, rangeMax ) : ImVec2();
+			ImVec2 tanRScreen = showRight ? CurveToScreen( sk.Pos + sk.TangentRight, frame_bb, rangeMin, rangeMax ) : ImVec2();
+			hovered_tangent = HitTestBezierHandles( g.IO.MousePos, tanLScreen, tanRScreen, showLeft, showRight, tanHitSq );
 		}
 
 		// --- DRAWING ---
@@ -7588,11 +7779,18 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Zero lines (if visible)
 		{
 			ImVec2 zeroScreen = CurveToScreen( ImVec2( 0.0f, 0.0f ), frame_bb, rangeMin, rangeMax );
+			ImVec2 oneScreen  = CurveToScreen( ImVec2( 1.0f, 1.0f ), frame_bb, rangeMin, rangeMax );
 			ImU32 zeroCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_ZeroLine ] );
+			float zeroThick = dwStyle.CurveEditor_ZeroLineThickness;
 			if ( zeroScreen.x > frame_bb.Min.x && zeroScreen.x < frame_bb.Max.x )
-				dl->AddLine( ImVec2( zeroScreen.x, frame_bb.Min.y ), ImVec2( zeroScreen.x, frame_bb.Max.y ), zeroCol );
+				dl->AddLine( ImVec2( zeroScreen.x, frame_bb.Min.y ), ImVec2( zeroScreen.x, frame_bb.Max.y ), zeroCol, zeroThick );
 			if ( zeroScreen.y > frame_bb.Min.y && zeroScreen.y < frame_bb.Max.y )
-				dl->AddLine( ImVec2( frame_bb.Min.x, zeroScreen.y ), ImVec2( frame_bb.Max.x, zeroScreen.y ), zeroCol );
+				dl->AddLine( ImVec2( frame_bb.Min.x, zeroScreen.y ), ImVec2( frame_bb.Max.x, zeroScreen.y ), zeroCol, zeroThick );
+			// x=1 and y=1 lines
+			if ( oneScreen.x > frame_bb.Min.x && oneScreen.x < frame_bb.Max.x )
+				dl->AddLine( ImVec2( oneScreen.x, frame_bb.Min.y ), ImVec2( oneScreen.x, frame_bb.Max.y ), zeroCol, zeroThick );
+			if ( oneScreen.y > frame_bb.Min.y && oneScreen.y < frame_bb.Max.y )
+				dl->AddLine( ImVec2( frame_bb.Min.x, oneScreen.y ), ImVec2( frame_bb.Max.x, oneScreen.y ), zeroCol, zeroThick );
 		}
 
 		// Draw curve segments
@@ -7658,28 +7856,15 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( selected >= 0 && selected < curve->Keys.Size )
 		{
 			ImCurveEditorKey const& sk = curve->Keys[ selected ];
-
 			bool showRight = ( sk.Segment == ImCurveEditorSeg_CubicBezier && selected < curve->Keys.Size - 1 );
 			bool showLeft = ( selected > 0 && curve->Keys[ selected - 1 ].Segment == ImCurveEditorSeg_CubicBezier );
-
 			ImVec2 keyScreen = CurveToScreen( sk.Pos, frame_bb, rangeMin, rangeMax );
 			ImU32 tangentCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_TangentLine ] );
 			ImU32 tangentHovCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_TangentHovered ] );
-
-			if ( showLeft )
-			{
-				ImVec2 tanScreen = CurveToScreen( sk.Pos + sk.TangentLeft, frame_bb, rangeMin, rangeMax );
-				bool tanHov = ( hovered_tangent == -1 );
-				dl->AddLine( keyScreen, tanScreen, tanHov ? tangentHovCol : tangentCol, tanHov ? curveThickness : curveThickness * 0.5f );
-				dl->AddCircleFilled( tanScreen, tanHov ? tangentRadius + 1.5f : tangentRadius, tanHov ? tangentHovCol : tangentCol );
-			}
-			if ( showRight )
-			{
-				ImVec2 tanScreen = CurveToScreen( sk.Pos + sk.TangentRight, frame_bb, rangeMin, rangeMax );
-				bool tanHov = ( hovered_tangent == 1 );
-				dl->AddLine( keyScreen, tanScreen, tanHov ? tangentHovCol : tangentCol, tanHov ? curveThickness : curveThickness * 0.5f );
-				dl->AddCircleFilled( tanScreen, tanHov ? tangentRadius + 1.5f : tangentRadius, tanHov ? tangentHovCol : tangentCol );
-			}
+			ImVec2 tanLScreen = showLeft ? CurveToScreen( sk.Pos + sk.TangentLeft, frame_bb, rangeMin, rangeMax ) : ImVec2();
+			ImVec2 tanRScreen = showRight ? CurveToScreen( sk.Pos + sk.TangentRight, frame_bb, rangeMin, rangeMax ) : ImVec2();
+			DrawBezierHandles( dl, keyScreen, tanLScreen, tanRScreen, showLeft, showRight,
+							   hovered_tangent, tangentCol, tangentHovCol, curveThickness, tangentRadius );
 		}
 
 		// Draw keys with hover feedback
@@ -7724,6 +7909,60 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 
 		dl->PopClipRect();
+
+		// Axis labels at frame edges and at 0/1 tick positions
+		{
+			ImU32 axisTextCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_AxisLabel ] );
+			float pad = 3.0f;
+			char buf[ 16 ];
+
+			// Y axis: range min/max (left side, outside frame)
+			ImFormatString( buf, sizeof( buf ), "%.3g", rangeMax.y );
+			ImVec2 sz = ImGui::CalcTextSize( buf );
+			dl->AddText( ImVec2( frame_bb.Min.x - sz.x - pad, frame_bb.Min.y ), axisTextCol, buf );
+
+			ImFormatString( buf, sizeof( buf ), "%.3g", rangeMin.y );
+			sz = ImGui::CalcTextSize( buf );
+			dl->AddText( ImVec2( frame_bb.Min.x - sz.x - pad, frame_bb.Max.y - sz.y ), axisTextCol, buf );
+
+			// X axis: range min/max (bottom, outside frame)
+			ImFormatString( buf, sizeof( buf ), "%.3g", rangeMin.x );
+			dl->AddText( ImVec2( frame_bb.Min.x, frame_bb.Max.y + pad ), axisTextCol, buf );
+
+			ImFormatString( buf, sizeof( buf ), "%.3g", rangeMax.x );
+			sz = ImGui::CalcTextSize( buf );
+			dl->AddText( ImVec2( frame_bb.Max.x - sz.x, frame_bb.Max.y + pad ), axisTextCol, buf );
+
+			// 0 and 1 tick labels on axes (if visible and not too close to range edges)
+			ImVec2 zeroS = CurveToScreen( ImVec2( 0.0f, 0.0f ), frame_bb, rangeMin, rangeMax );
+			ImVec2 oneS  = CurveToScreen( ImVec2( 1.0f, 1.0f ), frame_bb, rangeMin, rangeMax );
+			float edgeThr = 20.0f; // pixels threshold to avoid overlapping with range labels
+
+			// Y=0 label (left side)
+			if ( zeroS.y > frame_bb.Min.y + edgeThr && zeroS.y < frame_bb.Max.y - edgeThr )
+			{
+				sz = ImGui::CalcTextSize( "0" );
+				dl->AddText( ImVec2( frame_bb.Min.x - sz.x - pad, zeroS.y - sz.y * 0.5f ), axisTextCol, "0" );
+			}
+			// Y=1 label (left side)
+			if ( oneS.y > frame_bb.Min.y + edgeThr && oneS.y < frame_bb.Max.y - edgeThr )
+			{
+				sz = ImGui::CalcTextSize( "1" );
+				dl->AddText( ImVec2( frame_bb.Min.x - sz.x - pad, oneS.y - sz.y * 0.5f ), axisTextCol, "1" );
+			}
+			// X=0 label (bottom)
+			if ( zeroS.x > frame_bb.Min.x + edgeThr && zeroS.x < frame_bb.Max.x - edgeThr )
+			{
+				sz = ImGui::CalcTextSize( "0" );
+				dl->AddText( ImVec2( zeroS.x - sz.x * 0.5f, frame_bb.Max.y + pad ), axisTextCol, "0" );
+			}
+			// X=1 label (bottom)
+			if ( oneS.x > frame_bb.Min.x + edgeThr && oneS.x < frame_bb.Max.x - edgeThr )
+			{
+				sz = ImGui::CalcTextSize( "1" );
+				dl->AddText( ImVec2( oneS.x - sz.x * 0.5f, frame_bb.Max.y + pad ), axisTextCol, "1" );
+			}
+		}
 
 		// Border
 		dl->AddRect( frame_bb.Min, frame_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
@@ -7797,22 +8036,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				// Drag left tangent
 				ImCurveEditorKey& k = curve->Keys[ selected ];
 				k.TangentLeft = k.TangentLeft + delta;
-				if ( k.TangentLeft.x > 0.0f )
-					k.TangentLeft.x = 0.0f;
-				// Enforce tangent mode on the opposite handle
-				if ( k.TangentMode == ImCurveEditorTangentMode_Mirrored )
-				{
-					k.TangentRight = ImVec2( -k.TangentLeft.x, -k.TangentLeft.y );
-				}
-				else if ( k.TangentMode == ImCurveEditorTangentMode_Aligned )
-				{
-					float lenL = ImSqrt( ImLengthSqr( k.TangentLeft ) );
-					float lenR = ImSqrt( ImLengthSqr( k.TangentRight ) );
-					if ( lenL > 1e-6f )
-						k.TangentRight = ImVec2( -k.TangentLeft.x, -k.TangentLeft.y ) * ( lenR / lenL );
-				}
-				if ( k.TangentRight.x < 0.0f )
-					k.TangentRight.x = 0.0f;
+				if ( k.TangentLeft.x > 0.0f ) k.TangentLeft.x = 0.0f;
+				EnforceTangentMode( k.TangentLeft, k.TangentRight, k.TangentMode, -1 );
 				value_changed = true;
 			}
 			else if ( dragTarget == 1 )
@@ -7820,22 +8045,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				// Drag right tangent
 				ImCurveEditorKey& k = curve->Keys[ selected ];
 				k.TangentRight = k.TangentRight + delta;
-				if ( k.TangentRight.x < 0.0f )
-					k.TangentRight.x = 0.0f;
-				// Enforce tangent mode on the opposite handle
-				if ( k.TangentMode == ImCurveEditorTangentMode_Mirrored )
-				{
-					k.TangentLeft = ImVec2( -k.TangentRight.x, -k.TangentRight.y );
-				}
-				else if ( k.TangentMode == ImCurveEditorTangentMode_Aligned )
-				{
-					float lenR = ImSqrt( ImLengthSqr( k.TangentRight ) );
-					float lenL = ImSqrt( ImLengthSqr( k.TangentLeft ) );
-					if ( lenR > 1e-6f )
-						k.TangentLeft = ImVec2( -k.TangentRight.x, -k.TangentRight.y ) * ( lenL / lenR );
-				}
-				if ( k.TangentLeft.x > 0.0f )
-					k.TangentLeft.x = 0.0f;
+				if ( k.TangentRight.x < 0.0f ) k.TangentRight.x = 0.0f;
+				EnforceTangentMode( k.TangentLeft, k.TangentRight, k.TangentMode, 1 );
 				value_changed = true;
 			}
 		}
@@ -7846,11 +8057,18 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImGui::ClearActiveID();
 		}
 
-		// Right-click on key: context menu
-		if ( hovered_key >= 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) && hovered && frame_contains_mouse )
+		// Right-click: context menu on key, or start pan on empty area
+		if ( ImGui::IsMouseClicked( ImGuiMouseButton_Right ) && hovered && frame_contains_mouse )
 		{
-			selected = hovered_key;
-			ImGui::OpenPopup( "##CurveKeyCtx" );
+			if ( hovered_key >= 0 )
+			{
+				selected = hovered_key;
+				ImGui::OpenPopup( "##CurveKeyCtx" );
+			}
+			else
+			{
+				*pPanActive = 1;
+			}
 		}
 
 		// Context menu
@@ -7969,7 +8187,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 
 		// Tooltip on hovered key
-		if ( hovered_key >= 0 && hovered && g.ActiveId != id )
+		if ( hovered_key >= 0 && hovered_key < curve->Keys.Size && hovered && g.ActiveId != id )
 		{
 			ImGui::SetTooltip( "Key %d: (%.3f, %.3f)", hovered_key,
 				curve->Keys[ hovered_key ].Pos.x, curve->Keys[ hovered_key ].Pos.y );
@@ -7979,6 +8197,90 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		if ( value_changed )
 			ImGui::MarkItemEdited( id );
+
+		// Expand button
+		bool* pExpanded = WidgetExpandButton( id, frame_bb );
+		if ( pExpanded && *pExpanded )
+		{
+			if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 800, 400 ) ) )
+			{
+				ImVec2 avail = ImGui::GetContentRegionAvail();
+				float widgetW = avail.x * 0.75f;
+				// Left: widget
+				if ( CurveEditor( "##exp", curve, ImVec2( widgetW, avail.y ) ) )
+					value_changed = true;
+				ImGui::SameLine();
+				// Right: info / edit
+				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
+				ImGui::TextUnformatted( "Keys" );
+				ImGui::Text( "%d", curve->Keys.Size );
+				ImGui::Spacing();
+				ImGui::TextUnformatted( "Range X" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				if ( ImGui::DragFloatRange2( "##rxMinMax", &curve->RangeMin.x, &curve->RangeMax.x, 0.01f, -FLT_MAX, FLT_MAX, "%.2f", "%.2f" ) )
+				{
+					if ( curve->RangeMin.x >= curve->RangeMax.x )
+						curve->RangeMax.x = curve->RangeMin.x + 0.01f;
+				}
+				ImGui::Spacing();
+				ImGui::TextUnformatted( "Range Y" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				if ( ImGui::DragFloatRange2( "##ryMinMax", &curve->RangeMin.y, &curve->RangeMax.y, 0.01f, -FLT_MAX, FLT_MAX, "%.2f", "%.2f" ) )
+				{
+					if ( curve->RangeMin.y >= curve->RangeMax.y )
+						curve->RangeMax.y = curve->RangeMin.y + 0.01f;
+				}
+				if ( curve->SelectedIdx >= 0 && curve->SelectedIdx < curve->Keys.Size )
+				{
+					ImCurveEditorKey& sk = curve->Keys[ curve->SelectedIdx ];
+					ImGui::Separator();
+					ImGui::TextUnformatted( "Selected" );
+					ImGui::Text( "%d", curve->SelectedIdx );
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "X" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					if ( ImGui::DragFloat( "##posx", &sk.Pos.x, 0.001f, curve->RangeMin.x, curve->RangeMax.x, "%.3f" ) )
+						value_changed = true;
+					ImGui::TextUnformatted( "Y" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					if ( ImGui::DragFloat( "##posy", &sk.Pos.y, 0.001f, curve->RangeMin.y, curve->RangeMax.y, "%.3f" ) )
+						value_changed = true;
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "Segment" );
+					if ( ImGui::Button( CurveEditorSegName( sk.Segment ), ImVec2( -FLT_MIN, 0 ) ) )
+						ImGui::OpenPopup( "##segPopup" );
+					if ( ImGui::BeginPopup( "##segPopup" ) )
+					{
+						if ( ImCurveEditorSegmentMenu( &sk.Segment, sk.Segment ) )
+						{
+							// When switching to bezier, set reasonable default tangents
+							if ( sk.Segment == ImCurveEditorSeg_CubicBezier )
+							{
+								int si = curve->SelectedIdx;
+								float segWidth = 0.1f;
+								if ( si < curve->Keys.Size - 1 )
+									segWidth = ( curve->Keys[ si + 1 ].Pos.x - sk.Pos.x ) * 0.33f;
+								sk.TangentRight = ImVec2( segWidth, 0.0f );
+								if ( si < curve->Keys.Size - 1 )
+									curve->Keys[ si + 1 ].TangentLeft = ImVec2( -segWidth, 0.0f );
+							}
+							value_changed = true;
+						}
+						ImGui::EndPopup();
+					}
+					// Tangent mode (only for bezier keys)
+					bool hasBezier = ( sk.Segment == ImCurveEditorSeg_CubicBezier )
+						|| ( curve->SelectedIdx > 0 && curve->Keys[ curve->SelectedIdx - 1 ].Segment == ImCurveEditorSeg_CubicBezier );
+					if ( hasBezier )
+					{
+						if ( TangentModeUI( sk.TangentLeft, sk.TangentRight, sk.TangentMode ) )
+							value_changed = true;
+					}
+				}
+				ImGui::EndChild();
+			}
+			EndExpandedWindow();
+		}
 
 		return value_changed;
 	}
@@ -8093,7 +8395,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( !ImGui::ItemAdd( total_bb, id, &total_bb, 0 ) )
 			return false;
 
-		const bool hovered = ImGui::ItemHoverable( total_bb, id, g.LastItemData.ItemFlags );
+		bool hovered = ImGui::ItemHoverable( total_bb, id, g.LastItemData.ItemFlags );
+		if ( IsMouseOverExpandButton( id, disc_bb ) ) hovered = false;
 
 		bool value_changed = false;
 		float alpha = color->w;
@@ -8207,17 +8510,17 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( ringThick > 0.0f )
 			dl->AddCircle( discCenter, innerDiscRadius, ImGui::GetColorU32( ImGuiCol_Border ), 0, 0.5f );
 
-		// Crosshair guide lines from dot to disc edges
+		// Radial guide lines: hue line from center to disc edge + saturation ring
 		{
 			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorWheel_Crosshair ] );
-			// Horizontal line through dot
-			float clampY = ImClamp( dotPos.y, discCenter.y - innerDiscRadius, discCenter.y + innerDiscRadius );
-			float halfChord = ImSqrt( ImMax( innerDiscRadius * innerDiscRadius - ( clampY - discCenter.y ) * ( clampY - discCenter.y ), 0.0f ) );
-			dl->AddLine( ImVec2( discCenter.x - halfChord, dotPos.y ), ImVec2( discCenter.x + halfChord, dotPos.y ), crossCol );
-			// Vertical line through dot
-			float clampX = ImClamp( dotPos.x, discCenter.x - innerDiscRadius, discCenter.x + innerDiscRadius );
-			float halfChordV = ImSqrt( ImMax( innerDiscRadius * innerDiscRadius - ( clampX - discCenter.x ) * ( clampX - discCenter.x ), 0.0f ) );
-			dl->AddLine( ImVec2( dotPos.x, discCenter.y - halfChordV ), ImVec2( dotPos.x, discCenter.y + halfChordV ), crossCol );
+			// Hue line: from center through dot to disc edge
+			float cosA = ImCos( dotAngle );
+			float sinA = ImSin( dotAngle );
+			dl->AddLine( discCenter, ImVec2( discCenter.x + cosA * innerDiscRadius, discCenter.y + sinA * innerDiscRadius ), crossCol );
+			// Saturation ring at current sat radius
+			float satRadius = sat * innerDiscRadius;
+			if ( satRadius > 1.0f )
+				dl->AddCircle( discCenter, satRadius, crossCol, 0, 1.0f );
 		}
 
 		// Control dot (filled with current color)
@@ -8444,6 +8747,53 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImGui::MarkItemEdited( id );
 		}
 
+		// Expand button
+		bool* pExpanded = WidgetExpandButton( id, disc_bb );
+		if ( pExpanded && *pExpanded )
+		{
+			if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 800, 400 ) ) )
+			{
+				ImVec2 avail = ImGui::GetContentRegionAvail();
+				float widgetW = avail.x * 0.75f;
+				// Left: widget
+				if ( ColorWheel( "##exp", color, mode, hdr_max, ImVec2( widgetW, avail.y ) ) )
+					value_changed = true;
+				ImGui::SameLine();
+				// Right: info / edit
+				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
+				char const* modeNames[] = { "HSV", "OkLCH" };
+				ImGui::TextUnformatted( "Mode" );
+				ImGui::TextUnformatted( modeNames[ ImClamp( ( int )mode, 0, 1 ) ] );
+				ImGui::Separator();
+				float r, g, b;
+				ImGui::ColorConvertHSVtoRGB( color->x, color->y, color->z, r, g, b );
+				ImGui::TextUnformatted( "R" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				if ( ImGui::DragFloat( "##r", &r, 0.001f, 0.0f, hdr_max, "%.3f" ) ) { float h, s, v; ImGui::ColorConvertRGBtoHSV( r, g, b, h, s, v ); color->x = h; color->y = s; color->z = v; value_changed = true; }
+				ImGui::TextUnformatted( "G" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				if ( ImGui::DragFloat( "##g", &g, 0.001f, 0.0f, hdr_max, "%.3f" ) ) { float h, s, v; ImGui::ColorConvertRGBtoHSV( r, g, b, h, s, v ); color->x = h; color->y = s; color->z = v; value_changed = true; }
+				ImGui::TextUnformatted( "B" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				if ( ImGui::DragFloat( "##b", &b, 0.001f, 0.0f, hdr_max, "%.3f" ) ) { float h, s, v; ImGui::ColorConvertRGBtoHSV( r, g, b, h, s, v ); color->x = h; color->y = s; color->z = v; value_changed = true; }
+				ImGui::TextUnformatted( "A" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				if ( ImGui::DragFloat( "##a", &color->w, 0.001f, 0.0f, 1.0f, "%.3f" ) ) value_changed = true;
+				if ( hdr_max > 1.0f )
+				{
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "HDR Max" );
+					ImGui::Text( "%.1f", hdr_max );
+				}
+				ImGui::Separator();
+				ImGui::TextUnformatted( "Preview" );
+				ImVec4 preview( r, g, b, color->w );
+				ImGui::ColorButton( "##preview", preview, 0, ImVec2( ImGui::GetContentRegionAvail().x, 30 ) );
+				ImGui::EndChild();
+			}
+			EndExpandedWindow();
+		}
+
 		return value_changed;
 	}
 
@@ -8521,21 +8871,44 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	void ColorConvertHSYtoRGB( float h, float s, float y, float& out_r, float& out_g, float& out_b )
 	{
-		// Convert through HSV: use hue, approximate V from Y
-		ImGui::ColorConvertHSVtoRGB( h, s, ImClamp( y, 0.0f, 1.0f ), out_r, out_g, out_b );
-		// Scale to approximate target luma
-		float curY = 0.2126f * out_r + 0.7152f * out_g + 0.0722f * out_b;
-		if ( curY > 1e-6f )
-		{
-			float scale = y / curY;
-			out_r = ImClamp( out_r * scale, 0.0f, 1.0f );
-			out_g = ImClamp( out_g * scale, 0.0f, 1.0f );
-			out_b = ImClamp( out_b * scale, 0.0f, 1.0f );
-		}
-		else
+		if ( s < 1e-6f )
 		{
 			out_r = out_g = out_b = ImClamp( y, 0.0f, 1.0f );
+			return;
 		}
+
+		// Pure hue direction at full saturation
+		float r0, g0, b0;
+		ImGui::ColorConvertHSVtoRGB( h, 1.0f, 1.0f, r0, g0, b0 );
+
+		float y0 = 0.2126f * r0 + 0.7152f * g0 + 0.0722f * b0;
+		if ( y0 < 1e-6f )
+		{
+			out_r = out_g = out_b = ImClamp( y, 0.0f, 1.0f );
+			return;
+		}
+
+		// Scale pure hue to match target luma
+		float k = y / y0;
+		float rc = r0 * k;
+		float gc = g0 * k;
+		float bc = b0 * k;
+
+		// If out of gamut, blend toward gray(y) to bring max channel to 1.0
+		float maxC = ImMax( rc, ImMax( gc, bc ) );
+		if ( maxC > 1.0f && maxC > y + 1e-6f )
+		{
+			float t = ( 1.0f - y ) / ( maxC - y );
+			t = ImClamp( t, 0.0f, 1.0f );
+			rc = y + t * ( rc - y );
+			gc = y + t * ( gc - y );
+			bc = y + t * ( bc - y );
+		}
+
+		// Apply saturation as interpolation between gray(y) and chromatic
+		out_r = ImClamp( y + s * ( rc - y ), 0.0f, 1.0f );
+		out_g = ImClamp( y + s * ( gc - y ), 0.0f, 1.0f );
+		out_b = ImClamp( y + s * ( bc - y ), 0.0f, 1.0f );
 	}
 
 	// ---- HSP conversion (perceived brightness) ----
@@ -8561,20 +8934,73 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	void ColorConvertHSPtoRGB( float h, float s, float p, float& out_r, float& out_g, float& out_b )
 	{
-		// Convert through HSV, then scale to target perceived brightness
-		ImGui::ColorConvertHSVtoRGB( h, s, ImClamp( p, 0.0f, 1.0f ), out_r, out_g, out_b );
-		float curP = ImSqrt( 0.299f * out_r * out_r + 0.587f * out_g * out_g + 0.114f * out_b * out_b );
-		if ( curP > 1e-6f )
-		{
-			float scale = p / curP;
-			out_r = ImClamp( out_r * scale, 0.0f, 1.0f );
-			out_g = ImClamp( out_g * scale, 0.0f, 1.0f );
-			out_b = ImClamp( out_b * scale, 0.0f, 1.0f );
-		}
-		else
+		if ( s < 1e-6f )
 		{
 			out_r = out_g = out_b = ImClamp( p, 0.0f, 1.0f );
+			return;
 		}
+
+		// Pure hue direction at full saturation
+		float r0, g0, b0;
+		ImGui::ColorConvertHSVtoRGB( h, 1.0f, 1.0f, r0, g0, b0 );
+
+		float p0 = ImSqrt( 0.299f * r0 * r0 + 0.587f * g0 * g0 + 0.114f * b0 * b0 );
+		if ( p0 < 1e-6f )
+		{
+			out_r = out_g = out_b = ImClamp( p, 0.0f, 1.0f );
+			return;
+		}
+
+		// Scale pure hue to match target perceived brightness
+		float k = p / p0;
+		float rc = r0 * k;
+		float gc = g0 * k;
+		float bc = b0 * k;
+
+		// If out of gamut, blend toward gray(p) to bring max channel to 1.0
+		float maxC = ImMax( rc, ImMax( gc, bc ) );
+		if ( maxC > 1.0f && maxC > p + 1e-6f )
+		{
+			float t = ( 1.0f - p ) / ( maxC - p );
+			t = ImClamp( t, 0.0f, 1.0f );
+			rc = p + t * ( rc - p );
+			gc = p + t * ( gc - p );
+			bc = p + t * ( bc - p );
+		}
+
+		// Apply saturation as interpolation between gray(p) and chromatic
+		out_r = ImClamp( p + s * ( rc - p ), 0.0f, 1.0f );
+		out_g = ImClamp( p + s * ( gc - p ), 0.0f, 1.0f );
+		out_b = ImClamp( p + s * ( bc - p ), 0.0f, 1.0f );
+	}
+
+	// ---- HSP Log conversion (log-perceived brightness) ----
+	void ColorConvertRGBtoHSPLog( float r, float g, float b, float& out_h, float& out_s, float& out_p )
+	{
+		float pLin = ImSqrt( 0.299f * r * r + 0.587f * g * g + 0.114f * b * b );
+		out_p = ( pLin > 1e-6f ) ? ImLog( 1.0f + pLin * 99.0f ) / ImLog( 100.0f ) : 0.0f; // log [0,1] -> [0,1]
+		float mx = ImMax( r, ImMax( g, b ) );
+		float mn = ImMin( r, ImMin( g, b ) );
+		float d = mx - mn;
+		if ( d < 1e-6f )
+		{
+			out_h = 0.0f;
+			out_s = 0.0f;
+			return;
+		}
+		if ( mx == r )		out_h = ImFmod( ( g - b ) / d, 6.0f );
+		else if ( mx == g )	out_h = ( b - r ) / d + 2.0f;
+		else				out_h = ( r - g ) / d + 4.0f;
+		out_h /= 6.0f;
+		if ( out_h < 0.0f ) out_h += 1.0f;
+		out_s = ( mx > 1e-6f ) ? d / mx : 0.0f;
+	}
+
+	void ColorConvertHSPLogtoRGB( float h, float s, float pLog, float& out_r, float& out_g, float& out_b )
+	{
+		// Invert log: pLin = (10^(pLog * 2) - 1) / 99
+		float pLin = ( ImPow( 100.0f, pLog ) - 1.0f ) / 99.0f;
+		ColorConvertHSPtoRGB( h, s, pLin, out_r, out_g, out_b );
 	}
 
 	// Sample disc color for the warper background
@@ -8592,6 +9018,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		case ImColorWarperSpace_HSL: ColorConvertHSLtoRGB( h, normRadius, thirdAxis, r, g, b ); break;
 		case ImColorWarperSpace_HSY: ColorConvertHSYtoRGB( h, normRadius, thirdAxis, r, g, b ); break;
 		case ImColorWarperSpace_HSP: ColorConvertHSPtoRGB( h, normRadius, thirdAxis, r, g, b ); break;
+		case ImColorWarperSpace_HSPLog: ColorConvertHSPLogtoRGB( h, normRadius, thirdAxis, r, g, b ); break;
 		case ImColorWarperSpace_OkLCH:
 		{
 			float c = normRadius * kOkLCHMaxChroma;
@@ -8612,6 +9039,75 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		g = ImClamp( g, 0.0f, 1.0f );
 		b = ImClamp( b, 0.0f, 1.0f );
 		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	// ChromaLuma: extract brightness from the selected color space
+	static float ChromaLumaBrightness( ImColorWarperSpace space, float r, float g, float b )
+	{
+		float h, s, third;
+		switch ( space )
+		{
+		default:
+		case ImColorWarperSpace_HSV:  ImGui::ColorConvertRGBtoHSV( r, g, b, h, s, third ); return third;
+		case ImColorWarperSpace_HSL:  ColorConvertRGBtoHSL( r, g, b, h, s, third ); return third;
+		case ImColorWarperSpace_HSY:  ColorConvertRGBtoHSY( r, g, b, h, s, third ); return third;
+		case ImColorWarperSpace_HSP:  ColorConvertRGBtoHSP( r, g, b, h, s, third ); return third;
+		case ImColorWarperSpace_HSPLog: ColorConvertRGBtoHSPLog( r, g, b, h, s, third ); return third;
+		case ImColorWarperSpace_OkLab:
+		case ImColorWarperSpace_OkLCH:
+		{
+			float L, la, lb;
+			ColorConvertRGBtoOKLAB( L, la, lb, r, g, b );
+			return L;
+		}
+		}
+	}
+
+	// ChromaLuma: decompose RGB into two rotated opponent axes [-0.5,0.5] and space-dependent brightness [0,1]
+	// axisAngle (radians) rotates the Cb/Cr axes — at 0 the defaults are Yellow-Blue (axis1) and Green-Red (axis2)
+	static void ChromaLumaDecompose( ImColorWarperSpace space, float r, float g, float b,
+									 float& out_axis1, float& out_axis2, float& out_brightness,
+									 float axisAngle = 0.0f )
+	{
+		// Standard BT.601 opponent axes
+		float y601 = 0.299f * r + 0.587f * g + 0.114f * b;
+		float cb = ( b - y601 ) / 1.772f;  // [-0.5, 0.5] yellow(-) to blue(+)
+		float cr = ( r - y601 ) / 1.402f;  // [-0.5, 0.5] green(-) to red(+)
+
+		// Rotate by axis angle
+		float cosA = ImCos( axisAngle );
+		float sinA = ImSin( axisAngle );
+		out_axis1 = cb * cosA - cr * sinA;
+		out_axis2 = cb * sinA + cr * cosA;
+
+		// Brightness from selected color space
+		out_brightness = ChromaLumaBrightness( space, r, g, b );
+	}
+
+	// ChromaLuma background: reconstruct color from axis value and brightness via BT.601 YCbCr inverse
+	// axisVal in [-1,1], brightness in [0,1] (used as Y), isSecondGrid selects axis2, axisAngle rotates
+	static ImU32 ChromaLumaSampleBG( float axisVal, float brightness, bool isSecondGrid, float axisAngle, float satScale )
+	{
+		// Map axis value to the rotated Cb/Cr component ([-0.5, 0.5])
+		float a1 = isSecondGrid ? 0.0f : ( axisVal * 0.5f * satScale );
+		float a2 = isSecondGrid ? ( axisVal * 0.5f * satScale ) : 0.0f;
+
+		// Un-rotate to recover original Cb/Cr
+		float cosA = ImCos( axisAngle );
+		float sinA = ImSin( axisAngle );
+		float cb = a1 * cosA + a2 * sinA;
+		float cr = -a1 * sinA + a2 * cosA;
+
+		// BT.601 inverse: Y ≈ brightness (approximation — actual Y601 differs from per-space brightness)
+		float Y = brightness;
+		float rv = Y + 1.402f * cr;
+		float bv = Y + 1.772f * cb;
+		float gv = ( Y - 0.299f * rv - 0.114f * bv ) / 0.587f;
+
+		rv = ImClamp( rv, 0.0f, 1.0f );
+		gv = ImClamp( gv, 0.0f, 1.0f );
+		bv = ImClamp( bv, 0.0f, 1.0f );
+		return IM_COL32( ( int )( rv * 255.0f + 0.5f ), ( int )( gv * 255.0f + 0.5f ), ( int )( bv * 255.0f + 0.5f ), 255 );
 	}
 
 	// Draw warper background disc (circular mode)
@@ -8663,33 +9159,77 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float w = bb.GetWidth();
 		float h = bb.GetHeight();
 
-		for ( int si = 0; si < numS; ++si )
+		if ( space == ImColorWarperSpace_OkLab )
 		{
-			float s0 = ( float )si / numS;
-			float s1 = ( float )( si + 1 ) / numS;
-			float y0 = bb.Max.y - s0 * h; // bottom = sat 0, top = sat 1
-			float y1 = bb.Max.y - s1 * h;
-
-			for ( int hi = 0; hi < numH; ++hi )
+			// Cartesian a/b plane: X = a [-maxChroma, +maxChroma], Y = b [-maxChroma, +maxChroma]
+			for ( int yi = 0; yi < numS; ++yi )
 			{
-				float h0 = ( float )hi / numH;
-				float h1 = ( float )( hi + 1 ) / numH;
-				float x0 = bb.Min.x + h0 * w;
-				float x1 = bb.Min.x + h1 * w;
+				float t0 = ( float )yi / numS;
+				float t1 = ( float )( yi + 1 ) / numS;
+				float b0 = ( 1.0f - t0 ) * kOkLCHMaxChroma * 2.0f - kOkLCHMaxChroma; // top = +max, bottom = -max
+				float b1 = ( 1.0f - t1 ) * kOkLCHMaxChroma * 2.0f - kOkLCHMaxChroma;
+				float y0 = bb.Min.y + t0 * h;
+				float y1 = bb.Min.y + t1 * h;
 
-				float a0 = h0 * 2.0f * IM_PI;
-				float a1 = h1 * 2.0f * IM_PI;
+				for ( int xi = 0; xi < numH; ++xi )
+				{
+					float u0 = ( float )xi / numH;
+					float u1 = ( float )( xi + 1 ) / numH;
+					float a0 = u0 * kOkLCHMaxChroma * 2.0f - kOkLCHMaxChroma; // left = -max, right = +max
+					float a1 = u1 * kOkLCHMaxChroma * 2.0f - kOkLCHMaxChroma;
+					float x0 = bb.Min.x + u0 * w;
+					float x1 = bb.Min.x + u1 * w;
 
-				ImU32 c00 = ColorWarperSampleDisc( space, s0, a0, thirdAxis );
-				ImU32 c10 = ColorWarperSampleDisc( space, s0, a1, thirdAxis );
-				ImU32 c11 = ColorWarperSampleDisc( space, s1, a1, thirdAxis );
-				ImU32 c01 = ColorWarperSampleDisc( space, s1, a0, thirdAxis );
+					auto sampleOkLab = [&]( float la, float lb ) -> ImU32 {
+						float r, g, bv;
+						ColorConvertOKLABtoRGB( r, g, bv, thirdAxis, la, lb );
+						r = ImClamp( r, 0.0f, 1.0f );
+						g = ImClamp( g, 0.0f, 1.0f );
+						bv = ImClamp( bv, 0.0f, 1.0f );
+						return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( bv * 255.0f + 0.5f ), 255 );
+					};
 
-				ImDrawIdx idx = ( ImDrawIdx )dl->_VtxCurrentIdx;
-				dl->PrimWriteIdx( idx + 0 ); dl->PrimWriteIdx( idx + 1 ); dl->PrimWriteIdx( idx + 2 );
-				dl->PrimWriteIdx( idx + 0 ); dl->PrimWriteIdx( idx + 2 ); dl->PrimWriteIdx( idx + 3 );
-				dl->PrimWriteVtx( ImVec2( x0, y0 ), uv, c00 ); dl->PrimWriteVtx( ImVec2( x1, y0 ), uv, c10 );
-				dl->PrimWriteVtx( ImVec2( x1, y1 ), uv, c11 ); dl->PrimWriteVtx( ImVec2( x0, y1 ), uv, c01 );
+					ImDrawIdx idx = ( ImDrawIdx )dl->_VtxCurrentIdx;
+					dl->PrimWriteIdx( idx + 0 ); dl->PrimWriteIdx( idx + 1 ); dl->PrimWriteIdx( idx + 2 );
+					dl->PrimWriteIdx( idx + 0 ); dl->PrimWriteIdx( idx + 2 ); dl->PrimWriteIdx( idx + 3 );
+					dl->PrimWriteVtx( ImVec2( x0, y0 ), uv, sampleOkLab( a0, b0 ) );
+					dl->PrimWriteVtx( ImVec2( x1, y0 ), uv, sampleOkLab( a1, b0 ) );
+					dl->PrimWriteVtx( ImVec2( x1, y1 ), uv, sampleOkLab( a1, b1 ) );
+					dl->PrimWriteVtx( ImVec2( x0, y1 ), uv, sampleOkLab( a0, b1 ) );
+				}
+			}
+		}
+		else
+		{
+			// Polar unwrap: X = hue [0,1], Y = sat/chroma [0,1]
+			for ( int si = 0; si < numS; ++si )
+			{
+				float s0 = ( float )si / numS;
+				float s1 = ( float )( si + 1 ) / numS;
+				float y0 = bb.Max.y - s0 * h; // bottom = sat 0, top = sat 1
+				float y1 = bb.Max.y - s1 * h;
+
+				for ( int hi = 0; hi < numH; ++hi )
+				{
+					float h0 = ( float )hi / numH;
+					float h1 = ( float )( hi + 1 ) / numH;
+					float x0 = bb.Min.x + h0 * w;
+					float x1 = bb.Min.x + h1 * w;
+
+					float a0 = h0 * 2.0f * IM_PI;
+					float a1 = h1 * 2.0f * IM_PI;
+
+					ImU32 c00 = ColorWarperSampleDisc( space, s0, a0, thirdAxis );
+					ImU32 c10 = ColorWarperSampleDisc( space, s0, a1, thirdAxis );
+					ImU32 c11 = ColorWarperSampleDisc( space, s1, a1, thirdAxis );
+					ImU32 c01 = ColorWarperSampleDisc( space, s1, a0, thirdAxis );
+
+					ImDrawIdx idx = ( ImDrawIdx )dl->_VtxCurrentIdx;
+					dl->PrimWriteIdx( idx + 0 ); dl->PrimWriteIdx( idx + 1 ); dl->PrimWriteIdx( idx + 2 );
+					dl->PrimWriteIdx( idx + 0 ); dl->PrimWriteIdx( idx + 2 ); dl->PrimWriteIdx( idx + 3 );
+					dl->PrimWriteVtx( ImVec2( x0, y0 ), uv, c00 ); dl->PrimWriteVtx( ImVec2( x1, y0 ), uv, c10 );
+					dl->PrimWriteVtx( ImVec2( x1, y1 ), uv, c11 ); dl->PrimWriteVtx( ImVec2( x0, y1 ), uv, c01 );
+				}
 			}
 		}
 	}
@@ -8706,7 +9246,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return ImVec2( bb.Min.x + hue * bb.GetWidth(), bb.Max.y - sat * bb.GetHeight() );
 	}
 
-	bool ColorWarper( char const* label, ImColorWarperData* data, ImColorWarperMode mode, ImColorWarperSpace space, float thirdAxis, ImVec2 size )
+	bool ColorWarper( char const* label, ImColorWarperData* data, ImColorWarperMode mode, ImColorWarperSpace space, float thirdAxis, ImColorWarperOverlay const* signalOverlay, ImColorWarperSignalColor signalColor, float axisAngle, ImVec2 size )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
@@ -8741,6 +9281,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			return false;
 
 		bool hovered = ImGui::ItemHoverable( content_bb, id, ImGuiItemFlags_None );
+		if ( IsMouseOverExpandButton( id, content_bb ) ) hovered = false;
 		bool value_changed = false;
 
 		ImDrawList* dl = window->DrawList;
@@ -8754,11 +9295,237 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			DrawColorWarperDisc( dl, center, radius, space, thirdAxis, discSectors, discRings );
 			dl->AddCircle( center, radius, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
-		else // Square
+		else if ( mode == ImColorWarperMode_Square )
 		{
 			dl->AddRectFilled( content_bb.Min, content_bb.Max, IM_COL32( 0, 0, 0, 255 ) );
 			DrawColorWarperSquare( dl, content_bb, space, thirdAxis, discSectors, discRings );
 			dl->AddRect( content_bb.Min, content_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		else // ChromaLuma — two squares side by side
+		{
+			float halfW = content_bb.GetWidth() * 0.5f - 2.0f;
+			ImRect leftBB( content_bb.Min, ImVec2( content_bb.Min.x + halfW, content_bb.Max.y ) );
+			ImRect rightBB( ImVec2( content_bb.Max.x - halfW, content_bb.Min.y ), content_bb.Max );
+
+			// Draw both squares with space-aware background
+			for ( int sq = 0; sq < 2; ++sq )
+			{
+				ImRect const& bb = ( sq == 0 ) ? leftBB : rightBB;
+				bool isSecond = ( sq == 1 );
+				dl->AddRectFilled( bb.Min, bb.Max, IM_COL32( 0, 0, 0, 255 ) );
+				float w = bb.GetWidth(), h = bb.GetHeight();
+				int nX = 32, nY = 16;
+				ImVec2 uv = ImGui::GetFontTexUvWhitePixel();
+				dl->PrimReserve( nX * nY * 6, nX * nY * 4 );
+				for ( int yi = 0; yi < nY; ++yi )
+				{
+					float br0 = 1.0f - ( float )yi / nY;
+					float br1 = 1.0f - ( float )( yi + 1 ) / nY;
+					for ( int xi = 0; xi < nX; ++xi )
+					{
+						float a0 = ( ( float )xi / nX - 0.5f ) * 2.0f;
+						float a1 = ( ( float )( xi + 1 ) / nX - 0.5f ) * 2.0f;
+						ImVec2 p0( bb.Min.x + ( float )xi / nX * w, bb.Min.y + ( float )yi / nY * h );
+						ImVec2 p1( bb.Min.x + ( float )( xi + 1 ) / nX * w, bb.Min.y + ( float )( yi + 1 ) / nY * h );
+						ImDrawIdx idx = ( ImDrawIdx )dl->_VtxCurrentIdx;
+						dl->PrimWriteIdx( idx ); dl->PrimWriteIdx( idx + 1 ); dl->PrimWriteIdx( idx + 2 );
+						dl->PrimWriteIdx( idx ); dl->PrimWriteIdx( idx + 2 ); dl->PrimWriteIdx( idx + 3 );
+						dl->PrimWriteVtx( p0, uv, ChromaLumaSampleBG( a0, br0, isSecond, axisAngle, thirdAxis ) );
+						dl->PrimWriteVtx( ImVec2( p1.x, p0.y ), uv, ChromaLumaSampleBG( a1, br0, isSecond, axisAngle, thirdAxis ) );
+						dl->PrimWriteVtx( p1, uv, ChromaLumaSampleBG( a1, br1, isSecond, axisAngle, thirdAxis ) );
+						dl->PrimWriteVtx( ImVec2( p0.x, p1.y ), uv, ChromaLumaSampleBG( a0, br1, isSecond, axisAngle, thirdAxis ) );
+					}
+				}
+				dl->AddRect( bb.Min, bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+			}
+		}
+
+		// Signal overlay (sampled pixel point cloud)
+		if ( signalOverlay && signalOverlay->SampleCount > 0 )
+		{
+			dl->PushClipRect( content_bb.Min, content_bb.Max, true );
+
+			float dotR = dwStyle.CIEChromaticity_SignalRadius;
+			float signalAlphaF = ImClamp( dwStyle.CIEChromaticity_SignalAlpha, 0.0f, 1.0f );
+			ImU8 alphaU8 = ( ImU8 )( signalAlphaF * 255.0f );
+
+			// Flat color (with alpha override)
+			ImU32 flatCol = 0;
+			if ( signalColor == ImColorWarperSignalColor_Flat )
+			{
+				ImVec4 sigF = dwStyle.Colors[ StyleColor_CIEChromaticity_Signal ];
+				sigF.w = signalAlphaF;
+				flatCol = ImGui::GetColorU32( sigF );
+			}
+
+			// ChromaLuma sub-rects
+			float clHalfW = content_bb.GetWidth() * 0.5f - 2.0f;
+			ImRect clLeftBB( content_bb.Min, ImVec2( content_bb.Min.x + clHalfW, content_bb.Max.y ) );
+			ImRect clRightBB( ImVec2( content_bb.Max.x - clHalfW, content_bb.Min.y ), content_bb.Max );
+
+			int const kMaxPerBatch = 16000;
+			int total = signalOverlay->SampleCount;
+			// ChromaLuma draws 2 dots per sample
+			int dotsPerSample = ( mode == ImColorWarperMode_ChromaLuma ) ? 2 : 1;
+			int totalDots = total * dotsPerSample;
+			int inBatch = 0;
+			dl->PrimReserve( ImMin( totalDots, kMaxPerBatch ) * 6, ImMin( totalDots, kMaxPerBatch ) * 4 );
+			ImVec2 uv = ImGui::GetFontTexUvWhitePixel();
+
+			float const* rgb = signalOverlay->SampledRGB.Data;
+			for ( int i = 0; i < total; ++i )
+			{
+				float r = rgb[ i * 3 + 0 ];
+				float g2 = rgb[ i * 3 + 1 ];
+				float b = rgb[ i * 3 + 2 ];
+
+				ImU32 col;
+				if ( signalColor == ImColorWarperSignalColor_PixelColor )
+				{
+					ImU8 pR = ( ImU8 )( ImClamp( r, 0.0f, 1.0f ) * 255.0f );
+					ImU8 pG = ( ImU8 )( ImClamp( g2, 0.0f, 1.0f ) * 255.0f );
+					ImU8 pB = ( ImU8 )( ImClamp( b, 0.0f, 1.0f ) * 255.0f );
+					col = IM_COL32( pR, pG, pB, alphaU8 );
+				}
+				else
+				{
+					col = flatCol;
+				}
+
+				if ( mode == ImColorWarperMode_ChromaLuma )
+				{
+					// Decompose into rotated opponent axes [-0.5,0.5] and space-dependent brightness [0,1]
+					float axis1, axis2, brightness;
+					ChromaLumaDecompose( space, r, g2, b, axis1, axis2, brightness, axisAngle );
+
+					// Normalize from [-0.5,0.5] to [0,1] for screen mapping
+					float a1Norm = axis1 + 0.5f;
+					float a2Norm = axis2 + 0.5f;
+
+					// Left square: axis1 vs brightness
+					ImVec2 posL;
+					posL.x = clLeftBB.Min.x + a1Norm * clLeftBB.GetWidth();
+					posL.y = clLeftBB.Min.y + ( 1.0f - brightness ) * clLeftBB.GetHeight();
+					{
+						ImVec2 p0( posL.x - dotR, posL.y - dotR );
+						ImVec2 p1( posL.x + dotR, posL.y + dotR );
+						ImDrawIdx pidx = ( ImDrawIdx )dl->_VtxCurrentIdx;
+						dl->PrimWriteIdx( pidx ); dl->PrimWriteIdx( pidx + 1 ); dl->PrimWriteIdx( pidx + 2 );
+						dl->PrimWriteIdx( pidx ); dl->PrimWriteIdx( pidx + 2 ); dl->PrimWriteIdx( pidx + 3 );
+						dl->PrimWriteVtx( p0, uv, col );
+						dl->PrimWriteVtx( ImVec2( p1.x, p0.y ), uv, col );
+						dl->PrimWriteVtx( p1, uv, col );
+						dl->PrimWriteVtx( ImVec2( p0.x, p1.y ), uv, col );
+					}
+
+					// Right square: axis2 vs brightness
+					ImVec2 posR;
+					posR.x = clRightBB.Min.x + a2Norm * clRightBB.GetWidth();
+					posR.y = clRightBB.Min.y + ( 1.0f - brightness ) * clRightBB.GetHeight();
+					{
+						ImVec2 p0( posR.x - dotR, posR.y - dotR );
+						ImVec2 p1( posR.x + dotR, posR.y + dotR );
+						ImDrawIdx pidx = ( ImDrawIdx )dl->_VtxCurrentIdx;
+						dl->PrimWriteIdx( pidx ); dl->PrimWriteIdx( pidx + 1 ); dl->PrimWriteIdx( pidx + 2 );
+						dl->PrimWriteIdx( pidx ); dl->PrimWriteIdx( pidx + 2 ); dl->PrimWriteIdx( pidx + 3 );
+						dl->PrimWriteVtx( p0, uv, col );
+						dl->PrimWriteVtx( ImVec2( p1.x, p0.y ), uv, col );
+						dl->PrimWriteVtx( p1, uv, col );
+						dl->PrimWriteVtx( ImVec2( p0.x, p1.y ), uv, col );
+					}
+
+					inBatch += 2;
+				}
+				else
+				{
+					// Convert RGB to hue/sat in the current color space
+					float h = 0.0f, s = 0.0f, third = 0.0f;
+					ImVec2 pos;
+					bool posComputed = false;
+
+					switch ( space )
+					{
+					case ImColorWarperSpace_HSV:
+						ImGui::ColorConvertRGBtoHSV( r, g2, b, h, s, third );
+						break;
+					case ImColorWarperSpace_HSL:
+						ColorConvertRGBtoHSL( r, g2, b, h, s, third );
+						break;
+					case ImColorWarperSpace_HSY:
+						ColorConvertRGBtoHSY( r, g2, b, h, s, third );
+						break;
+					case ImColorWarperSpace_HSP:
+						ColorConvertRGBtoHSP( r, g2, b, h, s, third );
+						break;
+					case ImColorWarperSpace_HSPLog:
+						ColorConvertRGBtoHSPLog( r, g2, b, h, s, third );
+						break;
+					case ImColorWarperSpace_OkLCH:
+					{
+						float L, C, H;
+						ColorConvertsRGBtoOKLCH( L, C, H, r, g2, b );
+						h = H;
+						s = ImClamp( C / kOkLCHMaxChroma, 0.0f, 1.0f );
+						break;
+					}
+					case ImColorWarperSpace_OkLab:
+					{
+						float L, la, lb;
+						ColorConvertRGBtoOKLAB( L, la, lb, r, g2, b );
+						if ( mode == ImColorWarperMode_Square )
+						{
+							// Cartesian a/b mapping: a → X, b → Y
+							float aNorm = la / ( kOkLCHMaxChroma * 2.0f ) + 0.5f;
+							float bNorm = 1.0f - ( lb / ( kOkLCHMaxChroma * 2.0f ) + 0.5f );
+							pos.x = content_bb.Min.x + aNorm * content_bb.GetWidth();
+							pos.y = content_bb.Min.y + bNorm * content_bb.GetHeight();
+							posComputed = true;
+						}
+						else
+						{
+							// Circular: polar form (same as OkLCH on a disc)
+							float dist = ImSqrt( la * la + lb * lb );
+							s = ImClamp( dist / kOkLCHMaxChroma, 0.0f, 1.0f );
+							h = ImAtan2( lb, la ) / ( 2.0f * IM_PI );
+							if ( h < 0.0f ) h += 1.0f;
+						}
+						break;
+					}
+					default:
+						ImGui::ColorConvertRGBtoHSV( r, g2, b, h, s, third );
+						break;
+					}
+
+					if ( !posComputed )
+					{
+						if ( mode == ImColorWarperMode_Circular )
+							pos = WarperHueSatToScreenCircular( h, s, center, radius );
+						else
+							pos = WarperHueSatToScreenSquare( h, s, content_bb );
+					}
+
+					ImVec2 p0( pos.x - dotR, pos.y - dotR );
+					ImVec2 p1( pos.x + dotR, pos.y + dotR );
+					ImDrawIdx pidx = ( ImDrawIdx )dl->_VtxCurrentIdx;
+					dl->PrimWriteIdx( pidx ); dl->PrimWriteIdx( pidx + 1 ); dl->PrimWriteIdx( pidx + 2 );
+					dl->PrimWriteIdx( pidx ); dl->PrimWriteIdx( pidx + 2 ); dl->PrimWriteIdx( pidx + 3 );
+					dl->PrimWriteVtx( p0, uv, col );
+					dl->PrimWriteVtx( ImVec2( p1.x, p0.y ), uv, col );
+					dl->PrimWriteVtx( p1, uv, col );
+					dl->PrimWriteVtx( ImVec2( p0.x, p1.y ), uv, col );
+
+					++inBatch;
+				}
+
+				if ( inBatch >= kMaxPerBatch && ( i + 1 ) < total )
+				{
+					int remaining = ImMin( ( total - i - 1 ) * dotsPerSample, kMaxPerBatch );
+					dl->PrimReserve( remaining * 6, remaining * 4 );
+					inBatch = 0;
+				}
+			}
+
+			dl->PopClipRect();
 		}
 
 		// Clip
@@ -9001,6 +9768,60 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( value_changed )
 			ImGui::MarkItemEdited( id );
 
+		// Expand button
+		bool* pExpanded = WidgetExpandButton( id, content_bb );
+		if ( pExpanded && *pExpanded )
+		{
+			if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 800, 400 ) ) )
+			{
+				ImVec2 avail = ImGui::GetContentRegionAvail();
+				float widgetW = avail.x * 0.75f;
+				// Left: widget
+				if ( ColorWarper( "##exp", data, mode, space, thirdAxis, signalOverlay, signalColor, axisAngle, ImVec2( widgetW, avail.y ) ) )
+					value_changed = true;
+				ImGui::SameLine();
+				// Right: info / edit
+				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
+				char const* modeNames[] = { "Circular", "Square", "Chroma/Luma" };
+				char const* spaceNames[] = { "HSV", "HSL", "HSY", "HSP", "HSP Log", "OkLab", "OkLCH" };
+				ImGui::TextUnformatted( "Mode" );
+				ImGui::TextUnformatted( modeNames[ ImClamp( ( int )mode, 0, 2 ) ] );
+				ImGui::Spacing();
+				ImGui::TextUnformatted( "Space" );
+				ImGui::TextUnformatted( spaceNames[ ImClamp( ( int )space, 0, 6 ) ] );
+				ImGui::Spacing();
+				char const* thirdAxisNames[] = { "Value", "Lightness", "Luma", "Brightness", "Brightness (Log)", "Lightness", "Lightness" };
+				ImGui::TextUnformatted( thirdAxisNames[ ImClamp( ( int )space, 0, 6 ) ] );
+				ImGui::Text( "%.2f", thirdAxis );
+				if ( mode == ImColorWarperMode_ChromaLuma )
+				{
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "Axis Angle" );
+					ImGui::Text( "%.1f deg", axisAngle * 180.0f / IM_PI );
+				}
+				if ( data->SelectedIdx >= 0 && data->SelectedIdx < data->Offsets.Size )
+				{
+					ImGui::Separator();
+					ImGui::TextUnformatted( "Point" );
+					ImGui::Text( "%d", data->SelectedIdx );
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "Offset X" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					if ( ImGui::DragFloat( "##offx", &data->Offsets[ data->SelectedIdx ].x, 0.001f, -1.0f, 1.0f, "%.3f" ) )
+						value_changed = true;
+					ImGui::TextUnformatted( "Offset Y" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					if ( ImGui::DragFloat( "##offy", &data->Offsets[ data->SelectedIdx ].y, 0.001f, -1.0f, 1.0f, "%.3f" ) )
+						value_changed = true;
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "Pinned" );
+					ImGui::TextUnformatted( data->Pinned[ data->SelectedIdx ] ? "Yes" : "No" );
+				}
+				ImGui::EndChild();
+			}
+			EndExpandedWindow();
+		}
+
 		return value_changed;
 	}
 
@@ -9063,7 +9884,31 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			( -p0 + 3.0f * p1 - 3.0f * p2 + p3 ) * t3 );
 	}
 
-	float ColorCurveSample( ImColorCurveData const& curve, ImColorCurveMode mode, float x )
+	// Advanced segment sampling: evaluate a segment between two keys using the key's segment type
+	static float ColorCurveAdvancedSegSample( ImColorCurveKey const& k0, ImColorCurveKey const& k1, float t )
+	{
+		ImCurveEditorSeg seg = k0.Segment;
+
+		if ( seg == ImCurveEditorSeg_CubicBezier )
+		{
+			// Hermite cubic using tangent slopes
+			float span = ImMax( k1.Position - k0.Position, 1e-6f );
+			float m1 = ( k0.TangentRight.x > 1e-6f ) ? ( k0.TangentRight.y / k0.TangentRight.x ) : 0.0f;
+			float m2 = ( k1.TangentLeft.x < -1e-6f ) ? ( k1.TangentLeft.y / k1.TangentLeft.x ) : 0.0f;
+			float t2 = t * t;
+			float t3 = t2 * t;
+			return ( 2.0f * t3 - 3.0f * t2 + 1.0f ) * k0.Value
+				 + ( t3 - 2.0f * t2 + t ) * span * m1
+				 + ( -2.0f * t3 + 3.0f * t2 ) * k1.Value
+				 + ( t3 - t2 ) * span * m2;
+		}
+
+		// Step, linear, and easing functions
+		float easedT = CurveEditorEvalEasing( seg, t );
+		return k0.Value + ( k1.Value - k0.Value ) * easedT;
+	}
+
+	float ColorCurveSample( ImColorCurveData const& curve, ImColorCurveMode mode, float x, bool advancedSegments )
 	{
 		bool cyclic = ColorCurveIsCyclic( mode );
 		float defaultY = ColorCurveDefaultValue( mode );
@@ -9071,6 +9916,39 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		if ( n == 0 ) return defaultY;
 		if ( n == 1 ) return curve.Keys[ 0 ].Value;
+
+		// Advanced mode: use per-key segment types
+		if ( advancedSegments )
+		{
+			float cx = cyclic ? ( x - ImFloor( x ) ) : x;
+			if ( !cyclic )
+			{
+				if ( cx <= curve.Keys[ 0 ].Position ) return curve.Keys[ 0 ].Value;
+				if ( cx >= curve.Keys[ n - 1 ].Position ) return curve.Keys[ n - 1 ].Value;
+			}
+			for ( int i = 0; i < n - 1; ++i )
+			{
+				if ( cx >= curve.Keys[ i ].Position && cx < curve.Keys[ i + 1 ].Position )
+				{
+					float span = curve.Keys[ i + 1 ].Position - curve.Keys[ i ].Position;
+					if ( span < 1e-6f ) return curve.Keys[ i ].Value;
+					float t = ( cx - curve.Keys[ i ].Position ) / span;
+					return ColorCurveAdvancedSegSample( curve.Keys[ i ], curve.Keys[ i + 1 ], t );
+				}
+			}
+			if ( cyclic && n >= 2 )
+			{
+				// Wrap-around segment: last key -> first key
+				float segStart = curve.Keys[ n - 1 ].Position;
+				float segEnd = curve.Keys[ 0 ].Position + 1.0f;
+				float wx = ( cx < curve.Keys[ 0 ].Position ) ? cx + 1.0f : cx;
+				float span = segEnd - segStart;
+				if ( span < 1e-6f ) return curve.Keys[ n - 1 ].Value;
+				float t = ( wx - segStart ) / span;
+				return ColorCurveAdvancedSegSample( curve.Keys[ n - 1 ], curve.Keys[ 0 ], t );
+			}
+			return curve.Keys[ n - 1 ].Value;
+		}
 
 		if ( cyclic )
 			x = x - ImFloor( x );
@@ -9199,7 +10077,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return ImVec2( pos, val );
 	}
 
-	bool ColorCurve( char const* label, ImColorCurveData* curve, ImColorCurveMode mode, ImHistogramData const* histogramOverlay, ImVec2 size )
+	bool ColorCurve( char const* label, ImColorCurveData* curve, ImColorCurveMode mode, ImHistogramData const* histogramOverlay, bool advancedSegments, ImVec2 size )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
@@ -9222,7 +10100,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, 0 ) )
 			return false;
 
-		const bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.ItemFlags );
+		bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.ItemFlags );
+		if ( IsMouseOverExpandButton( id, frame_bb ) ) hovered = false;
 
 		bool value_changed = false;
 		int& selected = curve->SelectedIdx;
@@ -9231,6 +10110,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float yMin, yMax;
 		ColorCurveRange( mode, &yMin, &yMax );
 		float defaultY = ColorCurveDefaultValue( mode );
+
+		// Auto-initialize with two identity keys if empty
+		if ( curve->Keys.Size == 0 )
+		{
+			curve->AddKey( 0.0f, defaultY );
+			curve->AddKey( 1.0f, defaultY );
+		}
 
 		float keyRadius = dwStyle.ColorCurve_KeyRadius;
 		float lineThick = dwStyle.ColorCurve_LineThickness;
@@ -9252,6 +10138,21 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				closest_dist_sq = dSq;
 				hovered_key = i;
 			}
+		}
+
+		// Find hovered tangent handle (only for selected key, only in advanced mode)
+		int hovered_tangent = 0;
+		ImGuiID dragTargetKey = ImGui::GetID( "##ccDragTgt" );
+		int& dragTarget = *ImGui::GetStateStorage()->GetIntRef( dragTargetKey, 0 );
+		if ( advancedSegments && selected >= 0 && selected < curve->Keys.Size )
+		{
+			ImColorCurveKey const& sk = curve->Keys[ selected ];
+			bool showRight = ( sk.Segment == ImCurveEditorSeg_CubicBezier && selected < curve->Keys.Size - 1 );
+			bool showLeft = ( selected > 0 && curve->Keys[ selected - 1 ].Segment == ImCurveEditorSeg_CubicBezier );
+			float tanHitSq = ( hitRadius + 2.0f ) * ( hitRadius + 2.0f );
+			ImVec2 tanLScreen = showLeft ? ColorCurveToScreen( sk.Position + sk.TangentLeft.x, sk.Value + sk.TangentLeft.y, frame_bb, yMin, yMax ) : ImVec2();
+			ImVec2 tanRScreen = showRight ? ColorCurveToScreen( sk.Position + sk.TangentRight.x, sk.Value + sk.TangentRight.y, frame_bb, yMin, yMax ) : ImVec2();
+			hovered_tangent = HitTestBezierHandles( g.IO.MousePos, tanLScreen, tanRScreen, showLeft, showRight, tanHitSq );
 		}
 
 		// --- DRAWING ---
@@ -9350,13 +10251,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			if ( sampleCount < 64 ) sampleCount = 64;
 
 			ImVec2 prev = ColorCurveToScreen( 0.0f,
-				curve->Keys.Size > 0 ? ColorCurveSample( *curve, mode, 0.0f ) : defaultY,
+				curve->Keys.Size > 0 ? ColorCurveSample( *curve, mode, 0.0f, advancedSegments ) : defaultY,
 				frame_bb, yMin, yMax );
 
 			for ( int s = 1; s <= sampleCount; ++s )
 			{
 				float t = ( float )s / ( float )sampleCount;
-				float val = curve->Keys.Size > 0 ? ColorCurveSample( *curve, mode, t ) : defaultY;
+				float val = curve->Keys.Size > 0 ? ColorCurveSample( *curve, mode, t, advancedSegments ) : defaultY;
 				ImVec2 cur = ColorCurveToScreen( t, val, frame_bb, yMin, yMax );
 				dl->AddLine( prev, cur, curveCol, lineThick );
 				prev = cur;
@@ -9371,24 +10272,38 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			bool isHovered = ( i == hovered_key );
 			float radius = isHovered ? keyRadius + 2.0f : keyRadius;
 
-			// For hue modes, tint key with the hue at its position
+			// For hue modes, tint key with the hue at its position; indicate selection via outline
 			ImU32 keyCol;
 			if ( mode <= ImColorCurveMode_HueVsLum )
 			{
 				float hr, hg, hb;
 				ImGui::ColorConvertHSVtoRGB( curve->Keys[ i ].Position, 0.9f, 1.0f, hr, hg, hb );
-				keyCol = isSelected
-					? ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorCurve_KeySelected ] )
-					: IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
+				keyCol = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
 			}
 			else
 			{
 				keyCol = ImGui::GetColorU32( dwStyle.Colors[ isSelected ? StyleColor_ColorCurve_KeySelected : ( isHovered ? StyleColor_ColorCurve_KeyHovered : StyleColor_ColorCurve_Key ) ] );
 			}
-			ImU32 outCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorCurve_KeyOutline ] );
+			ImU32 outCol = isSelected ? IM_COL32_WHITE : ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorCurve_KeyOutline ] );
+			float outThk = isSelected ? 2.5f : 1.5f;
 
 			dl->AddCircleFilled( kScreen, radius, keyCol );
-			dl->AddCircle( kScreen, radius, outCol, 0, isSelected ? 2.0f : 1.5f );
+			dl->AddCircle( kScreen, radius, outCol, 0, outThk );
+		}
+
+		// Draw tangent handles for selected key (advanced mode)
+		if ( advancedSegments && selected >= 0 && selected < curve->Keys.Size )
+		{
+			ImColorCurveKey const& sk = curve->Keys[ selected ];
+			bool showRight = ( sk.Segment == ImCurveEditorSeg_CubicBezier && selected < curve->Keys.Size - 1 );
+			bool showLeft = ( selected > 0 && curve->Keys[ selected - 1 ].Segment == ImCurveEditorSeg_CubicBezier );
+			ImVec2 keyScreen = ColorCurveToScreen( sk.Position, sk.Value, frame_bb, yMin, yMax );
+			ImU32 tangentCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_TangentLine ] );
+			ImU32 tangentHovCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_TangentHovered ] );
+			ImVec2 tanLScreen = showLeft ? ColorCurveToScreen( sk.Position + sk.TangentLeft.x, sk.Value + sk.TangentLeft.y, frame_bb, yMin, yMax ) : ImVec2();
+			ImVec2 tanRScreen = showRight ? ColorCurveToScreen( sk.Position + sk.TangentRight.x, sk.Value + sk.TangentRight.y, frame_bb, yMin, yMax ) : ImVec2();
+			DrawBezierHandles( dl, keyScreen, tanLScreen, tanRScreen, showLeft, showRight,
+							   hovered_tangent, tangentCol, tangentHovCol, lineThick, keyRadius * 0.7f );
 		}
 
 		// Hover feedback
@@ -9420,23 +10335,34 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// --- INTERACTIONS ---
 		ImGui::PushID( id );
 
+		// Click on tangent handle: select and start drag
+		if ( advancedSegments && hovered_tangent != 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
+		{
+			dragTarget = hovered_tangent;
+			ImGui::SetActiveID( id, window );
+			ImGui::SetFocusID( id, window );
+			ImGui::FocusWindow( window );
+			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+		}
 		// Click on key: select and start drag
-		if ( hovered_key >= 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
+		else if ( hovered_key >= 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
 		{
 			selected = hovered_key;
+			dragTarget = 0;
 			ImGui::SetActiveID( id, window );
 			ImGui::SetFocusID( id, window );
 			ImGui::FocusWindow( window );
 			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
 		}
 		// Click on empty area: add key
-		else if ( hovered_key == -1 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
+		else if ( hovered_key == -1 && hovered_tangent == 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
 		{
 			ImVec2 curvePos = ScreenToColorCurve( g.IO.MousePos, frame_bb, yMin, yMax );
 			float pos = ImClamp( curvePos.x, 0.0f, 1.0f );
 			float val = ImClamp( curvePos.y, yMin, yMax );
 			int newIdx = curve->AddKey( pos, val );
 			selected = newIdx;
+			dragTarget = 0;
 			value_changed = true;
 			ImGui::SetActiveID( id, window );
 			ImGui::SetFocusID( id, window );
@@ -9447,39 +10373,64 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Drag
 		if ( g.ActiveId == id && ImGui::IsMouseDragging( ImGuiMouseButton_Left ) && selected >= 0 && selected < curve->Keys.Size )
 		{
-			ImVec2 curvePos = ScreenToColorCurve( g.IO.MousePos, frame_bb, yMin, yMax );
-
-			float newPos = curvePos.x;
-			if ( cyclic )
-				newPos = newPos - floorf( newPos );
-			else
-				newPos = ImClamp( newPos, 0.0f, 1.0f );
-
-			float newVal = ImClamp( curvePos.y, yMin, yMax );
-
-			curve->Keys[ selected ].Position = newPos;
-			curve->Keys[ selected ].Value = newVal;
-			curve->SortKeys();
-
-			// Re-find selected after sort
-			for ( int i = 0; i < curve->Keys.Size; ++i )
+			if ( advancedSegments && dragTarget != 0 )
 			{
-				if ( curve->Keys[ i ].Position == newPos && curve->Keys[ i ].Value == newVal )
+				// Drag tangent handle
+				ImVec2 prev = ScreenToColorCurve( g.IO.MousePos - g.IO.MouseDelta, frame_bb, yMin, yMax );
+				ImVec2 curr = ScreenToColorCurve( g.IO.MousePos, frame_bb, yMin, yMax );
+				ImVec2 delta( curr.x - prev.x, curr.y - prev.y );
+				ImColorCurveKey& k = curve->Keys[ selected ];
+				if ( dragTarget == -1 )
 				{
-					selected = i;
-					break;
+					k.TangentLeft = ImVec2( k.TangentLeft.x + delta.x, k.TangentLeft.y + delta.y );
+					if ( k.TangentLeft.x > 0.0f ) k.TangentLeft.x = 0.0f;
+					EnforceTangentMode( k.TangentLeft, k.TangentRight, k.TangentMode, -1 );
 				}
-			}
-
-			value_changed = true;
-
-			// Drag far below/above: delete
-			if ( ( g.IO.MousePos.y > frame_bb.Max.y + 30.0f || g.IO.MousePos.y < frame_bb.Min.y - 30.0f ) && curve->Keys.Size > 0 )
-			{
-				curve->RemoveKey( selected );
-				selected = -1;
-				ImGui::ClearActiveID();
+				else
+				{
+					k.TangentRight = ImVec2( k.TangentRight.x + delta.x, k.TangentRight.y + delta.y );
+					if ( k.TangentRight.x < 0.0f ) k.TangentRight.x = 0.0f;
+					EnforceTangentMode( k.TangentLeft, k.TangentRight, k.TangentMode, 1 );
+				}
 				value_changed = true;
+			}
+			else
+			{
+				// Drag key
+				ImVec2 curvePos = ScreenToColorCurve( g.IO.MousePos, frame_bb, yMin, yMax );
+
+				float newPos = curvePos.x;
+				if ( cyclic )
+					newPos = newPos - floorf( newPos );
+				else
+					newPos = ImClamp( newPos, 0.0f, 1.0f );
+
+				float newVal = ImClamp( curvePos.y, yMin, yMax );
+
+				curve->Keys[ selected ].Position = newPos;
+				curve->Keys[ selected ].Value = newVal;
+				curve->SortKeys();
+
+				// Re-find selected after sort
+				for ( int i = 0; i < curve->Keys.Size; ++i )
+				{
+					if ( curve->Keys[ i ].Position == newPos && curve->Keys[ i ].Value == newVal )
+					{
+						selected = i;
+						break;
+					}
+				}
+
+				value_changed = true;
+
+				// Drag far below/above: delete
+				if ( ( g.IO.MousePos.y > frame_bb.Max.y + 30.0f || g.IO.MousePos.y < frame_bb.Min.y - 30.0f ) && curve->Keys.Size > 0 )
+				{
+					curve->RemoveKey( selected );
+					selected = -1;
+					ImGui::ClearActiveID();
+					value_changed = true;
+				}
 			}
 		}
 
@@ -9566,7 +10517,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 
 		// Tooltip on hovered key
-		if ( hovered_key >= 0 && hovered && g.ActiveId != id )
+		if ( hovered_key >= 0 && hovered_key < curve->Keys.Size && hovered && g.ActiveId != id )
 		{
 			ImGui::SetTooltip( "Key %d: pos=%.3f val=%.3f", hovered_key,
 				curve->Keys[ hovered_key ].Position, curve->Keys[ hovered_key ].Value );
@@ -9577,6 +10528,85 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( value_changed )
 			ImGui::MarkItemEdited( id );
 
+		// Expand button
+		bool* pExpanded = WidgetExpandButton( id, frame_bb );
+		if ( pExpanded && *pExpanded )
+		{
+			if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 800, 400 ) ) )
+			{
+				ImVec2 avail = ImGui::GetContentRegionAvail();
+				float widgetW = avail.x * 0.75f;
+				// Left: widget
+				if ( ColorCurve( "##exp", curve, mode, histogramOverlay, advancedSegments, ImVec2( widgetW, avail.y ) ) )
+					value_changed = true;
+				ImGui::SameLine();
+				// Right: info / edit
+				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
+				float ccYMin, ccYMax;
+				ColorCurveRange( mode, &ccYMin, &ccYMax );
+				ImGui::TextUnformatted( "Mode" );
+				ImGui::TextUnformatted( ColorCurveModeName( mode ) );
+				ImGui::Spacing();
+				ImGui::TextUnformatted( "Keys" );
+				ImGui::Text( "%d", curve->Keys.Size );
+				if ( curve->SelectedIdx >= 0 && curve->SelectedIdx < curve->Keys.Size )
+				{
+					ImColorCurveKey& ck = curve->Keys[ curve->SelectedIdx ];
+					ImGui::Separator();
+					ImGui::TextUnformatted( "Selected" );
+					ImGui::Text( "%d", curve->SelectedIdx );
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "Position" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					if ( ImGui::DragFloat( "##pos", &ck.Position, 0.001f, 0.0f, 1.0f, "%.3f" ) )
+					{
+						curve->SortKeys();
+						value_changed = true;
+					}
+					ImGui::TextUnformatted( "Value" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					if ( ImGui::DragFloat( "##val", &ck.Value, 0.001f, ccYMin, ccYMax, "%.3f" ) )
+						value_changed = true;
+					// Advanced segment controls (only in modal)
+					if ( advancedSegments )
+					{
+						ImGui::Spacing();
+						ImGui::TextUnformatted( "Segment" );
+						if ( ImGui::Button( CurveEditorSegName( ck.Segment ), ImVec2( -FLT_MIN, 0 ) ) )
+							ImGui::OpenPopup( "##ccSegPopup" );
+						if ( ImGui::BeginPopup( "##ccSegPopup" ) )
+						{
+							if ( ImCurveEditorSegmentMenu( &ck.Segment, ck.Segment ) )
+							{
+								if ( ck.Segment == ImCurveEditorSeg_CubicBezier )
+								{
+									int si = curve->SelectedIdx;
+									float segWidth = 0.1f;
+									if ( si < curve->Keys.Size - 1 )
+										segWidth = ( curve->Keys[ si + 1 ].Position - ck.Position ) * 0.33f;
+									ck.TangentRight = ImVec2( segWidth, 0.0f );
+									if ( si < curve->Keys.Size - 1 )
+										curve->Keys[ si + 1 ].TangentLeft = ImVec2( -segWidth, 0.0f );
+								}
+								value_changed = true;
+							}
+							ImGui::EndPopup();
+						}
+						// Tangent mode (only for bezier keys)
+						bool hasBezier = ( ck.Segment == ImCurveEditorSeg_CubicBezier )
+							|| ( curve->SelectedIdx > 0 && curve->Keys[ curve->SelectedIdx - 1 ].Segment == ImCurveEditorSeg_CubicBezier );
+						if ( hasBezier )
+						{
+							if ( TangentModeUI( ck.TangentLeft, ck.TangentRight, ck.TangentMode ) )
+								value_changed = true;
+						}
+					}
+				}
+				ImGui::EndChild();
+			}
+			EndExpandedWindow();
+		}
+
 		return value_changed;
 	}
 
@@ -9585,6 +10615,90 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// ========================================================================
 
 } // close namespace ImWidgets for global-scope struct method
+
+void ImColorWarperOverlay::Accumulate( void const* data, int width, int height, int channels,
+									   ImParadeBitDepth bitDepth, ImParadeLayout layout,
+									   int maxSamples )
+{
+	if ( !data || width <= 0 || height <= 0 || channels < 3 )
+		return;
+
+	int maxVal;
+	switch ( bitDepth )
+	{
+	case ImParadeBitDepth_UInt8:  maxVal = 255; break;
+	case ImParadeBitDepth_UInt10: maxVal = 1023; break;
+	case ImParadeBitDepth_UInt16: maxVal = 65535; break;
+	default:                      maxVal = 255; break;
+	}
+	float invMaxVal = 1.0f / ( float )maxVal;
+	int mask16 = ( bitDepth == ImParadeBitDepth_UInt10 ) ? 0x3FF : 0xFFFF;
+
+	int totalPixels = width * height;
+	int actualSamples = ( maxSamples > 0 && totalPixels > maxSamples ) ? maxSamples : totalPixels;
+
+	SampledRGB.resize( actualSamples * 3 );
+	SampleCount = 0;
+
+	ImU32 rng = 0x12345678u;
+	bool subsample = ( maxSamples > 0 && totalPixels > maxSamples );
+	ImU32 threshold = subsample ? ( ImU32 )( ( double )maxSamples / ( double )totalPixels * 4294967295.0 ) : 0xFFFFFFFF;
+
+	int planeStride = width * height;
+
+	for ( int pixIdx = 0; pixIdx < totalPixels && SampleCount < actualSamples; ++pixIdx )
+	{
+		if ( subsample )
+		{
+			rng = rng * 1664525u + 1013904223u;
+			if ( rng > threshold )
+				continue;
+		}
+
+		float r, g, b;
+		if ( layout == ImParadeLayout_Interleaved )
+		{
+			int offset = pixIdx * channels;
+			if ( bitDepth == ImParadeBitDepth_UInt8 )
+			{
+				ImU8 const* p = ( ImU8 const* )data + offset;
+				r = p[ 0 ] * invMaxVal;
+				g = p[ 1 ] * invMaxVal;
+				b = p[ 2 ] * invMaxVal;
+			}
+			else
+			{
+				ImU16 const* p = ( ImU16 const* )data + offset;
+				r = ( float )( p[ 0 ] & mask16 ) * invMaxVal;
+				g = ( float )( p[ 1 ] & mask16 ) * invMaxVal;
+				b = ( float )( p[ 2 ] & mask16 ) * invMaxVal;
+			}
+		}
+		else
+		{
+			if ( bitDepth == ImParadeBitDepth_UInt8 )
+			{
+				ImU8 const* p = ( ImU8 const* )data;
+				r = p[ pixIdx ] * invMaxVal;
+				g = p[ pixIdx + planeStride ] * invMaxVal;
+				b = p[ pixIdx + planeStride * 2 ] * invMaxVal;
+			}
+			else
+			{
+				ImU16 const* p = ( ImU16 const* )data;
+				r = ( float )( p[ pixIdx ] & mask16 ) * invMaxVal;
+				g = ( float )( p[ pixIdx + planeStride ] & mask16 ) * invMaxVal;
+				b = ( float )( p[ pixIdx + planeStride * 2 ] & mask16 ) * invMaxVal;
+			}
+		}
+
+		int idx = SampleCount * 3;
+		SampledRGB[ idx + 0 ] = r;
+		SampledRGB[ idx + 1 ] = g;
+		SampledRGB[ idx + 2 ] = b;
+		++SampleCount;
+	}
+}
 
 void ImParadeScopeData::Accumulate( void const* data, int width, int height, int channels,
 									ImParadeBitDepth bitDepth, ImParadeLayout layout, ImParadeMode mode,
@@ -10018,6 +11132,33 @@ namespace ImWidgets {
 		// Label
 		if ( label[ 0 ] != '#' || label[ 1 ] != '#' )
 			ImGui::RenderText( ImVec2( scope_bb.Max.x + style.ItemInnerSpacing.x, scope_bb.Min.y + style.FramePadding.y ), label );
+
+		// Expand button
+		bool* pExpanded = WidgetExpandButton( id, scope_bb );
+		if ( pExpanded && *pExpanded )
+		{
+			if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 800, 400 ) ) )
+			{
+				ImVec2 avail = ImGui::GetContentRegionAvail();
+				float widgetW = avail.x * 0.75f;
+				// Options (need to read before widget)
+				int* pOverlay = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##overlay" ), overlay ? 1 : 0 );
+				int* pScale = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##scale" ), ( int )scale );
+				// Left: widget
+				ParadeScope( "##exp", data, *pOverlay != 0, ( ImParadeScale )*pScale, ImVec2( widgetW, avail.y ) );
+				ImGui::SameLine();
+				// Right: options
+				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
+				ImGui::TextUnformatted( "Overlay" );
+				ImGui::Checkbox( "##overlay", ( bool* )pOverlay );
+				ImGui::Spacing();
+				ImGui::TextUnformatted( "Scale" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				ImGui::Combo( "##scale", pScale, "Linear\0Log\0Inv Log\0" );
+				ImGui::EndChild();
+			}
+			EndExpandedWindow();
+		}
 	}
 
 	// ========================================================================
@@ -10309,6 +11450,28 @@ namespace ImWidgets {
 		// Label
 		if ( label[ 0 ] != '#' || label[ 1 ] != '#' )
 			ImGui::RenderText( ImVec2( total_bb.Max.x + style.ItemInnerSpacing.x, total_bb.Min.y + style.FramePadding.y ), label );
+
+		// Expand button
+		bool* pExpanded = WidgetExpandButton( id, total_bb );
+		if ( pExpanded && *pExpanded )
+		{
+			if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 800, 400 ) ) )
+			{
+				ImVec2 avail = ImGui::GetContentRegionAvail();
+				float widgetW = avail.x * 0.75f;
+				// Options (need to read before widget)
+				int* pSkinLine = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##skinline" ), showSkinToneLine ? 1 : 0 );
+				// Left: widget
+				VectorScope( "##exp", data, *pSkinLine != 0, ImVec2( widgetW, avail.y ) );
+				ImGui::SameLine();
+				// Right: options
+				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
+				ImGui::TextUnformatted( "Skin Tone Line" );
+				ImGui::Checkbox( "##skinline", ( bool* )pSkinLine );
+				ImGui::EndChild();
+			}
+			EndExpandedWindow();
+		}
 	}
 
 	// ========================================================================
@@ -10842,6 +12005,39 @@ namespace ImWidgets {
 		// Label
 		if ( label[ 0 ] != '#' || label[ 1 ] != '#' )
 			ImGui::RenderText( ImVec2( scope_bb.Max.x + style.ItemInnerSpacing.x, scope_bb.Min.y + style.FramePadding.y ), label );
+
+		// Expand button
+		bool* pExpanded = WidgetExpandButton( id, scope_bb );
+		if ( pExpanded && *pExpanded )
+		{
+			if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 800, 400 ) ) )
+			{
+				ImVec2 avail = ImGui::GetContentRegionAvail();
+				float widgetW = avail.x * 0.75f;
+				// Options (need to read before widget)
+				int* pLayout = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##layout" ), ( int )layout );
+				int* pXScale = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##xscale" ), ( int )xScale );
+				int* pYScale = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##yscale" ), ( int )yScale );
+				// Left: widget
+				Histogram( "##exp", data, ( ImHistogramLayout )*pLayout, ( ImParadeScale )*pXScale, ( ImParadeScale )*pYScale, ImVec2( widgetW, avail.y ) );
+				ImGui::SameLine();
+				// Right: options
+				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
+				ImGui::TextUnformatted( "Layout" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				ImGui::Combo( "##layout", pLayout, "Overlapped\0Stacked\0" );
+				ImGui::Spacing();
+				ImGui::TextUnformatted( "X Scale" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				ImGui::Combo( "##xscale", pXScale, "Linear\0Log\0Inv Log\0" );
+				ImGui::Spacing();
+				ImGui::TextUnformatted( "Y Scale" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				ImGui::Combo( "##yscale", pYScale, "Linear\0Log\0Inv Log\0" );
+				ImGui::EndChild();
+			}
+			EndExpandedWindow();
+		}
 	}
 
 	// ========================================================================
@@ -11167,6 +12363,38 @@ namespace ImWidgets {
 		// Label
 		if ( label[ 0 ] != '#' || label[ 1 ] != '#' )
 			ImGui::RenderText( ImVec2( scope_bb.Max.x + style.ItemInnerSpacing.x, scope_bb.Min.y + style.FramePadding.y ), label );
+
+		// Expand button
+		bool* pExpanded = WidgetExpandButton( id, scope_bb );
+		if ( pExpanded && *pExpanded )
+		{
+			if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 800, 400 ) ) )
+			{
+				ImVec2 avail = ImGui::GetContentRegionAvail();
+				float widgetW = avail.x * 0.75f;
+				// Options (need to read before widget)
+				int* pGamut = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##gamut" ), ( int )gamut );
+				int* pBg = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##bg" ), showBackground ? 1 : 0 );
+				int* pSigCol = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##sigcol" ), ( int )signalColor );
+				// Left: widget
+				CIEChromaticity( "##exp", data, ( ImCIEChromaticityGamut )*pGamut, *pBg != 0, ( ImCIEChromaticitySignalColor )*pSigCol, ImVec2( widgetW, avail.y ) );
+				ImGui::SameLine();
+				// Right: options
+				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
+				ImGui::TextUnformatted( "Gamut" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				ImGui::Combo( "##gamut", pGamut, "sRGB / Rec.709\0Rec.2020\0DCI-P3\0ACEScg\0Adobe RGB\0ProPhoto\0" );
+				ImGui::Spacing();
+				ImGui::TextUnformatted( "Background" );
+				ImGui::Checkbox( "##bg", ( bool* )pBg );
+				ImGui::Spacing();
+				ImGui::TextUnformatted( "Signal Color" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				ImGui::Combo( "##sigcol", pSigCol, "Flat\0Pixel Color\0" );
+				ImGui::EndChild();
+			}
+			EndExpandedWindow();
+		}
 	}
 
 	// ========================================================================
@@ -11222,7 +12450,7 @@ namespace ImWidgets {
 		}
 	}
 
-	float ToneCurveSample( ImColorCurveData const& curve, float x )
+	float ToneCurveSample( ImColorCurveData const& curve, float x, bool advancedSegments )
 	{
 		int n = curve.Keys.Size;
 		if ( n == 0 ) return x; // identity
@@ -11232,6 +12460,22 @@ namespace ImWidgets {
 		if ( x <= curve.Keys[ 0 ].Position ) return curve.Keys[ 0 ].Value;
 		// After last key: hold last value
 		if ( x >= curve.Keys[ n - 1 ].Position ) return curve.Keys[ n - 1 ].Value;
+
+		// Advanced mode: use per-key segment types
+		if ( advancedSegments )
+		{
+			for ( int i = 0; i < n - 1; ++i )
+			{
+				if ( x >= curve.Keys[ i ].Position && x < curve.Keys[ i + 1 ].Position )
+				{
+					float span = curve.Keys[ i + 1 ].Position - curve.Keys[ i ].Position;
+					if ( span < 1e-6f ) return curve.Keys[ i ].Value;
+					float t = ( x - curve.Keys[ i ].Position ) / span;
+					return ColorCurveAdvancedSegSample( curve.Keys[ i ], curve.Keys[ i + 1 ], t );
+				}
+			}
+			return curve.Keys[ n - 1 ].Value;
+		}
 
 		// Find segment
 		int seg = 0;
@@ -11331,7 +12575,7 @@ namespace ImWidgets {
 		}
 	}
 
-	bool ToneCurve( char const* label, ImToneCurveData* curve, ImHistogramMode mode, ImHistogramData const* histogramOverlay, ImVec2 size )
+	bool ToneCurve( char const* label, ImToneCurveData* curve, ImHistogramMode mode, ImHistogramData const* histogramOverlay, bool advancedSegments, ImVec2 size )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
@@ -11361,7 +12605,8 @@ namespace ImWidgets {
 		if ( !ImGui::ItemAdd( total_bb, id, &total_bb, 0 ) )
 			return false;
 
-		bool const hovered = ImGui::ItemHoverable( total_bb, id, g.LastItemData.ItemFlags );
+		bool hovered = ImGui::ItemHoverable( total_bb, id, g.LastItemData.ItemFlags );
+		if ( IsMouseOverExpandButton( id, scope_bb ) ) hovered = false;
 		bool value_changed = false;
 
 		float keyRadius = dwStyle.ToneCurve_KeyRadius;
@@ -11388,6 +12633,21 @@ namespace ImWidgets {
 				closest_dist_sq = dSq;
 				hovered_key = i;
 			}
+		}
+
+		// Find hovered tangent handle (only for selected key, only in advanced mode)
+		int hovered_tangent = 0;
+		ImGuiID tcDragTargetKey = ImGui::GetID( "##tcDragTgt" );
+		int& dragTarget = *ImGui::GetStateStorage()->GetIntRef( tcDragTargetKey, 0 );
+		if ( advancedSegments && activeCurve.SelectedIdx >= 0 && activeCurve.SelectedIdx < activeCurve.Keys.Size )
+		{
+			ImColorCurveKey const& sk = activeCurve.Keys[ activeCurve.SelectedIdx ];
+			bool showRight = ( sk.Segment == ImCurveEditorSeg_CubicBezier && activeCurve.SelectedIdx < activeCurve.Keys.Size - 1 );
+			bool showLeft = ( activeCurve.SelectedIdx > 0 && activeCurve.Keys[ activeCurve.SelectedIdx - 1 ].Segment == ImCurveEditorSeg_CubicBezier );
+			float tanHitSq = ( hitRadius + 2.0f ) * ( hitRadius + 2.0f );
+			ImVec2 tanLScreen = showLeft ? ToneCurveToScreen( sk.Position + sk.TangentLeft.x, sk.Value + sk.TangentLeft.y, scope_bb ) : ImVec2();
+			ImVec2 tanRScreen = showRight ? ToneCurveToScreen( sk.Position + sk.TangentRight.x, sk.Value + sk.TangentRight.y, scope_bb ) : ImVec2();
+			hovered_tangent = HitTestBezierHandles( g.IO.MousePos, tanLScreen, tanRScreen, showLeft, showRight, tanHitSq );
 		}
 
 		// --- DRAWING ---
@@ -11464,12 +12724,12 @@ namespace ImWidgets {
 			cf.w = alpha;
 			ImU32 curveCol = ImGui::GetColorU32( cf );
 
-			ImVec2 prev = ToneCurveToScreen( 0.0f, ToneCurveSample( chCurve, 0.0f ), scope_bb );
+			ImVec2 prev = ToneCurveToScreen( 0.0f, ToneCurveSample( chCurve, 0.0f, advancedSegments ), scope_bb );
 
 			for ( int s = 1; s <= sampleCount; ++s )
 			{
 				float t = ( float )s / ( float )sampleCount;
-				float val = ToneCurveSample( chCurve, t );
+				float val = ToneCurveSample( chCurve, t, advancedSegments );
 				ImVec2 cur = ToneCurveToScreen( t, val, scope_bb );
 				dl->AddLine( prev, cur, curveCol, thick );
 				prev = cur;
@@ -11493,6 +12753,21 @@ namespace ImWidgets {
 				dl->AddCircleFilled( kScreen, radius, isSelected ? selCol : keyCol );
 				dl->AddCircle( kScreen, radius, outCol, 0, isSelected ? 2.0f : 1.5f );
 			}
+		}
+
+		// Draw tangent handles for selected key (advanced mode)
+		if ( advancedSegments && activeCurve.SelectedIdx >= 0 && activeCurve.SelectedIdx < activeCurve.Keys.Size )
+		{
+			ImColorCurveKey const& sk = activeCurve.Keys[ activeCurve.SelectedIdx ];
+			bool showRight = ( sk.Segment == ImCurveEditorSeg_CubicBezier && activeCurve.SelectedIdx < activeCurve.Keys.Size - 1 );
+			bool showLeft = ( activeCurve.SelectedIdx > 0 && activeCurve.Keys[ activeCurve.SelectedIdx - 1 ].Segment == ImCurveEditorSeg_CubicBezier );
+			ImVec2 keyScreen = ToneCurveToScreen( sk.Position, sk.Value, scope_bb );
+			ImU32 tangentCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_TangentLine ] );
+			ImU32 tangentHovCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_TangentHovered ] );
+			ImVec2 tanLScreen = showLeft ? ToneCurveToScreen( sk.Position + sk.TangentLeft.x, sk.Value + sk.TangentLeft.y, scope_bb ) : ImVec2();
+			ImVec2 tanRScreen = showRight ? ToneCurveToScreen( sk.Position + sk.TangentRight.x, sk.Value + sk.TangentRight.y, scope_bb ) : ImVec2();
+			DrawBezierHandles( dl, keyScreen, tanLScreen, tanRScreen, showLeft, showRight,
+							   hovered_tangent, tangentCol, tangentHovCol, lineThick, keyRadius * 0.7f );
 		}
 
 		// Hover feedback
@@ -11555,23 +12830,34 @@ namespace ImWidgets {
 		// --- INTERACTIONS (active channel only) ---
 		ImGui::PushID( id );
 
+		// Click on tangent handle: select and start drag
+		if ( advancedSegments && hovered_tangent != 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
+		{
+			dragTarget = hovered_tangent;
+			ImGui::SetActiveID( id, window );
+			ImGui::SetFocusID( id, window );
+			ImGui::FocusWindow( window );
+			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+		}
 		// Click on key: select and start drag
-		if ( hovered_key >= 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
+		else if ( hovered_key >= 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
 		{
 			activeCurve.SelectedIdx = hovered_key;
+			dragTarget = 0;
 			ImGui::SetActiveID( id, window );
 			ImGui::SetFocusID( id, window );
 			ImGui::FocusWindow( window );
 			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
 		}
 		// Click on empty area: add key
-		else if ( hovered_key == -1 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
+		else if ( hovered_key == -1 && hovered_tangent == 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
 		{
 			ImVec2 curvePos = ScreenToToneCurve( g.IO.MousePos, scope_bb );
 			float pos = ImClamp( curvePos.x, 0.0f, 1.0f );
 			float val = ImClamp( curvePos.y, 0.0f, 1.0f );
 			int newIdx = activeCurve.AddKey( pos, val );
 			activeCurve.SelectedIdx = newIdx;
+			dragTarget = 0;
 			value_changed = true;
 			ImGui::SetActiveID( id, window );
 			ImGui::SetFocusID( id, window );
@@ -11582,34 +12868,59 @@ namespace ImWidgets {
 		// Drag
 		if ( g.ActiveId == id && ImGui::IsMouseDragging( ImGuiMouseButton_Left ) && activeCurve.SelectedIdx >= 0 && activeCurve.SelectedIdx < activeCurve.Keys.Size )
 		{
-			ImVec2 curvePos = ScreenToToneCurve( g.IO.MousePos, scope_bb );
-
-			float newPos = ImClamp( curvePos.x, 0.0f, 1.0f );
-			float newVal = ImClamp( curvePos.y, 0.0f, 1.0f );
-
-			activeCurve.Keys[ activeCurve.SelectedIdx ].Position = newPos;
-			activeCurve.Keys[ activeCurve.SelectedIdx ].Value = newVal;
-			activeCurve.SortKeys();
-
-			// Re-find selected after sort
-			for ( int i = 0; i < activeCurve.Keys.Size; ++i )
+			if ( advancedSegments && dragTarget != 0 )
 			{
-				if ( activeCurve.Keys[ i ].Position == newPos && activeCurve.Keys[ i ].Value == newVal )
+				// Drag tangent handle
+				ImVec2 prev = ScreenToToneCurve( g.IO.MousePos - g.IO.MouseDelta, scope_bb );
+				ImVec2 curr = ScreenToToneCurve( g.IO.MousePos, scope_bb );
+				ImVec2 delta( curr.x - prev.x, curr.y - prev.y );
+				ImColorCurveKey& k = activeCurve.Keys[ activeCurve.SelectedIdx ];
+				if ( dragTarget == -1 )
 				{
-					activeCurve.SelectedIdx = i;
-					break;
+					k.TangentLeft = ImVec2( k.TangentLeft.x + delta.x, k.TangentLeft.y + delta.y );
+					if ( k.TangentLeft.x > 0.0f ) k.TangentLeft.x = 0.0f;
+					EnforceTangentMode( k.TangentLeft, k.TangentRight, k.TangentMode, -1 );
 				}
-			}
-
-			value_changed = true;
-
-			// Drag far outside: delete
-			if ( ( g.IO.MousePos.y > scope_bb.Max.y + 30.0f || g.IO.MousePos.y < scope_bb.Min.y - 30.0f ) && activeCurve.Keys.Size > 0 )
-			{
-				activeCurve.RemoveKey( activeCurve.SelectedIdx );
-				activeCurve.SelectedIdx = -1;
-				ImGui::ClearActiveID();
+				else
+				{
+					k.TangentRight = ImVec2( k.TangentRight.x + delta.x, k.TangentRight.y + delta.y );
+					if ( k.TangentRight.x < 0.0f ) k.TangentRight.x = 0.0f;
+					EnforceTangentMode( k.TangentLeft, k.TangentRight, k.TangentMode, 1 );
+				}
 				value_changed = true;
+			}
+			else
+			{
+				// Drag key
+				ImVec2 curvePos = ScreenToToneCurve( g.IO.MousePos, scope_bb );
+
+				float newPos = ImClamp( curvePos.x, 0.0f, 1.0f );
+				float newVal = ImClamp( curvePos.y, 0.0f, 1.0f );
+
+				activeCurve.Keys[ activeCurve.SelectedIdx ].Position = newPos;
+				activeCurve.Keys[ activeCurve.SelectedIdx ].Value = newVal;
+				activeCurve.SortKeys();
+
+				// Re-find selected after sort
+				for ( int i = 0; i < activeCurve.Keys.Size; ++i )
+				{
+					if ( activeCurve.Keys[ i ].Position == newPos && activeCurve.Keys[ i ].Value == newVal )
+					{
+						activeCurve.SelectedIdx = i;
+						break;
+					}
+				}
+
+				value_changed = true;
+
+				// Drag far outside: delete
+				if ( ( g.IO.MousePos.y > scope_bb.Max.y + 30.0f || g.IO.MousePos.y < scope_bb.Min.y - 30.0f ) && activeCurve.Keys.Size > 0 )
+				{
+					activeCurve.RemoveKey( activeCurve.SelectedIdx );
+					activeCurve.SelectedIdx = -1;
+					ImGui::ClearActiveID();
+					value_changed = true;
+				}
 			}
 		}
 
@@ -11697,7 +13008,7 @@ namespace ImWidgets {
 		}
 
 		// Tooltip on hovered key
-		if ( hovered_key >= 0 && hovered && g.ActiveId != id )
+		if ( hovered_key >= 0 && hovered_key < activeCurve.Keys.Size && hovered && g.ActiveId != id )
 		{
 			ImGui::SetTooltip( "Key %d: in=%.3f out=%.3f", hovered_key,
 				activeCurve.Keys[ hovered_key ].Position, activeCurve.Keys[ hovered_key ].Value );
@@ -11707,6 +13018,89 @@ namespace ImWidgets {
 
 		if ( value_changed )
 			ImGui::MarkItemEdited( id );
+
+		// Expand button
+		bool* pExpanded = WidgetExpandButton( id, scope_bb );
+		if ( pExpanded && *pExpanded )
+		{
+			if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 800, 400 ) ) )
+			{
+				ImVec2 avail = ImGui::GetContentRegionAvail();
+				float widgetW = avail.x * 0.75f;
+				// Left: widget
+				if ( ToneCurve( "##exp", curve, mode, histogramOverlay, advancedSegments, ImVec2( widgetW, avail.y ) ) )
+					value_changed = true;
+				ImGui::SameLine();
+				// Right: info / edit
+				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
+				int chCount = ToneCurveChannelCount( mode );
+				int act = ImClamp( curve->ActiveChannel, 0, chCount - 1 );
+				ImGui::TextUnformatted( "Mode" );
+				ImGui::TextUnformatted( HistogramModeName( mode ) );
+				ImGui::Spacing();
+				ImGui::TextUnformatted( "Channel" );
+				ImGui::Text( "%s (%d/%d)", ToneCurveChannelName( mode, act ), act + 1, chCount );
+				ImGui::Spacing();
+				ImColorCurveData& ac = curve->Channels[ act ];
+				ImGui::TextUnformatted( "Keys" );
+				ImGui::Text( "%d", ac.Keys.Size );
+				if ( ac.SelectedIdx >= 0 && ac.SelectedIdx < ac.Keys.Size )
+				{
+					ImColorCurveKey& tk = ac.Keys[ ac.SelectedIdx ];
+					ImGui::Separator();
+					ImGui::TextUnformatted( "Selected" );
+					ImGui::Text( "%d", ac.SelectedIdx );
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "Input" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					if ( ImGui::DragFloat( "##in", &tk.Position, 0.001f, 0.0f, 1.0f, "%.3f" ) )
+					{
+						ac.SortKeys();
+						value_changed = true;
+					}
+					ImGui::TextUnformatted( "Output" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					if ( ImGui::DragFloat( "##out", &tk.Value, 0.001f, 0.0f, 1.0f, "%.3f" ) )
+						value_changed = true;
+					// Advanced segment controls (only in modal)
+					if ( advancedSegments )
+					{
+						ImGui::Spacing();
+						ImGui::TextUnformatted( "Segment" );
+						if ( ImGui::Button( CurveEditorSegName( tk.Segment ), ImVec2( -FLT_MIN, 0 ) ) )
+							ImGui::OpenPopup( "##tcSegPopup" );
+						if ( ImGui::BeginPopup( "##tcSegPopup" ) )
+						{
+							if ( ImCurveEditorSegmentMenu( &tk.Segment, tk.Segment ) )
+							{
+								if ( tk.Segment == ImCurveEditorSeg_CubicBezier )
+								{
+									int si = ac.SelectedIdx;
+									float segWidth = 0.1f;
+									if ( si < ac.Keys.Size - 1 )
+										segWidth = ( ac.Keys[ si + 1 ].Position - tk.Position ) * 0.33f;
+									tk.TangentRight = ImVec2( segWidth, 0.0f );
+									if ( si < ac.Keys.Size - 1 )
+										ac.Keys[ si + 1 ].TangentLeft = ImVec2( -segWidth, 0.0f );
+								}
+								value_changed = true;
+							}
+							ImGui::EndPopup();
+						}
+						// Tangent mode (only for bezier keys)
+						bool hasBezier = ( tk.Segment == ImCurveEditorSeg_CubicBezier )
+							|| ( ac.SelectedIdx > 0 && ac.Keys[ ac.SelectedIdx - 1 ].Segment == ImCurveEditorSeg_CubicBezier );
+						if ( hasBezier )
+						{
+							if ( TangentModeUI( tk.TangentLeft, tk.TangentRight, tk.TangentMode ) )
+								value_changed = true;
+						}
+					}
+				}
+				ImGui::EndChild();
+			}
+			EndExpandedWindow();
+		}
 
 		return value_changed;
 	}

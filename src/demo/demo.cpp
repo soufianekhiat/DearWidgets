@@ -2426,9 +2426,9 @@ namespace ImWidgets {
 				if ( !curveInitialized )
 				{
 					curve.Keys.clear();
-					curve.AddKey( ImVec2( 0.0f, 0.0f ), ImCurveEditorSeg_InOutCubic );
-					curve.AddKey( ImVec2( 0.5f, 1.0f ), ImCurveEditorSeg_InOutCubic );
-					curve.AddKey( ImVec2( 1.0f, 0.0f ) );
+					curve.AddKey( ImVec2( 0.0f, 0.0f ), ImCurveEditorSeg_CubicBezier );
+					curve.AddKey( ImVec2( 0.5f, 1.0f ), ImCurveEditorSeg_CubicBezier );
+					curve.AddKey( ImVec2( 1.0f, 0.0f ), ImCurveEditorSeg_CubicBezier );
 					curve.RangeMin = ImVec2( -0.1f, -0.2f );
 					curve.RangeMax = ImVec2( 1.1f, 1.2f );
 					curveInitialized = true;
@@ -2528,6 +2528,7 @@ namespace ImWidgets {
 			{
 				static int ccMode = ImColorCurveMode_HueVsHue;
 				static bool ccShowHistogram = true;
+				static bool ccAdvancedSegments = false;
 				static ImHistogramData ccHistData;
 				static bool ccHistInit = false;
 
@@ -2565,9 +2566,10 @@ namespace ImWidgets {
 					ccInit = true;
 				}
 
+				ImGui::Checkbox( "Advanced Segments##CC", &ccAdvancedSegments );
 				ImColorCurveData& curData = ccData[ ccMode ];
 				ImHistogramData const* histPtr = ( ccShowHistogram && ccHistData.BinCount > 0 ) ? &ccHistData : NULL;
-				ColorCurve( "##CCMain", &curData, ( ImColorCurveMode )ccMode, histPtr, ImVec2( 0, 150 ) );
+				ColorCurve( "##CCMain", &curData, ( ImColorCurveMode )ccMode, histPtr, ccAdvancedSegments, ImVec2( 0, 150 ) );
 
 				if ( curData.SelectedIdx >= 0 && curData.SelectedIdx < curData.Keys.Size )
 				{
@@ -3271,10 +3273,11 @@ namespace ImWidgets {
 			{
 				static ImToneCurveData tcData;
 				static ImHistogramData tcHistData;
-				static int tcMode = ImHistogramMode_RGB;
+				static int tcMode = ImHistogramMode_YRGB;
 				static int tcSource = 4;
 				static bool tcNeedsUpdate = true;
 				static bool tcShowHistogram = true;
+				static bool tcAdvancedSegments = false;
 				static stbi_uc* tcImgData = NULL;
 				static int tcImgW = 0;
 				static int tcImgH = 0;
@@ -3443,8 +3446,9 @@ namespace ImWidgets {
 					}
 				}
 
+				ImGui::Checkbox( "Advanced Segments##TC", &tcAdvancedSegments );
 				ImHistogramData const* histPtr = ( tcShowHistogram && tcHistData.BinCount > 0 ) ? &tcHistData : NULL;
-				ImWidgets::ToneCurve( "##ToneCurveMain", &tcData, ( ImHistogramMode )tcMode, histPtr );
+				ImWidgets::ToneCurve( "##ToneCurveMain", &tcData, ( ImHistogramMode )tcMode, histPtr, tcAdvancedSegments );
 				if ( tcSource <= 2 )
 					ImGui::Text( "Source: 1920x1080 (generated)" );
 				else if ( tcImgData )
@@ -3463,11 +3467,34 @@ namespace ImWidgets {
 				static int warperMode = ImColorWarperMode_Circular;
 				static int warperSpace = ImColorWarperSpace_HSV;
 				static float warperThirdAxis = 1.0f;
+				static float warperAxisAngle = 0.0f; // radians
 				static int warperGrid = 1; // 0=6, 1=12, 2=24
 
-				ImGui::Combo( "Shape##Warper", &warperMode, "Circular\0Square\0" );
-				ImGui::Combo( "Color Space##Warper", &warperSpace, "HSV\0HSL\0HSY\0HSP\0OkLab\0OkLCH\0" );
-				ImGui::SliderFloat( "Value/Lightness##Warper", &warperThirdAxis, 0.0f, 1.0f );
+				// Signal overlay
+				static ImColorWarperOverlay warperSignal;
+				static int warperSource = 4;
+				static bool warperNeedsUpdate = true;
+				static stbi_uc* warperImgData = NULL;
+				static int warperImgW = 0, warperImgH = 0, warperImgCh = 0;
+				static int warperSignalColor = ImColorWarperSignalColor_PixelColor;
+				static float warperSignalAlpha = 0.6f;
+				static float warperSignalRadius = 1.5f;
+				static ImTextureID warperThumbnail = ImTextureID_Invalid;
+				static ImVec2 warperThumbnailSize( 0, 0 );
+
+				ImGui::Combo( "Shape##Warper", &warperMode, "Circular\0Square\0Chroma/Luma\0" );
+				ImGui::Combo( "Color Space##Warper", &warperSpace, "HSV\0HSL\0HSY\0HSP\0HSP Log\0OkLab\0OkLCH\0" );
+				{
+					char const* thirdAxisLabels[] = { "Value##Warper", "Lightness##Warper", "Luma##Warper",
+						"Brightness##Warper", "Brightness (Log)##Warper", "Lightness##Warper", "Lightness##Warper" };
+					ImGui::SliderFloat( thirdAxisLabels[ ImClamp( warperSpace, 0, 6 ) ], &warperThirdAxis, 0.0f, 1.0f );
+				}
+				if ( warperMode == ImColorWarperMode_ChromaLuma )
+				{
+					float angleDeg = warperAxisAngle * 180.0f / IM_PI;
+					if ( ImGui::SliderFloat( "Axis Angle##Warper", &angleDeg, -180.0f, 180.0f, "%.1f deg" ) )
+						warperAxisAngle = angleDeg * IM_PI / 180.0f;
+				}
 
 				if ( ImGui::Combo( "Grid##Warper", &warperGrid, "6x6\0" "12x6\0" "24x12\0" ) )
 				{
@@ -3476,8 +3503,144 @@ namespace ImWidgets {
 					warperData.Init( hueDivs[ warperGrid ], satDivs[ warperGrid ] );
 				}
 
+				bool sourceChanged = ImGui::Combo( "Source##Warper", &warperSource,
+					"Color Bars\0Gradient Ramp\0Random Noise\0"
+					"Berries (photo)\0Interior (photo)\0Man (photo)\0Astronaut (photo)\0" );
+				ImGui::Combo( "Signal Color##Warper", &warperSignalColor, "Flat\0Pixel Color\0" );
+				ImGui::SliderFloat( "Signal Alpha##Warper", &warperSignalAlpha, 0.0f, 1.0f, "%.2f" );
+				ImGui::SliderFloat( "Signal Radius##Warper", &warperSignalRadius, 0.5f, 6.0f, "%.1f" );
+				if ( sourceChanged )
+					warperNeedsUpdate = true;
+
+				if ( warperNeedsUpdate )
+				{
+					if ( warperImgData ) { STBI_FREE( warperImgData ); warperImgData = NULL; }
+					if ( warperThumbnail != ImTextureID_Invalid )
+					{
+						ImPlatform_DestroyTexture( warperThumbnail );
+						warperThumbnail = ImTextureID_Invalid;
+					}
+
+					static int const kW = 1920, kH = 1080;
+					static ImVector<ImU8> testImg;
+
+					if ( warperSource <= 2 )
+					{
+						testImg.resize( kW * kH * 3 );
+						ImU32 rng = 0xCAFEBABEu;
+						if ( warperSource == 0 )
+						{
+							static ImU8 const bars[ 7 ][ 3 ] = {
+								{ 191, 191, 191 }, { 191, 191, 17 }, { 17, 191, 191 }, { 17, 191, 17 },
+								{ 191, 17, 191 }, { 191, 17, 17 }, { 17, 17, 191 }
+							};
+							for ( int y = 0; y < kH; ++y )
+								for ( int x = 0; x < kW; ++x )
+								{
+									int off = ( y * kW + x ) * 3;
+									int bar = x * 7 / kW;
+									rng = rng * 1664525u + 1013904223u;
+									int noise = ( int )( rng >> 28 ) - 8;
+									testImg[ off + 0 ] = ( ImU8 )ImClamp( bars[ bar ][ 0 ] + noise, 0, 255 );
+									testImg[ off + 1 ] = ( ImU8 )ImClamp( bars[ bar ][ 1 ] + noise, 0, 255 );
+									testImg[ off + 2 ] = ( ImU8 )ImClamp( bars[ bar ][ 2 ] + noise, 0, 255 );
+								}
+						}
+						else if ( warperSource == 1 )
+						{
+							for ( int y = 0; y < kH; ++y )
+								for ( int x = 0; x < kW; ++x )
+								{
+									float t = ( float )x / ( float )( kW - 1 );
+									int off = ( y * kW + x ) * 3;
+									int third = y * 3 / kH;
+									rng = rng * 1664525u + 1013904223u;
+									int noise = ( int )( rng >> 29 ) - 4;
+									testImg[ off + 0 ] = ( ImU8 )ImClamp( ( third == 0 ? ( int )( t * 255.0f ) : 0 ) + noise, 0, 255 );
+									testImg[ off + 1 ] = ( ImU8 )ImClamp( ( third == 1 ? ( int )( t * 255.0f ) : 0 ) + noise, 0, 255 );
+									testImg[ off + 2 ] = ( ImU8 )ImClamp( ( third == 2 ? ( int )( t * 255.0f ) : 0 ) + noise, 0, 255 );
+								}
+						}
+						else
+						{
+							for ( int i = 0; i < kW * kH * 3; ++i )
+							{
+								rng = rng * 1664525u + 1013904223u;
+								testImg[ i ] = ( ImU8 )( rng >> 24 );
+							}
+						}
+						warperSignal.Accumulate( testImg.Data, kW, kH, 3,
+							ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved );
+						// Create thumbnail for synthetic image
+						{
+							ImVector<ImU8> rgba;
+							rgba.resize( kW * kH * 4 );
+							for ( int i = 0; i < kW * kH; ++i )
+							{
+								rgba[ i * 4 + 0 ] = testImg[ i * 3 + 0 ];
+								rgba[ i * 4 + 1 ] = testImg[ i * 3 + 1 ];
+								rgba[ i * 4 + 2 ] = testImg[ i * 3 + 2 ];
+								rgba[ i * 4 + 3 ] = 255;
+							}
+							ImPlatform_TextureDesc td = ImPlatform_TextureDesc_Default( kW, kH );
+							warperThumbnail = ImPlatform_CreateTexture( rgba.Data, &td );
+							warperThumbnailSize = ImVec2( ( float )kW, ( float )kH );
+						}
+					}
+					else
+					{
+						char const* filenames[] = {
+							"pexels-robert-bogdan-156165-1152351.jpg",
+							"pexels-fotoaibe-1571453.jpg",
+							"man.png",
+							"astro.png"
+						};
+						warperImgData = stbi_load( filenames[ warperSource - 3 ], &warperImgW, &warperImgH, &warperImgCh, 0 );
+						if ( warperImgData )
+						{
+							int ch = ( warperImgCh >= 3 ) ? warperImgCh : 3;
+							warperSignal.Accumulate( warperImgData, warperImgW, warperImgH, ch,
+								ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved );
+						}
+					}
+					warperNeedsUpdate = false;
+				}
+
+				// Thumbnail
+				{
+					ImTextureID thumbTex = ImTextureID_Invalid;
+					ImVec2 thumbSize( 0, 0 );
+					if ( warperSource <= 2 && warperThumbnail != ImTextureID_Invalid )
+					{
+						thumbTex = warperThumbnail;
+						thumbSize = warperThumbnailSize;
+					}
+					else if ( warperSource == 3 ) { thumbTex = illlustration_img; thumbSize = illlustration_size; }
+					else if ( warperSource == 4 ) { thumbTex = background;        thumbSize = background_size; }
+					else if ( warperSource == 5 ) { thumbTex = man_img;           thumbSize = man_size; }
+					else if ( warperSource == 6 ) { thumbTex = astro_img;         thumbSize = astro_size; }
+					if ( thumbTex != ImTextureID_Invalid && thumbSize.x > 0.0f )
+					{
+						float thumbH = 120.0f;
+						float thumbW = thumbH * thumbSize.x / thumbSize.y;
+						ImGui::Image( thumbTex, ImVec2( thumbW, thumbH ) );
+					}
+				}
+
+				ImColorWarperOverlay const* sigPtr = ( warperSignal.SampleCount > 0 ) ? &warperSignal : NULL;
+				ImWidgets::PushStyleVar( StyleVar_CIEChromaticity_SignalAlpha, warperSignalAlpha );
+				ImWidgets::PushStyleVar( StyleVar_CIEChromaticity_SignalRadius, warperSignalRadius );
 				ColorWarper( "##WarperMain", &warperData,
-					( ImColorWarperMode )warperMode, ( ImColorWarperSpace )warperSpace, warperThirdAxis );
+					( ImColorWarperMode )warperMode, ( ImColorWarperSpace )warperSpace, warperThirdAxis, sigPtr,
+					( ImColorWarperSignalColor )warperSignalColor, warperAxisAngle );
+				ImWidgets::PopStyleVar( 2 );
+
+				if ( warperSource <= 2 )
+					ImGui::Text( "Source: 1920x1080 (generated)  Samples: %d", warperSignal.SampleCount );
+				else if ( warperImgData )
+					ImGui::Text( "Source: %dx%d (%d ch)  Samples: %d", warperImgW, warperImgH, warperImgCh, warperSignal.SampleCount );
+				else
+					ImGui::TextDisabled( "Failed to load image" );
 
 				if ( ImGui::Button( "Reset##Warper" ) )
 					warperData.Reset();

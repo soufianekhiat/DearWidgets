@@ -263,6 +263,7 @@ enum ImWidgetsStyleColor
 	StyleColor_CurveEditor_TangentHovered,
 	StyleColor_CurveEditor_Crosshair,
 	StyleColor_CurveEditor_AddIndicator,
+	StyleColor_CurveEditor_AxisLabel,
 
 	// Color Wheel
 	StyleColor_ColorWheel_DotOutline,
@@ -399,6 +400,7 @@ enum ImWidgetsStyleVar
 	StyleVar_CurveEditor_HitRadius,
 	StyleVar_CurveEditor_LineThickness,
 	StyleVar_CurveEditor_KeyOutlineThickness,
+	StyleVar_CurveEditor_ZeroLineThickness,
 
 	// Color Wheel
 	StyleVar_ColorWheel_DotRadius,
@@ -497,6 +499,7 @@ struct ImWidgetsStyle
 	float	CurveEditor_HitRadius;
 	float	CurveEditor_LineThickness;
 	float	CurveEditor_KeyOutlineThickness;
+	float	CurveEditor_ZeroLineThickness;
 
 	// Color Wheel
 	float	ColorWheel_DotRadius;
@@ -584,6 +587,7 @@ struct ImWidgetsStyle
 		CurveEditor_HitRadius        = 8.0f;
 		CurveEditor_LineThickness    = 2.0f;
 		CurveEditor_KeyOutlineThickness = 1.5f;
+		CurveEditor_ZeroLineThickness = 1.0f;
 
 		// Color Wheel
 		ColorWheel_DotRadius     = 6.0f;
@@ -676,6 +680,7 @@ struct ImWidgetsStyle
 		Colors[ StyleColor_CurveEditor_TangentHovered ]     = ImVec4( 1.0f, 220.0f / 255.0f, 100.0f / 255.0f, 1.0f );
 		Colors[ StyleColor_CurveEditor_Crosshair ]          = ImVec4( 1.0f, 1.0f, 1.0f, 100.0f / 255.0f );
 		Colors[ StyleColor_CurveEditor_AddIndicator ]       = ImVec4( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 220.0f / 255.0f );
+		Colors[ StyleColor_CurveEditor_AxisLabel ]          = ImVec4( 200.0f / 255.0f, 200.0f / 255.0f, 200.0f / 255.0f, 180.0f / 255.0f );
 
 		// Color Wheel Colors
 		Colors[ StyleColor_ColorWheel_DotOutline ]          = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
@@ -808,6 +813,7 @@ struct ImWidgetsStyle
 		CurveEditor_HitRadius         = ImTrunc( CurveEditor_HitRadius * scale_factor );
 		CurveEditor_LineThickness     = ImTrunc( CurveEditor_LineThickness * scale_factor );
 		CurveEditor_KeyOutlineThickness = ImTrunc( CurveEditor_KeyOutlineThickness * scale_factor );
+		CurveEditor_ZeroLineThickness = ImTrunc( CurveEditor_ZeroLineThickness * scale_factor );
 
 		ColorWheel_DotRadius     = ImTrunc( ColorWheel_DotRadius * scale_factor );
 		ColorWheel_RingThickness = ImTrunc( ColorWheel_RingThickness * scale_factor );
@@ -948,6 +954,7 @@ struct ImWidgetsStyle
 		case StyleColor_CurveEditor_TangentHovered: return "CurveEditorTangentHovered";
 		case StyleColor_CurveEditor_Crosshair: return "CurveEditorCrosshair";
 		case StyleColor_CurveEditor_AddIndicator: return "CurveEditorAddIndicator";
+		case StyleColor_CurveEditor_AxisLabel: return "CurveEditorAxisLabel";
 		case StyleColor_ColorWheel_DotOutline: return "ColorWheelDotOutline";
 		case StyleColor_ColorWheel_DotOutlineActive: return "ColorWheelDotOutlineActive";
 		case StyleColor_ColorWheel_Crosshair: return "ColorWheelCrosshair";
@@ -1078,6 +1085,7 @@ private:
 		case StyleVar_CurveEditor_HitRadius:			return &CurveEditor_HitRadius;
 		case StyleVar_CurveEditor_LineThickness:		return &CurveEditor_LineThickness;
 		case StyleVar_CurveEditor_KeyOutlineThickness:	return &CurveEditor_KeyOutlineThickness;
+		case StyleVar_CurveEditor_ZeroLineThickness:	return &CurveEditor_ZeroLineThickness;
 		case StyleVar_ColorWheel_DotRadius:				return &ColorWheel_DotRadius;
 		case StyleVar_ColorWheel_RingThickness:			return &ColorWheel_RingThickness;
 		case StyleVar_ColorWheel_DiscSectors:			return &ColorWheel_DiscSectors;
@@ -1469,11 +1477,11 @@ struct ImCurveEditorKey
 	ImVec2						TangentRight;	// Outgoing tangent handle offset (typically positive x)
 	ImCurveEditorTangentMode	TangentMode;	// How left/right handles relate
 
-	ImCurveEditorKey() : Pos( 0.0f, 0.0f ), Segment( ImCurveEditorSeg_Linear ),
-		TangentLeft( -0.1f, 0.0f ), TangentRight( 0.1f, 0.0f ), TangentMode( ImCurveEditorTangentMode_Free ) {}
-	ImCurveEditorKey( ImVec2 pos, ImCurveEditorSeg seg = ImCurveEditorSeg_Linear )
+	ImCurveEditorKey() : Pos( 0.0f, 0.0f ), Segment( ImCurveEditorSeg_CubicBezier ),
+		TangentLeft( -0.1f, 0.0f ), TangentRight( 0.1f, 0.0f ), TangentMode( ImCurveEditorTangentMode_Mirrored ) {}
+	ImCurveEditorKey( ImVec2 pos, ImCurveEditorSeg seg = ImCurveEditorSeg_CubicBezier )
 		: Pos( pos ), Segment( seg ),
-		TangentLeft( -0.1f, 0.0f ), TangentRight( 0.1f, 0.0f ), TangentMode( ImCurveEditorTangentMode_Free ) {}
+		TangentLeft( -0.1f, 0.0f ), TangentRight( 0.1f, 0.0f ), TangentMode( ImCurveEditorTangentMode_Mirrored ) {}
 };
 
 struct ImCurveEditorData
@@ -1508,7 +1516,7 @@ struct ImCurveEditorData
 		}
 	}
 
-	int AddKey( ImVec2 pos, ImCurveEditorSeg seg = ImCurveEditorSeg_Linear )
+	int AddKey( ImVec2 pos, ImCurveEditorSeg seg = ImCurveEditorSeg_CubicBezier )
 	{
 		Keys.push_back( ImCurveEditorKey( pos, seg ) );
 		SortKeys();
@@ -1542,6 +1550,7 @@ enum ImColorWarperMode_
 {
 	ImColorWarperMode_Circular = 0,		// Hue/Sat disc layout (polar mesh)
 	ImColorWarperMode_Square,			// Square grid layout (cartesian mesh)
+	ImColorWarperMode_ChromaLuma,		// Two squares: Yellow-Blue vs Luma + Green-Red vs Luma
 	ImColorWarperMode_COUNT
 };
 
@@ -1552,10 +1561,21 @@ enum ImColorWarperSpace_
 	ImColorWarperSpace_HSL,				// Hue-Saturation-Lightness
 	ImColorWarperSpace_HSY,				// Hue-Saturation-Luma (BT.709)
 	ImColorWarperSpace_HSP,				// Hue-Saturation-Perceived brightness
+	ImColorWarperSpace_HSPLog,			// Hue-Saturation-Perceived brightness (log scale)
 	ImColorWarperSpace_OkLab,			// OkLab (perceptually uniform, L on third axis)
 	ImColorWarperSpace_OkLCH,			// OkLCH (perceptually uniform, L on third axis)
 	ImColorWarperSpace_COUNT
 };
+
+typedef int ImColorWarperSignalColor;
+enum ImColorWarperSignalColor_
+{
+	ImColorWarperSignalColor_Flat = 0,			// Use style color for all points
+	ImColorWarperSignalColor_PixelColor,		// Use each pixel's own RGB color
+	ImColorWarperSignalColor_COUNT
+};
+
+struct ImColorWarperOverlay;
 
 struct ImColorWarperData
 {
@@ -1635,8 +1655,16 @@ struct ImColorCurveKey
 	float Position;		// X position (0-1)
 	float Value;		// Y value (meaning depends on mode)
 
-	ImColorCurveKey() : Position( 0.0f ), Value( 0.0f ) {}
-	ImColorCurveKey( float pos, float val ) : Position( pos ), Value( val ) {}
+	// Advanced segment fields (used only when advancedSegments is enabled)
+	ImCurveEditorSeg			Segment;		// Interpolation to next key
+	ImVec2						TangentLeft;	// Left tangent handle (for CubicBezier)
+	ImVec2						TangentRight;	// Right tangent handle (for CubicBezier)
+	ImCurveEditorTangentMode	TangentMode;	// How left/right handles relate
+
+	ImColorCurveKey() : Position( 0.0f ), Value( 0.0f ), Segment( ImCurveEditorSeg_Linear ),
+		TangentLeft( -0.1f, 0.0f ), TangentRight( 0.1f, 0.0f ), TangentMode( ImCurveEditorTangentMode_Mirrored ) {}
+	ImColorCurveKey( float pos, float val ) : Position( pos ), Value( val ), Segment( ImCurveEditorSeg_Linear ),
+		TangentLeft( -0.1f, 0.0f ), TangentRight( 0.1f, 0.0f ), TangentMode( ImCurveEditorTangentMode_Mirrored ) {}
 };
 
 struct ImColorCurveData
@@ -1766,6 +1794,22 @@ struct ImVectorScopeData
 	void Accumulate( void const* data, int width, int height, int channels,
 					 ImParadeBitDepth bitDepth, ImParadeLayout layout,
 					 int resolution = 256, int maxSamples = 1000000 );
+};
+
+// ---- Color Warper Overlay ----
+
+struct ImColorWarperOverlay
+{
+	ImVector<float>	SampledRGB;		// [i*3 + 0..2] = r, g, b (normalized [0,1])
+	int				SampleCount;
+
+	ImColorWarperOverlay() : SampleCount( 0 ) {}
+
+	void Clear() { SampledRGB.clear(); SampleCount = 0; }
+
+	void Accumulate( void const* data, int width, int height, int channels,
+					 ImParadeBitDepth bitDepth, ImParadeLayout layout,
+					 int maxSamples = 50000 );
 };
 
 // ---- Histogram ----
@@ -2554,13 +2598,15 @@ namespace ImWidgets{
 	IMGUI_API void ColorConvertHSYtoRGB( float h, float s, float y, float& out_r, float& out_g, float& out_b );
 	IMGUI_API void ColorConvertRGBtoHSP( float r, float g, float b, float& out_h, float& out_s, float& out_p );
 	IMGUI_API void ColorConvertHSPtoRGB( float h, float s, float p, float& out_r, float& out_g, float& out_b );
-	IMGUI_API bool ColorWarper( char const* label, ImColorWarperData* data, ImColorWarperMode mode = ImColorWarperMode_Circular, ImColorWarperSpace space = ImColorWarperSpace_HSV, float thirdAxis = 1.0f, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API void ColorConvertRGBtoHSPLog( float r, float g, float b, float& out_h, float& out_s, float& out_p );
+	IMGUI_API void ColorConvertHSPLogtoRGB( float h, float s, float pLog, float& out_r, float& out_g, float& out_b );
+	IMGUI_API bool ColorWarper( char const* label, ImColorWarperData* data, ImColorWarperMode mode = ImColorWarperMode_Circular, ImColorWarperSpace space = ImColorWarperSpace_HSV, float thirdAxis = 1.0f, ImColorWarperOverlay const* signalOverlay = NULL, ImColorWarperSignalColor signalColor = ImColorWarperSignalColor_PixelColor, float axisAngle = 0.0f, ImVec2 size = ImVec2( 0, 0 ) );
 
 	IMGUI_API float ColorCurveDefaultValue( ImColorCurveMode mode );
 	IMGUI_API void  ColorCurveRange( ImColorCurveMode mode, float* out_min, float* out_max );
 	IMGUI_API const char* ColorCurveModeName( ImColorCurveMode mode );
-	IMGUI_API float ColorCurveSample( ImColorCurveData const& curve, ImColorCurveMode mode, float x );
-	IMGUI_API bool  ColorCurve( char const* label, ImColorCurveData* curve, ImColorCurveMode mode, ImHistogramData const* histogramOverlay = NULL, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API float ColorCurveSample( ImColorCurveData const& curve, ImColorCurveMode mode, float x, bool advancedSegments = false );
+	IMGUI_API bool  ColorCurve( char const* label, ImColorCurveData* curve, ImColorCurveMode mode, ImHistogramData const* histogramOverlay = NULL, bool advancedSegments = false, ImVec2 size = ImVec2( 0, 0 ) );
 
 	IMGUI_API const char* ParadeModeName( ImParadeMode mode );
 	IMGUI_API void  ParadeScope( char const* label, ImParadeScopeData const& data, bool overlay = false, ImParadeScale scale = ImParadeScale_Linear, ImVec2 size = ImVec2( 0, 0 ) );
@@ -2575,8 +2621,8 @@ namespace ImWidgets{
 
 	IMGUI_API int   ToneCurveChannelCount( ImHistogramMode mode );
 	IMGUI_API const char* ToneCurveChannelName( ImHistogramMode mode, int channel );
-	IMGUI_API float ToneCurveSample( ImColorCurveData const& curve, float x );
-	IMGUI_API bool  ToneCurve( char const* label, ImToneCurveData* curve, ImHistogramMode mode, ImHistogramData const* histogramOverlay = NULL, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API float ToneCurveSample( ImColorCurveData const& curve, float x, bool advancedSegments = false );
+	IMGUI_API bool  ToneCurve( char const* label, ImToneCurveData* curve, ImHistogramMode mode, ImHistogramData const* histogramOverlay = NULL, bool advancedSegments = false, ImVec2 size = ImVec2( 0, 0 ) );
 
 	IMGUI_API bool SliderRingScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max,
 									float v_angle_min = -0.75f * IM_PI, float v_angle_max = 0.75f * IM_PI,
