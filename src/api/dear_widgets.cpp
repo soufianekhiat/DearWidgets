@@ -11398,7 +11398,7 @@ namespace ImWidgets {
 
 		dl->PushClipRect( scope_bb.Min, scope_bb.Max, true );
 
-		// Optional histogram overlay
+		// Optional histogram overlay (show only the active channel)
 		if ( histogramOverlay && histogramOverlay->BinCount > 0 && histogramOverlay->PeakCount > 0 )
 		{
 			int binCount = histogramOverlay->BinCount;
@@ -11409,22 +11409,20 @@ namespace ImWidgets {
 			ToneCurveGetChannelColors( histogramOverlay->Mode, dwStyle, histChColors, 4 );
 
 			float histOverlayAlpha = dwStyle.Colors[ StyleColor_ToneCurve_HistogramOverlay ].w;
-			for ( int ch = 0; ch < chCount; ++ch )
+			int histCh = ImClamp( active, 0, chCount - 1 );
+			ImU32 const* bins = histogramOverlay->Bins.Data + histCh * binCount;
+			ImVec4 cf = histChColors[ histCh ];
+			ImU32 histCol = ImGui::GetColorU32( ImVec4( cf.x, cf.y, cf.z, histOverlayAlpha ) );
+
+			for ( int i = 0; i < binCount; ++i )
 			{
-				ImU32 const* bins = histogramOverlay->Bins.Data + ch * binCount;
-				ImVec4 cf = histChColors[ ch ];
-				ImU32 histCol = ImGui::GetColorU32( ImVec4( cf.x, cf.y, cf.z, histOverlayAlpha ) );
+				float t0 = ( float )i / ( float )binCount;
+				float t1 = ( float )( i + 1 ) / ( float )binCount;
+				float barH = ( float )bins[ i ] * invPeak;
 
-				for ( int i = 0; i < binCount; ++i )
-				{
-					float t0 = ( float )i / ( float )binCount;
-					float t1 = ( float )( i + 1 ) / ( float )binCount;
-					float barH = ( float )bins[ i ] * invPeak;
-
-					ImVec2 rMin( scope_bb.Min.x + t0 * scopeW, scope_bb.Max.y - barH * scopeH );
-					ImVec2 rMax( scope_bb.Min.x + t1 * scopeW, scope_bb.Max.y );
-					dl->AddRectFilled( rMin, rMax, histCol );
-				}
+				ImVec2 rMin( scope_bb.Min.x + t0 * scopeW, scope_bb.Max.y - barH * scopeH );
+				ImVec2 rMax( scope_bb.Min.x + t1 * scopeW, scope_bb.Max.y );
+				dl->AddRectFilled( rMin, rMax, histCol );
 			}
 		}
 
