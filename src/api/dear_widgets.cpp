@@ -7030,6 +7030,35 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			}
 		}
 
+		// Arrow key nudging
+		if ( selected >= 0 && selected < gradient->Stops.Size && hovered )
+		{
+			float step = 1.0f / ImMax( bar_bb.GetWidth(), 1.0f );
+			if ( ImGui::GetIO().KeyShift )
+				step *= 10.0f;
+			if ( ImGui::IsKeyPressed( ImGuiKey_LeftArrow ) )
+			{
+				gradient->Stops[ selected ].Position = ImClamp( gradient->Stops[ selected ].Position - step, 0.0f, 1.0f );
+				gradient->SortStops();
+				value_changed = true;
+			}
+			if ( ImGui::IsKeyPressed( ImGuiKey_RightArrow ) )
+			{
+				gradient->Stops[ selected ].Position = ImClamp( gradient->Stops[ selected ].Position + step, 0.0f, 1.0f );
+				gradient->SortStops();
+				value_changed = true;
+			}
+		}
+
+		// Tooltip
+		if ( hovered_marker >= 0 && hovered && g.ActiveId != id )
+		{
+			ImGui::SetTooltip( "Stop %d: pos=%.3f RGBA=(%.2f, %.2f, %.2f, %.2f)",
+				hovered_marker, gradient->Stops[ hovered_marker ].Position,
+				gradient->Stops[ hovered_marker ].Color.x, gradient->Stops[ hovered_marker ].Color.y,
+				gradient->Stops[ hovered_marker ].Color.z, gradient->Stops[ hovered_marker ].Color.w );
+		}
+
 		ImGui::PopID();
 
 		if ( value_changed )
@@ -7887,6 +7916,15 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImGui::EndPopup();
 		}
 
+		// Double-click on key: reset Y to default (midpoint of range)
+		if ( hovered_key >= 0 && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
+		{
+			float defaultY = ( rangeMin.y + rangeMax.y ) * 0.5f;
+			curve->Keys[ hovered_key ].Pos.y = defaultY;
+			selected = hovered_key;
+			value_changed = true;
+		}
+
 		// Delete key
 		if ( selected >= 0 && ImGui::IsKeyPressed( ImGuiKey_Delete ) && hovered )
 		{
@@ -7895,6 +7933,40 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				selected = -1;
 				value_changed = true;
 			}
+		}
+
+		// Arrow key nudging
+		if ( selected >= 0 && selected < curve->Keys.Size && hovered )
+		{
+			float stepX = ( rangeMax.x - rangeMin.x ) / ImMax( frame_bb.GetWidth(), 1.0f );
+			float stepY = ( rangeMax.y - rangeMin.y ) / ImMax( frame_bb.GetHeight(), 1.0f );
+			if ( ImGui::GetIO().KeyShift )
+			{
+				stepX *= 10.0f;
+				stepY *= 10.0f;
+			}
+			bool nudged = false;
+			ImVec2 newPos = curve->Keys[ selected ].Pos;
+			if ( ImGui::IsKeyPressed( ImGuiKey_LeftArrow ) )  { newPos.x -= stepX; nudged = true; }
+			if ( ImGui::IsKeyPressed( ImGuiKey_RightArrow ) ) { newPos.x += stepX; nudged = true; }
+			if ( ImGui::IsKeyPressed( ImGuiKey_UpArrow ) )    { newPos.y += stepY; nudged = true; }
+			if ( ImGui::IsKeyPressed( ImGuiKey_DownArrow ) )  { newPos.y -= stepY; nudged = true; }
+			if ( nudged )
+			{
+				if ( selected > 0 )
+					newPos.x = ImMax( newPos.x, curve->Keys[ selected - 1 ].Pos.x + 1e-4f );
+				if ( selected < curve->Keys.Size - 1 )
+					newPos.x = ImMin( newPos.x, curve->Keys[ selected + 1 ].Pos.x - 1e-4f );
+				curve->Keys[ selected ].Pos = newPos;
+				value_changed = true;
+			}
+		}
+
+		// Tooltip on hovered key
+		if ( hovered_key >= 0 && hovered && g.ActiveId != id )
+		{
+			ImGui::SetTooltip( "Key %d: (%.3f, %.3f)", hovered_key,
+				curve->Keys[ hovered_key ].Pos.x, curve->Keys[ hovered_key ].Pos.y );
 		}
 
 		ImGui::PopID();
@@ -8306,6 +8378,44 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			else
 				thirdAxis = 0.5f;
 			value_changed = true;
+		}
+
+		// Right-click context menu
+		if ( hovered && ( mouseInDisc || mouseInSlider ) && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) )
+			ImGui::OpenPopup( "##ColorWheelCtx" );
+
+		if ( ImGui::BeginPopup( "##ColorWheelCtx" ) )
+		{
+			if ( ImGui::MenuItem( "Reset Color" ) )
+			{
+				hue = 0.0f;
+				sat = 0.0f;
+				if ( mode == ImColorWheelMode_HSV )
+					thirdAxis = 1.0f;
+				else
+					thirdAxis = 0.5f;
+				alpha = 1.0f;
+				value_changed = true;
+			}
+			if ( ImGui::MenuItem( "Copy Hex" ) )
+			{
+				float r = color->x, gg = color->y, b = color->z;
+				char hex[ 16 ];
+				ImFormatString( hex, IM_ARRAYSIZE( hex ), "#%02X%02X%02X%02X",
+					( int )( r * 255.0f + 0.5f ), ( int )( gg * 255.0f + 0.5f ),
+					( int )( b * 255.0f + 0.5f ), ( int )( alpha * 255.0f + 0.5f ) );
+				ImGui::SetClipboardText( hex );
+			}
+			ImGui::EndPopup();
+		}
+
+		// Tooltip
+		if ( hovered && ( mouseNearDot || mouseInDisc ) && g.ActiveId != id )
+		{
+			if ( mode == ImColorWheelMode_HSV )
+				ImGui::SetTooltip( "H: %.3f  S: %.3f  V: %.3f\nR: %.3f  G: %.3f  B: %.3f  A: %.2f", hue, sat, thirdAxis, color->x, color->y, color->z, alpha );
+			else
+				ImGui::SetTooltip( "H: %.3f  C: %.3f  L: %.3f\nR: %.3f  G: %.3f  B: %.3f  A: %.2f", hue, sat * kOkLCHMaxChroma, thirdAxis, color->x, color->y, color->z, alpha );
 		}
 
 		ImGui::PopID();
@@ -8855,6 +8965,27 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( hovered && hovered_point >= 0 && g.ActiveId != id )
 			ImGui::SetMouseCursor( ImGuiMouseCursor_Hand );
 
+		// Delete key: reset selected point
+		if ( data->SelectedIdx >= 0 && data->SelectedIdx < data->Offsets.Size && hovered && ImGui::IsKeyPressed( ImGuiKey_Delete ) )
+		{
+			if ( !data->Pinned[ data->SelectedIdx ] )
+			{
+				data->Offsets[ data->SelectedIdx ] = ImVec2( 0.0f, 0.0f );
+				value_changed = true;
+			}
+		}
+
+		// Tooltip on hovered point
+		if ( hovered_point >= 0 && hovered && g.ActiveId != id )
+		{
+			int hi = hovered_point % hueDivs;
+			int si = hovered_point / hueDivs;
+			ImVec2 off = data->Offsets[ hovered_point ];
+			bool pinned = data->Pinned[ hovered_point ];
+			ImGui::SetTooltip( "Point [%d,%d]%s\nHue shift: %.3f  Sat shift: %.3f",
+				hi, si, pinned ? " (pinned)" : "", off.x, off.y );
+		}
+
 		// Label
 		if ( label_size.x > 0.0f )
 			ImGui::RenderText( ImVec2( content_bb.Max.x + style.ItemInnerSpacing.x, content_bb.Min.y + style.FramePadding.y ), label );
@@ -9356,6 +9487,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImGui::EndPopup();
 		}
 
+		// Double-click on key: reset value to default
+		if ( hovered_key >= 0 && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
+		{
+			curve->Keys[ hovered_key ].Value = defaultY;
+			selected = hovered_key;
+			value_changed = true;
+		}
+
 		// Delete key
 		if ( selected >= 0 && ImGui::IsKeyPressed( ImGuiKey_Delete ) && hovered )
 		{
@@ -9364,6 +9503,39 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				selected = -1;
 				value_changed = true;
 			}
+		}
+
+		// Arrow key nudging
+		if ( selected >= 0 && selected < curve->Keys.Size && hovered )
+		{
+			float stepX = 1.0f / ImMax( frame_bb.GetWidth(), 1.0f );
+			float stepY = ( yMax - yMin ) / ImMax( frame_bb.GetHeight(), 1.0f );
+			if ( ImGui::GetIO().KeyShift )
+			{
+				stepX *= 10.0f;
+				stepY *= 10.0f;
+			}
+			bool nudged = false;
+			float newPos = curve->Keys[ selected ].Position;
+			float newVal = curve->Keys[ selected ].Value;
+			if ( ImGui::IsKeyPressed( ImGuiKey_LeftArrow ) )  { newPos -= stepX; nudged = true; }
+			if ( ImGui::IsKeyPressed( ImGuiKey_RightArrow ) ) { newPos += stepX; nudged = true; }
+			if ( ImGui::IsKeyPressed( ImGuiKey_UpArrow ) )    { newVal += stepY; nudged = true; }
+			if ( ImGui::IsKeyPressed( ImGuiKey_DownArrow ) )  { newVal -= stepY; nudged = true; }
+			if ( nudged )
+			{
+				curve->Keys[ selected ].Position = ImClamp( newPos, 0.0f, 1.0f );
+				curve->Keys[ selected ].Value = ImClamp( newVal, yMin, yMax );
+				curve->SortKeys();
+				value_changed = true;
+			}
+		}
+
+		// Tooltip on hovered key
+		if ( hovered_key >= 0 && hovered && g.ActiveId != id )
+		{
+			ImGui::SetTooltip( "Key %d: pos=%.3f val=%.3f", hovered_key,
+				curve->Keys[ hovered_key ].Position, curve->Keys[ hovered_key ].Value );
 		}
 
 		ImGui::PopID();
@@ -11421,6 +11593,14 @@ namespace ImWidgets {
 			ImGui::EndPopup();
 		}
 
+		// Double-click on key: reset to identity (output = input)
+		if ( hovered_key >= 0 && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
+		{
+			activeCurve.Keys[ hovered_key ].Value = activeCurve.Keys[ hovered_key ].Position;
+			activeCurve.SelectedIdx = hovered_key;
+			value_changed = true;
+		}
+
 		// Delete key
 		if ( activeCurve.SelectedIdx >= 0 && ImGui::IsKeyPressed( ImGuiKey_Delete ) && hovered )
 		{
@@ -11429,6 +11609,40 @@ namespace ImWidgets {
 				activeCurve.SelectedIdx = -1;
 				value_changed = true;
 			}
+		}
+
+		// Arrow key nudging
+		if ( activeCurve.SelectedIdx >= 0 && activeCurve.SelectedIdx < activeCurve.Keys.Size && hovered )
+		{
+			float stepX = 1.0f / ImMax( scope_bb.GetWidth(), 1.0f );
+			float stepY = 1.0f / ImMax( scope_bb.GetHeight(), 1.0f );
+			if ( ImGui::GetIO().KeyShift )
+			{
+				stepX *= 10.0f;
+				stepY *= 10.0f;
+			}
+			int sel = activeCurve.SelectedIdx;
+			bool nudged = false;
+			float newPos = activeCurve.Keys[ sel ].Position;
+			float newVal = activeCurve.Keys[ sel ].Value;
+			if ( ImGui::IsKeyPressed( ImGuiKey_LeftArrow ) )  { newPos -= stepX; nudged = true; }
+			if ( ImGui::IsKeyPressed( ImGuiKey_RightArrow ) ) { newPos += stepX; nudged = true; }
+			if ( ImGui::IsKeyPressed( ImGuiKey_UpArrow ) )    { newVal += stepY; nudged = true; }
+			if ( ImGui::IsKeyPressed( ImGuiKey_DownArrow ) )  { newVal -= stepY; nudged = true; }
+			if ( nudged )
+			{
+				activeCurve.Keys[ sel ].Position = ImClamp( newPos, 0.0f, 1.0f );
+				activeCurve.Keys[ sel ].Value = ImClamp( newVal, 0.0f, 1.0f );
+				activeCurve.SortKeys();
+				value_changed = true;
+			}
+		}
+
+		// Tooltip on hovered key
+		if ( hovered_key >= 0 && hovered && g.ActiveId != id )
+		{
+			ImGui::SetTooltip( "Key %d: in=%.3f out=%.3f", hovered_key,
+				activeCurve.Keys[ hovered_key ].Position, activeCurve.Keys[ hovered_key ].Value );
 		}
 
 		ImGui::PopID();
