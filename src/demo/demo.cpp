@@ -2377,7 +2377,10 @@ namespace ImWidgets {
 					gradInitialized = true;
 				}
 
-				GradientEditor( "##GradientMain", &gradient, ImVec2( 0, 32 ) );
+				static bool gradAlpha = true;
+				ImGui::Checkbox( "Alpha##GradEditor", &gradAlpha );
+
+				GradientEditor( "##GradientMain", &gradient, gradAlpha, ImVec2( 0, 32 ) );
 
 				static char const* interpNames[] = { "sRGB", "Linear sRGB", "OkLab", "OkLCH", "HSV" };
 				ImGui::Combo( "Interpolation##GradEditor", &gradient.Interpolation, interpNames, ImWidgetsGradientInterp_COUNT );
@@ -2387,7 +2390,8 @@ namespace ImWidgets {
 				{
 					ImGradientStop& stop = gradient.Stops[ gradient.SelectedIdx ];
 					ImGui::Text( "Stop %d  Position: %.3f", gradient.SelectedIdx, stop.Position );
-					ImGui::ColorEdit4( "Stop Color##GradEditor", &stop.Color.x, ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf );
+					ImGuiColorEditFlags ceFlags = gradAlpha ? ( ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf ) : ImGuiColorEditFlags_NoAlpha;
+					ImGui::ColorEdit4( "Stop Color##GradEditor", &stop.Color.x, ceFlags );
 				}
 				else
 				{
@@ -2417,7 +2421,7 @@ namespace ImWidgets {
 					gradient2.AddStop( 1.0f, ImVec4( 1.0f, 1.0f, 1.0f, 1.0f ) );
 					grad2Initialized = true;
 				}
-				GradientEditor( "Black to White (OkLab)##Grad2", &gradient2 );
+				GradientEditor( "Black to White (OkLab)##Grad2", &gradient2, false );
 			}
 			if ( ImGui::CollapsingHeader( "Curve Editor", ImGuiTreeNodeFlags_DefaultOpen ) )
 			{
@@ -3666,6 +3670,229 @@ namespace ImWidgets {
 				ImGui::Text( "OkLCH Wheel (HDR max = 2.0)" );
 				ColorWheel( "##WheelHDR", &wheelColor2, ImColorWheelMode_OkLCH, 2.0f );
 				ImGui::ColorEdit4( "HDR Color##Wheel2", &wheelColor2.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR );
+			}
+
+			if ( ImGui::CollapsingHeader( "Primaries Wheels (Lift/Gamma/Gain/Offset)" ) )
+			{
+				static ImVec4 primColors[ 4 ] = {
+					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Lift
+					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Gamma
+					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Gain
+					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Offset
+				};
+				static float primY[ 4 ] = { 0.0f, 0.0f, 1.0f, 0.0f };
+				static int primMode = ImColorWheelMode_HSV;
+
+				const char* primNames[] = { "Lift", "Gamma", "Gain", "Offset" };
+
+				ImGui::Combo( "Mode##Prim", &primMode, "HSV\0OkLCH\0" );
+
+				ImWidgetsStyle& dwStyle = ImWidgets::GetStyle();
+				float ringThick = 6.0f;
+				float ringGap = 3.0f;
+				float ringMargin = dwStyle.SliderRing_GrabRadius + ringThick + ringGap;
+
+				float outerSize = ImGui::GetContentRegionAvail().x / 4.0f - ImGui::GetStyle().ItemSpacing.x;
+				if ( outerSize < 100.0f ) outerSize = 100.0f;
+				if ( outerSize > 200.0f ) outerSize = 200.0f;
+
+				float innerWheelSize = outerSize - 2.0f * ringMargin;
+				float sliderH = 20.0f;
+				float spacing = ImGui::GetStyle().ItemInnerSpacing.y;
+
+				if ( ImGui::BeginTable( "##PrimWheels", 4, ImGuiTableFlags_NoSavedSettings ) )
+				{
+					for ( int i = 0; i < 4; ++i )
+						ImGui::TableSetupColumn( primNames[ i ], ImGuiTableColumnFlags_WidthFixed, outerSize );
+
+					for ( int i = 0; i < 4; ++i )
+					{
+						ImGui::TableNextColumn();
+						ImGui::TextUnformatted( primNames[ i ] );
+
+						ImGui::PushID( i );
+
+						float yMin = ( i == 2 ) ? 0.0f : -1.0f;
+						float yMax = ( i == 2 ) ? 2.0f : 1.0f;
+
+						ImVec2 basePos = ImGui::GetCursorPos();
+
+						// 1) Draw SliderRing FIRST (background, larger, surrounding the wheel)
+						ImGui::SetNextItemAllowOverlap();
+						ImGui::SetNextItemWidth( outerSize );
+						ImWidgets::SliderRingFloat( "##Ydial", &primY[ i ], yMin, yMax,
+							-0.75f * IM_PI, 0.75f * IM_PI, ringThick, "%.2f" );
+
+						// 2) Draw ColorWheel ON TOP (smaller, centered inside the ring)
+						ImGui::SetCursorPos( ImVec2( basePos.x + ringMargin, basePos.y + ringMargin ) );
+						float wheelTotalH = innerWheelSize + spacing + sliderH;
+						ColorWheel( "##pw", &primColors[ i ], ( ImColorWheelMode )primMode, 1.0f, ImVec2( innerWheelSize, wheelTotalH ) );
+
+						// 3) Advance cursor past the full area (wheel's slider may extend below ring)
+						float wheelBottom = ringMargin + innerWheelSize + spacing + sliderH;
+						float maxBottom = ImMax( wheelBottom, outerSize );
+						ImGui::SetCursorPos( ImVec2( basePos.x, basePos.y + maxBottom + spacing ) );
+
+						// YRGB readouts
+						float qw = outerSize * 0.25f - 1.0f;
+						ImGui::SetNextItemWidth( qw ); ImGui::DragFloat( "Y##v", &primY[ i ], 0.01f, yMin, yMax, "%.2f" );
+						ImGui::SameLine();
+						ImGui::SetNextItemWidth( qw ); ImGui::DragFloat( "R##v", &primColors[ i ].x, 0.01f, 0.0f, 1.0f, "%.2f" );
+						ImGui::SetNextItemWidth( qw ); ImGui::DragFloat( "G##v", &primColors[ i ].y, 0.01f, 0.0f, 1.0f, "%.2f" );
+						ImGui::SameLine();
+						ImGui::SetNextItemWidth( qw ); ImGui::DragFloat( "B##v", &primColors[ i ].z, 0.01f, 0.0f, 1.0f, "%.2f" );
+
+						ImGui::PopID();
+					}
+					ImGui::EndTable();
+				}
+
+				ImGui::Separator();
+
+				// Shared controls
+				static float primTemp = 0.0f, primTint = 0.0f;
+				static float primContrast = 0.0f, primPivot = 0.5f;
+				static float primSaturation = 50.0f, primHue = 0.0f;
+
+				float ctrlW = ImGui::GetContentRegionAvail().x * 0.5f - ImGui::GetStyle().ItemSpacing.x;
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Temp", &primTemp, -100.0f, 100.0f, "%.1f" );
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Tint", &primTint, -100.0f, 100.0f, "%.1f" );
+
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Contrast", &primContrast, -100.0f, 100.0f, "%.1f" );
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Pivot", &primPivot, 0.0f, 1.0f, "%.2f" );
+
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Saturation", &primSaturation, 0.0f, 100.0f, "%.1f" );
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Hue", &primHue, -180.0f, 180.0f, "%.1f" );
+			}
+
+			if ( ImGui::CollapsingHeader( "HDR Wheels (Dark/Shadow/Light/Global)" ) )
+			{
+				static ImVec4 hdrColors[ 4 ] = {
+					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Dark
+					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Shadow
+					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Light
+					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Global
+				};
+				static float hdrExposure[ 4 ] = { 0.0f, 0.0f, 0.0f, 0.0f };
+				static float hdrSaturation[ 4 ] = { 1.0f, 1.0f, 1.0f, 1.0f };
+				static float hdrRange[ 3 ] = { -2.5f, 0.0f, 2.5f };
+				static float hdrFalloff[ 3 ] = { 0.5f, 0.5f, 0.5f };
+
+				const char* hdrNames[] = { "Dark", "Shadow", "Light", "Global" };
+
+				float colW = ImGui::GetContentRegionAvail().x / 4.0f - ImGui::GetStyle().ItemSpacing.x;
+				if ( colW < 100.0f ) colW = 100.0f;
+				if ( colW > 200.0f ) colW = 200.0f;
+
+				ImWidgetsStyle& dwStyleH = ImWidgets::GetStyle();
+				float arcThick = 8.0f;
+				float arcGap = 3.0f;
+				float arcMargin = dwStyleH.SliderRing_GrabRadius + arcThick + arcGap;
+
+				if ( ImGui::BeginTable( "##HDRWheels", 4, ImGuiTableFlags_NoSavedSettings ) )
+				{
+					for ( int i = 0; i < 4; ++i )
+						ImGui::TableSetupColumn( hdrNames[ i ], ImGuiTableColumnFlags_WidthFixed, colW );
+
+					for ( int i = 0; i < 4; ++i )
+					{
+						ImGui::TableNextColumn();
+						ImGui::TextUnformatted( hdrNames[ i ] );
+
+						ImGui::PushID( i );
+
+						bool hasZone = ( i < 3 );
+						float outerSize = colW;
+						float innerWheelSize = hasZone ? ( outerSize - 2.0f * arcMargin ) : outerSize;
+						float sliderH = 20.0f;
+						float spacing = ImGui::GetStyle().ItemInnerSpacing.y;
+
+						if ( hasZone )
+						{
+							// --- Zone arcs overlaid on the color wheel ---
+							ImVec2 basePos = ImGui::GetCursorPos();
+
+							// Range arc (left side of circle)
+							ImGui::SetNextItemAllowOverlap();
+							ImGui::SetNextItemWidth( outerSize );
+							ImWidgets::SliderRingFloat( "##rng", &hdrRange[ i ], -8.0f, 8.0f,
+								0.6f * IM_PI, 1.4f * IM_PI, arcThick, "##" );
+
+							// Falloff arc (right side of circle)
+							ImGui::SetCursorPos( basePos );
+							ImGui::SetNextItemAllowOverlap();
+							ImGui::SetNextItemWidth( outerSize );
+							ImWidgets::SliderRingFloat( "##fal", &hdrFalloff[ i ], 0.0f, 4.0f,
+								-0.4f * IM_PI, 0.4f * IM_PI, arcThick, "##" );
+
+							// ColorWheel centered inside the arcs
+							ImGui::SetCursorPos( ImVec2( basePos.x + arcMargin, basePos.y + arcMargin ) );
+							float wheelTotalH = innerWheelSize + spacing + sliderH;
+							ColorWheel( "##hw", &hdrColors[ i ], ImColorWheelMode_OkLCH, 1.0f, ImVec2( innerWheelSize, wheelTotalH ) );
+
+							// Advance cursor past the full area (wheel's slider may extend below arcs)
+							float hdrWheelBottom = arcMargin + innerWheelSize + spacing + sliderH;
+							float hdrMaxBottom = ImMax( hdrWheelBottom, outerSize );
+							ImGui::SetCursorPos( ImVec2( basePos.x, basePos.y + hdrMaxBottom + spacing ) );
+
+							// Range / Falloff labels
+							ImGui::Text( "Rng:%.1f  Fal:%.2f", hdrRange[ i ], hdrFalloff[ i ] );
+						}
+						else
+						{
+							// Global: just the wheel, no arcs
+							float wheelTotalH = outerSize + spacing + sliderH;
+							ColorWheel( "##hw", &hdrColors[ i ], ImColorWheelMode_OkLCH, 1.0f, ImVec2( outerSize, wheelTotalH ) );
+						}
+
+						// Exposure (stops)
+						ImGui::SetNextItemWidth( outerSize );
+						ImGui::SliderFloat( "Exp##hdr", &hdrExposure[ i ], -4.0f, 4.0f, "%.2f EV" );
+
+						// Saturation
+						ImGui::SetNextItemWidth( outerSize );
+						ImGui::SliderFloat( "Sat##hdr", &hdrSaturation[ i ], 0.0f, 2.0f, "%.2f" );
+
+						ImGui::PopID();
+					}
+					ImGui::EndTable();
+				}
+
+				ImGui::Separator();
+
+				// Global controls
+				static float hdrTemp = 0.0f, hdrTint = 0.0f;
+				static float hdrContrast = 0.0f, hdrPivot = 0.5f;
+				static float hdrMidDetail = 0.0f;
+				static float hdrBlackOffset = 0.0f;
+
+				float ctrlW = ImGui::GetContentRegionAvail().x * 0.5f - ImGui::GetStyle().ItemSpacing.x;
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Temp##HDR", &hdrTemp, -100.0f, 100.0f, "%.1f" );
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Tint##HDR", &hdrTint, -100.0f, 100.0f, "%.1f" );
+
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Contrast##HDR", &hdrContrast, -100.0f, 100.0f, "%.1f" );
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Pivot##HDR", &hdrPivot, 0.0f, 1.0f, "%.2f" );
+
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Mid Detail##HDR", &hdrMidDetail, -100.0f, 100.0f, "%.1f" );
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Black Offset##HDR", &hdrBlackOffset, -1.0f, 1.0f, "%.3f" );
 			}
 
 			ImGui::Unindent();

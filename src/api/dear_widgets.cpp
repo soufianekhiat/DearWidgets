@@ -6812,7 +6812,78 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 	}
 
-	bool GradientEditor( char const* label, ImGradientData* gradient, ImVec2 size )
+	// ========================================================================
+	// Expand-to-window infrastructure
+	// ========================================================================
+
+	static bool s_InsideExpandedWidget = false;
+
+	// Draw a small expand button at the top-right corner of a widget.
+	// Returns pointer to the expanded-state bool, or NULL if inside an expanded window.
+	static bool* WidgetExpandButton( ImGuiID widget_id, ImRect const& bb )
+	{
+		if ( s_InsideExpandedWidget )
+			return NULL;
+
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		ImDrawList* dl = window->DrawList;
+
+		ImGuiID expandKey = widget_id ^ 0x1F2E3D4C;
+		bool* pOpen = window->StateStorage.GetBoolRef( expandKey, false );
+
+		float btnSize = 32.0f;
+		float margin = 3.0f;
+		ImVec2 btnMin( bb.Max.x - btnSize - margin, bb.Min.y + margin );
+		ImVec2 btnMax( bb.Max.x - margin, bb.Min.y + btnSize + margin );
+
+		bool hov = ImGui::IsMouseHoveringRect( btnMin, btnMax ) && ImGui::IsWindowHovered( ImGuiHoveredFlags_AllowWhenBlockedByActiveItem );
+		if ( hov && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) )
+			*pOpen = !( *pOpen );
+
+		ImU32 bg = hov ? IM_COL32( 80, 80, 80, 200 ) : IM_COL32( 40, 40, 40, 128 );
+		ImU32 fg = hov ? IM_COL32_WHITE : IM_COL32( 180, 180, 180, 180 );
+		dl->AddRectFilled( btnMin, btnMax, bg, 2.0f );
+
+		// Icon: small window with title bar
+		float p = 4.0f;
+		ImVec2 a( btnMin.x + p, btnMin.y + p );
+		ImVec2 b( btnMax.x - p, btnMax.y - p );
+		dl->AddRect( a, b, fg, 0.0f, 0, 1.0f );
+		dl->AddLine( ImVec2( a.x, a.y + 2.5f ), ImVec2( b.x, a.y + 2.5f ), fg, 1.0f );
+
+		return pOpen;
+	}
+
+	// Returns true if the mouse is over the expand button area (to suppress widget interaction).
+	static bool IsMouseOverExpandButton( ImGuiID widget_id, ImRect const& bb )
+	{
+		if ( s_InsideExpandedWidget )
+			return false;
+
+		float btnSize = 32.0f;
+		float margin = 3.0f;
+		ImVec2 btnMin( bb.Max.x - btnSize - margin, bb.Min.y + margin );
+		ImVec2 btnMax( bb.Max.x - margin, bb.Min.y + btnSize + margin );
+		return ImGui::IsMouseHoveringRect( btnMin, btnMax );
+	}
+
+	static bool BeginExpandedWindow( char const* label, ImGuiID widget_id, bool* pOpen, ImVec2 defaultSize = ImVec2( 600, 500 ) )
+	{
+		char title[ 256 ];
+		char const* displayLabel = ( label[ 0 ] == '#' && label[ 1 ] == '#' ) ? label + 2 : label;
+		ImFormatString( title, sizeof( title ), "%s###ExpandWdg_%08X", displayLabel, widget_id );
+		ImGui::SetNextWindowSize( defaultSize, ImGuiCond_FirstUseEver );
+		s_InsideExpandedWidget = true;
+		return ImGui::Begin( title, pOpen, ImGuiWindowFlags_NoCollapse );
+	}
+
+	static void EndExpandedWindow()
+	{
+		ImGui::End();
+		s_InsideExpandedWidget = false;
+	}
+
+	bool GradientEditor( char const* label, ImGradientData* gradient, bool alpha, ImVec2 size )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
@@ -6837,7 +6908,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( !ImGui::ItemAdd( total_bb, id, &bar_bb, 0 ) )
 			return false;
 
-		const bool hovered = ImGui::ItemHoverable( total_bb, id, g.LastItemData.ItemFlags );
+		bool hovered = ImGui::ItemHoverable( total_bb, id, g.LastItemData.ItemFlags );
+		if ( IsMouseOverExpandButton( id, bar_bb ) ) hovered = false;
 
 		bool value_changed = false;
 		int& selected = gradient->SelectedIdx;
@@ -6861,10 +6933,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
 		ImGui::RenderFrame( bar_bb.Min, bar_bb.Max, frame_col, true, g.Style.FrameRounding );
 
-		// Checkerboard for transparency
-		DrawCheckerboard( window->DrawList, bar_bb.Min, bar_bb.GetSize(), dwStyle.Gradient_CheckerboardCellSize,
-						  ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gradient_Checkerboard1 ] ),
-						  ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gradient_Checkerboard2 ] ) );
+		// Checkerboard for transparency (only when alpha is enabled)
+		if ( alpha )
+		{
+			DrawCheckerboard( window->DrawList, bar_bb.Min, bar_bb.GetSize(), dwStyle.Gradient_CheckerboardCellSize,
+							  ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gradient_Checkerboard1 ] ),
+							  ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gradient_Checkerboard2 ] ) );
+		}
 
 		// Gradient bar
 		int resolution = ImMax( ( int )( w * 0.5f ), 16 );
@@ -6898,7 +6973,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			window->DrawList->AddTriangle( p0, p1, p2, outlineCol, outlineThick );
 
 			// Alpha indicator: small horizontal line across marker proportional to alpha
-			if ( gradient->Stops[ i ].Color.w < 1.0f )
+			if ( alpha && gradient->Stops[ i ].Color.w < 1.0f )
 			{
 				float alphaY = ImLerp( marker_bb.Min.y + 2.0f, marker_bb.Max.y - 1.0f, 1.0f - gradient->Stops[ i ].Color.w );
 				float halfW = markerHeight * 0.3f;
@@ -6993,8 +7068,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			if ( selected >= 0 && selected < gradient->Stops.Size )
 			{
-				if ( ImGui::ColorPicker4( "##picker", &gradient->Stops[ selected ].Color.x,
-					 ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf ) )
+				ImGuiColorEditFlags pickerFlags = alpha ? ( ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf ) : ImGuiColorEditFlags_NoAlpha;
+				if ( ImGui::ColorPicker4( "##picker", &gradient->Stops[ selected ].Color.x, pickerFlags ) )
 				{
 					value_changed = true;
 				}
@@ -7065,6 +7140,52 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		if ( value_changed )
 			ImGui::MarkItemEdited( id );
+
+		// Expand button
+		bool* pExpanded = WidgetExpandButton( id, bar_bb );
+		if ( pExpanded && *pExpanded )
+		{
+			if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 800, 400 ) ) )
+			{
+				ImVec2 avail = ImGui::GetContentRegionAvail();
+				float widgetW = avail.x * 0.75f;
+				// Left: widget
+				if ( GradientEditor( "##exp", gradient, alpha, ImVec2( widgetW, avail.y * 0.5f ) ) )
+					value_changed = true;
+				ImGui::SameLine();
+				// Right: info / edit
+				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
+				ImGui::TextUnformatted( "Stops" );
+				ImGui::Text( "%d", gradient->Stops.Size );
+				ImGui::Spacing();
+				ImGui::TextUnformatted( "Interpolation" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				if ( ImGui::Combo( "##interp", ( int* )&gradient->Interpolation, "sRGB\0Linear sRGB\0OkLab\0OkLCH\0HSV\0" ) )
+					value_changed = true;
+				if ( selected >= 0 && selected < gradient->Stops.Size )
+				{
+					ImGradientStop& ss = gradient->Stops[ selected ];
+					ImGui::Separator();
+					ImGui::TextUnformatted( "Selected" );
+					ImGui::Text( "%d", selected );
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "Position" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					if ( ImGui::DragFloat( "##pos", &ss.Position, 0.001f, 0.0f, 1.0f, "%.3f" ) )
+					{
+						gradient->SortStops();
+						value_changed = true;
+					}
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "Color" );
+					ImGuiColorEditFlags editFlags = alpha ? ( ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf ) : ImGuiColorEditFlags_NoAlpha;
+					if ( ImGui::ColorEdit4( "##col", &ss.Color.x, editFlags ) )
+						value_changed = true;
+				}
+				ImGui::EndChild();
+			}
+			EndExpandedWindow();
+		}
 
 		return value_changed;
 	}
@@ -7593,77 +7714,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		#undef IM_CURVE_SEG_ITEM
 
 		return changed;
-	}
-
-	// ========================================================================
-	// Expand-to-window infrastructure
-	// ========================================================================
-
-	static bool s_InsideExpandedWidget = false;
-
-	// Draw a small expand button at the top-right corner of a widget.
-	// Returns pointer to the expanded-state bool, or NULL if inside an expanded window.
-	static bool* WidgetExpandButton( ImGuiID widget_id, ImRect const& bb )
-	{
-		if ( s_InsideExpandedWidget )
-			return NULL;
-
-		ImGuiWindow* window = ImGui::GetCurrentWindow();
-		ImDrawList* dl = window->DrawList;
-
-		ImGuiID expandKey = widget_id ^ 0x1F2E3D4C;
-		bool* pOpen = window->StateStorage.GetBoolRef( expandKey, false );
-
-		float btnSize = 32.0f;
-		float margin = 3.0f;
-		ImVec2 btnMin( bb.Max.x - btnSize - margin, bb.Min.y + margin );
-		ImVec2 btnMax( bb.Max.x - margin, bb.Min.y + btnSize + margin );
-
-		bool hov = ImGui::IsMouseHoveringRect( btnMin, btnMax ) && ImGui::IsWindowHovered( ImGuiHoveredFlags_AllowWhenBlockedByActiveItem );
-		if ( hov && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) )
-			*pOpen = !( *pOpen );
-
-		ImU32 bg = hov ? IM_COL32( 80, 80, 80, 200 ) : IM_COL32( 40, 40, 40, 128 );
-		ImU32 fg = hov ? IM_COL32_WHITE : IM_COL32( 180, 180, 180, 180 );
-		dl->AddRectFilled( btnMin, btnMax, bg, 2.0f );
-
-		// Icon: small window with title bar
-		float p = 4.0f;
-		ImVec2 a( btnMin.x + p, btnMin.y + p );
-		ImVec2 b( btnMax.x - p, btnMax.y - p );
-		dl->AddRect( a, b, fg, 0.0f, 0, 1.0f );
-		dl->AddLine( ImVec2( a.x, a.y + 2.5f ), ImVec2( b.x, a.y + 2.5f ), fg, 1.0f );
-
-		return pOpen;
-	}
-
-	// Returns true if the mouse is over the expand button area (to suppress widget interaction).
-	static bool IsMouseOverExpandButton( ImGuiID widget_id, ImRect const& bb )
-	{
-		if ( s_InsideExpandedWidget )
-			return false;
-
-		float btnSize = 32.0f;
-		float margin = 3.0f;
-		ImVec2 btnMin( bb.Max.x - btnSize - margin, bb.Min.y + margin );
-		ImVec2 btnMax( bb.Max.x - margin, bb.Min.y + btnSize + margin );
-		return ImGui::IsMouseHoveringRect( btnMin, btnMax );
-	}
-
-	static bool BeginExpandedWindow( char const* label, ImGuiID widget_id, bool* pOpen, ImVec2 defaultSize = ImVec2( 600, 500 ) )
-	{
-		char title[ 256 ];
-		char const* displayLabel = ( label[ 0 ] == '#' && label[ 1 ] == '#' ) ? label + 2 : label;
-		ImFormatString( title, sizeof( title ), "%s###ExpandWdg_%08X", displayLabel, widget_id );
-		ImGui::SetNextWindowSize( defaultSize, ImGuiCond_FirstUseEver );
-		s_InsideExpandedWidget = true;
-		return ImGui::Begin( title, pOpen, ImGuiWindowFlags_NoCollapse );
-	}
-
-	static void EndExpandedWindow()
-	{
-		ImGui::End();
-		s_InsideExpandedWidget = false;
 	}
 
 	bool CurveEditor( char const* label, ImCurveEditorData* curve, ImVec2 size )
@@ -13344,8 +13394,24 @@ namespace ImWidgets {
 		if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, 0 ) )
 			return false;
 
-		// Interaction
+		// Geometry (computed before interaction for ring hit-test)
+		const ImVec2 center = frame_bb.GetCenter();
+		const float trackThickness = ( v_thickness > 0.0f ) ? v_thickness : dwStyle.SliderRing_TrackThickness;
+		const float grabRadius = dwStyle.SliderRing_GrabRadius;
+		const float outerRadius = ( w * 0.5f ) - grabRadius;
+		const float innerRadius = outerRadius - trackThickness;
+		const float midRadius = ( outerRadius + innerRadius ) * 0.5f;
+
+		// Interaction — ring-distance hit-test so only the ring track is interactive
 		bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.ItemFlags );
+		if ( hovered )
+		{
+			float dx = g.IO.MousePos.x - center.x;
+			float dy = g.IO.MousePos.y - center.y;
+			float dist = ImSqrt( dx * dx + dy * dy );
+			if ( dist < innerRadius - grabRadius || dist > outerRadius + grabRadius )
+				hovered = false;
+		}
 		bool clicked = hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id );
 		bool make_active = ( clicked || g.NavActivateId == id );
 		if ( make_active && clicked )
@@ -13357,14 +13423,6 @@ namespace ImWidgets {
 			ImGui::FocusWindow( window );
 			g.ActiveIdUsingNavDirMask |= ( 1 << ImGuiDir_Left ) | ( 1 << ImGuiDir_Right );
 		}
-
-		// Geometry
-		const ImVec2 center = frame_bb.GetCenter();
-		const float trackThickness = ( v_thickness > 0.0f ) ? v_thickness : dwStyle.SliderRing_TrackThickness;
-		const float grabRadius = dwStyle.SliderRing_GrabRadius;
-		const float outerRadius = ( w * 0.5f ) - grabRadius;
-		const float innerRadius = outerRadius - trackThickness;
-		const float midRadius = ( outerRadius + innerRadius ) * 0.5f;
 
 		// Normalize value to [0..1]
 		float v_min_f = ScalarToFloat( data_type, ( ImU64* )p_min );
