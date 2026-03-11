@@ -3680,24 +3680,23 @@ namespace ImWidgets {
 					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Gain
 					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Offset
 				};
-				static float primY[ 4 ] = { 0.0f, 0.0f, 1.0f, 0.0f };
+				static float primY[ 4 ] = { 0.0f, 0.0f, 1.0f, 25.0f };
 				static int primMode = ImColorWheelMode_HSV;
 
 				const char* primNames[] = { "Lift", "Gamma", "Gain", "Offset" };
+				const float yMins[] = { -1.0f, -1.0f, -1.0f, -175.0f };
+				const float yMaxs[] = {  1.0f,  1.0f,  1.0f,  225.0f };
 
 				ImGui::Combo( "Mode##Prim", &primMode, "HSV\0OkLCH\0" );
 
-				ImWidgetsStyle& dwStyle = ImWidgets::GetStyle();
-				float ringThick = 6.0f;
-				float ringGap = 3.0f;
-				float ringMargin = dwStyle.SliderRing_GrabRadius + ringThick + ringGap;
+				float ringThick = 12.0f;
+				float ringGap = 2.0f;
 
 				float outerSize = ImGui::GetContentRegionAvail().x / 4.0f - ImGui::GetStyle().ItemSpacing.x;
 				if ( outerSize < 100.0f ) outerSize = 100.0f;
 				if ( outerSize > 200.0f ) outerSize = 200.0f;
 
-				float innerWheelSize = outerSize - 2.0f * ringMargin;
-				float sliderH = 20.0f;
+				float innerWheelSize = outerSize - 2.0f * ( ringThick + ringGap );
 				float spacing = ImGui::GetStyle().ItemInnerSpacing.y;
 
 				if ( ImGui::BeginTable( "##PrimWheels", 4, ImGuiTableFlags_NoSavedSettings ) )
@@ -3712,30 +3711,30 @@ namespace ImWidgets {
 
 						ImGui::PushID( i );
 
-						float yMin = ( i == 2 ) ? 0.0f : -1.0f;
-						float yMax = ( i == 2 ) ? 2.0f : 1.0f;
-
+						ImVec2 baseScreen = ImGui::GetCursorScreenPos();
 						ImVec2 basePos = ImGui::GetCursorPos();
 
-						// 1) Draw SliderRing FIRST (background, larger, surrounding the wheel)
-						ImGui::SetNextItemAllowOverlap();
-						ImGui::SetNextItemWidth( outerSize );
-						ImWidgets::SliderRingFloat( "##Ydial", &primY[ i ], yMin, yMax,
-							-0.75f * IM_PI, 0.75f * IM_PI, ringThick, "%.2f" );
+						// 1) Reserve space for the ring + wheel area
+						ImGui::Dummy( ImVec2( outerSize, outerSize ) );
 
-						// 2) Draw ColorWheel ON TOP (smaller, centered inside the ring)
-						ImGui::SetCursorPos( ImVec2( basePos.x + ringMargin, basePos.y + ringMargin ) );
-						float wheelTotalH = innerWheelSize + spacing + sliderH;
-						ColorWheel( "##pw", &primColors[ i ], ( ImColorWheelMode )primMode, 1.0f, ImVec2( innerWheelSize, wheelTotalH ) );
+						// 2) Draw circular gradient indicator (display-only)
+						float outerR = outerSize * 0.5f - 1.0f;
+						float innerR = outerR - ringThick;
+						ImVec2 center( baseScreen.x + outerSize * 0.5f, baseScreen.y + outerSize * 0.5f );
+						float t = ( yMaxs[ i ] > yMins[ i ] ) ? ImClamp( ( primY[ i ] - yMins[ i ] ) / ( yMaxs[ i ] - yMins[ i ] ), 0.0f, 1.0f ) : 0.0f;
+						ImWidgets::DrawCircularGradientIndicator( ImGui::GetWindowDrawList(), center, outerR, innerR, t );
 
-						// 3) Advance cursor past the full area (wheel's slider may extend below ring)
-						float wheelBottom = ringMargin + innerWheelSize + spacing + sliderH;
-						float maxBottom = ImMax( wheelBottom, outerSize );
-						ImGui::SetCursorPos( ImVec2( basePos.x, basePos.y + maxBottom + spacing ) );
+						// 3) ColorWheel ON TOP (smaller, centered inside, no master slider)
+						float wheelMargin = ringThick + ringGap;
+						ImGui::SetCursorPos( ImVec2( basePos.x + wheelMargin, basePos.y + wheelMargin ) );
+						ColorWheel( "##pw", &primColors[ i ], ( ImColorWheelMode )primMode, 1.0f, true, ImVec2( innerWheelSize, innerWheelSize ) );
+
+						// 4) Advance cursor past the ring
+						ImGui::SetCursorPos( ImVec2( basePos.x, basePos.y + outerSize + spacing ) );
 
 						// YRGB readouts
 						float qw = outerSize * 0.25f - 1.0f;
-						ImGui::SetNextItemWidth( qw ); ImGui::DragFloat( "Y##v", &primY[ i ], 0.01f, yMin, yMax, "%.2f" );
+						ImGui::SetNextItemWidth( qw ); ImGui::DragFloat( "Y##v", &primY[ i ], 0.01f, yMins[ i ], yMaxs[ i ], "%.2f" );
 						ImGui::SameLine();
 						ImGui::SetNextItemWidth( qw ); ImGui::DragFloat( "R##v", &primColors[ i ].x, 0.01f, 0.0f, 1.0f, "%.2f" );
 						ImGui::SetNextItemWidth( qw ); ImGui::DragFloat( "G##v", &primColors[ i ].y, 0.01f, 0.0f, 1.0f, "%.2f" );
@@ -3837,7 +3836,7 @@ namespace ImWidgets {
 							// ColorWheel centered inside the arcs
 							ImGui::SetCursorPos( ImVec2( basePos.x + arcMargin, basePos.y + arcMargin ) );
 							float wheelTotalH = innerWheelSize + spacing + sliderH;
-							ColorWheel( "##hw", &hdrColors[ i ], ImColorWheelMode_OkLCH, 1.0f, ImVec2( innerWheelSize, wheelTotalH ) );
+							ColorWheel( "##hw", &hdrColors[ i ], ImColorWheelMode_OkLCH, 1.0f, false, ImVec2( innerWheelSize, wheelTotalH ) );
 
 							// Advance cursor past the full area (wheel's slider may extend below arcs)
 							float hdrWheelBottom = arcMargin + innerWheelSize + spacing + sliderH;
@@ -3851,7 +3850,7 @@ namespace ImWidgets {
 						{
 							// Global: just the wheel, no arcs
 							float wheelTotalH = outerSize + spacing + sliderH;
-							ColorWheel( "##hw", &hdrColors[ i ], ImColorWheelMode_OkLCH, 1.0f, ImVec2( outerSize, wheelTotalH ) );
+							ColorWheel( "##hw", &hdrColors[ i ], ImColorWheelMode_OkLCH, 1.0f, false, ImVec2( outerSize, wheelTotalH ) );
 						}
 
 						// Exposure (stops)

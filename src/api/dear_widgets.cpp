@@ -8414,7 +8414,62 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 	}
 
-	bool ColorWheel( char const* label, ImVec4* color, ImColorWheelMode mode, float hdr_max, ImVec2 size )
+	void DrawCircularGradientIndicator( ImDrawList* pDrawList, ImVec2 center, float outerRadius, float innerRadius, float t )
+	{
+		ImVec2 uv = ImGui::GetFontTexUvWhitePixel();
+		int segments = 128;
+		pDrawList->PrimReserve( segments * 6, segments * 4 );
+
+		for ( int s = 0; s < segments; ++s )
+		{
+			float st0 = ( float )s / segments;
+			float st1 = ( float )( s + 1 ) / segments;
+			float a0 = -IM_PI * 0.5f + st0 * 2.0f * IM_PI;
+			float a1 = -IM_PI * 0.5f + st1 * 2.0f * IM_PI;
+
+			ImU32 col0, col1;
+			if ( st0 < t )
+			{
+				// Filled portion: gradient from black (st0=0) to white (st0=t)
+				float g0 = ( t > 0.0f ) ? ( st0 / t ) : 0.0f;
+				float g1 = ( t > 0.0f ) ? ImMin( st1 / t, 1.0f ) : 0.0f;
+				ImU8 gray0 = ( ImU8 )( g0 * 255.0f );
+				ImU8 gray1 = ( ImU8 )( g1 * 255.0f );
+				col0 = IM_COL32( gray0, gray0, gray0, 255 );
+				col1 = IM_COL32( gray1, gray1, gray1, 255 );
+			}
+			else
+			{
+				// Unfilled portion: black
+				col0 = IM_COL32( 0, 0, 0, 255 );
+				col1 = IM_COL32( 0, 0, 0, 255 );
+			}
+
+			ImVec2 outer0( center.x + ImCos( a0 ) * outerRadius, center.y + ImSin( a0 ) * outerRadius );
+			ImVec2 outer1( center.x + ImCos( a1 ) * outerRadius, center.y + ImSin( a1 ) * outerRadius );
+			ImVec2 inner0( center.x + ImCos( a0 ) * innerRadius, center.y + ImSin( a0 ) * innerRadius );
+			ImVec2 inner1( center.x + ImCos( a1 ) * innerRadius, center.y + ImSin( a1 ) * innerRadius );
+
+			ImDrawIdx idx = ( ImDrawIdx )pDrawList->_VtxCurrentIdx;
+			pDrawList->PrimWriteIdx( idx + 0 );
+			pDrawList->PrimWriteIdx( idx + 1 );
+			pDrawList->PrimWriteIdx( idx + 2 );
+			pDrawList->PrimWriteIdx( idx + 0 );
+			pDrawList->PrimWriteIdx( idx + 2 );
+			pDrawList->PrimWriteIdx( idx + 3 );
+
+			pDrawList->PrimWriteVtx( outer0, uv, col0 );
+			pDrawList->PrimWriteVtx( outer1, uv, col1 );
+			pDrawList->PrimWriteVtx( inner1, uv, col1 );
+			pDrawList->PrimWriteVtx( inner0, uv, col0 );
+		}
+
+		// Ring outlines
+		pDrawList->AddCircle( center, outerRadius, ImGui::GetColorU32( ImGuiCol_Border ) );
+		pDrawList->AddCircle( center, innerRadius, ImGui::GetColorU32( ImGuiCol_Border ) );
+	}
+
+	bool ColorWheel( char const* label, ImVec4* color, ImColorWheelMode mode, float hdr_max, bool fixedIntensity, ImVec2 size )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
@@ -8426,8 +8481,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const ImGuiID id = window->GetID( label );
 
 		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
-		const float sliderHeight = dwStyle.ColorWheel_SliderHeight;
-		const float spacing = style.ItemInnerSpacing.y;
+		const float sliderHeight = fixedIntensity ? 0.0f : dwStyle.ColorWheel_SliderHeight;
+		const float spacing = fixedIntensity ? 0.0f : style.ItemInnerSpacing.y;
 		const float discDiameter = w;
 		const float discRadius = discDiameter * 0.5f;
 		const float totalH = ( size.y > 0.0f ) ? size.y : ( discDiameter + spacing + sliderHeight );
@@ -8480,7 +8535,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float dyDisc = mp.y - discCenter.y;
 		float distFromCenter = ImSqrt( dxDisc * dxDisc + dyDisc * dyDisc );
 		bool mouseInDisc = ( distFromCenter <= discRadius );
-		bool mouseInSlider = slider_bb.Contains( mp );
+		bool mouseInSlider = !fixedIntensity && slider_bb.Contains( mp );
 
 		float dxDot = mp.x - dotPos.x;
 		float dyDot = mp.y - dotPos.y;
@@ -8595,72 +8650,76 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			dl->AddCircle( dotPos, dotRadius + 1.0f, dotOutCol, 0, isDraggingDisc ? 2.0f : 1.0f );
 		}
 
-		// Master slider background
-		ImGui::RenderFrame( slider_bb.Min, slider_bb.Max, ImGui::GetColorU32( ImGuiCol_FrameBg ), true, g.Style.FrameRounding );
-
-		// Master slider gradient
+		// Master slider (hidden when fixedIntensity)
+		if ( !fixedIntensity )
 		{
-			int sliderSegs = 16;
-			float segW = slider_bb.GetWidth() / ( float )sliderSegs;
-			for ( int i = 0; i < sliderSegs; ++i )
+			// Slider background
+			ImGui::RenderFrame( slider_bb.Min, slider_bb.Max, ImGui::GetColorU32( ImGuiCol_FrameBg ), true, g.Style.FrameRounding );
+
+			// Slider gradient
 			{
-				float t0 = ( float )i / ( float )sliderSegs;
-				float t1 = ( float )( i + 1 ) / ( float )sliderSegs;
-
-				float v0 = t0 * hdr_max;
-				float v1 = t1 * hdr_max;
-
-				float r0, g0, b0, r1, g1, b1;
-				if ( mode == ImColorWheelMode_HSV )
+				int sliderSegs = 16;
+				float segW = slider_bb.GetWidth() / ( float )sliderSegs;
+				for ( int i = 0; i < sliderSegs; ++i )
 				{
-					ImGui::ColorConvertHSVtoRGB( hue, sat, v0, r0, g0, b0 );
-					ImGui::ColorConvertHSVtoRGB( hue, sat, v1, r1, g1, b1 );
+					float t0 = ( float )i / ( float )sliderSegs;
+					float t1 = ( float )( i + 1 ) / ( float )sliderSegs;
+
+					float v0 = t0 * hdr_max;
+					float v1 = t1 * hdr_max;
+
+					float r0, g0, b0, r1, g1, b1;
+					if ( mode == ImColorWheelMode_HSV )
+					{
+						ImGui::ColorConvertHSVtoRGB( hue, sat, v0, r0, g0, b0 );
+						ImGui::ColorConvertHSVtoRGB( hue, sat, v1, r1, g1, b1 );
+					}
+					else
+					{
+						float c = sat * kOkLCHMaxChroma;
+						ColorConvertOKLCHtosRGB( r0, g0, b0, v0, c, hue );
+						ColorConvertOKLCHtosRGB( r1, g1, b1, v1, c, hue );
+					}
+
+					r0 = ImClamp( r0, 0.0f, 1.0f ); g0 = ImClamp( g0, 0.0f, 1.0f ); b0 = ImClamp( b0, 0.0f, 1.0f );
+					r1 = ImClamp( r1, 0.0f, 1.0f ); g1 = ImClamp( g1, 0.0f, 1.0f ); b1 = ImClamp( b1, 0.0f, 1.0f );
+
+					ImU32 col0 = IM_COL32( ( int )( r0 * 255.0f + 0.5f ), ( int )( g0 * 255.0f + 0.5f ), ( int )( b0 * 255.0f + 0.5f ), 255 );
+					ImU32 col1 = IM_COL32( ( int )( r1 * 255.0f + 0.5f ), ( int )( g1 * 255.0f + 0.5f ), ( int )( b1 * 255.0f + 0.5f ), 255 );
+
+					ImVec2 segMin( slider_bb.Min.x + segW * i, slider_bb.Min.y );
+					ImVec2 segMax( slider_bb.Min.x + segW * ( i + 1 ), slider_bb.Max.y );
+					dl->AddRectFilledMultiColor( segMin, segMax, col0, col1, col1, col0 );
 				}
+			}
+
+			// Slider border
+			dl->AddRect( slider_bb.Min, slider_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ), g.Style.FrameRounding );
+
+			// Slider handle
+			{
+				float handleT = ImClamp( thirdAxis / hdr_max, 0.0f, 1.0f );
+				float handleX = ImLerp( slider_bb.Min.x, slider_bb.Max.x, handleT );
+				float handleHalf = 4.0f;
+				ImVec2 handleMin( handleX - handleHalf, slider_bb.Min.y - 1.0f );
+				ImVec2 handleMax( handleX + handleHalf, slider_bb.Max.y + 1.0f );
+
+				// Fill handle with the current color at this position
+				float hr, hg, hb;
+				if ( mode == ImColorWheelMode_HSV )
+					ImGui::ColorConvertHSVtoRGB( hue, sat, thirdAxis, hr, hg, hb );
 				else
 				{
 					float c = sat * kOkLCHMaxChroma;
-					ColorConvertOKLCHtosRGB( r0, g0, b0, v0, c, hue );
-					ColorConvertOKLCHtosRGB( r1, g1, b1, v1, c, hue );
+					ColorConvertOKLCHtosRGB( hr, hg, hb, thirdAxis, c, hue );
 				}
+				hr = ImClamp( hr, 0.0f, 1.0f ); hg = ImClamp( hg, 0.0f, 1.0f ); hb = ImClamp( hb, 0.0f, 1.0f );
+				ImU32 handleFill = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
 
-				r0 = ImClamp( r0, 0.0f, 1.0f ); g0 = ImClamp( g0, 0.0f, 1.0f ); b0 = ImClamp( b0, 0.0f, 1.0f );
-				r1 = ImClamp( r1, 0.0f, 1.0f ); g1 = ImClamp( g1, 0.0f, 1.0f ); b1 = ImClamp( b1, 0.0f, 1.0f );
-
-				ImU32 col0 = IM_COL32( ( int )( r0 * 255.0f + 0.5f ), ( int )( g0 * 255.0f + 0.5f ), ( int )( b0 * 255.0f + 0.5f ), 255 );
-				ImU32 col1 = IM_COL32( ( int )( r1 * 255.0f + 0.5f ), ( int )( g1 * 255.0f + 0.5f ), ( int )( b1 * 255.0f + 0.5f ), 255 );
-
-				ImVec2 segMin( slider_bb.Min.x + segW * i, slider_bb.Min.y );
-				ImVec2 segMax( slider_bb.Min.x + segW * ( i + 1 ), slider_bb.Max.y );
-				dl->AddRectFilledMultiColor( segMin, segMax, col0, col1, col1, col0 );
+				dl->AddRectFilled( handleMin, handleMax, handleFill, 2.0f );
+				dl->AddRect( handleMin, handleMax, IM_COL32_WHITE, 2.0f, 0, 1.5f );
+				dl->AddRect( ImVec2( handleMin.x - 0.5f, handleMin.y - 0.5f ), ImVec2( handleMax.x + 0.5f, handleMax.y + 0.5f ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorWheel_SliderOutline ] ), 2.0f );
 			}
-		}
-
-		// Slider border
-		dl->AddRect( slider_bb.Min, slider_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ), g.Style.FrameRounding );
-
-		// Slider handle
-		{
-			float handleT = ImClamp( thirdAxis / hdr_max, 0.0f, 1.0f );
-			float handleX = ImLerp( slider_bb.Min.x, slider_bb.Max.x, handleT );
-			float handleHalf = 4.0f;
-			ImVec2 handleMin( handleX - handleHalf, slider_bb.Min.y - 1.0f );
-			ImVec2 handleMax( handleX + handleHalf, slider_bb.Max.y + 1.0f );
-
-			// Fill handle with the current color at this position
-			float hr, hg, hb;
-			if ( mode == ImColorWheelMode_HSV )
-				ImGui::ColorConvertHSVtoRGB( hue, sat, thirdAxis, hr, hg, hb );
-			else
-			{
-				float c = sat * kOkLCHMaxChroma;
-				ColorConvertOKLCHtosRGB( hr, hg, hb, thirdAxis, c, hue );
-			}
-			hr = ImClamp( hr, 0.0f, 1.0f ); hg = ImClamp( hg, 0.0f, 1.0f ); hb = ImClamp( hb, 0.0f, 1.0f );
-			ImU32 handleFill = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
-
-			dl->AddRectFilled( handleMin, handleMax, handleFill, 2.0f );
-			dl->AddRect( handleMin, handleMax, IM_COL32_WHITE, 2.0f, 0, 1.5f );
-			dl->AddRect( ImVec2( handleMin.x - 0.5f, handleMin.y - 0.5f ), ImVec2( handleMax.x + 0.5f, handleMax.y + 0.5f ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorWheel_SliderOutline ] ), 2.0f );
 		}
 
 		// Label
@@ -8806,7 +8865,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				ImVec2 avail = ImGui::GetContentRegionAvail();
 				float widgetW = avail.x * 0.75f;
 				// Left: widget
-				if ( ColorWheel( "##exp", color, mode, hdr_max, ImVec2( widgetW, avail.y ) ) )
+				if ( ColorWheel( "##exp", color, mode, hdr_max, false, ImVec2( widgetW, avail.y ) ) )
 					value_changed = true;
 				ImGui::SameLine();
 				// Right: info / edit
