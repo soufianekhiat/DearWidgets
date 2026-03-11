@@ -7033,6 +7033,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Arrow key nudging
 		if ( selected >= 0 && selected < gradient->Stops.Size && hovered )
 		{
+			ImGui::SetKeyOwner( ImGuiKey_LeftArrow, id );
+			ImGui::SetKeyOwner( ImGuiKey_RightArrow, id );
 			float step = 1.0f / ImMax( bar_bb.GetWidth(), 1.0f );
 			if ( ImGui::GetIO().KeyShift )
 				step *= 10.0f;
@@ -7938,6 +7940,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Arrow key nudging
 		if ( selected >= 0 && selected < curve->Keys.Size && hovered )
 		{
+			ImGui::SetKeyOwner( ImGuiKey_LeftArrow, id );
+			ImGui::SetKeyOwner( ImGuiKey_RightArrow, id );
+			ImGui::SetKeyOwner( ImGuiKey_UpArrow, id );
+			ImGui::SetKeyOwner( ImGuiKey_DownArrow, id );
 			float stepX = ( rangeMax.x - rangeMin.x ) / ImMax( frame_bb.GetWidth(), 1.0f );
 			float stepY = ( rangeMax.y - rangeMin.y ) / ImMax( frame_bb.GetHeight(), 1.0f );
 			if ( ImGui::GetIO().KeyShift )
@@ -8377,6 +8383,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				thirdAxis = 1.0f;
 			else
 				thirdAxis = 0.5f;
+			ImGui::ClearActiveID();
+			*pDragMode = 0;
 			value_changed = true;
 		}
 
@@ -9123,9 +9131,31 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			v2 = curve.Keys[ seg + 1 ].Value;
 			v0 = ( seg > 0 ) ? curve.Keys[ seg - 1 ].Value : ( 2.0f * v1 - v2 );
 			v3 = ( seg + 2 < n ) ? curve.Keys[ seg + 2 ].Value : ( 2.0f * v2 - v1 );
+
+			// Non-uniform Catmull-Rom for proper tangent estimation with uneven key spacing
+			float x1 = segStart;
+			float x2 = segEnd;
+			float x0 = ( seg > 0 ) ? curve.Keys[ seg - 1 ].Position : ( x1 - span );
+			float x3 = ( seg + 2 < n ) ? curve.Keys[ seg + 2 ].Position : ( x2 + span );
+
+			float d01 = ImMax( x1 - x0, 1e-6f );
+			float d12 = ImMax( span, 1e-6f );
+			float d23 = ImMax( x3 - x2, 1e-6f );
+			float d02 = ImMax( x2 - x0, 1e-6f );
+			float d13 = ImMax( x3 - x1, 1e-6f );
+
+			float m1 = d12 / d02 * ( ( v1 - v0 ) / d01 ) + d01 / d02 * ( ( v2 - v1 ) / d12 );
+			float m2 = d23 / d13 * ( ( v2 - v1 ) / d12 ) + d12 / d13 * ( ( v3 - v2 ) / d23 );
+
+			float t2 = t * t;
+			float t3 = t2 * t;
+			return ( 2.0f * t3 - 3.0f * t2 + 1.0f ) * v1
+				 + ( t3 - 2.0f * t2 + t ) * d12 * m1
+				 + ( -2.0f * t3 + 3.0f * t2 ) * v2
+				 + ( t3 - t2 ) * d12 * m2;
 		}
 
-		return CatmullRom( v0, v1, v2, v3, t );
+		return CatmullRom( v0, v1, v2, v3, t ); // cyclic path
 	}
 
 	// Background color for a given X position depending on mode
@@ -9508,6 +9538,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Arrow key nudging
 		if ( selected >= 0 && selected < curve->Keys.Size && hovered )
 		{
+			ImGui::SetKeyOwner( ImGuiKey_LeftArrow, id );
+			ImGui::SetKeyOwner( ImGuiKey_RightArrow, id );
+			ImGui::SetKeyOwner( ImGuiKey_UpArrow, id );
+			ImGui::SetKeyOwner( ImGuiKey_DownArrow, id );
 			float stepX = 1.0f / ImMax( frame_bb.GetWidth(), 1.0f );
 			float stepY = ( yMax - yMin ) / ImMax( frame_bb.GetHeight(), 1.0f );
 			if ( ImGui::GetIO().KeyShift )
@@ -11210,17 +11244,39 @@ namespace ImWidgets {
 			}
 		}
 
-		float span = curve.Keys[ seg + 1 ].Position - curve.Keys[ seg ].Position;
+		float x1 = curve.Keys[ seg ].Position;
+		float x2 = curve.Keys[ seg + 1 ].Position;
+		float span = x2 - x1;
 		if ( span < 1e-6f ) return curve.Keys[ seg ].Value;
 
-		float t = ( x - curve.Keys[ seg ].Position ) / span;
+		float t = ( x - x1 ) / span;
 
 		float v1 = curve.Keys[ seg ].Value;
 		float v2 = curve.Keys[ seg + 1 ].Value;
 		float v0 = ( seg > 0 ) ? curve.Keys[ seg - 1 ].Value : ( 2.0f * v1 - v2 );
 		float v3 = ( seg + 2 < n ) ? curve.Keys[ seg + 2 ].Value : ( 2.0f * v2 - v1 );
 
-		return CatmullRom( v0, v1, v2, v3, t );
+		// Non-uniform Catmull-Rom: use actual key positions for proper tangent estimation
+		float x0 = ( seg > 0 ) ? curve.Keys[ seg - 1 ].Position : ( x1 - span );
+		float x3 = ( seg + 2 < n ) ? curve.Keys[ seg + 2 ].Position : ( x2 + span );
+
+		float d01 = ImMax( x1 - x0, 1e-6f );
+		float d12 = ImMax( span, 1e-6f );
+		float d23 = ImMax( x3 - x2, 1e-6f );
+		float d02 = ImMax( x2 - x0, 1e-6f );
+		float d13 = ImMax( x3 - x1, 1e-6f );
+
+		// Non-uniform tangents
+		float m1 = d12 / d02 * ( ( v1 - v0 ) / d01 ) + d01 / d02 * ( ( v2 - v1 ) / d12 );
+		float m2 = d23 / d13 * ( ( v2 - v1 ) / d12 ) + d12 / d13 * ( ( v3 - v2 ) / d23 );
+
+		// Cubic Hermite interpolation
+		float t2 = t * t;
+		float t3 = t2 * t;
+		return ( 2.0f * t3 - 3.0f * t2 + 1.0f ) * v1
+			 + ( t3 - 2.0f * t2 + t ) * d12 * m1
+			 + ( -2.0f * t3 + 3.0f * t2 ) * v2
+			 + ( t3 - t2 ) * d12 * m2;
 	}
 
 	static ImVec2 ToneCurveToScreen( float pos, float val, ImRect const& bb )
@@ -11614,6 +11670,10 @@ namespace ImWidgets {
 		// Arrow key nudging
 		if ( activeCurve.SelectedIdx >= 0 && activeCurve.SelectedIdx < activeCurve.Keys.Size && hovered )
 		{
+			ImGui::SetKeyOwner( ImGuiKey_LeftArrow, id );
+			ImGui::SetKeyOwner( ImGuiKey_RightArrow, id );
+			ImGui::SetKeyOwner( ImGuiKey_UpArrow, id );
+			ImGui::SetKeyOwner( ImGuiKey_DownArrow, id );
 			float stepX = 1.0f / ImMax( scope_bb.GetWidth(), 1.0f );
 			float stepY = 1.0f / ImMax( scope_bb.GetHeight(), 1.0f );
 			if ( ImGui::GetIO().KeyShift )
