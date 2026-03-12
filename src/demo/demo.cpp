@@ -3829,6 +3829,57 @@ namespace ImWidgets {
 			ImGui::Unindent();
 		}
 
+		if ( ImGui::CollapsingHeader( "Transform Gizmo", ImGuiTreeNodeFlags_DefaultOpen ) )
+		{
+			static ImTransformImage gizmoImages[ 3 ];
+			static bool gizmoInit = false;
+			if ( !gizmoInit )
+			{
+				gizmoImages[ 0 ] = ImTransformImage( astro_img, astro_size );
+				gizmoImages[ 1 ] = ImTransformImage( clock_img, clock_size );
+				gizmoImages[ 1 ].Transform.Translation = ImVec2( -120.0f, -60.0f );
+				gizmoImages[ 1 ].Transform.Scale = ImVec2( 0.4f, 0.4f );
+				gizmoImages[ 2 ] = ImTransformImage( man_img, man_size );
+				gizmoImages[ 2 ].Transform.Translation = ImVec2( 100.0f, 50.0f );
+				gizmoImages[ 2 ].Transform.Scale = ImVec2( 0.5f, 0.5f );
+				gizmoInit = true;
+			}
+
+			static int gizmoSel = 0;
+			static bool gizmoNonUniform = false;
+
+			ImGui::Checkbox( "Non-Uniform Scale", &gizmoNonUniform );
+
+			ImTransformGizmoFlags gizmoFlags = ImTransformGizmoFlags_None;
+			if ( gizmoNonUniform )
+				gizmoFlags |= ImTransformGizmoFlags_NonUniformScale;
+
+			ImWidgets::ImageTransformGizmo( "##xform", gizmoImages, 3, &gizmoSel, gizmoFlags );
+
+			if ( gizmoSel >= 0 && gizmoSel < 3 )
+			{
+				ImTransformData* tr = &gizmoImages[ gizmoSel ].Transform;
+				ImGui::Text( "Selected: %d", gizmoSel );
+				float halfW = ImGui::GetContentRegionAvail().x * 0.5f - ImGui::GetStyle().ItemSpacing.x;
+				ImGui::SetNextItemWidth( halfW );
+				ImGui::DragFloat2( "Position", &tr->Translation.x, 1.0f );
+				ImGui::SameLine();
+				float deg = tr->Rotation * ( 180.0f / IM_PI );
+				ImGui::SetNextItemWidth( halfW );
+				if ( ImGui::DragFloat( "Rotation", &deg, 0.5f ) )
+					tr->Rotation = deg * ( IM_PI / 180.0f );
+				ImGui::SetNextItemWidth( halfW );
+				ImGui::DragFloat2( "Scale", &tr->Scale.x, 0.01f, 0.01f, 10.0f );
+				ImGui::SameLine();
+				if ( ImGui::Button( "Reset" ) )
+					*tr = ImTransformData();
+			}
+			else
+			{
+				ImGui::TextDisabled( "Click an image to select it" );
+			}
+		}
+
 		ImGui::End();
 		ImGui::PopStyleVar();
 	}

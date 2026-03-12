@@ -9268,6 +9268,421 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 	//////////////////////////////////////////////////////////////////////////
+	// Transform Gizmo
+	//////////////////////////////////////////////////////////////////////////
+
+	// Helper: compute image corners for a given transform
+	static void ComputeImageCorners( ImVec2 canvasCenter, float canvasW, float canvasH,
+		const ImTransformImage& img, ImVec2* corners, ImVec2* edgeMids, ImVec2* outCenter,
+		float* outHw, float* outHh, float* outCosR, float* outSinR )
+	{
+		float imgAR = img.TexSize.x / img.TexSize.y;
+		float canvasAR = canvasW / canvasH;
+		float baseW, baseH;
+		if ( imgAR > canvasAR ) { baseW = canvasW; baseH = canvasW / imgAR; }
+		else                    { baseH = canvasH; baseW = canvasH * imgAR; }
+
+		float hw = baseW * img.Transform.Scale.x * 0.5f;
+		float hh = baseH * img.Transform.Scale.y * 0.5f;
+		ImVec2 center( canvasCenter.x + img.Transform.Translation.x,
+					   canvasCenter.y + img.Transform.Translation.y );
+		float cosR = ImCos( img.Transform.Rotation );
+		float sinR = ImSin( img.Transform.Rotation );
+
+		ImVec2 local[ 4 ] = { { -hw, -hh }, { hw, -hh }, { hw, hh }, { -hw, hh } };
+		for ( int i = 0; i < 4; ++i )
+		{
+			float rx = local[ i ].x * cosR - local[ i ].y * sinR;
+			float ry = local[ i ].x * sinR + local[ i ].y * cosR;
+			corners[ i ] = ImVec2( center.x + rx, center.y + ry );
+		}
+		if ( edgeMids )
+		{
+			for ( int i = 0; i < 4; ++i )
+				edgeMids[ i ] = ImVec2( ( corners[ i ].x + corners[ ( i + 1 ) % 4 ].x ) * 0.5f,
+										( corners[ i ].y + corners[ ( i + 1 ) % 4 ].y ) * 0.5f );
+		}
+		*outCenter = center;
+		*outHw = hw;
+		*outHh = hh;
+		*outCosR = cosR;
+		*outSinR = sinR;
+	}
+
+	// Helper: point-in-rotated-rect test
+	static bool PointInRotatedRect( ImVec2 point, ImVec2 center, float hw, float hh, float cosR, float sinR )
+	{
+		float mx = point.x - center.x;
+		float my = point.y - center.y;
+		float lx =  mx * cosR + my * sinR;
+		float ly = -mx * sinR + my * cosR;
+		return ( ImFabs( lx ) <= hw && ImFabs( ly ) <= hh );
+	}
+
+	bool ImageTransformGizmo( char const* label, ImTransformImage* images, int imageCount, int* selectedIndex,
+		ImTransformGizmoFlags flags, ImVec2 canvasSize )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		const ImGuiID id = window->GetID( label );
+		const bool nonUniform = ( flags & ImTransformGizmoFlags_NonUniformScale ) != 0;
+
+		// Style
+		const float handleSz     = dwStyle.Gizmo_HandleSize;
+		const float rotHandleOff = dwStyle.Gizmo_RotationHandleOffset;
+		const float outlineThick = dwStyle.Gizmo_OutlineThickness;
+		const ImU32 colCanvas    = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gizmo_Canvas ] );
+		const ImU32 colOutline   = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gizmo_Outline ] );
+		const ImU32 colHandle    = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gizmo_Handle ] );
+		const ImU32 colHandleAct = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gizmo_HandleActive ] );
+		const ImU32 colBorder    = ImGui::GetColorU32( ImGuiCol_Border );
+		const ImU32 colOutlineDim = IM_COL32( 255, 255, 255, 60 );
+
+		// Canvas size
+		float cw = ( canvasSize.x > 0.0f ) ? canvasSize.x : ImGui::GetContentRegionAvail().x;
+		float ch = ( canvasSize.y > 0.0f ) ? canvasSize.y : 400.0f;
+
+		// Register item
+		ImRect canvasBB( window->DC.CursorPos, window->DC.CursorPos + ImVec2( cw, ch ) );
+		ImGui::ItemSize( canvasBB );
+		if ( !ImGui::ItemAdd( canvasBB, id, &canvasBB ) )
+			return false;
+
+		ImDrawList* dl = window->DrawList;
+		ImVec2 canvasCenter( canvasBB.Min.x + cw * 0.5f, canvasBB.Min.y + ch * 0.5f );
+
+		// Draw canvas background
+		dl->AddRectFilled( canvasBB.Min, canvasBB.Max, colCanvas );
+		dl->AddRect( canvasBB.Min, canvasBB.Max, colBorder );
+		dl->PushClipRect( canvasBB.Min, canvasBB.Max, true );
+
+		int sel = ( selectedIndex && *selectedIndex >= 0 && *selectedIndex < imageCount ) ? *selectedIndex : -1;
+
+		// Draw all images (back to front, selected last)
+		for ( int n = 0; n < imageCount; ++n )
+		{
+			ImVec2 corners[ 4 ], edgeMids[ 4 ], center;
+			float hw, hh, cosR, sinR;
+			ComputeImageCorners( canvasCenter, cw, ch, images[ n ], corners, edgeMids, &center, &hw, &hh, &cosR, &sinR );
+
+			dl->AddImageQuad( images[ n ].Texture, corners[ 0 ], corners[ 1 ], corners[ 2 ], corners[ 3 ],
+				ImVec2( 0, 0 ), ImVec2( 1, 0 ), ImVec2( 1, 1 ), ImVec2( 0, 1 ) );
+
+			if ( n == sel )
+			{
+				// Full outline + handles drawn after all images
+			}
+			else
+			{
+				// Dim outline for unselected images
+				for ( int i = 0; i < 4; ++i )
+					dl->AddLine( corners[ i ], corners[ ( i + 1 ) % 4 ], colOutlineDim, 1.0f );
+			}
+		}
+
+		// Draw handles for selected image
+		ImVec2 selCorners[ 4 ] = {};
+		ImVec2 selEdgeMids[ 4 ] = {};
+		ImVec2 selCenter = canvasCenter;
+		float selHw = 0, selHh = 0, selCosR = 1, selSinR = 0;
+		ImVec2 rotHandle = canvasCenter;
+
+		if ( sel >= 0 )
+		{
+			ComputeImageCorners( canvasCenter, cw, ch, images[ sel ], selCorners, selEdgeMids,
+				&selCenter, &selHw, &selHh, &selCosR, &selSinR );
+
+			// Bounding box outline
+			for ( int i = 0; i < 4; ++i )
+				dl->AddLine( selCorners[ i ], selCorners[ ( i + 1 ) % 4 ], colOutline, outlineThick );
+
+			// Rotation handle
+			ImVec2 topMid = selEdgeMids[ 0 ]; // midpoint of TL-TR edge
+			ImVec2 upDir( selSinR, -selCosR );
+			rotHandle = ImVec2( topMid.x + upDir.x * rotHandleOff,
+								topMid.y + upDir.y * rotHandleOff );
+			dl->AddLine( topMid, rotHandle, colOutline, 1.0f );
+
+			// Determine active action for coloring
+			ImGuiStorage* storage = &window->StateStorage;
+			const ImGuiID actionKey = id + 1000;
+			const ImGuiID handleKey = id + 1001;
+			int curAction = ( g.ActiveId == id ) ? storage->GetInt( actionKey, 0 ) : 0;
+			int curHandle = storage->GetInt( handleKey, -1 );
+
+			// Corner handles
+			for ( int i = 0; i < 4; ++i )
+			{
+				bool active = ( curAction == 2 && curHandle == i );
+				ImU32 hCol = active ? colHandleAct : colHandle;
+				dl->AddRectFilled( selCorners[ i ] - ImVec2( handleSz, handleSz ),
+								   selCorners[ i ] + ImVec2( handleSz, handleSz ), hCol );
+				dl->AddRect( selCorners[ i ] - ImVec2( handleSz, handleSz ),
+							 selCorners[ i ] + ImVec2( handleSz, handleSz ), colBorder );
+			}
+
+			// Edge midpoint handles (non-uniform scale)
+			if ( nonUniform )
+			{
+				float edgeSz = handleSz * 0.8f;
+				for ( int i = 0; i < 4; ++i )
+				{
+					bool active = ( curAction == 4 && curHandle == i );
+					ImU32 hCol = active ? colHandleAct : colHandle;
+					dl->AddRectFilled( selEdgeMids[ i ] - ImVec2( edgeSz, edgeSz ),
+									   selEdgeMids[ i ] + ImVec2( edgeSz, edgeSz ), hCol );
+					dl->AddRect( selEdgeMids[ i ] - ImVec2( edgeSz, edgeSz ),
+								 selEdgeMids[ i ] + ImVec2( edgeSz, edgeSz ), colBorder );
+				}
+			}
+
+			// Rotation handle circle
+			{
+				bool active = ( curAction == 3 );
+				ImU32 hCol = active ? colHandleAct : colHandle;
+				dl->AddCircleFilled( rotHandle, handleSz, hCol );
+				dl->AddCircle( rotHandle, handleSz, colBorder );
+			}
+
+			// Center dot
+			dl->AddCircleFilled( selCenter, 3.0f, colOutline );
+			dl->AddCircle( selCenter, 3.0f, colBorder );
+		}
+
+		dl->PopClipRect();
+
+		// --- Interaction ---
+		bool hovered = ImGui::ItemHoverable( canvasBB, id, g.LastItemData.ItemFlags );
+		bool value_changed = false;
+
+		ImGuiStorage* storage = &window->StateStorage;
+		const ImGuiID actionKey      = id + 1000;
+		const ImGuiID handleKey      = id + 1001;
+		const ImGuiID startAngleKey  = id + 1002;
+		const ImGuiID startRotKey    = id + 1003;
+		const ImGuiID startDistKey   = id + 1004;
+		const ImGuiID startScaleXKey = id + 1005;
+		const ImGuiID startScaleYKey = id + 1006;
+
+		if ( g.ActiveId == id && sel >= 0 )
+		{
+			ImTransformData* tr = &images[ sel ].Transform;
+			int action = storage->GetInt( actionKey, 0 );
+
+			if ( ImGui::IsMouseDown( 0 ) )
+			{
+				ImVec2 mouse = g.IO.MousePos;
+				ImVec2 delta = g.IO.MouseDelta;
+
+				if ( action == 1 ) // Translate
+				{
+					tr->Translation.x += delta.x;
+					tr->Translation.y += delta.y;
+					if ( delta.x != 0.0f || delta.y != 0.0f )
+						value_changed = true;
+				}
+				else if ( action == 2 ) // Scale (uniform from corner)
+				{
+					float newDist = ImSqrt(
+						( mouse.x - selCenter.x ) * ( mouse.x - selCenter.x ) +
+						( mouse.y - selCenter.y ) * ( mouse.y - selCenter.y ) );
+					float startDist = storage->GetFloat( startDistKey, 1.0f );
+					if ( startDist > 1.0f )
+					{
+						float ratio = newDist / startDist;
+						float sx = storage->GetFloat( startScaleXKey, 1.0f ) * ratio;
+						float sy = storage->GetFloat( startScaleYKey, 1.0f ) * ratio;
+						if ( sx > 0.01f && sy > 0.01f )
+						{
+							tr->Scale.x = sx;
+							tr->Scale.y = sy;
+							value_changed = true;
+						}
+					}
+				}
+				else if ( action == 3 ) // Rotate
+				{
+					float angle = ImAtan2( mouse.y - selCenter.y, mouse.x - selCenter.x );
+					float startAngle = storage->GetFloat( startAngleKey, 0.0f );
+					float startRot = storage->GetFloat( startRotKey, 0.0f );
+					tr->Rotation = startRot + ( angle - startAngle );
+					value_changed = true;
+				}
+				else if ( action == 4 ) // Non-uniform scale (edge handle)
+				{
+					int edge = storage->GetInt( handleKey, 0 );
+					// Project mouse delta onto the edge's normal axis in local space
+					// Edges: 0=top, 1=right, 2=bottom, 3=left
+					// Top/Bottom affect Y scale, Left/Right affect X scale
+					float mx = mouse.x - selCenter.x;
+					float my = mouse.y - selCenter.y;
+					// Transform to local space
+					float lx =  mx * selCosR + my * selSinR;
+					float ly = -mx * selSinR + my * selCosR;
+					float startSX = storage->GetFloat( startScaleXKey, 1.0f );
+					float startSY = storage->GetFloat( startScaleYKey, 1.0f );
+					float startDist = storage->GetFloat( startDistKey, 1.0f );
+					if ( startDist > 1.0f )
+					{
+						if ( edge == 0 || edge == 2 ) // top/bottom → Y scale
+						{
+							float newDist = ImFabs( ly );
+							tr->Scale.y = startSY * ( newDist / startDist );
+							if ( tr->Scale.y < 0.01f ) tr->Scale.y = 0.01f;
+						}
+						else // left/right → X scale
+						{
+							float newDist = ImFabs( lx );
+							tr->Scale.x = startSX * ( newDist / startDist );
+							if ( tr->Scale.x < 0.01f ) tr->Scale.x = 0.01f;
+						}
+						value_changed = true;
+					}
+				}
+			}
+			else
+			{
+				storage->SetInt( actionKey, 0 );
+				ImGui::ClearActiveID();
+			}
+		}
+		else if ( hovered && ImGui::IsMouseClicked( 0 ) )
+		{
+			ImVec2 mouse = g.IO.MousePos;
+			bool handled = false;
+
+			// If we have a selected image, check its handles first
+			if ( sel >= 0 )
+			{
+				// 1) Rotation handle
+				float rotDist = ImSqrt(
+					( mouse.x - rotHandle.x ) * ( mouse.x - rotHandle.x ) +
+					( mouse.y - rotHandle.y ) * ( mouse.y - rotHandle.y ) );
+				if ( rotDist <= handleSz * 2.0f )
+				{
+					storage->SetInt( actionKey, 3 );
+					float angle = ImAtan2( mouse.y - selCenter.y, mouse.x - selCenter.x );
+					storage->SetFloat( startAngleKey, angle );
+					storage->SetFloat( startRotKey, images[ sel ].Transform.Rotation );
+					ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+					ImGui::SetActiveID( id, window );
+					ImGui::SetFocusID( id, window );
+					handled = true;
+				}
+
+				// 2) Corner handles (uniform scale)
+				if ( !handled )
+				{
+					for ( int i = 0; i < 4; ++i )
+					{
+						float cd = ImSqrt(
+							( mouse.x - selCorners[ i ].x ) * ( mouse.x - selCorners[ i ].x ) +
+							( mouse.y - selCorners[ i ].y ) * ( mouse.y - selCorners[ i ].y ) );
+						if ( cd <= handleSz * 2.0f )
+						{
+							storage->SetInt( actionKey, 2 );
+							storage->SetInt( handleKey, i );
+							float dist = ImSqrt(
+								( mouse.x - selCenter.x ) * ( mouse.x - selCenter.x ) +
+								( mouse.y - selCenter.y ) * ( mouse.y - selCenter.y ) );
+							storage->SetFloat( startDistKey, dist );
+							storage->SetFloat( startScaleXKey, images[ sel ].Transform.Scale.x );
+							storage->SetFloat( startScaleYKey, images[ sel ].Transform.Scale.y );
+							ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+							ImGui::SetActiveID( id, window );
+							ImGui::SetFocusID( id, window );
+							handled = true;
+							break;
+						}
+					}
+				}
+
+				// 3) Edge midpoint handles (non-uniform scale)
+				if ( !handled && nonUniform )
+				{
+					float edgeHit = handleSz * 2.0f;
+					for ( int i = 0; i < 4; ++i )
+					{
+						float cd = ImSqrt(
+							( mouse.x - selEdgeMids[ i ].x ) * ( mouse.x - selEdgeMids[ i ].x ) +
+							( mouse.y - selEdgeMids[ i ].y ) * ( mouse.y - selEdgeMids[ i ].y ) );
+						if ( cd <= edgeHit )
+						{
+							storage->SetInt( actionKey, 4 );
+							storage->SetInt( handleKey, i );
+							// Store distance along the relevant axis
+							float mx = mouse.x - selCenter.x;
+							float my = mouse.y - selCenter.y;
+							float lx =  mx * selCosR + my * selSinR;
+							float ly = -mx * selSinR + my * selCosR;
+							float dist = ( i == 0 || i == 2 ) ? ImFabs( ly ) : ImFabs( lx );
+							storage->SetFloat( startDistKey, dist );
+							storage->SetFloat( startScaleXKey, images[ sel ].Transform.Scale.x );
+							storage->SetFloat( startScaleYKey, images[ sel ].Transform.Scale.y );
+							ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+							ImGui::SetActiveID( id, window );
+							ImGui::SetFocusID( id, window );
+							handled = true;
+							break;
+						}
+					}
+				}
+			}
+
+			// 4) Click on any image body → select it (or translate if already selected)
+			if ( !handled )
+			{
+				// Check images in reverse order (front to back) for selection
+				int hitImage = -1;
+				for ( int n = imageCount - 1; n >= 0; --n )
+				{
+					ImVec2 c[ 4 ], center;
+					float hw, hh, cosR, sinR;
+					ComputeImageCorners( canvasCenter, cw, ch, images[ n ], c, NULL, &center, &hw, &hh, &cosR, &sinR );
+					if ( PointInRotatedRect( mouse, center, hw, hh, cosR, sinR ) )
+					{
+						hitImage = n;
+						break;
+					}
+				}
+
+				if ( hitImage >= 0 )
+				{
+					if ( hitImage == sel )
+					{
+						// Already selected → start translating
+						storage->SetInt( actionKey, 1 );
+						ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+						ImGui::SetActiveID( id, window );
+						ImGui::SetFocusID( id, window );
+					}
+					else
+					{
+						// Select this image
+						if ( selectedIndex )
+							*selectedIndex = hitImage;
+						value_changed = true;
+					}
+					handled = true;
+				}
+			}
+
+			// 5) Click on empty canvas → deselect
+			if ( !handled && selectedIndex )
+			{
+				*selectedIndex = -1;
+				value_changed = true;
+			}
+		}
+
+		return value_changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
 	// Color Warper
 	//////////////////////////////////////////////////////////////////////////
 

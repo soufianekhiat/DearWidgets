@@ -364,6 +364,12 @@ enum ImWidgetsStyleColor
 	StyleColor_HDRWheel_LeftArcMin,			// Left arc gradient start color (black)
 	StyleColor_HDRWheel_LeftArcMax,			// Left arc gradient end color (white)
 
+	// Transform Gizmo
+	StyleColor_Gizmo_Canvas,				// Canvas background
+	StyleColor_Gizmo_Outline,				// Bounding box outline
+	StyleColor_Gizmo_Handle,				// Handle fill
+	StyleColor_Gizmo_HandleActive,			// Handle fill when active
+
 	StyleColor_Count
 };
 
@@ -571,6 +577,11 @@ struct ImWidgetsStyle
 	float	HDRWheel_ArcThickness;				// Arc slider track thickness (px)
 	float	HDRWheel_ArcGrabRadius;				// Arc slider grab handle radius (px)
 
+	// Transform Gizmo
+	float	Gizmo_HandleSize;					// Corner handle half-size (px)
+	float	Gizmo_RotationHandleOffset;			// Distance from top edge to rotation handle (px)
+	float	Gizmo_OutlineThickness;				// Bounding box outline thickness (px)
+
 	ImVec4  Colors[ StyleColor_Count ];
 
 	ImWidgetsStyle()
@@ -675,6 +686,11 @@ struct ImWidgetsStyle
 		HDRWheel_ArcGap          = 4.0f;
 		HDRWheel_ArcThickness    = 8.0f;
 		HDRWheel_ArcGrabRadius   = 7.0f;
+
+		// Transform Gizmo
+		Gizmo_HandleSize              = 5.0f;
+		Gizmo_RotationHandleOffset    = 25.0f;
+		Gizmo_OutlineThickness        = 1.5f;
 
 		Colors[ StyleColor_Value ] = ImVec4( 1.0f, 0.0f, 0.0f, 1.0f );
 		Colors[ StyleColor_Slider2D_CursorX ] = ImVec4( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f ); // Blue
@@ -815,6 +831,12 @@ struct ImWidgetsStyle
 		Colors[ StyleColor_HDRWheel_RightArc ]              = ImVec4( 1.0f, 0.0f, 0.0f, 0.8f );
 		Colors[ StyleColor_HDRWheel_LeftArcMin ]            = ImVec4( 0.0f, 0.0f, 0.0f, 0.8f );
 		Colors[ StyleColor_HDRWheel_LeftArcMax ]            = ImVec4( 1.0f, 1.0f, 1.0f, 0.8f );
+
+		// Transform Gizmo Colors
+		Colors[ StyleColor_Gizmo_Canvas ]                  = ImVec4( 30.0f / 255.0f, 30.0f / 255.0f, 30.0f / 255.0f, 1.0f );
+		Colors[ StyleColor_Gizmo_Outline ]                 = ImVec4( 1.0f, 1.0f, 1.0f, 180.0f / 255.0f );
+		Colors[ StyleColor_Gizmo_Handle ]                  = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
+		Colors[ StyleColor_Gizmo_HandleActive ]            = ImVec4( 1.0f, 1.0f, 0.0f, 1.0f );
 	}
 
 	void ScaleAllSizes( float scale_factor )
@@ -892,6 +914,10 @@ struct ImWidgetsStyle
 		HDRWheel_ArcGap             = ImTrunc( HDRWheel_ArcGap * scale_factor );
 		HDRWheel_ArcThickness       = ImTrunc( HDRWheel_ArcThickness * scale_factor );
 		HDRWheel_ArcGrabRadius      = ImTrunc( HDRWheel_ArcGrabRadius * scale_factor );
+
+		Gizmo_HandleSize             = ImTrunc( Gizmo_HandleSize * scale_factor );
+		Gizmo_RotationHandleOffset   = ImTrunc( Gizmo_RotationHandleOffset * scale_factor );
+		Gizmo_OutlineThickness       = ImTrunc( Gizmo_OutlineThickness * scale_factor );
 	}
 
 	void PushColor( ImWidgetsStyleColor colorIndex, const ImVec4& color )
@@ -1567,6 +1593,32 @@ struct ImCurveEditorData
 		Keys.erase( Keys.Data + idx );
 		return true;
 	}
+};
+
+struct ImTransformData
+{
+	ImVec2	Translation;	// Offset from canvas center (px)
+	float	Rotation;		// Rotation angle (radians)
+	ImVec2	Scale;			// Scale factor (1,1 = fit to canvas)
+
+	ImTransformData() : Translation( 0.0f, 0.0f ), Rotation( 0.0f ), Scale( 1.0f, 1.0f ) {}
+};
+
+struct ImTransformImage
+{
+	ImTextureID		Texture;
+	ImVec2			TexSize;		// Original image dimensions
+	ImTransformData	Transform;
+
+	ImTransformImage() : Texture( ImTextureID() ), TexSize( 0, 0 ) {}
+	ImTransformImage( ImTextureID tex, ImVec2 size ) : Texture( tex ), TexSize( size ) {}
+};
+
+typedef int ImTransformGizmoFlags;
+enum ImTransformGizmoFlags_
+{
+	ImTransformGizmoFlags_None           = 0,
+	ImTransformGizmoFlags_NonUniformScale = 1 << 0,		// Show edge midpoint handles for non-uniform scaling
 };
 
 typedef int ImColorWheelMode;
@@ -2625,6 +2677,9 @@ namespace ImWidgets{
 	IMGUI_API bool ColorWheel( char const* label, ImVec4* color, ImColorWheelMode mode = ImColorWheelMode_HSV, float hdr_max = 1.0f, bool fixedIntensity = false, ImVec2 size = ImVec2( 0, 0 ) );
 	IMGUI_API bool PrimariesWheel( char const* label, ImVec4* color, float* yValue, float yMin, float yMax, ImColorWheelMode mode = ImColorWheelMode_HSV, float ringThickness = 12.0f, ImVec2 size = ImVec2( 0, 0 ) );
 	IMGUI_API bool HDRWheel( char const* label, ImVec4* color, float* yValue, float yMin, float yMax, float* rightValue, float rightMin, float rightMax, float* leftValue, float leftMin, float leftMax, ImColorWheelMode mode = ImColorWheelMode_HSV, float ringThickness = 12.0f, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// Transform Gizmo
+	IMGUI_API bool ImageTransformGizmo( char const* label, ImTransformImage* images, int imageCount, int* selectedIndex, ImTransformGizmoFlags flags = ImTransformGizmoFlags_None, ImVec2 canvasSize = ImVec2( 0, 0 ) );
 
 	// Color Warper
 	IMGUI_API void ColorConvertRGBtoHSL( float r, float g, float b, float& out_h, float& out_s, float& out_l );
