@@ -359,6 +359,11 @@ enum ImWidgetsStyleColor
 	StyleColor_ToneCurve_GradTick,
 	StyleColor_ToneCurve_GradLabel,
 
+	// HDR Wheel
+	StyleColor_HDRWheel_RightArc,			// Right arc fill color (default red)
+	StyleColor_HDRWheel_LeftArcMin,			// Left arc gradient start color (black)
+	StyleColor_HDRWheel_LeftArcMax,			// Left arc gradient end color (white)
+
 	StyleColor_Count
 };
 
@@ -557,6 +562,15 @@ struct ImWidgetsStyle
 	float	ToneCurve_BandThickness;			// Gradient band thickness (px)
 	float	ToneCurve_BandGap;					// Gap between scope and band (px)
 
+	// HDR Wheel
+	float	HDRWheel_RightArcStart;				// Right arc start angle in degrees (0=right, CW)
+	float	HDRWheel_RightArcEnd;				// Right arc end angle in degrees
+	float	HDRWheel_LeftArcStart;				// Left arc start angle in degrees
+	float	HDRWheel_LeftArcEnd;				// Left arc end angle in degrees
+	float	HDRWheel_ArcGap;					// Gap between indicator ring and arc sliders (px)
+	float	HDRWheel_ArcThickness;				// Arc slider track thickness (px)
+	float	HDRWheel_ArcGrabRadius;				// Arc slider grab handle radius (px)
+
 	ImVec4  Colors[ StyleColor_Count ];
 
 	ImWidgetsStyle()
@@ -652,6 +666,15 @@ struct ImWidgetsStyle
 		ToneCurve_GradMarginBottom  = 20.0f;
 		ToneCurve_BandThickness     = 8.0f;
 		ToneCurve_BandGap           = 2.0f;
+
+		// HDR Wheel
+		HDRWheel_RightArcStart   = -45.0f;
+		HDRWheel_RightArcEnd     = 45.0f;
+		HDRWheel_LeftArcStart    = 135.0f;
+		HDRWheel_LeftArcEnd      = 225.0f;
+		HDRWheel_ArcGap          = 4.0f;
+		HDRWheel_ArcThickness    = 8.0f;
+		HDRWheel_ArcGrabRadius   = 7.0f;
 
 		Colors[ StyleColor_Value ] = ImVec4( 1.0f, 0.0f, 0.0f, 1.0f );
 		Colors[ StyleColor_Slider2D_CursorX ] = ImVec4( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f ); // Blue
@@ -787,6 +810,11 @@ struct ImWidgetsStyle
 		Colors[ StyleColor_ToneCurve_HistogramOverlay ]     = ImVec4( 1.0f, 1.0f, 1.0f, 40.0f / 255.0f );
 		Colors[ StyleColor_ToneCurve_GradTick ]             = ImVec4( 1.0f, 1.0f, 1.0f, 0.4f );
 		Colors[ StyleColor_ToneCurve_GradLabel ]            = ImVec4( 1.0f, 1.0f, 1.0f, 0.7f );
+
+		// HDR Wheel Colors
+		Colors[ StyleColor_HDRWheel_RightArc ]              = ImVec4( 1.0f, 0.0f, 0.0f, 0.8f );
+		Colors[ StyleColor_HDRWheel_LeftArcMin ]            = ImVec4( 0.0f, 0.0f, 0.0f, 0.8f );
+		Colors[ StyleColor_HDRWheel_LeftArcMax ]            = ImVec4( 1.0f, 1.0f, 1.0f, 0.8f );
 	}
 
 	void ScaleAllSizes( float scale_factor )
@@ -860,6 +888,10 @@ struct ImWidgetsStyle
 		ToneCurve_GradMarginBottom  = ImTrunc( ToneCurve_GradMarginBottom * scale_factor );
 		ToneCurve_BandThickness     = ImTrunc( ToneCurve_BandThickness * scale_factor );
 		ToneCurve_BandGap           = ImTrunc( ToneCurve_BandGap * scale_factor );
+
+		HDRWheel_ArcGap             = ImTrunc( HDRWheel_ArcGap * scale_factor );
+		HDRWheel_ArcThickness       = ImTrunc( HDRWheel_ArcThickness * scale_factor );
+		HDRWheel_ArcGrabRadius      = ImTrunc( HDRWheel_ArcGrabRadius * scale_factor );
 	}
 
 	void PushColor( ImWidgetsStyleColor colorIndex, const ImVec4& color )
@@ -2591,6 +2623,8 @@ namespace ImWidgets{
 	IMGUI_API void DrawColorDisc( ImDrawList* pDrawList, ImVec2 center, float radius, ImColorWheelMode mode, float thirdAxis, int numSectors = 64, int numRings = 16 );
 	IMGUI_API void DrawCircularGradientIndicator( ImDrawList* pDrawList, ImVec2 center, float outerRadius, float innerRadius, float t );
 	IMGUI_API bool ColorWheel( char const* label, ImVec4* color, ImColorWheelMode mode = ImColorWheelMode_HSV, float hdr_max = 1.0f, bool fixedIntensity = false, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool PrimariesWheel( char const* label, ImVec4* color, float* yValue, float yMin, float yMax, ImColorWheelMode mode = ImColorWheelMode_HSV, float ringThickness = 12.0f, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool HDRWheel( char const* label, ImVec4* color, float* yValue, float yMin, float yMax, float* rightValue, float rightMin, float rightMax, float* leftValue, float leftMin, float leftMax, ImColorWheelMode mode = ImColorWheelMode_HSV, float ringThickness = 12.0f, ImVec2 size = ImVec2( 0, 0 ) );
 
 	// Color Warper
 	IMGUI_API void ColorConvertRGBtoHSL( float r, float g, float b, float& out_h, float& out_s, float& out_l );

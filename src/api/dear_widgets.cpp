@@ -8907,6 +8907,367 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 	//////////////////////////////////////////////////////////////////////////
+	// Primaries Wheel (ColorWheel + circular gradient indicator ring)
+	//////////////////////////////////////////////////////////////////////////
+
+	bool PrimariesWheel( char const* label, ImVec4* color, float* yValue, float yMin, float yMax, ImColorWheelMode mode, float ringThickness, ImVec2 size )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		const ImGuiID id = window->GetID( label );
+		const float ringGap = 2.0f;
+		const float outerSize = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
+		const float innerSize = outerSize - 2.0f * ( ringThickness + ringGap );
+		const float margin = ringThickness + ringGap;
+
+		ImVec2 startPos = window->DC.CursorPos;
+		bool value_changed = false;
+
+		// 1) Draw gradient ring indicator
+		ImVec2 center( startPos.x + outerSize * 0.5f, startPos.y + outerSize * 0.5f );
+		float outerR = outerSize * 0.5f - 1.0f;
+		float innerR = outerR - ringThickness;
+		float t = ( yMax > yMin ) ? ImClamp( ( *yValue - yMin ) / ( yMax - yMin ), 0.0f, 1.0f ) : 0.0f;
+		DrawCircularGradientIndicator( window->DrawList, center, outerR, innerR, t );
+
+		// 2) Suppress inner ColorWheel's expand button
+		bool prevExpanded = s_InsideExpandedWidget;
+		s_InsideExpandedWidget = true;
+
+		// 3) Place ColorWheel inside (fixedIntensity, disc-only)
+		window->DC.CursorPos = ImVec2( startPos.x + margin, startPos.y + margin );
+		if ( ColorWheel( "##cw", color, mode, 1.0f, true, ImVec2( innerSize, innerSize ) ) )
+			value_changed = true;
+
+		s_InsideExpandedWidget = prevExpanded;
+
+		// 4) Ensure cursor advances past the full outer area
+		window->DC.CursorPos.x = startPos.x;
+		if ( window->DC.CursorPos.y < startPos.y + outerSize )
+			window->DC.CursorPos.y = startPos.y + outerSize;
+		window->DC.CursorMaxPos.x = ImMax( window->DC.CursorMaxPos.x, startPos.x + outerSize );
+		window->DC.CursorMaxPos.y = ImMax( window->DC.CursorMaxPos.y, startPos.y + outerSize );
+
+		// 5) Expand button at top-right of outer square
+		ImRect outerBB( startPos, startPos + ImVec2( outerSize, outerSize ) );
+		bool* pExpanded = WidgetExpandButton( id, outerBB );
+		if ( pExpanded && *pExpanded )
+		{
+			if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 800, 400 ) ) )
+			{
+				ImVec2 avail = ImGui::GetContentRegionAvail();
+				float widgetW = avail.x * 0.75f;
+				float widgetSize = ImMin( widgetW, avail.y );
+				// Left: larger PrimariesWheel
+				ImGui::SetNextItemWidth( widgetSize );
+				if ( PrimariesWheel( "##exp", color, yValue, yMin, yMax, mode, ringThickness ) )
+					value_changed = true;
+				ImGui::SameLine();
+				// Right: controls
+				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
+				ImGui::TextUnformatted( "Y Value" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				if ( ImGui::DragFloat( "##yval", yValue, 0.01f, yMin, yMax, "%.2f" ) )
+					value_changed = true;
+				ImGui::Spacing();
+				ImGui::TextUnformatted( "Red" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				if ( ImGui::DragFloat( "##r", &color->x, 0.01f, 0.0f, 1.0f, "%.3f" ) )
+					value_changed = true;
+				ImGui::TextUnformatted( "Green" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				if ( ImGui::DragFloat( "##g", &color->y, 0.01f, 0.0f, 1.0f, "%.3f" ) )
+					value_changed = true;
+				ImGui::TextUnformatted( "Blue" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				if ( ImGui::DragFloat( "##b", &color->z, 0.01f, 0.0f, 1.0f, "%.3f" ) )
+					value_changed = true;
+				ImGui::EndChild();
+			}
+			EndExpandedWindow();
+		}
+
+		return value_changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// HDR Wheel (PrimariesWheel + two arc sliders)
+	//////////////////////////////////////////////////////////////////////////
+
+	// Internal helper: arc slider interaction and drawing
+	static bool HDRWheelArcSlider( ImGuiID arcId, ImDrawList* dl, ImVec2 center,
+		float outerR, float innerR, float grabR,
+		float angleStart, float angleEnd,
+		float* value, float vMin, float vMax,
+		bool gradient, ImU32 col0, ImU32 col1 )
+	{
+		ImGuiContext& g = *GImGui;
+		ImGuiWindow* window = g.CurrentWindow;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		float midR = ( outerR + innerR ) * 0.5f;
+		float thickness = outerR - innerR;
+		bool changed = false;
+
+		float t = ( vMax > vMin ) ? ImClamp( ( *value - vMin ) / ( vMax - vMin ), 0.0f, 1.0f ) : 0.0f;
+
+		// Normalize arc range
+		float aStart = angleStart;
+		float aEnd = angleEnd;
+		if ( aEnd < aStart ) aEnd += 2.0f * IM_PI;
+		float span = aEnd - aStart;
+
+		// Interaction: hit-test by distance and angle
+		ImVec2 mp = g.IO.MousePos;
+		float dx = mp.x - center.x;
+		float dy = mp.y - center.y;
+		float dist = ImSqrt( dx * dx + dy * dy );
+		bool inRing = ( dist >= innerR - grabR && dist <= outerR + grabR );
+
+		bool inArc = false;
+		if ( inRing )
+		{
+			float mouseAngle = ImAtan2( dy, dx );
+			float rel = mouseAngle - aStart;
+			while ( rel < 0.0f )       rel += 2.0f * IM_PI;
+			while ( rel >= 2.0f * IM_PI ) rel -= 2.0f * IM_PI;
+			inArc = ( rel <= span + 0.2f );
+		}
+
+		ImGui::KeepAliveID( arcId );
+
+		if ( inArc && g.ActiveId == 0 && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, arcId ) )
+		{
+			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, arcId );
+			ImGui::SetActiveID( arcId, window );
+			ImGui::SetFocusID( arcId, window );
+			ImGui::FocusWindow( window );
+		}
+
+		if ( g.ActiveId == arcId )
+		{
+			if ( ImGui::IsMouseDown( 0 ) )
+			{
+				float angle = ImAtan2( dy, dx );
+				float rel = angle - aStart;
+				while ( rel < 0.0f )       rel += 2.0f * IM_PI;
+				while ( rel >= 2.0f * IM_PI ) rel -= 2.0f * IM_PI;
+				if ( rel > span )
+					t = ( rel - span < 2.0f * IM_PI - rel ) ? 1.0f : 0.0f;
+				else
+					t = rel / span;
+				t = ImClamp( t, 0.0f, 1.0f );
+				float newVal = vMin + t * ( vMax - vMin );
+				if ( newVal != *value ) { *value = newVal; changed = true; }
+				t = ( vMax > vMin ) ? ImClamp( ( *value - vMin ) / ( vMax - vMin ), 0.0f, 1.0f ) : 0.0f;
+			}
+			else
+			{
+				ImGui::ClearActiveID();
+			}
+		}
+
+		bool isActive = ( g.ActiveId == arcId );
+
+		// Drawing
+		if ( gradient )
+		{
+			// Gradient track: segments with interpolated colors
+			const int nSeg = 48;
+			ImVec2 uv = dl->_Data->TexUvWhitePixel;
+			dl->PrimReserve( nSeg * 6, ( nSeg + 1 ) * 2 );
+			unsigned int vtxBase = dl->_VtxCurrentIdx;
+
+			ImVec4 c0f = ImGui::ColorConvertU32ToFloat4( col0 );
+			ImVec4 c1f = ImGui::ColorConvertU32ToFloat4( col1 );
+
+			for ( int s = 0; s <= nSeg; ++s )
+			{
+				float frac = ( float )s / ( float )nSeg;
+				float a = aStart + frac * span;
+				float cs = ImCos( a );
+				float sn = ImSin( a );
+				ImVec4 ci( c0f.x + ( c1f.x - c0f.x ) * frac,
+						   c0f.y + ( c1f.y - c0f.y ) * frac,
+						   c0f.z + ( c1f.z - c0f.z ) * frac,
+						   c0f.w + ( c1f.w - c0f.w ) * frac );
+				ImU32 col = ImGui::ColorConvertFloat4ToU32( ci );
+				dl->PrimWriteVtx( ImVec2( center.x + outerR * cs, center.y + outerR * sn ), uv, col );
+				dl->PrimWriteVtx( ImVec2( center.x + innerR * cs, center.y + innerR * sn ), uv, col );
+			}
+
+			for ( int s = 0; s < nSeg; ++s )
+			{
+				unsigned int i0 = vtxBase + s * 2;
+				dl->PrimWriteIdx( ( ImDrawIdx )( i0 ) );
+				dl->PrimWriteIdx( ( ImDrawIdx )( i0 + 1 ) );
+				dl->PrimWriteIdx( ( ImDrawIdx )( i0 + 2 ) );
+				dl->PrimWriteIdx( ( ImDrawIdx )( i0 + 2 ) );
+				dl->PrimWriteIdx( ( ImDrawIdx )( i0 + 1 ) );
+				dl->PrimWriteIdx( ( ImDrawIdx )( i0 + 3 ) );
+			}
+		}
+		else
+		{
+			// Solid track with fill
+			ImU32 colTrack = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_SliderRing_Track ] );
+			const int arcSegs = 48;
+			dl->PathArcTo( center, midR, angleStart, angleEnd, arcSegs );
+			dl->PathStroke( colTrack, 0, thickness );
+
+			// Filled portion from start to current value
+			float grabAngle = aStart + t * span;
+			if ( t > 0.001f )
+			{
+				dl->PathArcTo( center, midR, angleStart, grabAngle, ( int )( arcSegs * t ) + 2 );
+				dl->PathStroke( col0, 0, thickness );
+			}
+		}
+
+		// Grab handle
+		float grabAngle = aStart + t * span;
+		ImVec2 grabPos( center.x + midR * ImCos( grabAngle ), center.y + midR * ImSin( grabAngle ) );
+		ImU32 colGrab = ImGui::GetColorU32( dwStyle.Colors[ isActive ? StyleColor_SliderRing_GrabActive : StyleColor_SliderRing_Grab ] );
+		dl->AddCircleFilled( grabPos, grabR, colGrab );
+		dl->AddCircle( grabPos, grabR, ImGui::GetColorU32( ImGuiCol_Border ), 0, 1.5f );
+
+		return changed;
+	}
+
+	bool HDRWheel( char const* label, ImVec4* color, float* yValue, float yMin, float yMax,
+		float* rightValue, float rightMin, float rightMax,
+		float* leftValue, float leftMin, float leftMax,
+		ImColorWheelMode mode, float ringThickness, ImVec2 size )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImWidgetsStyle& dwStyle = GetStyle();
+		const ImGuiID id = window->GetID( label );
+
+		// Style values
+		const float arcGap     = dwStyle.HDRWheel_ArcGap;
+		const float arcThick   = dwStyle.HDRWheel_ArcThickness;
+		const float arcGrabR   = dwStyle.HDRWheel_ArcGrabRadius;
+		const float rightStart = dwStyle.HDRWheel_RightArcStart * ( IM_PI / 180.0f );
+		const float rightEnd   = dwStyle.HDRWheel_RightArcEnd   * ( IM_PI / 180.0f );
+		const float leftStart  = dwStyle.HDRWheel_LeftArcStart  * ( IM_PI / 180.0f );
+		const float leftEnd    = dwStyle.HDRWheel_LeftArcEnd    * ( IM_PI / 180.0f );
+		const float ringGap    = 2.0f;
+
+		// Layout
+		const float outerSize = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
+		const float halfSize  = outerSize * 0.5f;
+
+		// Radii from outside in
+		const float arcOuterR  = halfSize - arcGrabR;
+		const float arcInnerR  = arcOuterR - arcThick;
+		const float ringOuterR = arcInnerR - arcGap;
+		const float ringInnerR = ringOuterR - ringThickness;
+		const float innerSize  = ( ringInnerR - ringGap ) * 2.0f;
+		const float margin     = halfSize - innerSize * 0.5f;
+
+		ImVec2 startPos = window->DC.CursorPos;
+		ImVec2 center( startPos.x + halfSize, startPos.y + halfSize );
+		bool value_changed = false;
+
+		// 1) Draw gradient ring indicator
+		float yT = ( yMax > yMin ) ? ImClamp( ( *yValue - yMin ) / ( yMax - yMin ), 0.0f, 1.0f ) : 0.0f;
+		DrawCircularGradientIndicator( window->DrawList, center, ringOuterR, ringInnerR, yT );
+
+		// 2) Arc sliders
+		ImGuiID rightId = id + 1;
+		ImGuiID leftId  = id + 2;
+
+		ImU32 colRight    = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_HDRWheel_RightArc ] );
+		ImU32 colLeftMin  = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_HDRWheel_LeftArcMin ] );
+		ImU32 colLeftMax  = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_HDRWheel_LeftArcMax ] );
+
+		if ( HDRWheelArcSlider( rightId, window->DrawList, center,
+				arcOuterR, arcInnerR, arcGrabR, rightStart, rightEnd,
+				rightValue, rightMin, rightMax, false, colRight, 0 ) )
+			value_changed = true;
+
+		if ( HDRWheelArcSlider( leftId, window->DrawList, center,
+				arcOuterR, arcInnerR, arcGrabR, leftStart, leftEnd,
+				leftValue, leftMin, leftMax, true, colLeftMin, colLeftMax ) )
+			value_changed = true;
+
+		// 3) Suppress inner ColorWheel's expand button
+		bool prevExpanded = s_InsideExpandedWidget;
+		s_InsideExpandedWidget = true;
+
+		// 4) Place ColorWheel inside (fixedIntensity, disc-only)
+		window->DC.CursorPos = ImVec2( startPos.x + margin, startPos.y + margin );
+		if ( ColorWheel( "##cw", color, mode, 1.0f, true, ImVec2( innerSize, innerSize ) ) )
+			value_changed = true;
+
+		s_InsideExpandedWidget = prevExpanded;
+
+		// 5) Ensure cursor advances past the full outer area
+		window->DC.CursorPos.x = startPos.x;
+		if ( window->DC.CursorPos.y < startPos.y + outerSize )
+			window->DC.CursorPos.y = startPos.y + outerSize;
+		window->DC.CursorMaxPos.x = ImMax( window->DC.CursorMaxPos.x, startPos.x + outerSize );
+		window->DC.CursorMaxPos.y = ImMax( window->DC.CursorMaxPos.y, startPos.y + outerSize );
+
+		// 6) Expand button at top-right of outer square
+		ImRect outerBB( startPos, startPos + ImVec2( outerSize, outerSize ) );
+		bool* pExpanded = WidgetExpandButton( id, outerBB );
+		if ( pExpanded && *pExpanded )
+		{
+			if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 800, 400 ) ) )
+			{
+				ImVec2 avail = ImGui::GetContentRegionAvail();
+				float widgetW = avail.x * 0.75f;
+				float widgetSize = ImMin( widgetW, avail.y );
+				// Left: larger HDRWheel
+				ImGui::SetNextItemWidth( widgetSize );
+				if ( HDRWheel( "##exp", color, yValue, yMin, yMax,
+						rightValue, rightMin, rightMax, leftValue, leftMin, leftMax,
+						mode, ringThickness ) )
+					value_changed = true;
+				ImGui::SameLine();
+				// Right: controls
+				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
+				ImGui::TextUnformatted( "Y Value" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				if ( ImGui::DragFloat( "##yval", yValue, 0.01f, yMin, yMax, "%.2f" ) )
+					value_changed = true;
+				ImGui::Spacing();
+				ImGui::TextUnformatted( "Right Arc" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				if ( ImGui::DragFloat( "##right", rightValue, 0.01f, rightMin, rightMax, "%.2f" ) )
+					value_changed = true;
+				ImGui::Spacing();
+				ImGui::TextUnformatted( "Left Arc" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				if ( ImGui::DragFloat( "##left", leftValue, 0.01f, leftMin, leftMax, "%.2f" ) )
+					value_changed = true;
+				ImGui::Spacing();
+				ImGui::TextUnformatted( "Red" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				if ( ImGui::DragFloat( "##r", &color->x, 0.01f, 0.0f, 1.0f, "%.3f" ) )
+					value_changed = true;
+				ImGui::TextUnformatted( "Green" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				if ( ImGui::DragFloat( "##g", &color->y, 0.01f, 0.0f, 1.0f, "%.3f" ) )
+					value_changed = true;
+				ImGui::TextUnformatted( "Blue" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				if ( ImGui::DragFloat( "##b", &color->z, 0.01f, 0.0f, 1.0f, "%.3f" ) )
+					value_changed = true;
+				ImGui::EndChild();
+			}
+			EndExpandedWindow();
+		}
+
+		return value_changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
 	// Color Warper
 	//////////////////////////////////////////////////////////////////////////
 
