@@ -15342,16 +15342,72 @@ namespace ImWidgets
             if (!want_cpu_base) return;
 
             const float halfw = 0.5f * thickness;
+
+            // Trim end/start segments that are too short for their join's inner
+            // miter. The miter extends halfw*tan(α/2) along each segment; if the
+            // segment is shorter, the miter overshoots and causes overdraw.
+            // Trimming removes the offending endpoint so the dash ends at the
+            // corner vertex instead of epsilon past it.
+            // --- End trim ---
+            while (sp.Size >= 3)
+            {
+                int n = sp.Size;
+                ImVec2 dp = sp[n - 2] - sp[n - 3];
+                ImVec2 dn = sp[n - 1] - sp[n - 2];
+                float lp = ImSqrt(dp.x * dp.x + dp.y * dp.y);
+                float ln = ImSqrt(dn.x * dn.x + dn.y * dn.y);
+                if (ln < 1e-6f) { sp.pop_back(); continue; }
+                if (lp < 1e-6f) break;
+                ImVec2 tp = ImVec2(dp.x / lp, dp.y / lp);
+                ImVec2 tn = ImVec2(dn.x / ln, dn.y / ln);
+                ImVec2 np = DW_Perp(tp), nn = DW_Perp(tn);
+                ImVec2 avg = DW_Normalize(ImVec2(np.x + nn.x, np.y + nn.y));
+                float dv = ImMax(0.01f, avg.x * np.x + avg.y * np.y);
+                float sin_h = ImSqrt(ImMax(0.0f, 1.0f - dv * dv));
+                float ext = (halfw / dv) * sin_h; // halfw * tan(α/2)
+                if (ext > ln)
+                    sp.pop_back();
+                else
+                    break;
+            }
+            // --- Start trim ---
+            while (sp.Size >= 3)
+            {
+                ImVec2 d0 = sp[1] - sp[0];
+                ImVec2 d1 = sp[2] - sp[1];
+                float l0 = ImSqrt(d0.x * d0.x + d0.y * d0.y);
+                float l1 = ImSqrt(d1.x * d1.x + d1.y * d1.y);
+                if (l0 < 1e-6f) { sp.erase(sp.Data); continue; }
+                if (l1 < 1e-6f) break;
+                ImVec2 t0 = ImVec2(d0.x / l0, d0.y / l0);
+                ImVec2 t1 = ImVec2(d1.x / l1, d1.y / l1);
+                ImVec2 n0 = DW_Perp(t0), n1 = DW_Perp(t1);
+                ImVec2 avg = DW_Normalize(ImVec2(n0.x + n1.x, n0.y + n1.y));
+                float dv = ImMax(0.01f, avg.x * n0.x + avg.y * n0.y);
+                float sin_h = ImSqrt(ImMax(0.0f, 1.0f - dv * dv));
+                float ext = (halfw / dv) * sin_h;
+                if (ext > l0)
+                    sp.erase(sp.Data);
+                else
+                    break;
+            }
+            if (sp.Size < 2) return;
+
             const int nSeg = sp.Size - 1;
 
-            // Per-segment tangent and left normal
+            // Per-segment tangent, left normal, and length
             ImVec2 seg_t_stack[128], seg_n_stack[128];
+            float seg_len_stack[128];
             ImVec2* seg_t = (nSeg <= 128) ? seg_t_stack : (ImVec2*)IM_ALLOC(sizeof(ImVec2) * nSeg);
             ImVec2* seg_n = (nSeg <= 128) ? seg_n_stack : (ImVec2*)IM_ALLOC(sizeof(ImVec2) * nSeg);
+            float* seg_len = (nSeg <= 128) ? seg_len_stack : (float*)IM_ALLOC(sizeof(float) * nSeg);
             for (int i = 0; i < nSeg; ++i)
             {
-                seg_t[i] = DW_Normalize(sp[i + 1] - sp[i]);
-                seg_n[i] = DW_Perp(seg_t[i]); // left normal (-y, x)
+                ImVec2 d = sp[i + 1] - sp[i];
+                float len = ImSqrt(d.x * d.x + d.y * d.y);
+                seg_len[i] = len;
+                seg_t[i] = (len > 1e-6f) ? ImVec2(d.x / len, d.y / len) : ImVec2(1, 0);
+                seg_n[i] = DW_Perp(seg_t[i]);
             }
 
             // Build left and right contours (going forward from start to end)
@@ -15388,7 +15444,7 @@ namespace ImWidgets
                     continue;
                 }
 
-                // Miter bisector and offset (for outer side join)
+                // Miter bisector and offset
                 ImVec2 avg = DW_Normalize(np + nn);
                 float dv = ImMax(0.01f, avg.x * np.x + avg.y * np.y);
                 float miter_off = halfw / dv;
@@ -15404,8 +15460,8 @@ namespace ImWidgets
                 float sign = right_outer ? 1.0f : -1.0f;
 
                 // === Inner side: single miter point (intersection of inner offset lines) ===
-                // Uses miter_off (not halfw) for correct perpendicular distance = halfw
-                // from each segment's path line, preserving stroke width at corners.
+                // Uses miter_off for correct perpendicular distance = halfw from each
+                // segment's path line, preserving stroke width at corners.
                 {
                     ImVec2 inner_pt = sp[i] + ImVec2(avg.x * -sign, avg.y * -sign) * miter_off;
                     if (right_outer)
@@ -15722,7 +15778,7 @@ namespace ImWidgets
             }
 
             if (sp.Size > 128) { IM_FREE(row_L); IM_FREE(row_R); }
-            if (nSeg > 128) { IM_FREE(seg_t); IM_FREE(seg_n); }
+            if (nSeg > 128) { IM_FREE(seg_t); IM_FREE(seg_n); IM_FREE(seg_len); }
         };
 
         // Seamless wrap for closed loop: merge last and first ON intervals across seam
@@ -15733,10 +15789,12 @@ namespace ImWidgets
             ImVector<ImVec2> B; B.resize(0);
             DW_ExtractSubpath(pd_local, intervals.back().x, pd_local.total_len, A, false, 0.0f);
             DW_ExtractSubpath(pd_local, 0.0f, intervals[0].y, B, false, 0.0f);
+            // Merge A and B, skipping B[0] since it duplicates A[last] (the close vertex)
             ImVector<ImVec2> C; C.resize(0);
-            C.resize(A.Size + B.Size);
+            int b_start = (B.Size > 1) ? 1 : 0;
+            C.resize(A.Size + B.Size - b_start);
             for (int i = 0; i < A.Size; ++i) C[i] = A[i];
-            for (int i = 0; i < B.Size; ++i) C[A.Size + i] = B[i];
+            for (int i = b_start; i < B.Size; ++i) C[A.Size + i - b_start] = B[i];
             draw_subpath(C);
         }
 
