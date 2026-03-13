@@ -15336,7 +15336,7 @@ namespace ImWidgets
 
         // Build the full stroke outline for a subpath, handling caps, joins, and miter limit,
         // then render with AddConcavePolyFilled.
-        auto draw_subpath = [&](ImVector<ImVec2>& sp)
+        auto draw_subpath = [&](ImVector<ImVec2>& sp, bool trim_ends)
         {
             if (sp.Size < 2) return;
             if (!want_cpu_base) return;
@@ -15348,48 +15348,53 @@ namespace ImWidgets
             // segment is shorter, the miter overshoots and causes overdraw.
             // Trimming removes the offending endpoint so the dash ends at the
             // corner vertex instead of epsilon past it.
-            // --- End trim ---
-            while (sp.Size >= 3)
+            // Skipped for the merged wrap subpath (both ends border a gap, not
+            // another dash, so miter overflow can't cause inter-dash overdraw).
+            if (trim_ends)
             {
-                int n = sp.Size;
-                ImVec2 dp = sp[n - 2] - sp[n - 3];
-                ImVec2 dn = sp[n - 1] - sp[n - 2];
-                float lp = ImSqrt(dp.x * dp.x + dp.y * dp.y);
-                float ln = ImSqrt(dn.x * dn.x + dn.y * dn.y);
-                if (ln < 1e-6f) { sp.pop_back(); continue; }
-                if (lp < 1e-6f) break;
-                ImVec2 tp = ImVec2(dp.x / lp, dp.y / lp);
-                ImVec2 tn = ImVec2(dn.x / ln, dn.y / ln);
-                ImVec2 np = DW_Perp(tp), nn = DW_Perp(tn);
-                ImVec2 avg = DW_Normalize(ImVec2(np.x + nn.x, np.y + nn.y));
-                float dv = ImMax(0.01f, avg.x * np.x + avg.y * np.y);
-                float sin_h = ImSqrt(ImMax(0.0f, 1.0f - dv * dv));
-                float ext = (halfw / dv) * sin_h; // halfw * tan(α/2)
-                if (ext > ln)
-                    sp.pop_back();
-                else
-                    break;
-            }
-            // --- Start trim ---
-            while (sp.Size >= 3)
-            {
-                ImVec2 d0 = sp[1] - sp[0];
-                ImVec2 d1 = sp[2] - sp[1];
-                float l0 = ImSqrt(d0.x * d0.x + d0.y * d0.y);
-                float l1 = ImSqrt(d1.x * d1.x + d1.y * d1.y);
-                if (l0 < 1e-6f) { sp.erase(sp.Data); continue; }
-                if (l1 < 1e-6f) break;
-                ImVec2 t0 = ImVec2(d0.x / l0, d0.y / l0);
-                ImVec2 t1 = ImVec2(d1.x / l1, d1.y / l1);
-                ImVec2 n0 = DW_Perp(t0), n1 = DW_Perp(t1);
-                ImVec2 avg = DW_Normalize(ImVec2(n0.x + n1.x, n0.y + n1.y));
-                float dv = ImMax(0.01f, avg.x * n0.x + avg.y * n0.y);
-                float sin_h = ImSqrt(ImMax(0.0f, 1.0f - dv * dv));
-                float ext = (halfw / dv) * sin_h;
-                if (ext > l0)
-                    sp.erase(sp.Data);
-                else
-                    break;
+                // --- End trim ---
+                while (sp.Size >= 3)
+                {
+                    int n = sp.Size;
+                    ImVec2 dp = sp[n - 2] - sp[n - 3];
+                    ImVec2 dn = sp[n - 1] - sp[n - 2];
+                    float lp = ImSqrt(dp.x * dp.x + dp.y * dp.y);
+                    float ln = ImSqrt(dn.x * dn.x + dn.y * dn.y);
+                    if (ln < 1e-6f) { sp.pop_back(); continue; }
+                    if (lp < 1e-6f) break;
+                    ImVec2 tp = ImVec2(dp.x / lp, dp.y / lp);
+                    ImVec2 tn = ImVec2(dn.x / ln, dn.y / ln);
+                    ImVec2 npp = DW_Perp(tp), nnn = DW_Perp(tn);
+                    ImVec2 avg = DW_Normalize(ImVec2(npp.x + nnn.x, npp.y + nnn.y));
+                    float dv = ImMax(0.01f, avg.x * npp.x + avg.y * npp.y);
+                    float sin_h = ImSqrt(ImMax(0.0f, 1.0f - dv * dv));
+                    float ext = (halfw / dv) * sin_h; // halfw * tan(α/2)
+                    if (ext > ln)
+                        sp.pop_back();
+                    else
+                        break;
+                }
+                // --- Start trim ---
+                while (sp.Size >= 3)
+                {
+                    ImVec2 d0 = sp[1] - sp[0];
+                    ImVec2 d1 = sp[2] - sp[1];
+                    float l0 = ImSqrt(d0.x * d0.x + d0.y * d0.y);
+                    float l1 = ImSqrt(d1.x * d1.x + d1.y * d1.y);
+                    if (l0 < 1e-6f) { sp.erase(sp.Data); continue; }
+                    if (l1 < 1e-6f) break;
+                    ImVec2 t0 = ImVec2(d0.x / l0, d0.y / l0);
+                    ImVec2 t1 = ImVec2(d1.x / l1, d1.y / l1);
+                    ImVec2 n0 = DW_Perp(t0), n1 = DW_Perp(t1);
+                    ImVec2 avg = DW_Normalize(ImVec2(n0.x + n1.x, n0.y + n1.y));
+                    float dv = ImMax(0.01f, avg.x * n0.x + avg.y * n0.y);
+                    float sin_h = ImSqrt(ImMax(0.0f, 1.0f - dv * dv));
+                    float ext = (halfw / dv) * sin_h;
+                    if (ext > l0)
+                        sp.erase(sp.Data);
+                    else
+                        break;
+                }
             }
             if (sp.Size < 2) return;
 
@@ -15795,7 +15800,7 @@ namespace ImWidgets
             C.resize(A.Size + B.Size - b_start);
             for (int i = 0; i < A.Size; ++i) C[i] = A[i];
             for (int i = b_start; i < B.Size; ++i) C[A.Size + i - b_start] = B[i];
-            draw_subpath(C);
+            draw_subpath(C, false); // no trim: both ends border a gap, not another dash
         }
 
         for (int k = 0; k < intervals.Size; ++k)
@@ -15808,7 +15813,7 @@ namespace ImWidgets
             if (s1 - s0 <= 0.0f) continue;
             subpath.resize(0);
             DW_ExtractSubpath(pd_local, s0, s1, subpath, false, 0.0f);
-            draw_subpath(subpath);
+            draw_subpath(subpath, true);
         }
 
         // Safety net: if nothing was drawn (e.g., degenerate dash pattern), draw a solid polyline
