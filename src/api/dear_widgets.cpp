@@ -15114,8 +15114,10 @@ namespace ImWidgets
             return;
         ImVec2 n0 = DW_Perp(v0);
         ImVec2 n1 = DW_Perp(v1);
-        ImVec2 nout0 = (turn > 0.0f) ? n0 : ImVec2(-n0.x, -n0.y);
-        ImVec2 nout1 = (turn > 0.0f) ? n1 : ImVec2(-n1.x, -n1.y);
+        // DW_Perp gives right-hand perpendicular in screen Y-down.
+        // turn > 0 => screen right turn => LEFT is outer => outer normal = -n (flipped)
+        ImVec2 nout0 = (turn > 0.0f) ? ImVec2(-n0.x, -n0.y) : n0;
+        ImVec2 nout1 = (turn > 0.0f) ? ImVec2(-n1.x, -n1.y) : n1;
         ImVec2 e0 = ImVec2(B.x + nout0.x * halfw, B.y + nout0.y * halfw);
         ImVec2 e1 = ImVec2(B.x + nout1.x * halfw, B.y + nout1.y * halfw);
 
@@ -15131,8 +15133,9 @@ namespace ImWidgets
             float a1 = atan2f(nout1.y, nout1.x);
             // Ensure we go the shorter way in the outside direction
             float da = a1 - a0;
-            if (turn > 0.0f && da < 0.0f) da += 2.0f * IM_PI;
-            if (turn < 0.0f && da > 0.0f) da -= 2.0f * IM_PI;
+            float n_cross = DW_Cross(nout0, nout1);
+            if (n_cross > 0.0f && da < 0.0f) da += 2.0f * IM_PI;
+            if (n_cross < 0.0f && da > 0.0f) da -= 2.0f * IM_PI;
             for (int i = 0; i <= segments; ++i)
             {
                 float t = (float)i / (float)segments;
@@ -15315,7 +15318,6 @@ namespace ImWidgets
 #endif
         // Draw CPU base only if GPU wasn't used
         const bool want_cpu_base = !gpu_used;
-        const bool want_tri_overlay = (cap == ImWidgetsCap_TriangleOut) || (!gpu_used && cap == ImWidgetsCap_TriangleIn);
 
         // CPU fallback: dashed polyline using subpaths
         DW_PathData pd_local;
@@ -15332,94 +15334,395 @@ namespace ImWidgets
         float pats_local[2] = { dash_len_px, gap_len_px };
         DW_BuildOnIntervals(pd_local.total_len, pats_local, 2, dash_offset, intervals);
 
-        auto draw_caps = [&](const ImVector<ImVec2>& sp)
-        {
-            if (sp.Size < 2) return;
-            const float halfw = 0.5f * thickness;
-            auto safe_norm = [](ImVec2 v) { float l = ImSqrt(v.x*v.x + v.y*v.y); return (l > 1e-6f) ? ImVec2(v.x/l, v.y/l) : ImVec2(1, 0); };
-            auto perp = [](const ImVec2& v){ return ImVec2(-v.y, v.x); };
-            const ImVec2 p_start = sp[0];
-            const ImVec2 p_start_next = sp[1];
-            const ImVec2 p_end = sp[sp.Size - 1];
-            const ImVec2 p_end_prev = sp[sp.Size - 2];
-            ImVec2 t0 = safe_norm(p_start_next - p_start);
-            ImVec2 t1 = safe_norm(p_end - p_end_prev);
-            ImVec2 n0 = perp(t0);
-            ImVec2 n1 = perp(t1);
-            if (cap == ImWidgetsCap_Round && !gpu_used)
-            {
-                drawlist->AddCircleFilled(p_start, halfw, col, 16);
-                drawlist->AddCircleFilled(p_end,   halfw, col, 16);
-            }
-            else if (cap == ImWidgetsCap_TriangleOut)
-            {
-                ImVec2 base0_l = p_start - n0 * halfw, base0_r = p_start + n0 * halfw;
-                ImVec2 base1_l = p_end   - n1 * halfw, base1_r = p_end   + n1 * halfw;
-                ImVec2 apex0 = p_start - t0 * halfw; ImVec2 apex1 = p_end + t1 * halfw;
-                drawlist->AddTriangleFilled(base0_l, base0_r, apex0, col);
-                drawlist->AddTriangleFilled(base1_l, base1_r, apex1, col);
-            }
-            else if (!gpu_used && cap == ImWidgetsCap_TriangleIn)
-            {
-                ImVec2 base0_l = p_start - n0 * halfw, base0_r = p_start + n0 * halfw;
-                ImVec2 base1_l = p_end   - n1 * halfw, base1_r = p_end   + n1 * halfw;
-                ImVec2 apex0 = p_start + t0 * halfw; ImVec2 apex1 = p_end - t1 * halfw;
-                drawlist->AddTriangleFilled(base0_l, base0_r, apex0, col);
-                drawlist->AddTriangleFilled(base1_l, base1_r, apex1, col);
-            }
-            else if (!gpu_used && cap == ImWidgetsCap_Square)
-            {
-                ImVec2 dir0 = DW_Normalize(p_start_next - p_start);
-                ImVec2 dir1 = DW_Normalize(p_end - p_end_prev);
-                ImVec2 s0 = p_start - dir0 * halfw - n0 * halfw;
-                ImVec2 s1 = p_start - dir0 * halfw + n0 * halfw;
-                drawlist->AddQuadFilled(s0, s1, p_start + n0 * halfw, p_start - n0 * halfw, col);
-                ImVec2 e0 = p_end + dir1 * halfw - n1 * halfw;
-                ImVec2 e1 = p_end + dir1 * halfw + n1 * halfw;
-                drawlist->AddQuadFilled(p_end - n1 * halfw, p_end + n1 * halfw, e1, e0, col);
-            }
-        };
-
+        // Build the full stroke outline for a subpath, handling caps, joins, and miter limit,
+        // then render with AddConcavePolyFilled.
         auto draw_subpath = [&](ImVector<ImVec2>& sp)
         {
             if (sp.Size < 2) return;
+            if (!want_cpu_base) return;
+
             const float halfw = 0.5f * thickness;
-            auto seg_normal = [](const ImVec2& a, const ImVec2& b)
+            const int nSeg = sp.Size - 1;
+
+            // Per-segment tangent and left normal
+            ImVec2 seg_t_stack[128], seg_n_stack[128];
+            ImVec2* seg_t = (nSeg <= 128) ? seg_t_stack : (ImVec2*)IM_ALLOC(sizeof(ImVec2) * nSeg);
+            ImVec2* seg_n = (nSeg <= 128) ? seg_n_stack : (ImVec2*)IM_ALLOC(sizeof(ImVec2) * nSeg);
+            for (int i = 0; i < nSeg; ++i)
             {
-                ImVec2 d(b.x - a.x, b.y - a.y);
-                float l = ImSqrt(d.x*d.x + d.y*d.y);
-                if (l <= 1e-6f) return ImVec2(0, 0);
-                ImVec2 v(d.x / l, d.y / l);
-                return ImVec2(-v.y, v.x);
-            };
-
-            if (want_cpu_base)
-            {
-                // Draw thick butt-capped quads per segment
-                for (int s = 0; s + 1 < sp.Size; ++s)
-                {
-                    const ImVec2& p0 = sp[s];
-                    const ImVec2& p1 = sp[s + 1];
-                    ImVec2 n = seg_normal(p0, p1);
-                    if (n.x == 0 && n.y == 0) continue;
-                    ImVec2 off(n.x * halfw, n.y * halfw);
-                    ImVec2 p0l = ImVec2(p0.x - off.x, p0.y - off.y);
-                    ImVec2 p0r = ImVec2(p0.x + off.x, p0.y + off.y);
-                    ImVec2 p1l = ImVec2(p1.x - off.x, p1.y - off.y);
-                    ImVec2 p1r = ImVec2(p1.x + off.x, p1.y + off.y);
-                    drawlist->AddQuadFilled(p0l, p1l, p1r, p0r, col);
-                }
-
-                // Add joins according to join style and miter limit
-                for (int s = 1; s + 1 < sp.Size; ++s)
-                    DW_DrawJoinOverlay(drawlist, sp[s - 1], sp[s], sp[s + 1], col, thickness, join, miter_limit);
-
-                any_drawn = true;
+                seg_t[i] = DW_Normalize(sp[i + 1] - sp[i]);
+                seg_n[i] = DW_Perp(seg_t[i]); // left normal (-y, x)
             }
 
-            // Caps at subpath ends
-            if ((cap == ImWidgetsCap_Round && !gpu_used) || (cap == ImWidgetsCap_TriangleOut) || (!gpu_used && (cap == ImWidgetsCap_TriangleIn || cap == ImWidgetsCap_Square)))
-                draw_caps(sp);
+            // Build left and right contours (going forward from start to end)
+            ImVector<ImVec2> L, R;
+            L.reserve(sp.Size * 2 + 16);
+            R.reserve(sp.Size * 2 + 16);
+
+            // Row tracking for strip triangulation (one row per path vertex)
+            int row_L_stack[128], row_R_stack[128];
+            int* row_L = (sp.Size <= 128) ? row_L_stack : (int*)IM_ALLOC(sizeof(int) * sp.Size);
+            int* row_R = (sp.Size <= 128) ? row_R_stack : (int*)IM_ALLOC(sizeof(int) * sp.Size);
+            int n_rows = 0;
+
+            // First vertex (row 0)
+            row_L[n_rows] = 0; row_R[n_rows] = 0; n_rows++;
+            L.push_back(sp[0] + seg_n[0] * halfw);
+            R.push_back(sp[0] - seg_n[0] * halfw);
+
+            // Interior vertices — joins
+            for (int i = 1; i < sp.Size - 1; ++i)
+            {
+                row_L[n_rows] = L.Size; row_R[n_rows] = R.Size; n_rows++;
+                ImVec2 np = seg_n[i - 1], nn = seg_n[i];
+                ImVec2 tp = seg_t[i - 1], tn = seg_t[i];
+                float cross_val = DW_Cross(tp, tn);
+
+                if (ImFabs(cross_val) < 1e-5f)
+                {
+                    // Collinear: averaged normal
+                    ImVec2 avg = DW_Normalize(np + nn);
+                    float dv = ImMax(0.1f, avg.x * np.x + avg.y * np.y);
+                    L.push_back(sp[i] + avg * (halfw / dv));
+                    R.push_back(sp[i] - avg * (halfw / dv));
+                    continue;
+                }
+
+                // Miter bisector and offset (for outer side join)
+                ImVec2 avg = DW_Normalize(np + nn);
+                float dv = ImMax(0.01f, avg.x * np.x + avg.y * np.y);
+                float miter_off = halfw / dv;
+                bool miter_ok = (miter_off <= miter_limit * halfw);
+
+                // DW_Perp gives right-hand perpendicular in screen Y-down.
+                // L contour = +DW_Perp = right side of path.
+                // R contour = -DW_Perp = left side of path.
+                // cross > 0 => screen right turn => outer is LEFT (R contour).
+                // cross < 0 => screen left turn  => outer is RIGHT (L contour).
+                bool right_outer = (cross_val < 0.0f);
+                // sign: +1 when outer is +DW_Perp (right_outer), -1 when outer is -DW_Perp
+                float sign = right_outer ? 1.0f : -1.0f;
+
+                // === Inner side: single miter point (intersection of inner offset lines) ===
+                // Uses miter_off (not halfw) for correct perpendicular distance = halfw
+                // from each segment's path line, preserving stroke width at corners.
+                {
+                    ImVec2 inner_pt = sp[i] + ImVec2(avg.x * -sign, avg.y * -sign) * miter_off;
+                    if (right_outer)
+                        R.push_back(inner_pt);
+                    else
+                        L.push_back(inner_pt);
+                }
+
+                // === Outer side: user's join style ===
+                ImVec2 edge_prev = sp[i] + ImVec2(np.x * sign, np.y * sign) * halfw;
+                ImVec2 edge_next = sp[i] + ImVec2(nn.x * sign, nn.y * sign) * halfw;
+                ImVector<ImVec2>& outer = right_outer ? L : R;
+
+                if (join == ImWidgetsJoin_Mitter && miter_ok)
+                {
+                    // Single miter apex — lies on both offset lines, so the
+                    // contour transitions correctly from prev to next segment.
+                    outer.push_back(sp[i] + ImVec2(avg.x * sign, avg.y * sign) * miter_off);
+                }
+                else if (join == ImWidgetsJoin_Round)
+                {
+                    ImVec2 n_out_p = ImVec2(np.x * sign, np.y * sign);
+                    ImVec2 n_out_n = ImVec2(nn.x * sign, nn.y * sign);
+                    float a0 = atan2f(n_out_p.y, n_out_p.x);
+                    float a1 = atan2f(n_out_n.y, n_out_n.x);
+                    float da = a1 - a0;
+                    // Arc direction: use cross product of outer normals (correct in Y-down screen space)
+                    float n_cross = DW_Cross(n_out_p, n_out_n);
+                    if (n_cross > 0.0f && da < 0.0f) da += 2.0f * IM_PI;
+                    if (n_cross < 0.0f && da > 0.0f) da -= 2.0f * IM_PI;
+                    int arc_segs = ImClamp((int)(ImFabs(da) * halfw * 0.5f), 3, 32);
+                    for (int s = 0; s <= arc_segs; ++s)
+                    {
+                        float t = (float)s / (float)arc_segs;
+                        float a = a0 + da * t;
+                        outer.push_back(ImVec2(sp[i].x + cosf(a) * halfw, sp[i].y + sinf(a) * halfw));
+                    }
+                }
+                else // Bevel (or miter limit exceeded)
+                {
+                    outer.push_back(edge_prev);
+                    outer.push_back(edge_next);
+                }
+            }
+
+            // Last vertex
+            row_L[n_rows] = L.Size; row_R[n_rows] = R.Size; n_rows++;
+            L.push_back(sp[sp.Size - 1] + seg_n[nSeg - 1] * halfw);
+            R.push_back(sp[sp.Size - 1] - seg_n[nSeg - 1] * halfw);
+
+            // ============================================================
+            // Strip triangulation: emit triangles directly to draw list.
+            // We know the topology (L/R contour strip with fans at joins),
+            // so we bypass AddConcavePolyFilled's ear-clipper which can't
+            // handle self-intersecting concave stroke polygons correctly.
+            // ============================================================
+
+            // --- Build cap vertices ---
+            ImVec2 end_pt = sp[sp.Size - 1];
+            ImVec2 end_t_dir = seg_t[nSeg - 1];
+            ImVec2 end_n_dir = seg_n[nSeg - 1];
+            ImVec2 start_pt = sp[0];
+            ImVec2 start_t_dir = seg_t[0];
+            ImVec2 start_n_dir = seg_n[0];
+
+            ImVec2 end_cap_v[40], start_cap_v[40];
+            int n_ecv = 0, n_ect = 0; // end cap vertices / triangles
+            int n_scv = 0, n_sct = 0; // start cap vertices / triangles
+            bool end_tri_in = false, start_tri_in = false;
+
+            switch (cap)
+            {
+            case ImWidgetsCap_Square:
+                end_cap_v[0] = end_pt + end_n_dir * halfw + end_t_dir * halfw;
+                end_cap_v[1] = end_pt - end_n_dir * halfw + end_t_dir * halfw;
+                n_ecv = 2; n_ect = 2;
+                break;
+            case ImWidgetsCap_Round: {
+                float a_s = atan2f(end_n_dir.y, end_n_dir.x);
+                int segs = ImMax(8, (int)(halfw));
+                end_cap_v[0] = end_pt; // center
+                for (int s = 1; s < segs; ++s)
+                {
+                    float t = (float)s / (float)segs;
+                    float a = a_s - IM_PI * t;
+                    end_cap_v[s] = ImVec2(end_pt.x + cosf(a) * halfw, end_pt.y + sinf(a) * halfw);
+                }
+                n_ecv = segs; n_ect = segs;
+                break;
+            }
+            case ImWidgetsCap_TriangleOut:
+                end_cap_v[0] = end_pt + end_t_dir * halfw;
+                n_ecv = 1; n_ect = 1;
+                break;
+            case ImWidgetsCap_TriangleIn:
+                end_cap_v[0] = end_pt - end_t_dir * halfw;
+                n_ecv = 1; n_ect = 0; end_tri_in = true; // handled in segment
+                break;
+            default: break;
+            }
+
+            switch (cap)
+            {
+            case ImWidgetsCap_Square:
+                start_cap_v[0] = start_pt - start_n_dir * halfw - start_t_dir * halfw;
+                start_cap_v[1] = start_pt + start_n_dir * halfw - start_t_dir * halfw;
+                n_scv = 2; n_sct = 2;
+                break;
+            case ImWidgetsCap_Round: {
+                float a_s = atan2f(-start_n_dir.y, -start_n_dir.x);
+                int segs = ImMax(8, (int)(halfw));
+                start_cap_v[0] = start_pt; // center
+                for (int s = 1; s < segs; ++s)
+                {
+                    float t = (float)s / (float)segs;
+                    float a = a_s - IM_PI * t;
+                    start_cap_v[s] = ImVec2(start_pt.x + cosf(a) * halfw, start_pt.y + sinf(a) * halfw);
+                }
+                n_scv = segs; n_sct = segs;
+                break;
+            }
+            case ImWidgetsCap_TriangleOut:
+                start_cap_v[0] = start_pt - start_t_dir * halfw;
+                n_scv = 1; n_sct = 1;
+                break;
+            case ImWidgetsCap_TriangleIn:
+                start_cap_v[0] = start_pt + start_t_dir * halfw;
+                n_scv = 1; n_sct = 0; start_tri_in = true;
+                break;
+            default: break;
+            }
+
+            // --- Count triangles ---
+            int nTri = 0;
+            // Segment quads (+1 per TriangleIn notch on first/last segment)
+            for (int k = 0; k < n_rows - 1; ++k)
+            {
+                nTri += 2;
+                if (k == 0 && start_tri_in) nTri += 1;
+                if (k == n_rows - 2 && end_tri_in) nTri += 1;
+            }
+            // Join fans
+            for (int k = 1; k < n_rows - 1; ++k)
+            {
+                int nL_k = row_L[k + 1] - row_L[k];
+                int nR_k = row_R[k + 1] - row_R[k];
+                int fan = ImMax(nL_k, nR_k) - 1;
+                if (fan > 0) nTri += fan;
+            }
+            // Cap triangles (non-TriangleIn)
+            nTri += n_ect + n_sct;
+
+            int nVtx = L.Size + R.Size + n_ecv + n_scv;
+
+            // --- Emit primitives ---
+            if (nTri > 0 && nVtx >= 3)
+            {
+                ImVec2 uv = drawlist->_Data->TexUvWhitePixel;
+                drawlist->PrimReserve(nTri * 3, nVtx);
+                ImDrawIdx idx_base = (ImDrawIdx)drawlist->_VtxCurrentIdx;
+
+                // Write all vertices
+                ImDrawVert* vw = drawlist->_VtxWritePtr;
+                for (int vi = 0; vi < L.Size; ++vi) { vw->pos = L[vi]; vw->uv = uv; vw->col = col; vw++; }
+                for (int vi = 0; vi < R.Size; ++vi) { vw->pos = R[vi]; vw->uv = uv; vw->col = col; vw++; }
+                for (int vi = 0; vi < n_ecv; ++vi) { vw->pos = end_cap_v[vi]; vw->uv = uv; vw->col = col; vw++; }
+                for (int vi = 0; vi < n_scv; ++vi) { vw->pos = start_cap_v[vi]; vw->uv = uv; vw->col = col; vw++; }
+                drawlist->_VtxWritePtr = vw;
+                drawlist->_VtxCurrentIdx += (unsigned int)nVtx;
+
+                // Index bases for each vertex group
+                ImDrawIdx bL = idx_base;
+                ImDrawIdx bR = idx_base + (ImDrawIdx)L.Size;
+                ImDrawIdx bE = idx_base + (ImDrawIdx)(L.Size + R.Size);
+                ImDrawIdx bS = bE + (ImDrawIdx)n_ecv;
+
+                ImDrawIdx* iw = drawlist->_IdxWritePtr;
+                #define DW_TRI(a, b, c) do { *iw++ = (ImDrawIdx)(a); *iw++ = (ImDrawIdx)(b); *iw++ = (ImDrawIdx)(c); } while(0)
+
+                // --- Segment quads ---
+                for (int k = 0; k < n_rows - 1; ++k)
+                {
+                    // Last L/R of row k → first L/R of row k+1
+                    ImDrawIdx lp = bL + (ImDrawIdx)(row_L[k + 1] - 1);
+                    ImDrawIdx ln = bL + (ImDrawIdx)(row_L[k + 1]);
+                    ImDrawIdx rp = bR + (ImDrawIdx)(row_R[k + 1] - 1);
+                    ImDrawIdx rn = bR + (ImDrawIdx)(row_R[k + 1]);
+
+                    bool is_first = (k == 0);
+                    bool is_last  = (k == n_rows - 2);
+                    bool has_en   = is_last  && end_tri_in;
+                    bool has_sn   = is_first && start_tri_in;
+
+                    if (has_en && has_sn)
+                    {
+                        // Hexagon: lp → ln → end_notch → rn → rp → start_notch
+                        DW_TRI(lp, ln, bE); DW_TRI(lp, bE, rn);
+                        DW_TRI(lp, rn, rp); DW_TRI(lp, rp, bS);
+                    }
+                    else if (has_en)
+                    {
+                        // Pentagon: lp → ln → end_notch → rn → rp
+                        DW_TRI(lp, ln, bE); DW_TRI(lp, bE, rn); DW_TRI(lp, rn, rp);
+                    }
+                    else if (has_sn)
+                    {
+                        // Pentagon: ln → rn → rp → start_notch → lp
+                        DW_TRI(ln, rn, rp); DW_TRI(ln, rp, bS); DW_TRI(ln, bS, lp);
+                    }
+                    else
+                    {
+                        // Normal quad
+                        DW_TRI(lp, ln, rn); DW_TRI(lp, rn, rp);
+                    }
+                }
+
+                // --- Join fans ---
+                for (int k = 1; k < n_rows - 1; ++k)
+                {
+                    int nL_k = row_L[k + 1] - row_L[k];
+                    int nR_k = row_R[k + 1] - row_R[k];
+                    if (nL_k > 1 && nR_k == 1)
+                    {
+                        // Fan from R pivot to L points
+                        ImDrawIdx pivot = bR + (ImDrawIdx)row_R[k];
+                        for (int j = 0; j < nL_k - 1; ++j)
+                        {
+                            ImDrawIdx a = bL + (ImDrawIdx)(row_L[k] + j);
+                            ImDrawIdx b = bL + (ImDrawIdx)(row_L[k] + j + 1);
+                            DW_TRI(pivot, a, b);
+                        }
+                    }
+                    else if (nR_k > 1 && nL_k == 1)
+                    {
+                        // Fan from L pivot to R points
+                        ImDrawIdx pivot = bL + (ImDrawIdx)row_L[k];
+                        for (int j = 0; j < nR_k - 1; ++j)
+                        {
+                            ImDrawIdx a = bR + (ImDrawIdx)(row_R[k] + j);
+                            ImDrawIdx b = bR + (ImDrawIdx)(row_R[k] + j + 1);
+                            DW_TRI(pivot, b, a);
+                        }
+                    }
+                }
+
+                // --- End cap ---
+                ImDrawIdx L_last = bL + (ImDrawIdx)(L.Size - 1);
+                ImDrawIdx R_last = bR + (ImDrawIdx)(R.Size - 1);
+                if (cap == ImWidgetsCap_Square)
+                {
+                    DW_TRI(L_last, bE, bE + 1);
+                    DW_TRI(L_last, bE + 1, R_last);
+                }
+                else if (cap == ImWidgetsCap_Round)
+                {
+                    ImDrawIdx center = bE;
+                    ImDrawIdx prev = L_last;
+                    for (int j = 1; j < n_ecv; ++j)
+                    {
+                        ImDrawIdx cur = bE + (ImDrawIdx)j;
+                        DW_TRI(center, prev, cur);
+                        prev = cur;
+                    }
+                    DW_TRI(center, prev, R_last);
+                }
+                else if (cap == ImWidgetsCap_TriangleOut)
+                {
+                    DW_TRI(L_last, bE, R_last);
+                }
+
+                // --- Start cap ---
+                ImDrawIdx L0 = bL;
+                ImDrawIdx R0 = bR;
+                if (cap == ImWidgetsCap_Square)
+                {
+                    DW_TRI(R0, bS, bS + 1);
+                    DW_TRI(R0, bS + 1, L0);
+                }
+                else if (cap == ImWidgetsCap_Round)
+                {
+                    ImDrawIdx center = bS;
+                    ImDrawIdx prev = R0;
+                    for (int j = 1; j < n_scv; ++j)
+                    {
+                        ImDrawIdx cur = bS + (ImDrawIdx)j;
+                        DW_TRI(center, prev, cur);
+                        prev = cur;
+                    }
+                    DW_TRI(center, prev, L0);
+                }
+                else if (cap == ImWidgetsCap_TriangleOut)
+                {
+                    DW_TRI(R0, bS, L0);
+                }
+
+                #undef DW_TRI
+                drawlist->_IdxWritePtr = iw;
+            }
+            any_drawn = true;
+
+            // Debug: draw contour edges and vertices
+            if (GlobalData.dashedLinesDebugJoins && L.Size >= 2)
+            {
+                for (int vi = 0; vi < L.Size - 1; ++vi)
+                    drawlist->AddLine(L[vi], L[vi + 1], IM_COL32(255, 255, 0, 200), 1.0f);
+                for (int vi = 0; vi < R.Size - 1; ++vi)
+                    drawlist->AddLine(R[vi], R[vi + 1], IM_COL32(255, 255, 0, 200), 1.0f);
+                drawlist->AddLine(L[0], R[0], IM_COL32(255, 255, 0, 200), 1.0f);
+                drawlist->AddLine(L[L.Size - 1], R[R.Size - 1], IM_COL32(255, 255, 0, 200), 1.0f);
+                for (int vi = 0; vi < L.Size; ++vi)
+                    drawlist->AddCircleFilled(L[vi], 3.0f, IM_COL32(0, 255, 0, 255));
+                for (int vi = 0; vi < R.Size; ++vi)
+                    drawlist->AddCircleFilled(R[vi], 3.0f, IM_COL32(255, 0, 0, 255));
+            }
+
+            if (sp.Size > 128) { IM_FREE(row_L); IM_FREE(row_R); }
+            if (nSeg > 128) { IM_FREE(seg_t); IM_FREE(seg_n); }
         };
 
         // Seamless wrap for closed loop: merge last and first ON intervals across seam
@@ -15428,8 +15731,8 @@ namespace ImWidgets
         {
             ImVector<ImVec2> A; A.resize(0);
             ImVector<ImVec2> B; B.resize(0);
-            DW_ExtractSubpath(pd_local, intervals.back().x, pd_local.total_len, A, cap == ImWidgetsCap_Square, 0.5f * thickness);
-            DW_ExtractSubpath(pd_local, 0.0f, intervals[0].y, B, cap == ImWidgetsCap_Square, 0.5f * thickness);
+            DW_ExtractSubpath(pd_local, intervals.back().x, pd_local.total_len, A, false, 0.0f);
+            DW_ExtractSubpath(pd_local, 0.0f, intervals[0].y, B, false, 0.0f);
             ImVector<ImVec2> C; C.resize(0);
             C.resize(A.Size + B.Size);
             for (int i = 0; i < A.Size; ++i) C[i] = A[i];
@@ -15446,7 +15749,7 @@ namespace ImWidgets
             float s1 = intervals[k].y;
             if (s1 - s0 <= 0.0f) continue;
             subpath.resize(0);
-            DW_ExtractSubpath(pd_local, s0, s1, subpath, cap == ImWidgetsCap_Square, 0.5f * thickness);
+            DW_ExtractSubpath(pd_local, s0, s1, subpath, false, 0.0f);
             draw_subpath(subpath);
         }
 

@@ -1989,9 +1989,10 @@ namespace ImWidgets {
 			{
 				ImDrawList* dl = ImGui::GetWindowDrawList();
 				float avail = ImGui::GetContentRegionAvail().x;
-				float height = 220.0f;
+				float side = ImMin( avail, ImGui::GetContentRegionAvail().y );
+				if ( side < 64.0f ) side = avail; // fallback if vertical space is tiny
 				ImVec2 origin = ImGui::GetCursorScreenPos();
-				ImGui::InvisibleButton("##zone_dashed_poly", ImVec2(avail, height));
+				ImGui::InvisibleButton("##zone_dashed_poly", ImVec2(side, side));
 
 				static float thickness = 6.0f;
 				static float dash_len = 24.0f;
@@ -2007,16 +2008,16 @@ namespace ImWidgets {
 				const char* joins[] = { "Round", "Mitter", "Bevel" };
 				const char* paths[] = { "ZigZag", "Sine", "Spiral", "RoundedRect", "Circle", "Infinity", "Rose (k=5)", "Heart", "Sawtooth", "Arc Chain", "Star", "Bezier S" };
 				ImGui::SetCursorScreenPos(origin + ImVec2(8, 6));
-				dl->AddRect(origin, origin + ImVec2(avail, height), IM_COL32(64,64,64,255));
+				dl->AddRect(origin, origin + ImVec2(side, side), IM_COL32(64,64,64,255));
 
 				// Build path
 				ImVec2 pts_stack[256];
 				ImVec2* pts = pts_stack;
 				int pts_count = 0;
 				float left = origin.x + 16.0f;
-				float right = origin.x + avail - 16.0f;
+				float right = origin.x + side - 16.0f;
 				float top = origin.y + 24.0f;
-				float bottom = origin.y + height - 24.0f;
+				float bottom = origin.y + side - 24.0f;
 				float midx = (left + right) * 0.5f;
 				if (path_type == 0)
 				{
@@ -2222,12 +2223,13 @@ namespace ImWidgets {
 					pts_count = 2*N;
 				}
 
-				ImU32 col = IM_COL32(255, 200, 40, 255);
+				static ImVec4 col_v4 = ImVec4(1.0f, 0.784f, 0.157f, 1.0f);
+				ImU32 col = ImGui::ColorConvertFloat4ToU32(col_v4);
 				if (animate)
 					offset += ImGui::GetIO().DeltaTime * 50.0f;
 				ImWidgets::DrawDashedPolylineAA(dl, pts, pts_count, col, thickness, dash_len, gap_len, offset, closed, (ImWidgetsCap_)cap_idx, (ImWidgetsJoin)join_idx, miter_limit);
 
-				ImGui::SetCursorScreenPos(origin + ImVec2(0, height + 6));
+				ImGui::SetCursorScreenPos(origin + ImVec2(0, side + 6));
 				ImGui::SliderFloat("Thickness##dashed", &thickness, 1.0f, 24.0f);
 				ImGui::SliderFloat("Dash##dashed", &dash_len, 1.0f, 100.0f);
 				ImGui::SliderFloat("Gap##dashed", &gap_len, 0.0f, 100.0f);
@@ -2238,6 +2240,7 @@ namespace ImWidgets {
 				ImGui::Combo("Join##dashed", &join_idx, joins, IM_ARRAYSIZE(joins));
 				ImGui::SliderFloat("Miter Limit##dashed", &miter_limit, 1.0f, 12.0f, "%.2f");
 				ImGui::Combo("Path##dashed", &path_type, paths, IM_ARRAYSIZE(paths));
+				ImGui::ColorEdit4("Color##dashed", &col_v4.x, ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf);
 				bool use_gpu = ImWidgets::GetDashedLinesUseGPU();
 				if (ImGui::Checkbox("GPU Path##dashed", &use_gpu))
 					ImWidgets::SetDashedLinesUseGPU(use_gpu);
