@@ -7177,11 +7177,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 
 		// Context menu popup
+		bool openPickerDeferred = false;
 		if ( ImGui::BeginPopup( "##GradStopCtx" ) )
 		{
 			if ( ImGui::MenuItem( "Edit Color" ) )
 			{
-				ImGui::OpenPopup( "##GradStopPicker" );
+				openPickerDeferred = true;
 			}
 			if ( ImGui::MenuItem( "Remove Stop", NULL, false, gradient->Stops.Size > 2 ) )
 			{
@@ -7193,6 +7194,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			}
 			ImGui::EndPopup();
 		}
+		if ( openPickerDeferred )
+			ImGui::OpenPopup( "##GradStopPicker" );
 
 		// Delete key
 		if ( selected >= 0 && ImGui::IsKeyPressed( ImGuiKey_Delete ) && hovered )
@@ -7237,9 +7240,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		ImGui::PopID();
 
-		if ( value_changed )
-			ImGui::MarkItemEdited( id );
-
 		// Expand button
 		bool* pExpanded = WidgetExpandButton( id, bar_bb );
 		if ( pExpanded && *pExpanded )
@@ -7263,28 +7263,49 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					value_changed = true;
 				if ( selected >= 0 && selected < gradient->Stops.Size )
 				{
-					ImGradientStop& ss = gradient->Stops[ selected ];
 					ImGui::Separator();
 					ImGui::TextUnformatted( "Selected" );
 					ImGui::Text( "%d", selected );
 					ImGui::Spacing();
 					ImGui::TextUnformatted( "Position" );
 					ImGui::SetNextItemWidth( -FLT_MIN );
-					if ( ImGui::DragFloat( "##pos", &ss.Position, 0.001f, 0.0f, 1.0f, "%.3f" ) )
+					if ( ImGui::DragFloat( "##pos", &gradient->Stops[ selected ].Position, 0.001f, 0.0f, 1.0f, "%.3f" ) )
 					{
 						gradient->SortStops();
 						value_changed = true;
 					}
-					ImGui::Spacing();
-					ImGui::TextUnformatted( "Color" );
-					ImGuiColorEditFlags editFlags = alpha ? ( ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf ) : ImGuiColorEditFlags_NoAlpha;
-					if ( ImGui::ColorEdit4( "##col", &ss.Color.x, editFlags ) )
-						value_changed = true;
+					if ( selected >= 0 && selected < gradient->Stops.Size )
+					{
+						ImVec4& stopColor = gradient->Stops[ selected ].Color;
+						ImGui::Spacing();
+						ImGui::TextUnformatted( "Color" );
+						ImGui::SetNextItemWidth( -FLT_MIN );
+						if ( ImGui::DragFloat( "##r", &stopColor.x, 0.001f, 0.0f, 1.0f, "R: %.3f" ) )
+							value_changed = true;
+						ImGui::SetNextItemWidth( -FLT_MIN );
+						if ( ImGui::DragFloat( "##g", &stopColor.y, 0.001f, 0.0f, 1.0f, "G: %.3f" ) )
+							value_changed = true;
+						ImGui::SetNextItemWidth( -FLT_MIN );
+						if ( ImGui::DragFloat( "##b", &stopColor.z, 0.001f, 0.0f, 1.0f, "B: %.3f" ) )
+							value_changed = true;
+						if ( alpha )
+						{
+							ImGui::SetNextItemWidth( -FLT_MIN );
+							if ( ImGui::DragFloat( "##a", &stopColor.w, 0.001f, 0.0f, 1.0f, "A: %.3f" ) )
+								value_changed = true;
+						}
+						ImGui::Spacing();
+						ImVec4 preview = stopColor; preview.w = 1.0f;
+						ImGui::ColorButton( "##preview", preview, 0, ImVec2( ImGui::GetContentRegionAvail().x, 20 ) );
+					}
 				}
 				ImGui::EndChild();
 			}
 			EndExpandedWindow();
 		}
+
+		if ( value_changed && ( g.ActiveId == id || g.ActiveId == 0 ) )
+			ImGui::MarkItemEdited( id );
 
 		return value_changed;
 	}
