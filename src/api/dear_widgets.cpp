@@ -1703,6 +1703,105 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImGui::ColorConvertHSVtoRGB( h, s, v, out_r, out_g, out_b );
 	}
 
+	// sRGB <-> XYZ (D65) using existing matrices
+	void ColorConvertsRGBtoXYZ( float& out_X, float& out_Y, float& out_Z, float r, float g, float b )
+	{
+		float lr = ImsRGBToLinear( r );
+		float lg = ImsRGBToLinear( g );
+		float lb = ImsRGBToLinear( b );
+		float vec[3] = { lr, lg, lb };
+		Mat33RowMajorMulVec3( out_X, out_Y, out_Z, s_ColorSpace_RGB2XYZ_sRGB, vec );
+	}
+	void ColorConvertXYZtosRGB( float& out_r, float& out_g, float& out_b, float X, float Y, float Z )
+	{
+		float vec[3] = { X, Y, Z };
+		float lr, lg, lb;
+		Mat33RowMajorMulVec3( lr, lg, lb, s_ColorSpace_XYZ2RGB_sRGB, vec );
+		out_r = ImLinearTosRGB( lr );
+		out_g = ImLinearTosRGB( lg );
+		out_b = ImLinearTosRGB( lb );
+	}
+
+	// CIE Lab (L*a*b* D65)
+	static const float kCIELabWhiteD65[3] = { 0.95047f, 1.0f, 1.08883f };
+	static const float kCIELabDelta = 6.0f / 29.0f;
+	static const float kCIELabDelta3 = kCIELabDelta * kCIELabDelta * kCIELabDelta;
+	static const float kCIELabDelta2x3 = 3.0f * kCIELabDelta * kCIELabDelta;
+
+	static float CIELabF( float t )
+	{
+		if ( t > kCIELabDelta3 )
+			return ImCbrt( t );
+		return t / kCIELabDelta2x3 + 4.0f / 29.0f;
+	}
+	static float CIELabFInv( float t )
+	{
+		if ( t > kCIELabDelta )
+			return t * t * t;
+		return kCIELabDelta2x3 * ( t - 4.0f / 29.0f );
+	}
+	void ColorConvertXYZtoCIELab( float& out_L, float& out_a, float& out_b, float X, float Y, float Z )
+	{
+		float fx = CIELabF( X / kCIELabWhiteD65[0] );
+		float fy = CIELabF( Y / kCIELabWhiteD65[1] );
+		float fz = CIELabF( Z / kCIELabWhiteD65[2] );
+		out_L = 116.0f * fy - 16.0f;
+		out_a = 500.0f * ( fx - fy );
+		out_b = 200.0f * ( fy - fz );
+	}
+	void ColorConvertCIELabtoXYZ( float& out_X, float& out_Y, float& out_Z, float L, float a, float b )
+	{
+		float fy = ( L + 16.0f ) / 116.0f;
+		float fx = a / 500.0f + fy;
+		float fz = fy - b / 200.0f;
+		out_X = kCIELabWhiteD65[0] * CIELabFInv( fx );
+		out_Y = kCIELabWhiteD65[1] * CIELabFInv( fy );
+		out_Z = kCIELabWhiteD65[2] * CIELabFInv( fz );
+	}
+	void ColorConvertsRGBtoCIELab( float& out_L, float& out_a, float& out_b, float r, float g, float b )
+	{
+		float X, Y, Z;
+		ColorConvertsRGBtoXYZ( X, Y, Z, r, g, b );
+		ColorConvertXYZtoCIELab( out_L, out_a, out_b, X, Y, Z );
+	}
+	void ColorConvertCIELabtosRGB( float& out_r, float& out_g, float& out_b, float L, float a, float b )
+	{
+		float X, Y, Z;
+		ColorConvertCIELabtoXYZ( X, Y, Z, L, a, b );
+		ColorConvertXYZtosRGB( out_r, out_g, out_b, X, Y, Z );
+	}
+
+	// CIE xyY <-> XYZ
+	void ColorConvertXYZtoxyY( float& out_x, float& out_y, float& out_Y, float X, float Y, float Z )
+	{
+		float sum = X + Y + Z;
+		if ( sum < 0.001f )
+		{
+			// Use D65 white chromaticity as fallback
+			out_x = 0.3127f;
+			out_y = 0.3290f;
+		}
+		else
+		{
+			out_x = X / sum;
+			out_y = Y / sum;
+		}
+		out_Y = Y;
+	}
+	void ColorConvertxyYtoXYZ( float& out_X, float& out_Y, float& out_Z, float x, float y, float Yval )
+	{
+		if ( y < 0.001f )
+		{
+			out_X = 0.0f;
+			out_Y = 0.0f;
+			out_Z = 0.0f;
+			return;
+		}
+		out_X = ( Yval / y ) * x;
+		out_Y = Yval;
+		out_Z = ( Yval / y ) * ( 1.0f - x - y );
+	}
+
 	ImU32	KelvinTemperatureTosRGBColors( float temperature )
 	{
 		float _r = ImFunctionFromData( temperature, s_min_kelvin_temp, s_max_kelvin_temp, s_kelvin_sRGB_Colors_Red,   s_kelvin_temp_count );
@@ -9265,6 +9364,483 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 
 		return value_changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Color Picker Collection
+	//////////////////////////////////////////////////////////////////////////
+
+	struct ImColorPickerSpaceDesc
+	{
+		void ( *sRGBToSpace )( float&, float&, float&, float, float, float );
+		void ( *spaceToSRGB )( float&, float&, float&, float, float, float );
+		const char* axisName[3];
+		const char* axisFormat[3];
+		float axisMin[3];
+		float axisMax[3];
+		int planeAxisX, planeAxisY, sliderAxis;
+	};
+
+	// 2D plane callback data
+	struct ImColorPickerPlaneData
+	{
+		ImColorPickerSpaceDesc const* desc;
+		float sliderValue;
+	};
+
+	static ImU32 ColorPickerPlaneCallback( float u, float v, void* pUserData )
+	{
+		ImColorPickerPlaneData* data = ( ImColorPickerPlaneData* )pUserData;
+		ImColorPickerSpaceDesc const& desc = *data->desc;
+		float comp[3];
+		comp[ desc.sliderAxis ] = data->sliderValue;
+		comp[ desc.planeAxisX ] = u;
+		comp[ desc.planeAxisY ] = v;
+		float r, g, b;
+		desc.spaceToSRGB( r, g, b, comp[0], comp[1], comp[2] );
+		r = ImSaturate( r ); g = ImSaturate( g ); b = ImSaturate( b );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	// 1D component slider callback data
+	struct ImColorPickerSlider1DData
+	{
+		ImColorPickerSpaceDesc const* desc;
+		float comp[3];
+		int varyAxis;
+	};
+
+	static ImU32 ColorPickerSlider1DCallback( float t, void* pUserData )
+	{
+		ImColorPickerSlider1DData* data = ( ImColorPickerSlider1DData* )pUserData;
+		ImColorPickerSpaceDesc const& desc = *data->desc;
+		float c[3] = { data->comp[0], data->comp[1], data->comp[2] };
+		c[ data->varyAxis ] = t;
+		float r, g, b;
+		desc.spaceToSRGB( r, g, b, c[0], c[1], c[2] );
+		r = ImSaturate( r ); g = ImSaturate( g ); b = ImSaturate( b );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	static bool ColorPickerInternal( char const* label, ImVec4* color, ImColorPickerSpaceDesc const& desc )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		const ImGuiID id = window->GetID( label );
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderWidth = dwStyle.ColorPicker_SliderWidth;
+		const float compSliderH = dwStyle.ColorPicker_ComponentSliderHeight;
+		const float spacing = style.ItemInnerSpacing.x;
+		const float vSpacing = style.ItemInnerSpacing.y;
+		const float planeSide = w - sliderWidth - spacing;
+		const int planeRes = ( int )dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = ( int )dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = dwStyle.ColorPicker_DotRadius;
+
+		const float totalH = planeSide + vSpacing + ( compSliderH + vSpacing ) * 3.0f;
+
+		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
+		const ImVec2 cursorPos = window->DC.CursorPos;
+
+		const ImRect plane_bb( cursorPos, ImVec2( cursorPos.x + planeSide, cursorPos.y + planeSide ) );
+		const ImRect vslider_bb( ImVec2( cursorPos.x + planeSide + spacing, cursorPos.y ),
+								 ImVec2( cursorPos.x + planeSide + spacing + sliderWidth, cursorPos.y + planeSide ) );
+		const float compY0 = cursorPos.y + planeSide + vSpacing;
+		ImRect comp_bb[3];
+		for ( int i = 0; i < 3; ++i )
+		{
+			float y = compY0 + ( compSliderH + vSpacing ) * i;
+			comp_bb[i] = ImRect( ImVec2( cursorPos.x, y ), ImVec2( cursorPos.x + w, y + compSliderH ) );
+		}
+		const ImRect total_bb( cursorPos,
+			ImVec2( cursorPos.x + w + ( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f ),
+					cursorPos.y + totalH ) );
+
+		ImGui::ItemSize( total_bb, style.FramePadding.y );
+		if ( !ImGui::ItemAdd( total_bb, id, &total_bb, 0 ) )
+			return false;
+
+		bool hovered = ImGui::ItemHoverable( total_bb, id, g.LastItemData.ItemFlags );
+		bool value_changed = false;
+		float alpha = color->w;
+
+		// Drag state: 0=none, 1=plane, 2=vslider, 3/4/5=comp0/1/2
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		int* pDragMode = storage->GetIntRef( id, 0 );
+
+		// Persistent space-native components to avoid lossy sRGB round-trips
+		// during drag (out-of-gamut clamping would corrupt untouched axes).
+		const ImGuiID idC0 = id + 0x100;
+		const ImGuiID idC1 = id + 0x200;
+		const ImGuiID idC2 = id + 0x300;
+
+		float comp[3];
+		if ( *pDragMode != 0 && g.ActiveId == id )
+		{
+			// While dragging, use stored space values as truth
+			comp[0] = storage->GetFloat( idC0, 0.0f );
+			comp[1] = storage->GetFloat( idC1, 0.0f );
+			comp[2] = storage->GetFloat( idC2, 0.0f );
+		}
+		else
+		{
+			// Not dragging: derive from sRGB input
+			desc.sRGBToSpace( comp[0], comp[1], comp[2], color->x, color->y, color->z );
+			storage->SetFloat( idC0, comp[0] );
+			storage->SetFloat( idC1, comp[1] );
+			storage->SetFloat( idC2, comp[2] );
+		}
+
+		ImDrawList* dl = window->DrawList;
+
+		// --- DRAWING ---
+
+		// 2D plane
+		{
+			ImColorPickerPlaneData cbData;
+			cbData.desc = &desc;
+			cbData.sliderValue = comp[ desc.sliderAxis ];
+
+			DrawProceduralColor2DBilinear( dl, ColorPickerPlaneCallback, &cbData,
+				desc.axisMin[ desc.planeAxisX ], desc.axisMax[ desc.planeAxisX ],
+				desc.axisMin[ desc.planeAxisY ], desc.axisMax[ desc.planeAxisY ],
+				plane_bb.Min, plane_bb.GetSize(), planeRes, planeRes );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+
+		// Dot on plane
+		float dotU = ImSaturate( ImNormalize01( comp[ desc.planeAxisX ], desc.axisMin[ desc.planeAxisX ], desc.axisMax[ desc.planeAxisX ] ) );
+		float dotV = ImSaturate( ImNormalize01( comp[ desc.planeAxisY ], desc.axisMin[ desc.planeAxisY ], desc.axisMax[ desc.planeAxisY ] ) );
+		ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, dotU ),
+					   ImLerp( plane_bb.Min.y, plane_bb.Max.y, dotV ) );
+
+		bool isDraggingPlane = ( g.ActiveId == id && *pDragMode == 1 );
+		ImU32 dotOutCol = ImGui::GetColorU32( dwStyle.Colors[ isDraggingPlane ? StyleColor_ColorPicker_DotOutlineActive : StyleColor_ColorPicker_DotOutline ] );
+		{
+			float dr, dg, db;
+			desc.spaceToSRGB( dr, dg, db, comp[0], comp[1], comp[2] );
+			dr = ImSaturate( dr ); dg = ImSaturate( dg ); db = ImSaturate( db );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			dl->AddCircleFilled( dotPos, dotRadius + 1.0f, IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, 2.0f );
+			dl->AddCircle( dotPos, dotRadius + 1.0f, dotOutCol, 0, isDraggingPlane ? 2.0f : 1.0f );
+		}
+
+		// Crosshairs on plane
+		{
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
+			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+		}
+
+		// Vertical slider
+		{
+			int sliderAxis = desc.sliderAxis;
+			float sliderSegH = vslider_bb.GetHeight() / ( float )sliderRes;
+			for ( int i = 0; i < sliderRes; ++i )
+			{
+				float t0 = ( float )i / ( float )sliderRes;
+				float t1 = ( float )( i + 1 ) / ( float )sliderRes;
+				float v0 = ImLerp( desc.axisMin[ sliderAxis ], desc.axisMax[ sliderAxis ], t0 );
+				float v1 = ImLerp( desc.axisMin[ sliderAxis ], desc.axisMax[ sliderAxis ], t1 );
+
+				float c0[3] = { comp[0], comp[1], comp[2] };
+				float c1[3] = { comp[0], comp[1], comp[2] };
+				c0[ sliderAxis ] = v0;
+				c1[ sliderAxis ] = v1;
+
+				float r0, g0, b0, r1, g1, b1;
+				desc.spaceToSRGB( r0, g0, b0, c0[0], c0[1], c0[2] );
+				desc.spaceToSRGB( r1, g1, b1, c1[0], c1[1], c1[2] );
+				r0 = ImSaturate( r0 ); g0 = ImSaturate( g0 ); b0 = ImSaturate( b0 );
+				r1 = ImSaturate( r1 ); g1 = ImSaturate( g1 ); b1 = ImSaturate( b1 );
+
+				ImU32 col0 = IM_COL32( ( int )( r0 * 255.0f + 0.5f ), ( int )( g0 * 255.0f + 0.5f ), ( int )( b0 * 255.0f + 0.5f ), 255 );
+				ImU32 col1 = IM_COL32( ( int )( r1 * 255.0f + 0.5f ), ( int )( g1 * 255.0f + 0.5f ), ( int )( b1 * 255.0f + 0.5f ), 255 );
+
+				ImVec2 segMin( vslider_bb.Min.x, vslider_bb.Min.y + sliderSegH * i );
+				ImVec2 segMax( vslider_bb.Max.x, vslider_bb.Min.y + sliderSegH * ( i + 1 ) );
+				dl->AddRectFilledMultiColor( segMin, segMax, col0, col0, col1, col1 );
+			}
+			dl->AddRect( vslider_bb.Min, vslider_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+
+			// Slider handle
+			float handleT = ImSaturate( ImNormalize01( comp[ sliderAxis ], desc.axisMin[ sliderAxis ], desc.axisMax[ sliderAxis ] ) );
+			float handleY = ImLerp( vslider_bb.Min.y, vslider_bb.Max.y, handleT );
+			float hh = 3.0f;
+			ImVec2 handleMin( vslider_bb.Min.x - 1.0f, handleY - hh );
+			ImVec2 handleMax( vslider_bb.Max.x + 1.0f, handleY + hh );
+
+			float hr, hg, hb;
+			desc.spaceToSRGB( hr, hg, hb, comp[0], comp[1], comp[2] );
+			hr = ImSaturate( hr ); hg = ImSaturate( hg ); hb = ImSaturate( hb );
+			ImU32 handleFill = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
+
+			dl->AddRectFilled( handleMin, handleMax, handleFill, 2.0f );
+			dl->AddRect( handleMin, handleMax, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		// Component sliders
+		for ( int ci = 0; ci < 3; ++ci )
+		{
+			ImColorPickerSlider1DData cbData;
+			cbData.desc = &desc;
+			cbData.comp[0] = comp[0]; cbData.comp[1] = comp[1]; cbData.comp[2] = comp[2];
+			cbData.varyAxis = ci;
+
+			DrawProceduralColor1DBilinear( dl, ColorPickerSlider1DCallback, &cbData,
+				desc.axisMin[ci], desc.axisMax[ci],
+				comp_bb[ci].Min, comp_bb[ci].GetSize(), 16 );
+			dl->AddRect( comp_bb[ci].Min, comp_bb[ci].Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+
+			// Handle
+			float t = ImSaturate( ImNormalize01( comp[ci], desc.axisMin[ci], desc.axisMax[ci] ) );
+			float handleX = ImLerp( comp_bb[ci].Min.x, comp_bb[ci].Max.x, t );
+			float hw = 3.0f;
+			ImVec2 hMin( handleX - hw, comp_bb[ci].Min.y - 1.0f );
+			ImVec2 hMax( handleX + hw, comp_bb[ci].Max.y + 1.0f );
+			dl->AddRectFilled( hMin, hMax, IM_COL32_WHITE, 2.0f );
+			dl->AddRect( hMin, hMax, IM_COL32( 0, 0, 0, 180 ), 2.0f );
+
+			// Label
+			char compLabel[32];
+			ImFormatString( compLabel, IM_ARRAYSIZE( compLabel ), "%s: ", desc.axisName[ci] );
+			ImVec2 textSize = ImGui::CalcTextSize( compLabel );
+			ImVec2 textPos( comp_bb[ci].Min.x + 2.0f, comp_bb[ci].Min.y + ( compSliderH - textSize.y ) * 0.5f );
+			dl->AddText( textPos, IM_COL32_WHITE, compLabel );
+
+			// Value text
+			char valStr[32];
+			ImFormatString( valStr, IM_ARRAYSIZE( valStr ), desc.axisFormat[ci], comp[ci] );
+			ImVec2 valSize = ImGui::CalcTextSize( valStr );
+			ImVec2 valPos( comp_bb[ci].Max.x - valSize.x - 2.0f, comp_bb[ci].Min.y + ( compSliderH - valSize.y ) * 0.5f );
+			dl->AddText( valPos, IM_COL32_WHITE, valStr );
+		}
+
+		// Label
+		if ( label_size.x > 0.0f )
+			ImGui::RenderText( ImVec2( plane_bb.Max.x + style.ItemInnerSpacing.x, plane_bb.Min.y + style.FramePadding.y ), label );
+
+		// --- HIT TESTING ---
+		ImVec2 mp = g.IO.MousePos;
+		bool mouseInPlane = plane_bb.Contains( mp );
+		bool mouseInVSlider = vslider_bb.Contains( mp );
+		int mouseInComp = -1;
+		for ( int i = 0; i < 3; ++i )
+			if ( comp_bb[i].Contains( mp ) ) mouseInComp = i;
+
+		// Hover cursor
+		if ( hovered && g.ActiveId != id )
+		{
+			if ( mouseInPlane || mouseInVSlider || mouseInComp >= 0 )
+				ImGui::SetMouseCursor( ImGuiMouseCursor_Hand );
+		}
+
+		// --- INTERACTIONS ---
+		ImGui::PushID( id );
+
+		if ( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) )
+		{
+			int newMode = 0;
+			if ( mouseInPlane ) newMode = 1;
+			else if ( mouseInVSlider ) newMode = 2;
+			else if ( mouseInComp >= 0 ) newMode = 3 + mouseInComp;
+
+			if ( newMode > 0 )
+			{
+				*pDragMode = newMode;
+				ImGui::SetActiveID( id, window );
+				ImGui::SetFocusID( id, window );
+				ImGui::FocusWindow( window );
+				ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+			}
+		}
+
+		if ( g.ActiveId == id && ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+		{
+			if ( *pDragMode == 1 ) // plane
+			{
+				float u = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f );
+				float v = ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f );
+				comp[ desc.planeAxisX ] = ImLerp( desc.axisMin[ desc.planeAxisX ], desc.axisMax[ desc.planeAxisX ], u );
+				comp[ desc.planeAxisY ] = ImLerp( desc.axisMin[ desc.planeAxisY ], desc.axisMax[ desc.planeAxisY ], v );
+				value_changed = true;
+			}
+			else if ( *pDragMode == 2 ) // vslider
+			{
+				float t = ImClamp( ( mp.y - vslider_bb.Min.y ) / vslider_bb.GetHeight(), 0.0f, 1.0f );
+				comp[ desc.sliderAxis ] = ImLerp( desc.axisMin[ desc.sliderAxis ], desc.axisMax[ desc.sliderAxis ], t );
+				value_changed = true;
+			}
+			else if ( *pDragMode >= 3 && *pDragMode <= 5 ) // component sliders
+			{
+				int ci = *pDragMode - 3;
+				float t = ImClamp( ( mp.x - comp_bb[ci].Min.x ) / comp_bb[ci].GetWidth(), 0.0f, 1.0f );
+				comp[ci] = ImLerp( desc.axisMin[ci], desc.axisMax[ci], t );
+				value_changed = true;
+			}
+		}
+
+		if ( g.ActiveId == id && ImGui::IsMouseReleased( ImGuiMouseButton_Left ) )
+		{
+			ImGui::ClearActiveID();
+			*pDragMode = 0;
+		}
+
+		ImGui::PopID();
+
+		// Convert back to sRGB
+		if ( value_changed )
+		{
+			// Persist space-native values so next frame doesn't lose them
+			storage->SetFloat( idC0, comp[0] );
+			storage->SetFloat( idC1, comp[1] );
+			storage->SetFloat( idC2, comp[2] );
+
+			desc.spaceToSRGB( color->x, color->y, color->z, comp[0], comp[1], comp[2] );
+			color->x = ImSaturate( color->x );
+			color->y = ImSaturate( color->y );
+			color->z = ImSaturate( color->z );
+			color->w = alpha;
+			ImGui::MarkItemEdited( id );
+		}
+
+		return value_changed;
+	}
+
+	// --- Per-space wrappers ---
+
+	// sRGB picker with configurable fixed axis
+	static void sRGBIdentity( float& out_a, float& out_b, float& out_c, float a, float b, float c )
+	{
+		out_a = a; out_b = b; out_c = c;
+	}
+
+	bool ColorPickerSRGB( char const* label, ImVec4* color, int fixedAxis, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		int pX, pY, sA;
+		switch ( fixedAxis )
+		{
+		case 0: pX = 1; pY = 2; sA = 0; break; // R fixed -> GB plane
+		case 1: pX = 0; pY = 2; sA = 1; break; // G fixed -> RB plane
+		default: pX = 0; pY = 1; sA = 2; break; // B fixed -> RG plane
+		}
+		const char* names[] = { "R", "G", "B" };
+		ImColorPickerSpaceDesc desc;
+		desc.sRGBToSpace = sRGBIdentity;
+		desc.spaceToSRGB = sRGBIdentity;
+		desc.axisName[0] = names[0]; desc.axisName[1] = names[1]; desc.axisName[2] = names[2];
+		desc.axisFormat[0] = "%.3f"; desc.axisFormat[1] = "%.3f"; desc.axisFormat[2] = "%.3f";
+		desc.axisMin[0] = 0.0f; desc.axisMin[1] = 0.0f; desc.axisMin[2] = 0.0f;
+		desc.axisMax[0] = 1.0f; desc.axisMax[1] = 1.0f; desc.axisMax[2] = 1.0f;
+		desc.planeAxisX = pX; desc.planeAxisY = pY; desc.sliderAxis = sA;
+		return ColorPickerInternal( label, color, desc );
+	}
+
+	bool ColorPickerHSV( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImColorPickerSpaceDesc desc;
+		desc.sRGBToSpace = ColorConvertRGBtoHSV;
+		desc.spaceToSRGB = ColorConvertHSVtoRGB;
+		desc.axisName[0] = "H"; desc.axisName[1] = "S"; desc.axisName[2] = "V";
+		desc.axisFormat[0] = "%.3f"; desc.axisFormat[1] = "%.3f"; desc.axisFormat[2] = "%.3f";
+		desc.axisMin[0] = 0.0f; desc.axisMin[1] = 0.0f; desc.axisMin[2] = 0.0f;
+		desc.axisMax[0] = 1.0f; desc.axisMax[1] = 1.0f; desc.axisMax[2] = 1.0f;
+		desc.planeAxisX = 0; desc.planeAxisY = 1; desc.sliderAxis = 2; // H on X, S on Y, V on slider
+		return ColorPickerInternal( label, color, desc );
+	}
+
+	bool ColorPickerOkLab( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImColorPickerSpaceDesc desc;
+		desc.sRGBToSpace = ColorConvertRGBtoOKLAB;
+		desc.spaceToSRGB = ColorConvertOKLABtoRGB;
+		desc.axisName[0] = "L"; desc.axisName[1] = "a"; desc.axisName[2] = "b";
+		desc.axisFormat[0] = "%.3f"; desc.axisFormat[1] = "%.3f"; desc.axisFormat[2] = "%.3f";
+		desc.axisMin[0] = 0.0f; desc.axisMin[1] = -0.4f; desc.axisMin[2] = -0.4f;
+		desc.axisMax[0] = 1.0f; desc.axisMax[1] = 0.4f;  desc.axisMax[2] = 0.4f;
+		desc.planeAxisX = 1; desc.planeAxisY = 2; desc.sliderAxis = 0; // a on X, b on Y, L on slider
+		return ColorPickerInternal( label, color, desc );
+	}
+
+	bool ColorPickerOkLCH( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImColorPickerSpaceDesc desc;
+		desc.sRGBToSpace = ColorConvertsRGBtoOKLCH;
+		desc.spaceToSRGB = ColorConvertOKLCHtosRGB;
+		desc.axisName[0] = "L"; desc.axisName[1] = "C"; desc.axisName[2] = "H";
+		desc.axisFormat[0] = "%.3f"; desc.axisFormat[1] = "%.3f"; desc.axisFormat[2] = "%.3f";
+		desc.axisMin[0] = 0.0f; desc.axisMin[1] = 0.0f; desc.axisMin[2] = 0.0f;
+		desc.axisMax[0] = 1.0f; desc.axisMax[1] = 0.4f; desc.axisMax[2] = 1.0f;
+		desc.planeAxisX = 1; desc.planeAxisY = 2; desc.sliderAxis = 0; // C on X, H on Y, L on slider
+		return ColorPickerInternal( label, color, desc );
+	}
+
+	bool ColorPickerCIELab( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImColorPickerSpaceDesc desc;
+		desc.sRGBToSpace = ColorConvertsRGBtoCIELab;
+		desc.spaceToSRGB = ColorConvertCIELabtosRGB;
+		desc.axisName[0] = "L*"; desc.axisName[1] = "a*"; desc.axisName[2] = "b*";
+		desc.axisFormat[0] = "%.1f"; desc.axisFormat[1] = "%.1f"; desc.axisFormat[2] = "%.1f";
+		desc.axisMin[0] = 0.0f;  desc.axisMin[1] = -128.0f; desc.axisMin[2] = -128.0f;
+		desc.axisMax[0] = 100.0f; desc.axisMax[1] = 127.0f;  desc.axisMax[2] = 127.0f;
+		desc.planeAxisX = 1; desc.planeAxisY = 2; desc.sliderAxis = 0; // a* on X, b* on Y, L* on slider
+		return ColorPickerInternal( label, color, desc );
+	}
+
+	// XYZ picker uses xyY for the plane, Y for the slider
+	static void sRGBtoxyY_ForPicker( float& out_x, float& out_y, float& out_Y, float r, float g, float b )
+	{
+		float X, Y, Z;
+		ColorConvertsRGBtoXYZ( X, Y, Z, r, g, b );
+		ColorConvertXYZtoxyY( out_x, out_y, out_Y, X, Y, Z );
+	}
+	static void xyYtosRGB_ForPicker( float& out_r, float& out_g, float& out_b, float x, float y, float Y )
+	{
+		float X, Yout, Z;
+		ColorConvertxyYtoXYZ( X, Yout, Z, x, y, Y );
+		ColorConvertXYZtosRGB( out_r, out_g, out_b, X, Yout, Z );
+	}
+
+	bool ColorPickerXYZ( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImColorPickerSpaceDesc desc;
+		desc.sRGBToSpace = sRGBtoxyY_ForPicker;
+		desc.spaceToSRGB = xyYtosRGB_ForPicker;
+		desc.axisName[0] = "x"; desc.axisName[1] = "y"; desc.axisName[2] = "Y";
+		desc.axisFormat[0] = "%.4f"; desc.axisFormat[1] = "%.4f"; desc.axisFormat[2] = "%.3f";
+		desc.axisMin[0] = 0.0f; desc.axisMin[1] = 0.0f; desc.axisMin[2] = 0.0f;
+		desc.axisMax[0] = 0.8f; desc.axisMax[1] = 0.9f; desc.axisMax[2] = 1.0f;
+		desc.planeAxisX = 0; desc.planeAxisY = 1; desc.sliderAxis = 2; // x on X, y on Y, Y on slider
+		return ColorPickerInternal( label, color, desc );
+	}
+
+	bool ColorPicker( char const* label, ImVec4* color, ImColorPickerSpace space, int fixedAxis, ImVec2 size )
+	{
+		switch ( space )
+		{
+		case ImColorPickerSpace_sRGB:  return ColorPickerSRGB( label, color, fixedAxis, size );
+		case ImColorPickerSpace_HSV:   return ColorPickerHSV( label, color, size );
+		case ImColorPickerSpace_OkLab: return ColorPickerOkLab( label, color, size );
+		case ImColorPickerSpace_OkLCH: return ColorPickerOkLCH( label, color, size );
+		case ImColorPickerSpace_CIELab: return ColorPickerCIELab( label, color, size );
+		case ImColorPickerSpace_XYZ:   return ColorPickerXYZ( label, color, size );
+		default: return false;
+		}
 	}
 
 	//////////////////////////////////////////////////////////////////////////

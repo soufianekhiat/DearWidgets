@@ -3650,6 +3650,44 @@ namespace ImWidgets {
 				ImGui::ColorEdit4( "HDR Color##Wheel2", &wheelColor2.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR );
 			}
 
+			if ( ImGui::CollapsingHeader( "Color Picker" ) )
+			{
+				static ImVec4 pickerColor( 0.4f, 0.7f, 0.3f, 1.0f );
+				static int pickerSpace = ImColorPickerSpace_sRGB;
+				static int srgbFixedAxis = 2;
+
+				ImGui::Combo( "Space##Picker", &pickerSpace, "sRGB\0HSV\0OkLab\0OkLCH\0CIE Lab\0XYZ\0" );
+				if ( pickerSpace == ImColorPickerSpace_sRGB )
+					ImGui::Combo( "Fixed Axis##Picker", &srgbFixedAxis, "R (GB plane)\0G (RB plane)\0B (RG plane)\0" );
+
+				ColorPicker( "##PickerMain", &pickerColor, ( ImColorPickerSpace )pickerSpace, srgbFixedAxis );
+
+				ImGui::ColorEdit4( "Color##Picker", &pickerColor.x, ImGuiColorEditFlags_Float );
+
+				ImGui::Separator();
+				ImGui::Text( "Side-by-side: OkLab vs CIE Lab" );
+				if ( ImGui::BeginTable( "##PickerCompare", 2, ImGuiTableFlags_NoSavedSettings ) )
+				{
+					float colW = ImGui::GetContentRegionAvail().x * 0.5f - ImGui::GetStyle().ItemSpacing.x;
+					ImGui::TableSetupColumn( "OkLab", ImGuiTableColumnFlags_WidthFixed, colW );
+					ImGui::TableSetupColumn( "CIE Lab", ImGuiTableColumnFlags_WidthFixed, colW );
+					ImGui::TableHeadersRow();
+
+					static ImVec4 cmpColor( 0.6f, 0.3f, 0.8f, 1.0f );
+
+					ImGui::TableNextColumn();
+					ImGui::SetNextItemWidth( colW );
+					ColorPickerOkLab( "##CmpOkLab", &cmpColor );
+
+					ImGui::TableNextColumn();
+					ImGui::SetNextItemWidth( colW );
+					ColorPickerCIELab( "##CmpCIELab", &cmpColor );
+
+					ImGui::EndTable();
+				}
+				ImGui::ColorEdit4( "Shared Color##PickerCmp", &pickerColor.x, ImGuiColorEditFlags_Float );
+			}
+
 			if ( ImGui::CollapsingHeader( "Primaries Wheels (Lift/Gamma/Gain/Offset)" ) )
 			{
 				static ImVec4 primColors[ 4 ] = {

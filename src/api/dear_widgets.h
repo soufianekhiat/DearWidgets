@@ -370,6 +370,13 @@ enum ImWidgetsStyleColor
 	StyleColor_Gizmo_Handle,				// Handle fill
 	StyleColor_Gizmo_HandleActive,			// Handle fill when active
 
+	// Color Picker
+	StyleColor_ColorPicker_DotOutline,		// Dot outline (white)
+	StyleColor_ColorPicker_DotOutlineActive,// Dot outline when active (yellow)
+	StyleColor_ColorPicker_Crosshair,		// Crosshair lines (white, low alpha)
+	StyleColor_ColorPicker_SliderOutline,	// Vertical slider outline (black, medium alpha)
+	StyleColor_ColorPicker_SliderHandle,	// Vertical slider handle (white)
+
 	StyleColor_Count
 };
 
@@ -468,6 +475,13 @@ enum ImWidgetsStyleVar
 	StyleVar_ToneCurve_GradMarginBottom,
 	StyleVar_ToneCurve_BandThickness,
 	StyleVar_ToneCurve_BandGap,
+
+	// Color Picker
+	StyleVar_ColorPicker_DotRadius,
+	StyleVar_ColorPicker_PlaneResolution,
+	StyleVar_ColorPicker_SliderWidth,
+	StyleVar_ColorPicker_SliderResolution,
+	StyleVar_ColorPicker_ComponentSliderHeight,
 
 	StyleVar_Count
 };
@@ -581,6 +595,13 @@ struct ImWidgetsStyle
 	float	Gizmo_HandleSize;					// Corner handle half-size (px)
 	float	Gizmo_RotationHandleOffset;			// Distance from top edge to rotation handle (px)
 	float	Gizmo_OutlineThickness;				// Bounding box outline thickness (px)
+
+	// Color Picker
+	float	ColorPicker_DotRadius;				// Dot indicator radius (px)
+	float	ColorPicker_PlaneResolution;		// 2D plane grid resolution per axis
+	float	ColorPicker_SliderWidth;			// Vertical slider width (px)
+	float	ColorPicker_SliderResolution;		// Vertical slider segment count
+	float	ColorPicker_ComponentSliderHeight;	// Component slider height (px)
 
 	ImVec4  Colors[ StyleColor_Count ];
 
@@ -837,6 +858,20 @@ struct ImWidgetsStyle
 		Colors[ StyleColor_Gizmo_Outline ]                 = ImVec4( 1.0f, 1.0f, 1.0f, 180.0f / 255.0f );
 		Colors[ StyleColor_Gizmo_Handle ]                  = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
 		Colors[ StyleColor_Gizmo_HandleActive ]            = ImVec4( 1.0f, 1.0f, 0.0f, 1.0f );
+
+		// Color Picker Colors
+		Colors[ StyleColor_ColorPicker_DotOutline ]        = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
+		Colors[ StyleColor_ColorPicker_DotOutlineActive ]  = ImVec4( 1.0f, 1.0f, 0.0f, 1.0f );
+		Colors[ StyleColor_ColorPicker_Crosshair ]         = ImVec4( 1.0f, 1.0f, 1.0f, 40.0f / 255.0f );
+		Colors[ StyleColor_ColorPicker_SliderOutline ]     = ImVec4( 0.0f, 0.0f, 0.0f, 150.0f / 255.0f );
+		Colors[ StyleColor_ColorPicker_SliderHandle ]      = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
+
+		// Color Picker Vars
+		ColorPicker_DotRadius            = 6.0f;
+		ColorPicker_PlaneResolution      = 24.0f;
+		ColorPicker_SliderWidth          = 20.0f;
+		ColorPicker_SliderResolution     = 16.0f;
+		ColorPicker_ComponentSliderHeight = 16.0f;
 	}
 
 	void ScaleAllSizes( float scale_factor )
@@ -918,6 +953,10 @@ struct ImWidgetsStyle
 		Gizmo_HandleSize             = ImTrunc( Gizmo_HandleSize * scale_factor );
 		Gizmo_RotationHandleOffset   = ImTrunc( Gizmo_RotationHandleOffset * scale_factor );
 		Gizmo_OutlineThickness       = ImTrunc( Gizmo_OutlineThickness * scale_factor );
+
+		ColorPicker_DotRadius            = ImTrunc( ColorPicker_DotRadius * scale_factor );
+		ColorPicker_SliderWidth          = ImTrunc( ColorPicker_SliderWidth * scale_factor );
+		ColorPicker_ComponentSliderHeight = ImTrunc( ColorPicker_ComponentSliderHeight * scale_factor );
 	}
 
 	void PushColor( ImWidgetsStyleColor colorIndex, const ImVec4& color )
@@ -1099,6 +1138,18 @@ struct ImWidgetsStyle
 		case StyleColor_ToneCurve_HistogramOverlay: return "ToneCurveHistogramOverlay";
 		case StyleColor_ToneCurve_GradTick: return "ToneCurveGradTick";
 		case StyleColor_ToneCurve_GradLabel: return "ToneCurveGradLabel";
+		case StyleColor_HDRWheel_RightArc: return "HDRWheelRightArc";
+		case StyleColor_HDRWheel_LeftArcMin: return "HDRWheelLeftArcMin";
+		case StyleColor_HDRWheel_LeftArcMax: return "HDRWheelLeftArcMax";
+		case StyleColor_Gizmo_Canvas: return "GizmoCanvas";
+		case StyleColor_Gizmo_Outline: return "GizmoOutline";
+		case StyleColor_Gizmo_Handle: return "GizmoHandle";
+		case StyleColor_Gizmo_HandleActive: return "GizmoHandleActive";
+		case StyleColor_ColorPicker_DotOutline: return "ColorPickerDotOutline";
+		case StyleColor_ColorPicker_DotOutlineActive: return "ColorPickerDotOutlineActive";
+		case StyleColor_ColorPicker_Crosshair: return "ColorPickerCrosshair";
+		case StyleColor_ColorPicker_SliderOutline: return "ColorPickerSliderOutline";
+		case StyleColor_ColorPicker_SliderHandle: return "ColorPickerSliderHandle";
 		case StyleColor_Count: break;
 		}
 
@@ -1188,6 +1239,11 @@ private:
 		case StyleVar_ToneCurve_GradMarginBottom:		return &ToneCurve_GradMarginBottom;
 		case StyleVar_ToneCurve_BandThickness:			return &ToneCurve_BandThickness;
 		case StyleVar_ToneCurve_BandGap:				return &ToneCurve_BandGap;
+		case StyleVar_ColorPicker_DotRadius:			return &ColorPicker_DotRadius;
+		case StyleVar_ColorPicker_PlaneResolution:		return &ColorPicker_PlaneResolution;
+		case StyleVar_ColorPicker_SliderWidth:			return &ColorPicker_SliderWidth;
+		case StyleVar_ColorPicker_SliderResolution:		return &ColorPicker_SliderResolution;
+		case StyleVar_ColorPicker_ComponentSliderHeight:	return &ColorPicker_ComponentSliderHeight;
 		default:										return nullptr;
 		}
 	}
@@ -1634,6 +1690,18 @@ enum ImColorWheelMode_
 	ImColorWheelMode_HSV = 0,	// Hue-Saturation disc, Value on master slider
 	ImColorWheelMode_OkLCH,		// Perceptually uniform: Hue-Chroma disc, Lightness on master slider
 	ImColorWheelMode_COUNT
+};
+
+typedef int ImColorPickerSpace;
+enum ImColorPickerSpace_
+{
+	ImColorPickerSpace_sRGB = 0,
+	ImColorPickerSpace_HSV,
+	ImColorPickerSpace_OkLab,
+	ImColorPickerSpace_OkLCH,
+	ImColorPickerSpace_CIELab,
+	ImColorPickerSpace_XYZ,
+	ImColorPickerSpace_COUNT
 };
 
 typedef int ImColorWarperMode;
@@ -2268,6 +2336,19 @@ namespace ImWidgets{
 	IMGUI_API void	ColorConvertOKLCHtosRGB( float& out_r, float& out_g, float& out_b, float L, float c, float h );
 	IMGUI_API void	ColorConvertRGBtoHSV( float& out_h, float& out_s, float& out_v, float r, float g, float b );
 	IMGUI_API void	ColorConvertHSVtoRGB( float& out_r, float& out_g, float& out_b, float h, float s, float v );
+
+	// sRGB <-> XYZ (D65)
+	IMGUI_API void	ColorConvertsRGBtoXYZ( float& out_X, float& out_Y, float& out_Z, float r, float g, float b );
+	IMGUI_API void	ColorConvertXYZtosRGB( float& out_r, float& out_g, float& out_b, float X, float Y, float Z );
+	// CIE Lab (L*a*b* D65)
+	IMGUI_API void	ColorConvertXYZtoCIELab( float& out_L, float& out_a, float& out_b, float X, float Y, float Z );
+	IMGUI_API void	ColorConvertCIELabtoXYZ( float& out_X, float& out_Y, float& out_Z, float L, float a, float b );
+	IMGUI_API void	ColorConvertsRGBtoCIELab( float& out_L, float& out_a, float& out_b, float r, float g, float b );
+	IMGUI_API void	ColorConvertCIELabtosRGB( float& out_r, float& out_g, float& out_b, float L, float a, float b );
+	// CIE xyY <-> XYZ
+	IMGUI_API void	ColorConvertXYZtoxyY( float& out_x, float& out_y, float& out_Y, float X, float Y, float Z );
+	IMGUI_API void	ColorConvertxyYtoXYZ( float& out_X, float& out_Y, float& out_Z, float x, float y, float Yval );
+
 	ImU32	KelvinTemperatureTosRGBColors( float temperature ); // [ 1000 K; 12000 K ]
 
 	inline
@@ -2684,6 +2765,15 @@ namespace ImWidgets{
 	IMGUI_API bool ColorWheel( char const* label, ImVec4* color, ImColorWheelMode mode = ImColorWheelMode_HSV, float hdr_max = 1.0f, bool fixedIntensity = false, ImVec2 size = ImVec2( 0, 0 ) );
 	IMGUI_API bool PrimariesWheel( char const* label, ImVec4* color, float* yValue, float yMin, float yMax, ImColorWheelMode mode = ImColorWheelMode_HSV, float ringThickness = 12.0f, ImVec2 size = ImVec2( 0, 0 ) );
 	IMGUI_API bool HDRWheel( char const* label, ImVec4* color, float* yValue, float yMin, float yMax, float* rightValue, float rightMin, float rightMax, float* leftValue, float leftMin, float leftMax, ImColorWheelMode mode = ImColorWheelMode_HSV, float ringThickness = 12.0f, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// Color Picker
+	IMGUI_API bool ColorPickerSRGB( char const* label, ImVec4* color, int fixedAxis = 2, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerHSV( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerOkLab( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerOkLCH( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerCIELab( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerXYZ( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPicker( char const* label, ImVec4* color, ImColorPickerSpace space = ImColorPickerSpace_sRGB, int fixedAxis = 2, ImVec2 size = ImVec2( 0, 0 ) );
 
 	// Transform Gizmo
 	IMGUI_API bool ImageTransformGizmo( char const* label, ImTransformImage* images, int imageCount, int* selectedIndex, ImTransformGizmoFlags flags = ImTransformGizmoFlags_None, ImVec2 canvasSize = ImVec2( 0, 0 ) );

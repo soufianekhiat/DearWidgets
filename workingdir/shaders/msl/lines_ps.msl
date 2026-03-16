@@ -604,36 +604,36 @@ struct KernelContext_0
 #line 223
         }
 
-#line 230
+#line 232
         if(has_prev_0)
         {
 
-#line 230
+#line 232
             _S8 = lx_0 < 0.0;
 
-#line 230
+#line 232
         }
         else
         {
 
-#line 230
+#line 232
             _S8 = false;
 
-#line 230
+#line 232
         }
 
-#line 230
+#line 232
         if(_S8)
         {
-            float _S18 = max(d_2, join_dist_0(P_0, PS_CONSTANT_BUFFER_1->p0_0, ex_0, PS_CONSTANT_BUFFER_1->prev_dir_0, ly_0, jtype_1, halfw_1, (&kernelContext_0)->PS_CONSTANT_BUFFER_0->miter_limit_0));
+            float _S18 = min(d_2, join_dist_0(P_0, PS_CONSTANT_BUFFER_1->p0_0, ex_0, PS_CONSTANT_BUFFER_1->prev_dir_0, ly_0, jtype_1, halfw_1, (&kernelContext_0)->PS_CONSTANT_BUFFER_0->miter_limit_0));
 
-#line 232
+#line 234
             zone_0 = int(2);
 
-#line 232
+#line 234
             d_2 = _S18;
 
-#line 230
+#line 232
         }
         else
         {
@@ -642,79 +642,79 @@ struct KernelContext_0
             if(has_next_0)
             {
 
-#line 235
+#line 237
                 _S8 = lx_0 > seg_len_0;
 
-#line 235
+#line 237
             }
             else
             {
 
-#line 235
+#line 237
                 _S8 = false;
 
-#line 235
+#line 237
             }
 
-#line 235
+#line 237
             if(_S8)
             {
-                float _S19 = max(d_2, join_dist_0(P_0, PS_CONSTANT_BUFFER_1->p1_0, ex_0, PS_CONSTANT_BUFFER_1->next_dir_0, ly_0, jtype_1, halfw_1, (&kernelContext_0)->PS_CONSTANT_BUFFER_0->miter_limit_0));
+                float _S19 = min(d_2, join_dist_0(P_0, PS_CONSTANT_BUFFER_1->p1_0, ex_0, PS_CONSTANT_BUFFER_1->next_dir_0, ly_0, jtype_1, halfw_1, (&kernelContext_0)->PS_CONSTANT_BUFFER_0->miter_limit_0));
 
-#line 237
+#line 239
                 zone_0 = int(3);
 
-#line 237
+#line 239
                 d_2 = _S19;
 
-#line 235
+#line 237
             }
             else
             {
 
-#line 235
+#line 237
                 zone_0 = int(0);
 
-#line 235
+#line 237
             }
 
-#line 230
+#line 232
         }
 
 #line 172
     }
 
-#line 243
+#line 245
     float d_4 = d_2 - t_1;
     if(d_4 < 0.0)
     {
         if(dbg_0)
         {
 
-#line 246
+#line 248
             _S8 = zone_0 >= int(2);
 
-#line 246
+#line 248
         }
         else
         {
 
-#line 246
+#line 248
             _S8 = false;
 
-#line 246
+#line 248
         }
 
-#line 246
+#line 248
         if(_S8)
         {
 
-#line 246
+#line 248
             pixelOutput_0 _S20 = { float4(1.0, 0.0, 0.0, (&kernelContext_0)->PS_CONSTANT_BUFFER_0->color_0.w) };
             return _S20;
         }
 
-#line 247
+#line 249
         pixelOutput_0 _S21 = { float4((&kernelContext_0)->PS_CONSTANT_BUFFER_0->color_0.xyz, (&kernelContext_0)->PS_CONSTANT_BUFFER_0->color_0.w) };
         return _S21;
     }
@@ -725,34 +725,34 @@ struct KernelContext_0
         if(dbg_0)
         {
 
-#line 254
+#line 256
             _S8 = zone_0 >= int(2);
 
-#line 254
+#line 256
         }
         else
         {
 
-#line 254
+#line 256
             _S8 = false;
 
-#line 254
+#line 256
         }
 
-#line 254
+#line 256
         if(_S8)
         {
 
-#line 254
+#line 256
             pixelOutput_0 _S22 = { float4(1.0, 0.0, 0.0, a_0) };
             return _S22;
         }
 
-#line 255
+#line 257
         pixelOutput_0 _S23 = { float4((&kernelContext_0)->PS_CONSTANT_BUFFER_0->color_0.xyz, a_0) };
         return _S23;
     }
 
-#line 256
+#line 258
 }
 

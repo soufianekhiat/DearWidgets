@@ -321,7 +321,7 @@ fn main_ps( _S4 : pixelInput_0, @builtin(position) pos_0 : vec4<f32>) -> pixelOu
         }
         if(_S8)
         {
-            var _S18 : f32 = max(d_2, join_dist_0(P_0, PS_CONSTANT_BUFFER_0.p0_0, ex_0, PS_CONSTANT_BUFFER_0.prev_dir_0, ly_0, jtype_1, halfw_1, PS_CONSTANT_BUFFER_0.miter_limit_0));
+            var _S18 : f32 = min(d_2, join_dist_0(P_0, PS_CONSTANT_BUFFER_0.p0_0, ex_0, PS_CONSTANT_BUFFER_0.prev_dir_0, ly_0, jtype_1, halfw_1, PS_CONSTANT_BUFFER_0.miter_limit_0));
             zone_0 = i32(2);
             d_2 = _S18;
         }
@@ -337,7 +337,7 @@ fn main_ps( _S4 : pixelInput_0, @builtin(position) pos_0 : vec4<f32>) -> pixelOu
             }
             if(_S8)
             {
-                var _S19 : f32 = max(d_2, join_dist_0(P_0, PS_CONSTANT_BUFFER_0.p1_0, ex_0, PS_CONSTANT_BUFFER_0.next_dir_0, ly_0, jtype_1, halfw_1, PS_CONSTANT_BUFFER_0.miter_limit_0));
+                var _S19 : f32 = min(d_2, join_dist_0(P_0, PS_CONSTANT_BUFFER_0.p1_0, ex_0, PS_CONSTANT_BUFFER_0.next_dir_0, ly_0, jtype_1, halfw_1, PS_CONSTANT_BUFFER_0.miter_limit_0));
                 zone_0 = i32(3);
                 d_2 = _S19;
             }

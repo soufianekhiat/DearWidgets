@@ -508,8 +508,115 @@ void main()
     else
     {
 
-#line 199
-        float u_0 = dx_1 + PS_CONSTANT_BUFFER_0.dash_offset_0;
+#line 204
+        if(has_prev_0)
+        {
+
+#line 204
+            _S5 = (PS_CONSTANT_BUFFER_0.seg_start_0) < 0.00100000004749745;
+
+#line 204
+        }
+        else
+        {
+
+#line 204
+            _S5 = false;
+
+#line 204
+        }
+
+#line 204
+        if(_S5)
+        {
+
+#line 204
+            _S5 = lx_0 < 0.0;
+
+#line 204
+        }
+        else
+        {
+
+#line 204
+            _S5 = false;
+
+#line 204
+        }
+
+#line 204
+        float dx_dash_0;
+
+#line 204
+        if(_S5)
+        {
+
+#line 204
+            dx_dash_0 = PS_CONSTANT_BUFFER_0.total_length_0 + dx_1;
+
+#line 204
+        }
+        else
+        {
+
+#line 204
+            dx_dash_0 = dx_1;
+
+#line 204
+        }
+
+        if(has_next_0)
+        {
+
+#line 206
+            _S5 = (PS_CONSTANT_BUFFER_0.seg_end_0) > (PS_CONSTANT_BUFFER_0.total_length_0 - 0.00100000004749745);
+
+#line 206
+        }
+        else
+        {
+
+#line 206
+            _S5 = false;
+
+#line 206
+        }
+
+#line 206
+        if(_S5)
+        {
+
+#line 206
+            _S5 = lx_0 > seg_len_0;
+
+#line 206
+        }
+        else
+        {
+
+#line 206
+            _S5 = false;
+
+#line 206
+        }
+
+#line 206
+        if(_S5)
+        {
+
+#line 206
+            dx_dash_0 = dx_1 - PS_CONSTANT_BUFFER_0.total_length_0;
+
+#line 206
+        }
+        else
+        {
+
+#line 206
+        }
+
+
+        float u_0 = dx_dash_0 + PS_CONSTANT_BUFFER_0.dash_offset_0;
         float m_0 = u_0 - period_0 * floor(u_0 / period_0);
 
 
@@ -523,220 +630,313 @@ void main()
             if(cap_type_0 == 5)
             {
 
-#line 210
+#line 220
                 d_2 = max(d_3, min(d_start_0, d_end_0));
 
-#line 210
+#line 220
             }
             else
             {
 
-#line 210
+#line 220
                 d_2 = d_3;
 
-#line 210
+#line 220
             }
 
-#line 203
+#line 213
         }
         else
         {
 
-#line 217
+#line 227
             float _S12 = abs(ly_0);
 
-#line 217
+#line 227
             d_2 = min(cap_dist_0(cap_type_0, m_0 - dash_len_0, _S12, t_1), cap_dist_0(cap_type_0, period_0 - m_0, _S12, t_1));
 
-#line 203
+#line 213
         }
 
-#line 223
+#line 233
         if(_S4)
         {
 
-#line 223
+#line 233
             _S5 = dx_1 < 0.0;
 
-#line 223
+#line 233
         }
         else
         {
 
-#line 223
+#line 233
             _S5 = false;
 
-#line 223
+#line 233
         }
 
-#line 223
+#line 233
         if(_S5)
         {
 
-#line 223
+#line 233
             d_2 = cap_dist_0(cap_type_0, - dx_1, abs(ly_0), t_1);
 
-#line 223
+#line 233
         }
         else
         {
 
-#line 225
+#line 235
             if(_S6)
             {
 
-#line 225
+#line 235
                 _S5 = dx_1 > (PS_CONSTANT_BUFFER_0.total_length_0);
 
-#line 225
+#line 235
             }
             else
             {
 
-#line 225
+#line 235
                 _S5 = false;
 
-#line 225
+#line 235
             }
 
-#line 225
+#line 235
             if(_S5)
             {
 
-#line 225
+#line 235
                 d_2 = cap_dist_0(cap_type_0, dx_1 - PS_CONSTANT_BUFFER_0.total_length_0, abs(ly_0), t_1);
 
-#line 225
+#line 235
             }
             else
             {
 
-#line 225
+#line 235
             }
 
-#line 223
+#line 233
         }
 
-#line 230
+#line 246
         if(has_prev_0)
         {
 
-#line 230
+#line 246
             _S5 = lx_0 < 0.0;
 
-#line 230
+#line 246
         }
         else
         {
 
-#line 230
+#line 246
             _S5 = false;
 
-#line 230
+#line 246
         }
 
-#line 230
+#line 246
         if(_S5)
         {
-            float _S13 = max(d_2, join_dist_0(P_0, PS_CONSTANT_BUFFER_0.p0_0, ex_0, PS_CONSTANT_BUFFER_0.prev_dir_0, ly_0, jtype_1, halfw_1, PS_CONSTANT_BUFFER_0.miter_limit_0));
+            float jd_0 = join_dist_0(P_0, PS_CONSTANT_BUFFER_0.p0_0, ex_0, PS_CONSTANT_BUFFER_0.prev_dir_0, ly_0, jtype_1, halfw_1, PS_CONSTANT_BUFFER_0.miter_limit_0);
 
-#line 232
+#line 248
+            float v_al_0;
+
+            if((PS_CONSTANT_BUFFER_0.seg_start_0) < 0.00100000004749745)
+            {
+
+#line 250
+                v_al_0 = PS_CONSTANT_BUFFER_0.total_length_0;
+
+#line 250
+            }
+            else
+            {
+
+#line 250
+                v_al_0 = PS_CONSTANT_BUFFER_0.seg_start_0;
+
+#line 250
+            }
+            float v_u_0 = v_al_0 + PS_CONSTANT_BUFFER_0.dash_offset_0;
+
+            if((v_u_0 - period_0 * floor(v_u_0 / period_0)) < dash_len_0)
+            {
+
+#line 253
+                max_ext_1 = jd_0;
+
+#line 253
+            }
+            else
+            {
+
+#line 253
+                max_ext_1 = max(d_2, jd_0);
+
+#line 253
+            }
+
+#line 253
             zone_0 = 2;
 
-#line 232
-            d_2 = _S13;
+#line 253
+            d_2 = max_ext_1;
 
-#line 230
+#line 246
         }
         else
         {
 
-
+#line 256
             if(has_next_0)
             {
 
-#line 235
+#line 256
                 _S5 = lx_0 > seg_len_0;
 
-#line 235
+#line 256
             }
             else
             {
 
-#line 235
+#line 256
                 _S5 = false;
 
-#line 235
+#line 256
             }
 
-#line 235
+#line 256
             if(_S5)
             {
-                float _S14 = max(d_2, join_dist_0(P_0, PS_CONSTANT_BUFFER_0.p1_0, ex_0, PS_CONSTANT_BUFFER_0.next_dir_0, ly_0, jtype_1, halfw_1, PS_CONSTANT_BUFFER_0.miter_limit_0));
+                float jd_1 = join_dist_0(P_0, PS_CONSTANT_BUFFER_0.p1_0, ex_0, PS_CONSTANT_BUFFER_0.next_dir_0, ly_0, jtype_1, halfw_1, PS_CONSTANT_BUFFER_0.miter_limit_0);
 
-#line 237
+                float v_u_1 = PS_CONSTANT_BUFFER_0.seg_end_0 + PS_CONSTANT_BUFFER_0.dash_offset_0;
+
+                if((v_u_1 - period_0 * floor(v_u_1 / period_0)) < dash_len_0)
+                {
+
+#line 262
+                    max_ext_1 = jd_1;
+
+#line 262
+                }
+                else
+                {
+
+#line 262
+                    max_ext_1 = max(d_2, jd_1);
+
+#line 262
+                }
+
+#line 262
                 zone_0 = 3;
 
-#line 237
-                d_2 = _S14;
+#line 262
+                d_2 = max_ext_1;
 
-#line 235
+#line 256
             }
             else
             {
 
-#line 235
+#line 256
                 zone_0 = 0;
 
-#line 235
+#line 256
             }
 
-#line 230
+#line 246
         }
 
 #line 172
     }
 
-#line 243
+#line 268
     float d_4 = d_2 - t_1;
+
+#line 268
+    vec3 dc_0;
     if(d_4 < 0.0)
     {
         if(dbg_0)
         {
 
-#line 246
+#line 271
             _S5 = zone_0 >= 2;
 
-#line 246
+#line 271
         }
         else
         {
 
-#line 246
+#line 271
             _S5 = false;
 
-#line 246
+#line 271
         }
 
-#line 246
+#line 271
         if(_S5)
         {
 
-#line 246
-            entryPointParam_main_ps_0 = vec4(1.0, 0.0, 0.0, PS_CONSTANT_BUFFER_0.color_0.w);
+            if(jtype_1 == 0)
+            {
 
-#line 246
+#line 274
+                dc_0 = vec3(0.0, 1.0, 0.0);
+
+#line 274
+            }
+            else
+            {
+
+#line 274
+                if(jtype_1 == 2)
+                {
+
+#line 274
+                    dc_0 = vec3(0.0, 0.0, 1.0);
+
+#line 274
+                }
+                else
+                {
+
+#line 274
+                    dc_0 = vec3(1.0, 0.0, 0.0);
+
+#line 274
+                }
+
+#line 274
+            }
+
+#line 274
+            entryPointParam_main_ps_0 = vec4(dc_0, PS_CONSTANT_BUFFER_0.color_0.w);
+
+#line 274
             return;
         }
 
-#line 246
+#line 274
         entryPointParam_main_ps_0 = vec4(PS_CONSTANT_BUFFER_0.color_0.xyz, PS_CONSTANT_BUFFER_0.color_0.w);
 
-#line 246
+#line 274
         return;
     }
     else
     {
+
 
 
         float d_5 = d_4 / max(PS_CONSTANT_BUFFER_0.aa_0, 0.00000999999974738);
@@ -744,38 +944,69 @@ void main()
         if(dbg_0)
         {
 
-#line 254
+#line 283
             _S5 = zone_0 >= 2;
 
-#line 254
+#line 283
         }
         else
         {
 
-#line 254
+#line 283
             _S5 = false;
 
-#line 254
+#line 283
         }
 
-#line 254
+#line 283
         if(_S5)
         {
+            if(jtype_1 == 0)
+            {
 
-#line 254
-            entryPointParam_main_ps_0 = vec4(1.0, 0.0, 0.0, a_0);
+#line 285
+                dc_0 = vec3(0.0, 1.0, 0.0);
 
-#line 254
+#line 285
+            }
+            else
+            {
+
+#line 285
+                if(jtype_1 == 2)
+                {
+
+#line 285
+                    dc_0 = vec3(0.0, 0.0, 1.0);
+
+#line 285
+                }
+                else
+                {
+
+#line 285
+                    dc_0 = vec3(1.0, 0.0, 0.0);
+
+#line 285
+                }
+
+#line 285
+            }
+
+#line 285
+            entryPointParam_main_ps_0 = vec4(dc_0, a_0);
+
+#line 285
             return;
         }
 
-#line 254
+#line 285
         entryPointParam_main_ps_0 = vec4(PS_CONSTANT_BUFFER_0.color_0.xyz, a_0);
 
-#line 254
+#line 285
         return;
     }
 
-#line 254
+#line 285
 }
 

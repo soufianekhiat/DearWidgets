@@ -196,7 +196,17 @@ float4 main_ps(PS_INPUT input) : SV_Target
     }
     else
     {
-        float u = dx + dash_offset;
+        // For the closing vertex of closed polylines, wrap dx so the dash
+        // pattern is continuous around the loop.
+        // Detection: first segment has seg_start==0 with has_prev (closed),
+        //            last  segment has seg_end==total_length with has_next (closed).
+        float dx_dash = dx;
+        if (has_prev && seg_start < 0.001 && lx < 0.0)
+            dx_dash = total_length + dx;   // wrap negative → end of polyline
+        if (has_next && seg_end > total_length - 0.001 && lx > seg_len)
+            dx_dash = dx - total_length;   // wrap past-end → start of polyline
+
+        float u = dx_dash + dash_offset;
         float m = u - period * floor(u / period);
         bool in_dash = (m < dash_len);
 
@@ -219,22 +229,37 @@ float4 main_ps(PS_INPUT input) : SV_Target
             d = min(d1, d2);
         }
 
-        // Cap at polyline endpoints
+        // Cap at polyline endpoints (open polylines only)
         if (!has_prev && dx < 0.0)
             d = cap_dist(cap_type, -dx, abs(dy), t);
         else if (!has_next && dx > total_length)
             d = cap_dist(cap_type, dx - total_length, abs(dy), t);
 
-        // Apply join shaping at interior joins so round/bevel/miter
-        // are respected even with dashed lines.
+        // Join zone: when a dash covers the vertex, fill with the join
+        // shape directly (like the solid path) so the two segments produce
+        // a seamless join.  When the vertex falls in a gap, only clip
+        // nearby dash caps to the join shape via max().
+        //
+        // Without the direct assignment, the per-pixel arc-length
+        // projection differs between the two segments at acute angles,
+        // causing premature dash caps on the diagonally-clipped side.
         if (has_prev && lx < 0.0)
         {
-            d = max(d, join_dist(P, p0, ex, prev_dir, dy, jtype, halfw, miter_limit));
+            float jd = join_dist(P, p0, ex, prev_dir, dy, jtype, halfw, miter_limit);
+            // Dash state at the vertex (seg_start); wrap for closing vertex
+            float v_al = (seg_start < 0.001) ? total_length : seg_start;
+            float v_u = v_al + dash_offset;
+            float v_m = v_u - period * floor(v_u / period);
+            d = (v_m < dash_len) ? jd : max(d, jd);
             zone = 2;
         }
         else if (has_next && lx > seg_len)
         {
-            d = max(d, join_dist(P, p1, ex, next_dir, dy, jtype, halfw, miter_limit));
+            float jd = join_dist(P, p1, ex, next_dir, dy, jtype, halfw, miter_limit);
+            // Dash state at the vertex (seg_end)
+            float v_u = seg_end + dash_offset;
+            float v_m = v_u - period * floor(v_u / period);
+            d = (v_m < dash_len) ? jd : max(d, jd);
             zone = 3;
         }
     }
@@ -244,7 +269,11 @@ float4 main_ps(PS_INPUT input) : SV_Target
     if (d < 0.0)
     {
         if (dbg && zone >= 2)
-            return float4(1, 0, 0, color.a);
+        {
+            // Debug: Green=Round(0), Red=Miter(1), Blue=Bevel(2)
+            float3 dc = (jtype == 0) ? float3(0,1,0) : (jtype == 2) ? float3(0,0,1) : float3(1,0,0);
+            return float4(dc, color.a);
+        }
         return float4(color.rgb, color.a);
     }
     else
@@ -252,7 +281,10 @@ float4 main_ps(PS_INPUT input) : SV_Target
         d /= max(aa, 1e-5);
         float a = exp(-d * d) * color.a;
         if (dbg && zone >= 2)
-            return float4(1, 0, 0, a);
+        {
+            float3 dc = (jtype == 0) ? float3(0,1,0) : (jtype == 2) ? float3(0,0,1) : float3(1,0,0);
+            return float4(dc, a);
+        }
         return float4(color.rgb, a);
     }
 }
