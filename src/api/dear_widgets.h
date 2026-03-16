@@ -1215,18 +1215,25 @@ private:
 //            [48-63] rect_min+rect_max, [64-79] color.  Total: 80 bytes.
 struct ImWidgetsDashedLineBuffer
 {
-    ImVec2  p0;            // offset 0  - segment start (screen space)
-    ImVec2  p1;            // offset 8  - segment end   (screen space)
-    float   thickness;     // offset 16 - stroke width in pixels
-    float   aa;            // offset 20 - aa fringe in pixels
-    ImVec2  dash;          // offset 24 - x=dash length, y=gap length (pixels)
-    float   dash_offset;   // offset 32 - offset along path (pixels)
-    float   cap;           // offset 36 - 0=butt,1=square,2=round
-    float   join;          // offset 40 - reserved
-    float   miter_limit;   // offset 44 - reserved
-    ImVec2  rect_min;      // offset 48 - bounding quad min (screen space)
-    ImVec2  rect_max;      // offset 56 - bounding quad max (screen space)
-    ImVec4  color;         // offset 64 - RGBA
+    ImVec2  p0;            // offset 0   - segment start (screen space)
+    ImVec2  p1;            // offset 8   - segment end   (screen space)
+    float   thickness;     // offset 16  - stroke width in pixels
+    float   aa;            // offset 20  - aa fringe in pixels
+    ImVec2  dash;          // offset 24  - x=dash length, y=gap length (pixels)
+    float   dash_offset;   // offset 32  - offset along path (pixels)
+    float   cap;           // offset 36  - cap type (ImWidgetsCap_)
+    float   join;          // offset 40  - join type (ImWidgetsJoin_)
+    float   miter_limit;   // offset 44  - miter limit ratio
+    ImVec2  rect_min;      // offset 48  - bounding quad min (screen space)
+    ImVec2  rect_max;      // offset 56  - bounding quad max (screen space)
+    ImVec4  color;         // offset 64  - RGBA
+    // --- Join/cap support (reg 5-6) ---
+    ImVec2  prev_dir;      // offset 80  - tangent of previous segment (0,0 = cap at p0)
+    ImVec2  next_dir;      // offset 88  - tangent of next segment (0,0 = cap at p1)
+    float   seg_start;     // offset 96  - cumulative arc-length at p0
+    float   seg_end;       // offset 100 - cumulative arc-length at p1
+    float   total_length;  // offset 104 - total polyline length
+    float   _pad;          // offset 108 - padding
 };
 
 #define ImWidgets_Kibi (1024ull)

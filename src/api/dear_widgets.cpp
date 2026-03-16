@@ -15202,7 +15202,6 @@ namespace ImWidgets
         ImWidgetsJoin join,
         float miter_limit)
     {
-        // join and miter_limit are used by CPU fallback
         if (!drawlist || !points || points_count <= 1 || (col & IM_COL32_A_MASK) == 0)
             return;
 
@@ -15223,6 +15222,7 @@ namespace ImWidgets
                           gs_pContext->lineShader.program != NULL);
         const bool enable_gpu_path = GlobalData.dashedLinesUseGPU; // user-configurable
         bool gpu_drew_any = false;
+
         if (enable_gpu_path && shader_ok)
         {
             // Clear per-frame pool on first use each frame
@@ -15233,25 +15233,50 @@ namespace ImWidgets
                 s_lineSegmentPoolFrame = current_frame;
             }
 
+            ImPlatform_ShaderProgram program = gs_pContext->lineShader.program;
+
+            // Precompute per-segment tangent directions and lengths
+            ImVec2 seg_t_stack[128];
+            float  seg_l_stack[128];
+            ImVec2* seg_t = (seg_count <= 128) ? seg_t_stack : (ImVec2*)IM_ALLOC(sizeof(ImVec2) * seg_count);
+            float*  seg_l = (seg_count <= 128) ? seg_l_stack : (float*)IM_ALLOC(sizeof(float) * seg_count);
+
+            float total_len = 0.0f;
+            for (int i = 0; i < seg_count; ++i)
+            {
+                ImVec2 a = points[i];
+                ImVec2 b = points[(i + 1) % points_count];
+                ImVec2 d = ImVec2(b.x - a.x, b.y - a.y);
+                float len = ImSqrt(d.x * d.x + d.y * d.y);
+                seg_l[i] = len;
+                seg_t[i] = (len > 1e-6f) ? ImVec2(d.x / len, d.y / len) : ImVec2(1.0f, 0.0f);
+                total_len += len;
+            }
+
             // Reserve pool space upfront so pointers remain stable
             int pool_base = s_lineSegmentPool.Size;
             s_lineSegmentPool.resize(pool_base + seg_count);
-
-            ImPlatform_ShaderProgram program = gs_pContext->lineShader.program;
-
-            // Precompute cumulative lengths for dash continuity across segments
-            float acc_len = 0.0f;
             int pool_idx = pool_base;
+
+            float halfw = 0.5f * thickness;
+            float acc_len = 0.0f;
             for (int i = 0; i < seg_count; ++i)
             {
-                int i0 = i;
-                int i1 = (i + 1) % points_count;
-                ImVec2 a = points[i0];
-                ImVec2 b = points[i1];
-                ImVec2 d = b - a;
-                float len = ImSqrt(d.x * d.x + d.y * d.y);
+                float len = seg_l[i];
                 if (len <= 1e-6f)
+                {
+                    acc_len += len;
                     continue;
+                }
+
+                ImVec2 a = points[i];
+                ImVec2 b = points[(i + 1) % points_count];
+
+                // Determine adjacency: each segment owns the join at its END (p1)
+                bool has_prev = (i > 0) || closed;
+                bool has_next = (i < seg_count - 1) || closed;
+                ImVec2 pdir = has_prev ? seg_t[(i - 1 + seg_count) % seg_count] : ImVec2(0.0f, 0.0f);
+                ImVec2 ndir = has_next ? seg_t[(i + 1) % seg_count] : ImVec2(0.0f, 0.0f);
 
                 ImWidgetsDashedLineBuffer params;
                 params.p0 = a;
@@ -15268,58 +15293,77 @@ namespace ImWidgets
                 {
                     params.dash = ImVec2(1e9f, 0.0f); // effectively solid
                 }
-                params.dash_offset = dash_offset + acc_len;
+                params.dash_offset = dash_offset;
                 params.cap = (float)cap;
                 params.join = (float)join;
                 params.miter_limit = miter_limit;
-                float pad = 0.5f * thickness + 2.0f * aa + 2.0f;
+                params.color = colf;
+                params.prev_dir = pdir;
+                params.next_dir = ndir;
+                params.seg_start = acc_len;
+                params.seg_end = acc_len + len;
+                params.total_length = total_len;
+                params._pad = GlobalData.dashedLinesDebugJoins ? 1.0f : 0.0f;
+
+                // Compute bounding quad padding (must cover join/cap extensions)
+                float pad = halfw + 2.0f * aa + 2.0f;
+
+                // Extra padding for join geometry at both endpoints
+                auto compute_join_ext = [&](ImVec2 adj_dir) -> float {
+                    float cos_a = seg_t[i].x * adj_dir.x + seg_t[i].y * adj_dir.y;
+                    float cos_half = ImSqrt(ImMax(0.0f, 0.5f * (1.0f + cos_a)));
+                    float ext = (cos_half > 0.01f) ? halfw / cos_half : halfw * 100.0f;
+                    if (join == ImWidgetsJoin_Mitter)
+                        ext = ImMin(ext, miter_limit * halfw);
+                    else
+                        ext = ImMin(ext, halfw * 2.0f);
+                    return ext;
+                };
+                if (has_prev)
+                    pad = ImMax(pad, compute_join_ext(pdir) + aa + 2.0f);
+                if (has_next)
+                    pad = ImMax(pad, compute_join_ext(ndir) + aa + 2.0f);
+
                 ImVec2 minv(ImMin(a.x, b.x) - pad, ImMin(a.y, b.y) - pad);
                 ImVec2 maxv(ImMax(a.x, b.x) + pad, ImMax(a.y, b.y) + pad);
                 params.rect_min = minv;
                 params.rect_max = maxv;
-                params.color = colf;
 
-                // Store params in frame-persistent pool so the deferred callback
-                // can upload THIS segment's data (not the last segment's)
                 DW_LineSegmentCBData& cb = s_lineSegmentPool[pool_idx++];
                 cb.program = program;
                 cb.params = params;
 
-                // 1) Prep callback: sets this segment's uniforms + dirty flag
                 drawlist->AddCallback(DW_PrepareLineUniforms, &cb);
-                // 2) ImPlatform callback: sees dirty=true, uploads to GPU, binds shader
                 ImPlatform_BeginCustomShader(drawlist, program);
-
-                // Draw quad covering the line segment with padding for AA and caps
                 drawlist->AddImageQuad((ImTextureID)gs_pContext->whiteImg,
                                        ImVec2(minv.x, minv.y), ImVec2(maxv.x, minv.y),
                                        ImVec2(maxv.x, maxv.y), ImVec2(minv.x, maxv.y),
                                        ImVec2(0,0), ImVec2(1,0), ImVec2(1,1), ImVec2(0,1),
                                        IM_COL32(255,255,255,255));
-
-                // End custom shader and restore ImGui state
                 ImPlatform_EndCustomShader(drawlist);
                 gpu_drew_any = true;
 
                 acc_len += len;
             }
 
-            // GPU path rendered
-            // For triangle caps (not supported in shader), we'll add CPU overlay below.
-            // For other caps, skip CPU base fallback to avoid double drawing.
-            // Mark via a local flag (outside of ifdef) using a static boolean
+            // Free heap-allocated arrays
+            if (seg_count > 128)
+            {
+                IM_FREE(seg_t);
+                IM_FREE(seg_l);
+            }
         }
 #endif // IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 
-        // CPU fallback/overlay: dashed polyline and/or extra caps
+        // GPU path now handles joins, caps, and dashes via SDF in the fragment shader.
+        // Fall back to CPU path only when GPU path is disabled or unavailable.
         bool gpu_used = false;
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
         gpu_used = enable_gpu_path && shader_ok && gpu_drew_any;
 #endif
-        // Draw CPU base only if GPU wasn't used
         const bool want_cpu_base = !gpu_used;
 
-        // CPU fallback: dashed polyline using subpaths
+        // CPU: dashed polyline using subpaths
         DW_PathData pd_local;
         DW_BuildPathData(points, points_count, closed, pd_local);
         ImVector<ImVec2> intervals;

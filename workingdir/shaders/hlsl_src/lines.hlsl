@@ -1,13 +1,11 @@
 // Vertex shader constant buffer at register b0
-// DirectX: ImGui backend automatically provides this
 cbuffer vertexBuffer : register(b0)
 {
 	float4x4 ProjMtx;
 };
 
 // Pixel shader constant buffer at register b1
-// Note: Must be b1 because b0 is used by vertex shader (ImPlatform binds PS cbuffer to slot 1)
-// Layout: 5 registers (80 bytes), must match ImWidgetsDashedLineBuffer in dear_widgets.h
+// Layout: 7 registers (112 bytes), must match ImWidgetsDashedLineBuffer in dear_widgets.h
 cbuffer PS_CONSTANT_BUFFER : register(b1)
 {
     float2 p0;            // reg0: screen-space start
@@ -16,12 +14,18 @@ cbuffer PS_CONSTANT_BUFFER : register(b1)
     float  aa;            //       AA fringe in pixels
     float2 dash;          //       x=dash length, y=gap length
     float  dash_offset;   // reg2: offset in pixels
-    float  cap;           //       0=butt, 1=square, 2=round
-    float  join;          //       reserved
-    float  miter_limit;   //       reserved
+    float  cap;           //       ImWidgetsCap_
+    float  join_type;     //       ImWidgetsJoin_
+    float  miter_limit;   //       miter limit ratio
     float2 rect_min;      // reg3: quad min in screen space
     float2 rect_max;      //       quad max in screen space
     float4 color;         // reg4: RGBA
+    float2 prev_dir;      // reg5: tangent of previous segment (0,0 = cap)
+    float2 next_dir;      //       tangent of next segment (0,0 = cap)
+    float  seg_start;     // reg6: cumulative arc-length at p0
+    float  seg_end;       //       cumulative arc-length at p1
+    float  total_length;  //       total polyline length
+    float  debug_joins;   //       1.0 = debug join visualization
 };
 
 struct VS_INPUT
@@ -47,122 +51,208 @@ PS_INPUT main_vs(VS_INPUT input)
     return output;
 }
 
-// Distance to oriented rectangle centered at c, with half extents b, local basis ex (unit), ey (unit)
-float sdOrientedBox(float2 p, float2 c, float2 ex, float2 ey, float2 b)
+// ImWidgetsCap: 0=None, 1=Butt, 2=Square, 3=Round, 4=TriangleOut, 5=TriangleIn
+float cap_dist(int ctype, float dx, float dy, float t)
 {
-    float2 rel = p - c;
-    float2 q = float2(dot(rel, ex), dot(rel, ey));
-    float2 d = abs(q) - b;
-    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+    dx = abs(dx);
+    dy = abs(dy);
+    if (ctype == 0) return 1e10;
+    if (ctype == 1) return max(dx + t, dy);
+    if (ctype == 2) return max(dx, dy);
+    if (ctype == 3) return sqrt(dx * dx + dy * dy);
+    if (ctype == 4) return max(dy, (t + dx - dy));
+    if (ctype == 5) return (dx + dy);
+    return 1e10;
 }
 
-float sdCapsule(float2 p, float2 a, float2 b, float r)
+// Compute SDF distance in a join region.
+// Both segments at a join compute the same value (symmetric SDF), so
+// the bisector split produces no seam with transparent colours.
+//
+// P_world:   pixel position in screen space
+// vertex:    join vertex position in screen space
+// cur_dir:   tangent of current segment (ex)
+// adj_dir:   tangent of adjacent segment (prev_dir or next_dir)
+// dy:        perpendicular distance to current segment axis
+// jtype:     0=Round, 1=Miter, 2=Bevel
+// halfw:     half stroke width
+// mlimit:    miter limit ratio
+float join_dist(float2 P_world, float2 vertex,
+                float2 cur_dir, float2 adj_dir,
+                float dy, int jtype, float halfw, float mlimit)
 {
-    float2 pa = p - a, ba = b - a;
-    float h = saturate(dot(pa, ba) / dot(ba, ba));
-    return length(pa - ba * h) - r;
-}
+    // Round join: circle centered at vertex (already symmetric)
+    if (jtype == 0)
+        return length(P_world - vertex);
 
-float2 perp(float2 v) { return float2(-v.y, v.x); }
+    // Distance to current segment axis
+    float d_cur = abs(dy);
+    // Distance to adjacent segment axis
+    float2 adj_perp = float2(-adj_dir.y, adj_dir.x);
+    float d_adj = abs(dot(P_world - vertex, adj_perp));
 
-float main_dash_mask(float s, float dash_len, float gap_len)
-{
-    float period = max(1e-5, dash_len + gap_len);
-    float m = frac(s / period) * period;
-    return (m <= dash_len) ? 1.0f : 0.0f;
-}
+    // Miter diamond: intersection of both stroke half-planes.
+    // max(d_cur, d_adj) is identical from either segment's perspective.
+    float d = max(d_cur, d_adj);
 
-// Signed distance for an isosceles triangle oriented along +x with base centered on x=0
-// q.x = half base width, q.y = height (apex at (q.y, 0), base from (-q.x,0) to (q.x,0))
-float sdTriangleIsoscelesX(float2 p, float2 q)
-{
-    // Map to canonical triangle with apex along +x: swap axes from the usual +y formulation
-    // We want apex on +x, base on x=0. Use the standard +y function with swapped coords.
-    // Standard isosceles SDF (apex along +y):
-    float2 ps = float2(p.y, p.x);
-    float2 qs = float2(q.x, q.y);
+    // Bisector perpendicular distance (shared by miter limit & bevel)
+    float2 bisect = cur_dir + adj_dir;
+    float bl2 = dot(bisect, bisect);
+    if (bl2 > 0.001)
+    {
+        float2 bn = bisect * rsqrt(bl2);
+        float2 bp = float2(-bn.y, bn.x);
+        float miter_d = abs(dot(P_world - vertex, bp));
 
-    ps.x = abs(ps.x);
-    float2 a = ps - qs * saturate(dot(ps, qs) / dot(qs, qs));
-    float2 b = ps - qs * float2(saturate(ps.x / qs.x), 1.0);
-    float s = -sign(qs.y);
-    float d2 = min(dot(a, a), dot(b, b));
-    float xsgn = s * (ps.x * qs.y - ps.y * qs.x);
-    return sqrt(d2) * sign(xsgn);
+        if (jtype == 1) // Miter: allow extension, clip at limit
+            d = max(d, miter_d - mlimit * halfw);
+        else            // Bevel: clip at bisector line
+            d = max(d, miter_d);
+    }
+
+    return d;
 }
 
 float4 main_ps(PS_INPUT input) : SV_Target
 {
-    // Reconstruct pixel position in screen space from UV + rect
     float2 P = lerp(rect_min, rect_max, input.uv.xy);
-    float2 ba = p1 - p0;
-    float len = max(length(ba), 1e-5);
-    float2 ex = ba / len;
-    float2 ey = perp(ex);
+    float2 ba_vec = p1 - p0;
+    float seg_len = max(length(ba_vec), 1e-5);
+    float2 ex = ba_vec / seg_len;
+    float2 ey = float2(-ex.y, ex.x);
     float halfw = 0.5 * thickness;
+    float t = halfw - aa;
 
-    // Signed distance to stroke shape (caps handled)
-    float d;
-    // ImWidgetsCap: 0=None,1=Butt,2=Square,3=Round,4=TriangleOut,5=TriangleIn
-    if (cap < 1.5) // None/Butt -> butt
+    float lx = dot(P - p0, ex);
+    float ly = dot(P - p0, ey);
+    float dx = seg_start + lx;
+    float dy = ly;
+
+    bool has_prev = (dot(prev_dir, prev_dir) > 0.0001);
+    bool has_next = (dot(next_dir, next_dir) > 0.0001);
+    int cap_type = (int)cap;
+    int jtype = (int)join_type;
+    bool dbg = (debug_joins > 0.5);
+
+    // --- Bisector clip: prevent overdraw between adjacent segments ---
+    if (has_prev)
     {
-        float2 c = 0.5 * (p0 + p1);
-        float2 b = float2(0.5 * len, halfw);
-        d = sdOrientedBox(P, c, ex, ey, b);
+        float2 bisect = prev_dir + ex;
+        if (dot(bisect, bisect) > 0.001)
+        {
+            if (dot(P - p0, bisect) < 0.0)
+                return float4(0, 0, 0, 0);
+        }
     }
-    else if (cap < 2.5) // square
+    if (has_next)
     {
-        float2 c = 0.5 * (p0 + p1);
-        float2 b = float2(0.5 * len + halfw, halfw);
-        d = sdOrientedBox(P, c, ex, ey, b);
-    }
-    else if (cap < 3.5) // round
-    {
-        d = sdCapsule(P, p0, p1, halfw);
-    }
-    else if (cap < 4.5) // TriangleOut -> union of butt rect and outward isosceles at both ends
-    {
-        float2 c = 0.5 * (p0 + p1);
-        float2 b = float2(0.5 * len, halfw);
-        float d_rect = sdOrientedBox(P, c, ex, ey, b);
-
-        // Triangle at start (points outward, along -ex)
-        float2 local0 = float2(dot(P - p0, -ex), dot(P - p0, ey)); // height along +x in local
-        float d_tri0 = sdTriangleIsoscelesX(local0, float2(halfw, halfw));
-
-        // Triangle at end (points outward, along +ex)
-        float2 local1 = float2(dot(P - p1, ex), dot(P - p1, ey));
-        float d_tri1 = sdTriangleIsoscelesX(local1, float2(halfw, halfw));
-
-        // Union: min of distances
-        d = min(d_rect, min(d_tri0, d_tri1));
-    }
-    else // TriangleIn -> subtract inward isosceles at both ends from butt rect
-    {
-        float2 c = 0.5 * (p0 + p1);
-        float2 b = float2(0.5 * len, halfw);
-        float d_rect = sdOrientedBox(P, c, ex, ey, b);
-
-        // Inward triangles with height = halfw inside segment
-        float2 local0 = float2(dot(P - p0, ex), dot(P - p0, ey));   // +x toward inside of segment
-        float2 local1 = float2(dot(P - p1, -ex), dot(P - p1, ey)); // +x toward inside from end
-        float d_tri0 = sdTriangleIsoscelesX(local0, float2(halfw, halfw));
-        float d_tri1 = sdTriangleIsoscelesX(local1, float2(halfw, halfw));
-
-        // Subtract triangles: A \ B = max(A, -B)
-        d = max(d_rect, -min(d_tri0, d_tri1));
+        float2 bisect = ex + next_dir;
+        if (dot(bisect, bisect) > 0.001)
+        {
+            if (dot(P - p1, bisect) > 0.0)
+                return float4(0, 0, 0, 0);
+        }
     }
 
-    // Anti-aliased edge
-    float alpha_edge = saturate(0.5 - d / max(aa, 1e-5));
+    // --- Early discard for pixels far from the line ---
+    float max_ext = halfw + aa;
+    if (jtype == 1) max_ext = max(max_ext, miter_limit * halfw + aa);
+    if (!has_prev && dx < -max_ext) return float4(0, 0, 0, 0);
+    if (!has_next && dx > total_length + max_ext) return float4(0, 0, 0, 0);
 
-    // Dash mask: project onto axis along segment (unclamped)
-    float s = dot(P - p0, ex) + dash_offset;
-    float m = main_dash_mask(s, dash.x, dash.y);
+    // --- Dash pattern ---
+    float dash_len = dash.x;
+    float gap_len  = dash.y;
+    float period = max(1e-5, dash_len + gap_len);
+    bool solid = (gap_len < 0.5);
 
-    float vis = alpha_edge * m;
-    float4 out_col = color;
-    out_col.rgb *= vis;   // also modulate RGB so dashes are obvious even if blend state is atypical
-    out_col.a   *= vis;
-    return out_col;
+    float d = 0.0;
+    int zone = 0; // 0=body, 1=cap, 2=join_p0, 3=join_p1
+
+    if (solid)
+    {
+        d = abs(dy);
+
+        if (!has_prev && dx < 0.0)
+        {
+            d = cap_dist(cap_type, -dx, abs(dy), t);
+            zone = 1;
+        }
+        else if (!has_next && dx > total_length)
+        {
+            d = cap_dist(cap_type, dx - total_length, abs(dy), t);
+            zone = 1;
+        }
+        else if (has_prev && lx < 0.0)
+        {
+            d = join_dist(P, p0, ex, prev_dir, dy, jtype, halfw, miter_limit);
+            zone = 2;
+        }
+        else if (has_next && lx > seg_len)
+        {
+            d = join_dist(P, p1, ex, next_dir, dy, jtype, halfw, miter_limit);
+            zone = 3;
+        }
+    }
+    else
+    {
+        float u = dx + dash_offset;
+        float m = u - period * floor(u / period);
+        bool in_dash = (m < dash_len);
+
+        if (in_dash)
+        {
+            d = abs(dy);
+            float to_start = m;
+            float to_end = dash_len - m;
+            float d_start = cap_dist(cap_type, to_start, abs(dy), t);
+            float d_end = cap_dist(cap_type, to_end, abs(dy), t);
+            if (cap_type == 5)
+                d = max(d, min(d_start, d_end));
+        }
+        else
+        {
+            float to_prev_end = m - dash_len;
+            float to_next_start = period - m;
+            float d1 = cap_dist(cap_type, to_prev_end, abs(dy), t);
+            float d2 = cap_dist(cap_type, to_next_start, abs(dy), t);
+            d = min(d1, d2);
+        }
+
+        // Cap at polyline endpoints
+        if (!has_prev && dx < 0.0)
+            d = cap_dist(cap_type, -dx, abs(dy), t);
+        else if (!has_next && dx > total_length)
+            d = cap_dist(cap_type, dx - total_length, abs(dy), t);
+
+        // Apply join shaping at interior joins so round/bevel/miter
+        // are respected even with dashed lines.
+        if (has_prev && lx < 0.0)
+        {
+            d = max(d, join_dist(P, p0, ex, prev_dir, dy, jtype, halfw, miter_limit));
+            zone = 2;
+        }
+        else if (has_next && lx > seg_len)
+        {
+            d = max(d, join_dist(P, p1, ex, next_dir, dy, jtype, halfw, miter_limit));
+            zone = 3;
+        }
+    }
+
+    // --- Anti-aliasing ---
+    d = d - t;
+    if (d < 0.0)
+    {
+        if (dbg && zone >= 2)
+            return float4(1, 0, 0, color.a);
+        return float4(color.rgb, color.a);
+    }
+    else
+    {
+        d /= max(aa, 1e-5);
+        float a = exp(-d * d) * color.a;
+        if (dbg && zone >= 2)
+            return float4(1, 0, 0, a);
+        return float4(color.rgb, a);
+    }
 }

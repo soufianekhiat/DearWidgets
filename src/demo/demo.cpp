@@ -2003,10 +2003,10 @@ namespace ImWidgets {
 				static int   cap_idx   = (int)ImWidgetsCap_Butt;
 				static int   join_idx  = (int)ImWidgetsJoin_Mitter;
 				static float miter_limit = 4.0f;
-				static int   path_type = 1; // 0=ZigZag, 1=Sine, 2=Spiral, 3=RoundedRect, 4=Circle, 5=Infinity, 6=Rose, 7=Heart, 8=Sawtooth, 9=ArcChain, 10=Star, 11=BezierS
+				static int   path_type = 1; // 0=ZigZag, 1=Sine, 2=Spiral, 3=RoundedRect, 4=Circle, 5=Infinity, 6=Rose, 7=Heart, 8=Sawtooth, 9=Star, 10=BezierS
 				const char* caps[] = { "None", "Butt", "Square", "Round", "TriangleOut", "TriangleIn" };
 				const char* joins[] = { "Round", "Mitter", "Bevel" };
-				const char* paths[] = { "ZigZag", "Sine", "Spiral", "RoundedRect", "Circle", "Infinity", "Rose (k=5)", "Heart", "Sawtooth", "Arc Chain", "Star", "Bezier S" };
+				const char* paths[] = { "ZigZag", "Sine", "Spiral", "RoundedRect", "Circle", "Infinity", "Rose (k=5)", "Heart", "Sawtooth", "Star", "Bezier S" };
 				ImGui::SetCursorScreenPos(origin + ImVec2(8, 6));
 				dl->AddRect(origin, origin + ImVec2(side, side), IM_COL32(64,64,64,255));
 
@@ -2155,31 +2155,6 @@ namespace ImWidgets {
 				}
 				else if (path_type == 9)
 				{
-					// Arc chain: alternating up/down semicircles
-					int arcs = 6; int seg = 18; int idx = 0;
-					float span = (right-left) / arcs;
-					float cy = (top+bottom)*0.5f;
-					float r = (bottom-top)*0.22f;
-					for (int a = 0; a < arcs; ++a)
-					{
-						float cx = left + span*(a+0.5f);
-						bool up = (a%2)==0;
-						// Up arc should go from 0..pi (bulge up), down arc pi..2pi
-						float start = up ? 0.0f : IM_PI;
-						float end   = up ? IM_PI : 2.0f*IM_PI;
-						for (int i = 0; i <= seg; ++i)
-						{
-							float t = (float)i/(float)seg;
-							float ang = ImLerp(start, end, t);
-							// Skip duplicate vertex between consecutive arcs
-							if (i==0 && a>0) continue;
-							pts_stack[idx++] = ImVec2(cx + cosf(ang)*r, cy + sinf(ang)*r);
-						}
-					}
-					pts_count = idx;
-				}
-				else if (path_type == 10)
-				{
 					// 5-point star
 					ImVec2 c((left+right)*0.5f, (top+bottom)*0.5f);
 					float R = ImMin((right-left), (bottom-top))*0.42f;
@@ -2192,7 +2167,7 @@ namespace ImWidgets {
 					}
 					pts_count = 10;
 				}
-				else if (path_type == 11)
+				else if (path_type == 10)
 				{
 					// Bezier S (two cubic segments)
 					ImVec2 p0(left, (top+bottom)*0.5f);
