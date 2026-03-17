@@ -16466,6 +16466,645 @@ namespace ImWidgets {
 	}
 
 	//////////////////////////////////////////////////////////////////////////
+	// Image Carousel
+	//////////////////////////////////////////////////////////////////////////
+
+	bool ImageCarousel( char const* label, ImTextureID* images, ImVec2* imageSizes, int imageCount, int* pSelectedIndex, ImVec2 size )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+		if ( !images || imageCount <= 0 || !pSelectedIndex )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		const ImGuiID id = window->GetID( label );
+
+		if ( size.x <= 0.0f ) size.x = ImGui::CalcItemWidth();
+
+		// Layout constants
+		float thumbH = 48.0f;
+		float thumbSpacing = 4.0f;
+		float arrowW = 24.0f;
+		float dotH = 16.0f;
+
+		// Main image area height
+		if ( size.y <= 0.0f ) size.y = size.x * 0.6f;
+		float mainH = size.y;
+		float totalH = mainH + style.ItemInnerSpacing.y + thumbH + style.ItemInnerSpacing.y + dotH;
+
+		ImVec2 pos = window->DC.CursorPos;
+		ImRect total_bb( pos, ImVec2( pos.x + size.x, pos.y + totalH ) );
+
+		ImGui::ItemSize( total_bb );
+		if ( !ImGui::ItemAdd( total_bb, id ) )
+			return false;
+
+		int sel = *pSelectedIndex;
+		if ( sel < 0 || sel >= imageCount ) sel = 0;
+		bool value_changed = false;
+		ImDrawList* dl = window->DrawList;
+
+		// --- Main image area ---
+		ImRect mainBB( pos, ImVec2( pos.x + size.x, pos.y + mainH ) );
+		dl->AddRectFilled( mainBB.Min, mainBB.Max, IM_COL32( 20, 20, 20, 255 ), style.FrameRounding );
+
+		// Draw selected image fitted (preserve aspect ratio)
+		{
+			ImVec2 imgSz = imageSizes[ sel ];
+			float aspect = imgSz.x / imgSz.y;
+			float fitW, fitH;
+			if ( mainBB.GetWidth() / mainBB.GetHeight() > aspect )
+			{
+				fitH = mainBB.GetHeight();
+				fitW = fitH * aspect;
+			}
+			else
+			{
+				fitW = mainBB.GetWidth();
+				fitH = fitW / aspect;
+			}
+			ImVec2 imgMin( mainBB.Min.x + ( mainBB.GetWidth() - fitW ) * 0.5f,
+						   mainBB.Min.y + ( mainBB.GetHeight() - fitH ) * 0.5f );
+			ImVec2 imgMax( imgMin.x + fitW, imgMin.y + fitH );
+			dl->AddImage( images[ sel ], imgMin, imgMax );
+		}
+
+		// Navigation arrows on main image
+		ImRect leftArrowBB( mainBB.Min, ImVec2( mainBB.Min.x + arrowW, mainBB.Max.y ) );
+		ImRect rightArrowBB( ImVec2( mainBB.Max.x - arrowW, mainBB.Min.y ), mainBB.Max );
+
+		ImVec2 mp = g.IO.MousePos;
+		bool hovMain = mainBB.Contains( mp );
+		bool hovLeft = leftArrowBB.Contains( mp );
+		bool hovRight = rightArrowBB.Contains( mp );
+
+		if ( hovMain )
+		{
+			// Left arrow
+			{
+				ImU32 arrowBg = hovLeft ? IM_COL32( 0, 0, 0, 150 ) : IM_COL32( 0, 0, 0, 60 );
+				dl->AddRectFilled( leftArrowBB.Min, leftArrowBB.Max, arrowBg );
+				ImVec2 c = leftArrowBB.GetCenter();
+				float sz = 8.0f;
+				ImU32 arrowCol = hovLeft ? IM_COL32_WHITE : IM_COL32( 200, 200, 200, 200 );
+				dl->AddTriangleFilled( ImVec2( c.x - sz * 0.5f, c.y ), ImVec2( c.x + sz * 0.5f, c.y - sz ), ImVec2( c.x + sz * 0.5f, c.y + sz ), arrowCol );
+			}
+			// Right arrow
+			{
+				ImU32 arrowBg = hovRight ? IM_COL32( 0, 0, 0, 150 ) : IM_COL32( 0, 0, 0, 60 );
+				dl->AddRectFilled( rightArrowBB.Min, rightArrowBB.Max, arrowBg );
+				ImVec2 c = rightArrowBB.GetCenter();
+				float sz = 8.0f;
+				ImU32 arrowCol = hovRight ? IM_COL32_WHITE : IM_COL32( 200, 200, 200, 200 );
+				dl->AddTriangleFilled( ImVec2( c.x + sz * 0.5f, c.y ), ImVec2( c.x - sz * 0.5f, c.y - sz ), ImVec2( c.x - sz * 0.5f, c.y + sz ), arrowCol );
+			}
+
+			if ( ImGui::IsMouseClicked( 0 ) )
+			{
+				if ( hovLeft && imageCount > 1 )
+				{
+					sel = ( sel - 1 + imageCount ) % imageCount;
+					*pSelectedIndex = sel;
+					value_changed = true;
+				}
+				else if ( hovRight && imageCount > 1 )
+				{
+					sel = ( sel + 1 ) % imageCount;
+					*pSelectedIndex = sel;
+					value_changed = true;
+				}
+			}
+		}
+
+		dl->AddRect( mainBB.Min, mainBB.Max, IM_COL32( 80, 80, 80, 200 ), style.FrameRounding );
+
+		// --- Thumbnail strip ---
+		float thumbY = mainBB.Max.y + style.ItemInnerSpacing.y;
+		float totalThumbW = imageCount * thumbH + ( imageCount - 1 ) * thumbSpacing;
+		float thumbStartX = pos.x + ( size.x - totalThumbW ) * 0.5f;
+		if ( thumbStartX < pos.x ) thumbStartX = pos.x; // clamp left
+
+		for ( int i = 0; i < imageCount; i++ )
+		{
+			float tx = thumbStartX + i * ( thumbH + thumbSpacing );
+			ImVec2 tMin( tx, thumbY );
+			ImVec2 tMax( tx + thumbH, thumbY + thumbH );
+
+			// Fit image in square thumbnail
+			ImVec2 imgSz = imageSizes[ i ];
+			float aspect = imgSz.x / imgSz.y;
+			float fitW, fitH;
+			if ( aspect > 1.0f ) { fitW = thumbH; fitH = thumbH / aspect; }
+			else                 { fitH = thumbH; fitW = thumbH * aspect; }
+			ImVec2 fitMin( tMin.x + ( thumbH - fitW ) * 0.5f, tMin.y + ( thumbH - fitH ) * 0.5f );
+			ImVec2 fitMax( fitMin.x + fitW, fitMin.y + fitH );
+
+			bool hovThumb = ImRect( tMin, tMax ).Contains( mp );
+			ImU32 thumbBg = ( i == sel ) ? IM_COL32( 60, 60, 60, 255 ) : IM_COL32( 30, 30, 30, 255 );
+			dl->AddRectFilled( tMin, tMax, thumbBg, 2.0f );
+			dl->AddImage( images[ i ], fitMin, fitMax );
+
+			ImU32 border = ( i == sel ) ? IM_COL32( 255, 200, 50, 255 ) : ( hovThumb ? IM_COL32( 180, 180, 180, 200 ) : IM_COL32( 80, 80, 80, 150 ) );
+			float borderThk = ( i == sel ) ? 2.0f : 1.0f;
+			dl->AddRect( tMin, tMax, border, 2.0f, 0, borderThk );
+
+			if ( hovThumb && ImGui::IsMouseClicked( 0 ) && i != sel )
+			{
+				sel = i;
+				*pSelectedIndex = sel;
+				value_changed = true;
+			}
+		}
+
+		// --- Dot indicators ---
+		float dotY = thumbY + thumbH + style.ItemInnerSpacing.y;
+		float dotRadius = 4.0f;
+		float dotSpacing = dotRadius * 3.0f;
+		float dotsW = imageCount * dotSpacing;
+		float dotStartX = pos.x + ( size.x - dotsW ) * 0.5f + dotSpacing * 0.5f;
+
+		for ( int i = 0; i < imageCount; i++ )
+		{
+			ImVec2 dc( dotStartX + i * dotSpacing, dotY + dotH * 0.5f );
+			if ( i == sel )
+				dl->AddCircleFilled( dc, dotRadius, IM_COL32( 255, 200, 50, 255 ) );
+			else
+				dl->AddCircleFilled( dc, dotRadius - 1.0f, IM_COL32( 150, 150, 150, 200 ) );
+		}
+
+		// Label
+		const char* labelEnd = ImGui::FindRenderedTextEnd( label );
+		if ( label != labelEnd )
+		{
+			ImGui::SetCursorScreenPos( ImVec2( pos.x, total_bb.Max.y + style.ItemSpacing.y ) );
+			ImGui::TextEx( label, labelEnd );
+		}
+
+		return value_changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Image Bento Grid
+	//////////////////////////////////////////////////////////////////////////
+
+	bool ImageBento( char const* label, ImTextureID* images, ImVec2* imageSizes, int imageCount, int* pSelectedIndex, int columnsPerRow, float cellAspect, float spacing )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+		if ( !images || imageCount <= 0 || !pSelectedIndex )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		const ImGuiID id = window->GetID( label );
+
+		if ( columnsPerRow < 1 ) columnsPerRow = 1;
+		if ( cellAspect <= 0.0f ) cellAspect = 1.0f;
+
+		float availW = ImGui::CalcItemWidth();
+		float cellW = ( availW - spacing * ( columnsPerRow - 1 ) ) / columnsPerRow;
+		float cellH = cellW / cellAspect;
+		int rows = ( imageCount + columnsPerRow - 1 ) / columnsPerRow;
+		float totalH = rows * cellH + ( rows - 1 ) * spacing;
+
+		ImVec2 pos = window->DC.CursorPos;
+		ImRect total_bb( pos, ImVec2( pos.x + availW, pos.y + totalH ) );
+
+		ImGui::ItemSize( total_bb );
+		if ( !ImGui::ItemAdd( total_bb, id ) )
+			return false;
+
+		bool value_changed = false;
+		ImDrawList* dl = window->DrawList;
+		ImVec2 mp = g.IO.MousePos;
+		int sel = *pSelectedIndex;
+
+		for ( int i = 0; i < imageCount; i++ )
+		{
+			int col = i % columnsPerRow;
+			int row = i / columnsPerRow;
+			float cx = pos.x + col * ( cellW + spacing );
+			float cy = pos.y + row * ( cellH + spacing );
+			ImVec2 cellMin( cx, cy );
+			ImVec2 cellMax( cx + cellW, cy + cellH );
+
+			// Background
+			dl->AddRectFilled( cellMin, cellMax, IM_COL32( 20, 20, 20, 255 ), 2.0f );
+
+			// Center-crop UVs: fit the cell aspect ratio within the image
+			ImVec2 imgSz = imageSizes[ i ];
+			float imgAspect = imgSz.x / imgSz.y;
+			float uMin = 0.0f, vMin = 0.0f, uMax = 1.0f, vMax = 1.0f;
+
+			if ( imgAspect > cellAspect )
+			{
+				// Image is wider than cell: crop sides
+				float visibleFrac = cellAspect / imgAspect;
+				float margin = ( 1.0f - visibleFrac ) * 0.5f;
+				uMin = margin;
+				uMax = 1.0f - margin;
+			}
+			else
+			{
+				// Image is taller than cell: crop top/bottom
+				float visibleFrac = imgAspect / cellAspect;
+				float margin = ( 1.0f - visibleFrac ) * 0.5f;
+				vMin = margin;
+				vMax = 1.0f - margin;
+			}
+
+			dl->AddImage( images[ i ], cellMin, cellMax, ImVec2( uMin, vMin ), ImVec2( uMax, vMax ) );
+
+			// Selection / hover
+			bool hov = ImRect( cellMin, cellMax ).Contains( mp );
+			if ( i == sel )
+				dl->AddRect( cellMin, cellMax, IM_COL32( 255, 200, 50, 255 ), 2.0f, 0, 2.0f );
+			else if ( hov )
+				dl->AddRect( cellMin, cellMax, IM_COL32( 200, 200, 200, 180 ), 2.0f, 0, 1.0f );
+
+			if ( hov && ImGui::IsMouseClicked( 0 ) && i != sel )
+			{
+				*pSelectedIndex = i;
+				value_changed = true;
+			}
+		}
+
+		// Label
+		const char* labelEnd = ImGui::FindRenderedTextEnd( label );
+		if ( label != labelEnd )
+		{
+			ImGui::SetCursorScreenPos( ImVec2( pos.x, total_bb.Max.y + style.ItemSpacing.y ) );
+			ImGui::TextEx( label, labelEnd );
+		}
+
+		return value_changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Image Viewer
+	//////////////////////////////////////////////////////////////////////////
+
+	bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGuiContext&      g     = *GImGui;
+		const ImGuiID      id    = window->GetID( label );
+		const ImGuiStyle&  style = g.Style;
+
+		// --- Widget rect ---
+		ImVec2 sz = widgetSize;
+		if ( sz.x <= 0.0f ) sz.x = ImGui::GetContentRegionAvail().x;
+		if ( sz.y <= 0.0f )
+		{
+			if ( imageSize.x > 0.0f && imageSize.y > 0.0f )
+				sz.y = sz.x * ( imageSize.y / imageSize.x );
+			else
+				sz.y = sz.x;
+			sz.y = ImMin( sz.y, sz.x ); // cap at square
+		}
+
+		ImRect bb( window->DC.CursorPos, window->DC.CursorPos + sz );
+		ImGui::ItemSize( bb );
+		if ( !ImGui::ItemAdd( bb, id ) )
+			return false;
+
+		const bool hovered = ImGui::IsItemHovered();
+		const ImVec2 mp = g.IO.MousePos;
+		bool changed = false;
+
+		// Claim scroll wheel when hovered so the parent window does not also scroll
+		if ( hovered )
+			ImGui::SetKeyOwner( ImGuiKey_MouseWheelY, id );
+
+		// --- Fit scale ---
+		float fitScale = ImMin(
+			( imageSize.x > 0.0f ) ? sz.x / imageSize.x : 1.0f,
+			( imageSize.y > 0.0f ) ? sz.y / imageSize.y : 1.0f );
+
+		float totalScale = fitScale * state.Zoom;
+		ImVec2 rectCenter = ( bb.Min + bb.Max ) * 0.5f;
+		// imgCenter: center of the visible region in image-space
+		ImVec2 imgCenter = ImVec2( imageSize.x * 0.5f + state.Pan.x, imageSize.y * 0.5f + state.Pan.y );
+
+		auto screenToImg = [&]( ImVec2 s ) -> ImVec2 {
+			return ImVec2(
+				imgCenter.x + ( s.x - rectCenter.x ) / totalScale,
+				imgCenter.y + ( s.y - rectCenter.y ) / totalScale );
+		};
+
+		// --- Scroll-wheel zoom (centred on mouse cursor) ---
+		if ( hovered && g.IO.MouseWheel != 0.0f )
+		{
+			ImVec2 mouseImg = screenToImg( mp );
+			float  newZoom  = ImClamp( state.Zoom * powf( 1.15f, g.IO.MouseWheel ), 0.05f, 64.0f );
+			float  newTS    = fitScale * newZoom;
+			state.Pan.x = mouseImg.x - imageSize.x * 0.5f - ( mp.x - rectCenter.x ) / newTS;
+			state.Pan.y = mouseImg.y - imageSize.y * 0.5f - ( mp.y - rectCenter.y ) / newTS;
+			state.Zoom  = newZoom;
+			totalScale  = newTS;
+			imgCenter   = ImVec2( imageSize.x * 0.5f + state.Pan.x, imageSize.y * 0.5f + state.Pan.y );
+			changed = true;
+		}
+
+		// --- Left-click drag: pan (ignore if it's a double-click) ---
+		if ( hovered && g.IO.MouseClicked[ 0 ] && !g.IO.MouseDoubleClicked[ 0 ] )
+		{
+			ImGui::SetActiveID( id, window );
+			ImGui::SetFocusID( id, window );
+			ImGui::FocusWindow( window );
+		}
+		if ( g.ActiveId == id )
+		{
+			if ( ImGui::IsMouseDown( 0 ) )
+			{
+				ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+				state.Pan.x -= g.IO.MouseDelta.x / totalScale;
+				state.Pan.y -= g.IO.MouseDelta.y / totalScale;
+				imgCenter = ImVec2( imageSize.x * 0.5f + state.Pan.x, imageSize.y * 0.5f + state.Pan.y );
+				ImGui::SetMouseCursor( ImGuiMouseCursor_ResizeAll );
+				changed = true;
+			}
+			else
+			{
+				ImGui::ClearActiveID();
+			}
+		}
+
+		// --- Double-click: reset to fit ---
+		if ( hovered && g.IO.MouseDoubleClicked[ 0 ] )
+		{
+			state.Zoom = 1.0f;
+			state.Pan  = ImVec2( 0.0f, 0.0f );
+			totalScale = fitScale;
+			imgCenter  = ImVec2( imageSize.x * 0.5f, imageSize.y * 0.5f );
+			changed = true;
+		}
+
+		// ---- Render ----
+		ImDrawList* dl = window->DrawList;
+		dl->PushClipRect( bb.Min, bb.Max, true );
+
+		// Checkerboard background (transparency indicator)
+		{
+			const float  csz = 8.0f;
+			const ImU32  ca  = IM_COL32( 50, 50, 50, 255 );
+			const ImU32  cb  = IM_COL32( 75, 75, 75, 255 );
+			int nx = ( int )ceilf( sz.x / csz );
+			int ny = ( int )ceilf( sz.y / csz );
+			for ( int cy = 0; cy < ny; cy++ )
+				for ( int cx = 0; cx < nx; cx++ )
+				{
+					ImU32  col = ( ( cx + cy ) & 1 ) ? cb : ca;
+					ImVec2 tl  = ImVec2( bb.Min.x + cx * csz, bb.Min.y + cy * csz );
+					ImVec2 br  = ImVec2( ImMin( tl.x + csz, bb.Max.x ), ImMin( tl.y + csz, bb.Max.y ) );
+					dl->AddRectFilled( tl, br, col );
+				}
+		}
+
+		// Image — compute UV range from current pan/zoom
+		{
+			float visW = sz.x / totalScale;
+			float visH = sz.y / totalScale;
+			float uMin = ( imgCenter.x - visW * 0.5f ) / imageSize.x;
+			float uMax = ( imgCenter.x + visW * 0.5f ) / imageSize.x;
+			float vMin = ( imgCenter.y - visH * 0.5f ) / imageSize.y;
+			float vMax = ( imgCenter.y + visH * 0.5f ) / imageSize.y;
+			dl->AddImage( image, bb.Min, bb.Max, ImVec2( uMin, vMin ), ImVec2( uMax, vMax ) );
+		}
+
+		// Pixel-grid overlay (shown when zoomed in enough for pixels to be visible)
+		if ( state.Zoom * fitScale > 8.0f )
+		{
+			float pixSz = totalScale; // one image pixel in screen pixels
+			// find first pixel boundary visible in widget
+			float startX = bb.Min.x + fmodf( rectCenter.x - bb.Min.x - imgCenter.x * totalScale, pixSz );
+			float startY = bb.Min.y + fmodf( rectCenter.y - bb.Min.y - imgCenter.y * totalScale, pixSz );
+			for ( float x = startX; x < bb.Max.x; x += pixSz )
+				dl->AddLine( ImVec2( x, bb.Min.y ), ImVec2( x, bb.Max.y ), IM_COL32( 0, 0, 0, 60 ) );
+			for ( float y = startY; y < bb.Max.y; y += pixSz )
+				dl->AddLine( ImVec2( bb.Min.x, y ), ImVec2( bb.Max.x, y ), IM_COL32( 0, 0, 0, 60 ) );
+		}
+
+		dl->PopClipRect();
+
+		// Border
+		dl->AddRect( bb.Min, bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+
+		// Zoom % label (bottom-right corner)
+		{
+			char zoomBuf[ 16 ];
+			ImFormatString( zoomBuf, sizeof( zoomBuf ), "%.0f%%", state.Zoom * 100.0f );
+			ImVec2 ts = ImGui::CalcTextSize( zoomBuf );
+			ImVec2 tp = ImVec2( bb.Max.x - ts.x - 5.0f, bb.Max.y - ts.y - 3.0f );
+			dl->AddRectFilled( ImVec2( tp.x - 2, tp.y - 1 ), ImVec2( tp.x + ts.x + 2, tp.y + ts.y + 1 ), IM_COL32( 0, 0, 0, 140 ) );
+			dl->AddText( tp, IM_COL32( 200, 200, 200, 255 ), zoomBuf );
+		}
+
+		// Hint: double-click to reset (shown while zoomed / panned)
+		if ( hovered && ( fabsf( state.Zoom - 1.0f ) > 0.01f || state.Pan.x != 0.0f || state.Pan.y != 0.0f ) )
+		{
+			const char* hint = "dbl-click to reset";
+			ImVec2 hs = ImGui::CalcTextSize( hint );
+			ImVec2 hp = ImVec2( bb.Min.x + 4.0f, bb.Max.y - hs.y - 3.0f );
+			dl->AddRectFilled( ImVec2( hp.x - 2, hp.y - 1 ), ImVec2( hp.x + hs.x + 2, hp.y + hs.y + 1 ), IM_COL32( 0, 0, 0, 140 ) );
+			dl->AddText( hp, IM_COL32( 180, 180, 180, 200 ), hint );
+		}
+
+		// ---- Right-click pixel inspector ----
+		if ( hovered && ImGui::IsMouseDown( 1 ) )
+		{
+			ImVec2 mouseImg = screenToImg( mp );
+			int    px       = ( int )floorf( mouseImg.x );
+			int    py       = ( int )floorf( mouseImg.y );
+
+			// --- CPU pixel readback (optional) ---
+			float rgba[ 4 ] = { 0.0f, 0.0f, 0.0f, 1.0f };
+			bool  hasCPU    = ( state.Pixels      != NULL )
+			               && ( state.PixelSize.x  > 0.0f )
+			               && ( state.PixelSize.y  > 0.0f )
+			               && ( px >= 0 ) && ( px < ( int )state.PixelSize.x )
+			               && ( py >= 0 ) && ( py < ( int )state.PixelSize.y );
+			if ( hasCPU )
+			{
+				PaintReadPixel( state.Pixels, ( int )state.PixelSize.x, px, py, state.PixelFormat, rgba );
+				int ch = PaintChannelCount( state.PixelFormat );
+				bool isFloat = ( state.PixelFormat == ImPlatform_PixelFormat_R32F
+				              || state.PixelFormat == ImPlatform_PixelFormat_RG32F
+				              || state.PixelFormat == ImPlatform_PixelFormat_RGBA32F );
+				if ( ch < 2 ) rgba[ 1 ] = 0.0f;
+				if ( ch < 3 ) rgba[ 2 ] = 0.0f;
+				if ( ch < 4 ) rgba[ 3 ] = isFloat ? 0.0f : 1.0f;
+			}
+
+			// --- 4 fixed text rows ---
+			float u = ( imageSize.x > 0.0f ) ? mouseImg.x / imageSize.x : 0.0f;
+			float v = ( imageSize.y > 0.0f ) ? mouseImg.y / imageSize.y : 0.0f;
+			char posLine[ 48 ], uvLine[ 48 ], rgLine[ 48 ], baLine[ 48 ];
+			ImFormatString( posLine, sizeof( posLine ), "x: %-5d  y: %d",   px, py );
+			ImFormatString( uvLine,  sizeof( uvLine  ), "u: %-7.4f  v: %.4f", u, v );
+			if ( hasCPU )
+			{
+				bool isFloat = ( state.PixelFormat == ImPlatform_PixelFormat_R32F
+				              || state.PixelFormat == ImPlatform_PixelFormat_RG32F
+				              || state.PixelFormat == ImPlatform_PixelFormat_RGBA32F );
+				if ( isFloat )
+				{
+					ImFormatString( rgLine, sizeof( rgLine ), "R: %-7.4f  G: %.4f", rgba[ 0 ], rgba[ 1 ] );
+					ImFormatString( baLine, sizeof( baLine ), "B: %-7.4f  A: %.4f", rgba[ 2 ], rgba[ 3 ] );
+				}
+				else
+				{
+					ImFormatString( rgLine, sizeof( rgLine ), "R: %-5d  G: %d",
+					    ( int )( rgba[ 0 ] * 255.0f + 0.5f ), ( int )( rgba[ 1 ] * 255.0f + 0.5f ) );
+					ImFormatString( baLine, sizeof( baLine ), "B: %-5d  A: %d",
+					    ( int )( rgba[ 2 ] * 255.0f + 0.5f ), ( int )( rgba[ 3 ] * 255.0f + 0.5f ) );
+				}
+			}
+			else
+			{
+				ImFormatString( rgLine, sizeof( rgLine ), "R: --     G: --" );
+				ImFormatString( baLine, sizeof( baLine ), "B: --     A: --" );
+			}
+
+			// --- Layout: [loupe(sq)] [text] [swatch(sq)] — all same height ---
+			const float pad      = 7.0f;
+			const float colGap   = 8.0f;
+			const float lineH    = ImGui::GetTextLineHeight();
+			const float lineGap  = 3.0f;
+			const float sepGap   = 5.0f;
+			const float rounding = 4.0f;
+
+			// text height: 4 rows + 3 inter-row gaps + 1 separator gap
+			float textH = 4.0f * lineH + 3.0f * lineGap + sepGap;
+			// inner height: loupe + swatch are both this tall (square)
+			float innerH  = ImMax( textH, lineH * 5.0f ); // at least some minimum
+			float squareSz = innerH;                        // loupe and swatch share this
+
+			float textW = ImGui::CalcTextSize( posLine ).x;
+			textW = ImMax( textW, ImGui::CalcTextSize( uvLine ).x );
+			textW = ImMax( textW, ImGui::CalcTextSize( rgLine ).x );
+			textW = ImMax( textW, ImGui::CalcTextSize( baLine ).x );
+
+			float panelW = pad + squareSz + colGap + textW + colGap + squareSz + pad;
+			float panelH = pad + innerH + pad;
+
+			// --- Position: top-right of cursor, clamp to display ---
+			float px0 = mp.x + 14.0f;
+			float py0 = mp.y - panelH - 6.0f;
+			if ( px0 + panelW > g.IO.DisplaySize.x - 2.0f ) px0 = mp.x - 14.0f - panelW;
+			if ( py0 < 2.0f )                                py0 = mp.y + 10.0f;
+			if ( py0 + panelH > g.IO.DisplaySize.y - 2.0f ) py0 = g.IO.DisplaySize.y - panelH - 2.0f;
+
+			ImVec2 panelMin = ImVec2( px0, py0 );
+			ImVec2 panelMax = ImVec2( px0 + panelW, py0 + panelH );
+
+			ImDrawList* fg = ImGui::GetForegroundDrawList();
+
+			fg->AddRectFilled( panelMin, panelMax, IM_COL32( 18, 18, 18, 235 ), rounding );
+			fg->AddRect( panelMin, panelMax, IM_COL32( 90, 90, 90, 220 ), rounding, 0, 1.0f );
+
+			// --- Loupe (left square, fills innerH) ---
+			ImVec2 lTL  = ImVec2( panelMin.x + pad, panelMin.y + pad );
+			ImVec2 lBR  = ImVec2( lTL.x + squareSz, lTL.y + squareSz );
+			ImVec2 lCtr = ( lTL + lBR ) * 0.5f;
+
+			const float loupePixels = 11.0f;
+			const float pixSz       = squareSz / loupePixels;
+			float lu = ( mouseImg.x - loupePixels * 0.5f ) / imageSize.x;
+			float ru = ( mouseImg.x + loupePixels * 0.5f ) / imageSize.x;
+			float tv = ( mouseImg.y - loupePixels * 0.5f ) / imageSize.y;
+			float bv = ( mouseImg.y + loupePixels * 0.5f ) / imageSize.y;
+
+			// Checkerboard
+			fg->PushClipRect( lTL, lBR, true );
+			{
+				const float csz = 5.0f;
+				int nx = ( int )ceilf( squareSz / csz );
+				int ny = ( int )ceilf( squareSz / csz );
+				for ( int cy2 = 0; cy2 < ny; cy2++ )
+					for ( int cx2 = 0; cx2 < nx; cx2++ )
+					{
+						ImU32  c2  = ( ( cx2 + cy2 ) & 1 ) ? IM_COL32( 70, 70, 70, 255 ) : IM_COL32( 45, 45, 45, 255 );
+						ImVec2 tl2 = ImVec2( lTL.x + cx2 * csz, lTL.y + cy2 * csz );
+						ImVec2 br2 = ImVec2( ImMin( tl2.x + csz, lBR.x ), ImMin( tl2.y + csz, lBR.y ) );
+						fg->AddRectFilled( tl2, br2, c2 );
+					}
+			}
+			fg->PopClipRect();
+
+			fg->AddImage( image, lTL, lBR, ImVec2( lu, tv ), ImVec2( ru, bv ) );
+
+			// Pixel grid + crosshair + highlight
+			fg->PushClipRect( lTL, lBR, true );
+			for ( int i = 0; i <= ( int )loupePixels; i++ )
+			{
+				float x2 = lTL.x + i * pixSz;
+				float y2 = lTL.y + i * pixSz;
+				fg->AddLine( ImVec2( x2, lTL.y ), ImVec2( x2, lBR.y ), IM_COL32( 0, 0, 0, 70 ) );
+				fg->AddLine( ImVec2( lTL.x, y2 ), ImVec2( lBR.x, y2 ), IM_COL32( 0, 0, 0, 70 ) );
+			}
+			{
+				float fracX  = mouseImg.x - floorf( mouseImg.x );
+				float fracY  = mouseImg.y - floorf( mouseImg.y );
+				float pxLeft = lCtr.x - fracX * pixSz;
+				float pxTop  = lCtr.y - fracY * pixSz;
+				ImVec2 ctr2  = ImVec2( pxLeft + pixSz * 0.5f, pxTop + pixSz * 0.5f );
+				fg->AddLine( ImVec2( lTL.x, ctr2.y ), ImVec2( lBR.x, ctr2.y ), IM_COL32( 255, 60, 60, 100 ) );
+				fg->AddLine( ImVec2( ctr2.x, lTL.y ), ImVec2( ctr2.x, lBR.y ), IM_COL32( 255, 60, 60, 100 ) );
+				fg->AddRect( ImVec2( pxLeft, pxTop ), ImVec2( pxLeft + pixSz, pxTop + pixSz ),
+				             IM_COL32( 255, 60, 60, 255 ), 0.0f, 0, 1.5f );
+			}
+			fg->PopClipRect();
+			fg->AddRect( lTL, lBR, IM_COL32( 110, 110, 110, 200 ), 0.0f, 0, 1.0f );
+
+			// --- Text column (4 rows, vertically centred) ---
+			const ImU32 colValue = IM_COL32( 230, 230, 230, 255 );
+			const ImU32 colLabel = IM_COL32( 130, 130, 130, 255 );
+			const ImU32 colDim   = IM_COL32(  90,  90,  90, 255 );
+
+			float tx = lBR.x + colGap;
+			float ty = panelMin.y + pad + ( innerH - textH ) * 0.5f;
+
+			auto drawRow = [&]( const char* text, ImU32 col )
+			{
+				fg->AddText( ImVec2( tx, ty ), col, text );
+				ty += lineH + lineGap;
+			};
+
+			drawRow( posLine, colValue );
+			drawRow( uvLine,  colLabel );
+			ty += sepGap;
+			drawRow( rgLine, hasCPU ? colValue : colDim );
+			drawRow( baLine, hasCPU ? colValue : colDim );
+
+			// --- Color swatch (right square, same size as loupe) ---
+			ImVec2 sTL = ImVec2( panelMax.x - pad - squareSz, panelMin.y + pad );
+			ImVec2 sBR = ImVec2( panelMax.x - pad,            panelMin.y + pad + squareSz );
+			ImU32  swCol = hasCPU
+			             ? ImGui::ColorConvertFloat4ToU32( ImVec4( rgba[ 0 ], rgba[ 1 ], rgba[ 2 ], 1.0f ) )
+			             : IM_COL32( 45, 45, 45, 255 );
+			fg->AddRectFilled( sTL, sBR, swCol, 2.0f );
+			if ( !hasCPU )
+			{
+				// Dim hatching to signal "no data"
+				fg->PushClipRect( sTL, sBR, true );
+				for ( float d = 0.0f; d < squareSz * 2.0f; d += 8.0f )
+					fg->AddLine( ImVec2( sTL.x + d, sTL.y ), ImVec2( sTL.x, sTL.y + d ), IM_COL32( 70, 70, 70, 255 ) );
+				fg->PopClipRect();
+			}
+			fg->AddRect( sTL, sBR, IM_COL32( 90, 90, 90, 180 ), 2.0f, 0, 1.0f );
+		}
+
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
 	// Window Customization
 	//////////////////////////////////////////////////////////////////////////
 	void SetCurrentWindowBackgroundImage( ImTextureID id, ImVec2 imgSize, bool fixedSize, ImU32 col )

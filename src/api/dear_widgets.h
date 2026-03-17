@@ -2212,6 +2212,21 @@ struct ImPaintCanvasData
 	void DestroyTexture() { if ( _TexID != ImTextureID_Invalid ) { ImPlatform_DestroyTexture( _TexID ); _TexID = ImTextureID_Invalid; } _TexW = _TexH = 0; }
 };
 
+// Image Viewer: persistent pan/zoom state + optional CPU pixel buffer for inspector readback
+struct ImImageViewerState
+{
+	float  Zoom;         // Display zoom factor: 1.0 = fit image to widget
+	ImVec2 Pan;          // Pan offset in image-space pixels from image centre
+
+	// Optional: provide a CPU copy of the texture pixels to show RGBA values in the inspector.
+	// If NULL, the inspector only shows (x, y) coordinates.
+	const void*            Pixels;      // CPU pixel buffer
+	ImVec2                 PixelSize;   // Dimensions of the Pixels buffer (should match texture)
+	ImPlatform_PixelFormat PixelFormat;
+
+	ImImageViewerState() : Zoom( 1.0f ), Pan( 0.0f, 0.0f ), Pixels( NULL ), PixelSize( 0.0f, 0.0f ), PixelFormat( ImPlatform_PixelFormat_RGBA8 ) {}
+};
+
 namespace ImWidgets{
 	extern ImGlobalData GlobalData;
 
@@ -2937,6 +2952,16 @@ namespace ImWidgets{
 
 	// Up Vector selector (hemisphere picker)
 	IMGUI_API bool UpVector( char const* label, float* direction, int defaultUpAxis = 1, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// Image Carousel
+	IMGUI_API bool ImageCarousel( char const* label, ImTextureID* images, ImVec2* imageSizes, int imageCount, int* pSelectedIndex, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// Image Bento Grid: displays images in a uniform grid, cropping to a target cell aspect ratio (center crop)
+	IMGUI_API bool ImageBento( char const* label, ImTextureID* images, ImVec2* imageSizes, int imageCount, int* pSelectedIndex, int columnsPerRow = 4, float cellAspect = 1.0f, float spacing = 4.0f );
+
+	// Image Viewer: pan (left-drag), zoom (scroll wheel), double-click to reset.
+	// Right-click shows a pixel-inspector loupe with RGBA values (requires state.Pixels).
+	IMGUI_API bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize = ImVec2( 0, 0 ) );
 
 	//////////////////////////////////////////////////////////////////////////
 	// Window Customization

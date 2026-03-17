@@ -1979,6 +1979,67 @@ namespace ImWidgets {
 				ImWidgets::UpVector( "##UpVec", upDir );
 				ImGui::Text( "Direction: %.3f, %.3f, %.3f", upDir[ 0 ], upDir[ 1 ], upDir[ 2 ] );
 			}
+			if ( ImGui::CollapsingHeader( "Image Carousel" ) )
+			{
+				static int carouselIdx = 0;
+				ImTextureID carouselImages[] = { astro_img, clock_img, man_img, illlustration_img, bike_img };
+				ImVec2 carouselSizes[] = { astro_size, clock_size, man_size, illlustration_size, bike_size };
+				ImWidgets::ImageCarousel( "##Carousel", carouselImages, carouselSizes, IM_ARRAYSIZE( carouselImages ), &carouselIdx );
+				ImGui::Text( "Selected: %d", carouselIdx );
+			}
+			if ( ImGui::CollapsingHeader( "Image Bento" ) )
+			{
+				static int bentoIdx = 0;
+				static int bentoColumns = 3;
+				static float bentoAspect = 1.0f;
+				ImTextureID bentoImages[] = { astro_img, clock_img, man_img, illlustration_img, bike_img };
+				ImVec2 bentoSizes[] = { astro_size, clock_size, man_size, illlustration_size, bike_size };
+				ImGui::SliderInt( "Columns##Bento", &bentoColumns, 1, 6 );
+				ImGui::SliderFloat( "Aspect (W/H)##Bento", &bentoAspect, 0.25f, 4.0f, "%.2f" );
+				ImWidgets::ImageBento( "##Bento", bentoImages, bentoSizes, IM_ARRAYSIZE( bentoImages ), &bentoIdx, bentoColumns, bentoAspect );
+				ImGui::Text( "Selected: %d", bentoIdx );
+			}
+			if ( ImGui::CollapsingHeader( "Image Viewer" ) )
+			{
+				// Reuse GPU textures already loaded at startup.
+				// CPU copies are loaded separately (stbi keeps them alive) so the inspector
+				// can read pixel values. GPU memory is not duplicated.
+				static const char* viewerFiles[] = {
+					"astro.png", "clock.png", "man.png",
+					"pexels-robert-bogdan-156165-1152351.jpg", "camera-542784_1280.png"
+				};
+				static const char* viewerNames[] = { "Astronaut", "Clock", "Man", "Illustration", "Bike" };
+				static stbi_uc*    viewerCPU[ 5 ] = {};
+				static bool        viewerCPULoaded = false;
+
+				if ( !viewerCPULoaded )
+				{
+					viewerCPULoaded = true;
+					for ( int i = 0; i < 5; i++ )
+					{
+						int w, h;
+						viewerCPU[ i ] = stbi_load( viewerFiles[ i ], &w, &h, NULL, 4 );
+					}
+				}
+
+				static int viewerIdx = 0;
+				static ImImageViewerState viewerState;
+
+				if ( ImGui::Combo( "Image##Viewer", &viewerIdx, viewerNames, 5 ) )
+					viewerState = ImImageViewerState{};
+
+				ImTextureID viewerTexes[] = { astro_img, clock_img, man_img, illlustration_img, bike_img };
+				ImVec2      viewerSizes[] = { astro_size, clock_size, man_size, illlustration_size, bike_size };
+
+				// Wire CPU buffer for current image (enables pixel value readback in inspector)
+				viewerState.Pixels      = viewerCPU[ viewerIdx ];
+				viewerState.PixelSize   = viewerSizes[ viewerIdx ];
+				viewerState.PixelFormat = ImPlatform_PixelFormat_RGBA8;
+
+				ImGui::Text( "Scroll: zoom  |  Left-drag: pan  |  Dbl-click: reset  |  Right-click: inspect" );
+				ImWidgets::ImageViewer( "##Viewer", viewerTexes[ viewerIdx ], viewerSizes[ viewerIdx ], viewerState );
+
+			}
 			if ( ImGui::CollapsingHeader( "SliderN" ) )
 			{
 				static float value[ 3 ] = { 0.25f, 10.0f, 100.0f };
