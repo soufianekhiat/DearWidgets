@@ -15888,8 +15888,7 @@ namespace ImWidgets {
 		return SliderSplineScalar( label, ImGuiDataType_S32, value, &v_min, &v_max, control_points, num_points, v_height, v_thickness, format, flags );
 	}
 
-#if 0
-	bool DragFloatPrecise( char const* label, float* value, float v_min, float v_max, ImGuiSliderFlags flags )
+	bool DragFloatPrecise( char const* label, float* value, float v_min, float v_max, const char* format, ImGuiSliderFlags flags )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
@@ -15898,26 +15897,21 @@ namespace ImWidgets {
 		ImGuiContext& g = *GImGui;
 		const ImGuiStyle& style = g.Style;
 		const ImGuiID id = window->GetID( label );
-		const ImGuiID idP = window->GetID( id );
 		const float w = ImGui::CalcItemWidth();
 
 		const ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
 		const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, label_size.y + style.FramePadding.y * 2.0f ) );
 		const ImRect total_bb( frame_bb.Min, frame_bb.Max + ImVec2( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f, 0.0f ) );
 
-		float precision_block_size = GetStyle().PrecisionDrag_BlockSize;
-
 		const bool temp_input_allowed = ( flags & ImGuiSliderFlags_NoInput ) == 0;
 		ImGui::ItemSize( total_bb, style.FramePadding.y );
 		if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, temp_input_allowed ? ImGuiItemFlags_Inputable : 0 ) )
 			return false;
 
-		// Default format string when passing NULL
-		const bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.InFlags );
+		const bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.ItemFlags );
 		bool temp_input_is_active = temp_input_allowed && ImGui::TempInputIsActive( id );
 		if ( !temp_input_is_active )
 		{
-			// Tabbing or CTRL-clicking on Drag turns it into an InputText
 			const bool clicked = hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id );
 			const bool double_clicked = ( hovered && g.IO.MouseClickedCount[ 0 ] == 2 && ImGui::TestKeyOwner( ImGuiKey_MouseLeft, id ) );
 			const bool make_active = ( clicked || double_clicked || g.NavActivateId == id );
@@ -15927,7 +15921,6 @@ namespace ImWidgets {
 				if ( ( clicked && g.IO.KeyCtrl ) || double_clicked || ( g.NavActivateId == id && ( g.NavActivateFlags & ImGuiActivateFlags_PreferInput ) ) )
 					temp_input_is_active = true;
 
-			// (Optional) simple click (without moving) turns Drag into an InputText
 			if ( g.IO.ConfigDragClickToInputText && temp_input_allowed && !temp_input_is_active )
 				if ( g.ActiveId == id && hovered && g.IO.MouseReleased[ 0 ] && !ImGui::IsMouseDragPastThreshold( 0, g.IO.MouseDragThreshold * ImGui::GetIO().MouseDragThreshold ) )
 				{
@@ -15945,66 +15938,72 @@ namespace ImWidgets {
 			}
 		}
 
-		//float fLog = ImMax< float >( ImRound( ImAbs( ImLog( ImAbs( ImFract( *value ) ) )/ImLog( 10.0f ) ) ), 5.0f );
-		//float fLog;
-		//float fract = ImAbs( ImFract( *value ) );
-		//if ( *value < 1.0f && fract > 0.0f )
-		//	fLog = ImMax( ImAbs( ImLog( fract ) / ImLog( 10.0f ) ), 1.0f );
-		//else
-		//if ( *value != 0 )
-		//	fLog = ImRound( ImLog( ImAbs( *value ) ) / ImLog( 10.0f ) );
-		//else
-		//	fLog = 1.0f;
+		// Value ladder rungs
+		static const float kRungs[] = { 0.001f, 0.01f, 0.1f, 1.0f, 10.0f, 100.0f };
+		static const int kRungCount = IM_ARRAYSIZE( kRungs );
+		static const int kDefaultRung = 3; // "1.0"
 
-		//int log = ( int )fLog;
-		//std::string sFormat( 16, '\0' );
-		//ImFormatString( &sFormat[ 0 ], 16, "%%.%df", log );
+		// Determine active rung and auto format
+		int activeRung = kDefaultRung;
+		const char* autoFormat = "%.1f";
+
+		if ( g.ActiveId == id )
+		{
+			float rungHeight = GetStyle().PrecisionDrag_BlockSize;
+			float dy = g.IO.MouseClickedPos[ 0 ].y - g.IO.MousePos.y; // up = positive = larger rungs
+			int rungOffset = ( int )ImFloor( ( dy + rungHeight * 0.5f ) / rungHeight );
+			activeRung = ImClamp( kDefaultRung + rungOffset, 0, kRungCount - 1 );
+		}
+
+		float speed = kRungs[ activeRung ];
+		if      ( speed >= 10.0f )  autoFormat = "%.0f";
+		else if ( speed >= 1.0f )   autoFormat = "%.1f";
+		else if ( speed >= 0.1f )   autoFormat = "%.2f";
+		else if ( speed >= 0.01f )  autoFormat = "%.3f";
+		else                        autoFormat = "%.4f";
+
+		const char* displayFormat = format ? format : autoFormat;
 
 		if ( temp_input_is_active )
 		{
-			// Only clamp CTRL+Click input when ImGuiSliderFlags_AlwaysClamp is set
-			const bool is_clamp_input = ( flags & ImGuiSliderFlags_AlwaysClamp ) != 0 && ( ImGui::DataTypeCompare( ImGuiDataType_Float, &v_min, &v_max ) < 0 );
-			//return ImGui::TempInputScalar( frame_bb, id, label, ImGuiDataType_Float, value, sFormat.c_str(), is_clamp_input ? &v_min : NULL, is_clamp_input ? &v_max : NULL );
-			return ImGui::TempInputScalar( frame_bb, id, label, ImGuiDataType_Float, value, "%.7f", is_clamp_input ? &v_min : NULL, is_clamp_input ? &v_max : NULL);
+			const bool is_clamp_input = ( flags & ImGuiSliderFlags_AlwaysClamp ) != 0 && ( v_min < v_max );
+			return ImGui::TempInputScalar( frame_bb, id, label, ImGuiDataType_Float, value, displayFormat, is_clamp_input ? &v_min : NULL, is_clamp_input ? &v_max : NULL );
 		}
 
-		float fLog;
-		if ( ImGui::IsItemActive() )
+		// Apply horizontal delta directly (no DragBehavior — its accumulator fights dynamic speed changes)
+		bool value_changed = false;
+		if ( g.ActiveId == id )
 		{
-			float precision_block_size_half = precision_block_size * 0.5f;
-			ImVec2 bb_center = frame_bb.GetCenter();
-			const ImRect drag_top_bb( ImVec2( bb_center.x - precision_block_size_half, frame_bb.Min.y - precision_block_size ),
-									  ImVec2( bb_center.x + precision_block_size_half, frame_bb.Min.y ) );
-			const ImRect drag_bottom_bb( ImVec2( bb_center.x - precision_block_size_half, frame_bb.Max.y ),
-										 ImVec2( bb_center.x + precision_block_size_half, frame_bb.Max.y + precision_block_size ) );
-			window->DrawList->AddRect( drag_top_bb.Min, drag_top_bb.Max, IM_COL32( 255, 0, 0, 255 ) );
-			window->DrawList->AddRect( drag_bottom_bb.Min, drag_bottom_bb.Max, IM_COL32( 0, 255, 0, 255 ) );
-			ImGui::ItemAdd( drag_top_bb, idP, NULL, ImGuiItemFlags_AllowOverlap );
-			if ( ImGui::IsItemHovered() )
+			if ( !ImGui::IsMouseDown( 0 ) )
 			{
-				fLog = 10.0f;
+				ImGui::ClearActiveID();
 			}
-			ImGui::ItemAdd( drag_bottom_bb, idP, NULL, ImGuiItemFlags_AllowOverlap );
-			if ( ImGui::IsItemHovered() )
+			else if ( ImGui::IsMouseDragPastThreshold( 0 ) )
 			{
-				fLog = 0.01f;
+				float delta = g.IO.MouseDelta.x * speed;
+				if ( g.IO.KeyAlt )
+					delta *= 1.0f / 100.0f;
+				if ( g.IO.KeyShift )
+					delta *= 10.0f;
+				if ( delta != 0.0f )
+				{
+					*value += delta;
+					if ( v_min < v_max )
+						*value = ImClamp( *value, v_min, v_max );
+					value_changed = true;
+					ImGui::MarkItemEdited( id );
+				}
 			}
 		}
 
 		// Draw frame
 		const ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
-		ImGui::RenderNavHighlight( frame_bb, id );
+		ImGui::RenderNavCursor( frame_bb, id );
 		ImGui::RenderFrame( frame_bb.Min, frame_bb.Max, frame_col, true, style.FrameRounding );
 
-		// Drag behavior
-		//const bool value_changed = ImGui::DragBehavior( id, ImGuiDataType_Float, value, fLog, &v_min, &v_max, sFormat.c_str(), 0);
-		const bool value_changed = ImGui::DragBehavior( id, ImGuiDataType_Float, value, fLog, &v_min, &v_max, "%.7f", 0 );
-		if ( value_changed )
-			ImGui::MarkItemEdited( id );
-
-		// Display value using user-provided display format so user can add prefix/suffix/decorations to the value.
+		// Display value
 		char value_buf[ 64 ];
-		const char* value_buf_end = value_buf + ImGui::DataTypeFormatString( value_buf, IM_ARRAYSIZE( value_buf ), ImGuiDataType_Float, value, "%.7f" );
+		const char* value_buf_end = value_buf + ImGui::DataTypeFormatString( value_buf, IM_ARRAYSIZE( value_buf ), ImGuiDataType_Float, value, displayFormat );
 		if ( g.LogEnabled )
 			ImGui::LogSetNextTextDecoration( "{", "}" );
 		ImGui::RenderTextClipped( frame_bb.Min, frame_bb.Max, value_buf, value_buf_end, NULL, ImVec2( 0.5f, 0.5f ) );
@@ -16012,9 +16011,40 @@ namespace ImWidgets {
 		if ( label_size.x > 0.0f )
 			ImGui::RenderText( ImVec2( frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + style.FramePadding.y ), label );
 
+		// Draw ladder overlay when active
+		if ( g.ActiveId == id )
+		{
+			ImDrawList* fgDl = ImGui::GetForegroundDrawList();
+			float rungHeight = GetStyle().PrecisionDrag_BlockSize;
+			float rungWidth = 60.0f;
+			float anchorX = g.IO.MouseClickedPos[ 0 ].x;
+			float anchorY = g.IO.MouseClickedPos[ 0 ].y;
+
+			for ( int i = 0; i < kRungCount; i++ )
+			{
+				float ry = anchorY - ( i - kDefaultRung ) * rungHeight;
+				ImVec2 rMin( anchorX - rungWidth * 0.5f, ry - rungHeight * 0.5f );
+				ImVec2 rMax( anchorX + rungWidth * 0.5f, ry + rungHeight * 0.5f );
+
+				bool isActive = ( i == activeRung );
+				ImU32 bg = isActive ? ImGui::GetColorU32( ImGuiCol_FrameBgActive ) : ImGui::GetColorU32( ImGuiCol_FrameBg, 0.9f );
+				fgDl->AddRectFilled( rMin, rMax, bg, 2.0f );
+				fgDl->AddRect( rMin, rMax, ImGui::GetColorU32( ImGuiCol_Border ), 2.0f );
+
+				char rungLabel[ 16 ];
+				if ( kRungs[ i ] >= 1.0f )
+					ImFormatString( rungLabel, IM_ARRAYSIZE( rungLabel ), "%.0f", kRungs[ i ] );
+				else
+					ImFormatString( rungLabel, IM_ARRAYSIZE( rungLabel ), "%g", kRungs[ i ] );
+
+				ImVec2 textSize = ImGui::CalcTextSize( rungLabel );
+				ImVec2 textPos( ( rMin.x + rMax.x - textSize.x ) * 0.5f, ( rMin.y + rMax.y - textSize.y ) * 0.5f );
+				fgDl->AddText( textPos, ImGui::GetColorU32( isActive ? ImGuiCol_Text : ImGuiCol_TextDisabled ), rungLabel );
+			}
+		}
+
 		return value_changed;
 	}
-#endif
 
 	//////////////////////////////////////////////////////////////////////////
 	// Window Customization

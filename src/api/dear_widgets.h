@@ -619,7 +619,7 @@ struct ImWidgetsStyle
 		NavCursor_Thickness      = 2.0f;
 		NavCursor_Distance       = 3.0f;
 		WhitePoint_Radius        = 5.0f;
-		PrecisionDrag_BlockSize  = 128.0f;
+		PrecisionDrag_BlockSize  = 28.0f;
 
 		// Gradient Editor
 		Gradient_MarkerHeight        = 12.0f;
@@ -2933,7 +2933,7 @@ namespace ImWidgets{
 									const ImVec2* control_points = NULL, int num_points = 4, float v_height = 0.0f,
 									float v_thickness = 0.0f, const char* format = "%d", ImGuiSliderFlags flags = 0 );
 
-	//IMGUI_API bool DragFloatPrecise( char const* label, float* value, float v_min, float v_max, ImGuiSliderFlags flags );
+	IMGUI_API bool DragFloatPrecise( char const* label, float* value, float v_min = 0.0f, float v_max = 0.0f, const char* format = NULL, ImGuiSliderFlags flags = 0 );
 
 	//////////////////////////////////////////////////////////////////////////
 	// Window Customization

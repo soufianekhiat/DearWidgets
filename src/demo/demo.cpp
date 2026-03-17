@@ -1963,14 +1963,16 @@ namespace ImWidgets {
 				ImGui::Text( "Value: %d", value );
 				value += ( int )ImWidgets::ButtonExWithHole( "With Hole", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 );
 			}
-#if 0
 			if ( ImGui::CollapsingHeader( "DragFloatPrecise" ) )
 			{
-				static float value = 100.0f;
-				ImWidgets::DragFloatPrecise( "Value##DragFloatPrecise", &value, -FLT_MAX, FLT_MAX, ImGuiSliderFlags_AlwaysClamp );
-
+				static float value1 = 1.0f;
+				static float value2 = 100.0f;
+				static float value3 = 0.5f;
+				ImWidgets::DragFloatPrecise( "Unbounded", &value1 );
+				ImWidgets::DragFloatPrecise( "Clamped [0..1000]", &value2, 0.0f, 1000.0f );
+				ImWidgets::DragFloatPrecise( "Fixed format", &value3, 0.0f, 0.0f, "%.6f" );
+				ImGui::TextWrapped( "Click and drag left/right to edit. Move up/down to change precision rung." );
 			}
-#endif
 			if ( ImGui::CollapsingHeader( "SliderN" ) )
 			{
 				static float value[ 3 ] = { 0.25f, 10.0f, 100.0f };
