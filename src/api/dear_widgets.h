@@ -1639,14 +1639,54 @@ struct ImCurveEditorData
 
 	int AddKey( ImVec2 pos, ImCurveEditorSeg seg = ImCurveEditorSeg_CubicBezier )
 	{
+		// Capture neighbors before insertion (push_back may reallocate)
+		ImCurveEditorKey prevKey, nextKey;
+		bool hasPrev = false, hasNext = false;
+		for ( int i = 0; i < Keys.Size; ++i )
+		{
+			if ( Keys[ i ].Pos.x < pos.x )
+				{ prevKey = Keys[ i ]; hasPrev = true; }
+			else if ( Keys[ i ].Pos.x > pos.x && !hasNext )
+				{ nextKey = Keys[ i ]; hasNext = true; }
+		}
+
 		Keys.push_back( ImCurveEditorKey( pos, seg ) );
 		SortKeys();
+		int newIdx = Keys.Size - 1;
 		for ( int i = 0; i < Keys.Size; ++i )
 		{
 			if ( Keys[ i ].Pos.x == pos.x && Keys[ i ].Pos.y == pos.y )
-				return i;
+				{ newIdx = i; break; }
 		}
-		return Keys.Size - 1;
+
+		// Evaluate the existing Bezier tangent at the insertion point via De Casteljau
+		if ( seg == ImCurveEditorSeg_CubicBezier && hasPrev && hasNext )
+		{
+			float segW = nextKey.Pos.x - prevKey.Pos.x;
+			if ( segW > 1e-6f )
+			{
+				float t    = ( pos.x - prevKey.Pos.x ) / segW;
+				// Control points
+				float P0x = prevKey.Pos.x,                          P0y = prevKey.Pos.y;
+				float P1x = P0x + prevKey.TangentRight.x,           P1y = P0y + prevKey.TangentRight.y;
+				float P2x = nextKey.Pos.x + nextKey.TangentLeft.x,  P2y = nextKey.Pos.y + nextKey.TangentLeft.y;
+				float P3x = nextKey.Pos.x,                          P3y = nextKey.Pos.y;
+				// De Casteljau level 1
+				float P01x  = P0x  + t*(P1x-P0x),   P01y  = P0y  + t*(P1y-P0y);
+				float P12x  = P1x  + t*(P2x-P1x),   P12y  = P1y  + t*(P2y-P1y);
+				float P23x  = P2x  + t*(P3x-P2x),   P23y  = P2y  + t*(P3y-P2y);
+				// De Casteljau level 2
+				float P012x = P01x + t*(P12x-P01x), P012y = P01y + t*(P12y-P01y);
+				float P123x = P12x + t*(P23x-P12x), P123y = P12y + t*(P23y-P12y);
+				// De Casteljau level 3 — split point
+				float P0123x = P012x + t*(P123x-P012x), P0123y = P012y + t*(P123y-P012y);
+				// Tangent handles relative to the split point
+				Keys[ newIdx ].TangentLeft  = ImVec2( P012x - P0123x, P012y - P0123y );
+				Keys[ newIdx ].TangentRight = ImVec2( P123x - P0123x, P123y - P0123y );
+				Keys[ newIdx ].TangentMode  = ImCurveEditorTangentMode_Aligned;
+			}
+		}
+		return newIdx;
 	}
 
 	bool RemoveKey( int idx )
@@ -1820,9 +1860,9 @@ struct ImColorCurveKey
 	ImVec2						TangentRight;	// Right tangent handle (for CubicBezier)
 	ImCurveEditorTangentMode	TangentMode;	// How left/right handles relate
 
-	ImColorCurveKey() : Position( 0.0f ), Value( 0.0f ), Segment( ImCurveEditorSeg_Linear ),
+	ImColorCurveKey() : Position( 0.0f ), Value( 0.0f ), Segment( ImCurveEditorSeg_CubicBezier ),
 		TangentLeft( -0.1f, 0.0f ), TangentRight( 0.1f, 0.0f ), TangentMode( ImCurveEditorTangentMode_Mirrored ) {}
-	ImColorCurveKey( float pos, float val ) : Position( pos ), Value( val ), Segment( ImCurveEditorSeg_Linear ),
+	ImColorCurveKey( float pos, float val ) : Position( pos ), Value( val ), Segment( ImCurveEditorSeg_CubicBezier ),
 		TangentLeft( -0.1f, 0.0f ), TangentRight( 0.1f, 0.0f ), TangentMode( ImCurveEditorTangentMode_Mirrored ) {}
 };
 
@@ -1850,14 +1890,54 @@ struct ImColorCurveData
 
 	int AddKey( float pos, float val )
 	{
+		// Capture neighbors before insertion (push_back may reallocate)
+		ImColorCurveKey prevKey, nextKey;
+		bool hasPrev = false, hasNext = false;
+		for ( int i = 0; i < Keys.Size; ++i )
+		{
+			if ( Keys[ i ].Position < pos )
+				{ prevKey = Keys[ i ]; hasPrev = true; }
+			else if ( Keys[ i ].Position > pos && !hasNext )
+				{ nextKey = Keys[ i ]; hasNext = true; }
+		}
+
 		Keys.push_back( ImColorCurveKey( pos, val ) );
 		SortKeys();
+		int newIdx = Keys.Size - 1;
 		for ( int i = 0; i < Keys.Size; ++i )
 		{
 			if ( Keys[ i ].Position == pos )
-				return i;
+				{ newIdx = i; break; }
 		}
-		return Keys.Size - 1;
+
+		// Evaluate the existing Bezier tangent at the insertion point via De Casteljau
+		if ( hasPrev && hasNext )
+		{
+			float segW = nextKey.Position - prevKey.Position;
+			if ( segW > 1e-6f )
+			{
+				float t    = ( pos - prevKey.Position ) / segW;
+				// Control points
+				float P0x = prevKey.Position,                            P0y = prevKey.Value;
+				float P1x = P0x + prevKey.TangentRight.x,               P1y = P0y + prevKey.TangentRight.y;
+				float P2x = nextKey.Position + nextKey.TangentLeft.x,   P2y = nextKey.Value + nextKey.TangentLeft.y;
+				float P3x = nextKey.Position,                            P3y = nextKey.Value;
+				// De Casteljau level 1
+				float P01x  = P0x  + t*(P1x-P0x),   P01y  = P0y  + t*(P1y-P0y);
+				float P12x  = P1x  + t*(P2x-P1x),   P12y  = P1y  + t*(P2y-P1y);
+				float P23x  = P2x  + t*(P3x-P2x),   P23y  = P2y  + t*(P3y-P2y);
+				// De Casteljau level 2
+				float P012x = P01x + t*(P12x-P01x), P012y = P01y + t*(P12y-P01y);
+				float P123x = P12x + t*(P23x-P12x), P123y = P12y + t*(P23y-P12y);
+				// De Casteljau level 3 — split point
+				float P0123x = P012x + t*(P123x-P012x), P0123y = P012y + t*(P123y-P012y);
+				// Tangent handles relative to the split point
+				Keys[ newIdx ].TangentLeft  = ImVec2( P012x - P0123x, P012y - P0123y );
+				Keys[ newIdx ].TangentRight = ImVec2( P123x - P0123x, P123y - P0123y );
+				Keys[ newIdx ].TangentMode  = ImCurveEditorTangentMode_Aligned;
+			}
+		}
+		return newIdx;
 	}
 
 	bool RemoveKey( int idx )

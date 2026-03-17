@@ -774,6 +774,7 @@ namespace ImWidgets {
 			ShowDrawShapeDemo();
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 			ShowCustomShaderDemo();
+			ImGui::SeparatorText( "Primitives" );
 			if ( ImGui::CollapsingHeader( "Thick line", ImGuiTreeNodeFlags_DefaultOpen ) )
 			{
 				float const size = ImGui::GetContentRegionAvail().x;
@@ -811,6 +812,7 @@ namespace ImWidgets {
 			}
 #endif
 			ShowDrawSquircleDemo();
+			ImGui::SeparatorText( "Gradients" );
 			if ( ImGui::CollapsingHeader( "Linear Gradient" ) )
 			{
 				float const size = ImGui::GetContentRegionAvail().x;
@@ -1070,6 +1072,7 @@ namespace ImWidgets {
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
 				ImGui::Text( "Vtx: %d", shape.vertices.size() );
 			}
+			ImGui::SeparatorText( "Pointers" );
 			if ( ImGui::CollapsingHeader( "Triangles Pointers" ) )
 			{
 				const float S = ImPlatform_GetDpiScale();
@@ -1153,6 +1156,7 @@ namespace ImWidgets {
 				ImWidgets::DrawSignetFilledCursor( pDrawList, ImVec2( curPos.x + 11.0f * dx, curPos.y + fPointerLine ), width, height, height_ratio, 1.0f, angle, uBlue );
 				pDrawList->AddCircleFilled( ImVec2( curPos.x + 11.0f * dx, curPos.y + fPointerLine ), 4.0f * S, IM_COL32( 255, 128, 0, 255 ), 16 );
 			}
+			ImGui::SeparatorText( "Color" );
 			if ( ImGui::CollapsingHeader( "Color Bands" ) )
 			{
 				static float col[ 4 ] = { 1, 0, 0, 1 };
@@ -1335,6 +1339,7 @@ namespace ImWidgets {
 				}
 				ImGui::Dummy( ImVec2( width, width ) );
 			}
+			ImGui::SeparatorText( "Masked Shapes" );
 			if ( ImGui::CollapsingHeader( "Image Convex Shape" ) )
 			{
 				float const size = ImGui::GetContentRegionAvail().x;
@@ -1405,6 +1410,7 @@ namespace ImWidgets {
 
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			ImGui::SeparatorText( "Chromaticity" );
 			if ( ImGui::CollapsingHeader( "Chromaticity Plot" ) )
 			{
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
@@ -1557,6 +1563,7 @@ namespace ImWidgets {
 
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			ImGui::SeparatorText( "Graduation" );
 			if ( ImGui::CollapsingHeader( "Linear Line Graduation" ) )
 			{
 				float const size = ImGui::GetContentRegionAvail().x;
@@ -1766,6 +1773,7 @@ namespace ImWidgets {
 		if ( ImGui::CollapsingHeader( "Interactions" ) )
 		{
 			ImGui::Indent();
+			ImGui::SeparatorText( "Polygon Hit Testing" );
 			if ( ImGui::CollapsingHeader( "Poly Convex Hovered" ) )
 			{
 				float const size = ImGui::GetContentRegionAvail().x;
@@ -1890,6 +1898,8 @@ namespace ImWidgets {
 		if ( ImGui::CollapsingHeader( "Widgets", ImGuiTreeNodeFlags_DefaultOpen ) )
 		{
 			ImGui::Indent();
+			ImGui::SeparatorText( "Buttons" );
+
 			if ( ImGui::CollapsingHeader( "Button Circle" ) )
 			{
 				float const half_size = 0.5f * ImGui::GetContentRegionAvail().x;
@@ -1901,6 +1911,7 @@ namespace ImWidgets {
 				ImGui::Text( "Value: %d", value );
 				value += ( int )ImWidgets::ButtonExCircle( caption.c_str(), radius, 0 );
 			}
+
 			if ( ImGui::CollapsingHeader( "Button Capsule" ) )
 			{
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
@@ -1914,6 +1925,7 @@ namespace ImWidgets {
 				value += ( int )ButtonExCapsuleH( "CapsuleH", length, thickness, 0 );
 				value += ( int )ButtonExCapsuleV( "CapsuleV", length, thickness, 0 );
 			}
+
 			if ( ImGui::CollapsingHeader( "Button Convex" ) )
 			{
 				float const size = ImGui::GetContentRegionAvail().x;
@@ -1931,6 +1943,7 @@ namespace ImWidgets {
 				ImGui::Text( "Value: %d", value );
 				value += ( int )ImWidgets::ButtonExConvex( "Convex", ImVec2( 0, 0 ), &disk[ 0 ], 32, 0 );
 			}
+
 			if ( ImGui::CollapsingHeader( "Button Concave" ) )
 			{
 				float const size = ImGui::GetContentRegionAvail().x;
@@ -1947,6 +1960,7 @@ namespace ImWidgets {
 				ImGui::Text( "Value: %d", value );
 				value += ( int )ImWidgets::ButtonExConcave( "Concave", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 );
 			}
+
 			if ( ImGui::CollapsingHeader( "Button With Hole" ) )
 			{
 				float const size = ImGui::GetContentRegionAvail().x;
@@ -1963,6 +1977,9 @@ namespace ImWidgets {
 				ImGui::Text( "Value: %d", value );
 				value += ( int )ImWidgets::ButtonExWithHole( "With Hole", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 );
 			}
+
+			ImGui::SeparatorText( "Sliders & Inputs" );
+
 			if ( ImGui::CollapsingHeader( "DragFloatPrecise" ) )
 			{
 				static float value1 = 1.0f;
@@ -1973,12 +1990,117 @@ namespace ImWidgets {
 				ImWidgets::DragFloatPrecise( "Fixed format", &value3, 0.0f, 0.0f, "%.6f" );
 				ImGui::TextWrapped( "Click and drag left/right to edit. Move up/down to change precision rung." );
 			}
-			if ( ImGui::CollapsingHeader( "Up Vector" ) )
+
+			if ( ImGui::CollapsingHeader( "SliderN" ) )
 			{
-				static float upDir[ 3 ] = { 0.0f, 1.0f, 0.0f };
-				ImWidgets::UpVector( "##UpVec", upDir );
-				ImGui::Text( "Direction: %.3f, %.3f, %.3f", upDir[ 0 ], upDir[ 1 ], upDir[ 2 ] );
+				static float value[ 3 ] = { 0.25f, 10.0f, 100.0f };
+				static float min = 0.1f;
+				static float max = 150.0f;
+				ImGui::Text( "Hover per region of influence" );
+				ImWidgets::SliderNScalar( "Values##SliderNRegions", ImGuiDataType_Float, &value, 3, &min, &max, 8.0f, true );
+				ImGui::Text( "Global Hover" );
+				ImWidgets::SliderNScalar( "Values##SliderNGlobal", ImGuiDataType_Float, &value, 3, &min, &max, 8.0f, false );
+				ImGui::DragFloat( "Near Plane", &value[ 0 ], 1.0f, min, value[ 1 ] );
+				ImGui::DragFloat( "Focal Planes", &value[ 1 ], 1.0f, value[ 0 ], value[ 2 ] );
+				ImGui::DragFloat( "Far Planes", &value[ 2 ], 1.0f, value[ 1 ], max );
 			}
+
+			if ( ImGui::CollapsingHeader( "SliderRing" ) )
+			{
+				static float fval = 0.5f;
+				ImWidgets::SliderRingFloat( "Float##SR", &fval, 0.0f, 1.0f );
+
+				static int ival = 50;
+				ImWidgets::SliderRingInt( "Int##SR", &ival, 0, 100 );
+
+				ImGui::Separator();
+				ImGui::Text( "Custom angles & thickness:" );
+				static float fval2 = 0.25f;
+				ImWidgets::SliderRingFloat( "Half##SR2", &fval2, 0.0f, 1.0f, -IM_PI, 0.0f, 12.0f );
+
+				static float fval3 = 0.75f;
+				ImWidgets::SliderRingFloat( "Full##SR3", &fval3, 0.0f, 1.0f, -IM_PI, IM_PI, 6.0f );
+			}
+
+			if ( ImGui::CollapsingHeader( "SliderSpline" ) )
+			{
+				static float fval = 0.5f;
+				ImWidgets::SliderSplineFloat( "S-Curve##SS1", &fval, 0.0f, 1.0f );
+
+				static int ival = 50;
+				ImWidgets::SliderSplineInt( "Int##SS2", &ival, 0, 100 );
+
+				ImGui::Separator();
+				ImGui::Text( "Custom curves:" );
+
+				// Arc up
+				static const ImVec2 arcUp[ 4 ] = { ImVec2( 0.0f, 0.8f ), ImVec2( 0.25f, 0.0f ), ImVec2( 0.75f, 0.0f ), ImVec2( 1.0f, 0.8f ) };
+				static float fval2 = 0.3f;
+				ImWidgets::SliderSplineFloat( "Arc Up##SS3", &fval2, 0.0f, 1.0f, arcUp );
+
+				// Arc down
+				static const ImVec2 arcDown[ 4 ] = { ImVec2( 0.0f, 0.2f ), ImVec2( 0.25f, 1.0f ), ImVec2( 0.75f, 1.0f ), ImVec2( 1.0f, 0.2f ) };
+				static float fval3 = 0.7f;
+				ImWidgets::SliderSplineFloat( "Arc Down##SS4", &fval3, 0.0f, 1.0f, arcDown );
+
+				// Straight line
+				static const ImVec2 straight[ 4 ] = { ImVec2( 0.0f, 0.5f ), ImVec2( 0.33f, 0.5f ), ImVec2( 0.66f, 0.5f ), ImVec2( 1.0f, 0.5f ) };
+				static float fval4 = 0.5f;
+				ImWidgets::SliderSplineFloat( "Straight##SS5", &fval4, -10.0f, 10.0f, straight );
+
+				// Wave
+				static const ImVec2 wave[ 4 ] = { ImVec2( 0.0f, 0.5f ), ImVec2( 0.15f, 0.0f ), ImVec2( 0.85f, 1.0f ), ImVec2( 1.0f, 0.5f ) };
+				static float fval5 = 0.5f;
+				ImWidgets::SliderSplineFloat( "Wave##SS6", &fval5, 0.0f, 100.0f, wave, 4, 80.0f, 6.0f );
+
+				ImGui::Separator();
+				ImGui::Text( "Loops:" );
+
+				// Closed loop (circle-like, 2 bezier segments = 7 points)
+				static const ImVec2 closedLoop[ 7 ] = {
+					ImVec2( 0.5f, 0.0f ),   // top center
+					ImVec2( 1.1f, 0.0f ),   // cp: pull right
+					ImVec2( 1.1f, 1.0f ),   // cp: pull right-bottom
+					ImVec2( 0.5f, 1.0f ),   // bottom center
+					ImVec2( -0.1f, 1.0f ),  // cp: pull left-bottom
+					ImVec2( -0.1f, 0.0f ),  // cp: pull left
+					ImVec2( 0.5f, 0.0f ),   // back to top
+				};
+				static float fval6 = 0.25f;
+				ImWidgets::SliderSplineFloat( "Closed Loop##SS7", &fval6, 0.0f, 1.0f, closedLoop, 7, 200.0f );
+
+				// Infinity sign (2 bezier segments = 7 points): right lobe then left lobe
+				static const ImVec2 infinity[ 7 ] = {
+					ImVec2( 0.5f, 0.5f ),    // center crossing
+					ImVec2( 0.85f, -0.15f ), // cp: pull upper-right
+					ImVec2( 1.15f, 1.15f ),  // cp: pull lower-right
+					ImVec2( 0.5f, 0.5f ),    // back to center
+					ImVec2( -0.15f, -0.15f ),// cp: pull upper-left
+					ImVec2( 0.15f, 1.15f ),  // cp: pull lower-left
+					ImVec2( 0.5f, 0.5f ),    // back to center
+				};
+				static float fval7 = 0.5f;
+				ImWidgets::SliderSplineFloat( "Infinity##SS8", &fval7, 0.0f, 1.0f, infinity, 7, 200.0f );
+			}
+
+			if ( ImGui::CollapsingHeader( "Slider2D Float" ) )
+			{
+				static ImVec2 slider2D;
+				ImVec2 boundMin( -1.0f, -1.0f );
+				ImVec2 boundMax( 1.0f, 1.0f );
+				Slider2DFloat( "Slider 2D Float", &slider2D.x, &slider2D.y, boundMin.x, boundMax.x, boundMin.y, boundMax.y );
+				ImGui::InputFloat2( "Value", &slider2D.x );
+			}
+
+			if ( ImGui::CollapsingHeader( "Slider2D Int" ) )
+			{
+				static int vv[ 2 ];
+				Slider2DInt( "Slider 2D Int", &vv[ 0 ], &vv[ 1 ], -5, 5, -5, 5 );
+				ImGui::InputInt2( "Value", &vv[ 0 ] );
+			}
+
+			ImGui::SeparatorText( "Images" );
+
 			if ( ImGui::CollapsingHeader( "Image Carousel" ) )
 			{
 				static int carouselIdx = 0;
@@ -1987,6 +2109,7 @@ namespace ImWidgets {
 				ImWidgets::ImageCarousel( "##Carousel", carouselImages, carouselSizes, IM_ARRAYSIZE( carouselImages ), &carouselIdx );
 				ImGui::Text( "Selected: %d", carouselIdx );
 			}
+
 			if ( ImGui::CollapsingHeader( "Image Bento" ) )
 			{
 				static int bentoIdx = 0;
@@ -1999,6 +2122,7 @@ namespace ImWidgets {
 				ImWidgets::ImageBento( "##Bento", bentoImages, bentoSizes, IM_ARRAYSIZE( bentoImages ), &bentoIdx, bentoColumns, bentoAspect );
 				ImGui::Text( "Selected: %d", bentoIdx );
 			}
+
 			if ( ImGui::CollapsingHeader( "Image Viewer" ) )
 			{
 				// Reuse GPU textures already loaded at startup.
@@ -2040,20 +2164,16 @@ namespace ImWidgets {
 				ImWidgets::ImageViewer( "##Viewer", viewerTexes[ viewerIdx ], viewerSizes[ viewerIdx ], viewerState );
 
 			}
-			if ( ImGui::CollapsingHeader( "SliderN" ) )
+
+			ImGui::SeparatorText( "Drawing Tools" );
+
+			if ( ImGui::CollapsingHeader( "Up Vector" ) )
 			{
-				static float value[ 3 ] = { 0.25f, 10.0f, 100.0f };
-				static float min = 0.1f;
-				static float max = 150.0f;
-				ImGui::Text( "Hover per region of influence" );
-				ImWidgets::SliderNScalar( "Values##SliderNRegions", ImGuiDataType_Float, &value, 3, &min, &max, 8.0f, true );
-				ImGui::Text( "Global Hover" );
-				ImWidgets::SliderNScalar( "Values##SliderNGlobal", ImGuiDataType_Float, &value, 3, &min, &max, 8.0f, false );
-				ImGui::DragFloat( "Near Plane", &value[ 0 ], 1.0f, min, value[ 1 ] );
-				ImGui::DragFloat( "Focal Planes", &value[ 1 ], 1.0f, value[ 0 ], value[ 2 ] );
-				ImGui::DragFloat( "Far Planes", &value[ 2 ], 1.0f, value[ 1 ], max );
+				static float upDir[ 3 ] = { 0.0f, 1.0f, 0.0f };
+				ImWidgets::UpVector( "##UpVec", upDir );
+				ImGui::Text( "Direction: %.3f, %.3f, %.3f", upDir[ 0 ], upDir[ 1 ], upDir[ 2 ] );
 			}
-#if 1
+
 			if ( ImGui::CollapsingHeader( "Dashed Polylines", ImGuiTreeNodeFlags_DefaultOpen ) )
 			{
 				ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -2292,83 +2412,116 @@ namespace ImWidgets {
 				if (ImGui::Checkbox("Debug Joins (CPU)##dashed", &debug_joins))
 					ImWidgets::SetDashedLinesDebugJoins(debug_joins);
 			}
-#endif
-			if ( ImGui::CollapsingHeader( "SliderRing" ) )
+
+			if ( ImGui::CollapsingHeader( "Paint Canvas" ) )
 			{
-				static float fval = 0.5f;
-				ImWidgets::SliderRingFloat( "Float##SR", &fval, 0.0f, 1.0f );
+				// User-owned pixel buffers (different aspect ratios)
+				static unsigned char maskPixels[ 64 * 64 ];            // 1:1
+				static unsigned char grayPixels[ 60 * 70 ];            // 6:7
+				static ImU32         colorPixels[ 160 * 90 ];          // 16:9
+				static float         floatPixels[ 128 * 64 * 4 ];     // 2:1
 
-				static int ival = 50;
-				ImWidgets::SliderRingInt( "Int##SR", &ival, 0, 100 );
+				static ImPaintCanvasData canvases[ 4 ];
+				static bool paintInit = false;
+				if ( !paintInit )
+				{
+					memset( maskPixels, 0, sizeof( maskPixels ) );
+					memset( grayPixels, 0, sizeof( grayPixels ) );
+					memset( colorPixels, 0, sizeof( colorPixels ) );
+					memset( floatPixels, 0, sizeof( floatPixels ) );
 
-				ImGui::Separator();
-				ImGui::Text( "Custom angles & thickness:" );
-				static float fval2 = 0.25f;
-				ImWidgets::SliderRingFloat( "Half##SR2", &fval2, 0.0f, 1.0f, -IM_PI, 0.0f, 12.0f );
+					canvases[ 0 ].Pixels = maskPixels;   canvases[ 0 ].Width = 64;  canvases[ 0 ].Height = 64; canvases[ 0 ].Format = ImPlatform_PixelFormat_R8;      canvases[ 0 ].Mode = ImPaintMode_BinaryMask;
+					canvases[ 1 ].Pixels = grayPixels;   canvases[ 1 ].Width = 60;  canvases[ 1 ].Height = 70; canvases[ 1 ].Format = ImPlatform_PixelFormat_R8;      canvases[ 1 ].Mode = ImPaintMode_Grayscale;
+					canvases[ 2 ].Pixels = colorPixels;  canvases[ 2 ].Width = 160; canvases[ 2 ].Height = 90; canvases[ 2 ].Format = ImPlatform_PixelFormat_RGBA8;   canvases[ 2 ].Mode = ImPaintMode_Color;
+					canvases[ 3 ].Pixels = floatPixels;  canvases[ 3 ].Width = 128; canvases[ 3 ].Height = 64; canvases[ 3 ].Format = ImPlatform_PixelFormat_RGBA32F; canvases[ 3 ].Mode = ImPaintMode_Color;
+					paintInit = true;
+				}
 
-				static float fval3 = 0.75f;
-				ImWidgets::SliderRingFloat( "Full##SR3", &fval3, 0.0f, 1.0f, -IM_PI, IM_PI, 6.0f );
+				static int activePaint = 2;
+				ImGui::Combo( "Format##paint", &activePaint, "Binary Mask (R8)\0Grayscale (R8)\0Color (RGBA8)\0Color (RGBA32F)\0" );
+				ImPaintCanvasData& pc = canvases[ activePaint ];
+
+				PaintCanvas( "##PaintMain", &pc, ImVec2( 192, 0 ) );
+
+				// Brush controls
+				if ( ImGui::RadioButton( "Brush##pc", pc.Tool == ImPaintTool_Brush ) ) pc.Tool = ImPaintTool_Brush;
+				ImGui::SameLine();
+				if ( ImGui::RadioButton( "Eraser##pc", pc.Tool == ImPaintTool_Eraser ) ) pc.Tool = ImPaintTool_Eraser;
+				if ( pc.Mode != ImPaintMode_BinaryMask )
+				{
+					ImGui::SameLine();
+					if ( ImGui::RadioButton( "Hard##pc", pc.Brush == ImPaintBrush_Hard ) ) pc.Brush = ImPaintBrush_Hard;
+					ImGui::SameLine();
+					if ( ImGui::RadioButton( "Soft##pc", pc.Brush == ImPaintBrush_Soft ) ) pc.Brush = ImPaintBrush_Soft;
+				}
+
+				ImGui::SliderFloat( "Size##pc", &pc.BrushSize, 1.0f, 64.0f, "%.0f" );
+				if ( pc.Mode != ImPaintMode_BinaryMask && pc.Brush == ImPaintBrush_Soft )
+					ImGui::SliderFloat( "Hardness##pc", &pc.BrushHardness, 0.0f, 1.0f, "%.2f" );
+				ImGui::SliderFloat( "Opacity##pc", &pc.BrushOpacity, 0.0f, 1.0f, "%.2f" );
+
+				if ( pc.Mode == ImPaintMode_Color )
+					ImGui::ColorEdit4( "Color##pc", &pc.BrushColor.x );
+				else if ( pc.Mode == ImPaintMode_Grayscale )
+				{
+					ImGui::SliderFloat( "Intensity##pc", &pc.BrushColor.x, 0.0f, 1.0f, "%.2f" );
+					pc.BrushColor.y = pc.BrushColor.z = pc.BrushColor.x;
+				}
 			}
-			if ( ImGui::CollapsingHeader( "SliderSpline" ) )
+
+			if ( ImGui::CollapsingHeader( "Transform Gizmo", ImGuiTreeNodeFlags_DefaultOpen ) )
 			{
-				static float fval = 0.5f;
-				ImWidgets::SliderSplineFloat( "S-Curve##SS1", &fval, 0.0f, 1.0f );
+				static ImTransformImage gizmoImages[ 3 ];
+				static bool gizmoInit = false;
+				if ( !gizmoInit )
+				{
+					gizmoImages[ 0 ] = ImTransformImage( astro_img, astro_size );
+					gizmoImages[ 1 ] = ImTransformImage( clock_img, clock_size );
+					gizmoImages[ 1 ].Transform.Translation = ImVec2( -120.0f, -60.0f );
+					gizmoImages[ 1 ].Transform.Scale = ImVec2( 0.4f, 0.4f );
+					gizmoImages[ 2 ] = ImTransformImage( man_img, man_size );
+					gizmoImages[ 2 ].Transform.Translation = ImVec2( 100.0f, 50.0f );
+					gizmoImages[ 2 ].Transform.Scale = ImVec2( 0.5f, 0.5f );
+					gizmoInit = true;
+				}
 
-				static int ival = 50;
-				ImWidgets::SliderSplineInt( "Int##SS2", &ival, 0, 100 );
+				static int gizmoSel = 0;
+				static bool gizmoNonUniform = false;
 
-				ImGui::Separator();
-				ImGui::Text( "Custom curves:" );
+				ImGui::Checkbox( "Non-Uniform Scale", &gizmoNonUniform );
 
-				// Arc up
-				static const ImVec2 arcUp[ 4 ] = { ImVec2( 0.0f, 0.8f ), ImVec2( 0.25f, 0.0f ), ImVec2( 0.75f, 0.0f ), ImVec2( 1.0f, 0.8f ) };
-				static float fval2 = 0.3f;
-				ImWidgets::SliderSplineFloat( "Arc Up##SS3", &fval2, 0.0f, 1.0f, arcUp );
+				ImTransformGizmoFlags gizmoFlags = ImTransformGizmoFlags_None;
+				if ( gizmoNonUniform )
+					gizmoFlags |= ImTransformGizmoFlags_NonUniformScale;
 
-				// Arc down
-				static const ImVec2 arcDown[ 4 ] = { ImVec2( 0.0f, 0.2f ), ImVec2( 0.25f, 1.0f ), ImVec2( 0.75f, 1.0f ), ImVec2( 1.0f, 0.2f ) };
-				static float fval3 = 0.7f;
-				ImWidgets::SliderSplineFloat( "Arc Down##SS4", &fval3, 0.0f, 1.0f, arcDown );
+				ImWidgets::ImageTransformGizmo( "##xform", gizmoImages, 3, &gizmoSel, gizmoFlags );
 
-				// Straight line
-				static const ImVec2 straight[ 4 ] = { ImVec2( 0.0f, 0.5f ), ImVec2( 0.33f, 0.5f ), ImVec2( 0.66f, 0.5f ), ImVec2( 1.0f, 0.5f ) };
-				static float fval4 = 0.5f;
-				ImWidgets::SliderSplineFloat( "Straight##SS5", &fval4, -10.0f, 10.0f, straight );
-
-				// Wave
-				static const ImVec2 wave[ 4 ] = { ImVec2( 0.0f, 0.5f ), ImVec2( 0.15f, 0.0f ), ImVec2( 0.85f, 1.0f ), ImVec2( 1.0f, 0.5f ) };
-				static float fval5 = 0.5f;
-				ImWidgets::SliderSplineFloat( "Wave##SS6", &fval5, 0.0f, 100.0f, wave, 4, 80.0f, 6.0f );
-
-				ImGui::Separator();
-				ImGui::Text( "Loops:" );
-
-				// Closed loop (circle-like, 2 bezier segments = 7 points)
-				static const ImVec2 closedLoop[ 7 ] = {
-					ImVec2( 0.5f, 0.0f ),   // top center
-					ImVec2( 1.1f, 0.0f ),   // cp: pull right
-					ImVec2( 1.1f, 1.0f ),   // cp: pull right-bottom
-					ImVec2( 0.5f, 1.0f ),   // bottom center
-					ImVec2( -0.1f, 1.0f ),  // cp: pull left-bottom
-					ImVec2( -0.1f, 0.0f ),  // cp: pull left
-					ImVec2( 0.5f, 0.0f ),   // back to top
-				};
-				static float fval6 = 0.25f;
-				ImWidgets::SliderSplineFloat( "Closed Loop##SS7", &fval6, 0.0f, 1.0f, closedLoop, 7, 200.0f );
-
-				// Infinity sign (2 bezier segments = 7 points): right lobe then left lobe
-				static const ImVec2 infinity[ 7 ] = {
-					ImVec2( 0.5f, 0.5f ),    // center crossing
-					ImVec2( 0.85f, -0.15f ), // cp: pull upper-right
-					ImVec2( 1.15f, 1.15f ),  // cp: pull lower-right
-					ImVec2( 0.5f, 0.5f ),    // back to center
-					ImVec2( -0.15f, -0.15f ),// cp: pull upper-left
-					ImVec2( 0.15f, 1.15f ),  // cp: pull lower-left
-					ImVec2( 0.5f, 0.5f ),    // back to center
-				};
-				static float fval7 = 0.5f;
-				ImWidgets::SliderSplineFloat( "Infinity##SS8", &fval7, 0.0f, 1.0f, infinity, 7, 200.0f );
+				if ( gizmoSel >= 0 && gizmoSel < 3 )
+				{
+					ImTransformData* tr = &gizmoImages[ gizmoSel ].Transform;
+					ImGui::Text( "Selected: %d", gizmoSel );
+					float halfW = ImGui::GetContentRegionAvail().x * 0.5f - ImGui::GetStyle().ItemSpacing.x;
+					ImGui::SetNextItemWidth( halfW );
+					ImGui::DragFloat2( "Position", &tr->Translation.x, 1.0f );
+					ImGui::SameLine();
+					float deg = tr->Rotation * ( 180.0f / IM_PI );
+					ImGui::SetNextItemWidth( halfW );
+					if ( ImGui::DragFloat( "Rotation", &deg, 0.5f ) )
+						tr->Rotation = deg * ( IM_PI / 180.0f );
+					ImGui::SetNextItemWidth( halfW );
+					ImGui::DragFloat2( "Scale", &tr->Scale.x, 0.01f, 0.01f, 10.0f );
+					ImGui::SameLine();
+					if ( ImGui::Button( "Reset" ) )
+						*tr = ImTransformData();
+				}
+				else
+				{
+					ImGui::TextDisabled( "Click an image to select it" );
+				}
 			}
+
+			ImGui::SeparatorText( "Color Editing" );
+
 			if ( ImGui::CollapsingHeader( "Hue Selector" ) )
 			{
 				static float offset = 1.0f;
@@ -2397,20 +2550,7 @@ namespace ImWidgets {
 				ImWidgets::GetStyle().PopVar();
 				HueSelector( "Hue 1##HueSelector", hueHeight, cursorHeight, &hueCenter, &hueWidth, &featherLeft, &featherRight, division, alphaHue, alphaHideHue, offset );
 			}
-			if ( ImGui::CollapsingHeader( "Slider2D Float" ) )
-			{
-				static ImVec2 slider2D;
-				ImVec2 boundMin( -1.0f, -1.0f );
-				ImVec2 boundMax( 1.0f, 1.0f );
-				Slider2DFloat( "Slider 2D Float", &slider2D.x, &slider2D.y, boundMin.x, boundMax.x, boundMin.y, boundMax.y );
-				ImGui::InputFloat2( "Value", &slider2D.x );
-			}
-			if ( ImGui::CollapsingHeader( "Slider2D Int" ) )
-			{
-				static int vv[ 2 ];
-				Slider2DInt( "Slider 2D Int", &vv[ 0 ], &vv[ 1 ], -5, 5, -5, 5 );
-				ImGui::InputInt2( "Value", &vv[ 0 ] );
-			}
+
 			if ( ImGui::CollapsingHeader( "Gradient Editor", ImGuiTreeNodeFlags_DefaultOpen ) )
 			{
 				static ImGradientData gradient;
@@ -2470,6 +2610,7 @@ namespace ImWidgets {
 				}
 				GradientEditor( "Black to White (OkLab)##Grad2", &gradient2, false );
 			}
+
 			if ( ImGui::CollapsingHeader( "Curve Editor", ImGuiTreeNodeFlags_DefaultOpen ) )
 			{
 				static ImCurveEditorData curve;
@@ -2574,6 +2715,220 @@ namespace ImWidgets {
 				}
 				CurveEditor( "Steps & Linear##Curve2", &curve2, ImVec2( 0, 150 ) );
 			}
+
+			if ( ImGui::CollapsingHeader( "Color Wheel", ImGuiTreeNodeFlags_DefaultOpen ) )
+			{
+				static ImVec4 wheelColor( 0.8f, 0.2f, 0.3f, 1.0f );
+				static int wheelMode = ImColorWheelMode_HSV;
+
+				ImGui::Combo( "Mode##Wheel", &wheelMode, "HSV\0OkLCH\0" );
+
+				ColorWheel( "##WheelMain", &wheelColor, ( ImColorWheelMode )wheelMode );
+
+				ImGui::ColorEdit4( "Color##Wheel", &wheelColor.x, ImGuiColorEditFlags_Float );
+
+				ImGui::Separator();
+
+				// Second wheel: OkLCH with HDR slider
+				static ImVec4 wheelColor2( 0.5f, 0.7f, 0.2f, 1.0f );
+				ImGui::Text( "OkLCH Wheel (HDR max = 2.0)" );
+				ColorWheel( "##WheelHDR", &wheelColor2, ImColorWheelMode_OkLCH, 2.0f );
+				ImGui::ColorEdit4( "HDR Color##Wheel2", &wheelColor2.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR );
+			}
+
+			if ( ImGui::CollapsingHeader( "Color Picker" ) )
+			{
+				static ImVec4 pickerColor( 0.4f, 0.7f, 0.3f, 1.0f );
+				static int pickerSpace = ImColorPickerSpace_sRGB;
+				static int srgbFixedAxis = 2;
+
+				ImGui::Combo( "Space##Picker", &pickerSpace, "sRGB\0HSV\0OkLab\0OkLCH\0CIE Lab\0XYZ\0" );
+				if ( pickerSpace == ImColorPickerSpace_sRGB )
+					ImGui::Combo( "Fixed Axis##Picker", &srgbFixedAxis, "R (GB plane)\0G (RB plane)\0B (RG plane)\0" );
+
+				ColorPicker( "##PickerMain", &pickerColor, ( ImColorPickerSpace )pickerSpace, srgbFixedAxis );
+
+				ImGui::ColorEdit4( "Color##Picker", &pickerColor.x, ImGuiColorEditFlags_Float );
+
+				ImGui::Separator();
+				ImGui::Text( "Side-by-side: OkLab vs CIE Lab" );
+				if ( ImGui::BeginTable( "##PickerCompare", 2, ImGuiTableFlags_NoSavedSettings ) )
+				{
+					float colW = ImGui::GetContentRegionAvail().x * 0.5f - ImGui::GetStyle().ItemSpacing.x;
+					ImGui::TableSetupColumn( "OkLab", ImGuiTableColumnFlags_WidthFixed, colW );
+					ImGui::TableSetupColumn( "CIE Lab", ImGuiTableColumnFlags_WidthFixed, colW );
+					ImGui::TableHeadersRow();
+
+					static ImVec4 cmpColor( 0.6f, 0.3f, 0.8f, 1.0f );
+
+					ImGui::TableNextColumn();
+					ImGui::SetNextItemWidth( colW );
+					ColorPickerOkLab( "##CmpOkLab", &cmpColor );
+
+					ImGui::TableNextColumn();
+					ImGui::SetNextItemWidth( colW );
+					ColorPickerCIELab( "##CmpCIELab", &cmpColor );
+
+					ImGui::EndTable();
+				}
+				ImGui::ColorEdit4( "Shared Color##PickerCmp", &pickerColor.x, ImGuiColorEditFlags_Float );
+			}
+
+			if ( ImGui::CollapsingHeader( "Primaries Wheels (Lift/Gamma/Gain/Offset)" ) )
+			{
+				static ImVec4 primColors[ 4 ] = {
+					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Lift
+					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Gamma
+					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Gain
+					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Offset
+				};
+				static float primY[ 4 ] = { 0.0f, 0.0f, 1.0f, 25.0f };
+				static int primMode = ImColorWheelMode_HSV;
+
+				const char* primNames[] = { "Lift", "Gamma", "Gain", "Offset" };
+				const float yMins[] = { -1.0f, -1.0f, -1.0f, -175.0f };
+				const float yMaxs[] = {  1.0f,  1.0f,  1.0f,  225.0f };
+
+				ImGui::Combo( "Mode##Prim", &primMode, "HSV\0OkLCH\0" );
+
+				float ringThick = 12.0f;
+
+				float outerSize = ImGui::GetContentRegionAvail().x / 4.0f - ImGui::GetStyle().ItemSpacing.x;
+				if ( outerSize < 100.0f ) outerSize = 100.0f;
+				if ( outerSize > 200.0f ) outerSize = 200.0f;
+
+				if ( ImGui::BeginTable( "##PrimWheels", 4, ImGuiTableFlags_NoSavedSettings ) )
+				{
+					for ( int i = 0; i < 4; ++i )
+						ImGui::TableSetupColumn( primNames[ i ], ImGuiTableColumnFlags_WidthFixed, outerSize );
+
+					for ( int i = 0; i < 4; ++i )
+					{
+						ImGui::TableNextColumn();
+						ImGui::TextUnformatted( primNames[ i ] );
+
+						ImGui::PushID( i );
+
+						PrimariesWheel( "##pw", &primColors[ i ], &primY[ i ], yMins[ i ], yMaxs[ i ], ( ImColorWheelMode )primMode, ringThick, ImVec2( outerSize, outerSize ) );
+
+						// YRGB readouts
+						float qw = outerSize * 0.25f - 1.0f;
+						ImGui::SetNextItemWidth( qw ); ImGui::DragFloat( "Y##v", &primY[ i ], 0.01f, yMins[ i ], yMaxs[ i ], "%.2f" );
+						ImGui::SameLine();
+						ImGui::SetNextItemWidth( qw ); ImGui::DragFloat( "R##v", &primColors[ i ].x, 0.01f, 0.0f, 1.0f, "%.2f" );
+						ImGui::SetNextItemWidth( qw ); ImGui::DragFloat( "G##v", &primColors[ i ].y, 0.01f, 0.0f, 1.0f, "%.2f" );
+						ImGui::SameLine();
+						ImGui::SetNextItemWidth( qw ); ImGui::DragFloat( "B##v", &primColors[ i ].z, 0.01f, 0.0f, 1.0f, "%.2f" );
+
+						ImGui::PopID();
+					}
+					ImGui::EndTable();
+				}
+
+				ImGui::Separator();
+
+				// Shared controls
+				static float primTemp = 0.0f, primTint = 0.0f;
+				static float primContrast = 0.0f, primPivot = 0.5f;
+				static float primSaturation = 50.0f, primHue = 0.0f;
+
+				float ctrlW = ImGui::GetContentRegionAvail().x * 0.5f - ImGui::GetStyle().ItemSpacing.x;
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Temp", &primTemp, -100.0f, 100.0f, "%.1f" );
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Tint", &primTint, -100.0f, 100.0f, "%.1f" );
+
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Contrast", &primContrast, -100.0f, 100.0f, "%.1f" );
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Pivot", &primPivot, 0.0f, 1.0f, "%.2f" );
+
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Saturation", &primSaturation, 0.0f, 100.0f, "%.1f" );
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Hue", &primHue, -180.0f, 180.0f, "%.1f" );
+			}
+
+			if ( ImGui::CollapsingHeader( "HDR Wheels (Dark/Shadow/Light/Global)" ) )
+			{
+				static ImVec4 hdrColors[ 4 ] = {
+					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Dark
+					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Shadow
+					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Light
+					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Global
+				};
+				static float hdrY[ 4 ] = { 0.0f, 0.0f, 0.0f, 0.0f };
+				static float hdrExposure[ 4 ] = { 0.0f, 0.0f, 0.0f, 0.0f };
+				static float hdrSaturation[ 4 ] = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+				const char* hdrNames[] = { "Dark", "Shadow", "Light", "Global" };
+
+				float colW = ImGui::GetContentRegionAvail().x / 4.0f - ImGui::GetStyle().ItemSpacing.x;
+				if ( colW < 100.0f ) colW = 100.0f;
+				if ( colW > 200.0f ) colW = 200.0f;
+
+				float ringThick = 12.0f;
+
+				if ( ImGui::BeginTable( "##HDRWheels", 4, ImGuiTableFlags_NoSavedSettings ) )
+				{
+					for ( int i = 0; i < 4; ++i )
+						ImGui::TableSetupColumn( hdrNames[ i ], ImGuiTableColumnFlags_WidthFixed, colW );
+
+					for ( int i = 0; i < 4; ++i )
+					{
+						ImGui::TableNextColumn();
+						ImGui::TextUnformatted( hdrNames[ i ] );
+
+						ImGui::PushID( i );
+
+						HDRWheel( "##hw", &hdrColors[ i ], &hdrY[ i ], -1.0f, 1.0f,
+							&hdrExposure[ i ], -4.0f, 4.0f,
+							&hdrSaturation[ i ], 0.0f, 2.0f,
+							ImColorWheelMode_OkLCH, ringThick, ImVec2( colW, colW ) );
+
+						// Readouts
+						float qw = colW * 0.5f - 1.0f;
+						ImGui::SetNextItemWidth( qw ); ImGui::DragFloat( "Exp##v", &hdrExposure[ i ], 0.01f, -4.0f, 4.0f, "%.2f" );
+						ImGui::SameLine();
+						ImGui::SetNextItemWidth( qw ); ImGui::DragFloat( "Sat##v", &hdrSaturation[ i ], 0.01f, 0.0f, 2.0f, "%.2f" );
+
+						ImGui::PopID();
+					}
+					ImGui::EndTable();
+				}
+
+				ImGui::Separator();
+
+				// Global controls
+				static float hdrTemp = 0.0f, hdrTint = 0.0f;
+				static float hdrContrast = 0.0f, hdrPivot = 0.5f;
+				static float hdrMidDetail = 0.0f;
+				static float hdrBlackOffset = 0.0f;
+
+				float ctrlW = ImGui::GetContentRegionAvail().x * 0.5f - ImGui::GetStyle().ItemSpacing.x;
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Temp##HDR", &hdrTemp, -100.0f, 100.0f, "%.1f" );
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Tint##HDR", &hdrTint, -100.0f, 100.0f, "%.1f" );
+
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Contrast##HDR", &hdrContrast, -100.0f, 100.0f, "%.1f" );
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Pivot##HDR", &hdrPivot, 0.0f, 1.0f, "%.2f" );
+
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Mid Detail##HDR", &hdrMidDetail, -100.0f, 100.0f, "%.1f" );
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ctrlW );
+				ImGui::SliderFloat( "Black Offset##HDR", &hdrBlackOffset, -1.0f, 1.0f, "%.3f" );
+			}
+
+			ImGui::SeparatorText( "Color Analysis" );
 
 			if ( ImGui::CollapsingHeader( "Color Curve", ImGuiTreeNodeFlags_DefaultOpen ) )
 			{
@@ -3699,217 +4054,7 @@ namespace ImWidgets {
 				ImGui::Text( "Points: %d (%dx%d)", warperData.PointCount(), warperData.HueDivisions, warperData.SatDivisions );
 			}
 
-			if ( ImGui::CollapsingHeader( "Color Wheel", ImGuiTreeNodeFlags_DefaultOpen ) )
-			{
-				static ImVec4 wheelColor( 0.8f, 0.2f, 0.3f, 1.0f );
-				static int wheelMode = ImColorWheelMode_HSV;
-
-				ImGui::Combo( "Mode##Wheel", &wheelMode, "HSV\0OkLCH\0" );
-
-				ColorWheel( "##WheelMain", &wheelColor, ( ImColorWheelMode )wheelMode );
-
-				ImGui::ColorEdit4( "Color##Wheel", &wheelColor.x, ImGuiColorEditFlags_Float );
-
-				ImGui::Separator();
-
-				// Second wheel: OkLCH with HDR slider
-				static ImVec4 wheelColor2( 0.5f, 0.7f, 0.2f, 1.0f );
-				ImGui::Text( "OkLCH Wheel (HDR max = 2.0)" );
-				ColorWheel( "##WheelHDR", &wheelColor2, ImColorWheelMode_OkLCH, 2.0f );
-				ImGui::ColorEdit4( "HDR Color##Wheel2", &wheelColor2.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR );
-			}
-
-			if ( ImGui::CollapsingHeader( "Color Picker" ) )
-			{
-				static ImVec4 pickerColor( 0.4f, 0.7f, 0.3f, 1.0f );
-				static int pickerSpace = ImColorPickerSpace_sRGB;
-				static int srgbFixedAxis = 2;
-
-				ImGui::Combo( "Space##Picker", &pickerSpace, "sRGB\0HSV\0OkLab\0OkLCH\0CIE Lab\0XYZ\0" );
-				if ( pickerSpace == ImColorPickerSpace_sRGB )
-					ImGui::Combo( "Fixed Axis##Picker", &srgbFixedAxis, "R (GB plane)\0G (RB plane)\0B (RG plane)\0" );
-
-				ColorPicker( "##PickerMain", &pickerColor, ( ImColorPickerSpace )pickerSpace, srgbFixedAxis );
-
-				ImGui::ColorEdit4( "Color##Picker", &pickerColor.x, ImGuiColorEditFlags_Float );
-
-				ImGui::Separator();
-				ImGui::Text( "Side-by-side: OkLab vs CIE Lab" );
-				if ( ImGui::BeginTable( "##PickerCompare", 2, ImGuiTableFlags_NoSavedSettings ) )
-				{
-					float colW = ImGui::GetContentRegionAvail().x * 0.5f - ImGui::GetStyle().ItemSpacing.x;
-					ImGui::TableSetupColumn( "OkLab", ImGuiTableColumnFlags_WidthFixed, colW );
-					ImGui::TableSetupColumn( "CIE Lab", ImGuiTableColumnFlags_WidthFixed, colW );
-					ImGui::TableHeadersRow();
-
-					static ImVec4 cmpColor( 0.6f, 0.3f, 0.8f, 1.0f );
-
-					ImGui::TableNextColumn();
-					ImGui::SetNextItemWidth( colW );
-					ColorPickerOkLab( "##CmpOkLab", &cmpColor );
-
-					ImGui::TableNextColumn();
-					ImGui::SetNextItemWidth( colW );
-					ColorPickerCIELab( "##CmpCIELab", &cmpColor );
-
-					ImGui::EndTable();
-				}
-				ImGui::ColorEdit4( "Shared Color##PickerCmp", &pickerColor.x, ImGuiColorEditFlags_Float );
-			}
-
-			if ( ImGui::CollapsingHeader( "Primaries Wheels (Lift/Gamma/Gain/Offset)" ) )
-			{
-				static ImVec4 primColors[ 4 ] = {
-					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Lift
-					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Gamma
-					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Gain
-					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Offset
-				};
-				static float primY[ 4 ] = { 0.0f, 0.0f, 1.0f, 25.0f };
-				static int primMode = ImColorWheelMode_HSV;
-
-				const char* primNames[] = { "Lift", "Gamma", "Gain", "Offset" };
-				const float yMins[] = { -1.0f, -1.0f, -1.0f, -175.0f };
-				const float yMaxs[] = {  1.0f,  1.0f,  1.0f,  225.0f };
-
-				ImGui::Combo( "Mode##Prim", &primMode, "HSV\0OkLCH\0" );
-
-				float ringThick = 12.0f;
-
-				float outerSize = ImGui::GetContentRegionAvail().x / 4.0f - ImGui::GetStyle().ItemSpacing.x;
-				if ( outerSize < 100.0f ) outerSize = 100.0f;
-				if ( outerSize > 200.0f ) outerSize = 200.0f;
-
-				if ( ImGui::BeginTable( "##PrimWheels", 4, ImGuiTableFlags_NoSavedSettings ) )
-				{
-					for ( int i = 0; i < 4; ++i )
-						ImGui::TableSetupColumn( primNames[ i ], ImGuiTableColumnFlags_WidthFixed, outerSize );
-
-					for ( int i = 0; i < 4; ++i )
-					{
-						ImGui::TableNextColumn();
-						ImGui::TextUnformatted( primNames[ i ] );
-
-						ImGui::PushID( i );
-
-						PrimariesWheel( "##pw", &primColors[ i ], &primY[ i ], yMins[ i ], yMaxs[ i ], ( ImColorWheelMode )primMode, ringThick, ImVec2( outerSize, outerSize ) );
-
-						// YRGB readouts
-						float qw = outerSize * 0.25f - 1.0f;
-						ImGui::SetNextItemWidth( qw ); ImGui::DragFloat( "Y##v", &primY[ i ], 0.01f, yMins[ i ], yMaxs[ i ], "%.2f" );
-						ImGui::SameLine();
-						ImGui::SetNextItemWidth( qw ); ImGui::DragFloat( "R##v", &primColors[ i ].x, 0.01f, 0.0f, 1.0f, "%.2f" );
-						ImGui::SetNextItemWidth( qw ); ImGui::DragFloat( "G##v", &primColors[ i ].y, 0.01f, 0.0f, 1.0f, "%.2f" );
-						ImGui::SameLine();
-						ImGui::SetNextItemWidth( qw ); ImGui::DragFloat( "B##v", &primColors[ i ].z, 0.01f, 0.0f, 1.0f, "%.2f" );
-
-						ImGui::PopID();
-					}
-					ImGui::EndTable();
-				}
-
-				ImGui::Separator();
-
-				// Shared controls
-				static float primTemp = 0.0f, primTint = 0.0f;
-				static float primContrast = 0.0f, primPivot = 0.5f;
-				static float primSaturation = 50.0f, primHue = 0.0f;
-
-				float ctrlW = ImGui::GetContentRegionAvail().x * 0.5f - ImGui::GetStyle().ItemSpacing.x;
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Temp", &primTemp, -100.0f, 100.0f, "%.1f" );
-				ImGui::SameLine();
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Tint", &primTint, -100.0f, 100.0f, "%.1f" );
-
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Contrast", &primContrast, -100.0f, 100.0f, "%.1f" );
-				ImGui::SameLine();
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Pivot", &primPivot, 0.0f, 1.0f, "%.2f" );
-
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Saturation", &primSaturation, 0.0f, 100.0f, "%.1f" );
-				ImGui::SameLine();
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Hue", &primHue, -180.0f, 180.0f, "%.1f" );
-			}
-
-			if ( ImGui::CollapsingHeader( "HDR Wheels (Dark/Shadow/Light/Global)" ) )
-			{
-				static ImVec4 hdrColors[ 4 ] = {
-					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Dark
-					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Shadow
-					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Light
-					ImVec4( 0.5f, 0.5f, 0.5f, 1.0f ), // Global
-				};
-				static float hdrY[ 4 ] = { 0.0f, 0.0f, 0.0f, 0.0f };
-				static float hdrExposure[ 4 ] = { 0.0f, 0.0f, 0.0f, 0.0f };
-				static float hdrSaturation[ 4 ] = { 1.0f, 1.0f, 1.0f, 1.0f };
-
-				const char* hdrNames[] = { "Dark", "Shadow", "Light", "Global" };
-
-				float colW = ImGui::GetContentRegionAvail().x / 4.0f - ImGui::GetStyle().ItemSpacing.x;
-				if ( colW < 100.0f ) colW = 100.0f;
-				if ( colW > 200.0f ) colW = 200.0f;
-
-				float ringThick = 12.0f;
-
-				if ( ImGui::BeginTable( "##HDRWheels", 4, ImGuiTableFlags_NoSavedSettings ) )
-				{
-					for ( int i = 0; i < 4; ++i )
-						ImGui::TableSetupColumn( hdrNames[ i ], ImGuiTableColumnFlags_WidthFixed, colW );
-
-					for ( int i = 0; i < 4; ++i )
-					{
-						ImGui::TableNextColumn();
-						ImGui::TextUnformatted( hdrNames[ i ] );
-
-						ImGui::PushID( i );
-
-						HDRWheel( "##hw", &hdrColors[ i ], &hdrY[ i ], -1.0f, 1.0f,
-							&hdrExposure[ i ], -4.0f, 4.0f,
-							&hdrSaturation[ i ], 0.0f, 2.0f,
-							ImColorWheelMode_OkLCH, ringThick, ImVec2( colW, colW ) );
-
-						// Readouts
-						float qw = colW * 0.5f - 1.0f;
-						ImGui::SetNextItemWidth( qw ); ImGui::DragFloat( "Exp##v", &hdrExposure[ i ], 0.01f, -4.0f, 4.0f, "%.2f" );
-						ImGui::SameLine();
-						ImGui::SetNextItemWidth( qw ); ImGui::DragFloat( "Sat##v", &hdrSaturation[ i ], 0.01f, 0.0f, 2.0f, "%.2f" );
-
-						ImGui::PopID();
-					}
-					ImGui::EndTable();
-				}
-
-				ImGui::Separator();
-
-				// Global controls
-				static float hdrTemp = 0.0f, hdrTint = 0.0f;
-				static float hdrContrast = 0.0f, hdrPivot = 0.5f;
-				static float hdrMidDetail = 0.0f;
-				static float hdrBlackOffset = 0.0f;
-
-				float ctrlW = ImGui::GetContentRegionAvail().x * 0.5f - ImGui::GetStyle().ItemSpacing.x;
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Temp##HDR", &hdrTemp, -100.0f, 100.0f, "%.1f" );
-				ImGui::SameLine();
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Tint##HDR", &hdrTint, -100.0f, 100.0f, "%.1f" );
-
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Contrast##HDR", &hdrContrast, -100.0f, 100.0f, "%.1f" );
-				ImGui::SameLine();
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Pivot##HDR", &hdrPivot, 0.0f, 1.0f, "%.2f" );
-
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Mid Detail##HDR", &hdrMidDetail, -100.0f, 100.0f, "%.1f" );
-				ImGui::SameLine();
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Black Offset##HDR", &hdrBlackOffset, -1.0f, 1.0f, "%.3f" );
-			}
+			ImGui::SeparatorText( "Misc" );
 
 			if ( ImGui::CollapsingHeader( "Unit Field" ) )
 			{
@@ -3946,111 +4091,6 @@ namespace ImWidgets {
 					ImUnitDef_Simple( "ounce",    "oz", 35.274f ),
 				};
 				ImWidgets::UnitField( "Weight", &weight, weightUnits, IM_ARRAYSIZE( weightUnits ), &weightUnit, 0.01f, 0.0f, 1000.0f );
-			}
-			if ( ImGui::CollapsingHeader( "Paint Canvas" ) )
-			{
-				// User-owned pixel buffers (different aspect ratios)
-				static unsigned char maskPixels[ 64 * 64 ];            // 1:1
-				static unsigned char grayPixels[ 60 * 70 ];            // 6:7
-				static ImU32         colorPixels[ 160 * 90 ];          // 16:9
-				static float         floatPixels[ 128 * 64 * 4 ];     // 2:1
-
-				static ImPaintCanvasData canvases[ 4 ];
-				static bool paintInit = false;
-				if ( !paintInit )
-				{
-					memset( maskPixels, 0, sizeof( maskPixels ) );
-					memset( grayPixels, 0, sizeof( grayPixels ) );
-					memset( colorPixels, 0, sizeof( colorPixels ) );
-					memset( floatPixels, 0, sizeof( floatPixels ) );
-
-					canvases[ 0 ].Pixels = maskPixels;   canvases[ 0 ].Width = 64;  canvases[ 0 ].Height = 64; canvases[ 0 ].Format = ImPlatform_PixelFormat_R8;      canvases[ 0 ].Mode = ImPaintMode_BinaryMask;
-					canvases[ 1 ].Pixels = grayPixels;   canvases[ 1 ].Width = 60;  canvases[ 1 ].Height = 70; canvases[ 1 ].Format = ImPlatform_PixelFormat_R8;      canvases[ 1 ].Mode = ImPaintMode_Grayscale;
-					canvases[ 2 ].Pixels = colorPixels;  canvases[ 2 ].Width = 160; canvases[ 2 ].Height = 90; canvases[ 2 ].Format = ImPlatform_PixelFormat_RGBA8;   canvases[ 2 ].Mode = ImPaintMode_Color;
-					canvases[ 3 ].Pixels = floatPixels;  canvases[ 3 ].Width = 128; canvases[ 3 ].Height = 64; canvases[ 3 ].Format = ImPlatform_PixelFormat_RGBA32F; canvases[ 3 ].Mode = ImPaintMode_Color;
-					paintInit = true;
-				}
-
-				static int activePaint = 2;
-				ImGui::Combo( "Format##paint", &activePaint, "Binary Mask (R8)\0Grayscale (R8)\0Color (RGBA8)\0Color (RGBA32F)\0" );
-				ImPaintCanvasData& pc = canvases[ activePaint ];
-
-				PaintCanvas( "##PaintMain", &pc, ImVec2( 192, 0 ) );
-
-				// Brush controls
-				if ( ImGui::RadioButton( "Brush##pc", pc.Tool == ImPaintTool_Brush ) ) pc.Tool = ImPaintTool_Brush;
-				ImGui::SameLine();
-				if ( ImGui::RadioButton( "Eraser##pc", pc.Tool == ImPaintTool_Eraser ) ) pc.Tool = ImPaintTool_Eraser;
-				if ( pc.Mode != ImPaintMode_BinaryMask )
-				{
-					ImGui::SameLine();
-					if ( ImGui::RadioButton( "Hard##pc", pc.Brush == ImPaintBrush_Hard ) ) pc.Brush = ImPaintBrush_Hard;
-					ImGui::SameLine();
-					if ( ImGui::RadioButton( "Soft##pc", pc.Brush == ImPaintBrush_Soft ) ) pc.Brush = ImPaintBrush_Soft;
-				}
-
-				ImGui::SliderFloat( "Size##pc", &pc.BrushSize, 1.0f, 64.0f, "%.0f" );
-				if ( pc.Mode != ImPaintMode_BinaryMask && pc.Brush == ImPaintBrush_Soft )
-					ImGui::SliderFloat( "Hardness##pc", &pc.BrushHardness, 0.0f, 1.0f, "%.2f" );
-				ImGui::SliderFloat( "Opacity##pc", &pc.BrushOpacity, 0.0f, 1.0f, "%.2f" );
-
-				if ( pc.Mode == ImPaintMode_Color )
-					ImGui::ColorEdit4( "Color##pc", &pc.BrushColor.x );
-				else if ( pc.Mode == ImPaintMode_Grayscale )
-				{
-					ImGui::SliderFloat( "Intensity##pc", &pc.BrushColor.x, 0.0f, 1.0f, "%.2f" );
-					pc.BrushColor.y = pc.BrushColor.z = pc.BrushColor.x;
-				}
-			}
-			if ( ImGui::CollapsingHeader( "Transform Gizmo", ImGuiTreeNodeFlags_DefaultOpen ) )
-			{
-				static ImTransformImage gizmoImages[ 3 ];
-				static bool gizmoInit = false;
-				if ( !gizmoInit )
-				{
-					gizmoImages[ 0 ] = ImTransformImage( astro_img, astro_size );
-					gizmoImages[ 1 ] = ImTransformImage( clock_img, clock_size );
-					gizmoImages[ 1 ].Transform.Translation = ImVec2( -120.0f, -60.0f );
-					gizmoImages[ 1 ].Transform.Scale = ImVec2( 0.4f, 0.4f );
-					gizmoImages[ 2 ] = ImTransformImage( man_img, man_size );
-					gizmoImages[ 2 ].Transform.Translation = ImVec2( 100.0f, 50.0f );
-					gizmoImages[ 2 ].Transform.Scale = ImVec2( 0.5f, 0.5f );
-					gizmoInit = true;
-				}
-
-				static int gizmoSel = 0;
-				static bool gizmoNonUniform = false;
-
-				ImGui::Checkbox( "Non-Uniform Scale", &gizmoNonUniform );
-
-				ImTransformGizmoFlags gizmoFlags = ImTransformGizmoFlags_None;
-				if ( gizmoNonUniform )
-					gizmoFlags |= ImTransformGizmoFlags_NonUniformScale;
-
-				ImWidgets::ImageTransformGizmo( "##xform", gizmoImages, 3, &gizmoSel, gizmoFlags );
-
-				if ( gizmoSel >= 0 && gizmoSel < 3 )
-				{
-					ImTransformData* tr = &gizmoImages[ gizmoSel ].Transform;
-					ImGui::Text( "Selected: %d", gizmoSel );
-					float halfW = ImGui::GetContentRegionAvail().x * 0.5f - ImGui::GetStyle().ItemSpacing.x;
-					ImGui::SetNextItemWidth( halfW );
-					ImGui::DragFloat2( "Position", &tr->Translation.x, 1.0f );
-					ImGui::SameLine();
-					float deg = tr->Rotation * ( 180.0f / IM_PI );
-					ImGui::SetNextItemWidth( halfW );
-					if ( ImGui::DragFloat( "Rotation", &deg, 0.5f ) )
-						tr->Rotation = deg * ( IM_PI / 180.0f );
-					ImGui::SetNextItemWidth( halfW );
-					ImGui::DragFloat2( "Scale", &tr->Scale.x, 0.01f, 0.01f, 10.0f );
-					ImGui::SameLine();
-					if ( ImGui::Button( "Reset" ) )
-						*tr = ImTransformData();
-				}
-				else
-				{
-					ImGui::TextDisabled( "Click an image to select it" );
-				}
 			}
 			ImGui::Unindent();
 		}
