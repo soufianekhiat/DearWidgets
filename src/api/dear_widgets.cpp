@@ -15943,24 +15943,34 @@ namespace ImWidgets {
 		static const int kRungCount = IM_ARRAYSIZE( kRungs );
 		static const int kDefaultRung = 3; // "1.0"
 
-		// Determine active rung and auto format
-		int activeRung = kDefaultRung;
+		// Determine active rung; persist last-used rung for formatting
+		ImGuiID rungKey = id ^ 0xA5A5A5A5;
+		int* pLastRung = window->StateStorage.GetIntRef( rungKey, kDefaultRung );
+		int activeRung = *pLastRung;
 		const char* autoFormat = "%.1f";
 
 		if ( g.ActiveId == id )
 		{
 			float rungHeight = GetStyle().PrecisionDrag_BlockSize;
-			float dy = g.IO.MouseClickedPos[ 0 ].y - g.IO.MousePos.y; // up = positive = larger rungs
+			float dy = g.IO.MouseClickedPos[ 0 ].y - g.IO.MousePos.y;
 			int rungOffset = ( int )ImFloor( ( dy + rungHeight * 0.5f ) / rungHeight );
 			activeRung = ImClamp( kDefaultRung + rungOffset, 0, kRungCount - 1 );
+			*pLastRung = activeRung;
 		}
 
 		float speed = kRungs[ activeRung ];
-		if      ( speed >= 10.0f )  autoFormat = "%.0f";
-		else if ( speed >= 1.0f )   autoFormat = "%.1f";
-		else if ( speed >= 0.1f )   autoFormat = "%.2f";
-		else if ( speed >= 0.01f )  autoFormat = "%.3f";
-		else                        autoFormat = "%.4f";
+
+		// Format based on last rung the user dragged on
+		int decimals;
+		if      ( speed >= 10.0f )  decimals = 0;
+		else if ( speed >= 1.0f )   decimals = 1;
+		else if ( speed >= 0.1f )   decimals = 2;
+		else if ( speed >= 0.01f )  decimals = 3;
+		else                        decimals = 4;
+
+		char autoFormatBuf[ 16 ];
+		ImFormatString( autoFormatBuf, IM_ARRAYSIZE( autoFormatBuf ), "%%.%df", decimals );
+		autoFormat = autoFormatBuf;
 
 		const char* displayFormat = format ? format : autoFormat;
 
@@ -16001,9 +16011,21 @@ namespace ImWidgets {
 		ImGui::RenderNavCursor( frame_bb, id );
 		ImGui::RenderFrame( frame_bb.Min, frame_bb.Max, frame_col, true, style.FrameRounding );
 
-		// Display value
+		// Display value — format then strip trailing zeros (keep at least 1 decimal)
 		char value_buf[ 64 ];
-		const char* value_buf_end = value_buf + ImGui::DataTypeFormatString( value_buf, IM_ARRAYSIZE( value_buf ), ImGuiDataType_Float, value, displayFormat );
+		ImGui::DataTypeFormatString( value_buf, IM_ARRAYSIZE( value_buf ), ImGuiDataType_Float, value, displayFormat );
+		if ( !format )
+		{
+			char* dot = strchr( value_buf, '.' );
+			if ( dot )
+			{
+				char* end = dot + strlen( dot ) - 1;
+				while ( end > dot + 1 && *end == '0' )
+					end--;
+				*( end + 1 ) = '\0';
+			}
+		}
+		const char* value_buf_end = value_buf + strlen( value_buf );
 		if ( g.LogEnabled )
 			ImGui::LogSetNextTextDecoration( "{", "}" );
 		ImGui::RenderTextClipped( frame_bb.Min, frame_bb.Max, value_buf, value_buf_end, NULL, ImVec2( 0.5f, 0.5f ) );
