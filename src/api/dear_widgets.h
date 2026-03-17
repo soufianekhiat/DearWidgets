@@ -2935,6 +2935,9 @@ namespace ImWidgets{
 
 	IMGUI_API bool DragFloatPrecise( char const* label, float* value, float v_min = 0.0f, float v_max = 0.0f, const char* format = NULL, ImGuiSliderFlags flags = 0 );
 
+	// Up Vector selector (hemisphere picker)
+	IMGUI_API bool UpVector( char const* label, float* direction, int defaultUpAxis = 1, ImVec2 size = ImVec2( 0, 0 ) );
+
 	//////////////////////////////////////////////////////////////////////////
 	// Window Customization
 	//////////////////////////////////////////////////////////////////////////

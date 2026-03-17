@@ -16069,6 +16069,403 @@ namespace ImWidgets {
 	}
 
 	//////////////////////////////////////////////////////////////////////////
+	// Up Vector
+	//////////////////////////////////////////////////////////////////////////
+
+	static void UpVectorBuildView( float yaw, float pitch, float right[ 3 ], float up[ 3 ], float fwd[ 3 ] )
+	{
+		float cy = ImCos( yaw ), sy = ImSin( yaw );
+		float cp = ImCos( pitch ), sp = ImSin( pitch );
+		right[ 0 ] = cy;   right[ 1 ] = 0.0f; right[ 2 ] = sy;
+		up[ 0 ] = -sy * sp; up[ 1 ] = cp;      up[ 2 ] = cy * sp;
+		fwd[ 0 ] = -sy * cp; fwd[ 1 ] = -sp;    fwd[ 2 ] = cy * cp;
+	}
+
+	static ImVec2 UpVectorProject( const float p[ 3 ], const float right[ 3 ], const float up[ 3 ], ImVec2 center, float radius )
+	{
+		float sx = p[ 0 ] * right[ 0 ] + p[ 1 ] * right[ 1 ] + p[ 2 ] * right[ 2 ];
+		float sy = p[ 0 ] * up[ 0 ] + p[ 1 ] * up[ 1 ] + p[ 2 ] * up[ 2 ];
+		return ImVec2( center.x + sx * radius, center.y - sy * radius );
+	}
+
+	static void UpVectorUnproject( ImVec2 mouse, ImVec2 center, float radius, const float right[ 3 ], const float up[ 3 ], const float fwd[ 3 ], float outDir[ 3 ] )
+	{
+		float lx = ( mouse.x - center.x ) / radius;
+		float ly = -( mouse.y - center.y ) / radius;
+		float r2 = lx * lx + ly * ly;
+		float lz;
+		if ( r2 > 1.0f )
+		{
+			float inv = 1.0f / ImSqrt( r2 );
+			lx *= inv;
+			ly *= inv;
+			lz = 0.0f;
+		}
+		else
+		{
+			lz = ImSqrt( 1.0f - r2 );
+		}
+		for ( int i = 0; i < 3; i++ )
+			outDir[ i ] = lx * right[ i ] + ly * up[ i ] - lz * fwd[ i ];
+		float len = ImSqrt( outDir[ 0 ] * outDir[ 0 ] + outDir[ 1 ] * outDir[ 1 ] + outDir[ 2 ] * outDir[ 2 ] );
+		if ( len > 0.0f ) { outDir[ 0 ] /= len; outDir[ 1 ] /= len; outDir[ 2 ] /= len; }
+	}
+
+	bool UpVector( char const* label, float* direction, int defaultUpAxis, ImVec2 size )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		const ImGuiID id = window->GetID( label );
+
+		if ( size.x <= 0.0f ) size.x = ImGui::GetFrameHeight() * 6.0f;
+		if ( size.y <= 0.0f ) size.y = size.x;
+
+		float discRadius = ImMin( size.x, size.y ) * 0.5f - 2.0f;
+		ImVec2 pos = window->DC.CursorPos;
+		ImVec2 discCenter( pos.x + size.x * 0.5f, pos.y + size.y * 0.5f );
+
+		// Buttons width
+		float btnW = ImGui::CalcTextSize( "+X" ).x + style.FramePadding.x * 2.0f;
+		float totalW = size.x + style.ItemInnerSpacing.x + btnW * 2.0f + style.ItemSpacing.x;
+		ImRect total_bb( pos, ImVec2( pos.x + totalW, pos.y + size.y ) );
+		ImRect disc_bb( pos, ImVec2( pos.x + size.x, pos.y + size.y ) );
+
+		ImGui::ItemSize( total_bb );
+		if ( !ImGui::ItemAdd( total_bb, id ) )
+			return false;
+
+		bool value_changed = false;
+
+		// State storage
+		ImGuiID dragKey = id ^ 0xBEEF0001;
+		ImGuiID yawKey = id ^ 0xBEEF0002;
+		ImGuiID pitchKey = id ^ 0xBEEF0003;
+		int* pDragMode = window->StateStorage.GetIntRef( dragKey, 0 );
+
+		// Default view: top-down looking at hemisphere from above the default axis
+		float defaultYaw = 0.0f, defaultPitch = IM_PI * 0.5f - 0.01f;
+		if ( defaultUpAxis == 0 ) { defaultYaw = IM_PI * 0.5f; defaultPitch = IM_PI * 0.5f - 0.01f; }
+		if ( defaultUpAxis == 2 ) { defaultYaw = 0.0f; defaultPitch = 0.0f; }
+
+		float* pYaw = window->StateStorage.GetFloatRef( yawKey, defaultYaw );
+		float* pPitch = window->StateStorage.GetFloatRef( pitchKey, defaultPitch );
+
+		// Build view
+		float vRight[ 3 ], vUp[ 3 ], vFwd[ 3 ];
+		UpVectorBuildView( *pYaw, *pPitch, vRight, vUp, vFwd );
+
+		ImDrawList* dl = window->DrawList;
+		bool hovered = ImGui::ItemHoverable( disc_bb, id, g.LastItemData.ItemFlags );
+		if ( IsMouseOverExpandButton( id, disc_bb ) ) hovered = false;
+
+		ImVec2 mp = g.IO.MousePos;
+		float dx = mp.x - discCenter.x, dy = mp.y - discCenter.y;
+		bool mouseInDisc = ( dx * dx + dy * dy ) <= discRadius * discRadius;
+
+		// --- Interaction ---
+		if ( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && mouseInDisc )
+		{
+			*pDragMode = 1;
+			ImGui::SetActiveID( id, window );
+			ImGui::SetFocusID( id, window );
+			ImGui::FocusWindow( window );
+			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+		}
+		if ( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) && mouseInDisc )
+		{
+			*pDragMode = 2;
+			ImGui::SetActiveID( id, window );
+			ImGui::SetFocusID( id, window );
+			ImGui::FocusWindow( window );
+			ImGui::SetKeyOwner( ImGuiKey_MouseRight, id );
+		}
+
+		if ( g.ActiveId == id )
+		{
+			if ( *pDragMode == 1 )
+			{
+				if ( ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+				{
+					float newDir[ 3 ];
+					UpVectorUnproject( mp, discCenter, discRadius, vRight, vUp, vFwd, newDir );
+					if ( newDir[ 0 ] != direction[ 0 ] || newDir[ 1 ] != direction[ 1 ] || newDir[ 2 ] != direction[ 2 ] )
+					{
+						direction[ 0 ] = newDir[ 0 ]; direction[ 1 ] = newDir[ 1 ]; direction[ 2 ] = newDir[ 2 ];
+						value_changed = true;
+					}
+				}
+				else
+				{
+					*pDragMode = 0;
+					ImGui::ClearActiveID();
+				}
+			}
+			else if ( *pDragMode == 2 )
+			{
+				if ( ImGui::IsMouseDown( ImGuiMouseButton_Right ) )
+				{
+					float sensitivity = 0.01f;
+					*pYaw -= g.IO.MouseDelta.x * sensitivity;
+					*pPitch += g.IO.MouseDelta.y * sensitivity;
+					*pPitch = ImClamp( *pPitch, -IM_PI * 0.5f + 0.01f, IM_PI * 0.5f - 0.01f );
+					UpVectorBuildView( *pYaw, *pPitch, vRight, vUp, vFwd );
+				}
+				else
+				{
+					*pDragMode = 0;
+					ImGui::ClearActiveID();
+				}
+			}
+		}
+
+		// --- Rendering ---
+
+		// Background
+		dl->AddCircleFilled( discCenter, discRadius, ImGui::GetColorU32( ImGuiCol_FrameBg ), 48 );
+
+		// Hemisphere surface (shaded triangles)
+		const int rings = 10;
+		const int slices = 24;
+		ImVec2 lightDir2( 0.4f, -0.7f ); // screen-space light for simple shading
+		(void)lightDir2;
+
+		for ( int r = 0; r < rings; r++ )
+		{
+			float lat0 = ( float )r / rings * ( IM_PI * 0.5f );
+			float lat1 = ( float )( r + 1 ) / rings * ( IM_PI * 0.5f );
+			float cLat0 = ImCos( lat0 ), sLat0 = ImSin( lat0 );
+			float cLat1 = ImCos( lat1 ), sLat1 = ImSin( lat1 );
+
+			for ( int s = 0; s < slices; s++ )
+			{
+				float lon0 = ( float )s / slices * IM_PI * 2.0f;
+				float lon1 = ( float )( s + 1 ) / slices * IM_PI * 2.0f;
+
+				float p00[ 3 ] = { cLat0 * ImCos( lon0 ), sLat0, cLat0 * ImSin( lon0 ) };
+				float p10[ 3 ] = { cLat0 * ImCos( lon1 ), sLat0, cLat0 * ImSin( lon1 ) };
+				float p01[ 3 ] = { cLat1 * ImCos( lon0 ), sLat1, cLat1 * ImSin( lon0 ) };
+				float p11[ 3 ] = { cLat1 * ImCos( lon1 ), sLat1, cLat1 * ImSin( lon1 ) };
+
+				// Backface cull: check if facing viewer
+				float mid[ 3 ] = { ( p00[ 0 ] + p11[ 0 ] ) * 0.5f, ( p00[ 1 ] + p11[ 1 ] ) * 0.5f, ( p00[ 2 ] + p11[ 2 ] ) * 0.5f };
+				float viewDot = mid[ 0 ] * vFwd[ 0 ] + mid[ 1 ] * vFwd[ 1 ] + mid[ 2 ] * vFwd[ 2 ];
+				if ( viewDot > 0.05f ) continue;
+
+				// Simple shading: Lambertian with a fixed light
+				float lightDir[ 3 ] = { 0.3f, 0.6f, -0.7f };
+				float lightDot = mid[ 0 ] * lightDir[ 0 ] + mid[ 1 ] * lightDir[ 1 ] + mid[ 2 ] * lightDir[ 2 ];
+				float brightness = ImClamp( lightDot * 0.5f + 0.5f, 0.15f, 0.85f );
+				ImU8 bv = ( ImU8 )( brightness * 255.0f );
+				ImU32 col = IM_COL32( bv / 2, bv / 2 + 30, bv, 200 );
+
+				ImVec2 s00 = UpVectorProject( p00, vRight, vUp, discCenter, discRadius );
+				ImVec2 s10 = UpVectorProject( p10, vRight, vUp, discCenter, discRadius );
+				ImVec2 s01 = UpVectorProject( p01, vRight, vUp, discCenter, discRadius );
+				ImVec2 s11 = UpVectorProject( p11, vRight, vUp, discCenter, discRadius );
+
+				dl->AddTriangleFilled( s00, s10, s11, col );
+				dl->AddTriangleFilled( s00, s11, s01, col );
+			}
+		}
+
+		// Grid lines (latitude)
+		ImU32 gridCol = IM_COL32( 255, 255, 255, 40 );
+		for ( int r = 1; r < rings; r++ )
+		{
+			float lat = ( float )r / rings * ( IM_PI * 0.5f );
+			float cLat = ImCos( lat ), sLat = ImSin( lat );
+			ImVec2 prev( 0, 0 );
+			for ( int s = 0; s <= slices; s++ )
+			{
+				float lon = ( float )s / slices * IM_PI * 2.0f;
+				float p[ 3 ] = { cLat * ImCos( lon ), sLat, cLat * ImSin( lon ) };
+				float vd = p[ 0 ] * vFwd[ 0 ] + p[ 1 ] * vFwd[ 1 ] + p[ 2 ] * vFwd[ 2 ];
+				ImVec2 sp = UpVectorProject( p, vRight, vUp, discCenter, discRadius );
+				if ( s > 0 && vd < 0.0f )
+					dl->AddLine( prev, sp, gridCol, 1.0f );
+				prev = sp;
+			}
+		}
+		// Grid lines (longitude)
+		for ( int s = 0; s < slices / 2; s++ )
+		{
+			float lon = ( float )s / ( slices / 2 ) * IM_PI;
+			ImVec2 prev( 0, 0 );
+			for ( int r2 = 0; r2 <= rings * 2; r2++ )
+			{
+				float lat = ( float )r2 / ( rings * 2 ) * IM_PI - IM_PI * 0.5f;
+				float cLat = ImCos( lat ), sLat = ImSin( lat );
+				float p[ 3 ] = { cLat * ImCos( lon ), sLat, cLat * ImSin( lon ) };
+				float vd = p[ 0 ] * vFwd[ 0 ] + p[ 1 ] * vFwd[ 1 ] + p[ 2 ] * vFwd[ 2 ];
+				ImVec2 sp = UpVectorProject( p, vRight, vUp, discCenter, discRadius );
+				if ( r2 > 0 && vd < 0.0f )
+					dl->AddLine( prev, sp, gridCol, 1.0f );
+				prev = sp;
+			}
+		}
+
+		// Equator
+		dl->AddCircle( discCenter, discRadius, IM_COL32( 200, 200, 200, 100 ), 48, 1.0f );
+
+		// Axis lines
+		float axisLen = 0.6f;
+		ImU32 axisColors[ 3 ] = { IM_COL32( 220, 60, 60, 200 ), IM_COL32( 60, 200, 60, 200 ), IM_COL32( 60, 100, 220, 200 ) };
+		const char* axisNames[ 3 ] = { "X", "Y", "Z" };
+		float origin[ 3 ] = { 0, 0, 0 };
+		ImVec2 originS = UpVectorProject( origin, vRight, vUp, discCenter, discRadius );
+		for ( int a = 0; a < 3; a++ )
+		{
+			float tip[ 3 ] = { 0, 0, 0 };
+			tip[ a ] = axisLen;
+			float viewDot = tip[ 0 ] * vFwd[ 0 ] + tip[ 1 ] * vFwd[ 1 ] + tip[ 2 ] * vFwd[ 2 ];
+			ImVec2 tipS = UpVectorProject( tip, vRight, vUp, discCenter, discRadius );
+			dl->AddLine( originS, tipS, axisColors[ a ], viewDot < 0.0f ? 2.0f : 1.0f );
+			dl->AddText( tipS, axisColors[ a ], axisNames[ a ] );
+		}
+
+		// Direction indicator: 3D circle + cross on the sphere surface
+		{
+			// Build tangent frame at the direction point
+			float tan1[ 3 ], tan2[ 3 ];
+			// Pick an arbitrary vector not parallel to direction to cross with
+			float ref[ 3 ] = { 0.0f, 1.0f, 0.0f };
+			if ( ImAbs( direction[ 0 ] * ref[ 0 ] + direction[ 1 ] * ref[ 1 ] + direction[ 2 ] * ref[ 2 ] ) > 0.9f )
+			{
+				ref[ 0 ] = 1.0f; ref[ 1 ] = 0.0f; ref[ 2 ] = 0.0f;
+			}
+			// tan1 = normalize( cross( direction, ref ) )
+			tan1[ 0 ] = direction[ 1 ] * ref[ 2 ] - direction[ 2 ] * ref[ 1 ];
+			tan1[ 1 ] = direction[ 2 ] * ref[ 0 ] - direction[ 0 ] * ref[ 2 ];
+			tan1[ 2 ] = direction[ 0 ] * ref[ 1 ] - direction[ 1 ] * ref[ 0 ];
+			float t1Len = ImSqrt( tan1[ 0 ] * tan1[ 0 ] + tan1[ 1 ] * tan1[ 1 ] + tan1[ 2 ] * tan1[ 2 ] );
+			if ( t1Len > 0.0f ) { tan1[ 0 ] /= t1Len; tan1[ 1 ] /= t1Len; tan1[ 2 ] /= t1Len; }
+			// tan2 = cross( direction, tan1 )
+			tan2[ 0 ] = direction[ 1 ] * tan1[ 2 ] - direction[ 2 ] * tan1[ 1 ];
+			tan2[ 1 ] = direction[ 2 ] * tan1[ 0 ] - direction[ 0 ] * tan1[ 2 ];
+			tan2[ 2 ] = direction[ 0 ] * tan1[ 1 ] - direction[ 1 ] * tan1[ 0 ];
+
+			float circleAngle = 0.15f; // angular radius on the sphere (radians)
+			float cosCA = ImCos( circleAngle );
+			float sinCA = ImSin( circleAngle );
+
+			// Draw circle on sphere
+			const int circleSegs = 32;
+			ImVec2 circlePts[ 33 ];
+			for ( int s = 0; s <= circleSegs; s++ )
+			{
+				float a = ( float )s / circleSegs * IM_PI * 2.0f;
+				float ca = ImCos( a ), sa = ImSin( a );
+				float p[ 3 ];
+				for ( int j = 0; j < 3; j++ )
+					p[ j ] = direction[ j ] * cosCA + ( tan1[ j ] * ca + tan2[ j ] * sa ) * sinCA;
+				circlePts[ s ] = UpVectorProject( p, vRight, vUp, discCenter, discRadius );
+			}
+
+			float dotViewDot = direction[ 0 ] * vFwd[ 0 ] + direction[ 1 ] * vFwd[ 1 ] + direction[ 2 ] * vFwd[ 2 ];
+			ImU32 circleCol = dotViewDot < 0.1f ? IM_COL32( 255, 255, 0, 220 ) : IM_COL32( 255, 255, 0, 80 );
+			float thickness = dotViewDot < 0.1f ? 2.0f : 1.0f;
+			dl->AddPolyline( circlePts, circleSegs + 1, circleCol, ImDrawFlags_None, thickness );
+
+			// Draw cross (two perpendicular lines through center, on the sphere surface)
+			float crossAngle = circleAngle * 0.8f;
+			float cosXA = ImCos( crossAngle ), sinXA = ImSin( crossAngle );
+			for ( int axis = 0; axis < 2; axis++ )
+			{
+				const float* tAxis = ( axis == 0 ) ? tan1 : tan2;
+				float pA[ 3 ], pB[ 3 ];
+				for ( int j = 0; j < 3; j++ )
+				{
+					pA[ j ] = direction[ j ] * cosXA + tAxis[ j ] * sinXA;
+					pB[ j ] = direction[ j ] * cosXA - tAxis[ j ] * sinXA;
+				}
+				ImVec2 sA = UpVectorProject( pA, vRight, vUp, discCenter, discRadius );
+				ImVec2 sB = UpVectorProject( pB, vRight, vUp, discCenter, discRadius );
+				dl->AddLine( sA, sB, circleCol, thickness );
+			}
+		}
+
+		// --- Axis shortcut buttons (drawn directly, no layout impact) ---
+		{
+			float btnH = ImGui::GetFrameHeight();
+			float startY = pos.y;
+			float col1X = pos.x + size.x + style.ItemInnerSpacing.x;
+			float col2X = col1X + btnW + style.ItemSpacing.x * 0.5f;
+
+			// Buttons set the orbit view orientation (which axis points up), not the direction value
+			const char* btnLabels[ 6 ] = { "+X", "+Y", "+Z", "-X", "-Y", "-Z" };
+			// yaw, pitch pairs to look down each axis
+			float btnYaw[ 6 ]   = { IM_PI * 0.5f, 0.0f, 0.0f,           -IM_PI * 0.5f, 0.0f,  IM_PI };
+			float btnPitch[ 6 ] = { IM_PI * 0.5f - 0.01f, IM_PI * 0.5f - 0.01f, 0.0f, IM_PI * 0.5f - 0.01f, -IM_PI * 0.5f + 0.01f, 0.0f };
+
+			ImVec2 savedCursor = window->DC.CursorPos;
+			for ( int i = 0; i < 6; i++ )
+			{
+				float bx = ( i < 3 ) ? col1X : col2X;
+				float by = startY + ( i % 3 ) * ( btnH + style.ItemSpacing.y * 0.5f );
+				ImGui::SetCursorScreenPos( ImVec2( bx, by ) );
+				ImGui::PushID( i );
+				if ( ImGui::SmallButton( btnLabels[ i ] ) )
+				{
+					*pYaw = btnYaw[ i ];
+					*pPitch = btnPitch[ i ];
+				}
+				ImGui::PopID();
+			}
+			// Restore cursor to after the total_bb so next widgets don't overlap
+			window->DC.CursorPos = ImVec2( pos.x, total_bb.Max.y + style.ItemSpacing.y );
+			window->DC.CursorMaxPos = ImMax( window->DC.CursorMaxPos, ImVec2( total_bb.Max.x, total_bb.Max.y + style.ItemSpacing.y ) );
+		}
+
+		// Label
+		const char* labelEnd = ImGui::FindRenderedTextEnd( label );
+		if ( label != labelEnd )
+		{
+			ImGui::TextEx( label, labelEnd );
+		}
+
+		if ( value_changed )
+			ImGui::MarkItemEdited( id );
+
+		// Expand button
+		bool* pExpanded = WidgetExpandButton( id, disc_bb );
+		if ( pExpanded && *pExpanded )
+		{
+			if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 600, 500 ) ) )
+			{
+				ImVec2 avail = ImGui::GetContentRegionAvail();
+				float widgetW = avail.x * 0.75f;
+				float widgetSz = ImMin( widgetW, avail.y );
+				if ( UpVector( "##exp", direction, defaultUpAxis, ImVec2( widgetSz, widgetSz ) ) )
+					value_changed = true;
+				ImGui::SameLine();
+				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
+				ImGui::TextUnformatted( "Direction" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				if ( ImGui::DragFloat3( "##dir", direction, 0.01f, -1.0f, 1.0f, "%.3f" ) )
+				{
+					float len = ImSqrt( direction[ 0 ] * direction[ 0 ] + direction[ 1 ] * direction[ 1 ] + direction[ 2 ] * direction[ 2 ] );
+					if ( len > 0.0f ) { direction[ 0 ] /= len; direction[ 1 ] /= len; direction[ 2 ] /= len; }
+					value_changed = true;
+				}
+				ImGui::Separator();
+				ImGui::Text( "X: %.4f", direction[ 0 ] );
+				ImGui::Text( "Y: %.4f", direction[ 1 ] );
+				ImGui::Text( "Z: %.4f", direction[ 2 ] );
+				ImGui::Separator();
+				ImGui::TextWrapped( "Left-click to pick direction. Right-drag to orbit view." );
+				ImGui::EndChild();
+			}
+			EndExpandedWindow();
+		}
+
+		return value_changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
 	// Window Customization
 	//////////////////////////////////////////////////////////////////////////
 	void SetCurrentWindowBackgroundImage( ImTextureID id, ImVec2 imgSize, bool fixedSize, ImU32 col )

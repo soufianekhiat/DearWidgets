@@ -1973,6 +1973,12 @@ namespace ImWidgets {
 				ImWidgets::DragFloatPrecise( "Fixed format", &value3, 0.0f, 0.0f, "%.6f" );
 				ImGui::TextWrapped( "Click and drag left/right to edit. Move up/down to change precision rung." );
 			}
+			if ( ImGui::CollapsingHeader( "Up Vector" ) )
+			{
+				static float upDir[ 3 ] = { 0.0f, 1.0f, 0.0f };
+				ImWidgets::UpVector( "##UpVec", upDir );
+				ImGui::Text( "Direction: %.3f, %.3f, %.3f", upDir[ 0 ], upDir[ 1 ], upDir[ 2 ] );
+			}
 			if ( ImGui::CollapsingHeader( "SliderN" ) )
 			{
 				static float value[ 3 ] = { 0.25f, 10.0f, 100.0f };
