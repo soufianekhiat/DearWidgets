@@ -3878,6 +3878,61 @@ namespace ImWidgets {
 				};
 				ImWidgets::UnitField( "Weight", &weight, weightUnits, IM_ARRAYSIZE( weightUnits ), &weightUnit, 0.01f, 0.0f, 1000.0f );
 			}
+			if ( ImGui::CollapsingHeader( "Paint Canvas" ) )
+			{
+				// User-owned pixel buffers (different aspect ratios)
+				static unsigned char maskPixels[ 64 * 64 ];            // 1:1
+				static unsigned char grayPixels[ 60 * 70 ];            // 6:7
+				static ImU32         colorPixels[ 160 * 90 ];          // 16:9
+				static float         floatPixels[ 128 * 64 * 4 ];     // 2:1
+
+				static ImPaintCanvasData canvases[ 4 ];
+				static bool paintInit = false;
+				if ( !paintInit )
+				{
+					memset( maskPixels, 0, sizeof( maskPixels ) );
+					memset( grayPixels, 0, sizeof( grayPixels ) );
+					memset( colorPixels, 0, sizeof( colorPixels ) );
+					memset( floatPixels, 0, sizeof( floatPixels ) );
+
+					canvases[ 0 ].Pixels = maskPixels;   canvases[ 0 ].Width = 64;  canvases[ 0 ].Height = 64; canvases[ 0 ].Format = ImPlatform_PixelFormat_R8;      canvases[ 0 ].Mode = ImPaintMode_BinaryMask;
+					canvases[ 1 ].Pixels = grayPixels;   canvases[ 1 ].Width = 60;  canvases[ 1 ].Height = 70; canvases[ 1 ].Format = ImPlatform_PixelFormat_R8;      canvases[ 1 ].Mode = ImPaintMode_Grayscale;
+					canvases[ 2 ].Pixels = colorPixels;  canvases[ 2 ].Width = 160; canvases[ 2 ].Height = 90; canvases[ 2 ].Format = ImPlatform_PixelFormat_RGBA8;   canvases[ 2 ].Mode = ImPaintMode_Color;
+					canvases[ 3 ].Pixels = floatPixels;  canvases[ 3 ].Width = 128; canvases[ 3 ].Height = 64; canvases[ 3 ].Format = ImPlatform_PixelFormat_RGBA32F; canvases[ 3 ].Mode = ImPaintMode_Color;
+					paintInit = true;
+				}
+
+				static int activePaint = 2;
+				ImGui::Combo( "Format##paint", &activePaint, "Binary Mask (R8)\0Grayscale (R8)\0Color (RGBA8)\0Color (RGBA32F)\0" );
+				ImPaintCanvasData& pc = canvases[ activePaint ];
+
+				PaintCanvas( "##PaintMain", &pc, ImVec2( 192, 0 ) );
+
+				// Brush controls
+				if ( ImGui::RadioButton( "Brush##pc", pc.Tool == ImPaintTool_Brush ) ) pc.Tool = ImPaintTool_Brush;
+				ImGui::SameLine();
+				if ( ImGui::RadioButton( "Eraser##pc", pc.Tool == ImPaintTool_Eraser ) ) pc.Tool = ImPaintTool_Eraser;
+				if ( pc.Mode != ImPaintMode_BinaryMask )
+				{
+					ImGui::SameLine();
+					if ( ImGui::RadioButton( "Hard##pc", pc.Brush == ImPaintBrush_Hard ) ) pc.Brush = ImPaintBrush_Hard;
+					ImGui::SameLine();
+					if ( ImGui::RadioButton( "Soft##pc", pc.Brush == ImPaintBrush_Soft ) ) pc.Brush = ImPaintBrush_Soft;
+				}
+
+				ImGui::SliderFloat( "Size##pc", &pc.BrushSize, 1.0f, 64.0f, "%.0f" );
+				if ( pc.Mode != ImPaintMode_BinaryMask && pc.Brush == ImPaintBrush_Soft )
+					ImGui::SliderFloat( "Hardness##pc", &pc.BrushHardness, 0.0f, 1.0f, "%.2f" );
+				ImGui::SliderFloat( "Opacity##pc", &pc.BrushOpacity, 0.0f, 1.0f, "%.2f" );
+
+				if ( pc.Mode == ImPaintMode_Color )
+					ImGui::ColorEdit4( "Color##pc", &pc.BrushColor.x );
+				else if ( pc.Mode == ImPaintMode_Grayscale )
+				{
+					ImGui::SliderFloat( "Intensity##pc", &pc.BrushColor.x, 0.0f, 1.0f, "%.2f" );
+					pc.BrushColor.y = pc.BrushColor.z = pc.BrushColor.x;
+				}
+			}
 			if ( ImGui::CollapsingHeader( "Transform Gizmo", ImGuiTreeNodeFlags_DefaultOpen ) )
 			{
 				static ImTransformImage gizmoImages[ 3 ];

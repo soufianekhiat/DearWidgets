@@ -2158,6 +2158,60 @@ inline ImUnitDef ImUnitDef_Custom( const char* name, const char* abbr, ImUnitCon
 	return u;
 }
 
+// Paint Canvas
+typedef int ImPaintMode;
+enum ImPaintMode_
+{
+	ImPaintMode_BinaryMask = 0, // Binary mask: on/off
+	ImPaintMode_Grayscale,      // Black & white intensity
+	ImPaintMode_Color,          // Full RGBA
+	ImPaintMode_COUNT
+};
+
+typedef int ImPaintBrush;
+enum ImPaintBrush_
+{
+	ImPaintBrush_Hard = 0,      // Solid circle
+	ImPaintBrush_Soft,          // Feathered circle
+	ImPaintBrush_COUNT
+};
+
+typedef int ImPaintTool;
+enum ImPaintTool_
+{
+	ImPaintTool_Brush = 0,
+	ImPaintTool_Eraser,
+	ImPaintTool_COUNT
+};
+
+struct ImPaintCanvasData
+{
+	// User-owned pixel buffer
+	void*                  Pixels;         // Pointer to user pixel data (user allocates/frees)
+	int                    Width;          // Canvas width in pixels
+	int                    Height;         // Canvas height in pixels
+	ImPlatform_PixelFormat Format;         // Pixel format (ImPlatform_PixelFormat_RGBA8, _R8, _RGBA32F, etc.)
+	ImPaintMode            Mode;           // Brush behavior: Mask, Grayscale, Color
+
+	// Brush settings
+	ImPaintBrush Brush;
+	ImPaintTool  Tool;
+	float        BrushSize;
+	float        BrushHardness;
+	float        BrushOpacity;
+	ImVec4       BrushColor;
+
+	// Internal (widget-owned)
+	ImTextureID  _TexID;                   // GPU texture (managed by widget)
+	int          _TexW, _TexH;             // Current texture dimensions
+	ImPlatform_PixelFormat _TexFmt;        // Current texture format
+	ImVec2       _LastPos;
+	bool         _TexDirty;
+
+	ImPaintCanvasData()  { Pixels = NULL; Width = Height = 0; Format = ImPlatform_PixelFormat_RGBA8; Mode = ImPaintMode_Color; Brush = ImPaintBrush_Hard; Tool = ImPaintTool_Brush; BrushSize = 4.0f; BrushHardness = 0.5f; BrushOpacity = 1.0f; BrushColor = ImVec4( 1, 1, 1, 1 ); _TexID = ImTextureID_Invalid; _TexW = _TexH = 0; _TexFmt = ImPlatform_PixelFormat_RGBA8; _LastPos = ImVec2( -1, -1 ); _TexDirty = true; }
+	void DestroyTexture() { if ( _TexID != ImTextureID_Invalid ) { ImPlatform_DestroyTexture( _TexID ); _TexID = ImTextureID_Invalid; } _TexW = _TexH = 0; }
+};
+
 namespace ImWidgets{
 	extern ImGlobalData GlobalData;
 
@@ -2798,6 +2852,9 @@ namespace ImWidgets{
 
 	// Unit Field: DragFloat with built-in unit selector
 	IMGUI_API bool UnitField( char const* label, float* pValue, ImUnitDef* units, int unitCount, int* pSelectedUnit, float v_speed = 1.0f, float v_min = 0.0f, float v_max = 0.0f, const char* format = NULL );
+
+	// Paint Canvas
+	IMGUI_API bool PaintCanvas( char const* label, ImPaintCanvasData* canvas, ImVec2 size = ImVec2( 0, 0 ) );
 
 	IMGUI_API bool GradientEditor( char const* label, ImGradientData* gradient, bool alpha = true, ImVec2 size = ImVec2( 0, 0 ) );
 	IMGUI_API bool CurveEditor( char const* label, ImCurveEditorData* curve, ImVec2 size = ImVec2( 0, 0 ) );

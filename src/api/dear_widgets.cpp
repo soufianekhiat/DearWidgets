@@ -10019,6 +10019,443 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 	//////////////////////////////////////////////////////////////////////////
+	// Paint Canvas
+	//////////////////////////////////////////////////////////////////////////
+
+	// --- Format helpers ---
+
+	static int PaintBytesPerPixel( ImPlatform_PixelFormat fmt )
+	{
+		switch ( fmt )
+		{
+		case ImPlatform_PixelFormat_R8:      return 1;
+		case ImPlatform_PixelFormat_RG8:     return 2;
+		case ImPlatform_PixelFormat_RGB8:    return 3;
+		case ImPlatform_PixelFormat_RGBA8:   return 4;
+		case ImPlatform_PixelFormat_R16:     return 2;
+		case ImPlatform_PixelFormat_RG16:    return 4;
+		case ImPlatform_PixelFormat_RGBA16:  return 8;
+		case ImPlatform_PixelFormat_R32F:    return 4;
+		case ImPlatform_PixelFormat_RG32F:   return 8;
+		case ImPlatform_PixelFormat_RGBA32F: return 16;
+		default: return 4;
+		}
+	}
+
+	static int PaintChannelCount( ImPlatform_PixelFormat fmt )
+	{
+		switch ( fmt )
+		{
+		case ImPlatform_PixelFormat_R8:
+		case ImPlatform_PixelFormat_R16:
+		case ImPlatform_PixelFormat_R32F:    return 1;
+		case ImPlatform_PixelFormat_RG8:
+		case ImPlatform_PixelFormat_RG16:
+		case ImPlatform_PixelFormat_RG32F:   return 2;
+		case ImPlatform_PixelFormat_RGB8:    return 3;
+		case ImPlatform_PixelFormat_RGBA8:
+		case ImPlatform_PixelFormat_RGBA16:
+		case ImPlatform_PixelFormat_RGBA32F: return 4;
+		default: return 4;
+		}
+	}
+
+	static void PaintReadPixel( const void* pixels, int w, int x, int y, ImPlatform_PixelFormat fmt, float out[ 4 ] )
+	{
+		int bpp = PaintBytesPerPixel( fmt );
+		const unsigned char* ptr = ( const unsigned char* )pixels + ( y * w + x ) * bpp;
+		out[ 0 ] = out[ 1 ] = out[ 2 ] = 0.0f;
+		out[ 3 ] = 1.0f;
+		switch ( fmt )
+		{
+		case ImPlatform_PixelFormat_R8:      out[ 0 ] = ptr[ 0 ] / 255.0f; break;
+		case ImPlatform_PixelFormat_RG8:     out[ 0 ] = ptr[ 0 ] / 255.0f; out[ 1 ] = ptr[ 1 ] / 255.0f; break;
+		case ImPlatform_PixelFormat_RGB8:    out[ 0 ] = ptr[ 0 ] / 255.0f; out[ 1 ] = ptr[ 1 ] / 255.0f; out[ 2 ] = ptr[ 2 ] / 255.0f; break;
+		case ImPlatform_PixelFormat_RGBA8:   out[ 0 ] = ptr[ 0 ] / 255.0f; out[ 1 ] = ptr[ 1 ] / 255.0f; out[ 2 ] = ptr[ 2 ] / 255.0f; out[ 3 ] = ptr[ 3 ] / 255.0f; break;
+		case ImPlatform_PixelFormat_R16:     out[ 0 ] = ( ( const unsigned short* )ptr )[ 0 ] / 65535.0f; break;
+		case ImPlatform_PixelFormat_RG16:    out[ 0 ] = ( ( const unsigned short* )ptr )[ 0 ] / 65535.0f; out[ 1 ] = ( ( const unsigned short* )ptr )[ 1 ] / 65535.0f; break;
+		case ImPlatform_PixelFormat_RGBA16:  { const unsigned short* p = ( const unsigned short* )ptr; out[ 0 ] = p[ 0 ] / 65535.0f; out[ 1 ] = p[ 1 ] / 65535.0f; out[ 2 ] = p[ 2 ] / 65535.0f; out[ 3 ] = p[ 3 ] / 65535.0f; break; }
+		case ImPlatform_PixelFormat_R32F:    out[ 0 ] = ( ( const float* )ptr )[ 0 ]; break;
+		case ImPlatform_PixelFormat_RG32F:   out[ 0 ] = ( ( const float* )ptr )[ 0 ]; out[ 1 ] = ( ( const float* )ptr )[ 1 ]; break;
+		case ImPlatform_PixelFormat_RGBA32F: { const float* p = ( const float* )ptr; out[ 0 ] = p[ 0 ]; out[ 1 ] = p[ 1 ]; out[ 2 ] = p[ 2 ]; out[ 3 ] = p[ 3 ]; break; }
+		default: break;
+		}
+	}
+
+	static void PaintWritePixel( void* pixels, int w, int x, int y, ImPlatform_PixelFormat fmt, const float in[ 4 ] )
+	{
+		int bpp = PaintBytesPerPixel( fmt );
+		unsigned char* ptr = ( unsigned char* )pixels + ( y * w + x ) * bpp;
+		switch ( fmt )
+		{
+		case ImPlatform_PixelFormat_R8:      ptr[ 0 ] = ( unsigned char )( ImSaturate( in[ 0 ] ) * 255.0f ); break;
+		case ImPlatform_PixelFormat_RG8:     ptr[ 0 ] = ( unsigned char )( ImSaturate( in[ 0 ] ) * 255.0f ); ptr[ 1 ] = ( unsigned char )( ImSaturate( in[ 1 ] ) * 255.0f ); break;
+		case ImPlatform_PixelFormat_RGB8:    ptr[ 0 ] = ( unsigned char )( ImSaturate( in[ 0 ] ) * 255.0f ); ptr[ 1 ] = ( unsigned char )( ImSaturate( in[ 1 ] ) * 255.0f ); ptr[ 2 ] = ( unsigned char )( ImSaturate( in[ 2 ] ) * 255.0f ); break;
+		case ImPlatform_PixelFormat_RGBA8:   ptr[ 0 ] = ( unsigned char )( ImSaturate( in[ 0 ] ) * 255.0f ); ptr[ 1 ] = ( unsigned char )( ImSaturate( in[ 1 ] ) * 255.0f ); ptr[ 2 ] = ( unsigned char )( ImSaturate( in[ 2 ] ) * 255.0f ); ptr[ 3 ] = ( unsigned char )( ImSaturate( in[ 3 ] ) * 255.0f ); break;
+		case ImPlatform_PixelFormat_R16:     ( ( unsigned short* )ptr )[ 0 ] = ( unsigned short )( ImSaturate( in[ 0 ] ) * 65535.0f ); break;
+		case ImPlatform_PixelFormat_RG16:    ( ( unsigned short* )ptr )[ 0 ] = ( unsigned short )( ImSaturate( in[ 0 ] ) * 65535.0f ); ( ( unsigned short* )ptr )[ 1 ] = ( unsigned short )( ImSaturate( in[ 1 ] ) * 65535.0f ); break;
+		case ImPlatform_PixelFormat_RGBA16:  { unsigned short* p = ( unsigned short* )ptr; p[ 0 ] = ( unsigned short )( ImSaturate( in[ 0 ] ) * 65535.0f ); p[ 1 ] = ( unsigned short )( ImSaturate( in[ 1 ] ) * 65535.0f ); p[ 2 ] = ( unsigned short )( ImSaturate( in[ 2 ] ) * 65535.0f ); p[ 3 ] = ( unsigned short )( ImSaturate( in[ 3 ] ) * 65535.0f ); break; }
+		case ImPlatform_PixelFormat_R32F:    ( ( float* )ptr )[ 0 ] = in[ 0 ]; break;
+		case ImPlatform_PixelFormat_RG32F:   ( ( float* )ptr )[ 0 ] = in[ 0 ]; ( ( float* )ptr )[ 1 ] = in[ 1 ]; break;
+		case ImPlatform_PixelFormat_RGBA32F: { float* p = ( float* )ptr; p[ 0 ] = in[ 0 ]; p[ 1 ] = in[ 1 ]; p[ 2 ] = in[ 2 ]; p[ 3 ] = in[ 3 ]; break; }
+		default: break;
+		}
+	}
+
+	// --- Blending in float space ---
+
+	static void PaintBlendPixel( float dst[ 4 ], const float src[ 4 ], int channels )
+	{
+		float sa = src[ 3 ];
+		if ( sa <= 0.0f )
+			return;
+
+		if ( channels < 4 )
+		{
+			// No alpha channel: lerp each channel using src alpha
+			if ( sa >= 1.0f ) { for ( int i = 0; i < channels; i++ ) dst[ i ] = src[ i ]; return; }
+			for ( int i = 0; i < channels; i++ )
+				dst[ i ] = dst[ i ] * ( 1.0f - sa ) + src[ i ] * sa;
+			return;
+		}
+
+		// Full alpha compositing (source over)
+		if ( sa >= 1.0f ) { for ( int i = 0; i < 4; i++ ) dst[ i ] = src[ i ]; return; }
+		float da = dst[ 3 ];
+		float oa = sa + da * ( 1.0f - sa );
+		if ( oa <= 0.0f ) { for ( int i = 0; i < 4; i++ ) dst[ i ] = 0.0f; return; }
+		for ( int i = 0; i < 3; i++ )
+			dst[ i ] = ( src[ i ] * sa + dst[ i ] * da * ( 1.0f - sa ) ) / oa;
+		dst[ 3 ] = oa;
+	}
+
+	// --- Brush ---
+
+	static void PaintApplyBrush( ImPaintCanvasData* canvas, float cx, float cy )
+	{
+		float r = ImMax( canvas->BrushSize, 0.5f );
+		int x0 = ImMax( 0, ( int )( cx - r ) );
+		int y0 = ImMax( 0, ( int )( cy - r ) );
+		int x1 = ImMin( canvas->Width - 1, ( int )( cx + r ) );
+		int y1 = ImMin( canvas->Height - 1, ( int )( cy + r ) );
+		float r2 = r * r;
+		int channels = PaintChannelCount( canvas->Format );
+
+		for ( int y = y0; y <= y1; y++ )
+		{
+			for ( int x = x0; x <= x1; x++ )
+			{
+				float dx = x + 0.5f - cx;
+				float dy = y + 0.5f - cy;
+				float d2 = dx * dx + dy * dy;
+				if ( d2 > r2 ) continue;
+
+				float alpha = canvas->BrushOpacity;
+				if ( canvas->Brush == ImPaintBrush_Soft && canvas->Mode != ImPaintMode_BinaryMask && r > 0.0f )
+				{
+					float t = ImSqrt( d2 ) / r;
+					float edge = canvas->BrushHardness;
+					if ( t > edge )
+						alpha *= 1.0f - ( t - edge ) / ( 1.0f - edge + 1e-5f );
+				}
+
+				float dst[ 4 ];
+				PaintReadPixel( canvas->Pixels, canvas->Width, x, y, canvas->Format, dst );
+
+				if ( canvas->Tool == ImPaintTool_Eraser )
+				{
+					// Reduce last channel (alpha if >=4ch, else intensity of ch0)
+					if ( channels >= 4 )
+						dst[ 3 ] = ImMax( 0.0f, dst[ 3 ] - alpha );
+					else
+						dst[ 0 ] = ImMax( 0.0f, dst[ 0 ] - alpha );
+				}
+				else
+				{
+					float src[ 4 ];
+					switch ( canvas->Mode )
+					{
+					case ImPaintMode_BinaryMask:
+						src[ 0 ] = src[ 1 ] = src[ 2 ] = 1.0f;
+						src[ 3 ] = alpha;
+						break;
+					case ImPaintMode_Grayscale:
+						src[ 0 ] = src[ 1 ] = src[ 2 ] = canvas->BrushColor.x;
+						src[ 3 ] = alpha;
+						break;
+					default:
+						src[ 0 ] = canvas->BrushColor.x;
+						src[ 1 ] = canvas->BrushColor.y;
+						src[ 2 ] = canvas->BrushColor.z;
+						src[ 3 ] = alpha * canvas->BrushColor.w;
+						break;
+					}
+					PaintBlendPixel( dst, src, channels );
+				}
+
+				PaintWritePixel( canvas->Pixels, canvas->Width, x, y, canvas->Format, dst );
+			}
+		}
+		canvas->_TexDirty = true;
+	}
+
+	static void PaintStrokeTo( ImPaintCanvasData* canvas, float x0, float y0, float x1, float y1 )
+	{
+		float dx = x1 - x0;
+		float dy = y1 - y0;
+		float dist = ImSqrt( dx * dx + dy * dy );
+		float step = ImMax( 1.0f, canvas->BrushSize * 0.25f );
+		int steps = ImMax( 1, ( int )( dist / step ) );
+
+		for ( int i = 1; i <= steps; i++ )
+		{
+			float t = ( float )i / ( float )steps;
+			PaintApplyBrush( canvas, x0 + dx * t, y0 + dy * t );
+		}
+	}
+
+	// --- Texture management ---
+
+	static void PaintEnsureTexture( ImPaintCanvasData* canvas )
+	{
+		// Recreate if dimensions or format changed
+		if ( canvas->_TexID != ImTextureID_Invalid &&
+			( canvas->_TexW != canvas->Width || canvas->_TexH != canvas->Height || canvas->_TexFmt != canvas->Format ) )
+		{
+			ImPlatform_DestroyTexture( canvas->_TexID );
+			canvas->_TexID = ImTextureID_Invalid;
+		}
+
+		// Create
+		if ( canvas->_TexID == ImTextureID_Invalid )
+		{
+			ImPlatform_TextureDesc desc = ImPlatform_TextureDesc_Default( canvas->Width, canvas->Height );
+			desc.format = canvas->Format;
+			desc.min_filter = ImPlatform_TextureFilter_Nearest;
+			desc.mag_filter = ImPlatform_TextureFilter_Nearest;
+			canvas->_TexID = ImPlatform_CreateTexture( canvas->Pixels, &desc );
+			canvas->_TexW = canvas->Width;
+			canvas->_TexH = canvas->Height;
+			canvas->_TexFmt = canvas->Format;
+			canvas->_TexDirty = false;
+		}
+
+		// Update
+		if ( canvas->_TexDirty )
+		{
+			ImPlatform_UpdateTexture( canvas->_TexID, canvas->Pixels, 0, 0, canvas->Width, canvas->Height );
+			canvas->_TexDirty = false;
+		}
+	}
+
+	// --- Render ---
+
+	static void PaintRenderCanvas( ImDrawList* dl, ImRect bb, ImPaintCanvasData* canvas )
+	{
+		// Checkerboard background
+		float checkSz = 8.0f;
+		ImU32 checkA = IM_COL32( 180, 180, 180, 255 );
+		ImU32 checkB = IM_COL32( 220, 220, 220, 255 );
+		dl->AddRectFilled( bb.Min, bb.Max, checkA );
+		for ( float cy = bb.Min.y; cy < bb.Max.y; cy += checkSz )
+		{
+			for ( float cx = bb.Min.x; cx < bb.Max.x; cx += checkSz )
+			{
+				int ix = ( int )( ( cx - bb.Min.x ) / checkSz );
+				int iy = ( int )( ( cy - bb.Min.y ) / checkSz );
+				if ( ( ix + iy ) & 1 )
+				{
+					float ex = ImMin( cx + checkSz, bb.Max.x );
+					float ey = ImMin( cy + checkSz, bb.Max.y );
+					dl->AddRectFilled( ImVec2( cx, cy ), ImVec2( ex, ey ), checkB );
+				}
+			}
+		}
+
+		// Upload and draw texture
+		PaintEnsureTexture( canvas );
+		if ( canvas->_TexID != ImTextureID_Invalid )
+			dl->AddImage( canvas->_TexID, bb.Min, bb.Max );
+
+		// Border
+		dl->AddRect( bb.Min, bb.Max, IM_COL32( 128, 128, 128, 255 ) );
+	}
+
+	bool PaintCanvas( char const* label, ImPaintCanvasData* canvas, ImVec2 size )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+		if ( !canvas || !canvas->Pixels )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		const ImGuiID id = window->GetID( label );
+
+		if ( size.x <= 0.0f ) size.x = ImGui::CalcItemWidth();
+		if ( size.y <= 0.0f ) size.y = size.x * canvas->Height / canvas->Width;
+
+		const ImVec2 pos = window->DC.CursorPos;
+		const ImRect bb( pos, ImVec2( pos.x + size.x, pos.y + size.y ) );
+
+		ImGui::ItemSize( bb );
+		if ( !ImGui::ItemAdd( bb, id ) )
+			return false;
+
+		bool modified = false;
+		ImDrawList* dl = window->DrawList;
+
+		// Render
+		PaintRenderCanvas( dl, bb, canvas );
+
+		// Mouse mapping
+		float pixW = bb.GetWidth() / canvas->Width;
+		float pixH = bb.GetHeight() / canvas->Height;
+		ImVec2 mp = g.IO.MousePos;
+		float cx = ImClamp( ( mp.x - bb.Min.x ) / pixW, 0.0f, ( float )canvas->Width );
+		float cy = ImClamp( ( mp.y - bb.Min.y ) / pixH, 0.0f, ( float )canvas->Height );
+
+		bool hovered = ImGui::ItemHoverable( bb, id, g.LastItemData.ItemFlags );
+		if ( IsMouseOverExpandButton( id, bb ) ) hovered = false;
+
+		// Click to start painting
+		if ( hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id ) )
+		{
+			ImGui::SetActiveID( id, window );
+			ImGui::SetFocusID( id, window );
+			ImGui::FocusWindow( window );
+			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+			canvas->_LastPos = ImVec2( cx, cy );
+			PaintApplyBrush( canvas, cx, cy );
+			modified = true;
+		}
+		else if ( g.ActiveId == id )
+		{
+			if ( ImGui::IsMouseDown( 0 ) )
+			{
+				float dx = cx - canvas->_LastPos.x;
+				float dy = cy - canvas->_LastPos.y;
+				if ( dx * dx + dy * dy > 0.25f )
+				{
+					PaintStrokeTo( canvas, canvas->_LastPos.x, canvas->_LastPos.y, cx, cy );
+					canvas->_LastPos = ImVec2( cx, cy );
+					modified = true;
+				}
+			}
+			else
+			{
+				ImGui::ClearActiveID();
+			}
+		}
+
+		// Brush cursor
+		if ( hovered || g.ActiveId == id )
+		{
+			float screenR = ImMax( canvas->BrushSize * pixW, 1.0f );
+			ImGui::GetForegroundDrawList()->AddCircle( mp, screenR, IM_COL32( 255, 255, 255, 200 ), 0, 1.0f );
+			ImGui::GetForegroundDrawList()->AddCircle( mp, screenR + 1.0f, IM_COL32( 0, 0, 0, 120 ), 0, 1.0f );
+		}
+
+		// Label
+		const char* labelEnd = ImGui::FindRenderedTextEnd( label );
+		if ( label != labelEnd )
+		{
+			ImGui::SameLine( 0, style.ItemInnerSpacing.x );
+			ImGui::TextEx( label, labelEnd );
+		}
+
+		// Expand button
+		bool* pExpanded = WidgetExpandButton( id, bb );
+		if ( pExpanded && *pExpanded )
+		{
+			if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 800, 500 ) ) )
+			{
+				ImVec2 avail = ImGui::GetContentRegionAvail();
+				float panelW = avail.x * 0.75f;
+				float panelH = avail.y;
+				// Fit canvas in panel preserving aspect ratio
+				float aspect = ( float )canvas->Width / ( float )canvas->Height;
+				float fitW, fitH;
+				if ( panelW / panelH > aspect )
+				{
+					fitH = panelH;
+					fitW = panelH * aspect;
+				}
+				else
+				{
+					fitW = panelW;
+					fitH = panelW / aspect;
+				}
+				// Left: canvas
+				if ( PaintCanvas( "##exp", canvas, ImVec2( fitW, fitH ) ) )
+					modified = true;
+				ImGui::SameLine();
+				// Right: controls
+				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
+
+				ImGui::TextUnformatted( "Tool" );
+				if ( ImGui::RadioButton( "Brush", canvas->Tool == ImPaintTool_Brush ) ) canvas->Tool = ImPaintTool_Brush;
+				ImGui::SameLine();
+				if ( ImGui::RadioButton( "Eraser", canvas->Tool == ImPaintTool_Eraser ) ) canvas->Tool = ImPaintTool_Eraser;
+
+				if ( canvas->Mode != ImPaintMode_BinaryMask )
+				{
+					ImGui::Separator();
+					ImGui::TextUnformatted( "Brush" );
+					if ( ImGui::RadioButton( "Hard", canvas->Brush == ImPaintBrush_Hard ) ) canvas->Brush = ImPaintBrush_Hard;
+					ImGui::SameLine();
+					if ( ImGui::RadioButton( "Soft", canvas->Brush == ImPaintBrush_Soft ) ) canvas->Brush = ImPaintBrush_Soft;
+				}
+
+				ImGui::Separator();
+				ImGui::TextUnformatted( "Size" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				ImGui::SliderFloat( "##size", &canvas->BrushSize, 1.0f, 64.0f, "%.0f" );
+
+				if ( canvas->Mode != ImPaintMode_BinaryMask && canvas->Brush == ImPaintBrush_Soft )
+				{
+					ImGui::TextUnformatted( "Hardness" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					ImGui::SliderFloat( "##hardness", &canvas->BrushHardness, 0.0f, 1.0f, "%.2f" );
+				}
+
+				ImGui::TextUnformatted( "Opacity" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				ImGui::SliderFloat( "##opacity", &canvas->BrushOpacity, 0.0f, 1.0f, "%.2f" );
+
+				if ( canvas->Mode == ImPaintMode_Grayscale )
+				{
+					ImGui::Separator();
+					ImGui::TextUnformatted( "Intensity" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					ImGui::SliderFloat( "##intensity", &canvas->BrushColor.x, 0.0f, 1.0f, "%.2f" );
+					canvas->BrushColor.y = canvas->BrushColor.z = canvas->BrushColor.x;
+				}
+				else if ( canvas->Mode == ImPaintMode_Color )
+				{
+					ImGui::Separator();
+					ImGui::ColorEdit4( "Color", &canvas->BrushColor.x );
+				}
+
+				ImGui::Separator();
+				if ( ImGui::Button( "Clear" ) )
+				{
+					int totalBytes = canvas->Width * canvas->Height * PaintBytesPerPixel( canvas->Format );
+					memset( canvas->Pixels, 0, totalBytes );
+					canvas->_TexDirty = true;
+					modified = true;
+				}
+
+				ImGui::EndChild();
+			}
+			EndExpandedWindow();
+		}
+
+		return modified;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
 	// Transform Gizmo
 	//////////////////////////////////////////////////////////////////////////
 
