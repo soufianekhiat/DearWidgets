@@ -3842,58 +3842,93 @@ namespace ImWidgets {
 				ImGui::SliderFloat( "Black Offset##HDR", &hdrBlackOffset, -1.0f, 1.0f, "%.3f" );
 			}
 
+			if ( ImGui::CollapsingHeader( "Unit Field" ) )
+			{
+				// Length example
+				static float wallLength = 2.5f; // meters
+				static int lengthUnit = 0;
+				static ImUnitDef lengthUnits[] = {
+					ImUnitDef_Simple( "meter",      "m",  1.0f ),
+					ImUnitDef_Simple( "centimeter", "cm", 100.0f ),
+					ImUnitDef_Simple( "millimeter", "mm", 1000.0f ),
+					ImUnitDef_Simple( "foot",       "ft", 3.28084f ),
+					ImUnitDef_Simple( "inch",       "in", 39.3701f ),
+					ImUnitDef_Simple( "yard",       "yd", 1.09361f ),
+				};
+				ImWidgets::UnitField( "Wall Length", &wallLength, lengthUnits, IM_ARRAYSIZE( lengthUnits ), &lengthUnit, 0.01f, 0.0f, 100.0f );
+
+				// Temperature example (mul+add)
+				static float temperature = 20.0f; // Celsius
+				static int tempUnit = 0;
+				static ImUnitDef tempUnits[] = {
+					ImUnitDef_Simple( "Celsius",    "C", 1.0f,      0.0f ),
+					ImUnitDef_Simple( "Fahrenheit", "F", 9.0f/5.0f, 32.0f ),
+					ImUnitDef_Simple( "Kelvin",     "K", 1.0f,      273.15f ),
+				};
+				ImWidgets::UnitField( "Temperature", &temperature, tempUnits, IM_ARRAYSIZE( tempUnits ), &tempUnit, 0.1f );
+
+				// Weight example
+				static float weight = 1.0f; // kg
+				static int weightUnit = 0;
+				static ImUnitDef weightUnits[] = {
+					ImUnitDef_Simple( "kilogram", "kg", 1.0f ),
+					ImUnitDef_Simple( "gram",     "g",  1000.0f ),
+					ImUnitDef_Simple( "pound",    "lb", 2.20462f ),
+					ImUnitDef_Simple( "ounce",    "oz", 35.274f ),
+				};
+				ImWidgets::UnitField( "Weight", &weight, weightUnits, IM_ARRAYSIZE( weightUnits ), &weightUnit, 0.01f, 0.0f, 1000.0f );
+			}
+			if ( ImGui::CollapsingHeader( "Transform Gizmo", ImGuiTreeNodeFlags_DefaultOpen ) )
+			{
+				static ImTransformImage gizmoImages[ 3 ];
+				static bool gizmoInit = false;
+				if ( !gizmoInit )
+				{
+					gizmoImages[ 0 ] = ImTransformImage( astro_img, astro_size );
+					gizmoImages[ 1 ] = ImTransformImage( clock_img, clock_size );
+					gizmoImages[ 1 ].Transform.Translation = ImVec2( -120.0f, -60.0f );
+					gizmoImages[ 1 ].Transform.Scale = ImVec2( 0.4f, 0.4f );
+					gizmoImages[ 2 ] = ImTransformImage( man_img, man_size );
+					gizmoImages[ 2 ].Transform.Translation = ImVec2( 100.0f, 50.0f );
+					gizmoImages[ 2 ].Transform.Scale = ImVec2( 0.5f, 0.5f );
+					gizmoInit = true;
+				}
+
+				static int gizmoSel = 0;
+				static bool gizmoNonUniform = false;
+
+				ImGui::Checkbox( "Non-Uniform Scale", &gizmoNonUniform );
+
+				ImTransformGizmoFlags gizmoFlags = ImTransformGizmoFlags_None;
+				if ( gizmoNonUniform )
+					gizmoFlags |= ImTransformGizmoFlags_NonUniformScale;
+
+				ImWidgets::ImageTransformGizmo( "##xform", gizmoImages, 3, &gizmoSel, gizmoFlags );
+
+				if ( gizmoSel >= 0 && gizmoSel < 3 )
+				{
+					ImTransformData* tr = &gizmoImages[ gizmoSel ].Transform;
+					ImGui::Text( "Selected: %d", gizmoSel );
+					float halfW = ImGui::GetContentRegionAvail().x * 0.5f - ImGui::GetStyle().ItemSpacing.x;
+					ImGui::SetNextItemWidth( halfW );
+					ImGui::DragFloat2( "Position", &tr->Translation.x, 1.0f );
+					ImGui::SameLine();
+					float deg = tr->Rotation * ( 180.0f / IM_PI );
+					ImGui::SetNextItemWidth( halfW );
+					if ( ImGui::DragFloat( "Rotation", &deg, 0.5f ) )
+						tr->Rotation = deg * ( IM_PI / 180.0f );
+					ImGui::SetNextItemWidth( halfW );
+					ImGui::DragFloat2( "Scale", &tr->Scale.x, 0.01f, 0.01f, 10.0f );
+					ImGui::SameLine();
+					if ( ImGui::Button( "Reset" ) )
+						*tr = ImTransformData();
+				}
+				else
+				{
+					ImGui::TextDisabled( "Click an image to select it" );
+				}
+			}
 			ImGui::Unindent();
-		}
-
-		if ( ImGui::CollapsingHeader( "Transform Gizmo", ImGuiTreeNodeFlags_DefaultOpen ) )
-		{
-			static ImTransformImage gizmoImages[ 3 ];
-			static bool gizmoInit = false;
-			if ( !gizmoInit )
-			{
-				gizmoImages[ 0 ] = ImTransformImage( astro_img, astro_size );
-				gizmoImages[ 1 ] = ImTransformImage( clock_img, clock_size );
-				gizmoImages[ 1 ].Transform.Translation = ImVec2( -120.0f, -60.0f );
-				gizmoImages[ 1 ].Transform.Scale = ImVec2( 0.4f, 0.4f );
-				gizmoImages[ 2 ] = ImTransformImage( man_img, man_size );
-				gizmoImages[ 2 ].Transform.Translation = ImVec2( 100.0f, 50.0f );
-				gizmoImages[ 2 ].Transform.Scale = ImVec2( 0.5f, 0.5f );
-				gizmoInit = true;
-			}
-
-			static int gizmoSel = 0;
-			static bool gizmoNonUniform = false;
-
-			ImGui::Checkbox( "Non-Uniform Scale", &gizmoNonUniform );
-
-			ImTransformGizmoFlags gizmoFlags = ImTransformGizmoFlags_None;
-			if ( gizmoNonUniform )
-				gizmoFlags |= ImTransformGizmoFlags_NonUniformScale;
-
-			ImWidgets::ImageTransformGizmo( "##xform", gizmoImages, 3, &gizmoSel, gizmoFlags );
-
-			if ( gizmoSel >= 0 && gizmoSel < 3 )
-			{
-				ImTransformData* tr = &gizmoImages[ gizmoSel ].Transform;
-				ImGui::Text( "Selected: %d", gizmoSel );
-				float halfW = ImGui::GetContentRegionAvail().x * 0.5f - ImGui::GetStyle().ItemSpacing.x;
-				ImGui::SetNextItemWidth( halfW );
-				ImGui::DragFloat2( "Position", &tr->Translation.x, 1.0f );
-				ImGui::SameLine();
-				float deg = tr->Rotation * ( 180.0f / IM_PI );
-				ImGui::SetNextItemWidth( halfW );
-				if ( ImGui::DragFloat( "Rotation", &deg, 0.5f ) )
-					tr->Rotation = deg * ( IM_PI / 180.0f );
-				ImGui::SetNextItemWidth( halfW );
-				ImGui::DragFloat2( "Scale", &tr->Scale.x, 0.01f, 0.01f, 10.0f );
-				ImGui::SameLine();
-				if ( ImGui::Button( "Reset" ) )
-					*tr = ImTransformData();
-			}
-			else
-			{
-				ImGui::TextDisabled( "Click an image to select it" );
-			}
 		}
 
 		ImGui::End();

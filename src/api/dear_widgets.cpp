@@ -9865,6 +9865,160 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 	//////////////////////////////////////////////////////////////////////////
+	// Unit Field
+	//////////////////////////////////////////////////////////////////////////
+
+	static float UnitBaseToDisplay( ImUnitDef& u, float base )
+	{
+		if ( u.toDisplay ) return u.toDisplay( base, u.pUserData );
+		return base * u.mul + u.add;
+	}
+
+	static float UnitDisplayToBase( ImUnitDef& u, float display )
+	{
+		if ( u.toBase ) return u.toBase( display, u.pUserData );
+		return ( display - u.add ) / u.mul;
+	}
+
+	bool UnitField( char const* label, float* pValue, ImUnitDef* units, int unitCount, int* pSelectedUnit, float v_speed, float v_min, float v_max, const char* format )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		const ImGuiID id = window->GetID( label );
+		const float w = ImGui::CalcItemWidth();
+		const float frameH = ImGui::GetFrameHeight();
+
+		const char* fmt = format ? format : "%.3f";
+		int sel = *pSelectedUnit;
+		if ( sel < 0 || sel >= unitCount ) sel = 0;
+		ImUnitDef& unit = units[ sel ];
+
+		// Convert base value to display value
+		float displayValue = UnitBaseToDisplay( unit, *pValue );
+
+		// ---- Top row: DragFloat with unit abbreviation ----
+		const ImVec2 cursor = window->DC.CursorPos;
+		const ImRect frameBB( cursor, ImVec2( cursor.x + w, cursor.y + frameH ) );
+
+		// Format display string with abbreviation
+		char valueBuf[ 128 ];
+		ImFormatString( valueBuf, IM_ARRAYSIZE( valueBuf ), fmt, displayValue );
+		char fullBuf[ 160 ];
+		ImFormatString( fullBuf, IM_ARRAYSIZE( fullBuf ), "%s %s", valueBuf, unit.abbreviation );
+
+		// Use DragScalar with custom format that includes abbreviation
+		ImGui::PushID( id );
+		ImGui::SetNextItemWidth( w );
+		bool changed = ImGui::DragFloat( "##drag", &displayValue, v_speed, 0.0f, 0.0f, fullBuf );
+
+		if ( changed )
+		{
+			float newBase = UnitDisplayToBase( unit, displayValue );
+			// Clamp in base unit
+			if ( v_min != v_max )
+				newBase = ImClamp( newBase, v_min, v_max );
+			*pValue = newBase;
+		}
+
+		// Label next to the value field (top row)
+		const char* labelEnd = ImGui::FindRenderedTextEnd( label );
+		if ( label != labelEnd )
+		{
+			ImGui::SameLine( 0, style.ItemInnerSpacing.x );
+			ImGui::TextEx( label, labelEnd );
+		}
+
+		// ---- Bottom row: Unit selector (half frame height) ----
+		const float selectorH = ImTrunc( frameH * 0.5f );
+		const float fontSize = g.FontSize;
+		const float smallFontScale = ( selectorH * 0.85f ) / fontSize; // text slightly smaller than row
+		// Move cursor up to reduce gap between drag field and selector
+		window->DC.CursorPos.y -= style.ItemSpacing.y - 1.0f;
+		const ImVec2 selectorPos = window->DC.CursorPos;
+		const ImRect selectorBB( selectorPos, ImVec2( selectorPos.x + w, selectorPos.y + selectorH ) );
+
+		ImGui::ItemSize( selectorBB, 0.0f );
+		if ( ImGui::ItemAdd( selectorBB, id + 1 ) )
+		{
+			ImDrawList* dl = window->DrawList;
+			const ImU32 frameBg = ImGui::GetColorU32( ImGuiCol_FrameBg );
+			const ImU32 borderCol = ImGui::GetColorU32( ImGuiCol_Border );
+			const ImU32 textCol = ImGui::GetColorU32( ImGuiCol_Text );
+			const ImU32 hoverCol = ImGui::GetColorU32( ImGuiCol_ButtonHovered );
+			const ImU32 activeCol = ImGui::GetColorU32( ImGuiCol_ButtonActive );
+
+			dl->AddRectFilled( selectorBB.Min, selectorBB.Max, frameBg, style.FrameRounding );
+			dl->AddRect( selectorBB.Min, selectorBB.Max, borderCol, style.FrameRounding );
+
+			// Arrow regions (square based on selector height)
+			const float arrowW = selectorH;
+			const ImRect leftArrowBB( selectorBB.Min, ImVec2( selectorBB.Min.x + arrowW, selectorBB.Max.y ) );
+			const ImRect rightArrowBB( ImVec2( selectorBB.Max.x - arrowW, selectorBB.Min.y ), selectorBB.Max );
+			const ImRect nameBB( ImVec2( leftArrowBB.Max.x, selectorBB.Min.y ), ImVec2( rightArrowBB.Min.x, selectorBB.Max.y ) );
+
+			// Interaction
+			const ImVec2 mousePos = g.IO.MousePos;
+			bool hovLeft = leftArrowBB.Contains( mousePos );
+			bool hovRight = rightArrowBB.Contains( mousePos );
+			bool hovName = nameBB.Contains( mousePos );
+			bool hovAny = selectorBB.Contains( mousePos );
+
+			if ( hovAny && ImGui::IsMouseClicked( 0 ) )
+			{
+				if ( hovLeft )
+					sel = ( sel - 1 + unitCount ) % unitCount;
+				else // hovRight or hovName both cycle forward
+					sel = ( sel + 1 ) % unitCount;
+				*pSelectedUnit = sel;
+			}
+
+			const float smallFontSize = fontSize * smallFontScale;
+			ImFont* font = g.Font;
+
+			// Draw left arrow "<"
+			{
+				ImU32 col = hovLeft && ImGui::IsMouseDown( 0 ) ? activeCol : ( hovLeft ? hoverCol : textCol );
+				ImVec2 center = leftArrowBB.GetCenter();
+				float sz = selectorH * 0.25f;
+				dl->AddTriangleFilled(
+					ImVec2( center.x - sz, center.y ),
+					ImVec2( center.x + sz * 0.5f, center.y - sz ),
+					ImVec2( center.x + sz * 0.5f, center.y + sz ),
+					col );
+			}
+			// Draw right arrow ">"
+			{
+				ImU32 col = hovRight && ImGui::IsMouseDown( 0 ) ? activeCol : ( hovRight ? hoverCol : textCol );
+				ImVec2 center = rightArrowBB.GetCenter();
+				float sz = selectorH * 0.25f;
+				dl->AddTriangleFilled(
+					ImVec2( center.x + sz, center.y ),
+					ImVec2( center.x - sz * 0.5f, center.y - sz ),
+					ImVec2( center.x - sz * 0.5f, center.y + sz ),
+					col );
+			}
+			// Draw unit name centered (small text)
+			{
+				ImU32 col = ( hovName || hovRight || hovLeft ) ? hoverCol : textCol;
+				if ( hovName && ImGui::IsMouseDown( 0 ) ) col = activeCol;
+				const char* name = units[ sel ].name;
+				ImVec2 textSize = font->CalcTextSizeA( smallFontSize, FLT_MAX, 0.0f, name );
+				ImVec2 textPos( nameBB.Min.x + ( nameBB.GetWidth() - textSize.x ) * 0.5f,
+								nameBB.Min.y + ( nameBB.GetHeight() - textSize.y ) * 0.5f );
+				dl->AddText( font, smallFontSize, textPos, col, name );
+			}
+		}
+
+		ImGui::PopID();
+
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
 	// Transform Gizmo
 	//////////////////////////////////////////////////////////////////////////
 

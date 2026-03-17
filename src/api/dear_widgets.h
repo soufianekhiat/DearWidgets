@@ -2119,6 +2119,45 @@ struct ImPolyHoleShapeData
 	int strokeWidth;
 };
 
+// Unit Field
+typedef float (*ImUnitConvertCallback)(float value, void* pUserData);
+struct ImUnitDef
+{
+	const char* name;            // Full name: "meter", "foot", "inch"
+	const char* abbreviation;    // Short: "m", "ft", "in"
+	float       mul;             // base_value * mul + add = display_value
+	float       add;             // (for Fahrenheit: mul=9/5, add=32)
+	ImUnitConvertCallback toDisplay;  // Custom: base -> display (if non-NULL, mul/add ignored)
+	ImUnitConvertCallback toBase;     // Custom: display -> base
+	void*       pUserData;       // Passed to callbacks
+};
+
+inline ImUnitDef ImUnitDef_Simple( const char* name, const char* abbr, float mul, float add = 0.0f )
+{
+	ImUnitDef u = {};
+	u.name = name;
+	u.abbreviation = abbr;
+	u.mul = mul;
+	u.add = add;
+	u.toDisplay = NULL;
+	u.toBase = NULL;
+	u.pUserData = NULL;
+	return u;
+}
+
+inline ImUnitDef ImUnitDef_Custom( const char* name, const char* abbr, ImUnitConvertCallback toDisplay, ImUnitConvertCallback toBase, void* pUserData = NULL )
+{
+	ImUnitDef u = {};
+	u.name = name;
+	u.abbreviation = abbr;
+	u.mul = 1.0f;
+	u.add = 0.0f;
+	u.toDisplay = toDisplay;
+	u.toBase = toBase;
+	u.pUserData = pUserData;
+	return u;
+}
+
 namespace ImWidgets{
 	extern ImGlobalData GlobalData;
 
@@ -2756,6 +2795,9 @@ namespace ImWidgets{
 	IMGUI_API bool Slider2DScalar( char const* pLabel, ImGuiDataType data_type, void* pValueX, void* pValueY, void* p_minX, void* p_maxX, void* p_minY, void* p_maxY );
 	IMGUI_API bool Slider2DFloat( char const* pLabel, float* pValueX, float* pValueY, float v_minX, float v_maxX, float v_minY, float v_maxY );
 	IMGUI_API bool Slider2DInt( char const* pLabel, int* pValueX, void* pValueY, int v_minX, int v_maxX, int v_minY, int v_maxY );
+
+	// Unit Field: DragFloat with built-in unit selector
+	IMGUI_API bool UnitField( char const* label, float* pValue, ImUnitDef* units, int unitCount, int* pSelectedUnit, float v_speed = 1.0f, float v_min = 0.0f, float v_max = 0.0f, const char* format = NULL );
 
 	IMGUI_API bool GradientEditor( char const* label, ImGradientData* gradient, bool alpha = true, ImVec2 size = ImVec2( 0, 0 ) );
 	IMGUI_API bool CurveEditor( char const* label, ImCurveEditorData* curve, ImVec2 size = ImVec2( 0, 0 ) );
