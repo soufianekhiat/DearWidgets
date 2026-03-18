@@ -10985,6 +10985,125 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			}
 		}
 
+		// Expand button
+		bool* pExpanded = WidgetExpandButton( id, canvasBB );
+		if ( pExpanded && *pExpanded )
+		{
+			// Persistent non-uniform scale toggle for the expanded window
+			const ImGuiID nonUniformKey = id ^ 0xABC10000;
+			bool nonUniformExp = window->StateStorage.GetBool( nonUniformKey, ( flags & ImTransformGizmoFlags_NonUniformScale ) != 0 );
+			ImTransformGizmoFlags expFlags = nonUniformExp
+				? ( flags | ImTransformGizmoFlags_NonUniformScale )
+				: ( flags & ~ImTransformGizmoFlags_NonUniformScale );
+
+			if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 1000, 700 ) ) )
+			{
+				ImVec2 avail = ImGui::GetContentRegionAvail();
+				float widgetW = avail.x * 0.75f;
+				// Left: gizmo
+				if ( ImageTransformGizmo( "##exp", images, imageCount, selectedIndex, expFlags, ImVec2( widgetW, avail.y ) ) )
+					value_changed = true;
+				ImGui::SameLine();
+				// Right: info panel
+				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
+
+				// Options
+				ImGui::TextUnformatted( "Options" );
+				if ( ImGui::Checkbox( "Non-uniform scale##nu", &nonUniformExp ) )
+					window->StateStorage.SetBool( nonUniformKey, nonUniformExp );
+
+				// Layer info + ordering
+				ImGui::Separator();
+				ImGui::Text( "%d image%s", imageCount, imageCount != 1 ? "s" : "" );
+				int s = ( selectedIndex && *selectedIndex >= 0 && *selectedIndex < imageCount ) ? *selectedIndex : -1;
+				if ( s >= 0 )
+				{
+					ImTransformData& tr = images[ s ].Transform;
+					ImGui::Separator();
+					ImGui::Text( "Selected: %d", s );
+
+					// Layer ordering
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "Order" );
+					float hw = ( ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x ) * 0.5f;
+					bool canBack  = s > 0;
+					bool canFront = s < imageCount - 1;
+					if ( !canBack ) ImGui::BeginDisabled();
+					if ( ImGui::Button( "< Back##ord", ImVec2( hw, 0 ) ) )
+					{
+						ImSwap( images[ s ], images[ s - 1 ] );
+						*selectedIndex = s - 1;
+						value_changed = true;
+					}
+					if ( !canBack ) ImGui::EndDisabled();
+					ImGui::SameLine();
+					if ( !canFront ) ImGui::BeginDisabled();
+					if ( ImGui::Button( "Front >##ord", ImVec2( hw, 0 ) ) )
+					{
+						ImSwap( images[ s ], images[ s + 1 ] );
+						*selectedIndex = s + 1;
+						value_changed = true;
+					}
+					if ( !canFront ) ImGui::EndDisabled();
+					if ( !canBack ) ImGui::BeginDisabled();
+					if ( ImGui::Button( "|< Background##ord", ImVec2( hw, 0 ) ) )
+					{
+						ImTransformImage tmp = images[ s ];
+						for ( int i = s; i > 0; --i )
+							images[ i ] = images[ i - 1 ];
+						images[ 0 ] = tmp;
+						*selectedIndex = 0;
+						value_changed = true;
+					}
+					if ( !canBack ) ImGui::EndDisabled();
+					ImGui::SameLine();
+					if ( !canFront ) ImGui::BeginDisabled();
+					if ( ImGui::Button( "Foreground >|##ord", ImVec2( hw, 0 ) ) )
+					{
+						ImTransformImage tmp = images[ s ];
+						for ( int i = s; i < imageCount - 1; ++i )
+							images[ i ] = images[ i + 1 ];
+						images[ imageCount - 1 ] = tmp;
+						*selectedIndex = imageCount - 1;
+						value_changed = true;
+					}
+					if ( !canFront ) ImGui::EndDisabled();
+
+					// Transform controls
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "Translation" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					if ( ImGui::DragFloat2( "##tr", &tr.Translation.x, 1.0f, -FLT_MAX, FLT_MAX, "%.1f" ) )
+						value_changed = true;
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "Scale" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					if ( ImGui::DragFloat2( "##sc", &tr.Scale.x, 0.005f, 0.01f, FLT_MAX, "%.3f" ) )
+						value_changed = true;
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "Rotation (rad)" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					if ( ImGui::DragFloat( "##rot", &tr.Rotation, 0.01f, -IM_PI, IM_PI, "%.3f" ) )
+						value_changed = true;
+					ImGui::Spacing();
+					if ( ImGui::Button( "Reset##itg", ImVec2( -FLT_MIN, 0 ) ) )
+					{
+						tr.Translation = ImVec2( 0.0f, 0.0f );
+						tr.Scale       = ImVec2( 1.0f, 1.0f );
+						tr.Rotation    = 0.0f;
+						value_changed  = true;
+					}
+				}
+				else
+				{
+					ImGui::Spacing();
+					ImGui::TextDisabled( "no selection" );
+				}
+				ImGui::EndChild();
+			}
+			EndExpandedWindow();
+		}
+
 		return value_changed;
 	}
 
@@ -17217,6 +17336,54 @@ namespace ImWidgets {
 				fg->PopClipRect();
 			}
 			fg->AddRect( sTL, sBR, IM_COL32( 90, 90, 90, 180 ), 2.0f, 0, 1.0f );
+		}
+
+		// Expand button
+		bool* pExpanded = WidgetExpandButton( id, bb );
+		if ( pExpanded && *pExpanded )
+		{
+			if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 900, 600 ) ) )
+			{
+				ImVec2 avail = ImGui::GetContentRegionAvail();
+				float  widgetW = avail.x * 0.75f;
+				// Left: image viewer
+				if ( ImageViewer( "##exp", image, imageSize, state, ImVec2( widgetW, avail.y ) ) )
+					changed = true;
+				ImGui::SameLine();
+				// Right: info panel
+				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
+				ImGui::TextUnformatted( "Image" );
+				if ( imageSize.x > 0.0f && imageSize.y > 0.0f )
+					ImGui::Text( "%.0f x %.0f", imageSize.x, imageSize.y );
+				else
+					ImGui::TextDisabled( "unknown size" );
+				ImGui::Spacing();
+				ImGui::TextUnformatted( "Zoom" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				if ( ImGui::DragFloat( "##zoom", &state.Zoom, 0.01f, 0.05f, 64.0f, "%.2fx" ) )
+					changed = true;
+				ImGui::Spacing();
+				ImGui::TextUnformatted( "Pan" );
+				ImGui::SetNextItemWidth( -FLT_MIN );
+				if ( ImGui::DragFloat2( "##pan", &state.Pan.x, 0.5f, -FLT_MAX, FLT_MAX, "%.1f" ) )
+					changed = true;
+				ImGui::Spacing();
+				if ( ImGui::Button( "Reset##iv", ImVec2( -FLT_MIN, 0 ) ) )
+				{
+					state.Zoom = 1.0f;
+					state.Pan  = ImVec2( 0.0f, 0.0f );
+					changed = true;
+				}
+				if ( state.Pixels != NULL && state.PixelSize.x > 0.0f && state.PixelSize.y > 0.0f )
+				{
+					ImGui::Separator();
+					ImGui::TextUnformatted( "Pixel data" );
+					ImGui::Text( "%.0f x %.0f", state.PixelSize.x, state.PixelSize.y );
+					ImGui::TextDisabled( "right-click to inspect" );
+				}
+				ImGui::EndChild();
+			}
+			EndExpandedWindow();
 		}
 
 		return changed;
