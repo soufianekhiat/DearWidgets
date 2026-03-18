@@ -4069,6 +4069,124 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 	}
 
+	void DrawImageShapeWithHole( ImDrawList* draw, ImTextureID img, ImVec2* poly, int points_count, ImU32 tint,
+								 ImVec2 uv_offset, ImVec2 uv_scale, int gap, int strokeWidth )
+	{
+		if ( points_count < 3 || ( tint & IM_COL32_A_MASK ) == 0 )
+			return;
+
+		ImRect bb;
+		bb.Min = ImVec2(  FLT_MAX,  FLT_MAX );
+		bb.Max = ImVec2( -FLT_MAX, -FLT_MAX );
+		for ( int i = 0; i < points_count; ++i )
+		{
+			bb.Min.x = ImMin( bb.Min.x, poly[ i ].x );
+			bb.Min.y = ImMin( bb.Min.y, poly[ i ].y );
+			bb.Max.x = ImMax( bb.Max.x, poly[ i ].x );
+			bb.Max.y = ImMax( bb.Max.y, poly[ i ].y );
+		}
+
+		ImGuiIO io = ImGui::GetIO();
+		if ( bb.Max.x < 0 || bb.Min.x > io.DisplaySize.x || bb.Max.y < 0 || bb.Min.y > io.DisplaySize.y )
+			return;
+
+		float y_min     = ImMax( bb.Min.y, 0.0f );
+		float y_max     = ImMin( bb.Max.y, io.DisplaySize.y );
+		float bb_width  = bb.Max.x - bb.Min.x;
+		float bb_height = bb.Max.y - bb.Min.y;
+		if ( bb_width <= 0.0f || bb_height <= 0.0f )
+			return;
+
+		const bool push_texture_id = img != draw->_CmdHeader.TexRef.GetTexID();
+		if ( push_texture_id )
+			draw->PushTexture( img );
+
+		draw->PushClipRect( bb.Min, bb.Max, true );
+
+		struct SortByX
+		{
+			static int IMGUI_CDECL Comp( const void* lhs, const void* rhs )
+			{
+				if ( ( ( const ImVec2* )lhs )->x > ( ( const ImVec2* )rhs )->x ) return +1;
+				if ( ( ( const ImVec2* )lhs )->x < ( ( const ImVec2* )rhs )->x ) return -1;
+				return 0;
+			}
+		};
+
+		ImVector<ImVec2> scanHits;
+		for ( float y = ImFloor( y_min ); y < y_max; y += (float)gap )
+		{
+			scanHits.clear();
+
+			int    jump = 1;
+			ImVec2 fp   = poly[ 0 ];
+			for ( int i = 0; i < points_count - 1; i++ )
+			{
+				ImVec2 pa = poly[ i ];
+				ImVec2 pb = poly[ i + 1 ];
+
+				if ( pa.x == pb.x && pa.y == pb.y ) continue;
+
+				if ( !jump && fp.x == pb.x && fp.y == pb.y )
+				{
+					if ( i < points_count - 2 )
+					{
+						fp   = poly[ i + 2 ];
+						jump = 1;
+						i++;
+					}
+				}
+				else
+				{
+					jump = 0;
+				}
+
+				if ( ( pa.y > pb.y && y < pa.y && y > pb.y ) || ( pa.y < pb.y && y > pa.y && y < pb.y ) )
+				{
+					ImVec2 intersect;
+					intersect.y = y;
+					intersect.x = ( pa.x == pb.x ) ? pa.x : ( pb.x - pa.x ) / ( pb.y - pa.y ) * ( y - pa.y ) + pa.x;
+					scanHits.push_back( intersect );
+				}
+			}
+
+			if ( scanHits.Size < 2 ) continue;
+			ImQsort( &scanHits[ 0 ], ( size_t )scanHits.Size, sizeof( ImVec2 ), &SortByX::Comp );
+
+			for ( int i = 0; i + 1 < scanHits.Size; i += 2 )
+			{
+				float x0 = scanHits[ i     ].x;
+				float x1 = scanHits[ i + 1 ].x;
+				if ( x0 >= x1 ) continue;
+
+				float sw    = (float)strokeWidth;
+				float uv_y0 = ( y      - bb.Min.y ) / bb_height * uv_scale.y + uv_offset.y;
+				float uv_y1 = ( y + sw - bb.Min.y ) / bb_height * uv_scale.y + uv_offset.y;
+				float uv_x0 = ( x0 - bb.Min.x ) / bb_width * uv_scale.x + uv_offset.x;
+				float uv_x1 = ( x1 - bb.Min.x ) / bb_width * uv_scale.x + uv_offset.x;
+
+				draw->PrimReserve( 6, 4 );
+				draw->_VtxWritePtr[ 0 ].pos = ImVec2( x0, y      ); draw->_VtxWritePtr[ 0 ].uv = ImVec2( uv_x0, uv_y0 ); draw->_VtxWritePtr[ 0 ].col = tint;
+				draw->_VtxWritePtr[ 1 ].pos = ImVec2( x1, y      ); draw->_VtxWritePtr[ 1 ].uv = ImVec2( uv_x1, uv_y0 ); draw->_VtxWritePtr[ 1 ].col = tint;
+				draw->_VtxWritePtr[ 2 ].pos = ImVec2( x1, y + sw ); draw->_VtxWritePtr[ 2 ].uv = ImVec2( uv_x1, uv_y1 ); draw->_VtxWritePtr[ 2 ].col = tint;
+				draw->_VtxWritePtr[ 3 ].pos = ImVec2( x0, y + sw ); draw->_VtxWritePtr[ 3 ].uv = ImVec2( uv_x0, uv_y1 ); draw->_VtxWritePtr[ 3 ].col = tint;
+				draw->_VtxWritePtr += 4;
+				draw->_IdxWritePtr[ 0 ] = draw->_VtxCurrentIdx + 0;
+				draw->_IdxWritePtr[ 1 ] = draw->_VtxCurrentIdx + 1;
+				draw->_IdxWritePtr[ 2 ] = draw->_VtxCurrentIdx + 2;
+				draw->_IdxWritePtr[ 3 ] = draw->_VtxCurrentIdx + 0;
+				draw->_IdxWritePtr[ 4 ] = draw->_VtxCurrentIdx + 2;
+				draw->_IdxWritePtr[ 5 ] = draw->_VtxCurrentIdx + 3;
+				draw->_IdxWritePtr += 6;
+				draw->_VtxCurrentIdx += 4;
+			}
+		}
+
+		draw->PopClipRect();
+		if ( push_texture_id )
+			draw->PopTexture();
+	}
+
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 	void CreateInternalShader( ImDrawShader *shaders_out, char const *shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer )
 	{

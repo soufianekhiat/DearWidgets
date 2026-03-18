@@ -221,12 +221,16 @@ struct GradientParams {
 
 		ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
 		ImWidgets::Slider2DFloat( label_uv0, &uv_start.x, &uv_start.y, 0.0f, 1.0f, 0.0f, 1.0f );
+		ImGui::PopItemWidth();
 		ImGui::SameLine();
 		ImWidgets::Slider2DFloat( label_uv1, &uv_end.x, &uv_end.y, 0.0f, 1.0f, 0.0f, 1.0f );
+		ImGui::PopItemWidth();
 		ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
 		cola.Edit( label_a );
+		ImGui::PopItemWidth();
 		ImGui::SameLine();
 		colb.Edit( label_b );
+		ImGui::PopItemWidth();
 	}
 };
 
@@ -624,12 +628,17 @@ namespace ImWidgets {
 	//////////////////////////////////////////////////////////////////////////
 	// ShowDemo Section Functions
 	//////////////////////////////////////////////////////////////////////////
+	static int  s_open_all = 0;
+	static void ApplyOpenAll() { if ( s_open_all != 0 ) ImGui::SetNextItemOpen( s_open_all > 0, ImGuiCond_Always ); }
+	static float CanvasSize() { return ImMin( ImGui::GetContentRegionAvail().x, 400.0f ); }
+
 	void ShowDrawShapeDemo()
 	{
+		ApplyOpenAll();
 		if ( !ImGui::CollapsingHeader( "Draw Shape" ) )
 			return;
 
-		float const size = ImGui::GetContentRegionAvail().x;
+		float const size = CanvasSize();
 		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 
 		static ShapeDebugState debug_state;
@@ -669,10 +678,11 @@ namespace ImWidgets {
 
 	void ShowCustomShaderDemo()
 	{
+		ApplyOpenAll();
 		if ( !ImGui::CollapsingHeader( "Custom Shader" ) )
 			return;
 
-		float const size = ImGui::GetContentRegionAvail().x;
+		float const size = CanvasSize();
 
 		static float shape_size = 1.0f;
 		static float line_width = 0.05f;
@@ -683,8 +693,10 @@ namespace ImWidgets {
 
 		ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
 		fg_color.Edit( "ColA##CustomShader" );
+		ImGui::PopItemWidth();
 		ImGui::SameLine();
 		bg_color.Edit( "ColB##CustomShader" );
+		ImGui::PopItemWidth();
 		ImGui::DragFloat( "shape_size", &shape_size, 0.25f, 0.0f, 1.0f );
 		ImGui::DragFloat( "line_width", &line_width, 0.0125f, 0.0f, 0.1f );
 		ImGui::DragFloat( "antialiasing", &antialiasing, 0.0125f, 0.0f, 16.0f );
@@ -715,10 +727,11 @@ namespace ImWidgets {
 
 	void ShowDrawSquircleDemo()
 	{
+		ApplyOpenAll();
 		if ( !ImGui::CollapsingHeader( "Draw Squircle" ) )
 			return;
 
-		float const size = ImGui::GetContentRegionAvail().x;
+		float const size = CanvasSize();
 		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 
 		static ShapeDebugState debug_state( 32 );
@@ -768,16 +781,24 @@ namespace ImWidgets {
 		ImGui::Begin( "Dear Widgets", NULL, ImGuiWindowFlags_NoTitleBar );
 		ImWidgets::SetCurrentWindowBackgroundImage( background, background_size, false, IM_COL32(255, 255, 255, 128) );
 
+		// ─── Open / Close All ──────────────────────────────────────────────
+		if ( ImGui::Button( "Open All" ) )  { s_open_all =  1; }
+		ImGui::SameLine();
+		if ( ImGui::Button( "Close All" ) ) { s_open_all = -1; ImGui::SetScrollY( 0.0f ); }
+
+		ApplyOpenAll();
 		if ( ImGui::CollapsingHeader( "Draw" ) )
 		{
-			ImGui::Indent();
 			ShowDrawShapeDemo();
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 			ShowCustomShaderDemo();
-			ImGui::SeparatorText( "Primitives" );
-			if ( ImGui::CollapsingHeader( "Thick line", ImGuiTreeNodeFlags_DefaultOpen ) )
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Primitives##Draw" ) )
 			{
-				float const size = ImGui::GetContentRegionAvail().x;
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Thick line" ) )
+			{
+				float const size = CanvasSize();
 				ImGui::Dummy( ImVec2( size, 0.25f * size ) );
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 
@@ -812,10 +833,15 @@ namespace ImWidgets {
 			}
 #endif
 			ShowDrawSquircleDemo();
-			ImGui::SeparatorText( "Gradients" );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Gradients##Draw" ) )
+			{
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Linear Gradient" ) )
 			{
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				static ImVec2 uv_start( 0.0f, 0.0f );
 				static ImVec2 uv_end( 1.0f, 0.0f );
@@ -829,14 +855,18 @@ namespace ImWidgets {
 #endif
 				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
 				Slider2DFloat( "uv0", &uv_start.x, &uv_start.y, 0.0f, 1.0f, -1.0f, 2.0f );
+				ImGui::PopItemWidth();
 				ImGui::SameLine();
 				Slider2DFloat( "uv1", &uv_end.x, &uv_end.y, 0.0f, 1.0f, -1.0f, 2.0f );
+				ImGui::PopItemWidth();
 				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
 				if ( ImGui::ColorEdit4( "ColA##DrawShape", &cola_v.x ) )
 					cola = ImGui::GetColorU32( cola_v );
+				ImGui::PopItemWidth();
 				ImGui::SameLine();
 				if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
 					colb = ImGui::GetColorU32( colb_v );
+				ImGui::PopItemWidth();
 				ImVec2 pos = ImGui::GetCursorScreenPos();
 				static ImWidgetsShape shape;
 				float height = size * 0.25f;
@@ -888,9 +918,10 @@ namespace ImWidgets {
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
 				ImGui::Text( "Vtx: %d", shape.vertices.size() );
 			}
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Radial Gradient" ) )
 			{
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				static ImVec2 uv_start( 0.5f, 0.5f );
 				static ImVec2 uv_end( 0.95f, 0.5f );
@@ -904,14 +935,18 @@ namespace ImWidgets {
 #endif
 				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
 				Slider2DFloat( "uv0", &uv_start.x, &uv_start.y, 0.0f, 1.0f, -1.0f, 2.0f );
+				ImGui::PopItemWidth();
 				ImGui::SameLine();
 				Slider2DFloat( "uv1", &uv_end.x, &uv_end.y, 0.0f, 1.0f, -1.0f, 2.0f );
+				ImGui::PopItemWidth();
 				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
 				if ( ImGui::ColorEdit4( "ColA##DrawShape", &cola_v.x ) )
 					cola = ImGui::GetColorU32( cola_v );
+				ImGui::PopItemWidth();
 				ImGui::SameLine();
 				if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
 					colb = ImGui::GetColorU32( colb_v );
+				ImGui::PopItemWidth();
 				ImVec2 pos = ImGui::GetCursorScreenPos();
 				static ImWidgetsShape shape;
 				GenShapeCircle( shape, pos + ImVec2( 0.5f * size, 0.5f * size ), size * 0.5f, 16 );
@@ -928,9 +963,10 @@ namespace ImWidgets {
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
 				ImGui::Text( "Vtx: %d", shape.vertices.size() );
 			}
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Diamond Gradient" ) )
 			{
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				static ImVec2 uv_start( 0.5f, 0.5f );
 				static ImVec2 uv_end( 1.0f, 0.5f );
@@ -944,14 +980,18 @@ namespace ImWidgets {
 #endif
 				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
 				Slider2DFloat( "uv0", &uv_start.x, &uv_start.y, 0.0f, 1.0f, -1.0f, 2.0f );
+				ImGui::PopItemWidth();
 				ImGui::SameLine();
 				Slider2DFloat( "uv1", &uv_end.x, &uv_end.y, 0.0f, 1.0f, -1.0f, 2.0f );
+				ImGui::PopItemWidth();
 				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
 				if ( ImGui::ColorEdit4( "ColA##DrawShape", &cola_v.x ) )
 					cola = ImGui::GetColorU32( cola_v );
+				ImGui::PopItemWidth();
 				ImGui::SameLine();
 				if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
 					colb = ImGui::GetColorU32( colb_v );
+				ImGui::PopItemWidth();
 				ImVec2 pos = ImGui::GetCursorScreenPos();
 				static ImWidgetsShape shape;
 				GenShapeRect( shape, ImRect( pos, pos + ImVec2( size, size ) ) );
@@ -968,9 +1008,10 @@ namespace ImWidgets {
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
 				ImGui::Text( "Vtx: %d", shape.vertices.size() );
 			}
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Image Shape" ) )
 			{
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				static int tri_idx = -1;
 				static float edge_thickness = 2.0f;
@@ -1015,9 +1056,10 @@ namespace ImWidgets {
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
 				ImGui::Text( "Vtx: %d", shape.vertices.size() );
 			}
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Image Shape Gradient" ) )
 			{
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				static int tri_idx = -1;
 				static float edge_thickness = 2.0f;
@@ -1048,14 +1090,18 @@ namespace ImWidgets {
 					vertex_col = ImGui::GetColorU32( vertex_col_v );
 				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
 				Slider2DFloat( "uv0", &uv_start.x, &uv_start.y, 0.0f, 1.0f, -1.0f, 2.0f );
+				ImGui::PopItemWidth();
 				ImGui::SameLine();
 				Slider2DFloat( "uv1", &uv_end.x, &uv_end.y, 0.0f, 1.0f, -1.0f, 2.0f );
+				ImGui::PopItemWidth();
 				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
 				if ( ImGui::ColorEdit4( "ColA##DrawShape", &cola_v.x ) )
 					cola = ImGui::GetColorU32( cola_v );
+				ImGui::PopItemWidth();
 				ImGui::SameLine();
 				if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
 					colb = ImGui::GetColorU32( colb_v );
+				ImGui::PopItemWidth();
 				ImVec2 pos = ImGui::GetCursorScreenPos();
 				static ImWidgetsShape shape;
 				GenShapeRect( shape, ImRect( pos, pos + ImVec2( size, size ) ) );
@@ -1072,7 +1118,12 @@ namespace ImWidgets {
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
 				ImGui::Text( "Vtx: %d", shape.vertices.size() );
 			}
-			ImGui::SeparatorText( "Pointers" );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Pointers##Draw" ) )
+			{
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Triangles Pointers" ) )
 			{
 				const float S = ImPlatform_GetDpiScale();
@@ -1116,6 +1167,7 @@ namespace ImWidgets {
 				ImWidgets::DrawTriangleCursorFilled( pDrawList, ImVec2( curPos.x + 5.0f * dx, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
 				ImWidgets::DrawTriangleCursorFilled( pDrawList, ImVec2( curPos.x + 7.0f * dx, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
 			}
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Signet Pointer" ) )
 			{
 				const float S = ImPlatform_GetDpiScale();
@@ -1156,7 +1208,12 @@ namespace ImWidgets {
 				ImWidgets::DrawSignetFilledCursor( pDrawList, ImVec2( curPos.x + 11.0f * dx, curPos.y + fPointerLine ), width, height, height_ratio, 1.0f, angle, uBlue );
 				pDrawList->AddCircleFilled( ImVec2( curPos.x + 11.0f * dx, curPos.y + fPointerLine ), 4.0f * S, IM_COL32( 255, 128, 0, 255 ), 16 );
 			}
-			ImGui::SeparatorText( "Color" );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Color##Draw" ) )
+			{
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Color Bands" ) )
 			{
 				static float col[ 4 ] = { 1, 0, 0, 1 };
@@ -1209,9 +1266,10 @@ namespace ImWidgets {
 				// ImU32 CustomColorBand( float x, void* );
 #endif
 			}
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Color Ring" ) )
 			{
-				float const width = ImGui::GetContentRegionAvail().x;
+				float const width = CanvasSize();
 
 				static int division = 16;
 				ImGui::SliderInt( "Division", &division, 3, 128 );
@@ -1278,30 +1336,30 @@ namespace ImWidgets {
 								   }, &fFreqValue, division, colorOffset, true );
 				}
 			}
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "OkLab/OkLch Color Quad" ) )
 			{
-				float const width = ImGui::GetContentRegionAvail().x;
-
 				static int resX = 16;
 				static int resY = 16;
 				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
-				ImGui::SliderInt( "resX", &resX, 4, 64 ); ImGui::SameLine();
-				ImGui::SliderInt( "resY", &resY, 4, 64 );
+				ImGui::SliderInt( "resX", &resX, 4, 64 ); ImGui::PopItemWidth(); ImGui::SameLine();
+				ImGui::SliderInt( "resY", &resY, 4, 64 ); ImGui::PopItemWidth();
 				static float L = 1.0f;
 				ImGui::SliderFloat( "L", &L, 0.0f, 1.0f );
 
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				ImVec2 curPos = ImGui::GetCursorScreenPos();
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 				DrawOkLabQuad( pDrawList, curPos, ImVec2( size, size ), L, resX, resY );
 				ImGui::Dummy( ImVec2( size, size ) );
 				curPos = ImGui::GetCursorScreenPos();
 				DrawOkLchQuad( pDrawList, curPos, ImVec2( size, size ), L, resX, resY );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Color2D" ) )
 			{
-				float const width = ImGui::GetContentRegionAvail().x;
+				float const width = CanvasSize();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 
 				float const fTime = static_cast< float >( ImGui::GetTime() );
@@ -1339,10 +1397,15 @@ namespace ImWidgets {
 				}
 				ImGui::Dummy( ImVec2( width, width ) );
 			}
-			ImGui::SeparatorText( "Masked Shapes" );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Masked Shapes##Draw" ) )
+			{
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Image Convex Shape" ) )
 			{
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				static ImVec2 uv_offset( 0.0f, 0.0f );
 				static ImVec2 uv_scale( 1.0f, 1.0f );
@@ -1362,9 +1425,10 @@ namespace ImWidgets {
 				DrawImageConvexShape( pDrawList, background, &disk[ 0 ], 32, IM_COL32( 255, 255, 255, 255 ), uv_offset, uv_scale );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Image Concave Shape" ) )
 			{
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				static ImVec2 uv_offset( 0.0f, 0.0f );
 				static ImVec2 uv_scale( 1.0f, 1.0f );
@@ -1384,6 +1448,7 @@ namespace ImWidgets {
 				DrawImageConcaveShape( pDrawList, background, &pos_norms[ 0 ], sz, IM_COL32( 255, 255, 255, 255 ), uv_offset, uv_scale );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Shape with Hole" ) )
 			{
 				static ImVec4 col = { 1, 0, 0, 1 };
@@ -1392,7 +1457,7 @@ namespace ImWidgets {
 				ImGui::ColorEdit4( "Color##Hole", &col.x );
 				ImGui::SliderInt( "Gap##Hole", &gap, 1, 16 );
 				ImGui::SliderInt( "Stroke Width##Hole", &strokeWidth, 1, 16 );
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 
 				ImVec2 pos = ImGui::GetCursorScreenPos();
@@ -1410,11 +1475,54 @@ namespace ImWidgets {
 
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
-			ImGui::SeparatorText( "Chromaticity" );
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Image Shape With Hole" ) )
+			{
+				float const size = CanvasSize();
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				static ImVec2 uv_offset( 0.0f, 0.0f );
+				static ImVec2 uv_scale( 1.0f, 1.0f );
+				static int gap = 3;
+				static int strokeWidth = 3;
+				ImGui::DragFloat2( "Offset##DrawImageShapeWithHole",      &uv_offset[ 0 ], 0.001f, -3.0f, 3.0f );
+				ImGui::DragFloat2( "Scale##DrawImageShapeWithHole",       &uv_scale[ 0 ],  0.001f, -3.0f, 3.0f );
+				ImGui::SliderInt( "Gap##DrawImageShapeWithHole",          &gap,         1, 16 );
+				ImGui::SliderInt( "Stroke Width##DrawImageShapeWithHole", &strokeWidth, 1, 16 );
+
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+
+				// Outer polygon: CW square in screen space (y-down)
+				const int hole_segs = 32;
+				ImVector<ImVec2> pts;
+				pts.resize( 5 + ( hole_segs + 1 ) );
+				pts[ 0 ] = ImVec2( pos.x,        pos.y );
+				pts[ 1 ] = ImVec2( pos.x + size,  pos.y );
+				pts[ 2 ] = ImVec2( pos.x + size,  pos.y + size );
+				pts[ 3 ] = ImVec2( pos.x,         pos.y + size );
+				pts[ 4 ] = ImVec2( pos.x,         pos.y );       // close outer
+				// Hole: CCW circle (counter-clockwise in screen space)
+				float cx = pos.x + size * 0.5f;
+				float cy = pos.y + size * 0.5f;
+				float r  = size * 0.3f;
+				for ( int k = 0; k <= hole_segs; k++ )
+				{
+					float angle = 2.0f * IM_PI * k / hole_segs;
+					pts[ 5 + k ] = ImVec2( cx + r * ImCos( angle ), cy - r * ImSin( angle ) );
+				}
+
+				DrawImageShapeWithHole( pDrawList, background, pts.Data, pts.Size, IM_COL32( 255, 255, 255, 255 ), uv_offset, uv_scale, gap, strokeWidth );
+				ImGui::Dummy( ImVec2( size, size ) );
+			}
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Chromaticity##Draw" ) )
+			{
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Chromaticity Plot" ) )
 			{
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 
 				static int chromLinesampleCount = 128;
 				ImGui::SliderInt( "Chromatic Sample Count##Chromaticity", &chromLinesampleCount, 3, 256 );
@@ -1486,10 +1594,11 @@ namespace ImWidgets {
 
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Chromaticity Line/Point" ) )
 			{
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 
 				static float temp = 6504.0f;
 				ImGui::SliderFloat( "Temperature K##ChromaticityLines", &temp, 1000.0f, 12000.0f );
@@ -1563,10 +1672,15 @@ namespace ImWidgets {
 
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
-			ImGui::SeparatorText( "Graduation" );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Graduation##Draw" ) )
+			{
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Linear Line Graduation" ) )
 			{
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				static float mainLineThickness = 1.0f;
 				static ImU32 mainCol = IM_COL32( 255, 255, 255, 255 );
@@ -1588,18 +1702,21 @@ namespace ImWidgets {
 				ImGui::DragFloat3( "Heights", &heights[ 0 ], 1.0f, 1.0f, 128.0f );
 				ImGui::DragFloat3( "Thicknesses", &thicknesses[ 0 ], 1.0f, 1.0f, 16.0f );
 				ImGui::PushMultiItemsWidths( 3, ImGui::CalcItemWidth() );
-				ImGui::SliderAngle( "a0", &angles[ 0 ] ); ImGui::SameLine();
-				ImGui::SliderAngle( "a1", &angles[ 1 ] ); ImGui::SameLine();
-				ImGui::SliderAngle( "a2", &angles[ 2 ] );
+				ImGui::SliderAngle( "a0", &angles[ 0 ] ); ImGui::PopItemWidth(); ImGui::SameLine();
+				ImGui::SliderAngle( "a1", &angles[ 1 ] ); ImGui::PopItemWidth(); ImGui::SameLine();
+				ImGui::SliderAngle( "a2", &angles[ 2 ] ); ImGui::PopItemWidth();
 				ImGui::PushMultiItemsWidths( 3, ImGui::CalcItemWidth() );
 				if ( ImGui::ColorEdit3( "c0", &colors[ 0 ].x ) )
 					col0 = ImGui::GetColorU32( colors[ 0 ] );
+				ImGui::PopItemWidth();
 				ImGui::SameLine();
 				if ( ImGui::ColorEdit3( "c1", &colors[ 1 ].x ) )
 					col1 = ImGui::GetColorU32( colors[ 1 ] );
+				ImGui::PopItemWidth();
 				ImGui::SameLine();
 				if ( ImGui::ColorEdit3( "c2", &colors[ 2 ].x ) )
 					col2 = ImGui::GetColorU32( colors[ 2 ] );
+				ImGui::PopItemWidth();
 
 				float height = ImMax( heights[ 0 ], ImMax( heights[ 1 ], heights[ 2 ] ) );
 				ImVec2 pos = ImGui::GetCursorScreenPos() + ImVec2( 0.0f, height );
@@ -1616,9 +1733,10 @@ namespace ImWidgets {
 										  divisions[ 2 ], heights[ 2 ], thicknesses[ 2 ], angles[ 2 ], col2 );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Linear Circular Graduation" ) )
 			{
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				static float mainLineThickness = 1.0f;
 				static ImU32 mainCol = IM_COL32( 255, 255, 255, 255 );
@@ -1647,21 +1765,24 @@ namespace ImWidgets {
 				ImGui::DragFloat( "Radius", &radius, 1.0f, 1.0f, size );
 				ImGui::DragInt( "Segment", &num_segments, 1.0f, 0, 64 );
 				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
-				ImGui::SliderAngle( "start angle", &angles_bound[ 0 ], -360.0f, angles_bound[ 1 ] * 180.0f / IM_PI ); ImGui::SameLine();
-				ImGui::SliderAngle( "end angle", &angles_bound[ 1 ], angles_bound[ 0 ] * 180.0f / IM_PI, 360.0f );
+				ImGui::SliderAngle( "start angle", &angles_bound[ 0 ], -360.0f, angles_bound[ 1 ] * 180.0f / IM_PI ); ImGui::PopItemWidth(); ImGui::SameLine();
+				ImGui::SliderAngle( "end angle", &angles_bound[ 1 ], angles_bound[ 0 ] * 180.0f / IM_PI, 360.0f ); ImGui::PopItemWidth();
 				ImGui::PushMultiItemsWidths( 3, ImGui::CalcItemWidth() );
-				ImGui::SliderAngle( "a0", &angles[ 0 ] ); ImGui::SameLine();
-				ImGui::SliderAngle( "a1", &angles[ 1 ] ); ImGui::SameLine();
-				ImGui::SliderAngle( "a2", &angles[ 2 ] );
+				ImGui::SliderAngle( "a0", &angles[ 0 ] ); ImGui::PopItemWidth(); ImGui::SameLine();
+				ImGui::SliderAngle( "a1", &angles[ 1 ] ); ImGui::PopItemWidth(); ImGui::SameLine();
+				ImGui::SliderAngle( "a2", &angles[ 2 ] ); ImGui::PopItemWidth();
 				ImGui::PushMultiItemsWidths( 3, ImGui::CalcItemWidth() );
 				if ( ImGui::ColorEdit3( "c0", &colors[ 0 ].x ) )
 					col0 = ImGui::GetColorU32( colors[ 0 ] );
+				ImGui::PopItemWidth();
 				ImGui::SameLine();
 				if ( ImGui::ColorEdit3( "c1", &colors[ 1 ].x ) )
 					col1 = ImGui::GetColorU32( colors[ 1 ] );
+				ImGui::PopItemWidth();
 				ImGui::SameLine();
 				if ( ImGui::ColorEdit3( "c2", &colors[ 2 ].x ) )
 					col2 = ImGui::GetColorU32( colors[ 2 ] );
+				ImGui::PopItemWidth();
 
 				float height = ImMax( heights[ 0 ], ImMax( heights[ 1 ], heights[ 2 ] ) );
 				ImVec2 pos = ImGui::GetCursorScreenPos() + ImVec2( 0.0f, height );
@@ -1672,9 +1793,10 @@ namespace ImWidgets {
 											  divisions[ 2 ], heights[ 2 ], thicknesses[ 2 ], angles[ 2 ], col2 );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Log Line Graduation" ) )
 			{
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				static float mainLineThickness = 1.0f;
 				static ImU32 mainCol = IM_COL32( 255, 255, 255, 255 );
@@ -1695,15 +1817,17 @@ namespace ImWidgets {
 				ImGui::DragFloat2( "Heights", &heights[ 0 ], 1.0f, 1.0f, 128.0f );
 				ImGui::DragFloat2( "Thicknesses", &thicknesses[ 0 ], 1.0f, 1.0f, 16.0f );
 				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
-				ImGui::SliderAngle( "a0", &angles[ 0 ] ); ImGui::SameLine();
-				ImGui::SliderAngle( "a1", &angles[ 1 ] ); ImGui::SameLine();
+				ImGui::SliderAngle( "a0", &angles[ 0 ] ); ImGui::PopItemWidth(); ImGui::SameLine();
+				ImGui::SliderAngle( "a1", &angles[ 1 ] ); ImGui::PopItemWidth(); ImGui::SameLine();
 				ImGui::SliderAngle( "a2", &angles[ 2 ] );
 				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
 				if ( ImGui::ColorEdit3( "c0", &colors[ 0 ].x ) )
 					col0 = ImGui::GetColorU32( colors[ 0 ] );
+				ImGui::PopItemWidth();
 				ImGui::SameLine();
 				if ( ImGui::ColorEdit3( "c1", &colors[ 1 ].x ) )
 					col1 = ImGui::GetColorU32( colors[ 1 ] );
+				ImGui::PopItemWidth();
 
 				float height = ImMax( heights[ 0 ], ImMax( heights[ 1 ], heights[ 2 ] ) );
 				ImVec2 pos = ImGui::GetCursorScreenPos() + ImVec2( 0.0f, height );
@@ -1718,9 +1842,10 @@ namespace ImWidgets {
 									   divisions[ 1 ], heights[ 1 ], thicknesses[ 1 ], angles[ 1 ], col1 );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Log Circular Graduation" ) )
 			{
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				static float mainLineThickness = 1.0f;
 				static ImU32 mainCol = IM_COL32( 255, 255, 255, 255 );
@@ -1748,17 +1873,19 @@ namespace ImWidgets {
 				ImGui::DragFloat( "Radius", &radius, 1.0f, 1.0f, size );
 				ImGui::DragInt( "Segment", &num_segments, 1.0f, 0, 64 );
 				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
-				ImGui::SliderAngle( "start angle", &angles_bound[ 0 ], -360.0f, angles_bound[ 1 ] * 180.0f / IM_PI ); ImGui::SameLine();
-				ImGui::SliderAngle( "end angle", &angles_bound[ 1 ], angles_bound[ 0 ] * 180.0f / IM_PI, 360.0f );
+				ImGui::SliderAngle( "start angle", &angles_bound[ 0 ], -360.0f, angles_bound[ 1 ] * 180.0f / IM_PI ); ImGui::PopItemWidth(); ImGui::SameLine();
+				ImGui::SliderAngle( "end angle", &angles_bound[ 1 ], angles_bound[ 0 ] * 180.0f / IM_PI, 360.0f ); ImGui::PopItemWidth();
 				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
-				ImGui::SliderAngle( "a0", &angles[ 0 ] ); ImGui::SameLine();
-				ImGui::SliderAngle( "a1", &angles[ 1 ] );
+				ImGui::SliderAngle( "a0", &angles[ 0 ] ); ImGui::PopItemWidth(); ImGui::SameLine();
+				ImGui::SliderAngle( "a1", &angles[ 1 ] ); ImGui::PopItemWidth();
 				ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
 				if ( ImGui::ColorEdit3( "c0", &colors[ 0 ].x ) )
 					col0 = ImGui::GetColorU32( colors[ 0 ] );
+				ImGui::PopItemWidth();
 				ImGui::SameLine();
 				if ( ImGui::ColorEdit3( "c1", &colors[ 1 ].x ) )
 					col1 = ImGui::GetColorU32( colors[ 1 ] );
+				ImGui::PopItemWidth();
 
 				float height = ImMax( heights[ 0 ], heights[ 1 ] );
 				ImVec2 pos = ImGui::GetCursorScreenPos() + ImVec2( 0.0f, height );
@@ -1768,15 +1895,19 @@ namespace ImWidgets {
 										   divisions[ 1 ], heights[ 1 ], thicknesses[ 1 ], angles[ 1 ], col1 );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
-			ImGui::Unindent();
+				ImGui::TreePop();
+			}
 		}
+		ApplyOpenAll();
 		if ( ImGui::CollapsingHeader( "Interactions" ) )
 		{
-			ImGui::Indent();
-			ImGui::SeparatorText( "Polygon Hit Testing" );
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Polygon Hit Testing##Interactions" ) )
+			{
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Poly Convex Hovered" ) )
 			{
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				ImVec2 pos = ImGui::GetCursorScreenPos();
 				ImVec2 pos_norms[] = { { 0.0f, 0.0f }, { 0.0f, 1.0f }, { 1.0f, 1.0f } };
@@ -1807,9 +1938,10 @@ namespace ImWidgets {
 
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Poly Concave Hovered" ) )
 			{
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				ImVec2 pos = ImGui::GetCursorScreenPos();
 				int sz = 8;
@@ -1845,9 +1977,10 @@ namespace ImWidgets {
 				pDrawList->AddConcavePolyFilled( &ring[ 0 ], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Poly With Hole Hovered" ) )
 			{
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				ImVec2 pos = ImGui::GetCursorScreenPos();
 				int sz = 10;
@@ -1893,13 +2026,17 @@ namespace ImWidgets {
 				DrawShapeWithHole( pDrawList, &ring[ 0 ], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
-			ImGui::Unindent();
+				ImGui::TreePop();
+			}
 		}
-		if ( ImGui::CollapsingHeader( "Widgets", ImGuiTreeNodeFlags_DefaultOpen ) )
+		ApplyOpenAll();
+		if ( ImGui::CollapsingHeader( "Widgets" ) )
 		{
-			ImGui::Indent();
-			ImGui::SeparatorText( "Buttons" );
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Buttons##Widgets" ) )
+			{
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Button Circle" ) )
 			{
 				float const half_size = 0.5f * ImGui::GetContentRegionAvail().x;
@@ -1912,10 +2049,11 @@ namespace ImWidgets {
 				value += ( int )ImWidgets::ButtonExCircle( caption.c_str(), radius, 0 );
 			}
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Button Capsule" ) )
 			{
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 				static int value = 0;
 				static float length = size;
 				static float thickness = size * 0.25f;
@@ -1926,9 +2064,10 @@ namespace ImWidgets {
 				value += ( int )ButtonExCapsuleV( "CapsuleV", length, thickness, 0 );
 			}
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Button Convex" ) )
 			{
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 				ImVector<ImVec2> disk;
 				disk.resize( 32 );
 				for ( int k = 0; k < 32; ++k )
@@ -1944,9 +2083,10 @@ namespace ImWidgets {
 				value += ( int )ImWidgets::ButtonExConvex( "Convex", ImVec2( 0, 0 ), &disk[ 0 ], 32, 0 );
 			}
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Button Concave" ) )
 			{
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 				int sz = 8;
 				ImVec2 pos_norms[] = { { 0.0f, 0.0f }, { 0.3f, 0.0f }, { 0.3f, 0.7f }, { 0.7f, 0.7f }, { 0.7f, 0.0f },
 									   { 1.0f, 0.0f }, { 1.0f, 1.0f }, { 0.0f, 1.0f } };
@@ -1961,9 +2101,10 @@ namespace ImWidgets {
 				value += ( int )ImWidgets::ButtonExConcave( "Concave", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 );
 			}
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Button With Hole" ) )
 			{
-				float const size = ImGui::GetContentRegionAvail().x;
+				float const size = CanvasSize();
 				int sz = 10;
 				ImVec2 pos_norms[] = { { 0.0f, 0.0f }, { 0.0f, 1.0f }, { 1.0f, 1.0f }, { 1.0f, 0.0f }, { 0.0f, 0.0f },
 									   { 0.3f, 0.3f }, { 0.7f, 0.3f }, { 0.7f, 0.7f }, { 0.3f, 0.7f }, { 0.3f, 0.3f } };
@@ -1978,8 +2119,13 @@ namespace ImWidgets {
 				value += ( int )ImWidgets::ButtonExWithHole( "With Hole", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 );
 			}
 
-			ImGui::SeparatorText( "Sliders & Inputs" );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Sliders & Inputs##Widgets" ) )
+			{
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "DragFloatPrecise" ) )
 			{
 				static float value1 = 1.0f;
@@ -1991,6 +2137,7 @@ namespace ImWidgets {
 				ImGui::TextWrapped( "Click and drag left/right to edit. Move up/down to change precision rung." );
 			}
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "SliderN" ) )
 			{
 				static float value[ 3 ] = { 0.25f, 10.0f, 100.0f };
@@ -2005,6 +2152,7 @@ namespace ImWidgets {
 				ImGui::DragFloat( "Far Planes", &value[ 2 ], 1.0f, value[ 1 ], max );
 			}
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "SliderRing" ) )
 			{
 				static float fval = 0.5f;
@@ -2022,6 +2170,7 @@ namespace ImWidgets {
 				ImWidgets::SliderRingFloat( "Full##SR3", &fval3, 0.0f, 1.0f, -IM_PI, IM_PI, 6.0f );
 			}
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "SliderSpline" ) )
 			{
 				static float fval = 0.5f;
@@ -2083,6 +2232,7 @@ namespace ImWidgets {
 				ImWidgets::SliderSplineFloat( "Infinity##SS8", &fval7, 0.0f, 1.0f, infinity, 7, 200.0f );
 			}
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Slider2D Float" ) )
 			{
 				static ImVec2 slider2D;
@@ -2092,6 +2242,7 @@ namespace ImWidgets {
 				ImGui::InputFloat2( "Value", &slider2D.x );
 			}
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Slider2D Int" ) )
 			{
 				static int vv[ 2 ];
@@ -2099,8 +2250,13 @@ namespace ImWidgets {
 				ImGui::InputInt2( "Value", &vv[ 0 ] );
 			}
 
-			ImGui::SeparatorText( "Images" );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Images##Widgets" ) )
+			{
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Image Carousel" ) )
 			{
 				static int carouselIdx = 0;
@@ -2110,6 +2266,7 @@ namespace ImWidgets {
 				ImGui::Text( "Selected: %d", carouselIdx );
 			}
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Image Bento" ) )
 			{
 				static int bentoIdx = 0;
@@ -2123,6 +2280,7 @@ namespace ImWidgets {
 				ImGui::Text( "Selected: %d", bentoIdx );
 			}
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Image Viewer" ) )
 			{
 				// Reuse GPU textures already loaded at startup.
@@ -2165,8 +2323,13 @@ namespace ImWidgets {
 
 			}
 
-			ImGui::SeparatorText( "Drawing Tools" );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Drawing Tools##Widgets" ) )
+			{
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Up Vector" ) )
 			{
 				static float upDir[ 3 ] = { 0.0f, 1.0f, 0.0f };
@@ -2174,10 +2337,11 @@ namespace ImWidgets {
 				ImGui::Text( "Direction: %.3f, %.3f, %.3f", upDir[ 0 ], upDir[ 1 ], upDir[ 2 ] );
 			}
 
-			if ( ImGui::CollapsingHeader( "Dashed Polylines", ImGuiTreeNodeFlags_DefaultOpen ) )
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Dashed Polylines" ) )
 			{
 				ImDrawList* dl = ImGui::GetWindowDrawList();
-				float avail = ImGui::GetContentRegionAvail().x;
+				float avail = ImMin( ImGui::GetContentRegionAvail().x, 400.0f );
 				float side = ImMin( avail, ImGui::GetContentRegionAvail().y );
 				if ( side < 64.0f ) side = avail; // fallback if vertical space is tiny
 				ImVec2 origin = ImGui::GetCursorScreenPos();
@@ -2413,6 +2577,7 @@ namespace ImWidgets {
 					ImWidgets::SetDashedLinesDebugJoins(debug_joins);
 			}
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Paint Canvas" ) )
 			{
 				// User-owned pixel buffers (different aspect ratios)
@@ -2469,7 +2634,8 @@ namespace ImWidgets {
 				}
 			}
 
-			if ( ImGui::CollapsingHeader( "Transform Gizmo", ImGuiTreeNodeFlags_DefaultOpen ) )
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Transform Gizmo" ) )
 			{
 				static ImTransformImage gizmoImages[ 3 ];
 				static bool gizmoInit = false;
@@ -2520,8 +2686,13 @@ namespace ImWidgets {
 				}
 			}
 
-			ImGui::SeparatorText( "Color Editing" );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Color Editing##Widgets" ) )
+			{
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Hue Selector" ) )
 			{
 				static float offset = 1.0f;
@@ -2551,7 +2722,8 @@ namespace ImWidgets {
 				HueSelector( "Hue 1##HueSelector", hueHeight, cursorHeight, &hueCenter, &hueWidth, &featherLeft, &featherRight, division, alphaHue, alphaHideHue, offset );
 			}
 
-			if ( ImGui::CollapsingHeader( "Gradient Editor", ImGuiTreeNodeFlags_DefaultOpen ) )
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Gradient Editor" ) )
 			{
 				static ImGradientData gradient;
 				static bool gradInitialized = false;
@@ -2611,7 +2783,8 @@ namespace ImWidgets {
 				GradientEditor( "Black to White (OkLab)##Grad2", &gradient2, false );
 			}
 
-			if ( ImGui::CollapsingHeader( "Curve Editor", ImGuiTreeNodeFlags_DefaultOpen ) )
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Curve Editor" ) )
 			{
 				static ImCurveEditorData curve;
 				static bool curveInitialized = false;
@@ -2716,7 +2889,8 @@ namespace ImWidgets {
 				CurveEditor( "Steps & Linear##Curve2", &curve2, ImVec2( 0, 150 ) );
 			}
 
-			if ( ImGui::CollapsingHeader( "Color Wheel", ImGuiTreeNodeFlags_DefaultOpen ) )
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Color Wheel" ) )
 			{
 				static ImVec4 wheelColor( 0.8f, 0.2f, 0.3f, 1.0f );
 				static int wheelMode = ImColorWheelMode_HSV;
@@ -2736,6 +2910,7 @@ namespace ImWidgets {
 				ImGui::ColorEdit4( "HDR Color##Wheel2", &wheelColor2.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR );
 			}
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Color Picker" ) )
 			{
 				static ImVec4 pickerColor( 0.4f, 0.7f, 0.3f, 1.0f );
@@ -2774,6 +2949,7 @@ namespace ImWidgets {
 				ImGui::ColorEdit4( "Shared Color##PickerCmp", &pickerColor.x, ImGuiColorEditFlags_Float );
 			}
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Primaries Wheels (Lift/Gamma/Gain/Offset)" ) )
 			{
 				static ImVec4 primColors[ 4 ] = {
@@ -2852,6 +3028,7 @@ namespace ImWidgets {
 				ImGui::SliderFloat( "Hue", &primHue, -180.0f, 180.0f, "%.1f" );
 			}
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "HDR Wheels (Dark/Shadow/Light/Global)" ) )
 			{
 				static ImVec4 hdrColors[ 4 ] = {
@@ -2928,9 +3105,14 @@ namespace ImWidgets {
 				ImGui::SliderFloat( "Black Offset##HDR", &hdrBlackOffset, -1.0f, 1.0f, "%.3f" );
 			}
 
-			ImGui::SeparatorText( "Color Analysis" );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Color Analysis##Widgets" ) )
+			{
 
-			if ( ImGui::CollapsingHeader( "Color Curve", ImGuiTreeNodeFlags_DefaultOpen ) )
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Color Curve" ) )
 			{
 				static int ccMode = ImColorCurveMode_HueVsHue;
 				static bool ccShowHistogram = true;
@@ -3001,7 +3183,8 @@ namespace ImWidgets {
 				ImGui::TextWrapped( "Click to add key. Drag to move. Drag far outside to delete. Right-click for options." );
 			}
 
-			if ( ImGui::CollapsingHeader( "Parade Scope", ImGuiTreeNodeFlags_DefaultOpen ) )
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Parade Scope" ) )
 			{
 				static ImParadeScopeData paradeData;
 				static int paradeMode = ImParadeMode_RGB;
@@ -3174,7 +3357,8 @@ namespace ImWidgets {
 					ImGui::TextDisabled( "Failed to load image" );
 			}
 
-			if ( ImGui::CollapsingHeader( "Vector Scope", ImGuiTreeNodeFlags_DefaultOpen ) )
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Vector Scope" ) )
 			{
 				static ImVectorScopeData vectorData;
 				static int vectorSource = 4;
@@ -3337,7 +3521,8 @@ namespace ImWidgets {
 					ImGui::TextDisabled( "Failed to load image" );
 			}
 
-			if ( ImGui::CollapsingHeader( "Histogram", ImGuiTreeNodeFlags_DefaultOpen ) )
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Histogram" ) )
 			{
 				static ImHistogramData histData;
 				static int histMode = ImHistogramMode_RGB;
@@ -3503,7 +3688,8 @@ namespace ImWidgets {
 					ImGui::TextDisabled( "Failed to load image" );
 			}
 
-			if ( ImGui::CollapsingHeader( "CIE Chromaticity", ImGuiTreeNodeFlags_DefaultOpen ) )
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "CIE Chromaticity" ) )
 			{
 				static ImCIEChromaticityData cieData;
 				static int cieSource = 4;
@@ -3675,7 +3861,8 @@ namespace ImWidgets {
 					ImGui::TextDisabled( "Failed to load image" );
 			}
 
-			if ( ImGui::CollapsingHeader( "Tone Curve", ImGuiTreeNodeFlags_DefaultOpen ) )
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Tone Curve" ) )
 			{
 				static ImToneCurveData tcData;
 				static ImHistogramData tcHistData;
@@ -3864,7 +4051,8 @@ namespace ImWidgets {
 				ImGui::TextWrapped( "Click to add key. Drag to move. Drag far outside to delete. Right-click for options." );
 			}
 
-			if ( ImGui::CollapsingHeader( "Color Warper", ImGuiTreeNodeFlags_DefaultOpen ) )
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Color Warper" ) )
 			{
 				static ImColorWarperData warperData;
 				static bool warperInited = false;
@@ -4054,8 +4242,13 @@ namespace ImWidgets {
 				ImGui::Text( "Points: %d (%dx%d)", warperData.PointCount(), warperData.HueDivisions, warperData.SatDivisions );
 			}
 
-			ImGui::SeparatorText( "Misc" );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Misc##Widgets" ) )
+			{
 
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Unit Field" ) )
 			{
 				// Length example
@@ -4092,8 +4285,11 @@ namespace ImWidgets {
 				};
 				ImWidgets::UnitField( "Weight", &weight, weightUnits, IM_ARRAYSIZE( weightUnits ), &weightUnit, 0.01f, 0.0f, 1000.0f );
 			}
-			ImGui::Unindent();
+				ImGui::TreePop();
+			}
 		}
+
+		s_open_all = 0;
 
 		ImGui::End();
 		ImGui::PopStyleVar();
