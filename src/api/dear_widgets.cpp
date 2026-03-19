@@ -1,5 +1,21 @@
 ﻿#include <dear_widgets.h>
 
+// Include stb_rect_pack first so stbrp_node is a proper named struct,
+// compatible with imgui_internal.h's 'struct stbrp_node;' forward declaration.
+// STBRP_STATIC + STB_RECT_PACK_IMPLEMENTATION gives us private static implementations
+// that don't conflict with imgui.cpp's own copy.
+// The header guard STB_RECT_PACK_VERSION=1 it sets also suppresses stb_truetype's
+// incompatible anonymous-typedef inline fallback.
+#define STBRP_STATIC
+#define STB_RECT_PACK_IMPLEMENTATION
+#include "../../extern/ImPlatform/imgui/imstb_rectpack.h"
+
+// Include stb_truetype for Slug glyph outline extraction.
+// STBTT_STATIC makes all symbols private to this TU (no conflict with imgui.cpp).
+#define STBTT_STATIC
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "../../extern/ImPlatform/imgui/imstb_truetype.h"
+
 namespace ImWidgets{
     ImGlobalData GlobalData;
 
@@ -3117,9 +3133,872 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 	//////////////////////////////////////////////////////////////////////////
-	// ImWidgets Context
+	// ImWidgets Context pointer — used by Slug and other subsystems
 	//////////////////////////////////////////////////////////////////////////
 	static ImWidgetsContext* gs_pContext = NULL;
+
+	//////////////////////////////////////////////////////////////////////////
+	// Slug GPU Font Rendering — Internal Implementation
+	//////////////////////////////////////////////////////////////////////////
+
+#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+
+	// ---- Constants ----------------------------------------------------------
+	#define SLUG_TEX_WIDTH    4096
+	#define SLUG_LOG_TEX_W    12       // log2(SLUG_TEX_WIDTH)
+	#define SLUG_BANDS_X      8        // vertical band count (partition x-axis)
+	#define SLUG_BANDS_Y      8        // horizontal band count (partition y-axis)
+	#define SLUG_TEX_INIT_H   16       // initial texture height (rows)
+
+	// ---- Data Structures ----------------------------------------------------
+
+	// One quadratic Bezier curve in em-space (TTF coordinate system, Y-up)
+	struct SlugCurve
+	{
+		float p1x, p1y;  // start point
+		float p2x, p2y;  // control point
+		float p3x, p3y;  // end point
+	};
+
+	// Cached per-glyph rendering data
+	struct SlugGlyphEntry
+	{
+		ImWchar codepoint;
+		// Location of this glyph's header block in the band texture
+		int  bandTexX, bandTexY;    // = glyphLoc passed to vertex
+		// Band grid parameters
+		int  bandMaxX, bandMaxY;    // max band indices (= SLUG_BANDS_X/Y - 1)
+		float bandScaleX, bandScaleY;
+		float bandOffsetX, bandOffsetY;
+		// Glyph metrics in em-space (TTF Y-up)
+		float advanceEm;
+		float minXEm, minYEm, maxXEm, maxYEm;  // em-space bounding box
+	};
+
+	// Per-font atlas: holds the CPU/GPU curve and band texture data
+	struct SlugFontAtlas
+	{
+		ImFont*        imguiFont;    // key into atlas cache
+		stbtt_fontinfo stbFont;      // stb_truetype handle (points into ImGui's font data)
+		float          emScale;      // stbtt_ScaleForMappingEmToPixels(&stbFont, 1.0f) = 1/unitsPerEm
+
+		ImVector<SlugGlyphEntry> glyphs;   // built on demand
+
+		// Curve texture: RGBA32F, width = SLUG_TEX_WIDTH
+		//   Each Bezier curve occupies 2 consecutive texels on the same row:
+		//     texel 0: (p1.x, p1.y, p2.x, p2.y)
+		//     texel 1: (p3.x, p3.y, 0, 0)
+		ImVector<float> curveTex;     // flat RGBA32F pixel data
+		int curveCursor;              // next available texel index (1-D, wraps to next row)
+		int curveTexHeight;           // current allocated height
+
+		// Band texture: RGBA32F, integers stored as exact floats
+		//   Band header: (count, offset, 0, 0)
+		//   Curve ref:   (curveTexX, curveTexY, 0, 0)
+		ImVector<float> bandTex;
+		int bandCursor;
+		int bandTexHeight;
+
+		ImTextureID curveTexture;     // GPU handle (NULL until first upload)
+		ImTextureID bandTexture;
+		bool        dirty;            // needs GPU re-upload
+	};
+
+	// Top-level slug state stored in ImWidgetsContext
+	struct ImWidgetsSlugState
+	{
+		ImVector<SlugFontAtlas*> atlases;
+	};
+
+	// ---- Texture helpers ----------------------------------------------------
+
+	// Write one RGBA32F texel at absolute (x, y) in the curve texture
+	static void SlugCurveWrite4f(SlugFontAtlas* a, int x, int y,
+	                              float r, float g, float b, float f)
+	{
+		int needed = y + 1;
+		while (needed > a->curveTexHeight)
+		{
+			a->curveTexHeight *= 2;
+			a->curveTex.resize(SLUG_TEX_WIDTH * a->curveTexHeight * 4, 0.0f);
+		}
+		int idx = (y * SLUG_TEX_WIDTH + x) * 4;
+		a->curveTex[idx + 0] = r;
+		a->curveTex[idx + 1] = g;
+		a->curveTex[idx + 2] = b;
+		a->curveTex[idx + 3] = f;
+	}
+
+	// Allocate space for one curve (2 texels on the same row).
+	// Returns the position (cx, cy) of the first texel.
+	static void SlugAllocOneCurve(SlugFontAtlas* a, int* cx, int* cy)
+	{
+		// Each pair of texels must lie in the same row (shader reads [x] and [x+1])
+		int x = a->curveCursor % SLUG_TEX_WIDTH;
+		int y = a->curveCursor / SLUG_TEX_WIDTH;
+		if (x + 2 > SLUG_TEX_WIDTH) { x = 0; y++; a->curveCursor = y * SLUG_TEX_WIDTH; }
+		*cx = x;
+		*cy = y;
+		a->curveCursor += 2;
+	}
+
+	// Write one RGBA32F texel at absolute (x, y) in the band texture
+	static void SlugBandWrite2f(SlugFontAtlas* a, int x, int y, float v0, float v1)
+	{
+		int needed = y + 1;
+		while (needed > a->bandTexHeight)
+		{
+			a->bandTexHeight *= 2;
+			a->bandTex.resize(SLUG_TEX_WIDTH * a->bandTexHeight * 4, 0.0f);
+		}
+		int idx = (y * SLUG_TEX_WIDTH + x) * 4;
+		a->bandTex[idx + 0] = v0;
+		a->bandTex[idx + 1] = v1;
+		a->bandTex[idx + 2] = 0.0f;
+		a->bandTex[idx + 3] = 0.0f;
+	}
+
+	// Resolve (glyphLoc + offset) with row wrapping (mirrors CalcBandLoc in the shader)
+	static void SlugBandCalcLoc(int glx, int gly, int offset, int* outX, int* outY)
+	{
+		int x = glx + offset;
+		int y = gly + x / SLUG_TEX_WIDTH;
+		x     = x % SLUG_TEX_WIDTH;
+		*outX = x;
+		*outY = y;
+	}
+
+	// ---- Glyph builder ------------------------------------------------------
+
+	static bool SlugBuildGlyph(SlugFontAtlas* atlas, ImWchar cp, SlugGlyphEntry* outEntry)
+	{
+		int gi = stbtt_FindGlyphIndex(&atlas->stbFont, (int)cp);
+		if (gi == 0) return false;
+
+		// ---- metrics ----
+		int adv, lsb;
+		stbtt_GetGlyphHMetrics(&atlas->stbFont, gi, &adv, &lsb);
+
+		int bx0, by0, bx1, by1;
+		if (!stbtt_GetGlyphBox(&atlas->stbFont, gi, &bx0, &by0, &bx1, &by1))
+		{
+			// Empty glyph (space etc.)
+			SlugGlyphEntry e = {};
+			e.codepoint  = cp;
+			e.advanceEm  = (float)adv * atlas->emScale;
+			atlas->glyphs.push_back(e);
+			*outEntry = e;
+			return true;
+		}
+
+		const float sc = atlas->emScale;
+
+		// Pad em-space bounds slightly so curves don't land exactly on band edges
+		const float pad = 0.01f;
+		float minX = bx0 * sc - pad,  maxX = bx1 * sc + pad;
+		float minY = by0 * sc - pad,  maxY = by1 * sc + pad;
+		float glyphW = maxX - minX,   glyphH = maxY - minY;
+		if (glyphW < 1e-5f) glyphW = 1e-5f;
+		if (glyphH < 1e-5f) glyphH = 1e-5f;
+
+		// ---- extract Bezier outlines via stb_truetype ----
+		stbtt_vertex* verts = NULL;
+		int nVerts = stbtt_GetGlyphShape(&atlas->stbFont, gi, &verts);
+
+		ImVector<SlugCurve> curves;
+		float curX = 0.0f, curY = 0.0f;
+
+		for (int i = 0; i < nVerts; i++)
+		{
+			stbtt_vertex& v = verts[i];
+			float vx  = v.x  * sc,  vy  = v.y  * sc;
+			float vcx = v.cx * sc,   vcy = v.cy * sc;
+
+			switch (v.type)
+			{
+			case STBTT_vmove:
+				curX = vx; curY = vy;
+				break;
+			case STBTT_vline:
+			{
+				// Line → degenerate quadratic (midpoint as control point)
+				SlugCurve c;
+				c.p1x = curX; c.p1y = curY;
+				c.p2x = (curX + vx) * 0.5f; c.p2y = (curY + vy) * 0.5f;
+				c.p3x = vx;   c.p3y = vy;
+				curves.push_back(c);
+				curX = vx; curY = vy;
+				break;
+			}
+			case STBTT_vcurve:
+			{
+				SlugCurve c;
+				c.p1x = curX; c.p1y = curY;
+				c.p2x = vcx;  c.p2y = vcy;
+				c.p3x = vx;   c.p3y = vy;
+				curves.push_back(c);
+				curX = vx; curY = vy;
+				break;
+			}
+			case STBTT_vcubic:
+			{
+				// Approximate cubic with two quadratics by splitting at t=0.5
+				float cx0 = v.cx  * sc, cy0 = v.cy  * sc;
+				float cx1 = v.cx1 * sc, cy1 = v.cy1 * sc;
+				float mx = (curX + 3.0f * cx0 + 3.0f * cx1 + vx) / 8.0f;
+				float my = (curY + 3.0f * cy0 + 3.0f * cy1 + vy) / 8.0f;
+				SlugCurve c1, c2;
+				c1.p1x = curX; c1.p1y = curY;
+				c1.p2x = (curX + cx0) * 0.5f; c1.p2y = (curY + cy0) * 0.5f;
+				c1.p3x = mx;   c1.p3y = my;
+				c2.p1x = mx;   c2.p1y = my;
+				c2.p2x = (cx1 + vx) * 0.5f; c2.p2y = (cy1 + vy) * 0.5f;
+				c2.p3x = vx;   c2.p3y = vy;
+				curves.push_back(c1);
+				curves.push_back(c2);
+				curX = vx; curY = vy;
+				break;
+			}
+			}
+		}
+		stbtt_FreeShape(&atlas->stbFont, verts);
+
+		int nc = curves.Size;
+
+		// ---- handle empty glyph ----
+		if (nc == 0)
+		{
+			SlugGlyphEntry e = {};
+			e.codepoint  = cp;
+			e.advanceEm  = (float)adv * sc;
+			e.minXEm = minX; e.minYEm = minY;
+			e.maxXEm = maxX; e.maxYEm = maxY;
+			atlas->glyphs.push_back(e);
+			*outEntry = e;
+			return true;
+		}
+
+		// ---- write each curve into the curve texture ----
+		// curveLoc[i] = texel position (x, y) of curve i in the curve texture
+		ImVector<int> curveLocX, curveLocY;
+		curveLocX.resize(nc);
+		curveLocY.resize(nc);
+
+		for (int i = 0; i < nc; i++)
+		{
+			int cx, cy;
+			SlugAllocOneCurve(atlas, &cx, &cy);
+			curveLocX[i] = cx;
+			curveLocY[i] = cy;
+			const SlugCurve& c = curves[i];
+			SlugCurveWrite4f(atlas, cx,   cy, c.p1x, c.p1y, c.p2x, c.p2y);
+			SlugCurveWrite4f(atlas, cx+1, cy, c.p3x, c.p3y, 0.0f,  0.0f );
+		}
+
+		// ---- band assignment ----
+		// Horizontal bands partition the Y-axis; curves are sorted by descending max-X.
+		// Vertical bands partition the X-axis;   curves are sorted by descending max-Y.
+
+		const float bsx = (float)SLUG_BANDS_X / glyphW;   // em → band-x scale
+		const float bsy = (float)SLUG_BANDS_Y / glyphH;   // em → band-y scale
+		const float box = -minX * bsx;                     // em → band-x offset
+		const float boy = -minY * bsy;                     // em → band-y offset
+
+		const int NBX = SLUG_BANDS_X;
+		const int NBY = SLUG_BANDS_Y;
+
+		// Per-band curve lists
+		ImVector<int> hBand[SLUG_BANDS_Y];  // horizontal bands (indexed by y-band)
+		ImVector<int> vBand[SLUG_BANDS_X];  // vertical bands  (indexed by x-band)
+
+		for (int i = 0; i < nc; i++)
+		{
+			const SlugCurve& c = curves[i];
+			float cMinX = ImMin(ImMin(c.p1x, c.p2x), c.p3x);
+			float cMaxX = ImMax(ImMax(c.p1x, c.p2x), c.p3x);
+			float cMinY = ImMin(ImMin(c.p1y, c.p2y), c.p3y);
+			float cMaxY = ImMax(ImMax(c.p1y, c.p2y), c.p3y);
+
+			// Horizontal bands: which y-strips does this curve's y-extent overlap?
+			int hyMin = (int)(( cMinY - minY ) * bsy);
+			int hyMax = (int)(( cMaxY - minY ) * bsy);
+			hyMin = ImClamp(hyMin, 0, NBY - 1);
+			hyMax = ImClamp(hyMax, 0, NBY - 1);
+			for (int b = hyMin; b <= hyMax; b++)
+				hBand[b].push_back(i);
+
+			// Vertical bands: which x-strips does this curve's x-extent overlap?
+			int vxMin = (int)(( cMinX - minX ) * bsx);
+			int vxMax = (int)(( cMaxX - minX ) * bsx);
+			vxMin = ImClamp(vxMin, 0, NBX - 1);
+			vxMax = ImClamp(vxMax, 0, NBX - 1);
+			for (int b = vxMin; b <= vxMax; b++)
+				vBand[b].push_back(i);
+		}
+
+		// Sort horizontal bands by descending max-X (for early-exit in the PS)
+		for (int b = 0; b < NBY; b++)
+		{
+			ImVector<int>& lst = hBand[b];
+			// Simple insertion sort (lists are short)
+			for (int i = 1; i < lst.Size; i++)
+			{
+				int key = lst[i];
+				float keyMaxX = ImMax(ImMax(curves[key].p1x, curves[key].p2x), curves[key].p3x);
+				int j = i - 1;
+				while (j >= 0)
+				{
+					int cj = lst[j];
+					float cjMaxX = ImMax(ImMax(curves[cj].p1x, curves[cj].p2x), curves[cj].p3x);
+					if (cjMaxX >= keyMaxX) break;
+					lst[j + 1] = lst[j];
+					j--;
+				}
+				lst[j + 1] = key;
+			}
+		}
+
+		// Sort vertical bands by descending max-Y
+		for (int b = 0; b < NBX; b++)
+		{
+			ImVector<int>& lst = vBand[b];
+			for (int i = 1; i < lst.Size; i++)
+			{
+				int key = lst[i];
+				float keyMaxY = ImMax(ImMax(curves[key].p1y, curves[key].p2y), curves[key].p3y);
+				int j = i - 1;
+				while (j >= 0)
+				{
+					int cj = lst[j];
+					float cjMaxY = ImMax(ImMax(curves[cj].p1y, curves[cj].p2y), curves[cj].p3y);
+					if (cjMaxY >= keyMaxY) break;
+					lst[j + 1] = lst[j];
+					j--;
+				}
+				lst[j + 1] = key;
+			}
+		}
+
+		// Count total curve references for band texture allocation
+		int totalCurveRefs = 0;
+		for (int b = 0; b < NBY; b++) totalCurveRefs += hBand[b].Size;
+		for (int b = 0; b < NBX; b++) totalCurveRefs += vBand[b].Size;
+
+		// ---- allocate glyph block in band texture ----
+		// The header block must fit in one row (direct indexed by the shader without wrapping).
+		// Header layout: NBY horiz headers, then NBX vert headers = NBY + NBX total.
+		int totalHeaders = NBY + NBX;
+
+		// Ensure headers fit in current row
+		int bx = atlas->bandCursor % SLUG_TEX_WIDTH;
+		int by = atlas->bandCursor / SLUG_TEX_WIDTH;
+		if (bx + totalHeaders > SLUG_TEX_WIDTH)
+		{
+			// Move to start of next row
+			atlas->bandCursor = (by + 1) * SLUG_TEX_WIDTH;
+			bx = 0;
+			by++;
+		}
+		int glyphLocX = bx;
+		int glyphLocY = by;
+
+		// Reserve: headers + curve ref list (curve refs can wrap via CalcBandLoc)
+		atlas->bandCursor += totalHeaders + totalCurveRefs;
+
+		// ---- write band headers and curve ref lists ----
+		// offset is relative to glyphLoc, using CalcBandLoc semantics
+		int nextOffset = totalHeaders;  // first curve list starts after all headers
+
+		for (int b = 0; b < NBY; b++)
+		{
+			// Write horizontal band header at (glyphLocX + b, glyphLocY)
+			SlugBandWrite2f(atlas, glyphLocX + b, glyphLocY,
+			                (float)hBand[b].Size, (float)nextOffset);
+
+			// Write curve references at CalcBandLoc(glyphLoc, nextOffset + i)
+			for (int i = 0; i < hBand[b].Size; i++)
+			{
+				int ci = hBand[b][i];
+				int ax, ay;
+				SlugBandCalcLoc(glyphLocX, glyphLocY, nextOffset + i, &ax, &ay);
+				SlugBandWrite2f(atlas, ax, ay, (float)curveLocX[ci], (float)curveLocY[ci]);
+			}
+			nextOffset += hBand[b].Size;
+		}
+
+		for (int b = 0; b < NBX; b++)
+		{
+			// Write vertical band header at (glyphLocX + NBY + b, glyphLocY)
+			SlugBandWrite2f(atlas, glyphLocX + NBY + b, glyphLocY,
+			                (float)vBand[b].Size, (float)nextOffset);
+
+			for (int i = 0; i < vBand[b].Size; i++)
+			{
+				int ci = vBand[b][i];
+				int ax, ay;
+				SlugBandCalcLoc(glyphLocX, glyphLocY, nextOffset + i, &ax, &ay);
+				SlugBandWrite2f(atlas, ax, ay, (float)curveLocX[ci], (float)curveLocY[ci]);
+			}
+			nextOffset += vBand[b].Size;
+		}
+
+		// ---- fill in glyph entry ----
+		SlugGlyphEntry e = {};
+		e.codepoint    = cp;
+		e.bandTexX     = glyphLocX;
+		e.bandTexY     = glyphLocY;
+		e.bandMaxX     = NBX - 1;
+		e.bandMaxY     = NBY - 1;
+		e.bandScaleX   = bsx;
+		e.bandScaleY   = bsy;
+		e.bandOffsetX  = box;
+		e.bandOffsetY  = boy;
+		e.advanceEm    = (float)adv * sc;
+		e.minXEm = minX; e.minYEm = minY;
+		e.maxXEm = maxX; e.maxYEm = maxY;
+
+		atlas->glyphs.push_back(e);
+		atlas->dirty = true;
+		*outEntry = e;
+		return true;
+	}
+
+	// ---- Atlas management ---------------------------------------------------
+
+	static SlugGlyphEntry* SlugFindGlyph(SlugFontAtlas* atlas, ImWchar cp)
+	{
+		for (int i = 0; i < atlas->glyphs.Size; i++)
+			if (atlas->glyphs[i].codepoint == cp)
+				return &atlas->glyphs[i];
+		return NULL;
+	}
+
+	static SlugFontAtlas* SlugGetOrCreateAtlas(ImWidgetsSlugState* state, ImFont* font)
+	{
+		// Find existing atlas for this font
+		for (int i = 0; i < state->atlases.Size; i++)
+			if (state->atlases[i]->imguiFont == font)
+				return state->atlases[i];
+
+		// Create new atlas — find font config by matching DstFont pointer
+		if (!font)
+			return NULL;
+
+		ImFontAtlas* fontAtlas = ImGui::GetIO().Fonts;
+		ImFontConfig* cfg = NULL;
+		for (int i = 0; i < fontAtlas->Sources.Size; i++)
+		{
+			if (fontAtlas->Sources[i].DstFont == font)
+			{
+				cfg = &fontAtlas->Sources[i];
+				break;
+			}
+		}
+		if (!cfg || !cfg->FontData || cfg->FontDataSize == 0)
+			return NULL;
+
+		SlugFontAtlas* atlas = IM_NEW(SlugFontAtlas);
+		atlas->imguiFont     = font;
+		atlas->curveCursor   = 0;
+		atlas->curveTexHeight = SLUG_TEX_INIT_H;
+		atlas->curveTex.resize(SLUG_TEX_WIDTH * SLUG_TEX_INIT_H * 4, 0.0f);
+		atlas->bandCursor    = 0;
+		atlas->bandTexHeight = SLUG_TEX_INIT_H;
+		atlas->bandTex.resize(SLUG_TEX_WIDTH * SLUG_TEX_INIT_H * 4, 0.0f);
+		atlas->curveTexture  = NULL;
+		atlas->bandTexture   = NULL;
+		atlas->dirty         = true;
+
+		int offset = stbtt_GetFontOffsetForIndex((unsigned char*)cfg->FontData, 0);
+		if (!stbtt_InitFont(&atlas->stbFont, (unsigned char*)cfg->FontData, offset))
+		{
+			IM_DELETE(atlas);
+			return NULL;
+		}
+
+		// stbtt_ScaleForMappingEmToPixels(info, 1.0f) = 1.0f / unitsPerEm
+		atlas->emScale = stbtt_ScaleForMappingEmToPixels(&atlas->stbFont, 1.0f);
+
+		state->atlases.push_back(atlas);
+		return atlas;
+	}
+
+	static void SlugUploadTextures(SlugFontAtlas* atlas)
+	{
+		if (!atlas->dirty) return;
+
+		// Curve texture
+		if (atlas->curveTexture != NULL)
+			ImPlatform_DestroyTexture(atlas->curveTexture);
+		{
+			ImPlatform_TextureDesc desc = {};
+			desc.width      = SLUG_TEX_WIDTH;
+			desc.height     = (unsigned int)atlas->curveTexHeight;
+			desc.format     = ImPlatform_PixelFormat_RGBA32F;
+			desc.min_filter = ImPlatform_TextureFilter_Nearest;
+			desc.mag_filter = ImPlatform_TextureFilter_Nearest;
+			desc.wrap_u     = ImPlatform_TextureWrap_Clamp;
+			desc.wrap_v     = ImPlatform_TextureWrap_Clamp;
+			atlas->curveTexture = ImPlatform_CreateTexture(atlas->curveTex.Data, &desc);
+		}
+
+		// Band texture
+		if (atlas->bandTexture != NULL)
+			ImPlatform_DestroyTexture(atlas->bandTexture);
+		{
+			ImPlatform_TextureDesc desc = {};
+			desc.width      = SLUG_TEX_WIDTH;
+			desc.height     = (unsigned int)atlas->bandTexHeight;
+			desc.format     = ImPlatform_PixelFormat_RGBA32F;
+			desc.min_filter = ImPlatform_TextureFilter_Nearest;
+			desc.mag_filter = ImPlatform_TextureFilter_Nearest;
+			desc.wrap_u     = ImPlatform_TextureWrap_Clamp;
+			desc.wrap_v     = ImPlatform_TextureWrap_Clamp;
+			atlas->bandTexture = ImPlatform_CreateTexture(atlas->bandTex.Data, &desc);
+		}
+
+		atlas->dirty = false;
+	}
+
+	static void SlugDestroyAtlas(SlugFontAtlas* atlas)
+	{
+		if (atlas->curveTexture) ImPlatform_DestroyTexture(atlas->curveTexture);
+		if (atlas->bandTexture)  ImPlatform_DestroyTexture(atlas->bandTexture);
+		IM_DELETE(atlas);
+	}
+
+	// ---- Slug draw callbacks ------------------------------------------------
+	//
+	// Two paths depending on backend:
+	//
+	// DX11 (single draw call, batch):
+	//   All glyphs share one geometry draw command. Per-glyph Slug data lives in
+	//   cbuffer b1 as a float4 array indexed by a glyph index encoded in the
+	//   vertex color (R=low byte, G=high byte, flat-shaded via nointerpolation).
+	//   Cbuffer layout: slugTextColor (float4) + slugGlyphData[512] (float4[]).
+	//   Data: [col.r, col.g, col.b, col.a, g0.bandLoc(4f), g0.banding(4f), ...]
+	//
+	// Other backends (per-glyph, OpenGL etc.):
+	//   Each glyph is a separate BeginCustomShader/AddImageQuad/EndCustomShader.
+	//   Two uniforms per glyph: slugBandLoc, slugBanding (4 floats each).
+	//   OpenGL ImPlatform caps uniform size at 64 bytes; this path stays within that.
+
+#if defined(IM_CURRENT_GFX) && (IM_CURRENT_GFX == IM_GFX_DIRECTX11)
+
+	// DX11 batch: one IM_ALLOC per DrawText call, trailing float data.
+	struct SlugBatchCBData
+	{
+		ImPlatform_ShaderProgram program;
+		ImTextureID              bandTexture;
+		unsigned int             dataFloatCount;  // 4 (color) + glyphCount * 8
+		// Followed in memory by dataFloatCount floats:
+		//   [0..3]          = RGBA text color as float4
+		//   [4 + gi*8 .. ]  = bandLoc (4f) + banding (4f) for glyph index gi
+	};
+
+	static inline float* SlugBatchCBFloats(SlugBatchCBData* d)
+	{
+		return reinterpret_cast<float*>(d + 1);
+	}
+
+	static void SlugSetBatchUniforms(const ImDrawList*, const ImDrawCmd* cmd)
+	{
+		SlugBatchCBData* d = (SlugBatchCBData*)cmd->UserCallbackData;
+		if (!d) return;
+
+		if (d->program)
+		{
+			// Upload the entire batch cbuffer as a single contiguous block.
+			// DX11: ImPlatform_SetShaderUniform has no size limit; it allocates
+			// a dynamic cbuffer of exactly this size bound to register b1.
+			ImPlatform_SetShaderUniform(d->program, "slugBatch",
+			    SlugBatchCBFloats(d), d->dataFloatCount * (unsigned int)sizeof(float));
+
+			// Band texture is the same for all glyphs (same font atlas); bind to t1.
+			// Curve texture is bound to t0 by ImGui's renderer via PushTextureID.
+			ImPlatform_SetShaderTexture(d->program, "bandTexture", 1, d->bandTexture);
+		}
+
+		IM_FREE(d);
+	}
+
+#else  // non-DX11: per-glyph callback using named uniforms
+
+	// Per-glyph uniform data. Heap-allocated per glyph to avoid ImVector
+	// reallocation hazard when multiple DrawText calls happen in the same frame.
+	struct SlugGlyphCBData
+	{
+		ImPlatform_ShaderProgram program;
+		ImTextureID              bandTexture;
+		float                    data[8];
+		// [0..3] = slugBandLoc: glyphTexX, glyphTexY, bandMaxX, bandMaxY
+		// [4..7] = slugBanding: bandScaleX, bandScaleY, bandOffsetX, bandOffsetY
+	};
+
+	static void SlugSetGlyphUniforms(const ImDrawList*, const ImDrawCmd* cmd)
+	{
+		SlugGlyphCBData* d = (SlugGlyphCBData*)cmd->UserCallbackData;
+		if (!d) return;
+
+		if (d->program)
+		{
+			// Two named uniforms, 4 floats each — stays within OpenGL's 64-byte limit.
+			ImPlatform_BeginUniformBlock(d->program);
+			ImPlatform_SetUniform("slugBandLoc", &d->data[0], 4 * sizeof(float));
+			ImPlatform_SetUniform("slugBanding",  &d->data[4], 4 * sizeof(float));
+			ImPlatform_EndUniformBlock(d->program);
+
+			ImPlatform_SetShaderTexture(d->program, "bandTexture", 1, d->bandTexture);
+		}
+
+		IM_FREE(d);
+	}
+
+#endif  // IM_CURRENT_GFX == IM_GFX_DIRECTX11
+
+	// ---- Public API implementation ------------------------------------------
+
+	void DrawText(ImDrawList* pDrawList, ImFont* font, float font_size,
+	              ImVec2 pos, ImU32 col, const char* text, const char* text_end)
+	{
+		if (!pDrawList || !gs_pContext || !text || text == text_end) return;
+		if (!text_end) text_end = text + strlen(text);
+		if (text >= text_end) return;
+
+		// Resolve font and size
+		if (!font)      font      = ImGui::GetFont();
+		if (font_size <= 0.0f) font_size = ImGui::GetFontSize();
+
+#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+		// Lazy-init slug state and shader
+		if (!gs_pContext->slugState)
+			gs_pContext->slugState = IM_NEW(ImWidgetsSlugState);
+
+		if (!gs_pContext->slugShader.program)
+			CreateInternalShader(&gs_pContext->slugShader, "slug", 0, NULL, 0, NULL);
+
+		if (!gs_pContext->slugShader.program) return;  // shader compilation failed
+
+		ImWidgetsSlugState* state = gs_pContext->slugState;
+
+		// Get or create the font atlas for this font
+		SlugFontAtlas* atlas = SlugGetOrCreateAtlas(state, font);
+		if (!atlas) return;
+
+		// Pre-build all glyphs and upload textures if anything is new
+		bool anyNew = false;
+		const char* p = text;
+		while (p < text_end)
+		{
+			unsigned int cp = 0;
+			p += ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
+			if (cp == 0) break;
+			if (SlugFindGlyph(atlas, (ImWchar)cp) == NULL)
+			{
+				SlugGlyphEntry e;
+				SlugBuildGlyph(atlas, (ImWchar)cp, &e);
+				anyNew = true;
+			}
+		}
+		if (anyNew || atlas->dirty)
+			SlugUploadTextures(atlas);
+		if (!atlas->curveTexture || !atlas->bandTexture) return;
+
+		// Count glyphs so we can allocate exactly
+		int glyphCount = 0;
+		p = text;
+		while (p < text_end)
+		{
+			unsigned int cp = 0;
+			const char* next = p + ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
+			if (cp == 0) break;
+			SlugGlyphEntry* ge = SlugFindGlyph(atlas, (ImWchar)cp);
+			if (ge && (ge->maxXEm - ge->minXEm) > 1e-5f && (ge->maxYEm - ge->minYEm) > 1e-5f)
+				glyphCount++;
+			p = next;
+		}
+		if (glyphCount == 0) return;
+
+		const float sz = font_size;  // pixels per em
+
+		float penX = pos.x;
+
+#if defined(IM_CURRENT_GFX) && (IM_CURRENT_GFX == IM_GFX_DIRECTX11)
+
+		// ---- DX11: single draw call for the entire string ----
+		//
+		// One SlugBatchCBData is allocated per DrawText call. It holds:
+		//   - text color as float4
+		//   - per-glyph bandLoc + banding data (8 floats each)
+		//
+		// The glyph index is encoded in vertex color (R=low byte, G=high byte)
+		// and read in the VS with nointerpolation → flat-shaded into the PS.
+		// The PS indexes into slugGlyphData[gi*2+0 / gi*2+1] to get per-glyph data.
+
+		// Limit to 256 glyphs per DrawText call (cbuffer holds 512 float4s = 256 × 2)
+		if (glyphCount > 256) glyphCount = 256;
+
+		unsigned int dataFloatCount = 4u + (unsigned int)glyphCount * 8u;
+		SlugBatchCBData* cbd = (SlugBatchCBData*)IM_ALLOC(
+		    sizeof(SlugBatchCBData) + dataFloatCount * sizeof(float));
+		cbd->program        = gs_pContext->slugShader.program;
+		cbd->bandTexture    = atlas->bandTexture;
+		cbd->dataFloatCount = dataFloatCount;
+
+		// Fill text color (convert ImU32 ABGR → RGBA float4)
+		float* cbf = SlugBatchCBFloats(cbd);
+		cbf[0] = (float)((col >>  0) & 0xFF) / 255.0f;  // R
+		cbf[1] = (float)((col >>  8) & 0xFF) / 255.0f;  // G
+		cbf[2] = (float)((col >> 16) & 0xFF) / 255.0f;  // B
+		cbf[3] = (float)((col >> 24) & 0xFF) / 255.0f;  // A
+
+		// Emit callback (uploads cbuffer + binds bandTexture to t1)
+		pDrawList->AddCallback(SlugSetBatchUniforms, cbd);
+
+		// Begin shader, push the curve texture so all PrimRectUV calls share one draw cmd
+		ImPlatform_BeginCustomShader(pDrawList, gs_pContext->slugShader.program);
+		pDrawList->PushTexture(atlas->curveTexture);
+
+		int gi = 0;
+		p = text;
+		while (p < text_end && gi < glyphCount)
+		{
+			unsigned int cp = 0;
+			p += ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
+			if (cp == 0) break;
+
+			SlugGlyphEntry* ge = SlugFindGlyph(atlas, (ImWchar)cp);
+			if (!ge) continue;
+
+			float advance = ge->advanceEm * sz;
+
+			if ((ge->maxXEm - ge->minXEm) < 1e-5f || (ge->maxYEm - ge->minYEm) < 1e-5f)
+			{
+				penX += advance;
+				continue;
+			}
+
+			// Fill per-glyph cbuffer data (slot gi)
+			float* gd = cbf + 4 + gi * 8;
+			gd[0] = (float)ge->bandTexX;
+			gd[1] = (float)ge->bandTexY;
+			gd[2] = (float)ge->bandMaxX;
+			gd[3] = (float)(ge->bandMaxY & 0xFF);
+			gd[4] = ge->bandScaleX;
+			gd[5] = ge->bandScaleY;
+			gd[6] = ge->bandOffsetX;
+			gd[7] = ge->bandOffsetY;
+
+			// Screen-space quad (Y is down; em-space Y is up → flip)
+			float sL = penX + ge->minXEm * sz;
+			float sR = penX + ge->maxXEm * sz;
+			float sT = pos.y - ge->maxYEm * sz;
+			float sB = pos.y - ge->minYEm * sz;
+
+			// Encode glyph index in vertex color (R=low byte, G=high byte).
+			// The VS decodes this and passes it flat-shaded to the PS.
+			ImU32 glyphCol = IM_COL32(gi & 0xFF, (gi >> 8) & 0xFF, 0, 255);
+
+			// UV: em-space renderCoord. TL=(minXEm, maxYEm), BR=(maxXEm, minYEm)
+			// (Y flip: screen top = em-space max-Y because TTF Y is up)
+			pDrawList->PrimReserve(6, 4);
+			pDrawList->PrimRectUV(
+			    ImVec2(sL, sT), ImVec2(sR, sB),
+			    ImVec2(ge->minXEm, ge->maxYEm), ImVec2(ge->maxXEm, ge->minYEm),
+			    glyphCol);
+
+			penX += advance;
+			gi++;
+		}
+
+		pDrawList->PopTexture();
+		ImPlatform_EndCustomShader(pDrawList);
+
+#else  // non-DX11: per-glyph draw calls (OpenGL etc.)
+
+		p = text;
+		while (p < text_end)
+		{
+			unsigned int cp = 0;
+			p += ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
+			if (cp == 0) break;
+
+			SlugGlyphEntry* ge = SlugFindGlyph(atlas, (ImWchar)cp);
+			if (!ge) continue;
+
+			float advance = ge->advanceEm * sz;
+
+			if ((ge->maxXEm - ge->minXEm) < 1e-5f || (ge->maxYEm - ge->minYEm) < 1e-5f)
+			{
+				penX += advance;
+				continue;
+			}
+
+			float sL = penX + ge->minXEm * sz;
+			float sR = penX + ge->maxXEm * sz;
+			float sT = pos.y - ge->maxYEm * sz;
+			float sB = pos.y - ge->minYEm * sz;
+
+			SlugGlyphCBData* cb = (SlugGlyphCBData*)IM_ALLOC(sizeof(SlugGlyphCBData));
+			cb->program     = gs_pContext->slugShader.program;
+			cb->bandTexture = atlas->bandTexture;
+			cb->data[0] = (float)ge->bandTexX;
+			cb->data[1] = (float)ge->bandTexY;
+			cb->data[2] = (float)ge->bandMaxX;
+			cb->data[3] = (float)(ge->bandMaxY & 0xFF);
+			cb->data[4] = ge->bandScaleX;
+			cb->data[5] = ge->bandScaleY;
+			cb->data[6] = ge->bandOffsetX;
+			cb->data[7] = ge->bandOffsetY;
+
+			pDrawList->AddCallback(SlugSetGlyphUniforms, cb);
+			ImPlatform_BeginCustomShader(pDrawList, gs_pContext->slugShader.program);
+			pDrawList->AddImageQuad(atlas->curveTexture,
+			                        ImVec2(sL, sT), ImVec2(sR, sT),
+			                        ImVec2(sR, sB), ImVec2(sL, sB),
+			                        ImVec2(ge->minXEm, ge->maxYEm), ImVec2(ge->maxXEm, ge->maxYEm),
+			                        ImVec2(ge->maxXEm, ge->minYEm), ImVec2(ge->minXEm, ge->minYEm),
+			                        col);
+			ImPlatform_EndCustomShader(pDrawList);
+
+			penX += advance;
+		}
+
+#endif  // IM_CURRENT_GFX == IM_GFX_DIRECTX11
+
+#else
+		// Fallback: use ImGui's built-in text rendering
+		pDrawList->AddText(font, font_size, pos, col, text, text_end);
+#endif
+	}
+
+	void DrawText(ImDrawList* pDrawList, ImVec2 pos, ImU32 col,
+	              const char* text, const char* text_end)
+	{
+		DrawText(pDrawList, nullptr, 0.0f, pos, col, text, text_end);
+	}
+
+#else  // !IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+
+	void DrawText(ImDrawList* pDrawList, ImFont* font, float font_size,
+	              ImVec2 pos, ImU32 col, const char* text, const char* text_end)
+	{
+		if (!font)      font      = ImGui::GetFont();
+		if (font_size <= 0.0f) font_size = ImGui::GetFontSize();
+		if (pDrawList) pDrawList->AddText(font, font_size, pos, col, text, text_end);
+	}
+
+	void DrawText(ImDrawList* pDrawList, ImVec2 pos, ImU32 col,
+	              const char* text, const char* text_end)
+	{
+		DrawText(pDrawList, nullptr, 0.0f, pos, col, text, text_end);
+	}
+
+#endif  // IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+
+	//////////////////////////////////////////////////////////////////////////
+	// ImWidgets Context
+	//////////////////////////////////////////////////////////////////////////
 
 	void CreateMarkersShaders( ImWidgetsContext* ctx )
 	{
@@ -3194,7 +4073,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		GlobalData.dashedLinesUseGPU = false;
 		// Ensure shader handles are zero-initialized to avoid random garbage checks
 		memset(&ctx->markerShader, 0, sizeof(ImDrawShader));
-		memset(&ctx->lineShader, 0, sizeof(ImDrawShader));
+		memset(&ctx->lineShader,   0, sizeof(ImDrawShader));
+		memset(&ctx->slugShader,   0, sizeof(ImDrawShader));
+		ctx->slugState = NULL;
 
 		if ( gs_pContext == NULL )
 			gs_pContext = ctx;
@@ -3256,6 +4137,26 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			{
 				ImPlatform_DestroyTexture( ctx->ressources[ k ] );
 			}
+
+#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+			// Clean up Slug font atlases and GPU textures
+			if ( ctx->slugState )
+			{
+				for ( int k = 0; k < ctx->slugState->atlases.Size; ++k )
+					SlugDestroyAtlas( ctx->slugState->atlases[ k ] );
+				IM_DELETE( ctx->slugState );
+				ctx->slugState = NULL;
+			}
+
+			// Clean up Slug shader
+			if ( ctx->slugShader.program )
+			{
+				ImPlatform_DestroyShaderProgram( ctx->slugShader.program );
+				ImPlatform_DestroyShader( ctx->slugShader.vs );
+				ImPlatform_DestroyShader( ctx->slugShader.ps );
+				memset( &ctx->slugShader, 0, sizeof( ImDrawShader ) );
+			}
+#endif  // IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 
 			// If this is the global context, null it out
 			if ( ctx == gs_pContext )

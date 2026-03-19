@@ -211,6 +211,9 @@ struct ImWidgetsShapeCache
 typedef ImU32( *ImWidgetsColor1DCallback )( float x, void* );
 typedef ImU32( *ImWidgetsColor2DCallback )( float x, float y, void* );
 
+// Opaque Slug font rendering state (defined in dear_widgets.cpp, inside namespace ImWidgets)
+namespace ImWidgets { struct ImWidgetsSlugState; }
+
 struct ImWidgetsContext
 {
 	ImTextureID						blackImg; // 4x4 RGBA UInt8 Black Image: { Linear, Clamp }
@@ -220,6 +223,8 @@ struct ImWidgetsContext
 
 	ImDrawShader					markerShader;
 	ImDrawShader					lineShader;
+	ImDrawShader					slugShader;    // Slug GPU font rendering shader
+	ImWidgets::ImWidgetsSlugState*	slugState;     // Per-context Slug font atlas cache
 };
 
 enum ImWidgetsStyleColor
@@ -2685,6 +2690,24 @@ namespace ImWidgets{
 	IMGUI_API ImTextureID GetWhiteTexture();
 
 	IMGUI_API void OwnTexture( ImTextureID tex );
+
+	//////////////////////////////////////////////////////////////////////////
+	// Slug GPU Text Rendering
+	// Renders resolution-independent text using the Slug algorithm (Eric Lengyel, public domain 2026).
+	// Uses the current ImGui font by extracting its TTF outline data for GPU Bezier rendering.
+	// Produces crisp results at any scale or viewing angle without texture atlases or distance fields.
+	//////////////////////////////////////////////////////////////////////////
+	// Guard against Win32's DrawText/DrawTextA macro collision (winuser.h)
+#ifdef DrawText
+#undef DrawText
+#endif
+#ifdef DrawTextA
+#undef DrawTextA
+#endif
+	// Use current ImGui font/size at pos
+	IMGUI_API void DrawText( ImDrawList* pDrawList, ImVec2 pos, ImU32 col, const char* text, const char* text_end = nullptr );
+	// Explicit font and size (pass nullptr/0 to use current)
+	IMGUI_API void DrawText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, ImU32 col, const char* text, const char* text_end = nullptr );
 
 	//////////////////////////////////////////////////////////////////////////
 	// DrawList

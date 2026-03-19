@@ -269,6 +269,8 @@ struct ShapeDebugState {
 
 void ShowSampleOffscreen00();
 
+ImFont* g_cinzelFont = nullptr;
+
 ImTextureID background;
 ImVec2 background_size;
 ImTextureID illlustration_img;
@@ -352,6 +354,10 @@ int main()
 
 	// Load fonts (FontScaleDpi handles DPI scaling at render time)
 	io.Fonts->AddFontFromFileTTF( "../extern/FiraCode/distr/ttf/FiraCode-Medium.ttf", 16.0f );
+
+	// Cinzel: classical Roman display serif used exclusively for the Slug GPU text demo.
+	// Rasterized at 24 px just so ImGui holds the TTF data; Slug renders at any size.
+	g_cinzelFont = io.Fonts->AddFontFromFileTTF( "Cinzel.ttf", 24.0f );
 
 	ImGuiStyle& style = ImGui::GetStyle();
 	style.ScaleAllSizes( dpi_scale );
@@ -676,6 +682,61 @@ namespace ImWidgets {
 		ImGui::Text( "Vtx: %d", shape.vertices.size() );
 	}
 
+	void ShowDrawTextDemo()
+	{
+		ApplyOpenAll();
+		if ( !ImGui::CollapsingHeader( "GPU Text (Slug)" ) )
+			return;
+
+		if ( !g_cinzelFont )
+		{
+			ImGui::TextDisabled( "Cinzel.ttf not loaded." );
+			return;
+		}
+
+		static char text_buf[256] = "Veritas et Lux";
+		static float font_size = 48.0f;
+		static ImVec4 color_v( 0.92f, 0.82f, 0.60f, 1.0f );  // warm gold
+		static ImU32  color_u = ImGui::ColorConvertFloat4ToU32( color_v );
+
+		ImGui::InputText( "Text##SlugDemo", text_buf, sizeof( text_buf ) );
+		ImGui::DragFloat( "Font Size##SlugDemo", &font_size, 0.5f, 8.0f, 300.0f, "%.0f px" );
+		if ( ImGui::ColorEdit4( "Color##SlugDemo", &color_v.x ) )
+			color_u = ImGui::ColorConvertFloat4ToU32( color_v );
+
+		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+		float const canvas_w  = CanvasSize();
+
+		// ── Cinzel cascade: resolution-independent GPU rendering ──────────────
+		ImGui::Separator();
+		ImGui::TextDisabled( "Cinzel (GPU / Slug) — crisp at every size:" );
+
+		static const float kSizes[] = { 16.0f, 24.0f, 36.0f, 56.0f, 80.0f, 120.0f };
+		for ( float sz : kSizes )
+		{
+			ImVec2 pos = ImGui::GetCursorScreenPos();
+			ImWidgets::DrawText( pDrawList, g_cinzelFont, sz, pos, color_u, text_buf );
+			ImGui::Dummy( ImVec2( canvas_w, sz * 1.3f ) );
+		}
+
+		// ── Side-by-side comparison ───────────────────────────────────────────
+		ImGui::Separator();
+		ImGui::TextDisabled( "GPU (Slug) vs. ImGui bitmap at %.0f px:", font_size );
+
+		ImGui::TextDisabled( "Slug GPU:" );
+		{
+			ImVec2 pos = ImGui::GetCursorScreenPos();
+			ImWidgets::DrawText( pDrawList, g_cinzelFont, font_size, pos, color_u, text_buf );
+			ImGui::Dummy( ImVec2( canvas_w, font_size * 1.3f ) );
+		}
+		ImGui::TextDisabled( "ImGui bitmap (rasterised at 24 px, scaled):" );
+		{
+			ImVec2 pos = ImGui::GetCursorScreenPos();
+			pDrawList->AddText( g_cinzelFont, font_size, pos, color_u, text_buf );
+			ImGui::Dummy( ImVec2( canvas_w, font_size * 1.3f ) );
+		}
+	}
+
 	void ShowCustomShaderDemo()
 	{
 		ApplyOpenAll();
@@ -791,6 +852,7 @@ namespace ImWidgets {
 		{
 			ShowDrawShapeDemo();
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+			ShowDrawTextDemo();
 			ShowCustomShaderDemo();
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Primitives##Draw" ) )

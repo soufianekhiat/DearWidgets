@@ -1,0 +1,131 @@
+// Slug GPU Font Rendering - Pixel Shader (Metal MSL)
+// Based on the Slug Algorithm by Eric Lengyel (public domain, 2026)
+#include <metal_stdlib>
+#include <metal_math>
+using namespace metal;
+
+#define SLUG_BAND_TEXTURE_WIDTH  4096
+#define SLUG_LOG_BAND_TEX_WIDTH  12
+
+struct PS_INPUT
+{
+    float4 pos      [[position]];
+    float4 color    [[user(COLOR)]];
+    float2 texcoord [[user(TEXCOORD)]];
+    float4 banding  [[flat, user(BANDING)]];
+    int4   glyph    [[flat, user(GLYPH)]];
+};
+
+int2 BandLoad(texture2d<float> bandTex, int2 coord)
+{
+    float4 raw = bandTex.read(uint2(coord));
+    return int2(int(raw.r + 0.5f), int(raw.g + 0.5f));
+}
+
+float4 CurveLoad(texture2d<float> curveTex, int2 coord)
+{
+    return curveTex.read(uint2(coord));
+}
+
+int2 CalcBandLoc(int2 glyphLoc, int offset)
+{
+    int2 loc = int2(glyphLoc.x + offset, glyphLoc.y);
+    loc.y += loc.x >> SLUG_LOG_BAND_TEX_WIDTH;
+    loc.x &= SLUG_BAND_TEXTURE_WIDTH - 1;
+    return loc;
+}
+
+uint CalcRootCode(float y1, float y2, float y3)
+{
+    uint i1 = as_type<uint>(y1) >> 31u;
+    uint i2 = as_type<uint>(y2) >> 30u;
+    uint i3 = as_type<uint>(y3) >> 29u;
+    uint shift = (i2 & 2u) | (i1 & ~2u);
+    shift = (i3 & 4u) | (shift & ~4u);
+    return (0x2E74u >> shift) & 0x0101u;
+}
+
+float2 SolveHorizPoly(float4 p12, float2 p3)
+{
+    float2 a = p12.xy - p12.zw * 2.0f + p3;
+    float2 b = p12.xy - p12.zw;
+    float ra = 1.0f / a.y, rb = 0.5f / b.y;
+    float d  = sqrt(max(b.y * b.y - a.y * p12.y, 0.0f));
+    float t1 = (b.y - d) * ra, t2 = (b.y + d) * ra;
+    if (fabs(a.y) < 1.0f / 65536.0f) { t1 = t2 = p12.y * rb; }
+    return float2((a.x * t1 - b.x * 2.0f) * t1 + p12.x,
+                  (a.x * t2 - b.x * 2.0f) * t2 + p12.x);
+}
+
+float2 SolveVertPoly(float4 p12, float2 p3)
+{
+    float2 a = p12.xy - p12.zw * 2.0f + p3;
+    float2 b = p12.xy - p12.zw;
+    float ra = 1.0f / a.x, rb = 0.5f / b.x;
+    float d  = sqrt(max(b.x * b.x - a.x * p12.x, 0.0f));
+    float t1 = (b.x - d) * ra, t2 = (b.x + d) * ra;
+    if (fabs(a.x) < 1.0f / 65536.0f) { t1 = t2 = p12.x * rb; }
+    return float2((a.y * t1 - b.y * 2.0f) * t1 + p12.y,
+                  (a.y * t2 - b.y * 2.0f) * t2 + p12.y);
+}
+
+[[fragment]]
+float4 main_ps(PS_INPUT input       [[stage_in]],
+               texture2d<float> curveTexture [[texture(0)]],
+               texture2d<float> bandTexture  [[texture(1)]])
+{
+    float2 renderCoord = input.texcoord;
+    int2   glyphLoc    = input.glyph.xy;
+    int2   bandMax     = input.glyph.zw;
+    bandMax.y &= 0x00FF;
+
+    // Metal doesn't have fwidth on fragment stage directly; use dfdx/dfdy
+    float2 emsPerPixel = float2(fabs(dfdx(renderCoord.x)) + fabs(dfdy(renderCoord.x)),
+                                fabs(dfdx(renderCoord.y)) + fabs(dfdy(renderCoord.y)));
+    float2 pixelsPerEm = 1.0f / max(emsPerPixel, float2(1e-10f));
+
+    int2 bandIndex = clamp(int2(renderCoord * input.banding.xy + input.banding.zw),
+                           int2(0, 0), bandMax);
+
+    float xcov = 0.0f, xwgt = 0.0f;
+    int2 hData = BandLoad(bandTexture, int2(glyphLoc.x + bandIndex.y, glyphLoc.y));
+    int2 hLoc  = CalcBandLoc(glyphLoc, hData.y);
+
+    for (int ci = 0; ci < hData.x; ci++)
+    {
+        int2 ref = BandLoad(bandTexture, int2(hLoc.x + ci, hLoc.y));
+        int2 cl  = int2(ref.x, ref.y);
+        float4 p12 = CurveLoad(curveTexture, cl)                  - float4(renderCoord, renderCoord);
+        float2 p3  = CurveLoad(curveTexture, int2(cl.x+1, cl.y)).xy - renderCoord;
+        if (max(max(p12.x, p12.z), p3.x) * pixelsPerEm.x < -0.5f) break;
+        uint code = CalcRootCode(p12.y, p12.w, p3.y);
+        if (code != 0u) {
+            float2 r = SolveHorizPoly(p12, p3) * pixelsPerEm.x;
+            if ((code & 1u) != 0u) { xcov += clamp(r.x+0.5f,0.f,1.f); xwgt = max(xwgt, clamp(1.f-fabs(r.x)*2.f,0.f,1.f)); }
+            if (code > 1u)         { xcov -= clamp(r.y+0.5f,0.f,1.f); xwgt = max(xwgt, clamp(1.f-fabs(r.y)*2.f,0.f,1.f)); }
+        }
+    }
+
+    float ycov = 0.0f, ywgt = 0.0f;
+    int2 vData = BandLoad(bandTexture, int2(glyphLoc.x + bandMax.y + 1 + bandIndex.x, glyphLoc.y));
+    int2 vLoc  = CalcBandLoc(glyphLoc, vData.y);
+
+    for (int ci = 0; ci < vData.x; ci++)
+    {
+        int2 ref = BandLoad(bandTexture, int2(vLoc.x + ci, vLoc.y));
+        int2 cl  = int2(ref.x, ref.y);
+        float4 p12 = CurveLoad(curveTexture, cl)                  - float4(renderCoord, renderCoord);
+        float2 p3  = CurveLoad(curveTexture, int2(cl.x+1, cl.y)).xy - renderCoord;
+        if (max(max(p12.y, p12.w), p3.y) * pixelsPerEm.y < -0.5f) break;
+        uint code = CalcRootCode(p12.x, p12.z, p3.x);
+        if (code != 0u) {
+            float2 r = SolveVertPoly(p12, p3) * pixelsPerEm.y;
+            if ((code & 1u) != 0u) { ycov -= clamp(r.x+0.5f,0.f,1.f); ywgt = max(ywgt, clamp(1.f-fabs(r.x)*2.f,0.f,1.f)); }
+            if (code > 1u)         { ycov += clamp(r.y+0.5f,0.f,1.f); ywgt = max(ywgt, clamp(1.f-fabs(r.y)*2.f,0.f,1.f)); }
+        }
+    }
+
+    float wsum = max(xwgt + ywgt, 1.0f / 65536.0f);
+    float cov  = max(fabs(xcov * xwgt + ycov * ywgt) / wsum, min(fabs(xcov), fabs(ycov)));
+    return input.color * clamp(cov, 0.0f, 1.0f);
+}

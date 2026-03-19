@@ -1,0 +1,73 @@
+// Slug GPU Font Rendering - Vertex Shader (Metal MSL)
+// Based on the Slug Algorithm by Eric Lengyel (public domain, 2026)
+#include <metal_stdlib>
+#include <metal_math>
+using namespace metal;
+
+struct SlugVSConstants
+{
+    float4x4 SlugProjMtx;
+    float2   SlugViewport;
+    float2   _pad;
+};
+
+struct VS_INPUT
+{
+    float4 pos [[attribute(0)]];
+    float4 tex [[attribute(1)]];
+    float4 jac [[attribute(2)]];
+    float4 bnd [[attribute(3)]];
+    float4 col [[attribute(4)]];
+};
+
+struct PS_INPUT
+{
+    float4 pos      [[position]];
+    float4 color    [[user(COLOR)]];
+    float2 texcoord [[user(TEXCOORD)]];
+    float4 banding  [[flat, user(BANDING)]];
+    int4   glyph    [[flat, user(GLYPH)]];
+};
+
+[[vertex]]
+PS_INPUT main_vs(VS_INPUT input [[stage_in]],
+                 constant SlugVSConstants& cb [[buffer(1)]])
+{
+    PS_INPUT output;
+
+    // Unpack glyph location from packed floats
+    uint gx = as_type<uint>(input.tex.z);
+    uint gy = as_type<uint>(input.tex.w);
+    output.glyph = int4(int(gx & 0xFFFFu), int(gx >> 16u),
+                        int(gy & 0xFFFFu), int(gy >> 16u));
+    output.banding = input.bnd;
+    output.color   = input.col;
+
+    // Dynamic dilation
+    float2 n = normalize(input.pos.zw);
+    float4x4 M = cb.SlugProjMtx;
+    // In Metal, matrix is column-major: M[col][row]
+    float4 m0 = float4(M[0][0], M[1][0], M[2][0], M[3][0]);
+    float4 m1 = float4(M[0][1], M[1][1], M[2][1], M[3][1]);
+    float4 m3 = float4(M[0][3], M[1][3], M[2][3], M[3][3]);
+
+    float s  = dot(m3.xy, input.pos.xy) + m3.w;
+    float t  = dot(m3.xy, n);
+    float u  = (s * dot(m0.xy, n) - t * (dot(m0.xy, input.pos.xy) + m0.w)) * cb.SlugViewport.x;
+    float v  = (s * dot(m1.xy, n) - t * (dot(m1.xy, input.pos.xy) + m1.w)) * cb.SlugViewport.y;
+
+    float s2  = s * s;
+    float st  = s * t;
+    float uv2 = u * u + v * v;
+    float denom = uv2 - st * st;
+    float2 d = (fabs(denom) > 1e-10f)
+        ? input.pos.zw * (s2 * (st + sqrt(max(uv2, 0.0f))) / denom)
+        : input.pos.zw;
+
+    float2 p = input.pos.xy + d;
+    output.texcoord = float2(input.tex.x + dot(d, input.jac.xy),
+                             input.tex.y + dot(d, input.jac.zw));
+    output.pos = M * float4(p, 0.0f, 1.0f);
+
+    return output;
+}
