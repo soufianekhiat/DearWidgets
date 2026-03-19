@@ -714,15 +714,25 @@ namespace ImWidgets {
 			return;
 		}
 
-		static char text_buf[256] = "Veritas et Lux";
-		static float font_size = 48.0f;
+		static char   text_buf[256] = "Veritas et Lux";
+		static float  font_size = 48.0f;
 		static ImVec4 color_v( 0.92f, 0.82f, 0.60f, 1.0f );  // warm gold
 		static ImU32  color_u = ImGui::ColorConvertFloat4ToU32( color_v );
+		static bool   use_bg = false;
+		static ImVec4 bg_color_v( 0.12f, 0.12f, 0.18f, 1.0f );  // dark navy
+		static ImU32  bg_color_u = ImGui::ColorConvertFloat4ToU32( bg_color_v );
 
 		ImGui::InputText( "Text##SlugDemo", text_buf, sizeof( text_buf ) );
 		ImGui::DragFloat( "Font Size##SlugDemo", &font_size, 0.5f, 8.0f, 300.0f, "%.0f px" );
 		if ( ImGui::ColorEdit4( "Color##SlugDemo", &color_v.x ) )
 			color_u = ImGui::ColorConvertFloat4ToU32( color_v );
+		ImGui::Checkbox( "Background##SlugDemo", &use_bg );
+		if ( use_bg )
+		{
+			ImGui::SameLine();
+			if ( ImGui::ColorEdit4( "##BgColor", &bg_color_v.x, ImGuiColorEditFlags_NoLabel ) )
+				bg_color_u = ImGui::ColorConvertFloat4ToU32( bg_color_v );
+		}
 
 		struct FontEntry { ImFont** font; const char* label; };
 		static const FontEntry kFonts[] = {
@@ -740,15 +750,35 @@ namespace ImWidgets {
 
 		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 		float const canvas_w  = CanvasSize();
+		float const gap       = ImGui::GetStyle().ItemSpacing.y;
 
 		ImGui::Separator();
 		for ( const FontEntry& e : kFonts )
 		{
 			if ( !*e.font ) continue;
-			ImGui::TextDisabled( "%s:", e.label );
-			ImVec2 pos = ImGui::GetCursorScreenPos();
-			ImWidgets::DrawText( pDrawList, *e.font, font_size, pos, color_u, text_buf );
-			ImGui::Dummy( ImVec2( canvas_w, font_size * 1.3f ) );
+
+			ImFont* f     = *e.font;
+			float   asc   = 0.0f;
+			ImVec2  sz    = ImWidgets::CalcTextSize( f, font_size, text_buf, nullptr, &asc );
+			float   line_h = sz.y + gap;
+
+			// Font name in solid black
+			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 0, 0, 0, 255 ) );
+			ImGui::Text( "%s:", e.label );
+			ImGui::PopStyleColor();
+
+			// Optional colored background spanning the full window width
+			ImVec2 pos     = ImGui::GetCursorScreenPos();
+			if ( use_bg )
+			{
+				float win_x0 = ImGui::GetWindowPos().x;
+				float win_x1 = win_x0 + ImGui::GetWindowWidth();
+				pDrawList->AddRectFilled( ImVec2( win_x0, pos.y ), ImVec2( win_x1, pos.y + sz.y ), bg_color_u );
+			}
+
+			// DrawText baseline shifted down by ascent so glyph top aligns with cursor
+			ImWidgets::DrawText( pDrawList, f, font_size, ImVec2( pos.x, pos.y + asc ), color_u, text_buf );
+			ImGui::Dummy( ImVec2( canvas_w, line_h ) );
 		}
 	}
 

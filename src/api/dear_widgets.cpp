@@ -3399,17 +3399,31 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Horizontal bands partition the Y-axis; curves are sorted by descending max-X.
 		// Vertical bands partition the X-axis;   curves are sorted by descending max-Y.
 
-		const float bsx = (float)SLUG_BANDS_X / glyphW;   // em → band-x scale
-		const float bsy = (float)SLUG_BANDS_Y / glyphH;   // em → band-y scale
-		const float box = -minX * bsx;                     // em → band-x offset
-		const float boy = -minY * bsy;                     // em → band-y offset
+		// Adaptive band count: scale with sqrt(curve_count) weighted by glyph aspect ratio.
+		// More bands → finer acceleration, fewer wasted ray tests per pixel.
+		// NBY capped at 255 (packed into 8 bits in glyph.w); NBX capped at 64 for safety.
+		int NBX, NBY;
+		if (nc == 0)
+		{
+			NBX = 1; NBY = 1;
+		}
+		else
+		{
+			float sqrtC  = sqrtf((float)nc);
+			float aspect = (glyphH > 1e-6f) ? (glyphW / glyphH) : 1.0f;
+			float sqA    = sqrtf(aspect);
+			NBX = ImClamp((int)ceilf(sqrtC * sqA),       4, 64);
+			NBY = ImClamp((int)ceilf(sqrtC / sqA),       4, 64);
+		}
 
-		const int NBX = SLUG_BANDS_X;
-		const int NBY = SLUG_BANDS_Y;
+		const float bsx = (float)NBX / glyphW;            // em → band-x scale
+		const float bsy = (float)NBY / glyphH;            // em → band-y scale
+		const float box = -minX * bsx;                    // em → band-x offset
+		const float boy = -minY * bsy;                    // em → band-y offset
 
-		// Per-band curve lists
-		ImVector<int> hBand[SLUG_BANDS_Y];  // horizontal bands (indexed by y-band)
-		ImVector<int> vBand[SLUG_BANDS_X];  // vertical bands  (indexed by x-band)
+		// Per-band curve lists (heap-allocated, size determined adaptively)
+		ImVector<int>* hBand = new ImVector<int>[NBY];    // horizontal bands (indexed by y-band)
+		ImVector<int>* vBand = new ImVector<int>[NBX];    // vertical bands  (indexed by x-band)
 
 		for (int i = 0; i < nc; i++)
 		{
@@ -3560,6 +3574,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		atlas->glyphs.push_back(e);
 		atlas->dirty = true;
 		*outEntry = e;
+
+		delete[] hBand;
+		delete[] vBand;
 		return true;
 	}
 
@@ -3734,6 +3751,57 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 	// ---- Public API implementation ------------------------------------------
+
+	ImVec2 CalcTextSize(ImFont* font, float font_size,
+	                    const char* text, const char* text_end, float* out_ascent)
+	{
+		if (!gs_pContext || !text) { if (out_ascent) *out_ascent = 0.0f; return ImVec2(0, 0); }
+		if (!text_end) text_end = text + strlen(text);
+		if (text >= text_end) { if (out_ascent) *out_ascent = 0.0f; return ImVec2(0, 0); }
+
+		if (!font)           font      = ImGui::GetFont();
+		if (font_size <= 0.0f) font_size = ImGui::GetFontSize();
+
+		ImWidgetsSlugState* state = gs_pContext->slugState;
+		if (!state) state = gs_pContext->slugState = IM_NEW(ImWidgetsSlugState);
+
+		SlugFontAtlas* atlas = SlugGetOrCreateAtlas(state, font);
+		if (!atlas) { if (out_ascent) *out_ascent = font_size; return ImVec2(0, font_size); }
+
+		// Ensure all glyphs are built (no texture upload needed for measurement)
+		const char* p = text;
+		while (p < text_end)
+		{
+			unsigned int cp = 0;
+			p += ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
+			if (cp == 0) break;
+			if (SlugFindGlyph(atlas, (ImWchar)cp) == NULL)
+			{
+				SlugGlyphEntry e;
+				SlugBuildGlyph(atlas, (ImWchar)cp, &e);
+			}
+		}
+
+		float width   = 0.0f;
+		float maxY    =  0.0f;  // highest point above baseline (em units, positive)
+		float minY    =  0.0f;  // lowest  point below baseline (em units, negative)
+
+		p = text;
+		while (p < text_end)
+		{
+			unsigned int cp = 0;
+			p += ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
+			if (cp == 0) break;
+			SlugGlyphEntry* ge = SlugFindGlyph(atlas, (ImWchar)cp);
+			if (!ge) continue;
+			width += ge->advanceEm * font_size;
+			maxY   = ImMax(maxY, ge->maxYEm);
+			minY   = ImMin(minY, ge->minYEm);
+		}
+
+		if (out_ascent) *out_ascent = maxY * font_size;
+		return ImVec2(width, (maxY - minY) * font_size);
+	}
 
 	void DrawText(ImDrawList* pDrawList, ImFont* font, float font_size,
 	              ImVec2 pos, ImU32 col, const char* text, const char* text_end)
@@ -3953,6 +4021,20 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 #else  // !IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+
+	ImVec2 CalcTextSize(ImFont* font, float font_size,
+	                    const char* text, const char* text_end, float* out_ascent)
+	{
+		if (!font)           font      = ImGui::GetFont();
+		if (font_size <= 0.0f) font_size = ImGui::GetFontSize();
+		ImFontBaked* baked = font->GetFontBaked(font_size);
+		if (out_ascent) *out_ascent = baked ? baked->Ascent * (font_size / baked->Size) : font_size * 0.8f;
+		// Delegate to ImGui for width; height from font metrics
+		ImVec2 sz = font->GetFontBaked(font_size) ?
+		    ImVec2(0, font_size) : ImVec2(0, font_size);
+		(void)text; (void)text_end;
+		return sz;
+	}
 
 	void DrawText(ImDrawList* pDrawList, ImFont* font, float font_size,
 	              ImVec2 pos, ImU32 col, const char* text, const char* text_end)

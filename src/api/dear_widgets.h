@@ -2708,6 +2708,9 @@ namespace ImWidgets{
 	IMGUI_API void DrawText( ImDrawList* pDrawList, ImVec2 pos, ImU32 col, const char* text, const char* text_end = nullptr );
 	// Explicit font and size (pass nullptr/0 to use current)
 	IMGUI_API void DrawText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, ImU32 col, const char* text, const char* text_end = nullptr );
+	// Measure text rendered via DrawText. Returns (width, height) in pixels.
+	// out_ascent: if non-null, receives the distance above the baseline (i.e. pass cursor.y + ascent as baseline to DrawText).
+	IMGUI_API ImVec2 CalcTextSize( ImFont* font, float font_size, const char* text, const char* text_end = nullptr, float* out_ascent = nullptr );
 
 	//////////////////////////////////////////////////////////////////////////
 	// DrawList
