@@ -1,4 +1,4 @@
-﻿#include <dear_widgets.h>
+#include <dear_widgets.h>
 
 // Include stb_rect_pack first so stbrp_node is a proper named struct,
 // compatible with imgui_internal.h's 'struct stbrp_node;' forward declaration.
@@ -3155,9 +3155,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// One quadratic Bezier curve in em-space (TTF coordinate system, Y-up)
 	struct SlugCurve
 	{
-		float p1x, p1y;  // start point
-		float p2x, p2y;  // control point
-		float p3x, p3y;  // end point
+		float p1x, p1y;   // start point
+		float p2x, p2y;   // ctrl1 (quadratic) / cubic ctrl1
+		float p3x, p3y;   // end (quadratic) / cubic ctrl2
+		float p4x, p4y;   // end point (cubic only)
+		bool  isCubic;
 	};
 
 	// Cached per-glyph rendering data
@@ -3321,8 +3323,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				break;
 			case STBTT_vline:
 			{
-				// Line → degenerate quadratic (midpoint as control point)
-				SlugCurve c;
+				// Line: degenerate quadratic (midpoint as control point)
+				SlugCurve c = {};
 				c.p1x = curX; c.p1y = curY;
 				c.p2x = (curX + vx) * 0.5f; c.p2y = (curY + vy) * 0.5f;
 				c.p3x = vx;   c.p3y = vy;
@@ -3332,7 +3334,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			}
 			case STBTT_vcurve:
 			{
-				SlugCurve c;
+				SlugCurve c = {};
 				c.p1x = curX; c.p1y = curY;
 				c.p2x = vcx;  c.p2y = vcy;
 				c.p3x = vx;   c.p3y = vy;
@@ -3342,20 +3344,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			}
 			case STBTT_vcubic:
 			{
-				// Approximate cubic with two quadratics by splitting at t=0.5
+				// Store native cubic Bezier -- solved exactly in the pixel shader
 				float cx0 = v.cx  * sc, cy0 = v.cy  * sc;
 				float cx1 = v.cx1 * sc, cy1 = v.cy1 * sc;
-				float mx = (curX + 3.0f * cx0 + 3.0f * cx1 + vx) / 8.0f;
-				float my = (curY + 3.0f * cy0 + 3.0f * cy1 + vy) / 8.0f;
-				SlugCurve c1, c2;
-				c1.p1x = curX; c1.p1y = curY;
-				c1.p2x = (curX + cx0) * 0.5f; c1.p2y = (curY + cy0) * 0.5f;
-				c1.p3x = mx;   c1.p3y = my;
-				c2.p1x = mx;   c2.p1y = my;
-				c2.p2x = (cx1 + vx) * 0.5f; c2.p2y = (cy1 + vy) * 0.5f;
-				c2.p3x = vx;   c2.p3y = vy;
-				curves.push_back(c1);
-				curves.push_back(c2);
+				SlugCurve c = {};
+				c.p1x = curX; c.p1y = curY;
+				c.p2x = cx0;  c.p2y = cy0;
+				c.p3x = cx1;  c.p3y = cy1;
+				c.p4x = vx;   c.p4y = vy;
+				c.isCubic = true;
+				curves.push_back(c);
 				curX = vx; curY = vy;
 				break;
 			}
@@ -3392,7 +3390,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			curveLocY[i] = cy;
 			const SlugCurve& c = curves[i];
 			SlugCurveWrite4f(atlas, cx,   cy, c.p1x, c.p1y, c.p2x, c.p2y);
-			SlugCurveWrite4f(atlas, cx+1, cy, c.p3x, c.p3y, 0.0f,  0.0f );
+			// For cubics texel1.zw stores p4; for quadratics it stays (0,0) -- shader reads zw only when isCubic flag set
+			SlugCurveWrite4f(atlas, cx+1, cy, c.p3x, c.p3y, c.isCubic ? c.p4x : 0.0f, c.isCubic ? c.p4y : 0.0f);
 		}
 
 		// ---- band assignment ----
@@ -3428,10 +3427,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		for (int i = 0; i < nc; i++)
 		{
 			const SlugCurve& c = curves[i];
-			float cMinX = ImMin(ImMin(c.p1x, c.p2x), c.p3x);
-			float cMaxX = ImMax(ImMax(c.p1x, c.p2x), c.p3x);
-			float cMinY = ImMin(ImMin(c.p1y, c.p2y), c.p3y);
-			float cMaxY = ImMax(ImMax(c.p1y, c.p2y), c.p3y);
+			float cMinX = c.isCubic ? ImMin(ImMin(ImMin(c.p1x, c.p2x), c.p3x), c.p4x) : ImMin(ImMin(c.p1x, c.p2x), c.p3x);
+			float cMaxX = c.isCubic ? ImMax(ImMax(ImMax(c.p1x, c.p2x), c.p3x), c.p4x) : ImMax(ImMax(c.p1x, c.p2x), c.p3x);
+			float cMinY = c.isCubic ? ImMin(ImMin(ImMin(c.p1y, c.p2y), c.p3y), c.p4y) : ImMin(ImMin(c.p1y, c.p2y), c.p3y);
+			float cMaxY = c.isCubic ? ImMax(ImMax(ImMax(c.p1y, c.p2y), c.p3y), c.p4y) : ImMax(ImMax(c.p1y, c.p2y), c.p3y);
 
 			// Horizontal bands: which y-strips does this curve's y-extent overlap?
 			int hyMin = (int)(( cMinY - minY ) * bsy);
@@ -3450,21 +3449,29 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				vBand[b].push_back(i);
 		}
 
-		// Sort horizontal bands by descending max-X (for early-exit in the PS)
+		// Sort horizontal bands by descending max-X (for early-exit in the PS).
+		// Sort key must match the shader's early-exit check: max over all control points.
+		auto CurveMaxX = [&](int idx) -> float {
+			const SlugCurve& c = curves[idx];
+			float m = ImMax(ImMax(c.p1x, c.p2x), c.p3x);
+			return c.isCubic ? ImMax(m, c.p4x) : m;
+		};
+		auto CurveMaxY = [&](int idx) -> float {
+			const SlugCurve& c = curves[idx];
+			float m = ImMax(ImMax(c.p1y, c.p2y), c.p3y);
+			return c.isCubic ? ImMax(m, c.p4y) : m;
+		};
+
 		for (int b = 0; b < NBY; b++)
 		{
 			ImVector<int>& lst = hBand[b];
-			// Simple insertion sort (lists are short)
 			for (int i = 1; i < lst.Size; i++)
 			{
-				int key = lst[i];
-				float keyMaxX = ImMax(ImMax(curves[key].p1x, curves[key].p2x), curves[key].p3x);
+				int   key     = lst[i];
+				float keyMaxX = CurveMaxX(key);
 				int j = i - 1;
-				while (j >= 0)
+				while (j >= 0 && CurveMaxX(lst[j]) < keyMaxX)
 				{
-					int cj = lst[j];
-					float cjMaxX = ImMax(ImMax(curves[cj].p1x, curves[cj].p2x), curves[cj].p3x);
-					if (cjMaxX >= keyMaxX) break;
 					lst[j + 1] = lst[j];
 					j--;
 				}
@@ -3478,14 +3485,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImVector<int>& lst = vBand[b];
 			for (int i = 1; i < lst.Size; i++)
 			{
-				int key = lst[i];
-				float keyMaxY = ImMax(ImMax(curves[key].p1y, curves[key].p2y), curves[key].p3y);
+				int   key     = lst[i];
+				float keyMaxY = CurveMaxY(key);
 				int j = i - 1;
-				while (j >= 0)
+				while (j >= 0 && CurveMaxY(lst[j]) < keyMaxY)
 				{
-					int cj = lst[j];
-					float cjMaxY = ImMax(ImMax(curves[cj].p1y, curves[cj].p2y), curves[cj].p3y);
-					if (cjMaxY >= keyMaxY) break;
 					lst[j + 1] = lst[j];
 					j--;
 				}
@@ -3535,7 +3539,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				int ci = hBand[b][i];
 				int ax, ay;
 				SlugBandCalcLoc(glyphLocX, glyphLocY, nextOffset + i, &ax, &ay);
-				SlugBandWrite2f(atlas, ax, ay, (float)curveLocX[ci], (float)curveLocY[ci]);
+				// Bit 12 (0x1000) of curveLocX encodes isCubic flag; curveTex is 4096 wide so bits 12+ are free
+			SlugBandWrite2f(atlas, ax, ay, (float)(curveLocX[ci] | (curves[ci].isCubic ? 0x1000 : 0)), (float)curveLocY[ci]);
 			}
 			nextOffset += hBand[b].Size;
 		}
@@ -3551,7 +3556,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				int ci = vBand[b][i];
 				int ax, ay;
 				SlugBandCalcLoc(glyphLocX, glyphLocY, nextOffset + i, &ax, &ay);
-				SlugBandWrite2f(atlas, ax, ay, (float)curveLocX[ci], (float)curveLocY[ci]);
+				// Bit 12 (0x1000) of curveLocX encodes isCubic flag; curveTex is 4096 wide so bits 12+ are free
+			SlugBandWrite2f(atlas, ax, ay, (float)(curveLocX[ci] | (curves[ci].isCubic ? 0x1000 : 0)), (float)curveLocY[ci]);
 			}
 			nextOffset += vBand[b].Size;
 		}

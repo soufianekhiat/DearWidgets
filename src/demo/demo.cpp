@@ -714,7 +714,7 @@ namespace ImWidgets {
 			return;
 		}
 
-		static char   text_buf[256] = "Veritas et Lux";
+		static char   text_buf[256] = "Dear Widgets";
 		static float  font_size = 48.0f;
 		static ImVec4 color_v( 0.92f, 0.82f, 0.60f, 1.0f );  // warm gold
 		static ImU32  color_u = ImGui::ColorConvertFloat4ToU32( color_v );
