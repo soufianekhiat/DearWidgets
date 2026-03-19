@@ -1,81 +1,85 @@
-// Slug GPU Font Rendering - HLSL Shader (VS + PS)
-// Based on the Slug Algorithm by Eric Lengyel (public domain, 2026)
-// https://sluglibrary.com
+// ===================================================
+// Slug GPU Font Rendering - DearWidgets HLSL Shader
+// Based on the reference implementation by Eric Lengyel
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2017, by Eric Lengyel.
+// ===================================================
 //
-// Single draw call design: all glyphs in a DrawText call share one geometry
-// draw command. Per-glyph Slug data is stored in a cbuffer array (slugGlyphData),
-// indexed by glyph index encoded in the vertex color (R=low byte, G=high byte).
-// Entry points: main_vs (vertex), main_ps (pixel)
+// Vertex format (SlugVertex, 56 bytes):
+//   POSITION  float2  (offset  0) - screen-space position, CPU-dilated by 0.5 px
+//   TEXCOORD0 float4  (offset  8) - xy = em-space UV (CPU-dilated), zw = packed glyph data
+//   TEXCOORD1 float4  (offset 24) - band transform (scaleX, scaleY, offsetX, offsetY)
+//   COLOR0    float4  (offset 40) - RGBA vertex color
+//
+// tex.z interpreted as uint: bits 0-15 = bandTexX, bits 16-31 = bandTexY
+// tex.w interpreted as uint: bits 0-7  = bandMaxX, bits 16-23 = bandMaxY, bit 28 = E (even-odd)
+//
+// Entry points: main_vs, main_ps
 
 // ---- Constant Buffers -------------------------------------------------------
 
-// b0: ImGui's standard projection matrix (set by ImGui DX11 backend)
+// b0: ImGui orthographic projection matrix (set by ImPlatform_BeginCustomShader)
 cbuffer vertexBuffer : register(b0)
 {
     float4x4 ProjectionMatrix;
 };
 
-// b1: per-batch Slug data, set via ImPlatform_SetShaderUniform before each draw
-// Layout (must match SlugBatchCBData trailing float array in C++):
-//   slugTextColor       : RGBA text color as float4
-//   slugGlyphData[0]    : bandLoc for glyph 0  (xy=bandTexX/Y, zw=bandMaxX/Y)
-//   slugGlyphData[1]    : banding for glyph 0  (xy=bandScale,  zw=bandOffset)
-//   slugGlyphData[2]    : bandLoc for glyph 1
-//   slugGlyphData[3]    : banding for glyph 1
-//   ... (2 float4s per glyph, up to 256 glyphs = 512 float4s)
-cbuffer slugBatch : register(b1)
-{
-    float4 slugTextColor;
-    float4 slugGlyphData[512];   // supports up to 256 glyphs per DrawText call
-};
-
 // ---- Textures ---------------------------------------------------------------
 
-// curveTexture: each quadratic Bezier curve uses 2 consecutive texels
+// curveTexture (t0): RGBA32F, each quadratic Bezier uses 2 consecutive texels
 //   texel 0: (p1.x, p1.y, p2.x, p2.y)
 //   texel 1: (p3.x, p3.y, 0, 0)
 Texture2D<float4> curveTexture : register(t0);
 
-// bandTexture: integers stored as exact floats
-//   band headers: (count, offset, 0, 0)
-//   curve refs:   (curveTexX, curveTexY, 0, 0)
-Texture2D<float4> bandTexture  : register(t1);
+// bandTexture (t1): RGBA32F storing integer values as exact floats
+//   band headers: (.r=count, .g=offset, 0, 0)
+//   curve refs:   (.r=curveTexX, .g=curveTexY, 0, 0)
+Texture2D<float4> bandTexture : register(t1);
 
 // ---- Structs ----------------------------------------------------------------
 
-// Matches ImDrawVert: pos(float2) + uv(float2) + col(RGBA8 UNORM)
 struct VS_INPUT
 {
-    float2 pos : POSITION;   // screen-space position
-    float2 uv  : TEXCOORD0;  // em-space render coordinate (Slug renderCoord)
-    float4 col : COLOR0;     // glyph index encoded as UNORM (r=low byte, g=high byte)
+    float2 pos  : POSITION;   // screen-space position (CPU-dilated)
+    float4 tex  : TEXCOORD0;  // xy = em UV, zw = packed glyph location + band max
+    float4 bnd  : TEXCOORD1;  // band transform: scaleX, scaleY, offsetX, offsetY
+    float4 col  : COLOR0;     // RGBA vertex color (float)
 };
 
 struct PS_INPUT
 {
-    float4 pos                      : SV_POSITION;
-    float2 renderCoord              : TEXCOORD0;  // em-space coord, interpolated
-    nointerpolation uint glyphIndex : TEXCOORD1;  // constant across the primitive
+    float4 position                 : SV_Position;
+    float4 color                    : COLOR0;
+    float2 texcoord                 : TEXCOORD0;  // em-space sample coord (interpolated)
+    nointerpolation float4 banding  : TEXCOORD1;  // band scale/offset, constant per glyph
+    nointerpolation int4 glyph      : TEXCOORD2;  // glyph loc + band max + flags, constant per glyph
 };
 
 // ---- Vertex Shader ----------------------------------------------------------
 
+// Decode packed per-glyph data from tex.zw and pass through bnd.
+// tex.z (as uint): bits  0-15 = glyph band texture X, bits 16-31 = glyph band texture Y
+// tex.w (as uint): bits  0-15 = bandMaxX,             bits 16-31 = bandMaxY | (E << 12)
+void SlugUnpack(float4 tex, float4 bnd, out float4 vbnd, out int4 vgly)
+{
+    uint2 g  = asuint(tex.zw);
+    vgly = int4(int(g.x & 0xFFFFU), int(g.x >> 16U), int(g.y & 0xFFFFU), int(g.y >> 16U));
+    vbnd = bnd;
+}
+
 PS_INPUT main_vs(VS_INPUT input)
 {
     PS_INPUT output;
-    output.pos         = mul(ProjectionMatrix, float4(input.pos, 0.f, 1.f));
-    output.renderCoord = input.uv;
-    // Decode glyph index from UNORM vertex color: R=low byte, G=high byte
-    // IM_COL32(gi & 0xFF, (gi >> 8) & 0xFF, 0, 255) → ABGR in memory → col.r=R, col.g=G
-    output.glyphIndex  = (uint)(input.col.r * 255.0f + 0.5f)
-                       | ((uint)(input.col.g * 255.0f + 0.5f) << 8);
+    output.position = mul(ProjectionMatrix, float4(input.pos, 0.f, 1.f));
+    output.texcoord = input.tex.xy;
+    output.color    = input.col;
+    SlugUnpack(input.tex, input.bnd, output.banding, output.glyph);
     return output;
 }
 
 // ---- Pixel Shader -----------------------------------------------------------
 
-#define SLUG_BAND_TEXTURE_WIDTH  4096
-#define SLUG_LOG_BAND_TEX_WIDTH  12
+#define kLogBandTextureWidth 12
 
 int2 BandLoad(int2 coord)
 {
@@ -88,11 +92,11 @@ float4 CurveLoad(int2 coord)
     return curveTexture.Load(int3(coord, 0));
 }
 
-int2 CalcBandLoc(int2 glyphLoc, int offset)
+int2 CalcBandLoc(int2 glyphLoc, uint offset)
 {
-    int2 loc = int2(glyphLoc.x + offset, glyphLoc.y);
-    loc.y += loc.x >> SLUG_LOG_BAND_TEX_WIDTH;
-    loc.x &= SLUG_BAND_TEXTURE_WIDTH - 1;
+    int2 loc = int2(glyphLoc.x + int(offset), glyphLoc.y);
+    loc.y   += loc.x >> kLogBandTextureWidth;
+    loc.x   &= (1 << kLogBandTextureWidth) - 1;
     return loc;
 }
 
@@ -134,43 +138,59 @@ float2 SolveVertPoly(float4 p12, float2 p3)
                   (a.y * t2 - b.y * 2.0f) * t2 + p12.y);
 }
 
-float CalcCoverage(float xcov, float ycov, float xwgt, float ywgt)
+float CalcCoverage(float xcov, float ycov, float xwgt, float ywgt, int flags)
 {
-    float wsum = max(xwgt + ywgt, 1.0f / 65536.0f);
-    float cov  = max(abs(xcov * xwgt + ycov * ywgt) / wsum,
-                     min(abs(xcov), abs(ycov)));
-    return saturate(cov);
+    float coverage = max(abs(xcov * xwgt + ycov * ywgt) / max(xwgt + ywgt, 1.0f / 65536.0f),
+                         min(abs(xcov), abs(ycov)));
+
+#if defined(SLUG_EVENODD)
+    if ((flags & 0x1000) == 0)
+    {
+#endif
+        // Nonzero fill rule
+        coverage = saturate(coverage);
+#if defined(SLUG_EVENODD)
+    }
+    else
+    {
+        // Even-odd fill rule
+        coverage = 1.0f - abs(1.0f - frac(coverage * 0.5f) * 2.0f);
+    }
+#endif
+
+#if defined(SLUG_WEIGHT)
+    // Square-root boost for optical weight on thin strokes
+    coverage = sqrt(coverage);
+#endif
+
+    return coverage;
 }
 
 float4 main_ps(PS_INPUT input) : SV_Target
 {
-    float2 renderCoord = input.renderCoord;
-
-    // Fetch per-glyph data from the batch cbuffer using the flat-shaded glyph index
-    uint gi = input.glyphIndex;
-    float4 bandLoc = slugGlyphData[gi * 2u + 0u];
-    float4 banding = slugGlyphData[gi * 2u + 1u];
-
-    int2 glyphLoc = int2(int(bandLoc.x + 0.5f), int(bandLoc.y + 0.5f));
-    int2 bandMax  = int2(int(bandLoc.z + 0.5f), int(bandLoc.w + 0.5f));
+    float2 renderCoord = input.texcoord;
 
     float2 emsPerPixel = fwidth(renderCoord);
     float2 pixelsPerEm = 1.0f / emsPerPixel;
 
-    int2 bandIndex = clamp(int2(renderCoord * banding.xy + banding.zw),
+    int2 glyphLoc = input.glyph.xy;
+    int2 bandMax  = input.glyph.zw;
+    bandMax.y    &= 0x00FF;  // strip flags from upper byte; keep only bandMaxY
+
+    int2 bandIndex = clamp(int2(renderCoord * input.banding.xy + input.banding.zw),
                            int2(0, 0), bandMax);
 
-    // ----- Horizontal bands -----
+    // ----- Horizontal band (cast ray leftward) -----
     float xcov = 0.0f, xwgt = 0.0f;
     int2 hData = BandLoad(int2(glyphLoc.x + bandIndex.y, glyphLoc.y));
-    int2 hLoc  = CalcBandLoc(glyphLoc, hData.y);
+    int2 hLoc  = CalcBandLoc(glyphLoc, uint(hData.y));
 
     for (int ci = 0; ci < hData.x; ci++)
     {
         int2   ref      = BandLoad(int2(hLoc.x + ci, hLoc.y));
         int2   curveLoc = int2(ref.x, ref.y);
-        float4 p12 = CurveLoad(curveLoc)                         - float4(renderCoord, renderCoord);
-        float2 p3  = CurveLoad(int2(curveLoc.x+1, curveLoc.y)).xy - renderCoord;
+        float4 p12 = CurveLoad(curveLoc)                          - float4(renderCoord, renderCoord);
+        float2 p3  = CurveLoad(int2(curveLoc.x + 1, curveLoc.y)).xy - renderCoord;
 
         if (max(max(p12.x, p12.z), p3.x) * pixelsPerEm.x < -0.5f) break;
 
@@ -191,17 +211,17 @@ float4 main_ps(PS_INPUT input) : SV_Target
         }
     }
 
-    // ----- Vertical bands -----
+    // ----- Vertical band (cast ray upward) -----
     float ycov = 0.0f, ywgt = 0.0f;
     int2 vData = BandLoad(int2(glyphLoc.x + bandMax.y + 1 + bandIndex.x, glyphLoc.y));
-    int2 vLoc  = CalcBandLoc(glyphLoc, vData.y);
+    int2 vLoc  = CalcBandLoc(glyphLoc, uint(vData.y));
 
     for (int ci = 0; ci < vData.x; ci++)
     {
         int2   ref      = BandLoad(int2(vLoc.x + ci, vLoc.y));
         int2   curveLoc = int2(ref.x, ref.y);
-        float4 p12 = CurveLoad(curveLoc)                         - float4(renderCoord, renderCoord);
-        float2 p3  = CurveLoad(int2(curveLoc.x+1, curveLoc.y)).xy - renderCoord;
+        float4 p12 = CurveLoad(curveLoc)                          - float4(renderCoord, renderCoord);
+        float2 p3  = CurveLoad(int2(curveLoc.x + 1, curveLoc.y)).xy - renderCoord;
 
         if (max(max(p12.y, p12.w), p3.y) * pixelsPerEm.y < -0.5f) break;
 
@@ -222,6 +242,6 @@ float4 main_ps(PS_INPUT input) : SV_Target
         }
     }
 
-    float coverage = CalcCoverage(xcov, ycov, xwgt, ywgt);
-    return slugTextColor * coverage;
+    float coverage = CalcCoverage(xcov, ycov, xwgt, ywgt, input.glyph.w);
+    return input.color * coverage;
 }

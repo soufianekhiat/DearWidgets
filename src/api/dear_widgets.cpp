@@ -3669,92 +3669,66 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	// ---- Slug draw callbacks ------------------------------------------------
 	//
-	// Two paths depending on backend:
+	// DX11 path (reference implementation, single draw call):
+	//   Custom vertex buffer with SlugVertex format (56 bytes):
+	//     POSITION  float2 - screen pos, CPU-dilated by 0.5 px
+	//     TEXCOORD0 float4 - em UV (xy, dilated) + packed glyph data (zw, bit-cast)
+	//     TEXCOORD1 float4 - band transform (scaleX, scaleY, offsetX, offsetY)
+	//     COLOR0    float4 - RGBA vertex color
 	//
-	// DX11 (single draw call, batch):
-	//   All glyphs share one geometry draw command. Per-glyph Slug data lives in
-	//   cbuffer b1 as a float4 array indexed by a glyph index encoded in the
-	//   vertex color (R=low byte, G=high byte, flat-shaded via nointerpolation).
-	//   Cbuffer layout: slugTextColor (float4) + slugGlyphData[512] (float4[]).
-	//   Data: [col.r, col.g, col.b, col.a, g0.bandLoc(4f), g0.banding(4f), ...]
+	//   tex.z bits 0-15 = bandTexX, bits 16-31 = bandTexY
+	//   tex.w bits 0-7  = bandMaxX, bits 16-23 = bandMaxY, bit 28 = E (even-odd flag)
 	//
-	// Other backends (per-glyph, OpenGL etc.):
-	//   Each glyph is a separate BeginCustomShader/AddImageQuad/EndCustomShader.
-	//   Two uniforms per glyph: slugBandLoc, slugBanding (4 floats each).
-	//   OpenGL ImPlatform caps uniform size at 64 bytes; this path stays within that.
+	//   All glyphs in one DrawText call share one VB/IB → one draw call.
+	//   Per-glyph data is in the vertex stream, decoded in VS by SlugUnpack,
+	//   passed as nointerpolation int4 glyph and float4 banding to PS.
+	//
+	// All backends use this single-draw-call VB/IB path.
+	// DX11 additionally needs CreateVertexInputLayout (builds D3D11 input layout from VS bytecode).
+	// OpenGL/Metal/WGSL use layout(location=N) / pipeline descriptors set up in CreateVertexBuffer.
 
-#if defined(IM_CURRENT_GFX) && (IM_CURRENT_GFX == IM_GFX_DIRECTX11)
-
-	// DX11 batch: one IM_ALLOC per DrawText call, trailing float data.
-	struct SlugBatchCBData
+	// CPU vertex format matching slug.hlsl VS_INPUT (56 bytes per vertex)
+	struct SlugVertex
 	{
-		ImPlatform_ShaderProgram program;
-		ImTextureID              bandTexture;
-		unsigned int             dataFloatCount;  // 4 (color) + glyphCount * 8
-		// Followed in memory by dataFloatCount floats:
-		//   [0..3]          = RGBA text color as float4
-		//   [4 + gi*8 .. ]  = bandLoc (4f) + banding (4f) for glyph index gi
+		float pos[2];  // screen-space position (CPU-dilated by 0.5 px)
+		float tex[4];  // [0,1]=em UV (dilated), [2,3]=packed glyph data (bit-cast uint)
+		float bnd[4];  // band transform: scaleX, scaleY, offsetX, offsetY
+		float col[4];  // RGBA vertex color as floats
 	};
 
-	static inline float* SlugBatchCBFloats(SlugBatchCBData* d)
-	{
-		return reinterpret_cast<float*>(d + 1);
-	}
-
-	static void SlugSetBatchUniforms(const ImDrawList*, const ImDrawCmd* cmd)
-	{
-		SlugBatchCBData* d = (SlugBatchCBData*)cmd->UserCallbackData;
-		if (!d) return;
-
-		if (d->program)
-		{
-			// Upload the entire batch cbuffer as a single contiguous block.
-			// DX11: ImPlatform_SetShaderUniform has no size limit; it allocates
-			// a dynamic cbuffer of exactly this size bound to register b1.
-			ImPlatform_SetShaderUniform(d->program, "slugBatch",
-			    SlugBatchCBFloats(d), d->dataFloatCount * (unsigned int)sizeof(float));
-
-			// Band texture is the same for all glyphs (same font atlas); bind to t1.
-			// Curve texture is bound to t0 by ImGui's renderer via PushTextureID.
-			ImPlatform_SetShaderTexture(d->program, "bandTexture", 1, d->bandTexture);
-		}
-
-		IM_FREE(d);
-	}
-
-#else  // non-DX11: per-glyph callback using named uniforms
-
-	// Per-glyph uniform data. Heap-allocated per glyph to avoid ImVector
-	// reallocation hazard when multiple DrawText calls happen in the same frame.
-	struct SlugGlyphCBData
+	// Data passed to the raw draw callback
+	struct SlugDrawCBData
 	{
 		ImPlatform_ShaderProgram program;
+		ImPlatform_VertexBuffer  vb;
+		ImPlatform_IndexBuffer   ib;
+		ImTextureID              curveTexture;
 		ImTextureID              bandTexture;
-		float                    data[8];
-		// [0..3] = slugBandLoc: glyphTexX, glyphTexY, bandMaxX, bandMaxY
-		// [4..7] = slugBanding: bandScaleX, bandScaleY, bandOffsetX, bandOffsetY
+		unsigned int             indexCount;
 	};
 
-	static void SlugSetGlyphUniforms(const ImDrawList*, const ImDrawCmd* cmd)
+	// Render callback: overrides the ImDrawVert input layout set by BeginCustomShader,
+	// binds our custom VB/IB, binds textures, draws, then frees itself.
+	static void SlugRawDraw(const ImDrawList*, const ImDrawCmd* cmd)
 	{
-		SlugGlyphCBData* d = (SlugGlyphCBData*)cmd->UserCallbackData;
+		SlugDrawCBData* d = (SlugDrawCBData*)cmd->UserCallbackData;
 		if (!d) return;
 
-		if (d->program)
-		{
-			// Two named uniforms, 4 floats each — stays within OpenGL's 64-byte limit.
-			ImPlatform_BeginUniformBlock(d->program);
-			ImPlatform_SetUniform("slugBandLoc", &d->data[0], 4 * sizeof(float));
-			ImPlatform_SetUniform("slugBanding",  &d->data[4], 4 * sizeof(float));
-			ImPlatform_EndUniformBlock(d->program);
+		// BindBuffers sets our custom VAO/input layout, overriding the ImDrawVert layout
+		// that BeginCustomShader activated.
+		ImPlatform_BindBuffers(d->vb, d->ib);
 
-			ImPlatform_SetShaderTexture(d->program, "bandTexture", 1, d->bandTexture);
-		}
+		// Bind curveTexture to slot 0, bandTexture to slot 1
+		ImPlatform_SetShaderTexture(d->program, "curveTexture", 0, d->curveTexture);
+		ImPlatform_SetShaderTexture(d->program, "bandTexture",  1, d->bandTexture);
 
+		ImPlatform_DrawIndexed(0, d->indexCount, 0);
+
+		// Free stream buffers after the draw
+		ImPlatform_DestroyVertexBuffer(d->vb);
+		ImPlatform_DestroyIndexBuffer(d->ib);
 		IM_FREE(d);
 	}
-
-#endif  // IM_CURRENT_GFX == IM_GFX_DIRECTX11
 
 	// ---- Public API implementation ------------------------------------------
 
@@ -3823,98 +3797,36 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		float penX = pos.x;
 
-#if defined(IM_CURRENT_GFX) && (IM_CURRENT_GFX == IM_GFX_DIRECTX11)
-
-		// ---- DX11: single draw call for the entire string ----
+		// ---- Reference Slug implementation — single draw call ----
 		//
-		// One SlugBatchCBData is allocated per DrawText call. It holds:
-		//   - text color as float4
-		//   - per-glyph bandLoc + banding data (8 floats each)
-		//
-		// The glyph index is encoded in vertex color (R=low byte, G=high byte)
-		// and read in the VS with nointerpolation → flat-shaded into the PS.
-		// The PS indexes into slugGlyphData[gi*2+0 / gi*2+1] to get per-glyph data.
+		// All glyphs packed into one SlugVertex VB + uint16_t IB.
+		// Per-glyph data (band loc, band transform) lives in the vertex stream.
+		// CPU dilation: each quad expanded by 0.5 px on every edge to eliminate
+		// the need for a per-vertex normal / inverse Jacobian attribute.
 
-		// Limit to 256 glyphs per DrawText call (cbuffer holds 512 float4s = 256 × 2)
-		if (glyphCount > 256) glyphCount = 256;
+		// Vertex attribute layout for slug VS_INPUT.
+		// Semantic names are used by DX11; other backends use location index order (0-3).
+		static const ImPlatform_VertexAttribute kSlugAttribs[] = {
+			{ ImPlatform_VertexFormat_Float2, offsetof(SlugVertex, pos), "POSITION" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, tex), "TEXCOORD" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, bnd), "TEXCOORD" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, col), "COLOR"    },
+		};
 
-		unsigned int dataFloatCount = 4u + (unsigned int)glyphCount * 8u;
-		SlugBatchCBData* cbd = (SlugBatchCBData*)IM_ALLOC(
-		    sizeof(SlugBatchCBData) + dataFloatCount * sizeof(float));
-		cbd->program        = gs_pContext->slugShader.program;
-		cbd->bandTexture    = atlas->bandTexture;
-		cbd->dataFloatCount = dataFloatCount;
+		// Float color (ImU32 is 0xAABBGGRR)
+		const float fR = (float)((col >>  0) & 0xFF) / 255.0f;
+		const float fG = (float)((col >>  8) & 0xFF) / 255.0f;
+		const float fB = (float)((col >> 16) & 0xFF) / 255.0f;
+		const float fA = (float)((col >> 24) & 0xFF) / 255.0f;
 
-		// Fill text color (convert ImU32 ABGR → RGBA float4)
-		float* cbf = SlugBatchCBFloats(cbd);
-		cbf[0] = (float)((col >>  0) & 0xFF) / 255.0f;  // R
-		cbf[1] = (float)((col >>  8) & 0xFF) / 255.0f;  // G
-		cbf[2] = (float)((col >> 16) & 0xFF) / 255.0f;  // B
-		cbf[3] = (float)((col >> 24) & 0xFF) / 255.0f;  // A
+		// CPU dilation: 0.5 px per edge in screen space, matching em-space
+		const float dilPx = 0.5f;
+		const float dilEm = dilPx / sz;
 
-		// Emit callback (uploads cbuffer + binds bandTexture to t1)
-		pDrawList->AddCallback(SlugSetBatchUniforms, cbd);
-
-		// Begin shader, push the curve texture so all PrimRectUV calls share one draw cmd
-		ImPlatform_BeginCustomShader(pDrawList, gs_pContext->slugShader.program);
-		pDrawList->PushTexture(atlas->curveTexture);
-
-		int gi = 0;
-		p = text;
-		while (p < text_end && gi < glyphCount)
-		{
-			unsigned int cp = 0;
-			p += ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
-			if (cp == 0) break;
-
-			SlugGlyphEntry* ge = SlugFindGlyph(atlas, (ImWchar)cp);
-			if (!ge) continue;
-
-			float advance = ge->advanceEm * sz;
-
-			if ((ge->maxXEm - ge->minXEm) < 1e-5f || (ge->maxYEm - ge->minYEm) < 1e-5f)
-			{
-				penX += advance;
-				continue;
-			}
-
-			// Fill per-glyph cbuffer data (slot gi)
-			float* gd = cbf + 4 + gi * 8;
-			gd[0] = (float)ge->bandTexX;
-			gd[1] = (float)ge->bandTexY;
-			gd[2] = (float)ge->bandMaxX;
-			gd[3] = (float)(ge->bandMaxY & 0xFF);
-			gd[4] = ge->bandScaleX;
-			gd[5] = ge->bandScaleY;
-			gd[6] = ge->bandOffsetX;
-			gd[7] = ge->bandOffsetY;
-
-			// Screen-space quad (Y is down; em-space Y is up → flip)
-			float sL = penX + ge->minXEm * sz;
-			float sR = penX + ge->maxXEm * sz;
-			float sT = pos.y - ge->maxYEm * sz;
-			float sB = pos.y - ge->minYEm * sz;
-
-			// Encode glyph index in vertex color (R=low byte, G=high byte).
-			// The VS decodes this and passes it flat-shaded to the PS.
-			ImU32 glyphCol = IM_COL32(gi & 0xFF, (gi >> 8) & 0xFF, 0, 255);
-
-			// UV: em-space renderCoord. TL=(minXEm, maxYEm), BR=(maxXEm, minYEm)
-			// (Y flip: screen top = em-space max-Y because TTF Y is up)
-			pDrawList->PrimReserve(6, 4);
-			pDrawList->PrimRectUV(
-			    ImVec2(sL, sT), ImVec2(sR, sB),
-			    ImVec2(ge->minXEm, ge->maxYEm), ImVec2(ge->maxXEm, ge->minYEm),
-			    glyphCol);
-
-			penX += advance;
-			gi++;
-		}
-
-		pDrawList->PopTexture();
-		ImPlatform_EndCustomShader(pDrawList);
-
-#else  // non-DX11: per-glyph draw calls (OpenGL etc.)
+		ImVector<SlugVertex>   verts;
+		ImVector<ImU16>        idxs;
+		verts.reserve(glyphCount * 4);
+		idxs.reserve(glyphCount * 6);
 
 		p = text;
 		while (p < text_end)
@@ -3924,7 +3836,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			if (cp == 0) break;
 
 			SlugGlyphEntry* ge = SlugFindGlyph(atlas, (ImWchar)cp);
-			if (!ge) continue;
+			if (!ge) { continue; }
 
 			float advance = ge->advanceEm * sz;
 
@@ -3934,37 +3846,95 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				continue;
 			}
 
-			float sL = penX + ge->minXEm * sz;
-			float sR = penX + ge->maxXEm * sz;
-			float sT = pos.y - ge->maxYEm * sz;
-			float sB = pos.y - ge->minYEm * sz;
+			// Screen-space quad, CPU-dilated by 0.5 px
+			float sL = penX + ge->minXEm * sz - dilPx;
+			float sR = penX + ge->maxXEm * sz + dilPx;
+			float sT = pos.y - ge->maxYEm * sz - dilPx;
+			float sB = pos.y - ge->minYEm * sz + dilPx;
 
-			SlugGlyphCBData* cb = (SlugGlyphCBData*)IM_ALLOC(sizeof(SlugGlyphCBData));
-			cb->program     = gs_pContext->slugShader.program;
-			cb->bandTexture = atlas->bandTexture;
-			cb->data[0] = (float)ge->bandTexX;
-			cb->data[1] = (float)ge->bandTexY;
-			cb->data[2] = (float)ge->bandMaxX;
-			cb->data[3] = (float)(ge->bandMaxY & 0xFF);
-			cb->data[4] = ge->bandScaleX;
-			cb->data[5] = ge->bandScaleY;
-			cb->data[6] = ge->bandOffsetX;
-			cb->data[7] = ge->bandOffsetY;
+			// em-space UV, dilated by 0.5/sz
+			float uL = ge->minXEm - dilEm;
+			float uR = ge->maxXEm + dilEm;
+			float uT = ge->maxYEm + dilEm;  // screen top = em max-Y (TTF Y-up)
+			float uB = ge->minYEm - dilEm;
 
-			pDrawList->AddCallback(SlugSetGlyphUniforms, cb);
-			ImPlatform_BeginCustomShader(pDrawList, gs_pContext->slugShader.program);
-			pDrawList->AddImageQuad(atlas->curveTexture,
-			                        ImVec2(sL, sT), ImVec2(sR, sT),
-			                        ImVec2(sR, sB), ImVec2(sL, sB),
-			                        ImVec2(ge->minXEm, ge->maxYEm), ImVec2(ge->maxXEm, ge->maxYEm),
-			                        ImVec2(ge->maxXEm, ge->minYEm), ImVec2(ge->minXEm, ge->minYEm),
-			                        col);
-			ImPlatform_EndCustomShader(pDrawList);
+			// Pack per-glyph data into tex.zw as bit-reinterpreted uint32s
+			// tex.z: bits 0-15 = bandTexX, bits 16-31 = bandTexY
+			// tex.w: bits 0-7  = bandMaxX, bits 16-23 = bandMaxY
+			unsigned int gz = (unsigned int)(ImU16)ge->bandTexX
+			                | ((unsigned int)(ImU16)ge->bandTexY << 16);
+			unsigned int gw = (unsigned int)(ge->bandMaxX & 0xFF)
+			                | ((unsigned int)(ge->bandMaxY & 0xFF) << 16);
+			float fgz, fgw;
+			memcpy(&fgz, &gz, 4);
+			memcpy(&fgw, &gw, 4);
+
+			ImU16 base = (ImU16)verts.Size;
+
+			// 4 vertices: TL, TR, BR, BL
+			SlugVertex v;
+			v.tex[2] = fgz;  v.tex[3] = fgw;
+			v.bnd[0] = ge->bandScaleX;  v.bnd[1] = ge->bandScaleY;
+			v.bnd[2] = ge->bandOffsetX; v.bnd[3] = ge->bandOffsetY;
+			v.col[0] = fR; v.col[1] = fG; v.col[2] = fB; v.col[3] = fA;
+
+			v.pos[0] = sL; v.pos[1] = sT; v.tex[0] = uL; v.tex[1] = uT; verts.push_back(v);
+			v.pos[0] = sR; v.pos[1] = sT; v.tex[0] = uR; v.tex[1] = uT; verts.push_back(v);
+			v.pos[0] = sR; v.pos[1] = sB; v.tex[0] = uR; v.tex[1] = uB; verts.push_back(v);
+			v.pos[0] = sL; v.pos[1] = sB; v.tex[0] = uL; v.tex[1] = uB; verts.push_back(v);
+
+			// 6 indices: two CCW triangles
+			idxs.push_back(base + 0); idxs.push_back(base + 1); idxs.push_back(base + 2);
+			idxs.push_back(base + 0); idxs.push_back(base + 2); idxs.push_back(base + 3);
 
 			penX += advance;
 		}
 
-#endif  // IM_CURRENT_GFX == IM_GFX_DIRECTX11
+		if (verts.empty()) return;
+
+		// Create stream vertex and index buffers
+		ImPlatform_VertexBufferDesc vbDesc = {};
+		vbDesc.vertex_count   = (unsigned int)verts.Size;
+		vbDesc.vertex_stride  = sizeof(SlugVertex);
+		vbDesc.usage          = ImPlatform_BufferUsage_Stream;
+		vbDesc.attributes     = kSlugAttribs;
+		vbDesc.attribute_count = 4;
+
+		ImPlatform_IndexBufferDesc ibDesc = {};
+		ibDesc.index_count = (unsigned int)idxs.Size;
+		ibDesc.format      = ImPlatform_IndexFormat_UInt16;
+		ibDesc.usage       = ImPlatform_BufferUsage_Stream;
+
+		ImPlatform_VertexBuffer vb = ImPlatform_CreateVertexBuffer(verts.Data, &vbDesc);
+		ImPlatform_IndexBuffer  ib = ImPlatform_CreateIndexBuffer(idxs.Data, &ibDesc);
+		if (!vb || !ib)
+		{
+			if (vb) ImPlatform_DestroyVertexBuffer(vb);
+			if (ib) ImPlatform_DestroyIndexBuffer(ib);
+			return;
+		}
+
+		// DX11 requires an explicit input layout built from VS bytecode.
+		// Other backends (OpenGL, Metal, WGSL) derive layout from the VAO or pipeline state.
+#if defined(IM_CURRENT_GFX) && (IM_CURRENT_GFX == IM_GFX_DIRECTX11)
+		ImPlatform_CreateVertexInputLayout(vb, gs_pContext->slugShader.program);
+#endif
+
+		// Allocate callback data (freed inside SlugRawDraw)
+		SlugDrawCBData* cbd = (SlugDrawCBData*)IM_ALLOC(sizeof(SlugDrawCBData));
+		cbd->program      = gs_pContext->slugShader.program;
+		cbd->vb           = vb;
+		cbd->ib           = ib;
+		cbd->curveTexture = atlas->curveTexture;
+		cbd->bandTexture  = atlas->bandTexture;
+		cbd->indexCount   = (unsigned int)idxs.Size;
+
+		// BeginCustomShader sets the slug VS+PS and uploads the projection matrix to b0.
+		// SlugRawDraw overrides the input layout and issues the draw.
+		ImPlatform_BeginCustomShader(pDrawList, gs_pContext->slugShader.program);
+		pDrawList->AddCallback(SlugRawDraw, cbd);
+		pDrawList->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
+		ImPlatform_EndCustomShader(pDrawList);
 
 #else
 		// Fallback: use ImGui's built-in text rendering

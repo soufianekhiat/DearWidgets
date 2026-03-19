@@ -1,4 +1,4 @@
-#include <demo.h>
+﻿#include <demo.h>
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 
@@ -269,7 +269,16 @@ struct ShapeDebugState {
 
 void ShowSampleOffscreen00();
 
-ImFont* g_cinzelFont = nullptr;
+ImFont* g_cinzelFont         = nullptr;
+ImFont* g_alfaSlabFont       = nullptr;
+ImFont* g_dottedFont         = nullptr;
+ImFont* g_flowmeryFont       = nullptr;
+ImFont* g_franticallyFont    = nullptr;
+ImFont* g_loveLightFont      = nullptr;
+ImFont* g_magnoliaFont       = nullptr;
+ImFont* g_nablaFont          = nullptr;
+ImFont* g_rosehotFont        = nullptr;
+ImFont* g_squareLilyFont     = nullptr;
 
 ImTextureID background;
 ImVec2 background_size;
@@ -355,9 +364,18 @@ int main()
 	// Load fonts (FontScaleDpi handles DPI scaling at render time)
 	io.Fonts->AddFontFromFileTTF( "../extern/FiraCode/distr/ttf/FiraCode-Medium.ttf", 16.0f );
 
-	// Cinzel: classical Roman display serif used exclusively for the Slug GPU text demo.
+	// Cinzel: classical Roman display serif for the Slug GPU text demo.
 	// Rasterized at 24 px just so ImGui holds the TTF data; Slug renders at any size.
-	g_cinzelFont = io.Fonts->AddFontFromFileTTF( "Cinzel.ttf", 24.0f );
+	g_cinzelFont      = io.Fonts->AddFontFromFileTTF( "fonts/Cinzel.ttf",                                    24.0f );
+	g_alfaSlabFont    = io.Fonts->AddFontFromFileTTF( "fonts/AlfaSlabOne-Regular.ttf",                       24.0f );
+	g_dottedFont      = io.Fonts->AddFontFromFileTTF( "fonts/Dotted.ttf",                                    24.0f );
+	g_flowmeryFont    = io.Fonts->AddFontFromFileTTF( "fonts/Flowmery-Regular.ttf",                          24.0f );
+	g_franticallyFont = io.Fonts->AddFontFromFileTTF( "fonts/Frantically-Regular (1).ttf",                   24.0f );
+	g_loveLightFont   = io.Fonts->AddFontFromFileTTF( "fonts/LoveLight-Regular.ttf",                         24.0f );
+	g_magnoliaFont    = io.Fonts->AddFontFromFileTTF( "fonts/Magnolia Floral Line Monogram.ttf",             24.0f );
+	g_nablaFont       = io.Fonts->AddFontFromFileTTF( "fonts/Nabla-Regular-VariableFont_EDPT,EHLT.ttf",      24.0f );
+	g_rosehotFont     = io.Fonts->AddFontFromFileTTF( "fonts/Rosehot.ttf",                                   24.0f );
+	g_squareLilyFont  = io.Fonts->AddFontFromFileTTF( "fonts/Square Lily Monogram.ttf",                      24.0f );
 
 	ImGuiStyle& style = ImGui::GetStyle();
 	style.ScaleAllSizes( dpi_scale );
@@ -688,9 +706,11 @@ namespace ImWidgets {
 		if ( !ImGui::CollapsingHeader( "GPU Text (Slug)" ) )
 			return;
 
-		if ( !g_cinzelFont )
+		if ( !g_cinzelFont && !g_alfaSlabFont && !g_dottedFont && !g_flowmeryFont &&
+		     !g_franticallyFont && !g_loveLightFont && !g_magnoliaFont &&
+		     !g_nablaFont && !g_rosehotFont && !g_squareLilyFont )
 		{
-			ImGui::TextDisabled( "Cinzel.ttf not loaded." );
+			ImGui::TextDisabled( "No Slug fonts loaded." );
 			return;
 		}
 
@@ -704,45 +724,36 @@ namespace ImWidgets {
 		if ( ImGui::ColorEdit4( "Color##SlugDemo", &color_v.x ) )
 			color_u = ImGui::ColorConvertFloat4ToU32( color_v );
 
+		struct FontEntry { ImFont** font; const char* label; };
+		static const FontEntry kFonts[] = {
+			{ &g_alfaSlabFont,    "Alfa Slab One"          },
+			{ &g_cinzelFont,      "Cinzel"                  },
+			{ &g_dottedFont,      "Dotted"                  },
+			{ &g_flowmeryFont,    "Flowmery"                },
+			{ &g_franticallyFont, "Frantically"             },
+			{ &g_loveLightFont,   "Love Light"              },
+			{ &g_magnoliaFont,    "Magnolia Monogram"       },
+			{ &g_nablaFont,       "Nabla"                   },
+			{ &g_rosehotFont,     "Rosehot"                 },
+			{ &g_squareLilyFont,  "Square Lily Monogram"    },
+		};
+
 		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 		float const canvas_w  = CanvasSize();
 
-		// ── Cinzel cascade: resolution-independent GPU rendering ──────────────
 		ImGui::Separator();
-		ImGui::TextDisabled( "Cinzel (GPU / Slug) — crisp at every size:" );
-
-		static const float kSizes[] = { 16.0f, 24.0f, 36.0f, 56.0f, 80.0f, 120.0f };
-		for ( float sz : kSizes )
+		for ( const FontEntry& e : kFonts )
 		{
+			if ( !*e.font ) continue;
+			ImGui::TextDisabled( "%s:", e.label );
 			ImVec2 pos = ImGui::GetCursorScreenPos();
-			ImWidgets::DrawText( pDrawList, g_cinzelFont, sz, pos, color_u, text_buf );
-			ImGui::Dummy( ImVec2( canvas_w, sz * 1.3f ) );
-		}
-
-		// ── Side-by-side comparison ───────────────────────────────────────────
-		ImGui::Separator();
-		ImGui::TextDisabled( "GPU (Slug) vs. ImGui bitmap at %.0f px:", font_size );
-
-		ImGui::TextDisabled( "Slug GPU:" );
-		{
-			ImVec2 pos = ImGui::GetCursorScreenPos();
-			ImWidgets::DrawText( pDrawList, g_cinzelFont, font_size, pos, color_u, text_buf );
-			ImGui::Dummy( ImVec2( canvas_w, font_size * 1.3f ) );
-		}
-		ImGui::TextDisabled( "ImGui bitmap (rasterised at 24 px, scaled):" );
-		{
-			ImVec2 pos = ImGui::GetCursorScreenPos();
-			pDrawList->AddText( g_cinzelFont, font_size, pos, color_u, text_buf );
+			ImWidgets::DrawText( pDrawList, *e.font, font_size, pos, color_u, text_buf );
 			ImGui::Dummy( ImVec2( canvas_w, font_size * 1.3f ) );
 		}
 	}
 
 	void ShowCustomShaderDemo()
 	{
-		ApplyOpenAll();
-		if ( !ImGui::CollapsingHeader( "Custom Shader" ) )
-			return;
-
 		float const size = CanvasSize();
 
 		static float shape_size = 1.0f;
@@ -853,50 +864,56 @@ namespace ImWidgets {
 			ShowDrawShapeDemo();
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 			ShowDrawTextDemo();
-			ShowCustomShaderDemo();
 			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Primitives##Draw" ) )
+			if ( ImGui::CollapsingHeader( "Custom Shader" ) )
 			{
-			ApplyOpenAll();
-			if ( ImGui::CollapsingHeader( "Thick line" ) )
-			{
-				float const size = CanvasSize();
-				ImGui::Dummy( ImVec2( size, 0.25f * size ) );
-				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+				ImGui::Indent();
+				ShowCustomShaderDemo();
+				ApplyOpenAll();
+				if ( ImGui::TreeNode( "Primitives##Draw" ) )
+				{
+				ApplyOpenAll();
+				if ( ImGui::CollapsingHeader( "Thick line" ) )
+				{
+					float const size = CanvasSize();
+					ImGui::Dummy( ImVec2( size, 0.25f * size ) );
+					ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 
-				static float line_width = 5.0f;
-				static float mitter_limit = 0.0f;
-				static float antialiasing = 1.0f / size;
+					static float line_width = 5.0f;
+					static float mitter_limit = 0.0f;
+					static float antialiasing = 1.0f / size;
 
-				ImWidgetsStyle& widgetStyle = ImWidgets::GetStyle();
-				ImVec4 vBlue = widgetStyle.Colors[ StyleColor_Slider2D_CursorX ];
-				ImVec4 vOrange = widgetStyle.Colors[ StyleColor_Slider2D_CursorY ];
-				ImU32 uBlue = ImGui::GetColorU32( vBlue );
-				ImU32 uOrange = ImGui::GetColorU32( vOrange );
-				static ImVec4 color_v( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
-				static ImU32 color_col = ImGui::GetColorU32( color_v );
-				if ( ImGui::ColorEdit4( "ColA##DrawShape", &color_v.x ) )
-					color_col = ImGui::GetColorU32( color_v );
-				ImGui::DragFloat( "line_width", &line_width, 0.0125f, 0.0f, 16.0f );
-				ImGui::DragFloat( "antialiasing", &antialiasing, 0.0125f, 0.0f, 16.0f );
-				ImGui::SliderAngle( "mitter_limit", &mitter_limit );
+					ImWidgetsStyle& widgetStyle = ImWidgets::GetStyle();
+					ImVec4 vBlue = widgetStyle.Colors[ StyleColor_Slider2D_CursorX ];
+					ImVec4 vOrange = widgetStyle.Colors[ StyleColor_Slider2D_CursorY ];
+					ImU32 uBlue = ImGui::GetColorU32( vBlue );
+					ImU32 uOrange = ImGui::GetColorU32( vOrange );
+					static ImVec4 color_v( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
+					static ImU32 color_col = ImGui::GetColorU32( color_v );
+					if ( ImGui::ColorEdit4( "ColA##DrawShape", &color_v.x ) )
+						color_col = ImGui::GetColorU32( color_v );
+					ImGui::DragFloat( "line_width", &line_width, 0.0125f, 0.0f, 16.0f );
+					ImGui::DragFloat( "antialiasing", &antialiasing, 0.0125f, 0.0f, 16.0f );
+					ImGui::SliderAngle( "mitter_limit", &mitter_limit );
 
-				ImVec2 pos = ImGui::GetCursorScreenPos();
+					ImVec2 pos = ImGui::GetCursorScreenPos();
 
-				ImVec2 pts[] = {
-					pos + ImVec2( size * 0.25f, size * 0.25f ),
-					pos + ImVec2( size * 0.72f, size * 0.25f ),
-					pos + ImVec2( size * 0.72f, size * 0.75f )
-				};
+					ImVec2 pts[] = {
+						pos + ImVec2( size * 0.25f, size * 0.25f ),
+						pos + ImVec2( size * 0.72f, size * 0.25f ),
+						pos + ImVec2( size * 0.72f, size * 0.75f )
+					};
 
-				//pDrawList->AddLine( pts[ 0 ], pts[ 1 ], color_col, line_width );
+					//pDrawList->AddLine( pts[ 0 ], pts[ 1 ], color_col, line_width );
 
-				ImGui::Dummy( ImVec2( size, size ) );
+					ImGui::Dummy( ImVec2( size, size ) );
+				}
+				ShowDrawSquircleDemo();
+				ImGui::TreePop();
+				}
+				ImGui::Unindent();
 			}
 #endif
-			ShowDrawSquircleDemo();
-				ImGui::TreePop();
-			}
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Gradients##Draw" ) )
 			{
