@@ -3,7 +3,7 @@
 #include <metal_texture>
 using namespace metal;
 
-#line 87 "C:/git/DearWidgets/workingdir/shaders/hlsl_src/slug.hlsl"
+#line 87 "hlsl_src/slug.hlsl"
 float2 SlugDilate_0(float4 pos_0, float4 tex_0, float4 jac_0, float4 m0_0, float4 m1_0, float4 m3_0, float2 dim_0, float2 thread* vpos_0)
 {
     float2 _S1 = pos_0.zw;

@@ -132,42 +132,202 @@ float saturate_0(float x_0)
 }
 
 
-#line 172 0
+#line 188 0
+vec3 SolveCubicRoots_0(float a_1, float b_1, float c_0, float d_1)
+{
+
+    if((abs(a_1)) < 0.0000152587890625)
+    {
+        if((abs(b_1)) < 0.0000152587890625)
+        {
+            if((abs(c_0)) < 0.0000152587890625)
+            {
+
+#line 195
+                return vec3(1.0e+09, 1.0e+09, 1.0e+09);
+            }
+
+#line 196
+            return vec3(- d_1 / c_0, 1.0e+09, 1.0e+09);
+        }
+        float disc2_0 = c_0 * c_0 - 4.0 * b_1 * d_1;
+        if(disc2_0 < 0.0)
+        {
+
+#line 199
+            return vec3(1.0e+09, 1.0e+09, 1.0e+09);
+        }
+
+#line 200
+        float sq_0 = sqrt(disc2_0);
+
+#line 200
+        float inv2b_0 = 0.5 / b_1;
+        float _S14 = - c_0;
+
+#line 201
+        return vec3((_S14 - sq_0) * inv2b_0, (_S14 + sq_0) * inv2b_0, 1.0e+09);
+    }
+
+    float inv_a_0 = 1.0 / a_1;
+    float B_0 = b_1 * inv_a_0;
+
+#line 205
+    float C_0 = c_0 * inv_a_0;
+
+    float shift_0 = - B_0 / 3.0;
+    float p_0 = C_0 - B_0 * B_0 / 3.0;
+    float q_0 = d_1 * inv_a_0 + B_0 * (2.0 * B_0 * B_0 - 9.0 * C_0) / 27.0;
+    float disc_0 = - (4.0 * p_0 * p_0 * p_0 + 27.0 * q_0 * q_0);
+    if(disc_0 >= 0.0)
+    {
+
+
+        float m_0 = 2.0 * sqrt(max(- p_0 / 3.0, 0.0));
+
+#line 215
+        float arg_0;
+        if(m_0 > 1.00000001168609742e-07)
+        {
+
+#line 216
+            arg_0 = clamp(3.0 * q_0 / (p_0 * m_0), -1.0, 1.0);
+
+#line 216
+        }
+        else
+        {
+
+#line 216
+            arg_0 = 0.0;
+
+#line 216
+        }
+        float phi_0 = acos(arg_0) / 3.0;
+        return vec3(m_0 * cos(phi_0) + shift_0, m_0 * cos(phi_0 - 2.09439516067504883) + shift_0, m_0 * cos(phi_0 - 4.18879032135009766) + shift_0);
+    }
+    else
+    {
+
+
+
+        float sq_1 = sqrt(max(- disc_0 / 108.0, 0.0));
+        float hq_0 = - q_0 * 0.5;
+        float _S15 = hq_0 + sq_1;
+        float _S16 = hq_0 - sq_1;
+        return vec3(float((int(sign((_S15))))) * pow(abs(_S15), 0.3333333432674408) + float((int(sign((_S16))))) * pow(abs(_S16), 0.3333333432674408) + shift_0, 1.0e+09, 1.0e+09);
+    }
+
+#line 229
+}
+
+
+#line 236
+void ApplyCubicRoot_0(float t_0, float x_em_0, float pxPerEm_0, float deriv_0, float sign_pos_0, inout float cov_0, inout float wgt_0)
+{
+
+#line 237
+    bool _S17;
+
+    if(t_0 < 0.0)
+    {
+
+#line 239
+        _S17 = true;
+
+#line 239
+    }
+    else
+    {
+
+#line 239
+        _S17 = t_0 >= 1.0;
+
+#line 239
+    }
+
+#line 239
+    if(_S17)
+    {
+
+#line 239
+        return;
+    }
+
+#line 240
+    float r_0 = x_em_0 * pxPerEm_0;
+    float contrib_0 = saturate_0(r_0 + 0.5);
+    float w_0 = saturate_0(1.0 - abs(r_0) * 2.0);
+    if(deriv_0 > 0.0)
+    {
+
+#line 243
+        cov_0 = cov_0 + sign_pos_0 * contrib_0;
+
+#line 243
+        wgt_0 = max(wgt_0, w_0);
+
+#line 243
+    }
+    else
+    {
+
+#line 244
+        if(deriv_0 < 0.0)
+        {
+
+#line 244
+            cov_0 = cov_0 - sign_pos_0 * contrib_0;
+
+#line 244
+            wgt_0 = max(wgt_0, w_0);
+
+#line 244
+        }
+
+#line 243
+    }
+
+    return;
+}
+
+
+#line 172
 vec2 SolveVertPoly_0(vec4 p12_1, vec2 p3_1)
 {
-    vec2 _S14 = p12_1.xy;
+    vec2 _S18 = p12_1.xy;
 
 #line 174
-    vec2 _S15 = p12_1.zw;
+    vec2 _S19 = p12_1.zw;
 
 #line 174
-    vec2 a_1 = _S14 - _S15 * 2.0 + p3_1;
-    vec2 b_1 = _S14 - _S15;
-    float _S16 = a_1.x;
+    vec2 a_2 = _S18 - _S19 * 2.0 + p3_1;
+    vec2 b_2 = _S18 - _S19;
+    float _S20 = a_2.x;
 
 #line 176
-    float ra_1 = 1.0 / _S16;
-    float _S17 = b_1.x;
+    float ra_1 = 1.0 / _S20;
+    float _S21 = b_2.x;
 
 #line 177
-    float rb_1 = 0.5 / _S17;
-    float _S18 = p12_1.x;
+    float rb_1 = 0.5 / _S21;
+    float _S22 = p12_1.x;
 
 #line 178
-    float d_1 = sqrt(max(_S17 * _S17 - _S16 * _S18, 0.0));
-    float _S19 = (_S17 - d_1) * ra_1;
-    float _S20 = (_S17 + d_1) * ra_1;
+    float d_2 = sqrt(max(_S21 * _S21 - _S20 * _S22, 0.0));
+    float _S23 = (_S21 - d_2) * ra_1;
+    float _S24 = (_S21 + d_2) * ra_1;
 
 #line 180
     float t1_1;
 
 #line 180
     float t2_2;
-    if((abs(_S16)) < 0.0000152587890625)
+    if((abs(_S20)) < 0.0000152587890625)
     {
 
 #line 181
-        float t2_3 = _S18 * rb_1;
+        float t2_3 = _S22 * rb_1;
 
 #line 181
         t1_1 = t2_3;
@@ -181,51 +341,43 @@ vec2 SolveVertPoly_0(vec4 p12_1, vec2 p3_1)
     {
 
 #line 181
-        t1_1 = _S19;
+        t1_1 = _S23;
 
 #line 181
-        t2_2 = _S20;
+        t2_2 = _S24;
 
 #line 181
     }
-    float _S21 = a_1.y;
+    float _S25 = a_2.y;
 
 #line 182
-    float _S22 = b_1.y * 2.0;
+    float _S26 = b_2.y * 2.0;
 
 #line 182
-    float _S23 = p12_1.y;
+    float _S27 = p12_1.y;
 
 #line 182
-    return vec2((_S21 * t1_1 - _S22) * t1_1 + _S23, (_S21 * t2_2 - _S22) * t2_2 + _S23);
+    return vec2((_S25 * t1_1 - _S26) * t1_1 + _S27, (_S25 * t2_2 - _S26) * t2_2 + _S27);
 }
 
 
+#line 247
 float CalcCoverage_0(float xcov_0, float ycov_0, float xwgt_0, float ywgt_0, int flags_0)
 {
 
-#line 208
+#line 269
     return saturate_0(max(abs(xcov_0 * xwgt_0 + ycov_0 * ywgt_0) / max(xwgt_0 + ywgt_0, 0.0000152587890625), min(abs(xcov_0), abs(ycov_0))));
 }
 
 float SlugRender_0(vec2 renderCoord_0, vec4 banding_0, ivec4 glyphData_0)
 {
 
-#line 211
-    float ycov_1;
-
-#line 211
-    float ywgt_1;
-
-#line 211
-    float ycov_2;
-
-#line 211
-    float ywgt_2;
+#line 272
+    float maxY_0;
 
 
 
-    vec2 _S24 = 1.0 / (abs(dFdx(renderCoord_0)) + abs(dFdy(renderCoord_0)));
+    vec2 _S28 = 1.0 / (abs(dFdx(renderCoord_0)) + abs(dFdy(renderCoord_0)));
 
     ivec2 glyphLoc_1 = glyphData_0.xy;
     ivec2 bandMax_0 = glyphData_0.zw;
@@ -233,288 +385,369 @@ float SlugRender_0(vec2 renderCoord_0, vec4 banding_0, ivec4 glyphData_0)
 
     ivec2 bandIndex_0 = clamp(ivec2(renderCoord_0 * banding_0.xy + banding_0.zw), ivec2(0, 0), bandMax_0);
 
-#line 226
-    int _S25 = glyphLoc_1.x;
 
-#line 226
-    int _S26 = glyphLoc_1.y;
 
-#line 226
-    ivec2 hData_0 = BandLoad_0(ivec2(_S25 + bandIndex_0.y, _S26));
-    ivec2 _S27 = CalcBandLoc_0(glyphLoc_1, uint(hData_0.y));
-
-#line 227
-    float xwgt_1 = 0.0;
-
-#line 227
-    int ci_0 = 0;
-
-#line 227
     float xcov_1 = 0.0;
 
+#line 286
+    float xwgt_1 = 0.0;
+    int _S29 = glyphLoc_1.x;
+
+#line 287
+    int _S30 = glyphLoc_1.y;
+
+#line 287
+    ivec2 _S31 = BandLoad_0(ivec2(_S29 + bandIndex_0.y, _S30));
+
+#line 287
+    int ci_0 = 0;
+
     for(;;)
     {
 
-#line 229
-        if(ci_0 < (hData_0.x))
+#line 289
+        if(ci_0 < (_S31.x))
         {
         }
         else
         {
 
-#line 229
+#line 289
             break;
         }
-        ivec2 ref_0 = BandLoad_0(ivec2(_S27.x + ci_0, _S27.y));
-        int _S28 = ref_0.x;
 
-#line 232
-        int _S29 = ref_0.y;
-        vec4 p12_2 = CurveLoad_0(ivec2(_S28, _S29)) - vec4(renderCoord_0, renderCoord_0);
-        vec2 p3_2 = CurveLoad_0(ivec2(_S28 + 1, _S29)).xy - renderCoord_0;
+#line 309
+        ivec2 ref_0 = BandLoad_0(CalcBandLoc_0(glyphLoc_1, uint(_S31.y) + uint(ci_0)));
+        int _S32 = ref_0.x;
 
-        float _S30 = _S24.x;
+#line 310
+        bool isCubic_0 = (_S32 & 4096) != 0;
+        int _S33 = _S32 & 4095;
 
-#line 236
-        if((max(max(p12_2.x, p12_2.z), p3_2.x) * _S30) < -0.5)
+#line 311
+        int _S34 = ref_0.y;
+        vec4 p12_2 = CurveLoad_0(ivec2(_S33, _S34)) - vec4(renderCoord_0, renderCoord_0);
+        vec4 texel1_0 = CurveLoad_0(ivec2(_S33 + 1, _S34));
+        vec2 p3_2 = texel1_0.xy - renderCoord_0;
+        vec2 p4_0 = texel1_0.zw - renderCoord_0;
+
+
+        if(isCubic_0)
         {
 
-#line 236
+#line 318
+            maxY_0 = max(max(max(p12_2.x, p12_2.z), p3_2.x), p4_0.x);
+
+#line 318
+        }
+        else
+        {
+
+#line 318
+            maxY_0 = max(max(p12_2.x, p12_2.z), p3_2.x);
+
+#line 318
+        }
+
+        float _S35 = _S28.x;
+
+#line 320
+        if((maxY_0 * _S35) < -0.5)
+        {
+
+#line 320
             break;
         }
-        uint code_0 = CalcRootCode_0(p12_2.y, p12_2.w, p3_2.y);
-        if(code_0 != 0U)
+        if(!isCubic_0)
         {
-            vec2 r_0 = SolveHorizPoly_0(p12_2, p3_2) * _S30;
-            if((code_0 & 1U) != 0U)
+            uint code_0 = CalcRootCode_0(p12_2.y, p12_2.w, p3_2.y);
+            if(code_0 != 0U)
             {
-                float _S31 = r_0.x;
+                vec2 r_1 = SolveHorizPoly_0(p12_2, p3_2) * _S35;
+                if((code_0 & 1U) != 0U)
+                {
+                    float _S36 = r_1.x;
 
-#line 244
-                float xcov_2 = xcov_1 + saturate_0(_S31 + 0.5);
+#line 330
+                    xcov_1 = xcov_1 + saturate_0(_S36 + 0.5);
+                    xwgt_1 = max(xwgt_1, saturate_0(1.0 - abs(_S36) * 2.0));
 
-#line 244
-                ywgt_2 = max(xwgt_1, saturate_0(1.0 - abs(_S31) * 2.0));
+#line 328
+                }
 
-#line 244
-                ycov_2 = xcov_2;
+#line 333
+                if(code_0 > 1U)
+                {
+                    float _S37 = r_1.y;
 
-#line 242
-            }
-            else
-            {
+#line 335
+                    xcov_1 = xcov_1 - saturate_0(_S37 + 0.5);
+                    xwgt_1 = max(xwgt_1, saturate_0(1.0 - abs(_S37) * 2.0));
 
-#line 242
-                ywgt_2 = xwgt_1;
+#line 333
+                }
 
-#line 242
-                ycov_2 = xcov_1;
-
-#line 242
-            }
-
-#line 247
-            if(code_0 > 1U)
-            {
-                float _S32 = r_0.y;
-
-#line 249
-                float xcov_3 = ycov_2 - saturate_0(_S32 + 0.5);
-
-#line 249
-                ywgt_1 = max(ywgt_2, saturate_0(1.0 - abs(_S32) * 2.0));
-
-#line 249
-                ycov_1 = xcov_3;
-
-#line 247
-            }
-            else
-            {
-
-#line 247
-                ywgt_1 = ywgt_2;
-
-#line 247
-                ycov_1 = ycov_2;
-
-#line 247
+#line 325
             }
 
-#line 247
-            xwgt_1 = ywgt_1;
+#line 322
+        }
+        else
+        {
 
-#line 247
-            xcov_1 = ycov_1;
+#line 343
+            float _S38 = p12_2.y;
 
-#line 239
+#line 343
+            float _S39 = p12_2.w;
+
+#line 343
+            float _S40 = 3.0 * _S39;
+
+#line 343
+            float _S41 = 3.0 * p3_2.y;
+
+#line 343
+            float ay_0 = - _S38 + _S40 - _S41 + p4_0.y;
+            float by_0 = 3.0 * _S38 - 6.0 * _S39 + _S41;
+            float cy_0 = -3.0 * _S38 + _S40;
+
+            float _S42 = p12_2.x;
+
+#line 347
+            float _S43 = p12_2.z;
+
+#line 347
+            float _S44 = 3.0 * _S43;
+
+#line 347
+            float _S45 = 3.0 * p3_2.x;
+
+#line 347
+            float ax_0 = - _S42 + _S44 - _S45 + p4_0.x;
+            float bx_0 = 3.0 * _S42 - 6.0 * _S43 + _S45;
+            float cx_0 = -3.0 * _S42 + _S44;
+
+            vec3 ts_0 = SolveCubicRoots_0(ay_0, by_0, cy_0, _S38);
+
+            float t0_0 = ts_0.x;
+            float _S46 = 3.0 * ay_0;
+
+#line 354
+            float _S47 = 2.0 * by_0;
+
+#line 354
+            ApplyCubicRoot_0(t0_0, ((ax_0 * t0_0 + bx_0) * t0_0 + cx_0) * t0_0 + _S42, _S35, (_S46 * t0_0 + _S47) * t0_0 + cy_0, 1.0, xcov_1, xwgt_1);
+            float t1_2 = ts_0.y;
+            ApplyCubicRoot_0(t1_2, ((ax_0 * t1_2 + bx_0) * t1_2 + cx_0) * t1_2 + _S42, _S35, (_S46 * t1_2 + _S47) * t1_2 + cy_0, 1.0, xcov_1, xwgt_1);
+            float t2_4 = ts_0.z;
+            ApplyCubicRoot_0(t2_4, ((ax_0 * t2_4 + bx_0) * t2_4 + cx_0) * t2_4 + _S42, _S35, (_S46 * t2_4 + _S47) * t2_4 + cy_0, 1.0, xcov_1, xwgt_1);
+
+#line 322
         }
 
-#line 229
+#line 289
         ci_0 = ci_0 + 1;
 
-#line 229
+#line 289
     }
 
-#line 257
-    ivec2 vData_0 = BandLoad_0(ivec2(_S25 + bandMax_0.y + 1 + bandIndex_0.x, _S26));
-    ivec2 _S33 = CalcBandLoc_0(glyphLoc_1, uint(vData_0.y));
+#line 363
+    float ycov_1 = 0.0;
 
-#line 258
-    ywgt_2 = 0.0;
+#line 363
+    float ywgt_1 = 0.0;
+    ivec2 _S48 = BandLoad_0(ivec2(_S29 + bandMax_0.y + 1 + bandIndex_0.x, _S30));
 
-#line 258
+#line 364
     int ci2_0 = 0;
-
-#line 258
-    ycov_2 = 0.0;
 
     for(;;)
     {
 
-#line 260
-        if(ci2_0 < (vData_0.x))
+#line 366
+        if(ci2_0 < (_S48.x))
         {
         }
         else
         {
 
-#line 260
+#line 366
             break;
         }
-        ivec2 ref_1 = BandLoad_0(ivec2(_S33.x + ci2_0, _S33.y));
-        int _S34 = ref_1.x;
 
-#line 263
-        int _S35 = ref_1.y;
-        vec4 p12_3 = CurveLoad_0(ivec2(_S34, _S35)) - vec4(renderCoord_0, renderCoord_0);
-        vec2 p3_3 = CurveLoad_0(ivec2(_S34 + 1, _S35)).xy - renderCoord_0;
+#line 372
+        ivec2 ref_1 = BandLoad_0(CalcBandLoc_0(glyphLoc_1, uint(_S48.y) + uint(ci2_0)));
+        int _S49 = ref_1.x;
 
-        float _S36 = _S24.y;
+#line 373
+        bool isCubic_1 = (_S49 & 4096) != 0;
+        int _S50 = _S49 & 4095;
 
-#line 267
-        if((max(max(p12_3.y, p12_3.w), p3_3.y) * _S36) < -0.5)
+#line 374
+        int _S51 = ref_1.y;
+        vec4 p12_3 = CurveLoad_0(ivec2(_S50, _S51)) - vec4(renderCoord_0, renderCoord_0);
+        vec4 texel1_1 = CurveLoad_0(ivec2(_S50 + 1, _S51));
+        vec2 p3_3 = texel1_1.xy - renderCoord_0;
+        vec2 p4_1 = texel1_1.zw - renderCoord_0;
+
+
+        if(isCubic_1)
         {
 
-#line 267
+#line 381
+            maxY_0 = max(max(max(p12_3.y, p12_3.w), p3_3.y), p4_1.y);
+
+#line 381
+        }
+        else
+        {
+
+#line 381
+            maxY_0 = max(max(p12_3.y, p12_3.w), p3_3.y);
+
+#line 381
+        }
+
+        float _S52 = _S28.y;
+
+#line 383
+        if((maxY_0 * _S52) < -0.5)
+        {
+
+#line 383
             break;
         }
-        uint code_1 = CalcRootCode_0(p12_3.x, p12_3.z, p3_3.x);
-        if(code_1 != 0U)
+        if(!isCubic_1)
         {
-            vec2 r_1 = SolveVertPoly_0(p12_3, p3_3) * _S36;
-            if((code_1 & 1U) != 0U)
+            uint code_1 = CalcRootCode_0(p12_3.x, p12_3.z, p3_3.x);
+            if(code_1 != 0U)
             {
-                float _S37 = r_1.x;
+                vec2 r_2 = SolveVertPoly_0(p12_3, p3_3) * _S52;
+                if((code_1 & 1U) != 0U)
+                {
+                    float _S53 = r_2.x;
 
-#line 275
-                float ycov_3 = ycov_2 - saturate_0(_S37 + 0.5);
+#line 393
+                    ycov_1 = ycov_1 - saturate_0(_S53 + 0.5);
+                    ywgt_1 = max(ywgt_1, saturate_0(1.0 - abs(_S53) * 2.0));
 
-#line 275
-                ywgt_1 = max(ywgt_2, saturate_0(1.0 - abs(_S37) * 2.0));
+#line 391
+                }
 
-#line 275
-                ycov_1 = ycov_3;
+#line 396
+                if(code_1 > 1U)
+                {
+                    float _S54 = r_2.y;
 
-#line 273
-            }
-            else
-            {
+#line 398
+                    ycov_1 = ycov_1 + saturate_0(_S54 + 0.5);
+                    ywgt_1 = max(ywgt_1, saturate_0(1.0 - abs(_S54) * 2.0));
 
-#line 273
-                ywgt_1 = ywgt_2;
+#line 396
+                }
 
-#line 273
-                ycov_1 = ycov_2;
-
-#line 273
-            }
-
-#line 273
-            float ywgt_3;
-
-#line 273
-            float ycov_4;
-
-#line 278
-            if(code_1 > 1U)
-            {
-                float _S38 = r_1.y;
-
-#line 280
-                float ycov_5 = ycov_1 + saturate_0(_S38 + 0.5);
-
-#line 280
-                ywgt_3 = max(ywgt_1, saturate_0(1.0 - abs(_S38) * 2.0));
-
-#line 280
-                ycov_4 = ycov_5;
-
-#line 278
-            }
-            else
-            {
-
-#line 278
-                ywgt_3 = ywgt_1;
-
-#line 278
-                ycov_4 = ycov_1;
-
-#line 278
+#line 388
             }
 
-#line 278
-            ywgt_2 = ywgt_3;
+#line 385
+        }
+        else
+        {
 
-#line 278
-            ycov_2 = ycov_4;
+#line 406
+            float _S55 = p12_3.x;
 
-#line 270
+#line 406
+            float _S56 = p12_3.z;
+
+#line 406
+            float _S57 = 3.0 * _S56;
+
+#line 406
+            float _S58 = 3.0 * p3_3.x;
+
+#line 406
+            float ax_1 = - _S55 + _S57 - _S58 + p4_1.x;
+            float bx_1 = 3.0 * _S55 - 6.0 * _S56 + _S58;
+            float cx_1 = -3.0 * _S55 + _S57;
+
+            float _S59 = p12_3.y;
+
+#line 410
+            float _S60 = p12_3.w;
+
+#line 410
+            float _S61 = 3.0 * _S60;
+
+#line 410
+            float _S62 = 3.0 * p3_3.y;
+
+#line 410
+            float ay_1 = - _S59 + _S61 - _S62 + p4_1.y;
+            float by_1 = 3.0 * _S59 - 6.0 * _S60 + _S62;
+            float cy_1 = -3.0 * _S59 + _S61;
+
+            vec3 ts_1 = SolveCubicRoots_0(ax_1, bx_1, cx_1, _S55);
+
+            float t0_1 = ts_1.x;
+            float _S63 = 3.0 * ax_1;
+
+#line 417
+            float _S64 = 2.0 * bx_1;
+
+#line 417
+            ApplyCubicRoot_0(t0_1, ((ay_1 * t0_1 + by_1) * t0_1 + cy_1) * t0_1 + _S59, _S52, (_S63 * t0_1 + _S64) * t0_1 + cx_1, -1.0, ycov_1, ywgt_1);
+            float t1_3 = ts_1.y;
+            ApplyCubicRoot_0(t1_3, ((ay_1 * t1_3 + by_1) * t1_3 + cy_1) * t1_3 + _S59, _S52, (_S63 * t1_3 + _S64) * t1_3 + cx_1, -1.0, ycov_1, ywgt_1);
+            float t2_5 = ts_1.z;
+            ApplyCubicRoot_0(t2_5, ((ay_1 * t2_5 + by_1) * t2_5 + cy_1) * t2_5 + _S59, _S52, (_S63 * t2_5 + _S64) * t2_5 + cx_1, -1.0, ycov_1, ywgt_1);
+
+#line 385
         }
 
-#line 260
+#line 366
         ci2_0 = ci2_0 + 1;
 
-#line 260
+#line 366
     }
 
-#line 286
-    return CalcCoverage_0(xcov_1, ycov_2, xwgt_1, ywgt_2, glyphData_0.w);
+#line 425
+    return CalcCoverage_0(xcov_1, ycov_1, xwgt_1, ywgt_1, glyphData_0.w);
 }
 
 
-#line 286
+#line 425
 layout(location = 0)
 out vec4 entryPointParam_main_ps_0;
 
 
-#line 286
+#line 425
 layout(location = 0)
 in vec4 input_color_0;
 
 
-#line 286
+#line 425
 layout(location = 1)
 in vec2 input_texcoord_0;
 
 
-#line 286
+#line 425
 flat layout(location = 2)
 in vec4 input_banding_0;
 
 
-#line 286
+#line 425
 flat layout(location = 3)
 in ivec4 input_glyph_0;
 
 void main()
 {
 
-#line 289
+#line 428
     entryPointParam_main_ps_0 = input_color_0 * SlugRender_0(input_texcoord_0, input_banding_0, input_glyph_0);
 
-#line 289
+#line 428
     return;
 }
 
