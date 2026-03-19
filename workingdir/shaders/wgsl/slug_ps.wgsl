@@ -1,122 +1,254 @@
-// Slug GPU Font Rendering - Pixel Shader (WGSL)
-// Based on the Slug Algorithm by Eric Lengyel (public domain, 2026)
+@binding(1) @group(0) var bandTexture_0 : texture_2d<f32>;
 
-@binding(0) @group(1) var curveTexture : texture_2d<f32>;
-@binding(1) @group(1) var bandTexture  : texture_2d<f32>;
+@binding(0) @group(0) var curveTexture_0 : texture_2d<f32>;
 
-struct PS_INPUT {
-    @builtin(position) pos       : vec4<f32>,
-    @location(0)        color    : vec4<f32>,
-    @location(1)        texcoord : vec2<f32>,
-    @location(2) @interpolate(flat) banding : vec4<f32>,
-    @location(3) @interpolate(flat) glyph   : vec4<i32>,
+fn BandLoad_0( coord_0 : vec2<i32>) -> vec2<i32>
+{
+    var _S1 : vec3<i32> = vec3<i32>(coord_0, i32(0));
+    var raw_0 : vec4<f32> = (textureLoad((bandTexture_0), ((_S1)).xy, ((_S1)).z));
+    return vec2<i32>(i32(raw_0.x + 0.5f), i32(raw_0.y + 0.5f));
+}
+
+fn CalcBandLoc_0( glyphLoc_0 : vec2<i32>,  offset_0 : u32) -> vec2<i32>
+{
+    var _S2 : i32 = glyphLoc_0.x + i32(offset_0);
+    var loc_0 : vec2<i32> = vec2<i32>(_S2, glyphLoc_0.y);
+    loc_0[i32(1)] = loc_0[i32(1)] + ((_S2 >> (u32(12))));
+    loc_0[i32(0)] = ((loc_0[i32(0)]) & (i32(4095)));
+    return loc_0;
+}
+
+fn CurveLoad_0( coord_1 : vec2<i32>) -> vec4<f32>
+{
+    var _S3 : vec3<i32> = vec3<i32>(coord_1, i32(0));
+    return (textureLoad((curveTexture_0), ((_S3)).xy, ((_S3)).z));
+}
+
+fn CalcRootCode_0( y1_0 : f32,  y2_0 : f32,  y3_0 : f32) -> u32
+{
+    return (((u32(11892) >> ((((((((bitcast<u32>((y3_0))) >> (u32(29)))) & (u32(4)))) | ((((((((((bitcast<u32>((y2_0))) >> (u32(30)))) & (u32(2)))) | ((((((bitcast<u32>((y1_0))) >> (u32(31)))) & (u32(4294967293))))))) & (u32(4294967291)))))))))) & (u32(257)));
+}
+
+fn SolveHorizPoly_0( p12_0 : vec4<f32>,  p3_0 : vec2<f32>) -> vec2<f32>
+{
+    var _S4 : vec2<f32> = p12_0.xy;
+    var _S5 : vec2<f32> = p12_0.zw;
+    var a_0 : vec2<f32> = _S4 - _S5 * vec2<f32>(2.0f) + p3_0;
+    var b_0 : vec2<f32> = _S4 - _S5;
+    var _S6 : f32 = a_0.y;
+    var ra_0 : f32 = 1.0f / _S6;
+    var _S7 : f32 = b_0.y;
+    var rb_0 : f32 = 0.5f / _S7;
+    var _S8 : f32 = p12_0.y;
+    var d_0 : f32 = sqrt(max(_S7 * _S7 - _S6 * _S8, 0.0f));
+    var _S9 : f32 = (_S7 - d_0) * ra_0;
+    var _S10 : f32 = (_S7 + d_0) * ra_0;
+    var t1_0 : f32;
+    var t2_0 : f32;
+    if((abs(_S6)) < 0.0000152587890625f)
+    {
+        var t2_1 : f32 = _S8 * rb_0;
+        t1_0 = t2_1;
+        t2_0 = t2_1;
+    }
+    else
+    {
+        t1_0 = _S9;
+        t2_0 = _S10;
+    }
+    var _S11 : f32 = a_0.x;
+    var _S12 : f32 = b_0.x * 2.0f;
+    var _S13 : f32 = p12_0.x;
+    return vec2<f32>((_S11 * t1_0 - _S12) * t1_0 + _S13, (_S11 * t2_0 - _S12) * t2_0 + _S13);
+}
+
+fn SolveVertPoly_0( p12_1 : vec4<f32>,  p3_1 : vec2<f32>) -> vec2<f32>
+{
+    var _S14 : vec2<f32> = p12_1.xy;
+    var _S15 : vec2<f32> = p12_1.zw;
+    var a_1 : vec2<f32> = _S14 - _S15 * vec2<f32>(2.0f) + p3_1;
+    var b_1 : vec2<f32> = _S14 - _S15;
+    var _S16 : f32 = a_1.x;
+    var ra_1 : f32 = 1.0f / _S16;
+    var _S17 : f32 = b_1.x;
+    var rb_1 : f32 = 0.5f / _S17;
+    var _S18 : f32 = p12_1.x;
+    var d_1 : f32 = sqrt(max(_S17 * _S17 - _S16 * _S18, 0.0f));
+    var _S19 : f32 = (_S17 - d_1) * ra_1;
+    var _S20 : f32 = (_S17 + d_1) * ra_1;
+    var t1_1 : f32;
+    var t2_2 : f32;
+    if((abs(_S16)) < 0.0000152587890625f)
+    {
+        var t2_3 : f32 = _S18 * rb_1;
+        t1_1 = t2_3;
+        t2_2 = t2_3;
+    }
+    else
+    {
+        t1_1 = _S19;
+        t2_2 = _S20;
+    }
+    var _S21 : f32 = a_1.y;
+    var _S22 : f32 = b_1.y * 2.0f;
+    var _S23 : f32 = p12_1.y;
+    return vec2<f32>((_S21 * t1_1 - _S22) * t1_1 + _S23, (_S21 * t2_2 - _S22) * t2_2 + _S23);
+}
+
+fn CalcCoverage_0( xcov_0 : f32,  ycov_0 : f32,  xwgt_0 : f32,  ywgt_0 : f32,  flags_0 : i32) -> f32
+{
+    return saturate(max(abs(xcov_0 * xwgt_0 + ycov_0 * ywgt_0) / max(xwgt_0 + ywgt_0, 0.0000152587890625f), min(abs(xcov_0), abs(ycov_0))));
+}
+
+fn SlugRender_0( renderCoord_0 : vec2<f32>,  banding_0 : vec4<f32>,  glyphData_0 : vec4<i32>) -> f32
+{
+    var ycov_1 : f32;
+    var ywgt_1 : f32;
+    var ycov_2 : f32;
+    var ywgt_2 : f32;
+    var _S24 : vec2<f32> = vec2<f32>(1.0f) / (abs(dpdx(renderCoord_0)) + abs(dpdy(renderCoord_0)));
+    var glyphLoc_1 : vec2<i32> = glyphData_0.xy;
+    var bandMax_0 : vec2<i32> = glyphData_0.zw;
+    bandMax_0[i32(1)] = ((bandMax_0[i32(1)]) & (i32(255)));
+    var bandIndex_0 : vec2<i32> = clamp(vec2<i32>(renderCoord_0 * banding_0.xy + banding_0.zw), vec2<i32>(i32(0), i32(0)), bandMax_0);
+    var _S25 : i32 = glyphLoc_1.x;
+    var _S26 : i32 = glyphLoc_1.y;
+    var hData_0 : vec2<i32> = BandLoad_0(vec2<i32>(_S25 + bandIndex_0.y, _S26));
+    var _S27 : vec2<i32> = CalcBandLoc_0(glyphLoc_1, u32(hData_0.y));
+    var xwgt_1 : f32 = 0.0f;
+    var ci_0 : i32 = i32(0);
+    var xcov_1 : f32 = 0.0f;
+    for(;;)
+    {
+        if(ci_0 < (hData_0.x))
+        {
+        }
+        else
+        {
+            break;
+        }
+        var ref_0 : vec2<i32> = BandLoad_0(vec2<i32>(_S27.x + ci_0, _S27.y));
+        var _S28 : i32 = ref_0.x;
+        var _S29 : i32 = ref_0.y;
+        var p12_2 : vec4<f32> = CurveLoad_0(vec2<i32>(_S28, _S29)) - vec4<f32>(renderCoord_0, renderCoord_0);
+        var p3_2 : vec2<f32> = CurveLoad_0(vec2<i32>(_S28 + i32(1), _S29)).xy - renderCoord_0;
+        var _S30 : f32 = _S24.x;
+        if((max(max(p12_2.x, p12_2.z), p3_2.x) * _S30) < -0.5f)
+        {
+            break;
+        }
+        var code_0 : u32 = CalcRootCode_0(p12_2.y, p12_2.w, p3_2.y);
+        if(code_0 != u32(0))
+        {
+            var r_0 : vec2<f32> = SolveHorizPoly_0(p12_2, p3_2) * vec2<f32>(_S30);
+            if(((code_0 & (u32(1)))) != u32(0))
+            {
+                var _S31 : f32 = r_0.x;
+                var xcov_2 : f32 = xcov_1 + saturate(_S31 + 0.5f);
+                ywgt_2 = max(xwgt_1, saturate(1.0f - abs(_S31) * 2.0f));
+                ycov_2 = xcov_2;
+            }
+            else
+            {
+                ywgt_2 = xwgt_1;
+                ycov_2 = xcov_1;
+            }
+            if(code_0 > u32(1))
+            {
+                var _S32 : f32 = r_0.y;
+                var xcov_3 : f32 = ycov_2 - saturate(_S32 + 0.5f);
+                ywgt_1 = max(ywgt_2, saturate(1.0f - abs(_S32) * 2.0f));
+                ycov_1 = xcov_3;
+            }
+            else
+            {
+                ywgt_1 = ywgt_2;
+                ycov_1 = ycov_2;
+            }
+            xwgt_1 = ywgt_1;
+            xcov_1 = ycov_1;
+        }
+        ci_0 = ci_0 + i32(1);
+    }
+    var vData_0 : vec2<i32> = BandLoad_0(vec2<i32>(_S25 + bandMax_0.y + i32(1) + bandIndex_0.x, _S26));
+    var _S33 : vec2<i32> = CalcBandLoc_0(glyphLoc_1, u32(vData_0.y));
+    ywgt_2 = 0.0f;
+    var ci2_0 : i32 = i32(0);
+    ycov_2 = 0.0f;
+    for(;;)
+    {
+        if(ci2_0 < (vData_0.x))
+        {
+        }
+        else
+        {
+            break;
+        }
+        var ref_1 : vec2<i32> = BandLoad_0(vec2<i32>(_S33.x + ci2_0, _S33.y));
+        var _S34 : i32 = ref_1.x;
+        var _S35 : i32 = ref_1.y;
+        var p12_3 : vec4<f32> = CurveLoad_0(vec2<i32>(_S34, _S35)) - vec4<f32>(renderCoord_0, renderCoord_0);
+        var p3_3 : vec2<f32> = CurveLoad_0(vec2<i32>(_S34 + i32(1), _S35)).xy - renderCoord_0;
+        var _S36 : f32 = _S24.y;
+        if((max(max(p12_3.y, p12_3.w), p3_3.y) * _S36) < -0.5f)
+        {
+            break;
+        }
+        var code_1 : u32 = CalcRootCode_0(p12_3.x, p12_3.z, p3_3.x);
+        if(code_1 != u32(0))
+        {
+            var r_1 : vec2<f32> = SolveVertPoly_0(p12_3, p3_3) * vec2<f32>(_S36);
+            if(((code_1 & (u32(1)))) != u32(0))
+            {
+                var _S37 : f32 = r_1.x;
+                var ycov_3 : f32 = ycov_2 - saturate(_S37 + 0.5f);
+                ywgt_1 = max(ywgt_2, saturate(1.0f - abs(_S37) * 2.0f));
+                ycov_1 = ycov_3;
+            }
+            else
+            {
+                ywgt_1 = ywgt_2;
+                ycov_1 = ycov_2;
+            }
+            var ywgt_3 : f32;
+            var ycov_4 : f32;
+            if(code_1 > u32(1))
+            {
+                var _S38 : f32 = r_1.y;
+                var ycov_5 : f32 = ycov_1 + saturate(_S38 + 0.5f);
+                ywgt_3 = max(ywgt_1, saturate(1.0f - abs(_S38) * 2.0f));
+                ycov_4 = ycov_5;
+            }
+            else
+            {
+                ywgt_3 = ywgt_1;
+                ycov_4 = ycov_1;
+            }
+            ywgt_2 = ywgt_3;
+            ycov_2 = ycov_4;
+        }
+        ci2_0 = ci2_0 + i32(1);
+    }
+    return CalcCoverage_0(xcov_1, ycov_2, xwgt_1, ywgt_2, glyphData_0.w);
+}
+
+struct pixelOutput_0
+{
+    @location(0) output_0 : vec4<f32>,
 };
 
-const SLUG_BAND_TEXTURE_WIDTH : i32 = 4096;
-const SLUG_LOG_BAND_TEX_WIDTH : u32 = 12u;
-
-fn BandLoad(coord : vec2<i32>) -> vec2<i32> {
-    let raw = textureLoad(bandTexture, coord, 0);
-    return vec2<i32>(i32(raw.r + 0.5), i32(raw.g + 0.5));
-}
-
-fn CurveLoad(coord : vec2<i32>) -> vec4<f32> {
-    return textureLoad(curveTexture, coord, 0);
-}
-
-fn CalcBandLoc(glyphLoc : vec2<i32>, offset : i32) -> vec2<i32> {
-    var loc = vec2<i32>(glyphLoc.x + offset, glyphLoc.y);
-    loc.y += loc.x >> i32(SLUG_LOG_BAND_TEX_WIDTH);
-    loc.x &= SLUG_BAND_TEXTURE_WIDTH - 1;
-    return loc;
-}
-
-fn CalcRootCode(y1 : f32, y2 : f32, y3 : f32) -> u32 {
-    let i1 : u32 = bitcast<u32>(y1) >> 31u;
-    let i2 : u32 = bitcast<u32>(y2) >> 30u;
-    let i3 : u32 = bitcast<u32>(y3) >> 29u;
-    var shift : u32 = (i2 & 2u) | (i1 & ~2u);
-    shift = (i3 & 4u) | (shift & ~4u);
-    return (0x2E74u >> shift) & 0x0101u;
-}
-
-fn SolveHorizPoly(p12 : vec4<f32>, p3 : vec2<f32>) -> vec2<f32> {
-    let a  = p12.xy - p12.zw * 2.0 + p3;
-    let b  = p12.xy - p12.zw;
-    let ra = 1.0 / a.y;
-    let rb = 0.5 / b.y;
-    let d  = sqrt(max(b.y * b.y - a.y * p12.y, 0.0));
-    var t1 = (b.y - d) * ra;
-    var t2 = (b.y + d) * ra;
-    if (abs(a.y) < 1.0 / 65536.0) { t1 = p12.y * rb; t2 = t1; }
-    return vec2<f32>((a.x * t1 - b.x * 2.0) * t1 + p12.x,
-                     (a.x * t2 - b.x * 2.0) * t2 + p12.x);
-}
-
-fn SolveVertPoly(p12 : vec4<f32>, p3 : vec2<f32>) -> vec2<f32> {
-    let a  = p12.xy - p12.zw * 2.0 + p3;
-    let b  = p12.xy - p12.zw;
-    let ra = 1.0 / a.x;
-    let rb = 0.5 / b.x;
-    let d  = sqrt(max(b.x * b.x - a.x * p12.x, 0.0));
-    var t1 = (b.x - d) * ra;
-    var t2 = (b.x + d) * ra;
-    if (abs(a.x) < 1.0 / 65536.0) { t1 = p12.x * rb; t2 = t1; }
-    return vec2<f32>((a.y * t1 - b.y * 2.0) * t1 + p12.y,
-                     (a.y * t2 - b.y * 2.0) * t2 + p12.y);
-}
+struct pixelInput_0
+{
+    @location(0) color_0 : vec4<f32>,
+    @location(3) texcoord_0 : vec2<f32>,
+    @interpolate(flat) @location(1) banding_1 : vec4<f32>,
+    @interpolate(flat) @location(2) glyph_0 : vec4<i32>,
+};
 
 @fragment
-fn main_ps(input : PS_INPUT) -> @location(0) vec4<f32> {
-    let renderCoord = input.texcoord;
-    let glyphLoc    = input.glyph.xy;
-    var bandMax     = input.glyph.zw;
-    bandMax.y       = bandMax.y & 0x00FF;
-
-    let emsPerPixel = vec2<f32>(abs(dpdx(renderCoord.x)) + abs(dpdy(renderCoord.x)),
-                                abs(dpdx(renderCoord.y)) + abs(dpdy(renderCoord.y)));
-    let pixelsPerEm = 1.0 / max(emsPerPixel, vec2<f32>(1e-10));
-
-    let bandIndex = clamp(vec2<i32>(renderCoord * input.banding.xy + input.banding.zw),
-                          vec2<i32>(0, 0), bandMax);
-
-    var xcov : f32 = 0.0; var xwgt : f32 = 0.0;
-    let hData = BandLoad(vec2<i32>(glyphLoc.x + bandIndex.y, glyphLoc.y));
-    let hLoc  = CalcBandLoc(glyphLoc, hData.y);
-
-    for (var ci : i32 = 0; ci < hData.x; ci++) {
-        let ref = BandLoad(vec2<i32>(hLoc.x + ci, hLoc.y));
-        let cl  = vec2<i32>(ref.x, ref.y);
-        let p12 = CurveLoad(cl)                          - vec4<f32>(renderCoord, renderCoord);
-        let p3  = CurveLoad(vec2<i32>(cl.x + 1, cl.y)).xy - renderCoord;
-        if (max(max(p12.x, p12.z), p3.x) * pixelsPerEm.x < -0.5) { break; }
-        let code = CalcRootCode(p12.y, p12.w, p3.y);
-        if (code != 0u) {
-            let r = SolveHorizPoly(p12, p3) * pixelsPerEm.x;
-            if ((code & 1u) != 0u) { xcov += clamp(r.x+0.5,0.,1.); xwgt = max(xwgt, clamp(1.-abs(r.x)*2.,0.,1.)); }
-            if (code > 1u)         { xcov -= clamp(r.y+0.5,0.,1.); xwgt = max(xwgt, clamp(1.-abs(r.y)*2.,0.,1.)); }
-        }
-    }
-
-    var ycov : f32 = 0.0; var ywgt : f32 = 0.0;
-    let vData = BandLoad(vec2<i32>(glyphLoc.x + bandMax.y + 1 + bandIndex.x, glyphLoc.y));
-    let vLoc  = CalcBandLoc(glyphLoc, vData.y);
-
-    for (var ci : i32 = 0; ci < vData.x; ci++) {
-        let ref = BandLoad(vec2<i32>(vLoc.x + ci, vLoc.y));
-        let cl  = vec2<i32>(ref.x, ref.y);
-        let p12 = CurveLoad(cl)                          - vec4<f32>(renderCoord, renderCoord);
-        let p3  = CurveLoad(vec2<i32>(cl.x + 1, cl.y)).xy - renderCoord;
-        if (max(max(p12.y, p12.w), p3.y) * pixelsPerEm.y < -0.5) { break; }
-        let code = CalcRootCode(p12.x, p12.z, p3.x);
-        if (code != 0u) {
-            let r = SolveVertPoly(p12, p3) * pixelsPerEm.y;
-            if ((code & 1u) != 0u) { ycov -= clamp(r.x+0.5,0.,1.); ywgt = max(ywgt, clamp(1.-abs(r.x)*2.,0.,1.)); }
-            if (code > 1u)         { ycov += clamp(r.y+0.5,0.,1.); ywgt = max(ywgt, clamp(1.-abs(r.y)*2.,0.,1.)); }
-        }
-    }
-
-    let wsum : f32 = max(xwgt + ywgt, 1.0 / 65536.0);
-    let cov  : f32 = max(abs(xcov * xwgt + ycov * ywgt) / wsum, min(abs(xcov), abs(ycov)));
-    return input.color * clamp(cov, 0.0, 1.0);
+fn main_ps( _S39 : pixelInput_0, @builtin(position) position_0 : vec4<f32>) -> pixelOutput_0
+{
+    var _S40 : pixelOutput_0 = pixelOutput_0( _S39.color_0 * vec4<f32>(SlugRender_0(_S39.texcoord_0, _S39.banding_1, _S39.glyph_0)) );
+    return _S40;
 }
+

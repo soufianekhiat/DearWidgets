@@ -3687,11 +3687,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// DX11 additionally needs CreateVertexInputLayout (builds D3D11 input layout from VS bytecode).
 	// OpenGL/Metal/WGSL use layout(location=N) / pipeline descriptors set up in CreateVertexBuffer.
 
-	// CPU vertex format matching slug.hlsl VS_INPUT (56 bytes per vertex)
+	// Vertex format matching slug.hlsl VS_INPUT (80 bytes = 5 x float4)
+	// Matches the reference implementation layout exactly.
 	struct SlugVertex
 	{
-		float pos[2];  // screen-space position (CPU-dilated by 0.5 px)
-		float tex[4];  // [0,1]=em UV (dilated), [2,3]=packed glyph data (bit-cast uint)
+		float pos[4];  // xy = screen-space position (undilated), zw = outward vertex normal
+		float tex[4];  // xy = em UV (undilated), zw = packed glyph data (bit-cast uint)
+		float jac[4];  // inverse Jacobian: maps screen-space offset → em-space offset
+		               //   = (1/sz, 0, 0, -1/sz) for axis-aligned glyph at pixel size sz
 		float bnd[4];  // band transform: scaleX, scaleY, offsetX, offsetY
 		float col[4];  // RGBA vertex color as floats
 	};
@@ -3793,22 +3796,23 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 		if (glyphCount == 0) return;
 
-		const float sz = font_size;  // pixels per em
+		const float sz    = font_size;        // pixels per em
+		const float invSz = 1.0f / sz;       // 1 screen pixel = invSz em units
 
 		float penX = pos.x;
 
 		// ---- Reference Slug implementation — single draw call ----
 		//
 		// All glyphs packed into one SlugVertex VB + uint16_t IB.
-		// Per-glyph data (band loc, band transform) lives in the vertex stream.
-		// CPU dilation: each quad expanded by 0.5 px on every edge to eliminate
-		// the need for a per-vertex normal / inverse Jacobian attribute.
+		// Per-glyph data (band loc, band transform, normal, Jacobian) lives in the vertex stream.
+		// Dilation is performed in the vertex shader (SlugDilate) — no CPU pre-dilation.
 
-		// Vertex attribute layout for slug VS_INPUT.
-		// Semantic names are used by DX11; other backends use location index order (0-3).
+		// Vertex attribute layout for slug VS_INPUT (5 attributes, 80 bytes).
+		// Semantic names used by DX11; other backends use sequential location indices (0-4).
 		static const ImPlatform_VertexAttribute kSlugAttribs[] = {
-			{ ImPlatform_VertexFormat_Float2, offsetof(SlugVertex, pos), "POSITION" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, pos), "POSITION" },
 			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, tex), "TEXCOORD" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, jac), "TEXCOORD" },
 			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, bnd), "TEXCOORD" },
 			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, col), "COLOR"    },
 		};
@@ -3818,10 +3822,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const float fG = (float)((col >>  8) & 0xFF) / 255.0f;
 		const float fB = (float)((col >> 16) & 0xFF) / 255.0f;
 		const float fA = (float)((col >> 24) & 0xFF) / 255.0f;
-
-		// CPU dilation: 0.5 px per edge in screen space, matching em-space
-		const float dilPx = 0.5f;
-		const float dilEm = dilPx / sz;
 
 		ImVector<SlugVertex>   verts;
 		ImVector<ImU16>        idxs;
@@ -3846,17 +3846,17 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				continue;
 			}
 
-			// Screen-space quad, CPU-dilated by 0.5 px
-			float sL = penX + ge->minXEm * sz - dilPx;
-			float sR = penX + ge->maxXEm * sz + dilPx;
-			float sT = pos.y - ge->maxYEm * sz - dilPx;
-			float sB = pos.y - ge->minYEm * sz + dilPx;
+			// Screen-space quad corners (undilated — dilation handled in vertex shader)
+			float sL = penX + ge->minXEm * sz;
+			float sR = penX + ge->maxXEm * sz;
+			float sT = pos.y - ge->maxYEm * sz;
+			float sB = pos.y - ge->minYEm * sz;
 
-			// em-space UV, dilated by 0.5/sz
-			float uL = ge->minXEm - dilEm;
-			float uR = ge->maxXEm + dilEm;
-			float uT = ge->maxYEm + dilEm;  // screen top = em max-Y (TTF Y-up)
-			float uB = ge->minYEm - dilEm;
+			// em-space UVs (undilated — shader applies Jacobian to compute dilated UV)
+			float uL = ge->minXEm;
+			float uR = ge->maxXEm;
+			float uT = ge->maxYEm;  // screen top = em max-Y (TTF Y-up)
+			float uB = ge->minYEm;
 
 			// Pack per-glyph data into tex.zw as bit-reinterpreted uint32s
 			// tex.z: bits 0-15 = bandTexX, bits 16-31 = bandTexY
@@ -3871,17 +3871,21 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 			ImU16 base = (ImU16)verts.Size;
 
-			// 4 vertices: TL, TR, BR, BL
+			// Inverse Jacobian: maps screen-space offset (dx, dy) to em-space offset (du, dv)
+			// du = dx/sz,  dv = -dy/sz  (Y flipped: screen Y-down, em Y-up)
 			SlugVertex v;
 			v.tex[2] = fgz;  v.tex[3] = fgw;
+			v.jac[0] = invSz; v.jac[1] = 0.0f;
+			v.jac[2] = 0.0f;  v.jac[3] = -invSz;
 			v.bnd[0] = ge->bandScaleX;  v.bnd[1] = ge->bandScaleY;
 			v.bnd[2] = ge->bandOffsetX; v.bnd[3] = ge->bandOffsetY;
 			v.col[0] = fR; v.col[1] = fG; v.col[2] = fB; v.col[3] = fA;
 
-			v.pos[0] = sL; v.pos[1] = sT; v.tex[0] = uL; v.tex[1] = uT; verts.push_back(v);
-			v.pos[0] = sR; v.pos[1] = sT; v.tex[0] = uR; v.tex[1] = uT; verts.push_back(v);
-			v.pos[0] = sR; v.pos[1] = sB; v.tex[0] = uR; v.tex[1] = uB; verts.push_back(v);
-			v.pos[0] = sL; v.pos[1] = sB; v.tex[0] = uL; v.tex[1] = uB; verts.push_back(v);
+			// 4 vertices: TL, TR, BR, BL — normals point outward at each corner
+			v.pos[0] = sL; v.pos[1] = sT; v.pos[2] = -1.0f; v.pos[3] = -1.0f; v.tex[0] = uL; v.tex[1] = uT; verts.push_back(v);
+			v.pos[0] = sR; v.pos[1] = sT; v.pos[2] = +1.0f; v.pos[3] = -1.0f; v.tex[0] = uR; v.tex[1] = uT; verts.push_back(v);
+			v.pos[0] = sR; v.pos[1] = sB; v.pos[2] = +1.0f; v.pos[3] = +1.0f; v.tex[0] = uR; v.tex[1] = uB; verts.push_back(v);
+			v.pos[0] = sL; v.pos[1] = sB; v.pos[2] = -1.0f; v.pos[3] = +1.0f; v.tex[0] = uL; v.tex[1] = uB; verts.push_back(v);
 
 			// 6 indices: two CCW triangles
 			idxs.push_back(base + 0); idxs.push_back(base + 1); idxs.push_back(base + 2);
@@ -3898,7 +3902,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		vbDesc.vertex_stride  = sizeof(SlugVertex);
 		vbDesc.usage          = ImPlatform_BufferUsage_Stream;
 		vbDesc.attributes     = kSlugAttribs;
-		vbDesc.attribute_count = 4;
+		vbDesc.attribute_count = 5;
 
 		ImPlatform_IndexBufferDesc ibDesc = {};
 		ibDesc.index_count = (unsigned int)idxs.Size;

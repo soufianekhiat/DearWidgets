@@ -1,69 +1,75 @@
-// Slug GPU Font Rendering - Vertex Shader (WGSL)
-// Based on the Slug Algorithm by Eric Lengyel (public domain, 2026)
-
-struct SlugVSConstants {
-    SlugProjMtx : mat4x4<f32>,
-    SlugViewport : vec2<f32>,
-    _pad : vec2<f32>,
+struct _MatrixStorage_float4x4_ColMajorstd140_0
+{
+    @align(16) data_0 : array<vec4<f32>, i32(4)>,
 };
 
-@binding(0) @group(0) var<uniform> cb : SlugVSConstants;
-
-struct VS_INPUT {
-    @location(0) pos : vec4<f32>,
-    @location(1) tex : vec4<f32>,
-    @location(2) jac : vec4<f32>,
-    @location(3) bnd : vec4<f32>,
-    @location(4) col : vec4<f32>,
+struct SLANG_ParameterGroup_vertexBuffer_std140_0
+{
+    @align(16) ProjectionMatrix_0 : _MatrixStorage_float4x4_ColMajorstd140_0,
 };
 
-struct PS_INPUT {
-    @builtin(position) pos       : vec4<f32>,
-    @location(0)        color    : vec4<f32>,
-    @location(1)        texcoord : vec2<f32>,
-    @location(2) @interpolate(flat) banding : vec4<f32>,
-    @location(3) @interpolate(flat) glyph   : vec4<i32>,
+@binding(0) @group(0) var<uniform> vertexBuffer_0 : SLANG_ParameterGroup_vertexBuffer_std140_0;
+fn SlugDilate_0( pos_0 : vec4<f32>,  tex_0 : vec4<f32>,  jac_0 : vec4<f32>,  m0_0 : vec4<f32>,  m1_0 : vec4<f32>,  m3_0 : vec4<f32>,  dim_0 : vec2<f32>,  vpos_0 : ptr<function, vec2<f32>>) -> vec2<f32>
+{
+    var _S1 : vec2<f32> = pos_0.zw;
+    var n_0 : vec2<f32> = normalize(_S1);
+    var _S2 : vec2<f32> = m3_0.xy;
+    var _S3 : vec2<f32> = pos_0.xy;
+    var s_0 : f32 = dot(_S2, _S3) + m3_0.w;
+    var t_0 : f32 = dot(_S2, n_0);
+    var _S4 : vec2<f32> = m0_0.xy;
+    var u_0 : f32 = (s_0 * dot(_S4, n_0) - t_0 * (dot(_S4, _S3) + m0_0.w)) * dim_0.x;
+    var _S5 : vec2<f32> = m1_0.xy;
+    var v_0 : f32 = (s_0 * dot(_S5, n_0) - t_0 * (dot(_S5, _S3) + m1_0.w)) * dim_0.y;
+    var st_0 : f32 = s_0 * t_0;
+    var uv_0 : f32 = u_0 * u_0 + v_0 * v_0;
+    var d_0 : vec2<f32> = _S1 * vec2<f32>((s_0 * s_0 * (st_0 + sqrt(uv_0)) / (uv_0 - st_0 * st_0)));
+    (*vpos_0) = _S3 + d_0;
+    return vec2<f32>(tex_0.x + dot(d_0, jac_0.xy), tex_0.y + dot(d_0, jac_0.zw));
+}
+
+fn SlugUnpack_0( tex_1 : vec4<f32>,  bnd_0 : vec4<f32>,  vbnd_0 : ptr<function, vec4<f32>>,  vgly_0 : ptr<function, vec4<i32>>)
+{
+    var g_0 : vec2<u32> = (bitcast<vec2<u32>>((tex_1.zw)));
+    var _S6 : u32 = g_0.x;
+    var _S7 : u32 = g_0.y;
+    (*vgly_0) = vec4<i32>(i32((_S6 & (u32(65535)))), i32((_S6 >> (u32(16)))), i32((_S7 & (u32(65535)))), i32((_S7 >> (u32(16)))));
+    (*vbnd_0) = bnd_0;
+    return;
+}
+
+struct PS_INPUT_0
+{
+    @builtin(position) position_0 : vec4<f32>,
+    @location(0) color_0 : vec4<f32>,
+    @location(3) texcoord_0 : vec2<f32>,
+    @interpolate(flat) @location(1) banding_0 : vec4<f32>,
+    @interpolate(flat) @location(2) glyph_0 : vec4<i32>,
+};
+
+struct vertexInput_0
+{
+    @location(0) pos_1 : vec4<f32>,
+    @location(3) tex_2 : vec4<f32>,
+    @location(1) jac_1 : vec4<f32>,
+    @location(2) bnd_1 : vec4<f32>,
+    @location(4) col_0 : vec4<f32>,
 };
 
 @vertex
-fn main_vs(input : VS_INPUT) -> PS_INPUT {
-    var output : PS_INPUT;
-
-    // Unpack glyph info from bit-packed floats
-    let gx : u32 = bitcast<u32>(input.tex.z);
-    let gy : u32 = bitcast<u32>(input.tex.w);
-    output.glyph   = vec4<i32>(i32(gx & 0xFFFFu), i32(gx >> 16u),
-                                i32(gy & 0xFFFFu), i32(gy >> 16u));
-    output.banding = input.bnd;
-    output.color   = input.col;
-
-    let n : vec2<f32> = normalize(input.pos.zw);
-    let M : mat4x4<f32> = cb.SlugProjMtx;
-
-    // Extract rows 0, 1, 3 from column-major matrix
-    let m0 = vec4<f32>(M[0][0], M[1][0], M[2][0], M[3][0]);
-    let m1 = vec4<f32>(M[0][1], M[1][1], M[2][1], M[3][1]);
-    let m3 = vec4<f32>(M[0][3], M[1][3], M[2][3], M[3][3]);
-
-    let s  : f32 = dot(m3.xy, input.pos.xy) + m3.w;
-    let t  : f32 = dot(m3.xy, n);
-    let u  : f32 = (s * dot(m0.xy, n) - t * (dot(m0.xy, input.pos.xy) + m0.w)) * cb.SlugViewport.x;
-    let v  : f32 = (s * dot(m1.xy, n) - t * (dot(m1.xy, input.pos.xy) + m1.w)) * cb.SlugViewport.y;
-
-    let s2   : f32 = s * s;
-    let st   : f32 = s * t;
-    let uv2  : f32 = u * u + v * v;
-    let denom: f32 = uv2 - st * st;
-    var d    : vec2<f32>;
-    if (abs(denom) > 1e-10) {
-        d = input.pos.zw * (s2 * (st + sqrt(max(uv2, 0.0))) / denom);
-    } else {
-        d = input.pos.zw;
-    }
-
-    let p = input.pos.xy + d;
-    output.texcoord = vec2<f32>(input.tex.x + dot(d, input.jac.xy),
-                                input.tex.y + dot(d, input.jac.zw));
-    output.pos = M * vec4<f32>(p, 0.0, 1.0);
-    return output;
+fn main_vs( _S8 : vertexInput_0) -> PS_INPUT_0
+{
+    var output_0 : PS_INPUT_0;
+    var dilatedPos_0 : vec2<f32>;
+    var _S9 : vec2<f32> = SlugDilate_0(_S8.pos_1, _S8.tex_2, _S8.jac_1, vec4<f32>(vertexBuffer_0.ProjectionMatrix_0.data_0[i32(0)][i32(0)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(1)][i32(0)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(2)][i32(0)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(3)][i32(0)]), vec4<f32>(vertexBuffer_0.ProjectionMatrix_0.data_0[i32(0)][i32(1)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(1)][i32(1)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(2)][i32(1)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(3)][i32(1)]), vec4<f32>(vertexBuffer_0.ProjectionMatrix_0.data_0[i32(0)][i32(3)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(1)][i32(3)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(2)][i32(3)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(3)][i32(3)]), vec2<f32>(2.0f / vertexBuffer_0.ProjectionMatrix_0.data_0[i32(0)][i32(0)], 2.0f / abs(vertexBuffer_0.ProjectionMatrix_0.data_0[i32(1)][i32(1)])), &(dilatedPos_0));
+    output_0.texcoord_0 = _S9;
+    output_0.position_0 = (((vec4<f32>(dilatedPos_0, 0.0f, 1.0f)) * (mat4x4<f32>(vertexBuffer_0.ProjectionMatrix_0.data_0[i32(0)][i32(0)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(1)][i32(0)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(2)][i32(0)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(3)][i32(0)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(0)][i32(1)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(1)][i32(1)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(2)][i32(1)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(3)][i32(1)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(0)][i32(2)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(1)][i32(2)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(2)][i32(2)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(3)][i32(2)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(0)][i32(3)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(1)][i32(3)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(2)][i32(3)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(3)][i32(3)]))));
+    output_0.color_0 = _S8.col_0;
+    var _S10 : vec4<f32> = output_0.banding_0;
+    var _S11 : vec4<i32> = output_0.glyph_0;
+    SlugUnpack_0(_S8.tex_2, _S8.bnd_1, &(_S10), &(_S11));
+    output_0.banding_0 = _S10;
+    output_0.glyph_0 = _S11;
+    return output_0;
 }
+

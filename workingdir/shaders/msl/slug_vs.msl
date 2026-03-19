@@ -1,73 +1,142 @@
-// Slug GPU Font Rendering - Vertex Shader (Metal MSL)
-// Based on the Slug Algorithm by Eric Lengyel (public domain, 2026)
 #include <metal_stdlib>
 #include <metal_math>
+#include <metal_texture>
 using namespace metal;
 
-struct SlugVSConstants
+#line 87 "C:/git/DearWidgets/workingdir/shaders/hlsl_src/slug.hlsl"
+float2 SlugDilate_0(float4 pos_0, float4 tex_0, float4 jac_0, float4 m0_0, float4 m1_0, float4 m3_0, float2 dim_0, float2 thread* vpos_0)
 {
-    float4x4 SlugProjMtx;
-    float2   SlugViewport;
-    float2   _pad;
-};
+    float2 _S1 = pos_0.zw;
 
-struct VS_INPUT
-{
-    float4 pos [[attribute(0)]];
-    float4 tex [[attribute(1)]];
-    float4 jac [[attribute(2)]];
-    float4 bnd [[attribute(3)]];
-    float4 col [[attribute(4)]];
-};
+#line 89
+    float2 n_0 = normalize(_S1);
+    float2 _S2 = m3_0.xy;
 
-struct PS_INPUT
-{
-    float4 pos      [[position]];
-    float4 color    [[user(COLOR)]];
-    float2 texcoord [[user(TEXCOORD)]];
-    float4 banding  [[flat, user(BANDING)]];
-    int4   glyph    [[flat, user(GLYPH)]];
-};
+#line 90
+    float2 _S3 = pos_0.xy;
 
-[[vertex]]
-PS_INPUT main_vs(VS_INPUT input [[stage_in]],
-                 constant SlugVSConstants& cb [[buffer(1)]])
-{
-    PS_INPUT output;
+#line 90
+    float s_0 = dot(_S2, _S3) + m3_0.w;
+    float t_0 = dot(_S2, n_0);
 
-    // Unpack glyph location from packed floats
-    uint gx = as_type<uint>(input.tex.z);
-    uint gy = as_type<uint>(input.tex.w);
-    output.glyph = int4(int(gx & 0xFFFFu), int(gx >> 16u),
-                        int(gy & 0xFFFFu), int(gy >> 16u));
-    output.banding = input.bnd;
-    output.color   = input.col;
+    float2 _S4 = m0_0.xy;
 
-    // Dynamic dilation
-    float2 n = normalize(input.pos.zw);
-    float4x4 M = cb.SlugProjMtx;
-    // In Metal, matrix is column-major: M[col][row]
-    float4 m0 = float4(M[0][0], M[1][0], M[2][0], M[3][0]);
-    float4 m1 = float4(M[0][1], M[1][1], M[2][1], M[3][1]);
-    float4 m3 = float4(M[0][3], M[1][3], M[2][3], M[3][3]);
+#line 93
+    float u_0 = (s_0 * dot(_S4, n_0) - t_0 * (dot(_S4, _S3) + m0_0.w)) * dim_0.x;
+    float2 _S5 = m1_0.xy;
 
-    float s  = dot(m3.xy, input.pos.xy) + m3.w;
-    float t  = dot(m3.xy, n);
-    float u  = (s * dot(m0.xy, n) - t * (dot(m0.xy, input.pos.xy) + m0.w)) * cb.SlugViewport.x;
-    float v  = (s * dot(m1.xy, n) - t * (dot(m1.xy, input.pos.xy) + m1.w)) * cb.SlugViewport.y;
+#line 94
+    float v_0 = (s_0 * dot(_S5, n_0) - t_0 * (dot(_S5, _S3) + m1_0.w)) * dim_0.y;
 
-    float s2  = s * s;
-    float st  = s * t;
-    float uv2 = u * u + v * v;
-    float denom = uv2 - st * st;
-    float2 d = (fabs(denom) > 1e-10f)
-        ? input.pos.zw * (s2 * (st + sqrt(max(uv2, 0.0f))) / denom)
-        : input.pos.zw;
 
-    float2 p = input.pos.xy + d;
-    output.texcoord = float2(input.tex.x + dot(d, input.jac.xy),
-                             input.tex.y + dot(d, input.jac.zw));
-    output.pos = M * float4(p, 0.0f, 1.0f);
+    float st_0 = s_0 * t_0;
+    float uv_0 = u_0 * u_0 + v_0 * v_0;
+    float2 d_0 = _S1 * float2((s_0 * s_0 * (st_0 + sqrt(uv_0)) / (uv_0 - st_0 * st_0))) ;
 
-    return output;
+    *vpos_0 = _S3 + d_0;
+    return float2(tex_0.x + dot(d_0, jac_0.xy), tex_0.y + dot(d_0, jac_0.zw));
 }
+
+
+#line 69
+void SlugUnpack_0(float4 tex_1, float4 bnd_0, float4 thread* vbnd_0, int4 thread* vgly_0)
+{
+    uint2 g_0 = (as_type<uint2>((tex_1.zw)));
+    uint _S6 = g_0.x;
+
+#line 72
+    uint _S7 = g_0.y;
+
+#line 72
+    *vgly_0 = int4(int(_S6 & 65535U), int(_S6 >> 16U), int(_S7 & 65535U), int(_S7 >> 16U));
+    *vbnd_0 = bnd_0;
+    return;
+}
+
+
+#line 74
+struct main_vs_Result_0
+{
+    float4 position_0 [[position]];
+    float4 color_0 [[user(COLOR)]];
+    float2 texcoord_0 [[user(TEXCOORD)]];
+    float4 banding_0 [[user(TEXCOORD_1)]];
+    int4 glyph_0 [[user(TEXCOORD_2)]];
+};
+
+
+#line 74
+struct vertexInput_0
+{
+    float4 pos_1 [[attribute(0)]];
+    float4 tex_2 [[attribute(1)]];
+    float4 jac_1 [[attribute(2)]];
+    float4 bnd_1 [[attribute(3)]];
+    float4 col_0 [[attribute(4)]];
+};
+
+
+#line 74
+struct _MatrixStorage_float4x4_ColMajornatural_0
+{
+    array<float4, int(4)> data_0;
+};
+
+
+#line 74
+struct SLANG_ParameterGroup_vertexBuffer_natural_0
+{
+    _MatrixStorage_float4x4_ColMajornatural_0 ProjectionMatrix_0;
+};
+
+
+#line 55
+struct PS_INPUT_0
+{
+    float4 position_1;
+    float4 color_1;
+    float2 texcoord_1;
+    [[flat]] float4 banding_1;
+    [[flat]] int4 glyph_1;
+};
+
+
+#line 55
+[[vertex]] main_vs_Result_0 main_vs(vertexInput_0 _S8 [[stage_in]], SLANG_ParameterGroup_vertexBuffer_natural_0 constant* vertexBuffer_0 [[buffer(0)]])
+{
+
+#line 107
+    thread PS_INPUT_0 output_0;
+
+#line 117
+    thread float2 dilatedPos_0;
+    float2 _S9 = SlugDilate_0(_S8.pos_1, _S8.tex_2, _S8.jac_1, float4((&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(0)][int(0)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(1)][int(0)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(2)][int(0)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(3)][int(0)]), float4((&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(0)][int(1)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(1)][int(1)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(2)][int(1)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(3)][int(1)]), float4((&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(0)][int(3)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(1)][int(3)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(2)][int(3)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(3)][int(3)]), float2(2.0 / (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(0)][int(0)], 2.0 / abs((&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(1)][int(1)])), &dilatedPos_0);
+
+#line 118
+    (&output_0)->texcoord_1 = _S9;
+    (&output_0)->position_1 = (((float4(dilatedPos_0, 0.0, 1.0)) * (matrix<float,int(4),int(4)> (vertexBuffer_0->ProjectionMatrix_0.data_0[int(0)][int(0)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(1)][int(0)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(2)][int(0)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(3)][int(0)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(0)][int(1)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(1)][int(1)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(2)][int(1)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(3)][int(1)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(0)][int(2)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(1)][int(2)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(2)][int(2)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(3)][int(2)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(0)][int(3)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(1)][int(3)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(2)][int(3)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(3)][int(3)]))));
+    (&output_0)->color_1 = _S8.col_0;
+    SlugUnpack_0(_S8.tex_2, _S8.bnd_1, &(&output_0)->banding_1, &(&output_0)->glyph_1);
+
+#line 121
+    thread main_vs_Result_0 _S10;
+
+#line 121
+    (&_S10)->position_0 = output_0.position_1;
+
+#line 121
+    (&_S10)->color_0 = output_0.color_1;
+
+#line 121
+    (&_S10)->texcoord_0 = output_0.texcoord_1;
+
+#line 121
+    (&_S10)->banding_0 = output_0.banding_1;
+
+#line 121
+    (&_S10)->glyph_0 = output_0.glyph_1;
+
+#line 121
+    return _S10;
+}
+
