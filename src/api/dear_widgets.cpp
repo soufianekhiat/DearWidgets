@@ -4964,14 +4964,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return ImVec2(u*u*p1x + 2*u*t*p2x + t*t*p3x,
 		              u*u*p1y + 2*u*t*p2y + t*t*p3y);
 	}
-	// Evaluate a cubic Bezier at parameter t
-	static ImVec2 EvalCubic(float p1x, float p1y, float p2x, float p2y,
-	                         float p3x, float p3y, float p4x, float p4y, float t)
-	{
-		float u = 1.0f - t;
-		return ImVec2(u*u*u*p1x + 3*u*u*t*p2x + 3*u*t*t*p3x + t*t*t*p4x,
-		              u*u*u*p1y + 3*u*u*t*p2y + 3*u*t*t*p3y + t*t*t*p4y);
-	}
 
 	// Helper: draw debug curves/ctrl/bbox/bands for a single glyph's curve list
 	static void SlugDebugDrawCurves(ImDrawList* dl, const ImVector<SlugCurve>& curves,
@@ -4995,9 +4987,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				ImVec2 prev(penX + (cv.p1x + ttx) * sz, posY - (cv.p1y + tty) * sz);
 				for (int s = 1; s <= SEGS; s++) {
 					float t = (float)s / SEGS;
-					ImVec2 pt = false
-									? EvalQuad(cv.p1x, cv.p1y, cv.p2x, cv.p2y, cv.p3x, cv.p3y, t) // unreachable
-									: EvalQuad(cv.p1x, cv.p1y, cv.p2x, cv.p2y, cv.p3x, cv.p3y, t);
+					ImVec2 pt = EvalQuad(cv.p1x, cv.p1y, cv.p2x, cv.p2y, cv.p3x, cv.p3y, t);
 					pt = ImVec2(penX + (pt.x + ttx) * sz, posY - (pt.y + tty) * sz);
 					dl->AddLine(prev, pt, curveCol, 1.5f);
 					prev = pt;
