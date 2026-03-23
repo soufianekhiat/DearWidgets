@@ -759,9 +759,9 @@ struct pixelInput_0
     float _S72 = SlugRender_0(_S71.texcoord_0, _S71.banding_1, _S71.glyph_0, &kernelContext_3);
 
 #line 428
-    pixelOutput_0 _S73 = { _S71.color_0 * float4(_S72)  };
+    pixelOutput_0 _S73 = { float4(_S71.color_0.xyz, _S71.color_0.w * _S72) };
 
-#line 437
+#line 435
     return _S73;
 }
 

@@ -15,9 +15,7 @@
 // tex.z interpreted as uint: bits 0-15 = bandTexX, bits 16-31 = bandTexY
 // tex.w interpreted as uint: bits 0-15 = bandMaxX, bits 16-23 = bandMaxY, bit 28 = E (even-odd)
 //
-// Dilation is performed in the vertex shader (SlugDilate), matching the reference exactly.
-// The Jacobian is (1/sz, 0, 0, -1/sz) for an axis-aligned glyph at pixel size sz.
-// Viewport dimensions are derived from the projection matrix: dim = (2/P[0][0], 2/|P[1][1]|).
+// All curves are quadratic Bezier (cubics are converted to quadratics on the CPU).
 //
 // Entry points: main_vs, main_ps
 
@@ -74,16 +72,6 @@ void SlugUnpack(float4 tex, float4 bnd, out float4 vbnd, out int4 vgly)
 }
 
 // Dynamic vertex dilation — matches the reference implementation exactly.
-// Pushes each vertex along its outward normal by exactly 0.5 screen pixels,
-// accounting for the full MVP transform (handles rotation, scale, perspective).
-// Also updates the em-space texcoord via the inverse Jacobian.
-//   pos:  xy = object-space position, zw = outward normal direction
-//   tex:  xy = em-space UV (undilated)
-//   jac:  inverse Jacobian (maps object-space offset → em-space offset)
-//   m0, m1, m3: rows 0, 1, 3 of the MVP matrix
-//   dim:  viewport dimensions in pixels
-//   vpos: [out] dilated object-space position
-// Returns: dilated em-space texcoord
 float2 SlugDilate(float4 pos, float4 tex, float4 jac, float4 m0, float4 m1, float4 m3, float2 dim, out float2 vpos)
 {
     float2 n  = normalize(pos.zw);
@@ -106,9 +94,6 @@ PS_INPUT main_vs(VS_INPUT input)
 {
     PS_INPUT output;
 
-    // Derive viewport dimensions from the orthographic projection matrix.
-    // P[0][0] = 2/W  =>  W = 2/P[0][0]
-    // P[1][1] = ±2/H =>  H = 2/|P[1][1]|
     float4 m0  = ProjectionMatrix[0];
     float4 m1  = ProjectionMatrix[1];
     float4 m3  = ProjectionMatrix[3];
@@ -183,95 +168,16 @@ float2 SolveVertPoly(float4 p12, float2 p3)
                   (a.y * t2 - b.y * 2.0f) * t2 + p12.y);
 }
 
-// Solve cubic at^3 + bt^2 + ct + d = 0 — returns up to 3 real roots (invalid = 1e9).
-// Uses the trigonometric method for 3-root case, Cardano for 1-root case.
-float3 SolveCubicRoots(float a, float b, float c, float d)
-{
-    // Degenerate: quadratic or lower
-    if (abs(a) < 1.0f / 65536.0f)
-    {
-        if (abs(b) < 1.0f / 65536.0f)
-        {
-            if (abs(c) < 1.0f / 65536.0f) return float3(1e9f, 1e9f, 1e9f);
-            return float3(-d / c, 1e9f, 1e9f);
-        }
-        float disc2 = c * c - 4.0f * b * d;
-        if (disc2 < 0.0f) return float3(1e9f, 1e9f, 1e9f);
-        float sq = sqrt(disc2), inv2b = 0.5f / b;
-        return float3((-c - sq) * inv2b, (-c + sq) * inv2b, 1e9f);
-    }
-    // Normalise to t^3 + Bt^2 + Ct + D = 0
-    float inv_a = 1.0f / a;
-    float B = b * inv_a, C = c * inv_a, D = d * inv_a;
-    // Depress: t = u - B/3  =>  u^3 + pu + q = 0
-    float shift = -B / 3.0f;
-    float p = C - B * B / 3.0f;
-    float q = D + B * (2.0f * B * B - 9.0f * C) / 27.0f;
-    float disc = -(4.0f * p * p * p + 27.0f * q * q);
-    if (disc >= 0.0f)
-    {
-        // Three real roots — trigonometric method
-        // arg = 3q / (p * m), where m = 2*sqrt(-p/3)  (mathematically in [-1,1] when disc>=0)
-        float m   = 2.0f * sqrt(max(-p / 3.0f, 0.0f));
-        float arg = (m > 1e-7f) ? clamp(3.0f * q / (p * m), -1.0f, 1.0f) : 0.0f;
-        float phi = acos(arg) / 3.0f;
-        return float3(m * cos(phi)                + shift,
-                      m * cos(phi - 2.0943951f)   + shift,   // 2*pi/3
-                      m * cos(phi - 4.1887902f)   + shift);  // 4*pi/3
-    }
-    else
-    {
-        // One real root — Cardano
-        float sq  = sqrt(max(-disc / 108.0f, 0.0f));
-        float hq  = -q * 0.5f;
-        float A   = sign(hq + sq) * pow(abs(hq + sq), 1.0f / 3.0f);
-        float Bv  = sign(hq - sq) * pow(abs(hq - sq), 1.0f / 3.0f);
-        return float3(A + Bv + shift, 1e9f, 1e9f);
-    }
-}
-
-// Apply coverage contribution for one cubic root (t must be in [0,1)).
-// deriv: dy/dt (horiz) or dx/dt (vert) determines winding direction.
-// sign_pos: +1.0 for horiz (dyt>0 → xcov+=), -1.0 for vert (dxt>0 → ycov-=).
-void ApplyCubicRoot(float t, float x_em, float pxPerEm, float deriv, float sign_pos,
-                    inout float cov, inout float wgt)
-{
-    if (t < 0.0f || t >= 1.0f) return;
-    float r = x_em * pxPerEm;
-    float contrib = saturate(r + 0.5f);
-    float w       = saturate(1.0f - abs(r) * 2.0f);
-    if (deriv > 0.0f) { cov += sign_pos * contrib; wgt = max(wgt, w); }
-    else if (deriv < 0.0f) { cov -= sign_pos * contrib; wgt = max(wgt, w); }
-}
-
-float CalcCoverage(float xcov, float ycov, float xwgt, float ywgt, int flags)
+float CalcCoverage(float xcov, float ycov, float xwgt, float ywgt)
 {
     float coverage = max(abs(xcov * xwgt + ycov * ywgt) / max(xwgt + ywgt, 1.0f / 65536.0f),
                          min(abs(xcov), abs(ycov)));
-
-#if defined(SLUG_EVENODD)
-    if ((flags & 0x1000) == 0)
-    {
-#endif
-        coverage = saturate(coverage);
-#if defined(SLUG_EVENODD)
-    }
-    else
-    {
-        coverage = 1.0f - abs(1.0f - frac(coverage * 0.5f) * 2.0f);
-    }
-#endif
-
-#if defined(SLUG_WEIGHT)
-    coverage = sqrt(coverage);
-#endif
-
+    coverage = saturate(coverage);
     return coverage;
 }
 
 float SlugRender(float2 renderCoord, float4 banding, int4 glyphData)
 {
-    // fwidth expanded for Slang/Metal compatibility: abs(ddx) + abs(ddy)
     float2 emsPerPixel = abs(ddx(renderCoord)) + abs(ddy(renderCoord));
     float2 pixelsPerEm = 1.0f / emsPerPixel;
 
@@ -288,74 +194,30 @@ float SlugRender(float2 renderCoord, float4 banding, int4 glyphData)
 
     for (int ci = 0; ci < hData.x; ci++)
     {
-        // DIFFERENCE FROM REFERENCE: Per-ref CalcBandLoc instead of linear hLoc.x + ci.
-        //
-        // The reference implementation pre-computes the base address of the band's ref list:
-        //   int2 hLoc = CalcBandLoc(glyphLoc, uint(hData.y));
-        // and then reads each ref with a plain linear offset:
-        //   ref = BandLoad(int2(hLoc.x + ci, hLoc.y));  // reference code (buggy for us)
-        //
-        // This works in the reference because its band texture layout guarantees each band's
-        // ref list fits entirely within one texture row, so hLoc.x + ci never crosses 4096.
-        //
-        // In our implementation the band cursor is shared across all glyphs and the ref lists
-        // are packed contiguously without per-band row alignment. When a band's ref list
-        // crosses a row boundary, hLoc.x + ci exceeds 4095 and the GPU texture Load returns
-        // zero for those out-of-bounds coordinates — those curves become invisible, causing
-        // horizontal or vertical stripe artifacts in the rendered glyph.
-        //
-        // Fix: call CalcBandLoc individually for every ref, which performs the correct
-        // row-wrap (>> 12, & 4095) and always produces a valid texture coordinate.
         int2   ref      = BandLoad(CalcBandLoc(glyphLoc, uint(hData.y) + uint(ci)));
-        bool   isCubic  = (ref.x & 0x1000) != 0;
         int2   curveLoc = int2(ref.x & 0x0FFF, ref.y);
         float4 p12    = CurveLoad(curveLoc) - float4(renderCoord, renderCoord);
         float4 texel1 = CurveLoad(int2(curveLoc.x + 1, curveLoc.y));
         float2 p3     = texel1.xy - renderCoord;
-        float2 p4     = texel1.zw - renderCoord;  // valid for cubic only
 
         // Early exit: curves sorted by descending maxX
-        float maxX = isCubic ? max(max(max(p12.x, p12.z), p3.x), p4.x)
-                             : max(max(p12.x, p12.z), p3.x);
+        float maxX = max(max(p12.x, p12.z), p3.x);
         if (maxX * pixelsPerEm.x < -0.5f) break;
 
-        if (!isCubic)
+        uint code = CalcRootCode(p12.y, p12.w, p3.y);
+        if (code != 0U)
         {
-            uint code = CalcRootCode(p12.y, p12.w, p3.y);
-            if (code != 0U)
+            float2 r = SolveHorizPoly(p12, p3) * pixelsPerEm.x;
+            if ((code & 1U) != 0U)
             {
-                float2 r = SolveHorizPoly(p12, p3) * pixelsPerEm.x;
-                if ((code & 1U) != 0U)
-                {
-                    xcov += saturate(r.x + 0.5f);
-                    xwgt  = max(xwgt, saturate(1.0f - abs(r.x) * 2.0f));
-                }
-                if (code > 1U)
-                {
-                    xcov -= saturate(r.y + 0.5f);
-                    xwgt  = max(xwgt, saturate(1.0f - abs(r.y) * 2.0f));
-                }
+                xcov += saturate(r.x + 0.5f);
+                xwgt  = max(xwgt, saturate(1.0f - abs(r.x) * 2.0f));
             }
-        }
-        else
-        {
-            // Cubic Bezier: polynomial coefficients for Y and X components
-            float ay = -p12.y + 3.0f*p12.w - 3.0f*p3.y + p4.y;
-            float by =  3.0f*p12.y - 6.0f*p12.w + 3.0f*p3.y;
-            float cy = -3.0f*p12.y + 3.0f*p12.w;
-            float dy =  p12.y;
-            float ax = -p12.x + 3.0f*p12.z - 3.0f*p3.x + p4.x;
-            float bx =  3.0f*p12.x - 6.0f*p12.z + 3.0f*p3.x;
-            float cx = -3.0f*p12.x + 3.0f*p12.z;
-            float dx =  p12.x;
-            float3 ts = SolveCubicRoots(ay, by, cy, dy);
-            // Process each root: dy/dt sign gives winding direction
-            float t0 = ts.x; float x0 = ((ax*t0+bx)*t0+cx)*t0+dx;
-            ApplyCubicRoot(t0, x0, pixelsPerEm.x, (3.0f*ay*t0+2.0f*by)*t0+cy, 1.0f, xcov, xwgt);
-            float t1 = ts.y; float x1 = ((ax*t1+bx)*t1+cx)*t1+dx;
-            ApplyCubicRoot(t1, x1, pixelsPerEm.x, (3.0f*ay*t1+2.0f*by)*t1+cy, 1.0f, xcov, xwgt);
-            float t2 = ts.z; float x2 = ((ax*t2+bx)*t2+cx)*t2+dx;
-            ApplyCubicRoot(t2, x2, pixelsPerEm.x, (3.0f*ay*t2+2.0f*by)*t2+cy, 1.0f, xcov, xwgt);
+            if (code > 1U)
+            {
+                xcov -= saturate(r.y + 0.5f);
+                xwgt  = max(xwgt, saturate(1.0f - abs(r.y) * 2.0f));
+            }
         }
     }
 
@@ -365,68 +227,55 @@ float SlugRender(float2 renderCoord, float4 banding, int4 glyphData)
 
     for (int ci2 = 0; ci2 < vData.x; ci2++)
     {
-        // Same fix as the horizontal band above: per-ref CalcBandLoc for correct row wrapping.
-        // Reference code would be:
-        //   int2 vLoc = CalcBandLoc(glyphLoc, uint(vData.y));
-        //   ref = BandLoad(int2(vLoc.x + ci2, vLoc.y));  // reference code (buggy for us)
         int2   ref      = BandLoad(CalcBandLoc(glyphLoc, uint(vData.y) + uint(ci2)));
-        bool   isCubic  = (ref.x & 0x1000) != 0;
         int2   curveLoc = int2(ref.x & 0x0FFF, ref.y);
         float4 p12    = CurveLoad(curveLoc) - float4(renderCoord, renderCoord);
         float4 texel1 = CurveLoad(int2(curveLoc.x + 1, curveLoc.y));
         float2 p3     = texel1.xy - renderCoord;
-        float2 p4     = texel1.zw - renderCoord;
 
         // Early exit: curves sorted by descending maxY
-        float maxY = isCubic ? max(max(max(p12.y, p12.w), p3.y), p4.y)
-                             : max(max(p12.y, p12.w), p3.y);
+        float maxY = max(max(p12.y, p12.w), p3.y);
         if (maxY * pixelsPerEm.y < -0.5f) break;
 
-        if (!isCubic)
+        uint code = CalcRootCode(p12.x, p12.z, p3.x);
+        if (code != 0U)
         {
-            uint code = CalcRootCode(p12.x, p12.z, p3.x);
-            if (code != 0U)
+            float2 r = SolveVertPoly(p12, p3) * pixelsPerEm.y;
+            if ((code & 1U) != 0U)
             {
-                float2 r = SolveVertPoly(p12, p3) * pixelsPerEm.y;
-                if ((code & 1U) != 0U)
-                {
-                    ycov -= saturate(r.x + 0.5f);
-                    ywgt  = max(ywgt, saturate(1.0f - abs(r.x) * 2.0f));
-                }
-                if (code > 1U)
-                {
-                    ycov += saturate(r.y + 0.5f);
-                    ywgt  = max(ywgt, saturate(1.0f - abs(r.y) * 2.0f));
-                }
+                ycov -= saturate(r.x + 0.5f);
+                ywgt  = max(ywgt, saturate(1.0f - abs(r.x) * 2.0f));
             }
-        }
-        else
-        {
-            // Cubic: solve X(t)=0, dy/dt gives vertical winding (sign_pos=-1 for vert convention)
-            float ax = -p12.x + 3.0f*p12.z - 3.0f*p3.x + p4.x;
-            float bx =  3.0f*p12.x - 6.0f*p12.z + 3.0f*p3.x;
-            float cx = -3.0f*p12.x + 3.0f*p12.z;
-            float dx =  p12.x;
-            float ay = -p12.y + 3.0f*p12.w - 3.0f*p3.y + p4.y;
-            float by =  3.0f*p12.y - 6.0f*p12.w + 3.0f*p3.y;
-            float cy = -3.0f*p12.y + 3.0f*p12.w;
-            float dy =  p12.y;
-            float3 ts = SolveCubicRoots(ax, bx, cx, dx);
-            // dx/dt sign gives winding; sign_pos=-1 matches vertical convention (dxt>0 => ycov-=)
-            float t0 = ts.x; float y0 = ((ay*t0+by)*t0+cy)*t0+dy;
-            ApplyCubicRoot(t0, y0, pixelsPerEm.y, (3.0f*ax*t0+2.0f*bx)*t0+cx, -1.0f, ycov, ywgt);
-            float t1 = ts.y; float y1 = ((ay*t1+by)*t1+cy)*t1+dy;
-            ApplyCubicRoot(t1, y1, pixelsPerEm.y, (3.0f*ax*t1+2.0f*bx)*t1+cx, -1.0f, ycov, ywgt);
-            float t2 = ts.z; float y2 = ((ay*t2+by)*t2+cy)*t2+dy;
-            ApplyCubicRoot(t2, y2, pixelsPerEm.y, (3.0f*ax*t2+2.0f*bx)*t2+cx, -1.0f, ycov, ywgt);
+            if (code > 1U)
+            {
+                ycov += saturate(r.y + 0.5f);
+                ywgt  = max(ywgt, saturate(1.0f - abs(r.y) * 2.0f));
+            }
         }
     }
 
-    return CalcCoverage(xcov, ycov, xwgt, ywgt, glyphData.w);
+    return CalcCoverage(xcov, ycov, xwgt, ywgt);
 }
+
+#ifdef SLUG_DEBUG
+// Debug variant: output xcov/ycov/coverage as visible colors
+float4 SlugRenderDebug(float2 renderCoord, float4 banding, int4 glyphData)
+{
+    // Re-use the main render to get coverage, then also compute xcov/ycov for visualization.
+    // (Since we removed cubics, SlugRender is the single authoritative path.)
+    float coverage = SlugRender(renderCoord, banding, glyphData);
+    return float4(coverage, coverage, coverage, max(coverage, 0.25f));
+}
+#endif
 
 float4 main_ps(PS_INPUT input) : SV_Target
 {
     float coverage = SlugRender(input.texcoord, input.banding, input.glyph);
+#ifdef SLUG_DEBUG
+    return SlugRenderDebug(input.texcoord, input.banding, input.glyph);
+#elif defined(SLUG_COLOR)
+    return float4(input.color.rgb, input.color.a * coverage);
+#else
     return input.color * coverage;
+#endif
 }

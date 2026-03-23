@@ -279,6 +279,33 @@ ImFont* g_magnoliaFont       = nullptr;
 ImFont* g_nablaFont          = nullptr;
 ImFont* g_rosehotFont        = nullptr;
 ImFont* g_squareLilyFont     = nullptr;
+ImFont* g_twemojiFont        = nullptr;  // Twemoji Mozilla — COLR v0 color emoji
+ImFont* g_aquaphonicDampFont     = nullptr;
+ImFont* g_aquaphonicDehydFont    = nullptr;
+ImFont* g_aquaphonicDelugeFont   = nullptr;
+ImFont* g_aquaphonicDownpourFont = nullptr;
+ImFont* g_aquaphonicDrizzleFont  = nullptr;
+ImFont* g_aquaphonicDroughtFont  = nullptr;
+ImFont* g_bungeeSpiceFont        = nullptr;  // COLR v1
+ImFont* g_cimeroProFont          = nullptr;
+ImFont* g_colorTubeFont          = nullptr;
+ImFont* g_fatternFont            = nullptr;
+ImFont* g_gilbertColorFont       = nullptr;
+ImFont* g_manbowClearFont        = nullptr;
+ImFont* g_manbowDotsFont         = nullptr;
+ImFont* g_manbowFillFont         = nullptr;
+ImFont* g_manbowLinesFont        = nullptr;
+ImFont* g_manbowScreenFont       = nullptr;
+ImFont* g_manbowSolidFont        = nullptr;
+ImFont* g_manbowSpotsFont        = nullptr;
+ImFont* g_manbowStripeFont       = nullptr;
+ImFont* g_manbowToneFont         = nullptr;
+ImFont* g_multicoloreFont        = nullptr;
+ImFont* g_primecolorBFont        = nullptr;
+ImFont* g_primecolorCV1Font      = nullptr;  // COLR v1
+ImFont* g_primecolorGFont        = nullptr;
+ImFont* g_primecolorMFont        = nullptr;
+ImFont* g_primecolorRFont        = nullptr;
 
 ImTextureID background;
 ImVec2 background_size;
@@ -376,6 +403,33 @@ int main()
 	g_nablaFont       = io.Fonts->AddFontFromFileTTF( "fonts/Nabla-Regular-VariableFont_EDPT,EHLT.ttf",      24.0f );
 	g_rosehotFont     = io.Fonts->AddFontFromFileTTF( "fonts/Rosehot.ttf",                                   24.0f );
 	g_squareLilyFont  = io.Fonts->AddFontFromFileTTF( "fonts/Square Lily Monogram.ttf",                      24.0f );
+	g_twemojiFont        = io.Fonts->AddFontFromFileTTF( "fonts/Twemoji.Mozilla.ttf",                           24.0f );
+	g_aquaphonicDampFont     = io.Fonts->AddFontFromFileTTF( "fonts/Aquaphonic-Damp.otf",                          24.0f );
+	g_aquaphonicDehydFont    = io.Fonts->AddFontFromFileTTF( "fonts/Aquaphonic-Dehydrated.otf",                    24.0f );
+	g_aquaphonicDelugeFont   = io.Fonts->AddFontFromFileTTF( "fonts/Aquaphonic-Deluge.otf",                        24.0f );
+	g_aquaphonicDownpourFont = io.Fonts->AddFontFromFileTTF( "fonts/Aquaphonic-Downpour.otf",                      24.0f );
+	g_aquaphonicDrizzleFont  = io.Fonts->AddFontFromFileTTF( "fonts/Aquaphonic-Drizzle.otf",                       24.0f );
+	g_aquaphonicDroughtFont  = io.Fonts->AddFontFromFileTTF( "fonts/Aquaphonic-Drought.otf",                       24.0f );
+	g_bungeeSpiceFont        = io.Fonts->AddFontFromFileTTF( "fonts/BungeeSpice-Regular.ttf",                      24.0f );
+	g_cimeroProFont          = io.Fonts->AddFontFromFileTTF( "fonts/CimeroPro.otf",                               24.0f );
+	g_colorTubeFont          = io.Fonts->AddFontFromFileTTF( "fonts/ColorTube.otf",                                24.0f );
+	g_fatternFont            = io.Fonts->AddFontFromFileTTF( "fonts/Fattern-GO6zm.otf",                            24.0f );
+	g_gilbertColorFont       = io.Fonts->AddFontFromFileTTF( "fonts/Gilbert-Color Bold Preview5.otf",              24.0f );
+	g_manbowClearFont        = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Clear.otf",                             24.0f );
+	g_manbowDotsFont         = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Dots.otf",                              24.0f );
+	g_manbowFillFont         = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Fill.otf",                              24.0f );
+	g_manbowLinesFont        = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Lines.otf",                             24.0f );
+	g_manbowScreenFont       = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Screen.otf",                            24.0f );
+	g_manbowSolidFont        = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Solid.otf",                             24.0f );
+	g_manbowSpotsFont        = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Spots.otf",                             24.0f );
+	g_manbowStripeFont       = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Stripe.otf",                            24.0f );
+	g_manbowToneFont         = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Tone.otf",                              24.0f );
+	g_multicoloreFont        = io.Fonts->AddFontFromFileTTF( "fonts/Multicolore Pro.otf",                          24.0f );
+	g_primecolorBFont        = io.Fonts->AddFontFromFileTTF( "fonts/Primecolor-B.ttf",                             24.0f );
+	g_primecolorCV1Font      = io.Fonts->AddFontFromFileTTF( "fonts/Primecolor-CV1.ttf",                           24.0f );
+	g_primecolorGFont        = io.Fonts->AddFontFromFileTTF( "fonts/Primecolor-G.ttf",                             24.0f );
+	g_primecolorMFont        = io.Fonts->AddFontFromFileTTF( "fonts/Primecolor-M.ttf",                             24.0f );
+	g_primecolorRFont        = io.Fonts->AddFontFromFileTTF( "fonts/Primecolor-R.ttf",                             24.0f );
 
 	ImGuiStyle& style = ImGui::GetStyle();
 	style.ScaleAllSizes( dpi_scale );
@@ -734,6 +788,20 @@ namespace ImWidgets {
 				bg_color_u = ImGui::ColorConvertFloat4ToU32( bg_color_v );
 		}
 
+		static bool  debug_curves = false;
+		static bool  dbg_curves_on = true, dbg_ctrl_on = true, dbg_bbox_on = true, dbg_bands_on = false;
+		static bool  debug_layers = false;
+		ImGui::Checkbox( "Debug Curves##SlugDebug", &debug_curves );
+		if ( debug_curves )
+		{
+			ImGui::SameLine(); ImGui::Checkbox( "Curves", &dbg_curves_on );
+			ImGui::SameLine(); ImGui::Checkbox( "Ctrl Pts", &dbg_ctrl_on );
+			ImGui::SameLine(); ImGui::Checkbox( "BBox", &dbg_bbox_on );
+			ImGui::SameLine(); ImGui::Checkbox( "Bands", &dbg_bands_on );
+		}
+		ImGui::Checkbox( "Show Layer Quads (flat color, no shader)##SlugLayerDbg", &debug_layers );
+		ImGui::Checkbox( "Debug Shader (R=xcov G=ycov B=cov)##SlugShaderDbg", &ImWidgets::g_SlugDebugShader );
+
 		struct FontEntry { ImFont** font; const char* label; };
 		static const FontEntry kFonts[] = {
 			{ &g_alfaSlabFont,    "Alfa Slab One"          },
@@ -746,20 +814,55 @@ namespace ImWidgets {
 			{ &g_nablaFont,       "Nabla"                   },
 			{ &g_rosehotFont,     "Rosehot"                 },
 			{ &g_squareLilyFont,  "Square Lily Monogram"    },
+			{ &g_twemojiFont,        "Twemoji (COLR v0)"        },
+			{ &g_aquaphonicDampFont,     "Aquaphonic Damp"          },
+			{ &g_aquaphonicDehydFont,    "Aquaphonic Dehydrated"    },
+			{ &g_aquaphonicDelugeFont,   "Aquaphonic Deluge"        },
+			{ &g_aquaphonicDownpourFont, "Aquaphonic Downpour"      },
+			{ &g_aquaphonicDrizzleFont,  "Aquaphonic Drizzle"       },
+			{ &g_aquaphonicDroughtFont,  "Aquaphonic Drought"       },
+			{ &g_bungeeSpiceFont,        "Bungee Spice (COLR v1)"   },
+			{ &g_cimeroProFont,          "Cimero Pro"               },
+			{ &g_colorTubeFont,          "Color Tube"               },
+			{ &g_fatternFont,            "Fattern"                  },
+			{ &g_gilbertColorFont,       "Gilbert Color Bold"       },
+			{ &g_manbowClearFont,        "Manbow Clear"             },
+			{ &g_manbowDotsFont,         "Manbow Dots"              },
+			{ &g_manbowFillFont,         "Manbow Fill"              },
+			{ &g_manbowLinesFont,        "Manbow Lines"             },
+			{ &g_manbowScreenFont,       "Manbow Screen"            },
+			{ &g_manbowSolidFont,        "Manbow Solid"             },
+			{ &g_manbowSpotsFont,        "Manbow Spots"             },
+			{ &g_manbowStripeFont,       "Manbow Stripe"            },
+			{ &g_manbowToneFont,         "Manbow Tone"              },
+			{ &g_multicoloreFont,        "Multicolore Pro"          },
+			{ &g_primecolorBFont,        "Primecolor B"             },
+			{ &g_primecolorCV1Font,      "Primecolor CV1 (COLR v1)" },
+			{ &g_primecolorGFont,        "Primecolor G"             },
+			{ &g_primecolorMFont,        "Primecolor M"             },
+			{ &g_primecolorRFont,        "Primecolor R"             },
 		};
 
 		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 		float const canvas_w  = CanvasSize();
 		float const gap       = ImGui::GetStyle().ItemSpacing.y;
 
+		// Separate text buffer for emoji (Twemoji uses its own codepoints, not Latin text)
+		static char emoji_buf[256] = "\xF0\x9F\x98\x80\xF0\x9F\x94\xA5\xF0\x9F\x8C\x88\xF0\x9F\x8E\xA8\xF0\x9F\x9A\x80\xF0\x9F\x92\xA1\xF0\x9F\x8C\x8D";
+		// UTF-8 encoding of: 😀🔥🌈🎨🚀💡🌍
+		ImGui::InputText( "Emoji##SlugEmoji", emoji_buf, sizeof( emoji_buf ) );
+
 		ImGui::Separator();
 		for ( const FontEntry& e : kFonts )
 		{
 			if ( !*e.font ) continue;
 
-			ImFont* f     = *e.font;
+			ImFont* f           = *e.font;
+			bool    isEmoji     = ( e.font == &g_twemojiFont );
+			const char* drawStr = isEmoji ? emoji_buf : text_buf;
+
 			float   asc   = 0.0f;
-			ImVec2  sz    = ImWidgets::CalcTextSize( f, font_size, text_buf, nullptr, &asc );
+			ImVec2  sz    = ImWidgets::CalcTextSize( f, font_size, drawStr, nullptr, &asc );
 			float   line_h = sz.y + gap;
 
 			// Font name in solid black
@@ -777,7 +880,16 @@ namespace ImWidgets {
 			}
 
 			// DrawText baseline shifted down by ascent so glyph top aligns with cursor
-			ImWidgets::DrawText( pDrawList, f, font_size, ImVec2( pos.x, pos.y + asc ), color_u, text_buf );
+			ImWidgets::DrawText( pDrawList, f, font_size, ImVec2( pos.x, pos.y + asc ), color_u, drawStr );
+			if ( debug_curves )
+			{
+				int dbgFlags = ( dbg_curves_on ? 1 : 0 ) | ( dbg_ctrl_on ? 2 : 0 )
+				             | ( dbg_bbox_on ? 4 : 0 ) | ( dbg_bands_on ? 8 : 0 );
+				ImWidgets::DrawTextDebugCurves( pDrawList, f, font_size, ImVec2( pos.x, pos.y + asc ), drawStr, nullptr, dbgFlags );
+			}
+			if ( debug_layers )
+				ImWidgets::DrawTextDebugLayers( pDrawList, f, font_size, ImVec2( pos.x, pos.y + asc ), drawStr );
+
 			ImGui::Dummy( ImVec2( canvas_w, line_h ) );
 		}
 	}
