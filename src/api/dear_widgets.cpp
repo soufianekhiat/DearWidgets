@@ -1,6 +1,17 @@
 #include <dear_widgets.h>
 #include <stdint.h>
 
+// Text shaping support via kb_text_shape (single-header library)
+// Handles ligatures, contextual forms, RTL, and OpenType GSUB/GPOS features.
+#ifndef IM_SUPPORT_LIGATURE
+#define IM_SUPPORT_LIGATURE 1
+#endif
+#if IM_SUPPORT_LIGATURE
+#define KB_TEXT_SHAPE_STATIC
+#define KB_TEXT_SHAPE_IMPLEMENTATION
+#include "kb_text_shape.h"
+#endif
+
 // Include stb_rect_pack first so stbrp_node is a proper named struct,
 // compatible with imgui_internal.h's 'struct stbrp_node;' forward declaration.
 // STBRP_STATIC + STB_RECT_PACK_IMPLEMENTATION gives us private static implementations
@@ -3209,19 +3220,24 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float advanceEm;
 		float minXEm, minYEm, maxXEm, maxYEm;  // em-space bounding box
 		// COLR v0 color layer support (-1 / 0 = not a color glyph)
-		int  colorLayerStart;  // index into SlugFontAtlas::colorLayers
+		int  colorLayerStart;  // index into SlugFontCache::colorLayers
 		int  colorLayerCount;  // 0 = monochrome glyph
 	};
 
-	// One COLR v0 layer: a built layer glyph entry + its palette color
+	// One color layer: a built layer glyph entry + its fill (solid color or gradient)
 	struct SlugColorLayer
 	{
-		int   glyphEntryIdx;  // index in SlugFontAtlas::glyphs (already-built outline)
-		ImU32 color;          // RGBA; IM_COL32(0,0,0,0) = use caller's text color (CPAL 0xFFFF)
+		int   glyphEntryIdx;  // index in SlugFontCache::glyphs (already-built outline)
+		ImU32 color;          // solid RGBA; IM_COL32(0,0,0,0) = use caller's text color (CPAL 0xFFFF)
+		// Linear gradient (if hasGradient is true, color field is ignored)
+		bool  hasGradient;
+		ImU32 gradColor0, gradColor1;  // gradient stop colors
+		float gradDirX, gradDirY;      // gradient direction in em-space (normalized)
+		float gradScale, gradBias;     // t = dot(emCoord, dir) * scale + bias
 	};
 
-	// Per-font atlas: holds the CPU/GPU curve and band texture data
-	struct SlugFontAtlas
+	// Per-font cache: holds curve control points, band acceleration structure, and glyph metrics
+	struct SlugFontCache
 	{
 		ImFont*        imguiFont;    // key into atlas cache
 		stbtt_fontinfo stbFont;      // stb_truetype handle (points into ImGui's font data)
@@ -3234,6 +3250,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		uint32_t colrTableOffset;
 		uint32_t cpalTableOffset;
 		uint32_t svgTableOffset;
+
+#if IM_SUPPORT_LIGATURE
+		kbts_shape_context* shapeCtx;  // text shaping context (RTL, ligatures, etc.)
+		kbts_font*          shapeFont; // font pushed to the shaping context
+#endif
 
 		// Curve texture: RGBA32F, width = SLUG_TEX_WIDTH
 		//   Each Bezier curve occupies 2 consecutive texels on the same row:
@@ -3258,13 +3279,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// Top-level slug state stored in ImWidgetsContext
 	struct ImWidgetsSlugState
 	{
-		ImVector<SlugFontAtlas*> atlases;
+		ImVector<SlugFontCache*> atlases;
 	};
 
 	// ---- Texture helpers ----------------------------------------------------
 
 	// Write one RGBA32F texel at absolute (x, y) in the curve texture
-	static void SlugCurveWrite4f(SlugFontAtlas* a, int x, int y,
+	static void SlugCurveWrite4f(SlugFontCache* a, int x, int y,
 	                              float r, float g, float b, float f)
 	{
 		int needed = y + 1;
@@ -3282,7 +3303,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	// Allocate space for one curve (2 texels on the same row).
 	// Returns the position (cx, cy) of the first texel.
-	static void SlugAllocOneCurve(SlugFontAtlas* a, int* cx, int* cy)
+	static void SlugAllocOneCurve(SlugFontCache* a, int* cx, int* cy)
 	{
 		// Each pair of texels must lie in the same row (shader reads [x] and [x+1])
 		int x = a->curveCursor % SLUG_TEX_WIDTH;
@@ -3294,7 +3315,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 	// Write one RGBA32F texel at absolute (x, y) in the band texture
-	static void SlugBandWrite2f(SlugFontAtlas* a, int x, int y, float v0, float v1)
+	static void SlugBandWrite2f(SlugFontCache* a, int x, int y, float v0, float v1)
 	{
 		int needed = y + 1;
 		while (needed > a->bandTexHeight)
@@ -3341,7 +3362,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// For a given glyph index, fill outGlyphIDs/outColors with COLR v0 layer data.
 	// outColors entry = 0 (IM_COL32(0,0,0,0)) means "use foreground text color" (paletteIndex 0xFFFF).
 	// Returns number of layers, or 0 if not a COLR glyph.
-	static int SlugGetColrLayers(SlugFontAtlas* atlas, int glyphID,
+	static int SlugGetColrLayers(SlugFontCache* atlas, int glyphID,
 	                             ImVector<int>& outGlyphIDs, ImVector<ImU32>& outColors)
 	{
 		if (!atlas->colrTableOffset || !atlas->cpalTableOffset) return 0;
@@ -3401,9 +3422,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 	// COLR v1 layer extraction: PaintColrLayers → PaintGlyph → PaintSolid / PaintLinearGradient.
-	// Gradients are approximated by the first colour stop. Returns layer count or 0.
-	static int SlugGetColrV1Layers(SlugFontAtlas* atlas, int glyphID,
-	                               ImVector<int>& outGlyphIDs, ImVector<ImU32>& outColors)
+	// Returns layer count or 0. Fills outLayers with glyph IDs and fill info (solid or gradient).
+	static int SlugGetColrV1Layers(SlugFontCache* atlas, int glyphID,
+	                               ImVector<int>& outGlyphIDs, ImVector<SlugColorLayer>& outLayers)
 	{
 		if (!atlas->colrTableOffset || !atlas->cpalTableOffset) return 0;
 		const uint8_t* data = (const uint8_t*)atlas->stbFont.data;
@@ -3420,8 +3441,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		uint32_t numBGL = SlugTTU32(bgl);
 		uint32_t numLL  = SlugTTU32(ll);
 
-		// Binary search BaseGlyphList (sorted by GlyphID)
-		// Each entry: uint16 GlyphID + Offset32 paintOffset = 6 bytes
 		int lo = 0, hi = (int)numBGL - 1, found = -1;
 		while (lo <= hi)
 		{
@@ -3433,71 +3452,162 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 		if (found < 0) return 0;
 
-		// PaintOffset is Offset32 relative to BaseGlyphList start
 		uint32_t paintOff = SlugTTU32(bgl + 4 + found * 6 + 2);
 		const uint8_t* p0 = bgl + paintOff;
-		if (p0[0] != 1) return 0;  // only handle PaintColrLayers (format 1) at top level
 
-		uint8_t  numLayers     = p0[1];
-		uint32_t firstLayerIdx = SlugTTU32(p0 + 2);
+		// Determine top-level layers: PaintColrLayers (1), or single-layer paint nodes (10, 11, 14, etc.)
+		uint8_t  numLayers = 0;
+		uint32_t firstLayerIdx = 0;
+		bool     topIsSinglePaint = false;
+
+		if (p0[0] == 1) { // PaintColrLayers
+			numLayers     = p0[1];
+			firstLayerIdx = SlugTTU32(p0 + 2);
+		} else {
+			// Top-level is a single paint node (PaintGlyph, PaintColrGlyph, PaintTranslate, etc.)
+			// We'll handle it as a single-layer glyph below
+			topIsSinglePaint = true;
+			numLayers = 1;
+		}
 
 		const uint8_t* cpal      = data + atlas->cpalTableOffset;
 		uint32_t       offColors = SlugTTU32(cpal + 8);
+		const float sc = atlas->emScale;
 
-		// Helper: CPAL index → IM_COL32 (BGRA storage → RGBA)
 		auto GetPalColor = [&](int palIdx, float alpha) -> ImU32 {
-			if (palIdx == 0xFFFF) return IM_COL32(0, 0, 0, 0);  // foreground sentinel
+			if (palIdx == 0xFFFF) return IM_COL32(0, 0, 0, 0);
 			const uint8_t* cr = cpal + offColors + palIdx * 4;
 			uint8_t a = (uint8_t)(alpha * cr[3]);
 			return IM_COL32(cr[2], cr[1], cr[0], a);
 		};
+		auto F2D14 = [](const uint8_t* p) -> float {
+			int16_t v = (int16_t)((p[0] << 8) | p[1]);
+			return (float)v / 16384.0f;
+		};
+		auto FWORD = [](const uint8_t* p) -> int16_t {
+			return (int16_t)((p[0] << 8) | p[1]);
+		};
+
+		// Helper: resolve a paint node to (glyphID, fill paint pointer).
+		// Unwraps PaintTranslate/Transform/Scale wrappers.
+		// For PaintColrGlyph (fmt 11), recursively looks up the referenced glyph's paint tree.
+		struct PaintResolved { int glyphID; const uint8_t* fillPaint; };
+		ImVector<PaintResolved> resolvedPaints;
+
+		auto ResolvePaint = [&](const uint8_t* paint, int recurseDepth, auto& self) -> void {
+			if (recurseDepth > 4) return;
+			// Unwrap wrappers (PaintTranslate, PaintTransform, PaintScale)
+			const uint8_t* p2 = paint;
+			for (int d2 = 0; d2 < 8; d2++) {
+				uint8_t f = p2[0];
+				if ((f >= 12 && f <= 21) || f == 14 || f == 15) { // Transform/Translate/Scale variants
+					uint32_t off2 = ((uint32_t)p2[1] << 16) | ((uint32_t)p2[2] << 8) | p2[3];
+					p2 = p2 + off2;
+				} else break;
+			}
+			if (p2[0] == 10) { // PaintGlyph
+				uint32_t fOff = ((uint32_t)p2[1] << 16) | ((uint32_t)p2[2] << 8) | p2[3];
+				PaintResolved pr; pr.glyphID = (int)SlugTTU16(p2 + 4); pr.fillPaint = p2 + fOff;
+				resolvedPaints.push_back(pr);
+			}
+			else if (p2[0] == 11) { // PaintColrGlyph — recurse into referenced glyph's paint tree
+				int refGlyphID = (int)SlugTTU16(p2 + 1);
+				// Binary search BaseGlyphList for refGlyphID
+				int lo2 = 0, hi2 = (int)numBGL - 1, found2 = -1;
+				while (lo2 <= hi2) {
+					int mid2 = (lo2 + hi2) / 2;
+					int gid2 = (int)SlugTTU16(bgl + 4 + mid2 * 6);
+					if (gid2 == refGlyphID) { found2 = mid2; break; }
+					else if (gid2 < refGlyphID) lo2 = mid2 + 1;
+					else hi2 = mid2 - 1;
+				}
+				if (found2 >= 0) {
+					uint32_t refPaintOff = SlugTTU32(bgl + 4 + found2 * 6 + 2);
+					const uint8_t* refPaint = bgl + refPaintOff;
+					if (refPaint[0] == 1) { // PaintColrLayers
+						uint8_t refNL = refPaint[1];
+						uint32_t refFirstIdx = SlugTTU32(refPaint + 2);
+						for (int ri = 0; ri < (int)refNL; ri++) {
+							uint32_t rloff = SlugTTU32(ll + 4 + (refFirstIdx + ri) * 4);
+							self(ll + rloff, recurseDepth + 1, self);
+						}
+					} else {
+						self(refPaint, recurseDepth + 1, self);
+					}
+				}
+			}
+			else if (p2[0] == 1) { // PaintColrLayers (nested)
+				uint8_t nL2 = p2[1];
+				uint32_t firstIdx2 = SlugTTU32(p2 + 2);
+				for (int ri = 0; ri < (int)nL2; ri++) {
+					uint32_t rloff = SlugTTU32(ll + 4 + (firstIdx2 + ri) * 4);
+					self(ll + rloff, recurseDepth + 1, self);
+				}
+			}
+		};
 
 		for (int li = 0; li < (int)numLayers; li++)
 		{
-			uint32_t layerIdx = firstLayerIdx + (uint32_t)li;
-			if (layerIdx >= numLL) break;
+			resolvedPaints.clear();
+			if (topIsSinglePaint) {
+				// Top-level is a single paint node — resolve it directly
+				ResolvePaint(p0, 0, ResolvePaint);
+			} else {
+				uint32_t layerIdx = firstLayerIdx + (uint32_t)li;
+				if (layerIdx >= numLL) break;
+				uint32_t loff = SlugTTU32(ll + 4 + layerIdx * 4);
+				ResolvePaint(ll + loff, 0, ResolvePaint);
+			}
 
-			// LayerList entry: Offset32 relative to LayerList start
-			uint32_t loff = SlugTTU32(ll + 4 + layerIdx * 4);
-			const uint8_t* lp = ll + loff;
-			if (lp[0] != 10) continue;  // only PaintGlyph (format 10)
+			for (int ri = 0; ri < resolvedPaints.Size; ri++)
+			{
+			int layerGlyphID = resolvedPaints[ri].glyphID;
+			const uint8_t* fp = resolvedPaints[ri].fillPaint;
 
-			// PaintGlyph: uint8 fmt, Offset24 paintOffset, uint16 glyphID
-			uint32_t fillOff = ((uint32_t)lp[1] << 16) | ((uint32_t)lp[2] << 8) | lp[3];
-			int layerGlyphID = (int)SlugTTU16(lp + 4);
-			const uint8_t* fp = lp + fillOff;
-
-			ImU32 color;
+			SlugColorLayer cl = {};
 			switch (fp[0])
 			{
 			case 2:  // PaintSolid
-			case 3:  // PaintVarSolid (same layout, ignore variation)
+			case 3:  // PaintVarSolid
 			{
 				int palIdx = (int)SlugTTU16(fp + 1);
-				float alpha = (float)SlugTTU16(fp + 3) / 16384.0f;  // F2Dot14
-				color = GetPalColor(palIdx, alpha);
+				float alpha = F2D14(fp + 3);
+				cl.color = GetPalColor(palIdx, alpha);
 				break;
 			}
-			case 4:  // PaintLinearGradient  — approximate with first stop colour
+			case 4:  // PaintLinearGradient
 			case 5:  // PaintVarLinearGradient
 			{
-				// Offset24 → ColorLine; ColorLine: uint8 extend, uint16 numStops, then stops
-				// ColorStop: F2Dot14 stopOffset(2B), uint16 paletteIndex(2B), F2Dot14 alpha(2B)
 				uint32_t clOff = ((uint32_t)fp[1] << 16) | ((uint32_t)fp[2] << 8) | fp[3];
-				const uint8_t* cl = fp + clOff;
-				uint16_t numStops = SlugTTU16(cl + 1);
-				if (numStops == 0) continue;
-				int palIdx = (int)SlugTTU16(cl + 3 + 2);  // skip F2Dot14 stopOffset
-				float alpha = (float)SlugTTU16(cl + 3 + 4) / 16384.0f;
-				color = GetPalColor(palIdx, alpha);
+				float gx0 = (float)FWORD(fp + 4) * sc, gy0 = (float)FWORD(fp + 6) * sc;
+				float gx1 = (float)FWORD(fp + 8) * sc, gy1 = (float)FWORD(fp + 10) * sc;
+				const uint8_t* clp = fp + clOff;
+				uint16_t numStops = SlugTTU16(clp + 1);
+				if (numStops < 2) { if (numStops == 1) { cl.color = GetPalColor((int)SlugTTU16(clp+3+2), F2D14(clp+3+4)); } break; }
+				int pal0 = (int)SlugTTU16(clp + 3 + 2); float alp0 = F2D14(clp + 3 + 4);
+				const uint8_t* lastStop = clp + 3 + (numStops - 1) * 6;
+				int pal1 = (int)SlugTTU16(lastStop + 2); float alp1 = F2D14(lastStop + 4);
+				cl.color = GetPalColor(pal0, alp0);  // solid fallback (always set)
+				cl.hasGradient = true;
+				cl.gradColor0 = cl.color;
+				cl.gradColor1 = GetPalColor(pal1, alp1);
+				float dx = gx1 - gx0, dy = gy1 - gy0;
+				float len2 = dx * dx + dy * dy;
+				if (len2 < 1e-10f) { cl.hasGradient = false; break; }
+				cl.gradDirX = dx / len2; cl.gradDirY = dy / len2;
+				float t0 = F2D14(clp + 3), t1 = F2D14(lastStop);
+				float tRange = (t1 - t0 > 1e-6f) ? (t1 - t0) : 1.0f;
+				cl.gradScale = 1.0f / tRange;
+				cl.gradBias = -(cl.gradDirX * gx0 + cl.gradDirY * gy0) / tRange - t0 / tRange;
 				break;
 			}
 			default:
-				continue;  // skip unsupported paint types (radial, sweep, etc.)
+				continue;
 			}
 
 			outGlyphIDs.push_back(layerGlyphID);
-			outColors.push_back(color);
+			outLayers.push_back(cl);
+			} // end resolvedPaints loop
 		}
 		return outGlyphIDs.Size;
 	}
@@ -3505,7 +3615,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// ---- SVG layer extraction ------------------------------------------------
 
 	// Forward declaration needed by SlugGetSVGLayers
-	static bool SlugBuildGlyphFromCurves(SlugFontAtlas* atlas, ImWchar cp, float advEm,
+	static bool SlugBuildGlyphFromCurves(SlugFontCache* atlas, ImWchar cp, float advEm,
 	                                      float minX, float minY, float maxX, float maxY,
 	                                      ImVector<SlugCurve>& curves, SlugGlyphEntry* outEntry);
 
@@ -3844,7 +3954,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// Parse the SVG table, find glyph glyphID, extract <path> elements grouped by fill colour,
 	// build one SlugGlyphEntry per colour group, and populate atlas->colorLayers.
 	// Returns false if no SVG data found for this glyph.
-	static bool SlugGetSVGLayers(SlugFontAtlas* atlas, int glyphID, ImWchar cp, SlugGlyphEntry* outEntry)
+	static bool SlugGetSVGLayers(SlugFontCache* atlas, int glyphID, ImWchar cp, SlugGlyphEntry* outEntry)
 	{
 		if (!atlas->svgTableOffset) return false;
 		const uint8_t* data = (const uint8_t*)atlas->stbFont.data;
@@ -4070,7 +4180,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			layerEntry.colorLayerStart = -1;
 			if (!SlugBuildGlyphFromCurves(atlas, 0, advEm, minX, minY, maxX, maxY, groupCurves[k], &layerEntry))
 				continue;
-			SlugColorLayer cl;
+			SlugColorLayer cl = {};
 			cl.glyphEntryIdx = (int)atlas->glyphs.Size - 1; // SlugBuildGlyphFromCurves already pushed
 			cl.color         = groupColor[k];
 			atlas->colorLayers.push_back(cl);
@@ -4088,16 +4198,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	// Build a glyph from a glyph index (gi) directly; cp is stored in the entry (0 for layer glyphs).
 	// skipColr = true when building a layer's outline — prevents recursive COLR lookup.
-	static bool SlugBuildGlyphByIndex(SlugFontAtlas* atlas, int gi, ImWchar cp, SlugGlyphEntry* outEntry, bool skipColr = false);
+	static bool SlugBuildGlyphByIndex(SlugFontCache* atlas, int gi, ImWchar cp, SlugGlyphEntry* outEntry, bool skipColr = false);
 
-	static bool SlugBuildGlyph(SlugFontAtlas* atlas, ImWchar cp, SlugGlyphEntry* outEntry)
+	static bool SlugBuildGlyph(SlugFontCache* atlas, ImWchar cp, SlugGlyphEntry* outEntry)
 	{
 		int gi = stbtt_FindGlyphIndex(&atlas->stbFont, (int)cp);
 		if (gi == 0) return false;
 		return SlugBuildGlyphByIndex(atlas, gi, cp, outEntry);
 	}
 
-	static bool SlugBuildGlyphByIndex(SlugFontAtlas* atlas, int gi, ImWchar cp, SlugGlyphEntry* outEntry, bool skipColr)
+	static bool SlugBuildGlyphByIndex(SlugFontCache* atlas, int gi, ImWchar cp, SlugGlyphEntry* outEntry, bool skipColr)
 	{
 		// ---- COLR: check for color layers (v0 first, fall back to v1) ----
 		// skipColr is set for the recursive call that builds each layer's outline shape,
@@ -4106,9 +4216,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 		ImVector<int>   layerGlyphIDs;
 		ImVector<ImU32> layerColors;
+		ImVector<SlugColorLayer> v1Layers;  // COLR v1 layers with gradient info
 		int nColrLayers = SlugGetColrLayers(atlas, gi, layerGlyphIDs, layerColors);
-		if (nColrLayers == 0)
-			nColrLayers = SlugGetColrV1Layers(atlas, gi, layerGlyphIDs, layerColors);
+		bool isV1 = false;
+		if (nColrLayers == 0) {
+			nColrLayers = SlugGetColrV1Layers(atlas, gi, layerGlyphIDs, v1Layers);
+			isV1 = (nColrLayers > 0);
+		}
 		// SVG fallback: if no COLR layers found, try SVG table
 		if (nColrLayers == 0 && atlas->svgTableOffset)
 		{
@@ -4124,8 +4238,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			e.codepoint        = cp;
 			e.advanceEm        = (float)adv2 * atlas->emScale;
 			e.colorLayerStart  = (int)atlas->colorLayers.Size;
-			e.colorLayerCount  = 0;  // incremented below as layers succeed
-			// bounds are union of all layer bounding boxes
+			e.colorLayerCount  = 0;
 			bool firstLayer = true;
 			for (int i = 0; i < nColrLayers; i++)
 			{
@@ -4134,9 +4247,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				if (!SlugBuildGlyphByIndex(atlas, layerGlyphIDs[i], 0, &layerEntry, /*skipColr=*/true))
 					continue;
 
-				SlugColorLayer cl;
+				SlugColorLayer cl = isV1 ? v1Layers[i] : SlugColorLayer{};
 				cl.glyphEntryIdx = (int)atlas->glyphs.Size;
-				cl.color         = layerColors[i];
+				if (!isV1) cl.color = layerColors[i];
 				atlas->colorLayers.push_back(cl);
 				atlas->glyphs.push_back(layerEntry);
 				e.colorLayerCount++;
@@ -4152,9 +4265,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					e.maxYEm = ImMax(e.maxYEm, layerEntry.maxYEm);
 				}
 			}
-			atlas->glyphs.push_back(e);
-			*outEntry = e;
-			return true;
+			if (e.colorLayerCount > 0)
+			{
+				atlas->glyphs.push_back(e);
+				*outEntry = e;
+				return true;
+			}
+			// All layers failed — fall through to monochrome outline
 		}
 		}  // end if (!skipColr)
 
@@ -4251,7 +4368,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return SlugBuildGlyphFromCurves(atlas, cp, (float)adv * sc, minX, minY, maxX, maxY, curves, outEntry);
 	}
 
-	static bool SlugBuildGlyphFromCurves(SlugFontAtlas* atlas, ImWchar cp, float advEm,
+	static bool SlugBuildGlyphFromCurves(SlugFontCache* atlas, ImWchar cp, float advEm,
 	                                      float minX, float minY, float maxX, float maxY,
 	                                      ImVector<SlugCurve>& curves, SlugGlyphEntry* outEntry)
 	{
@@ -4482,7 +4599,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	// ---- Atlas management ---------------------------------------------------
 
-	static SlugGlyphEntry* SlugFindGlyph(SlugFontAtlas* atlas, ImWchar cp)
+	static SlugGlyphEntry* SlugFindGlyph(SlugFontCache* atlas, ImWchar cp)
 	{
 		for (int i = 0; i < atlas->glyphs.Size; i++)
 			if (atlas->glyphs[i].codepoint == cp)
@@ -4490,7 +4607,84 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return NULL;
 	}
 
-	static SlugFontAtlas* SlugGetOrCreateAtlas(ImWidgetsSlugState* state, ImFont* font)
+#if IM_SUPPORT_LIGATURE
+#ifdef _WIN32
+	// Separate function so __try can be used (not allowed in functions with C++ object unwinding)
+	static kbts_font* SlugTryShapePushFont(kbts_shape_context* ctx, void* data, int size)
+	{
+		kbts_font* f = NULL;
+		__try { f = kbts_ShapePushFontFromMemory(ctx, data, size, 0); }
+		__except(1) { f = NULL; }
+		return f;
+	}
+#endif
+	// Validate GSUB ligature subtables — reject fonts with malformed ComponentCount
+	// that would crash kbts_PlaceBlob via out-of-bounds array access.
+	static bool SlugValidateGSUB(const uint8_t* data, uint32_t fontStart)
+	{
+		uint32_t gsubOff = SlugFindTable(data, fontStart, "GSUB");
+		if (gsubOff == 0) return false; // no GSUB
+		uint32_t maxpOff = SlugFindTable(data, fontStart, "maxp");
+		int numGlyphs = maxpOff ? (int)SlugTTU16(data + maxpOff + 4) : 65535;
+		uint16_t lookupListOff = SlugTTU16(data + gsubOff + 8);
+		const uint8_t* lookupList = data + gsubOff + lookupListOff;
+		uint16_t lookupCount = SlugTTU16(lookupList);
+		for (int li = 0; li < (int)lookupCount; li++) {
+			uint16_t lookupOff = SlugTTU16(lookupList + 2 + li * 2);
+			const uint8_t* lookup = lookupList + lookupOff;
+			uint16_t lookupType = SlugTTU16(lookup);
+			if (lookupType != 4) continue; // only check Ligature substitution (type 4)
+			uint16_t subCount = SlugTTU16(lookup + 4);
+			for (int si = 0; si < (int)subCount; si++) {
+				uint16_t subOff = SlugTTU16(lookup + 6 + si * 2);
+				const uint8_t* sub = lookup + subOff;
+				if (SlugTTU16(sub) != 1) continue; // only format 1
+				uint16_t ligSetCount = SlugTTU16(sub + 4);
+				for (int ls = 0; ls < (int)ligSetCount; ls++) {
+					uint16_t lsOff = SlugTTU16(sub + 6 + ls * 2);
+					const uint8_t* ligSet = sub + lsOff;
+					uint16_t ligCount = SlugTTU16(ligSet);
+					for (int l = 0; l < (int)ligCount; l++) {
+						uint16_t ligOff = SlugTTU16(ligSet + 2 + l * 2);
+						const uint8_t* lig = ligSet + ligOff;
+						uint16_t compCount = SlugTTU16(lig + 2);
+						if (compCount > 64 || compCount == 0) return false; // malformed
+						// Check component glyph IDs are in range
+						for (int c = 0; c < (int)compCount - 1; c++) {
+							uint16_t gid = SlugTTU16(lig + 4 + c * 2);
+							if (gid >= numGlyphs) return false; // out of range
+						}
+					}
+				}
+			}
+		}
+		return true; // GSUB looks valid
+	}
+
+	static void SlugInitShaping(SlugFontCache* atlas, void* fontData, int fontDataSize)
+	{
+		// Only init shaping if font has a valid GSUB table
+		const uint8_t* raw = (const uint8_t*)fontData;
+		uint32_t fontStart = (uint32_t)atlas->stbFont.fontstart;
+		if (!SlugValidateGSUB(raw, fontStart))
+			return; // No GSUB or malformed → skip shaping
+
+		kbts_shape_context* ctx = kbts_CreateShapeContext(0, 0);
+#ifdef _WIN32
+		kbts_font* f = SlugTryShapePushFont(ctx, fontData, fontDataSize);
+#else
+		kbts_font* f = kbts_ShapePushFontFromMemory(ctx, fontData, fontDataSize, 0);
+#endif
+		if (f && f->Error == 0) {
+			atlas->shapeCtx  = ctx;
+			atlas->shapeFont = f;
+		} else {
+			kbts_DestroyShapeContext(ctx);
+		}
+	}
+#endif
+
+	static SlugFontCache* SlugGetOrCreateAtlas(ImWidgetsSlugState* state, ImFont* font)
 	{
 		// Find existing atlas for this font
 		for (int i = 0; i < state->atlases.Size; i++)
@@ -4514,7 +4708,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if (!cfg || !cfg->FontData || cfg->FontDataSize == 0)
 			return NULL;
 
-		SlugFontAtlas* atlas = IM_NEW(SlugFontAtlas);
+		SlugFontCache* atlas = IM_NEW(SlugFontCache);
 		atlas->imguiFont     = font;
 		atlas->curveCursor   = 0;
 		atlas->curveTexHeight = SLUG_TEX_INIT_H;
@@ -4543,11 +4737,17 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		atlas->cpalTableOffset = SlugFindTable(rawData, fontStart, "CPAL");
 		atlas->svgTableOffset  = SlugFindTable(rawData, fontStart, "SVG ");
 
+#if IM_SUPPORT_LIGATURE
+		atlas->shapeCtx  = NULL;
+		atlas->shapeFont = NULL;
+		SlugInitShaping(atlas, cfg->FontData, cfg->FontDataSize);
+#endif
+
 		state->atlases.push_back(atlas);
 		return atlas;
 	}
 
-	static void SlugUploadTextures(SlugFontAtlas* atlas)
+	static void SlugUploadTextures(SlugFontCache* atlas)
 	{
 		if (!atlas->dirty) return;
 
@@ -4584,10 +4784,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		atlas->dirty = false;
 	}
 
-	static void SlugDestroyAtlas(SlugFontAtlas* atlas)
+	static void SlugDestroyAtlas(SlugFontCache* atlas)
 	{
 		if (atlas->curveTexture) ImPlatform_DestroyTexture(atlas->curveTexture);
 		if (atlas->bandTexture)  ImPlatform_DestroyTexture(atlas->bandTexture);
+#if IM_SUPPORT_LIGATURE
+		if (atlas->shapeCtx)     kbts_DestroyShapeContext(atlas->shapeCtx);
+#endif
 		IM_DELETE(atlas);
 	}
 
@@ -4621,6 +4824,18 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		               //   = (1/sz, 0, 0, -1/sz) for axis-aligned glyph at pixel size sz
 		float bnd[4];  // band transform: scaleX, scaleY, offsetX, offsetY
 		float col[4];  // RGBA vertex color as floats
+	};
+
+	// Extended vertex for SLUG_GRADIENT permutation (112 bytes = 7 x float4)
+	struct SlugGradientVertex
+	{
+		float pos[4];
+		float tex[4];
+		float jac[4];
+		float bnd[4];
+		float col[4];   // gradient color 0
+		float grd[4];   // gradient params: dirX, dirY, scale, bias
+		float col2[4];  // gradient color 1
 	};
 
 	// Data passed to the raw draw callback
@@ -4672,7 +4887,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImWidgetsSlugState* state = gs_pContext->slugState;
 		if (!state) state = gs_pContext->slugState = IM_NEW(ImWidgetsSlugState);
 
-		SlugFontAtlas* atlas = SlugGetOrCreateAtlas(state, font);
+		SlugFontCache* atlas = SlugGetOrCreateAtlas(state, font);
 		if (!atlas) { if (out_ascent) *out_ascent = font_size; return ImVec2(0, font_size); }
 
 		// Ensure all glyphs are built (no texture upload needed for measurement)
@@ -4722,27 +4937,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if (font_size <= 0.0f) font_size = ImGui::GetFontSize();
 
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
-		// Lazy-init slug state and shader
+		// Shaders must be compiled at startup via ImWidgetsFeatures_RichFont + CreateContext()
+		if (!gs_pContext->slugShader.program) return;
+
 		if (!gs_pContext->slugState)
 			gs_pContext->slugState = IM_NEW(ImWidgetsSlugState);
-
-		if (!gs_pContext->slugShader.program)
-			CreateInternalShader(&gs_pContext->slugShader, "slug", 0, NULL, 0, NULL);
-		if (!gs_pContext->slugColorShader.program)
-			CreateInternalShader(&gs_pContext->slugColorShader, "slug_color", 0, NULL, 0, NULL);
-		static bool slugDebugShaderInit = false;
-		if (!slugDebugShaderInit) {
-			memset(&gs_pContext->slugDebugShader, 0, sizeof(gs_pContext->slugDebugShader));
-			CreateInternalShader(&gs_pContext->slugDebugShader, "slug_debug", 0, NULL, 0, NULL);
-			slugDebugShaderInit = true;
-		}
-
-		if (!gs_pContext->slugShader.program) return;  // shader compilation failed
 
 		ImWidgetsSlugState* state = gs_pContext->slugState;
 
 		// Get or create the font atlas for this font
-		SlugFontAtlas* atlas = SlugGetOrCreateAtlas(state, font);
+		SlugFontCache* atlas = SlugGetOrCreateAtlas(state, font);
 		if (!atlas) return;
 
 		// Pre-build all glyphs and upload textures if anything is new
@@ -4764,18 +4968,63 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			SlugUploadTextures(atlas);
 		if (!atlas->curveTexture || !atlas->bandTexture) return;
 
+		// ---- Text shaping (ligatures, contextual forms, RTL, OpenType features) ----
+		struct ShapedGlyph { int glyphID; float advanceX; float offsetX; float offsetY; };
+		ImVector<ShapedGlyph> shapedGlyphs;
+#if IM_SUPPORT_LIGATURE
+		if (atlas->shapeCtx && atlas->shapeFont)
+		{
+			int textLen = (int)(text_end - text);
+			kbts_ShapeBegin(atlas->shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
+			kbts_ShapeUtf8(atlas->shapeCtx, text, textLen, KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
+			kbts_ShapeEnd(atlas->shapeCtx);
+
+			kbts_run run;
+			while (kbts_ShapeRun(atlas->shapeCtx, &run))
+			{
+				kbts_glyph* glyph;
+				while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph))
+				{
+					ShapedGlyph sg;
+					sg.glyphID  = (int)glyph->Id;
+					sg.advanceX = (float)glyph->AdvanceX * atlas->emScale;
+					sg.offsetX  = (float)glyph->OffsetX  * atlas->emScale;
+					sg.offsetY  = (float)glyph->OffsetY  * atlas->emScale;
+					shapedGlyphs.push_back(sg);
+
+					// Build glyph by ID if not already built (use high codepoint range to avoid collision)
+					ImWchar glyphKey = (ImWchar)(0x100000 + sg.glyphID); // private-use offset to avoid codepoint collision
+					if (!SlugFindGlyph(atlas, glyphKey))
+					{
+						SlugGlyphEntry e;
+						if (SlugBuildGlyphByIndex(atlas, sg.glyphID, glyphKey, &e))
+							anyNew = true;
+					}
+				}
+			}
+		}
+#endif
+		if (anyNew || atlas->dirty)
+			SlugUploadTextures(atlas);
+		if (!atlas->curveTexture || !atlas->bandTexture) return;
+
 		// Count glyphs so we can allocate exactly
 		int glyphCount = 0;
-		p = text;
-		while (p < text_end)
+		if (shapedGlyphs.Size > 0)
+			glyphCount = shapedGlyphs.Size;
+		else
 		{
-			unsigned int cp = 0;
-			const char* next = p + ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
-			if (cp == 0) break;
-			SlugGlyphEntry* ge = SlugFindGlyph(atlas, (ImWchar)cp);
-			if (ge && (ge->maxXEm - ge->minXEm) > 1e-5f && (ge->maxYEm - ge->minYEm) > 1e-5f)
-				glyphCount++;
-			p = next;
+			p = text;
+			while (p < text_end)
+			{
+				unsigned int cp = 0;
+				const char* next = p + ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
+				if (cp == 0) break;
+				SlugGlyphEntry* ge = SlugFindGlyph(atlas, (ImWchar)cp);
+				if (ge && (ge->maxXEm - ge->minXEm) > 1e-5f && (ge->maxYEm - ge->minYEm) > 1e-5f)
+					glyphCount++;
+				p = next;
+			}
 		}
 		if (glyphCount == 0) return;
 
@@ -4808,20 +5057,22 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			*a = (float)((c >> 24) & 0xFF) / 255.0f;
 		};
 
-		// Two vertex/index buffers: one for monochrome glyphs, one for COLR v0 color layers
+		// Three vertex/index buffers: monochrome, solid color layers, gradient color layers
 		ImVector<SlugVertex> vertsNorm,  vertsColor;
 		ImVector<ImU16>      idxsNorm,   idxsColor;
+		ImVector<SlugGradientVertex> vertsGrad;
+		ImVector<ImU16>              idxsGrad;
 		vertsNorm.reserve(glyphCount * 4);
 		idxsNorm.reserve(glyphCount * 6);
 
 		// Helper: emit one quad into a vertex/index buffer for a given glyph entry + color
 		auto EmitQuad = [&](ImVector<SlugVertex>& vBuf, ImVector<ImU16>& iBuf,
-		                    const SlugGlyphEntry* ge, float penX_, ImU32 quadCol)
+		                    const SlugGlyphEntry* ge, float penX_, float posY_, ImU32 quadCol)
 		{
 			float sL = penX_ + ge->minXEm * sz;
 			float sR = penX_ + ge->maxXEm * sz;
-			float sT = pos.y - ge->maxYEm * sz;
-			float sB = pos.y - ge->minYEm * sz;
+			float sT = posY_ - ge->maxYEm * sz;
+			float sB = posY_ - ge->minYEm * sz;
 			float uL = ge->minXEm, uR = ge->maxXEm;
 			float uT = ge->maxYEm, uB = ge->minYEm;
 
@@ -4854,41 +5105,101 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			iBuf.push_back(base + 0); iBuf.push_back(base + 2); iBuf.push_back(base + 3);
 		};
 
-		p = text;
-		while (p < text_end)
+		// Gradient quad emitter (SLUG_GRADIENT permutation — 7 float4 vertex)
+		auto EmitGradQuad = [&](const SlugGlyphEntry* ge, float penX_, float posY_, const SlugColorLayer& cl)
 		{
-			unsigned int cp = 0;
-			p += ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
-			if (cp == 0) break;
+			float sL = penX_ + ge->minXEm * sz, sR = penX_ + ge->maxXEm * sz;
+			float sT = posY_ - ge->maxYEm * sz, sB = posY_ - ge->minYEm * sz;
+			float uL = ge->minXEm, uR = ge->maxXEm, uT = ge->maxYEm, uB = ge->minYEm;
 
-			SlugGlyphEntry* ge = SlugFindGlyph(atlas, (ImWchar)cp);
-			if (!ge) { continue; }
+			unsigned int gz = (unsigned int)(ImU16)ge->bandTexX | ((unsigned int)(ImU16)ge->bandTexY << 16);
+			unsigned int gw = (unsigned int)(ge->bandMaxX & 0xFF) | ((unsigned int)(ge->bandMaxY & 0xFF) << 16);
+			float fgz, fgw; memcpy(&fgz, &gz, 4); memcpy(&fgw, &gw, 4);
 
-			float advance = ge->advanceEm * sz;
+			float c0R, c0G, c0B, c0A, c1R, c1G, c1B, c1A;
+			U32toF4(cl.gradColor0, &c0R, &c0G, &c0B, &c0A);
+			U32toF4(cl.gradColor1, &c1R, &c1G, &c1B, &c1A);
+
+			ImU16 base = (ImU16)vertsGrad.Size;
+			SlugGradientVertex v = {};
+			v.tex[2] = fgz; v.tex[3] = fgw;
+			v.jac[0] = invSz; v.jac[1] = 0; v.jac[2] = 0; v.jac[3] = -invSz;
+			v.bnd[0] = ge->bandScaleX; v.bnd[1] = ge->bandScaleY;
+			v.bnd[2] = ge->bandOffsetX; v.bnd[3] = ge->bandOffsetY;
+			v.col[0] = c0R; v.col[1] = c0G; v.col[2] = c0B; v.col[3] = c0A;
+			v.grd[0] = cl.gradDirX; v.grd[1] = cl.gradDirY;
+			v.grd[2] = cl.gradScale; v.grd[3] = cl.gradBias;
+			v.col2[0] = c1R; v.col2[1] = c1G; v.col2[2] = c1B; v.col2[3] = c1A;
+
+			v.pos[0]=sL; v.pos[1]=sT; v.pos[2]=-1; v.pos[3]=-1; v.tex[0]=uL; v.tex[1]=uT; vertsGrad.push_back(v);
+			v.pos[0]=sR; v.pos[1]=sT; v.pos[2]=+1; v.pos[3]=-1; v.tex[0]=uR; v.tex[1]=uT; vertsGrad.push_back(v);
+			v.pos[0]=sR; v.pos[1]=sB; v.pos[2]=+1; v.pos[3]=+1; v.tex[0]=uR; v.tex[1]=uB; vertsGrad.push_back(v);
+			v.pos[0]=sL; v.pos[1]=sB; v.pos[2]=-1; v.pos[3]=+1; v.tex[0]=uL; v.tex[1]=uB; vertsGrad.push_back(v);
+
+			idxsGrad.push_back(base+0); idxsGrad.push_back(base+1); idxsGrad.push_back(base+2);
+			idxsGrad.push_back(base+0); idxsGrad.push_back(base+2); idxsGrad.push_back(base+3);
+		};
+
+		// Emit glyphs — either from shaped glyph list or codepoint iteration
+		int shapedIdx = 0;
+		p = text;
+		while (shapedGlyphs.Size > 0 ? (shapedIdx < shapedGlyphs.Size) : (p < text_end))
+		{
+			SlugGlyphEntry* ge = NULL;
+			float advance = 0;
+			float glyphOffX = 0, glyphOffY = 0; // GPOS mark offsets (em-space)
+
+			if (shapedGlyphs.Size > 0)
+			{
+				const ShapedGlyph& sg = shapedGlyphs[shapedIdx++];
+				ImWchar glyphKey = (ImWchar)(0x100000 + sg.glyphID);
+				ge = SlugFindGlyph(atlas, glyphKey);
+				advance = sg.advanceX * sz;
+				glyphOffX = sg.offsetX * sz;
+				glyphOffY = sg.offsetY * sz;
+			}
+			else
+			{
+				unsigned int cp = 0;
+				p += ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
+				if (cp == 0) break;
+				ge = SlugFindGlyph(atlas, (ImWchar)cp);
+				if (ge) advance = ge->advanceEm * sz;
+			}
+			if (!ge) { penX += advance; continue; }
+
+			// Apply GPOS offsets to pen position for this glyph
+			float glyphPenX = penX + glyphOffX;
+			float glyphPosY = pos.y - glyphOffY; // Y-up: positive offsetY moves glyph up
 
 			if (ge->colorLayerCount > 0)
 			{
-				// COLR v0: emit one quad per layer into the color batch
 				for (int li = 0; li < ge->colorLayerCount; li++)
 				{
 					const SlugColorLayer& cl = atlas->colorLayers[ge->colorLayerStart + li];
 					const SlugGlyphEntry& le = atlas->glyphs[cl.glyphEntryIdx];
 					if ((le.maxXEm - le.minXEm) < 1e-5f || (le.maxYEm - le.minYEm) < 1e-5f)
 						continue;
-					// color == 0 means "use foreground text color" (CPAL index 0xFFFF)
-					ImU32 layerCol = (cl.color != 0) ? cl.color : col;
-					EmitQuad(vertsColor, idxsColor, &le, penX, layerCol);
+					if (cl.hasGradient && gs_pContext->slugGradientShader.program)
+					{
+						EmitGradQuad(&le, glyphPenX, glyphPosY, cl);
+					}
+					else
+					{
+						ImU32 layerCol = (cl.color != 0) ? cl.color : col;
+						EmitQuad(vertsColor, idxsColor, &le, glyphPenX, glyphPosY, layerCol);
+					}
 				}
 			}
 			else if ((ge->maxXEm - ge->minXEm) >= 1e-5f && (ge->maxYEm - ge->minYEm) >= 1e-5f)
 			{
-				EmitQuad(vertsNorm, idxsNorm, ge, penX, col);
+				EmitQuad(vertsNorm, idxsNorm, ge, glyphPenX, glyphPosY, col);
 			}
 
 			penX += advance;
 		}
 
-		if (vertsNorm.empty() && vertsColor.empty()) return;
+		if (vertsNorm.empty() && vertsColor.empty() && vertsGrad.empty()) return;
 
 		// Helper: create GPU buffers, register draw callback, and destroy after draw
 		auto IssueDrawCall = [&](ImVector<SlugVertex>& vBuf, ImVector<ImU16>& iBuf,
@@ -4931,16 +5242,57 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		if (g_SlugDebugShader && gs_pContext->slugDebugShader.program)
 		{
-			// Debug: all glyphs through debug shader (R=|xcov|, G=|ycov|, B=coverage)
 			IssueDrawCall(vertsNorm,  idxsNorm,  gs_pContext->slugDebugShader.program);
 			IssueDrawCall(vertsColor, idxsColor, gs_pContext->slugDebugShader.program);
 		}
 		else
 		{
-			// Monochrome glyphs — standard slug shader
 			IssueDrawCall(vertsNorm,  idxsNorm,  gs_pContext->slugShader.program);
-			// COLR v0 color layers — color slug shader (output preserves RGB, feathers alpha only)
 			IssueDrawCall(vertsColor, idxsColor, gs_pContext->slugColorShader.program);
+		}
+
+		// Gradient layers — separate draw call with extended vertex format (7 × float4)
+		if (!vertsGrad.empty() && gs_pContext->slugGradientShader.program)
+		{
+			static const ImPlatform_VertexAttribute kGradAttribs[] = {
+				{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, pos),  "POSITION" },
+				{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, tex),  "TEXCOORD" },
+				{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, jac),  "TEXCOORD" },
+				{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, bnd),  "TEXCOORD" },
+				{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, col),  "COLOR"    },
+				{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, grd),  "TEXCOORD" },
+				{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, col2), "COLOR"    },
+			};
+			ImPlatform_VertexBufferDesc vbDesc = {};
+			vbDesc.vertex_count    = (unsigned int)vertsGrad.Size;
+			vbDesc.vertex_stride   = sizeof(SlugGradientVertex);
+			vbDesc.usage           = ImPlatform_BufferUsage_Stream;
+			vbDesc.attributes      = kGradAttribs;
+			vbDesc.attribute_count = 7;
+			ImPlatform_IndexBufferDesc ibDesc = {};
+			ibDesc.index_count = (unsigned int)idxsGrad.Size;
+			ibDesc.format      = ImPlatform_IndexFormat_UInt16;
+			ibDesc.usage       = ImPlatform_BufferUsage_Stream;
+			ImPlatform_VertexBuffer vb = ImPlatform_CreateVertexBuffer(vertsGrad.Data, &vbDesc);
+			ImPlatform_IndexBuffer  ib = ImPlatform_CreateIndexBuffer(idxsGrad.Data, &ibDesc);
+			if (vb && ib)
+			{
+#if defined(IM_CURRENT_GFX) && (IM_CURRENT_GFX == IM_GFX_DIRECTX11)
+				ImPlatform_CreateVertexInputLayout(vb, gs_pContext->slugGradientShader.program);
+#endif
+				SlugDrawCBData* cbd = (SlugDrawCBData*)IM_ALLOC(sizeof(SlugDrawCBData));
+				cbd->program      = gs_pContext->slugGradientShader.program;
+				cbd->vb           = vb;
+				cbd->ib           = ib;
+				cbd->curveTexture = atlas->curveTexture;
+				cbd->bandTexture  = atlas->bandTexture;
+				cbd->indexCount   = (unsigned int)idxsGrad.Size;
+				ImPlatform_BeginCustomShader(pDrawList, gs_pContext->slugGradientShader.program);
+				pDrawList->AddCallback(SlugRawDraw, cbd);
+				pDrawList->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
+				ImPlatform_EndCustomShader(pDrawList);
+			}
+			else { if (vb) ImPlatform_DestroyVertexBuffer(vb); if (ib) ImPlatform_DestroyIndexBuffer(ib); }
 		}
 
 #else
@@ -4953,6 +5305,205 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	              const char* text, const char* text_end)
 	{
 		DrawText(pDrawList, nullptr, 0.0f, pos, col, text, text_end);
+	}
+
+	// ---- Linear gradient text -----------------------------------------------
+
+	static ImU32 LerpColor(ImU32 a, ImU32 b, float t)
+	{
+		float u = 1.0f - t;
+		int r = (int)(((a >>  0) & 0xFF) * u + ((b >>  0) & 0xFF) * t + 0.5f);
+		int g = (int)(((a >>  8) & 0xFF) * u + ((b >>  8) & 0xFF) * t + 0.5f);
+		int bv= (int)(((a >> 16) & 0xFF) * u + ((b >> 16) & 0xFF) * t + 0.5f);
+		int al= (int)(((a >> 24) & 0xFF) * u + ((b >> 24) & 0xFF) * t + 0.5f);
+		return ((ImU32)al << 24) | ((ImU32)bv << 16) | ((ImU32)g << 8) | (ImU32)r;
+	}
+
+	void DrawTextGradient(ImDrawList* pDrawList, ImFont* font, float font_size,
+	                       ImVec2 pos, ImU32 col_left, ImU32 col_right,
+	                       const char* text, const char* text_end)
+	{
+#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+		if (!gs_pContext || !text) return;
+		if (!text_end) text_end = text + strlen(text);
+		if (text >= text_end) return;
+		if (!font)             font      = ImGui::GetFont();
+		if (font_size <= 0.0f) font_size = ImGui::GetFontSize();
+
+		ImWidgetsSlugState* state = gs_pContext->slugState;
+		if (!state) state = gs_pContext->slugState = IM_NEW(ImWidgetsSlugState);
+
+		if (!gs_pContext->slugShader.program) return;
+
+		SlugFontCache* atlas = SlugGetOrCreateAtlas(state, font);
+		if (!atlas) return;
+
+		// Build glyphs
+		bool anyNew = false;
+		const char* p = text;
+		while (p < text_end) {
+			unsigned int cp = 0;
+			p += ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
+			if (cp == 0) break;
+			if (!SlugFindGlyph(atlas, (ImWchar)cp)) {
+				SlugGlyphEntry e; SlugBuildGlyph(atlas, (ImWchar)cp, &e); anyNew = true;
+			}
+		}
+		if (anyNew || atlas->dirty) SlugUploadTextures(atlas);
+		if (!atlas->curveTexture || !atlas->bandTexture) return;
+
+		// Measure total width for gradient interpolation
+		float totalWidth = CalcTextSize(font, font_size, text, text_end).x;
+		if (totalWidth < 1e-5f) totalWidth = 1.0f;
+
+		const float sz    = font_size;
+		const float invSz = 1.0f / sz;
+		float penX = pos.x;
+		float startX = pos.x;
+
+		static const ImPlatform_VertexAttribute kSlugAttribs[] = {
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, pos), "POSITION" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, tex), "TEXCOORD" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, jac), "TEXCOORD" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, bnd), "TEXCOORD" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, col), "COLOR"    },
+		};
+
+		auto U32toF4 = [](ImU32 c, float* r, float* g, float* b, float* a) {
+			*r = (float)((c >>  0) & 0xFF) / 255.0f;
+			*g = (float)((c >>  8) & 0xFF) / 255.0f;
+			*b = (float)((c >> 16) & 0xFF) / 255.0f;
+			*a = (float)((c >> 24) & 0xFF) / 255.0f;
+		};
+
+		ImVector<SlugVertex> verts;
+		ImVector<ImU16>      idxs;
+
+		// Gradient EmitQuad: left vertices get colL, right vertices get colR
+		auto EmitQuadGrad = [&](ImVector<SlugVertex>& vBuf, ImVector<ImU16>& iBuf,
+		                        const SlugGlyphEntry* ge, float penX_, ImU32 colL, ImU32 colR)
+		{
+			float sL = penX_ + ge->minXEm * sz;
+			float sR = penX_ + ge->maxXEm * sz;
+			float sT = pos.y - ge->maxYEm * sz;
+			float sB = pos.y - ge->minYEm * sz;
+			float uL = ge->minXEm, uR = ge->maxXEm;
+			float uT = ge->maxYEm, uB = ge->minYEm;
+
+			unsigned int gz = (unsigned int)(ImU16)ge->bandTexX
+			                | ((unsigned int)(ImU16)ge->bandTexY << 16);
+			unsigned int gw = (unsigned int)(ge->bandMaxX & 0xFF)
+			                | ((unsigned int)(ge->bandMaxY & 0xFF) << 16);
+			float fgz, fgw;
+			memcpy(&fgz, &gz, 4);
+			memcpy(&fgw, &gw, 4);
+
+			float cLR, cLG, cLB, cLA, cRR, cRG, cRB, cRA;
+			U32toF4(colL, &cLR, &cLG, &cLB, &cLA);
+			U32toF4(colR, &cRR, &cRG, &cRB, &cRA);
+
+			ImU16 base = (ImU16)vBuf.Size;
+			SlugVertex v;
+			v.tex[2] = fgz; v.tex[3] = fgw;
+			v.jac[0] = invSz; v.jac[1] = 0.0f;
+			v.jac[2] = 0.0f;  v.jac[3] = -invSz;
+			v.bnd[0] = ge->bandScaleX;  v.bnd[1] = ge->bandScaleY;
+			v.bnd[2] = ge->bandOffsetX; v.bnd[3] = ge->bandOffsetY;
+
+			// TL (left color)
+			v.pos[0]=sL; v.pos[1]=sT; v.pos[2]=-1; v.pos[3]=-1; v.tex[0]=uL; v.tex[1]=uT;
+			v.col[0]=cLR; v.col[1]=cLG; v.col[2]=cLB; v.col[3]=cLA; vBuf.push_back(v);
+			// TR (right color)
+			v.pos[0]=sR; v.pos[1]=sT; v.pos[2]=+1; v.pos[3]=-1; v.tex[0]=uR; v.tex[1]=uT;
+			v.col[0]=cRR; v.col[1]=cRG; v.col[2]=cRB; v.col[3]=cRA; vBuf.push_back(v);
+			// BR (right color)
+			v.pos[0]=sR; v.pos[1]=sB; v.pos[2]=+1; v.pos[3]=+1; v.tex[0]=uR; v.tex[1]=uB;
+			v.col[0]=cRR; v.col[1]=cRG; v.col[2]=cRB; v.col[3]=cRA; vBuf.push_back(v);
+			// BL (left color)
+			v.pos[0]=sL; v.pos[1]=sB; v.pos[2]=-1; v.pos[3]=+1; v.tex[0]=uL; v.tex[1]=uB;
+			v.col[0]=cLR; v.col[1]=cLG; v.col[2]=cLB; v.col[3]=cLA; vBuf.push_back(v);
+
+			iBuf.push_back(base+0); iBuf.push_back(base+1); iBuf.push_back(base+2);
+			iBuf.push_back(base+0); iBuf.push_back(base+2); iBuf.push_back(base+3);
+		};
+
+		p = text;
+		while (p < text_end) {
+			unsigned int cp = 0;
+			p += ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
+			if (cp == 0) break;
+			SlugGlyphEntry* ge = SlugFindGlyph(atlas, (ImWchar)cp);
+			if (!ge) continue;
+			float advance = ge->advanceEm * sz;
+
+			// Gradient t at left and right edges of this glyph
+			float tL = (penX + ge->minXEm * sz - startX) / totalWidth;
+			float tR = (penX + ge->maxXEm * sz - startX) / totalWidth;
+			tL = ImClamp(tL, 0.0f, 1.0f);
+			tR = ImClamp(tR, 0.0f, 1.0f);
+			ImU32 colL = LerpColor(col_left, col_right, tL);
+			ImU32 colR = LerpColor(col_left, col_right, tR);
+
+			if (ge->colorLayerCount > 0) {
+				for (int li = 0; li < ge->colorLayerCount; li++) {
+					const SlugColorLayer& cl = atlas->colorLayers[ge->colorLayerStart + li];
+					const SlugGlyphEntry& le = atlas->glyphs[cl.glyphEntryIdx];
+					if ((le.maxXEm - le.minXEm) < 1e-5f || (le.maxYEm - le.minYEm) < 1e-5f) continue;
+					// For color layers, modulate the layer color with the gradient
+					ImU32 layerCol = (cl.color != 0) ? cl.color : IM_COL32(255,255,255,255);
+					// Blend gradient with layer color (multiply RGB, keep layer alpha)
+					auto ModColor = [](ImU32 layer, ImU32 grad) -> ImU32 {
+						int r = (((layer>> 0)&0xFF) * ((grad>> 0)&0xFF) + 127) / 255;
+						int g = (((layer>> 8)&0xFF) * ((grad>> 8)&0xFF) + 127) / 255;
+						int b = (((layer>>16)&0xFF) * ((grad>>16)&0xFF) + 127) / 255;
+						int a = ((layer>>24)&0xFF);
+						return ((ImU32)a<<24)|((ImU32)b<<16)|((ImU32)g<<8)|(ImU32)r;
+					};
+					EmitQuadGrad(verts, idxs, &le, penX, ModColor(layerCol, colL), ModColor(layerCol, colR));
+				}
+			} else if ((ge->maxXEm - ge->minXEm) >= 1e-5f && (ge->maxYEm - ge->minYEm) >= 1e-5f) {
+				EmitQuadGrad(verts, idxs, ge, penX, colL, colR);
+			}
+			penX += advance;
+		}
+
+		if (verts.empty()) return;
+
+		auto IssueDrawCall = [&](ImVector<SlugVertex>& vBuf, ImVector<ImU16>& iBuf,
+		                         ImPlatform_ShaderProgram prog)
+		{
+			if (vBuf.empty()) return;
+			ImPlatform_VertexBufferDesc vbDesc = {};
+			vbDesc.vertex_count  = (unsigned int)vBuf.Size;
+			vbDesc.vertex_stride = sizeof(SlugVertex);
+			vbDesc.usage         = ImPlatform_BufferUsage_Stream;
+			vbDesc.attributes    = kSlugAttribs;
+			vbDesc.attribute_count = 5;
+			ImPlatform_IndexBufferDesc ibDesc = {};
+			ibDesc.index_count = (unsigned int)iBuf.Size;
+			ibDesc.format      = ImPlatform_IndexFormat_UInt16;
+			ibDesc.usage       = ImPlatform_BufferUsage_Stream;
+			ImPlatform_VertexBuffer vb = ImPlatform_CreateVertexBuffer(vBuf.Data, &vbDesc);
+			ImPlatform_IndexBuffer  ib = ImPlatform_CreateIndexBuffer(iBuf.Data, &ibDesc);
+			SlugDrawCBData* cbd = (SlugDrawCBData*)IM_ALLOC(sizeof(SlugDrawCBData));
+			cbd->program      = prog;
+			cbd->vb           = vb;
+			cbd->ib           = ib;
+			cbd->curveTexture = atlas->curveTexture;
+			cbd->bandTexture  = atlas->bandTexture;
+			cbd->indexCount   = (unsigned int)iBuf.Size;
+			ImPlatform_BeginCustomShader(pDrawList, prog);
+			pDrawList->AddCallback(SlugRawDraw, cbd);
+			pDrawList->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
+			ImPlatform_EndCustomShader(pDrawList);
+		};
+
+		// All gradient glyphs use the color shader (preserves RGB, feathers alpha)
+		IssueDrawCall(verts, idxs, gs_pContext->slugColorShader.program);
+#else
+		(void)pDrawList; (void)font; (void)font_size; (void)pos;
+		(void)col_left; (void)col_right; (void)text; (void)text_end;
+#endif
 	}
 
 	// ---- Debug visualization: draw Slug curve outlines ----------------------
@@ -4968,10 +5519,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// Helper: draw debug curves/ctrl/bbox/bands for a single glyph's curve list
 	static void SlugDebugDrawCurves(ImDrawList* dl, const ImVector<SlugCurve>& curves,
 	    float penX, float posY, float sz, float ttx, float tty,
-	    ImU32 curveCol, bool showCurves, bool showCtrl, const ImVec4& clip)
+	    ImU32 curveCol, bool showCurves, bool showCtrl, const ImVec4& clip, int* budget)
 	{
 		const int SEGS = 16;
 		for (int ci = 0; ci < curves.Size; ci++) {
+			if (budget && *budget <= 0) return;
 			const SlugCurve& cv = curves[ci];
 			// Quick per-curve clip: compute screen-space bbox of control points
 			float cxMin = cv.p1x, cxMax = cv.p1x, cyMin = cv.p1y, cyMax = cv.p1y;
@@ -5003,7 +5555,29 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				dl->AddLine(sp1, sp2, ctrlCol, 1.0f);
 				dl->AddCircleFilled(sp2, 1.5f, ctrlCol);
 			}
+			if (budget) (*budget)--;
 		}
+	}
+
+	// Helper: extract curves for a glyph by glyph index from stbtt
+	static void SlugExtractGlyphCurves(SlugFontCache* atlas, int gi, ImVector<SlugCurve>& curves)
+	{
+		stbtt_vertex* verts = NULL;
+		int nVerts = stbtt_GetGlyphShape(&atlas->stbFont, gi, &verts);
+		const float sc = atlas->emScale;
+		float curX = 0, curY = 0;
+		for (int i = 0; i < nVerts; i++) {
+			const stbtt_vertex& v = verts[i];
+			float vx = v.x*sc, vy = v.y*sc;
+			if (v.type == STBTT_vmove) { curX=vx; curY=vy; continue; }
+			SlugCurve c = {};
+			c.p1x=curX; c.p1y=curY;
+			if (v.type==STBTT_vline) { if(curX==vx&&curY==vy) continue; c.p2x=(curX+vx)*0.5f; c.p2y=(curY+vy)*0.5f; c.p3x=vx; c.p3y=vy; }
+			else if (v.type==STBTT_vcurve) { c.p2x=v.cx*sc; c.p2y=v.cy*sc; c.p3x=vx; c.p3y=vy; }
+			else if (v.type==STBTT_vcubic) { SlugCubicToQuads(curves, curX, curY, v.cx*sc, v.cy*sc, v.cx1*sc, v.cy1*sc, vx, vy); curX=vx; curY=vy; continue; }
+			curves.push_back(c); curX=vx; curY=vy;
+		}
+		STBTT_free(verts, atlas->stbFont.userdata);
 	}
 
 	void DrawTextDebugCurves(ImDrawList* pDrawList, ImFont* font, float font_size,
@@ -5017,21 +5591,20 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		ImWidgetsSlugState* state = gs_pContext->slugState;
 		if (!state) return;
-		SlugFontAtlas* atlas = SlugGetOrCreateAtlas(state, font);
+		SlugFontCache* atlas = SlugGetOrCreateAtlas(state, font);
 		if (!atlas) return;
 
 		const float sz = font_size;
 		float penX = pos.x;
 
-		// Clip rect: use current window's visible region
 		ImVec4 clip;
 		{
 			ImVec2 wPos = ImGui::GetWindowPos();
 			ImVec2 wSize = ImGui::GetWindowSize();
-			ImVec2 scroll(ImGui::GetScrollX(), ImGui::GetScrollY());
 			clip = ImVec4(wPos.x, wPos.y, wPos.x + wSize.x, wPos.y + wSize.y);
 		}
 
+		int curveBudget = 2000;
 		static const ImU32 kPalette[] = {
 			IM_COL32(255, 80, 80, 255), IM_COL32(80, 200, 80, 255), IM_COL32(80, 120, 255, 255),
 			IM_COL32(255, 200, 40, 255), IM_COL32(200, 80, 255, 255), IM_COL32(80, 220, 220, 255),
@@ -5044,189 +5617,82 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const bool showBBox   = (flags & 4) != 0;
 		const bool showBands  = (flags & 8) != 0;
 
-		const char* p = text;
-		while (p < text_end)
+		// Use the same shaping path as DrawText
+		struct DbgGlyph { int glyphID; float advanceX; float offsetX; float offsetY; };
+		ImVector<DbgGlyph> shapedGlyphs;
+#if IM_SUPPORT_LIGATURE
+		if (atlas->shapeCtx && atlas->shapeFont)
 		{
-			unsigned int cp = 0;
-			p += ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
-			if (cp == 0) break;
+			int textLen = (int)(text_end - text);
+			kbts_ShapeBegin(atlas->shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
+			kbts_ShapeUtf8(atlas->shapeCtx, text, textLen, KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
+			kbts_ShapeEnd(atlas->shapeCtx);
+			kbts_run run;
+			while (kbts_ShapeRun(atlas->shapeCtx, &run)) {
+				kbts_glyph* glyph;
+				while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph)) {
+					DbgGlyph dg;
+					dg.glyphID  = (int)glyph->Id;
+					dg.advanceX = (float)glyph->AdvanceX * atlas->emScale;
+					dg.offsetX  = (float)glyph->OffsetX  * atlas->emScale;
+					dg.offsetY  = (float)glyph->OffsetY  * atlas->emScale;
+					shapedGlyphs.push_back(dg);
+				}
+			}
+		}
+#endif
 
-			SlugGlyphEntry* ge = SlugFindGlyph(atlas, (ImWchar)cp);
-			if (!ge) { continue; }
-			float advance = ge->advanceEm * sz;
+		int shapedIdx = 0;
+		const char* p = text;
+		int glyphColorIdx = 0;
+		while (shapedGlyphs.Size > 0 ? (shapedIdx < shapedGlyphs.Size) : (p < text_end))
+		{
+			int    gi = 0;
+			float  advance = 0, offX = 0, offY = 0;
 
-			// Early-out: skip glyph entirely if its screen bbox is outside the clip rect
-			float gScrL = penX + ge->minXEm * sz;
-			float gScrR = penX + ge->maxXEm * sz;
-			float gScrT = pos.y - ge->maxYEm * sz;
-			float gScrB = pos.y - ge->minYEm * sz;
-			if (gScrR < clip.x || gScrL > clip.z || gScrB < clip.y || gScrT > clip.w)
-			{
-				penX += advance;
-				continue;
+			if (shapedGlyphs.Size > 0) {
+				const DbgGlyph& dg = shapedGlyphs[shapedIdx++];
+				gi      = dg.glyphID;
+				advance = dg.advanceX * sz;
+				offX    = dg.offsetX * sz;
+				offY    = dg.offsetY * sz;
+			} else {
+				unsigned int cp = 0;
+				p += ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
+				if (cp == 0) break;
+				gi = stbtt_FindGlyphIndex(&atlas->stbFont, (int)cp);
+				if (gi <= 0) continue; // match DrawText: missing glyphs skip with advance=0
+				SlugGlyphEntry* dge = SlugFindGlyph(atlas, (ImWchar)cp);
+				advance = dge ? dge->advanceEm * sz : 0;
 			}
 
-			// Helper: convert em-space to screen-space
+			float gPenX = penX + offX;
+			float gPosY = pos.y - offY;
+
 			auto Em2Scr = [&](float ex, float ey) -> ImVec2 {
-				return ImVec2(penX + ex * sz, pos.y - ey * sz);
+				return ImVec2(gPenX + ex * sz, gPosY - ey * sz);
 			};
 
-			if (ge->colorLayerCount > 0)
-			{
-				for (int li = 0; li < ge->colorLayerCount; li++)
-				{
-					const SlugColorLayer& cl = atlas->colorLayers[ge->colorLayerStart + li];
-					const SlugGlyphEntry& le = atlas->glyphs[cl.glyphEntryIdx];
-					ImU32 curveCol = kPalette[li % kPaletteN];
-
-					if (showBBox)
-					{
-						ImVec2 bMin = Em2Scr(le.minXEm, le.minYEm);
-						ImVec2 bMax = Em2Scr(le.maxXEm, le.maxYEm);
-						pDrawList->AddRect(ImVec2(bMin.x, bMax.y), ImVec2(bMax.x, bMin.y), curveCol, 0.0f, 0, 1.0f);
-					}
-
-					if (showBands && le.bandMaxX > 0 && le.bandMaxY > 0)
-					{
-						int nbx = le.bandMaxX + 1, nby = le.bandMaxY + 1;
-						float gw = le.maxXEm - le.minXEm, gh = le.maxYEm - le.minYEm;
-						ImU32 bandCol = (curveCol & 0x00FFFFFF) | 0x40000000;
-						for (int bx = 1; bx < nbx; bx++) {
-							float ex = le.minXEm + gw * bx / nbx;
-							pDrawList->AddLine(Em2Scr(ex, le.maxYEm), Em2Scr(ex, le.minYEm), bandCol, 1.0f);
-						}
-						for (int by = 1; by < nby; by++) {
-							float ey = le.minYEm + gh * by / nby;
-							pDrawList->AddLine(Em2Scr(le.minXEm, ey), Em2Scr(le.maxXEm, ey), bandCol, 1.0f);
-						}
-					}
-				}
-
-				// Re-parse SVG curves (only if visible and requested)
-				if (showCurves || showCtrl)
-				{
-					int gi = stbtt_FindGlyphIndex(&atlas->stbFont, (int)cp);
-					if (gi > 0 && atlas->svgTableOffset)
-					{
-						const uint8_t* data = (const uint8_t*)atlas->stbFont.data;
-						const uint8_t* svg  = data + atlas->svgTableOffset;
-						uint32_t dlRel = SlugTTU32(svg + 2);
-						const uint8_t* dl = svg + dlRel;
-						uint16_t numEntries = SlugTTU16(dl);
-						const uint8_t* docData = NULL; uint32_t docLen = 0;
-						for (int i = 0; i < (int)numEntries; i++) {
-							const uint8_t* rec = dl + 2 + i * 12;
-							uint16_t sg = SlugTTU16(rec), eg = SlugTTU16(rec + 2);
-							if (gi >= sg && gi <= eg) {
-								docData = dl + SlugTTU32(rec + 4); docLen = SlugTTU32(rec + 8); break;
-							}
-						}
-						if (docData && docLen > 0 && !(docData[0] == 0x1F && docData[1] == 0x8B))
-						{
-							const char* svgText = (const char*)docData;
-							const char* svgTextEnd = svgText + (int)docLen;
-							float sc = atlas->emScale;
-							float txStk[32], tyStk[32]; int txTop = 0;
-							txStk[0] = tyStk[0] = 0.0f;
-							int pathIdx = 0;
-							const char* sp = svgText;
-							while (sp < svgTextEnd) {
-								if (*sp != '<') { sp++; continue; }
-								if (sp+3 < svgTextEnd && sp[1]=='/' && (sp[2]=='g'||sp[2]=='G')
-								    && (sp[3]=='>'||ImIsSpace(sp[3]))) {
-									if (txTop > 0) txTop--; sp += 3; continue;
-								}
-								if (sp+2 < svgTextEnd && (sp[1]=='g'||sp[1]=='G')
-								    && (sp[2]=='>'||ImIsSpace(sp[2]))) {
-									const char* gEnd = sp + 2;
-									while (gEnd < svgTextEnd && *gEnd != '>') gEnd++;
-									float gtx = txStk[txTop], gty = tyStk[txTop];
-									const char* gtp = SlugSVGFindAttr(sp+1, gEnd, "transform");
-									if (gtp) {
-										int gl2=0; const char* gv = SlugSVGReadQuoted(gtp,&gl2);
-										if (gv) { const char* tv=gv, *te=gv+gl2;
-											while (tv+9<=te && strncmp(tv,"translate",9)!=0) tv++;
-											if (tv+9<=te) { tv+=9; while (tv<te&&*tv!='(') tv++;
-												if (tv<te) { tv++; gtx+=SlugSVGParseFloat(&tv); gty+=SlugSVGParseFloat(&tv); }
-											}
-										}
-									}
-									if (txTop<31) { txStk[++txTop]=gtx; tyStk[txTop]=gty; }
-									sp = gEnd+1; continue;
-								}
-								if (sp+5>=svgTextEnd || !(strncmp(sp+1,"path",4)==0||strncmp(sp+1,"PATH",4)==0)
-								    || !ImIsSpace(sp[5])) { sp++; continue; }
-								const char* eS = sp+1, *eE = eS;
-								while (eE < svgTextEnd && *eE != '>') eE++;
-								if (eE >= svgTextEnd) break;
-								const char* dp = SlugSVGFindAttr(eS, eE, "d");
-								if (dp) {
-									int dlen=0; const char* dval = SlugSVGReadQuoted(dp,&dlen);
-									if (dval && dlen>0) {
-										ImVector<SlugCurve> curves;
-										SlugParseSVGPath(dval, dval+dlen, curves, sc, true);
-										float ttx = txStk[txTop]*sc, tty = tyStk[txTop]*sc*(-1.0f);
-										SlugDebugDrawCurves(pDrawList, curves, penX, pos.y, sz,
-											ttx, tty, kPalette[pathIdx%kPaletteN], showCurves, showCtrl, clip);
-										pathIdx++;
-									}
-								}
-								sp = eE+1;
-							}
-						}
-					}
-				}
+			// Extract curves for this glyph
+			if ((showCurves || showCtrl) && curveBudget > 0) {
+				ImVector<SlugCurve> curves;
+				SlugExtractGlyphCurves(atlas, gi, curves);
+				ImU32 curveCol = kPalette[glyphColorIdx % kPaletteN];
+				SlugDebugDrawCurves(pDrawList, curves, gPenX, gPosY, sz, 0, 0, curveCol, showCurves, showCtrl, clip, &curveBudget);
 			}
-			else
-			{
-				// Monochrome glyph
-				if (showBBox && (ge->maxXEm - ge->minXEm) > 1e-5f)
-					pDrawList->AddRect(ImVec2(penX+ge->minXEm*sz, pos.y-ge->maxYEm*sz),
-					                   ImVec2(penX+ge->maxXEm*sz, pos.y-ge->minYEm*sz),
-					                   IM_COL32(200,200,200,120), 0.0f, 0, 1.0f);
 
-				if ((showCurves || showCtrl) && (ge->maxXEm - ge->minXEm) > 1e-5f)
-				{
-					int gi = stbtt_FindGlyphIndex(&atlas->stbFont, (int)cp);
-					stbtt_vertex* verts = NULL;
-					int nVerts = stbtt_GetGlyphShape(&atlas->stbFont, gi, &verts);
-					const float sc = atlas->emScale;
-					ImVector<SlugCurve> curves;
-					float curX = 0.0f, curY = 0.0f;
-					for (int i = 0; i < nVerts; i++) {
-						const stbtt_vertex& v = verts[i];
-						float vx = v.x*sc, vy = v.y*sc;
-						if (v.type == STBTT_vmove) { curX=vx; curY=vy; continue; }
-						SlugCurve c = {};
-						c.p1x=curX; c.p1y=curY;
-						if (v.type==STBTT_vline) { c.p2x=(curX+vx)*0.5f; c.p2y=(curY+vy)*0.5f; c.p3x=vx; c.p3y=vy; }
-						else if (v.type==STBTT_vcurve) { c.p2x=v.cx*sc; c.p2y=v.cy*sc; c.p3x=vx; c.p3y=vy; }
-						else if (v.type==STBTT_vcubic) { SlugCubicToQuads(curves, curX, curY, v.cx*sc, v.cy*sc, v.cx1*sc, v.cy1*sc, vx, vy); curX=vx; curY=vy; continue; }
-						curves.push_back(c); curX=vx; curY=vy;
-					}
-					STBTT_free(verts, atlas->stbFont.userdata);
-					SlugDebugDrawCurves(pDrawList, curves, penX, pos.y, sz,
-						0.0f, 0.0f, IM_COL32(100,200,255,220), showCurves, showCtrl, clip);
-				}
-
-				if (showBands && ge->bandMaxX > 0 && ge->bandMaxY > 0 && (ge->maxXEm - ge->minXEm) > 1e-5f)
-				{
-					int nbx = ge->bandMaxX+1, nby = ge->bandMaxY+1;
-					float gw = ge->maxXEm - ge->minXEm, gh = ge->maxYEm - ge->minYEm;
-					ImU32 bandCol = IM_COL32(100, 200, 255, 60);
-					for (int bx = 1; bx < nbx; bx++) {
-						float ex = ge->minXEm + gw*bx/nbx;
-						pDrawList->AddLine(Em2Scr(ex,ge->maxYEm), Em2Scr(ex,ge->minYEm), bandCol, 1.0f);
-					}
-					for (int by = 1; by < nby; by++) {
-						float ey = ge->minYEm + gh*by/nby;
-						pDrawList->AddLine(Em2Scr(ge->minXEm,ey), Em2Scr(ge->maxXEm,ey), bandCol, 1.0f);
-					}
+			// BBox
+			if (showBBox) {
+				int bx0, by0, bx1, by1;
+				if (stbtt_GetGlyphBox(&atlas->stbFont, gi, &bx0, &by0, &bx1, &by1)) {
+					float sc = atlas->emScale;
+					pDrawList->AddRect(Em2Scr(bx0*sc, by0*sc), Em2Scr(bx1*sc, by1*sc),
+						kPalette[glyphColorIdx % kPaletteN], 0.0f, 0, 1.0f);
 				}
 			}
 
+			glyphColorIdx++;
 			penX += advance;
-			// Stop processing text if we've moved past the right edge of the clip region
 			if (penX > clip.z) break;
 		}
 	}
@@ -5242,7 +5708,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		ImWidgetsSlugState* state = gs_pContext->slugState;
 		if (!state) return;
-		SlugFontAtlas* atlas = SlugGetOrCreateAtlas(state, font);
+		SlugFontCache* atlas = SlugGetOrCreateAtlas(state, font);
 		if (!atlas) return;
 
 		const float sz = font_size;
@@ -5455,6 +5921,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// The code below is kept for backwards compatibility if features are pre-set
 		if ( GlobalData.features & ImWidgetsFeatures_Markers )
 			CreateMarkersShaders( ctx );
+
+		if ( GlobalData.features & ImWidgetsFeatures_RichFont )
+		{
+			CreateInternalShader(&ctx->slugShader, "slug", 0, NULL, 0, NULL);
+			CreateInternalShader(&ctx->slugColorShader, "slug_color", 0, NULL, 0, NULL);
+			CreateInternalShader(&ctx->slugGradientShader, "slug_gradient", 0, NULL, 0, NULL);
+			CreateInternalShader(&ctx->slugDebugShader, "slug_debug", 0, NULL, 0, NULL);
+		}
 
 		return ctx;
 	}

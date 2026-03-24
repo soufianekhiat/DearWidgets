@@ -41,6 +41,29 @@ Texture2D<float4> bandTexture : register(t1);
 
 // ---- Structs ----------------------------------------------------------------
 
+#ifdef SLUG_GRADIENT
+struct VS_INPUT
+{
+    float4 pos  : POSITION;
+    float4 tex  : TEXCOORD0;
+    float4 jac  : TEXCOORD1;
+    float4 bnd  : TEXCOORD2;
+    float4 col  : COLOR0;     // gradient color 0
+    float4 grd  : TEXCOORD3;  // gradient: dirX, dirY, scale, bias
+    float4 col2 : COLOR1;     // gradient color 1
+};
+
+struct PS_INPUT
+{
+    float4 position                     : SV_Position;
+    float2 texcoord                     : TEXCOORD0;
+    nointerpolation float4 banding      : TEXCOORD1;
+    nointerpolation int4 glyph          : TEXCOORD2;
+    nointerpolation float4 gradColor0   : COLOR0;
+    nointerpolation float4 gradColor1   : COLOR1;
+    nointerpolation float4 gradParams   : TEXCOORD3;  // dirX, dirY, scale, bias
+};
+#else
 struct VS_INPUT
 {
     float4 pos  : POSITION;   // xy = screen-space position, zw = outward vertex normal
@@ -58,6 +81,7 @@ struct PS_INPUT
     nointerpolation float4 banding  : TEXCOORD1;  // band scale/offset, constant per glyph
     nointerpolation int4 glyph      : TEXCOORD2;  // glyph loc + band max + flags, constant per glyph
 };
+#endif
 
 // ---- Vertex Shader ----------------------------------------------------------
 
@@ -102,7 +126,13 @@ PS_INPUT main_vs(VS_INPUT input)
     float2 dilatedPos;
     output.texcoord = SlugDilate(input.pos, input.tex, input.jac, m0, m1, m3, dim, dilatedPos);
     output.position = mul(ProjectionMatrix, float4(dilatedPos, 0.f, 1.f));
+#ifdef SLUG_GRADIENT
+    output.gradColor0 = input.col;
+    output.gradColor1 = input.col2;
+    output.gradParams = input.grd;
+#else
     output.color    = input.col;
+#endif
     SlugUnpack(input.tex, input.bnd, output.banding, output.glyph);
     return output;
 }
@@ -273,6 +303,12 @@ float4 main_ps(PS_INPUT input) : SV_Target
     float coverage = SlugRender(input.texcoord, input.banding, input.glyph);
 #ifdef SLUG_DEBUG
     return SlugRenderDebug(input.texcoord, input.banding, input.glyph);
+#elif defined(SLUG_GRADIENT)
+    // Linear gradient: compute t from em-space coordinate projected onto gradient line
+    float t = dot(input.texcoord, input.gradParams.xy) * input.gradParams.z + input.gradParams.w;
+    t = saturate(t);
+    float4 gradColor = lerp(input.gradColor0, input.gradColor1, t);
+    return float4(gradColor.rgb, gradColor.a * coverage);
 #elif defined(SLUG_COLOR)
     return float4(input.color.rgb, input.color.a * coverage);
 #else

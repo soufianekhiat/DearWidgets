@@ -108,8 +108,9 @@ struct ImWidgetsMarkerBuffer
 
 enum ImWidgetsFeatures_
 {
-	ImWidgetsFeatures_None,
-	ImWidgetsFeatures_Markers,
+	ImWidgetsFeatures_None     = 0,
+	ImWidgetsFeatures_Markers  = 1 << 0,
+	ImWidgetsFeatures_RichFont = 1 << 1,  // Slug GPU font rendering (color fonts, gradients, ligatures)
 
 	ImWidgetsFeatures_COUNT
 };
@@ -223,9 +224,10 @@ struct ImWidgetsContext
 
 	ImDrawShader					markerShader;
 	ImDrawShader					lineShader;
-	ImDrawShader					slugShader;       // Slug GPU font rendering shader (monochrome glyphs)
-	ImDrawShader					slugColorShader;  // Slug GPU font rendering shader (COLR v0 color glyphs)
-	ImDrawShader					slugDebugShader;  // Slug GPU font debug shader (xcov/ycov/coverage as RGB)
+	ImDrawShader					slugShader;         // Slug GPU font rendering shader (monochrome glyphs)
+	ImDrawShader					slugColorShader;    // Slug GPU font rendering shader (COLR v0 color glyphs)
+	ImDrawShader					slugGradientShader; // Slug GPU font gradient shader (COLR v1 linear gradients)
+	ImDrawShader					slugDebugShader;    // Slug GPU font debug shader (xcov/ycov/coverage as RGB)
 	ImWidgets::ImWidgetsSlugState*	slugState;        // Per-context Slug font atlas cache
 };
 
@@ -2713,6 +2715,8 @@ namespace ImWidgets{
 	// Measure text rendered via DrawText. Returns (width, height) in pixels.
 	// out_ascent: if non-null, receives the distance above the baseline (i.e. pass cursor.y + ascent as baseline to DrawText).
 	IMGUI_API ImVec2 CalcTextSize( ImFont* font, float font_size, const char* text, const char* text_end = nullptr, float* out_ascent = nullptr );
+	// Horizontal linear gradient: col_left at text start, col_right at text end.
+	IMGUI_API void DrawTextGradient( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, ImU32 col_left, ImU32 col_right, const char* text, const char* text_end = nullptr );
 	// Debug: draw curve outlines, control points, and bounding boxes for Slug glyphs.
 	// flags: 1=curves, 2=control points, 4=bounding boxes, 8=band grid, 0xFF=all
 	IMGUI_API void DrawTextDebugCurves( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, const char* text_end = nullptr, int flags = 0xFF );

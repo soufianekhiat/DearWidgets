@@ -269,6 +269,8 @@ struct ShapeDebugState {
 
 void ShowSampleOffscreen00();
 
+// Monochrome
+ImFont* g_firaCodeFont       = nullptr;
 ImFont* g_cinzelFont         = nullptr;
 ImFont* g_alfaSlabFont       = nullptr;
 ImFont* g_dottedFont         = nullptr;
@@ -276,36 +278,64 @@ ImFont* g_flowmeryFont       = nullptr;
 ImFont* g_franticallyFont    = nullptr;
 ImFont* g_loveLightFont      = nullptr;
 ImFont* g_magnoliaFont       = nullptr;
-ImFont* g_nablaFont          = nullptr;
 ImFont* g_rosehotFont        = nullptr;
 ImFont* g_squareLilyFont     = nullptr;
-ImFont* g_twemojiFont        = nullptr;  // Twemoji Mozilla — COLR v0 color emoji
-ImFont* g_aquaphonicDampFont     = nullptr;
-ImFont* g_aquaphonicDehydFont    = nullptr;
-ImFont* g_aquaphonicDelugeFont   = nullptr;
+// Ligature showcase
+ImFont* g_allessaFont        = nullptr;
+ImFont* g_bollgoFont         = nullptr;
+ImFont* g_boucherFont        = nullptr;
+ImFont* g_brightMarchFont    = nullptr;
+ImFont* g_camoodFont         = nullptr;
+ImFont* g_cheronaFont        = nullptr;
+ImFont* g_classicalFont      = nullptr;
+ImFont* g_daelingFont        = nullptr;
+ImFont* g_endlessFont        = nullptr;
+ImFont* g_foglihtenFont      = nullptr;
+ImFont* g_galinsFont         = nullptr;
+ImFont* g_gallanteFont       = nullptr;
+ImFont* g_gimboFont          = nullptr;
+ImFont* g_gingaFont          = nullptr;
+ImFont* g_kleymisskyFont     = nullptr;
+ImFont* g_metaforaAltFont    = nullptr;
+ImFont* g_metaforaSsFont     = nullptr;
+ImFont* g_migullonFont       = nullptr;
+ImFont* g_milsskyFont        = nullptr;
+ImFont* g_molgethFont        = nullptr;
+ImFont* g_monblockFont       = nullptr;
+ImFont* g_prida61Font        = nullptr;
+ImFont* g_reginaFont         = nullptr;
+ImFont* g_retroHeartFont     = nullptr;
+ImFont* g_sophieFont         = nullptr;
+ImFont* g_steelworksFont     = nullptr;
+// Color fonts
+ImFont* g_twemojiFont        = nullptr;
 ImFont* g_aquaphonicDownpourFont = nullptr;
 ImFont* g_aquaphonicDrizzleFont  = nullptr;
-ImFont* g_aquaphonicDroughtFont  = nullptr;
-ImFont* g_bungeeSpiceFont        = nullptr;  // COLR v1
+ImFont* g_bungeeSpiceFont        = nullptr;
 ImFont* g_cimeroProFont          = nullptr;
 ImFont* g_colorTubeFont          = nullptr;
 ImFont* g_fatternFont            = nullptr;
 ImFont* g_gilbertColorFont       = nullptr;
 ImFont* g_manbowClearFont        = nullptr;
-ImFont* g_manbowDotsFont         = nullptr;
-ImFont* g_manbowFillFont         = nullptr;
 ImFont* g_manbowLinesFont        = nullptr;
-ImFont* g_manbowScreenFont       = nullptr;
-ImFont* g_manbowSolidFont        = nullptr;
 ImFont* g_manbowSpotsFont        = nullptr;
-ImFont* g_manbowStripeFont       = nullptr;
 ImFont* g_manbowToneFont         = nullptr;
 ImFont* g_multicoloreFont        = nullptr;
-ImFont* g_primecolorBFont        = nullptr;
-ImFont* g_primecolorCV1Font      = nullptr;  // COLR v1
+ImFont* g_nablaFont              = nullptr;
+ImFont* g_primecolorCV1Font      = nullptr;
 ImFont* g_primecolorGFont        = nullptr;
 ImFont* g_primecolorMFont        = nullptr;
-ImFont* g_primecolorRFont        = nullptr;
+ImFont* g_honkFont               = nullptr;
+ImFont* g_coralPixelsFont        = nullptr;
+ImFont* g_notoZnamennyFont       = nullptr;
+// Arabic
+ImFont* g_arefRuqaaBoldFont     = nullptr;
+ImFont* g_arefRuqaaRegFont      = nullptr;
+ImFont* g_blakaInkFont          = nullptr;
+ImFont* g_reemKufiFunFont       = nullptr;
+ImFont* g_cairoPlayBoldFont     = nullptr;
+ImFont* g_cairoPlayXLightFont   = nullptr;
+ImFont* g_reemKufiInkFont       = nullptr;
 
 ImTextureID background;
 ImVec2 background_size;
@@ -391,7 +421,8 @@ int main()
 	// Load fonts (FontScaleDpi handles DPI scaling at render time)
 	io.Fonts->AddFontFromFileTTF( "../extern/FiraCode/distr/ttf/FiraCode-Medium.ttf", 16.0f );
 
-	// Cinzel: classical Roman display serif for the Slug GPU text demo.
+	g_firaCodeFont    = io.Fonts->AddFontFromFileTTF( "fonts/FiraCode-Regular.ttf",                           24.0f );
+
 	// Rasterized at 24 px just so ImGui holds the TTF data; Slug renders at any size.
 	g_cinzelFont      = io.Fonts->AddFontFromFileTTF( "fonts/Cinzel.ttf",                                    24.0f );
 	g_alfaSlabFont    = io.Fonts->AddFontFromFileTTF( "fonts/AlfaSlabOne-Regular.ttf",                       24.0f );
@@ -400,36 +431,64 @@ int main()
 	g_franticallyFont = io.Fonts->AddFontFromFileTTF( "fonts/Frantically-Regular (1).ttf",                   24.0f );
 	g_loveLightFont   = io.Fonts->AddFontFromFileTTF( "fonts/LoveLight-Regular.ttf",                         24.0f );
 	g_magnoliaFont    = io.Fonts->AddFontFromFileTTF( "fonts/Magnolia Floral Line Monogram.ttf",             24.0f );
-	g_nablaFont       = io.Fonts->AddFontFromFileTTF( "fonts/Nabla-Regular-VariableFont_EDPT,EHLT.ttf",      24.0f );
 	g_rosehotFont     = io.Fonts->AddFontFromFileTTF( "fonts/Rosehot.ttf",                                   24.0f );
+	g_nablaFont       = io.Fonts->AddFontFromFileTTF( "fonts/Nabla-Regular-VariableFont_EDPT,EHLT.ttf",      24.0f );
 	g_squareLilyFont  = io.Fonts->AddFontFromFileTTF( "fonts/Square Lily Monogram.ttf",                      24.0f );
+	// Ligature showcase fonts
+	g_allessaFont     = io.Fonts->AddFontFromFileTTF( "fonts/AllessaPersonalUse-4pRl.ttf",                 24.0f );
+	g_bollgoFont      = io.Fonts->AddFontFromFileTTF( "fonts/Bollgo-zr2pX.ttf",                            24.0f );
+	g_boucherFont     = io.Fonts->AddFontFromFileTTF( "fonts/BoucherDemoRegular-lxRoD.ttf",                24.0f );
+	g_brightMarchFont = io.Fonts->AddFontFromFileTTF( "fonts/BrightMarchingRegular-9MA72.otf",             24.0f );
+	g_camoodFont      = io.Fonts->AddFontFromFileTTF( "fonts/Camood-aYoaR.otf",                            24.0f );
+	g_cheronaFont     = io.Fonts->AddFontFromFileTTF( "fonts/Cherona-LVG73.otf",                           24.0f );
+	g_classicalFont   = io.Fonts->AddFontFromFileTTF( "fonts/ClassicalAestheticsDemoRegular-0vqjX.ttf",    24.0f );
+	g_daelingFont     = io.Fonts->AddFontFromFileTTF( "fonts/Daeling-Jp65x.ttf",                           24.0f );
+	g_endlessFont     = io.Fonts->AddFontFromFileTTF( "fonts/EndlesslyExpandedDemoRegular-rvXlp.ttf",      24.0f );
+	g_foglihtenFont   = io.Fonts->AddFontFromFileTTF( "fonts/Foglihtenno07calt-WpzEA.otf",                 24.0f );
+	g_galinsFont      = io.Fonts->AddFontFromFileTTF( "fonts/GalinsRegular-Wp5eY.otf",                     24.0f );
+	g_gallanteFont    = io.Fonts->AddFontFromFileTTF( "fonts/Gallante-AR1ap.otf",                           24.0f );
+	g_gimboFont       = io.Fonts->AddFontFromFileTTF( "fonts/Gimbo-ovZdA.ttf",                             24.0f );
+	g_gingaFont       = io.Fonts->AddFontFromFileTTF( "fonts/Ginga-r09p.ttf",                              24.0f );
+	g_kleymisskyFont  = io.Fonts->AddFontFromFileTTF( "fonts/Kleymissky-0xBG.otf",                         24.0f );
+	g_metaforaAltFont = io.Fonts->AddFontFromFileTTF( "fonts/MetaforaAlternateAndSwashRegular-KVRnW.ttf",  24.0f );
+	g_metaforaSsFont  = io.Fonts->AddFontFromFileTTF( "fonts/MetaforaSs05Ss09Regular-vn5LZ.ttf",           24.0f );
+	g_migullonFont    = io.Fonts->AddFontFromFileTTF( "fonts/Migullon-V4e6l.otf",                          24.0f );
+	g_milsskyFont     = io.Fonts->AddFontFromFileTTF( "fonts/MilsskyRegular-aYJOE.otf",                    24.0f );
+	g_molgethFont     = io.Fonts->AddFontFromFileTTF( "fonts/Molgeth-xRMpm.ttf",                           24.0f );
+	g_monblockFont    = io.Fonts->AddFontFromFileTTF( "fonts/Monblock-wo9Rn.otf",                          24.0f );
+	g_prida61Font     = io.Fonts->AddFontFromFileTTF( "fonts/Prida61-Groa.otf",                            24.0f );
+	g_reginaFont      = io.Fonts->AddFontFromFileTTF( "fonts/Regina-K7Yvl.ttf",                            24.0f );
+	g_retroHeartFont  = io.Fonts->AddFontFromFileTTF( "fonts/RetroHeartYou-1jvD4.otf",                     24.0f );
+	g_sophieFont      = io.Fonts->AddFontFromFileTTF( "fonts/SophiamelanieRegular-E4gee.otf",              24.0f );
+	g_steelworksFont  = io.Fonts->AddFontFromFileTTF( "fonts/SteelworksVintageDemo-rR98.ttf",              24.0f );
+	// Color fonts
 	g_twemojiFont        = io.Fonts->AddFontFromFileTTF( "fonts/Twemoji.Mozilla.ttf",                           24.0f );
-	g_aquaphonicDampFont     = io.Fonts->AddFontFromFileTTF( "fonts/Aquaphonic-Damp.otf",                          24.0f );
-	g_aquaphonicDehydFont    = io.Fonts->AddFontFromFileTTF( "fonts/Aquaphonic-Dehydrated.otf",                    24.0f );
-	g_aquaphonicDelugeFont   = io.Fonts->AddFontFromFileTTF( "fonts/Aquaphonic-Deluge.otf",                        24.0f );
 	g_aquaphonicDownpourFont = io.Fonts->AddFontFromFileTTF( "fonts/Aquaphonic-Downpour.otf",                      24.0f );
 	g_aquaphonicDrizzleFont  = io.Fonts->AddFontFromFileTTF( "fonts/Aquaphonic-Drizzle.otf",                       24.0f );
-	g_aquaphonicDroughtFont  = io.Fonts->AddFontFromFileTTF( "fonts/Aquaphonic-Drought.otf",                       24.0f );
 	g_bungeeSpiceFont        = io.Fonts->AddFontFromFileTTF( "fonts/BungeeSpice-Regular.ttf",                      24.0f );
 	g_cimeroProFont          = io.Fonts->AddFontFromFileTTF( "fonts/CimeroPro.otf",                               24.0f );
 	g_colorTubeFont          = io.Fonts->AddFontFromFileTTF( "fonts/ColorTube.otf",                                24.0f );
 	g_fatternFont            = io.Fonts->AddFontFromFileTTF( "fonts/Fattern-GO6zm.otf",                            24.0f );
 	g_gilbertColorFont       = io.Fonts->AddFontFromFileTTF( "fonts/Gilbert-Color Bold Preview5.otf",              24.0f );
 	g_manbowClearFont        = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Clear.otf",                             24.0f );
-	g_manbowDotsFont         = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Dots.otf",                              24.0f );
-	g_manbowFillFont         = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Fill.otf",                              24.0f );
 	g_manbowLinesFont        = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Lines.otf",                             24.0f );
-	g_manbowScreenFont       = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Screen.otf",                            24.0f );
-	g_manbowSolidFont        = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Solid.otf",                             24.0f );
 	g_manbowSpotsFont        = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Spots.otf",                             24.0f );
-	g_manbowStripeFont       = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Stripe.otf",                            24.0f );
 	g_manbowToneFont         = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Tone.otf",                              24.0f );
 	g_multicoloreFont        = io.Fonts->AddFontFromFileTTF( "fonts/Multicolore Pro.otf",                          24.0f );
-	g_primecolorBFont        = io.Fonts->AddFontFromFileTTF( "fonts/Primecolor-B.ttf",                             24.0f );
 	g_primecolorCV1Font      = io.Fonts->AddFontFromFileTTF( "fonts/Primecolor-CV1.ttf",                           24.0f );
 	g_primecolorGFont        = io.Fonts->AddFontFromFileTTF( "fonts/Primecolor-G.ttf",                             24.0f );
 	g_primecolorMFont        = io.Fonts->AddFontFromFileTTF( "fonts/Primecolor-M.ttf",                             24.0f );
-	g_primecolorRFont        = io.Fonts->AddFontFromFileTTF( "fonts/Primecolor-R.ttf",                             24.0f );
+	// Arabic glyph range for Arabic fonts
+	static const ImWchar arabicRanges[] = { 0x0020, 0x007E, 0x0600, 0x06FF, 0xFE70, 0xFEFF, 0 };
+	g_arefRuqaaBoldFont      = io.Fonts->AddFontFromFileTTF( "fonts/ArefRuqaaInk-Bold.ttf",                        24.0f, NULL, arabicRanges );
+	g_arefRuqaaRegFont       = io.Fonts->AddFontFromFileTTF( "fonts/ArefRuqaaInk-Regular.ttf",                     24.0f, NULL, arabicRanges );
+	g_blakaInkFont           = io.Fonts->AddFontFromFileTTF( "fonts/BlakaInk-Regular.ttf",                         24.0f, NULL, arabicRanges );
+	g_reemKufiInkFont        = io.Fonts->AddFontFromFileTTF( "fonts/ReemKufiInk-Regular.ttf",                      24.0f, NULL, arabicRanges );
+	g_reemKufiFunFont        = io.Fonts->AddFontFromFileTTF( "fonts/ReemKufiFun-Regular.ttf",                      24.0f, NULL, arabicRanges );
+	g_cairoPlayBoldFont      = io.Fonts->AddFontFromFileTTF( "fonts/CairoPlay-Bold.ttf",                           24.0f, NULL, arabicRanges );
+	g_cairoPlayXLightFont    = io.Fonts->AddFontFromFileTTF( "fonts/CairoPlay-ExtraLight.ttf",                     24.0f, NULL, arabicRanges );
+	g_coralPixelsFont        = io.Fonts->AddFontFromFileTTF( "fonts/CoralPixels-Regular.ttf",                      24.0f );
+	g_honkFont               = io.Fonts->AddFontFromFileTTF( "fonts/Honk-Regular-VariableFont_MORF,SHLN.ttf",      24.0f );
 
 	ImGuiStyle& style = ImGui::GetStyle();
 	style.ScaleAllSizes( dpi_scale );
@@ -470,7 +529,7 @@ int main()
 	}
 	
 	// Create ImWidgets context
-	ImWidgets::AddFeatures( ImWidgetsFeatures_Markers );
+	ImWidgets::AddFeatures( ImWidgetsFeatures_Markers | ImWidgetsFeatures_RichFont );
 	ImWidgetsContext* ctx = ImWidgets::CreateContext();
 
 	// Load test images
@@ -768,7 +827,7 @@ namespace ImWidgets {
 			return;
 		}
 
-		static char   text_buf[256] = "Dear Widgets";
+		static char   text_buf[256] = "=> === != >= Dear Widgets";
 		static float  font_size = 48.0f;
 		static ImVec4 color_v( 0.92f, 0.82f, 0.60f, 1.0f );  // warm gold
 		static ImU32  color_u = ImGui::ColorConvertFloat4ToU32( color_v );
@@ -802,45 +861,80 @@ namespace ImWidgets {
 		ImGui::Checkbox( "Show Layer Quads (flat color, no shader)##SlugLayerDbg", &debug_layers );
 		ImGui::Checkbox( "Debug Shader (R=xcov G=ycov B=cov)##SlugShaderDbg", &ImWidgets::g_SlugDebugShader );
 
-		struct FontEntry { ImFont** font; const char* label; };
+		enum FontTextType { kLatin = 0, kEmoji = 1, kArabic = 2 };
+		struct FontEntry { ImFont** font; const char* label; FontTextType textType; const char* group; };
+		static const char* kGrpCode   = "Programming / Code";
+		static const char* kGrpSerif  = "Serif";
+		static const char* kGrpScript = "Script / Handwriting";
+		static const char* kGrpDisp   = "Display / Decorative";
+		static const char* kGrpCFF    = "CFF Monochrome";
+		static const char* kGrpColr0  = "Color: COLR v0";
+		static const char* kGrpSVG    = "Color: SVG";
+		static const char* kGrpColr1  = "Color: COLR v1 / Gradient";
+		static const char* kGrpArabic = "Arabic";
 		static const FontEntry kFonts[] = {
-			{ &g_alfaSlabFont,    "Alfa Slab One"          },
-			{ &g_cinzelFont,      "Cinzel"                  },
-			{ &g_dottedFont,      "Dotted"                  },
-			{ &g_flowmeryFont,    "Flowmery"                },
-			{ &g_franticallyFont, "Frantically"             },
-			{ &g_loveLightFont,   "Love Light"              },
-			{ &g_magnoliaFont,    "Magnolia Monogram"       },
-			{ &g_nablaFont,       "Nabla"                   },
-			{ &g_rosehotFont,     "Rosehot"                 },
-			{ &g_squareLilyFont,  "Square Lily Monogram"    },
-			{ &g_twemojiFont,        "Twemoji (COLR v0)"        },
-			{ &g_aquaphonicDampFont,     "Aquaphonic Damp"          },
-			{ &g_aquaphonicDehydFont,    "Aquaphonic Dehydrated"    },
-			{ &g_aquaphonicDelugeFont,   "Aquaphonic Deluge"        },
-			{ &g_aquaphonicDownpourFont, "Aquaphonic Downpour"      },
-			{ &g_aquaphonicDrizzleFont,  "Aquaphonic Drizzle"       },
-			{ &g_aquaphonicDroughtFont,  "Aquaphonic Drought"       },
-			{ &g_bungeeSpiceFont,        "Bungee Spice (COLR v1)"   },
-			{ &g_cimeroProFont,          "Cimero Pro"               },
-			{ &g_colorTubeFont,          "Color Tube"               },
-			{ &g_fatternFont,            "Fattern"                  },
-			{ &g_gilbertColorFont,       "Gilbert Color Bold"       },
-			{ &g_manbowClearFont,        "Manbow Clear"             },
-			{ &g_manbowDotsFont,         "Manbow Dots"              },
-			{ &g_manbowFillFont,         "Manbow Fill"              },
-			{ &g_manbowLinesFont,        "Manbow Lines"             },
-			{ &g_manbowScreenFont,       "Manbow Screen"            },
-			{ &g_manbowSolidFont,        "Manbow Solid"             },
-			{ &g_manbowSpotsFont,        "Manbow Spots"             },
-			{ &g_manbowStripeFont,       "Manbow Stripe"            },
-			{ &g_manbowToneFont,         "Manbow Tone"              },
-			{ &g_multicoloreFont,        "Multicolore Pro"          },
-			{ &g_primecolorBFont,        "Primecolor B"             },
-			{ &g_primecolorCV1Font,      "Primecolor CV1 (COLR v1)" },
-			{ &g_primecolorGFont,        "Primecolor G"             },
-			{ &g_primecolorMFont,        "Primecolor M"             },
-			{ &g_primecolorRFont,        "Primecolor R"             },
+			{ &g_firaCodeFont,    "Fira Code",               kLatin,  kGrpCode },
+			{ &g_monblockFont,    "Monblock",                kLatin,  kGrpCode },
+			{ &g_cinzelFont,      "Cinzel",                  kLatin,  kGrpSerif },
+			{ &g_alfaSlabFont,    "Alfa Slab One",           kLatin,  kGrpSerif },
+			{ &g_classicalFont,   "Classical Aesthetics",    kLatin,  kGrpSerif },
+			{ &g_foglihtenFont,   "Foglihten No07",          kLatin,  kGrpSerif },
+			{ &g_prida61Font,     "Prida 61",                kLatin,  kGrpSerif },
+			{ &g_steelworksFont,  "Steelworks Vintage",      kLatin,  kGrpSerif },
+			{ &g_allessaFont,     "Allessa",                 kLatin,  kGrpScript },
+			{ &g_brightMarchFont, "Bright Marching",         kLatin,  kGrpScript },
+			{ &g_camoodFont,      "Camood",                  kLatin,  kGrpScript },
+			{ &g_cheronaFont,     "Cherona",                 kLatin,  kGrpScript },
+			{ &g_daelingFont,     "Daeling",                 kLatin,  kGrpScript },
+			{ &g_flowmeryFont,    "Flowmery",                kLatin,  kGrpScript },
+			{ &g_galinsFont,      "Galins",                  kLatin,  kGrpScript },
+			{ &g_gallanteFont,    "Gallante",                kLatin,  kGrpScript },
+			{ &g_kleymisskyFont,  "Kleymissky",              kLatin,  kGrpScript },
+			{ &g_loveLightFont,   "Love Light",              kLatin,  kGrpScript },
+			{ &g_metaforaAltFont, "Metafora Alternate",      kLatin,  kGrpScript },
+			{ &g_metaforaSsFont,  "Metafora Stylistic",      kLatin,  kGrpScript },
+			{ &g_migullonFont,    "Migullon",                kLatin,  kGrpScript },
+			{ &g_milsskyFont,     "Milssky",                 kLatin,  kGrpScript },
+			{ &g_reginaFont,      "Regina",                  kLatin,  kGrpScript },
+			{ &g_retroHeartFont,  "Retro Heart You",         kLatin,  kGrpScript },
+			{ &g_rosehotFont,     "Rosehot",                 kLatin,  kGrpScript },
+			{ &g_sophieFont,      "Sophiemelanie",           kLatin,  kGrpScript },
+			{ &g_bollgoFont,      "Bollgo",                  kLatin,  kGrpDisp },
+			{ &g_boucherFont,     "Boucher",                 kLatin,  kGrpDisp },
+			{ &g_dottedFont,      "Dotted",                  kLatin,  kGrpDisp },
+			//{ &g_endlessFont,     "Endlessly Expanded",      kLatin,  kGrpDisp },
+			{ &g_franticallyFont, "Frantically",             kLatin,  kGrpDisp },
+			{ &g_gimboFont,       "Gimbo",                   kLatin,  kGrpDisp },
+			{ &g_gingaFont,       "Ginga",                   kLatin,  kGrpDisp },
+			{ &g_magnoliaFont,    "Magnolia Monogram",       kLatin,  kGrpDisp },
+			{ &g_molgethFont,     "Molgeth",                 kLatin,  kGrpDisp },
+			{ &g_squareLilyFont,  "Square Lily Monogram",    kLatin,  kGrpDisp },
+			{ &g_manbowClearFont,        "Manbow Clear",     kLatin,  kGrpCFF },
+			{ &g_manbowLinesFont,        "Manbow Lines",     kLatin,  kGrpCFF },
+			{ &g_manbowSpotsFont,        "Manbow Spots",     kLatin,  kGrpCFF },
+			{ &g_manbowToneFont,         "Manbow Tone",      kLatin,  kGrpCFF },
+			{ &g_twemojiFont,            "Twemoji",          kEmoji,  kGrpColr0 },
+			{ &g_coralPixelsFont,        "Coral Pixels",     kLatin,  kGrpColr0 },
+			{ &g_aquaphonicDownpourFont, "Aquaphonic Downpour", kLatin, kGrpSVG },
+			{ &g_aquaphonicDrizzleFont,  "Aquaphonic Drizzle",  kLatin, kGrpSVG },
+			{ &g_cimeroProFont,          "Cimero Pro",       kLatin,  kGrpSVG },
+			{ &g_colorTubeFont,          "Color Tube",       kLatin,  kGrpSVG },
+			{ &g_gilbertColorFont,       "Gilbert Color Bold",kLatin, kGrpSVG },
+			{ &g_multicoloreFont,        "Multicolore Pro",  kLatin,  kGrpSVG },
+			{ &g_primecolorGFont,        "Primecolor G",     kLatin,  kGrpSVG },
+			{ &g_primecolorMFont,        "Primecolor M",     kLatin,  kGrpSVG },
+			{ &g_fatternFont,            "Fattern",           kLatin,  kGrpSVG },
+			{ &g_nablaFont,              "Nabla",             kLatin,  kGrpColr1 },
+			{ &g_primecolorCV1Font,      "Primecolor CV1",   kLatin,  kGrpColr1 },
+			{ &g_bungeeSpiceFont,        "Bungee Spice",     kLatin,  kGrpColr1 },
+			{ &g_honkFont,               "Honk",              kLatin,  kGrpColr1 },
+			{ &g_cairoPlayBoldFont,      "Cairo Play Bold",       kArabic, kGrpArabic },
+			{ &g_cairoPlayXLightFont,    "Cairo Play ExtraLight", kArabic, kGrpArabic },
+			{ &g_arefRuqaaBoldFont,      "Aref Ruqaa Ink Bold",  kArabic, kGrpArabic },
+			{ &g_arefRuqaaRegFont,       "Aref Ruqaa Ink Regular",kArabic, kGrpArabic },
+			{ &g_blakaInkFont,           "Blaka Ink",             kArabic, kGrpArabic },
+			{ &g_reemKufiInkFont,        "Reem Kufi Ink",         kArabic, kGrpArabic },
+			{ &g_reemKufiFunFont,        "Reem Kufi Fun",         kArabic, kGrpArabic },
 		};
 
 		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
@@ -849,17 +943,29 @@ namespace ImWidgets {
 
 		// Separate text buffer for emoji (Twemoji uses its own codepoints, not Latin text)
 		static char emoji_buf[256] = "\xF0\x9F\x98\x80\xF0\x9F\x94\xA5\xF0\x9F\x8C\x88\xF0\x9F\x8E\xA8\xF0\x9F\x9A\x80\xF0\x9F\x92\xA1\xF0\x9F\x8C\x8D";
-		// UTF-8 encoding of: 😀🔥🌈🎨🚀💡🌍
+		// UTF-8 encoding of: 
 		ImGui::InputText( "Emoji##SlugEmoji", emoji_buf, sizeof( emoji_buf ) );
+		// Arabic text buffer: الأدوات العزيزة (Dear Widgets)
+		static char arabic_buf[256] = "\xd8\xa7\xd9\x84\xd8\xa3\xd8\xaf\xd9\x88\xd8\xa7\xd8\xaa \xd8\xa7\xd9\x84\xd8\xb9\xd8\xb2\xd9\x8a\xd8\xb2\xd8\xa9";
+		ImGui::InputText( "Arabic##SlugArabic", arabic_buf, sizeof( arabic_buf ) );
 
 		ImGui::Separator();
+		const char* currentGroup = NULL;
+		bool groupOpen = false;
 		for ( const FontEntry& e : kFonts )
 		{
 			if ( !*e.font ) continue;
 
+			// Group header
+			if ( e.group != currentGroup )
+			{
+				currentGroup = e.group;
+				groupOpen = ImGui::CollapsingHeader( currentGroup );
+			}
+			if ( !groupOpen ) continue;
+
 			ImFont* f           = *e.font;
-			bool    isEmoji     = ( e.font == &g_twemojiFont );
-			const char* drawStr = isEmoji ? emoji_buf : text_buf;
+			const char* drawStr = (e.textType == kEmoji) ? emoji_buf : (e.textType == kArabic) ? arabic_buf : text_buf;
 
 			float   asc   = 0.0f;
 			ImVec2  sz    = ImWidgets::CalcTextSize( f, font_size, drawStr, nullptr, &asc );
