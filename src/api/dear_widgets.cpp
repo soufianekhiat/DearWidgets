@@ -4676,6 +4676,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		kbts_font* f = kbts_ShapePushFontFromMemory(ctx, fontData, fontDataSize, 0);
 #endif
 		if (f && f->Error == 0) {
+			// Enable standard OpenType features for ligatures and contextual forms
+			kbts_ShapePushFeature(ctx, KBTS_FEATURE_TAG_liga, 1);  // Standard Ligatures (ff, fi, fl, ffi)
+			kbts_ShapePushFeature(ctx, KBTS_FEATURE_TAG_calt, 1);  // Contextual Alternates (=>, ===, !=)
+			// Enable all stylistic sets (ss01-ss10) for fonts like FiraCode
+			for (int ssi = 0; ssi < 10; ssi++) {
+				kbts_u32 ssTag = KBTS_FOURCC('s', 's', '0' + (char)((ssi+1)/10), '0' + (char)((ssi+1)%10));
+				kbts_ShapePushFeature(ctx, ssTag, 1);
+			}
 			atlas->shapeCtx  = ctx;
 			atlas->shapeFont = f;
 		} else {
@@ -5762,7 +5770,313 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 	}
 
-#else  // !IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+#endif // IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+
+	// ---- ImFontLoader: Slug atlas baking ------------------------------------
+	// CPU-rasterizes font glyphs into ImGui's bitmap atlas.
+	//
+	// Color support:
+	//   COLR v0    — full color (per-layer compositing into RGBA32 atlas)
+	//   COLR v1    — flat color only (uses first gradient stop; GPU gradients not available in atlas)
+	//   SVG        — monochrome fallback (SVG paths require a CPU vector rasterizer we don't have;
+	//                would need NanoSVG, LunaSVG, or similar to render SVG path fills to bitmap)
+	//   Monochrome — full (Alpha8 atlas, tintable via vertex color)
+	//
+	// Other limitations:
+	//   - No ligature/contextual shaping (atlas is per-codepoint; use GPU Slug path for shaped text)
+	//   - Fixed resolution (rasterized at baked size; GPU Slug is resolution-independent)
+	//   - No kerning (ImGui's AddText doesn't apply kern pairs)
+
+	struct SlugLoaderFontData
+	{
+		stbtt_fontinfo fontInfo;
+		float          scaleFactor;  // 1.0 / unitsPerEm
+		uint32_t       colrOff, cpalOff, svgOff;
+	};
+
+	static bool SlugLoader_FontSrcInit(ImFontAtlas* atlas, ImFontConfig* src)
+	{
+		(void)atlas;
+		SlugLoaderFontData* fd = IM_NEW(SlugLoaderFontData);
+		int offset = stbtt_GetFontOffsetForIndex((unsigned char*)src->FontData, 0);
+		if (!stbtt_InitFont(&fd->fontInfo, (unsigned char*)src->FontData, offset))
+		{ IM_DELETE(fd); return false; }
+		fd->scaleFactor = stbtt_ScaleForMappingEmToPixels(&fd->fontInfo, 1.0f);
+		const uint8_t* raw = (const uint8_t*)fd->fontInfo.data;
+		uint32_t fs = (uint32_t)fd->fontInfo.fontstart;
+		fd->colrOff = SlugFindTable(raw, fs, "COLR");
+		fd->cpalOff = SlugFindTable(raw, fs, "CPAL");
+		fd->svgOff  = SlugFindTable(raw, fs, "SVG ");
+		src->FontLoaderData = fd;
+		return true;
+	}
+
+	static void SlugLoader_FontSrcDestroy(ImFontAtlas* atlas, ImFontConfig* src)
+	{
+		(void)atlas;
+		if (src->FontLoaderData) { IM_DELETE((SlugLoaderFontData*)src->FontLoaderData); src->FontLoaderData = NULL; }
+	}
+
+	static bool SlugLoader_FontSrcContainsGlyph(ImFontAtlas* atlas, ImFontConfig* src, ImWchar codepoint)
+	{
+		(void)atlas;
+		SlugLoaderFontData* fd = (SlugLoaderFontData*)src->FontLoaderData;
+		return stbtt_FindGlyphIndex(&fd->fontInfo, (int)codepoint) != 0;
+	}
+
+	static bool SlugLoader_FontBakedInit(ImFontAtlas* atlas, ImFontConfig* src, ImFontBaked* baked, void*)
+	{
+		(void)atlas;
+		SlugLoaderFontData* fd = (SlugLoaderFontData*)src->FontLoaderData;
+		if (src->MergeMode == false)
+		{
+			float scale = fd->scaleFactor * baked->Size;
+			int ascent, descent, lineGap;
+			stbtt_GetFontVMetrics(&fd->fontInfo, &ascent, &descent, &lineGap);
+			baked->Ascent  = ImCeil(ascent * scale);
+			baked->Descent = ImFloor(descent * scale);
+		}
+		return true;
+	}
+
+	static void SlugLoader_FontBakedDestroy(ImFontAtlas*, ImFontConfig*, ImFontBaked*, void*) {}
+
+	// Helper: composite a layer's alpha mask with a color onto an RGBA32 buffer (SrcOver blending)
+	static void SlugLoader_CompositeLayer(unsigned char* rgba, int w, int h,
+	    const unsigned char* layerAlpha, ImU32 col)
+	{
+		float cR = (float)((col >>  0) & 0xFF) / 255.0f;
+		float cG = (float)((col >>  8) & 0xFF) / 255.0f;
+		float cB = (float)((col >> 16) & 0xFF) / 255.0f;
+		float cA = (float)((col >> 24) & 0xFF) / 255.0f;
+		for (int p = 0; p < w * h; p++) {
+			float srcA = (layerAlpha[p] / 255.0f) * cA;
+			if (srcA < 1.0f/255.0f) continue;
+			float dstA = rgba[p*4+3] / 255.0f;
+			float outA = srcA + dstA * (1.0f - srcA);
+			float inv = outA > 0 ? 1.0f / outA : 1.0f;
+			rgba[p*4+0] = (unsigned char)(ImClamp((cR * srcA + (rgba[p*4+0]/255.0f) * dstA * (1.0f - srcA)) * inv, 0.0f, 1.0f) * 255.0f + 0.5f);
+			rgba[p*4+1] = (unsigned char)(ImClamp((cG * srcA + (rgba[p*4+1]/255.0f) * dstA * (1.0f - srcA)) * inv, 0.0f, 1.0f) * 255.0f + 0.5f);
+			rgba[p*4+2] = (unsigned char)(ImClamp((cB * srcA + (rgba[p*4+2]/255.0f) * dstA * (1.0f - srcA)) * inv, 0.0f, 1.0f) * 255.0f + 0.5f);
+			rgba[p*4+3] = (unsigned char)(ImClamp(outA, 0.0f, 1.0f) * 255.0f + 0.5f);
+		}
+	}
+
+	// Helper: rasterize a layer glyph into a full-size alpha buffer at the correct offset
+	static void SlugLoader_RasterizeLayer(stbtt_fontinfo* fi, int layerGI, float scale,
+	    unsigned char* outAlpha, int w, int h, int bx0, int by0)
+	{
+		memset(outAlpha, 0, w * h);
+		int lx0, ly0, lx1, ly1;
+		stbtt_GetGlyphBitmapBox(fi, layerGI, scale, scale, &lx0, &ly0, &lx1, &ly1);
+		int lw = lx1 - lx0, lh = ly1 - ly0;
+		if (lw <= 0 || lh <= 0) return;
+		ImVector<unsigned char> tmp; tmp.resize(lw * lh, 0);
+		stbtt_MakeGlyphBitmap(fi, tmp.Data, lw, lh, lw, scale, scale, layerGI);
+		int offX = lx0 - bx0, offY = ly0 - by0;
+		for (int y = 0; y < lh; y++)
+			for (int x = 0; x < lw; x++)
+				if (offY + y >= 0 && offY + y < h && offX + x >= 0 && offX + x < w)
+					outAlpha[(offY + y) * w + (offX + x)] = tmp[y * lw + x];
+	}
+
+	// Get color layers for a glyph from any color table (COLR v0, COLR v1, SVG).
+	// Returns layer count. Fills outGlyphIDs (glyph indices) and outColors (RGBA).
+	static int SlugLoader_GetColorLayers(SlugLoaderFontData* fd, int glyphID, ImWchar codepoint,
+	    int* outGlyphIDs, ImU32* outColors, int maxLayers)
+	{
+		const uint8_t* data = (const uint8_t*)fd->fontInfo.data;
+
+		// --- COLR v0 ---
+		if (fd->colrOff && fd->cpalOff) {
+			const uint8_t* colr = data + fd->colrOff;
+			uint16_t numBase = SlugTTU16(colr + 2);
+			if (numBase > 0) {
+				uint32_t baseOff = SlugTTU32(colr + 4);
+				uint32_t layerOff = SlugTTU32(colr + 8);
+				const uint8_t* bases = colr + baseOff;
+				const uint8_t* layers = colr + layerOff;
+				int lo = 0, hi = (int)numBase - 1;
+				while (lo <= hi) {
+					int mid = (lo + hi) / 2;
+					int gid = (int)SlugTTU16(bases + mid * 6);
+					if (gid == glyphID) {
+						int firstLayer = (int)SlugTTU16(bases + mid * 6 + 2);
+						int numLayers  = (int)SlugTTU16(bases + mid * 6 + 4);
+						if (numLayers > maxLayers) numLayers = maxLayers;
+						const uint8_t* cpal = data + fd->cpalOff;
+						uint32_t colorOff = SlugTTU32(cpal + 8);
+						for (int i = 0; i < numLayers; i++) {
+							outGlyphIDs[i] = (int)SlugTTU16(layers + (firstLayer + i) * 4);
+							int palIdx = (int)SlugTTU16(layers + (firstLayer + i) * 4 + 2);
+							if (palIdx == 0xFFFF) outColors[i] = IM_COL32(0,0,0,0);
+							else { const uint8_t* cr = cpal + colorOff + palIdx * 4; outColors[i] = IM_COL32(cr[2], cr[1], cr[0], cr[3]); }
+						}
+						return numLayers;
+					}
+					else if (gid < glyphID) lo = mid + 1;
+					else hi = mid - 1;
+				}
+			}
+		}
+
+		// --- COLR v1 (via the existing SlugGetColrV1Layers — requires a temporary SlugFontCache) ---
+		if (fd->colrOff && fd->cpalOff) {
+			const uint8_t* colr = data + fd->colrOff;
+			if (SlugTTU16(colr) >= 1) {
+				// Build a temporary SlugFontCache just for the v1 layer query
+				SlugFontCache tmpCache = {};
+				tmpCache.stbFont = fd->fontInfo;
+				tmpCache.emScale = fd->scaleFactor;
+				tmpCache.colrTableOffset = fd->colrOff;
+				tmpCache.cpalTableOffset = fd->cpalOff;
+				ImVector<int> v1GlyphIDs;
+				ImVector<SlugColorLayer> v1Layers;
+				int n = SlugGetColrV1Layers(&tmpCache, glyphID, v1GlyphIDs, v1Layers);
+				if (n > 0) {
+					if (n > maxLayers) n = maxLayers;
+					for (int i = 0; i < n; i++) {
+						outGlyphIDs[i] = v1GlyphIDs[i];
+						outColors[i] = v1Layers[i].color; // solid fallback color (first gradient stop for gradients)
+					}
+					return n;
+				}
+			}
+		}
+
+		// --- SVG (parse paths, get colors — but we can only composite outlines, not SVG vector fills) ---
+		// For SVG fonts, the atlas loader rasterizes the base glyph outline in monochrome for each
+		// color path. This gives correct shapes but gradients/effects are lost.
+		if (fd->svgOff) {
+			const uint8_t* svg = data + fd->svgOff;
+			uint32_t dlRel = SlugTTU32(svg + 2);
+			const uint8_t* dl = svg + dlRel;
+			uint16_t numEntries = SlugTTU16(dl);
+			for (int i = 0; i < (int)numEntries; i++) {
+				const uint8_t* rec = dl + 2 + i * 12;
+				uint16_t sg = SlugTTU16(rec), eg = SlugTTU16(rec + 2);
+				if (glyphID >= sg && glyphID <= eg) {
+					// SVG data exists for this glyph — render as monochrome with the base glyph outline
+					// (full SVG vector rasterization would require a CPU SVG renderer)
+					// Use a single layer with white color so the glyph is tintable
+					outGlyphIDs[0] = glyphID;
+					outColors[0] = IM_COL32(255, 255, 255, 255);
+					return 0; // return 0 to fall through to monochrome (SVG shapes need vector rasterization)
+				}
+			}
+		}
+
+		return 0;
+	}
+
+	static bool SlugLoader_FontBakedLoadGlyph(ImFontAtlas* atlas, ImFontConfig* src, ImFontBaked* baked, void*,
+	                                            ImWchar codepoint, ImFontGlyph* out_glyph, float* out_advance_x)
+	{
+		SlugLoaderFontData* fd = (SlugLoaderFontData*)src->FontLoaderData;
+		int gi = stbtt_FindGlyphIndex(&fd->fontInfo, (int)codepoint);
+		if (gi == 0) return false;
+
+		const float scale = fd->scaleFactor * baked->Size;
+		int advance, lsb;
+		stbtt_GetGlyphHMetrics(&fd->fontInfo, gi, &advance, &lsb);
+
+		// Metrics-only mode
+		if (out_advance_x != NULL) { *out_advance_x = advance * scale; return true; }
+
+		out_glyph->Codepoint = codepoint;
+		out_glyph->AdvanceX  = advance * scale;
+
+		// Check for color layers (COLR v0, COLR v1, SVG)
+		int layerGlyphIDs[256]; ImU32 layerColors[256];
+		int numLayers = SlugLoader_GetColorLayers(fd, gi, codepoint, layerGlyphIDs, layerColors, 256);
+
+		if (numLayers > 0)
+		{
+			// Color glyph: rasterize each layer, composite into RGBA32
+			// Compute union bbox across all layers
+			int bx0 = 0, by0 = 0, bx1 = 0, by1 = 0;
+			bool first = true;
+			for (int li = 0; li < numLayers; li++) {
+				int lx0, ly0, lx1, ly1;
+				stbtt_GetGlyphBitmapBox(&fd->fontInfo, layerGlyphIDs[li], scale, scale, &lx0, &ly0, &lx1, &ly1);
+				if (first) { bx0=lx0; by0=ly0; bx1=lx1; by1=ly1; first=false; }
+				else { bx0=ImMin(bx0,lx0); by0=ImMin(by0,ly0); bx1=ImMax(bx1,lx1); by1=ImMax(by1,ly1); }
+			}
+			int w = bx1 - bx0, h = by1 - by0;
+			if (w <= 0 || h <= 0) return true;
+
+			ImFontAtlasRectId packId = ImFontAtlasPackAddRect(atlas, w, h);
+			if (packId == ImFontAtlasRectId_Invalid) return false;
+			ImTextureRect* r = ImFontAtlasPackGetRect(atlas, packId);
+
+			ImVector<unsigned char> rgba; rgba.resize(w * h * 4, 0);
+			ImVector<unsigned char> layerAlpha; layerAlpha.resize(w * h, 0);
+
+			for (int li = 0; li < numLayers; li++) {
+				SlugLoader_RasterizeLayer(&fd->fontInfo, layerGlyphIDs[li], scale, layerAlpha.Data, w, h, bx0, by0);
+				SlugLoader_CompositeLayer(rgba.Data, w, h, layerAlpha.Data, layerColors[li]);
+			}
+
+			out_glyph->X0 = (float)bx0;
+			out_glyph->Y0 = (float)by0 + IM_ROUND(baked->Ascent);
+			out_glyph->X1 = (float)bx1;
+			out_glyph->Y1 = (float)by1 + IM_ROUND(baked->Ascent);
+			out_glyph->Visible = true;
+			out_glyph->Colored = true;
+			out_glyph->PackId = packId;
+			ImFontAtlasBakedSetFontGlyphBitmap(atlas, baked, src, out_glyph, r, rgba.Data, ImTextureFormat_RGBA32, w * 4);
+		}
+		else
+		{
+			// Monochrome glyph
+			int bx0, by0, bx1, by1;
+			stbtt_GetGlyphBitmapBox(&fd->fontInfo, gi, scale, scale, &bx0, &by0, &bx1, &by1);
+			int w = bx1 - bx0, h = by1 - by0;
+			if (w <= 0 || h <= 0) return true;
+
+			ImFontAtlasRectId packId = ImFontAtlasPackAddRect(atlas, w, h);
+			if (packId == ImFontAtlasRectId_Invalid) return false;
+			ImTextureRect* r = ImFontAtlasPackGetRect(atlas, packId);
+
+			ImVector<unsigned char> bitmap; bitmap.resize(w * h, 0);
+			stbtt_MakeGlyphBitmap(&fd->fontInfo, bitmap.Data, w, h, w, scale, scale, gi);
+
+			out_glyph->X0 = (float)bx0;
+			out_glyph->Y0 = (float)by0 + IM_ROUND(baked->Ascent);
+			out_glyph->X1 = (float)bx1;
+			out_glyph->Y1 = (float)by1 + IM_ROUND(baked->Ascent);
+			out_glyph->Visible = true;
+			out_glyph->PackId = packId;
+			ImFontAtlasBakedSetFontGlyphBitmap(atlas, baked, src, out_glyph, r, bitmap.Data, ImTextureFormat_Alpha8, w);
+		}
+
+		return true;
+	}
+
+	const ImFontLoader* GetSlugFontLoader()
+	{
+		static ImFontLoader loader;
+		static bool inited = false;
+		if (!inited) {
+			loader.Name                      = "Slug";
+			loader.FontSrcInit               = SlugLoader_FontSrcInit;
+			loader.FontSrcDestroy            = SlugLoader_FontSrcDestroy;
+			loader.FontSrcContainsGlyph      = SlugLoader_FontSrcContainsGlyph;
+			loader.FontBakedInit             = SlugLoader_FontBakedInit;
+			loader.FontBakedDestroy          = SlugLoader_FontBakedDestroy;
+			loader.FontBakedLoadGlyph        = SlugLoader_FontBakedLoadGlyph;
+			loader.FontBakedSrcLoaderDataSize = 0;
+			inited = true;
+		}
+		return &loader;
+	}
+
+#ifndef IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+// Stubs when custom shaders not available
+#define IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER_WAS_UNDEF
+#endif
+
+#if defined(IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER_WAS_UNDEF)
 
 	ImVec2 CalcTextSize(ImFont* font, float font_size,
 	                    const char* text, const char* text_end, float* out_ascent)

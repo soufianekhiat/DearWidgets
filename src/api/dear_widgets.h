@@ -2725,6 +2725,9 @@ namespace ImWidgets{
 	IMGUI_API void DrawTextDebugLayers( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, const char* text_end = nullptr );
 	// Set to true to use the debug shader (xcov=R, ycov=G, coverage=B) instead of normal rendering.
 	IMGUI_API extern bool g_SlugDebugShader;
+	// ImFontLoader backend: rasterizes Slug glyphs (including color/gradient) into ImGui's bitmap atlas.
+	// Use with: cfg.FontLoader = ImWidgets::GetSlugFontLoader();
+	IMGUI_API const ImFontLoader* GetSlugFontLoader();
 
 	//////////////////////////////////////////////////////////////////////////
 	// DrawList

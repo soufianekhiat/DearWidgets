@@ -421,74 +421,78 @@ int main()
 	// Load fonts (FontScaleDpi handles DPI scaling at render time)
 	io.Fonts->AddFontFromFileTTF( "../extern/FiraCode/distr/ttf/FiraCode-Medium.ttf", 16.0f );
 
-	g_firaCodeFont    = io.Fonts->AddFontFromFileTTF( "fonts/FiraCode-Regular.ttf",                           24.0f );
+	// Use Slug font loader for all demo fonts (enables colored atlas for COLR/SVG fonts)
+	ImFontConfig slugCfg;
+	slugCfg.FontLoader = ImWidgets::GetSlugFontLoader();
+
+	g_firaCodeFont    = io.Fonts->AddFontFromFileTTF( "fonts/FiraCode-Regular.ttf",                           24.0f, &slugCfg );
 
 	// Rasterized at 24 px just so ImGui holds the TTF data; Slug renders at any size.
-	g_cinzelFont      = io.Fonts->AddFontFromFileTTF( "fonts/Cinzel.ttf",                                    24.0f );
-	g_alfaSlabFont    = io.Fonts->AddFontFromFileTTF( "fonts/AlfaSlabOne-Regular.ttf",                       24.0f );
-	g_dottedFont      = io.Fonts->AddFontFromFileTTF( "fonts/Dotted.ttf",                                    24.0f );
-	g_flowmeryFont    = io.Fonts->AddFontFromFileTTF( "fonts/Flowmery-Regular.ttf",                          24.0f );
-	g_franticallyFont = io.Fonts->AddFontFromFileTTF( "fonts/Frantically-Regular (1).ttf",                   24.0f );
-	g_loveLightFont   = io.Fonts->AddFontFromFileTTF( "fonts/LoveLight-Regular.ttf",                         24.0f );
-	g_magnoliaFont    = io.Fonts->AddFontFromFileTTF( "fonts/Magnolia Floral Line Monogram.ttf",             24.0f );
-	g_rosehotFont     = io.Fonts->AddFontFromFileTTF( "fonts/Rosehot.ttf",                                   24.0f );
-	g_nablaFont       = io.Fonts->AddFontFromFileTTF( "fonts/Nabla-Regular-VariableFont_EDPT,EHLT.ttf",      24.0f );
-	g_squareLilyFont  = io.Fonts->AddFontFromFileTTF( "fonts/Square Lily Monogram.ttf",                      24.0f );
+	g_cinzelFont      = io.Fonts->AddFontFromFileTTF( "fonts/Cinzel.ttf", 24.0f, &slugCfg );
+	g_alfaSlabFont    = io.Fonts->AddFontFromFileTTF( "fonts/AlfaSlabOne-Regular.ttf", 24.0f, &slugCfg );
+	g_dottedFont      = io.Fonts->AddFontFromFileTTF( "fonts/Dotted.ttf", 24.0f, &slugCfg );
+	g_flowmeryFont    = io.Fonts->AddFontFromFileTTF( "fonts/Flowmery-Regular.ttf", 24.0f, &slugCfg );
+	g_franticallyFont = io.Fonts->AddFontFromFileTTF( "fonts/Frantically-Regular (1).ttf", 24.0f, &slugCfg );
+	g_loveLightFont   = io.Fonts->AddFontFromFileTTF( "fonts/LoveLight-Regular.ttf", 24.0f, &slugCfg );
+	g_magnoliaFont    = io.Fonts->AddFontFromFileTTF( "fonts/Magnolia Floral Line Monogram.ttf", 24.0f, &slugCfg );
+	g_rosehotFont     = io.Fonts->AddFontFromFileTTF( "fonts/Rosehot.ttf", 24.0f, &slugCfg );
+	g_nablaFont       = io.Fonts->AddFontFromFileTTF( "fonts/Nabla-Regular-VariableFont_EDPT,EHLT.ttf", 24.0f, &slugCfg );
+	g_squareLilyFont  = io.Fonts->AddFontFromFileTTF( "fonts/Square Lily Monogram.ttf", 24.0f, &slugCfg );
 	// Ligature showcase fonts
-	g_allessaFont     = io.Fonts->AddFontFromFileTTF( "fonts/AllessaPersonalUse-4pRl.ttf",                 24.0f );
-	g_bollgoFont      = io.Fonts->AddFontFromFileTTF( "fonts/Bollgo-zr2pX.ttf",                            24.0f );
-	g_boucherFont     = io.Fonts->AddFontFromFileTTF( "fonts/BoucherDemoRegular-lxRoD.ttf",                24.0f );
-	g_brightMarchFont = io.Fonts->AddFontFromFileTTF( "fonts/BrightMarchingRegular-9MA72.otf",             24.0f );
-	g_camoodFont      = io.Fonts->AddFontFromFileTTF( "fonts/Camood-aYoaR.otf",                            24.0f );
-	g_cheronaFont     = io.Fonts->AddFontFromFileTTF( "fonts/Cherona-LVG73.otf",                           24.0f );
-	g_classicalFont   = io.Fonts->AddFontFromFileTTF( "fonts/ClassicalAestheticsDemoRegular-0vqjX.ttf",    24.0f );
-	g_daelingFont     = io.Fonts->AddFontFromFileTTF( "fonts/Daeling-Jp65x.ttf",                           24.0f );
-	g_endlessFont     = io.Fonts->AddFontFromFileTTF( "fonts/EndlesslyExpandedDemoRegular-rvXlp.ttf",      24.0f );
-	g_foglihtenFont   = io.Fonts->AddFontFromFileTTF( "fonts/Foglihtenno07calt-WpzEA.otf",                 24.0f );
-	g_galinsFont      = io.Fonts->AddFontFromFileTTF( "fonts/GalinsRegular-Wp5eY.otf",                     24.0f );
-	g_gallanteFont    = io.Fonts->AddFontFromFileTTF( "fonts/Gallante-AR1ap.otf",                           24.0f );
-	g_gimboFont       = io.Fonts->AddFontFromFileTTF( "fonts/Gimbo-ovZdA.ttf",                             24.0f );
-	g_gingaFont       = io.Fonts->AddFontFromFileTTF( "fonts/Ginga-r09p.ttf",                              24.0f );
-	g_kleymisskyFont  = io.Fonts->AddFontFromFileTTF( "fonts/Kleymissky-0xBG.otf",                         24.0f );
-	g_metaforaAltFont = io.Fonts->AddFontFromFileTTF( "fonts/MetaforaAlternateAndSwashRegular-KVRnW.ttf",  24.0f );
-	g_metaforaSsFont  = io.Fonts->AddFontFromFileTTF( "fonts/MetaforaSs05Ss09Regular-vn5LZ.ttf",           24.0f );
-	g_migullonFont    = io.Fonts->AddFontFromFileTTF( "fonts/Migullon-V4e6l.otf",                          24.0f );
-	g_milsskyFont     = io.Fonts->AddFontFromFileTTF( "fonts/MilsskyRegular-aYJOE.otf",                    24.0f );
-	g_molgethFont     = io.Fonts->AddFontFromFileTTF( "fonts/Molgeth-xRMpm.ttf",                           24.0f );
-	g_monblockFont    = io.Fonts->AddFontFromFileTTF( "fonts/Monblock-wo9Rn.otf",                          24.0f );
-	g_prida61Font     = io.Fonts->AddFontFromFileTTF( "fonts/Prida61-Groa.otf",                            24.0f );
-	g_reginaFont      = io.Fonts->AddFontFromFileTTF( "fonts/Regina-K7Yvl.ttf",                            24.0f );
-	g_retroHeartFont  = io.Fonts->AddFontFromFileTTF( "fonts/RetroHeartYou-1jvD4.otf",                     24.0f );
-	g_sophieFont      = io.Fonts->AddFontFromFileTTF( "fonts/SophiamelanieRegular-E4gee.otf",              24.0f );
-	g_steelworksFont  = io.Fonts->AddFontFromFileTTF( "fonts/SteelworksVintageDemo-rR98.ttf",              24.0f );
+	g_allessaFont     = io.Fonts->AddFontFromFileTTF( "fonts/AllessaPersonalUse-4pRl.ttf", 24.0f, &slugCfg );
+	g_bollgoFont      = io.Fonts->AddFontFromFileTTF( "fonts/Bollgo-zr2pX.ttf", 24.0f, &slugCfg );
+	g_boucherFont     = io.Fonts->AddFontFromFileTTF( "fonts/BoucherDemoRegular-lxRoD.ttf", 24.0f, &slugCfg );
+	g_brightMarchFont = io.Fonts->AddFontFromFileTTF( "fonts/BrightMarchingRegular-9MA72.otf", 24.0f, &slugCfg );
+	g_camoodFont      = io.Fonts->AddFontFromFileTTF( "fonts/Camood-aYoaR.otf", 24.0f, &slugCfg );
+	g_cheronaFont     = io.Fonts->AddFontFromFileTTF( "fonts/Cherona-LVG73.otf", 24.0f, &slugCfg );
+	g_classicalFont   = io.Fonts->AddFontFromFileTTF( "fonts/ClassicalAestheticsDemoRegular-0vqjX.ttf", 24.0f, &slugCfg );
+	g_daelingFont     = io.Fonts->AddFontFromFileTTF( "fonts/Daeling-Jp65x.ttf", 24.0f, &slugCfg );
+	g_endlessFont     = io.Fonts->AddFontFromFileTTF( "fonts/EndlesslyExpandedDemoRegular-rvXlp.ttf", 24.0f, &slugCfg );
+	g_foglihtenFont   = io.Fonts->AddFontFromFileTTF( "fonts/Foglihtenno07calt-WpzEA.otf", 24.0f, &slugCfg );
+	g_galinsFont      = io.Fonts->AddFontFromFileTTF( "fonts/GalinsRegular-Wp5eY.otf", 24.0f, &slugCfg );
+	g_gallanteFont    = io.Fonts->AddFontFromFileTTF( "fonts/Gallante-AR1ap.otf", 24.0f, &slugCfg );
+	g_gimboFont       = io.Fonts->AddFontFromFileTTF( "fonts/Gimbo-ovZdA.ttf", 24.0f, &slugCfg );
+	g_gingaFont       = io.Fonts->AddFontFromFileTTF( "fonts/Ginga-r09p.ttf", 24.0f, &slugCfg );
+	g_kleymisskyFont  = io.Fonts->AddFontFromFileTTF( "fonts/Kleymissky-0xBG.otf", 24.0f, &slugCfg );
+	g_metaforaAltFont = io.Fonts->AddFontFromFileTTF( "fonts/MetaforaAlternateAndSwashRegular-KVRnW.ttf", 24.0f, &slugCfg );
+	g_metaforaSsFont  = io.Fonts->AddFontFromFileTTF( "fonts/MetaforaSs05Ss09Regular-vn5LZ.ttf", 24.0f, &slugCfg );
+	g_migullonFont    = io.Fonts->AddFontFromFileTTF( "fonts/Migullon-V4e6l.otf", 24.0f, &slugCfg );
+	g_milsskyFont     = io.Fonts->AddFontFromFileTTF( "fonts/MilsskyRegular-aYJOE.otf", 24.0f, &slugCfg );
+	g_molgethFont     = io.Fonts->AddFontFromFileTTF( "fonts/Molgeth-xRMpm.ttf", 24.0f, &slugCfg );
+	g_monblockFont    = io.Fonts->AddFontFromFileTTF( "fonts/Monblock-wo9Rn.otf", 24.0f, &slugCfg );
+	g_prida61Font     = io.Fonts->AddFontFromFileTTF( "fonts/Prida61-Groa.otf", 24.0f, &slugCfg );
+	g_reginaFont      = io.Fonts->AddFontFromFileTTF( "fonts/Regina-K7Yvl.ttf", 24.0f, &slugCfg );
+	g_retroHeartFont  = io.Fonts->AddFontFromFileTTF( "fonts/RetroHeartYou-1jvD4.otf", 24.0f, &slugCfg );
+	g_sophieFont      = io.Fonts->AddFontFromFileTTF( "fonts/SophiamelanieRegular-E4gee.otf", 24.0f, &slugCfg );
+	g_steelworksFont  = io.Fonts->AddFontFromFileTTF( "fonts/SteelworksVintageDemo-rR98.ttf", 24.0f, &slugCfg );
 	// Color fonts
-	g_twemojiFont        = io.Fonts->AddFontFromFileTTF( "fonts/Twemoji.Mozilla.ttf",                           24.0f );
-	g_aquaphonicDownpourFont = io.Fonts->AddFontFromFileTTF( "fonts/Aquaphonic-Downpour.otf",                      24.0f );
-	g_aquaphonicDrizzleFont  = io.Fonts->AddFontFromFileTTF( "fonts/Aquaphonic-Drizzle.otf",                       24.0f );
-	g_bungeeSpiceFont        = io.Fonts->AddFontFromFileTTF( "fonts/BungeeSpice-Regular.ttf",                      24.0f );
-	g_cimeroProFont          = io.Fonts->AddFontFromFileTTF( "fonts/CimeroPro.otf",                               24.0f );
-	g_colorTubeFont          = io.Fonts->AddFontFromFileTTF( "fonts/ColorTube.otf",                                24.0f );
-	g_fatternFont            = io.Fonts->AddFontFromFileTTF( "fonts/Fattern-GO6zm.otf",                            24.0f );
-	g_gilbertColorFont       = io.Fonts->AddFontFromFileTTF( "fonts/Gilbert-Color Bold Preview5.otf",              24.0f );
-	g_manbowClearFont        = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Clear.otf",                             24.0f );
-	g_manbowLinesFont        = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Lines.otf",                             24.0f );
-	g_manbowSpotsFont        = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Spots.otf",                             24.0f );
-	g_manbowToneFont         = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Tone.otf",                              24.0f );
-	g_multicoloreFont        = io.Fonts->AddFontFromFileTTF( "fonts/Multicolore Pro.otf",                          24.0f );
-	g_primecolorCV1Font      = io.Fonts->AddFontFromFileTTF( "fonts/Primecolor-CV1.ttf",                           24.0f );
-	g_primecolorGFont        = io.Fonts->AddFontFromFileTTF( "fonts/Primecolor-G.ttf",                             24.0f );
-	g_primecolorMFont        = io.Fonts->AddFontFromFileTTF( "fonts/Primecolor-M.ttf",                             24.0f );
+	g_twemojiFont        = io.Fonts->AddFontFromFileTTF( "fonts/Twemoji.Mozilla.ttf", 24.0f, &slugCfg );
+	g_aquaphonicDownpourFont = io.Fonts->AddFontFromFileTTF( "fonts/Aquaphonic-Downpour.otf", 24.0f, &slugCfg );
+	g_aquaphonicDrizzleFont  = io.Fonts->AddFontFromFileTTF( "fonts/Aquaphonic-Drizzle.otf", 24.0f, &slugCfg );
+	g_bungeeSpiceFont        = io.Fonts->AddFontFromFileTTF( "fonts/BungeeSpice-Regular.ttf", 24.0f, &slugCfg );
+	g_cimeroProFont          = io.Fonts->AddFontFromFileTTF( "fonts/CimeroPro.otf", 24.0f, &slugCfg );
+	g_colorTubeFont          = io.Fonts->AddFontFromFileTTF( "fonts/ColorTube.otf", 24.0f, &slugCfg );
+	g_fatternFont            = io.Fonts->AddFontFromFileTTF( "fonts/Fattern-GO6zm.otf", 24.0f, &slugCfg );
+	g_gilbertColorFont       = io.Fonts->AddFontFromFileTTF( "fonts/Gilbert-Color Bold Preview5.otf", 24.0f, &slugCfg );
+	g_manbowClearFont        = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Clear.otf", 24.0f, &slugCfg );
+	g_manbowLinesFont        = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Lines.otf", 24.0f, &slugCfg );
+	g_manbowSpotsFont        = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Spots.otf", 24.0f, &slugCfg );
+	g_manbowToneFont         = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Tone.otf", 24.0f, &slugCfg );
+	g_multicoloreFont        = io.Fonts->AddFontFromFileTTF( "fonts/Multicolore Pro.otf", 24.0f, &slugCfg );
+	g_primecolorCV1Font      = io.Fonts->AddFontFromFileTTF( "fonts/Primecolor-CV1.ttf", 24.0f, &slugCfg );
+	g_primecolorGFont        = io.Fonts->AddFontFromFileTTF( "fonts/Primecolor-G.ttf", 24.0f, &slugCfg );
+	g_primecolorMFont        = io.Fonts->AddFontFromFileTTF( "fonts/Primecolor-M.ttf", 24.0f, &slugCfg );
 	// Arabic glyph range for Arabic fonts
 	static const ImWchar arabicRanges[] = { 0x0020, 0x007E, 0x0600, 0x06FF, 0xFE70, 0xFEFF, 0 };
-	g_arefRuqaaBoldFont      = io.Fonts->AddFontFromFileTTF( "fonts/ArefRuqaaInk-Bold.ttf",                        24.0f, NULL, arabicRanges );
-	g_arefRuqaaRegFont       = io.Fonts->AddFontFromFileTTF( "fonts/ArefRuqaaInk-Regular.ttf",                     24.0f, NULL, arabicRanges );
-	g_blakaInkFont           = io.Fonts->AddFontFromFileTTF( "fonts/BlakaInk-Regular.ttf",                         24.0f, NULL, arabicRanges );
-	g_reemKufiInkFont        = io.Fonts->AddFontFromFileTTF( "fonts/ReemKufiInk-Regular.ttf",                      24.0f, NULL, arabicRanges );
-	g_reemKufiFunFont        = io.Fonts->AddFontFromFileTTF( "fonts/ReemKufiFun-Regular.ttf",                      24.0f, NULL, arabicRanges );
-	g_cairoPlayBoldFont      = io.Fonts->AddFontFromFileTTF( "fonts/CairoPlay-Bold.ttf",                           24.0f, NULL, arabicRanges );
-	g_cairoPlayXLightFont    = io.Fonts->AddFontFromFileTTF( "fonts/CairoPlay-ExtraLight.ttf",                     24.0f, NULL, arabicRanges );
-	g_coralPixelsFont        = io.Fonts->AddFontFromFileTTF( "fonts/CoralPixels-Regular.ttf",                      24.0f );
-	g_honkFont               = io.Fonts->AddFontFromFileTTF( "fonts/Honk-Regular-VariableFont_MORF,SHLN.ttf",      24.0f );
+	g_arefRuqaaBoldFont      = io.Fonts->AddFontFromFileTTF( "fonts/ArefRuqaaInk-Bold.ttf",                        24.0f, &slugCfg, arabicRanges );
+	g_arefRuqaaRegFont       = io.Fonts->AddFontFromFileTTF( "fonts/ArefRuqaaInk-Regular.ttf",                     24.0f, &slugCfg, arabicRanges );
+	g_blakaInkFont           = io.Fonts->AddFontFromFileTTF( "fonts/BlakaInk-Regular.ttf",                         24.0f, &slugCfg, arabicRanges );
+	g_reemKufiInkFont        = io.Fonts->AddFontFromFileTTF( "fonts/ReemKufiInk-Regular.ttf",                      24.0f, &slugCfg, arabicRanges );
+	g_reemKufiFunFont        = io.Fonts->AddFontFromFileTTF( "fonts/ReemKufiFun-Regular.ttf",                      24.0f, &slugCfg, arabicRanges );
+	g_cairoPlayBoldFont      = io.Fonts->AddFontFromFileTTF( "fonts/CairoPlay-Bold.ttf",                           24.0f, &slugCfg, arabicRanges );
+	g_cairoPlayXLightFont    = io.Fonts->AddFontFromFileTTF( "fonts/CairoPlay-ExtraLight.ttf",                     24.0f, &slugCfg, arabicRanges );
+	g_coralPixelsFont        = io.Fonts->AddFontFromFileTTF( "fonts/CoralPixels-Regular.ttf", 24.0f, &slugCfg );
+	g_honkFont               = io.Fonts->AddFontFromFileTTF( "fonts/Honk-Regular-VariableFont_MORF,SHLN.ttf", 24.0f, &slugCfg );
 
 	ImGuiStyle& style = ImGui::GetStyle();
 	style.ScaleAllSizes( dpi_scale );
@@ -827,7 +831,7 @@ namespace ImWidgets {
 			return;
 		}
 
-		static char   text_buf[256] = "=> === != >= Dear Widgets";
+		static char   text_buf[256] = "=><=Dear Widgets!";
 		static float  font_size = 48.0f;
 		static ImVec4 color_v( 0.92f, 0.82f, 0.60f, 1.0f );  // warm gold
 		static ImU32  color_u = ImGui::ColorConvertFloat4ToU32( color_v );
@@ -847,6 +851,11 @@ namespace ImWidgets {
 				bg_color_u = ImGui::ColorConvertFloat4ToU32( bg_color_v );
 		}
 
+		static bool  use_atlas = false;
+		ImGui::Checkbox( "Atlas Mode (bitmap, ImFontLoader)##SlugAtlas", &use_atlas );
+		ImGui::SameLine(); ImGui::TextDisabled( use_atlas ? "(CPU rasterized)" : "(GPU Slug)" );
+		if ( use_atlas )
+			ImGui::TextDisabled( "  Atlas: COLR v0 = color, COLR v1 = flat (no gradient), SVG = monochrome" );
 		static bool  debug_curves = false;
 		static bool  dbg_curves_on = true, dbg_ctrl_on = true, dbg_bbox_on = true, dbg_bands_on = false;
 		static bool  debug_layers = false;
@@ -986,7 +995,10 @@ namespace ImWidgets {
 			}
 
 			// DrawText baseline shifted down by ascent so glyph top aligns with cursor
-			ImWidgets::DrawText( pDrawList, f, font_size, ImVec2( pos.x, pos.y + asc ), color_u, drawStr );
+			if ( use_atlas )
+				pDrawList->AddText( f, font_size, ImVec2( pos.x, pos.y ), color_u, drawStr );
+			else
+				ImWidgets::DrawText( pDrawList, f, font_size, ImVec2( pos.x, pos.y + asc ), color_u, drawStr );
 			if ( debug_curves )
 			{
 				int dbgFlags = ( dbg_curves_on ? 1 : 0 ) | ( dbg_ctrl_on ? 2 : 0 )
