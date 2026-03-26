@@ -111,6 +111,7 @@ enum ImWidgetsFeatures_
 	ImWidgetsFeatures_None     = 0,
 	ImWidgetsFeatures_Markers  = 1 << 0,
 	ImWidgetsFeatures_RichFont = 1 << 1,  // Slug GPU font rendering (color fonts, gradients, ligatures)
+	ImWidgetsFeatures_LaTeX    = 1 << 2,  // LaTeX math rendering via Slug
 
 	ImWidgetsFeatures_COUNT
 };
@@ -2728,6 +2729,18 @@ namespace ImWidgets{
 	// ImFontLoader backend: rasterizes Slug glyphs (including color/gradient) into ImGui's bitmap atlas.
 	// Use with: cfg.FontLoader = ImWidgets::GetSlugFontLoader();
 	IMGUI_API const ImFontLoader* GetSlugFontLoader();
+	IMGUI_API bool GetSlugFontInfo(ImFont* font, void* outStbttFontInfo, float* outEmScale); // outStbttFontInfo = stbtt_fontinfo*
+	IMGUI_API void SlugBuildGlyphByID(ImFont* font, int glyphID);
+	// LaTeX math rendering via Slug GPU fonts.
+	// Requires ImWidgetsFeatures_LaTeX to be set before CreateContext().
+	// latex: LaTeX math string (e.g. "x^2 + \\frac{\\alpha}{\\beta} = 0")
+	// Call during font loading phase (before CreateContext) to load the Latin Modern Math font.
+	IMGUI_API void LoadLaTeXFont();
+	IMGUI_API void DrawLaTeX( ImDrawList* pDrawList, float font_size, ImVec2 pos, ImU32 col, const char* latex );
+	// Measure the bounding box of a LaTeX expression without drawing.
+	IMGUI_API ImVec2 CalcLaTeXSize( float font_size, const char* latex );
+	// Debug: draw bounding boxes for each glyph/box in a LaTeX expression.
+	IMGUI_API void DrawLaTeXDebug( ImDrawList* pDrawList, float font_size, ImVec2 pos, const char* latex );
 
 	//////////////////////////////////////////////////////////////////////////
 	// DrawList

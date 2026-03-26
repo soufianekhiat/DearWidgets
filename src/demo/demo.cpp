@@ -360,6 +360,8 @@ static void OnDpiChanged( float new_scale, void* /*user_data*/ )
 	ImWidgets::GetStyle().ScaleAllSizes( new_scale );
 }
 
+namespace ImWidgets { void ShowShowcase(); }
+
 int main()
 {
 	// Using the new ImPlatform C API - following ImPlatform demo pattern
@@ -494,6 +496,9 @@ int main()
 	g_coralPixelsFont        = io.Fonts->AddFontFromFileTTF( "fonts/CoralPixels-Regular.ttf", 24.0f, &slugCfg );
 	g_honkFont               = io.Fonts->AddFontFromFileTTF( "fonts/Honk-Regular-VariableFont_MORF,SHLN.ttf", 24.0f, &slugCfg );
 
+	// Load LaTeX math font (Latin Modern Math)
+	ImWidgets::LoadLaTeXFont();
+
 	ImGuiStyle& style = ImGui::GetStyle();
 	style.ScaleAllSizes( dpi_scale );
 	style.FontScaleDpi = dpi_scale;
@@ -533,7 +538,7 @@ int main()
 	}
 	
 	// Create ImWidgets context
-	ImWidgets::AddFeatures( ImWidgetsFeatures_Markers | ImWidgetsFeatures_RichFont );
+	ImWidgets::AddFeatures( ImWidgetsFeatures_Markers | ImWidgetsFeatures_RichFont | ImWidgetsFeatures_LaTeX );
 	ImWidgetsContext* ctx = ImWidgets::CreateContext();
 
 	// Load test images
@@ -571,6 +576,7 @@ int main()
 		// Render UI
 		ImWidgets::ShowSamples();
 		ImWidgets::ShowDemo();
+		ImWidgets::ShowShowcase();
 		ImWidgets::ShowStyleEditor();
 		ImGui::ShowMetricsWindow();
 		ImGui::ShowDemoWindow();
@@ -1012,6 +1018,119 @@ namespace ImWidgets {
 		}
 	}
 
+	void ShowLaTeXDemo()
+	{
+		ApplyOpenAll();
+		if ( !ImGui::CollapsingHeader( "LaTeX Math" ) )
+			return;
+
+		// User-editable expression
+		static char latex_buf[1024] = "L_o(x, \\omega_o) = L_e(x, \\omega_o) + \\int_{\\Omega} f_r(x, \\omega_i, \\omega_o) L_i(x, \\omega_i) \\langle \\omega_i \\cdot n \\rangle_+ d\\omega_i";
+		static float latex_size = 24.0f;
+		static ImVec4 latex_col_v( 1.0f, 1.0f, 1.0f, 1.0f );
+		static ImU32  latex_col_u = IM_COL32( 255, 255, 255, 255 );
+		static bool latex_show_bbox = false;
+
+		ImGui::InputTextMultiline( "##LatexInput", latex_buf, sizeof( latex_buf ), ImVec2( -1, ImGui::GetTextLineHeight() * 3 ) );
+		ImGui::DragFloat( "Size##LatexSize", &latex_size, 0.5f, 8.0f, 200.0f, "%.0f px" );
+		if ( ImGui::ColorEdit4( "Color##LatexColor", &latex_col_v.x ) )
+			latex_col_u = ImGui::ColorConvertFloat4ToU32( latex_col_v );
+		ImGui::Checkbox( "Show BBox##LatexBBox", &latex_show_bbox );
+
+		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+
+		// Render the user expression
+		{
+			ImVec2 pos = ImGui::GetCursorScreenPos();
+			ImVec2 sz = ImWidgets::CalcLaTeXSize( latex_size, latex_buf );
+			float pad = 8.0f;
+			pDrawList->AddRectFilled( ImVec2( pos.x - pad, pos.y - pad ), ImVec2( pos.x + sz.x + pad, pos.y + sz.y + pad ), IM_COL32( 30, 30, 40, 255 ), 4.0f );
+			ImWidgets::DrawLaTeX( pDrawList, latex_size, pos, latex_col_u, latex_buf );
+			if ( latex_show_bbox )
+				ImWidgets::DrawLaTeXDebug( pDrawList, latex_size, pos, latex_buf );
+			ImGui::Dummy( ImVec2( sz.x + pad * 2, sz.y + pad * 2 ) );
+		}
+
+		ImGui::Separator();
+
+		// Static examples organized by category
+		struct LaTeXEntry { const char* latex; const char* group; };
+		static const char* kGrpClassic  = "Classic Equations";
+		static const char* kGrpFrac     = "Fractions & Roots";
+		static const char* kGrpMatrix   = "Matrices & Vectors";
+		static const char* kGrpDecor    = "Decorations";
+		static const char* kGrpEnv      = "Environments";
+		static const char* kGrpSymbols  = "Symbols & Accents";
+		static const char* kGrpCalc     = "Calculus & Integrals";
+		static const LaTeXEntry kExamples[] = {
+			// Classic
+			{ "E = mc^2", kGrpClassic },
+			{ "L_o(x, \\omega_o) = L_e(x, \\omega_o) + \\int_{\\Omega} f_r(x, \\omega_i, \\omega_o) L_i(x, \\omega_i) \\langle \\omega_i \\cdot n \\rangle_+ d\\omega_i", kGrpClassic },
+			{ "\\nabla \\times E = -\\frac{\\partial B}{\\partial t}", kGrpClassic },
+			// Fractions & Roots
+			{ "\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}", kGrpFrac },
+			{ "\\sqrt[3]{x} + \\sqrt[n]{a^2+b^2}", kGrpFrac },
+			{ "\\binom{n}{k} = \\frac{n!}{k!(n-k)!}", kGrpFrac },
+			{ "f(x) = \\frac{1}{\\sigma\\sqrt{2\\pi}} e^{-\\frac{(x-\\mu)^2}{2\\sigma^2}}", kGrpFrac },
+			// Matrices
+			{ "\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}", kGrpMatrix },
+			{ "\\begin{bmatrix} 1 & 0 & 0 \\\\ 0 & 1 & 0 \\\\ 0 & 0 & 1 \\end{bmatrix}", kGrpMatrix },
+			{ "\\begin{vmatrix} a & b \\\\ c & d \\end{vmatrix} = ad - bc", kGrpMatrix },
+			{ "\\begin{pmatrix} \\cos\\theta & -\\sin\\theta \\\\ \\sin\\theta & \\cos\\theta \\end{pmatrix}", kGrpMatrix },
+			{ "\\begin{pmatrix} x' \\\\ y' \\end{pmatrix} = \\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix} \\begin{pmatrix} x \\\\ y \\end{pmatrix}", kGrpMatrix },
+			{ "\\begin{Bmatrix} a & b \\\\ c & d \\end{Bmatrix}", kGrpMatrix },
+			// Decorations
+			{ "\\overbrace{a+b+c}^{n} + \\underbrace{x+y}_{2}", kGrpDecor },
+			{ "\\overset{def}{=}", kGrpDecor },
+			{ "\\boxed{E = mc^2}", kGrpDecor },
+			{ "\\cancel{x} + \\bcancel{y} = z", kGrpDecor },
+			{ "\\color{red}{\\alpha} + \\color{blue}{\\beta} = \\color{green}{\\gamma}", kGrpDecor },
+			// Environments
+			{ "|x| = \\begin{cases} x & x \\geq 0 \\\\ -x & x < 0 \\end{cases}", kGrpEnv },
+			{ "\\begin{aligned} \\text{Dear} &= b + c \\\\ \\text{Widgets} &= e + f \\end{aligned}", kGrpEnv },
+			{ "\\text{if } x > 0 \\text{ then } f(x) = x^2", kGrpEnv },
+			// Symbols & Accents
+			{ "\\vec{F} = m\\vec{a}", kGrpSymbols },
+			{ "\\hat{x} + \\bar{y} + \\dot{z} + \\ddot{w} + \\tilde{n}", kGrpSymbols },
+			{ "x \\in \\mathbb{R}, n \\in \\mathbb{N}, z \\in \\mathbb{C}", kGrpSymbols },
+			{ "\\forall x \\in \\mathbb{R}, \\exists y : x + y = 0", kGrpSymbols },
+			// Calculus & Integrals
+			{ "\\sum_{i=0}^{n} x_i", kGrpCalc },
+			{ "\\int_0^{\\infty} e^{-x} dx", kGrpCalc },
+			{ "\\iint_S \\vec{F} \\cdot d\\vec{S} = \\iiint_V \\nabla \\cdot \\vec{F} \\, dV", kGrpCalc },
+		};
+
+		float const pad = 6.0f;
+		float const gap = ImGui::GetStyle().ItemSpacing.y;
+		const char* currentGroup = NULL;
+		bool groupOpen = false;
+		for ( const LaTeXEntry& e : kExamples )
+		{
+			// Group header (collapsed by default)
+			if ( e.group != currentGroup )
+			{
+				currentGroup = e.group;
+				ApplyOpenAll();
+				groupOpen = ImGui::CollapsingHeader( currentGroup );
+			}
+			if ( !groupOpen ) continue;
+
+			// LaTeX source label
+			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 160, 160, 160, 255 ) );
+			ImGui::TextWrapped( "%s", e.latex );
+			ImGui::PopStyleColor();
+
+			// Render the expression
+			ImVec2 pos = ImGui::GetCursorScreenPos();
+			ImVec2 sz = ImWidgets::CalcLaTeXSize( latex_size, e.latex );
+			pDrawList->AddRectFilled( ImVec2( pos.x - pad, pos.y ), ImVec2( pos.x + sz.x + pad, pos.y + sz.y + pad ), IM_COL32( 30, 30, 40, 255 ), 4.0f );
+			ImWidgets::DrawLaTeX( pDrawList, latex_size, ImVec2( pos.x, pos.y + pad * 0.5f ), latex_col_u, e.latex );
+			if ( latex_show_bbox )
+				ImWidgets::DrawLaTeXDebug( pDrawList, latex_size, ImVec2( pos.x, pos.y + pad * 0.5f ), e.latex );
+			ImGui::Dummy( ImVec2( sz.x + pad * 2, sz.y + pad + gap ) );
+		}
+	}
+
 	void ShowCustomShaderDemo()
 	{
 		float const size = CanvasSize();
@@ -1103,6 +1222,518 @@ namespace ImWidgets {
 		ImGui::Text( "Vtx: %d", shape.vertices.size() );
 	}
 
+	// ---- Showcase: Rendering Equation BRDF Explorer ----
+	void ShowShowcase()
+	{
+		ImGui::SetNextWindowSize( ImVec2( 800, 700 ), ImGuiCond_FirstUseEver );
+		if ( !ImGui::Begin( "Showcase" ) ) { ImGui::End(); return; }
+
+		ImGui::TextDisabled( "Rendering Equation — BRDF Explorer" );
+		ImGui::Separator();
+
+		// Material parameters
+		static float roughness = 0.4f;
+		static float f0 = 0.04f;
+		static float albedo = 0.8f;
+		static float light_angle = 45.0f;
+		static float view_angle = 30.0f;
+
+		ImGui::SliderFloat( "Roughness", &roughness, 0.01f, 1.0f );
+		ImGui::SliderFloat( "F0 (Fresnel)", &f0, 0.0f, 1.0f );
+		ImGui::SliderFloat( "Albedo", &albedo, 0.0f, 1.0f );
+		ImGui::SliderFloat( "Light Angle", &light_angle, 0.0f, 89.0f, "%.0f deg" );
+		ImGui::SliderFloat( "View Angle", &view_angle, 0.0f, 89.0f, "%.0f deg" );
+
+		// Static state (colors, draw options) — declared here, UI shown after schema
+		static ImVec4 cvLo    = ImVec4( 1.00f, 0.86f, 0.31f, 1.0f );
+		static ImVec4 cvLe    = ImVec4( 1.00f, 0.63f, 0.20f, 1.0f );
+		static ImVec4 cvFr    = ImVec4( 0.31f, 0.86f, 0.47f, 1.0f );
+		static ImVec4 cvLi    = ImVec4( 0.39f, 0.71f, 1.00f, 1.0f );
+		static ImVec4 cvCos   = ImVec4( 1.00f, 0.39f, 0.39f, 1.0f );
+		static ImVec4 cvN     = ImVec4( 0.78f, 0.78f, 1.00f, 1.0f );
+		static ImVec4 cvH     = ImVec4( 0.71f, 0.51f, 1.00f, 1.0f );
+		static ImVec4 cvSurf  = ImVec4( 0.71f, 0.71f, 0.71f, 1.0f );
+		static float line_thick = 2.0f;
+		static float arrow_thick = 2.0f;
+		static float lobe_thick = 2.0f;
+		static float hemi_thick = 1.5f;
+		static float hemi_dash = 8.0f;
+		static float hemi_gap = 5.0f;
+		static float brdf_scale = 1.0f;
+		static float schema_scale = 1.0f;
+		static float label_scale = 1.0f;
+		static bool show_diffuse = true;
+		static bool show_specular = true;
+		static bool show_total = true;
+		static bool show_half_vec = true;
+		static bool show_reflection = true;
+		static bool show_cos_arc = true;
+
+		// Convert ImVec4 colors to ImU32
+		ImU32 colLo    = ImGui::ColorConvertFloat4ToU32( cvLo );
+		ImU32 colLe    = ImGui::ColorConvertFloat4ToU32( cvLe );
+		ImU32 colFr    = ImGui::ColorConvertFloat4ToU32( cvFr );
+		ImU32 colLi    = ImGui::ColorConvertFloat4ToU32( cvLi );
+		ImU32 colCos   = ImGui::ColorConvertFloat4ToU32( cvCos );
+		ImU32 colN     = ImGui::ColorConvertFloat4ToU32( cvN );
+		ImU32 colOmegI = colLi;
+		ImU32 colOmegO = colLo;
+		ImU32 colH     = ImGui::ColorConvertFloat4ToU32( cvH );
+		ImU32 colSurf  = ImGui::ColorConvertFloat4ToU32( cvSurf );
+
+		// Build hex color strings for LaTeX \color{#RRGGBB}
+		auto ToHex = []( ImVec4 c, char* buf ) {
+			snprintf( buf, 8, "#%02X%02X%02X", (int)(c.x*255), (int)(c.y*255), (int)(c.z*255) );
+		};
+		char hexLo[8], hexLe[8], hexFr[8], hexLi[8], hexCos[8];
+		ToHex( cvLo, hexLo ); ToHex( cvLe, hexLe ); ToHex( cvFr, hexFr );
+		ToHex( cvLi, hexLi ); ToHex( cvCos, hexCos );
+
+		float eqSize = 64.0f;
+
+		// ---- Side-view BRDF diagram ----
+		float diagramW = ImGui::GetContentRegionAvail().x;
+		float diagramH = 450.0f * schema_scale;
+		ImVec2 canvasPos = ImGui::GetCursorScreenPos();
+		ImGui::Dummy( ImVec2( diagramW, diagramH ) );
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+
+		// Coordinate system: center of surface
+		float cx = canvasPos.x + diagramW * 0.5f;
+		float cy = canvasPos.y + diagramH * 0.55f; // surface line (higher to leave room for equation below)
+		float hemiR = diagramH * 0.42f; // hemisphere radius
+
+		// Background + clip rect to keep everything inside the canvas
+		dl->AddRectFilled( canvasPos, ImVec2( canvasPos.x + diagramW, canvasPos.y + diagramH ), IM_COL32( 20, 22, 30, 255 ), 4.0f );
+		dl->PushClipRect( canvasPos, ImVec2( canvasPos.x + diagramW, canvasPos.y + diagramH ), true );
+
+		// Surface line
+		float surfL = cx - hemiR * 1.3f;
+		float surfR = cx + hemiR * 1.3f;
+		dl->AddLine( ImVec2( surfL, cy ), ImVec2( surfR, cy ), colSurf, 2.0f );
+
+		// Surface with roughness visualization
+		// Smooth surface = straight line, rough = wavy/noisy
+		{
+			int surfSegs = 128;
+			ImVec2 surfPts[129];
+			for ( int i = 0; i <= surfSegs; i++ )
+			{
+				float t = (float)i / (float)surfSegs;
+				float sx = surfL + t * ( surfR - surfL );
+				// Roughness-dependent waviness using hash-like displacement
+				float disp = 0.0f;
+				if ( roughness > 0.05f )
+				{
+					float freq1 = 17.3f, freq2 = 43.7f, freq3 = 97.1f;
+					disp = sinf( sx * freq1 * 0.05f ) * 0.5f + sinf( sx * freq2 * 0.05f ) * 0.3f + sinf( sx * freq3 * 0.05f ) * 0.2f;
+					disp *= roughness * roughness * 4.0f;
+				}
+				surfPts[i] = ImVec2( sx, cy + disp );
+			}
+			dl->AddPolyline( surfPts, surfSegs + 1, colSurf, 0, line_thick );
+		}
+
+		// Surface hatching (below surface)
+		for ( float hx = surfL; hx < surfR; hx += 8.0f )
+			dl->AddLine( ImVec2( hx, cy ), ImVec2( hx - 6.0f, cy + 6.0f ), IM_COL32( 100, 100, 100, 120 ), 1.0f );
+
+		// Hemisphere outline (dashed, thicker)
+		{
+			int hemiSegs = 64;
+			ImVec2 hemiPts[65];
+			for ( int i = 0; i <= hemiSegs; i++ )
+			{
+				float a = IM_PI * (float)i / (float)hemiSegs;
+				hemiPts[i] = ImVec2( cx - cosf( a ) * hemiR, cy - sinf( a ) * hemiR );
+			}
+			ImWidgets::DrawDashedPolylineAA( dl, hemiPts, hemiSegs + 1,
+				IM_COL32( 80, 80, 100, 180 ), hemi_thick, hemi_dash, hemi_gap, 0.0f );
+		}
+
+		// Convert angles to radians
+		float lightRad = light_angle * IM_PI / 180.0f;
+		float viewRad = view_angle * IM_PI / 180.0f;
+
+		// Direction vectors (in screen space: up = -Y)
+		float liDirX = -sinf( lightRad ), liDirY = -cosf( lightRad ); // incoming from left
+		float loDirX = sinf( viewRad ), loDirY = -cosf( viewRad ); // outgoing to right
+
+		// Half vector H = normalize(wi + wo)
+		float hx2 = liDirX + loDirX, hy2 = liDirY + loDirY;
+		float hLen = sqrtf( hx2 * hx2 + hy2 * hy2 );
+		if ( hLen > 0.001f ) { hx2 /= hLen; hy2 /= hLen; }
+
+		float arrowLen = hemiR * 0.85f;
+		float arrowHead = 8.0f;
+
+		float labelSz = 14.0f * schema_scale * label_scale; // LaTeX label size
+
+		// Helper: draw arrow with triangle tip and LaTeX label
+		auto DrawArrow = [&]( float dx, float dy, float len, ImU32 col, const char* latexLabel, bool incoming ) {
+			float ex = cx + dx * len;
+			float ey = cy + dy * len;
+			float perpX = -dy, perpY = dx;
+			if ( incoming ) {
+				dl->AddLine( ImVec2( ex, ey ), ImVec2( cx, cy ), col, arrow_thick );
+				dl->AddTriangleFilled(
+					ImVec2( cx, cy ),
+					ImVec2( cx + dx * arrowHead - perpX * arrowHead * 0.4f, cy + dy * arrowHead - perpY * arrowHead * 0.4f ),
+					ImVec2( cx + dx * arrowHead + perpX * arrowHead * 0.4f, cy + dy * arrowHead + perpY * arrowHead * 0.4f ),
+					col );
+			} else {
+				dl->AddLine( ImVec2( cx, cy ), ImVec2( ex, ey ), col, arrow_thick );
+				dl->AddTriangleFilled(
+					ImVec2( ex, ey ),
+					ImVec2( ex - dx * arrowHead - perpX * arrowHead * 0.4f, ey - dy * arrowHead - perpY * arrowHead * 0.4f ),
+					ImVec2( ex - dx * arrowHead + perpX * arrowHead * 0.4f, ey - dy * arrowHead + perpY * arrowHead * 0.4f ),
+					col );
+			}
+			float labelOff = 14.0f * label_scale;
+			ImVec2 lsz = ImWidgets::CalcLaTeXSize( labelSz, latexLabel );
+			ImWidgets::DrawLaTeX( dl, labelSz, ImVec2( ex + dx * labelOff - lsz.x * 0.5f, ey + dy * labelOff - lsz.y * 0.5f ), col, latexLabel );
+		};
+
+		// Surface point marker (cross at origin)
+		float mkSz = 6.0f * schema_scale;
+		dl->AddLine( ImVec2( cx - mkSz, cy - mkSz ), ImVec2( cx + mkSz, cy + mkSz ), colSurf, 2.0f );
+		dl->AddLine( ImVec2( cx - mkSz, cy + mkSz ), ImVec2( cx + mkSz, cy - mkSz ), colSurf, 2.0f );
+
+		// Normal vector (up)
+		DrawArrow( 0, -1, arrowLen * 0.6f, colN, "\\vec{n}", false );
+
+		// Incoming light direction (omega_i)
+		DrawArrow( liDirX, liDirY, arrowLen, colOmegI, "\\omega_i", true );
+
+		// Outgoing view direction (omega_o / L_o)
+		DrawArrow( loDirX, loDirY, arrowLen, colOmegO, "\\omega_o", false );
+
+		// Half vector
+		if ( show_half_vec )
+			DrawArrow( hx2, hy2, arrowLen * 0.5f, colH, "H", false );
+
+		// Cosine theta_i indicator (arc from normal to omega_i)
+		if ( show_cos_arc ) {
+			float arcR = arrowLen * 0.25f;
+			int arcSegs = 16;
+			for ( int i = 0; i < arcSegs; i++ )
+			{
+				float t0 = (float)i / (float)arcSegs;
+				float t1 = (float)( i + 1 ) / (float)arcSegs;
+				float a0 = -IM_PI * 0.5f - lightRad * t0;
+				float a1 = -IM_PI * 0.5f - lightRad * t1;
+				dl->AddLine(
+					ImVec2( cx + cosf( a0 ) * arcR, cy + sinf( a0 ) * arcR ),
+					ImVec2( cx + cosf( a1 ) * arcR, cy + sinf( a1 ) * arcR ),
+					colCos, 1.5f );
+			}
+			float labelA = -IM_PI * 0.5f - lightRad * 0.5f;
+			float lx2 = cx + cosf( labelA ) * ( arcR + 16.0f );
+			float ly2 = cy + sinf( labelA ) * ( arcR + 16.0f );
+			ImVec2 csz = ImWidgets::CalcLaTeXSize( labelSz, "\\cos\\theta_i" );
+			ImWidgets::DrawLaTeX( dl, labelSz, ImVec2( lx2 - csz.x * 0.5f, ly2 - csz.y * 0.5f ), colCos, "\\cos\\theta_i" );
+		}
+
+		// ---- PBR BRDF lobe: f_r = diffuse/pi + D*G*F / (4*NdotL*NdotV) ----
+		{
+			float alpha = roughness * roughness;
+			float alpha2 = alpha * alpha;
+			// GGX Smith G1 helper
+			auto SmithG1 = []( float NdotX, float a2 ) -> float {
+				if ( NdotX <= 0.0f ) return 0.0f;
+				float n2 = NdotX * NdotX;
+				return 2.0f * NdotX / ( NdotX + sqrtf( a2 + ( 1.0f - a2 ) * n2 ) );
+			};
+
+			// Evaluate Cook-Torrance specular BRDF for a given outgoing angle theta_o
+			// with fixed incoming light at lightRad from normal
+			// Evaluate specular BRDF for outgoing angle theta_o from normal.
+			// Light comes from LEFT at lightRad from normal.
+			// Signed convention: negative = left, positive = right.
+			// wi signed angle = -lightRad, wo signed angle = theta_o.
+			auto EvalSpecular = [&]( float theta_o ) -> float {
+				float NdotL = cosf( lightRad );
+				float NdotV = cosf( theta_o );
+				if ( NdotL <= 0.0f || NdotV <= 0.0f ) return 0.0f;
+				// H = normalize(wi + wo); wi tangent = -sin(lightRad), wo tangent = sin(theta_o)
+				float hTan = -sinf( lightRad ) + sinf( theta_o );
+				float hNrm = cosf( lightRad ) + cosf( theta_o );
+				float hAngle = atan2f( hTan, hNrm );
+				float cosH = cosf( hAngle );
+				if ( cosH <= 0.0f ) return 0.0f;
+				float cos2H = cosH * cosH;
+				float denomNDF = cos2H * ( alpha2 - 1.0f ) + 1.0f;
+				float D = alpha2 / ( IM_PI * denomNDF * denomNDF );
+				float G = SmithG1( NdotL, alpha2 ) * SmithG1( NdotV, alpha2 );
+				float VdotH = cosf( theta_o - hAngle );
+				float F = f0 + ( 1.0f - f0 ) * powf( ImMax( 1.0f - VdotH, 0.0f ), 5.0f );
+				float denomBrdf = 4.0f * NdotL * NdotV;
+				return ( denomBrdf > 0.001f ) ? D * G * F / denomBrdf : 0.0f;
+			};
+
+			// Diffuse term: albedo / pi (Lambertian)
+			float diffuse = albedo / IM_PI;
+
+			// Find max value for log normalization (sweep outgoing directions)
+			float maxVal = diffuse;
+			int lobeSegs = 100;
+			for ( int i = 0; i <= lobeSegs; i++ )
+			{
+				// theta_o = outgoing angle from normal, sweep -pi/2 to +pi/2
+				float theta_o = ( (float)i / (float)lobeSegs - 0.5f ) * IM_PI * 0.99f;
+				float cosT = cosf( theta_o );
+				float spec = EvalSpecular( theta_o );
+				float total = diffuse * ImMax( cosT, 0.0f ) + spec;
+				if ( total > maxVal ) maxVal = total;
+			}
+			float logMax = logf( maxVal + 1.0f );
+			if ( logMax < 0.01f ) logMax = 0.01f;
+
+			ImVec2 prevSpec( 0, 0 ), prevDiff( 0, 0 ), prevTotal( 0, 0 );
+
+			for ( int i = 0; i <= lobeSegs; i++ )
+			{
+				float theta_o = ( (float)i / (float)lobeSegs - 0.5f ) * IM_PI * 0.99f;
+				float cosT = cosf( theta_o );
+				float spec = EvalSpecular( theta_o );
+
+				// Log-space radii
+				float lobeR = hemiR * 0.7f * brdf_scale;
+				float diffCos = diffuse * ImMax( cosT, 0.0f );
+				float rSpec  = ( logf( spec + 1.0f ) / logMax ) * lobeR;
+				float rDiff  = ( logf( diffCos + 1.0f ) / logMax ) * lobeR;
+				float rTotal = ( logf( diffCos + spec + 1.0f ) / logMax ) * lobeR;
+
+				float pAngle = -IM_PI * 0.5f + theta_o;
+				float ca = cosf( pAngle ), sa = sinf( pAngle );
+
+				ImVec2 ptSpec( cx + ca * rSpec, cy + sa * rSpec );
+				ImVec2 ptDiff( cx + ca * rDiff, cy + sa * rDiff );
+				ImVec2 ptTotal( cx + ca * rTotal, cy + sa * rTotal );
+
+				if ( i > 0 )
+				{
+					if ( show_diffuse )  dl->AddLine( prevDiff, ptDiff, colLe, lobe_thick );
+					if ( show_specular ) dl->AddLine( prevSpec, ptSpec, colFr, lobe_thick );
+					if ( show_total )    dl->AddLine( prevTotal, ptTotal, IM_COL32( 255, 255, 255, 200 ), lobe_thick * 0.7f );
+				}
+				prevSpec = ptSpec;
+				prevDiff = ptDiff;
+				prevTotal = ptTotal;
+			}
+
+			// Reflection direction indicator (dashed line)
+			if ( show_reflection ) {
+				float reflX = sinf( lightRad ), reflY = -cosf( lightRad );
+				ImVec2 reflPts[2] = { ImVec2( cx, cy ), ImVec2( cx + reflX * hemiR * 0.7f, cy + reflY * hemiR * 0.7f ) };
+				ImWidgets::DrawDashedPolylineAA( dl, reflPts, 2, IM_COL32( 255, 255, 255, 60 ), 1.0f, 4.0f, 3.0f, 0.0f );
+			}
+
+			// Labels using LaTeX + Asterisk marker to link schema to formula
+			{
+				const char* specLabel = "D \\cdot G \\cdot F";
+				ImVec2 slsz = ImWidgets::CalcLaTeXSize( labelSz, specLabel );
+				float specLabelX = cx - slsz.x * 0.5f;
+				float specLabelY = cy - hemiR * 0.82f - slsz.y;
+				// Asterisk marker to the left of the label
+				float astSz = labelSz * 1.2f;
+				ImWidgets::DrawMarker( dl, ImVec2( specLabelX - astSz - 2.0f, specLabelY + ( slsz.y - astSz ) * 0.5f ), ImVec2( astSz, astSz ),
+					colFr, IM_COL32( 0, 0, 0, 0 ), 0, 0.8f, 0.0f, 0.002f,
+					ImWidgetsMarker_Asterisk, ImWidgetsDrawType_Filled );
+				ImWidgets::DrawLaTeX( dl, labelSz, ImVec2( specLabelX, specLabelY ), colFr, specLabel );
+			}
+			{
+				const char* diffLabel = "\\frac{\\text{albedo}}{\\pi}";
+				ImWidgets::DrawLaTeX( dl, labelSz, ImVec2( cx + hemiR * 0.35f, cy - hemiR * 0.4f ), colLe, diffLabel );
+			}
+		}
+
+		// Rendering equation below the surface line, inside the canvas
+		{
+			char coloredEq[512];
+			snprintf( coloredEq, sizeof( coloredEq ),
+				"\\color{%s}{L_o}(x, \\color{%s}{\\omega_o}) = "
+				"\\color{%s}{L_e} + \\int_{\\Omega} "
+				"\\color{%s}{f_r} \\cdot "
+				"\\color{%s}{L_i} \\cdot "
+				"\\color{%s}{|\\omega_i \\cdot n|}"
+				" \\, d\\omega_i",
+				hexLo, hexLo, hexLe, hexFr, hexLi, hexCos );
+			float eqRenderSz = eqSize * schema_scale * 0.5f;
+			ImVec2 eqSz = ImWidgets::CalcLaTeXSize( eqRenderSz, coloredEq );
+			float eqX = cx - eqSz.x * 0.5f; // center horizontally
+			float eqY = cy + 12.0f * schema_scale; // just below surface + hatching
+			ImWidgets::DrawLaTeX( dl, eqRenderSz, ImVec2( eqX, eqY ), IM_COL32( 200, 200, 200, 255 ), coloredEq );
+		}
+
+		dl->PopClipRect();
+
+		// ---- Formulas using LaTeX rendering ----
+		ImGui::Spacing();
+		ImDrawList* fmDl = ImGui::GetWindowDrawList();
+		float fmSize = eqSize * 0.75f; // formulas at 3/4 of main equation size
+		float pad2 = 6.0f;
+
+		// Helper: render a LaTeX formula with dark background
+		auto DrawFormula = [&]( const char* latex, float sz2 ) {
+			ImVec2 p = ImGui::GetCursorScreenPos();
+			ImVec2 fsz = ImWidgets::CalcLaTeXSize( sz2, latex );
+			fmDl->AddRectFilled( ImVec2( p.x - pad2, p.y - pad2 ), ImVec2( p.x + fsz.x + pad2, p.y + fsz.y + pad2 ), IM_COL32( 20, 22, 30, 255 ), 4.0f );
+			ImWidgets::DrawLaTeX( fmDl, sz2, p, IM_COL32( 220, 220, 220, 255 ), latex );
+			ImGui::Dummy( ImVec2( fsz.x + pad2 * 2, fsz.y + pad2 * 2 + 2.0f ) );
+		};
+
+		// Full BRDF formula with Asterisk marker on the left (links to schema lobe)
+		{ char buf[512]; snprintf( buf, sizeof(buf),
+			"\\color{%s}{f_r} = "
+			"\\color{%s}{\\frac{\\text{albedo}}{\\pi}} + "
+			"\\frac{\\color{%s}{D_{GGX}} \\cdot \\color{%s}{G_{Smith}} \\cdot \\color{%s}{F_{Schlick}}}"
+			"{4 \\cdot \\color{%s}{|\\omega_i \\cdot n|} \\cdot \\color{%s}{|\\omega_o \\cdot n|}}",
+			hexFr, hexLe, hexFr, hexFr, hexFr, hexCos, hexCos );
+		ImVec2 fPos = ImGui::GetCursorScreenPos();
+		ImVec2 fSz2 = ImWidgets::CalcLaTeXSize( fmSize, buf );
+		float astFmSz = fmSize * 0.6f;
+		ImWidgets::DrawMarker( fmDl, ImVec2( fPos.x - pad2, fPos.y + ( fSz2.y - astFmSz ) * 0.5f ), ImVec2( astFmSz, astFmSz ),
+			colFr, IM_COL32( 0, 0, 0, 0 ), 0, 0.8f, 0.0f, 0.002f,
+			ImWidgetsMarker_Asterisk, ImWidgetsDrawType_Filled );
+		// Indent the formula to make room for the asterisk
+		ImGui::Indent( astFmSz + 4.0f );
+		DrawFormula( buf, fmSize );
+		ImGui::Unindent( astFmSz + 4.0f ); }
+
+		ImGui::Spacing();
+
+		// ---- Two-column layout: formulas left, values right ----
+		if ( ImGui::BeginTable( "##BRDFColumns", 2, ImGuiTableFlags_None ) )
+		{
+			ImGui::TableSetupColumn( "Formulas", ImGuiTableColumnFlags_WidthStretch, 0.55f );
+			ImGui::TableSetupColumn( "Values", ImGuiTableColumnFlags_WidthStretch, 0.45f );
+
+			ImGui::TableNextRow();
+
+			// Left column: component formulas
+			ImGui::TableSetColumnIndex( 0 );
+
+			{ char buf[256]; snprintf( buf, sizeof(buf),
+				"\\color{%s}{D_{GGX}} = "
+				"\\frac{\\alpha^2}{\\pi (\\cos^2\\theta_h (\\alpha^2 - 1) + 1)^2}", hexFr );
+			DrawFormula( buf, fmSize * 0.65f ); }
+
+			{ char buf[256]; snprintf( buf, sizeof(buf),
+				"\\color{%s}{G_{Smith}}(v) = "
+				"\\frac{2 (n \\cdot v)}{(n \\cdot v) + \\sqrt{\\alpha^2 + (1 - \\alpha^2)(n \\cdot v)^2}}", hexFr );
+			DrawFormula( buf, fmSize * 0.65f ); }
+
+			{ char buf[256]; snprintf( buf, sizeof(buf),
+				"\\color{%s}{F_{Schlick}} = "
+				"F_0 + (1 - F_0)(1 - \\cos\\theta_h)^5", hexFr );
+			DrawFormula( buf, fmSize * 0.65f ); }
+
+			// Right column: computed values
+			ImGui::TableSetColumnIndex( 1 );
+
+			{
+				float NdotL2 = cosf( lightRad ), NdotV2 = cosf( viewRad );
+				float cosH2 = cosf( ( lightRad + viewRad ) * 0.5f );
+				float al = roughness * roughness;
+				float al2 = al * al;
+				float denomD = cosH2 * cosH2 * ( al2 - 1.0f ) + 1.0f;
+				float Dval = al2 / ( IM_PI * denomD * denomD );
+				float G1L = 2.0f * NdotL2 / ( NdotL2 + sqrtf( al2 + ( 1.0f - al2 ) * NdotL2 * NdotL2 ) );
+				float G1V = 2.0f * NdotV2 / ( NdotV2 + sqrtf( al2 + ( 1.0f - al2 ) * NdotV2 * NdotV2 ) );
+				float Gval = G1L * G1V;
+				float Fval = f0 + ( 1.0f - f0 ) * powf( 1.0f - cosH2, 5.0f );
+				float denomBrdf = 4.0f * ImMax( NdotL2, 0.001f ) * ImMax( NdotV2, 0.001f );
+				float specVal = Dval * Gval * Fval / denomBrdf;
+				float diffVal = albedo / IM_PI;
+				float totalVal = diffVal + specVal;
+
+				char dynBuf[512];
+				snprintf( dynBuf, sizeof( dynBuf ),
+					"\\alpha = %.3f \\quad "
+					"N \\cdot L = %.3f",
+					al, NdotL2 );
+				DrawFormula( dynBuf, fmSize * 0.55f );
+
+				snprintf( dynBuf, sizeof( dynBuf ),
+					"N \\cdot V = %.3f \\quad "
+					"\\theta_h = %.1f",
+					NdotV2, ( lightRad + viewRad ) * 0.5f * 180.0f / IM_PI );
+				DrawFormula( dynBuf, fmSize * 0.55f );
+
+				snprintf( dynBuf, sizeof( dynBuf ),
+					"\\color{%s}{D} = %.2f \\quad "
+					"\\color{%s}{G} = %.3f \\quad "
+					"\\color{%s}{F} = %.3f",
+					hexFr, Dval, hexFr, Gval, hexFr, Fval );
+				DrawFormula( dynBuf, fmSize * 0.55f );
+
+				snprintf( dynBuf, sizeof( dynBuf ),
+					"\\color{%s}{\\text{Diff}} = %.3f \\quad "
+					"\\color{%s}{\\text{Spec}} = %.3f",
+					hexLe, diffVal, hexFr, specVal );
+				DrawFormula( dynBuf, fmSize * 0.55f );
+
+				snprintf( dynBuf, sizeof( dynBuf ),
+					"\\text{Total} = %.3f", totalVal );
+				DrawFormula( dynBuf, fmSize * 0.55f );
+			}
+
+			ImGui::EndTable();
+		}
+
+		ImGui::Spacing();
+		// ---- Display Options (after schema and formulas) ----
+		ImGui::Spacing();
+		if ( ImGui::CollapsingHeader( "Display Options" ) )
+		{
+			ImGui::SliderFloat( "Schema Scale", &schema_scale, 0.5f, 2.0f, "%.1fx" );
+			ImGui::SliderFloat( "Label Scale", &label_scale, 0.5f, 3.0f, "%.1fx" );
+			ImGui::SliderFloat( "BRDF Scale", &brdf_scale, 0.1f, 5.0f, "%.1fx" );
+
+			ImGui::Spacing();
+			ImGui::TextDisabled( "Line Style" );
+			ImGui::SliderFloat( "Arrow Thickness", &arrow_thick, 0.5f, 5.0f );
+			ImGui::SliderFloat( "Lobe Thickness", &lobe_thick, 0.5f, 5.0f );
+			ImGui::SliderFloat( "Surface Thickness", &line_thick, 0.5f, 5.0f );
+			ImGui::SliderFloat( "Hemisphere Thickness", &hemi_thick, 0.5f, 4.0f );
+			ImGui::SliderFloat( "Hemisphere Dash", &hemi_dash, 2.0f, 20.0f );
+			ImGui::SliderFloat( "Hemisphere Gap", &hemi_gap, 1.0f, 15.0f );
+
+			ImGui::Spacing();
+			ImGui::TextDisabled( "Visibility" );
+			ImGui::Checkbox( "Diffuse Lobe", &show_diffuse );
+			ImGui::SameLine();
+			ImGui::Checkbox( "Specular Lobe", &show_specular );
+			ImGui::SameLine();
+			ImGui::Checkbox( "Total BRDF", &show_total );
+			ImGui::Checkbox( "Half Vector", &show_half_vec );
+			ImGui::SameLine();
+			ImGui::Checkbox( "Reflection Dir", &show_reflection );
+			ImGui::SameLine();
+			ImGui::Checkbox( "Cos Arc", &show_cos_arc );
+
+			ImGui::Spacing();
+			ImGui::TextDisabled( "Colors" );
+			ImGui::ColorEdit4( "L_o / wo##colLo", &cvLo.x, ImGuiColorEditFlags_NoInputs );
+			ImGui::SameLine();
+			ImGui::ColorEdit4( "L_i / wi##colLi", &cvLi.x, ImGuiColorEditFlags_NoInputs );
+			ImGui::SameLine();
+			ImGui::ColorEdit4( "f_r / Spec##colFr", &cvFr.x, ImGuiColorEditFlags_NoInputs );
+			ImGui::SameLine();
+			ImGui::ColorEdit4( "Diff##colLe", &cvLe.x, ImGuiColorEditFlags_NoInputs );
+			ImGui::ColorEdit4( "Normal##colN", &cvN.x, ImGuiColorEditFlags_NoInputs );
+			ImGui::SameLine();
+			ImGui::ColorEdit4( "Half##colH", &cvH.x, ImGuiColorEditFlags_NoInputs );
+			ImGui::SameLine();
+			ImGui::ColorEdit4( "Cosine##colCos", &cvCos.x, ImGuiColorEditFlags_NoInputs );
+			ImGui::SameLine();
+			ImGui::ColorEdit4( "Surface##colSurf", &cvSurf.x, ImGuiColorEditFlags_NoInputs );
+		}
+
+		ImGui::End();
+	}
+
 	void	ShowDemo()
 	{
 		static float f = 0.0f;
@@ -1112,6 +1743,7 @@ namespace ImWidgets {
 		ImGui::PushStyleVar( ImGuiStyleVar_WindowRounding, 16 );
 		ImGui::Begin( "Dear Widgets", NULL, ImGuiWindowFlags_NoTitleBar );
 		ImWidgets::SetCurrentWindowBackgroundImage( background, background_size, false, IM_COL32(255, 255, 255, 128) );
+
 
 		// ─── Open / Close All ──────────────────────────────────────────────
 		if ( ImGui::Button( "Open All" ) )  { s_open_all =  1; }
@@ -1124,6 +1756,7 @@ namespace ImWidgets {
 			ShowDrawShapeDemo();
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 			ShowDrawTextDemo();
+			ShowLaTeXDemo();
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Custom Shader" ) )
 			{
