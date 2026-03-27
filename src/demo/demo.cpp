@@ -1016,6 +1016,419 @@ namespace ImWidgets {
 
 			ImGui::Dummy( ImVec2( canvas_w, line_h ) );
 		}
+
+		// Typography Fills section (inside GPU Text)
+		// ---- Debug Glyph Tessellation ----
+		ApplyOpenAll();
+		if ( ImGui::CollapsingHeader( "Debug Glyph Tessellation" ) )
+		{
+			static char dbgChar[8] = "O";
+			static int dbgFontIdx = 0;
+			static float dbgSize = 200.0f;
+			static float dbgTol = 0.5f;
+
+			struct FontChoice { const char* name; ImFont** ptr; };
+			static const FontChoice kDbgFonts[] = {
+				{ "Monblock", &g_monblockFont },
+				{ "Cinzel", &g_cinzelFont },
+				{ "Fira Code", &g_firaCodeFont },
+				{ "Alfa Slab", &g_alfaSlabFont },
+				{ "Frantically", &g_franticallyFont },
+				{ "Bollgo", &g_bollgoFont },
+				{ "Gimbo", &g_gimboFont },
+				{ "Bright Matching", &g_brightMarchFont },
+				{ "Gallante", &g_gallanteFont },
+				{ "Love Light", &g_loveLightFont },
+				{ "Metafora Alternate", &g_metaforaAltFont },
+				{ "Metafora Stylistic", &g_metaforaSsFont },
+				{ "Migulon", &g_migullonFont },
+				{ "Sophiemelanie", &g_sophieFont },
+				{ "Classical Aesthetics", &g_classicalFont },
+				{ "Prida 61", &g_prida61Font },
+				{ "Foglighten No07", &g_foglihtenFont },
+				{ "Steelworks Vintage", &g_steelworksFont },
+				{ "Square Lily Monogram", &g_squareLilyFont },
+				{ "Molgeth", &g_molgethFont },
+				{ "Ginga", &g_gingaFont },
+				{ "Dotted", &g_dottedFont },
+				{ "Boucher", &g_boucherFont },
+				{ "Manbow Clear", &g_manbowClearFont },
+				{ "Manbow Lines", &g_manbowLinesFont },
+				{ "Manbow Spots", &g_manbowSpotsFont },
+				{ "Manbow Tone", &g_manbowToneFont },
+				{ "Multicolor Pro", &g_multicoloreFont },
+				{ "Fattern", &g_fatternFont },
+				{ "Aphaphonic Drizzle", &g_aquaphonicDrizzleFont },
+				{ "Nabla", &g_nablaFont },
+				{ "Bungee Spice", &g_bungeeSpiceFont },
+			};
+			int numDbgFonts = IM_ARRAYSIZE( kDbgFonts );
+
+			ImGui::InputText( "Character##DbgTess", dbgChar, sizeof( dbgChar ) );
+			if ( ImGui::BeginCombo( "Font##DbgTess", kDbgFonts[dbgFontIdx].name ) ) {
+				for ( int fi = 0; fi < numDbgFonts; fi++ ) {
+					if ( !*kDbgFonts[fi].ptr ) continue;
+					if ( ImGui::Selectable( kDbgFonts[fi].name, fi == dbgFontIdx ) ) dbgFontIdx = fi;
+				}
+				ImGui::EndCombo();
+			}
+			ImGui::SliderFloat( "Size##DbgTess", &dbgSize, 32.0f, 400.0f, "%.0f px" );
+			ImGui::SliderFloat( "Tess Tol##DbgTess", &dbgTol, 0.05f, 5.0f, "%.2f" );
+			static float dbgSpacing = 30.0f;
+			ImGui::SliderFloat( "Piece Spacing##DbgTess", &dbgSpacing, 0.0f, 100.0f, "%.0f px" );
+
+			ImFont* dbgFont = *kDbgFonts[dbgFontIdx].ptr;
+			if ( dbgFont && dbgChar[0] )
+			{
+				ImVec2 dbgPos = ImGui::GetCursorScreenPos();
+				float dbgRowH = dbgSize * 1.3f;
+				ImWidgets::DrawTesselateDebug( pDrawList, dbgFont, dbgSize, dbgChar, dbgPos, dbgTol, dbgSpacing, dbgRowH );
+			}
+		}
+
+		// Typography Fills: tesselated text with gradient/image fills
+		ApplyOpenAll();
+		if ( g_monblockFont && ImGui::CollapsingHeader( "Typography Fills" ) )
+		{
+			static int tyFontIdx = 0;
+			struct FontChoice { const char* name; ImFont** ptr; };
+			static const FontChoice kTypoFonts[] = {
+				{ "Monblock", &g_monblockFont },
+				{ "Cinzel", &g_cinzelFont },
+				{ "Fira Code", &g_firaCodeFont },
+				{ "Alfa Slab", &g_alfaSlabFont },
+				{ "Frantically", &g_franticallyFont },
+				{ "Bollgo", &g_bollgoFont },
+				{ "Gimbo", &g_gimboFont },
+				{ "Bright Matching", &g_brightMarchFont },
+				{ "Gallante", &g_gallanteFont },
+				{ "Love Light", &g_loveLightFont },
+				{ "Metafora Alternate", &g_metaforaAltFont },
+				{ "Metafora Stylistic", &g_metaforaSsFont },
+				{ "Migulon", &g_migullonFont },
+				{ "Sophiemelanie", &g_sophieFont },
+				{ "Classical Aesthetics", &g_classicalFont },
+				{ "Prida 61", &g_prida61Font },
+				{ "Foglighten No07", &g_foglihtenFont },
+				{ "Steelworks Vintage", &g_steelworksFont },
+				{ "Square Lily Monogram", &g_squareLilyFont },
+				{ "Molgeth", &g_molgethFont },
+				{ "Ginga", &g_gingaFont },
+				{ "Dotted", &g_dottedFont },
+				{ "Boucher", &g_boucherFont },
+				{ "Manbow Clear", &g_manbowClearFont },
+				{ "Manbow Lines", &g_manbowLinesFont },
+				{ "Manbow Spots", &g_manbowSpotsFont },
+				{ "Manbow Tone", &g_manbowToneFont },
+				{ "Multicolor Pro", &g_multicoloreFont },
+				{ "Fattern", &g_fatternFont },
+				{ "Aphaphonic Drizzle", &g_aquaphonicDrizzleFont },
+				{ "Nabla", &g_nablaFont },
+				{ "Bungee Spice", &g_bungeeSpiceFont },
+			};
+			int numTypoFonts = IM_ARRAYSIZE( kTypoFonts );
+			if ( ImGui::BeginCombo( "Font##TypoFills", kTypoFonts[tyFontIdx].name ) ) {
+				for ( int fi = 0; fi < numTypoFonts; fi++ ) {
+					if ( !*kTypoFonts[fi].ptr ) continue;
+					if ( ImGui::Selectable( kTypoFonts[fi].name, fi == tyFontIdx ) ) tyFontIdx = fi;
+				}
+				ImGui::EndCombo();
+			}
+			ImFont* tyFont = *kTypoFonts[tyFontIdx].ptr;
+			if ( !tyFont ) tyFont = g_monblockFont;
+			static float tySize = 64.0f;
+			static bool perChar = true;
+			static float tessTol = 0.25f;
+			static int tyIterations = 2;
+			ImGui::SliderFloat( "Typography Size##TypoFills", &tySize, 16.0f, 200.0f, "%.0f px" );
+			ImGui::SliderFloat( "Tessellation##TessTol", &tessTol, 0.01f, 2.0f, "%.2f" );
+			ImGui::SameLine(); ImGui::TextDisabled( "(lower = smoother)" );
+			ImGui::SliderInt( "Iterations##TypoFills", &tyIterations, 0, 6 );
+			ImGui::Checkbox( "Per Character##TypoPerChar", &perChar );
+
+			struct TypoEntry { const char* label; int type; ImU32 c0; ImU32 c1; pfSpace2sRGB s2r; pfsRGB2Space r2s; };
+			static const TypoEntry kTypo[] = {
+				{ "Linear Gradient",  0, IM_COL32(255,50,50,255), IM_COL32(50,50,255,255), NULL, NULL },
+				{ "Radial Gradient",  1, IM_COL32(255,255,50,255), IM_COL32(50,200,50,255), NULL, NULL },
+				{ "Diamond Gradient", 2, IM_COL32(255,100,255,255), IM_COL32(100,255,255,255), NULL, NULL },
+				{ "OkLab Linear",     0, IM_COL32(255,0,0,255), IM_COL32(0,0,255,255), &ImWidgets::ColorConvertOKLABtoRGB, &ImWidgets::ColorConvertRGBtoOKLAB },
+			};
+
+			// Helper: render gradient text either whole or per-character
+			auto DrawGradText = [&]( const TypoEntry& te, ImVec2 basePos ) {
+				if ( !perChar ) {
+					if ( te.type == 0 )
+						ImWidgets::DrawLinearGradientText( pDrawList, tyFont, tySize, basePos, text_buf, ImVec2(0,0.5f), ImVec2(1,0.5f), te.c0, te.c1, te.s2r, te.r2s, nullptr, tessTol, tyIterations );
+					else if ( te.type == 1 )
+						ImWidgets::DrawRadialGradientText( pDrawList, tyFont, tySize, basePos, text_buf, ImVec2(0.5f,0.5f), ImVec2(1,0.5f), te.c0, te.c1, te.s2r, te.r2s, nullptr, tessTol, tyIterations );
+					else
+						ImWidgets::DrawDiamondGradientText( pDrawList, tyFont, tySize, basePos, text_buf, ImVec2(0.5f,0.5f), ImVec2(1,0.5f), te.c0, te.c1, te.s2r, te.r2s, nullptr, tessTol, tyIterations );
+				} else {
+					// Per-glyph: shape full text (preserves ligatures/calt), then apply gradient per glyph
+					ImVector<ImWidgetsShape> glyphShapes;
+					ImWidgets::TesselateTextPerGlyph( tyFont, tySize, text_buf, glyphShapes, nullptr, tessTol, tyIterations );
+					pfSpace2sRGB s2r = te.s2r ? te.s2r : &ImWidgets::ColorConvertsRGBtosRGB;
+					pfsRGB2Space r2s = te.r2s ? te.r2s : &ImWidgets::ColorConvertsRGBtosRGB;
+					for ( int gs = 0; gs < glyphShapes.Size; gs++ ) {
+						ImWidgetsShape& shape = glyphShapes[gs];
+						if ( shape.triangles.Size == 0 ) continue;
+						// Offset to screen position
+						for ( int vi = 0; vi < shape.vertices.Size; vi++ ) {
+							shape.vertices[vi].pos.x += basePos.x;
+							shape.vertices[vi].pos.y += basePos.y;
+						}
+						shape.bb.Translate( basePos );
+						// Apply gradient per glyph's own BBox
+						if ( te.type == 0 )
+							ImWidgets::ShapeLinearGradientGeneric( shape, ImVec2(0,0.5f), ImVec2(1,0.5f), te.c0, te.c1, s2r, r2s );
+						else if ( te.type == 1 )
+							ImWidgets::ShapeRadialGradientGeneric( shape, ImVec2(0.5f,0.5f), ImVec2(1,0.5f), te.c0, te.c1, s2r, r2s );
+						else
+							ImWidgets::ShapeDiamondGradientGeneric( shape, ImVec2(0.5f,0.5f), ImVec2(1,0.5f), te.c0, te.c1, s2r, r2s );
+						ImWidgets::DrawShape( pDrawList, shape );
+					}
+				}
+			};
+
+			for ( const TypoEntry& te : kTypo )
+			{
+				ImGui::TextDisabled( "%s", te.label );
+				ImVec2 p = ImGui::GetCursorScreenPos();
+				float asc2 = 0;
+				ImVec2 tsz = ImWidgets::CalcTextSize( tyFont, tySize, text_buf, nullptr, &asc2 );
+				DrawGradText( te, ImVec2( p.x, p.y + asc2 ) );
+				ImGui::Dummy( ImVec2( tsz.x, tsz.y + gap ) );
+			}
+
+			// Image fill text — cycle through all loaded images for per-character
+			{
+				// Collect all available images
+				ImTextureID allImages[8]; int nImages = 0;
+				if ( illlustration_img ) allImages[nImages++] = illlustration_img;
+				if ( bike_img )          allImages[nImages++] = bike_img;
+				if ( astro_img )         allImages[nImages++] = astro_img;
+				if ( clock_img )         allImages[nImages++] = clock_img;
+				if ( man_img )           allImages[nImages++] = man_img;
+
+				if ( nImages > 0 ) {
+					ImGui::TextDisabled( "Image Fill" );
+					ImVec2 p = ImGui::GetCursorScreenPos();
+					float asc2 = 0;
+					ImVec2 tsz = ImWidgets::CalcTextSize( tyFont, tySize, text_buf, nullptr, &asc2 );
+					if ( !perChar ) {
+						ImWidgets::DrawImageText( pDrawList, tyFont, tySize, ImVec2( p.x, p.y + asc2 ), allImages[0], text_buf, nullptr, IM_COL32_WHITE, ImVec2(0,0), ImVec2(1,1), tessTol, tyIterations );
+					} else {
+						// Per-glyph image fill: shape full text, one different image per glyph
+						ImVector<ImWidgetsShape> glyphShapes;
+						ImWidgets::TesselateTextPerGlyph( tyFont, tySize, text_buf, glyphShapes, nullptr, tessTol, tyIterations );
+						ImVec2 imgPos( p.x, p.y + asc2 );
+						for ( int gs = 0; gs < glyphShapes.Size; gs++ ) {
+							ImWidgetsShape& shape = glyphShapes[gs];
+							if ( shape.triangles.Size == 0 ) continue;
+							for ( int vi = 0; vi < shape.vertices.Size; vi++ ) {
+								shape.vertices[vi].pos.x += imgPos.x;
+								shape.vertices[vi].pos.y += imgPos.y;
+							}
+							shape.bb.Translate( imgPos );
+							float bbW = ImMax( shape.bb.GetWidth(), 1.0f ), bbH = ImMax( shape.bb.GetHeight(), 1.0f );
+							for ( int vi = 0; vi < shape.vertices.Size; vi++ ) {
+								ImWidgetsVertex& v = shape.vertices[vi];
+								v.uv = ImVec2( (v.pos.x - shape.bb.Min.x) / bbW, (v.pos.y - shape.bb.Min.y) / bbH );
+								v.col = IM_COL32_WHITE;
+							}
+							ImTextureID tex = allImages[gs % nImages]; // cycle through images
+							ImWidgets::DrawShapeEx( pDrawList, tex, shape );
+						}
+					}
+					ImGui::Dummy( ImVec2( tsz.x, tsz.y + gap ) );
+				}
+			}
+		}
+	}
+
+	void ShowTypographyAnimations()
+	{
+		ApplyOpenAll();
+		if ( !g_dottedFont || !ImGui::CollapsingHeader( "Typography Animations" ) )
+			return;
+
+		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+		ImFont* animFont = g_dottedFont;
+		static float animSize = 80.0f;
+		static float prevAnimSize = 0;
+		float t = (float)ImGui::GetTime();
+
+		ImGui::SliderFloat( "Size##TypoAnim", &animSize, 32.0f, 200.0f, "%.0f px" );
+		float gap = 8.0f;
+
+		// --- Cache: tessellate once, reuse every frame ---
+		struct AnimCache {
+			ImVector<ImWidgetsShape> glyphs; // per-glyph shapes in LOCAL space (not offset)
+			ImWidgetsShape whole;             // whole-text shape in LOCAL space
+			ImVec2 textSize;
+			float ascent;
+			bool valid;
+		};
+		static AnimCache cache[6];
+		static const char* kTexts[6] = {
+			"Hello World", "Rainbow Wave!", "Blinking Text",
+			"Bouncing!", "Pulse", "Typewriter Effect..."
+		};
+
+		// Invalidate cache on size change
+		bool needRebuild = (animSize != prevAnimSize);
+		if ( needRebuild ) {
+			prevAnimSize = animSize;
+			for ( int i = 0; i < 6; i++ ) cache[i].valid = false;
+		}
+
+		// Build cache entries that need it
+		float tessTol = 0.25f;
+		int iterations = 2;
+		for ( int ci = 0; ci < 6; ci++ ) {
+			if ( cache[ci].valid ) continue;
+			cache[ci].textSize = ImWidgets::CalcTextSize( animFont, animSize, kTexts[ci], nullptr, &cache[ci].ascent );
+			cache[ci].glyphs.resize(0);
+			ImWidgets::TesselateTextPerGlyph( animFont, animSize, kTexts[ci], cache[ci].glyphs, nullptr, tessTol, iterations );
+			// Also build whole-text shape for reveal/pulse
+			if ( ci == 0 || ci == 4 ) {
+				cache[ci].whole.vertices.resize(0); cache[ci].whole.triangles.resize(0);
+				cache[ci].whole.bb = ImRect(FLT_MAX,FLT_MAX,-FLT_MAX,-FLT_MAX);
+				ImWidgets::TesselateText( animFont, animSize, kTexts[ci], cache[ci].whole, nullptr, tessTol, iterations );
+			}
+			cache[ci].valid = true;
+		}
+
+		// Helper: draw a cached glyph shape at a screen position with a color
+		auto DrawGlyph = [&]( ImWidgetsShape& src, ImVec2 offset, ImU32 col ) {
+			if ( src.triangles.Size == 0 ) return;
+			// Copy vertices, apply offset + color
+			int baseVtx = pDrawList->VtxBuffer.Size;
+			int baseIdx = pDrawList->IdxBuffer.Size;
+			pDrawList->PrimReserve( src.triangles.Size * 3, src.vertices.Size );
+			ImDrawVert* vtx = pDrawList->VtxBuffer.Data + baseVtx;
+			ImDrawIdx* idx = pDrawList->IdxBuffer.Data + baseIdx;
+			ImVec2 wuv = ImGui::GetDrawListSharedData()->TexUvWhitePixel;
+			for ( int vi = 0; vi < src.vertices.Size; vi++ ) {
+				vtx[vi].pos = ImVec2( src.vertices[vi].pos.x + offset.x, src.vertices[vi].pos.y + offset.y );
+				vtx[vi].uv = wuv;
+				vtx[vi].col = col;
+			}
+			for ( int ti = 0; ti < src.triangles.Size; ti++ ) {
+				idx[ti*3+0] = (ImDrawIdx)( baseVtx + src.triangles[ti].a );
+				idx[ti*3+1] = (ImDrawIdx)( baseVtx + src.triangles[ti].b );
+				idx[ti*3+2] = (ImDrawIdx)( baseVtx + src.triangles[ti].c );
+			}
+		};
+
+		// --- 1. Reveal: linear gradient sweeps left to right ---
+		{
+			ImGui::TextDisabled( "Reveal (sweep)" );
+			ImVec2 p = ImGui::GetCursorScreenPos();
+			AnimCache& c = cache[0];
+			float sweep = fmodf( t * 0.4f, 1.0f );
+			ImVec2 basePos( p.x, p.y + c.ascent );
+			ImWidgetsShape tmp;
+			tmp.vertices.resize( c.whole.vertices.Size );
+			tmp.triangles.resize( c.whole.triangles.Size );
+			memcpy( tmp.triangles.Data, c.whole.triangles.Data, c.whole.triangles.Size * sizeof(ImWidgetsTriIdx) );
+			tmp.bb = c.whole.bb;
+			for ( int vi = 0; vi < c.whole.vertices.Size; vi++ ) {
+				tmp.vertices[vi].pos = ImVec2( c.whole.vertices[vi].pos.x + basePos.x, c.whole.vertices[vi].pos.y + basePos.y );
+				tmp.vertices[vi].uv = ImGui::GetDrawListSharedData()->TexUvWhitePixel;
+			}
+			tmp.bb.Translate( basePos );
+			float bandW = 0.08f;
+			ImWidgets::ShapeLinearGradientGeneric( tmp, ImVec2(sweep-bandW,0.5f), ImVec2(sweep,0.5f),
+				IM_COL32(255,200,50,0), IM_COL32(255,200,50,255),
+				&ImWidgets::ColorConvertsRGBtosRGB, &ImWidgets::ColorConvertsRGBtosRGB );
+			ImWidgets::DrawShape( pDrawList, tmp );
+			ImGui::Dummy( ImVec2( c.textSize.x, c.textSize.y + gap ) );
+		}
+
+		// --- 2. Rainbow wave ---
+		{
+			ImGui::TextDisabled( "Rainbow Wave" );
+			ImVec2 p = ImGui::GetCursorScreenPos();
+			AnimCache& c = cache[1];
+			ImVec2 basePos( p.x, p.y + c.ascent );
+			for ( int gs = 0; gs < c.glyphs.Size; gs++ ) {
+				float hue = fmodf( (float)gs * 0.12f + t * 0.5f, 1.0f );
+				ImVec4 hsv( hue, 0.9f, 1.0f, 1.0f );
+				ImVec4 rgb; ImGui::ColorConvertHSVtoRGB( hsv.x, hsv.y, hsv.z, rgb.x, rgb.y, rgb.z ); rgb.w = 1.0f;
+				DrawGlyph( c.glyphs[gs], basePos, ImGui::GetColorU32( rgb ) );
+			}
+			ImGui::Dummy( ImVec2( c.textSize.x, c.textSize.y + gap ) );
+		}
+
+		// --- 3. Blink ---
+		{
+			ImGui::TextDisabled( "Blink" );
+			ImVec2 p = ImGui::GetCursorScreenPos();
+			AnimCache& c = cache[2];
+			ImVec2 basePos( p.x, p.y + c.ascent );
+			for ( int gs = 0; gs < c.glyphs.Size; gs++ ) {
+				float phase = sinf( t * 3.0f + (float)gs * 0.8f );
+				int alpha = (int)( ImSaturate( phase * 0.5f + 0.5f ) * 255.0f );
+				DrawGlyph( c.glyphs[gs], basePos, IM_COL32( 100, 200, 255, alpha ) );
+			}
+			ImGui::Dummy( ImVec2( c.textSize.x, c.textSize.y + gap ) );
+		}
+
+		// --- 4. Bounce ---
+		{
+			ImGui::TextDisabled( "Bounce" );
+			ImVec2 p = ImGui::GetCursorScreenPos();
+			AnimCache& c = cache[3];
+			ImVec2 basePos( p.x, p.y + c.ascent );
+			float bounceH = animSize * 0.15f;
+			for ( int gs = 0; gs < c.glyphs.Size; gs++ ) {
+				float bounce = fabsf( sinf( t * 4.0f + (float)gs * 0.6f ) ) * bounceH;
+				DrawGlyph( c.glyphs[gs], ImVec2( basePos.x, basePos.y - bounce ), IM_COL32( 255, 140, 60, 255 ) );
+			}
+			ImGui::Dummy( ImVec2( c.textSize.x, c.textSize.y + bounceH + gap ) );
+		}
+
+		// --- 5. Radial pulse ---
+		{
+			ImGui::TextDisabled( "Radial Pulse" );
+			ImVec2 p = ImGui::GetCursorScreenPos();
+			AnimCache& c = cache[4];
+			ImVec2 basePos( p.x, p.y + c.ascent );
+			float pulse = sinf( t * 2.0f ) * 0.3f + 0.7f;
+			ImWidgetsShape tmp;
+			tmp.vertices.resize( c.whole.vertices.Size );
+			tmp.triangles.resize( c.whole.triangles.Size );
+			memcpy( tmp.triangles.Data, c.whole.triangles.Data, c.whole.triangles.Size * sizeof(ImWidgetsTriIdx) );
+			tmp.bb = c.whole.bb;
+			for ( int vi = 0; vi < c.whole.vertices.Size; vi++ ) {
+				tmp.vertices[vi].pos = ImVec2( c.whole.vertices[vi].pos.x + basePos.x, c.whole.vertices[vi].pos.y + basePos.y );
+				tmp.vertices[vi].uv = ImGui::GetDrawListSharedData()->TexUvWhitePixel;
+			}
+			tmp.bb.Translate( basePos );
+			ImWidgets::ShapeRadialGradientGeneric( tmp, ImVec2(0.5f,0.5f), ImVec2(pulse,0.5f),
+				IM_COL32(255,50,255,255), IM_COL32(50,50,255,60),
+				&ImWidgets::ColorConvertsRGBtosRGB, &ImWidgets::ColorConvertsRGBtosRGB );
+			ImWidgets::DrawShape( pDrawList, tmp );
+			ImGui::Dummy( ImVec2( c.textSize.x, c.textSize.y + gap ) );
+		}
+
+		// --- 6. Typewriter ---
+		{
+			ImGui::TextDisabled( "Typewriter" );
+			ImVec2 p = ImGui::GetCursorScreenPos();
+			AnimCache& c = cache[5];
+			ImVec2 basePos( p.x, p.y + c.ascent );
+			int totalGlyphs = c.glyphs.Size;
+			int visibleCount = (int)fmodf( t * 6.0f, (float)(totalGlyphs + 4) );
+			if ( visibleCount > totalGlyphs ) visibleCount = totalGlyphs;
+			for ( int gs = 0; gs < visibleCount; gs++ ) {
+				bool isCursor = (gs == visibleCount - 1);
+				DrawGlyph( c.glyphs[gs], basePos,
+					isCursor ? IM_COL32(255,255,255,255) : IM_COL32(200,220,200,255) );
+			}
+			ImGui::Dummy( ImVec2( c.textSize.x, c.textSize.y + gap ) );
+		}
 	}
 
 	void ShowLaTeXDemo()
@@ -1756,6 +2169,7 @@ namespace ImWidgets {
 			ShowDrawShapeDemo();
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 			ShowDrawTextDemo();
+			ShowTypographyAnimations();
 			ShowLaTeXDemo();
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Custom Shader" ) )

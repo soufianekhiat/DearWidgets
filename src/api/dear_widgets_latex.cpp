@@ -235,7 +235,7 @@ struct Tokenizer {
 		t.type = TOK_CHAR;
 		// UTF-8 decode
 		unsigned char c = (unsigned char)*p;
-		if (c < 0x80) { t.ch = c; p++; }
+		if (c < 0x80) { t.ch = (c == '-') ? (ImWchar)0x2212 : (ImWchar)c; p++; } // hyphen → minus sign U+2212
 		else {
 			unsigned int cp = 0;
 			p += ImTextCharFromUtf8(&cp, p, p + 4);
@@ -794,7 +794,7 @@ static void LayoutBox(LaTeXBox* box, float fontSize) {
 		box->depth  = tsz.y - asc;                          // descent below baseline
 		if (box->depth < 0) box->depth = 0;
 		// Operators get thin space padding
-		if (!box->text[0] && (ch == '+' || ch == '-' || ch == '=' || ch == 0x00D7 || ch == 0x00F7 ||
+		if (!box->text[0] && (ch == '+' || ch == 0x2212 || ch == '=' || ch == 0x00D7 || ch == 0x00F7 ||
 		    ch == 0x2264 || ch == 0x2265 || ch == 0x2260 || ch == 0x2248 || ch == 0x2261 ||
 		    ch == 0x2192 || ch == 0x2190 || ch == 0x21D2)) {
 			box->width += thinSpace * 2;  // padding both sides
@@ -1205,7 +1205,7 @@ static void MeasureBounds(LaTeXBox* box, float fontSize, float x, float y,
 static void RenderBox(ImDrawList* dl, LaTeXBox* box, ImFont* mathFont, float fontSize, float x, float y, ImU32 col);
 
 static bool IsOperator(ImWchar ch) {
-	return ch == '+' || ch == '-' || ch == '=' || ch == 0x00D7 || ch == 0x00F7 ||
+	return ch == '+' || ch == 0x2212 || ch == '=' || ch == 0x00D7 || ch == 0x00F7 ||
 	       ch == 0x2264 || ch == 0x2265 || ch == 0x2260 || ch == 0x2248 || ch == 0x2261 ||
 	       ch == 0x2192 || ch == 0x2190 || ch == 0x21D2;
 }

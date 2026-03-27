@@ -15,6 +15,10 @@
 #endif
 
 
+	// Debug options
+	static bool gs_cutAlongShortAxis = false;
+	static int gs_tessIterations = 0;
+
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 
 	// ---- Constants ----------------------------------------------------------
@@ -2637,6 +2641,1946 @@
 		}
 	}
 
+
+	// ================================================================
+	// Typography Pipeline: quadratic Bézier → cut → flatten → triangulate
+	// ================================================================
+
+	static float PolygonSignedArea(const ImVec2* pts, int n) {
+		float area = 0;
+		for (int i = 0, j = n - 1; i < n; j = i++) area += (pts[j].x - pts[i].x) * (pts[j].y + pts[i].y);
+		return area * 0.5f;
+	}
+
+	static bool PointInPolygon(const ImVec2* pts, int n, ImVec2 p) {
+		bool inside = false;
+		for (int i = 0, j = n - 1; i < n; j = i++) {
+			if ((pts[i].y > p.y) != (pts[j].y > p.y) &&
+				p.x < (pts[j].x - pts[i].x) * (p.y - pts[i].y) / (pts[j].y - pts[i].y) + pts[i].x)
+				inside = !inside;
+		}
+		return inside;
+	}
+
+	static void ComputeOBB(ImVector<ImVec2>& pts, ImVec2& outCenter, ImVec2& outAxis, float& outHalfLen, float& outHalfWidth) {
+		outCenter = ImVec2(0, 0);
+		for (int i = 0; i < pts.Size; i++) { outCenter.x += pts[i].x; outCenter.y += pts[i].y; }
+		outCenter.x /= pts.Size; outCenter.y /= pts.Size;
+		float cxx = 0, cxy = 0, cyy = 0;
+		for (int i = 0; i < pts.Size; i++) {
+			float dx = pts[i].x - outCenter.x, dy = pts[i].y - outCenter.y;
+			cxx += dx*dx; cxy += dx*dy; cyy += dy*dy;
+		}
+		float trace = cxx + cyy, det = cxx*cyy - cxy*cxy;
+		float disc = sqrtf(ImMax(trace*trace*0.25f - det, 0.0f));
+		float lambda1 = trace*0.5f + disc;
+		float ax = cxy, ay = lambda1 - cxx;
+		float len = sqrtf(ax*ax + ay*ay);
+		if (len < 1e-6f) { ax = 1; ay = 0; } else { ax /= len; ay /= len; }
+		outAxis = ImVec2(ax, ay);
+		float minP=FLT_MAX, maxP=-FLT_MAX, minQ=FLT_MAX, maxQ=-FLT_MAX;
+		for (int i = 0; i < pts.Size; i++) {
+			float dx = pts[i].x-outCenter.x, dy = pts[i].y-outCenter.y;
+			float proj = dx*ax+dy*ay, perp = -dx*ay+dy*ax;
+			minP=ImMin(minP,proj); maxP=ImMax(maxP,proj);
+			minQ=ImMin(minQ,perp); maxQ=ImMax(maxQ,perp);
+		}
+		outHalfLen = (maxP-minP)*0.5f; outHalfWidth = (maxQ-minQ)*0.5f;
+	}
+
+	// A quadratic Bézier segment in pixel coordinates
+	struct QBez { ImVec2 p0, p1, p2; }; // start, control, end
+
+	// A contour: ordered ring of QBez curves (implicitly closed: last.p2 == first.p0)
+	// Uses a fixed-size array instead of ImVector to avoid ImVector's memcpy-based reallocation
+	// which corrupts internal pointers when stored in another ImVector.
+	struct QContour {
+		QBez* curves;
+		int   curveCount;
+		int   curveCap;
+		float area;
+
+		QContour() : curves(NULL), curveCount(0), curveCap(0), area(0) {}
+		~QContour() { if (curves) IM_FREE(curves); }
+
+		void push_back(const QBez& q) {
+			if (curveCount >= curveCap) {
+				curveCap = curveCap ? curveCap * 2 : 16;
+				QBez* newData = (QBez*)IM_ALLOC(curveCap * sizeof(QBez));
+				if (curves) { memcpy(newData, curves, curveCount * sizeof(QBez)); IM_FREE(curves); }
+				curves = newData;
+			}
+			curves[curveCount++] = q;
+		}
+
+		// Safe copy — allocates new buffer
+		void copyFrom(const QContour& o) {
+			area = o.area;
+			curveCount = o.curveCount;
+			curveCap = o.curveCount;
+			if (curves) { IM_FREE(curves); curves = NULL; }
+			if (curveCount > 0) {
+				curves = (QBez*)IM_ALLOC(curveCount * sizeof(QBez));
+				memcpy(curves, o.curves, curveCount * sizeof(QBez));
+			}
+		}
+	};
+
+	// Evaluate Q(t)
+	static ImVec2 QBezEval(const QBez& q, float t) {
+		float u = 1 - t;
+		return ImVec2(u*u*q.p0.x + 2*u*t*q.p1.x + t*t*q.p2.x,
+		              u*u*q.p0.y + 2*u*t*q.p1.y + t*t*q.p2.y);
+	}
+
+	// Split a quadratic at parameter t → two sub-curves
+	static void QBezSplit(const QBez& q, float t, QBez& left, QBez& right) {
+		ImVec2 m01(q.p0.x + t*(q.p1.x-q.p0.x), q.p0.y + t*(q.p1.y-q.p0.y));
+		ImVec2 m12(q.p1.x + t*(q.p2.x-q.p1.x), q.p1.y + t*(q.p2.y-q.p1.y));
+		ImVec2 mid(m01.x + t*(m12.x-m01.x), m01.y + t*(m12.y-m01.y));
+		left  = { q.p0, m01, mid };
+		right = { mid, m12, q.p2 };
+	}
+
+	// Flatten a quadratic Bézier to line segments (adaptive, with depth limit)
+	static void FlattenQBezImpl(ImVector<ImVec2>& pts, const QBez& q, float tol, int depth) {
+		float dx = q.p2.x - q.p0.x, dy = q.p2.y - q.p0.y;
+		float lenSq = dx * dx + dy * dy;
+		// Degenerate (zero-length) or max depth: just emit endpoint
+		if (lenSq < 0.001f || depth >= 16) {
+			pts.push_back(q.p2);
+			return;
+		}
+		float d = fabsf((q.p1.x - q.p2.x) * dy - (q.p1.y - q.p2.y) * dx);
+		if (d * d < tol * lenSq) {
+			pts.push_back(q.p2);
+		} else {
+			QBez left, right;
+			QBezSplit(q, 0.5f, left, right);
+			FlattenQBezImpl(pts, left, tol, depth + 1);
+			FlattenQBezImpl(pts, right, tol, depth + 1);
+		}
+	}
+	static void FlattenQBez(ImVector<ImVec2>& pts, const QBez& q, float tol) {
+		FlattenQBezImpl(pts, q, tol, 0);
+	}
+
+	// Compute signed area of a QContour by sampling curves
+	static float QContourArea(QContour& c) {
+		float area = 0;
+		for (int i = 0; i < c.curveCount; i++) {
+			const QBez& q = c.curves[i];
+			// Approximate: use p0 and p2 as polygon edges
+			area += (q.p0.x * q.p2.y - q.p2.x * q.p0.y);
+			// Add contribution from the curve's midpoint for better accuracy
+			ImVec2 mid = QBezEval(q, 0.5f);
+			area += (q.p0.x * mid.y - mid.x * q.p0.y);
+			area += (mid.x * q.p2.y - q.p2.x * mid.y);
+		}
+		return area * 0.5f;
+	}
+
+	// Point-in-QContour test (flatten + point-in-polygon)
+	static bool PointInQContour(QContour& c, ImVec2 p) {
+		ImVector<ImVec2> pts;
+		if (c.curveCount > 0) pts.push_back(c.curves[0].p0);
+		for (int i = 0; i < c.curveCount; i++) FlattenQBez(pts, c.curves[i], 1.0f);
+		return PointInPolygon(pts.Data, pts.Size, p);
+	}
+
+	// Cut a quadratic Bézier by line ax+by+c=0. Returns curve segments on each side.
+	static void CutQBezByLine(const QBez& q, float a, float b, float c2,
+	                          ImVector<QBez>& posOut, ImVector<QBez>& negOut) {
+		float d0 = a*q.p0.x + b*q.p0.y + c2;
+		float d1 = a*q.p1.x + b*q.p1.y + c2;
+		float d2 = a*q.p2.x + b*q.p2.y + c2;
+
+		// Quadratic in t: d(t) = (d0-2d1+d2)t² + 2(d1-d0)t + d0
+		float A2 = d0 - 2*d1 + d2;
+		float B2 = 2*(d1 - d0);
+		float C2 = d0;
+
+		// Find roots in [0,1]
+		float roots[2]; int nRoots = 0;
+		if (fabsf(A2) > 1e-8f) {
+			float disc = B2*B2 - 4*A2*C2;
+			if (disc >= 0) {
+				float sd = sqrtf(disc);
+				float r1 = (-B2 - sd) / (2*A2);
+				float r2 = (-B2 + sd) / (2*A2);
+				if (r1 > 0.001f && r1 < 0.999f) roots[nRoots++] = r1;
+				if (r2 > 0.001f && r2 < 0.999f && fabsf(r2-r1) > 0.001f) roots[nRoots++] = r2;
+			}
+		} else if (fabsf(B2) > 1e-8f) {
+			float r = -C2 / B2;
+			if (r > 0.001f && r < 0.999f) roots[nRoots++] = r;
+		}
+
+		// Sort roots
+		if (nRoots == 2 && roots[0] > roots[1]) { float tmp = roots[0]; roots[0] = roots[1]; roots[1] = tmp; }
+
+		if (nRoots == 0) {
+			// Entire curve on one side
+			float dMid = a*QBezEval(q, 0.5f).x + b*QBezEval(q, 0.5f).y + c2;
+			if (dMid >= 0) posOut.push_back(q); else negOut.push_back(q);
+		} else {
+			// Split at roots and classify each segment
+			QBez segments[3]; int nSegs = 0;
+			QBez rem = q;
+			float prevT = 0;
+			for (int ri = 0; ri < nRoots; ri++) {
+				float t = (roots[ri] - prevT) / (1.0f - prevT); // remap to remaining curve
+				if (t <= 0.001f || t >= 0.999f) continue;
+				QBez left, right;
+				QBezSplit(rem, t, left, right);
+				segments[nSegs++] = left;
+				rem = right;
+				prevT = roots[ri];
+			}
+			segments[nSegs++] = rem;
+
+			for (int si = 0; si < nSegs; si++) {
+				ImVec2 mid = QBezEval(segments[si], 0.5f);
+				float dMid = a*mid.x + b*mid.y + c2;
+				if (dMid >= 0) posOut.push_back(segments[si]);
+				else negOut.push_back(segments[si]);
+			}
+		}
+	}
+
+	// Cut an entire QContour by a line → positive and negative side contour pieces
+	static void CutQContourByLine(QContour& contour, float a, float b, float c2,
+	                              ImVector<QContour>& posContours, ImVector<QContour>& negContours) {
+		ImVector<QBez> posCurves, negCurves;
+		for (int i = 0; i < contour.curveCount; i++)
+			CutQBezByLine(contour.curves[i], a, b, c2, posCurves, negCurves);
+
+		// Group consecutive curves into contours (they're ordered along the original contour)
+		auto GroupIntoContours = [](ImVector<QBez>& curves, ImVector<QContour>& out) {
+			if (curves.Size == 0) return;
+			out.push_back(QContour());
+			QContour* cur = &out.back();
+			cur->push_back(curves[0]);
+			for (int i = 1; i < curves.Size; i++) {
+				ImVec2 prevEnd = cur->curves[cur->curveCount-1].p2;
+				ImVec2 nextStart = curves[i].p0;
+				float d = (prevEnd.x-nextStart.x)*(prevEnd.x-nextStart.x) + (prevEnd.y-nextStart.y)*(prevEnd.y-nextStart.y);
+				if (d > 1.0f) {
+					// Gap → connect with a line segment (the cut line intersection)
+					QBez bridge = { prevEnd, ImVec2((prevEnd.x+nextStart.x)*0.5f,(prevEnd.y+nextStart.y)*0.5f), nextStart };
+					cur->push_back(bridge);
+				}
+				cur->push_back(curves[i]);
+			}
+			// Close: connect last to first
+			if (cur->curveCount > 0) {
+				ImVec2 last = cur->curves[cur->curveCount-1].p2;
+				ImVec2 first = cur->curves[0].p0;
+				float d = (last.x-first.x)*(last.x-first.x) + (last.y-first.y)*(last.y-first.y);
+				if (d > 0.1f) {
+					QBez bridge = { last, ImVec2((last.x+first.x)*0.5f,(last.y+first.y)*0.5f), first };
+					cur->push_back(bridge);
+				}
+			}
+			cur->area = QContourArea(*cur);
+		};
+
+		GroupIntoContours(posCurves, posContours);
+		GroupIntoContours(negCurves, negContours);
+	}
+
+	// Cut an outer contour + its contained holes by a line, producing properly
+	// connected hole-free pieces. Cuts ALL curves from ALL contours, then groups
+	// them together so bridges naturally connect outer arcs to hole arcs.
+	//
+	// For "O": intersections sorted along cut = C,H,H,C → 2 C-shapes
+	// For "8": C,H,H,H,H,C → 2 C-shapes incorporating both holes
+	static void CutContourGroupByLine(
+		QContour& outer, QContour* holes, int nHoles,
+		float a, float b, float c2,
+		ImVector<QContour>& posContours, ImVector<QContour>& negContours,
+		bool* absorbedHoles)
+	{
+		// Normalize the line equation so distances are in pixels
+		float lineLen = sqrtf(a * a + b * b);
+		if (lineLen > 1e-8f) { a /= lineLen; b /= lineLen; c2 /= lineLen; }
+
+		// Cut-line direction for sorting along the line
+		ImVec2 cutDir(-b, a);
+
+		// Per-contour arc: a sequence of curves on one side, with endpoints on the cut line
+		struct CurveArc {
+			int startIdx; // index into pos/neg curve array
+			int count;    // number of curves
+			float projStart; // projection of first curve's p0 along cut line
+			float projEnd;   // projection of last curve's p2 along cut line
+		};
+
+		// Cut each contour's curves independently, tracking arc boundaries
+		ImVector<QBez> allPosCurves, allNegCurves;
+		ImVector<CurveArc> posArcs, negArcs;
+
+		// Split a contour's curves into arcs (connected runs).
+		// A "cut gap" has both endpoints near the cut line (ax+by+c ≈ 0) and
+		// significant distance → split there (genuine crossing).
+		// A "dip gap" is a small numerical artifact → bridge over (keep in same arc).
+		auto ExtractArcs = [&](ImVector<QBez>& curves, int start, int count,
+		                       ImVector<CurveArc>& arcs) {
+			if (count <= 0) return;
+
+			// Compute contour BBox size for scale-relative thresholds
+			float bbMnX = FLT_MAX, bbMxX = -FLT_MAX, bbMnY = FLT_MAX, bbMxY = -FLT_MAX;
+			for (int i = 0; i < count; i++) {
+				ImVec2 p = curves[start + i].p0;
+				bbMnX = ImMin(bbMnX, p.x); bbMxX = ImMax(bbMxX, p.x);
+				bbMnY = ImMin(bbMnY, p.y); bbMxY = ImMax(bbMxY, p.y);
+			}
+			float bbSize = ImMax(bbMxX - bbMnX, bbMxY - bbMnY);
+			float lineTol = ImMax(bbSize * 0.02f, 1.0f);   // "near line" tolerance
+			float gapTol  = ImMax(bbSize * 0.01f, 2.0f);   // min gap dist² for cut gap
+			float gapTolSq = gapTol * gapTol;
+
+			// Find all gaps and classify them
+			struct GapInfo { int idx; float dist; bool isCutGap; };
+			ImVector<GapInfo> gaps;
+			for (int i = 0; i < count - 1; i++) {
+				ImVec2 pe = curves[start + i].p2;
+				ImVec2 ps = curves[start + i + 1].p0;
+				float dist = (pe.x - ps.x) * (pe.x - ps.x) + (pe.y - ps.y) * (pe.y - ps.y);
+				if (dist > 1.0f) {
+					// Check if both endpoints are near the cut line (normalized, so distance is in pixels)
+					float dPe = fabsf(a * pe.x + b * pe.y + c2);
+					float dPs = fabsf(a * ps.x + b * ps.y + c2);
+					bool isCut = (dPe < lineTol && dPs < lineTol && dist > gapTolSq);
+					GapInfo gi; gi.idx = i; gi.dist = dist; gi.isCutGap = isCut;
+					gaps.push_back(gi);
+				}
+			}
+
+			if (gaps.Size == 0) {
+				// No gaps: one continuous arc
+				CurveArc arc;
+				arc.startIdx = start; arc.count = count;
+				ImVec2 p0 = curves[start].p0;
+				ImVec2 p1 = curves[start + count - 1].p2;
+				arc.projStart = p0.x * cutDir.x + p0.y * cutDir.y;
+				arc.projEnd = p1.x * cutDir.x + p1.y * cutDir.y;
+				arcs.push_back(arc);
+				return;
+			}
+
+			// Find the largest cut gap — rotate to put it at the boundary
+			int bestCutGap = -1;
+			float bestCutDist = -1;
+			for (int gi = 0; gi < gaps.Size; gi++) {
+				if (gaps[gi].isCutGap && gaps[gi].dist > bestCutDist) {
+					bestCutDist = gaps[gi].dist;
+					bestCutGap = gi;
+				}
+			}
+			// If no cut gaps, use the largest gap overall
+			if (bestCutGap < 0) {
+				for (int gi = 0; gi < gaps.Size; gi++)
+					if (gaps[gi].dist > bestCutDist) { bestCutDist = gaps[gi].dist; bestCutGap = gi; }
+			}
+
+			// Rotate so the chosen gap is at the end
+			if (bestCutGap >= 0) {
+				int rotateCount = gaps[bestCutGap].idx + 1;
+				if (rotateCount > 0 && rotateCount < count) {
+					QBez* tmp = (QBez*)IM_ALLOC(rotateCount * sizeof(QBez));
+					memcpy(tmp, &curves[start], rotateCount * sizeof(QBez));
+					memmove(&curves[start], &curves[start + rotateCount], (count - rotateCount) * sizeof(QBez));
+					memcpy(&curves[start + count - rotateCount], tmp, rotateCount * sizeof(QBez));
+					IM_FREE(tmp);
+				}
+			}
+
+			// Now split at remaining cut gaps (rebuild gap list after rotation)
+			int runStart = start;
+			for (int i = 0; i < count - 1; i++) {
+				ImVec2 pe = curves[start + i].p2;
+				ImVec2 ps = curves[start + i + 1].p0;
+				float dist = (pe.x - ps.x) * (pe.x - ps.x) + (pe.y - ps.y) * (pe.y - ps.y);
+				if (dist > 1.0f) {
+					float dPe = fabsf(a * pe.x + b * pe.y + c2);
+					float dPs = fabsf(a * ps.x + b * ps.y + c2);
+					bool isCut = (dPe < 2.0f && dPs < 2.0f && dist > 4.0f);
+					if (isCut) {
+						// Split here: emit arc from runStart to i
+						int arcCount = (start + i + 1) - runStart;
+						if (arcCount > 0) {
+							CurveArc arc;
+							arc.startIdx = runStart; arc.count = arcCount;
+							ImVec2 p0 = curves[runStart].p0;
+							ImVec2 p1 = curves[runStart + arcCount - 1].p2;
+							arc.projStart = p0.x * cutDir.x + p0.y * cutDir.y;
+							arc.projEnd = p1.x * cutDir.x + p1.y * cutDir.y;
+							arcs.push_back(arc);
+						}
+						runStart = start + i + 1;
+					}
+				}
+			}
+			// Last arc
+			int lastCount = (start + count) - runStart;
+			if (lastCount > 0) {
+				CurveArc arc;
+				arc.startIdx = runStart; arc.count = lastCount;
+				ImVec2 p0 = curves[runStart].p0;
+				ImVec2 p1 = curves[runStart + lastCount - 1].p2;
+				arc.projStart = p0.x * cutDir.x + p0.y * cutDir.y;
+				arc.projEnd = p1.x * cutDir.x + p1.y * cutDir.y;
+				arcs.push_back(arc);
+			}
+		};
+
+		auto CutContourCurves = [&](QContour& contour) {
+			int prevPosSize = allPosCurves.Size;
+			int prevNegSize = allNegCurves.Size;
+			for (int i = 0; i < contour.curveCount; i++)
+				CutQBezByLine(contour.curves[i], a, b, c2, allPosCurves, allNegCurves);
+
+			int posCount = allPosCurves.Size - prevPosSize;
+			ExtractArcs(allPosCurves, prevPosSize, posCount, posArcs);
+
+			int negCount = allNegCurves.Size - prevNegSize;
+			ExtractArcs(allNegCurves, prevNegSize, negCount, negArcs);
+		};
+
+		CutContourCurves(outer);
+		for (int hi = 0; hi < nHoles; hi++) {
+			int prevPosArcs = posArcs.Size, prevNegArcs = negArcs.Size;
+			int prevPosCurves = allPosCurves.Size, prevNegCurves = allNegCurves.Size;
+			CutContourCurves(holes[hi]);
+			bool absorbed = (posArcs.Size > prevPosArcs) && (negArcs.Size > prevNegArcs);
+			absorbedHoles[hi] = absorbed;
+			if (!absorbed) {
+				// Non-absorbed hole: remove its arcs and curves from the assembly.
+				// Its curves stay as a hole for recursive processing.
+				while (posArcs.Size > prevPosArcs) posArcs.pop_back();
+				while (negArcs.Size > prevNegArcs) negArcs.pop_back();
+				allPosCurves.resize(prevPosCurves);
+				allNegCurves.resize(prevNegCurves);
+			}
+		}
+
+		// Sort arcs by projStart so bridges connect nearest endpoints along cut line.
+		// This prevents crossing bridges when hole winding is opposite to outer.
+		auto SortArcs = [](ImVector<CurveArc>& arcs) {
+			for (int i = 1; i < arcs.Size; i++) {
+				CurveArc key = arcs[i];
+				int j = i - 1;
+				while (j >= 0 && arcs[j].projStart > key.projStart) { arcs[j + 1] = arcs[j]; j--; }
+				arcs[j + 1] = key;
+			}
+		};
+		SortArcs(posArcs);
+		SortArcs(negArcs);
+
+		// Build contours from arcs using nearest-neighbor chaining.
+		// Each arc has two endpoints. We find the nearest unused endpoint to chain
+		// arcs into closed contours, reversing arcs as needed.
+		// This handles any number of arcs from any number of contours.
+		auto BuildFromArcs = [](ImVector<QBez>& curves, ImVector<CurveArc>& arcs, ImVector<QContour>& out) {
+			if (arcs.Size == 0) return;
+
+			ImVector<bool> used;
+			used.resize(arcs.Size, false);
+
+			// Helper: append arc curves with internal gap bridging
+			auto AppendArc = [&](QContour& dst, CurveArc& arc, bool reverse) {
+				if (!reverse) {
+					for (int ci = 0; ci < arc.count; ci++) {
+						if (dst.curveCount > 0) {
+							ImVec2 pe = dst.curves[dst.curveCount - 1].p2;
+							ImVec2 ps = curves[arc.startIdx + ci].p0;
+							float gd = (pe.x-ps.x)*(pe.x-ps.x) + (pe.y-ps.y)*(pe.y-ps.y);
+							if (gd > 1.0f) {
+								QBez br = { pe, ImVec2((pe.x+ps.x)*0.5f,(pe.y+ps.y)*0.5f), ps };
+								dst.push_back(br);
+							}
+						}
+						dst.push_back(curves[arc.startIdx + ci]);
+					}
+				} else {
+					for (int ci = arc.count - 1; ci >= 0; ci--) {
+						QBez& q = curves[arc.startIdx + ci];
+						QBez rev = { q.p2, q.p1, q.p0 };
+						if (dst.curveCount > 0) {
+							ImVec2 pe = dst.curves[dst.curveCount - 1].p2;
+							float gd = (pe.x-rev.p0.x)*(pe.x-rev.p0.x) + (pe.y-rev.p0.y)*(pe.y-rev.p0.y);
+							if (gd > 1.0f) {
+								QBez br = { pe, ImVec2((pe.x+rev.p0.x)*0.5f,(pe.y+rev.p0.y)*0.5f), rev.p0 };
+								dst.push_back(br);
+							}
+						}
+						dst.push_back(rev);
+					}
+				}
+			};
+
+			// Helper: add bridge between two points
+			auto AddBridge = [](QContour& dst, ImVec2 from, ImVec2 to) {
+				float d = (from.x-to.x)*(from.x-to.x) + (from.y-to.y)*(from.y-to.y);
+				if (d > 0.1f) {
+					QBez br = { from, ImVec2((from.x+to.x)*0.5f,(from.y+to.y)*0.5f), to };
+					dst.push_back(br);
+				}
+			};
+
+			for (int startArc = 0; startArc < arcs.Size; startArc++) {
+				if (used[startArc]) continue;
+
+				out.push_back(QContour());
+				QContour* cur = &out.back();
+				used[startArc] = true;
+				AppendArc(*cur, arcs[startArc], false);
+
+				// Chain: find nearest unused arc endpoint, bridge to it, append
+				for (int safety = 0; safety < arcs.Size; safety++) {
+					ImVec2 tail = cur->curves[cur->curveCount - 1].p2;
+
+					// Find nearest unused arc (check both endpoints)
+					int bestArc = -1; bool bestRev = false; float bestDist = FLT_MAX;
+					for (int ai = 0; ai < arcs.Size; ai++) {
+						if (used[ai]) continue;
+						ImVec2 as = curves[arcs[ai].startIdx].p0;
+						ImVec2 ae = curves[arcs[ai].startIdx + arcs[ai].count - 1].p2;
+						float dFwd = (tail.x-as.x)*(tail.x-as.x) + (tail.y-as.y)*(tail.y-as.y);
+						float dRev = (tail.x-ae.x)*(tail.x-ae.x) + (tail.y-ae.y)*(tail.y-ae.y);
+						if (dFwd < bestDist) { bestDist = dFwd; bestArc = ai; bestRev = false; }
+						if (dRev < bestDist) { bestDist = dRev; bestArc = ai; bestRev = true; }
+					}
+
+					if (bestArc < 0) break; // no more arcs
+
+					// Check if closing (back to start) is closer than chaining to any remaining arc
+					ImVec2 head = cur->curves[0].p0;
+					float dClose = (tail.x-head.x)*(tail.x-head.x) + (tail.y-head.y)*(tail.y-head.y);
+					if (dClose <= bestDist) break; // close the contour
+
+					used[bestArc] = true;
+					ImVec2 nextPt = bestRev ?
+						curves[arcs[bestArc].startIdx + arcs[bestArc].count - 1].p2 :
+						curves[arcs[bestArc].startIdx].p0;
+					AddBridge(*cur, tail, nextPt);
+					AppendArc(*cur, arcs[bestArc], bestRev);
+				}
+
+				// Close contour
+				if (cur->curveCount > 0) {
+					ImVec2 last = cur->curves[cur->curveCount - 1].p2;
+					ImVec2 first = cur->curves[0].p0;
+					AddBridge(*cur, last, first);
+				}
+				cur->area = QContourArea(*cur);
+			}
+		};
+
+		BuildFromArcs(allPosCurves, posArcs, posContours);
+		BuildFromArcs(allNegCurves, negArcs, negContours);
+	}
+
+	// Flatten a QContour into a polygon
+	static void FlattenQContour(QContour& c, ImVector<ImVec2>& pts, float tol) {
+		if (c.curveCount <= 0 || c.curves == NULL) return;
+		pts.push_back(c.curves[0].p0);
+		for (int i = 0; i < c.curveCount; i++)
+			FlattenQBez(pts, c.curves[i], tol);
+		// Remove closing duplicate
+		if (pts.Size >= 2) {
+			float dx = pts.back().x - pts[0].x, dy = pts.back().y - pts[0].y;
+			if (dx*dx + dy*dy < 0.01f) pts.pop_back();
+		}
+	}
+
+	// Ear-clipping triangulation for concave polygons (hole-free).
+	// Produces correct triangles for C-shapes and other non-convex pieces.
+	static void EarClipTriangulate(ImVector<ImVec2>& pts, ImWidgetsShape& outShape, ImVec2 whiteUV) {
+		if (pts.Size < 3) return;
+		int baseVtx = outShape.vertices.Size;
+		for (int pi = 0; pi < pts.Size; pi++) {
+			ImWidgetsVertex v; v.pos = pts[pi]; v.uv = whiteUV; v.col = IM_COL32_WHITE;
+			outShape.vertices.push_back(v);
+			outShape.bb.Add(v.pos);
+		}
+
+		// Build index list (mutable, vertices removed as ears are clipped)
+		ImVector<int> idx;
+		idx.resize(pts.Size);
+		for (int i = 0; i < pts.Size; i++) idx[i] = i;
+
+		// Determine polygon winding (sign of signed area)
+		float signedArea = 0;
+		for (int i = 0, n = pts.Size; i < n; i++) {
+			int j = (i + 1) % n;
+			signedArea += (pts[i].x * pts[j].y - pts[j].x * pts[i].y);
+		}
+		float winding = (signedArea >= 0) ? 1.0f : -1.0f;
+
+		// Cross product z-component
+		auto Cross2D = [](ImVec2 a2, ImVec2 b2, ImVec2 c2) -> float {
+			return (b2.x - a2.x) * (c2.y - a2.y) - (b2.y - a2.y) * (c2.x - a2.x);
+		};
+
+		// Point-in-triangle test
+		auto PointInTri = [&](ImVec2 p, ImVec2 a2, ImVec2 b2, ImVec2 c2) -> bool {
+			float d1 = Cross2D(a2, b2, p), d2 = Cross2D(b2, c2, p), d3 = Cross2D(c2, a2, p);
+			bool hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+			bool hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+			return !(hasNeg && hasPos);
+		};
+
+		int safety = pts.Size * pts.Size; // prevent infinite loop
+		while (idx.Size > 2 && safety-- > 0) {
+			bool earFound = false;
+			int n = idx.Size;
+			for (int i = 0; i < n; i++) {
+				int iPrev = (i + n - 1) % n;
+				int iNext = (i + 1) % n;
+				ImVec2 A = pts[idx[iPrev]], B = pts[idx[i]], C = pts[idx[iNext]];
+
+				// Check if this vertex is convex (same winding as polygon)
+				float cross = Cross2D(A, B, C);
+				if (cross * winding < 0) continue; // reflex vertex, skip
+
+				// Check no other vertex is inside triangle ABC
+				bool inside = false;
+				for (int j = 0; j < n; j++) {
+					if (j == iPrev || j == i || j == iNext) continue;
+					if (PointInTri(pts[idx[j]], A, B, C)) { inside = true; break; }
+				}
+				if (inside) continue;
+
+				// Ear found — emit triangle and remove vertex
+				ImWidgetsTriIdx tidx;
+				tidx.a = (ImDrawIdx)(baseVtx + idx[iPrev]);
+				tidx.b = (ImDrawIdx)(baseVtx + idx[i]);
+				tidx.c = (ImDrawIdx)(baseVtx + idx[iNext]);
+				outShape.triangles.push_back(tidx);
+				idx.erase(&idx[i]);
+				earFound = true;
+				break;
+			}
+			if (!earFound) break; // degenerate polygon
+		}
+	}
+
+	// Debug step recording for visualization
+	// Deep-copy a QContour into a new one stored in an ImVector via push_back
+	// Since ImVector uses memcpy for reallocation, we must ensure QContour's
+	// internal pointer is independently owned (no sharing).
+	static void PushQContourCopy(ImVector<QContour>& dst, const QContour& src) {
+		dst.push_back(QContour()); // push empty (NULL pointer, safe for memcpy)
+		dst.back().copyFrom(src);  // then deep-copy into the pushed slot
+	}
+
+	struct TessDebugStep {
+		int depth;
+		QContour* sourceOuters; int nSourceOuters;
+		QContour* sourceHoles;  int nSourceHoles;
+		QContour* resultPieces; int nResultPieces;
+		ImVec2 cutLineP0, cutLineP1;
+		bool isLeaf;
+
+		TessDebugStep() : depth(0), sourceOuters(NULL), nSourceOuters(0),
+			sourceHoles(NULL), nSourceHoles(0), resultPieces(NULL), nResultPieces(0),
+			cutLineP0(0,0), cutLineP1(0,0), isLeaf(false) {}
+
+		void setSourceOuters(const QContour* src, int n) {
+			nSourceOuters = n;
+			sourceOuters = (QContour*)IM_ALLOC(n * sizeof(QContour));
+			for (int i = 0; i < n; i++) { memset(&sourceOuters[i], 0, sizeof(QContour)); sourceOuters[i].copyFrom(src[i]); }
+		}
+		void setSourceHoles(const QContour* src, int n) {
+			nSourceHoles = n;
+			sourceHoles = (QContour*)IM_ALLOC(n * sizeof(QContour));
+			for (int i = 0; i < n; i++) { memset(&sourceHoles[i], 0, sizeof(QContour)); sourceHoles[i].copyFrom(src[i]); }
+		}
+		void setResultPieces(const QContour* src, int n) {
+			nResultPieces = n;
+			resultPieces = (QContour*)IM_ALLOC(n * sizeof(QContour));
+			for (int i = 0; i < n; i++) { memset(&resultPieces[i], 0, sizeof(QContour)); resultPieces[i].copyFrom(src[i]); }
+		}
+	};
+	struct TessDebugInfo {
+		ImVector<TessDebugStep> steps;
+		QContour* leafPieces; int nLeafPieces; int leafCap;
+		TessDebugInfo() : leafPieces(NULL), nLeafPieces(0), leafCap(0) {}
+		void pushLeaf(const QContour& c) {
+			if (nLeafPieces >= leafCap) {
+				leafCap = leafCap ? leafCap * 2 : 8;
+				QContour* newData = (QContour*)IM_ALLOC(leafCap * sizeof(QContour));
+				for (int i = 0; i < nLeafPieces; i++) { memset(&newData[i], 0, sizeof(QContour)); newData[i].curves = leafPieces[i].curves; newData[i].curveCount = leafPieces[i].curveCount; newData[i].curveCap = leafPieces[i].curveCap; newData[i].area = leafPieces[i].area; leafPieces[i].curves = NULL; }
+				if (leafPieces) IM_FREE(leafPieces);
+				leafPieces = newData;
+			}
+			memset(&leafPieces[nLeafPieces], 0, sizeof(QContour));
+			leafPieces[nLeafPieces].copyFrom(c);
+			nLeafPieces++;
+		}
+	};
+
+	// Recursive: cut QContour pieces until no holes remain, then flatten + triangulate
+	static void RecursiveCutQ(ImVector<QContour>& outers, ImVector<QContour>& holes,
+	                          ImWidgetsShape& outShape, ImVec2 whiteUV, float tol, int depth,
+	                          TessDebugInfo* dbg = NULL)
+	{
+		if (depth > 6) return; // limit recursion depth (each frame uses significant stack)
+
+		for (int oi = 0; oi < outers.Size; oi++) {
+			QContour& outer = outers[oi];
+			if (outer.curveCount == 0) continue;
+
+			// Find holes inside this outer (skip tiny holes below 1% of outer area)
+			float outerArea = fabsf(outer.area);
+			float minHoleArea = outerArea * 0.01f;
+			ImVector<int> containedHoles;
+			for (int hi = 0; hi < holes.Size; hi++) {
+				if (holes[hi].curveCount == 0) continue;
+				if (fabsf(holes[hi].area) < minHoleArea) continue; // skip tiny decorative holes
+				ImVec2 hpt = holes[hi].curves[0].p0;
+				if (PointInQContour(outer, hpt))
+					containedHoles.push_back(hi);
+			}
+
+			if (containedHoles.Size == 0) {
+				// Leaf: no holes → flatten and triangulate
+				ImVector<ImVec2> pts;
+				FlattenQContour(outer, pts, tol);
+				EarClipTriangulate(pts, outShape, whiteUV);
+				if (dbg) {
+					TessDebugStep step; step.depth = depth; step.isLeaf = true;
+					step.setSourceOuters(&outer, 1);
+					dbg->steps.push_back(step);
+					dbg->pushLeaf(outer);
+				}
+				continue;
+			}
+
+			// Pick the largest hole
+			int bestH = containedHoles[0];
+			float bestArea = fabsf(holes[bestH].area);
+			for (int hi = 1; hi < containedHoles.Size; hi++) {
+				float a2 = fabsf(holes[containedHoles[hi]].area);
+				if (a2 > bestArea) { bestArea = a2; bestH = containedHoles[hi]; }
+			}
+
+			// Compute OBB of the hole
+			ImVector<ImVec2> holePts;
+			FlattenQContour(holes[bestH], holePts, 2.0f);
+			ImVec2 holeCenter, holeAxis;
+			float holeHL, holeHW;
+			ComputeOBB(holePts, holeCenter, holeAxis, holeHL, holeHW);
+
+			// Cut line: along longest or shortest axis, through center
+			// gs_cutAlongShortAxis toggles between the two (debug option)
+			ImVec2 cutAxis = holeAxis;
+			if (gs_cutAlongShortAxis) {
+				// Rotate 90°: perpendicular to longest axis = shortest axis
+				cutAxis = ImVec2(-holeAxis.y, holeAxis.x);
+			}
+			ImVec2 cutN(-cutAxis.y, cutAxis.x);
+			float cutC = -(cutN.x * holeCenter.x + cutN.y * holeCenter.y);
+
+			// Unified cut: outer + all contained holes simultaneously
+			int nContained = containedHoles.Size;
+			QContour* containedArr = (QContour*)IM_ALLOC(nContained * sizeof(QContour));
+			for (int chi = 0; chi < nContained; chi++) {
+				memset(&containedArr[chi], 0, sizeof(QContour));
+				containedArr[chi].copyFrom(holes[containedHoles[chi]]);
+			}
+			bool absorbed[64];
+			memset(absorbed, 0, sizeof(absorbed));
+
+			ImVector<QContour> posContours, negContours;
+			CutContourGroupByLine(outer, containedArr, nContained,
+			                      cutN.x, cutN.y, cutC, posContours, negContours, absorbed);
+
+			// Record debug step
+			if (dbg) {
+				TessDebugStep step; step.depth = depth; step.isLeaf = false;
+				step.setSourceOuters(&outer, 1);
+				ImVector<QContour> tmpHoles;
+				for (int chi = 0; chi < nContained; chi++)
+					PushQContourCopy(tmpHoles, containedArr[chi]);
+				if (tmpHoles.Size > 0) step.setSourceHoles(tmpHoles.Data, tmpHoles.Size);
+				float lineExt = ImMax(holeHL, holeHW) * 3.0f;
+				step.cutLineP0 = ImVec2(holeCenter.x - holeAxis.x * lineExt, holeCenter.y - holeAxis.y * lineExt);
+				step.cutLineP1 = ImVec2(holeCenter.x + holeAxis.x * lineExt, holeCenter.y + holeAxis.y * lineExt);
+				int nRes = posContours.Size + negContours.Size;
+				if (nRes > 0) {
+					ImVector<QContour> tmpRes;
+					for (int rp = 0; rp < posContours.Size; rp++) PushQContourCopy(tmpRes, posContours[rp]);
+					for (int rp = 0; rp < negContours.Size; rp++) PushQContourCopy(tmpRes, negContours[rp]);
+					step.setResultPieces(tmpRes.Data, tmpRes.Size);
+				}
+				dbg->steps.push_back(step);
+			}
+
+			// Build remaining holes: exclude absorbed ones.
+			// Also exclude the target hole (bestH) even if not absorbed — it means the
+			// cut line failed to split it, and keeping it would cause infinite recursion.
+			ImVector<QContour> remainHoles;
+			for (int hi = 0; hi < holes.Size; hi++) {
+				if (hi == bestH) continue; // always remove the target hole
+				bool isAbsorbed = false;
+				for (int chi = 0; chi < nContained; chi++) {
+					if (containedHoles[chi] == hi && absorbed[chi]) {
+						isAbsorbed = true; break;
+					}
+				}
+				if (!isAbsorbed) PushQContourCopy(remainHoles, holes[hi]);
+			}
+
+			// Cleanup contained hole copies
+			for (int chi = 0; chi < nContained; chi++) containedArr[chi].~QContour();
+			IM_FREE(containedArr);
+
+			// Recurse on both sides with properly connected pieces
+			RecursiveCutQ(posContours, remainHoles, outShape, whiteUV, tol, depth + 1, dbg);
+			RecursiveCutQ(negContours, remainHoles, outShape, whiteUV, tol, depth + 1, dbg);
+		}
+	}
+
+	// Extract QContours from a glyph
+	static void ExtractQContours(SlugFontCache* atlas, int glyphID, float gx, float gy, float sc, float sz,
+	                             ImVector<QContour>& outContours)
+	{
+		stbtt_vertex* verts = NULL;
+		int nVerts = stbtt_GetGlyphShape(&atlas->stbFont, glyphID, &verts);
+		if (nVerts <= 0 || !verts) return;
+
+		QContour* cur = NULL;
+		for (int vi = 0; vi < nVerts; vi++) {
+			stbtt_vertex& v = verts[vi];
+			float vx = gx + (float)v.x * sc * sz;
+			float vy = gy - (float)v.y * sc * sz;
+			if (v.type == STBTT_vmove) {
+				outContours.push_back(QContour());
+				cur = &outContours.back();
+				cur->area = 0;
+				// Store start point (will be used as p0 of first curve)
+			} else if (v.type == STBTT_vline && cur) {
+				ImVec2 p0 = (cur->curveCount > 0) ? cur->curves[cur->curveCount-1].p2 :
+				            ImVec2(gx + (float)verts[vi-1].x * sc * sz, gy - (float)verts[vi-1].y * sc * sz);
+				// Line = degenerate quadratic
+				QBez q = { p0, ImVec2((p0.x+vx)*0.5f,(p0.y+vy)*0.5f), ImVec2(vx,vy) };
+				cur->push_back(q);
+			} else if (v.type == STBTT_vcurve && cur) {
+				ImVec2 p0 = (cur->curveCount > 0) ? cur->curves[cur->curveCount-1].p2 :
+				            ImVec2(gx + (float)verts[vi-1].x * sc * sz, gy - (float)verts[vi-1].y * sc * sz);
+				ImVec2 cp(gx + (float)v.cx * sc * sz, gy - (float)v.cy * sc * sz);
+				QBez q = { p0, cp, ImVec2(vx,vy) };
+				cur->push_back(q);
+			} else if (v.type == STBTT_vcubic && cur) {
+				ImVec2 p0 = (cur->curveCount > 0) ? cur->curves[cur->curveCount-1].p2 :
+				            ImVec2(gx + (float)verts[vi-1].x * sc * sz, gy - (float)verts[vi-1].y * sc * sz);
+				ImVec2 cp1(gx + (float)v.cx * sc * sz, gy - (float)v.cy * sc * sz);
+				ImVec2 cp2(gx + (float)v.cx1 * sc * sz, gy - (float)v.cy1 * sc * sz);
+				ImVec2 p3(vx, vy);
+				// Cubic → 2 quadratics (De Casteljau at t=0.5)
+				ImVec2 m01((p0.x+cp1.x)*.5f,(p0.y+cp1.y)*.5f);
+				ImVec2 m12((cp1.x+cp2.x)*.5f,(cp1.y+cp2.y)*.5f);
+				ImVec2 m23((cp2.x+p3.x)*.5f,(cp2.y+p3.y)*.5f);
+				ImVec2 m012((m01.x+m12.x)*.5f,(m01.y+m12.y)*.5f);
+				ImVec2 m123((m12.x+m23.x)*.5f,(m12.y+m23.y)*.5f);
+				ImVec2 mid((m012.x+m123.x)*.5f,(m012.y+m123.y)*.5f);
+				// Approximate each half as quadratic
+				QBez q1 = { p0, m01, mid };
+				QBez q2 = { mid, m123, p3 };
+				cur->push_back(q1);
+				cur->push_back(q2);
+			}
+		}
+		stbtt_FreeShape(&atlas->stbFont, verts);
+
+		// Close each contour and compute areas
+		for (int ci = 0; ci < outContours.Size; ci++) {
+			QContour& c = outContours[ci];
+			if (c.curveCount == 0) continue;
+			// Close: line from last.p2 to first.p0
+			ImVec2 last = c.curves[c.curveCount-1].p2;
+			ImVec2 first = c.curves[0].p0;
+			float d = (last.x-first.x)*(last.x-first.x) + (last.y-first.y)*(last.y-first.y);
+			if (d > 0.01f) {
+				QBez closeLine = { last, ImVec2((last.x+first.x)*.5f,(last.y+first.y)*.5f), first };
+				c.push_back(closeLine);
+			}
+			c.area = QContourArea(c);
+		}
+	}
+
+	// Legacy flatten helper (kept for ExtractTextPoly compatibility)
+	static void FlattenQuadBezier(ImVector<ImVec2>& pts, ImVec2 p0, ImVec2 p1, ImVec2 p2, float tol)
+	{
+		float dx = p2.x - p0.x, dy = p2.y - p0.y;
+		float d = fabsf((p1.x - p2.x) * dy - (p1.y - p2.y) * dx);
+		if (d * d < tol * (dx * dx + dy * dy)) {
+			pts.push_back(p2);
+		} else {
+			ImVec2 m01((p0.x + p1.x) * 0.5f, (p0.y + p1.y) * 0.5f);
+			ImVec2 m12((p1.x + p2.x) * 0.5f, (p1.y + p2.y) * 0.5f);
+			ImVec2 mid((m01.x + m12.x) * 0.5f, (m01.y + m12.y) * 0.5f);
+			FlattenQuadBezier(pts, p0, m01, mid, tol);
+			FlattenQuadBezier(pts, mid, m12, p2, tol);
+		}
+	}
+
+	#if 0 // === OLD TYPOGRAPHY CODE — replaced by QBez pipeline above ===
+	static bool PointInPolygon_OLD(const ImVec2* pts, int n, ImVec2 p)
+	{
+		bool inside = false;
+		for (int i = 0, j = n - 1; i < n; j = i++) {
+			if ((pts[i].y > p.y) != (pts[j].y > p.y) &&
+				p.x < (pts[j].x - pts[i].x) * (p.y - pts[i].y) / (pts[j].y - pts[i].y) + pts[i].x)
+				inside = !inside;
+		}
+		return inside;
+	}
+
+	// Extract text contour points as a flat array suitable for DrawShapeWithHole/DrawImageShapeWithHole.
+	// Output: CW outer contours + CCW holes, concatenated. Each contour implicitly closed.
+	// Also outputs the bounding box and total point count.
+	static void ExtractTextPoly(ImFont* font, float fontSize, const char* text, const char* text_end,
+	                            ImVec2 offset, ImVector<ImVec2>& outPoly, ImRect& outBB, float tess_tol)
+	{
+		outPoly.resize(0);
+		outBB = ImRect(FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX);
+
+		if (!gs_pContext || !gs_pContext->slugState) return;
+		if (!text_end) text_end = text + strlen(text);
+		if (text >= text_end) return;
+		if (!font) font = ImGui::GetFont();
+		if (fontSize <= 0.0f) fontSize = ImGui::GetFontSize();
+
+		SlugFontCache* atlas = SlugGetOrCreateAtlas(gs_pContext->slugState, font);
+		if (!atlas) return;
+		float sz = fontSize, sc = atlas->emScale;
+		float tol = (tess_tol > 0.0f) ? tess_tol : 0.5f;
+
+		// Shape text
+		struct ShGlyph { int glyphID; float advX, offX, offY; };
+		ImVector<ShGlyph> shaped;
+#if IM_SUPPORT_LIGATURE
+		if (atlas->shapeCtx && atlas->shapeFont) {
+			kbts_ShapeBegin(atlas->shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
+			kbts_ShapeUtf8(atlas->shapeCtx, text, (int)(text_end - text), KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
+			kbts_ShapeEnd(atlas->shapeCtx);
+			kbts_run run;
+			while (kbts_ShapeRun(atlas->shapeCtx, &run)) {
+				kbts_glyph* glyph;
+				while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph)) {
+					ShGlyph sg = { (int)glyph->Id, (float)glyph->AdvanceX * sc, (float)glyph->OffsetX * sc, (float)glyph->OffsetY * sc };
+					shaped.push_back(sg);
+				}
+			}
+		} else
+#endif
+		{
+			const char* p = text;
+			while (p < text_end) {
+				unsigned int cp = 0;
+				p += ImTextCharFromUtf8(&cp, p, text_end);
+				if (cp == 0) break;
+				int gi = stbtt_FindGlyphIndex(&atlas->stbFont, (int)cp);
+				int adv, lsb; stbtt_GetGlyphHMetrics(&atlas->stbFont, gi, &adv, &lsb);
+				ShGlyph sg = { gi, (float)adv * sc, 0, 0 };
+				shaped.push_back(sg);
+			}
+		}
+
+		float penX = 0;
+		for (int gi = 0; gi < shaped.Size; gi++)
+		{
+			const ShGlyph& sg = shaped[gi];
+			float gx = offset.x + penX + sg.offX * sz;
+			float gy = offset.y - sg.offY * sz;
+
+			stbtt_vertex* verts = NULL;
+			int nVerts = stbtt_GetGlyphShape(&atlas->stbFont, sg.glyphID, &verts);
+			if (nVerts <= 0 || !verts) { penX += sg.advX * sz; continue; }
+
+			// Flatten contours
+			struct Contour { ImVector<ImVec2> pts; float area; };
+			ImVector<Contour> contours;
+			Contour* cur = NULL;
+			for (int vi = 0; vi < nVerts; vi++) {
+				stbtt_vertex& v = verts[vi];
+				float vx = gx + (float)v.x * sc * sz;
+				float vy = gy - (float)v.y * sc * sz;
+				if (v.type == STBTT_vmove) {
+					contours.push_back(Contour()); cur = &contours.back();
+					cur->pts.push_back(ImVec2(vx, vy));
+				} else if (v.type == STBTT_vline && cur) {
+					cur->pts.push_back(ImVec2(vx, vy));
+				} else if (v.type == STBTT_vcurve && cur) {
+					ImVec2 p0 = cur->pts.back();
+					FlattenQuadBezier(cur->pts, p0, ImVec2(gx+(float)v.cx*sc*sz, gy-(float)v.cy*sc*sz), ImVec2(vx,vy), tol);
+				} else if (v.type == STBTT_vcubic && cur) {
+					ImVec2 p0=cur->pts.back(), p1(gx+(float)v.cx*sc*sz,gy-(float)v.cy*sc*sz);
+					ImVec2 p2(gx+(float)v.cx1*sc*sz,gy-(float)v.cy1*sc*sz), p3(vx,vy);
+					ImVec2 m((p1.x+p2.x)*0.5f,(p1.y+p2.y)*0.5f);
+					ImVec2 q1((p0.x+p1.x)*0.5f,(p0.y+p1.y)*0.5f), q2((p1.x+m.x)*0.5f,(p1.y+m.y)*0.5f);
+					ImVec2 mid((q1.x+q2.x)*0.5f,(q1.y+q2.y)*0.5f);
+					FlattenQuadBezier(cur->pts, p0, q1, mid, tol);
+					ImVec2 q3((m.x+p2.x)*0.5f,(m.y+p2.y)*0.5f), q4((p2.x+p3.x)*0.5f,(p2.y+p3.y)*0.5f);
+					ImVec2 mid2((q3.x+q4.x)*0.5f,(q3.y+q4.y)*0.5f);
+					FlattenQuadBezier(cur->pts, mid, q3, mid2, tol);
+					FlattenQuadBezier(cur->pts, mid2, q4, p3, tol);
+				}
+			}
+			stbtt_FreeShape(&atlas->stbFont, verts);
+
+			// Clean up: remove consecutive duplicates but KEEP the closing point
+			// (DrawShapeWithHole detects contour boundaries by last point == first point)
+			for (int ci = 0; ci < contours.Size; ci++) {
+				Contour& c = contours[ci];
+				// Remove interior consecutive duplicates
+				for (int pi = c.pts.Size-1; pi > 0; pi--) {
+					float dx2=c.pts[pi].x-c.pts[pi-1].x, dy2=c.pts[pi].y-c.pts[pi-1].y;
+					if (dx2*dx2+dy2*dy2 < 0.01f) c.pts.erase(c.pts.Data+pi);
+				}
+				// Ensure contour is explicitly closed (last point == first point)
+				if (c.pts.Size >= 3) {
+					float dx2=c.pts.back().x-c.pts[0].x, dy2=c.pts.back().y-c.pts[0].y;
+					if (dx2*dx2+dy2*dy2 > 0.01f)
+						c.pts.push_back(c.pts[0]); // close it
+				}
+				c.area = (c.pts.Size >= 3) ? PolygonSignedArea(c.pts.Data, c.pts.Size) : 0;
+			}
+
+			// Classify contours by containment and enforce winding for DrawShapeWithHole
+			// DrawShapeWithHole expects: CW outer + CCW holes, concatenated per glyph
+			ImVector<int> validCI;
+			for (int ci = 0; ci < contours.Size; ci++)
+				if (contours[ci].pts.Size >= 3 && fabsf(contours[ci].area) >= 0.1f)
+					validCI.push_back(ci);
+
+			// Sort by absolute area descending (outers first)
+			for (int i2 = 0; i2 < validCI.Size - 1; i2++)
+				for (int j2 = i2 + 1; j2 < validCI.Size; j2++)
+					if (fabsf(contours[validCI[j2]].area) > fabsf(contours[validCI[i2]].area))
+						ImSwap(validCI[i2], validCI[j2]);
+
+			// Classify holes by containment
+			ImVector<bool> isHoleMark;
+			isHoleMark.resize(contours.Size, false);
+			for (int vi2 = 1; vi2 < validCI.Size; vi2++) {
+				int ci2 = validCI[vi2];
+				for (int oi2 = 0; oi2 < vi2; oi2++) {
+					int outerCI2 = validCI[oi2];
+					if (!isHoleMark[outerCI2] && PointInPolygon(contours[outerCI2].pts.Data, contours[outerCI2].pts.Size, contours[ci2].pts[0])) {
+						isHoleMark[ci2] = true; break;
+					}
+				}
+			}
+
+			// Enforce winding: outers CW (positive area), holes CCW (negative area) in screen coords
+			for (int vi2 = 0; vi2 < validCI.Size; vi2++) {
+				Contour& c = contours[validCI[vi2]];
+				if (!isHoleMark[validCI[vi2]]) {
+					// Outer should be CW (positive area in screen coords)
+					if (c.area < 0)
+						for (int a2 = 0, b2 = c.pts.Size - 1; a2 < b2; a2++, b2--) ImSwap(c.pts[a2], c.pts[b2]);
+				} else {
+					// Hole should be CCW (negative area in screen coords)
+					if (c.area > 0)
+						for (int a2 = 0, b2 = c.pts.Size - 1; a2 < b2; a2++, b2--) ImSwap(c.pts[a2], c.pts[b2]);
+				}
+			}
+
+			// Append all contours: outers first, then holes
+			// Each contour is explicitly closed (last pt == first pt),
+			// which DrawShapeWithHole uses to detect contour boundaries.
+			for (int vi2 = 0; vi2 < validCI.Size; vi2++) {
+				if (isHoleMark[validCI[vi2]]) continue;
+				Contour& c = contours[validCI[vi2]];
+				for (int pi = 0; pi < c.pts.Size; pi++) { outPoly.push_back(c.pts[pi]); outBB.Add(c.pts[pi]); }
+			}
+			for (int vi2 = 0; vi2 < validCI.Size; vi2++) {
+				if (!isHoleMark[validCI[vi2]]) continue;
+				Contour& c = contours[validCI[vi2]];
+				for (int pi = 0; pi < c.pts.Size; pi++) { outPoly.push_back(c.pts[pi]); outBB.Add(c.pts[pi]); }
+			}
+
+			penX += sg.advX * sz;
+		}
+	}
+
+	// ---- Recursive hole-cutting triangulation ----
+
+	// Clip a polygon by a line (ax + by + c >= 0 side kept).
+	// Input: polygon pts (implicit closed). Output: clipped polygon.
+	// A single cut can produce 0, 1, or multiple pieces (stored separately in outPieces).
+	static void ClipPolyByLine(ImVector<ImVec2>& pts, float a, float b, float c, ImVector<ImVector<ImVec2>>& outPieces)
+	{
+		if (pts.Size < 3) return;
+		ImVector<ImVec2> current;
+		for (int i = 0; i < pts.Size; i++) {
+			int j = (i + 1) % pts.Size;
+			float di = a * pts[i].x + b * pts[i].y + c;
+			float dj = a * pts[j].x + b * pts[j].y + c;
+			bool iInside = di >= -0.01f;
+			bool jInside = dj >= -0.01f;
+			if (iInside) current.push_back(pts[i]);
+			if (iInside != jInside) {
+				float t = di / (di - dj);
+				ImVec2 inter(pts[i].x + t * (pts[j].x - pts[i].x), pts[i].y + t * (pts[j].y - pts[i].y));
+				current.push_back(inter);
+				if (iInside && current.Size >= 3) {
+					outPieces.push_back(ImVector<ImVec2>());
+					outPieces.back().swap(current);
+				}
+			}
+		}
+		if (current.Size >= 3) {
+			// If the polygon started inside, the first and last pieces are two halves
+			// of the same continuous piece (split by the loop boundary). Merge them.
+			if (outPieces.Size > 0) {
+				// Prepend the remaining 'current' points to the FIRST piece
+				ImVector<ImVec2>& first = outPieces[0];
+				ImVector<ImVec2> merged;
+				for (int k = 0; k < current.Size; k++) merged.push_back(current[k]);
+				for (int k = 0; k < first.Size; k++) merged.push_back(first[k]);
+				first.swap(merged);
+			} else {
+				outPieces.push_back(ImVector<ImVec2>());
+				outPieces.back().swap(current);
+			}
+		}
+	}
+
+	// Compute OBB of a polygon: returns center, main axis direction, and half-extents
+	static void ComputeOBB(ImVector<ImVec2>& pts, ImVec2& outCenter, ImVec2& outAxis, float& outHalfLen, float& outHalfWidth)
+	{
+		// Compute centroid
+		outCenter = ImVec2(0, 0);
+		for (int i = 0; i < pts.Size; i++) { outCenter.x += pts[i].x; outCenter.y += pts[i].y; }
+		outCenter.x /= pts.Size; outCenter.y /= pts.Size;
+
+		// Compute covariance matrix
+		float cxx = 0, cxy = 0, cyy = 0;
+		for (int i = 0; i < pts.Size; i++) {
+			float dx = pts[i].x - outCenter.x, dy = pts[i].y - outCenter.y;
+			cxx += dx * dx; cxy += dx * dy; cyy += dy * dy;
+		}
+
+		// Eigenvector of largest eigenvalue = main axis
+		float trace = cxx + cyy;
+		float det = cxx * cyy - cxy * cxy;
+		float disc = sqrtf(ImMax(trace * trace * 0.25f - det, 0.0f));
+		float lambda1 = trace * 0.5f + disc;
+
+		// Main axis eigenvector
+		float ax = cxy, ay = lambda1 - cxx;
+		float len = sqrtf(ax * ax + ay * ay);
+		if (len < 1e-6f) { ax = 1; ay = 0; } else { ax /= len; ay /= len; }
+		outAxis = ImVec2(ax, ay);
+
+		// Project all points to get half-extents
+		float minProj = FLT_MAX, maxProj = -FLT_MAX;
+		float minPerp = FLT_MAX, maxPerp = -FLT_MAX;
+		for (int i = 0; i < pts.Size; i++) {
+			float dx = pts[i].x - outCenter.x, dy = pts[i].y - outCenter.y;
+			float proj = dx * ax + dy * ay;
+			float perp = -dx * ay + dy * ax;
+			minProj = ImMin(minProj, proj); maxProj = ImMax(maxProj, proj);
+			minPerp = ImMin(minPerp, perp); maxPerp = ImMax(maxPerp, perp);
+		}
+		outHalfLen = (maxProj - minProj) * 0.5f;
+		outHalfWidth = (maxPerp - minPerp) * 0.5f;
+	}
+
+	// Add a simple polygon (no holes) to the output shape.
+	// Uses fan triangulation from vertex 0, which works correctly for convex polygons
+	// and reasonably well for mildly concave ones (the clipped pieces from CutAndTriangulate).
+	static void AddConcavePoly(ImVector<ImVec2>& pts, ImWidgetsShape& outShape, ImVec2 whiteUV)
+	{
+		if (pts.Size < 3) return;
+		int baseVtx = outShape.vertices.Size;
+		for (int pi = 0; pi < pts.Size; pi++) {
+			ImWidgetsVertex v; v.pos = pts[pi]; v.uv = whiteUV; v.col = IM_COL32_WHITE;
+			outShape.vertices.push_back(v);
+			outShape.bb.Add(v.pos);
+		}
+		// Fan from vertex 0
+		for (int pi = 1; pi < pts.Size - 1; pi++) {
+			ImWidgetsTriIdx tidx;
+			tidx.a = (ImDrawIdx)(baseVtx);
+			tidx.b = (ImDrawIdx)(baseVtx + pi);
+			tidx.c = (ImDrawIdx)(baseVtx + pi + 1);
+			outShape.triangles.push_back(tidx);
+		}
+	}
+
+	// Recursive: given an outer contour and its holes, cut along hole axes to eliminate holes,
+	// then triangulate the resulting hole-free pieces.
+	struct GlyphContour { ImVector<ImVec2> pts; float area; };
+
+	static void CutAndTriangulate(ImVector<ImVec2>& outerPts,
+	                              ImVector<GlyphContour*>& holes,
+	                              ImWidgetsShape& outShape, ImVec2 whiteUV, int depth)
+	{
+		if (depth > 10 || outerPts.Size < 3) return;
+
+		// Find holes that are inside this outer piece
+		ImVector<GlyphContour*> containedHoles;
+		for (int hi = 0; hi < holes.Size; hi++) {
+			if (holes[hi]->pts.Size < 3) continue;
+			if (PointInPolygon(outerPts.Data, outerPts.Size, holes[hi]->pts[0]))
+				containedHoles.push_back(holes[hi]);
+		}
+
+		if (containedHoles.Size == 0) {
+			// No holes — triangulate directly
+			AddConcavePoly(outerPts, outShape, whiteUV);
+			return;
+		}
+
+		// Pick the largest hole to cut through
+		int bestHole = 0;
+		float bestArea = 0;
+		for (int hi = 0; hi < containedHoles.Size; hi++) {
+			float absArea = fabsf(containedHoles[hi]->area);
+			if (absArea > bestArea) { bestArea = absArea; bestHole = hi; }
+		}
+
+		// Compute OBB of the chosen hole
+		ImVec2 holeCenter, holeAxis;
+		float holeHalfLen, holeHalfWidth;
+		ComputeOBB(containedHoles[bestHole]->pts, holeCenter, holeAxis, holeHalfLen, holeHalfWidth);
+
+		// Cut line goes ALONG the longest axis of the hole, through the hole center.
+		// The cut line NORMAL is the SHORT axis (perpendicular to the longest).
+		// This splits the outer shape on either side of the hole.
+		ImVec2 cutNormal(-holeAxis.y, holeAxis.x); // short axis = perpendicular to longest
+		float lineC = -(cutNormal.x * holeCenter.x + cutNormal.y * holeCenter.y);
+
+		// Cut the outer polygon AND the chosen hole by the same line
+		ImVector<ImVector<ImVec2>> outerPos, outerNeg;
+		ClipPolyByLine(outerPts, cutNormal.x, cutNormal.y, lineC, outerPos);
+		ClipPolyByLine(outerPts, -cutNormal.x, -cutNormal.y, -lineC, outerNeg);
+
+		ImVector<ImVector<ImVec2>> holePos, holeNeg;
+		ClipPolyByLine(containedHoles[bestHole]->pts, cutNormal.x, cutNormal.y, lineC, holePos);
+		ClipPolyByLine(containedHoles[bestHole]->pts, -cutNormal.x, -cutNormal.y, -lineC, holeNeg);
+
+		// Bridge-cut: merge each clipped hole portion into its corresponding outer piece
+		// This creates the concave C-shape (outer half minus hole half)
+		auto BridgeHoleIntoPiece = [](ImVector<ImVec2>& piece, ImVector<ImVec2>& holePart) {
+			if (holePart.Size < 3 || piece.Size < 3) return;
+			// Ensure opposite winding
+			float pArea = 0, hArea2 = 0;
+			for (int i = 0, j = piece.Size-1; i < piece.Size; j=i++) pArea += (piece[j].x-piece[i].x)*(piece[j].y+piece[i].y);
+			for (int i = 0, j = holePart.Size-1; i < holePart.Size; j=i++) hArea2 += (holePart[j].x-holePart[i].x)*(holePart[j].y+holePart[i].y);
+			if ((pArea > 0) == (hArea2 > 0))
+				for (int a2=0, b2=holePart.Size-1; a2<b2; a2++,b2--) ImSwap(holePart[a2], holePart[b2]);
+			// Find closest pair of vertices for bridge
+			int hRIdx = 0;
+			for (int pi2 = 1; pi2 < holePart.Size; pi2++)
+				if (holePart[pi2].x > holePart[hRIdx].x) hRIdx = pi2;
+			int bestM = 0; float bestD2 = FLT_MAX;
+			for (int mi = 0; mi < piece.Size; mi++) {
+				float d = (piece[mi].x-holePart[hRIdx].x)*(piece[mi].x-holePart[hRIdx].x)
+				        + (piece[mi].y-holePart[hRIdx].y)*(piece[mi].y-holePart[hRIdx].y);
+				if (d < bestD2) { bestD2 = d; bestM = mi; }
+			}
+			ImVector<ImVec2> merged;
+			for (int mi = 0; mi <= bestM; mi++) merged.push_back(piece[mi]);
+			for (int hi2 = 0; hi2 <= holePart.Size; hi2++)
+				merged.push_back(holePart[(hRIdx + hi2) % holePart.Size]);
+			merged.push_back(piece[bestM]);
+			for (int mi = bestM+1; mi < piece.Size; mi++) merged.push_back(piece[mi]);
+			piece.swap(merged);
+		};
+
+		// Build remaining holes (excluding the one we cut through)
+		ImVector<GlyphContour*> remainingHoles;
+		for (int hi = 0; hi < holes.Size; hi++)
+			if (holes[hi] != containedHoles[bestHole])
+				remainingHoles.push_back(holes[hi]);
+
+		// Process positive side
+		for (int pi = 0; pi < outerPos.Size; pi++) {
+			if (outerPos[pi].Size < 3) continue;
+			for (int chi = 0; chi < holePos.Size; chi++)
+				BridgeHoleIntoPiece(outerPos[pi], holePos[chi]);
+			CutAndTriangulate(outerPos[pi], remainingHoles, outShape, whiteUV, depth + 1);
+		}
+		// Process negative side
+		for (int pi = 0; pi < outerNeg.Size; pi++) {
+			if (outerNeg[pi].Size < 3) continue;
+			for (int chi = 0; chi < holeNeg.Size; chi++)
+				BridgeHoleIntoPiece(outerNeg[pi], holeNeg[chi]);
+			CutAndTriangulate(outerNeg[pi], remainingHoles, outShape, whiteUV, depth + 1);
+		}
+	}
+	#endif // === END OLD TYPOGRAPHY CODE ===
+
+	void TesselateText(ImFont* font, float font_size, const char* text, ImWidgetsShape& outShape, const char* text_end, float tess_tol, int iterations)
+	{
+		outShape.vertices.resize(0);
+		outShape.triangles.resize(0);
+		outShape.bb = ImRect(FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX);
+		float flatTol = (tess_tol > 0.0f) ? tess_tol : 0.5f;
+
+		if (!gs_pContext || !gs_pContext->slugState) return;
+		if (!text_end) text_end = text + strlen(text);
+		if (text >= text_end) return;
+		if (!font) font = ImGui::GetFont();
+		if (font_size <= 0.0f) font_size = ImGui::GetFontSize();
+
+		SlugFontCache* atlas = SlugGetOrCreateAtlas(gs_pContext->slugState, font);
+		if (!atlas) return;
+		float sz = font_size, sc = atlas->emScale;
+		float tol = (tess_tol > 0.0f) ? tess_tol : 0.5f;
+
+		// Shape text
+		struct ShGlyph { int glyphID; float advX, offX, offY; };
+		ImVector<ShGlyph> shaped;
+#if IM_SUPPORT_LIGATURE
+		if (atlas->shapeCtx && atlas->shapeFont) {
+			kbts_ShapeBegin(atlas->shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
+			kbts_ShapeUtf8(atlas->shapeCtx, text, (int)(text_end - text), KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
+			kbts_ShapeEnd(atlas->shapeCtx);
+			kbts_run run;
+			while (kbts_ShapeRun(atlas->shapeCtx, &run)) {
+				kbts_glyph* glyph;
+				while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph)) {
+					ShGlyph sg = { (int)glyph->Id, (float)glyph->AdvanceX * sc, (float)glyph->OffsetX * sc, (float)glyph->OffsetY * sc };
+					shaped.push_back(sg);
+				}
+			}
+		} else
+#endif
+		{
+			const char* p = text;
+			while (p < text_end) {
+				unsigned int cp = 0;
+				p += ImTextCharFromUtf8(&cp, p, text_end);
+				if (cp == 0) break;
+				int gi = stbtt_FindGlyphIndex(&atlas->stbFont, (int)cp);
+				int adv, lsb; stbtt_GetGlyphHMetrics(&atlas->stbFont, gi, &adv, &lsb);
+				ShGlyph sg = { gi, (float)adv * sc, 0, 0 };
+				shaped.push_back(sg);
+			}
+		}
+
+		ImVec2 whiteUV = ImGui::GetDrawListSharedData()->TexUvWhitePixel;
+		float penX = 0;
+
+		for (int gi = 0; gi < shaped.Size; gi++)
+		{
+			const ShGlyph& sg = shaped[gi];
+			float gx = penX + sg.offX * sz;
+			float gy = -sg.offY * sz;
+
+			// Step 1: Extract raw quadratic curves
+			ImVector<QContour> qcontours;
+			ExtractQContours(atlas, sg.glyphID, gx, gy, sc, sz, qcontours);
+			if (qcontours.Size == 0) { penX += sg.advX * sz; continue; }
+
+			// Step 2: Classify contours by containment
+			ImVector<int> validQI;
+			for (int ci = 0; ci < qcontours.Size; ci++)
+				if (qcontours[ci].curveCount >= 2 && fabsf(qcontours[ci].area) >= 0.1f)
+					validQI.push_back(ci);
+			// Sort by absolute area descending
+			for (int i2 = 0; i2 < validQI.Size - 1; i2++)
+				for (int j2 = i2 + 1; j2 < validQI.Size; j2++)
+					if (fabsf(qcontours[validQI[j2]].area) > fabsf(qcontours[validQI[i2]].area))
+						ImSwap(validQI[i2], validQI[j2]);
+
+			ImVector<int> parentQ;
+			parentQ.resize(qcontours.Size, -1);
+			for (int vi = 1; vi < validQI.Size; vi++) {
+				int ci = validQI[vi];
+				for (int oi = 0; oi < vi; oi++) {
+					int outerCI = validQI[oi];
+					if (parentQ[outerCI] == -1) {
+						ImVec2 testPt = qcontours[ci].curves[0].p0;
+						if (PointInQContour(qcontours[outerCI], testPt)) {
+							parentQ[ci] = outerCI;
+							break;
+						}
+					}
+				}
+			}
+
+			// Step 3: For each outer, collect its holes and recursively cut
+			for (int vi = 0; vi < validQI.Size; vi++) {
+				int outerCI = validQI[vi];
+				if (parentQ[outerCI] != -1) continue; // skip holes
+
+				ImVector<QContour> outers, holes2;
+				outers.push_back(qcontours[outerCI]);
+				for (int vi2 = 0; vi2 < validQI.Size; vi2++) {
+					int ci = validQI[vi2];
+					if (parentQ[ci] == outerCI) holes2.push_back(qcontours[ci]);
+				}
+
+				// Step 4: Recursive cut → Step 5: flatten + triangulate
+				RecursiveCutQ(outers, holes2, outShape, whiteUV, flatTol, 0);
+			}
+
+			penX += sg.advX * sz;
+		}
+
+		// Apply subdivision iterations after initial ear-clip triangulation
+		for (int it = 0; it < iterations; it++)
+			ShapeTesselationUniform(outShape);
+	}
+
+	// Tesselate text with full shaping but output per-glyph shapes (preserves ligatures/calt).
+	// Each glyph gets its own ImWidgetsShape with position already applied.
+	void TesselateTextPerGlyph(ImFont* font, float font_size, const char* text,
+	                           ImVector<ImWidgetsShape>& outShapes, const char* text_end,
+	                           float tess_tol, int iterations)
+	{
+		outShapes.resize(0);
+		float flatTol = (tess_tol > 0.0f) ? tess_tol : 0.5f;
+		if (!gs_pContext || !gs_pContext->slugState) return;
+		if (!text_end) text_end = text + strlen(text);
+		if (text >= text_end) return;
+		if (!font) font = ImGui::GetFont();
+		if (font_size <= 0.0f) font_size = ImGui::GetFontSize();
+
+		SlugFontCache* atlas = SlugGetOrCreateAtlas(gs_pContext->slugState, font);
+		if (!atlas) return;
+		float sz = font_size, sc = atlas->emScale;
+
+		// Shape the FULL text (preserves ligatures, calt, kerning)
+		struct ShGlyph { int glyphID; float advX, offX, offY; };
+		ImVector<ShGlyph> shaped;
+#if IM_SUPPORT_LIGATURE
+		if (atlas->shapeCtx && atlas->shapeFont) {
+			kbts_ShapeBegin(atlas->shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
+			kbts_ShapeUtf8(atlas->shapeCtx, text, (int)(text_end - text), KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
+			kbts_ShapeEnd(atlas->shapeCtx);
+			kbts_run run;
+			while (kbts_ShapeRun(atlas->shapeCtx, &run)) {
+				kbts_glyph* glyph;
+				while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph)) {
+					ShGlyph sg = { (int)glyph->Id, (float)glyph->AdvanceX * sc, (float)glyph->OffsetX * sc, (float)glyph->OffsetY * sc };
+					shaped.push_back(sg);
+				}
+			}
+		} else
+#endif
+		{
+			const char* p = text;
+			while (p < text_end) {
+				unsigned int cp = 0;
+				p += ImTextCharFromUtf8(&cp, p, text_end);
+				if (cp == 0) break;
+				int gi2 = stbtt_FindGlyphIndex(&atlas->stbFont, (int)cp);
+				int adv, lsb; stbtt_GetGlyphHMetrics(&atlas->stbFont, gi2, &adv, &lsb);
+				ShGlyph sg = { gi2, (float)adv * sc, 0, 0 };
+				shaped.push_back(sg);
+			}
+		}
+
+		ImVec2 whiteUV = ImGui::GetDrawListSharedData()->TexUvWhitePixel;
+		float penX = 0;
+
+		for (int gi = 0; gi < shaped.Size; gi++) {
+			const ShGlyph& sg = shaped[gi];
+			float gx = penX + sg.offX * sz;
+			float gy = -sg.offY * sz;
+
+			ImVector<QContour> qcontours;
+			ExtractQContours(atlas, sg.glyphID, gx, gy, sc, sz, qcontours);
+			if (qcontours.Size == 0) { penX += sg.advX * sz; continue; }
+
+			outShapes.push_back(ImWidgetsShape());
+			ImWidgetsShape& glyphShape = outShapes.back();
+			glyphShape.bb = ImRect(FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX);
+
+			ImVector<int> validQI;
+			for (int ci = 0; ci < qcontours.Size; ci++)
+				if (qcontours[ci].curveCount >= 2 && fabsf(qcontours[ci].area) >= 0.1f)
+					validQI.push_back(ci);
+			for (int i2 = 0; i2 < validQI.Size - 1; i2++)
+				for (int j2 = i2 + 1; j2 < validQI.Size; j2++)
+					if (fabsf(qcontours[validQI[j2]].area) > fabsf(qcontours[validQI[i2]].area))
+						ImSwap(validQI[i2], validQI[j2]);
+			ImVector<int> parentQ;
+			parentQ.resize(qcontours.Size, -1);
+			for (int vi = 1; vi < validQI.Size; vi++) {
+				int ci = validQI[vi];
+				for (int oi = 0; oi < vi; oi++) {
+					int outerCI = validQI[oi];
+					if (parentQ[outerCI] == -1 && PointInQContour(qcontours[outerCI], qcontours[ci].curves[0].p0))
+						{ parentQ[ci] = outerCI; break; }
+				}
+			}
+			for (int vi = 0; vi < validQI.Size; vi++) {
+				int outerCI = validQI[vi];
+				if (parentQ[outerCI] != -1) continue;
+				ImVector<QContour> outers, holes2;
+				outers.push_back(qcontours[outerCI]);
+				for (int vi2 = 0; vi2 < validQI.Size; vi2++) {
+					int ci = validQI[vi2];
+					if (parentQ[ci] == outerCI) holes2.push_back(qcontours[ci]);
+				}
+				RecursiveCutQ(outers, holes2, glyphShape, whiteUV, flatTol, 0);
+			}
+
+			for (int it = 0; it < iterations; it++)
+				ShapeTesselationUniform(glyphShape);
+
+			penX += sg.advX * sz;
+		}
+	}
+
+	// (old per-glyph code removed — replaced by QBez pipeline in TesselateText above)
+	static void TesselateAndOffset(ImFont* font, float fontSize, const char* text, const char* text_end, ImVec2 pos, ImWidgetsShape& shape, float tess_tol, int iterations = 0)
+	{
+		TesselateText(font, fontSize, text, shape, text_end, tess_tol, iterations);
+		for (int i = 0; i < shape.vertices.Size; i++)
+			shape.vertices[i].pos = ImVec2(shape.vertices[i].pos.x + pos.x, shape.vertices[i].pos.y + pos.y);
+		shape.bb.Translate(pos);
+	}
+
+	void DrawImageText(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
+	                   ImTextureID tex, const char* text, const char* text_end,
+	                   ImU32 tint, ImVec2 uv_offset, ImVec2 uv_scale, float tess_tol, int iterations)
+	{
+		ImWidgetsShape shape;
+		TesselateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
+		if (shape.triangles.Size == 0) return;
+		float bbW = ImMax(shape.bb.GetWidth(), 1.0f), bbH = ImMax(shape.bb.GetHeight(), 1.0f);
+		for (int i = 0; i < shape.vertices.Size; i++) {
+			ImWidgetsVertex& v = shape.vertices[i];
+			v.uv = ImVec2((v.pos.x - shape.bb.Min.x) / bbW * uv_scale.x + uv_offset.x,
+			              (v.pos.y - shape.bb.Min.y) / bbH * uv_scale.y + uv_offset.y);
+			v.col = tint;
+		}
+		DrawShapeEx(pDrawList, tex, shape);
+	}
+
+	void DrawLinearGradientText(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
+	                            const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1,
+	                            pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space, const char* text_end, float tess_tol, int iterations)
+	{
+		ImWidgetsShape shape;
+		TesselateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
+		if (shape.triangles.Size == 0) return;
+		if (!space2sRGB) { space2sRGB = &ColorConvertsRGBtosRGB; sRGB2Space = &ColorConvertsRGBtosRGB; }
+		ShapeLinearGradientGeneric(shape, uv_start, uv_end, col0, col1, space2sRGB, sRGB2Space);
+		DrawShape(pDrawList, shape);
+	}
+
+	void DrawRadialGradientText(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
+	                            const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1,
+	                            pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space, const char* text_end, float tess_tol, int iterations)
+	{
+		ImWidgetsShape shape;
+		TesselateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
+		if (shape.triangles.Size == 0) return;
+		if (!space2sRGB) { space2sRGB = &ColorConvertsRGBtosRGB; sRGB2Space = &ColorConvertsRGBtosRGB; }
+		ShapeRadialGradientGeneric(shape, uv_start, uv_end, col0, col1, space2sRGB, sRGB2Space);
+		DrawShape(pDrawList, shape);
+	}
+
+	void DrawDiamondGradientText(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
+	                             const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1,
+	                             pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space, const char* text_end, float tess_tol, int iterations)
+	{
+		ImWidgetsShape shape;
+		TesselateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
+		if (shape.triangles.Size == 0) return;
+		if (!space2sRGB) { space2sRGB = &ColorConvertsRGBtosRGB; sRGB2Space = &ColorConvertsRGBtosRGB; }
+		ShapeDiamondGradientGeneric(shape, uv_start, uv_end, col0, col1, space2sRGB, sRGB2Space);
+		DrawShape(pDrawList, shape);
+	}
+
+	// Public: extract contour points (for debug visualization)
+	// Helper: draw a QContour as a polyline on an ImDrawList
+	static void DrawQContourPolyline(ImDrawList* dl, QContour& c, ImVec2 off, ImU32 col, float thick, float tol) {
+		ImVector<ImVec2> pts;
+		FlattenQContour(c, pts, tol);
+		for (int i = 0; i < pts.Size; i++) pts[i] = ImVec2(pts[i].x + off.x, pts[i].y + off.y);
+		if (pts.Size >= 2) dl->AddPolyline(pts.Data, pts.Size, col, ImDrawFlags_Closed, thick);
+	}
+
+	// Debug: render tessellation algorithm steps for a single glyph
+	void DrawTesselateDebug(ImDrawList* dl, ImFont* font, float font_size, const char* text, ImVec2 pos, float tess_tol, float spacing, float rowH)
+	{
+		if (!gs_pContext || !gs_pContext->slugState || !text || !*text) return;
+		if (!font) font = ImGui::GetFont();
+		if (font_size <= 0) font_size = ImGui::GetFontSize();
+		SlugFontCache* atlas = SlugGetOrCreateAtlas(gs_pContext->slugState, font);
+		if (!atlas) return;
+		float sz = font_size, sc = atlas->emScale;
+		float tol = (tess_tol > 0) ? tess_tol : 0.5f;
+
+		unsigned int cp = 0;
+		ImTextCharFromUtf8(&cp, text, text + strlen(text));
+		int gi = stbtt_FindGlyphIndex(&atlas->stbFont, (int)cp);
+
+		ImVector<QContour> qcontours;
+		ExtractQContours(atlas, gi, 0, 0, sc, sz, qcontours);
+		if (qcontours.Size == 0) return;
+
+		// Classify contours
+		ImVector<int> validQI;
+		for (int ci = 0; ci < qcontours.Size; ci++)
+			if (qcontours[ci].curveCount >= 2 && fabsf(qcontours[ci].area) >= 0.1f)
+				validQI.push_back(ci);
+		for (int i2 = 0; i2 < validQI.Size - 1; i2++)
+			for (int j2 = i2 + 1; j2 < validQI.Size; j2++)
+				if (fabsf(qcontours[validQI[j2]].area) > fabsf(qcontours[validQI[i2]].area))
+					ImSwap(validQI[i2], validQI[j2]);
+
+		ImVector<int> parentQ;
+		parentQ.resize(qcontours.Size, -1);
+		for (int vi = 1; vi < validQI.Size; vi++) {
+			int ci = validQI[vi];
+			for (int oi = 0; oi < vi; oi++) {
+				int outerCI = validQI[oi];
+				if (parentQ[outerCI] == -1 && PointInQContour(qcontours[outerCI], qcontours[ci].curves[0].p0))
+					{ parentQ[ci] = outerCI; break; }
+			}
+		}
+
+		// Run with debug recording
+		ImWidgetsShape dbgShape;
+		dbgShape.bb = ImRect(FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX);
+		ImVec2 whiteUV = ImGui::GetDrawListSharedData()->TexUvWhitePixel;
+		TessDebugInfo dbg;
+
+		for (int vi = 0; vi < validQI.Size; vi++) {
+			int outerCI = validQI[vi];
+			if (parentQ[outerCI] != -1) continue;
+			ImVector<QContour> outers, holes2;
+			outers.push_back(qcontours[outerCI]);
+			for (int vi2 = 0; vi2 < validQI.Size; vi2++) {
+				int ci = validQI[vi2];
+				if (parentQ[ci] == outerCI) holes2.push_back(qcontours[ci]);
+			}
+			RecursiveCutQ(outers, holes2, dbgShape, whiteUV, tol, 0, &dbg);
+		}
+
+		static const ImU32 kColors[] = {
+			IM_COL32(255,100,100,255), IM_COL32(100,255,100,255), IM_COL32(100,100,255,255),
+			IM_COL32(255,255,100,255), IM_COL32(255,100,255,255), IM_COL32(100,255,255,255),
+			IM_COL32(200,150,100,255), IM_COL32(150,100,200,255),
+		};
+		int nColors = IM_ARRAYSIZE(kColors);
+
+		// Helper: compute BBox of a QContour
+		struct QBBox { float mnX, mnY, mxX, mxY; float w() const { return mxX-mnX; } float h() const { return mxY-mnY; } };
+		auto ContourBBox = [&](QContour& c) -> QBBox {
+			QBBox bb = {FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX};
+			ImVector<ImVec2> pts; FlattenQContour(c, pts, tol);
+			for (int i = 0; i < pts.Size; i++) {
+				bb.mnX = ImMin(bb.mnX, pts[i].x); bb.mxX = ImMax(bb.mxX, pts[i].x);
+				bb.mnY = ImMin(bb.mnY, pts[i].y); bb.mxY = ImMax(bb.mxY, pts[i].y);
+			}
+			return bb;
+		};
+		// Helper: compute merged BBox of multiple contours
+		auto ContoursBBox = [&](QContour* cs, int n) -> QBBox {
+			QBBox bb = {FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX};
+			for (int ci = 0; ci < n; ci++) {
+				QBBox cb = ContourBBox(cs[ci]);
+				bb.mnX = ImMin(bb.mnX, cb.mnX); bb.mxX = ImMax(bb.mxX, cb.mxX);
+				bb.mnY = ImMin(bb.mnY, cb.mnY); bb.mxY = ImMax(bb.mxY, cb.mxY);
+			}
+			return bb;
+		};
+		// Helper: emit a row with label + reserve space via Dummy. Returns row top Y.
+		auto BeginRow = [&](const char* label, float contentH) -> float {
+			float totalH = 14 + ImMax(contentH, 10.0f) + 4;
+			ImGui::Dummy(ImVec2(0, totalH));
+			float rowY = ImGui::GetCursorScreenPos().y - totalH;
+			dl->AddText(ImVec2(pos.x, rowY), IM_COL32(150,150,150,255), label);
+			return rowY + 14;
+		};
+
+		// Step 0: Slug rendering — compute real glyph height
+		{
+			float asc2 = 0;
+			ImVec2 textSz = CalcTextSize(font, sz, text, NULL, &asc2);
+			float realH = ImMax(textSz.y, 10.0f);
+			float curY = BeginRow("Step 0: Slug GPU", realH);
+			DrawText(dl, font, sz, ImVec2(pos.x + 10, curY + asc2), IM_COL32(100,100,255,200), text);
+		}
+
+		// Deferred intersection point draws (rendered last, on top of everything)
+		struct DeferredIsect { ImVec2 screenPos; bool isHole; int index; };
+		struct DeferredLabel { ImVec2 screenPos; char text[128]; };
+		ImVector<DeferredIsect> deferredIsects;
+		ImVector<DeferredLabel> deferredLabels;
+
+		// Steps 1.x: each cut operation
+		int cutIdx = 0;
+		for (int si = 0; si < dbg.steps.Size; si++) {
+			TessDebugStep& step = dbg.steps[si];
+			if (step.isLeaf) continue;
+
+			// Pre-compute all BBoxes to find max row height
+			QBBox srcBB = (step.nSourceOuters > 0) ? ContoursBBox(step.sourceOuters, step.nSourceOuters) : QBBox{0,0,0,0};
+			float maxH = srcBB.h();
+			for (int rp = 0; rp < step.nResultPieces; rp++) {
+				QBBox rb = ContourBBox(step.resultPieces[rp]);
+				maxH = ImMax(maxH, rb.h());
+			}
+
+			char label[64];
+			snprintf(label, sizeof(label), "Step 1.%d (depth %d): Cut -> %d pieces", cutIdx++, step.depth, step.nResultPieces);
+			float curY = BeginRow(label, maxH);
+			float penX = pos.x + 10;
+
+			// Source contours (outer green + holes red)
+			ImVec2 srcOff(penX - srcBB.mnX, curY - srcBB.mnY);
+			for (int so = 0; so < step.nSourceOuters; so++)
+				DrawQContourPolyline(dl, step.sourceOuters[so], srcOff, IM_COL32(80,255,80,255), 1.5f, tol);
+			for (int sh = 0; sh < step.nSourceHoles; sh++)
+				DrawQContourPolyline(dl, step.sourceHoles[sh], srcOff, IM_COL32(255,80,80,255), 1.5f, tol);
+			// Cut line
+			ImVec2 lp0(step.cutLineP0.x + srcOff.x, step.cutLineP0.y + srcOff.y);
+			ImVec2 lp1(step.cutLineP1.x + srcOff.x, step.cutLineP1.y + srcOff.y);
+			ImVec2 dashPts[2] = { lp0, lp1 };
+			DrawDashedPolylineAA(dl, dashPts, 2, IM_COL32(255,255,0,200), 1.0f, 4.0f, 3.0f, 0.0f);
+
+			// Intersection points (deferred)
+			{
+				ImVec2 cDir(step.cutLineP1.x - step.cutLineP0.x, step.cutLineP1.y - step.cutLineP0.y);
+				float cLen = sqrtf(cDir.x*cDir.x + cDir.y*cDir.y);
+				if (cLen > 0.001f) {
+					cDir.x /= cLen; cDir.y /= cLen;
+					float cA = -cDir.y, cB = cDir.x;
+					float cC2 = -(cA * step.cutLineP0.x + cB * step.cutLineP0.y);
+					struct IsectPt { ImVec2 pos; float proj; bool isHole; };
+					ImVector<IsectPt> isects;
+					auto FindIsects = [&](QContour& contour, bool isHole) {
+						if (contour.curveCount == 0) return;
+						for (int qi = 0; qi < contour.curveCount; qi++) {
+							const QBez& q = contour.curves[qi];
+							float d0=cA*q.p0.x+cB*q.p0.y+cC2, d1=cA*q.p1.x+cB*q.p1.y+cC2, d2=cA*q.p2.x+cB*q.p2.y+cC2;
+							float A2=d0-2*d1+d2, B2=2*(d1-d0), C2v=d0;
+							float roots[2]; int nR=0;
+							if(fabsf(A2)>1e-8f){float disc=B2*B2-4*A2*C2v;if(disc>=0){float sd=sqrtf(disc);float r1=(-B2-sd)/(2*A2),r2=(-B2+sd)/(2*A2);if(r1>0.001f&&r1<0.999f)roots[nR++]=r1;if(r2>0.001f&&r2<0.999f&&fabsf(r2-r1)>0.001f)roots[nR++]=r2;}}else if(fabsf(B2)>1e-8f){float r=-C2v/B2;if(r>0.001f&&r<0.999f)roots[nR++]=r;}
+							for(int ri=0;ri<nR;ri++){ImVec2 p=QBezEval(q,roots[ri]);isects.push_back({p,p.x*cDir.x+p.y*cDir.y,isHole});}
+							if(nR==0&&fabsf(d2)<0.5f){int nq=(qi+1)%contour.curveCount;float dN=cA*contour.curves[nq].p2.x+cB*contour.curves[nq].p2.y+cC2;if((d0>0.5f&&dN<-0.5f)||(d0<-0.5f&&dN>0.5f))isects.push_back({q.p2,q.p2.x*cDir.x+q.p2.y*cDir.y,isHole});}
+						}
+					};
+					for(int so=0;so<step.nSourceOuters;so++)FindIsects(step.sourceOuters[so],false);
+					for(int sh=0;sh<step.nSourceHoles;sh++)FindIsects(step.sourceHoles[sh],true);
+					for(int i2=1;i2<isects.Size;i2++){IsectPt key=isects[i2];int j2=i2-1;while(j2>=0&&isects[j2].proj>key.proj){isects[j2+1]=isects[j2];j2--;}isects[j2+1]=key;}
+					for(int i2=isects.Size-1;i2>0;i2--)if(fabsf(isects[i2].proj-isects[i2-1].proj)<1.0f)isects.erase(&isects[i2]);
+					DeferredLabel lbl; int lo=0;
+					lo+=snprintf(lbl.text+lo,sizeof(lbl.text)-lo,"Isects(%d) seq=",isects.Size);
+					for(int ip=0;ip<isects.Size;ip++){
+						deferredIsects.push_back({ImVec2(isects[ip].pos.x+srcOff.x,isects[ip].pos.y+srcOff.y),isects[ip].isHole,ip});
+						if(lo<120)lo+=snprintf(lbl.text+lo,sizeof(lbl.text)-lo,"%s%s",isects[ip].isHole?"H":"C",ip<isects.Size-1?",":"");
+					}
+					lbl.screenPos=ImVec2(penX,curY+srcBB.h()+2);
+					deferredLabels.push_back(lbl);
+				}
+			}
+
+			penX += srcBB.w() + spacing;
+			dl->AddText(ImVec2(penX - spacing * 0.5f - 5, curY + maxH * 0.4f), IM_COL32(200,200,200,255), ">");
+
+			// Result pieces
+			for (int rp = 0; rp < step.nResultPieces; rp++) {
+				QBBox rb = ContourBBox(step.resultPieces[rp]);
+				ImVec2 off(penX - rb.mnX, curY - rb.mnY);
+				DrawQContourPolyline(dl, step.resultPieces[rp], off, kColors[rp % nColors], 2.0f, tol);
+				penX += rb.w() + spacing * 0.3f;
+			}
+		}
+
+		// Compute max leaf height once for steps 2-5
+		float leafMaxH = 20.0f;
+		for (int lp = 0; lp < dbg.nLeafPieces; lp++)
+			leafMaxH = ImMax(leafMaxH, ContourBBox(dbg.leafPieces[lp]).h());
+
+		// Step 2: All leaf pieces (wireframe)
+		{
+			char label[64]; snprintf(label, sizeof(label), "Step 2: %d leaf pieces (hole-free)", dbg.nLeafPieces);
+			float curY = BeginRow(label, leafMaxH);
+			float penX = pos.x + 10;
+			for (int lp = 0; lp < dbg.nLeafPieces; lp++) {
+				QBBox bb = ContourBBox(dbg.leafPieces[lp]);
+				ImVec2 off(penX - bb.mnX, curY - bb.mnY);
+				DrawQContourPolyline(dl, dbg.leafPieces[lp], off, kColors[lp % nColors], 2.0f, tol);
+				penX += bb.w() + spacing * 0.3f;
+			}
+		}
+
+		// Step 3: Tessellated (filled) leaf pieces
+		{
+			float curY = BeginRow("Step 3: Tessellated (filled)", leafMaxH);
+			float penX = pos.x + 10;
+			ImVec2 wuv = ImGui::GetDrawListSharedData()->TexUvWhitePixel;
+			for (int lp = 0; lp < dbg.nLeafPieces; lp++) {
+				ImVector<ImVec2> pts; FlattenQContour(dbg.leafPieces[lp], pts, tol);
+				QBBox bb = ContourBBox(dbg.leafPieces[lp]);
+				float offX = penX - bb.mnX, offY = curY - bb.mnY;
+				// Offset points BEFORE triangulation so vertices are in screen space
+				for (int pi = 0; pi < pts.Size; pi++) { pts[pi].x += offX; pts[pi].y += offY; }
+				ImU32 col2 = kColors[lp % nColors] & 0x00FFFFFF | 0xC0000000;
+				ImWidgetsShape tmp; tmp.bb = ImRect(FLT_MAX,FLT_MAX,-FLT_MAX,-FLT_MAX);
+				EarClipTriangulate(pts, tmp, wuv);
+				for (int ti = 0; ti < tmp.triangles.Size; ti++) {
+					ImWidgetsTriIdx& t = tmp.triangles[ti];
+					dl->AddTriangleFilled(tmp.vertices[t.a].pos, tmp.vertices[t.b].pos, tmp.vertices[t.c].pos, col2);
+					dl->AddTriangle(tmp.vertices[t.a].pos, tmp.vertices[t.b].pos, tmp.vertices[t.c].pos, IM_COL32(255,255,255,60), 0.5f);
+				}
+				penX += bb.w() + spacing * 0.3f;
+			}
+		}
+
+		// Step 4: [Assembled Shape] - [Tessellated + iterations] - [Slug Render]
+		{
+			QBBox allLeafBB = {FLT_MAX,FLT_MAX,-FLT_MAX,-FLT_MAX};
+			for (int lp = 0; lp < dbg.nLeafPieces; lp++) {
+				QBBox lb = ContourBBox(dbg.leafPieces[lp]);
+				allLeafBB.mnX=ImMin(allLeafBB.mnX,lb.mnX); allLeafBB.mxX=ImMax(allLeafBB.mxX,lb.mxX);
+				allLeafBB.mnY=ImMin(allLeafBB.mnY,lb.mnY); allLeafBB.mxY=ImMax(allLeafBB.mxY,lb.mxY);
+			}
+			// Extra space for sub-labels
+			float curY = BeginRow("Step 4: Assembled | Tessellated | Slug GPU", allLeafBB.h() + 16);
+			ImVec2 wuv = ImGui::GetDrawListSharedData()->TexUvWhitePixel;
+			float glyphW = allLeafBB.w(), glyphH = allLeafBB.h();
+
+			// --- Left: Assembled shape (colored pieces, no wireframe) ---
+			float col1X = pos.x + 10;
+			{
+				float offX = col1X - allLeafBB.mnX, offY = curY - allLeafBB.mnY;
+				for (int lp = 0; lp < dbg.nLeafPieces; lp++) {
+					ImVector<ImVec2> pts; FlattenQContour(dbg.leafPieces[lp], pts, tol);
+					for (int pi = 0; pi < pts.Size; pi++) { pts[pi].x += offX; pts[pi].y += offY; }
+					ImU32 col2 = kColors[lp % nColors] & 0x00FFFFFF | 0xC0000000;
+					ImWidgetsShape tmp; tmp.bb = ImRect(FLT_MAX,FLT_MAX,-FLT_MAX,-FLT_MAX);
+					EarClipTriangulate(pts, tmp, wuv);
+					for (int ti = 0; ti < tmp.triangles.Size; ti++) {
+						ImWidgetsTriIdx& t = tmp.triangles[ti];
+						dl->AddTriangleFilled(tmp.vertices[t.a].pos, tmp.vertices[t.b].pos, tmp.vertices[t.c].pos, col2);
+					}
+				}
+				dl->AddText(ImVec2(col1X, curY + glyphH + 2), IM_COL32(150,150,150,200), "Assembled");
+			}
+
+			// --- Middle: Tessellated with ShapeTesselationUniform iterations (wireframe) ---
+			float col2X = col1X + glyphW + spacing;
+			{
+				// Build a single combined shape from all leaf pieces
+				ImWidgetsShape tessShape;
+				tessShape.bb = ImRect(FLT_MAX,FLT_MAX,-FLT_MAX,-FLT_MAX);
+				float offX = col2X - allLeafBB.mnX, offY = curY - allLeafBB.mnY;
+				for (int lp = 0; lp < dbg.nLeafPieces; lp++) {
+					ImVector<ImVec2> pts; FlattenQContour(dbg.leafPieces[lp], pts, tol);
+					for (int pi = 0; pi < pts.Size; pi++) { pts[pi].x += offX; pts[pi].y += offY; }
+					EarClipTriangulate(pts, tessShape, wuv);
+				}
+				// Apply subdivision iterations
+				for (int it = 0; it < gs_tessIterations; it++)
+					ShapeTesselationUniform(tessShape);
+				// Draw filled + wireframe
+				for (int ti = 0; ti < tessShape.triangles.Size; ti++) {
+					ImWidgetsTriIdx& t = tessShape.triangles[ti];
+					ImVec2 pa = tessShape.vertices[t.a].pos, pb = tessShape.vertices[t.b].pos, pc = tessShape.vertices[t.c].pos;
+					dl->AddTriangleFilled(pa, pb, pc, IM_COL32(80, 80, 80, 200));
+					dl->AddTriangle(pa, pb, pc, IM_COL32(255, 255, 255, 80), 0.5f);
+				}
+				char tessLabel[64];
+				snprintf(tessLabel, sizeof(tessLabel), "Tessellated (%d tri, %d iter)", tessShape.triangles.Size, gs_tessIterations);
+				dl->AddText(ImVec2(col2X, curY + glyphH + 2), IM_COL32(150,150,150,200), tessLabel);
+			}
+
+			// --- Right: Slug GPU reference ---
+			float col3X = col2X + glyphW + spacing;
+			{
+				float asc2 = 0;
+				CalcTextSize(font, sz, text, NULL, &asc2);
+				DrawText(dl, font, sz, ImVec2(col3X, curY + asc2), IM_COL32(100,100,255,200), text);
+				dl->AddText(ImVec2(col3X, curY + glyphH + 2), IM_COL32(150,150,150,200), "Slug GPU");
+			}
+		}
+
+		// Subdivision iteration slider
+		ImGui::SliderInt("Iterations##TessDbg", &gs_tessIterations, 0, 6);
+
+		// Cut axis toggle
+		ImGui::Checkbox("Cut along short axis##TessDbg", &gs_cutAlongShortAxis);
+		ImGui::SameLine();
+
+		// Debug text panel (togglable)
+		static bool showTessDebugText = false;
+		ImGui::Checkbox("Show Debug Info##TessDbg", &showTessDebugText);
+		if (showTessDebugText) {
+			static char tessDbgClipboard[2048];
+			{
+				int off = 0;
+				off += snprintf(tessDbgClipboard + off, sizeof(tessDbgClipboard) - off, "=== Tess Debug ===\n");
+				for (int di = 0; di < deferredLabels.Size; di++)
+					off += snprintf(tessDbgClipboard + off, sizeof(tessDbgClipboard) - off, "%s\n", deferredLabels[di].text);
+				off += snprintf(tessDbgClipboard + off, sizeof(tessDbgClipboard) - off,
+					"isects=%d leafPieces=%d steps=%d\n", deferredIsects.Size, dbg.nLeafPieces, dbg.steps.Size);
+				for (int di = 0; di < deferredIsects.Size; di++)
+					off += snprintf(tessDbgClipboard + off, sizeof(tessDbgClipboard) - off,
+						"  isect[%d] %s pos=(%.1f,%.1f)\n", di, deferredIsects[di].isHole ? "H" : "C",
+						deferredIsects[di].screenPos.x, deferredIsects[di].screenPos.y);
+			}
+			ImGui::TextWrapped("%s", tessDbgClipboard);
+			if (ImGui::Button("Copy Debug to Clipboard"))
+				ImGui::SetClipboardText(tessDbgClipboard);
+		}
+
+		// Deferred: draw intersection points using FOREGROUND draw list (never clipped)
+		ImDrawList* fgDl = ImGui::GetForegroundDrawList();
+		for (int di = 0; di < deferredIsects.Size; di++) {
+			DeferredIsect& d = deferredIsects[di];
+			ImU32 fillCol = d.isHole ? IM_COL32(255, 0, 0, 255) : IM_COL32(0, 255, 0, 255);
+			fgDl->AddRectFilled(ImVec2(d.screenPos.x - 5, d.screenPos.y - 5),
+			                    ImVec2(d.screenPos.x + 5, d.screenPos.y + 5), fillCol);
+			fgDl->AddRect(ImVec2(d.screenPos.x - 6, d.screenPos.y - 6),
+			              ImVec2(d.screenPos.x + 6, d.screenPos.y + 6), IM_COL32(255, 255, 255, 255), 0.0f, 0, 2.0f);
+			char numBuf[16]; snprintf(numBuf, sizeof(numBuf), "%d%s", d.index, d.isHole ? "H" : "C");
+			fgDl->AddRectFilled(ImVec2(d.screenPos.x + 8, d.screenPos.y - 14),
+			                    ImVec2(d.screenPos.x + 40, d.screenPos.y + 2), IM_COL32(0, 0, 0, 220));
+			fgDl->AddText(ImVec2(d.screenPos.x + 9, d.screenPos.y - 13), IM_COL32(255, 255, 255, 255), numBuf);
+		}
+	}
+
+	void ExtractTextContours(ImFont* font, float font_size, const char* text, const char* text_end,
+	                         ImVec2 offset, ImVector<ImVec2>& outPoly, ImRect& outBB, float tess_tol)
+	{
+		outPoly.resize(0);
+		outBB = ImRect(FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX);
+		if (!gs_pContext || !gs_pContext->slugState) return;
+		if (!text_end) text_end = text + strlen(text);
+		if (!font) font = ImGui::GetFont();
+		if (font_size <= 0) font_size = ImGui::GetFontSize();
+		SlugFontCache* atlas = SlugGetOrCreateAtlas(gs_pContext->slugState, font);
+		if (!atlas) return;
+		float sz = font_size, sc = atlas->emScale;
+		float tol = (tess_tol > 0) ? tess_tol : 0.5f;
+		// Simple: get first glyph contours
+		unsigned int cp = 0;
+		ImTextCharFromUtf8(&cp, text, text_end);
+		int gi = stbtt_FindGlyphIndex(&atlas->stbFont, (int)cp);
+		ImVector<QContour> qc;
+		ExtractQContours(atlas, gi, offset.x, offset.y, sc, sz, qc);
+		for (int ci = 0; ci < qc.Size; ci++) {
+			ImVector<ImVec2> pts;
+			FlattenQContour(qc[ci], pts, tol);
+			// Explicitly close for DrawShapeWithHole compatibility
+			if (pts.Size >= 3) {
+				float dx = pts.back().x - pts[0].x, dy = pts.back().y - pts[0].y;
+				if (dx*dx+dy*dy > 0.01f) pts.push_back(pts[0]);
+			}
+			for (int pi = 0; pi < pts.Size; pi++) { outPoly.push_back(pts[pi]); outBB.Add(pts[pi]); }
+		}
+	}
+
 #endif // IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 
 	// ---- ImFontLoader: Slug atlas baking ------------------------------------
@@ -2996,7 +4940,8 @@
 	void DrawTextDebugCurves(ImDrawList*, ImFont*, float, ImVec2, const char*, const char*, int) {}
 	void DrawTextDebugLayers(ImDrawList*, ImFont*, float, ImVec2, const char*, const char*) {}
 
-#endif  // IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+
+#endif  // IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER_WAS_UNDEF
 
 
 #endif // _DEAR_WIDGETS_SLUG_INCLUDED

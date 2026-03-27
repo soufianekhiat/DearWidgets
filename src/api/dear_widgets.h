@@ -2718,6 +2718,23 @@ namespace ImWidgets{
 	IMGUI_API ImVec2 CalcTextSize( ImFont* font, float font_size, const char* text, const char* text_end = nullptr, float* out_ascent = nullptr );
 	// Horizontal linear gradient: col_left at text start, col_right at text end.
 	IMGUI_API void DrawTextGradient( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, ImU32 col_left, ImU32 col_right, const char* text, const char* text_end = nullptr );
+	// ---- Typography: tesselated text for gradient/image fills ----
+	// tess_tol: curve flattening tolerance (lower = more segments, smoother curves). 0 = auto.
+	// Convert text to CPU-tesselated geometry (ImWidgetsShape) for use with gradient/image fill functions.
+	IMGUI_API void TesselateText( ImFont* font, float font_size, const char* text, ImWidgetsShape& outShape, const char* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
+	// Same as TesselateText but returns per-glyph shapes (preserves ligatures/calt from full text shaping).
+	IMGUI_API void TesselateTextPerGlyph( ImFont* font, float font_size, const char* text, ImVector<ImWidgetsShape>& outShapes, const char* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
+	// Extract raw contour points (explicitly closed, for DrawShapeWithHole). Debug/internal use.
+	IMGUI_API void ExtractTextContours( ImFont* font, float font_size, const char* text, const char* text_end, ImVec2 offset, ImVector<ImVec2>& outPoly, ImRect& outBB, float tess_tol = 0.0f );
+	// Debug: draw the tessellation algorithm steps for a single character
+	IMGUI_API void DrawTesselateDebug( ImDrawList* dl, ImFont* font, float font_size, const char* text, ImVec2 pos, float tess_tol, float spacing, float rowH );
+	// Text filled with an image texture.
+	IMGUI_API void DrawImageText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, ImTextureID tex, const char* text, const char* text_end = nullptr, ImU32 tint = IM_COL32_WHITE, ImVec2 uv_offset = ImVec2(0,0), ImVec2 uv_scale = ImVec2(1,1), float tess_tol = 0.0f, int iterations = 0 );
+	// Text filled with gradients (supports all color spaces via function pointers).
+	IMGUI_API void DrawLinearGradientText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB = nullptr, pfsRGB2Space sRGB2Space = nullptr, const char* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
+	IMGUI_API void DrawRadialGradientText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB = nullptr, pfsRGB2Space sRGB2Space = nullptr, const char* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
+	IMGUI_API void DrawDiamondGradientText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB = nullptr, pfsRGB2Space sRGB2Space = nullptr, const char* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
+
 	// Debug: draw curve outlines, control points, and bounding boxes for Slug glyphs.
 	// flags: 1=curves, 2=control points, 4=bounding boxes, 8=band grid, 0xFF=all
 	IMGUI_API void DrawTextDebugCurves( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, const char* text_end = nullptr, int flags = 0xFF );
