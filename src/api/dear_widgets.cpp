@@ -11,6 +11,7 @@
 #define STBTT_STATIC
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "../../extern/ImPlatform/imgui/imstb_truetype.h"
+#include "../../extern/CDT/CDT.h" // Constrained Delaunay Triangulation (artem-ogre/CDT) — must be outside namespace
 
 namespace ImWidgets{
     ImGlobalData GlobalData;

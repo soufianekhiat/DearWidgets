@@ -18,6 +18,8 @@
 	// Debug options
 	static bool gs_cutAlongShortAxis = false;
 	static int gs_tessIterations = 0;
+	static float gs_minHolePct = 1.0f; // min hole area as % of outer area
+	static bool gs_useCDT = true;      // use CDT instead of recursive cutting
 
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 
@@ -143,10 +145,20 @@
 		bool        dirty;            // needs GPU re-upload
 	};
 
+	// Cached tessellation of a single glyph stored at kTessRefSize pixel scale (sc=atlas->emScale, sz=kTessRefSize).
+	// positions[i] = (v.x, -v.y) — y-flip already applied, ready to scale by (sz/kTessRefSize) and offset by (gx,gy).
+	struct DwTessGlyphData
+	{
+		ImVector<ImVec2>          positions;  // font-unit coords
+		ImVector<ImWidgetsTriIdx> triangles;
+		ImRect                    bb;         // font-unit bounding box
+	};
+
 	// Top-level slug state stored in ImWidgetsContext
 	struct ImWidgetsSlugState
 	{
-		ImVector<SlugFontCache*> atlases;
+		ImVector<SlugFontCache*>  atlases;
+		ImPool<DwTessGlyphData>   tessGlyphPool; // keyed by DwTessGlyphKey(atlas, glyph_id)
 	};
 
 	// ---- Texture helpers ----------------------------------------------------
@@ -2789,48 +2801,66 @@
 	}
 
 	// Cut a quadratic Bézier by line ax+by+c=0. Returns curve segments on each side.
+	// Robust: uses endpoint signs as ground truth, no arbitrary epsilon for root filtering.
 	static void CutQBezByLine(const QBez& q, float a, float b, float c2,
 	                          ImVector<QBez>& posOut, ImVector<QBez>& negOut) {
 		float d0 = a*q.p0.x + b*q.p0.y + c2;
-		float d1 = a*q.p1.x + b*q.p1.y + c2;
 		float d2 = a*q.p2.x + b*q.p2.y + c2;
 
-		// Quadratic in t: d(t) = (d0-2d1+d2)t² + 2(d1-d0)t + d0
+		// Fast path: both endpoints clearly on the same side → no split needed
+		if (d0 > 0 && d2 > 0) {
+			// Check if curve dips into negative side (control point)
+			float d1 = a*q.p1.x + b*q.p1.y + c2;
+			if (d1 >= 0) { posOut.push_back(q); return; } // entirely positive
+		}
+		if (d0 < 0 && d2 < 0) {
+			float d1 = a*q.p1.x + b*q.p1.y + c2;
+			if (d1 <= 0) { negOut.push_back(q); return; } // entirely negative
+		}
+
+		// Need to find roots: d(t) = A2*t² + B2*t + C2 = 0
+		float d1 = a*q.p1.x + b*q.p1.y + c2;
 		float A2 = d0 - 2*d1 + d2;
 		float B2 = 2*(d1 - d0);
 		float C2 = d0;
 
-		// Find roots in [0,1]
 		float roots[2]; int nRoots = 0;
-		if (fabsf(A2) > 1e-8f) {
+		const float eps = 1e-6f; // tiny epsilon just for degenerate math, not for filtering
+		if (fabsf(A2) > 1e-12f) {
 			float disc = B2*B2 - 4*A2*C2;
 			if (disc >= 0) {
-				float sd = sqrtf(disc);
+				float sd = sqrtf(ImMax(disc, 0.0f));
 				float r1 = (-B2 - sd) / (2*A2);
 				float r2 = (-B2 + sd) / (2*A2);
-				if (r1 > 0.001f && r1 < 0.999f) roots[nRoots++] = r1;
-				if (r2 > 0.001f && r2 < 0.999f && fabsf(r2-r1) > 0.001f) roots[nRoots++] = r2;
+				if (r1 > eps && r1 < 1.0f - eps) roots[nRoots++] = r1;
+				if (r2 > eps && r2 < 1.0f - eps && fabsf(r2 - r1) > eps) roots[nRoots++] = r2;
 			}
-		} else if (fabsf(B2) > 1e-8f) {
+		} else if (fabsf(B2) > 1e-12f) {
 			float r = -C2 / B2;
-			if (r > 0.001f && r < 0.999f) roots[nRoots++] = r;
+			if (r > eps && r < 1.0f - eps) roots[nRoots++] = r;
 		}
 
 		// Sort roots
 		if (nRoots == 2 && roots[0] > roots[1]) { float tmp = roots[0]; roots[0] = roots[1]; roots[1] = tmp; }
 
+		// Fallback: if endpoints are on opposite sides but no root found (numerical edge case),
+		// force a split at t=0.5 where the sign must change
+		if (nRoots == 0 && ((d0 > 0) != (d2 > 0))) {
+			roots[nRoots++] = 0.5f;
+		}
+
 		if (nRoots == 0) {
-			// Entire curve on one side
-			float dMid = a*QBezEval(q, 0.5f).x + b*QBezEval(q, 0.5f).y + c2;
-			if (dMid >= 0) posOut.push_back(q); else negOut.push_back(q);
+			// Entire curve on one side — use endpoint majority for robustness
+			int nPos = (d0 >= 0 ? 1 : 0) + (d1 >= 0 ? 1 : 0) + (d2 >= 0 ? 1 : 0);
+			if (nPos >= 2) posOut.push_back(q); else negOut.push_back(q);
 		} else {
-			// Split at roots and classify each segment
+			// Split at roots and classify each segment by its endpoints
 			QBez segments[3]; int nSegs = 0;
 			QBez rem = q;
 			float prevT = 0;
 			for (int ri = 0; ri < nRoots; ri++) {
-				float t = (roots[ri] - prevT) / (1.0f - prevT); // remap to remaining curve
-				if (t <= 0.001f || t >= 0.999f) continue;
+				float t = (roots[ri] - prevT) / (1.0f - prevT);
+				if (t <= 1e-6f || t >= 1.0f - 1e-6f) continue;
 				QBez left, right;
 				QBezSplit(rem, t, left, right);
 				segments[nSegs++] = left;
@@ -2840,9 +2870,13 @@
 			segments[nSegs++] = rem;
 
 			for (int si = 0; si < nSegs; si++) {
-				ImVec2 mid = QBezEval(segments[si], 0.5f);
-				float dMid = a*mid.x + b*mid.y + c2;
-				if (dMid >= 0) posOut.push_back(segments[si]);
+				// Classify by midpoint — but verify with both endpoints for robustness
+				float dS = a*segments[si].p0.x + b*segments[si].p0.y + c2;
+				float dE = a*segments[si].p2.x + b*segments[si].p2.y + c2;
+				float dM = a*QBezEval(segments[si], 0.5f).x + b*QBezEval(segments[si], 0.5f).y + c2;
+				// Majority vote of 3 samples
+				int nPos = (dS >= 0 ? 1 : 0) + (dE >= 0 ? 1 : 0) + (dM >= 0 ? 1 : 0);
+				if (nPos >= 2) posOut.push_back(segments[si]);
 				else negOut.push_back(segments[si]);
 			}
 		}
@@ -2996,7 +3030,7 @@
 				}
 			}
 
-			// Now split at remaining cut gaps (rebuild gap list after rotation)
+			// Now split at ALL cut gaps (rebuild gap list after rotation, same thresholds)
 			int runStart = start;
 			for (int i = 0; i < count - 1; i++) {
 				ImVec2 pe = curves[start + i].p2;
@@ -3005,7 +3039,7 @@
 				if (dist > 1.0f) {
 					float dPe = fabsf(a * pe.x + b * pe.y + c2);
 					float dPs = fabsf(a * ps.x + b * ps.y + c2);
-					bool isCut = (dPe < 2.0f && dPs < 2.0f && dist > 4.0f);
+					bool isCut = (dPe < lineTol && dPs < lineTol && dist > gapTolSq);
 					if (isCut) {
 						// Split here: emit arc from runStart to i
 						int arcCount = (start + i + 1) - runStart;
@@ -3078,17 +3112,13 @@
 		SortArcs(posArcs);
 		SortArcs(negArcs);
 
-		// Build contours from arcs using nearest-neighbor chaining.
-		// Each arc has two endpoints. We find the nearest unused endpoint to chain
-		// arcs into closed contours, reversing arcs as needed.
-		// This handles any number of arcs from any number of contours.
-		auto BuildFromArcs = [](ImVector<QBez>& curves, ImVector<CurveArc>& arcs, ImVector<QContour>& out) {
+		// Build contours from arcs using the even-odd bridge rule.
+		// Sort all arc endpoints along the cut line. Between consecutive endpoints,
+		// alternate inside/outside (even-odd). Bridges connect at "inside" segments.
+		// This is topologically correct: C,H,H,C → bridges at C-H and H-C.
+		auto BuildFromArcs = [&](ImVector<QBez>& curves, ImVector<CurveArc>& arcs, ImVector<QContour>& out) {
 			if (arcs.Size == 0) return;
 
-			ImVector<bool> used;
-			used.resize(arcs.Size, false);
-
-			// Helper: append arc curves with internal gap bridging
 			auto AppendArc = [&](QContour& dst, CurveArc& arc, bool reverse) {
 				if (!reverse) {
 					for (int ci = 0; ci < arc.count; ci++) {
@@ -3120,7 +3150,6 @@
 				}
 			};
 
-			// Helper: add bridge between two points
 			auto AddBridge = [](QContour& dst, ImVec2 from, ImVec2 to) {
 				float d = (from.x-to.x)*(from.x-to.x) + (from.y-to.y)*(from.y-to.y);
 				if (d > 0.1f) {
@@ -3129,46 +3158,97 @@
 				}
 			};
 
-			for (int startArc = 0; startArc < arcs.Size; startArc++) {
-				if (used[startArc]) continue;
+			// Collect all arc endpoints
+			struct ArcEP {
+				float proj;
+				int arcIdx;
+				bool isEnd; // false = start, true = end
+				ImVec2 pos;
+			};
+			ImVector<ArcEP> eps;
+			for (int ai = 0; ai < arcs.Size; ai++) {
+				ImVec2 s = curves[arcs[ai].startIdx].p0;
+				ImVec2 e = curves[arcs[ai].startIdx + arcs[ai].count - 1].p2;
+				eps.push_back({s.x * cutDir.x + s.y * cutDir.y, ai, false, s});
+				eps.push_back({e.x * cutDir.x + e.y * cutDir.y, ai, true, e});
+			}
+
+			// Sort by projection
+			for (int i = 1; i < eps.Size; i++) {
+				ArcEP key = eps[i];
+				int j = i - 1;
+				while (j >= 0 && eps[j].proj > key.proj) { eps[j+1] = eps[j]; j--; }
+				eps[j+1] = key;
+			}
+
+			// Even-odd bridge determination: between consecutive sorted endpoints,
+			// the cut line alternates inside/outside the solid.
+			// Bridge segments are at "inside" positions.
+			// Starting from before the first endpoint: outside.
+			int nEps = eps.Size;
+			ImVector<bool> isBridge;
+			isBridge.resize(nEps > 1 ? nEps - 1 : 1, false);
+			{
+				bool inside = false;
+				for (int i = 0; i < nEps - 1; i++) {
+					inside = !inside;
+					isBridge[i] = inside;
+				}
+			}
+
+			// Build a lookup: for each sorted endpoint, which arc and which end
+			// Also build: arcStartEP[arcIdx] = sorted endpoint index for arc's start
+			//             arcEndEP[arcIdx] = sorted endpoint index for arc's end
+			ImVector<int> arcStartEP, arcEndEP;
+			arcStartEP.resize(arcs.Size, -1);
+			arcEndEP.resize(arcs.Size, -1);
+			for (int ei = 0; ei < nEps; ei++) {
+				if (!eps[ei].isEnd) arcStartEP[eps[ei].arcIdx] = ei;
+				else arcEndEP[eps[ei].arcIdx] = ei;
+			}
+
+			// Assemble: start with any unused arc, follow bridges using even-odd rule
+			ImVector<bool> used;
+			used.resize(arcs.Size, false);
+
+			for (int firstArc = 0; firstArc < arcs.Size; firstArc++) {
+				if (used[firstArc]) continue;
 
 				out.push_back(QContour());
 				QContour* cur = &out.back();
-				used[startArc] = true;
-				AppendArc(*cur, arcs[startArc], false);
+				used[firstArc] = true;
+				bool curFwd = true;
+				AppendArc(*cur, arcs[firstArc], false);
 
-				// Chain: find nearest unused arc endpoint, bridge to it, append
-				for (int safety = 0; safety < arcs.Size; safety++) {
+				// Track current tail's sorted endpoint index precisely
+				int curEndEP = arcEndEP[firstArc];
+
+				for (int safety = 0; safety < arcs.Size * 2; safety++) {
 					ImVec2 tail = cur->curves[cur->curveCount - 1].p2;
+					int tailEP = curEndEP;
+					if (tailEP < 0) break;
 
-					// Find nearest unused arc (check both endpoints)
-					int bestArc = -1; bool bestRev = false; float bestDist = FLT_MAX;
-					for (int ai = 0; ai < arcs.Size; ai++) {
-						if (used[ai]) continue;
-						ImVec2 as = curves[arcs[ai].startIdx].p0;
-						ImVec2 ae = curves[arcs[ai].startIdx + arcs[ai].count - 1].p2;
-						float dFwd = (tail.x-as.x)*(tail.x-as.x) + (tail.y-as.y)*(tail.y-as.y);
-						float dRev = (tail.x-ae.x)*(tail.x-ae.x) + (tail.y-ae.y)*(tail.y-ae.y);
-						if (dFwd < bestDist) { bestDist = dFwd; bestArc = ai; bestRev = false; }
-						if (dRev < bestDist) { bestDist = dRev; bestArc = ai; bestRev = true; }
-					}
+					// Find bridge: check which adjacent segment is "inside" (bridge)
+					int nextEP = -1;
+					if (tailEP < nEps - 1 && isBridge[tailEP])
+						nextEP = tailEP + 1;
+					else if (tailEP > 0 && isBridge[tailEP - 1])
+						nextEP = tailEP - 1;
+					if (nextEP < 0) break;
 
-					if (bestArc < 0) break; // no more arcs
+					int nextArc = eps[nextEP].arcIdx;
+					if (used[nextArc]) break;
 
-					// Check if closing (back to start) is closer than chaining to any remaining arc
-					ImVec2 head = cur->curves[0].p0;
-					float dClose = (tail.x-head.x)*(tail.x-head.x) + (tail.y-head.y)*(tail.y-head.y);
-					if (dClose <= bestDist) break; // close the contour
+					bool reverse = eps[nextEP].isEnd;
+					used[nextArc] = true;
+					AddBridge(*cur, tail, eps[nextEP].pos);
+					AppendArc(*cur, arcs[nextArc], reverse);
 
-					used[bestArc] = true;
-					ImVec2 nextPt = bestRev ?
-						curves[arcs[bestArc].startIdx + arcs[bestArc].count - 1].p2 :
-						curves[arcs[bestArc].startIdx].p0;
-					AddBridge(*cur, tail, nextPt);
-					AppendArc(*cur, arcs[bestArc], bestRev);
+					// Update: the new arc's exit endpoint
+					curFwd = !reverse;
+					curEndEP = reverse ? arcStartEP[nextArc] : arcEndEP[nextArc];
 				}
 
-				// Close contour
 				if (cur->curveCount > 0) {
 					ImVec2 last = cur->curves[cur->curveCount - 1].p2;
 					ImVec2 first = cur->curves[0].p0;
@@ -3267,6 +3347,109 @@
 		}
 	}
 
+	// CDT-based triangulation: handles outer contour + holes directly.
+	// Uses Constrained Delaunay Triangulation (artem-ogre/CDT) — no recursive cutting needed.
+	// Input: outer contour (QContour) + holes (QContour array)
+	// Output: triangulated shape (ImWidgetsShape)
+	static void CDTTriangulate(QContour& outer, QContour* holes, int nHoles,
+	                           ImWidgetsShape& outShape, ImVec2 whiteUV, float tol)
+	{
+		// Flatten outer contour to polygon
+		ImVector<ImVec2> outerPts;
+		FlattenQContour(outer, outerPts, tol);
+		if (outerPts.Size < 3) return;
+
+		// Build CDT vertices and edges — flatten directly into cdtVerts
+		std::vector<CDT::V2d<float>> cdtVerts;
+		std::vector<CDT::Edge> cdtEdges;
+
+		// Add outer contour
+		int outerBase = (int)cdtVerts.size();
+		for (int i = 0; i < outerPts.Size; i++)
+			cdtVerts.push_back({outerPts[i].x, outerPts[i].y});
+		for (int i = 0; i < outerPts.Size; i++)
+			cdtEdges.push_back({(CDT::VertInd)(outerBase + i),
+			                    (CDT::VertInd)(outerBase + (i + 1) % outerPts.Size)});
+
+		// Add holes one at a time (avoid ImVector<ImVector<>> which corrupts on realloc)
+		for (int hi = 0; hi < nHoles; hi++) {
+			if (holes[hi].curveCount == 0 || !holes[hi].curves) continue;
+			ImVector<ImVec2> hPts;
+			FlattenQContour(holes[hi], hPts, tol);
+			if (hPts.Size < 3) continue;
+			int holeBase = (int)cdtVerts.size();
+			for (int i = 0; i < hPts.Size; i++)
+				cdtVerts.push_back({hPts[i].x, hPts[i].y});
+			for (int i = 0; i < hPts.Size; i++)
+				cdtEdges.push_back({(CDT::VertInd)(holeBase + i),
+				                    (CDT::VertInd)(holeBase + (i + 1) % hPts.Size)});
+		}
+
+		if (cdtVerts.size() < 3) return;
+
+		// Remove near-duplicate vertices (merge within 0.1px) and remap edges
+		{
+			const float mergeDist = 0.1f;
+			std::vector<CDT::VertInd> remap(cdtVerts.size());
+			std::vector<CDT::V2d<float>> uniqueVerts;
+			for (size_t i = 0; i < cdtVerts.size(); i++) {
+				CDT::VertInd merged = (CDT::VertInd)uniqueVerts.size();
+				for (size_t j = 0; j < uniqueVerts.size(); j++) {
+					float dx = cdtVerts[i].x - uniqueVerts[j].x;
+					float dy = cdtVerts[i].y - uniqueVerts[j].y;
+					if (dx*dx + dy*dy < mergeDist*mergeDist) {
+						merged = (CDT::VertInd)j; break;
+					}
+				}
+				if (merged == (CDT::VertInd)uniqueVerts.size())
+					uniqueVerts.push_back(cdtVerts[i]);
+				remap[i] = merged;
+			}
+			cdtVerts = uniqueVerts;
+			// Remap edges and remove degenerate ones
+			std::vector<CDT::Edge> remappedEdges;
+			for (auto& e : cdtEdges) {
+				CDT::VertInd a2 = remap[e.v1()], b2 = remap[e.v2()];
+				if (a2 != b2)
+					remappedEdges.push_back(CDT::Edge(a2, b2));
+			}
+			cdtEdges = remappedEdges;
+		}
+
+		if (cdtVerts.size() < 3) return;
+
+		// Run CDT
+		CDT::Triangulation<float> cdt(CDT::VertexInsertionOrder::Auto,
+		                              CDT::IntersectingConstraintEdges::TryResolve,
+		                              0.0f);
+		try {
+			cdt.insertVertices(cdtVerts);
+			cdt.conformToEdges(cdtEdges); // auto-subdivides at intersections
+			cdt.eraseOuterTrianglesAndHoles();
+		} catch (...) {
+			return;
+		}
+		if (cdt.triangles.empty()) return;
+
+		// Convert CDT output to ImWidgetsShape
+		int baseVtx = outShape.vertices.Size;
+		for (size_t vi = 0; vi < cdt.vertices.size(); vi++) {
+			ImWidgetsVertex v;
+			v.pos = ImVec2(cdt.vertices[vi].x, cdt.vertices[vi].y);
+			v.uv = whiteUV;
+			v.col = IM_COL32_WHITE;
+			outShape.vertices.push_back(v);
+			outShape.bb.Add(v.pos);
+		}
+		for (size_t ti = 0; ti < cdt.triangles.size(); ti++) {
+			ImWidgetsTriIdx tidx;
+			tidx.a = (ImDrawIdx)(baseVtx + cdt.triangles[ti].vertices[0]);
+			tidx.b = (ImDrawIdx)(baseVtx + cdt.triangles[ti].vertices[1]);
+			tidx.c = (ImDrawIdx)(baseVtx + cdt.triangles[ti].vertices[2]);
+			outShape.triangles.push_back(tidx);
+		}
+	}
+
 	// Debug step recording for visualization
 	// Deep-copy a QContour into a new one stored in an ImVector via push_back
 	// Since ImVector uses memcpy for reallocation, we must ensure QContour's
@@ -3327,21 +3510,28 @@
 	                          ImWidgetsShape& outShape, ImVec2 whiteUV, float tol, int depth,
 	                          TessDebugInfo* dbg = NULL)
 	{
-		if (depth > 6) return; // limit recursion depth (each frame uses significant stack)
+		if (depth > 12) return; // limit recursion depth
 
 		for (int oi = 0; oi < outers.Size; oi++) {
 			QContour& outer = outers[oi];
 			if (outer.curveCount == 0) continue;
 
-			// Find holes inside this outer (skip tiny holes below 1% of outer area)
+			// Find holes inside this outer (skip holes below threshold % of outer area)
 			float outerArea = fabsf(outer.area);
-			float minHoleArea = outerArea * 0.01f;
+			float minHoleArea = outerArea * (gs_minHolePct * 0.01f);
 			ImVector<int> containedHoles;
 			for (int hi = 0; hi < holes.Size; hi++) {
 				if (holes[hi].curveCount == 0) continue;
-				if (fabsf(holes[hi].area) < minHoleArea) continue; // skip tiny decorative holes
-				ImVec2 hpt = holes[hi].curves[0].p0;
-				if (PointInQContour(outer, hpt))
+				if (fabsf(holes[hi].area) < minHoleArea) continue;
+				// Use hole centroid for containment test — more robust than first
+				// curve point which might fall on a cut line or bridge seam
+				QContour& hc = holes[hi];
+				float cx = 0, cy = 0;
+				for (int ci = 0; ci < hc.curveCount; ci++) {
+					cx += hc.curves[ci].p0.x; cy += hc.curves[ci].p0.y;
+				}
+				cx /= (float)hc.curveCount; cy /= (float)hc.curveCount;
+				if (PointInQContour(outer, ImVec2(cx, cy)))
 					containedHoles.push_back(hi);
 			}
 
@@ -3359,7 +3549,7 @@
 				continue;
 			}
 
-			// Pick the largest hole
+			// Pick the largest hole for OBB/cut direction
 			int bestH = containedHoles[0];
 			float bestArea = fabsf(holes[bestH].area);
 			for (int hi = 1; hi < containedHoles.Size; hi++) {
@@ -3367,36 +3557,63 @@
 				if (a2 > bestArea) { bestArea = a2; bestH = containedHoles[hi]; }
 			}
 
-			// Compute OBB of the hole
+			// Compute OBB of the largest hole for cut direction
 			ImVector<ImVec2> holePts;
 			FlattenQContour(holes[bestH], holePts, 2.0f);
 			ImVec2 holeCenter, holeAxis;
 			float holeHL, holeHW;
 			ComputeOBB(holePts, holeCenter, holeAxis, holeHL, holeHW);
 
-			// Cut line: along longest or shortest axis, through center
-			// gs_cutAlongShortAxis toggles between the two (debug option)
-			ImVec2 cutAxis = holeAxis;
-			if (gs_cutAlongShortAxis) {
-				// Rotate 90°: perpendicular to longest axis = shortest axis
-				cutAxis = ImVec2(-holeAxis.y, holeAxis.x);
-			}
-			ImVec2 cutN(-cutAxis.y, cutAxis.x);
-			float cutC = -(cutN.x * holeCenter.x + cutN.y * holeCenter.y);
-
-			// Unified cut: outer + all contained holes simultaneously
-			int nContained = containedHoles.Size;
-			QContour* containedArr = (QContour*)IM_ALLOC(nContained * sizeof(QContour));
-			for (int chi = 0; chi < nContained; chi++) {
-				memset(&containedArr[chi], 0, sizeof(QContour));
-				containedArr[chi].copyFrom(holes[containedHoles[chi]]);
-			}
-			bool absorbed[64];
-			memset(absorbed, 0, sizeof(absorbed));
-
+			// Try cutting along the chosen axis; if it fails, try the perpendicular
 			ImVector<QContour> posContours, negContours;
-			CutContourGroupByLine(outer, containedArr, nContained,
-			                      cutN.x, cutN.y, cutC, posContours, negContours, absorbed);
+			int nContained = containedHoles.Size;
+			QContour* containedArr = NULL;
+			bool absorbed[64];
+			ImVec2 cutN; float cutC;
+			bool cutOK = false;
+
+			for (int axisAttempt = 0; axisAttempt < 2 && !cutOK; axisAttempt++) {
+				ImVec2 cutAxis = holeAxis;
+				if ((axisAttempt == 0 && gs_cutAlongShortAxis) || axisAttempt == 1)
+					cutAxis = ImVec2(-holeAxis.y, holeAxis.x);
+				cutN = ImVec2(-cutAxis.y, cutAxis.x);
+				cutC = -(cutN.x * holeCenter.x + cutN.y * holeCenter.y);
+
+				// Allocate + copy contained holes
+				if (containedArr) {
+					for (int chi = 0; chi < nContained; chi++) containedArr[chi].~QContour();
+					IM_FREE(containedArr);
+				}
+				containedArr = (QContour*)IM_ALLOC(nContained * sizeof(QContour));
+				for (int chi = 0; chi < nContained; chi++) {
+					memset(&containedArr[chi], 0, sizeof(QContour));
+					containedArr[chi].copyFrom(holes[containedHoles[chi]]);
+				}
+				memset(absorbed, 0, ImMin(nContained, 64) * sizeof(bool));
+				posContours.resize(0); negContours.resize(0);
+
+				CutContourGroupByLine(outer, containedArr, nContained,
+				                      cutN.x, cutN.y, cutC, posContours, negContours, absorbed);
+				cutOK = (posContours.Size > 0 && negContours.Size > 0);
+			}
+
+			// If both axes failed, treat as leaf
+			if (!cutOK) {
+				if (containedArr) {
+					for (int chi = 0; chi < nContained; chi++) containedArr[chi].~QContour();
+					IM_FREE(containedArr);
+				}
+				ImVector<ImVec2> pts;
+				FlattenQContour(outer, pts, tol);
+				EarClipTriangulate(pts, outShape, whiteUV);
+				if (dbg) {
+					TessDebugStep step; step.depth = depth; step.isLeaf = true;
+					step.setSourceOuters(&outer, 1);
+					dbg->steps.push_back(step);
+					dbg->pushLeaf(outer);
+				}
+				continue;
+			}
 
 			// Record debug step
 			if (dbg) {
@@ -3406,9 +3623,13 @@
 				for (int chi = 0; chi < nContained; chi++)
 					PushQContourCopy(tmpHoles, containedArr[chi]);
 				if (tmpHoles.Size > 0) step.setSourceHoles(tmpHoles.Data, tmpHoles.Size);
-				float lineExt = ImMax(holeHL, holeHW) * 3.0f;
-				step.cutLineP0 = ImVec2(holeCenter.x - holeAxis.x * lineExt, holeCenter.y - holeAxis.y * lineExt);
-				step.cutLineP1 = ImVec2(holeCenter.x + holeAxis.x * lineExt, holeCenter.y + holeAxis.y * lineExt);
+				// Use actual cut direction (cutN is the normal; the LINE direction is perpendicular)
+				ImVec2 actualDir(-cutN.y, cutN.x); // line direction = perpendicular to normal
+				// Extend line to cover the entire outer contour, not just 3x the hole
+				float outerExtent = sqrtf(outerArea) * 2.0f;
+				float lineExt = ImMax(ImMax(holeHL, holeHW) * 3.0f, outerExtent);
+				step.cutLineP0 = ImVec2(holeCenter.x - actualDir.x * lineExt, holeCenter.y - actualDir.y * lineExt);
+				step.cutLineP1 = ImVec2(holeCenter.x + actualDir.x * lineExt, holeCenter.y + actualDir.y * lineExt);
 				int nRes = posContours.Size + negContours.Size;
 				if (nRes > 0) {
 					ImVector<QContour> tmpRes;
@@ -3419,12 +3640,10 @@
 				dbg->steps.push_back(step);
 			}
 
-			// Build remaining holes: exclude absorbed ones.
-			// Also exclude the target hole (bestH) even if not absorbed — it means the
-			// cut line failed to split it, and keeping it would cause infinite recursion.
+			// Build remaining holes: exclude absorbed ones + always remove bestH
 			ImVector<QContour> remainHoles;
 			for (int hi = 0; hi < holes.Size; hi++) {
-				if (hi == bestH) continue; // always remove the target hole
+				if (hi == bestH) continue; // always remove target hole
 				bool isAbsorbed = false;
 				for (int chi = 0; chi < nContained; chi++) {
 					if (containedHoles[chi] == hi && absorbed[chi]) {
@@ -3434,11 +3653,10 @@
 				if (!isAbsorbed) PushQContourCopy(remainHoles, holes[hi]);
 			}
 
-			// Cleanup contained hole copies
 			for (int chi = 0; chi < nContained; chi++) containedArr[chi].~QContour();
 			IM_FREE(containedArr);
 
-			// Recurse on both sides with properly connected pieces
+			// Recurse on both sides with ALL remaining holes
 			RecursiveCutQ(posContours, remainHoles, outShape, whiteUV, tol, depth + 1, dbg);
 			RecursiveCutQ(negContours, remainHoles, outShape, whiteUV, tol, depth + 1, dbg);
 		}
@@ -3480,18 +3698,16 @@
 				ImVec2 cp1(gx + (float)v.cx * sc * sz, gy - (float)v.cy * sc * sz);
 				ImVec2 cp2(gx + (float)v.cx1 * sc * sz, gy - (float)v.cy1 * sc * sz);
 				ImVec2 p3(vx, vy);
-				// Cubic → 2 quadratics (De Casteljau at t=0.5)
-				ImVec2 m01((p0.x+cp1.x)*.5f,(p0.y+cp1.y)*.5f);
-				ImVec2 m12((cp1.x+cp2.x)*.5f,(cp1.y+cp2.y)*.5f);
-				ImVec2 m23((cp2.x+p3.x)*.5f,(cp2.y+p3.y)*.5f);
-				ImVec2 m012((m01.x+m12.x)*.5f,(m01.y+m12.y)*.5f);
-				ImVec2 m123((m12.x+m23.x)*.5f,(m12.y+m23.y)*.5f);
-				ImVec2 mid((m012.x+m123.x)*.5f,(m012.y+m123.y)*.5f);
-				// Approximate each half as quadratic
-				QBez q1 = { p0, m01, mid };
-				QBez q2 = { mid, m123, p3 };
-				cur->push_back(q1);
-				cur->push_back(q2);
+				// Cubic → quadratics using same algorithm as Slug atlas builder
+				// (recursive De Casteljau depth=2 → 4 quadratic segments per cubic)
+				ImVector<SlugCurve> tmpCurves;
+				SlugCubicToQuads(tmpCurves, p0.x, p0.y, cp1.x, cp1.y, cp2.x, cp2.y, p3.x, p3.y, 2);
+				for (int tci = 0; tci < tmpCurves.Size; tci++) {
+					QBez q = { ImVec2(tmpCurves[tci].p1x, tmpCurves[tci].p1y),
+					           ImVec2(tmpCurves[tci].p2x, tmpCurves[tci].p2y),
+					           ImVec2(tmpCurves[tci].p3x, tmpCurves[tci].p3y) };
+					cur->push_back(q);
+				}
 			}
 		}
 		stbtt_FreeShape(&atlas->stbFont, verts);
@@ -3919,6 +4135,111 @@
 	}
 	#endif // === END OLD TYPOGRAPHY CODE ===
 
+	// Reference pixel size for cached glyph tessellation.
+	// All cached positions are stored at this font size so CDT/flattening thresholds (~0.1px) work correctly.
+	static const float kTessRefSize = 64.0f;
+
+	// Fast hash key for the glyph tessellation pool.
+	// Uses atlas pointer (font identity) and stbtt glyph id.
+	static inline ImGuiID DwTessGlyphKey(const SlugFontCache* atlas, int glyph_id)
+	{
+		ImU32 a = (ImU32)((uintptr_t)atlas >> 4);
+		return a * 2654435761u ^ (ImU32)glyph_id * 2246822519u;
+	}
+
+	// Tessellate a single glyph at kTessRefSize pixel scale (sc=atlas->emScale, sz=kTessRefSize, origin=(0,0)).
+	// flatTol: flatness tolerance in pixels (same scale as kTessRefSize — passed directly to CDT/RecursiveCutQ).
+	// Outputs positions as (v.x, -v.y) — y-flip already baked in.
+	static void TessGlyphFontUnits(SlugFontCache* atlas, int glyphID, float flatTol, DwTessGlyphData& out)
+	{
+		out.positions.resize(0);
+		out.triangles.resize(0);
+		out.bb = ImRect(FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX);
+
+		ImVector<QContour> qcontours;
+		ExtractQContours(atlas, glyphID, 0.0f, 0.0f, atlas->emScale, kTessRefSize, qcontours);
+		if (qcontours.Size == 0) return;
+
+		ImVector<int> validQI;
+		for (int ci = 0; ci < qcontours.Size; ci++)
+			if (qcontours[ci].curveCount >= 2 && fabsf(qcontours[ci].area) >= 0.1f)
+				validQI.push_back(ci);
+		for (int i = 0; i < validQI.Size - 1; i++)
+			for (int j = i + 1; j < validQI.Size; j++)
+				if (fabsf(qcontours[validQI[j]].area) > fabsf(qcontours[validQI[i]].area))
+					ImSwap(validQI[i], validQI[j]);
+
+		ImVector<int> parentQ;
+		parentQ.resize(qcontours.Size, -1);
+		for (int vi = 1; vi < validQI.Size; vi++) {
+			int ci = validQI[vi];
+			for (int oi = 0; oi < vi; oi++) {
+				int outerCI = validQI[oi];
+				if (parentQ[outerCI] == -1 && PointInQContour(qcontours[outerCI], qcontours[ci].curves[0].p0))
+					{ parentQ[ci] = outerCI; break; }
+			}
+		}
+
+		// Tessellate into a temporary shape (font-unit space); whiteUV is dummy, overwritten at instantiation
+		ImWidgetsShape tmpShape;
+		tmpShape.bb = ImRect(FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX);
+		ImVec2 dummyUV(0.0f, 0.0f);
+
+		for (int vi = 0; vi < validQI.Size; vi++) {
+			int outerCI = validQI[vi];
+			if (parentQ[outerCI] != -1) continue;
+			ImVector<QContour> holes2;
+			for (int vi2 = 0; vi2 < validQI.Size; vi2++) {
+				int ci = validQI[vi2];
+				if (parentQ[ci] == outerCI) holes2.push_back(qcontours[ci]);
+			}
+			if (gs_useCDT) {
+				CDTTriangulate(qcontours[outerCI], holes2.Data, holes2.Size, tmpShape, dummyUV, flatTol);
+			} else {
+				ImVector<QContour> outers;
+				outers.push_back(qcontours[outerCI]);
+				RecursiveCutQ(outers, holes2, tmpShape, dummyUV, flatTol, 0);
+			}
+		}
+
+		// Transfer: positions only (uv/col applied at instantiation time)
+		out.positions.resize(tmpShape.vertices.Size);
+		for (int i = 0; i < tmpShape.vertices.Size; i++)
+			out.positions[i] = tmpShape.vertices[i].pos;
+		out.triangles = tmpShape.triangles;
+		out.bb = tmpShape.bb;
+	}
+
+	// Instantiate a cached glyph into outShape, transforming from font units to screen space.
+	static void InstantiateGlyphFromCache(const DwTessGlyphData& cached, float gx, float gy,
+	                                      float scale, ImVec2 whiteUV, ImWidgetsShape& outShape)
+	{
+		if (cached.positions.Size == 0) return;
+		int baseVtx = outShape.vertices.Size;
+		outShape.vertices.resize(baseVtx + cached.positions.Size);
+		for (int pi = 0; pi < cached.positions.Size; pi++) {
+			ImWidgetsVertex& v = outShape.vertices[baseVtx + pi];
+			v.pos.x = gx + cached.positions[pi].x * scale;
+			v.pos.y = gy + cached.positions[pi].y * scale;
+			v.uv  = whiteUV;
+			v.col = IM_COL32_WHITE;
+		}
+		int baseTri = outShape.triangles.Size;
+		outShape.triangles.resize(baseTri + cached.triangles.Size);
+		for (int ti = 0; ti < cached.triangles.Size; ti++) {
+			const ImWidgetsTriIdx& t = cached.triangles[ti];
+			outShape.triangles[baseTri + ti] = ImWidgetsTriIdx(
+				(ImDrawIdx)(t.a + baseVtx),
+				(ImDrawIdx)(t.b + baseVtx),
+				(ImDrawIdx)(t.c + baseVtx)
+			);
+		}
+		outShape.bb.Add(ImRect(
+			gx + cached.bb.Min.x * scale, gy + cached.bb.Min.y * scale,
+			gx + cached.bb.Max.x * scale, gy + cached.bb.Max.y * scale
+		));
+	}
+
 	void TesselateText(ImFont* font, float font_size, const char* text, ImWidgetsShape& outShape, const char* text_end, float tess_tol, int iterations)
 	{
 		outShape.vertices.resize(0);
@@ -3935,7 +4256,6 @@
 		SlugFontCache* atlas = SlugGetOrCreateAtlas(gs_pContext->slugState, font);
 		if (!atlas) return;
 		float sz = font_size, sc = atlas->emScale;
-		float tol = (tess_tol > 0.0f) ? tess_tol : 0.5f;
 
 		// Shape text
 		struct ShGlyph { int glyphID; float advX, offX, offY; };
@@ -3969,6 +4289,7 @@
 		}
 
 		ImVec2 whiteUV = ImGui::GetDrawListSharedData()->TexUvWhitePixel;
+		ImPool<DwTessGlyphData>& pool = gs_pContext->slugState->tessGlyphPool;
 		float penX = 0;
 
 		for (int gi = 0; gi < shaped.Size; gi++)
@@ -3977,58 +4298,18 @@
 			float gx = penX + sg.offX * sz;
 			float gy = -sg.offY * sz;
 
-			// Step 1: Extract raw quadratic curves
-			ImVector<QContour> qcontours;
-			ExtractQContours(atlas, sg.glyphID, gx, gy, sc, sz, qcontours);
-			if (qcontours.Size == 0) { penX += sg.advX * sz; continue; }
-
-			// Step 2: Classify contours by containment
-			ImVector<int> validQI;
-			for (int ci = 0; ci < qcontours.Size; ci++)
-				if (qcontours[ci].curveCount >= 2 && fabsf(qcontours[ci].area) >= 0.1f)
-					validQI.push_back(ci);
-			// Sort by absolute area descending
-			for (int i2 = 0; i2 < validQI.Size - 1; i2++)
-				for (int j2 = i2 + 1; j2 < validQI.Size; j2++)
-					if (fabsf(qcontours[validQI[j2]].area) > fabsf(qcontours[validQI[i2]].area))
-						ImSwap(validQI[i2], validQI[j2]);
-
-			ImVector<int> parentQ;
-			parentQ.resize(qcontours.Size, -1);
-			for (int vi = 1; vi < validQI.Size; vi++) {
-				int ci = validQI[vi];
-				for (int oi = 0; oi < vi; oi++) {
-					int outerCI = validQI[oi];
-					if (parentQ[outerCI] == -1) {
-						ImVec2 testPt = qcontours[ci].curves[0].p0;
-						if (PointInQContour(qcontours[outerCI], testPt)) {
-							parentQ[ci] = outerCI;
-							break;
-						}
-					}
-				}
+			ImGuiID key = DwTessGlyphKey(atlas, sg.glyphID);
+			DwTessGlyphData* cached = pool.GetByKey(key);
+			if (!cached) {
+				cached = pool.GetOrAddByKey(key);
+				TessGlyphFontUnits(atlas, sg.glyphID, flatTol, *cached);
 			}
 
-			// Step 3: For each outer, collect its holes and recursively cut
-			for (int vi = 0; vi < validQI.Size; vi++) {
-				int outerCI = validQI[vi];
-				if (parentQ[outerCI] != -1) continue; // skip holes
-
-				ImVector<QContour> outers, holes2;
-				outers.push_back(qcontours[outerCI]);
-				for (int vi2 = 0; vi2 < validQI.Size; vi2++) {
-					int ci = validQI[vi2];
-					if (parentQ[ci] == outerCI) holes2.push_back(qcontours[ci]);
-				}
-
-				// Step 4: Recursive cut → Step 5: flatten + triangulate
-				RecursiveCutQ(outers, holes2, outShape, whiteUV, flatTol, 0);
-			}
-
+			InstantiateGlyphFromCache(*cached, gx, gy, sz / kTessRefSize, whiteUV, outShape);
 			penX += sg.advX * sz;
 		}
 
-		// Apply subdivision iterations after initial ear-clip triangulation
+		// Apply subdivision iterations after tessellation
 		for (int it = 0; it < iterations; it++)
 			ShapeTesselationUniform(outShape);
 	}
@@ -4083,6 +4364,7 @@
 		}
 
 		ImVec2 whiteUV = ImGui::GetDrawListSharedData()->TexUvWhitePixel;
+		ImPool<DwTessGlyphData>& pool = gs_pContext->slugState->tessGlyphPool;
 		float penX = 0;
 
 		for (int gi = 0; gi < shaped.Size; gi++) {
@@ -4090,43 +4372,18 @@
 			float gx = penX + sg.offX * sz;
 			float gy = -sg.offY * sz;
 
-			ImVector<QContour> qcontours;
-			ExtractQContours(atlas, sg.glyphID, gx, gy, sc, sz, qcontours);
-			if (qcontours.Size == 0) { penX += sg.advX * sz; continue; }
+			ImGuiID key = DwTessGlyphKey(atlas, sg.glyphID);
+			DwTessGlyphData* cached = pool.GetByKey(key);
+			if (!cached) {
+				cached = pool.GetOrAddByKey(key);
+				TessGlyphFontUnits(atlas, sg.glyphID, flatTol, *cached);
+			}
+			if (cached->positions.Size == 0) { penX += sg.advX * sz; continue; }
 
 			outShapes.push_back(ImWidgetsShape());
 			ImWidgetsShape& glyphShape = outShapes.back();
 			glyphShape.bb = ImRect(FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX);
-
-			ImVector<int> validQI;
-			for (int ci = 0; ci < qcontours.Size; ci++)
-				if (qcontours[ci].curveCount >= 2 && fabsf(qcontours[ci].area) >= 0.1f)
-					validQI.push_back(ci);
-			for (int i2 = 0; i2 < validQI.Size - 1; i2++)
-				for (int j2 = i2 + 1; j2 < validQI.Size; j2++)
-					if (fabsf(qcontours[validQI[j2]].area) > fabsf(qcontours[validQI[i2]].area))
-						ImSwap(validQI[i2], validQI[j2]);
-			ImVector<int> parentQ;
-			parentQ.resize(qcontours.Size, -1);
-			for (int vi = 1; vi < validQI.Size; vi++) {
-				int ci = validQI[vi];
-				for (int oi = 0; oi < vi; oi++) {
-					int outerCI = validQI[oi];
-					if (parentQ[outerCI] == -1 && PointInQContour(qcontours[outerCI], qcontours[ci].curves[0].p0))
-						{ parentQ[ci] = outerCI; break; }
-				}
-			}
-			for (int vi = 0; vi < validQI.Size; vi++) {
-				int outerCI = validQI[vi];
-				if (parentQ[outerCI] != -1) continue;
-				ImVector<QContour> outers, holes2;
-				outers.push_back(qcontours[outerCI]);
-				for (int vi2 = 0; vi2 < validQI.Size; vi2++) {
-					int ci = validQI[vi2];
-					if (parentQ[ci] == outerCI) holes2.push_back(qcontours[ci]);
-				}
-				RecursiveCutQ(outers, holes2, glyphShape, whiteUV, flatTol, 0);
-			}
+			InstantiateGlyphFromCache(*cached, gx, gy, sz / kTessRefSize, whiteUV, glyphShape);
 
 			for (int it = 0; it < iterations; it++)
 				ShapeTesselationUniform(glyphShape);
@@ -4216,13 +4473,49 @@
 		if (!atlas) return;
 		float sz = font_size, sc = atlas->emScale;
 		float tol = (tess_tol > 0) ? tess_tol : 0.5f;
+		const char* text_end = text + strlen(text);
 
-		unsigned int cp = 0;
-		ImTextCharFromUtf8(&cp, text, text + strlen(text));
-		int gi = stbtt_FindGlyphIndex(&atlas->stbFont, (int)cp);
+		// Shape the full text (preserves ligatures, calt) then extract all glyph contours
+		struct ShGlyph { int glyphID; float advX, offX, offY; };
+		ImVector<ShGlyph> shaped;
+#if IM_SUPPORT_LIGATURE
+		if (atlas->shapeCtx && atlas->shapeFont) {
+			kbts_ShapeBegin(atlas->shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
+			kbts_ShapeUtf8(atlas->shapeCtx, text, (int)(text_end - text), KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
+			kbts_ShapeEnd(atlas->shapeCtx);
+			kbts_run run;
+			while (kbts_ShapeRun(atlas->shapeCtx, &run)) {
+				kbts_glyph* glyph;
+				while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph)) {
+					ShGlyph sg = { (int)glyph->Id, (float)glyph->AdvanceX * sc, (float)glyph->OffsetX * sc, (float)glyph->OffsetY * sc };
+					shaped.push_back(sg);
+				}
+			}
+		} else
+#endif
+		{
+			const char* p = text;
+			while (p < text_end) {
+				unsigned int cp2 = 0;
+				p += ImTextCharFromUtf8(&cp2, p, text_end);
+				if (cp2 == 0) break;
+				int gi2 = stbtt_FindGlyphIndex(&atlas->stbFont, (int)cp2);
+				int adv, lsb; stbtt_GetGlyphHMetrics(&atlas->stbFont, gi2, &adv, &lsb);
+				ShGlyph sg = { gi2, (float)adv * sc, 0, 0 };
+				shaped.push_back(sg);
+			}
+		}
 
+		// Extract contours for all shaped glyphs
 		ImVector<QContour> qcontours;
-		ExtractQContours(atlas, gi, 0, 0, sc, sz, qcontours);
+		float penX = 0;
+		for (int sgi = 0; sgi < shaped.Size; sgi++) {
+			const ShGlyph& sg = shaped[sgi];
+			float gx = penX + sg.offX * sz;
+			float gy = -sg.offY * sz;
+			ExtractQContours(atlas, sg.glyphID, gx, gy, sc, sz, qcontours);
+			penX += sg.advX * sz;
+		}
 		if (qcontours.Size == 0) return;
 
 		// Classify contours
@@ -4246,7 +4539,7 @@
 			}
 		}
 
-		// Run with debug recording
+		// Run tessellation
 		ImWidgetsShape dbgShape;
 		dbgShape.bb = ImRect(FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX);
 		ImVec2 whiteUV = ImGui::GetDrawListSharedData()->TexUvWhitePixel;
@@ -4255,13 +4548,18 @@
 		for (int vi = 0; vi < validQI.Size; vi++) {
 			int outerCI = validQI[vi];
 			if (parentQ[outerCI] != -1) continue;
-			ImVector<QContour> outers, holes2;
-			outers.push_back(qcontours[outerCI]);
+			ImVector<QContour> holes2;
 			for (int vi2 = 0; vi2 < validQI.Size; vi2++) {
 				int ci = validQI[vi2];
 				if (parentQ[ci] == outerCI) holes2.push_back(qcontours[ci]);
 			}
-			RecursiveCutQ(outers, holes2, dbgShape, whiteUV, tol, 0, &dbg);
+			if (gs_useCDT) {
+				CDTTriangulate(qcontours[outerCI], holes2.Data, holes2.Size, dbgShape, whiteUV, tol);
+			} else {
+				ImVector<QContour> outers;
+				outers.push_back(qcontours[outerCI]);
+				RecursiveCutQ(outers, holes2, dbgShape, whiteUV, tol, 0, &dbg);
+			}
 		}
 
 		static const ImU32 kColors[] = {
@@ -4301,6 +4599,14 @@
 			return rowY + 14;
 		};
 
+		// Algorithm controls
+		ImGui::Checkbox("Use CDT##TessDbg", &gs_useCDT);
+		ImGui::SameLine();
+		ImGui::Checkbox("Cut along short axis##TessDbg", &gs_cutAlongShortAxis);
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(120);
+		ImGui::SliderFloat("Min hole %##TessDbg", &gs_minHolePct, 0.0f, 50.0f, "%.1f%%");
+
 		// Step 0: Slug rendering — compute real glyph height
 		{
 			float asc2 = 0;
@@ -4308,6 +4614,45 @@
 			float realH = ImMax(textSz.y, 10.0f);
 			float curY = BeginRow("Step 0: Slug GPU", realH);
 			DrawText(dl, font, sz, ImVec2(pos.x + 10, curY + asc2), IM_COL32(100,100,255,200), text);
+
+			// Show debug curves overlay
+			static bool showDebugCurves = false;
+			ImGui::Checkbox("Show Debug Curves##SlugDbg", &showDebugCurves);
+			if (showDebugCurves) {
+				ImVec2 slugOff(pos.x + 10, curY + asc2);
+				// Draw each contour's curves with alternating colors
+				static const ImU32 kCurveColors[] = {
+					IM_COL32(255,100,100,255), IM_COL32(100,255,100,255), IM_COL32(100,100,255,255),
+					IM_COL32(255,255,100,255), IM_COL32(255,100,255,255), IM_COL32(100,255,255,255),
+				};
+				for (int ci = 0; ci < qcontours.Size; ci++) {
+					QContour& c = qcontours[ci];
+					ImU32 contourCol = kCurveColors[ci % 6];
+					for (int qi = 0; qi < c.curveCount; qi++) {
+						QBez& q = c.curves[qi];
+						// Draw the curve as a polyline
+						ImVec2 prev = ImVec2(q.p0.x + slugOff.x, q.p0.y + slugOff.y);
+						for (int si = 1; si <= 8; si++) {
+							float tt = (float)si / 8.0f;
+							ImVec2 pt = QBezEval(q, tt);
+							ImVec2 sp = ImVec2(pt.x + slugOff.x, pt.y + slugOff.y);
+							dl->AddLine(prev, sp, contourCol, 1.0f);
+							prev = sp;
+						}
+						// Draw control point
+						ImVec2 cp(q.p1.x + slugOff.x, q.p1.y + slugOff.y);
+						dl->AddCircleFilled(cp, 2.0f, IM_COL32(255,255,255,120));
+						// Draw start point
+						ImVec2 sp0(q.p0.x + slugOff.x, q.p0.y + slugOff.y);
+						dl->AddRectFilled(ImVec2(sp0.x-2,sp0.y-2), ImVec2(sp0.x+2,sp0.y+2), contourCol);
+						// Curve index label every 4th curve
+						if (qi % 4 == 0) {
+							char idxBuf[8]; snprintf(idxBuf, sizeof(idxBuf), "%d", qi);
+							dl->AddText(ImVec2(sp0.x+3, sp0.y-10), IM_COL32(255,255,255,200), idxBuf);
+						}
+					}
+				}
+			}
 		}
 
 		// Deferred intersection point draws (rendered last, on top of everything)
@@ -4315,6 +4660,56 @@
 		struct DeferredLabel { ImVec2 screenPos; char text[128]; };
 		ImVector<DeferredIsect> deferredIsects;
 		ImVector<DeferredLabel> deferredLabels;
+
+		if (gs_useCDT) {
+			// CDT mode: show [Tessellated wireframe] | [Slug GPU] side by side
+			float cdtH = (dbgShape.bb.GetWidth() > 0) ? dbgShape.bb.GetHeight() : sz;
+			float curY = BeginRow("CDT Triangulation | Slug GPU", cdtH + 16);
+			float glyphW = dbgShape.bb.GetWidth(), glyphH = dbgShape.bb.GetHeight();
+
+			// Left: CDT result with wireframe
+			float col1X = pos.x + 10;
+			if (dbgShape.triangles.Size > 0) {
+				float offX = col1X - dbgShape.bb.Min.x, offY = curY - dbgShape.bb.Min.y;
+				// Apply subdivision iterations
+				ImWidgetsShape tessShape;
+				tessShape.vertices.resize(dbgShape.vertices.Size);
+				tessShape.triangles.resize(dbgShape.triangles.Size);
+				memcpy(tessShape.triangles.Data, dbgShape.triangles.Data, dbgShape.triangles.Size * sizeof(ImWidgetsTriIdx));
+				tessShape.bb = dbgShape.bb;
+				for (int vi = 0; vi < dbgShape.vertices.Size; vi++) {
+					tessShape.vertices[vi].pos = ImVec2(dbgShape.vertices[vi].pos.x + offX, dbgShape.vertices[vi].pos.y + offY);
+					tessShape.vertices[vi].uv = whiteUV;
+					tessShape.vertices[vi].col = IM_COL32_WHITE;
+				}
+				for (int it = 0; it < gs_tessIterations; it++)
+					ShapeTesselationUniform(tessShape);
+				for (int ti = 0; ti < tessShape.triangles.Size; ti++) {
+					ImWidgetsTriIdx& t = tessShape.triangles[ti];
+					ImVec2 pa = tessShape.vertices[t.a].pos, pb = tessShape.vertices[t.b].pos, pc = tessShape.vertices[t.c].pos;
+					dl->AddTriangleFilled(pa, pb, pc, IM_COL32(80, 80, 80, 200));
+					dl->AddTriangle(pa, pb, pc, IM_COL32(255, 255, 255, 80), 0.5f);
+				}
+				char tessLabel[64];
+				snprintf(tessLabel, sizeof(tessLabel), "CDT (%d tri, %d iter)", tessShape.triangles.Size, gs_tessIterations);
+				dl->AddText(ImVec2(col1X, curY + glyphH + 2), IM_COL32(150,150,150,200), tessLabel);
+			}
+
+			// Right: Slug GPU reference
+			float col2X = col1X + ImMax(glyphW, 20.0f) + spacing;
+			{
+				float asc2 = 0;
+				CalcTextSize(font, sz, text, NULL, &asc2);
+				DrawText(dl, font, sz, ImVec2(col2X, curY + asc2), IM_COL32(100,100,255,200), text);
+				dl->AddText(ImVec2(col2X, curY + glyphH + 2), IM_COL32(150,150,150,200), "Slug GPU");
+			}
+
+			// Iteration slider
+			ImGui::SliderInt("Iterations##TessDbg", &gs_tessIterations, 0, 6);
+		}
+
+		// Legacy recursive-cut debug steps (only when CDT is off)
+		if (!gs_useCDT) {
 
 		// Steps 1.x: each cut operation
 		int cutIdx = 0;
@@ -4372,7 +4767,7 @@
 					for(int so=0;so<step.nSourceOuters;so++)FindIsects(step.sourceOuters[so],false);
 					for(int sh=0;sh<step.nSourceHoles;sh++)FindIsects(step.sourceHoles[sh],true);
 					for(int i2=1;i2<isects.Size;i2++){IsectPt key=isects[i2];int j2=i2-1;while(j2>=0&&isects[j2].proj>key.proj){isects[j2+1]=isects[j2];j2--;}isects[j2+1]=key;}
-					for(int i2=isects.Size-1;i2>0;i2--)if(fabsf(isects[i2].proj-isects[i2-1].proj)<1.0f)isects.erase(&isects[i2]);
+					for(int i2=isects.Size-1;i2>0;i2--)if(fabsf(isects[i2].proj-isects[i2-1].proj)<1.0f && isects[i2].isHole==isects[i2-1].isHole)isects.erase(&isects[i2]);
 					DeferredLabel lbl; int lo=0;
 					lo+=snprintf(lbl.text+lo,sizeof(lbl.text)-lo,"Isects(%d) seq=",isects.Size);
 					for(int ip=0;ip<isects.Size;ip++){
@@ -4505,12 +4900,10 @@
 			}
 		}
 
-		// Subdivision iteration slider
+		// Subdivision iteration slider (legacy mode)
 		ImGui::SliderInt("Iterations##TessDbg", &gs_tessIterations, 0, 6);
 
-		// Cut axis toggle
-		ImGui::Checkbox("Cut along short axis##TessDbg", &gs_cutAlongShortAxis);
-		ImGui::SameLine();
+		} // end if (!gs_useCDT)
 
 		// Debug text panel (togglable)
 		static bool showTessDebugText = false;

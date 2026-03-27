@@ -1243,6 +1243,47 @@ namespace ImWidgets {
 					ImGui::Dummy( ImVec2( tsz.x, tsz.y + gap ) );
 				}
 			}
+
+			// LaTeX equation fills
+			{
+				ImGui::Separator();
+				static float latexFillSize = 40.0f;
+				ImGui::SliderFloat( "LaTeX Size##LatexFill", &latexFillSize, 16.0f, 80.0f, "%.0f px" );
+
+				struct LaTeXFillEntry { const char* eq; ImU32 c0; ImU32 c1; };
+				static const LaTeXFillEntry kLatexFills[] = {
+					{ "E = mc^2",
+					  IM_COL32( 255, 80,  50,  255 ), IM_COL32( 80,  80,  255, 255 ) },
+					{ "\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}",
+					  IM_COL32( 255, 200, 0,   255 ), IM_COL32( 0,   200, 255, 255 ) },
+					{ "\\sum_{n=0}^{\\infty} \\frac{x^n}{n!} = e^x",
+					  IM_COL32( 200, 100, 255, 255 ), IM_COL32( 255, 200, 50,  255 ) },
+					{ "\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}",
+					  IM_COL32( 50,  220, 150, 255 ), IM_COL32( 255, 100, 200, 255 ) },
+					{ "\\frac{1}{\\sigma\\sqrt{2\\pi}} e^{-\\frac{(x-\\mu)^2}{2\\sigma^2}}",
+					  IM_COL32( 255, 160, 30,  255 ), IM_COL32( 30,  180, 255, 255 ) },
+					{ "i\\hbar\\frac{\\partial}{\\partial t}\\Psi = \\hat{H}\\Psi",
+					  IM_COL32( 180, 255, 120, 255 ), IM_COL32( 255,  80, 180, 255 ) },
+				};
+
+				for ( int ei = 0; ei < IM_ARRAYSIZE( kLatexFills ); ei++ ) {
+					const LaTeXFillEntry& lfe = kLatexFills[ei];
+					ImVec2 sz = ImWidgets::CalcLaTeXSize( latexFillSize, lfe.eq );
+					if ( sz.x < 1.0f || sz.y < 1.0f ) continue;
+					ImVec2 p = ImGui::GetCursorScreenPos();
+
+					ImWidgetsShape latexShape;
+					ImWidgets::TesselateLaTeX( latexFillSize, lfe.eq, p, latexShape, tessTol, tyIterations );
+
+					if ( latexShape.triangles.Size > 0 ) {
+						ImWidgets::ShapeLinearGradientGeneric( latexShape,
+							ImVec2( 0, 0.5f ), ImVec2( 1, 0.5f ), lfe.c0, lfe.c1,
+							&ImWidgets::ColorConvertsRGBtosRGB, &ImWidgets::ColorConvertsRGBtosRGB );
+						ImWidgets::DrawShape( pDrawList, latexShape );
+					}
+					ImGui::Dummy( ImVec2( sz.x, sz.y + gap ) );
+				}
+			}
 		}
 	}
 
@@ -1319,6 +1360,9 @@ namespace ImWidgets {
 				idx[ti*3+1] = (ImDrawIdx)( baseVtx + src.triangles[ti].b );
 				idx[ti*3+2] = (ImDrawIdx)( baseVtx + src.triangles[ti].c );
 			}
+			pDrawList->_VtxWritePtr   += src.vertices.Size;
+			pDrawList->_IdxWritePtr   += src.triangles.Size * 3;
+			pDrawList->_VtxCurrentIdx += (ImDrawIdx)src.vertices.Size;
 		};
 
 		// --- 1. Reveal: linear gradient sweeps left to right ---

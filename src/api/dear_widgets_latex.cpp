@@ -1652,5 +1652,193 @@ void DrawLaTeXDebug(ImDrawList* pDrawList, float font_size, ImVec2 pos, const ch
 	IM_DELETE(tree);
 }
 
+// ---- Tessellation helpers (mirror of the DrawGlyphH / DrawGlyphHR render helpers) ----
+
+// Tessellate a text string at baseline (baseX, baselineY) and merge into outShape.
+static void TessLatexText(ImFont* font, float fontSize, const char* text,
+                          float baseX, float baselineY,
+                          ImWidgetsShape& outShape, float tess_tol, int iterations)
+{
+    ImWidgetsShape tmp;
+    tmp.bb = ImRect(FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX);
+    TesselateText(font, fontSize, text, tmp, nullptr, tess_tol, iterations);
+    if (tmp.triangles.Size == 0) return;
+    int baseVtx = outShape.vertices.Size;
+    outShape.vertices.resize(baseVtx + tmp.vertices.Size);
+    for (int i = 0; i < tmp.vertices.Size; i++) {
+        outShape.vertices[baseVtx + i] = tmp.vertices[i];
+        outShape.vertices[baseVtx + i].pos.x += baseX;
+        outShape.vertices[baseVtx + i].pos.y += baselineY;
+    }
+    int baseTri = outShape.triangles.Size;
+    outShape.triangles.resize(baseTri + tmp.triangles.Size);
+    for (int i = 0; i < tmp.triangles.Size; i++)
+        outShape.triangles[baseTri + i] = ImWidgetsTriIdx(
+            (ImDrawIdx)(tmp.triangles[i].a + baseVtx),
+            (ImDrawIdx)(tmp.triangles[i].b + baseVtx),
+            (ImDrawIdx)(tmp.triangles[i].c + baseVtx));
+    if (tmp.bb.Min.x < FLT_MAX)
+        outShape.bb.Add(ImRect(
+            tmp.bb.Min.x + baseX, tmp.bb.Min.y + baselineY,
+            tmp.bb.Max.x + baseX, tmp.bb.Max.y + baselineY));
+}
+
+// Tessellate a glyph scaled to targetH at (posX, posY=top-left) and merge.
+static void TessLatexGlyphH(ImFont* font, float baseSz, ImWchar ch, float targetH,
+                             float posX, float posY,
+                             ImWidgetsShape& outShape, float tess_tol, int iterations)
+{
+    char utf8[8]; EncodeUTF8(ch, utf8);
+    float asc = 0;
+    ImVec2 refSz = CalcTextSize(font, baseSz, utf8, NULL, &asc);
+    if (refSz.y < 1.0f) return;
+    float fontSz    = baseSz * targetH / refSz.y;
+    float baselineY = posY + targetH * (asc / refSz.y);
+    TessLatexText(font, fontSz, utf8, posX, baselineY, outShape, tess_tol, iterations);
+}
+
+// Tessellate a glyph scaled to targetH, right-aligned to rightX, and merge.
+static void TessLatexGlyphHR(ImFont* font, float baseSz, ImWchar ch, float targetH,
+                              float rightX, float posY,
+                              ImWidgetsShape& outShape, float tess_tol, int iterations)
+{
+    char utf8[8]; EncodeUTF8(ch, utf8);
+    float asc = 0;
+    ImVec2 refSz = CalcTextSize(font, baseSz, utf8, NULL, &asc);
+    if (refSz.y < 1.0f) return;
+    float fontSz    = baseSz * targetH / refSz.y;
+    float scaledW   = refSz.x * targetH / refSz.y;
+    float baselineY = posY + targetH * (asc / refSz.y);
+    TessLatexText(font, fontSz, utf8, rightX - scaledW, baselineY, outShape, tess_tol, iterations);
+}
+
+// Walk the LaTeX box tree and tessellate all glyphs into outShape.
+// x,y = baseline position (same convention as RenderBox).
+static void TessellateBox(LaTeXBox* box, ImFont* mathFont, float fontSize, float x, float y,
+                          ImWidgetsShape& outShape, float tess_tol, int iterations)
+{
+    if (!box) return;
+    float px = x + box->shiftX;
+    float py = y + box->shiftY;
+
+    switch (box->type) {
+    case LaTeXBox_Glyph: {
+        float sz = fontSize * box->sizeFactor;
+        if (box->text[0]) {
+            TessLatexText(mathFont, sz, box->text, px, py, outShape, tess_tol, iterations);
+        } else {
+            ImWchar ch = box->codepoint;
+            if (box->isMathItalic) ch = MathItalicize(ch);
+            char utf8[8]; EncodeUTF8(ch, utf8);
+            float offX = IsOperator(box->codepoint) ? sz * 0.17f : 0;
+            TessLatexText(mathFont, sz, utf8, px + offX, py, outShape, tess_tol, iterations);
+        }
+        break;
+    }
+    case LaTeXBox_Space:
+        break;
+    case LaTeXBox_HBox: {
+        for (int i = 0; i < box->children.Size; i++)
+            TessellateBox(box->children[i], mathFont, fontSize, px, py, outShape, tess_tol, iterations);
+        // Accent mark
+        if (box->delimLeft && box->delimLeft < 0xFFF0) {
+            float sz = fontSize * box->sizeFactor;
+            float contentH  = box->height - sz * 0.25f;
+            float accentBaseY = py - contentH - sz * 0.05f;
+            ImWchar accentCh = 0;
+            if      (box->delimLeft == 0x20D7) accentCh = 0x2192;
+            else if (box->delimLeft == 0x02C6) accentCh = 0x02C6;
+            else if (box->delimLeft == 0x00AF) accentCh = 0x00AF;
+            else if (box->delimLeft == 0x02D9) accentCh = 0x02D9;
+            else if (box->delimLeft == 0x00A8) accentCh = 0x00A8;
+            else if (box->delimLeft == 0x02DC) accentCh = 0x02DC;
+            if (accentCh) {
+                char utf8[8]; EncodeUTF8(accentCh, utf8);
+                TessLatexText(mathFont, sz * 0.7f, utf8, px, accentBaseY, outShape, tess_tol, iterations);
+            }
+        }
+        // Skip boxed rect / cancel line decorations (AddRect/AddLine)
+        break;
+    }
+    case LaTeXBox_Script:
+        TessellateBox(box->base,        mathFont, fontSize, px, py, outShape, tess_tol, iterations);
+        if (box->superscript) TessellateBox(box->superscript, mathFont, fontSize, px, py, outShape, tess_tol, iterations);
+        if (box->subscript)   TessellateBox(box->subscript,   mathFont, fontSize, px, py, outShape, tess_tol, iterations);
+        break;
+    case LaTeXBox_Frac: {
+        for (int i = 0; i < box->children.Size; i++)
+            TessellateBox(box->children[i], mathFont, fontSize, px, py, outShape, tess_tol, iterations);
+        // Skip fraction rule line
+        if (box->delimLeft || box->delimRight) {
+            float sz = fontSize * box->sizeFactor;
+            float topY = py - box->height, botY = py + box->depth;
+            float delimH = botY - topY;
+            if (box->delimLeft)
+                TessLatexGlyphH( mathFont, sz, box->delimLeft,  delimH, px,              topY, outShape, tess_tol, iterations);
+            if (box->delimRight)
+                TessLatexGlyphHR(mathFont, sz, box->delimRight, delimH, px + box->width, topY, outShape, tess_tol, iterations);
+        }
+        break;
+    }
+    case LaTeXBox_Sqrt: {
+        float sz    = fontSize * box->sizeFactor;
+        float topY  = py - box->height;
+        float radH  = box->height + box->depth;
+        TessLatexGlyphH(mathFont, sz, 0x221A, radH, px, topY, outShape, tess_tol, iterations);
+        // Skip overline (AddLine)
+        for (int i = 0; i < box->children.Size; i++)
+            TessellateBox(box->children[i], mathFont, fontSize, px, py, outShape, tess_tol, iterations);
+        if (box->base)
+            TessellateBox(box->base, mathFont, fontSize, px, py, outShape, tess_tol, iterations);
+        break;
+    }
+    case LaTeXBox_Matrix: {
+        float sz    = fontSize * box->sizeFactor;
+        float topY  = py - box->height, botY = py + box->depth;
+        float delimH = botY - topY;
+        if (box->delimLeft)
+            TessLatexGlyphH( mathFont, sz, box->delimLeft,  delimH, px,              topY, outShape, tess_tol, iterations);
+        if (box->delimRight)
+            TessLatexGlyphHR(mathFont, sz, box->delimRight, delimH, px + box->width, topY, outShape, tess_tol, iterations);
+        for (int i = 0; i < box->children.Size; i++)
+            TessellateBox(box->children[i], mathFont, fontSize, px, py, outShape, tess_tol, iterations);
+        break;
+    }
+    case LaTeXBox_VBox: {
+        for (int i = 0; i < box->children.Size; i++)
+            TessellateBox(box->children[i], mathFont, fontSize, px, py, outShape, tess_tol, iterations);
+        // Skip extensible brace assembly (too complex for gradient demo)
+        break;
+    }
+    case LaTeXBox_Delim:
+        break;
+    }
+}
+
+// Tessellate a LaTeX expression into an ImWidgetsShape for gradient/image fills.
+// pos = top-left corner of the expression (same convention as DrawLaTeX).
+// The shape's bb reflects actual glyph bounds; use CalcLaTeXSize for layout space.
+void TesselateLaTeX(float font_size, const char* latex, ImVec2 pos,
+                    ImWidgetsShape& outShape, float tess_tol, int iterations)
+{
+    outShape.vertices.resize(0);
+    outShape.triangles.resize(0);
+    outShape.bb = ImRect(FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX);
+    if (!latex || !*latex) return;
+
+    ImFont* mathFont = LaTeXGetMathFont();
+    if (!mathFont) return;
+
+    LaTeXBox* tree = NULL;
+    ImVec4 bb = LaTeXBuildAndMeasure(latex, font_size, &tree);
+    if (!tree) return;
+
+    // Same coordinate transform as DrawLaTeX: pos is the top-left corner of the content bbox.
+    float baseX = pos.x - bb.x;
+    float baseY = pos.y - bb.y;
+    TessellateBox(tree, mathFont, font_size, baseX, baseY, outShape, tess_tol, iterations);
+    IM_DELETE(tree);
+}
+
 } // namespace ImWidgets
 #endif // _DEAR_WIDGETS_LATEX_INCLUDED

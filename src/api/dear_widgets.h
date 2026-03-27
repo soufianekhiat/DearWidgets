@@ -2758,6 +2758,9 @@ namespace ImWidgets{
 	IMGUI_API ImVec2 CalcLaTeXSize( float font_size, const char* latex );
 	// Debug: draw bounding boxes for each glyph/box in a LaTeX expression.
 	IMGUI_API void DrawLaTeXDebug( ImDrawList* pDrawList, float font_size, ImVec2 pos, const char* latex );
+	// Tessellate a LaTeX expression into an ImWidgetsShape for gradient/image fills.
+	// pos = top-left corner (same convention as DrawLaTeX). Use CalcLaTeXSize for layout size.
+	IMGUI_API void TesselateLaTeX( float font_size, const char* latex, ImVec2 pos, ImWidgetsShape& outShape, float tess_tol = 0.25f, int iterations = 0 );
 
 	//////////////////////////////////////////////////////////////////////////
 	// DrawList
