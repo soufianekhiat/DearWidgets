@@ -1654,6 +1654,25 @@ void DrawLaTeXDebug(ImDrawList* pDrawList, float font_size, ImVec2 pos, const ch
 
 // ---- Tessellation helpers (mirror of the DrawGlyphH / DrawGlyphHR render helpers) ----
 
+// Add a filled axis-aligned rectangle to the shape as two triangles.
+// Used for fraction rules and sqrt overlines (dl->AddLine equivalents).
+static void AddRuleToShape(ImWidgetsShape& outShape, float x0, float y0, float x1, float y1)
+{
+	if (x1 <= x0 || y1 <= y0) return;
+	ImVec2 wuv = ImGui::GetDrawListSharedData()->TexUvWhitePixel;
+	int base = outShape.vertices.Size;
+	outShape.vertices.resize(base + 4);
+	outShape.vertices[base+0] = { ImVec2(x0, y0), wuv, IM_COL32_WHITE };
+	outShape.vertices[base+1] = { ImVec2(x1, y0), wuv, IM_COL32_WHITE };
+	outShape.vertices[base+2] = { ImVec2(x1, y1), wuv, IM_COL32_WHITE };
+	outShape.vertices[base+3] = { ImVec2(x0, y1), wuv, IM_COL32_WHITE };
+	int bt = outShape.triangles.Size;
+	outShape.triangles.resize(bt + 2);
+	outShape.triangles[bt+0] = ImWidgetsTriIdx((ImDrawIdx)(base+0),(ImDrawIdx)(base+1),(ImDrawIdx)(base+2));
+	outShape.triangles[bt+1] = ImWidgetsTriIdx((ImDrawIdx)(base+0),(ImDrawIdx)(base+2),(ImDrawIdx)(base+3));
+	outShape.bb.Add(ImRect(x0, y0, x1, y1));
+}
+
 // Tessellate a text string at baseline (baseX, baselineY) and merge into outShape.
 static void TessLatexText(ImFont* font, float fontSize, const char* text,
                           float baseX, float baselineY,
@@ -1768,7 +1787,13 @@ static void TessellateBox(LaTeXBox* box, ImFont* mathFont, float fontSize, float
     case LaTeXBox_Frac: {
         for (int i = 0; i < box->children.Size; i++)
             TessellateBox(box->children[i], mathFont, fontSize, px, py, outShape, tess_tol, iterations);
-        // Skip fraction rule line
+        // Fraction rule (mirrors dl->AddLine in RenderBox)
+        if (box->ruleThickness > 0) {
+            float sz = fontSize * box->sizeFactor;
+            float axisY = py - sz * 0.25f;
+            float half  = ImMax(0.5f, box->ruleThickness * 0.5f);
+            AddRuleToShape(outShape, px, axisY - half, px + box->width, axisY + half);
+        }
         if (box->delimLeft || box->delimRight) {
             float sz = fontSize * box->sizeFactor;
             float topY = py - box->height, botY = py + box->depth;
@@ -1784,8 +1809,10 @@ static void TessellateBox(LaTeXBox* box, ImFont* mathFont, float fontSize, float
         float sz    = fontSize * box->sizeFactor;
         float topY  = py - box->height;
         float radH  = box->height + box->depth;
+        float radW  = GlyphWidthAtH(mathFont, sz, 0x221A, radH);
+        float thick = ImMax(0.5f, sz * 0.04f);
         TessLatexGlyphH(mathFont, sz, 0x221A, radH, px, topY, outShape, tess_tol, iterations);
-        // Skip overline (AddLine)
+        AddRuleToShape(outShape, px + radW, topY, px + box->width, topY + thick);
         for (int i = 0; i < box->children.Size; i++)
             TessellateBox(box->children[i], mathFont, fontSize, px, py, outShape, tess_tol, iterations);
         if (box->base)
@@ -1807,7 +1834,61 @@ static void TessellateBox(LaTeXBox* box, ImFont* mathFont, float fontSize, float
     case LaTeXBox_VBox: {
         for (int i = 0; i < box->children.Size; i++)
             TessellateBox(box->children[i], mathFont, fontSize, px, py, outShape, tess_tol, iterations);
-        // Skip extensible brace assembly (too complex for gradient demo)
+        // Extensible horizontal brace assembly — mirrors RenderBox exactly
+        if (box->delimRight == '{') {
+            float sz = fontSize * box->sizeFactor;
+            LaTeXBox* main = box->children.Size > 0 ? box->children[0] : NULL;
+            float cw = box->width;
+            float targetW = cw / sz;
+            ImWchar braceCh = (box->delimLeft == 'O') ? 0x23DE : 0x23DF;
+            stbtt_fontinfo fi; float emSc = 0;
+            bool hasMath = GetSlugFontInfo(mathFont, &fi, &emSc);
+            int braceGI = hasMath ? stbtt_FindGlyphIndex(&fi, braceCh) : 0;
+            MathGlyphAssembly assembly;
+            bool hasAssembly = (braceGI > 0) && MathGetHAssembly(&fi, braceGI, emSc, &assembly) && assembly.partCount > 0;
+            float baseY = (box->delimLeft == 'O')
+                ? py - (main ? main->height : 0) - sz * 0.05f
+                : py + (main ? main->depth : 0) + sz * 0.05f;
+            if (hasAssembly) {
+                float fixedW = 0; int extIdx = -1;
+                for (int i = 0; i < assembly.partCount; i++) {
+                    if (assembly.parts[i].isExtender) extIdx = i;
+                    else fixedW += assembly.parts[i].fullAdvance;
+                }
+                float extAdv    = (extIdx >= 0) ? assembly.parts[extIdx].fullAdvance : 0;
+                float overlap   = (extIdx >= 0) ? assembly.parts[extIdx].startConnector * 0.5f : 0;
+                int extCopies = 0;
+                if (extAdv > overlap && targetW > fixedW)
+                    extCopies = (int)((targetW - fixedW) / (extAdv - overlap));
+                float totalAsmW = 0; int joinCount = 0;
+                for (int i2 = 0; i2 < assembly.partCount; i2++) {
+                    int cp2 = assembly.parts[i2].isExtender ? extCopies : 1;
+                    for (int c2 = 0; c2 < cp2; c2++) {
+                        if (joinCount++ > 0) totalAsmW -= overlap;
+                        totalAsmW += assembly.parts[i2].fullAdvance;
+                    }
+                }
+                if (totalAsmW < 0.01f) totalAsmW = 1.0f;
+                float braceSz = sz * targetW / totalAsmW;
+                float braceOverlap = overlap * braceSz;
+                float penX2 = px; int jc = 0;
+                for (int i = 0; i < assembly.partCount; i++) {
+                    int copies = assembly.parts[i].isExtender ? extCopies : 1;
+                    ImWchar partKey = (ImWchar)(0x100000 + assembly.parts[i].glyphID);
+                    char partUtf8[8]; EncodeUTF8(partKey, partUtf8);
+                    for (int c = 0; c < copies; c++) {
+                        float ov = (jc > 0) ? braceOverlap : 0;
+                        TessLatexText(mathFont, braceSz, partUtf8, penX2 - ov, baseY, outShape, tess_tol, iterations);
+                        penX2 += assembly.parts[i].fullAdvance * braceSz - ov;
+                        jc++;
+                    }
+                }
+            } else {
+                char bUtf8[8]; EncodeUTF8(braceCh, bUtf8);
+                ImVec2 bSz = CalcTextSize(mathFont, sz, bUtf8);
+                TessLatexText(mathFont, sz, bUtf8, px + (cw - bSz.x) * 0.5f, baseY, outShape, tess_tol, iterations);
+            }
+        }
         break;
     }
     case LaTeXBox_Delim:
