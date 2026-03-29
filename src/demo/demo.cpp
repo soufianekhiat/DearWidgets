@@ -1,4 +1,4 @@
-﻿#include <demo.h>
+#include <demo.h>
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 
@@ -40,6 +40,9 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb_image_write.h>
 
 #include <IconFontCppHeaders/IconsFontAwesome6.h>
 #include <IconFontCppHeaders/IconsFontAwesome6Brands.h>
@@ -89,6 +92,304 @@
 //		}
 //	}
 //};
+
+// ============================================================
+// Screenshot system (Windows only)
+// ============================================================
+#if defined(IM_CURRENT_PLATFORM) && (IM_CURRENT_PLATFORM == IM_PLATFORM_WIN32)
+#define DW_SCREENSHOT_SUPPORT 1
+#else
+#define DW_SCREENSHOT_SUPPORT 0
+#endif
+
+#if DW_SCREENSHOT_SUPPORT
+
+#ifndef PW_RENDERFULLCONTENT
+#define PW_RENDERFULLCONTENT 0x00000002
+#endif
+
+struct DW_ScreenshotSpec
+{
+	const char* imgui_window;  // ImGui window title (nullptr = full client area)
+	const char* filename;      // output filename, relative to out_dir
+};
+
+static const DW_ScreenshotSpec g_screenshot_specs[] =
+{
+	{ nullptr,        "full.png"          },
+	{ "Dear Widgets", "dear_widgets.png"  },
+	{ "Shop 00",      "shop_00.png"       },
+};
+
+enum DW_SsPhase
+{
+	DW_SsPhase_Warmup          = 0,  // render a few frames so GPU/layout stabilises
+	DW_SsPhase_Overview        = 1,  // capture full.png, showcase.png, shop_00.png
+	DW_SsPhase_OpenAll         = 2,  // force-open every CollapsingHeader / TreeNode
+	DW_SsPhase_Stabilize       = 3,  // let layout re-measure with everything expanded
+	DW_SsPhase_RecordSections  = 4,  // one frame pass: record section bounds via DW_SsRecord
+	DW_SsPhase_SectionCapture  = 5,  // iterate recorded sections: scroll → resize → capture
+	DW_SsPhase_Showcase        = 6,  // last: resize window to fit Showcase, capture showcase.png
+	DW_SsPhase_Done            = 7,
+};
+
+struct DW_ScreenshotState
+{
+	bool       active           = false;
+	char       out_dir[512]     = {};
+	bool       done             = false;
+	DW_SsPhase phase            = DW_SsPhase_Warmup;
+	int        phase_frames     = 0;    // frames elapsed in current phase
+	bool       with_headers     = true;   // include CollapsingHeader bar in capture
+	float      demo_win_w       = 1300.0f; // width of the "Dear Widgets" ImGui window (default 2×650)
+	// section-capture state
+	int        section_index    = 0;    // index into g_ss_sections[]
+	int        section_pass     = 0;    // 0=scroll, 1=settle, 2=remeasure trigger, 3=capture
+	int        base_client_w    = 1380; // OS window client dimensions to restore after each section
+	int        base_client_h    = 960;
+	float      correct_scroll   = -1.0f; // running correct scroll (accumulated from actual heights)
+};
+static DW_ScreenshotState g_ss;
+
+// Controls read by the demo rendering code (ApplyOpenAll, ShowDemo) each frame
+static int   g_ss_open_all   = 0;      // -1=close all, 0=off, 1=open all CollapsingHeaders/TreeNodes
+static float g_ss_scroll_y   = -1.0f;  // ≥0: override scroll position of "Dear Widgets" window
+static float g_ss_demo_win_h = -1.0f;  // ≥0: override "Dear Widgets" window height
+static float g_ss_demo_area_x    = 10.0f;   // x position for Demo+Samples windows (push off-screen during Showcase)
+static float g_ss_showcase_area_x = 5000.0f; // x position for Showcase window (off-screen except during Showcase phase)
+static float g_ss_showcase_h         = 1400.0f; // constraint height — large enough to render all content without scroll
+static float g_ss_showcase_capture_h = -1.0f;   // measured content height used for actual crop (set after render)
+
+// Per-section bounds recorded during DW_SsPhase_RecordSections
+struct DW_SsSection
+{
+	char  name[128];
+	float start_y;       // GetCursorPos().y before the header (scroll-independent, unchanged)
+	float end_y;         // GetCursorPos().y after the section (scroll-independent, unchanged)
+	float indent_offset; // GetCursorPos().x - WindowPadding.x (unchanged)
+	// Populated during the remeasure pass (section on-screen, avail.y is full):
+	float dc_x0;         // GetCursorScreenPos().x before header
+	float dc_y0;         // GetCursorScreenPos().y before header
+	float dc_y1;         // GetCursorScreenPos().y after section
+};
+static DW_SsSection g_ss_sections[512];
+static int          g_ss_nsections   = 0;
+static bool         g_ss_record_mode    = false;
+static int          g_ss_remeasure_idx  = -1;  // when ≥0, update that section's bounds in-place
+
+// Called from ShowDemo / sub-functions while g_ss_record_mode == true,
+// OR while g_ss_remeasure_idx == matching section index.
+static void DW_SsRecord( const char* name, float y0, float y1 )
+{
+	if ( g_ss_remeasure_idx >= 0 )
+	{
+		// Re-measure mode: section is scrolled to the top so avail.y is full.
+		// Record DC (screen-space) cursor positions for use as the exact crop rectangle.
+		// start_y/end_y are NOT updated so gap computation in the state machine stays correct.
+		DW_SsSection& s = g_ss_sections[g_ss_remeasure_idx];
+		if ( strcmp( s.name, name ) == 0 && y1 > y0 + 2.0f )
+		{
+			ImGuiWindow* dw = ImGui::FindWindowByName( "Dear Widgets" );
+			if ( dw )
+			{
+				// DC pos = GetCursorScreenPos().y = y + Pos.y − Scroll.y
+				s.dc_y0 = y0 + dw->Pos.y - dw->Scroll.y;
+				s.dc_y1 = y1 + dw->Pos.y - dw->Scroll.y;
+				s.dc_x0 = dw->InnerRect.Min.x + ( ImGui::GetCursorPos().x - ImGui::GetStyle().WindowPadding.x );
+			}
+			s.indent_offset    = ImGui::GetCursorPos().x - ImGui::GetStyle().WindowPadding.x;
+			g_ss_remeasure_idx = -1;  // consumed
+		}
+		return;
+	}
+	if ( !g_ss_record_mode || g_ss_nsections >= 512 ) return;
+	if ( y1 <= y0 + 2.0f ) return;   // section was closed – skip
+	DW_SsSection& s = g_ss_sections[g_ss_nsections++];
+	ImStrncpy( s.name, name, sizeof( s.name ) );
+	s.start_y       = y0;
+	s.end_y         = y1;
+	s.indent_offset = ImGui::GetCursorPos().x - ImGui::GetStyle().WindowPadding.x;
+}
+
+// Resize the Win32 OS window so the client area is at least (client_w × client_h).
+static void DW_ResizeOsWindow( HWND hwnd, int client_w, int client_h )
+{
+	int screen_w = GetSystemMetrics( SM_CXSCREEN );
+	int screen_h = GetSystemMetrics( SM_CYSCREEN );
+	client_w = ImMin( client_w, screen_w - 40 );
+	client_h = ImMin( client_h, screen_h - 10 );
+	DWORD style   = (DWORD)GetWindowLongA( hwnd, GWL_STYLE );
+	DWORD exstyle = (DWORD)GetWindowLongA( hwnd, GWL_EXSTYLE );
+	RECT  rc      = { 0, 0, client_w, client_h };
+	AdjustWindowRectEx( &rc, style, FALSE, exstyle );
+	SetWindowPos( hwnd, nullptr, 0, 0,
+	              rc.right - rc.left, rc.bottom - rc.top,
+	              SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE );
+}
+
+// Capture a rectangular region of the window's CLIENT AREA and write a PNG.
+// clip_x/y/w/h are in client-area coordinates.  Pass clip_w==0/clip_h==0 for full client area.
+// Uses PrintWindow with a full-window DC so the title bar is correctly excluded from the crop.
+static bool DW_CaptureClientAreaPNG( HWND hwnd, const char* path,
+                                     int clip_x, int clip_y,
+                                     int clip_w, int clip_h )
+{
+	// Full window rect (includes title bar + borders)
+	RECT wrc;
+	GetWindowRect( hwnd, &wrc );
+	int full_W = wrc.right  - wrc.left;
+	int full_H = wrc.bottom - wrc.top;
+	if ( full_W <= 0 || full_H <= 0 ) return false;
+
+	// Client area origin in screen coords → non-client offsets
+	POINT client_origin = { 0, 0 };
+	ClientToScreen( hwnd, &client_origin );
+	int nc_left = client_origin.x - wrc.left;
+	int nc_top  = client_origin.y - wrc.top;
+
+	// Client area size for clamping
+	RECT crc;
+	GetClientRect( hwnd, &crc );
+	int W = crc.right, H = crc.bottom;
+	if ( W <= 0 || H <= 0 ) return false;
+
+	// Resolve clip region in client-area coords
+	if ( clip_w <= 0 ) clip_w = W;
+	if ( clip_h <= 0 ) clip_h = H;
+	clip_x = ImMax( clip_x, 0 );
+	clip_y = ImMax( clip_y, 0 );
+	clip_w = ImMin( clip_w, W - clip_x );
+	clip_h = ImMin( clip_h, H - clip_y );
+	if ( clip_w <= 0 || clip_h <= 0 ) return false;
+
+	// Translate clip to full-window DC coordinates (add non-client offsets)
+	int dc_x = nc_left + clip_x;
+	int dc_y = nc_top  + clip_y;
+	// Clamp against full DC bounds
+	dc_x   = ImMax( dc_x, 0 );
+	dc_y   = ImMax( dc_y, 0 );
+	clip_w = ImMin( clip_w, full_W - dc_x );
+	clip_h = ImMin( clip_h, full_H - dc_y );
+	if ( clip_w <= 0 || clip_h <= 0 ) return false;
+
+	// Ask DWM to composite GPU content into a DC sized to the FULL window.
+	// This ensures the title bar occupies DC rows 0..nc_top-1 and the client
+	// area starts at nc_top — we then crop starting at dc_y to exclude it.
+	HDC     hdc   = GetDC( hwnd );
+	HDC     memdc = CreateCompatibleDC( hdc );
+	HBITMAP hbm   = CreateCompatibleBitmap( hdc, full_W, full_H );
+	HGDIOBJ prev  = SelectObject( memdc, hbm );
+	BOOL    pwok  = PrintWindow( hwnd, memdc, PW_RENDERFULLCONTENT );
+	GdiFlush();
+
+	if ( !pwok )
+	{
+		fprintf( stderr, "[screenshot] WARNING: PrintWindow returned FALSE (HWND=%p)\n", (void*)hwnd );
+		fflush( stderr );
+	}
+
+	// Download pixels — BGRX (32-bit, alpha byte is 0)
+	ImVector<unsigned char> buf;
+	buf.resize( full_W * full_H * 4 );
+	BITMAPINFO bmi              = {};
+	bmi.bmiHeader.biSize        = sizeof( BITMAPINFOHEADER );
+	bmi.bmiHeader.biWidth       = full_W;
+	bmi.bmiHeader.biHeight      = -full_H;  // top-down
+	bmi.bmiHeader.biPlanes      = 1;
+	bmi.bmiHeader.biBitCount    = 32;
+	bmi.bmiHeader.biCompression = BI_RGB;
+	int got = GetDIBits( memdc, hbm, 0, full_H, buf.Data, &bmi, DIB_RGB_COLORS );
+
+	SelectObject( memdc, prev );
+	DeleteObject( hbm );
+	DeleteDC( memdc );
+	ReleaseDC( hwnd, hdc );
+
+	if ( !got )
+	{
+		fprintf( stderr, "[screenshot] ERROR: GetDIBits returned 0\n" );
+		fflush( stderr );
+		return false;
+	}
+
+	// Crop and convert BGRX → RGBA
+	ImVector<unsigned char> crop;
+	crop.resize( clip_w * clip_h * 4 );
+	for ( int row = 0; row < clip_h; ++row )
+	{
+		const unsigned char* src = &buf[( ( dc_y + row ) * full_W + dc_x ) * 4];
+		unsigned char*       dst = &crop[row * clip_w * 4];
+		for ( int col = 0; col < clip_w; ++col, src += 4, dst += 4 )
+		{
+			dst[0] = src[2];  // R ← B
+			dst[1] = src[1];  // G
+			dst[2] = src[0];  // B ← R
+			dst[3] = 255;
+		}
+	}
+
+	return stbi_write_png( path, clip_w, clip_h, 4, crop.Data, clip_w * 4 ) != 0;
+}
+
+static void DW_RunScreenshotCapture()
+{
+	// Use window title — more reliable than ImPlatform_App_GetHWND() in all configurations
+	HWND hwnd = FindWindowA( NULL, "Dear Widgets Demo" );
+	if ( !hwnd )
+	{
+		fprintf( stderr, "[screenshot] ERROR: window 'Dear Widgets Demo' not found\n" );
+		fflush( stderr );
+		return;
+	}
+
+	fprintf( stderr, "[screenshot] Capturing to: %s\n", g_ss.out_dir );
+	fflush( stderr );
+
+	// Ensure output directory exists
+	CreateDirectoryA( g_ss.out_dir, nullptr );
+
+	char path[1024];
+	for ( int i = 0; i < (int)( sizeof( g_screenshot_specs ) / sizeof( g_screenshot_specs[0] ) ); ++i )
+	{
+		const DW_ScreenshotSpec& spec = g_screenshot_specs[i];
+		int x = 0, y = 0, w = 0, h = 0;
+
+		if ( spec.imgui_window )
+		{
+			ImGuiWindow* win = ImGui::FindWindowByName( spec.imgui_window );
+			if ( !win )
+			{
+				fprintf( stderr, "[screenshot] SKIP  %s (window not found)\n", spec.imgui_window );
+				fflush( stderr );
+				continue;
+			}
+			if ( win->Hidden || win->Collapsed )
+			{
+				fprintf( stderr, "[screenshot] SKIP  %s (hidden/collapsed)\n", spec.imgui_window );
+				fflush( stderr );
+				continue;
+			}
+			x = (int)win->Pos.x;
+			y = (int)win->Pos.y;
+			w = (int)win->Size.x;
+			h = (int)win->Size.y;
+			fprintf( stderr, "[screenshot] Win '%s' pos=(%d,%d) size=(%dx%d)\n",
+				spec.imgui_window, x, y, w, h );
+			fflush( stderr );
+		}
+
+		snprintf( path, sizeof( path ), "%s\\%s", g_ss.out_dir, spec.filename );
+		bool ok = DW_CaptureClientAreaPNG( hwnd, path, x, y, w, h );
+		fprintf( stderr, "[screenshot] %s  %s\n", ok ? "OK  " : "FAIL", path );
+		fflush( stderr );
+	}
+}
+
+
+#else  // !DW_SCREENSHOT_SUPPORT
+// Stub so DW_SsRecord calls in ShowDemo compile in non-screenshot builds
+static inline void DW_SsRecord( const char*, float, float ) {}
+#endif // DW_SCREENSHOT_SUPPORT
 
 ImTextureID TextureFromFile( char const* filename, ImVec2* img_size )
 {
@@ -362,18 +663,70 @@ static void OnDpiChanged( float new_scale, void* /*user_data*/ )
 
 namespace ImWidgets { void ShowShowcase(); }
 
-int main()
+int main( int argc, char** argv )
 {
+	// Parse command-line arguments
+#if DW_SCREENSHOT_SUPPORT
+	for ( int i = 1; i < argc; ++i )
+	{
+		if ( strcmp( argv[i], "--screenshot" ) == 0 && i + 1 < argc )
+		{
+			g_ss.active = true;
+			snprintf( g_ss.out_dir, sizeof( g_ss.out_dir ), "%s", argv[++i] );
+		}
+		else if ( strcmp( argv[i], "--no-headers" ) == 0 )
+		{
+			g_ss.with_headers = false;
+		}
+		else if ( strcmp( argv[i], "--width" ) == 0 && i + 1 < argc )
+		{
+			g_ss.demo_win_w = (float)atoi( argv[++i] );
+		}
+	}
+	if ( g_ss.active )
+	{
+		// Allocate a console so that stderr diagnostic output is visible
+		AllocConsole();
+		freopen( "CONOUT$", "w", stderr );
+		g_ss.base_client_w = (int)g_ss.demo_win_w + 80;
+	fprintf( stderr, "[screenshot] mode active, output dir: %s  headers=%s  width=%.0f\n",
+		         g_ss.out_dir, g_ss.with_headers ? "yes" : "no", g_ss.demo_win_w );
+		fflush( stderr );
+	}
+#else
+	(void)argc; (void)argv;
+#endif
+
 	// Using the new ImPlatform C API - following ImPlatform demo pattern
 	bool bGood;
 
-	// Create window
-	bGood = ImPlatform_CreateWindow( "Dear Widgets Demo", ImVec2( 100.0f, 100.0f ), 1024, 764 * 2 );
+	// Create window — use a compact fixed size in screenshot mode for consistent output
+#if DW_SCREENSHOT_SUPPORT
+	int win_w = g_ss.active ? g_ss.base_client_w : 1024;
+	int win_h = g_ss.active ? 960              : 764 * 2;
+	ImVec2 win_pos = g_ss.active ? ImVec2( 20.0f, 20.0f ) : ImVec2( 100.0f, 100.0f );
+#else
+	int win_w = 1024, win_h = 764 * 2;
+	ImVec2 win_pos = ImVec2( 100.0f, 100.0f );
+#endif
+	bGood = ImPlatform_CreateWindow( "Dear Widgets Demo", win_pos, win_w, win_h );
 	if ( !bGood )
 	{
 		fprintf( stderr, "ImPlatform: Cannot create window.\n" );
 		return 1;
 	}
+#if DW_SCREENSHOT_SUPPORT
+	if ( g_ss.active )
+	{
+		// Read actual client height (width already computed from demo_win_w)
+		HWND hwnd_init = FindWindowA( NULL, "Dear Widgets Demo" );
+		if ( hwnd_init )
+		{
+			RECT crc; GetClientRect( hwnd_init, &crc );
+			g_ss.base_client_h = crc.bottom;
+		}
+	}
+#endif
 
 	// Initialize Graphics API
 	bGood = ImPlatform_InitGfxAPI();
@@ -574,12 +927,46 @@ int main()
 		ImGui::NewFrame();
 
 		// Render UI
+		// In screenshot mode, force each window to a known position and size so captures
+		// are deterministic regardless of imgui.ini saved state.
+#if DW_SCREENSHOT_SUPPORT
+		if ( g_ss.active )
+		{
+			ImGui::SetNextWindowPos( ImVec2( g_ss_demo_area_x, 10.0f ), ImGuiCond_Always );
+			ImGui::SetNextWindowSize( ImVec2( 600.0f, 930.0f ), ImGuiCond_Always );
+		}
+#endif
 		ImWidgets::ShowSamples();
+
+#if DW_SCREENSHOT_SUPPORT
+		if ( g_ss.active )
+		{
+			float demo_h = ( g_ss_demo_win_h > 0.0f ) ? g_ss_demo_win_h : 930.0f;
+			ImGui::SetNextWindowPos( ImVec2( g_ss_demo_area_x, 10.0f ), ImGuiCond_Always );
+			ImGui::SetNextWindowSize( ImVec2( g_ss.demo_win_w, demo_h ), ImGuiCond_Always );
+		}
+#endif
 		ImWidgets::ShowDemo();
+
+#if DW_SCREENSHOT_SUPPORT
+		if ( g_ss.active )
+		{
+			float sh = ( g_ss.phase == DW_SsPhase_Showcase ) ? g_ss_showcase_h : 700.0f;
+			ImGui::SetNextWindowPos( ImVec2( g_ss_showcase_area_x, 10.0f ), ImGuiCond_Always );
+			ImGui::SetNextWindowSizeConstraints( ImVec2( 800.0f, sh ), ImVec2( 800.0f, sh ) );
+			ImGui::SetNextWindowCollapsed( false, ImGuiCond_Always );
+		}
+#endif
 		ImWidgets::ShowShowcase();
-		ImWidgets::ShowStyleEditor();
-		ImGui::ShowMetricsWindow();
-		ImGui::ShowDemoWindow();
+
+#if DW_SCREENSHOT_SUPPORT
+		if ( !g_ss.active )
+#endif
+		{
+			ImWidgets::ShowStyleEditor();
+			ImGui::ShowMetricsWindow();
+			ImGui::ShowDemoWindow();
+		}
 
 		ShowSampleOffscreen00();
 
@@ -598,6 +985,283 @@ int main()
 #endif
 
 		ImPlatform_GfxAPISwapBuffer();
+
+		// Screenshot state machine
+#if DW_SCREENSHOT_SUPPORT
+		if ( g_ss.active && !g_ss.done )
+		{
+			g_ss.phase_frames++;
+
+			switch ( g_ss.phase )
+			{
+			case DW_SsPhase_Warmup:
+				// Wait for GPU + ImGui layout to fully settle
+				if ( g_ss.phase_frames >= 8 )
+				{
+					g_ss.phase        = DW_SsPhase_Overview;
+					g_ss.phase_frames = 0;
+				}
+				break;
+
+			case DW_SsPhase_Overview:
+				// Capture the static overview shots (full window, Showcase, Shop 00)
+				// Wait one extra frame so positions from imgui.ini are applied
+				if ( g_ss.phase_frames >= 2 )
+				{
+					DW_RunScreenshotCapture();  // full.png, showcase.png, shop_00.png
+					g_ss.phase        = DW_SsPhase_OpenAll;
+					g_ss.phase_frames = 0;
+				}
+				break;
+
+			case DW_SsPhase_OpenAll:
+				// Signal ApplyOpenAll() to expand every CollapsingHeader / TreeNode.
+				// This is consumed each frame, so we hold it for 3 frames to reach
+				// nested headers that are only visible after their parent opens.
+				g_ss_open_all = 1;
+				if ( g_ss.phase_frames >= 3 )
+				{
+					g_ss_open_all     = 0;
+					g_ss.phase        = DW_SsPhase_Stabilize;
+					g_ss.phase_frames = 0;
+				}
+				break;
+
+			case DW_SsPhase_Stabilize:
+				// Let layout re-measure, then start section recording
+				if ( g_ss.phase_frames >= 5 )
+				{
+					g_ss_scroll_y     = 0.0f;
+					g_ss.phase        = DW_SsPhase_RecordSections;
+					g_ss.phase_frames = 0;
+				}
+				break;
+
+			case DW_SsPhase_RecordSections:
+				// Enable recording; ShowDemo() will populate g_ss_sections[] this frame
+				g_ss_record_mode = true;
+				if ( g_ss.phase_frames >= 2 )
+				{
+					g_ss_record_mode    = false;
+					g_ss.section_index  = 0;
+					g_ss.section_pass   = 0;
+					g_ss.correct_scroll = -1.0f;  // bootstrap from first section in pass 0
+					g_ss.phase          = DW_SsPhase_SectionCapture;
+					g_ss.phase_frames   = 0;
+					// Use a fixed tall window for ALL captures so GetContentRegionAvail().y
+					// is consistent between remeasure and capture passes.
+					{
+						float max_h = (float)GetSystemMetrics( SM_CYSCREEN ) - 100.0f;
+						g_ss_demo_win_h = max_h;
+						HWND hwnd_ss = FindWindowA( NULL, "Dear Widgets Demo" );
+						if ( hwnd_ss )
+							DW_ResizeOsWindow( hwnd_ss, g_ss.base_client_w, (int)max_h + 40 );
+					}
+					fprintf( stderr, "[screenshot] Recorded %d sections, capture height=%.0f\n",
+					         g_ss_nsections, g_ss_demo_win_h );
+					fflush( stderr );
+				}
+				break;
+
+			case DW_SsPhase_SectionCapture:
+			{
+				if ( g_ss.section_index >= g_ss_nsections )
+				{
+					// All sections captured — restore window then capture showcase.png last
+					HWND hwnd = FindWindowA( NULL, "Dear Widgets Demo" );
+					if ( hwnd )
+						DW_ResizeOsWindow( hwnd, g_ss.base_client_w, g_ss.base_client_h );
+					g_ss_scroll_y        = -1.0f;
+					g_ss_demo_win_h      = -1.0f;
+					g_ss.correct_scroll  = -1.0f;
+					g_ss.phase           = DW_SsPhase_Showcase;
+					g_ss.phase_frames    = 0;
+					break;
+				}
+
+				const DW_SsSection& sec = g_ss_sections[g_ss.section_index];
+
+				if ( g_ss.section_pass == 0 )
+				{
+					// Scroll so the section lands at InnerRect.Min.y.
+					// For section 0 bootstrap from the recorded start_y (near top, correct).
+					// For subsequent sections use the running correct_scroll accumulated from
+					// actual remeasured heights, so accumulated errors don't compound.
+					ImGuiWindow* dw_curr = ImGui::FindWindowByName( "Dear Widgets" );
+					float top_chrome = dw_curr ? ( dw_curr->InnerRect.Min.y - dw_curr->Pos.y ) : 27.0f;
+
+					if ( g_ss.correct_scroll < 0.0f )
+						g_ss.correct_scroll = ImMax( 0.0f, sec.start_y - top_chrome );
+
+					g_ss_scroll_y = g_ss.correct_scroll;
+
+					g_ss.section_pass = 1;
+					g_ss.phase_frames = 0;
+				}
+				else if ( g_ss.section_pass == 1 )
+				{
+					// Settle: wait for scroll to take effect (SetScrollY is deferred one frame)
+					if ( g_ss.phase_frames >= 3 )
+					{
+						g_ss.section_pass = 2;
+						g_ss.phase_frames = 0;
+					}
+				}
+				else if ( g_ss.section_pass == 2 )
+				{
+					// ShowDemo() already ran this frame before the state machine.
+					// Trigger remeasure: ShowDemo() will call DW_SsRecord next frame with
+					// this section on-screen and avail.y = full window height.
+					// DW_SsRecord will compute DC (screen-space) positions for exact crop.
+					g_ss_remeasure_idx = g_ss.section_index;
+					g_ss.section_pass  = 3;
+					g_ss.phase_frames  = 0;
+				}
+				else if ( g_ss.section_pass == 3 )
+				{
+					// ShowDemo() ran first this frame: DW_SsRecord fired for this section
+					// and populated sec.dc_y0 / sec.dc_y1 with screen-space positions.
+					g_ss_remeasure_idx = -1;  // safety clear
+
+					HWND         hwnd = FindWindowA( NULL, "Dear Widgets Demo" );
+					ImGuiWindow* dw   = ImGui::FindWindowByName( "Dear Widgets" );
+					if ( hwnd && dw && !dw->Hidden && !dw->Collapsed )
+					{
+						float hdr_skip = g_ss.with_headers ? 0.0f : ImGui::GetFrameHeightWithSpacing();
+
+						// Use DC positions for the crop — they reflect the actual on-screen
+						// position including indent, and avail.y-driven content height.
+						float cap_x_f = ( sec.dc_x0 > 0.0f )
+							? sec.dc_x0
+							: ( dw->InnerRect.Min.x + sec.indent_offset );
+						int cap_x = (int)cap_x_f;
+						int cap_y = ( sec.dc_y0 > 0.0f )
+							? (int)( sec.dc_y0 + hdr_skip )
+							: (int)( dw->InnerRect.Min.y + hdr_skip );
+						int cap_w = (int)( dw->InnerRect.Max.x - cap_x_f );
+						int cap_h = ( sec.dc_y0 > 0.0f && sec.dc_y1 > sec.dc_y0 )
+							? (int)ImMax( sec.dc_y1 - sec.dc_y0 - hdr_skip, 1.0f )
+							: (int)ImMax( sec.end_y - sec.start_y - hdr_skip, 1.0f );
+
+						char safe[128];
+						ImStrncpy( safe, sec.name, sizeof( safe ) );
+						for ( char* p = safe; *p; ++p )
+							if ( *p == '/' || *p == '\\' || *p == ' ' || *p == ':' || *p == '#' )
+								*p = '_';
+
+						char path[1024];
+						snprintf( path, sizeof( path ), "%s\\%04d_%s.png",
+						          g_ss.out_dir, g_ss.section_index, safe );
+
+						bool ok = DW_CaptureClientAreaPNG( hwnd, path, cap_x, cap_y, cap_w, cap_h );
+						fprintf( stderr, "[screenshot] %s  %s  dc=(%.0f,%.0f)  h=%d\n",
+						         ok ? "OK  " : "FAIL", path, sec.dc_y0, sec.dc_y1, cap_h );
+						fflush( stderr );
+					}
+
+					// Advance running correct_scroll by the actual (DC-measured) section height
+					// plus the original recorded gap to the next section.
+					{
+						float dc_h = ( sec.dc_y0 > 0.0f && sec.dc_y1 > sec.dc_y0 )
+							? ( sec.dc_y1 - sec.dc_y0 )
+							: ( sec.end_y - sec.start_y );
+						g_ss.correct_scroll += dc_h;
+						int next_idx = g_ss.section_index + 1;
+						if ( next_idx < g_ss_nsections )
+						{
+							// Gap = cursor advancement between end of this section and start of next.
+							// Use original recorded values (start_y is scroll-independent, unchanged).
+							float gap = g_ss_sections[next_idx].start_y - sec.end_y;
+							g_ss.correct_scroll += ImMax( 0.0f, gap );
+						}
+					}
+
+					g_ss.section_index++;
+					g_ss.section_pass = 0;
+					g_ss.phase_frames = 0;
+				}
+				break;
+			}
+
+			case DW_SsPhase_Showcase:
+			{
+				if ( g_ss.phase_frames == 1 )
+				{
+					// Resize OS window to 1450px client height — well above content height (~975px).
+					// The window may extend off-screen; PrintWindow(PW_RENDERFULLCONTENT) captures
+					// the full D3D backbuffer including off-screen portions, so this is fine.
+					HWND hwnd = FindWindowA( NULL, "Dear Widgets Demo" );
+					if ( hwnd )
+					{
+						DWORD style   = (DWORD)GetWindowLongA( hwnd, GWL_STYLE );
+						DWORD exstyle = (DWORD)GetWindowLongA( hwnd, GWL_EXSTYLE );
+						RECT  rc      = { 0, 0, 820, 1450 };
+						AdjustWindowRectEx( &rc, style, FALSE, exstyle );
+						SetWindowPos( hwnd, nullptr, 0, 0,
+						              rc.right - rc.left, rc.bottom - rc.top,
+						              SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE );
+					}
+					g_ss_showcase_capture_h = -1.0f;
+					// Push Demo and Samples windows off-screen; bring Showcase on-screen
+					g_ss_demo_area_x     = 5000.0f;
+					g_ss_showcase_area_x = 10.0f;
+				}
+				// After content has rendered, measure the actual scrollable content height.
+				if ( g_ss.phase_frames == 4 )
+				{
+					ImGuiWindow* win = ImGui::FindWindowByName( "Showcase" );
+					if ( win && win->ContentSize.y > 10.0f )
+					{
+						float pad = ImGui::GetStyle().WindowPadding.y;
+						g_ss_showcase_capture_h = win->ContentSize.y
+						                        + win->TitleBarHeight   // field since imgui 2024/05/28
+						                        + pad * 2.0f
+						                        + 4.0f; // small rounding margin
+						fprintf( stderr, "[screenshot] Showcase content height measured: %.0fpx → capture %.0fpx\n",
+						         win->ContentSize.y, g_ss_showcase_capture_h );
+						fflush( stderr );
+					}
+				}
+				if ( g_ss.phase_frames >= 7 )
+				{
+					HWND hwnd = FindWindowA( NULL, "Dear Widgets Demo" );
+					if ( hwnd )
+					{
+						ImGuiWindow* win = ImGui::FindWindowByName( "Showcase" );
+						if ( win && !win->Hidden && !win->Collapsed )
+						{
+							char path[1024];
+							snprintf( path, sizeof( path ), "%s\\showcase.png", g_ss.out_dir );
+							int x = 10, y = 10, w = 800;
+							int h = ( g_ss_showcase_capture_h > 0.0f )
+							        ? (int)g_ss_showcase_capture_h
+							        : (int)g_ss_showcase_h;
+							bool ok = DW_CaptureClientAreaPNG( hwnd, path, x, y, w, h );
+							fprintf( stderr, "[screenshot] %s  %s  (%dx%d)\n",
+							         ok ? "OK  " : "FAIL", path, w, h );
+							fflush( stderr );
+						}
+					}
+					// Restore windows
+					g_ss_demo_area_x     = 10.0f;
+					g_ss_showcase_area_x = 5000.0f;
+					HWND hwnd2 = FindWindowA( NULL, "Dear Widgets Demo" );
+					if ( hwnd2 )
+						DW_ResizeOsWindow( hwnd2, g_ss.base_client_w, g_ss.base_client_h );
+					g_ss.phase = DW_SsPhase_Done;
+					g_ss.done  = true;
+				}
+				break;
+			}
+
+			case DW_SsPhase_Done:
+				g_ss.done = true;
+				break;
+			}
+		}
+		if ( g_ss.active && g_ss.done )
+			break;
+#endif
 	}
 
 	// Cleanup
@@ -776,14 +1440,18 @@ namespace ImWidgets {
 	// ShowDemo Section Functions
 	//////////////////////////////////////////////////////////////////////////
 	static int  s_open_all = 0;
-	static void ApplyOpenAll() { if ( s_open_all != 0 ) ImGui::SetNextItemOpen( s_open_all > 0, ImGuiCond_Always ); }
+	static void ApplyOpenAll()
+	{
+		int eff = ( s_open_all != 0 ) ? s_open_all : g_ss_open_all;
+		if ( eff != 0 ) ImGui::SetNextItemOpen( eff > 0, ImGuiCond_Always );
+	}
 	static float CanvasSize() { return ImMin( ImGui::GetContentRegionAvail().x, 400.0f ); }
 
 	void ShowDrawShapeDemo()
 	{
 		ApplyOpenAll();
-		if ( !ImGui::CollapsingHeader( "Draw Shape" ) )
-			return;
+		if ( ImGui::CollapsingHeader( "Draw Shape" ) )
+		{
 
 		float const size = CanvasSize();
 		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
@@ -821,6 +1489,7 @@ namespace ImWidgets {
 		ImGui::SliderInt( "tri_idx", &debug_state.tri_idx, -1, shape.triangles.size() - 1 );
 		ImGui::Text( "Tri: %d", shape.triangles.size() );
 		ImGui::Text( "Vtx: %d", shape.vertices.size() );
+		}  // end CollapsingHeader "Draw Shape"
 	}
 
 	void ShowDrawTextDemo()
@@ -967,18 +1636,28 @@ namespace ImWidgets {
 		ImGui::Separator();
 		const char* currentGroup = NULL;
 		bool groupOpen = false;
-		for ( const FontEntry& e : kFonts )
+		float groupY0 = 0.0f;
+		int nFonts = IM_ARRAYSIZE( kFonts );
+		for ( int i = 0; i <= nFonts; i++ )
 		{
-			if ( !*e.font ) continue;
-
-			// Group header
-			if ( e.group != currentGroup )
+			const char* nextGroup = ( i < nFonts ) ? kFonts[i].group : NULL;
+			if ( nextGroup != currentGroup )
 			{
-				currentGroup = e.group;
-				groupOpen = ImGui::CollapsingHeader( currentGroup );
+				if ( currentGroup != NULL )
+					DW_SsRecord( currentGroup, groupY0, ImGui::GetCursorPos().y );
+				currentGroup = nextGroup;
+				if ( nextGroup != NULL )
+				{
+					groupY0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					groupOpen = ImGui::CollapsingHeader( nextGroup );
+				}
 			}
+			if ( i >= nFonts ) break;
+			if ( !*kFonts[i].font ) continue;
 			if ( !groupOpen ) continue;
 
+			const FontEntry& e = kFonts[i];
 			ImFont* f           = *e.font;
 			const char* drawStr = (e.textType == kEmoji) ? emoji_buf : (e.textType == kArabic) ? arabic_buf : text_buf;
 
@@ -1019,6 +1698,7 @@ namespace ImWidgets {
 
 		// Typography Fills section (inside GPU Text)
 		// ---- Debug Glyph Tessellation ----
+		{ float _sy0 = ImGui::GetCursorPos().y;
 		ApplyOpenAll();
 		if ( ImGui::CollapsingHeader( "Debug Glyph Tessellation" ) )
 		{
@@ -1085,8 +1765,10 @@ namespace ImWidgets {
 				ImWidgets::DrawTesselateDebug( pDrawList, dbgFont, dbgSize, dbgChar, dbgPos, dbgTol, dbgSpacing, dbgRowH );
 			}
 		}
+		DW_SsRecord( "Debug_Glyph_Tessellation", _sy0, ImGui::GetCursorPos().y ); }
 
 		// Typography Fills: tesselated text with gradient/image fills
+		{ float _sy0 = ImGui::GetCursorPos().y;
 		ApplyOpenAll();
 		if ( g_monblockFont && ImGui::CollapsingHeader( "Typography Fills" ) )
 		{
@@ -1285,6 +1967,7 @@ namespace ImWidgets {
 				}
 			}
 		}
+		DW_SsRecord( "Typography_Fills", _sy0, ImGui::GetCursorPos().y ); }
 	}
 
 	void ShowTypographyAnimations()
@@ -1561,16 +2244,26 @@ namespace ImWidgets {
 		float const gap = ImGui::GetStyle().ItemSpacing.y;
 		const char* currentGroup = NULL;
 		bool groupOpen = false;
-		for ( const LaTeXEntry& e : kExamples )
+		float groupY0 = 0.0f;
+		int nExamples = IM_ARRAYSIZE( kExamples );
+		for ( int i = 0; i <= nExamples; i++ )
 		{
-			// Group header (collapsed by default)
-			if ( e.group != currentGroup )
+			const char* nextGroup = ( i < nExamples ) ? kExamples[i].group : NULL;
+			if ( nextGroup != currentGroup )
 			{
-				currentGroup = e.group;
-				ApplyOpenAll();
-				groupOpen = ImGui::CollapsingHeader( currentGroup );
+				if ( currentGroup != NULL )
+					DW_SsRecord( currentGroup, groupY0, ImGui::GetCursorPos().y );
+				currentGroup = nextGroup;
+				if ( nextGroup != NULL )
+				{
+					groupY0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					groupOpen = ImGui::CollapsingHeader( nextGroup );
+				}
 			}
+			if ( i >= nExamples ) break;
 			if ( !groupOpen ) continue;
+			const LaTeXEntry& e = kExamples[i];
 
 			// LaTeX source label
 			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 160, 160, 160, 255 ) );
@@ -2201,6 +2894,9 @@ namespace ImWidgets {
 		ImGui::Begin( "Dear Widgets", NULL, ImGuiWindowFlags_NoTitleBar );
 		ImWidgets::SetCurrentWindowBackgroundImage( background, background_size, false, IM_COL32(255, 255, 255, 128) );
 
+		// Apply scroll override from screenshot state machine
+		if ( g_ss_scroll_y >= 0.0f )
+			ImGui::SetScrollY( g_ss_scroll_y );
 
 		// ─── Open / Close All ──────────────────────────────────────────────
 		if ( ImGui::Button( "Open All" ) )  { s_open_all =  1; }
@@ -2210,11 +2906,13 @@ namespace ImWidgets {
 		ApplyOpenAll();
 		if ( ImGui::CollapsingHeader( "Draw" ) )
 		{
-			ShowDrawShapeDemo();
+			// Sub-function recording wrappers
+			{ float _sy0 = ImGui::GetCursorPos().y; ShowDrawShapeDemo();        DW_SsRecord( "Draw_Shape",             _sy0, ImGui::GetCursorPos().y ); }
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 			ShowDrawTextDemo();
-			ShowTypographyAnimations();
+			{ float _sy0 = ImGui::GetCursorPos().y; ShowTypographyAnimations(); DW_SsRecord( "Typography_Animations",  _sy0, ImGui::GetCursorPos().y ); }
 			ShowLaTeXDemo();
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Custom Shader" ) )
 			{
@@ -2264,10 +2962,12 @@ namespace ImWidgets {
 				}
 				ImGui::Unindent();
 			}
+			DW_SsRecord( "Custom_Shader", _sy0, ImGui::GetCursorPos().y ); }  // end Custom Shader block
 #endif
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Gradients##Draw" ) )
 			{
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Linear Gradient" ) )
 			{
@@ -2348,6 +3048,8 @@ namespace ImWidgets {
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
 				ImGui::Text( "Vtx: %d", shape.vertices.size() );
 			}
+			DW_SsRecord( "Linear_Gradient", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Radial Gradient" ) )
 			{
@@ -2393,6 +3095,8 @@ namespace ImWidgets {
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
 				ImGui::Text( "Vtx: %d", shape.vertices.size() );
 			}
+			DW_SsRecord( "Radial_Gradient", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Diamond Gradient" ) )
 			{
@@ -2438,6 +3142,8 @@ namespace ImWidgets {
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
 				ImGui::Text( "Vtx: %d", shape.vertices.size() );
 			}
+			DW_SsRecord( "Diamond_Gradient", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Image Shape" ) )
 			{
@@ -2486,6 +3192,8 @@ namespace ImWidgets {
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
 				ImGui::Text( "Vtx: %d", shape.vertices.size() );
 			}
+			DW_SsRecord( "Image_Shape", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Image Shape Gradient" ) )
 			{
@@ -2548,11 +3256,13 @@ namespace ImWidgets {
 				ImGui::Text( "Tri: %d", shape.triangles.size() );
 				ImGui::Text( "Vtx: %d", shape.vertices.size() );
 			}
+			DW_SsRecord( "Image_Shape_Gradient", _sy0, ImGui::GetCursorPos().y ); }
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Pointers##Draw" ) )
 			{
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Triangles Pointers" ) )
 			{
@@ -2597,6 +3307,8 @@ namespace ImWidgets {
 				ImWidgets::DrawTriangleCursorFilled( pDrawList, ImVec2( curPos.x + 5.0f * dx, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
 				ImWidgets::DrawTriangleCursorFilled( pDrawList, ImVec2( curPos.x + 7.0f * dx, curPos.y + fPointerLine ), angle, size, IM_COL32( 255, 0, 0, 255 ) );
 			}
+			DW_SsRecord( "Triangles_Pointers", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Signet Pointer" ) )
 			{
@@ -2638,11 +3350,13 @@ namespace ImWidgets {
 				ImWidgets::DrawSignetFilledCursor( pDrawList, ImVec2( curPos.x + 11.0f * dx, curPos.y + fPointerLine ), width, height, height_ratio, 1.0f, angle, uBlue );
 				pDrawList->AddCircleFilled( ImVec2( curPos.x + 11.0f * dx, curPos.y + fPointerLine ), 4.0f * S, IM_COL32( 255, 128, 0, 255 ), 16 );
 			}
+			DW_SsRecord( "Signet_Pointer", _sy0, ImGui::GetCursorPos().y ); }
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Color##Draw" ) )
 			{
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Color Bands" ) )
 			{
@@ -2696,6 +3410,8 @@ namespace ImWidgets {
 				// ImU32 CustomColorBand( float x, void* );
 #endif
 			}
+			DW_SsRecord( "Color_Bands", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Color Ring" ) )
 			{
@@ -2766,6 +3482,8 @@ namespace ImWidgets {
 								   }, &fFreqValue, division, colorOffset, true );
 				}
 			}
+			DW_SsRecord( "Color_Ring", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "OkLab/OkLch Color Quad" ) )
 			{
@@ -2786,6 +3504,8 @@ namespace ImWidgets {
 				DrawOkLchQuad( pDrawList, curPos, ImVec2( size, size ), L, resX, resY );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			DW_SsRecord( "OkLab_Color_Quad", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Color2D" ) )
 			{
@@ -2827,11 +3547,13 @@ namespace ImWidgets {
 				}
 				ImGui::Dummy( ImVec2( width, width ) );
 			}
+			DW_SsRecord( "Color2D", _sy0, ImGui::GetCursorPos().y ); }
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Masked Shapes##Draw" ) )
 			{
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Image Convex Shape" ) )
 			{
@@ -2855,6 +3577,8 @@ namespace ImWidgets {
 				DrawImageConvexShape( pDrawList, background, &disk[ 0 ], 32, IM_COL32( 255, 255, 255, 255 ), uv_offset, uv_scale );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			DW_SsRecord( "Image_Convex_Shape", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Image Concave Shape" ) )
 			{
@@ -2878,6 +3602,8 @@ namespace ImWidgets {
 				DrawImageConcaveShape( pDrawList, background, &pos_norms[ 0 ], sz, IM_COL32( 255, 255, 255, 255 ), uv_offset, uv_scale );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			DW_SsRecord( "Image_Concave_Shape", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Shape with Hole" ) )
 			{
@@ -2905,6 +3631,8 @@ namespace ImWidgets {
 
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			DW_SsRecord( "Shape_with_Hole", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Image Shape With Hole" ) )
 			{
@@ -2943,11 +3671,13 @@ namespace ImWidgets {
 				DrawImageShapeWithHole( pDrawList, background, pts.Data, pts.Size, IM_COL32( 255, 255, 255, 255 ), uv_offset, uv_scale, gap, strokeWidth );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			DW_SsRecord( "Image_Shape_With_Hole", _sy0, ImGui::GetCursorPos().y ); }
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Chromaticity##Draw" ) )
 			{
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Chromaticity Plot" ) )
 			{
@@ -3024,6 +3754,8 @@ namespace ImWidgets {
 
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			DW_SsRecord( "Chromaticity_Plot", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Chromaticity Line/Point" ) )
 			{
@@ -3102,11 +3834,13 @@ namespace ImWidgets {
 
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			DW_SsRecord( "Chromaticity_Line_Point", _sy0, ImGui::GetCursorPos().y ); }
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Graduation##Draw" ) )
 			{
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Linear Line Graduation" ) )
 			{
@@ -3163,6 +3897,8 @@ namespace ImWidgets {
 										  divisions[ 2 ], heights[ 2 ], thicknesses[ 2 ], angles[ 2 ], col2 );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			DW_SsRecord( "Linear_Line_Graduation", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Linear Circular Graduation" ) )
 			{
@@ -3223,6 +3959,8 @@ namespace ImWidgets {
 											  divisions[ 2 ], heights[ 2 ], thicknesses[ 2 ], angles[ 2 ], col2 );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			DW_SsRecord( "Linear_Circular_Graduation", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Log Line Graduation" ) )
 			{
@@ -3272,6 +4010,8 @@ namespace ImWidgets {
 									   divisions[ 1 ], heights[ 1 ], thicknesses[ 1 ], angles[ 1 ], col1 );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			DW_SsRecord( "Log_Line_Graduation", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Log Circular Graduation" ) )
 			{
@@ -3325,6 +4065,7 @@ namespace ImWidgets {
 										   divisions[ 1 ], heights[ 1 ], thicknesses[ 1 ], angles[ 1 ], col1 );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			DW_SsRecord( "Log_Circular_Graduation", _sy0, ImGui::GetCursorPos().y ); }
 				ImGui::TreePop();
 			}
 		}
@@ -3334,6 +4075,7 @@ namespace ImWidgets {
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Polygon Hit Testing##Interactions" ) )
 			{
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Poly Convex Hovered" ) )
 			{
@@ -3368,6 +4110,8 @@ namespace ImWidgets {
 
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			DW_SsRecord( "Poly_Convex_Hovered", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Poly Concave Hovered" ) )
 			{
@@ -3407,6 +4151,8 @@ namespace ImWidgets {
 				pDrawList->AddConcavePolyFilled( &ring[ 0 ], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			DW_SsRecord( "Poly_Concave_Hovered", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Poly With Hole Hovered" ) )
 			{
@@ -3456,6 +4202,7 @@ namespace ImWidgets {
 				DrawShapeWithHole( pDrawList, &ring[ 0 ], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
+			DW_SsRecord( "Poly_With_Hole_Hovered", _sy0, ImGui::GetCursorPos().y ); }
 				ImGui::TreePop();
 			}
 		}
@@ -3466,6 +4213,7 @@ namespace ImWidgets {
 			if ( ImGui::TreeNode( "Buttons##Widgets" ) )
 			{
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Button Circle" ) )
 			{
@@ -3478,7 +4226,9 @@ namespace ImWidgets {
 				ImGui::Text( "Value: %d", value );
 				value += ( int )ImWidgets::ButtonExCircle( caption.c_str(), radius, 0 );
 			}
+			DW_SsRecord( "Button_Circle", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Button Capsule" ) )
 			{
@@ -3493,7 +4243,9 @@ namespace ImWidgets {
 				value += ( int )ButtonExCapsuleH( "CapsuleH", length, thickness, 0 );
 				value += ( int )ButtonExCapsuleV( "CapsuleV", length, thickness, 0 );
 			}
+			DW_SsRecord( "Button_Capsule", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Button Convex" ) )
 			{
@@ -3512,7 +4264,9 @@ namespace ImWidgets {
 				ImGui::Text( "Value: %d", value );
 				value += ( int )ImWidgets::ButtonExConvex( "Convex", ImVec2( 0, 0 ), &disk[ 0 ], 32, 0 );
 			}
+			DW_SsRecord( "Button_Convex", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Button Concave" ) )
 			{
@@ -3530,7 +4284,9 @@ namespace ImWidgets {
 				ImGui::Text( "Value: %d", value );
 				value += ( int )ImWidgets::ButtonExConcave( "Concave", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 );
 			}
+			DW_SsRecord( "Button_Concave", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Button With Hole" ) )
 			{
@@ -3548,6 +4304,7 @@ namespace ImWidgets {
 				ImGui::Text( "Value: %d", value );
 				value += ( int )ImWidgets::ButtonExWithHole( "With Hole", ImVec2( 0, 0 ), &pos_norms[ 0 ], sz, ImVec2( 0.0f, size / 3.0f ), 0 );
 			}
+			DW_SsRecord( "Button_With_Hole", _sy0, ImGui::GetCursorPos().y ); }
 
 				ImGui::TreePop();
 			}
@@ -3555,6 +4312,7 @@ namespace ImWidgets {
 			if ( ImGui::TreeNode( "Sliders & Inputs##Widgets" ) )
 			{
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "DragFloatPrecise" ) )
 			{
@@ -3566,7 +4324,9 @@ namespace ImWidgets {
 				ImWidgets::DragFloatPrecise( "Fixed format", &value3, 0.0f, 0.0f, "%.6f" );
 				ImGui::TextWrapped( "Click and drag left/right to edit. Move up/down to change precision rung." );
 			}
+			DW_SsRecord( "DragFloatPrecise", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "SliderN" ) )
 			{
@@ -3581,7 +4341,9 @@ namespace ImWidgets {
 				ImGui::DragFloat( "Focal Planes", &value[ 1 ], 1.0f, value[ 0 ], value[ 2 ] );
 				ImGui::DragFloat( "Far Planes", &value[ 2 ], 1.0f, value[ 1 ], max );
 			}
+			DW_SsRecord( "SliderN", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "SliderRing" ) )
 			{
@@ -3599,7 +4361,9 @@ namespace ImWidgets {
 				static float fval3 = 0.75f;
 				ImWidgets::SliderRingFloat( "Full##SR3", &fval3, 0.0f, 1.0f, -IM_PI, IM_PI, 6.0f );
 			}
+			DW_SsRecord( "SliderRing", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "SliderSpline" ) )
 			{
@@ -3661,7 +4425,9 @@ namespace ImWidgets {
 				static float fval7 = 0.5f;
 				ImWidgets::SliderSplineFloat( "Infinity##SS8", &fval7, 0.0f, 1.0f, infinity, 7, 200.0f );
 			}
+			DW_SsRecord( "SliderSpline", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Slider2D Float" ) )
 			{
@@ -3671,7 +4437,9 @@ namespace ImWidgets {
 				Slider2DFloat( "Slider 2D Float", &slider2D.x, &slider2D.y, boundMin.x, boundMax.x, boundMin.y, boundMax.y );
 				ImGui::InputFloat2( "Value", &slider2D.x );
 			}
+			DW_SsRecord( "Slider2D_Float", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Slider2D Int" ) )
 			{
@@ -3679,6 +4447,7 @@ namespace ImWidgets {
 				Slider2DInt( "Slider 2D Int", &vv[ 0 ], &vv[ 1 ], -5, 5, -5, 5 );
 				ImGui::InputInt2( "Value", &vv[ 0 ] );
 			}
+			DW_SsRecord( "Slider2D_Int", _sy0, ImGui::GetCursorPos().y ); }
 
 				ImGui::TreePop();
 			}
@@ -3686,6 +4455,7 @@ namespace ImWidgets {
 			if ( ImGui::TreeNode( "Images##Widgets" ) )
 			{
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Image Carousel" ) )
 			{
@@ -3695,7 +4465,9 @@ namespace ImWidgets {
 				ImWidgets::ImageCarousel( "##Carousel", carouselImages, carouselSizes, IM_ARRAYSIZE( carouselImages ), &carouselIdx );
 				ImGui::Text( "Selected: %d", carouselIdx );
 			}
+			DW_SsRecord( "Image_Carousel", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Image Bento" ) )
 			{
@@ -3709,7 +4481,9 @@ namespace ImWidgets {
 				ImWidgets::ImageBento( "##Bento", bentoImages, bentoSizes, IM_ARRAYSIZE( bentoImages ), &bentoIdx, bentoColumns, bentoAspect );
 				ImGui::Text( "Selected: %d", bentoIdx );
 			}
+			DW_SsRecord( "Image_Bento", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Image Viewer" ) )
 			{
@@ -3752,9 +4526,11 @@ namespace ImWidgets {
 				ImWidgets::ImageViewer( "##Viewer", viewerTexes[ viewerIdx ], viewerSizes[ viewerIdx ], viewerState );
 
 			}
+			DW_SsRecord( "Image_Viewer", _sy0, ImGui::GetCursorPos().y ); }
 
 				ImGui::TreePop();
 			}
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Drawing Tools##Widgets" ) )
 			{
@@ -3766,7 +4542,9 @@ namespace ImWidgets {
 				ImWidgets::UpVector( "##UpVec", upDir );
 				ImGui::Text( "Direction: %.3f, %.3f, %.3f", upDir[ 0 ], upDir[ 1 ], upDir[ 2 ] );
 			}
+			DW_SsRecord( "Up_Vector", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Dashed Polylines" ) )
 			{
@@ -4006,7 +4784,9 @@ namespace ImWidgets {
 				if (ImGui::Checkbox("Debug Joins (CPU)##dashed", &debug_joins))
 					ImWidgets::SetDashedLinesDebugJoins(debug_joins);
 			}
+			DW_SsRecord( "Dashed_Polylines", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Paint Canvas" ) )
 			{
@@ -4063,7 +4843,9 @@ namespace ImWidgets {
 					pc.BrushColor.y = pc.BrushColor.z = pc.BrushColor.x;
 				}
 			}
+			DW_SsRecord( "Paint_Canvas", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Transform Gizmo" ) )
 			{
@@ -4115,6 +4897,7 @@ namespace ImWidgets {
 					ImGui::TextDisabled( "Click an image to select it" );
 				}
 			}
+			DW_SsRecord( "Transform_Gizmo", _sy0, ImGui::GetCursorPos().y ); }
 
 				ImGui::TreePop();
 			}
@@ -4122,6 +4905,7 @@ namespace ImWidgets {
 			if ( ImGui::TreeNode( "Color Editing##Widgets" ) )
 			{
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Hue Selector" ) )
 			{
@@ -4151,7 +4935,9 @@ namespace ImWidgets {
 				ImWidgets::GetStyle().PopVar();
 				HueSelector( "Hue 1##HueSelector", hueHeight, cursorHeight, &hueCenter, &hueWidth, &featherLeft, &featherRight, division, alphaHue, alphaHideHue, offset );
 			}
+			DW_SsRecord( "Hue_Selector", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Gradient Editor" ) )
 			{
@@ -4212,7 +4998,9 @@ namespace ImWidgets {
 				}
 				GradientEditor( "Black to White (OkLab)##Grad2", &gradient2, false );
 			}
+			DW_SsRecord( "Gradient_Editor", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Curve Editor" ) )
 			{
@@ -4318,7 +5106,9 @@ namespace ImWidgets {
 				}
 				CurveEditor( "Steps & Linear##Curve2", &curve2, ImVec2( 0, 150 ) );
 			}
+			DW_SsRecord( "Curve_Editor", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Color Wheel" ) )
 			{
@@ -4339,7 +5129,9 @@ namespace ImWidgets {
 				ColorWheel( "##WheelHDR", &wheelColor2, ImColorWheelMode_OkLCH, 2.0f );
 				ImGui::ColorEdit4( "HDR Color##Wheel2", &wheelColor2.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR );
 			}
+			DW_SsRecord( "Color_Wheel", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Color Picker" ) )
 			{
@@ -4378,7 +5170,9 @@ namespace ImWidgets {
 				}
 				ImGui::ColorEdit4( "Shared Color##PickerCmp", &pickerColor.x, ImGuiColorEditFlags_Float );
 			}
+			DW_SsRecord( "Color_Picker", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Primaries Wheels (Lift/Gamma/Gain/Offset)" ) )
 			{
@@ -4457,7 +5251,9 @@ namespace ImWidgets {
 				ImGui::SetNextItemWidth( ctrlW );
 				ImGui::SliderFloat( "Hue", &primHue, -180.0f, 180.0f, "%.1f" );
 			}
+			DW_SsRecord( "Primaries_Wheels", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "HDR Wheels (Dark/Shadow/Light/Global)" ) )
 			{
@@ -4534,6 +5330,7 @@ namespace ImWidgets {
 				ImGui::SetNextItemWidth( ctrlW );
 				ImGui::SliderFloat( "Black Offset##HDR", &hdrBlackOffset, -1.0f, 1.0f, "%.3f" );
 			}
+			DW_SsRecord( "HDR_Wheels", _sy0, ImGui::GetCursorPos().y ); }
 
 				ImGui::TreePop();
 			}
@@ -4541,17 +5338,16 @@ namespace ImWidgets {
 			if ( ImGui::TreeNode( "Color Analysis##Widgets" ) )
 			{
 
-			ApplyOpenAll();
-			if ( ImGui::CollapsingHeader( "Color Curve" ) )
+			// Color Curve — one CollapsingHeader per mode so the screenshot system
+			// generates one image per curve type.
 			{
-				static int ccMode = ImColorCurveMode_HueVsHue;
-				static bool ccShowHistogram = true;
-				static bool ccAdvancedSegments = false;
-				static ImHistogramData ccHistData;
-				static bool ccHistInit = false;
-
-				ImGui::Combo( "Mode##CC", &ccMode, "Hue vs Hue\0Hue vs Sat\0Hue vs Lum\0Lum vs Sat\0Sat vs Sat\0" );
-				ImGui::Checkbox( "Luminance Histogram##CC", &ccShowHistogram );
+				static bool             ccShowHistogram    = true;
+				static bool             ccAdvancedSegments = false;
+				static float            ccSampleX          = 0.5f;
+				static ImHistogramData  ccHistData;
+				static bool             ccHistInit         = false;
+				static ImColorCurveData ccData[ ImColorCurveMode_COUNT ];
+				static bool             ccInit             = false;
 
 				if ( !ccHistInit )
 				{
@@ -4567,52 +5363,151 @@ namespace ImWidgets {
 					}
 					ccHistInit = true;
 				}
-
-				static ImColorCurveData ccData[ ImColorCurveMode_COUNT ];
-				static bool ccInit = false;
 				if ( !ccInit )
 				{
 					// Hue vs Hue: shift reds toward orange
 					ccData[ ImColorCurveMode_HueVsHue ].AddKey( 0.0f, 0.05f );
 					ccData[ ImColorCurveMode_HueVsHue ].AddKey( 0.15f, 0.0f );
-
 					// Hue vs Sat: boost greens
 					ccData[ ImColorCurveMode_HueVsSat ].AddKey( 0.25f, 1.0f );
 					ccData[ ImColorCurveMode_HueVsSat ].AddKey( 0.33f, 1.5f );
 					ccData[ ImColorCurveMode_HueVsSat ].AddKey( 0.42f, 1.0f );
-
 					ccInit = true;
 				}
-
+			{ float _sy0 = ImGui::GetCursorPos().y;
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Hue vs Hue" ) )
+			{
+				ImGui::Checkbox( "Histogram##CC", &ccShowHistogram );
+				ImGui::SameLine();
 				ImGui::Checkbox( "Advanced Segments##CC", &ccAdvancedSegments );
-				ImColorCurveData& curData = ccData[ ccMode ];
 				ImHistogramData const* histPtr = ( ccShowHistogram && ccHistData.BinCount > 0 ) ? &ccHistData : NULL;
-				ColorCurve( "##CCMain", &curData, ( ImColorCurveMode )ccMode, histPtr, ccAdvancedSegments, ImVec2( 0, 150 ) );
-
+				ImColorCurveData& curData = ccData[ ImColorCurveMode_HueVsHue ];
+				ColorCurve( "##CC_HH", &curData, ImColorCurveMode_HueVsHue, histPtr, ccAdvancedSegments, ImVec2( 0, 150 ) );
 				if ( curData.SelectedIdx >= 0 && curData.SelectedIdx < curData.Keys.Size )
 				{
 					ImColorCurveKey& key = curData.Keys[ curData.SelectedIdx ];
 					float posMin = ( curData.SelectedIdx > 0 ) ? curData.Keys[ curData.SelectedIdx - 1 ].Position : 0.0f;
 					float posMax = ( curData.SelectedIdx < curData.Keys.Size - 1 ) ? curData.Keys[ curData.SelectedIdx + 1 ].Position : 1.0f;
-					ImGui::DragFloat( "Position##CCKey", &key.Position, 0.005f, posMin, posMax, "%.3f" );
+					ImGui::DragFloat( "Position##CC_HH_Key", &key.Position, 0.005f, posMin, posMax, "%.3f" );
 					float rMin, rMax;
-					ImWidgets::ColorCurveRange( ( ImColorCurveMode )ccMode, &rMin, &rMax );
-					ImGui::DragFloat( "Value##CCKey", &key.Value, 0.01f, rMin, rMax, "%.3f" );
+					ImWidgets::ColorCurveRange( ImColorCurveMode_HueVsHue, &rMin, &rMax );
+					ImGui::DragFloat( "Value##CC_HH_Key", &key.Value, 0.01f, rMin, rMax, "%.3f" );
 				}
-				else
-				{
-					ImGui::TextDisabled( "No key selected" );
-				}
-
-				// Sample readout
-				static float ccSampleX = 0.5f;
-				ImGui::SliderFloat( "Sample x##CC", &ccSampleX, 0.0f, 1.0f );
-				float ccVal = ImWidgets::ColorCurveSample( curData, ( ImColorCurveMode )ccMode, ccSampleX );
-				ImGui::Text( "y = %.4f", ccVal );
-
+				else { ImGui::TextDisabled( "No key selected" ); }
+				ImGui::SliderFloat( "Sample x##CC_HH", &ccSampleX, 0.0f, 1.0f );
+				ImGui::Text( "y = %.4f", ImWidgets::ColorCurveSample( curData, ImColorCurveMode_HueVsHue, ccSampleX ) );
 				ImGui::TextWrapped( "Click to add key. Drag to move. Drag far outside to delete. Right-click for options." );
 			}
+			DW_SsRecord( "Color_Curve_Hue_vs_Hue", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Hue vs Sat" ) )
+			{
+				ImGui::Checkbox( "Histogram##CC", &ccShowHistogram );
+				ImGui::SameLine();
+				ImGui::Checkbox( "Advanced Segments##CC", &ccAdvancedSegments );
+				ImHistogramData const* histPtr = ( ccShowHistogram && ccHistData.BinCount > 0 ) ? &ccHistData : NULL;
+				ImColorCurveData& curData = ccData[ ImColorCurveMode_HueVsSat ];
+				ColorCurve( "##CC_HS", &curData, ImColorCurveMode_HueVsSat, histPtr, ccAdvancedSegments, ImVec2( 0, 150 ) );
+				if ( curData.SelectedIdx >= 0 && curData.SelectedIdx < curData.Keys.Size )
+				{
+					ImColorCurveKey& key = curData.Keys[ curData.SelectedIdx ];
+					float posMin = ( curData.SelectedIdx > 0 ) ? curData.Keys[ curData.SelectedIdx - 1 ].Position : 0.0f;
+					float posMax = ( curData.SelectedIdx < curData.Keys.Size - 1 ) ? curData.Keys[ curData.SelectedIdx + 1 ].Position : 1.0f;
+					ImGui::DragFloat( "Position##CC_HS_Key", &key.Position, 0.005f, posMin, posMax, "%.3f" );
+					float rMin, rMax;
+					ImWidgets::ColorCurveRange( ImColorCurveMode_HueVsSat, &rMin, &rMax );
+					ImGui::DragFloat( "Value##CC_HS_Key", &key.Value, 0.01f, rMin, rMax, "%.3f" );
+				}
+				else { ImGui::TextDisabled( "No key selected" ); }
+				ImGui::SliderFloat( "Sample x##CC_HS", &ccSampleX, 0.0f, 1.0f );
+				ImGui::Text( "y = %.4f", ImWidgets::ColorCurveSample( curData, ImColorCurveMode_HueVsSat, ccSampleX ) );
+				ImGui::TextWrapped( "Click to add key. Drag to move. Drag far outside to delete. Right-click for options." );
+			}
+			DW_SsRecord( "Color_Curve_Hue_vs_Sat", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Hue vs Lum" ) )
+			{
+				ImGui::Checkbox( "Histogram##CC", &ccShowHistogram );
+				ImGui::SameLine();
+				ImGui::Checkbox( "Advanced Segments##CC", &ccAdvancedSegments );
+				ImHistogramData const* histPtr = ( ccShowHistogram && ccHistData.BinCount > 0 ) ? &ccHistData : NULL;
+				ImColorCurveData& curData = ccData[ ImColorCurveMode_HueVsLum ];
+				ColorCurve( "##CC_HL", &curData, ImColorCurveMode_HueVsLum, histPtr, ccAdvancedSegments, ImVec2( 0, 150 ) );
+				if ( curData.SelectedIdx >= 0 && curData.SelectedIdx < curData.Keys.Size )
+				{
+					ImColorCurveKey& key = curData.Keys[ curData.SelectedIdx ];
+					float posMin = ( curData.SelectedIdx > 0 ) ? curData.Keys[ curData.SelectedIdx - 1 ].Position : 0.0f;
+					float posMax = ( curData.SelectedIdx < curData.Keys.Size - 1 ) ? curData.Keys[ curData.SelectedIdx + 1 ].Position : 1.0f;
+					ImGui::DragFloat( "Position##CC_HL_Key", &key.Position, 0.005f, posMin, posMax, "%.3f" );
+					float rMin, rMax;
+					ImWidgets::ColorCurveRange( ImColorCurveMode_HueVsLum, &rMin, &rMax );
+					ImGui::DragFloat( "Value##CC_HL_Key", &key.Value, 0.01f, rMin, rMax, "%.3f" );
+				}
+				else { ImGui::TextDisabled( "No key selected" ); }
+				ImGui::SliderFloat( "Sample x##CC_HL", &ccSampleX, 0.0f, 1.0f );
+				ImGui::Text( "y = %.4f", ImWidgets::ColorCurveSample( curData, ImColorCurveMode_HueVsLum, ccSampleX ) );
+				ImGui::TextWrapped( "Click to add key. Drag to move. Drag far outside to delete. Right-click for options." );
+			}
+			DW_SsRecord( "Color_Curve_Hue_vs_Lum", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Lum vs Sat" ) )
+			{
+				ImGui::Checkbox( "Histogram##CC", &ccShowHistogram );
+				ImGui::SameLine();
+				ImGui::Checkbox( "Advanced Segments##CC", &ccAdvancedSegments );
+				ImHistogramData const* histPtr = ( ccShowHistogram && ccHistData.BinCount > 0 ) ? &ccHistData : NULL;
+				ImColorCurveData& curData = ccData[ ImColorCurveMode_LumVsSat ];
+				ColorCurve( "##CC_LS", &curData, ImColorCurveMode_LumVsSat, histPtr, ccAdvancedSegments, ImVec2( 0, 150 ) );
+				if ( curData.SelectedIdx >= 0 && curData.SelectedIdx < curData.Keys.Size )
+				{
+					ImColorCurveKey& key = curData.Keys[ curData.SelectedIdx ];
+					float posMin = ( curData.SelectedIdx > 0 ) ? curData.Keys[ curData.SelectedIdx - 1 ].Position : 0.0f;
+					float posMax = ( curData.SelectedIdx < curData.Keys.Size - 1 ) ? curData.Keys[ curData.SelectedIdx + 1 ].Position : 1.0f;
+					ImGui::DragFloat( "Position##CC_LS_Key", &key.Position, 0.005f, posMin, posMax, "%.3f" );
+					float rMin, rMax;
+					ImWidgets::ColorCurveRange( ImColorCurveMode_LumVsSat, &rMin, &rMax );
+					ImGui::DragFloat( "Value##CC_LS_Key", &key.Value, 0.01f, rMin, rMax, "%.3f" );
+				}
+				else { ImGui::TextDisabled( "No key selected" ); }
+				ImGui::SliderFloat( "Sample x##CC_LS", &ccSampleX, 0.0f, 1.0f );
+				ImGui::Text( "y = %.4f", ImWidgets::ColorCurveSample( curData, ImColorCurveMode_LumVsSat, ccSampleX ) );
+				ImGui::TextWrapped( "Click to add key. Drag to move. Drag far outside to delete. Right-click for options." );
+			}
+			DW_SsRecord( "Color_Curve_Lum_vs_Sat", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Sat vs Sat" ) )
+			{
+				ImGui::Checkbox( "Histogram##CC", &ccShowHistogram );
+				ImGui::SameLine();
+				ImGui::Checkbox( "Advanced Segments##CC", &ccAdvancedSegments );
+				ImHistogramData const* histPtr = ( ccShowHistogram && ccHistData.BinCount > 0 ) ? &ccHistData : NULL;
+				ImColorCurveData& curData = ccData[ ImColorCurveMode_SatVsSat ];
+				ColorCurve( "##CC_SS", &curData, ImColorCurveMode_SatVsSat, histPtr, ccAdvancedSegments, ImVec2( 0, 150 ) );
+				if ( curData.SelectedIdx >= 0 && curData.SelectedIdx < curData.Keys.Size )
+				{
+					ImColorCurveKey& key = curData.Keys[ curData.SelectedIdx ];
+					float posMin = ( curData.SelectedIdx > 0 ) ? curData.Keys[ curData.SelectedIdx - 1 ].Position : 0.0f;
+					float posMax = ( curData.SelectedIdx < curData.Keys.Size - 1 ) ? curData.Keys[ curData.SelectedIdx + 1 ].Position : 1.0f;
+					ImGui::DragFloat( "Position##CC_SS_Key", &key.Position, 0.005f, posMin, posMax, "%.3f" );
+					float rMin, rMax;
+					ImWidgets::ColorCurveRange( ImColorCurveMode_SatVsSat, &rMin, &rMax );
+					ImGui::DragFloat( "Value##CC_SS_Key", &key.Value, 0.01f, rMin, rMax, "%.3f" );
+				}
+				else { ImGui::TextDisabled( "No key selected" ); }
+				ImGui::SliderFloat( "Sample x##CC_SS", &ccSampleX, 0.0f, 1.0f );
+				ImGui::Text( "y = %.4f", ImWidgets::ColorCurveSample( curData, ImColorCurveMode_SatVsSat, ccSampleX ) );
+				ImGui::TextWrapped( "Click to add key. Drag to move. Drag far outside to delete. Right-click for options." );
+			}
+			DW_SsRecord( "Color_Curve_Sat_vs_Sat", _sy0, ImGui::GetCursorPos().y ); }
+			}  // end Color Curve shared block
 
+
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Parade Scope" ) )
 			{
@@ -4786,7 +5681,9 @@ namespace ImWidgets {
 				else
 					ImGui::TextDisabled( "Failed to load image" );
 			}
+			DW_SsRecord( "Parade_Scope", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Vector Scope" ) )
 			{
@@ -4950,7 +5847,9 @@ namespace ImWidgets {
 				else
 					ImGui::TextDisabled( "Failed to load image" );
 			}
+			DW_SsRecord( "Vector_Scope", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Histogram" ) )
 			{
@@ -5117,7 +6016,9 @@ namespace ImWidgets {
 				else
 					ImGui::TextDisabled( "Failed to load image" );
 			}
+			DW_SsRecord( "Histogram", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "CIE Chromaticity" ) )
 			{
@@ -5290,7 +6191,9 @@ namespace ImWidgets {
 				else
 					ImGui::TextDisabled( "Failed to load image" );
 			}
+			DW_SsRecord( "CIE_Chromaticity", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Tone Curve" ) )
 			{
@@ -5480,7 +6383,9 @@ namespace ImWidgets {
 					ImGui::TextDisabled( "Failed to load image" );
 				ImGui::TextWrapped( "Click to add key. Drag to move. Drag far outside to delete. Right-click for options." );
 			}
+			DW_SsRecord( "Tone_Curve", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Color Warper" ) )
 			{
@@ -5671,9 +6576,11 @@ namespace ImWidgets {
 				ImGui::SameLine();
 				ImGui::Text( "Points: %d (%dx%d)", warperData.PointCount(), warperData.HueDivisions, warperData.SatDivisions );
 			}
+			DW_SsRecord( "Color_Warper", _sy0, ImGui::GetCursorPos().y ); }
 
 				ImGui::TreePop();
 			}
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Misc##Widgets" ) )
 			{
@@ -5717,6 +6624,7 @@ namespace ImWidgets {
 			}
 				ImGui::TreePop();
 			}
+			DW_SsRecord( "Misc", _sy0, ImGui::GetCursorPos().y ); }  // end Misc block
 		}
 
 		s_open_all = 0;
