@@ -1770,7 +1770,7 @@
 		SlugFontCache* atlas = SlugGetOrCreateAtlas(state, font);
 		if (!atlas) { if (out_ascent) *out_ascent = font_size; return ImVec2(0, font_size); }
 
-		// Ensure all glyphs are built (no texture upload needed for measurement)
+		// Ensure all base glyphs are built (needed for y-extents and unshaped fallback)
 		const char* p = text;
 		while (p < text_end)
 		{
@@ -1788,6 +1788,7 @@
 		float maxY    =  0.0f;  // highest point above baseline (em units, positive)
 		float minY    =  0.0f;  // lowest  point below baseline (em units, negative)
 
+		// Y-extents from base glyphs (contextual/shaped forms share same vertical metrics)
 		p = text;
 		while (p < text_end)
 		{
@@ -1796,9 +1797,50 @@
 			if (cp == 0) break;
 			SlugGlyphEntry* ge = SlugFindGlyph(atlas, (ImWchar)cp);
 			if (!ge) continue;
-			width += ge->advanceEm * font_size;
-			maxY   = ImMax(maxY, ge->maxYEm);
-			minY   = ImMin(minY, ge->minYEm);
+			maxY = ImMax(maxY, ge->maxYEm);
+			minY = ImMin(minY, ge->minYEm);
+		}
+
+#if IM_SUPPORT_LIGATURE
+		// Skip shaping for synthetic codepoints (0x100000+ range used by MATH table assembly)
+		bool skipShaping = false;
+		{
+			unsigned int firstCp = 0;
+			ImTextCharFromUtf8(&firstCp, text, text_end);
+			if (firstCp >= 0x100000) skipShaping = true;
+		}
+		if (atlas->shapeCtx && atlas->shapeFont && !skipShaping)
+		{
+			// Use HarfBuzz-shaped advances for accurate width — isolates form advances
+			// (used by the unshaped fallback below) overestimate Arabic because contextual
+			// forms (init/med/fin) and ligatures (lam-alef) are narrower than isolated.
+			int textLen = (int)(text_end - text);
+			kbts_ShapeBegin(atlas->shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
+			kbts_ShapeUtf8(atlas->shapeCtx, text, textLen, KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
+			kbts_ShapeEnd(atlas->shapeCtx);
+
+			kbts_run run;
+			while (kbts_ShapeRun(atlas->shapeCtx, &run))
+			{
+				kbts_glyph* glyph;
+				while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph))
+					width += (float)glyph->AdvanceX * atlas->emScale * font_size;
+			}
+		}
+		else
+#endif
+		{
+			// Fallback: sum unshaped (isolated-form) advances
+			p = text;
+			while (p < text_end)
+			{
+				unsigned int cp = 0;
+				p += ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
+				if (cp == 0) break;
+				SlugGlyphEntry* ge = SlugFindGlyph(atlas, (ImWchar)cp);
+				if (!ge) continue;
+				width += ge->advanceEm * font_size;
+			}
 		}
 
 		if (out_ascent) *out_ascent = maxY * font_size;

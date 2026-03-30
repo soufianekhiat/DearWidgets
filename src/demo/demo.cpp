@@ -37,6 +37,7 @@
 
 #include <vector>
 #include <random>
+#include <chrono>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -630,6 +631,7 @@ ImFont* g_honkFont               = nullptr;
 ImFont* g_coralPixelsFont        = nullptr;
 ImFont* g_notoZnamennyFont       = nullptr;
 // Arabic
+ImFont* g_amiriFont             = nullptr;
 ImFont* g_arefRuqaaBoldFont     = nullptr;
 ImFont* g_arefRuqaaRegFont      = nullptr;
 ImFont* g_blakaInkFont          = nullptr;
@@ -839,6 +841,7 @@ int main( int argc, char** argv )
 	g_primecolorMFont        = io.Fonts->AddFontFromFileTTF( "fonts/Primecolor-M.ttf", 24.0f, &slugCfg );
 	// Arabic glyph range for Arabic fonts
 	static const ImWchar arabicRanges[] = { 0x0020, 0x007E, 0x0600, 0x06FF, 0xFE70, 0xFEFF, 0 };
+	g_amiriFont              = io.Fonts->AddFontFromFileTTF( "fonts/Amiri-Regular.ttf",                           24.0f, &slugCfg, arabicRanges );
 	g_arefRuqaaBoldFont      = io.Fonts->AddFontFromFileTTF( "fonts/ArefRuqaaInk-Bold.ttf",                        24.0f, &slugCfg, arabicRanges );
 	g_arefRuqaaRegFont       = io.Fonts->AddFontFromFileTTF( "fonts/ArefRuqaaInk-Regular.ttf",                     24.0f, &slugCfg, arabicRanges );
 	g_blakaInkFont           = io.Fonts->AddFontFromFileTTF( "fonts/BlakaInk-Regular.ttf",                         24.0f, &slugCfg, arabicRanges );
@@ -2372,14 +2375,319 @@ namespace ImWidgets {
 		ImGui::Text( "Vtx: %d", shape.vertices.size() );
 	}
 
+	// ─────────────────────────────────────────────────────────────────────────
+	// Text Showcase — ImGui::Text / TextColored / TextWrapped equivalents
+	// using Slug DrawText, supporting LTR and RTL layouts.
+	// ─────────────────────────────────────────────────────────────────────────
+
+	// Returns the total rendered height of SlugTextWrapped (same algorithm, no draw).
+	static float SlugCalcWrappedHeight( ImFont* font, float font_size,
+	                                    const char* text, float wrap_width )
+	{
+		float space_w = ImWidgets::CalcTextSize( font, font_size, " " ).x;
+		float line_h  = ImWidgets::CalcTextSize( font, font_size, "Ay" ).y;
+		const char* p     = text;
+		float       line_w = 0.0f;
+		float       total  = 0.0f;
+		while ( *p )
+		{
+			if ( *p == '\n' ) { total += line_h; line_w = 0.0f; p++; continue; }
+			const char* ws = p;
+			while ( *p && *p != ' ' && *p != '\n' ) p++;
+			float word_w = ImWidgets::CalcTextSize( font, font_size, ws, p ).x;
+			float gap    = ( line_w > 0.0f ) ? space_w : 0.0f;
+			if ( line_w > 0.0f && line_w + gap + word_w > wrap_width )
+			{ total += line_h; line_w = word_w; }
+			else
+			{ line_w += gap + word_w; }
+			if ( *p == ' ' ) p++;
+		}
+		if ( line_w > 0.0f || total == 0.0f ) total += line_h;
+		return total;
+	}
+
+	// Equivalent to ImGui::Text(): renders one unstyled line and advances cursor.
+	static void SlugText( ImFont* font, float font_size, ImU32 col,
+	                      const char* text, const char* text_end = nullptr )
+	{
+		float  asc = 0.0f;
+		ImVec2 sz  = ImWidgets::CalcTextSize( font, font_size, text, text_end, &asc );
+		ImVec2 pos = ImGui::GetCursorScreenPos();
+		ImWidgets::DrawText( ImGui::GetWindowDrawList(), font, font_size,
+		                     ImVec2( pos.x, pos.y + asc ), col, text, text_end );
+		ImGui::Dummy( ImVec2( sz.x, sz.y ) );
+	}
+
+	// Equivalent to ImGui::TextColored(): same as SlugText with an explicit RGBA color.
+	static void SlugTextColored( ImFont* font, float font_size, ImVec4 col_v,
+	                             const char* text, const char* text_end = nullptr )
+	{
+		SlugText( font, font_size, ImGui::ColorConvertFloat4ToU32( col_v ), text, text_end );
+	}
+
+	// Equivalent to ImGui::TextWrapped(): word-wraps within wrap_width.
+	// right_align = true renders each line flush-right (use for RTL / Arabic).
+	static void SlugTextWrapped( ImFont* font, float font_size, ImU32 col,
+	                             const char* text, float wrap_width = 0.0f,
+	                             bool right_align = false )
+	{
+		if ( wrap_width <= 0.0f )
+			wrap_width = ImGui::GetContentRegionAvail().x;
+
+		// Measure line metrics once from a representative glyph
+		float asc    = 0.0f;
+		ImVec2 ref   = ImWidgets::CalcTextSize( font, font_size, "Ay", nullptr, &asc );
+		float line_h = ref.y;
+
+		ImDrawList*    dl     = ImGui::GetWindowDrawList();
+		ImVec2         origin = ImGui::GetCursorScreenPos();
+		float          pen_y  = origin.y;
+		float          total_h = 0.0f;
+
+		// Measure a single space width for inter-word gap
+		float space_w = ImWidgets::CalcTextSize( font, font_size, " " ).x;
+
+		// Walk token by token (words separated by spaces / explicit newlines)
+		const char* p          = text;
+		const char* line_start = p;   // first char of current assembled line
+		const char* line_end   = p;   // one-past-last char of last word that fit
+		float       line_w     = 0.0f;
+
+		auto flush_line = [&]( const char* end, float w )
+		{
+			if ( line_start >= end ) return;
+			// Strip trailing space/newline so it doesn't skew right-alignment offset.
+			const char* draw_end = end;
+			while ( draw_end > line_start && ( *(draw_end - 1) == ' ' || *(draw_end - 1) == '\n' ) )
+				--draw_end;
+			if ( right_align )
+				w = ImWidgets::CalcTextSize( font, font_size, line_start, draw_end ).x;
+			float rx = right_align ? ( origin.x + wrap_width - w ) : origin.x;
+			ImWidgets::DrawText( dl, font, font_size,
+			                     ImVec2( rx, pen_y + asc ), col, line_start, draw_end );
+			pen_y   += line_h;
+			total_h += line_h;
+		};
+
+		while ( *p )
+		{
+			if ( *p == '\n' )
+			{
+				flush_line( line_end, line_w );
+				p++;
+				line_start = line_end = p;
+				line_w = 0.0f;
+				continue;
+			}
+
+			// Scan to end of word
+			const char* word_s = p;
+			while ( *p && *p != ' ' && *p != '\n' ) ++p;
+			const char* word_e = p;
+
+			float word_w = ImWidgets::CalcTextSize( font, font_size, word_s, word_e ).x;
+			float gap    = ( line_w > 0.0f ) ? space_w : 0.0f;
+
+			if ( line_w > 0.0f && line_w + gap + word_w > wrap_width )
+			{
+				// Overflow → flush current line, start fresh with current word
+				flush_line( line_end, line_w );
+				line_start = word_s;
+				line_end   = word_e;
+				line_w     = word_w;
+			}
+			else
+			{
+				line_w += gap + word_w;
+				line_end = word_e;
+			}
+
+			if ( *p == ' ' ) ++p;  // consume separator
+		}
+
+		// Flush last line
+		if ( line_start < line_end )
+			flush_line( line_end, line_w );
+
+		if ( total_h < line_h ) total_h = line_h;
+		ImGui::Dummy( ImVec2( wrap_width, total_h ) );
+	}
+
+	void ShowTextShowcase()
+	{
+		ApplyOpenAll();
+		if ( !ImGui::CollapsingHeader( "Text Showcase" ) )
+			return;
+
+#if !IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+		ImGui::TextDisabled( "Slug requires custom shader support." );
+		return;
+#else
+		// ── Controls ───────────────────────────────────────────────────────────
+		static float  font_size   = 18.0f;
+		static ImVec4 col_v( 0.93f, 0.90f, 0.85f, 1.0f );
+		static ImU32  col_u       = ImGui::ColorConvertFloat4ToU32( col_v );
+		static ImVec4 hi_col_v( 0.45f, 0.82f, 1.00f, 1.0f );
+		static ImU32  hi_col_u    = ImGui::ColorConvertFloat4ToU32( hi_col_v );
+		static ImVec4 bg_col_v( 0.08f, 0.08f, 0.14f, 0.88f );
+
+		ImGui::DragFloat( "Font Size##TxtShow", &font_size, 0.5f, 8.0f, 72.0f, "%.0f px" );
+		if ( ImGui::ColorEdit4( "Text Color##TxtShow", &col_v.x ) )
+			col_u = ImGui::ColorConvertFloat4ToU32( col_v );
+		if ( ImGui::ColorEdit4( "Highlight Color##TxtShow", &hi_col_v.x ) )
+			hi_col_u = ImGui::ColorConvertFloat4ToU32( hi_col_v );
+		ImGui::ColorEdit4( "Box Background##TxtShow", &bg_col_v.x );
+
+		ImFont* latin_font  = g_cinzelFont  ? g_cinzelFont  : g_firaCodeFont;
+		ImFont* arabic_font = g_amiriFont;
+
+		static const char* k_latin_lorem =
+			"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor "
+			"incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud "
+			"exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure "
+			"dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. "
+			"Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt "
+			"mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus error sit "
+			"voluptatem accusantium doloremque laudantium, totam rem aperiam eaque ipsa quae ab "
+			"illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo.";
+
+		// Arabic Lorem Ipsum (standard placeholder text used in Arabic typesetting)
+		static const char* k_arabic_lorem =
+			"\xd9\x84\xd9\x88\xd8\xb1\xd9\x8a\xd9\x85 \xd8\xa5\xd9\x8a\xd8\xa8\xd8\xb3\xd9\x88\xd9\x85 "
+			"\xd9\x87\xd9\x88 \xd9\x86\xd9\x85\xd9\x88\xd8\xb0\xd8\xac \xd9\x8a\xd9\x8f\xd8\xb3\xd8\xaa\xd8\xae\xd8\xaf\xd9\x85 "
+			"\xd9\x81\xd9\x8a \xd8\xb5\xd9\x86\xd8\xa7\xd8\xb9\xd8\xa9 \xd8\xa7\xd9\x84\xd8\xb7\xd8\xa8\xd8\xa7\xd8\xb9\xd8\xa9 "
+			"\xd9\x88\xd8\xa7\xd9\x84\xd8\xaa\xd9\x86\xd8\xb6\xd9\x8a\xd8\xaf.\n"
+			"\xd9\x83\xd8\xa7\xd9\x86 \xd9\x84\xd9\x88\xd8\xb1\xd9\x8a\xd9\x85 \xd8\xa5\xd9\x8a\xd8\xa8\xd8\xb3\xd9\x88\xd9\x85 "
+			"\xd9\x87\xd9\x88 \xd8\xa7\xd9\x84\xd9\x86\xd9\x85\xd9\x88\xd8\xb0\xd8\xac \xd8\xa7\xd9\x84\xd9\x85\xd8\xb9\xd9\x8a\xd8\xa7\xd8\xb1\xd9\x8a "
+			"\xd9\x85\xd9\x86\xd8\xb0 \xd8\xa7\xd9\x84\xd9\x82\xd8\xb1\xd9\x86 \xd8\xa7\xd9\x84\xd8\xae\xd8\xa7\xd9\x85\xd8\xb3 \xd8\xb9\xd8\xb4\xd8\xb1\xd8\x8c "
+			"\xd8\xb9\xd9\x86\xd8\xaf\xd9\x85\xd8\xa7 \xd9\x82\xd8\xa7\xd9\x85\xd8\xaa \xd9\x85\xd8\xb7\xd8\xa8\xd8\xb9\xd8\xa9 \xd9\x85\xd8\xac\xd9\x87\xd9\x88\xd9\x84\xd8\xa9 "
+			"\xd8\xa8\xd8\xb1\xd8\xb5 \xd9\x85\xd8\xac\xd9\x85\xd9\x88\xd8\xb9\xd8\xa9 \xd9\x85\xd9\x86 \xd8\xa7\xd9\x84\xd8\xa3\xd8\xad\xd8\xb1\xd9\x81 "
+			"\xd8\xa8\xd8\xb4\xd9\x83\xd9\x84 \xd8\xb9\xd8\xb4\xd9\x88\xd8\xa7\xd8\xa6\xd9\x8a.\n"
+			"\xd9\x84\xd9\x85 \xd9\x8a\xd8\xaa\xd9\x83\xd9\x86 \xd8\xae\xd9\x85\xd8\xb3\xd8\xa9 \xd9\x82\xd8\xb1\xd9\x88\xd9\x86 \xd9\x81\xd8\xad\xd8\xb3\xd8\xa8\xd8\x8c "
+			"\xd8\xa8\xd9\x84 \xd8\xa7\xd9\x86\xd8\xaa\xd9\x82\xd9\x84 \xd8\xa5\xd9\x84\xd9\xb0 \xd8\xa7\xd9\x84\xd8\xaa\xd9\x86\xd8\xb6\xd9\x8a\xd8\xaf "
+			"\xd8\xa7\xd9\x84\xd8\xa5\xd9\x84\xd9\x83\xd8\xaa\xd8\xb1\xd9\x88\xd9\x86\xd9\x8a\xd8\x8c "
+			"\xd9\x88\xd9\x84\xd8\xa7 \xd9\x8a\xd8\xb2\xd8\xa7\xd9\x84 \xd8\xad\xd9\x8a\xd9\x91\xd8\xa7 \xd8\xad\xd8\xaa\xd9\xb0\xd9\x89 \xd8\xa7\xd9\x84\xd8\xb3\xd8\xa7\xd8\xb9\xd8\xa9.\n"
+			"\xd8\xa7\xd9\x86\xd8\xaa\xd8\xb4\xd8\xb1 \xd9\x87\xd8\xb0\xd8\xa7 \xd8\xa7\xd9\x84\xd9\x86\xd9\x85\xd9\x88\xd8\xb0\xd8\xac \xd9\x81\xd9\x8a \xd8\xa7\xd9\x84\xd8\xb3\xd8\xaa\xd9\x8a\xd9\x86\xd8\xa7\xd8\xaa "
+			"\xd9\x85\xd8\xb9 \xd8\xa5\xd8\xb5\xd8\xaf\xd8\xa7\xd8\xb1 \xd8\xb1\xd9\x82\xd8\xa7\xd8\xa6\xd9\x82 \xd9\x84\xd9\x8a\xd8\xaa\xd8\xb1\xd8\xa7\xd8\xb3\xd9\x8a\xd8\xaa "
+			"\xd8\xa7\xd9\x84\xd8\xa8\xd9\x84\xd8\xa7\xd8\xb3\xd8\xaa\xd9\x8a\xd9\x83\xd9\x8a\xd8\xa9 \xd8\xaa\xd8\xad\xd9\x88\xd9\x8a \xd9\x85\xd9\x82\xd8\xa7\xd8\xb7\xd8\xb9 \xd9\x85\xd9\x86 \xd9\x87\xd8\xb0\xd8\xa7 \xd8\xa7\xd9\x84\xd9\x86\xd8\xb5.";
+
+		float box_w   = ImGui::GetContentRegionAvail().x;
+		float box_pad = 10.0f;
+		float gap     = ImGui::GetStyle().ItemSpacing.y;
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+
+		// ── Latin block ────────────────────────────────────────────────────────
+		if ( latin_font )
+		{
+			ImGui::SeparatorText( "Latin  (left-aligned)" );
+
+			// Pre-compute box height so we can draw the background rect first,
+			// then render text on top (draw-list order = render order).
+			float wrap_w   = box_w - box_pad * 2.0f;
+			float h_line1  = ImWidgets::CalcTextSize( latin_font, font_size, "Text(): The quick brown fox jumps over the lazy dog." ).y;
+			float h_line2  = ImWidgets::CalcTextSize( latin_font, font_size, "TextColored(): Dear Widgets â GPU Text Showcase" ).y;
+			float wrap_h   = SlugCalcWrappedHeight( latin_font, font_size, k_latin_lorem, wrap_w );
+			float box_h    = box_pad + h_line1 + h_line2 + wrap_h + box_pad + gap * 3.0f;
+
+			ImVec2 box_pos = ImGui::GetCursorScreenPos();
+			dl->AddRectFilled( box_pos, ImVec2( box_pos.x + box_w, box_pos.y + box_h ),
+			                   ImGui::ColorConvertFloat4ToU32( bg_col_v ), 6.0f );
+
+			ImGui::Dummy( ImVec2( box_w, box_pad ) );     // top padding
+			ImGui::SetCursorPosX( ImGui::GetCursorPosX() + box_pad );
+
+			auto t0 = std::chrono::high_resolution_clock::now();
+
+			// ── SlugText ──
+			SlugText( latin_font, font_size, hi_col_u,
+			          "Text(): The quick brown fox jumps over the lazy dog." );
+			ImGui::SetCursorPosX( ImGui::GetCursorPosX() + box_pad );
+
+			// ── SlugTextColored ──
+			SlugTextColored( latin_font, font_size, col_v,
+			                 "TextColored(): Dear Widgets \xe2\x80\x94 GPU Text Showcase" );
+			ImGui::SetCursorPosX( ImGui::GetCursorPosX() + box_pad );
+
+			// ── SlugTextWrapped ──
+			SlugTextWrapped( latin_font, font_size, col_u, k_latin_lorem, wrap_w, false );
+
+			auto t1 = std::chrono::high_resolution_clock::now();
+			double dt_ms = std::chrono::duration<double, std::milli>( t1 - t0 ).count();
+
+			ImGui::Dummy( ImVec2( box_w, box_pad ) );     // bottom padding
+			ImGui::TextDisabled( "DrawText time: %.3f ms", dt_ms );
+		}
+
+		// ── Arabic block ───────────────────────────────────────────────────────
+		if ( arabic_font )
+		{
+			ImGui::SeparatorText( "Arabic  (right-aligned)" );
+
+			static const char* k_ar_line1 = "\xd9\x86\xd8\xb5: \xd8\xa7\xd9\x84\xd8\xa3\xd8\xaf\xd9\x88\xd8\xa7\xd8\xaa \xd8\xa7\xd9\x84\xd8\xb9\xd8\xb2\xd9\x8a\xd8\xb2\xd8\xa9 \xe2\x80\x94 \xd8\xb9\xd8\xb1\xd8\xb6 \xd8\xa7\xd9\x84\xd9\x86\xd8\xb5\xd9\x88\xd8\xb5";
+			static const char* k_ar_line2 = "\xd8\xa7\xd9\x84\xd8\xa3\xd8\xaf\xd9\x88\xd8\xa7\xd8\xaa \xd8\xa7\xd9\x84\xd8\xb9\xd8\xb2\xd9\x8a\xd8\xb2\xd8\xa9 \xe2\x80\x94 TextColored()";
+			float h_ar1   = ImWidgets::CalcTextSize( arabic_font, font_size, k_ar_line1 ).y;
+			float h_ar2   = ImWidgets::CalcTextSize( arabic_font, font_size, k_ar_line2 ).y;
+			float wrap_w_ar = box_w - box_pad * 2.0f;
+			float wrap_h    = SlugCalcWrappedHeight( arabic_font, font_size, k_arabic_lorem, wrap_w_ar );
+			float box_h   = box_pad + h_ar1 + h_ar2 + wrap_h + box_pad + gap * 3.0f;
+
+			ImVec2 box_pos = ImGui::GetCursorScreenPos();
+			dl->AddRectFilled( box_pos, ImVec2( box_pos.x + box_w, box_pos.y + box_h ),
+			                   ImGui::ColorConvertFloat4ToU32( bg_col_v ), 6.0f );
+
+			ImGui::Dummy( ImVec2( box_w, box_pad ) );     // top padding
+
+			auto t0 = std::chrono::high_resolution_clock::now();
+
+			// ── SlugText (RTL, right-aligned) ──
+			{
+				float asc = 0.0f;
+				const char* line = k_ar_line1;
+				ImVec2 sz  = ImWidgets::CalcTextSize( arabic_font, font_size, line, nullptr, &asc );
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+				ImWidgets::DrawText( dl, arabic_font, font_size,
+				                     ImVec2( pos.x + box_w - box_pad - sz.x, pos.y + asc ), hi_col_u, line );
+				ImGui::Dummy( ImVec2( box_w, sz.y ) );
+			}
+
+			//── SlugTextColored (RTL, right-aligned) ──
+			{
+				float asc = 0.0f;
+				const char* line = k_ar_line2;
+				ImVec2 sz  = ImWidgets::CalcTextSize( arabic_font, font_size, line, nullptr, &asc );
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+				ImWidgets::DrawText( dl, arabic_font, font_size,
+				                     ImVec2( pos.x + box_w - box_pad - sz.x, pos.y + asc ),
+				                     ImGui::ColorConvertFloat4ToU32( col_v ), line );
+				ImGui::Dummy( ImVec2( box_w, sz.y ) );
+			}
+
+			// ── SlugTextWrapped (RTL) — full box width, right-aligned ──
+			ImGui::SetCursorPosX( ImGui::GetCursorPosX() + box_pad );
+			SlugTextWrapped( arabic_font, font_size, col_u, k_arabic_lorem, wrap_w_ar, /*right_align=*/true );
+
+			auto t1 = std::chrono::high_resolution_clock::now();
+			double dt_ms = std::chrono::duration<double, std::milli>( t1 - t0 ).count();
+
+			ImGui::Dummy( ImVec2( box_w, box_pad ) );     // bottom padding
+			ImGui::TextDisabled( "DrawText time: %.3f ms", dt_ms );
+		}
+
+		if ( !latin_font && !arabic_font )
+			ImGui::TextDisabled( "No fonts available." );
+#endif
+	}
+
 	// ---- Showcase: Rendering Equation BRDF Explorer ----
 	void ShowShowcase()
 	{
-		ImGui::SetNextWindowSize( ImVec2( 800, 700 ), ImGuiCond_FirstUseEver );
+		ImGui::SetNextWindowSize( ImVec2( 860, 900 ), ImGuiCond_FirstUseEver );
 		if ( !ImGui::Begin( "Showcase" ) ) { ImGui::End(); return; }
 
-		ImGui::TextDisabled( "Rendering Equation — BRDF Explorer" );
-		ImGui::Separator();
+		ShowTextShowcase();
+
+		ApplyOpenAll();
+		if ( !ImGui::CollapsingHeader( "BRDF Explorer" ) ) { ImGui::End(); return; }
 
 		// Material parameters
 		static float roughness = 0.4f;
@@ -4452,6 +4760,92 @@ namespace ImWidgets {
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Text##Widgets" ) )
+			{
+#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+			{ float _sy0 = ImGui::GetCursorPos().y;
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Slug Text" ) )
+			{
+				static char   slug_buf[256] = "Dear Widgets";
+				static float  slug_sz       = 32.0f;
+				static ImVec4 slug_col_v( 0.95f, 0.88f, 0.60f, 1.0f );
+				static ImU32  slug_col_u    = ImGui::ColorConvertFloat4ToU32( slug_col_v );
+				static ImVec4 slug_hi_v( 0.40f, 0.80f, 1.00f, 1.0f );
+				static ImU32  slug_hi_u     = ImGui::ColorConvertFloat4ToU32( slug_hi_v );
+
+				ImGui::InputText( "Text##SlugWidget", slug_buf, sizeof( slug_buf ) );
+				ImGui::DragFloat( "Size##SlugWidget", &slug_sz, 0.5f, 8.0f, 120.0f, "%.0f px" );
+				if ( ImGui::ColorEdit4( "Color##SlugWidget", &slug_col_v.x ) )
+					slug_col_u = ImGui::ColorConvertFloat4ToU32( slug_col_v );
+				if ( ImGui::ColorEdit4( "Highlight##SlugWidget", &slug_hi_v.x ) )
+					slug_hi_u = ImGui::ColorConvertFloat4ToU32( slug_hi_v );
+
+				ImFont* f = g_cinzelFont ? g_cinzelFont : g_firaCodeFont;
+				if ( f )
+				{
+					float wrap_w = ImGui::GetContentRegionAvail().x;
+
+					ImGui::Separator();
+					ImGui::TextDisabled( "SlugText()" );
+					SlugText( f, slug_sz, slug_col_u, slug_buf );
+
+					ImGui::TextDisabled( "SlugTextColored()" );
+					SlugTextColored( f, slug_sz, slug_hi_v, slug_buf );
+
+					ImGui::TextDisabled( "SlugTextWrapped()" );
+					SlugTextWrapped( f, slug_sz, slug_col_u, slug_buf, wrap_w );
+				}
+				else
+				{
+					ImGui::TextDisabled( "No font loaded." );
+				}
+
+				// ── Arabic ──
+				ImFont* fa = g_amiriFont;
+				if ( fa )
+				{
+					static char   ar_buf[256] = "\xd8\xa7\xd9\x84\xd8\xa3\xd8\xaf\xd9\x88\xd8\xa7\xd8\xaa \xd8\xa7\xd9\x84\xd8\xb9\xd8\xb2\xd9\x8a\xd8\xb2\xd8\xa9";
+					static float  ar_sz       = 24.0f;
+					float         wrap_ar     = ImGui::GetContentRegionAvail().x;
+
+					ImGui::Separator();
+					ImGui::TextDisabled( "Arabic SlugText() â right-aligned" );
+					ImGui::DragFloat( "Arabic Size##SlugAr", &ar_sz, 0.5f, 8.0f, 72.0f, "%.0f px" );
+					ImGui::InputText( "Arabic Text##SlugAr", ar_buf, sizeof( ar_buf ) );
+
+					{
+						float asc = 0.0f;
+						ImVec2 sz  = ImWidgets::CalcTextSize( fa, ar_sz, ar_buf, nullptr, &asc );
+						ImVec2 pos = ImGui::GetCursorScreenPos();
+						ImWidgets::DrawText( ImGui::GetWindowDrawList(), fa, ar_sz,
+						                     ImVec2( pos.x + wrap_ar - sz.x, pos.y + asc ),
+						                     slug_col_u, ar_buf );
+						ImGui::Dummy( ImVec2( wrap_ar, sz.y ) );
+					}
+
+					ImGui::TextDisabled( "SlugTextColored()" );
+					{
+						float asc = 0.0f;
+						ImVec2 sz  = ImWidgets::CalcTextSize( fa, ar_sz, ar_buf, nullptr, &asc );
+						ImVec2 pos = ImGui::GetCursorScreenPos();
+						ImWidgets::DrawText( ImGui::GetWindowDrawList(), fa, ar_sz,
+						                     ImVec2( pos.x + wrap_ar - sz.x, pos.y + asc ),
+						                     ImGui::ColorConvertFloat4ToU32( slug_hi_v ), ar_buf );
+						ImGui::Dummy( ImVec2( wrap_ar, sz.y ) );
+					}
+
+					ImGui::TextDisabled( "SlugTextWrapped() right-align" );
+					SlugTextWrapped( fa, ar_sz, slug_col_u, ar_buf, wrap_ar, /*right_align=*/true );
+				}
+			}
+			DW_SsRecord( "Slug_Text", _sy0, ImGui::GetCursorPos().y ); }
+#else
+			ImGui::TextDisabled( "Requires custom shader support." );
+#endif
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Images##Widgets" ) )
 			{
 
@@ -4530,11 +4924,11 @@ namespace ImWidgets {
 
 				ImGui::TreePop();
 			}
-			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Drawing Tools##Widgets" ) )
 			{
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Up Vector" ) )
 			{
