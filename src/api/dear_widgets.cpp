@@ -2675,7 +2675,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 	//////////////////////////////////////////////////////////////////////////
-	// Shape Cache
+	// Shape Cache  (S-2: O(1) hash map lookup)
 	//////////////////////////////////////////////////////////////////////////
 	static ImWidgetsShapeCache g_ShapeCache;
 
@@ -2684,44 +2684,86 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return g_ShapeCache;
 	}
 
+	// Fold 64-bit key to a hash-map slot index.
+	static inline int ShapeCacheSlot( ImU64 key, int mask )
+	{
+		ImU32 k = (ImU32)( key ^ ( key >> 32 ) );
+		return (int)( ( k * 2654435761u ) & (ImU32)mask );
+	}
+
+	// Rebuild the open-addressed map from scratch. Called on grow or after erase.
+	static void ShapeCacheRebuildMap( ImWidgetsShapeCache& cache )
+	{
+		int cap = 8;
+		while ( cap < cache.entries.Size * 2 ) cap <<= 1;
+		cache.map.resize( cap );
+		memset( cache.map.Data, 0, cap * sizeof(int) );
+		int mask = cap - 1;
+		for ( int i = 0; i < cache.entries.Size; i++ )
+		{
+			int slot = ShapeCacheSlot( cache.entries[i].key, mask );
+			while ( cache.map[slot] ) slot = ( slot + 1 ) & mask;
+			cache.map[slot] = i + 1; // store index+1; 0 = empty sentinel
+		}
+	}
+
 	ImWidgetsShape* ShapeCacheGet( ImWidgetsShapeCache& cache, ImU64 key )
 	{
-		for ( int i = 0; i < cache.entries.Size; ++i )
-			if ( cache.entries[ i ].key == key )
-				return cache.entries[ i ].shape;
+		if ( cache.map.Size == 0 ) return nullptr;
+		int mask = cache.map.Size - 1;
+		int slot = ShapeCacheSlot( key, mask );
+		while ( int v = cache.map[slot] )
+		{
+			int idx = v - 1;
+			if ( cache.entries[idx].key == key )
+				return cache.entries[idx].shape;
+			slot = ( slot + 1 ) & mask;
+		}
 		return nullptr;
 	}
 
 	void ShapeCacheInsert( ImWidgetsShapeCache& cache, ImU64 key, const ImWidgetsShape& shape )
 	{
-		// Allocate shape on heap to avoid shallow copy issues
 		ImWidgetsShape* heap_shape = IM_NEW(ImWidgetsShape)();
-
-		*heap_shape = shape; // Deep copy via ImVector's assignment operator
+		*heap_shape = shape;
 
 		ImWidgetsShapeCacheEntry entry;
-		entry.key = key;
+		entry.key   = key;
 		entry.shape = heap_shape;
 		cache.entries.push_back( entry );
+
+		int n = cache.entries.Size; // new entry is at index n-1, stored value = n
+		if ( cache.map.Size == 0 || n * 2 > cache.map.Size )
+		{
+			ShapeCacheRebuildMap( cache );
+		}
+		else
+		{
+			int mask = cache.map.Size - 1;
+			int slot = ShapeCacheSlot( key, mask );
+			while ( cache.map[slot] ) slot = ( slot + 1 ) & mask;
+			cache.map[slot] = n;
+		}
 	}
 
 	void ShapeCacheInvalidate( ImWidgetsShapeCache& cache, ImU64 key )
 	{
 		for ( int i = 0; i < cache.entries.Size; ++i )
-			if ( cache.entries[ i ].key == key )
+			if ( cache.entries[i].key == key )
 			{
-				IM_DELETE(cache.entries[ i ].shape);  // Free heap memory
+				IM_DELETE( cache.entries[i].shape );
 				cache.entries.erase( cache.entries.Data + i );
+				ShapeCacheRebuildMap( cache ); // rebuild after erase (rare operation)
 				break;
 			}
 	}
 
 	void ShapeCacheClear( ImWidgetsShapeCache& cache )
 	{
-		// Free all heap-allocated shapes
 		for ( int i = 0; i < cache.entries.Size; ++i )
-			IM_DELETE(cache.entries[ i ].shape);
+			IM_DELETE( cache.entries[i].shape );
 		cache.entries.clear();
+		cache.map.clear();
 	}
 
 	void ClearShapeCache()
@@ -2932,6 +2974,59 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ShapeCacheInsert( cache, key, shape );
 #endif
 		ShapeTranslate( shape, center );
+	}
+
+	// S-1: Concave polygon tessellation with shape cache.
+	// pts must be in local/normalized space (not screen-space); origin is added back after tessellation.
+	// Cache key is the hash of the normalized points — same polygon shape always hits, regardless of position.
+	void	GenShapeConcavePoly( ImWidgetsShape& shape, const ImVec2* pts, int pts_count, ImVec2 origin )
+	{
+		if ( pts_count < 3 ) { shape.vertices.clear(); shape.triangles.clear(); return; }
+
+#ifdef DEAR_WIDGETS_SHAPE_CACHING
+		ImU64 key = ImHashData( pts, (size_t)pts_count * sizeof(ImVec2) );
+		ImWidgetsShapeCache& cache = GetShapeCache();
+		if ( ImWidgetsShape* cached = ShapeCacheGet( cache, key ) )
+		{
+			shape = *cached;
+			ShapeTranslate( shape, origin );
+			return;
+		}
+#endif
+		int tri_count = pts_count - 2;
+		shape.vertices.resize( pts_count );
+		shape.triangles.resize( tri_count );
+		memset( shape.vertices.Data, 0, (size_t)pts_count * sizeof(ImWidgetsVertex) );
+		shape.bb.Min = ImVec2(  FLT_MAX,  FLT_MAX );
+		shape.bb.Max = ImVec2( -FLT_MAX, -FLT_MAX );
+		for ( int i = 0; i < pts_count; i++ )
+		{
+			shape.vertices[i].pos = pts[i];
+			shape.bb.Min.x = ImMin( shape.bb.Min.x, pts[i].x );
+			shape.bb.Min.y = ImMin( shape.bb.Min.y, pts[i].y );
+			shape.bb.Max.x = ImMax( shape.bb.Max.x, pts[i].x );
+			shape.bb.Max.y = ImMax( shape.bb.Max.y, pts[i].y );
+		}
+
+		// Ear-clipping triangulation (ImTriangulator0) — O(n²) worst case, cached after first call
+		int scratch_bytes = ImTriangulator0::EstimateScratchBufferSize( pts_count );
+		void* scratch = IM_ALLOC( scratch_bytes );
+		ImTriangulator0 triangulator;
+		triangulator.Init( pts, pts_count, scratch );
+		for ( int i = 0; i < tri_count; i++ )
+		{
+			unsigned int tri[3];
+			triangulator.GetNextTriangle( tri );
+			shape.triangles[i].a = tri[0];
+			shape.triangles[i].b = tri[1];
+			shape.triangles[i].c = tri[2];
+		}
+		IM_FREE( scratch );
+
+#ifdef DEAR_WIDGETS_SHAPE_CACHING
+		ShapeCacheInsert( cache, key, shape );
+#endif
+		ShapeTranslate( shape, origin );
 	}
 
 	// TODO

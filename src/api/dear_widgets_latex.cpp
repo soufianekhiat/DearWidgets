@@ -783,11 +783,11 @@ static void LayoutBox(LaTeXBox* box, float fontSize) {
 		ImWchar ch = box->codepoint;
 		if (box->text[0]) {
 			// Shaped text string — measure the full string via kbts
-			tsz = mf ? CalcTextSize(mf, sz, box->text, NULL, &asc) : ImVec2(sz * 0.5f, sz);
+			tsz = mf ? CalcTextSize_Impl(mf, sz, box->text, NULL, &asc) : ImVec2(sz * 0.5f, sz);
 		} else {
 			if (box->isMathItalic) ch = MathItalicize(ch);
 			char utf8[8]; EncodeUTF8(ch, utf8);
-			tsz = mf ? CalcTextSize(mf, sz, utf8, NULL, &asc) : ImVec2(sz * 0.5f, sz);
+			tsz = mf ? CalcTextSize_Impl(mf, sz, utf8, NULL, &asc) : ImVec2(sz * 0.5f, sz);
 		}
 		box->width  = tsz.x > 0 ? tsz.x : sz * 0.5f;
 		box->height = asc > 0 ? asc : sz * 0.7f;          // ascent above baseline
@@ -1074,12 +1074,12 @@ static void LayoutBox(LaTeXBox* box, float fontSize) {
 				// Measure cusp glyph at scaled size for height
 				char cUtf8[8]; EncodeUTF8(cuspCh, cUtf8);
 				float bAsc2 = 0;
-				ImVec2 bRef2 = CalcTextSize(mf, braceSz2, cUtf8, NULL, &bAsc2);
+				ImVec2 bRef2 = CalcTextSize_Impl(mf, braceSz2, cUtf8, NULL, &bAsc2);
 				braceH = (box->delimLeft == 'O') ? bAsc2 : (bRef2.y - bAsc2);
 			} else {
 				char cUtf8[8]; EncodeUTF8(cuspCh, cUtf8);
 				float bAsc = 0;
-				ImVec2 bRef = CalcTextSize(mf, sz, cUtf8, NULL, &bAsc);
+				ImVec2 bRef = CalcTextSize_Impl(mf, sz, cUtf8, NULL, &bAsc);
 				braceH = (box->delimLeft == 'O') ? bAsc : (bRef.y - bAsc);
 			}
 		}
@@ -1215,29 +1215,29 @@ static bool IsOperator(ImWchar ch) {
 static void DrawGlyphH(ImDrawList* dl, ImFont* font, float baseSz, ImWchar ch, float targetH, float posX, float posY, ImU32 col) {
 	char utf8[8]; EncodeUTF8(ch, utf8);
 	float asc = 0;
-	ImVec2 refSz = CalcTextSize(font, baseSz, utf8, NULL, &asc);
+	ImVec2 refSz = CalcTextSize_Impl(font, baseSz, utf8, NULL, &asc);
 	if (refSz.y < 1.0f) return;
 	float fontSz = baseSz * targetH / refSz.y;
 	float baselineY = posY + targetH * (asc / refSz.y);
-	DrawText(dl, font, fontSz, ImVec2(posX, baselineY), col, utf8);
+	DrawText_Impl(dl, font, fontSz, ImVec2(posX, baselineY), col, utf8);
 }
 
 // Same but right-aligned.
 static void DrawGlyphHR(ImDrawList* dl, ImFont* font, float baseSz, ImWchar ch, float targetH, float rightX, float posY, ImU32 col) {
 	char utf8[8]; EncodeUTF8(ch, utf8);
 	float asc = 0;
-	ImVec2 refSz = CalcTextSize(font, baseSz, utf8, NULL, &asc);
+	ImVec2 refSz = CalcTextSize_Impl(font, baseSz, utf8, NULL, &asc);
 	if (refSz.y < 1.0f) return;
 	float fontSz = baseSz * targetH / refSz.y;
 	float scaledW = refSz.x * targetH / refSz.y;
 	float baselineY = posY + targetH * (asc / refSz.y);
-	DrawText(dl, font, fontSz, ImVec2(rightX - scaledW, baselineY), col, utf8);
+	DrawText_Impl(dl, font, fontSz, ImVec2(rightX - scaledW, baselineY), col, utf8);
 }
 
 // Compute the advance width of a glyph scaled to a target height.
 static float GlyphWidthAtH(ImFont* font, float baseSz, ImWchar ch, float targetH) {
 	char utf8[8]; EncodeUTF8(ch, utf8);
-	ImVec2 refSz = CalcTextSize(font, baseSz, utf8);
+	ImVec2 refSz = CalcTextSize_Impl(font, baseSz, utf8);
 	if (refSz.y < 1.0f) return baseSz * 0.3f;
 	return refSz.x * targetH / refSz.y;
 }
@@ -1246,17 +1246,17 @@ static float GlyphWidthAtH(ImFont* font, float baseSz, ImWchar ch, float targetH
 static void DrawGlyphW(ImDrawList* dl, ImFont* font, float baseSz, ImWchar ch, float targetW, float posX, float posY, ImU32 col) {
 	char utf8[8]; EncodeUTF8(ch, utf8);
 	float asc = 0;
-	ImVec2 refSz = CalcTextSize(font, baseSz, utf8, NULL, &asc);
+	ImVec2 refSz = CalcTextSize_Impl(font, baseSz, utf8, NULL, &asc);
 	if (refSz.x < 1.0f) return;
 	float fontSz = baseSz * targetW / refSz.x;
 	float scaledAsc = asc * targetW / refSz.x;
-	DrawText(dl, font, fontSz, ImVec2(posX, posY + scaledAsc), col, utf8);
+	DrawText_Impl(dl, font, fontSz, ImVec2(posX, posY + scaledAsc), col, utf8);
 }
 
 // Compute the height of a glyph scaled to a target width.
 static float GlyphHeightAtW(ImFont* font, float baseSz, ImWchar ch, float targetW) {
 	char utf8[8]; EncodeUTF8(ch, utf8);
-	ImVec2 refSz = CalcTextSize(font, baseSz, utf8);
+	ImVec2 refSz = CalcTextSize_Impl(font, baseSz, utf8);
 	if (refSz.x < 1.0f) return baseSz * 0.3f;
 	return refSz.y * targetW / refSz.x;
 }
@@ -1273,13 +1273,13 @@ static void RenderBox(ImDrawList* dl, LaTeXBox* box, ImFont* mathFont, float fon
 		float sz = fontSize * box->sizeFactor;
 		if (box->text[0]) {
 			// Shaped text — single DrawText call through kbts for proper kerning
-			DrawText(dl, mathFont, sz, ImVec2(px, py), col, box->text);
+			DrawText_Impl(dl, mathFont, sz, ImVec2(px, py), col, box->text);
 		} else {
 			ImWchar ch = box->codepoint;
 			if (box->isMathItalic) ch = MathItalicize(ch);
 			char utf8[8]; EncodeUTF8(ch, utf8);
 			float offX = IsOperator(box->codepoint) ? sz * 0.17f : 0;
-			DrawText(dl, mathFont, sz, ImVec2(px + offX, py), col, utf8);
+			DrawText_Impl(dl, mathFont, sz, ImVec2(px + offX, py), col, utf8);
 		}
 		break;
 	}
@@ -1306,7 +1306,7 @@ static void RenderBox(ImDrawList* dl, LaTeXBox* box, ImFont* mathFont, float fon
 				float accentSz = sz * 0.7f;
 				// Render centered over content — position at content left edge
 				// so the glyph visually centers (advance width includes bearings)
-				DrawText(dl, mathFont, accentSz, ImVec2(px, accentBaseY), col, utf8);
+				DrawText_Impl(dl, mathFont, accentSz, ImVec2(px, accentBaseY), col, utf8);
 			}
 		}
 		// Boxed: draw rectangle
@@ -1444,7 +1444,7 @@ static void RenderBox(ImDrawList* dl, LaTeXBox* box, ImFont* mathFont, float fon
 					char partUtf8[8]; EncodeUTF8(partKey, partUtf8);
 					for (int c = 0; c < copies; c++) {
 						float ov = (jc > 0) ? braceOverlap : 0;
-						DrawText(dl, mathFont, braceSz, ImVec2(penX2 - ov, baseY), col, partUtf8);
+						DrawText_Impl(dl, mathFont, braceSz, ImVec2(penX2 - ov, baseY), col, partUtf8);
 						penX2 += assembly.parts[i].fullAdvance * braceSz - ov;
 						jc++;
 					}
@@ -1452,8 +1452,8 @@ static void RenderBox(ImDrawList* dl, LaTeXBox* box, ImFont* mathFont, float fon
 			} else {
 				// Fallback: render single brace glyph centered
 				char bUtf8[8]; EncodeUTF8(braceCh, bUtf8);
-				ImVec2 bSz = CalcTextSize(mathFont, sz, bUtf8);
-				DrawText(dl, mathFont, sz, ImVec2(px + (cw - bSz.x) * 0.5f, baseY), col, bUtf8);
+				ImVec2 bSz = CalcTextSize_Impl(mathFont, sz, bUtf8);
+				DrawText_Impl(dl, mathFont, sz, ImVec2(px + (cw - bSz.x) * 0.5f, baseY), col, bUtf8);
 			}
 		}
 		break;
@@ -1603,6 +1603,7 @@ static ImVec4 LaTeXBuildAndMeasure(const char* latex, float font_size, LaTeXBox*
 // pos = top-left corner of the visible bounding box.
 void DrawLaTeX(ImDrawList* pDrawList, float font_size, ImVec2 pos, ImU32 col, const char* latex)
 {
+	font_size = SlugLpToPx(font_size);
 	if (!pDrawList || !latex || !*latex) return;
 	ImFont* mathFont = LaTeXGetMathFont();
 	if (!mathFont) return;
@@ -1623,6 +1624,7 @@ void DrawLaTeX(ImDrawList* pDrawList, float font_size, ImVec2 pos, ImU32 col, co
 // Returns (width, height) of the actual visible bounding box.
 ImVec2 CalcLaTeXSize(float font_size, const char* latex)
 {
+	font_size = SlugLpToPx(font_size);
 	if (!latex || !*latex) return ImVec2(0, 0);
 	ImVec4 bb = LaTeXBuildAndMeasure(latex, font_size, NULL);
 	return ImVec2(bb.z - bb.x, bb.w - bb.y);
@@ -1632,6 +1634,7 @@ void LoadLaTeXFont() { LaTeXLoadMathFont(); }
 
 void DrawLaTeXDebug(ImDrawList* pDrawList, float font_size, ImVec2 pos, const char* latex)
 {
+	font_size = SlugLpToPx(font_size);
 	if (!pDrawList || !latex || !*latex) return;
 
 	LaTeXBox* tree = NULL;
@@ -1680,7 +1683,7 @@ static void TessLatexText(ImFont* font, float fontSize, const char* text,
 {
     ImWidgetsShape tmp;
     tmp.bb = ImRect(FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX);
-    TesselateText(font, fontSize, text, tmp, nullptr, tess_tol, iterations);
+    TesselateText_Impl(font, fontSize, text, tmp, nullptr, tess_tol, iterations);
     if (tmp.triangles.Size == 0) return;
     int baseVtx = outShape.vertices.Size;
     outShape.vertices.resize(baseVtx + tmp.vertices.Size);
@@ -1709,7 +1712,7 @@ static void TessLatexGlyphH(ImFont* font, float baseSz, ImWchar ch, float target
 {
     char utf8[8]; EncodeUTF8(ch, utf8);
     float asc = 0;
-    ImVec2 refSz = CalcTextSize(font, baseSz, utf8, NULL, &asc);
+    ImVec2 refSz = CalcTextSize_Impl(font, baseSz, utf8, NULL, &asc);
     if (refSz.y < 1.0f) return;
     float fontSz    = baseSz * targetH / refSz.y;
     float baselineY = posY + targetH * (asc / refSz.y);
@@ -1723,7 +1726,7 @@ static void TessLatexGlyphHR(ImFont* font, float baseSz, ImWchar ch, float targe
 {
     char utf8[8]; EncodeUTF8(ch, utf8);
     float asc = 0;
-    ImVec2 refSz = CalcTextSize(font, baseSz, utf8, NULL, &asc);
+    ImVec2 refSz = CalcTextSize_Impl(font, baseSz, utf8, NULL, &asc);
     if (refSz.y < 1.0f) return;
     float fontSz    = baseSz * targetH / refSz.y;
     float scaledW   = refSz.x * targetH / refSz.y;
@@ -1885,7 +1888,7 @@ static void TessellateBox(LaTeXBox* box, ImFont* mathFont, float fontSize, float
                 }
             } else {
                 char bUtf8[8]; EncodeUTF8(braceCh, bUtf8);
-                ImVec2 bSz = CalcTextSize(mathFont, sz, bUtf8);
+                ImVec2 bSz = CalcTextSize_Impl(mathFont, sz, bUtf8);
                 TessLatexText(mathFont, sz, bUtf8, px + (cw - bSz.x) * 0.5f, baseY, outShape, tess_tol, iterations);
             }
         }
@@ -1902,6 +1905,7 @@ static void TessellateBox(LaTeXBox* box, ImFont* mathFont, float fontSize, float
 void TesselateLaTeX(float font_size, const char* latex, ImVec2 pos,
                     ImWidgetsShape& outShape, float tess_tol, int iterations)
 {
+    font_size = SlugLpToPx(font_size);
     outShape.vertices.resize(0);
     outShape.triangles.resize(0);
     outShape.bb = ImRect(FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX);

@@ -21,6 +21,10 @@
 	static float gs_minHolePct = 1.0f; // min hole area as % of outer area
 	static bool gs_useCDT = true;      // use CDT instead of recursive cutting
 
+	// Convert logical pixels (DPI-independent) to physical pixels.
+	// 1 lp = 1 px at 96 DPI / 1.0x scale. Scales by ImGui FontScaleDpi (set via ImGuiStyle).
+	static inline float SlugLpToPx(float lp) { return lp * ImGui::GetStyle().FontScaleDpi; }
+
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 
 	// ---- Constants ----------------------------------------------------------
@@ -105,6 +109,8 @@
 		float translateX, translateY;
 	};
 
+	struct SlugShapedGlyph { int glyphID; float advanceX; float offsetX; float offsetY; };
+
 	// Per-font cache: holds curve control points, band acceleration structure, and glyph metrics
 	struct SlugFontCache
 	{
@@ -114,6 +120,8 @@
 
 		ImVector<SlugGlyphEntry> glyphs;       // built on demand
 		ImVector<SlugColorLayer> colorLayers;  // COLR v0 layer list (referenced by SlugGlyphEntry)
+		ImVector<int> glyphMap;   // open-addressed hash table: glyphs[] index, -1 = empty
+		int glyphMapCount;        // number of cp != 0 entries in glyphMap
 
 		// Color table offsets from the start of the font file data (0 = table not present)
 		uint32_t colrTableOffset;
@@ -143,6 +151,11 @@
 		ImTextureID curveTexture;     // GPU handle (NULL until first upload)
 		ImTextureID bandTexture;
 		bool        dirty;            // needs GPU re-upload
+
+
+		// Fast tessellation index: tessIdxByGlyphID[glyphID] = ImPoolIdx into ImWidgetsSlugState::tessGlyphPool.
+		// -1 = glyph not yet tessellated. Avoids the O(log N) ImGuiStorage binary search on every render call.
+		ImVector<int> tessIdxByGlyphID;
 	};
 
 	// Cached tessellation of a single glyph stored at kTessRefSize pixel scale (sc=atlas->emScale, sz=kTessRefSize).
@@ -514,10 +527,13 @@
 
 	// ---- SVG layer extraction ------------------------------------------------
 
-	// Forward declaration needed by SlugGetSVGLayers
+	// Forward declarations needed by SVG/COLR builders (defined in Atlas management section)
 	static bool SlugBuildGlyphFromCurves(SlugFontCache* atlas, ImWchar cp, float advEm,
 	                                      float minX, float minY, float maxX, float maxY,
 	                                      ImVector<SlugCurve>& curves, SlugGlyphEntry* outEntry);
+	static void SlugGlyphMapInsert(SlugFontCache* atlas, ImWchar cp, int idx);
+	// Forward declaration for SlugTessGetOrBuild (defined in Typography section)
+	static void TessGlyphFontUnits(SlugFontCache* atlas, int glyphID, float flatTol, DwTessGlyphData& out);
 
 	static inline bool ImIsSpace(char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
 
@@ -1090,6 +1106,7 @@
 		if (e.colorLayerCount == 0) return false;
 
 		atlas->glyphs.push_back(e);
+		SlugGlyphMapInsert(atlas, e.codepoint, atlas->glyphs.Size - 1);
 		*outEntry = e;
 		return true;
 	}
@@ -1154,6 +1171,7 @@
 				if (!isV1) cl.color = layerColors[i];
 				atlas->colorLayers.push_back(cl);
 				atlas->glyphs.push_back(layerEntry);
+				SlugGlyphMapInsert(atlas, layerEntry.codepoint, atlas->glyphs.Size - 1);
 				e.colorLayerCount++;
 
 				// Include translation offset in base glyph bbox
@@ -1182,6 +1200,7 @@
 					// Fall through to monochrome outline
 				} else {
 					atlas->glyphs.push_back(e);
+					SlugGlyphMapInsert(atlas, e.codepoint, atlas->glyphs.Size - 1);
 					*outEntry = e;
 					return true;
 				}
@@ -1204,6 +1223,7 @@
 			e.codepoint  = cp;
 			e.advanceEm  = (float)adv * atlas->emScale;
 			atlas->glyphs.push_back(e);
+			SlugGlyphMapInsert(atlas, e.codepoint, atlas->glyphs.Size - 1);
 			*outEntry = e;
 			return true;
 		}
@@ -1298,6 +1318,7 @@
 			e.minXEm = minX; e.minYEm = minY;
 			e.maxXEm = maxX; e.maxYEm = maxY;
 			atlas->glyphs.push_back(e);
+			SlugGlyphMapInsert(atlas, e.codepoint, atlas->glyphs.Size - 1);
 			*outEntry = e;
 			return true;
 		}
@@ -1504,6 +1525,7 @@
 		e.maxXEm = maxX; e.maxYEm = maxY;
 
 		atlas->glyphs.push_back(e);
+		SlugGlyphMapInsert(atlas, e.codepoint, atlas->glyphs.Size - 1);
 		atlas->dirty = true;
 		*outEntry = e;
 
@@ -1514,11 +1536,56 @@
 
 	// ---- Atlas management ---------------------------------------------------
 
+	// Rebuild (or grow) the glyph hash map from scratch.
+	// Called on first insert and whenever load factor exceeds 50%.
+	static void SlugGlyphMapRebuild(SlugFontCache* atlas)
+	{
+		int newSize = (atlas->glyphMap.Size < 64) ? 64 : atlas->glyphMap.Size * 2;
+		atlas->glyphMap.resize(newSize);
+		memset(atlas->glyphMap.Data, -1, (size_t)newSize * sizeof(int));
+		int mask = newSize - 1;
+		for (int i = 0; i < atlas->glyphs.Size; i++)
+		{
+			ImWchar cp = atlas->glyphs[i].codepoint;
+			if (cp == 0) continue;
+			int slot = (int)((unsigned)(cp * 2654435761u)) & mask;
+			while (atlas->glyphMap[slot] != -1)
+				slot = (slot + 1) & mask;
+			atlas->glyphMap[slot] = i;
+		}
+	}
+
+	// Insert a newly pushed glyph entry (at index idx) into the hash map.
+	// Called immediately after every atlas->glyphs.push_back(e).
+	static void SlugGlyphMapInsert(SlugFontCache* atlas, ImWchar cp, int idx)
+	{
+		if (cp == 0) return;  // layer sub-glyphs (cp==0) are never looked up by codepoint
+		atlas->glyphMapCount++;
+		if (atlas->glyphMapCount * 2 > atlas->glyphMap.Size)
+		{
+			SlugGlyphMapRebuild(atlas);  // rebuild already inserts all entries including idx
+			return;
+		}
+		int mask = atlas->glyphMap.Size - 1;
+		int slot = (int)((unsigned)(cp * 2654435761u)) & mask;
+		while (atlas->glyphMap[slot] != -1)
+			slot = (slot + 1) & mask;
+		atlas->glyphMap[slot] = idx;
+	}
+
 	static SlugGlyphEntry* SlugFindGlyph(SlugFontCache* atlas, ImWchar cp)
 	{
-		for (int i = 0; i < atlas->glyphs.Size; i++)
-			if (atlas->glyphs[i].codepoint == cp)
-				return &atlas->glyphs[i];
+		if (atlas->glyphMap.empty())
+			return NULL;
+		int mask = atlas->glyphMap.Size - 1;
+		int slot = (int)((unsigned)(cp * 2654435761u)) & mask;
+		while (atlas->glyphMap[slot] != -1)
+		{
+			int idx = atlas->glyphMap[slot];
+			if (atlas->glyphs[idx].codepoint == cp)
+				return &atlas->glyphs[idx];
+			slot = (slot + 1) & mask;
+		}
 		return NULL;
 	}
 
@@ -1600,6 +1667,7 @@
 		atlas->curveTexture  = NULL;
 		atlas->bandTexture   = NULL;
 		atlas->dirty         = true;
+		atlas->glyphMapCount = 0;
 
 		int offset = stbtt_GetFontOffsetForIndex((unsigned char*)cfg->FontData, 0);
 		if (!stbtt_InitFont(&atlas->stbFont, (unsigned char*)cfg->FontData, offset))
@@ -1754,8 +1822,8 @@
 
 	// ---- Public API implementation ------------------------------------------
 
-	ImVec2 CalcTextSize(ImFont* font, float font_size,
-	                    const char* text, const char* text_end, float* out_ascent)
+	static ImVec2 CalcTextSize_Impl(ImFont* font, float font_size,
+	                                const char* text, const char* text_end = nullptr, float* out_ascent = nullptr)
 	{
 		if (!gs_pContext || !text) { if (out_ascent) *out_ascent = 0.0f; return ImVec2(0, 0); }
 		if (!text_end) text_end = text + strlen(text);
@@ -1770,7 +1838,7 @@
 		SlugFontCache* atlas = SlugGetOrCreateAtlas(state, font);
 		if (!atlas) { if (out_ascent) *out_ascent = font_size; return ImVec2(0, font_size); }
 
-		// Ensure all base glyphs are built (needed for y-extents and unshaped fallback)
+		// Ensure all glyphs are built (no texture upload needed for measurement)
 		const char* p = text;
 		while (p < text_end)
 		{
@@ -1788,7 +1856,6 @@
 		float maxY    =  0.0f;  // highest point above baseline (em units, positive)
 		float minY    =  0.0f;  // lowest  point below baseline (em units, negative)
 
-		// Y-extents from base glyphs (contextual/shaped forms share same vertical metrics)
 		p = text;
 		while (p < text_end)
 		{
@@ -1797,65 +1864,81 @@
 			if (cp == 0) break;
 			SlugGlyphEntry* ge = SlugFindGlyph(atlas, (ImWchar)cp);
 			if (!ge) continue;
-			maxY = ImMax(maxY, ge->maxYEm);
-			minY = ImMin(minY, ge->minYEm);
-		}
-
-#if IM_SUPPORT_LIGATURE
-		// Skip shaping for synthetic codepoints (0x100000+ range used by MATH table assembly)
-		bool skipShaping = false;
-		{
-			unsigned int firstCp = 0;
-			ImTextCharFromUtf8(&firstCp, text, text_end);
-			if (firstCp >= 0x100000) skipShaping = true;
-		}
-		if (atlas->shapeCtx && atlas->shapeFont && !skipShaping)
-		{
-			// Use HarfBuzz-shaped advances for accurate width — isolates form advances
-			// (used by the unshaped fallback below) overestimate Arabic because contextual
-			// forms (init/med/fin) and ligatures (lam-alef) are narrower than isolated.
-			int textLen = (int)(text_end - text);
-			kbts_ShapeBegin(atlas->shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
-			kbts_ShapeUtf8(atlas->shapeCtx, text, textLen, KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
-			kbts_ShapeEnd(atlas->shapeCtx);
-
-			kbts_run run;
-			while (kbts_ShapeRun(atlas->shapeCtx, &run))
-			{
-				kbts_glyph* glyph;
-				while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph))
-					width += (float)glyph->AdvanceX * atlas->emScale * font_size;
-			}
-		}
-		else
-#endif
-		{
-			// Fallback: sum unshaped (isolated-form) advances
-			p = text;
-			while (p < text_end)
-			{
-				unsigned int cp = 0;
-				p += ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
-				if (cp == 0) break;
-				SlugGlyphEntry* ge = SlugFindGlyph(atlas, (ImWchar)cp);
-				if (!ge) continue;
-				width += ge->advanceEm * font_size;
-			}
+			width += ge->advanceEm * font_size;
+			maxY   = ImMax(maxY, ge->maxYEm);
+			minY   = ImMin(minY, ge->minYEm);
 		}
 
 		if (out_ascent) *out_ascent = maxY * font_size;
 		return ImVec2(width, (maxY - minY) * font_size);
 	}
 
-	void DrawText(ImDrawList* pDrawList, ImFont* font, float font_size,
-	              ImVec2 pos, ImU32 col, const char* text, const char* text_end)
+	ImVec2 CalcTextSize(ImFont* font, float font_size,
+	                    const char* text, const char* text_end, float* out_ascent)
+	{
+		if (font_size > 0.0f) font_size = SlugLpToPx(font_size);
+		else                  font_size = ImGui::GetFontSize();
+		return CalcTextSize_Impl(font, font_size, text, text_end, out_ascent);
+	}
+
+	float CalcShapedTextWidth(ImFont* font, float font_size,
+	                          const char* text, const char* text_end)
+	{
+		// Use the OpenType shaper for accurate advance width of shaped text (Arabic
+		// contextual forms, lam-alef ligatures, kerning). Slower than CalcTextSize —
+		// call only where alignment precision matters, not in tight measurement loops.
+		if (!gs_pContext || !text) return 0.0f;
+		if (!text_end) text_end = text + strlen(text);
+		if (text >= text_end) return 0.0f;
+
+		if (!font)             font      = ImGui::GetFont();
+		if (font_size > 0.0f)  font_size = SlugLpToPx(font_size);
+		else                   font_size = ImGui::GetFontSize();
+
+#if IM_SUPPORT_LIGATURE
+		ImWidgetsSlugState* state = gs_pContext->slugState;
+		if (!state) state = gs_pContext->slugState = IM_NEW(ImWidgetsSlugState);
+
+		SlugFontCache* atlas = SlugGetOrCreateAtlas(state, font);
+		if (!atlas) return 0.0f;
+
+		if (atlas->shapeCtx && atlas->shapeFont)
+		{
+			// Skip shaping for synthetic codepoints (0x100000+ range)
+			unsigned int firstCp = 0;
+			ImTextCharFromUtf8(&firstCp, text, text_end);
+			if (firstCp < 0x100000)
+			{
+				int textLen = (int)(text_end - text);
+				kbts_ShapeBegin(atlas->shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
+				kbts_ShapeUtf8(atlas->shapeCtx, text, textLen, KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
+				kbts_ShapeEnd(atlas->shapeCtx);
+
+				float width = 0.0f;
+				kbts_run run;
+				while (kbts_ShapeRun(atlas->shapeCtx, &run))
+				{
+					kbts_glyph* glyph;
+					while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph))
+						width += (float)glyph->AdvanceX * atlas->emScale * font_size;
+				}
+				return width;
+			}
+		}
+#endif
+		// Fallback: unshaped width
+		return CalcTextSize(font, font_size, text, text_end).x;
+	}
+
+	static void DrawText_Impl(ImDrawList* pDrawList, ImFont* font, float font_size,
+	                          ImVec2 pos, ImU32 col, const char* text, const char* text_end = nullptr)
 	{
 		if (!pDrawList || !gs_pContext || !text || text == text_end) return;
 		if (!text_end) text_end = text + strlen(text);
 		if (text >= text_end) return;
 
 		// Resolve font and size
-		if (!font)      font      = ImGui::GetFont();
+		if (!font)             font      = ImGui::GetFont();
 		if (font_size <= 0.0f) font_size = ImGui::GetFontSize();
 
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
@@ -1895,8 +1978,7 @@
 		// NOTE: texture upload deferred until after shaping builds additional glyphs
 
 		// ---- Text shaping (ligatures, contextual forms, RTL, OpenType features) ----
-		struct ShapedGlyph { int glyphID; float advanceX; float offsetX; float offsetY; };
-		ImVector<ShapedGlyph> shapedGlyphs;
+		ImVector<SlugShapedGlyph> shapedGlyphs;
 #if IM_SUPPORT_LIGATURE
 		// Skip shaping for synthetic codepoints (0x100000+ range, used by MATH table assembly)
 		bool skipShaping = false;
@@ -1918,7 +2000,7 @@
 				kbts_glyph* glyph;
 				while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph))
 				{
-					ShapedGlyph sg;
+					SlugShapedGlyph sg;
 					sg.glyphID  = (int)glyph->Id;
 					sg.advanceX = (float)glyph->AdvanceX * atlas->emScale;
 					sg.offsetX  = (float)glyph->OffsetX  * atlas->emScale;
@@ -1940,6 +2022,7 @@
 		if (anyNew || atlas->dirty)
 			SlugUploadTextures(atlas);
 		if (!atlas->curveTexture || !atlas->bandTexture) return;
+
 
 		// Count glyphs so we can allocate exactly
 		int glyphCount = 0;
@@ -2084,7 +2167,7 @@
 
 			if (shapedGlyphs.Size > 0)
 			{
-				const ShapedGlyph& sg = shapedGlyphs[shapedIdx++];
+				const SlugShapedGlyph& sg = shapedGlyphs[shapedIdx++];
 				ImWchar glyphKey = (ImWchar)(0x100000 + sg.glyphID);
 				ge = SlugFindGlyph(atlas, glyphKey);
 				advance = sg.advanceX * sz;
@@ -2235,10 +2318,18 @@
 #endif
 	}
 
+	void DrawText(ImDrawList* pDrawList, ImFont* font, float font_size,
+	              ImVec2 pos, ImU32 col, const char* text, const char* text_end)
+	{
+		if (font_size > 0.0f) font_size = SlugLpToPx(font_size);
+		else                  font_size = ImGui::GetFontSize();
+		DrawText_Impl(pDrawList, font, font_size, pos, col, text, text_end);
+	}
+
 	void DrawText(ImDrawList* pDrawList, ImVec2 pos, ImU32 col,
 	              const char* text, const char* text_end)
 	{
-		DrawText(pDrawList, nullptr, 0.0f, pos, col, text, text_end);
+		DrawText_Impl(pDrawList, nullptr, ImGui::GetFontSize(), pos, col, text, text_end);
 	}
 
 	// ---- Linear gradient text -----------------------------------------------
@@ -2262,7 +2353,8 @@
 		if (!text_end) text_end = text + strlen(text);
 		if (text >= text_end) return;
 		if (!font)             font      = ImGui::GetFont();
-		if (font_size <= 0.0f) font_size = ImGui::GetFontSize();
+		if (font_size > 0.0f)  font_size = SlugLpToPx(font_size);
+		else                   font_size = ImGui::GetFontSize();
 
 		ImWidgetsSlugState* state = gs_pContext->slugState;
 		if (!state) state = gs_pContext->slugState = IM_NEW(ImWidgetsSlugState);
@@ -2287,7 +2379,7 @@
 		if (!atlas->curveTexture || !atlas->bandTexture) return;
 
 		// Measure total width for gradient interpolation
-		float totalWidth = CalcTextSize(font, font_size, text, text_end).x;
+		float totalWidth = CalcTextSize_Impl(font, font_size, text, text_end).x;
 		if (totalWidth < 1e-5f) totalWidth = 1.0f;
 
 		const float sz    = font_size;
@@ -2520,7 +2612,8 @@
 		if (!text_end) text_end = text + strlen(text);
 		if (text >= text_end) return;
 		if (!font)             font      = ImGui::GetFont();
-		if (font_size <= 0.0f) font_size = ImGui::GetFontSize();
+		if (font_size > 0.0f)  font_size = SlugLpToPx(font_size);
+		else                   font_size = ImGui::GetFontSize();
 
 		ImWidgetsSlugState* state = gs_pContext->slugState;
 		if (!state) return;
@@ -2637,7 +2730,8 @@
 		if (!text_end) text_end = text + strlen(text);
 		if (text >= text_end) return;
 		if (!font)             font      = ImGui::GetFont();
-		if (font_size <= 0.0f) font_size = ImGui::GetFontSize();
+		if (font_size > 0.0f)  font_size = SlugLpToPx(font_size);
+		else                   font_size = ImGui::GetFontSize();
 
 		ImWidgetsSlugState* state = gs_pContext->slugState;
 		if (!state) return;
@@ -4189,6 +4283,29 @@
 		return a * 2654435761u ^ (ImU32)glyph_id * 2246822519u;
 	}
 
+	// O(1) tessellation cache lookup: uses per-atlas flat index (glyphID → ImPoolIdx) to skip
+	// DwTessGlyphKey computation and ImGuiStorage binary search on every glyph render call.
+	// Tessellates and caches on first access; subsequent calls are a bounds check + array read.
+	static DwTessGlyphData* SlugTessGetOrBuild(SlugFontCache* atlas, ImPool<DwTessGlyphData>& pool,
+	                                            int glyphID, float flatTol)
+	{
+		if (glyphID >= 0 && glyphID < atlas->tessIdxByGlyphID.Size)
+		{
+			int idx = atlas->tessIdxByGlyphID[glyphID];
+			if (idx != -1)
+				return pool.GetByIndex(idx);
+		}
+		// First time: tessellate, store pool index
+		ImGuiID key = DwTessGlyphKey(atlas, glyphID);
+		DwTessGlyphData* cached = pool.GetOrAddByKey(key);
+		TessGlyphFontUnits(atlas, glyphID, flatTol, *cached);
+		int idx = pool.GetIndex(cached);
+		if (glyphID >= atlas->tessIdxByGlyphID.Size)
+			atlas->tessIdxByGlyphID.resize(glyphID + 1, -1);
+		atlas->tessIdxByGlyphID[glyphID] = idx;
+		return cached;
+	}
+
 	// Tessellate a single glyph at kTessRefSize pixel scale (sc=atlas->emScale, sz=kTessRefSize, origin=(0,0)).
 	// flatTol: flatness tolerance in pixels (same scale as kTessRefSize — passed directly to CDT/RecursiveCutQ).
 	// Outputs positions as (v.x, -v.y) — y-flip already baked in.
@@ -4282,7 +4399,7 @@
 		));
 	}
 
-	void TesselateText(ImFont* font, float font_size, const char* text, ImWidgetsShape& outShape, const char* text_end, float tess_tol, int iterations)
+	static void TesselateText_Impl(ImFont* font, float font_size, const char* text, ImWidgetsShape& outShape, const char* text_end, float tess_tol, int iterations)
 	{
 		outShape.vertices.resize(0);
 		outShape.triangles.resize(0);
@@ -4340,12 +4457,7 @@
 			float gx = penX + sg.offX * sz;
 			float gy = -sg.offY * sz;
 
-			ImGuiID key = DwTessGlyphKey(atlas, sg.glyphID);
-			DwTessGlyphData* cached = pool.GetByKey(key);
-			if (!cached) {
-				cached = pool.GetOrAddByKey(key);
-				TessGlyphFontUnits(atlas, sg.glyphID, flatTol, *cached);
-			}
+			DwTessGlyphData* cached = SlugTessGetOrBuild(atlas, pool, sg.glyphID, flatTol);
 
 			InstantiateGlyphFromCache(*cached, gx, gy, sz / kTessRefSize, whiteUV, outShape);
 			penX += sg.advX * sz;
@@ -4354,6 +4466,13 @@
 		// Apply subdivision iterations after tessellation
 		for (int it = 0; it < iterations; it++)
 			ShapeTesselationUniform(outShape);
+	}
+
+	void TesselateText(ImFont* font, float font_size, const char* text, ImWidgetsShape& outShape, const char* text_end, float tess_tol, int iterations)
+	{
+		if (font_size > 0.0f) font_size = SlugLpToPx(font_size);
+		else                  font_size = ImGui::GetFontSize();
+		TesselateText_Impl(font, font_size, text, outShape, text_end, tess_tol, iterations);
 	}
 
 	// Tesselate text with full shaping but output per-glyph shapes (preserves ligatures/calt).
@@ -4368,7 +4487,8 @@
 		if (!text_end) text_end = text + strlen(text);
 		if (text >= text_end) return;
 		if (!font) font = ImGui::GetFont();
-		if (font_size <= 0.0f) font_size = ImGui::GetFontSize();
+		if (font_size > 0.0f) font_size = SlugLpToPx(font_size);
+		else                  font_size = ImGui::GetFontSize();
 
 		SlugFontCache* atlas = SlugGetOrCreateAtlas(gs_pContext->slugState, font);
 		if (!atlas) return;
@@ -4414,12 +4534,7 @@
 			float gx = penX + sg.offX * sz;
 			float gy = -sg.offY * sz;
 
-			ImGuiID key = DwTessGlyphKey(atlas, sg.glyphID);
-			DwTessGlyphData* cached = pool.GetByKey(key);
-			if (!cached) {
-				cached = pool.GetOrAddByKey(key);
-				TessGlyphFontUnits(atlas, sg.glyphID, flatTol, *cached);
-			}
+			DwTessGlyphData* cached = SlugTessGetOrBuild(atlas, pool, sg.glyphID, flatTol);
 			if (cached->positions.Size == 0) { penX += sg.advX * sz; continue; }
 
 			outShapes.push_back(ImWidgetsShape());
@@ -4434,10 +4549,26 @@
 		}
 	}
 
+	void PrewarmTessellationCache(ImFont* font, float tess_tol)
+	{
+		if (!gs_pContext || !font) return;
+		if (!gs_pContext->slugState)
+			gs_pContext->slugState = IM_NEW(ImWidgetsSlugState);
+		ImWidgetsSlugState* state = gs_pContext->slugState;
+		SlugFontCache* atlas = SlugGetOrCreateAtlas(state, font);
+		if (!atlas) return;
+
+		ImPool<DwTessGlyphData>& pool = state->tessGlyphPool;
+		float flatTol = (tess_tol > 0.0f) ? tess_tol : 0.5f;
+		int numGlyphs = atlas->stbFont.numGlyphs;
+		for (int glyphID = 0; glyphID < numGlyphs; glyphID++)
+			SlugTessGetOrBuild(atlas, pool, glyphID, flatTol);
+	}
+
 	// (old per-glyph code removed — replaced by QBez pipeline in TesselateText above)
 	static void TesselateAndOffset(ImFont* font, float fontSize, const char* text, const char* text_end, ImVec2 pos, ImWidgetsShape& shape, float tess_tol, int iterations = 0)
 	{
-		TesselateText(font, fontSize, text, shape, text_end, tess_tol, iterations);
+		TesselateText_Impl(font, fontSize, text, shape, text_end, tess_tol, iterations);
 		for (int i = 0; i < shape.vertices.Size; i++)
 			shape.vertices[i].pos = ImVec2(shape.vertices[i].pos.x + pos.x, shape.vertices[i].pos.y + pos.y);
 		shape.bb.Translate(pos);
@@ -4447,6 +4578,7 @@
 	                   ImTextureID tex, const char* text, const char* text_end,
 	                   ImU32 tint, ImVec2 uv_offset, ImVec2 uv_scale, float tess_tol, int iterations)
 	{
+		font_size = SlugLpToPx(font_size);
 		ImWidgetsShape shape;
 		TesselateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
 		if (shape.triangles.Size == 0) return;
@@ -4464,6 +4596,7 @@
 	                            const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1,
 	                            pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space, const char* text_end, float tess_tol, int iterations)
 	{
+		font_size = SlugLpToPx(font_size);
 		ImWidgetsShape shape;
 		TesselateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
 		if (shape.triangles.Size == 0) return;
@@ -4476,6 +4609,7 @@
 	                            const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1,
 	                            pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space, const char* text_end, float tess_tol, int iterations)
 	{
+		font_size = SlugLpToPx(font_size);
 		ImWidgetsShape shape;
 		TesselateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
 		if (shape.triangles.Size == 0) return;
@@ -4488,6 +4622,7 @@
 	                             const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1,
 	                             pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space, const char* text_end, float tess_tol, int iterations)
 	{
+		font_size = SlugLpToPx(font_size);
 		ImWidgetsShape shape;
 		TesselateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
 		if (shape.triangles.Size == 0) return;
@@ -4510,7 +4645,9 @@
 	{
 		if (!gs_pContext || !gs_pContext->slugState || !text || !*text) return;
 		if (!font) font = ImGui::GetFont();
-		if (font_size <= 0) font_size = ImGui::GetFontSize();
+		if (font_size > 0.0f) font_size = SlugLpToPx(font_size);
+		else                  font_size = ImGui::GetFontSize();
+		spacing = SlugLpToPx(spacing);
 		SlugFontCache* atlas = SlugGetOrCreateAtlas(gs_pContext->slugState, font);
 		if (!atlas) return;
 		float sz = font_size, sc = atlas->emScale;
@@ -4652,10 +4789,10 @@
 		// Step 0: Slug rendering — compute real glyph height
 		{
 			float asc2 = 0;
-			ImVec2 textSz = CalcTextSize(font, sz, text, NULL, &asc2);
+			ImVec2 textSz = CalcTextSize_Impl(font, sz, text, NULL, &asc2);
 			float realH = ImMax(textSz.y, 10.0f);
 			float curY = BeginRow("Step 0: Slug GPU", realH);
-			DrawText(dl, font, sz, ImVec2(pos.x + 10, curY + asc2), IM_COL32(100,100,255,200), text);
+			DrawText_Impl(dl, font, sz, ImVec2(pos.x + 10, curY + asc2), IM_COL32(100,100,255,200), text);
 
 			// Show debug curves overlay
 			static bool showDebugCurves = false;
@@ -4741,8 +4878,8 @@
 			float col2X = col1X + ImMax(glyphW, 20.0f) + spacing;
 			{
 				float asc2 = 0;
-				CalcTextSize(font, sz, text, NULL, &asc2);
-				DrawText(dl, font, sz, ImVec2(col2X, curY + asc2), IM_COL32(100,100,255,200), text);
+				CalcTextSize_Impl(font, sz, text, NULL, &asc2);
+				DrawText_Impl(dl, font, sz, ImVec2(col2X, curY + asc2), IM_COL32(100,100,255,200), text);
 				dl->AddText(ImVec2(col2X, curY + glyphH + 2), IM_COL32(150,150,150,200), "Slug GPU");
 			}
 
@@ -4936,8 +5073,8 @@
 			float col3X = col2X + glyphW + spacing;
 			{
 				float asc2 = 0;
-				CalcTextSize(font, sz, text, NULL, &asc2);
-				DrawText(dl, font, sz, ImVec2(col3X, curY + asc2), IM_COL32(100,100,255,200), text);
+				CalcTextSize_Impl(font, sz, text, NULL, &asc2);
+				DrawText_Impl(dl, font, sz, ImVec2(col3X, curY + asc2), IM_COL32(100,100,255,200), text);
 				dl->AddText(ImVec2(col3X, curY + glyphH + 2), IM_COL32(150,150,150,200), "Slug GPU");
 			}
 		}
@@ -4993,7 +5130,8 @@
 		if (!gs_pContext || !gs_pContext->slugState) return;
 		if (!text_end) text_end = text + strlen(text);
 		if (!font) font = ImGui::GetFont();
-		if (font_size <= 0) font_size = ImGui::GetFontSize();
+		if (font_size > 0.0f) font_size = SlugLpToPx(font_size);
+		else                  font_size = ImGui::GetFontSize();
 		SlugFontCache* atlas = SlugGetOrCreateAtlas(gs_pContext->slugState, font);
 		if (!atlas) return;
 		float sz = font_size, sc = atlas->emScale;
@@ -5347,8 +5485,9 @@
 	ImVec2 CalcTextSize(ImFont* font, float font_size,
 	                    const char* text, const char* text_end, float* out_ascent)
 	{
-		if (!font)           font      = ImGui::GetFont();
-		if (font_size <= 0.0f) font_size = ImGui::GetFontSize();
+		if (!font)             font      = ImGui::GetFont();
+		if (font_size > 0.0f)  font_size = SlugLpToPx(font_size);
+		else                   font_size = ImGui::GetFontSize();
 		ImFontBaked* baked = font->GetFontBaked(font_size);
 		if (out_ascent) *out_ascent = baked ? baked->Ascent * (font_size / baked->Size) : font_size * 0.8f;
 		// Delegate to ImGui for width; height from font metrics
@@ -5361,8 +5500,9 @@
 	void DrawText(ImDrawList* pDrawList, ImFont* font, float font_size,
 	              ImVec2 pos, ImU32 col, const char* text, const char* text_end)
 	{
-		if (!font)      font      = ImGui::GetFont();
-		if (font_size <= 0.0f) font_size = ImGui::GetFontSize();
+		if (!font)             font      = ImGui::GetFont();
+		if (font_size > 0.0f)  font_size = SlugLpToPx(font_size);
+		else                   font_size = ImGui::GetFontSize();
 		if (pDrawList) pDrawList->AddText(font, font_size, pos, col, text, text_end);
 	}
 

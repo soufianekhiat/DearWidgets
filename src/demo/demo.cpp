@@ -109,6 +109,10 @@
 #define PW_RENDERFULLCONTENT 0x00000002
 #endif
 
+#ifdef DrawText
+#undef DrawText
+#endif
+
 struct DW_ScreenshotSpec
 {
 	const char* imgui_window;  // ImGui window title (nullptr = full client area)
@@ -929,6 +933,14 @@ int main( int argc, char** argv )
 		ImPlatform_PlatformNewFrame();
 		ImGui::NewFrame();
 
+		// Pre-warm tessellation cache on first frame so CollapsingHeaders open without stall
+		static bool s_tessWarmed = false;
+		if ( !s_tessWarmed )
+		{
+			if ( g_dottedFont ) ImWidgets::PrewarmTessellationCache( g_dottedFont );
+			s_tessWarmed = true;
+		}
+
 		// Render UI
 		// In screenshot mode, force each window to a known position and size so captures
 		// are deterministic regardless of imgui.ini saved state.
@@ -1518,7 +1530,7 @@ namespace ImWidgets {
 		static ImU32  bg_color_u = ImGui::ColorConvertFloat4ToU32( bg_color_v );
 
 		ImGui::InputText( "Text##SlugDemo", text_buf, sizeof( text_buf ) );
-		ImGui::DragFloat( "Font Size##SlugDemo", &font_size, 0.5f, 8.0f, 300.0f, "%.0f px" );
+		ImGui::DragFloat( "Font Size##SlugDemo", &font_size, 0.5f, 8.0f, 300.0f, "%.0f lp" );
 		if ( ImGui::ColorEdit4( "Color##SlugDemo", &color_v.x ) )
 			color_u = ImGui::ColorConvertFloat4ToU32( color_v );
 		ImGui::Checkbox( "Background##SlugDemo", &use_bg );
@@ -1755,10 +1767,10 @@ namespace ImWidgets {
 				}
 				ImGui::EndCombo();
 			}
-			ImGui::SliderFloat( "Size##DbgTess", &dbgSize, 32.0f, 400.0f, "%.0f px" );
+			ImGui::SliderFloat( "Size##DbgTess", &dbgSize, 32.0f, 400.0f, "%.0f lp" );
 			ImGui::SliderFloat( "Tess Tol##DbgTess", &dbgTol, 0.05f, 5.0f, "%.2f" );
 			static float dbgSpacing = 30.0f;
-			ImGui::SliderFloat( "Piece Spacing##DbgTess", &dbgSpacing, 0.0f, 100.0f, "%.0f px" );
+			ImGui::SliderFloat( "Piece Spacing##DbgTess", &dbgSpacing, 0.0f, 100.0f, "%.0f lp" );
 
 			ImFont* dbgFont = *kDbgFonts[dbgFontIdx].ptr;
 			if ( dbgFont && dbgChar[0] )
@@ -1825,7 +1837,7 @@ namespace ImWidgets {
 			static bool perChar = true;
 			static float tessTol = 0.25f;
 			static int tyIterations = 2;
-			ImGui::SliderFloat( "Typography Size##TypoFills", &tySize, 16.0f, 200.0f, "%.0f px" );
+			ImGui::SliderFloat( "Typography Size##TypoFills", &tySize, 16.0f, 200.0f, "%.0f lp" );
 			ImGui::SliderFloat( "Tessellation##TessTol", &tessTol, 0.01f, 2.0f, "%.2f" );
 			ImGui::SameLine(); ImGui::TextDisabled( "(lower = smoother)" );
 			ImGui::SliderInt( "Iterations##TypoFills", &tyIterations, 0, 6 );
@@ -1933,7 +1945,7 @@ namespace ImWidgets {
 			{
 				ImGui::Separator();
 				static float latexFillSize = 40.0f;
-				ImGui::SliderFloat( "LaTeX Size##LatexFill", &latexFillSize, 16.0f, 80.0f, "%.0f px" );
+				ImGui::SliderFloat( "LaTeX Size##LatexFill", &latexFillSize, 16.0f, 80.0f, "%.0f lp" );
 
 				struct LaTeXFillEntry { const char* eq; ImU32 c0; ImU32 c1; };
 				static const LaTeXFillEntry kLatexFills[] = {
@@ -1976,19 +1988,14 @@ namespace ImWidgets {
 	void ShowTypographyAnimations()
 	{
 		ApplyOpenAll();
-		if ( !g_dottedFont || !ImGui::CollapsingHeader( "Typography Animations" ) )
-			return;
+		if ( !g_dottedFont ) return;
 
-		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 		ImFont* animFont = g_dottedFont;
 		static float animSize = 80.0f;
 		static float prevAnimSize = 0;
-		float t = (float)ImGui::GetTime();
-
-		ImGui::SliderFloat( "Size##TypoAnim", &animSize, 32.0f, 200.0f, "%.0f px" );
-		float gap = 8.0f;
 
 		// --- Cache: tessellate once, reuse every frame ---
+		// Built every frame regardless of header state so opening the header is stall-free.
 		struct AnimCache {
 			ImVector<ImWidgetsShape> glyphs; // per-glyph shapes in LOCAL space (not offset)
 			ImWidgetsShape whole;             // whole-text shape in LOCAL space
@@ -2009,7 +2016,7 @@ namespace ImWidgets {
 			for ( int i = 0; i < 6; i++ ) cache[i].valid = false;
 		}
 
-		// Build cache entries that need it
+		// Build one pending cache entry per frame to amortise startup cost
 		float tessTol = 0.25f;
 		int iterations = 2;
 		for ( int ci = 0; ci < 6; ci++ ) {
@@ -2024,7 +2031,17 @@ namespace ImWidgets {
 				ImWidgets::TesselateText( animFont, animSize, kTexts[ci], cache[ci].whole, nullptr, tessTol, iterations );
 			}
 			cache[ci].valid = true;
+			break; // one entry per frame — spreads cost across 6 frames at startup
 		}
+
+		if ( !ImGui::CollapsingHeader( "Typography Animations" ) )
+			return;
+
+		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+		float t = (float)ImGui::GetTime();
+
+		ImGui::SliderFloat( "Size##TypoAnim", &animSize, 32.0f, 200.0f, "%.0f lp" );
+		float gap = 8.0f;
 
 		// Helper: draw a cached glyph shape at a screen position with a color
 		auto DrawGlyph = [&]( ImWidgetsShape& src, ImVec2 offset, ImU32 col ) {
@@ -2175,7 +2192,7 @@ namespace ImWidgets {
 		static bool latex_show_bbox = false;
 
 		ImGui::InputTextMultiline( "##LatexInput", latex_buf, sizeof( latex_buf ), ImVec2( -1, ImGui::GetTextLineHeight() * 3 ) );
-		ImGui::DragFloat( "Size##LatexSize", &latex_size, 0.5f, 8.0f, 200.0f, "%.0f px" );
+		ImGui::DragFloat( "Size##LatexSize", &latex_size, 0.5f, 8.0f, 200.0f, "%.0f lp" );
 		if ( ImGui::ColorEdit4( "Color##LatexColor", &latex_col_v.x ) )
 			latex_col_u = ImGui::ColorConvertFloat4ToU32( latex_col_v );
 		ImGui::Checkbox( "Show BBox##LatexBBox", &latex_show_bbox );
@@ -2461,7 +2478,7 @@ namespace ImWidgets {
 			while ( draw_end > line_start && ( *(draw_end - 1) == ' ' || *(draw_end - 1) == '\n' ) )
 				--draw_end;
 			if ( right_align )
-				w = ImWidgets::CalcTextSize( font, font_size, line_start, draw_end ).x;
+				w = ImWidgets::CalcShapedTextWidth( font, font_size, line_start, draw_end );
 			float rx = right_align ? ( origin.x + wrap_width - w ) : origin.x;
 			ImWidgets::DrawText( dl, font, font_size,
 			                     ImVec2( rx, pen_y + asc ), col, line_start, draw_end );
@@ -2531,7 +2548,7 @@ namespace ImWidgets {
 		static ImU32  hi_col_u    = ImGui::ColorConvertFloat4ToU32( hi_col_v );
 		static ImVec4 bg_col_v( 0.08f, 0.08f, 0.14f, 0.88f );
 
-		ImGui::DragFloat( "Font Size##TxtShow", &font_size, 0.5f, 8.0f, 72.0f, "%.0f px" );
+		ImGui::DragFloat( "Font Size##TxtShow", &font_size, 0.5f, 8.0f, 72.0f, "%.0f lp" );
 		if ( ImGui::ColorEdit4( "Text Color##TxtShow", &col_v.x ) )
 			col_u = ImGui::ColorConvertFloat4ToU32( col_v );
 		if ( ImGui::ColorEdit4( "Highlight Color##TxtShow", &hi_col_v.x ) )
@@ -2614,8 +2631,20 @@ namespace ImWidgets {
 			auto t1 = std::chrono::high_resolution_clock::now();
 			double dt_ms = std::chrono::duration<double, std::milli>( t1 - t0 ).count();
 
+			static float s_latin_ring32[32]   = {};
+			static float s_latin_ring128[128] = {};
+			static int   s_latin_head         = 0;
+			s_latin_ring32 [s_latin_head %  32] = (float)dt_ms;
+			s_latin_ring128[s_latin_head % 128] = (float)dt_ms;
+			s_latin_head++;
+			float s_latin_avg32 = 0.0f, s_latin_avg128 = 0.0f;
+			for ( int i = 0; i <  32; i++ ) s_latin_avg32  += s_latin_ring32[i];
+			for ( int i = 0; i < 128; i++ ) s_latin_avg128 += s_latin_ring128[i];
+			s_latin_avg32  /=  32.0f;
+			s_latin_avg128 /= 128.0f;
+
 			ImGui::Dummy( ImVec2( box_w, box_pad ) );     // bottom padding
-			ImGui::TextDisabled( "DrawText time: %.3f ms", dt_ms );
+			ImGui::TextDisabled( "DrawText time: %.3f ms  (avg32: %.3f ms  avg128: %.3f ms)", dt_ms, s_latin_avg32, s_latin_avg128 );
 		}
 
 		// ── Arabic block ───────────────────────────────────────────────────────
@@ -2669,8 +2698,20 @@ namespace ImWidgets {
 			auto t1 = std::chrono::high_resolution_clock::now();
 			double dt_ms = std::chrono::duration<double, std::milli>( t1 - t0 ).count();
 
+			static float s_arabic_ring32[32]   = {};
+			static float s_arabic_ring128[128] = {};
+			static int   s_arabic_head         = 0;
+			s_arabic_ring32 [s_arabic_head %  32] = (float)dt_ms;
+			s_arabic_ring128[s_arabic_head % 128] = (float)dt_ms;
+			s_arabic_head++;
+			float s_arabic_avg32 = 0.0f, s_arabic_avg128 = 0.0f;
+			for ( int i = 0; i <  32; i++ ) s_arabic_avg32  += s_arabic_ring32[i];
+			for ( int i = 0; i < 128; i++ ) s_arabic_avg128 += s_arabic_ring128[i];
+			s_arabic_avg32  /=  32.0f;
+			s_arabic_avg128 /= 128.0f;
+
 			ImGui::Dummy( ImVec2( box_w, box_pad ) );     // bottom padding
-			ImGui::TextDisabled( "DrawText time: %.3f ms", dt_ms );
+			ImGui::TextDisabled( "DrawText time: %.3f ms  (avg32: %.3f ms  avg128: %.3f ms)", dt_ms, s_arabic_avg32, s_arabic_avg128 );
 		}
 
 		if ( !latin_font && !arabic_font )
@@ -4775,7 +4816,7 @@ namespace ImWidgets {
 				static ImU32  slug_hi_u     = ImGui::ColorConvertFloat4ToU32( slug_hi_v );
 
 				ImGui::InputText( "Text##SlugWidget", slug_buf, sizeof( slug_buf ) );
-				ImGui::DragFloat( "Size##SlugWidget", &slug_sz, 0.5f, 8.0f, 120.0f, "%.0f px" );
+				ImGui::DragFloat( "Size##SlugWidget", &slug_sz, 0.5f, 8.0f, 120.0f, "%.0f lp" );
 				if ( ImGui::ColorEdit4( "Color##SlugWidget", &slug_col_v.x ) )
 					slug_col_u = ImGui::ColorConvertFloat4ToU32( slug_col_v );
 				if ( ImGui::ColorEdit4( "Highlight##SlugWidget", &slug_hi_v.x ) )
@@ -4811,7 +4852,7 @@ namespace ImWidgets {
 
 					ImGui::Separator();
 					ImGui::TextDisabled( "Arabic SlugText() â right-aligned" );
-					ImGui::DragFloat( "Arabic Size##SlugAr", &ar_sz, 0.5f, 8.0f, 72.0f, "%.0f px" );
+					ImGui::DragFloat( "Arabic Size##SlugAr", &ar_sz, 0.5f, 8.0f, 72.0f, "%.0f lp" );
 					ImGui::InputText( "Arabic Text##SlugAr", ar_buf, sizeof( ar_buf ) );
 
 					{

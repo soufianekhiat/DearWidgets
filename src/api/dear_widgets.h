@@ -208,6 +208,7 @@ struct ImWidgetsShapeCacheEntry
 struct ImWidgetsShapeCache
 {
 	ImVector<ImWidgetsShapeCacheEntry>	entries;
+	ImVector<int>                       map;    // S-2: open-addressed hash map, slot → entries index+1 (0=empty)
 };
 
 typedef ImU32( *ImWidgetsColor1DCallback )( float x, void* );
@@ -2650,6 +2651,9 @@ namespace ImWidgets{
 	void	GenShapeCircleArc( ImWidgetsShape& shape, ImVec2 center, float radius, float angle_min, float angle_max, int side_count );
 	void	GenShapeRegularNGon( ImWidgetsShape& shape, ImVec2 center, float radius, int side_count );
 	void	GenShapeSquircle( ImWidgetsShape& shape, ImVec2 center, float radius, int side_count, float n = 4.0f );
+	// S-1: Tessellate a concave polygon and cache the result. pts should be in local/normalized coords;
+	// origin is added back after tessellation (same pattern as GenShapeRect with r.Min).
+	void	GenShapeConcavePoly( ImWidgetsShape& shape, const ImVec2* pts, int pts_count, ImVec2 origin = ImVec2( 0.0f, 0.0f ) );
 
 	// TODO
 	//void	GenShapeFromBezierCubicCurve( ImShape& shape, ImVector<ImVec2>& path, float thickness, int num_segments = 0 );
@@ -2701,6 +2705,15 @@ namespace ImWidgets{
 	// Renders resolution-independent text using the Slug algorithm (Eric Lengyel, public domain 2026).
 	// Uses the current ImGui font by extracting its TTF outline data for GPU Bezier rendering.
 	// Produces crisp results at any scale or viewing angle without texture atlases or distance fields.
+	//
+	// FONT SIZE UNIT — Logical Pixels (lp):
+	//   All font_size parameters are in logical pixels (DPI-independent).
+	//   1 lp = 1 physical pixel at 96 DPI / 1.0x scale.
+	//   At 2x DPI (192 DPI / Windows 200%), 1 lp = 2 physical pixels.
+	//   The library converts lp → physical pixels internally using ImGui::GetStyle().FontScaleDpi.
+	//   Set FontScaleDpi at startup: ImGui::GetStyle().FontScaleDpi = ImPlatform_GetDpiScale();
+	//   Return values (CalcTextSize, CalcShapedTextWidth, CalcLaTeXSize) are in PHYSICAL pixels,
+	//   consistent with ImGui cursor positions and layout.
 	//////////////////////////////////////////////////////////////////////////
 	// Guard against Win32's DrawText/DrawTextA macro collision (winuser.h)
 #ifdef DrawText
@@ -2709,37 +2722,42 @@ namespace ImWidgets{
 #ifdef DrawTextA
 #undef DrawTextA
 #endif
-	// Use current ImGui font/size at pos
+	// Use current ImGui font/size at pos (uses GetFontSize() which is already DPI-scaled)
 	IMGUI_API void DrawText( ImDrawList* pDrawList, ImVec2 pos, ImU32 col, const char* text, const char* text_end = nullptr );
-	// Explicit font and size (pass nullptr/0 to use current)
+	// Explicit font and size in logical pixels (pass nullptr/0 to use current ImGui font/size)
 	IMGUI_API void DrawText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, ImU32 col, const char* text, const char* text_end = nullptr );
-	// Measure text rendered via DrawText. Returns (width, height) in pixels.
-	// out_ascent: if non-null, receives the distance above the baseline (i.e. pass cursor.y + ascent as baseline to DrawText).
+	// Measure text. font_size in lp. Returns (width, height) in physical pixels.
+	// out_ascent: if non-null, receives ascent in physical pixels (pass cursor.y + ascent as baseline to DrawText).
 	IMGUI_API ImVec2 CalcTextSize( ImFont* font, float font_size, const char* text, const char* text_end = nullptr, float* out_ascent = nullptr );
-	// Horizontal linear gradient: col_left at text start, col_right at text end.
+	// Like CalcTextSize but runs the OpenType shaper (HarfBuzz) for accurate width of shaped text
+	// (Arabic contextual forms, ligatures). Slower than CalcTextSize — use only when alignment precision matters.
+	IMGUI_API float CalcShapedTextWidth( ImFont* font, float font_size, const char* text, const char* text_end = nullptr );
+	// Horizontal linear gradient: col_left at text start, col_right at text end. font_size in lp.
 	IMGUI_API void DrawTextGradient( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, ImU32 col_left, ImU32 col_right, const char* text, const char* text_end = nullptr );
 	// ---- Typography: tesselated text for gradient/image fills ----
-	// tess_tol: curve flattening tolerance (lower = more segments, smoother curves). 0 = auto.
+	// font_size in lp. tess_tol: curve flattening tolerance (lower = more segments, smoother). 0 = auto.
 	// Convert text to CPU-tesselated geometry (ImWidgetsShape) for use with gradient/image fill functions.
 	IMGUI_API void TesselateText( ImFont* font, float font_size, const char* text, ImWidgetsShape& outShape, const char* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
 	// Same as TesselateText but returns per-glyph shapes (preserves ligatures/calt from full text shaping).
 	IMGUI_API void TesselateTextPerGlyph( ImFont* font, float font_size, const char* text, ImVector<ImWidgetsShape>& outShapes, const char* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
-	// Extract raw contour points (explicitly closed, for DrawShapeWithHole). Debug/internal use.
+	// Pre-tessellate every glyph in the font and populate the cache. Call once at startup (after the
+	// first ImGui::NewFrame) to eliminate stalls when TesselateText/TesselateTextPerGlyph first runs.
+	IMGUI_API void PrewarmTessellationCache( ImFont* font, float tess_tol = 0.0f );
+	// Extract raw contour points (explicitly closed, for DrawShapeWithHole). font_size in lp. Debug/internal use.
 	IMGUI_API void ExtractTextContours( ImFont* font, float font_size, const char* text, const char* text_end, ImVec2 offset, ImVector<ImVec2>& outPoly, ImRect& outBB, float tess_tol = 0.0f );
-	// Debug: draw the tessellation algorithm steps for a single character
+	// Debug: draw the tessellation algorithm steps for a single character. font_size in lp.
 	IMGUI_API void DrawTesselateDebug( ImDrawList* dl, ImFont* font, float font_size, const char* text, ImVec2 pos, float tess_tol, float spacing, float rowH );
-	// Text filled with an image texture.
+	// Text filled with an image texture. font_size in lp.
 	IMGUI_API void DrawImageText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, ImTextureID tex, const char* text, const char* text_end = nullptr, ImU32 tint = IM_COL32_WHITE, ImVec2 uv_offset = ImVec2(0,0), ImVec2 uv_scale = ImVec2(1,1), float tess_tol = 0.0f, int iterations = 0 );
-	// Text filled with gradients (supports all color spaces via function pointers).
+	// Text filled with gradients (supports all color spaces via function pointers). font_size in lp.
 	IMGUI_API void DrawLinearGradientText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB = nullptr, pfsRGB2Space sRGB2Space = nullptr, const char* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
 	IMGUI_API void DrawRadialGradientText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB = nullptr, pfsRGB2Space sRGB2Space = nullptr, const char* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
 	IMGUI_API void DrawDiamondGradientText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB = nullptr, pfsRGB2Space sRGB2Space = nullptr, const char* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
 
-	// Debug: draw curve outlines, control points, and bounding boxes for Slug glyphs.
+	// Debug: draw curve outlines, control points, and bounding boxes for Slug glyphs. font_size in lp.
 	// flags: 1=curves, 2=control points, 4=bounding boxes, 8=band grid, 0xFF=all
 	IMGUI_API void DrawTextDebugCurves( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, const char* text_end = nullptr, int flags = 0xFF );
-	// Debug: draw each color layer's quad as a flat semi-transparent rectangle (no Slug shader).
-	// This shows exactly where each layer's bounding box is, independent of the GPU rendering.
+	// Debug: draw each color layer's quad as a flat semi-transparent rectangle (no Slug shader). font_size in lp.
 	IMGUI_API void DrawTextDebugLayers( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, const char* text_end = nullptr );
 	// Set to true to use the debug shader (xcov=R, ycov=G, coverage=B) instead of normal rendering.
 	IMGUI_API extern bool g_SlugDebugShader;
@@ -2748,17 +2766,17 @@ namespace ImWidgets{
 	IMGUI_API const ImFontLoader* GetSlugFontLoader();
 	IMGUI_API bool GetSlugFontInfo(ImFont* font, void* outStbttFontInfo, float* outEmScale); // outStbttFontInfo = stbtt_fontinfo*
 	IMGUI_API void SlugBuildGlyphByID(ImFont* font, int glyphID);
-	// LaTeX math rendering via Slug GPU fonts.
+	// LaTeX math rendering via Slug GPU fonts. font_size in lp.
 	// Requires ImWidgetsFeatures_LaTeX to be set before CreateContext().
 	// latex: LaTeX math string (e.g. "x^2 + \\frac{\\alpha}{\\beta} = 0")
 	// Call during font loading phase (before CreateContext) to load the Latin Modern Math font.
 	IMGUI_API void LoadLaTeXFont();
 	IMGUI_API void DrawLaTeX( ImDrawList* pDrawList, float font_size, ImVec2 pos, ImU32 col, const char* latex );
-	// Measure the bounding box of a LaTeX expression without drawing.
+	// Measure the bounding box of a LaTeX expression. font_size in lp. Returns size in physical pixels.
 	IMGUI_API ImVec2 CalcLaTeXSize( float font_size, const char* latex );
-	// Debug: draw bounding boxes for each glyph/box in a LaTeX expression.
+	// Debug: draw bounding boxes for each glyph/box in a LaTeX expression. font_size in lp.
 	IMGUI_API void DrawLaTeXDebug( ImDrawList* pDrawList, float font_size, ImVec2 pos, const char* latex );
-	// Tessellate a LaTeX expression into an ImWidgetsShape for gradient/image fills.
+	// Tessellate a LaTeX expression into an ImWidgetsShape for gradient/image fills. font_size in lp.
 	// pos = top-left corner (same convention as DrawLaTeX). Use CalcLaTeXSize for layout size.
 	IMGUI_API void TesselateLaTeX( float font_size, const char* latex, ImVec2 pos, ImWidgetsShape& outShape, float tess_tol = 0.25f, int iterations = 0 );
 
