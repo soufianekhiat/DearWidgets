@@ -111,6 +111,51 @@
 
 	struct SlugShapedGlyph { int glyphID; float advanceX; float offsetX; float offsetY; };
 
+	// Vertex format matching slug.hlsl VS_INPUT (80 bytes = 5 x float4)
+	// Matches the reference implementation layout exactly.
+	struct SlugVertex
+	{
+		float pos[4];  // xy = screen-space position (undilated), zw = outward vertex normal
+		float tex[4];  // xy = em UV (undilated), zw = packed glyph data (bit-cast uint)
+		float jac[4];  // inverse Jacobian: maps screen-space offset → em-space offset
+		               //   = (1/sz, 0, 0, -1/sz) for axis-aligned glyph at pixel size sz
+		float bnd[4];  // band transform: scaleX, scaleY, offsetX, offsetY
+		float col[4];  // RGBA vertex color as floats
+	};
+
+	// Extended vertex for SLUG_GRADIENT permutation (112 bytes = 7 x float4)
+	struct SlugGradientVertex
+	{
+		float pos[4];
+		float tex[4];
+		float jac[4];
+		float bnd[4];
+		float col[4];   // gradient color 0
+		float grd[4];   // gradient params: dirX, dirY, scale, bias
+		float col2[4];  // gradient color 1
+	};
+
+	// Data passed to the raw draw callback (forward-declared here so SlugFontCache can hold a pool)
+	struct SlugFontCache;  // forward declaration
+	struct SlugDrawCBData
+	{
+		ImPlatform_ShaderProgram program;
+		ImPlatform_VertexBuffer  vb;
+		ImPlatform_IndexBuffer   ib;
+		SlugFontCache*           atlas;   // read textures at draw time (latest after all uploads)
+		unsigned int             indexCount;
+	};
+
+	// Pooled vertex/index buffer pair for reuse across frames
+	struct SlugVBIBPair {
+		ImPlatform_VertexBuffer  vb;
+		ImPlatform_IndexBuffer   ib;
+		unsigned int             vbCap;       // capacity in vertices
+		unsigned int             ibCap;       // capacity in indices
+		unsigned int             vertStride;  // sizeof(SlugVertex) or sizeof(SlugGradientVertex)
+		ImPlatform_ShaderProgram program;     // shader used for DX11 input layout (must match for reuse)
+	};
+
 	// Per-font cache: holds curve control points, band acceleration structure, and glyph metrics
 	struct SlugFontCache
 	{
@@ -156,6 +201,46 @@
 		// Fast tessellation index: tessIdxByGlyphID[glyphID] = ImPoolIdx into ImWidgetsSlugState::tessGlyphPool.
 		// -1 = glyph not yet tessellated. Avoids the O(log N) ImGuiStorage binary search on every render call.
 		ImVector<int> tessIdxByGlyphID;
+
+		// VB/IB pool: recycled = free to reuse; inFlight = submitted this frame
+		ImVector<SlugVBIBPair> vbibRecycled;
+		ImVector<SlugVBIBPair> vbibInFlight;
+		int vbibFrameCount;
+
+		// Band scratch (Change 3): reused across glyph builds, avoids new[]/delete[] per glyph
+		ImVector<ImVector<int>> bandHScratch;
+		ImVector<ImVector<int>> bandVScratch;
+
+		// Shaping cache (Change 4)
+		struct SlugShapeCacheEntry {
+			ImU64 hash;     // FNV64 of text bytes; 0 = empty slot
+			int   textLen;  // byte length (for collision detection)
+			ImVector<SlugShapedGlyph> glyphs;
+		};
+		ImVector<SlugShapeCacheEntry> shapeCacheTable;  // power-of-2 size
+		int shapeCacheCount;
+
+		// CPU scratch buffers (Change 8): persistent across calls, cleared at start of each DrawText
+		ImVector<SlugVertex>         scratchVertsNorm, scratchVertsColor;
+		ImVector<ImU16>              scratchIdxsNorm,  scratchIdxsColor;
+		ImVector<SlugGradientVertex> scratchVertsGrad;
+		ImVector<ImU16>              scratchIdxsGrad;
+
+		// Draw cache: skip ALL CPU work for static text (same text+pos+col+size across frames)
+		// Stores GPU VB/IB handles directly — cache hit = just register draw callbacks, zero upload
+		struct SlugDrawCallInfo {
+			ImPlatform_VertexBuffer  vb;
+			ImPlatform_IndexBuffer   ib;
+			ImPlatform_ShaderProgram program;
+			unsigned int             indexCount;
+		};
+		struct SlugDrawCacheEntry {
+			ImU64 key;              // 0 = empty slot
+			int drawCount;          // number of valid entries in draws[] (0-3)
+			SlugDrawCallInfo draws[3];
+		};
+		ImVector<SlugDrawCacheEntry> drawCacheTable;  // open-addressed, power-of-2
+		int drawCacheCount;
 	};
 
 	// Cached tessellation of a single glyph stored at kTessRefSize pixel scale (sc=atlas->emScale, sz=kTessRefSize).
@@ -1371,9 +1456,23 @@
 		const float box = -minX * bsx;                    // em → band-x offset
 		const float boy = -minY * bsy;                    // em → band-y offset
 
-		// Per-band curve lists (heap-allocated, size determined adaptively)
-		ImVector<int>* hBand = new ImVector<int>[NBY];    // horizontal bands (indexed by y-band)
-		ImVector<int>* vBand = new ImVector<int>[NBX];    // vertical bands  (indexed by x-band)
+		// Per-band curve lists — use persistent atlas scratch to avoid new[]/delete[] per glyph (Change 3)
+		// Only grow, never shrink: ImVector::resize() doesn't call constructors,
+		// so new slots must be memset to 0. Old slots just need Size reset to 0.
+		if (NBY > atlas->bandHScratch.Size) {
+			int old = atlas->bandHScratch.Size;
+			atlas->bandHScratch.resize(NBY);
+			for (int b = old; b < NBY; b++) memset(&atlas->bandHScratch[b], 0, sizeof(ImVector<int>));
+		}
+		for (int b = 0; b < NBY; b++) atlas->bandHScratch[b].Size = 0;
+		if (NBX > atlas->bandVScratch.Size) {
+			int old = atlas->bandVScratch.Size;
+			atlas->bandVScratch.resize(NBX);
+			for (int b = old; b < NBX; b++) memset(&atlas->bandVScratch[b], 0, sizeof(ImVector<int>));
+		}
+		for (int b = 0; b < NBX; b++) atlas->bandVScratch[b].Size = 0;
+		ImVector<int>* hBand = atlas->bandHScratch.Data;
+		ImVector<int>* vBand = atlas->bandVScratch.Data;
 
 		for (int i = 0; i < nc; i++)
 		{
@@ -1529,8 +1628,7 @@
 		atlas->dirty = true;
 		*outEntry = e;
 
-		delete[] hBand;
-		delete[] vBand;
+		// hBand and vBand are atlas scratch — no delete needed
 		return true;
 	}
 
@@ -1667,7 +1765,10 @@
 		atlas->curveTexture  = NULL;
 		atlas->bandTexture   = NULL;
 		atlas->dirty         = true;
-		atlas->glyphMapCount = 0;
+		atlas->glyphMapCount   = 0;
+		atlas->vbibFrameCount  = -1;
+		atlas->shapeCacheCount = 0;
+		atlas->drawCacheCount  = 0;
 
 		int offset = stbtt_GetFontOffsetForIndex((unsigned char*)cfg->FontData, 0);
 		if (!stbtt_InitFont(&atlas->stbFont, (unsigned char*)cfg->FontData, offset))
@@ -1733,6 +1834,15 @@
 		atlas->dirty = false;
 	}
 
+	// Destroy GPU resources owned by a draw cache entry
+	static void SlugDrawCacheEntryDestroy(SlugFontCache::SlugDrawCacheEntry& e) {
+		for (int i = 0; i < e.drawCount; i++) {
+			if (e.draws[i].vb) ImPlatform_DestroyVertexBuffer(e.draws[i].vb);
+			if (e.draws[i].ib) ImPlatform_DestroyIndexBuffer(e.draws[i].ib);
+		}
+		e.drawCount = 0;
+	}
+
 	static void SlugDestroyAtlas(SlugFontCache* atlas)
 	{
 		if (atlas->curveTexture) ImPlatform_DestroyTexture(atlas->curveTexture);
@@ -1740,6 +1850,17 @@
 #if IM_SUPPORT_LIGATURE
 		if (atlas->shapeCtx)     kbts_DestroyShapeContext(atlas->shapeCtx);
 #endif
+		for (int i = 0; i < atlas->vbibRecycled.Size; i++) {
+			if (atlas->vbibRecycled[i].vb) ImPlatform_DestroyVertexBuffer(atlas->vbibRecycled[i].vb);
+			if (atlas->vbibRecycled[i].ib) ImPlatform_DestroyIndexBuffer(atlas->vbibRecycled[i].ib);
+		}
+		for (int i = 0; i < atlas->vbibInFlight.Size; i++) {
+			if (atlas->vbibInFlight[i].vb) ImPlatform_DestroyVertexBuffer(atlas->vbibInFlight[i].vb);
+			if (atlas->vbibInFlight[i].ib) ImPlatform_DestroyIndexBuffer(atlas->vbibInFlight[i].ib);
+		}
+		for (int i = 0; i < atlas->drawCacheTable.Size; i++)
+			if (atlas->drawCacheTable[i].key)
+				SlugDrawCacheEntryDestroy(atlas->drawCacheTable[i]);
 		IM_DELETE(atlas);
 	}
 
@@ -1763,40 +1884,6 @@
 	// DX11 additionally needs CreateVertexInputLayout (builds D3D11 input layout from VS bytecode).
 	// OpenGL/Metal/WGSL use layout(location=N) / pipeline descriptors set up in CreateVertexBuffer.
 
-	// Vertex format matching slug.hlsl VS_INPUT (80 bytes = 5 x float4)
-	// Matches the reference implementation layout exactly.
-	struct SlugVertex
-	{
-		float pos[4];  // xy = screen-space position (undilated), zw = outward vertex normal
-		float tex[4];  // xy = em UV (undilated), zw = packed glyph data (bit-cast uint)
-		float jac[4];  // inverse Jacobian: maps screen-space offset → em-space offset
-		               //   = (1/sz, 0, 0, -1/sz) for axis-aligned glyph at pixel size sz
-		float bnd[4];  // band transform: scaleX, scaleY, offsetX, offsetY
-		float col[4];  // RGBA vertex color as floats
-	};
-
-	// Extended vertex for SLUG_GRADIENT permutation (112 bytes = 7 x float4)
-	struct SlugGradientVertex
-	{
-		float pos[4];
-		float tex[4];
-		float jac[4];
-		float bnd[4];
-		float col[4];   // gradient color 0
-		float grd[4];   // gradient params: dirX, dirY, scale, bias
-		float col2[4];  // gradient color 1
-	};
-
-	// Data passed to the raw draw callback
-	struct SlugDrawCBData
-	{
-		ImPlatform_ShaderProgram program;
-		ImPlatform_VertexBuffer  vb;
-		ImPlatform_IndexBuffer   ib;
-		SlugFontCache*           atlas;   // read textures at draw time (latest after all uploads)
-		unsigned int             indexCount;
-	};
-
 	static void SlugRawDraw(const ImDrawList*, const ImDrawCmd* cmd)
 	{
 		SlugDrawCBData* d = (SlugDrawCBData*)cmd->UserCallbackData;
@@ -1804,8 +1891,6 @@
 		ImTextureID curveTex = d->atlas ? d->atlas->curveTexture : NULL;
 		ImTextureID bandTex  = d->atlas ? d->atlas->bandTexture  : NULL;
 		if (!d->program || !d->vb || !d->ib || !curveTex || !bandTex) {
-			if (d->vb) ImPlatform_DestroyVertexBuffer(d->vb);
-			if (d->ib) ImPlatform_DestroyIndexBuffer(d->ib);
 			IM_FREE(d);
 			return;
 		}
@@ -1814,10 +1899,8 @@
 		ImPlatform_SetShaderTexture(d->program, "curveTexture", 0, curveTex);
 		ImPlatform_SetShaderTexture(d->program, "bandTexture",  1, bandTex);
 		ImPlatform_DrawIndexed(0, d->indexCount, 0);
-
-		ImPlatform_DestroyVertexBuffer(d->vb);
-		ImPlatform_DestroyIndexBuffer(d->ib);
 		IM_FREE(d);
+		// VB/IB are pool-owned — returned to recycled pool by frame-cycling logic
 	}
 
 	// ---- Public API implementation ------------------------------------------
@@ -1930,6 +2013,119 @@
 		return CalcTextSize(font, font_size, text, text_end).x;
 	}
 
+	// ---- Shaping cache helpers (Change 4) -----------------------------------
+
+	static ImU64 SlugFNV64(const char* text, int len) {
+		ImU64 h = 14695981039346656037ULL;
+		for (int i = 0; i < len; i++)
+			h = (h ^ (ImU8)text[i]) * 1099511628211ULL;
+		return h ? h : 1ULL; // 0 is empty sentinel
+	}
+
+	static ImVector<SlugShapedGlyph>* SlugShapeCacheLookup(SlugFontCache* atlas, ImU64 key, int textLen) {
+		if (atlas->shapeCacheTable.empty()) return nullptr;
+		int mask = atlas->shapeCacheTable.Size - 1;
+		int slot = (int)(key & (unsigned)mask);
+		while (atlas->shapeCacheTable[slot].hash) {
+			auto& e = atlas->shapeCacheTable[slot];
+			if (e.hash == key && e.textLen == textLen)
+				return &e.glyphs;
+			slot = (slot + 1) & mask;
+		}
+		return nullptr;
+	}
+
+	static void SlugShapeCacheInsert(SlugFontCache* atlas, ImU64 key, int textLen, const ImVector<SlugShapedGlyph>& glyphs) {
+		// Grow table when >75% full (or empty)
+		if (atlas->shapeCacheCount * 4 >= atlas->shapeCacheTable.Size * 3) {
+			int newSize = atlas->shapeCacheTable.empty() ? 64 : atlas->shapeCacheTable.Size * 2;
+			ImVector<SlugFontCache::SlugShapeCacheEntry> newTable;
+			newTable.resize(newSize);
+			memset(newTable.Data, 0, newSize * sizeof(SlugFontCache::SlugShapeCacheEntry));
+			// Rehash existing entries (deep-copies inner ImVector via struct assignment)
+			for (int i = 0; i < atlas->shapeCacheTable.Size; i++) {
+				auto& e = atlas->shapeCacheTable[i];
+				if (!e.hash) continue;
+				int mask2 = newSize - 1;
+				int slot2 = (int)(e.hash & (unsigned)mask2);
+				while (newTable[slot2].hash) slot2 = (slot2 + 1) & mask2;
+				newTable[slot2] = e;
+			}
+			// Free old inner vectors before replacing (ImVector::operator= does raw memcpy, not element-wise destruct)
+			for (int i = 0; i < atlas->shapeCacheTable.Size; i++)
+				atlas->shapeCacheTable[i].glyphs.clear();
+			atlas->shapeCacheTable = newTable;
+		}
+		int mask = atlas->shapeCacheTable.Size - 1;
+		int slot = (int)(key & (unsigned)mask);
+		while (atlas->shapeCacheTable[slot].hash && atlas->shapeCacheTable[slot].hash != key)
+			slot = (slot + 1) & mask;
+		auto& e = atlas->shapeCacheTable[slot];
+		bool isNew = (e.hash == 0);
+		e.hash    = key;
+		e.textLen = textLen;
+		e.glyphs  = glyphs;
+		if (isNew) atlas->shapeCacheCount++;
+	}
+
+	// ---- Draw cache: skip vertex emission for static text ----
+	// Key = FNV64 of (text bytes, pos.x, pos.y, col, font_size)
+	static ImU64 SlugDrawCacheKey(const char* text, int textLen, ImVec2 pos, ImU32 col, float sz)
+	{
+		ImU64 h = SlugFNV64(text, textLen);
+		ImU32 bits;
+		memcpy(&bits, &pos.x, 4); h = (h ^ bits) * 0x100000001B3ull;
+		memcpy(&bits, &pos.y, 4); h = (h ^ bits) * 0x100000001B3ull;
+		h = (h ^ col) * 0x100000001B3ull;
+		memcpy(&bits, &sz, 4);    h = (h ^ bits) * 0x100000001B3ull;
+		return h ? h : 1; // 0 = empty sentinel
+	}
+
+	static SlugFontCache::SlugDrawCacheEntry* SlugDrawCacheLookup(SlugFontCache* atlas, ImU64 key)
+	{
+		if (atlas->drawCacheTable.empty()) return nullptr;
+		int mask = atlas->drawCacheTable.Size - 1;
+		int slot = (int)(key & (unsigned)mask);
+		while (atlas->drawCacheTable[slot].key) {
+			if (atlas->drawCacheTable[slot].key == key)
+				return &atlas->drawCacheTable[slot];
+			slot = (slot + 1) & mask;
+		}
+		return nullptr;
+	}
+
+	// Find or create a slot for the given key. Returns pointer to slot.
+	static SlugFontCache::SlugDrawCacheEntry* SlugDrawCacheSlot(SlugFontCache* atlas, ImU64 key)
+	{
+		// Grow when >75% full (entries are POD — safe to memcpy during rehash)
+		if (atlas->drawCacheCount * 4 >= atlas->drawCacheTable.Size * 3) {
+			int newSize = atlas->drawCacheTable.empty() ? 64 : atlas->drawCacheTable.Size * 2;
+			ImVector<SlugFontCache::SlugDrawCacheEntry> newTable;
+			newTable.resize(newSize);
+			memset(newTable.Data, 0, newSize * sizeof(SlugFontCache::SlugDrawCacheEntry));
+			for (int i = 0; i < atlas->drawCacheTable.Size; i++) {
+				auto& e = atlas->drawCacheTable[i];
+				if (!e.key) continue;
+				int mask2 = newSize - 1;
+				int slot2 = (int)(e.key & (unsigned)mask2);
+				while (newTable[slot2].key) slot2 = (slot2 + 1) & mask2;
+				newTable[slot2] = e; // POD copy — GPU handles transfer ownership
+			}
+			atlas->drawCacheTable = newTable;
+		}
+		int mask = atlas->drawCacheTable.Size - 1;
+		int slot = (int)(key & (unsigned)mask);
+		while (atlas->drawCacheTable[slot].key && atlas->drawCacheTable[slot].key != key)
+			slot = (slot + 1) & mask;
+		auto& e = atlas->drawCacheTable[slot];
+		if (e.key == 0) {
+			e.key = key;
+			e.drawCount = 0;
+			atlas->drawCacheCount++;
+		}
+		return &e;
+	}
+
 	static void DrawText_Impl(ImDrawList* pDrawList, ImFont* font, float font_size,
 	                          ImVec2 pos, ImU32 col, const char* text, const char* text_end = nullptr)
 	{
@@ -1953,6 +2149,15 @@
 		// Get or create the font atlas for this font
 		SlugFontCache* atlas = SlugGetOrCreateAtlas(state, font);
 		if (!atlas) return;
+
+		// Frame cycling: move last frame's in-flight pairs to recycled pool
+		int currentFrame = ImGui::GetFrameCount();
+		if (currentFrame != atlas->vbibFrameCount) {
+			for (int i = 0; i < atlas->vbibInFlight.Size; i++)
+				atlas->vbibRecycled.push_back(atlas->vbibInFlight[i]);
+			atlas->vbibInFlight.clear();
+			atlas->vbibFrameCount = currentFrame;
+		}
 
 		// Pre-build all glyphs and upload textures if anything is new
 		bool anyNew = false;
@@ -1990,31 +2195,41 @@
 		if (atlas->shapeCtx && atlas->shapeFont && !skipShaping)
 		{
 			int textLen = (int)(text_end - text);
-			kbts_ShapeBegin(atlas->shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
-			kbts_ShapeUtf8(atlas->shapeCtx, text, textLen, KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
-			kbts_ShapeEnd(atlas->shapeCtx);
+			ImU64 shapeKey = SlugFNV64(text, textLen);
+			ImVector<SlugShapedGlyph>* cached = SlugShapeCacheLookup(atlas, shapeKey, textLen);
+			if (cached) {
+				shapedGlyphs = *cached;
+			} else {
+				kbts_ShapeBegin(atlas->shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
+				kbts_ShapeUtf8(atlas->shapeCtx, text, textLen, KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
+				kbts_ShapeEnd(atlas->shapeCtx);
 
-			kbts_run run;
-			while (kbts_ShapeRun(atlas->shapeCtx, &run))
-			{
-				kbts_glyph* glyph;
-				while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph))
+				kbts_run run;
+				while (kbts_ShapeRun(atlas->shapeCtx, &run))
 				{
-					SlugShapedGlyph sg;
-					sg.glyphID  = (int)glyph->Id;
-					sg.advanceX = (float)glyph->AdvanceX * atlas->emScale;
-					sg.offsetX  = (float)glyph->OffsetX  * atlas->emScale;
-					sg.offsetY  = (float)glyph->OffsetY  * atlas->emScale;
-					shapedGlyphs.push_back(sg);
-
-					// Build glyph by ID if not already built (use high codepoint range to avoid collision)
-					ImWchar glyphKey = (ImWchar)(0x100000 + sg.glyphID);
-					if (!SlugFindGlyph(atlas, glyphKey))
+					kbts_glyph* glyph;
+					while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph))
 					{
-						SlugGlyphEntry e;
-						if (SlugBuildGlyphByIndex(atlas, sg.glyphID, glyphKey, &e))
-							anyNew = true;
+						SlugShapedGlyph sg;
+						sg.glyphID  = (int)glyph->Id;
+						sg.advanceX = (float)glyph->AdvanceX * atlas->emScale;
+						sg.offsetX  = (float)glyph->OffsetX  * atlas->emScale;
+						sg.offsetY  = (float)glyph->OffsetY  * atlas->emScale;
+						shapedGlyphs.push_back(sg);
 					}
+				}
+				SlugShapeCacheInsert(atlas, shapeKey, textLen, shapedGlyphs);
+			}
+
+			// Build any shaped glyph IDs not yet in atlas (no-op for already-built glyphs)
+			for (int sg_i = 0; sg_i < shapedGlyphs.Size; sg_i++)
+			{
+				ImWchar glyphKey = (ImWchar)(0x100000 + shapedGlyphs[sg_i].glyphID);
+				if (!SlugFindGlyph(atlas, glyphKey))
+				{
+					SlugGlyphEntry e;
+					if (SlugBuildGlyphByIndex(atlas, shapedGlyphs[sg_i].glyphID, glyphKey, &e))
+						anyNew = true;
 				}
 			}
 		}
@@ -2023,6 +2238,90 @@
 			SlugUploadTextures(atlas);
 		if (!atlas->curveTexture || !atlas->bandTexture) return;
 
+		const float sz    = font_size;        // pixels per em
+		const float invSz = 1.0f / sz;       // 1 screen pixel = invSz em units
+
+		// Vertex attribute layouts (needed by both draw cache hit path and normal path)
+		static const ImPlatform_VertexAttribute kSlugAttribs[] = {
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, pos), "POSITION" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, tex), "TEXCOORD" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, jac), "TEXCOORD" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, bnd), "TEXCOORD" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, col), "COLOR"    },
+		};
+		static const ImPlatform_VertexAttribute kGradAttribs[] = {
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, pos),  "POSITION" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, tex),  "TEXCOORD" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, jac),  "TEXCOORD" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, bnd),  "TEXCOORD" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, col),  "COLOR"    },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, grd),  "TEXCOORD" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, col2), "COLOR"    },
+		};
+
+		// Register draw callbacks from a draw cache entry (zero GPU upload — just bind existing VB/IB)
+		auto RegisterCachedDraws = [&](SlugFontCache::SlugDrawCacheEntry* dc) {
+			for (int di = 0; di < dc->drawCount; di++) {
+				auto& d = dc->draws[di];
+				if (!d.vb || !d.ib) continue;
+				SlugDrawCBData* cbd = (SlugDrawCBData*)IM_ALLOC(sizeof(SlugDrawCBData));
+				cbd->program    = d.program;
+				cbd->vb         = d.vb;
+				cbd->ib         = d.ib;
+				cbd->atlas      = atlas;
+				cbd->indexCount = d.indexCount;
+				ImPlatform_BeginCustomShader(pDrawList, d.program);
+				pDrawList->AddCallback(SlugRawDraw, cbd);
+				pDrawList->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
+				ImPlatform_EndCustomShader(pDrawList);
+			}
+		};
+
+		// Create a static VB/IB (cache-owned, not pooled) and return the info
+		auto CreateCacheVBIB = [&](
+			const void* vData, unsigned int nv, unsigned int vStride,
+			const void* iData, unsigned int ni,
+			const ImPlatform_VertexAttribute* attribs, unsigned int attribCount,
+			ImPlatform_ShaderProgram prog) -> SlugFontCache::SlugDrawCallInfo
+		{
+			SlugFontCache::SlugDrawCallInfo info = {};
+			if (nv == 0 || ni == 0) return info;
+
+			ImPlatform_VertexBufferDesc vbDesc = {};
+			vbDesc.vertex_count    = nv;
+			vbDesc.vertex_stride   = vStride;
+			vbDesc.attributes      = attribs;
+			vbDesc.attribute_count = attribCount;
+			ImPlatform_IndexBufferDesc ibDesc = {};
+			ibDesc.index_count = ni;
+			ibDesc.format      = ImPlatform_IndexFormat_UInt16;
+
+			info.vb         = ImPlatform_CreateVertexBuffer(vData, &vbDesc);
+			info.ib         = ImPlatform_CreateIndexBuffer(iData, &ibDesc);
+			info.program    = prog;
+			info.indexCount  = ni;
+
+			if (!info.vb || !info.ib) {
+				if (info.vb) ImPlatform_DestroyVertexBuffer(info.vb);
+				if (info.ib) ImPlatform_DestroyIndexBuffer(info.ib);
+				info = {};
+				return info;
+			}
+
+#if defined(IM_CURRENT_GFX) && (IM_CURRENT_GFX == IM_GFX_DIRECTX11)
+			ImPlatform_CreateVertexInputLayout(info.vb, prog);
+#endif
+			return info;
+		};
+
+		// ---- Draw cache: skip ALL work for identical (text + pos + col + size) ----
+		int textLen = (int)(text_end - text);
+		ImU64 drawKey = SlugDrawCacheKey(text, textLen, pos, col, sz);
+		SlugFontCache::SlugDrawCacheEntry* dcHit = SlugDrawCacheLookup(atlas, drawKey);
+		if (dcHit) {
+			RegisterCachedDraws(dcHit);
+			return;
+		}
 
 		// Count glyphs so we can allocate exactly
 		int glyphCount = 0;
@@ -2044,26 +2343,7 @@
 		}
 		if (glyphCount == 0) return;
 
-		const float sz    = font_size;        // pixels per em
-		const float invSz = 1.0f / sz;       // 1 screen pixel = invSz em units
-
 		float penX = pos.x;
-
-		// ---- Reference Slug implementation — single draw call ----
-		//
-		// All glyphs packed into one SlugVertex VB + uint16_t IB.
-		// Per-glyph data (band loc, band transform, normal, Jacobian) lives in the vertex stream.
-		// Dilation is performed in the vertex shader (SlugDilate) — no CPU pre-dilation.
-
-		// Vertex attribute layout for slug VS_INPUT (5 attributes, 80 bytes).
-		// Semantic names used by DX11; other backends use sequential location indices (0-4).
-		static const ImPlatform_VertexAttribute kSlugAttribs[] = {
-			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, pos), "POSITION" },
-			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, tex), "TEXCOORD" },
-			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, jac), "TEXCOORD" },
-			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, bnd), "TEXCOORD" },
-			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, col), "COLOR"    },
-		};
 
 		// Float color (ImU32 is 0xAABBGGRR)
 		auto U32toF4 = [](ImU32 c, float* r, float* g, float* b, float* a) {
@@ -2074,10 +2354,16 @@
 		};
 
 		// Three vertex/index buffers: monochrome, solid color layers, gradient color layers
-		ImVector<SlugVertex> vertsNorm,  vertsColor;
-		ImVector<ImU16>      idxsNorm,   idxsColor;
-		ImVector<SlugGradientVertex> vertsGrad;
-		ImVector<ImU16>              idxsGrad;
+		// Use persistent atlas scratch buffers (Change 8) to avoid per-call heap allocation
+		ImVector<SlugVertex>&         vertsNorm  = atlas->scratchVertsNorm;
+		ImVector<SlugVertex>&         vertsColor = atlas->scratchVertsColor;
+		ImVector<ImU16>&              idxsNorm   = atlas->scratchIdxsNorm;
+		ImVector<ImU16>&              idxsColor  = atlas->scratchIdxsColor;
+		ImVector<SlugGradientVertex>& vertsGrad  = atlas->scratchVertsGrad;
+		ImVector<ImU16>&              idxsGrad   = atlas->scratchIdxsGrad;
+		vertsNorm.clear();  vertsColor.clear();
+		idxsNorm.clear();   idxsColor.clear();
+		vertsGrad.clear();  idxsGrad.clear();
 		vertsNorm.reserve(glyphCount * 4);
 		idxsNorm.reserve(glyphCount * 6);
 
@@ -2220,97 +2506,34 @@
 
 		if (vertsNorm.empty() && vertsColor.empty() && vertsGrad.empty()) return;
 
-		// Helper: create GPU buffers, register draw callback, and destroy after draw
-		auto IssueDrawCall = [&](ImVector<SlugVertex>& vBuf, ImVector<ImU16>& iBuf,
-		                         ImPlatform_ShaderProgram prog)
-		{
-			if (vBuf.empty()) return;
+		// Create GPU VB/IBs, store in draw cache, and register callbacks
+		SlugFontCache::SlugDrawCacheEntry* dcSlot = SlugDrawCacheSlot(atlas, drawKey);
+		SlugDrawCacheEntryDestroy(*dcSlot); // destroy any previous VB/IBs for this slot
 
-			ImPlatform_VertexBufferDesc vbDesc = {};
-			vbDesc.vertex_count    = (unsigned int)vBuf.Size;
-			vbDesc.vertex_stride   = sizeof(SlugVertex);
-			vbDesc.usage           = ImPlatform_BufferUsage_Stream;
-			vbDesc.attributes      = kSlugAttribs;
-			vbDesc.attribute_count = 5;
-
-			ImPlatform_IndexBufferDesc ibDesc = {};
-			ibDesc.index_count = (unsigned int)iBuf.Size;
-			ibDesc.format      = ImPlatform_IndexFormat_UInt16;
-			ibDesc.usage       = ImPlatform_BufferUsage_Stream;
-
-			ImPlatform_VertexBuffer vb = ImPlatform_CreateVertexBuffer(vBuf.Data, &vbDesc);
-			ImPlatform_IndexBuffer  ib = ImPlatform_CreateIndexBuffer(iBuf.Data, &ibDesc);
-			if (!vb || !ib) { if (vb) ImPlatform_DestroyVertexBuffer(vb); if (ib) ImPlatform_DestroyIndexBuffer(ib); return; }
-
-#if defined(IM_CURRENT_GFX) && (IM_CURRENT_GFX == IM_GFX_DIRECTX11)
-			ImPlatform_CreateVertexInputLayout(vb, prog);
-#endif
-			SlugDrawCBData* cbd = (SlugDrawCBData*)IM_ALLOC(sizeof(SlugDrawCBData));
-			cbd->program      = prog;
-			cbd->vb           = vb;
-			cbd->ib           = ib;
-			cbd->atlas         = atlas;
-			cbd->indexCount   = (unsigned int)iBuf.Size;
-
-			ImPlatform_BeginCustomShader(pDrawList, prog);
-			pDrawList->AddCallback(SlugRawDraw, cbd);
-			pDrawList->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
-			ImPlatform_EndCustomShader(pDrawList);
-		};
-
+		int dc = 0;
 		if (g_SlugDebugShader && gs_pContext->slugDebugShader.program)
 		{
-			IssueDrawCall(vertsNorm,  idxsNorm,  gs_pContext->slugDebugShader.program);
-			IssueDrawCall(vertsColor, idxsColor, gs_pContext->slugDebugShader.program);
+			dcSlot->draws[dc] = CreateCacheVBIB(vertsNorm.Data, (unsigned)vertsNorm.Size, sizeof(SlugVertex), idxsNorm.Data, (unsigned)idxsNorm.Size, kSlugAttribs, 5, gs_pContext->slugDebugShader.program);
+			if (dcSlot->draws[dc].vb) dc++;
+			dcSlot->draws[dc] = CreateCacheVBIB(vertsColor.Data, (unsigned)vertsColor.Size, sizeof(SlugVertex), idxsColor.Data, (unsigned)idxsColor.Size, kSlugAttribs, 5, gs_pContext->slugDebugShader.program);
+			if (dcSlot->draws[dc].vb) dc++;
 		}
 		else
 		{
-			IssueDrawCall(vertsNorm,  idxsNorm,  gs_pContext->slugShader.program);
-			IssueDrawCall(vertsColor, idxsColor, gs_pContext->slugColorShader.program);
+			dcSlot->draws[dc] = CreateCacheVBIB(vertsNorm.Data, (unsigned)vertsNorm.Size, sizeof(SlugVertex), idxsNorm.Data, (unsigned)idxsNorm.Size, kSlugAttribs, 5, gs_pContext->slugShader.program);
+			if (dcSlot->draws[dc].vb) dc++;
+			dcSlot->draws[dc] = CreateCacheVBIB(vertsColor.Data, (unsigned)vertsColor.Size, sizeof(SlugVertex), idxsColor.Data, (unsigned)idxsColor.Size, kSlugAttribs, 5, gs_pContext->slugColorShader.program);
+			if (dcSlot->draws[dc].vb) dc++;
 		}
-
-		// Gradient layers — separate draw call with extended vertex format (7 × float4)
 		if (!vertsGrad.empty() && gs_pContext->slugGradientShader.program)
 		{
-			static const ImPlatform_VertexAttribute kGradAttribs[] = {
-				{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, pos),  "POSITION" },
-				{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, tex),  "TEXCOORD" },
-				{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, jac),  "TEXCOORD" },
-				{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, bnd),  "TEXCOORD" },
-				{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, col),  "COLOR"    },
-				{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, grd),  "TEXCOORD" },
-				{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, col2), "COLOR"    },
-			};
-			ImPlatform_VertexBufferDesc vbDesc = {};
-			vbDesc.vertex_count    = (unsigned int)vertsGrad.Size;
-			vbDesc.vertex_stride   = sizeof(SlugGradientVertex);
-			vbDesc.usage           = ImPlatform_BufferUsage_Stream;
-			vbDesc.attributes      = kGradAttribs;
-			vbDesc.attribute_count = 7;
-			ImPlatform_IndexBufferDesc ibDesc = {};
-			ibDesc.index_count = (unsigned int)idxsGrad.Size;
-			ibDesc.format      = ImPlatform_IndexFormat_UInt16;
-			ibDesc.usage       = ImPlatform_BufferUsage_Stream;
-			ImPlatform_VertexBuffer vb = ImPlatform_CreateVertexBuffer(vertsGrad.Data, &vbDesc);
-			ImPlatform_IndexBuffer  ib = ImPlatform_CreateIndexBuffer(idxsGrad.Data, &ibDesc);
-			if (vb && ib)
-			{
-#if defined(IM_CURRENT_GFX) && (IM_CURRENT_GFX == IM_GFX_DIRECTX11)
-				ImPlatform_CreateVertexInputLayout(vb, gs_pContext->slugGradientShader.program);
-#endif
-				SlugDrawCBData* cbd = (SlugDrawCBData*)IM_ALLOC(sizeof(SlugDrawCBData));
-				cbd->program      = gs_pContext->slugGradientShader.program;
-				cbd->vb           = vb;
-				cbd->ib           = ib;
-				cbd->atlas         = atlas;
-				cbd->indexCount   = (unsigned int)idxsGrad.Size;
-				ImPlatform_BeginCustomShader(pDrawList, gs_pContext->slugGradientShader.program);
-				pDrawList->AddCallback(SlugRawDraw, cbd);
-				pDrawList->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
-				ImPlatform_EndCustomShader(pDrawList);
-			}
-			else { if (vb) ImPlatform_DestroyVertexBuffer(vb); if (ib) ImPlatform_DestroyIndexBuffer(ib); }
+			dcSlot->draws[dc] = CreateCacheVBIB(vertsGrad.Data, (unsigned)vertsGrad.Size, sizeof(SlugGradientVertex), idxsGrad.Data, (unsigned)idxsGrad.Size, kGradAttribs, 7, gs_pContext->slugGradientShader.program);
+			if (dcSlot->draws[dc].vb) dc++;
 		}
+		dcSlot->drawCount = dc;
+
+		// Register draw callbacks using the newly cached VB/IBs
+		RegisterCachedDraws(dcSlot);
 
 #else
 		// Fallback: use ImGui's built-in text rendering
