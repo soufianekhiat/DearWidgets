@@ -1462,11 +1462,36 @@ namespace ImWidgets {
 	}
 	static float CanvasSize() { return ImMin( ImGui::GetContentRegionAvail().x, 400.0f ); }
 
+	// Scroll culling: skip section content when entirely off-screen.
+	// cached_h stores previous frame height (0 = first frame, always render to measure).
+	// Returns true if the section should render its content.
+	static bool BeginCullSection( float& cached_h, float& out_start_y )
+	{
+		out_start_y = ImGui::GetCursorScreenPos().y;
+		if ( cached_h > 0.0f )
+		{
+			ImVec4 cr = ImGui::GetWindowDrawList()->_CmdHeader.ClipRect;
+			if ( out_start_y + cached_h < cr.y || out_start_y > cr.w )
+			{
+				ImGui::Dummy( ImVec2( 0, cached_h ) );
+				return false;
+			}
+		}
+		return true;
+	}
+	static void EndCullSection( float& cached_h, float start_y )
+	{
+		float end_y = ImGui::GetCursorScreenPos().y;
+		if ( end_y > start_y ) cached_h = end_y - start_y;
+	}
+
 	void ShowDrawShapeDemo()
 	{
 		ApplyOpenAll();
 		if ( ImGui::CollapsingHeader( "Draw Shape" ) )
 		{
+		static float s_cull_h = 0; float s_cull_y;
+		if ( BeginCullSection( s_cull_h, s_cull_y ) ) {
 
 		float const size = CanvasSize();
 		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
@@ -1504,6 +1529,7 @@ namespace ImWidgets {
 		ImGui::SliderInt( "tri_idx", &debug_state.tri_idx, -1, shape.triangles.size() - 1 );
 		ImGui::Text( "Tri: %d", shape.triangles.size() );
 		ImGui::Text( "Vtx: %d", shape.vertices.size() );
+		EndCullSection( s_cull_h, s_cull_y ); }
 		}  // end CollapsingHeader "Draw Shape"
 	}
 
@@ -1512,6 +1538,8 @@ namespace ImWidgets {
 		ApplyOpenAll();
 		if ( !ImGui::CollapsingHeader( "GPU Text (Slug)" ) )
 			return;
+		static float s_cull_h = 0; float s_cull_y;
+		if ( !BeginCullSection( s_cull_h, s_cull_y ) ) return;
 
 		if ( !g_cinzelFont && !g_alfaSlabFont && !g_dottedFont && !g_flowmeryFont &&
 		     !g_franticallyFont && !g_loveLightFont && !g_magnoliaFont &&
@@ -1983,6 +2011,7 @@ namespace ImWidgets {
 			}
 		}
 		DW_SsRecord( "Typography_Fills", _sy0, ImGui::GetCursorPos().y ); }
+		EndCullSection( s_cull_h, s_cull_y );
 	}
 
 	void ShowTypographyAnimations()
@@ -2036,6 +2065,8 @@ namespace ImWidgets {
 
 		if ( !ImGui::CollapsingHeader( "Typography Animations" ) )
 			return;
+		static float s_cull_h = 0; float s_cull_y;
+		if ( !BeginCullSection( s_cull_h, s_cull_y ) ) return;
 
 		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 		float t = (float)ImGui::GetTime();
@@ -2176,6 +2207,7 @@ namespace ImWidgets {
 			}
 			ImGui::Dummy( ImVec2( c.textSize.x, c.textSize.y + gap ) );
 		}
+		EndCullSection( s_cull_h, s_cull_y );
 	}
 
 	void ShowLaTeXDemo()
@@ -2183,6 +2215,8 @@ namespace ImWidgets {
 		ApplyOpenAll();
 		if ( !ImGui::CollapsingHeader( "LaTeX Math" ) )
 			return;
+		static float s_cull_h = 0; float s_cull_y;
+		if ( !BeginCullSection( s_cull_h, s_cull_y ) ) return;
 
 		// User-editable expression
 		static char latex_buf[1024] = "L_o(x, \\omega_o) = L_e(x, \\omega_o) + \\int_{\\Omega} f_r(x, \\omega_i, \\omega_o) L_i(x, \\omega_i) \\langle \\omega_i \\cdot n \\rangle_+ d\\omega_i";
@@ -2299,6 +2333,7 @@ namespace ImWidgets {
 				ImWidgets::DrawLaTeXDebug( pDrawList, latex_size, ImVec2( pos.x, pos.y + pad * 0.5f ), e.latex );
 			ImGui::Dummy( ImVec2( sz.x + pad * 2, sz.y + pad + gap ) );
 		}
+		EndCullSection( s_cull_h, s_cull_y );
 	}
 
 	void ShowCustomShaderDemo()
@@ -2461,6 +2496,9 @@ namespace ImWidgets {
 		float          pen_y  = origin.y;
 		float          total_h = 0.0f;
 
+		// Clip rect for early line/word culling
+		ImVec4 cr = dl->_CmdHeader.ClipRect;
+
 		// Measure a single space width for inter-word gap
 		float space_w = ImWidgets::CalcTextSize( font, font_size, " " ).x;
 
@@ -2469,10 +2507,21 @@ namespace ImWidgets {
 		const char* line_start = p;   // first char of current assembled line
 		const char* line_end   = p;   // one-past-last char of last word that fit
 		float       line_w     = 0.0f;
+		bool        past_bottom = false; // true once pen_y is past clip rect bottom
 
 		auto flush_line = [&]( const char* end, float w )
 		{
 			if ( line_start >= end ) return;
+			// Skip all work for lines fully above/below visible area
+			float lineTop = pen_y;
+			float lineBot = pen_y + line_h;
+			if ( lineBot < cr.y || lineTop > cr.w )
+			{
+				pen_y   += line_h;
+				total_h += line_h;
+				if ( lineTop > cr.w ) past_bottom = true;
+				return;
+			}
 			// Strip trailing space/newline so it doesn't skew right-alignment offset.
 			const char* draw_end = end;
 			while ( draw_end > line_start && ( *(draw_end - 1) == ' ' || *(draw_end - 1) == '\n' ) )
@@ -2486,7 +2535,7 @@ namespace ImWidgets {
 			total_h += line_h;
 		};
 
-		while ( *p )
+		while ( *p && !past_bottom )
 		{
 			if ( *p == '\n' )
 			{
@@ -2523,8 +2572,16 @@ namespace ImWidgets {
 		}
 
 		// Flush last line
-		if ( line_start < line_end )
+		if ( line_start < line_end && !past_bottom )
 			flush_line( line_end, line_w );
+
+		// If we early-exited, still account for remaining height
+		if ( past_bottom )
+		{
+			// Count remaining newlines to estimate total height
+			while ( *p ) { if ( *p == '\n' ) total_h += line_h; ++p; }
+			total_h += line_h; // last line
+		}
 
 		if ( total_h < line_h ) total_h = line_h;
 		ImGui::Dummy( ImVec2( wrap_width, total_h ) );
@@ -3265,6 +3322,8 @@ namespace ImWidgets {
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Custom Shader" ) )
 			{
+				static float s_cull_cshader_h = 0; float s_cull_cshader_y;
+				if ( BeginCullSection( s_cull_cshader_h, s_cull_cshader_y ) ) {
 				ImGui::Indent();
 				ShowCustomShaderDemo();
 				ApplyOpenAll();
@@ -3310,12 +3369,15 @@ namespace ImWidgets {
 				ImGui::TreePop();
 				}
 				ImGui::Unindent();
+				EndCullSection( s_cull_cshader_h, s_cull_cshader_y ); }
 			}
 			DW_SsRecord( "Custom_Shader", _sy0, ImGui::GetCursorPos().y ); }  // end Custom Shader block
 #endif
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Gradients##Draw" ) )
 			{
+			static float s_cull_gradients_h = 0; float s_cull_gradients_y;
+			if ( BeginCullSection( s_cull_gradients_h, s_cull_gradients_y ) ) {
 			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Linear Gradient" ) )
@@ -3606,11 +3668,14 @@ namespace ImWidgets {
 				ImGui::Text( "Vtx: %d", shape.vertices.size() );
 			}
 			DW_SsRecord( "Image_Shape_Gradient", _sy0, ImGui::GetCursorPos().y ); }
+			EndCullSection( s_cull_gradients_h, s_cull_gradients_y ); }
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Pointers##Draw" ) )
 			{
+			static float s_cull_pointers_h = 0; float s_cull_pointers_y;
+			if ( BeginCullSection( s_cull_pointers_h, s_cull_pointers_y ) ) {
 			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Triangles Pointers" ) )
@@ -3700,11 +3765,14 @@ namespace ImWidgets {
 				pDrawList->AddCircleFilled( ImVec2( curPos.x + 11.0f * dx, curPos.y + fPointerLine ), 4.0f * S, IM_COL32( 255, 128, 0, 255 ), 16 );
 			}
 			DW_SsRecord( "Signet_Pointer", _sy0, ImGui::GetCursorPos().y ); }
+			EndCullSection( s_cull_pointers_h, s_cull_pointers_y ); }
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Color##Draw" ) )
 			{
+			static float s_cull_color_h = 0; float s_cull_color_y;
+			if ( BeginCullSection( s_cull_color_h, s_cull_color_y ) ) {
 			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Color Bands" ) )
@@ -3897,11 +3965,14 @@ namespace ImWidgets {
 				ImGui::Dummy( ImVec2( width, width ) );
 			}
 			DW_SsRecord( "Color2D", _sy0, ImGui::GetCursorPos().y ); }
+			EndCullSection( s_cull_color_h, s_cull_color_y ); }
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Masked Shapes##Draw" ) )
 			{
+			static float s_cull_masked_h = 0; float s_cull_masked_y;
+			if ( BeginCullSection( s_cull_masked_h, s_cull_masked_y ) ) {
 			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Image Convex Shape" ) )
@@ -4021,11 +4092,14 @@ namespace ImWidgets {
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
 			DW_SsRecord( "Image_Shape_With_Hole", _sy0, ImGui::GetCursorPos().y ); }
+			EndCullSection( s_cull_masked_h, s_cull_masked_y ); }
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Chromaticity##Draw" ) )
 			{
+			static float s_cull_chroma_h = 0; float s_cull_chroma_y;
+			if ( BeginCullSection( s_cull_chroma_h, s_cull_chroma_y ) ) {
 			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Chromaticity Plot" ) )
@@ -4184,11 +4258,14 @@ namespace ImWidgets {
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
 			DW_SsRecord( "Chromaticity_Line_Point", _sy0, ImGui::GetCursorPos().y ); }
+			EndCullSection( s_cull_chroma_h, s_cull_chroma_y ); }
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Graduation##Draw" ) )
 			{
+			static float s_cull_grad_h = 0; float s_cull_grad_y;
+			if ( BeginCullSection( s_cull_grad_h, s_cull_grad_y ) ) {
 			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Linear Line Graduation" ) )
@@ -4415,12 +4492,15 @@ namespace ImWidgets {
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
 			DW_SsRecord( "Log_Circular_Graduation", _sy0, ImGui::GetCursorPos().y ); }
+			EndCullSection( s_cull_grad_h, s_cull_grad_y ); }
 				ImGui::TreePop();
 			}
 		}
 		ApplyOpenAll();
 		if ( ImGui::CollapsingHeader( "Interactions" ) )
 		{
+			static float s_cull_interact_h = 0; float s_cull_interact_y;
+			if ( BeginCullSection( s_cull_interact_h, s_cull_interact_y ) ) {
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Polygon Hit Testing##Interactions" ) )
 			{
@@ -4554,10 +4634,13 @@ namespace ImWidgets {
 			DW_SsRecord( "Poly_With_Hole_Hovered", _sy0, ImGui::GetCursorPos().y ); }
 				ImGui::TreePop();
 			}
+			EndCullSection( s_cull_interact_h, s_cull_interact_y ); }
 		}
 		ApplyOpenAll();
 		if ( ImGui::CollapsingHeader( "Widgets" ) )
 		{
+			static float s_cull_widgets_h = 0; float s_cull_widgets_y;
+			if ( BeginCullSection( s_cull_widgets_h, s_cull_widgets_y ) ) {
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Buttons##Widgets" ) )
 			{
@@ -7060,6 +7143,7 @@ namespace ImWidgets {
 				ImGui::TreePop();
 			}
 			DW_SsRecord( "Misc", _sy0, ImGui::GetCursorPos().y ); }  // end Misc block
+			EndCullSection( s_cull_widgets_h, s_cull_widgets_y ); }
 		}
 
 		s_open_all = 0;

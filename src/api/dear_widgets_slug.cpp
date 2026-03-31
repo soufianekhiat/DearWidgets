@@ -144,6 +144,11 @@
 		ImPlatform_IndexBuffer   ib;
 		SlugFontCache*           atlas;   // read textures at draw time (latest after all uploads)
 		unsigned int             indexCount;
+		// Debug overlay: screen-space bounding box + quad list for Metrics viewer
+		ImVec2                   debugBBMin;
+		ImVec2                   debugBBMax;
+		ImVec2*                  debugQuads;   // 4 ImVec2 per quad (TL,TR,BR,BL), heap-allocated
+		int                      debugQuadCount;
 	};
 
 	// Pooled vertex/index buffer pair for reuse across frames
@@ -238,6 +243,10 @@
 			ImU64 key;              // 0 = empty slot
 			int drawCount;          // number of valid entries in draws[] (0-3)
 			SlugDrawCallInfo draws[3];
+			// Debug: screen-space bounding box and quad list for Metrics viewer overlay
+			ImVec2 debugBBMin, debugBBMax;
+			ImVec2* debugQuads;     // 4 ImVec2 per quad (TL,TR,BR,BL), heap-allocated
+			int debugQuadCount;
 		};
 		ImVector<SlugDrawCacheEntry> drawCacheTable;  // open-addressed, power-of-2
 		int drawCacheCount;
@@ -1840,6 +1849,8 @@
 			if (e.draws[i].vb) ImPlatform_DestroyVertexBuffer(e.draws[i].vb);
 			if (e.draws[i].ib) ImPlatform_DestroyIndexBuffer(e.draws[i].ib);
 		}
+		if (e.debugQuads) { IM_FREE(e.debugQuads); e.debugQuads = nullptr; }
+		e.debugQuadCount = 0;
 		e.drawCount = 0;
 	}
 
@@ -1884,6 +1895,47 @@
 	// DX11 additionally needs CreateVertexInputLayout (builds D3D11 input layout from VS bytecode).
 	// OpenGL/Metal/WGSL use layout(location=N) / pipeline descriptors set up in CreateVertexBuffer.
 
+	static void SlugRawDraw(const ImDrawList*, const ImDrawCmd* cmd); // forward decl for debug callback
+
+	// Debug callback for ImGui Metrics viewer — shows slug draw command info + mesh overlay.
+	// Returns empty out_text for callbacks that aren't SlugRawDraw (imgui.cpp falls back to default display).
+	static void SlugDebugDrawCmdCallback(ImDrawList* overlay, const ImDrawList* /*draw_list*/,
+	                                     const ImDrawCmd* cmd, bool show_mesh, bool show_aabb,
+	                                     char* out_text, int text_size)
+	{
+		// Only handle our own callbacks; leave others for default display
+		if (cmd->UserCallback != SlugRawDraw) {
+			if (out_text && text_size > 0) out_text[0] = 0;
+			return;
+		}
+		SlugDrawCBData* d = (SlugDrawCBData*)cmd->UserCallbackData;
+		if (!d) {
+			if (out_text) ImFormatString(out_text, text_size, "Slug: (null data)");
+			return;
+		}
+		// Fill descriptive text
+		if (out_text)
+			ImFormatString(out_text, text_size, "Slug: %d tris, BB (%.0f,%.0f)-(%.0f,%.0f)",
+			               d->indexCount / 3, d->debugBBMin.x, d->debugBBMin.y, d->debugBBMax.x, d->debugBBMax.y);
+		// Draw overlay
+		if (overlay)
+		{
+			ImDrawListFlags backup = overlay->Flags;
+			overlay->Flags &= ~ImDrawListFlags_AntiAliasedLines;
+			if (show_aabb)
+				overlay->AddRect(d->debugBBMin, d->debugBBMax, IM_COL32(255, 255, 0, 255));
+			if (show_mesh && d->debugQuads)
+			{
+				for (int i = 0; i < d->debugQuadCount; i++)
+				{
+					const ImVec2* q = d->debugQuads + i * 4; // TL, TR, BR, BL
+					overlay->AddPolyline(q, 4, IM_COL32(255, 255, 0, 255), ImDrawFlags_Closed, 1.0f);
+				}
+			}
+			overlay->Flags = backup;
+		}
+	}
+
 	static void SlugRawDraw(const ImDrawList*, const ImDrawCmd* cmd)
 	{
 		SlugDrawCBData* d = (SlugDrawCBData*)cmd->UserCallbackData;
@@ -1899,6 +1951,7 @@
 		ImPlatform_SetShaderTexture(d->program, "curveTexture", 0, curveTex);
 		ImPlatform_SetShaderTexture(d->program, "bandTexture",  1, bandTex);
 		ImPlatform_DrawIndexed(0, d->indexCount, 0);
+		if (d->debugQuads) IM_FREE(d->debugQuads);
 		IM_FREE(d);
 		// VB/IB are pool-owned — returned to recycled pool by frame-cycling logic
 	}
@@ -2141,6 +2194,16 @@
 		// Shaders must be compiled at startup via ImWidgetsFeatures_RichFont + CreateContext()
 		if (!gs_pContext->slugShader.program) return;
 
+		// Early clip-rect culling: skip all work if text is outside the visible area.
+		// Conservative bounds: ascenders up to 1 em above baseline, descenders 0.5 em below.
+		{
+			ImVec4 cr = pDrawList->_CmdHeader.ClipRect;
+			float textTop = pos.y - font_size;
+			float textBot = pos.y + font_size * 0.5f;
+			if (textTop > cr.w || textBot < cr.y || pos.x > cr.z)
+				return;
+		}
+
 		if (!gs_pContext->slugState)
 			gs_pContext->slugState = IM_NEW(ImWidgetsSlugState);
 
@@ -2270,9 +2333,17 @@
 				cbd->ib         = d.ib;
 				cbd->atlas      = atlas;
 				cbd->indexCount = d.indexCount;
+				cbd->debugBBMin = dc->debugBBMin;
+				cbd->debugBBMax = dc->debugBBMax;
+				cbd->debugQuadCount = dc->debugQuadCount;
+				cbd->debugQuads = nullptr;
+				if (dc->debugQuads && dc->debugQuadCount > 0) {
+					size_t sz_bytes = (size_t)dc->debugQuadCount * 4 * sizeof(ImVec2);
+					cbd->debugQuads = (ImVec2*)IM_ALLOC(sz_bytes);
+					memcpy(cbd->debugQuads, dc->debugQuads, sz_bytes);
+				}
 				ImPlatform_BeginCustomShader(pDrawList, d.program);
 				pDrawList->AddCallback(SlugRawDraw, cbd);
-				pDrawList->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
 				ImPlatform_EndCustomShader(pDrawList);
 			}
 		};
@@ -2367,6 +2438,22 @@
 		vertsNorm.reserve(glyphCount * 4);
 		idxsNorm.reserve(glyphCount * 6);
 
+		// Debug: collect screen-space quad corners for Metrics overlay
+		ImVec2 dbgBBMin(FLT_MAX, FLT_MAX), dbgBBMax(-FLT_MAX, -FLT_MAX);
+		ImVector<ImVec2> dbgQuads;
+		dbgQuads.reserve(glyphCount * 4);
+
+		auto DbgRecordQuad = [&](float sL, float sT, float sR, float sB) {
+			if (sL < dbgBBMin.x) dbgBBMin.x = sL;
+			if (sT < dbgBBMin.y) dbgBBMin.y = sT;
+			if (sR > dbgBBMax.x) dbgBBMax.x = sR;
+			if (sB > dbgBBMax.y) dbgBBMax.y = sB;
+			dbgQuads.push_back(ImVec2(sL, sT));
+			dbgQuads.push_back(ImVec2(sR, sT));
+			dbgQuads.push_back(ImVec2(sR, sB));
+			dbgQuads.push_back(ImVec2(sL, sB));
+		};
+
 		// Helper: emit one quad into a vertex/index buffer for a given glyph entry + color
 		auto EmitQuad = [&](ImVector<SlugVertex>& vBuf, ImVector<ImU16>& iBuf,
 		                    const SlugGlyphEntry* ge, float penX_, float posY_, ImU32 quadCol)
@@ -2375,6 +2462,7 @@
 			float sR = penX_ + ge->maxXEm * sz;
 			float sT = posY_ - ge->maxYEm * sz;
 			float sB = posY_ - ge->minYEm * sz;
+			DbgRecordQuad(sL, sT, sR, sB);
 			float uL = ge->minXEm, uR = ge->maxXEm;
 			float uT = ge->maxYEm, uB = ge->minYEm;
 
@@ -2412,6 +2500,7 @@
 		{
 			float sL = penX_ + ge->minXEm * sz, sR = penX_ + ge->maxXEm * sz;
 			float sT = posY_ - ge->maxYEm * sz, sB = posY_ - ge->minYEm * sz;
+			DbgRecordQuad(sL, sT, sR, sB);
 			float uL = ge->minXEm, uR = ge->maxXEm, uT = ge->maxYEm, uB = ge->minYEm;
 
 			unsigned int gz = (unsigned int)(ImU16)ge->bandTexX | ((unsigned int)(ImU16)ge->bandTexY << 16);
@@ -2532,6 +2621,18 @@
 		}
 		dcSlot->drawCount = dc;
 
+		// Store debug overlay data in cache entry
+		dcSlot->debugBBMin = dbgBBMin;
+		dcSlot->debugBBMax = dbgBBMax;
+		dcSlot->debugQuadCount = dbgQuads.Size / 4;
+		if (dbgQuads.Size > 0) {
+			size_t sz_bytes = (size_t)dbgQuads.Size * sizeof(ImVec2);
+			dcSlot->debugQuads = (ImVec2*)IM_ALLOC(sz_bytes);
+			memcpy(dcSlot->debugQuads, dbgQuads.Data, sz_bytes);
+		} else {
+			dcSlot->debugQuads = nullptr;
+		}
+
 		// Register draw callbacks using the newly cached VB/IBs
 		RegisterCachedDraws(dcSlot);
 
@@ -2583,6 +2684,15 @@
 		if (!state) state = gs_pContext->slugState = IM_NEW(ImWidgetsSlugState);
 
 		if (!gs_pContext->slugShader.program) return;
+
+		// Early clip-rect culling
+		{
+			ImVec4 cr = pDrawList->_CmdHeader.ClipRect;
+			float textTop = pos.y - font_size;
+			float textBot = pos.y + font_size * 0.5f;
+			if (textTop > cr.w || textBot < cr.y || pos.x > cr.z)
+				return;
+		}
 
 		SlugFontCache* atlas = SlugGetOrCreateAtlas(state, font);
 		if (!atlas) return;
@@ -2742,7 +2852,6 @@
 			cbd->indexCount   = (unsigned int)iBuf.Size;
 			ImPlatform_BeginCustomShader(pDrawList, prog);
 			pDrawList->AddCallback(SlugRawDraw, cbd);
-			pDrawList->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
 			ImPlatform_EndCustomShader(pDrawList);
 		};
 
@@ -4802,6 +4911,7 @@
 	                   ImU32 tint, ImVec2 uv_offset, ImVec2 uv_scale, float tess_tol, int iterations)
 	{
 		font_size = SlugLpToPx(font_size);
+		{ ImVec4 cr = pDrawList->_CmdHeader.ClipRect; float tT = pos.y - font_size, tB = pos.y + font_size * 0.5f; if (tT > cr.w || tB < cr.y || pos.x > cr.z) return; }
 		ImWidgetsShape shape;
 		TesselateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
 		if (shape.triangles.Size == 0) return;
@@ -4820,6 +4930,7 @@
 	                            pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space, const char* text_end, float tess_tol, int iterations)
 	{
 		font_size = SlugLpToPx(font_size);
+		{ ImVec4 cr = pDrawList->_CmdHeader.ClipRect; float tT = pos.y - font_size, tB = pos.y + font_size * 0.5f; if (tT > cr.w || tB < cr.y || pos.x > cr.z) return; }
 		ImWidgetsShape shape;
 		TesselateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
 		if (shape.triangles.Size == 0) return;
@@ -4833,6 +4944,7 @@
 	                            pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space, const char* text_end, float tess_tol, int iterations)
 	{
 		font_size = SlugLpToPx(font_size);
+		{ ImVec4 cr = pDrawList->_CmdHeader.ClipRect; float tT = pos.y - font_size, tB = pos.y + font_size * 0.5f; if (tT > cr.w || tB < cr.y || pos.x > cr.z) return; }
 		ImWidgetsShape shape;
 		TesselateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
 		if (shape.triangles.Size == 0) return;
@@ -4846,6 +4958,7 @@
 	                             pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space, const char* text_end, float tess_tol, int iterations)
 	{
 		font_size = SlugLpToPx(font_size);
+		{ ImVec4 cr = pDrawList->_CmdHeader.ClipRect; float tT = pos.y - font_size, tB = pos.y + font_size * 0.5f; if (tT > cr.w || tB < cr.y || pos.x > cr.z) return; }
 		ImWidgetsShape shape;
 		TesselateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
 		if (shape.triangles.Size == 0) return;
