@@ -504,39 +504,52 @@ float SlugRender_0(vec2 renderCoord_0, vec4 banding_0, ivec4 glyphData_0)
 }
 
 
-#line 408
+#line 10319 1
 layout(location = 0)
 out vec4 entryPointParam_main_ps_0;
 
 
-#line 408
+#line 10319
 layout(location = 0)
-in vec4 input_color_0;
-
-
-#line 408
-layout(location = 1)
 in vec2 input_texcoord_0;
 
 
-#line 408
-flat layout(location = 2)
+#line 10319
+flat layout(location = 1)
 in vec4 input_banding_0;
 
 
-#line 408
-flat layout(location = 3)
+#line 10319
+flat layout(location = 2)
 in ivec4 input_glyph_0;
 
 
-#line 422
+#line 10319
+flat layout(location = 3)
+in vec4 input_gradColor0_0;
+
+
+#line 10319
+flat layout(location = 4)
+in vec4 input_gradColor1_0;
+
+
+#line 10319
+flat layout(location = 5)
+in vec4 input_gradParams_0;
+
+
+#line 422 0
 void main()
 {
 
-#line 422
-    entryPointParam_main_ps_0 = input_color_0 * SlugRender_0(input_texcoord_0, input_banding_0, input_glyph_0);
+#line 431
+    vec4 gradColor_0 = mix(input_gradColor0_0, input_gradColor1_0, vec4(saturate_0(dot(input_texcoord_0, input_gradParams_0.xy) * input_gradParams_0.z + input_gradParams_0.w)));
 
-#line 422
+#line 431
+    entryPointParam_main_ps_0 = vec4(gradColor_0.xyz, gradColor_0.w * SlugRender_0(input_texcoord_0, input_banding_0, input_glyph_0));
+
+#line 431
     return;
 }
 

@@ -3,69 +3,85 @@
 #include <metal_texture>
 using namespace metal;
 
-#line 87 "hlsl_src/slug.hlsl"
+#line 1500 "diff.meta.slang"
+struct _MatrixStorage_float4x4_ColMajornatural_0
+{
+    array<float4, int(4)> data_0;
+};
+
+
+#line 1500
+matrix<float,int(4),int(4)>  unpackStorage_0(_MatrixStorage_float4x4_ColMajornatural_0 _S1)
+{
+
+#line 1500
+    return matrix<float,int(4),int(4)> (_S1.data_0[int(0)][int(0)], _S1.data_0[int(1)][int(0)], _S1.data_0[int(2)][int(0)], _S1.data_0[int(3)][int(0)], _S1.data_0[int(0)][int(1)], _S1.data_0[int(1)][int(1)], _S1.data_0[int(2)][int(1)], _S1.data_0[int(3)][int(1)], _S1.data_0[int(0)][int(2)], _S1.data_0[int(1)][int(2)], _S1.data_0[int(2)][int(2)], _S1.data_0[int(3)][int(2)], _S1.data_0[int(0)][int(3)], _S1.data_0[int(1)][int(3)], _S1.data_0[int(2)][int(3)], _S1.data_0[int(3)][int(3)]);
+}
+
+
+#line 220 "C:/git/DearWidgets/workingdir/shaders/hlsl_src/slug.hlsl"
 float2 SlugDilate_0(float4 pos_0, float4 tex_0, float4 jac_0, float4 m0_0, float4 m1_0, float4 m3_0, float2 dim_0, float2 thread* vpos_0)
 {
-    float2 _S1 = pos_0.zw;
+    float2 _S2 = pos_0.zw;
 
-#line 89
-    float2 n_0 = normalize(_S1);
-    float2 _S2 = m3_0.xy;
+#line 222
+    float2 n_0 = normalize(_S2);
+    float2 _S3 = m3_0.xy;
 
-#line 90
-    float2 _S3 = pos_0.xy;
+#line 223
+    float2 _S4 = pos_0.xy;
 
-#line 90
-    float s_0 = dot(_S2, _S3) + m3_0.w;
-    float t_0 = dot(_S2, n_0);
+#line 223
+    float s_0 = dot(_S3, _S4) + m3_0.w;
+    float t_0 = dot(_S3, n_0);
 
-    float2 _S4 = m0_0.xy;
+    float2 _S5 = m0_0.xy;
 
-#line 93
-    float u_0 = (s_0 * dot(_S4, n_0) - t_0 * (dot(_S4, _S3) + m0_0.w)) * dim_0.x;
-    float2 _S5 = m1_0.xy;
+#line 226
+    float u_0 = (s_0 * dot(_S5, n_0) - t_0 * (dot(_S5, _S4) + m0_0.w)) * dim_0.x;
+    float2 _S6 = m1_0.xy;
 
-#line 94
-    float v_0 = (s_0 * dot(_S5, n_0) - t_0 * (dot(_S5, _S3) + m1_0.w)) * dim_0.y;
+#line 227
+    float v_0 = (s_0 * dot(_S6, n_0) - t_0 * (dot(_S6, _S4) + m1_0.w)) * dim_0.y;
 
 
     float st_0 = s_0 * t_0;
     float uv_0 = u_0 * u_0 + v_0 * v_0;
-    float2 d_0 = _S1 * float2((s_0 * s_0 * (st_0 + sqrt(uv_0)) / (uv_0 - st_0 * st_0))) ;
+    float2 d_0 = _S2 * float2((s_0 * s_0 * (st_0 + sqrt(uv_0)) / (uv_0 - st_0 * st_0))) ;
 
-    *vpos_0 = _S3 + d_0;
+    *vpos_0 = _S4 + d_0;
     return float2(tex_0.x + dot(d_0, jac_0.xy), tex_0.y + dot(d_0, jac_0.zw));
 }
 
 
-#line 69
+#line 212
 void SlugUnpack_0(float4 tex_1, float4 bnd_0, float4 thread* vbnd_0, int4 thread* vgly_0)
 {
     uint2 g_0 = (as_type<uint2>((tex_1.zw)));
-    uint _S6 = g_0.x;
+    uint _S7 = g_0.x;
 
-#line 72
-    uint _S7 = g_0.y;
+#line 215
+    uint _S8 = g_0.y;
 
-#line 72
-    *vgly_0 = int4(int(_S6 & 65535U), int(_S6 >> 16U), int(_S7 & 65535U), int(_S7 >> 16U));
+#line 215
+    *vgly_0 = int4(int(_S7 & 65535U), int(_S7 >> 16U), int(_S8 & 65535U), int(_S8 >> 16U));
     *vbnd_0 = bnd_0;
     return;
 }
 
 
-#line 74
-struct main_vs_Result_0
+#line 197
+struct PS_INPUT_0
 {
     float4 position_0 [[position]];
     float4 color_0 [[user(COLOR)]];
     float2 texcoord_0 [[user(TEXCOORD)]];
-    float4 banding_0 [[user(TEXCOORD_1)]];
-    int4 glyph_0 [[user(TEXCOORD_2)]];
+    [[flat]] float4 banding_0 [[user(TEXCOORD_1)]];
+    [[flat]] int4 glyph_0 [[user(TEXCOORD_2)]];
 };
 
 
-#line 74
+#line 197
 struct vertexInput_0
 {
     float4 pos_1 [[attribute(0)]];
@@ -76,67 +92,30 @@ struct vertexInput_0
 };
 
 
-#line 74
-struct _MatrixStorage_float4x4_ColMajornatural_0
-{
-    array<float4, int(4)> data_0;
-};
-
-
-#line 74
+#line 197
 struct SLANG_ParameterGroup_vertexBuffer_natural_0
 {
     _MatrixStorage_float4x4_ColMajornatural_0 ProjectionMatrix_0;
 };
 
 
-#line 55
-struct PS_INPUT_0
+#line 238
+[[vertex]] PS_INPUT_0 main_vs(vertexInput_0 _S9 [[stage_in]], SLANG_ParameterGroup_vertexBuffer_natural_0 constant* vertexBuffer_0 [[buffer(0)]])
 {
-    float4 position_1;
-    float4 color_1;
-    float2 texcoord_1;
-    [[flat]] float4 banding_1;
-    [[flat]] int4 glyph_1;
-};
-
-
-#line 55
-[[vertex]] main_vs_Result_0 main_vs(vertexInput_0 _S8 [[stage_in]], SLANG_ParameterGroup_vertexBuffer_natural_0 constant* vertexBuffer_0 [[buffer(0)]])
-{
-
-#line 107
     thread PS_INPUT_0 output_0;
 
-#line 117
+#line 247
     thread float2 dilatedPos_0;
-    float2 _S9 = SlugDilate_0(_S8.pos_1, _S8.tex_2, _S8.jac_1, float4((&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(0)][int(0)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(1)][int(0)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(2)][int(0)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(3)][int(0)]), float4((&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(0)][int(1)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(1)][int(1)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(2)][int(1)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(3)][int(1)]), float4((&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(0)][int(3)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(1)][int(3)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(2)][int(3)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(3)][int(3)]), float2(2.0 / (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(0)][int(0)], 2.0 / abs((&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(1)][int(1)])), &dilatedPos_0);
+    float2 _S10 = SlugDilate_0(_S9.pos_1, _S9.tex_2, _S9.jac_1, float4((&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(0)][int(0)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(1)][int(0)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(2)][int(0)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(3)][int(0)]), float4((&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(0)][int(1)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(1)][int(1)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(2)][int(1)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(3)][int(1)]), float4((&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(0)][int(3)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(1)][int(3)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(2)][int(3)], (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(3)][int(3)]), float2(2.0 / (&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(0)][int(0)], 2.0 / abs((&vertexBuffer_0->ProjectionMatrix_0)->data_0[int(1)][int(1)])), &dilatedPos_0);
 
-#line 118
-    (&output_0)->texcoord_1 = _S9;
-    (&output_0)->position_1 = (((float4(dilatedPos_0, 0.0, 1.0)) * (matrix<float,int(4),int(4)> (vertexBuffer_0->ProjectionMatrix_0.data_0[int(0)][int(0)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(1)][int(0)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(2)][int(0)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(3)][int(0)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(0)][int(1)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(1)][int(1)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(2)][int(1)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(3)][int(1)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(0)][int(2)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(1)][int(2)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(2)][int(2)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(3)][int(2)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(0)][int(3)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(1)][int(3)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(2)][int(3)], vertexBuffer_0->ProjectionMatrix_0.data_0[int(3)][int(3)]))));
-    (&output_0)->color_1 = _S8.col_0;
-    SlugUnpack_0(_S8.tex_2, _S8.bnd_1, &(&output_0)->banding_1, &(&output_0)->glyph_1);
+#line 248
+    (&output_0)->texcoord_0 = _S10;
+    (&output_0)->position_0 = (((float4(dilatedPos_0, 0.0, 1.0)) * (unpackStorage_0(vertexBuffer_0->ProjectionMatrix_0))));
 
-#line 121
-    thread main_vs_Result_0 _S10;
+#line 255
+    (&output_0)->color_0 = _S9.col_0;
 
-#line 121
-    (&_S10)->position_0 = output_0.position_1;
-
-#line 121
-    (&_S10)->color_0 = output_0.color_1;
-
-#line 121
-    (&_S10)->texcoord_0 = output_0.texcoord_1;
-
-#line 121
-    (&_S10)->banding_0 = output_0.banding_1;
-
-#line 121
-    (&_S10)->glyph_0 = output_0.glyph_1;
-
-#line 121
-    return _S10;
+    SlugUnpack_0(_S9.tex_2, _S9.bnd_1, &(&output_0)->banding_0, &(&output_0)->glyph_0);
+    return output_0;
 }
 

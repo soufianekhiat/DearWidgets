@@ -11,7 +11,7 @@ struct SLANG_ParameterGroup_PS_CONSTANT_BUFFER_std140_0
     @align(4) pad0_0 : f32,
 };
 
-@binding(0) @group(0) var<uniform> PS_CONSTANT_BUFFER_0 : SLANG_ParameterGroup_PS_CONSTANT_BUFFER_std140_0;
+@binding(1) @group(0) var<uniform> PS_CONSTANT_BUFFER_0 : SLANG_ParameterGroup_PS_CONSTANT_BUFFER_std140_0;
 fn disc_0( P_0 : vec2<f32>,  size_1 : f32) -> f32
 {
     return length(P_0) - size_1 * 0.5f;

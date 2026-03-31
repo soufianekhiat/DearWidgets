@@ -70,18 +70,20 @@ void SlugUnpack_0(float4 tex_1, float4 bnd_0, float4 thread* vbnd_0, int4 thread
 }
 
 
-#line 197
+#line 177
 struct PS_INPUT_0
 {
     float4 position_0 [[position]];
-    float4 color_0 [[user(COLOR)]];
     float2 texcoord_0 [[user(TEXCOORD)]];
     [[flat]] float4 banding_0 [[user(TEXCOORD_1)]];
     [[flat]] int4 glyph_0 [[user(TEXCOORD_2)]];
+    [[flat]] float4 gradColor0_0 [[user(COLOR)]];
+    [[flat]] float4 gradColor1_0 [[user(COLOR_1)]];
+    [[flat]] float4 gradParams_0 [[user(TEXCOORD_3)]];
 };
 
 
-#line 197
+#line 177
 struct vertexInput_0
 {
     float4 pos_1 [[attribute(0)]];
@@ -89,10 +91,12 @@ struct vertexInput_0
     float4 jac_1 [[attribute(2)]];
     float4 bnd_1 [[attribute(3)]];
     float4 col_0 [[attribute(4)]];
+    float4 grd_0 [[attribute(5)]];
+    float4 col2_0 [[attribute(6)]];
 };
 
 
-#line 197
+#line 177
 struct SLANG_ParameterGroup_vertexBuffer_natural_0
 {
     _MatrixStorage_float4x4_ColMajornatural_0 ProjectionMatrix_0;
@@ -112,8 +116,11 @@ struct SLANG_ParameterGroup_vertexBuffer_natural_0
     (&output_0)->texcoord_0 = _S10;
     (&output_0)->position_0 = (((float4(dilatedPos_0, 0.0, 1.0)) * (unpackStorage_0(vertexBuffer_0->ProjectionMatrix_0))));
 
-#line 255
-    (&output_0)->color_0 = _S9.col_0;
+    (&output_0)->gradColor0_0 = _S9.col_0;
+    (&output_0)->gradColor1_0 = _S9.col2_0;
+    (&output_0)->gradParams_0 = _S9.grd_0;
+
+
 
     SlugUnpack_0(_S9.tex_2, _S9.bnd_1, &(&output_0)->banding_0, &(&output_0)->glyph_0);
     return output_0;

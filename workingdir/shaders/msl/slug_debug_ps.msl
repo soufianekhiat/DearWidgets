@@ -519,43 +519,56 @@ float SlugRender_0(float2 renderCoord_0, float4 banding_0, int4 glyphData_0, Ker
 }
 
 
-#line 408
+
+float4 SlugRenderDebug_0(float2 renderCoord_1, float4 banding_1, int4 glyphData_1, KernelContext_0 thread* kernelContext_3)
+{
+
+#line 413
+    float _S53 = SlugRender_0(renderCoord_1, banding_1, glyphData_1, kernelContext_3);
+
+#line 418
+    return float4(_S53, _S53, _S53, max(_S53, 0.25));
+}
+
+
+#line 418
 struct pixelOutput_0
 {
     float4 output_0 [[color(0)]];
 };
 
 
-#line 408
+#line 418
 struct pixelInput_0
 {
     float4 color_0 [[user(COLOR)]];
     float2 texcoord_0 [[user(TEXCOORD)]];
-    [[flat]] float4 banding_1 [[user(TEXCOORD_1)]];
+    [[flat]] float4 banding_2 [[user(TEXCOORD_1)]];
     [[flat]] int4 glyph_0 [[user(TEXCOORD_2)]];
 };
 
 
 #line 422
-[[fragment]] pixelOutput_0 main_ps(pixelInput_0 _S53 [[stage_in]], float4 position_0 [[position]], texture2d<float, access::sample> bandTexture_1 [[texture(1)]], texture2d<float, access::sample> curveTexture_1 [[texture(0)]])
+[[fragment]] pixelOutput_0 main_ps(pixelInput_0 _S54 [[stage_in]], float4 position_0 [[position]], texture2d<float, access::sample> bandTexture_1 [[texture(1)]], texture2d<float, access::sample> curveTexture_1 [[texture(0)]])
 {
 
 #line 422
-    KernelContext_0 kernelContext_3;
+    KernelContext_0 kernelContext_4;
 
 #line 422
-    (&kernelContext_3)->bandTexture_0 = bandTexture_1;
+    (&kernelContext_4)->bandTexture_0 = bandTexture_1;
 
 #line 422
-    (&kernelContext_3)->curveTexture_0 = curveTexture_1;
+    (&kernelContext_4)->curveTexture_0 = curveTexture_1;
 
 #line 422
-    float _S54 = SlugRender_0(_S53.texcoord_0, _S53.banding_1, _S53.glyph_0, &kernelContext_3);
+    float4 _S55 = SlugRenderDebug_0(_S54.texcoord_0, _S54.banding_2, _S54.glyph_0, &kernelContext_4);
 
 #line 422
-    pixelOutput_0 _S55 = { _S53.color_0 * float4(_S54)  };
+    pixelOutput_0 _S56 = { _S55 };
 
-#line 467
-    return _S55;
+
+
+    return _S56;
 }
 

@@ -3318,7 +3318,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		memset(&ctx->lineShader,        0, sizeof(ImDrawShader));
 		memset(&ctx->slugShader,        0, sizeof(ImDrawShader));
 		memset(&ctx->slugColorShader,   0, sizeof(ImDrawShader));
+		memset(&ctx->slugFillShader,    0, sizeof(ImDrawShader));
 		ctx->slugState = NULL;
+
+		// Register debug callback for slug draw commands in ImGui Metrics viewer
+		ImGui::GetIO().DebugDrawCmdCallback = SlugDebugDrawCmdCallback;
 
 		if ( gs_pContext == NULL )
 			gs_pContext = ctx;
@@ -3369,6 +3373,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			CreateInternalShader(&ctx->slugColorShader, "slug_color", 0, NULL, 0, NULL);
 			CreateInternalShader(&ctx->slugGradientShader, "slug_gradient", 0, NULL, 0, NULL);
 			CreateInternalShader(&ctx->slugDebugShader, "slug_debug", 0, NULL, 0, NULL);
+			CreateInternalShader(&ctx->slugFillShader, "slug_fill", 0, NULL, 0, NULL);
 		}
 
 		return ctx;
@@ -3413,6 +3418,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				ImPlatform_DestroyShader( ctx->slugColorShader.vs );
 				ImPlatform_DestroyShader( ctx->slugColorShader.ps );
 				memset( &ctx->slugColorShader, 0, sizeof( ImDrawShader ) );
+			}
+			if ( ctx->slugFillShader.program )
+			{
+				ImPlatform_DestroyShaderProgram( ctx->slugFillShader.program );
+				ImPlatform_DestroyShader( ctx->slugFillShader.vs );
+				ImPlatform_DestroyShader( ctx->slugFillShader.ps );
+				memset( &ctx->slugFillShader, 0, sizeof( ImDrawShader ) );
 			}
 #endif  // IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 

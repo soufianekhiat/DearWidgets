@@ -85,22 +85,32 @@ void SlugUnpack_0(vec4 tex_1, vec4 bnd_0, out vec4 vbnd_0, out ivec4 vgly_0)
 
 #line 217
 layout(location = 0)
-out vec4 entryPointParam_main_vs_color_0;
-
-
-#line 217
-layout(location = 1)
 out vec2 entryPointParam_main_vs_texcoord_0;
 
 
 #line 217
-flat layout(location = 2)
+flat layout(location = 1)
 out vec4 entryPointParam_main_vs_banding_0;
 
 
 #line 217
-flat layout(location = 3)
+flat layout(location = 2)
 out ivec4 entryPointParam_main_vs_glyph_0;
+
+
+#line 217
+flat layout(location = 3)
+out vec4 entryPointParam_main_vs_gradColor0_0;
+
+
+#line 217
+flat layout(location = 4)
+out vec4 entryPointParam_main_vs_gradColor1_0;
+
+
+#line 217
+flat layout(location = 5)
+out vec4 entryPointParam_main_vs_gradParams_0;
 
 
 #line 217
@@ -128,14 +138,26 @@ layout(location = 4)
 in vec4 input_col_0;
 
 
-#line 197
+#line 217
+layout(location = 5)
+in vec4 input_grd_0;
+
+
+#line 217
+layout(location = 6)
+in vec4 input_col2_0;
+
+
+#line 177
 struct PS_INPUT_0
 {
     vec4 position_0;
-    vec4 color_0;
     vec2 texcoord_0;
     vec4 banding_0;
     ivec4 glyph_0;
+    vec4 gradColor0_0;
+    vec4 gradColor1_0;
+    vec4 gradParams_0;
 };
 
 
@@ -152,17 +174,17 @@ void main()
     output_0.texcoord_0 = _S9;
     output_0.position_0 = (((vec4(dilatedPos_0, 0.0, 1.0)) * (unpackStorage_0(vertexBuffer_0.ProjectionMatrix_0))));
 
-#line 255
-    output_0.color_0 = input_col_0;
+    output_0.gradColor0_0 = input_col_0;
+    output_0.gradColor1_0 = input_col2_0;
+    output_0.gradParams_0 = input_grd_0;
+
+
 
     SlugUnpack_0(input_tex_0, input_bnd_0, output_0.banding_0, output_0.glyph_0);
     PS_INPUT_0 _S10 = output_0;
 
 #line 258
     gl_Position = output_0.position_0;
-
-#line 258
-    entryPointParam_main_vs_color_0 = _S10.color_0;
 
 #line 258
     entryPointParam_main_vs_texcoord_0 = _S10.texcoord_0;
@@ -172,6 +194,15 @@ void main()
 
 #line 258
     entryPointParam_main_vs_glyph_0 = _S10.glyph_0;
+
+#line 258
+    entryPointParam_main_vs_gradColor0_0 = _S10.gradColor0_0;
+
+#line 258
+    entryPointParam_main_vs_gradColor1_0 = _S10.gradColor1_0;
+
+#line 258
+    entryPointParam_main_vs_gradParams_0 = _S10.gradParams_0;
 
 #line 258
     return;

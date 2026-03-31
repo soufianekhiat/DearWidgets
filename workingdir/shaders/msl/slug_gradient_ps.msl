@@ -519,24 +519,26 @@ float SlugRender_0(float2 renderCoord_0, float4 banding_0, int4 glyphData_0, Ker
 }
 
 
-#line 408
+#line 10319 "hlsl.meta.slang"
 struct pixelOutput_0
 {
     float4 output_0 [[color(0)]];
 };
 
 
-#line 408
+#line 10319
 struct pixelInput_0
 {
-    float4 color_0 [[user(COLOR)]];
     float2 texcoord_0 [[user(TEXCOORD)]];
     [[flat]] float4 banding_1 [[user(TEXCOORD_1)]];
     [[flat]] int4 glyph_0 [[user(TEXCOORD_2)]];
+    [[flat]] float4 gradColor0_0 [[user(COLOR)]];
+    [[flat]] float4 gradColor1_0 [[user(COLOR_1)]];
+    [[flat]] float4 gradParams_0 [[user(TEXCOORD_3)]];
 };
 
 
-#line 422
+#line 422 "C:/git/DearWidgets/workingdir/shaders/hlsl_src/slug.hlsl"
 [[fragment]] pixelOutput_0 main_ps(pixelInput_0 _S53 [[stage_in]], float4 position_0 [[position]], texture2d<float, access::sample> bandTexture_1 [[texture(1)]], texture2d<float, access::sample> curveTexture_1 [[texture(0)]])
 {
 
@@ -552,10 +554,11 @@ struct pixelInput_0
 #line 422
     float _S54 = SlugRender_0(_S53.texcoord_0, _S53.banding_1, _S53.glyph_0, &kernelContext_3);
 
-#line 422
-    pixelOutput_0 _S55 = { _S53.color_0 * float4(_S54)  };
+#line 431
+    float4 gradColor_0 = mix(_S53.gradColor0_0, _S53.gradColor1_0, float4(saturate(dot(_S53.texcoord_0, _S53.gradParams_0.xy) * _S53.gradParams_0.z + _S53.gradParams_0.w)) );
 
-#line 467
+#line 431
+    pixelOutput_0 _S55 = { float4(gradColor_0.xyz, gradColor_0.w * _S54) };
     return _S55;
 }
 

@@ -19,7 +19,7 @@ matrix<float,int(4),int(4)>  unpackStorage_0(_MatrixStorage_float4x4_ColMajornat
 }
 
 
-#line 38 "shaders/hlsl_src/lines.hlsl"
+#line 38 "C:/git/DearWidgets/workingdir/shaders/hlsl_src/lines.hlsl"
 struct PS_INPUT_0
 {
     float4 pos_0 [[position]];

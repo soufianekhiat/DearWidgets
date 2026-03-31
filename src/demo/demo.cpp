@@ -1681,6 +1681,34 @@ namespace ImWidgets {
 		bool groupOpen = false;
 		float groupY0 = 0.0f;
 		int nFonts = IM_ARRAYSIZE( kFonts );
+		ImVec4 fontClipRect = pDrawList->_CmdHeader.ClipRect;
+		float labelLineH = ImGui::GetTextLineHeightWithSpacing();
+		static float s_cached_font_h[128]; // per-entry layout height cache
+
+		// CalcTextSize cache: avoid re-shaping every frame when text/size unchanged
+		static ImVec2 s_cached_sz[128];
+		static float  s_cached_asc[128];
+		static ImU32  s_text_cache_key = 0;
+		ImU32 text_cache_key = ImHashData( &font_size, sizeof( font_size ) );
+		text_cache_key = ImHashStr( text_buf, 0, text_cache_key );
+		text_cache_key = ImHashStr( emoji_buf, 0, text_cache_key );
+		text_cache_key = ImHashStr( arabic_buf, 0, text_cache_key );
+		bool textCacheValid = ( text_cache_key == s_text_cache_key );
+		s_text_cache_key = text_cache_key;
+
+		// Pre-warm: compute one uncached CalcTextSize per frame so scrolling hits warm cache
+		if ( textCacheValid )
+		{
+			for ( int pw = 0; pw < nFonts; pw++ )
+			{
+				if ( !*kFonts[pw].font || s_cached_sz[pw].y > 0 ) continue;
+				ImFont* pwf = *kFonts[pw].font;
+				const char* pws = ( kFonts[pw].textType == kEmoji ) ? emoji_buf : ( kFonts[pw].textType == kArabic ) ? arabic_buf : text_buf;
+				s_cached_sz[pw] = ImWidgets::CalcTextSize( pwf, font_size, pws, nullptr, &s_cached_asc[pw] );
+				break; // one per frame
+			}
+		}
+
 		for ( int i = 0; i <= nFonts; i++ )
 		{
 			const char* nextGroup = ( i < nFonts ) ? kFonts[i].group : NULL;
@@ -1700,12 +1728,32 @@ namespace ImWidgets {
 			if ( !*kFonts[i].font ) continue;
 			if ( !groupOpen ) continue;
 
+			// Per-font-line scroll culling: skip CalcTextSize + DrawText for off-screen entries
+			float entryY = ImGui::GetCursorScreenPos().y;
+			float est_h = ( s_cached_font_h[i] > 0 ) ? s_cached_font_h[i] : ( labelLineH + font_size * 1.5f + gap );
+			if ( entryY + est_h < fontClipRect.y || entryY > fontClipRect.w )
+			{
+				ImGui::Dummy( ImVec2( canvas_w, est_h ) );
+				continue;
+			}
+
 			const FontEntry& e = kFonts[i];
 			ImFont* f           = *e.font;
 			const char* drawStr = (e.textType == kEmoji) ? emoji_buf : (e.textType == kArabic) ? arabic_buf : text_buf;
 
 			float   asc   = 0.0f;
-			ImVec2  sz    = ImWidgets::CalcTextSize( f, font_size, drawStr, nullptr, &asc );
+			ImVec2  sz;
+			if ( textCacheValid && s_cached_sz[i].y > 0 )
+			{
+				sz  = s_cached_sz[i];
+				asc = s_cached_asc[i];
+			}
+			else
+			{
+				sz  = ImWidgets::CalcTextSize( f, font_size, drawStr, nullptr, &asc );
+				s_cached_sz[i]  = sz;
+				s_cached_asc[i] = asc;
+			}
 			float   line_h = sz.y + gap;
 
 			// Font name in solid black
@@ -1737,6 +1785,7 @@ namespace ImWidgets {
 				ImWidgets::DrawTextDebugLayers( pDrawList, f, font_size, ImVec2( pos.x, pos.y + asc ), drawStr );
 
 			ImGui::Dummy( ImVec2( canvas_w, line_h ) );
+			s_cached_font_h[i] = ImGui::GetCursorScreenPos().y - entryY;
 		}
 
 		// Typography Fills section (inside GPU Text)
@@ -1745,6 +1794,8 @@ namespace ImWidgets {
 		ApplyOpenAll();
 		if ( ImGui::CollapsingHeader( "Debug Glyph Tessellation" ) )
 		{
+			static float s_cull_dbgtess_h = 0; float s_cull_dbgtess_y;
+			if ( BeginCullSection( s_cull_dbgtess_h, s_cull_dbgtess_y ) ) {
 			static char dbgChar[8] = "O";
 			static int dbgFontIdx = 0;
 			static float dbgSize = 200.0f;
@@ -1807,6 +1858,7 @@ namespace ImWidgets {
 				float dbgRowH = dbgSize * 1.3f;
 				ImWidgets::DrawTesselateDebug( pDrawList, dbgFont, dbgSize, dbgChar, dbgPos, dbgTol, dbgSpacing, dbgRowH );
 			}
+			EndCullSection( s_cull_dbgtess_h, s_cull_dbgtess_y ); }
 		}
 		DW_SsRecord( "Debug_Glyph_Tessellation", _sy0, ImGui::GetCursorPos().y ); }
 
@@ -1815,6 +1867,8 @@ namespace ImWidgets {
 		ApplyOpenAll();
 		if ( g_monblockFont && ImGui::CollapsingHeader( "Typography Fills" ) )
 		{
+			static float s_cull_typofills_h = 0; float s_cull_typofills_y;
+			if ( BeginCullSection( s_cull_typofills_h, s_cull_typofills_y ) ) {
 			static int tyFontIdx = 0;
 			struct FontChoice { const char* name; ImFont** ptr; };
 			static const FontChoice kTypoFonts[] = {
@@ -1870,17 +1924,31 @@ namespace ImWidgets {
 			ImGui::SameLine(); ImGui::TextDisabled( "(lower = smoother)" );
 			ImGui::SliderInt( "Iterations##TypoFills", &tyIterations, 0, 6 );
 			ImGui::Checkbox( "Per Character##TypoPerChar", &perChar );
+			static int gradPath = 0; // 0=GPU, 1=CPU
+			ImGui::RadioButton( "GPU Gradient##TypoPath", &gradPath, 0 ); ImGui::SameLine();
+			ImGui::RadioButton( "CPU Tessellation##TypoPath", &gradPath, 1 );
 
-			struct TypoEntry { const char* label; int type; ImU32 c0; ImU32 c1; pfSpace2sRGB s2r; pfsRGB2Space r2s; };
+			struct TypoEntry { const char* label; int type; ImU32 c0; ImU32 c1; pfSpace2sRGB s2r; pfsRGB2Space r2s; int interp; };
 			static const TypoEntry kTypo[] = {
-				{ "Linear Gradient",  0, IM_COL32(255,50,50,255), IM_COL32(50,50,255,255), NULL, NULL },
-				{ "Radial Gradient",  1, IM_COL32(255,255,50,255), IM_COL32(50,200,50,255), NULL, NULL },
-				{ "Diamond Gradient", 2, IM_COL32(255,100,255,255), IM_COL32(100,255,255,255), NULL, NULL },
-				{ "OkLab Linear",     0, IM_COL32(255,0,0,255), IM_COL32(0,0,255,255), &ImWidgets::ColorConvertOKLABtoRGB, &ImWidgets::ColorConvertRGBtoOKLAB },
+				{ "Linear Gradient",  0, IM_COL32(255,50,50,255), IM_COL32(50,50,255,255), NULL, NULL, ImWidgetsGradientInterp_sRGB },
+				{ "Radial Gradient",  1, IM_COL32(255,255,50,255), IM_COL32(50,200,50,255), NULL, NULL, ImWidgetsGradientInterp_sRGB },
+				{ "Diamond Gradient", 2, IM_COL32(255,100,255,255), IM_COL32(100,255,255,255), NULL, NULL, ImWidgetsGradientInterp_sRGB },
+				{ "OkLab Linear",     0, IM_COL32(255,0,0,255), IM_COL32(0,0,255,255), &ImWidgets::ColorConvertOKLABtoRGB, &ImWidgets::ColorConvertRGBtoOKLAB, ImWidgetsGradientInterp_OkLab },
 			};
 
 			// Helper: render gradient text either whole or per-character
 			auto DrawGradText = [&]( const TypoEntry& te, ImVec2 basePos ) {
+				// GPU path: no tessellation, gradient computed in pixel shader (all color spaces)
+				if ( gradPath == 0 ) {
+					if ( te.type == 0 )
+						ImWidgets::DrawLinearGradientTextGPU( pDrawList, tyFont, tySize, basePos, text_buf, ImVec2(0,0.5f), ImVec2(1,0.5f), te.c0, te.c1, nullptr, perChar, te.interp );
+					else if ( te.type == 1 )
+						ImWidgets::DrawRadialGradientTextGPU( pDrawList, tyFont, tySize, basePos, text_buf, ImVec2(0.5f,0.5f), ImVec2(1,0.5f), te.c0, te.c1, nullptr, perChar, te.interp );
+					else
+						ImWidgets::DrawDiamondGradientTextGPU( pDrawList, tyFont, tySize, basePos, text_buf, ImVec2(0.5f,0.5f), ImVec2(1,0.5f), te.c0, te.c1, nullptr, perChar, te.interp );
+					return;
+				}
+				// CPU path: tessellation + per-vertex gradient
 				if ( !perChar ) {
 					if ( te.type == 0 )
 						ImWidgets::DrawLinearGradientText( pDrawList, tyFont, tySize, basePos, text_buf, ImVec2(0,0.5f), ImVec2(1,0.5f), te.c0, te.c1, te.s2r, te.r2s, nullptr, tessTol, tyIterations );
@@ -1940,7 +2008,13 @@ namespace ImWidgets {
 					ImVec2 p = ImGui::GetCursorScreenPos();
 					float asc2 = 0;
 					ImVec2 tsz = ImWidgets::CalcTextSize( tyFont, tySize, text_buf, nullptr, &asc2 );
-					if ( !perChar ) {
+					if ( gradPath == 0 && perChar ) {
+						// GPU per-char image fill: cycle through images per glyph
+						ImWidgets::DrawImageTextGPU( pDrawList, tyFont, tySize, ImVec2( p.x, p.y + asc2 ), text_buf, allImages, nImages, IM_COL32_WHITE, ImVec2(0,0), ImVec2(1,1) );
+					} else if ( gradPath == 0 ) {
+						// GPU whole-text image fill: single image across entire text
+						ImWidgets::DrawImageTextGPU( pDrawList, tyFont, tySize, ImVec2( p.x, p.y + asc2 ), text_buf, allImages[0], IM_COL32_WHITE, ImVec2(0,0), ImVec2(1,1), nullptr, false );
+					} else if ( !perChar ) {
 						ImWidgets::DrawImageText( pDrawList, tyFont, tySize, ImVec2( p.x, p.y + asc2 ), allImages[0], text_buf, nullptr, IM_COL32_WHITE, ImVec2(0,0), ImVec2(1,1), tessTol, tyIterations );
 					} else {
 						// Per-glyph image fill: shape full text, one different image per glyph
@@ -2009,6 +2083,7 @@ namespace ImWidgets {
 					ImGui::Dummy( ImVec2( sz.x, sz.y + gap ) );
 				}
 			}
+			EndCullSection( s_cull_typofills_h, s_cull_typofills_y ); }
 		}
 		DW_SsRecord( "Typography_Fills", _sy0, ImGui::GetCursorPos().y ); }
 		EndCullSection( s_cull_h, s_cull_y );
@@ -2296,6 +2371,8 @@ namespace ImWidgets {
 
 		float const pad = 6.0f;
 		float const gap = ImGui::GetStyle().ItemSpacing.y;
+		ImVec4 latexClipRect = pDrawList->_CmdHeader.ClipRect;
+		static float s_cached_latex_h[64]; // per-example height cache
 		const char* currentGroup = NULL;
 		bool groupOpen = false;
 		float groupY0 = 0.0f;
@@ -2317,6 +2394,16 @@ namespace ImWidgets {
 			}
 			if ( i >= nExamples ) break;
 			if ( !groupOpen ) continue;
+
+			// Per-entry scroll culling
+			float entryY = ImGui::GetCursorScreenPos().y;
+			float est_h = ( s_cached_latex_h[i] > 0 ) ? s_cached_latex_h[i] : ( latex_size * 3.0f + pad * 2 + gap );
+			if ( entryY + est_h < latexClipRect.y || entryY > latexClipRect.w )
+			{
+				ImGui::Dummy( ImVec2( 0, est_h ) );
+				continue;
+			}
+
 			const LaTeXEntry& e = kExamples[i];
 
 			// LaTeX source label
@@ -2332,6 +2419,7 @@ namespace ImWidgets {
 			if ( latex_show_bbox )
 				ImWidgets::DrawLaTeXDebug( pDrawList, latex_size, ImVec2( pos.x, pos.y + pad * 0.5f ), e.latex );
 			ImGui::Dummy( ImVec2( sz.x + pad * 2, sz.y + pad + gap ) );
+			s_cached_latex_h[i] = ImGui::GetCursorScreenPos().y - entryY;
 		}
 		EndCullSection( s_cull_h, s_cull_y );
 	}

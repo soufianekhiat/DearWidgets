@@ -245,16 +245,19 @@ struct pixelOutput_0
 
 struct pixelInput_0
 {
-    @location(0) color_0 : vec4<f32>,
-    @location(3) texcoord_0 : vec2<f32>,
+    @location(0) texcoord_0 : vec2<f32>,
     @interpolate(flat) @location(1) banding_1 : vec4<f32>,
     @interpolate(flat) @location(2) glyph_0 : vec4<i32>,
+    @interpolate(flat) @location(4) gradColor0_0 : vec4<f32>,
+    @interpolate(flat) @location(5) gradColor1_0 : vec4<f32>,
+    @interpolate(flat) @location(3) gradParams_0 : vec4<f32>,
 };
 
 @fragment
 fn main_ps( _S47 : pixelInput_0, @builtin(position) position_0 : vec4<f32>) -> pixelOutput_0
 {
-    var _S48 : pixelOutput_0 = pixelOutput_0( vec4<f32>(_S47.color_0.xyz, _S47.color_0.w * SlugRender_0(_S47.texcoord_0, _S47.banding_1, _S47.glyph_0)) );
+    var gradColor_0 : vec4<f32> = mix(_S47.gradColor0_0, _S47.gradColor1_0, vec4<f32>(saturate(dot(_S47.texcoord_0, _S47.gradParams_0.xy) * _S47.gradParams_0.z + _S47.gradParams_0.w)));
+    var _S48 : pixelOutput_0 = pixelOutput_0( vec4<f32>(gradColor_0.xyz, gradColor_0.w * SlugRender_0(_S47.texcoord_0, _S47.banding_1, _S47.glyph_0)) );
     return _S48;
 }
 

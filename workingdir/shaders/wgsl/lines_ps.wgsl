@@ -260,7 +260,55 @@ fn main_ps( _S4 : pixelInput_0, @builtin(position) pos_0 : vec4<f32>) -> pixelOu
     }
     else
     {
-        var u_0 : f32 = dx_1 + PS_CONSTANT_BUFFER_0.dash_offset_0;
+        if(has_prev_0)
+        {
+            _S8 = (PS_CONSTANT_BUFFER_0.seg_start_0) < 0.00100000004749745f;
+        }
+        else
+        {
+            _S8 = false;
+        }
+        if(_S8)
+        {
+            _S8 = lx_0 < 0.0f;
+        }
+        else
+        {
+            _S8 = false;
+        }
+        var dx_dash_0 : f32;
+        if(_S8)
+        {
+            dx_dash_0 = PS_CONSTANT_BUFFER_0.total_length_0 + dx_1;
+        }
+        else
+        {
+            dx_dash_0 = dx_1;
+        }
+        if(has_next_0)
+        {
+            _S8 = (PS_CONSTANT_BUFFER_0.seg_end_0) > (PS_CONSTANT_BUFFER_0.total_length_0 - 0.00100000004749745f);
+        }
+        else
+        {
+            _S8 = false;
+        }
+        if(_S8)
+        {
+            _S8 = lx_0 > seg_len_0;
+        }
+        else
+        {
+            _S8 = false;
+        }
+        if(_S8)
+        {
+            dx_dash_0 = dx_1 - PS_CONSTANT_BUFFER_0.total_length_0;
+        }
+        else
+        {
+        }
+        var u_0 : f32 = dx_dash_0 + PS_CONSTANT_BUFFER_0.dash_offset_0;
         var m_0 : f32 = u_0 - period_0 * floor(u_0 / period_0);
         if(m_0 < dash_len_0)
         {
@@ -321,9 +369,27 @@ fn main_ps( _S4 : pixelInput_0, @builtin(position) pos_0 : vec4<f32>) -> pixelOu
         }
         if(_S8)
         {
-            var _S18 : f32 = min(d_2, join_dist_0(P_0, PS_CONSTANT_BUFFER_0.p0_0, ex_0, PS_CONSTANT_BUFFER_0.prev_dir_0, ly_0, jtype_1, halfw_1, PS_CONSTANT_BUFFER_0.miter_limit_0));
+            var jd_0 : f32 = join_dist_0(P_0, PS_CONSTANT_BUFFER_0.p0_0, ex_0, PS_CONSTANT_BUFFER_0.prev_dir_0, ly_0, jtype_1, halfw_1, PS_CONSTANT_BUFFER_0.miter_limit_0);
+            var v_al_0 : f32;
+            if((PS_CONSTANT_BUFFER_0.seg_start_0) < 0.00100000004749745f)
+            {
+                v_al_0 = PS_CONSTANT_BUFFER_0.total_length_0;
+            }
+            else
+            {
+                v_al_0 = PS_CONSTANT_BUFFER_0.seg_start_0;
+            }
+            var v_u_0 : f32 = v_al_0 + PS_CONSTANT_BUFFER_0.dash_offset_0;
+            if((v_u_0 - period_0 * floor(v_u_0 / period_0)) < dash_len_0)
+            {
+                max_ext_1 = jd_0;
+            }
+            else
+            {
+                max_ext_1 = max(d_2, jd_0);
+            }
             zone_0 = i32(2);
-            d_2 = _S18;
+            d_2 = max_ext_1;
         }
         else
         {
@@ -337,9 +403,18 @@ fn main_ps( _S4 : pixelInput_0, @builtin(position) pos_0 : vec4<f32>) -> pixelOu
             }
             if(_S8)
             {
-                var _S19 : f32 = min(d_2, join_dist_0(P_0, PS_CONSTANT_BUFFER_0.p1_0, ex_0, PS_CONSTANT_BUFFER_0.next_dir_0, ly_0, jtype_1, halfw_1, PS_CONSTANT_BUFFER_0.miter_limit_0));
+                var jd_1 : f32 = join_dist_0(P_0, PS_CONSTANT_BUFFER_0.p1_0, ex_0, PS_CONSTANT_BUFFER_0.next_dir_0, ly_0, jtype_1, halfw_1, PS_CONSTANT_BUFFER_0.miter_limit_0);
+                var v_u_1 : f32 = PS_CONSTANT_BUFFER_0.seg_end_0 + PS_CONSTANT_BUFFER_0.dash_offset_0;
+                if((v_u_1 - period_0 * floor(v_u_1 / period_0)) < dash_len_0)
+                {
+                    max_ext_1 = jd_1;
+                }
+                else
+                {
+                    max_ext_1 = max(d_2, jd_1);
+                }
                 zone_0 = i32(3);
-                d_2 = _S19;
+                d_2 = max_ext_1;
             }
             else
             {
@@ -348,6 +423,7 @@ fn main_ps( _S4 : pixelInput_0, @builtin(position) pos_0 : vec4<f32>) -> pixelOu
         }
     }
     var d_4 : f32 = d_2 - t_1;
+    var dc_0 : vec3<f32>;
     if(d_4 < 0.0f)
     {
         if(dbg_0)
@@ -360,11 +436,26 @@ fn main_ps( _S4 : pixelInput_0, @builtin(position) pos_0 : vec4<f32>) -> pixelOu
         }
         if(_S8)
         {
-            var _S20 : pixelOutput_0 = pixelOutput_0( vec4<f32>(1.0f, 0.0f, 0.0f, PS_CONSTANT_BUFFER_0.color_0.w) );
-            return _S20;
+            if(jtype_1 == i32(0))
+            {
+                dc_0 = vec3<f32>(0.0f, 1.0f, 0.0f);
+            }
+            else
+            {
+                if(jtype_1 == i32(2))
+                {
+                    dc_0 = vec3<f32>(0.0f, 0.0f, 1.0f);
+                }
+                else
+                {
+                    dc_0 = vec3<f32>(1.0f, 0.0f, 0.0f);
+                }
+            }
+            var _S18 : pixelOutput_0 = pixelOutput_0( vec4<f32>(dc_0, PS_CONSTANT_BUFFER_0.color_0.w) );
+            return _S18;
         }
-        var _S21 : pixelOutput_0 = pixelOutput_0( vec4<f32>(PS_CONSTANT_BUFFER_0.color_0.xyz, PS_CONSTANT_BUFFER_0.color_0.w) );
-        return _S21;
+        var _S19 : pixelOutput_0 = pixelOutput_0( vec4<f32>(PS_CONSTANT_BUFFER_0.color_0.xyz, PS_CONSTANT_BUFFER_0.color_0.w) );
+        return _S19;
     }
     else
     {
@@ -380,11 +471,26 @@ fn main_ps( _S4 : pixelInput_0, @builtin(position) pos_0 : vec4<f32>) -> pixelOu
         }
         if(_S8)
         {
-            var _S22 : pixelOutput_0 = pixelOutput_0( vec4<f32>(1.0f, 0.0f, 0.0f, a_0) );
-            return _S22;
+            if(jtype_1 == i32(0))
+            {
+                dc_0 = vec3<f32>(0.0f, 1.0f, 0.0f);
+            }
+            else
+            {
+                if(jtype_1 == i32(2))
+                {
+                    dc_0 = vec3<f32>(0.0f, 0.0f, 1.0f);
+                }
+                else
+                {
+                    dc_0 = vec3<f32>(1.0f, 0.0f, 0.0f);
+                }
+            }
+            var _S20 : pixelOutput_0 = pixelOutput_0( vec4<f32>(dc_0, a_0) );
+            return _S20;
         }
-        var _S23 : pixelOutput_0 = pixelOutput_0( vec4<f32>(PS_CONSTANT_BUFFER_0.color_0.xyz, a_0) );
-        return _S23;
+        var _S21 : pixelOutput_0 = pixelOutput_0( vec4<f32>(PS_CONSTANT_BUFFER_0.color_0.xyz, a_0) );
+        return _S21;
     }
 }
 

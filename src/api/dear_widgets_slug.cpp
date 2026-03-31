@@ -1392,7 +1392,7 @@
 			maxY = ImMax(maxY, ImMax(ImMax(c.p1y, c.p2y), c.p3y));
 		}
 		if (curves.Size == 0) { minX = minY = maxX = maxY = 0.0f; }
-		minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+		else { minX -= pad; minY -= pad; maxX += pad; maxY += pad; }
 
 		return SlugBuildGlyphFromCurves(atlas, cp, (float)adv * sc, minX, minY, maxX, maxY, curves, outEntry);
 	}
@@ -2654,6 +2654,504 @@
 	              const char* text, const char* text_end)
 	{
 		DrawText_Impl(pDrawList, nullptr, ImGui::GetFontSize(), pos, col, text, text_end);
+	}
+
+	// ---- GPU gradient fill text (SLUG_FILL shader permutation) ---------------
+
+	struct SlugFillCBParams {
+		float fillColor0[4];   // gradient start color (or image tint)
+		float fillColor1[4];   // gradient end color (unused for image)
+		float fillBBox[4];     // (reserved — bbox from vertex color)
+		float fillGrad[4];     // x=type (0=linear,1=radial,2=diamond,3=image), y=colorSpace (0-4), z,w=0
+		float fillUVStart[4];  // gradient UV start (or image uv_offset)
+		float fillUVEnd[4];    // gradient UV end (or image uv_scale)
+	};
+
+	struct SlugFillDrawCBData {
+		ImPlatform_ShaderProgram program;
+		ImPlatform_VertexBuffer  vb;
+		ImPlatform_IndexBuffer   ib;
+		SlugFontCache*           atlas;
+		unsigned int             indexCount;
+		SlugFillCBParams         params;
+		ImTextureID              fillTex;  // user image texture (NULL for gradients)
+	};
+
+	static void SlugFillRawDraw(const ImDrawList*, const ImDrawCmd* cmd)
+	{
+		SlugFillDrawCBData* d = (SlugFillDrawCBData*)cmd->UserCallbackData;
+		if (!d) return;
+		ImTextureID curveTex = d->atlas ? d->atlas->curveTexture : NULL;
+		ImTextureID bandTex  = d->atlas ? d->atlas->bandTexture  : NULL;
+		if (!d->program || !d->vb || !d->ib || !curveTex || !bandTex) {
+			IM_FREE(d);
+			return;
+		}
+		ImPlatform_BeginCustomShader_Render(d->program);
+		void* tempCB = ImPlatform_CreateAndBindTempPSCB(&d->params, sizeof(d->params));
+		ImPlatform_BindBuffers(d->vb, d->ib);
+		ImPlatform_SetShaderTexture(d->program, "curveTexture", 0, curveTex);
+		ImPlatform_SetShaderTexture(d->program, "bandTexture",  1, bandTex);
+		if (d->fillTex)
+			ImPlatform_SetShaderTexture(d->program, "fillTexture", 2, d->fillTex);
+		ImPlatform_DrawIndexed(0, d->indexCount, 0);
+		ImPlatform_DestroyTempPSCB(tempCB);
+		IM_FREE(d);
+	}
+
+	// Shared helper: builds glyph quads, creates VB/IB, issues draw callback.
+	// Callers set up SlugFillCBParams for their specific fill type (gradient/image).
+	// fillTexArray/fillTexCount: when non-NULL and count>1, cycles textures per glyph
+	// and issues separate draw calls per unique texture.
+	static void DrawGPUFillText_EmitAndDraw(ImDrawList* pDrawList, ImFont* font, float font_size,
+	    ImVec2 pos, const char* text, const char* text_end, bool perChar,
+	    const SlugFillCBParams& cbParamsIn, ImTextureID fillTex,
+	    const ImTextureID* fillTexArray = NULL, int fillTexCount = 0);
+
+	static void DrawGPUGradientText_Impl(ImDrawList* pDrawList, ImFont* font, float font_size,
+	    ImVec2 pos, const char* text, int gradType,
+	    ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1,
+	    const char* text_end, bool perChar = false, int colorSpace = 0)
+	{
+		if (!pDrawList || !gs_pContext || !text || text == text_end) return;
+		if (!gs_pContext->slugFillShader.program) return;
+
+		auto U32toF4 = [](ImU32 c, float* r, float* g, float* b, float* a) {
+			*r = (float)((c >>  0) & 0xFF) / 255.0f;
+			*g = (float)((c >>  8) & 0xFF) / 255.0f;
+			*b = (float)((c >> 16) & 0xFF) / 255.0f;
+			*a = (float)((c >> 24) & 0xFF) / 255.0f;
+		};
+		SlugFillCBParams cbParams = {};
+		U32toF4(col0, &cbParams.fillColor0[0], &cbParams.fillColor0[1], &cbParams.fillColor0[2], &cbParams.fillColor0[3]);
+		U32toF4(col1, &cbParams.fillColor1[0], &cbParams.fillColor1[1], &cbParams.fillColor1[2], &cbParams.fillColor1[3]);
+		cbParams.fillGrad[0] = (float)gradType;
+		cbParams.fillGrad[1] = (float)colorSpace;
+		cbParams.fillUVStart[0] = uv_start.x; cbParams.fillUVStart[1] = uv_start.y;
+		cbParams.fillUVEnd[0] = uv_end.x; cbParams.fillUVEnd[1] = uv_end.y;
+
+		DrawGPUFillText_EmitAndDraw(pDrawList, font, font_size, pos, text, text_end, perChar, cbParams, NULL);
+	}
+
+	static void DrawGPUFillText_EmitAndDraw(ImDrawList* pDrawList, ImFont* font, float font_size,
+	    ImVec2 pos, const char* text, const char* text_end, bool perChar,
+	    const SlugFillCBParams& cbParamsIn, ImTextureID fillTex,
+	    const ImTextureID* fillTexArray, int fillTexCount)
+	{
+		if (!pDrawList || !gs_pContext || !text || text == text_end) return;
+		if (!gs_pContext->slugFillShader.program) return;
+		if (!text_end) text_end = text + strlen(text);
+		if (text >= text_end) return;
+		if (!font)             font      = ImGui::GetFont();
+		if (font_size <= 0.0f) font_size = ImGui::GetFontSize();
+
+		// Clip-rect culling
+		{
+			ImVec4 cr = pDrawList->_CmdHeader.ClipRect;
+			float textTop = pos.y - font_size;
+			float textBot = pos.y + font_size * 0.5f;
+			if (textTop > cr.w || textBot < cr.y || pos.x > cr.z)
+				return;
+		}
+
+		if (!gs_pContext->slugState)
+			gs_pContext->slugState = IM_NEW(ImWidgetsSlugState);
+
+		ImWidgetsSlugState* state = gs_pContext->slugState;
+
+		SlugFontCache* atlas = SlugGetOrCreateAtlas(state, font);
+		if (!atlas) return;
+
+		// Frame cycling: move last frame's in-flight pairs to recycled pool
+		int currentFrame = ImGui::GetFrameCount();
+		if (currentFrame != atlas->vbibFrameCount) {
+			for (int i = 0; i < atlas->vbibInFlight.Size; i++)
+				atlas->vbibRecycled.push_back(atlas->vbibInFlight[i]);
+			atlas->vbibInFlight.clear();
+			atlas->vbibFrameCount = currentFrame;
+		}
+
+		// Pre-build all glyphs and upload textures if anything is new
+		bool anyNew = false;
+		const char* p = text;
+		while (p < text_end)
+		{
+			unsigned int cp = 0;
+			p += ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
+			if (cp == 0) break;
+			if (SlugFindGlyph(atlas, (ImWchar)cp) == NULL)
+			{
+				SlugGlyphEntry e;
+				if (cp >= 0x100000) {
+					int gi = (int)(cp - 0x100000);
+					SlugBuildGlyphByIndex(atlas, gi, (ImWchar)cp, &e);
+				} else {
+					SlugBuildGlyph(atlas, (ImWchar)cp, &e);
+				}
+				anyNew = true;
+			}
+		}
+
+		// Text shaping
+		ImVector<SlugShapedGlyph> shapedGlyphs;
+#if IM_SUPPORT_LIGATURE
+		bool skipShaping = false;
+		{
+			unsigned int firstCp = 0;
+			ImTextCharFromUtf8(&firstCp, text, text_end);
+			if (firstCp >= 0x100000) skipShaping = true;
+		}
+		if (atlas->shapeCtx && atlas->shapeFont && !skipShaping)
+		{
+			int textLen = (int)(text_end - text);
+			ImU64 shapeKey = SlugFNV64(text, textLen);
+			ImVector<SlugShapedGlyph>* cached = SlugShapeCacheLookup(atlas, shapeKey, textLen);
+			if (cached) {
+				shapedGlyphs = *cached;
+			} else {
+				kbts_ShapeBegin(atlas->shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
+				kbts_ShapeUtf8(atlas->shapeCtx, text, textLen, KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
+				kbts_ShapeEnd(atlas->shapeCtx);
+
+				kbts_run run;
+				while (kbts_ShapeRun(atlas->shapeCtx, &run))
+				{
+					kbts_glyph* glyph;
+					while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph))
+					{
+						SlugShapedGlyph sg;
+						sg.glyphID  = (int)glyph->Id;
+						sg.advanceX = (float)glyph->AdvanceX * atlas->emScale;
+						sg.offsetX  = (float)glyph->OffsetX  * atlas->emScale;
+						sg.offsetY  = (float)glyph->OffsetY  * atlas->emScale;
+						shapedGlyphs.push_back(sg);
+					}
+				}
+				SlugShapeCacheInsert(atlas, shapeKey, textLen, shapedGlyphs);
+			}
+
+			for (int sg_i = 0; sg_i < shapedGlyphs.Size; sg_i++)
+			{
+				ImWchar glyphKey = (ImWchar)(0x100000 + shapedGlyphs[sg_i].glyphID);
+				if (!SlugFindGlyph(atlas, glyphKey))
+				{
+					SlugGlyphEntry e;
+					if (SlugBuildGlyphByIndex(atlas, shapedGlyphs[sg_i].glyphID, glyphKey, &e))
+						anyNew = true;
+				}
+			}
+		}
+#endif
+
+		if (anyNew || atlas->dirty)
+			SlugUploadTextures(atlas);
+		if (!atlas->curveTexture || !atlas->bandTexture) return;
+
+		const float sz    = font_size;
+		const float invSz = 1.0f / sz;
+
+		static const ImPlatform_VertexAttribute kSlugAttribs[] = {
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, pos), "POSITION" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, tex), "TEXCOORD" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, jac), "TEXCOORD" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, bnd), "TEXCOORD" },
+			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, col), "COLOR"    },
+		};
+
+		// Count glyphs
+		int glyphCount = 0;
+		if (shapedGlyphs.Size > 0)
+			glyphCount = shapedGlyphs.Size;
+		else
+		{
+			p = text;
+			while (p < text_end)
+			{
+				unsigned int cp = 0;
+				const char* next = p + ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
+				if (cp == 0) break;
+				SlugGlyphEntry* ge = SlugFindGlyph(atlas, (ImWchar)cp);
+				if (ge && (ge->maxXEm - ge->minXEm) > 1e-5f && (ge->maxYEm - ge->minYEm) > 1e-5f)
+					glyphCount++;
+				p = next;
+			}
+		}
+		if (glyphCount == 0) return;
+
+		float penX = pos.x;
+
+		// Vertex/index buffers — single buffer, all quads use white color (gradient in PS)
+		ImVector<SlugVertex> verts;
+		ImVector<ImU16>      idxs;
+		verts.reserve(glyphCount * 4);
+		idxs.reserve(glyphCount * 6);
+
+		// Per-quad glyph index (for multi-texture image cycling)
+		bool multiTex = (fillTexArray != NULL && fillTexCount > 1);
+		ImVector<int> quadGlyphIdx;
+		if (multiTex) quadGlyphIdx.reserve(glyphCount);
+		int curGlyphVisual = 0;
+
+
+		// Track screen-space bounding box for gradient CB
+		float bbMinX = FLT_MAX, bbMinY = FLT_MAX, bbMaxX = -FLT_MAX, bbMaxY = -FLT_MAX;
+
+		auto EmitFillQuad = [&](const SlugGlyphEntry* ge, float penX_, float posY_)
+		{
+			float sL = penX_ + ge->minXEm * sz;
+			float sR = penX_ + ge->maxXEm * sz;
+			float sT = posY_ - ge->maxYEm * sz;
+			float sB = posY_ - ge->minYEm * sz;
+
+			// Track whole-text bbox (used for whole-text mode; per-char uses per-glyph bbox)
+			if (sL < bbMinX) bbMinX = sL;
+			if (sT < bbMinY) bbMinY = sT;
+			if (sR > bbMaxX) bbMaxX = sR;
+			if (sB > bbMaxY) bbMaxY = sB;
+
+			float uL = ge->minXEm, uR = ge->maxXEm;
+			float uT = ge->maxYEm, uB = ge->minYEm;
+
+			unsigned int gz = (unsigned int)(ImU16)ge->bandTexX
+			                | ((unsigned int)(ImU16)ge->bandTexY << 16);
+			unsigned int gw = (unsigned int)(ge->bandMaxX & 0xFF)
+			                | ((unsigned int)(ge->bandMaxY & 0xFF) << 16);
+			float fgz, fgw;
+			memcpy(&fgz, &gz, 4);
+			memcpy(&fgw, &gw, 4);
+
+			ImU16 base = (ImU16)verts.Size;
+			SlugVertex v;
+			v.tex[2] = fgz; v.tex[3] = fgw;
+			v.jac[0] = invSz; v.jac[1] = 0.0f;
+			v.jac[2] = 0.0f;  v.jac[3] = -invSz;
+			v.bnd[0] = ge->bandScaleX;  v.bnd[1] = ge->bandScaleY;
+			v.bnd[2] = ge->bandOffsetX; v.bnd[3] = ge->bandOffsetY;
+			// Vertex color = per-glyph bbox (shader reads bbox from input.color)
+			// For per-char mode: each glyph gets its own bbox
+			// For whole-text: we'll patch all vertices to the text bbox after the loop
+			v.col[0] = sL; v.col[1] = sT; v.col[2] = sR; v.col[3] = sB;
+
+			v.pos[0] = sL; v.pos[1] = sT; v.pos[2] = -1.0f; v.pos[3] = -1.0f; v.tex[0] = uL; v.tex[1] = uT; verts.push_back(v);
+			v.pos[0] = sR; v.pos[1] = sT; v.pos[2] = +1.0f; v.pos[3] = -1.0f; v.tex[0] = uR; v.tex[1] = uT; verts.push_back(v);
+			v.pos[0] = sR; v.pos[1] = sB; v.pos[2] = +1.0f; v.pos[3] = +1.0f; v.tex[0] = uR; v.tex[1] = uB; verts.push_back(v);
+			v.pos[0] = sL; v.pos[1] = sB; v.pos[2] = -1.0f; v.pos[3] = +1.0f; v.tex[0] = uL; v.tex[1] = uB; verts.push_back(v);
+
+			idxs.push_back(base + 0); idxs.push_back(base + 1); idxs.push_back(base + 2);
+			idxs.push_back(base + 0); idxs.push_back(base + 2); idxs.push_back(base + 3);
+			if (multiTex) quadGlyphIdx.push_back(curGlyphVisual);
+		};
+
+		// Emit glyph quads
+		int shapedIdx = 0;
+		p = text;
+		while (shapedGlyphs.Size > 0 ? (shapedIdx < shapedGlyphs.Size) : (p < text_end))
+		{
+			SlugGlyphEntry* ge = NULL;
+			float advance = 0;
+			float glyphOffX = 0, glyphOffY = 0;
+
+			if (shapedGlyphs.Size > 0)
+			{
+				const SlugShapedGlyph& sg = shapedGlyphs[shapedIdx++];
+				ImWchar glyphKey = (ImWchar)(0x100000 + sg.glyphID);
+				ge = SlugFindGlyph(atlas, glyphKey);
+				advance = sg.advanceX * sz;
+				glyphOffX = sg.offsetX * sz;
+				glyphOffY = sg.offsetY * sz;
+			}
+			else
+			{
+				unsigned int cp = 0;
+				p += ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
+				if (cp == 0) break;
+				ge = SlugFindGlyph(atlas, (ImWchar)cp);
+				if (ge) advance = ge->advanceEm * sz;
+			}
+			if (!ge) { penX += advance; continue; }
+
+			float glyphPenX = penX + glyphOffX;
+			float glyphPosY = pos.y - glyphOffY;
+
+			// For color fonts, emit all layers; for mono, emit the base glyph
+			bool emittedQuad = false;
+			if (ge->colorLayerCount > 0)
+			{
+				for (int li = 0; li < ge->colorLayerCount; li++)
+				{
+					const SlugColorLayer& cl = atlas->colorLayers[ge->colorLayerStart + li];
+					const SlugGlyphEntry& le = atlas->glyphs[cl.glyphEntryIdx];
+					if ((le.maxXEm - le.minXEm) < 1e-5f || (le.maxYEm - le.minYEm) < 1e-5f)
+						continue;
+					float layerPenX = glyphPenX + cl.translateX * sz;
+					float layerPosY = glyphPosY - cl.translateY * sz;
+					EmitFillQuad(&le, layerPenX, layerPosY);
+					emittedQuad = true;
+				}
+			}
+			else if ((ge->maxXEm - ge->minXEm) >= 1e-5f && (ge->maxYEm - ge->minYEm) >= 1e-5f)
+			{
+				EmitFillQuad(ge, glyphPenX, glyphPosY);
+				emittedQuad = true;
+			}
+
+			if (emittedQuad) curGlyphVisual++;
+			penX += advance;
+		}
+
+		if (verts.empty()) return;
+
+		// Whole-text mode: overwrite all vertex colors with the full text bbox
+		if (!perChar)
+		{
+			for (int vi = 0; vi < verts.Size; vi++)
+			{
+				verts[vi].col[0] = bbMinX;
+				verts[vi].col[1] = bbMinY;
+				verts[vi].col[2] = bbMaxX;
+				verts[vi].col[3] = bbMaxY;
+			}
+		}
+
+		// Copy caller's CB params, fill in bbox
+		SlugFillCBParams cbParams = cbParamsIn;
+		cbParams.fillBBox[0] = bbMinX;
+		cbParams.fillBBox[1] = bbMinY;
+		cbParams.fillBBox[2] = bbMaxX;
+		cbParams.fillBBox[3] = bbMaxY;
+
+		// Helper lambda: create VB/IB + issue draw callback for a subset of quads
+		auto IssueDraw = [&](const SlugVertex* v, int nVerts, const ImU16* ix, int nIdxs, ImTextureID tex)
+		{
+			ImPlatform_VertexBufferDesc vbDesc = {};
+			vbDesc.vertex_count  = (unsigned int)nVerts;
+			vbDesc.vertex_stride = sizeof(SlugVertex);
+			vbDesc.attributes    = kSlugAttribs;
+			vbDesc.attribute_count = 5;
+			ImPlatform_IndexBufferDesc ibDesc = {};
+			ibDesc.index_count = (unsigned int)nIdxs;
+			ibDesc.format      = ImPlatform_IndexFormat_UInt16;
+
+			ImPlatform_VertexBuffer vb = ImPlatform_CreateVertexBuffer(v, &vbDesc);
+			ImPlatform_IndexBuffer  ib = ImPlatform_CreateIndexBuffer(ix, &ibDesc);
+			if (!vb || !ib) {
+				if (vb) ImPlatform_DestroyVertexBuffer(vb);
+				if (ib) ImPlatform_DestroyIndexBuffer(ib);
+				return;
+			}
+#if defined(IM_CURRENT_GFX) && (IM_CURRENT_GFX == IM_GFX_DIRECTX11)
+			ImPlatform_CreateVertexInputLayout(vb, gs_pContext->slugFillShader.program);
+#endif
+			SlugFillDrawCBData* cbd = (SlugFillDrawCBData*)IM_ALLOC(sizeof(SlugFillDrawCBData));
+			cbd->program    = gs_pContext->slugFillShader.program;
+			cbd->vb         = vb;
+			cbd->ib         = ib;
+			cbd->atlas      = atlas;
+			cbd->indexCount  = (unsigned int)nIdxs;
+			cbd->params     = cbParams;
+			cbd->fillTex    = tex;
+			pDrawList->AddCallback(SlugFillRawDraw, cbd);
+			pDrawList->AddCallback(ImDrawCallback_ResetRenderState, NULL);
+
+			SlugVBIBPair pair;
+			pair.vb = vb; pair.ib = ib;
+			pair.vbCap = (unsigned int)nVerts; pair.ibCap = (unsigned int)nIdxs;
+			atlas->vbibInFlight.push_back(pair);
+		};
+
+		if (multiTex)
+		{
+			// Multi-texture mode: group quads by texture, issue separate draw per texture.
+			// Each quad is 4 verts + 6 indices.
+			int totalQuads = quadGlyphIdx.Size;
+			for (int ti = 0; ti < fillTexCount; ti++)
+			{
+				ImTextureID tex = fillTexArray[ti];
+				ImVector<SlugVertex> grpVerts;
+				ImVector<ImU16>      grpIdxs;
+				for (int qi = 0; qi < totalQuads; qi++)
+				{
+					if ((quadGlyphIdx[qi] % fillTexCount) != ti) continue;
+					ImU16 base = (ImU16)grpVerts.Size;
+					for (int vi = 0; vi < 4; vi++)
+						grpVerts.push_back(verts[qi * 4 + vi]);
+					grpIdxs.push_back(base + 0); grpIdxs.push_back(base + 1); grpIdxs.push_back(base + 2);
+					grpIdxs.push_back(base + 0); grpIdxs.push_back(base + 2); grpIdxs.push_back(base + 3);
+				}
+				if (grpVerts.Size > 0)
+					IssueDraw(grpVerts.Data, grpVerts.Size, grpIdxs.Data, grpIdxs.Size, tex);
+			}
+		}
+		else
+		{
+			// Single-texture mode: one draw call for all quads
+			IssueDraw(verts.Data, verts.Size, idxs.Data, idxs.Size, fillTex);
+		}
+	}
+
+	void DrawLinearGradientTextGPU(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
+	    const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end, bool perChar, int colorSpace)
+	{
+		font_size = SlugLpToPx(font_size);
+		DrawGPUGradientText_Impl(pDrawList, font, font_size, pos, text, 0/*linear*/, uv_start, uv_end, col0, col1, text_end, perChar, colorSpace);
+	}
+
+	void DrawRadialGradientTextGPU(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
+	    const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end, bool perChar, int colorSpace)
+	{
+		font_size = SlugLpToPx(font_size);
+		DrawGPUGradientText_Impl(pDrawList, font, font_size, pos, text, 1/*radial*/, uv_start, uv_end, col0, col1, text_end, perChar, colorSpace);
+	}
+
+	void DrawDiamondGradientTextGPU(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
+	    const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end, bool perChar, int colorSpace)
+	{
+		font_size = SlugLpToPx(font_size);
+		DrawGPUGradientText_Impl(pDrawList, font, font_size, pos, text, 2/*diamond*/, uv_start, uv_end, col0, col1, text_end, perChar, colorSpace);
+	}
+
+	void DrawImageTextGPU(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
+	    const char* text, ImTextureID tex, ImU32 tint,
+	    ImVec2 uv_offset, ImVec2 uv_scale, const char* text_end, bool perChar)
+	{
+		font_size = SlugLpToPx(font_size);
+
+		auto U32toF4 = [](ImU32 c, float* r, float* g, float* b, float* a) {
+			*r = (float)((c >>  0) & 0xFF) / 255.0f;
+			*g = (float)((c >>  8) & 0xFF) / 255.0f;
+			*b = (float)((c >> 16) & 0xFF) / 255.0f;
+			*a = (float)((c >> 24) & 0xFF) / 255.0f;
+		};
+		SlugFillCBParams cbParams = {};
+		U32toF4(tint, &cbParams.fillColor0[0], &cbParams.fillColor0[1], &cbParams.fillColor0[2], &cbParams.fillColor0[3]);
+		cbParams.fillGrad[0] = 3.0f; // image fill type
+		cbParams.fillUVStart[0] = uv_offset.x; cbParams.fillUVStart[1] = uv_offset.y;
+		cbParams.fillUVEnd[0] = uv_scale.x; cbParams.fillUVEnd[1] = uv_scale.y;
+
+		DrawGPUFillText_EmitAndDraw(pDrawList, font, font_size, pos, text, text_end, perChar, cbParams, tex);
+	}
+
+	void DrawImageTextGPU(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
+	    const char* text, const ImTextureID* textures, int nTextures, ImU32 tint,
+	    ImVec2 uv_offset, ImVec2 uv_scale, const char* text_end)
+	{
+		if (!textures || nTextures <= 0) return;
+		font_size = SlugLpToPx(font_size);
+
+		auto U32toF4 = [](ImU32 c, float* r, float* g, float* b, float* a) {
+			*r = (float)((c >>  0) & 0xFF) / 255.0f;
+			*g = (float)((c >>  8) & 0xFF) / 255.0f;
+			*b = (float)((c >> 16) & 0xFF) / 255.0f;
+			*a = (float)((c >> 24) & 0xFF) / 255.0f;
+		};
+		SlugFillCBParams cbParams = {};
+		U32toF4(tint, &cbParams.fillColor0[0], &cbParams.fillColor0[1], &cbParams.fillColor0[2], &cbParams.fillColor0[3]);
+		cbParams.fillGrad[0] = 3.0f; // image fill type
+		cbParams.fillUVStart[0] = uv_offset.x; cbParams.fillUVStart[1] = uv_offset.y;
+		cbParams.fillUVEnd[0] = uv_scale.x; cbParams.fillUVEnd[1] = uv_scale.y;
+
+		DrawGPUFillText_EmitAndDraw(pDrawList, font, font_size, pos, text, text_end, true/*perChar*/,
+		    cbParams, textures[0], textures, nTextures);
 	}
 
 	// ---- Linear gradient text -----------------------------------------------
@@ -5851,6 +6349,39 @@
 	void DrawTextDebugCurves(ImDrawList*, ImFont*, float, ImVec2, const char*, const char*, int) {}
 	void DrawTextDebugLayers(ImDrawList*, ImFont*, float, ImVec2, const char*, const char*) {}
 
+	void DrawLinearGradientTextGPU(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
+	    const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end, bool perChar, int colorSpace)
+	{
+		(void)perChar; (void)colorSpace;
+		DrawLinearGradientText(pDrawList, font, font_size, pos, text, uv_start, uv_end, col0, col1, nullptr, nullptr, text_end);
+	}
+	void DrawRadialGradientTextGPU(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
+	    const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end, bool perChar, int colorSpace)
+	{
+		(void)perChar; (void)colorSpace;
+		DrawRadialGradientText(pDrawList, font, font_size, pos, text, uv_start, uv_end, col0, col1, nullptr, nullptr, text_end);
+	}
+	void DrawDiamondGradientTextGPU(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
+	    const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end, bool perChar, int colorSpace)
+	{
+		(void)perChar; (void)colorSpace;
+		DrawDiamondGradientText(pDrawList, font, font_size, pos, text, uv_start, uv_end, col0, col1, nullptr, nullptr, text_end);
+	}
+	void DrawImageTextGPU(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
+	    const char* text, ImTextureID tex, ImU32 tint,
+	    ImVec2 uv_offset, ImVec2 uv_scale, const char* text_end, bool perChar)
+	{
+		(void)perChar;
+		DrawImageText(pDrawList, font, font_size, pos, tex, text, text_end, tint, uv_offset, uv_scale);
+	}
+	void DrawImageTextGPU(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
+	    const char* text, const ImTextureID* textures, int nTextures, ImU32 tint,
+	    ImVec2 uv_offset, ImVec2 uv_scale, const char* text_end)
+	{
+		(void)nTextures;
+		if (textures && nTextures > 0)
+			DrawImageText(pDrawList, font, font_size, pos, textures[0], text, text_end, tint, uv_offset, uv_scale);
+	}
 
 #endif  // IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER_WAS_UNDEF
 

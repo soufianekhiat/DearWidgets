@@ -504,37 +504,41 @@ float SlugRender_0(vec2 renderCoord_0, vec4 banding_0, ivec4 glyphData_0)
 }
 
 
-#line 408
+
+vec4 SlugRenderDebug_0(vec2 renderCoord_1, vec4 banding_1, ivec4 glyphData_1)
+{
+
+
+    float coverage_0 = SlugRender_0(renderCoord_1, banding_1, glyphData_1);
+    return vec4(coverage_0, coverage_0, coverage_0, max(coverage_0, 0.25));
+}
+
+
+#line 418
 layout(location = 0)
 out vec4 entryPointParam_main_ps_0;
 
 
-#line 408
-layout(location = 0)
-in vec4 input_color_0;
-
-
-#line 408
+#line 418
 layout(location = 1)
 in vec2 input_texcoord_0;
 
 
-#line 408
+#line 418
 flat layout(location = 2)
 in vec4 input_banding_0;
 
 
-#line 408
+#line 418
 flat layout(location = 3)
 in ivec4 input_glyph_0;
 
 
-#line 422
 void main()
 {
 
 #line 422
-    entryPointParam_main_ps_0 = input_color_0 * SlugRender_0(input_texcoord_0, input_banding_0, input_glyph_0);
+    entryPointParam_main_ps_0 = SlugRenderDebug_0(input_texcoord_0, input_banding_0, input_glyph_0);
 
 #line 422
     return;

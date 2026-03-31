@@ -230,6 +230,7 @@ struct ImWidgetsContext
 	ImDrawShader					slugColorShader;    // Slug GPU font rendering shader (COLR v0 color glyphs)
 	ImDrawShader					slugGradientShader; // Slug GPU font gradient shader (COLR v1 linear gradients)
 	ImDrawShader					slugDebugShader;    // Slug GPU font debug shader (xcov/ycov/coverage as RGB)
+	ImDrawShader					slugFillShader;     // Slug GPU fill gradient shader (user linear/radial/diamond)
 	ImWidgets::ImWidgetsSlugState*	slugState;        // Per-context Slug font atlas cache
 };
 
@@ -2753,7 +2754,16 @@ namespace ImWidgets{
 	IMGUI_API void DrawLinearGradientText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB = nullptr, pfsRGB2Space sRGB2Space = nullptr, const char* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
 	IMGUI_API void DrawRadialGradientText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB = nullptr, pfsRGB2Space sRGB2Space = nullptr, const char* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
 	IMGUI_API void DrawDiamondGradientText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB = nullptr, pfsRGB2Space sRGB2Space = nullptr, const char* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
-
+	// GPU gradient text rendering (requires ImPlatform + SLUG_FILL shader). No CPU tessellation.
+	// Gradient is computed per-pixel on GPU. Falls back to CPU tessellation if shader unavailable. font_size in lp.
+	// colorSpace: 0=sRGB, 1=Linear, 2=OkLab, 3=OkLch, 4=HSV (matches ImWidgetsGradientInterp_)
+	IMGUI_API void DrawLinearGradientTextGPU( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end = nullptr, bool perChar = false, int colorSpace = 0 );
+	IMGUI_API void DrawRadialGradientTextGPU( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end = nullptr, bool perChar = false, int colorSpace = 0 );
+	IMGUI_API void DrawDiamondGradientTextGPU( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end = nullptr, bool perChar = false, int colorSpace = 0 );
+	// GPU image text rendering. Image is sampled per-pixel within glyph coverage. font_size in lp.
+	IMGUI_API void DrawImageTextGPU( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, ImTextureID tex, ImU32 tint = IM_COL32_WHITE, ImVec2 uv_offset = ImVec2(0,0), ImVec2 uv_scale = ImVec2(1,1), const char* text_end = nullptr, bool perChar = false );
+	// GPU image text with per-character texture cycling. textures[i % nTextures] is used for glyph i.
+	IMGUI_API void DrawImageTextGPU( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, const ImTextureID* textures, int nTextures, ImU32 tint = IM_COL32_WHITE, ImVec2 uv_offset = ImVec2(0,0), ImVec2 uv_scale = ImVec2(1,1), const char* text_end = nullptr );
 	// Debug: draw curve outlines, control points, and bounding boxes for Slug glyphs. font_size in lp.
 	// flags: 1=curves, 2=control points, 4=bounding boxes, 8=band grid, 0xFF=all
 	IMGUI_API void DrawTextDebugCurves( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, const char* text_end = nullptr, int flags = 0xFF );

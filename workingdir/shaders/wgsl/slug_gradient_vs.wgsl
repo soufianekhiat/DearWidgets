@@ -46,19 +46,23 @@ fn SlugUnpack_0( tex_1 : vec4<f32>,  bnd_0 : vec4<f32>,  vbnd_0 : ptr<function, 
 struct PS_INPUT_0
 {
     @builtin(position) position_0 : vec4<f32>,
-    @location(0) color_0 : vec4<f32>,
-    @location(3) texcoord_0 : vec2<f32>,
+    @location(0) texcoord_0 : vec2<f32>,
     @interpolate(flat) @location(1) banding_0 : vec4<f32>,
     @interpolate(flat) @location(2) glyph_0 : vec4<i32>,
+    @interpolate(flat) @location(4) gradColor0_0 : vec4<f32>,
+    @interpolate(flat) @location(5) gradColor1_0 : vec4<f32>,
+    @interpolate(flat) @location(3) gradParams_0 : vec4<f32>,
 };
 
 struct vertexInput_0
 {
     @location(0) pos_1 : vec4<f32>,
-    @location(3) tex_2 : vec4<f32>,
+    @location(4) tex_2 : vec4<f32>,
     @location(1) jac_1 : vec4<f32>,
     @location(2) bnd_1 : vec4<f32>,
-    @location(4) col_0 : vec4<f32>,
+    @location(5) col_0 : vec4<f32>,
+    @location(3) grd_0 : vec4<f32>,
+    @location(6) col2_0 : vec4<f32>,
 };
 
 @vertex
@@ -69,7 +73,9 @@ fn main_vs( _S9 : vertexInput_0) -> PS_INPUT_0
     var _S10 : vec2<f32> = SlugDilate_0(_S9.pos_1, _S9.tex_2, _S9.jac_1, vec4<f32>(vertexBuffer_0.ProjectionMatrix_0.data_0[i32(0)][i32(0)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(1)][i32(0)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(2)][i32(0)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(3)][i32(0)]), vec4<f32>(vertexBuffer_0.ProjectionMatrix_0.data_0[i32(0)][i32(1)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(1)][i32(1)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(2)][i32(1)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(3)][i32(1)]), vec4<f32>(vertexBuffer_0.ProjectionMatrix_0.data_0[i32(0)][i32(3)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(1)][i32(3)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(2)][i32(3)], vertexBuffer_0.ProjectionMatrix_0.data_0[i32(3)][i32(3)]), vec2<f32>(2.0f / vertexBuffer_0.ProjectionMatrix_0.data_0[i32(0)][i32(0)], 2.0f / abs(vertexBuffer_0.ProjectionMatrix_0.data_0[i32(1)][i32(1)])), &(dilatedPos_0));
     output_0.texcoord_0 = _S10;
     output_0.position_0 = (((vec4<f32>(dilatedPos_0, 0.0f, 1.0f)) * (unpackStorage_0(vertexBuffer_0.ProjectionMatrix_0))));
-    output_0.color_0 = _S9.col_0;
+    output_0.gradColor0_0 = _S9.col_0;
+    output_0.gradColor1_0 = _S9.col2_0;
+    output_0.gradParams_0 = _S9.grd_0;
     var _S11 : vec4<f32> = output_0.banding_0;
     var _S12 : vec4<i32> = output_0.glyph_0;
     SlugUnpack_0(_S9.tex_2, _S9.bnd_1, &(_S11), &(_S12));

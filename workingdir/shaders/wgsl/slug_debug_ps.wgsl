@@ -238,6 +238,12 @@ fn SlugRender_0( renderCoord_0 : vec2<f32>,  banding_0 : vec4<f32>,  glyphData_0
     return CalcCoverage_0(xcov_1, ycov_2, xwgt_1, ywgt_2);
 }
 
+fn SlugRenderDebug_0( renderCoord_1 : vec2<f32>,  banding_1 : vec4<f32>,  glyphData_1 : vec4<i32>) -> vec4<f32>
+{
+    var coverage_0 : f32 = SlugRender_0(renderCoord_1, banding_1, glyphData_1);
+    return vec4<f32>(coverage_0, coverage_0, coverage_0, max(coverage_0, 0.25f));
+}
+
 struct pixelOutput_0
 {
     @location(0) output_0 : vec4<f32>,
@@ -247,14 +253,14 @@ struct pixelInput_0
 {
     @location(0) color_0 : vec4<f32>,
     @location(3) texcoord_0 : vec2<f32>,
-    @interpolate(flat) @location(1) banding_1 : vec4<f32>,
+    @interpolate(flat) @location(1) banding_2 : vec4<f32>,
     @interpolate(flat) @location(2) glyph_0 : vec4<i32>,
 };
 
 @fragment
 fn main_ps( _S47 : pixelInput_0, @builtin(position) position_0 : vec4<f32>) -> pixelOutput_0
 {
-    var _S48 : pixelOutput_0 = pixelOutput_0( vec4<f32>(_S47.color_0.xyz, _S47.color_0.w * SlugRender_0(_S47.texcoord_0, _S47.banding_1, _S47.glyph_0)) );
+    var _S48 : pixelOutput_0 = pixelOutput_0( SlugRenderDebug_0(_S47.texcoord_0, _S47.banding_2, _S47.glyph_0) );
     return _S48;
 }
 
