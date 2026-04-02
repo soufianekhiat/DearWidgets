@@ -3400,66 +3400,73 @@ namespace ImWidgets {
 		ApplyOpenAll();
 		if ( ImGui::CollapsingHeader( "Draw" ) )
 		{
-			// Sub-function recording wrappers
-			{ float _sy0 = ImGui::GetCursorPos().y; ShowDrawShapeDemo();        DW_SsRecord( "Draw_Shape",             _sy0, ImGui::GetCursorPos().y ); }
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Shapes##Draw" ) )
+			{
+				{ float _sy0 = ImGui::GetCursorPos().y; ShowDrawShapeDemo(); DW_SsRecord( "Draw_Shape", _sy0, ImGui::GetCursorPos().y ); }
+				ImGui::TreePop();
+			}
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
-			ShowDrawTextDemo();
-			{ float _sy0 = ImGui::GetCursorPos().y; ShowTypographyAnimations(); DW_SsRecord( "Typography_Animations",  _sy0, ImGui::GetCursorPos().y ); }
-			ShowLaTeXDemo();
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Text##Draw" ) )
+			{
+				ShowDrawTextDemo();
+				{ float _sy0 = ImGui::GetCursorPos().y; ShowTypographyAnimations(); DW_SsRecord( "Typography_Animations", _sy0, ImGui::GetCursorPos().y ); }
+				ShowLaTeXDemo();
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Primitives##Draw" ) )
+			{
+			static float s_cull_cshader_h = 0; float s_cull_cshader_y;
+			if ( BeginCullSection( s_cull_cshader_h, s_cull_cshader_y ) ) {
 			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Custom Shader" ) )
 			{
-				static float s_cull_cshader_h = 0; float s_cull_cshader_y;
-				if ( BeginCullSection( s_cull_cshader_h, s_cull_cshader_y ) ) {
-				ImGui::Indent();
 				ShowCustomShaderDemo();
-				ApplyOpenAll();
-				if ( ImGui::TreeNode( "Primitives##Draw" ) )
-				{
-				ApplyOpenAll();
-				if ( ImGui::CollapsingHeader( "Thick line" ) )
-				{
-					float const size = CanvasSize();
-					ImGui::Dummy( ImVec2( size, 0.25f * size ) );
-					ImDrawList* pDrawList = ImGui::GetWindowDrawList();
-
-					static float line_width = 5.0f;
-					static float mitter_limit = 0.0f;
-					static float antialiasing = 1.0f / size;
-
-					ImWidgetsStyle& widgetStyle = ImWidgets::GetStyle();
-					ImVec4 vBlue = widgetStyle.Colors[ StyleColor_Slider2D_CursorX ];
-					ImVec4 vOrange = widgetStyle.Colors[ StyleColor_Slider2D_CursorY ];
-					ImU32 uBlue = ImGui::GetColorU32( vBlue );
-					ImU32 uOrange = ImGui::GetColorU32( vOrange );
-					static ImVec4 color_v( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
-					static ImU32 color_col = ImGui::GetColorU32( color_v );
-					if ( ImGui::ColorEdit4( "ColA##DrawShape", &color_v.x ) )
-						color_col = ImGui::GetColorU32( color_v );
-					ImGui::DragFloat( "line_width", &line_width, 0.0125f, 0.0f, 16.0f );
-					ImGui::DragFloat( "antialiasing", &antialiasing, 0.0125f, 0.0f, 16.0f );
-					ImGui::SliderAngle( "mitter_limit", &mitter_limit );
-
-					ImVec2 pos = ImGui::GetCursorScreenPos();
-
-					ImVec2 pts[] = {
-						pos + ImVec2( size * 0.25f, size * 0.25f ),
-						pos + ImVec2( size * 0.72f, size * 0.25f ),
-						pos + ImVec2( size * 0.72f, size * 0.75f )
-					};
-
-					//pDrawList->AddLine( pts[ 0 ], pts[ 1 ], color_col, line_width );
-
-					ImGui::Dummy( ImVec2( size, size ) );
-				}
-				ShowDrawSquircleDemo();
-				ImGui::TreePop();
-				}
-				ImGui::Unindent();
-				EndCullSection( s_cull_cshader_h, s_cull_cshader_y ); }
 			}
-			DW_SsRecord( "Custom_Shader", _sy0, ImGui::GetCursorPos().y ); }  // end Custom Shader block
+			DW_SsRecord( "Custom_Shader", _sy0, ImGui::GetCursorPos().y ); }
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Thick line" ) )
+			{
+				float const size = CanvasSize();
+				ImGui::Dummy( ImVec2( size, 0.25f * size ) );
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+
+				static float line_width = 5.0f;
+				static float mitter_limit = 0.0f;
+				static float antialiasing = 1.0f / size;
+
+				ImWidgetsStyle& widgetStyle = ImWidgets::GetStyle();
+				ImVec4 vBlue = widgetStyle.Colors[ StyleColor_Slider2D_CursorX ];
+				ImVec4 vOrange = widgetStyle.Colors[ StyleColor_Slider2D_CursorY ];
+				ImU32 uBlue = ImGui::GetColorU32( vBlue );
+				ImU32 uOrange = ImGui::GetColorU32( vOrange );
+				static ImVec4 color_v( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
+				static ImU32 color_col = ImGui::GetColorU32( color_v );
+				if ( ImGui::ColorEdit4( "ColA##DrawShape", &color_v.x ) )
+					color_col = ImGui::GetColorU32( color_v );
+				ImGui::DragFloat( "line_width", &line_width, 0.0125f, 0.0f, 16.0f );
+				ImGui::DragFloat( "antialiasing", &antialiasing, 0.0125f, 0.0f, 16.0f );
+				ImGui::SliderAngle( "mitter_limit", &mitter_limit );
+
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+
+				ImVec2 pts[] = {
+					pos + ImVec2( size * 0.25f, size * 0.25f ),
+					pos + ImVec2( size * 0.72f, size * 0.25f ),
+					pos + ImVec2( size * 0.72f, size * 0.75f )
+				};
+
+				//pDrawList->AddLine( pts[ 0 ], pts[ 1 ], color_col, line_width );
+
+				ImGui::Dummy( ImVec2( size, size ) );
+			}
+			ShowDrawSquircleDemo();
+			EndCullSection( s_cull_cshader_h, s_cull_cshader_y ); }
+				ImGui::TreePop();
+			}
 #endif
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Gradients##Draw" ) )
@@ -4587,11 +4594,11 @@ namespace ImWidgets {
 		ApplyOpenAll();
 		if ( ImGui::CollapsingHeader( "Interactions" ) )
 		{
-			static float s_cull_interact_h = 0; float s_cull_interact_y;
-			if ( BeginCullSection( s_cull_interact_h, s_cull_interact_y ) ) {
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Polygon Hit Testing##Interactions" ) )
 			{
+			static float s_cull_interact_h = 0; float s_cull_interact_y;
+			if ( BeginCullSection( s_cull_interact_h, s_cull_interact_y ) ) {
 			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Poly Convex Hovered" ) )
@@ -4720,15 +4727,13 @@ namespace ImWidgets {
 				ImGui::Dummy( ImVec2( size, size ) );
 			}
 			DW_SsRecord( "Poly_With_Hole_Hovered", _sy0, ImGui::GetCursorPos().y ); }
+			EndCullSection( s_cull_interact_h, s_cull_interact_y ); }
 				ImGui::TreePop();
 			}
-			EndCullSection( s_cull_interact_h, s_cull_interact_y ); }
 		}
 		ApplyOpenAll();
 		if ( ImGui::CollapsingHeader( "Widgets" ) )
 		{
-			static float s_cull_widgets_h = 0; float s_cull_widgets_y;
-			if ( BeginCullSection( s_cull_widgets_h, s_cull_widgets_y ) ) {
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Buttons##Widgets" ) )
 			{
@@ -5560,26 +5565,37 @@ namespace ImWidgets {
 
 				static bool gradAlpha = true;
 				ImGui::Checkbox( "Alpha##GradEditor", &gradAlpha );
+				ImGui::SameLine();
+				if ( ImGui::Checkbox( "Split Alpha##GradEditor", &gradient.SplitAlpha ) )
+				{
+					gradient.SelectedAlphaIdx = -1;
+				}
 
 				GradientEditor( "##GradientMain", &gradient, gradAlpha, ImVec2( 0, 32 ) );
 
 				static char const* interpNames[] = { "sRGB", "Linear sRGB", "OkLab", "OkLCH", "HSV" };
 				ImGui::Combo( "Interpolation##GradEditor", &gradient.Interpolation, interpNames, ImWidgetsGradientInterp_COUNT );
 
-				// Edit selected stop color
+				// Edit selected color stop
 				if ( gradient.SelectedIdx >= 0 && gradient.SelectedIdx < gradient.Stops.Size )
 				{
 					ImGradientStop& stop = gradient.Stops[ gradient.SelectedIdx ];
-					ImGui::Text( "Stop %d  Position: %.3f", gradient.SelectedIdx, stop.Position );
-					ImGuiColorEditFlags ceFlags = gradAlpha ? ( ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf ) : ImGuiColorEditFlags_NoAlpha;
+					ImGui::Text( "Color Stop %d  Position: %.3f", gradient.SelectedIdx, stop.Position );
+					ImGuiColorEditFlags ceFlags = ( gradAlpha && !gradient.SplitAlpha ) ? ( ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf ) : ImGuiColorEditFlags_NoAlpha;
 					ImGui::ColorEdit4( "Stop Color##GradEditor", &stop.Color.x, ceFlags );
+				}
+				else if ( gradient.SplitAlpha && gradient.SelectedAlphaIdx >= 0 && gradient.SelectedAlphaIdx < gradient.AlphaStops.Size )
+				{
+					ImGradientAlphaStop& astop = gradient.AlphaStops[ gradient.SelectedAlphaIdx ];
+					ImGui::Text( "Alpha Stop %d  Position: %.3f", gradient.SelectedAlphaIdx, astop.Position );
+					ImGui::SliderFloat( "Alpha##GradAlphaStop", &astop.Alpha, 0.0f, 1.0f );
 				}
 				else
 				{
 					ImGui::TextDisabled( "No stop selected" );
 				}
 
-				ImGui::TextWrapped( "Click bar to add stop. Drag to move. Double-click to edit color. Right-click to delete. Drag far below to remove." );
+				ImGui::TextWrapped( "Click bar to add stop. Drag to move. Double-click to edit. Right-click for context menu. Drag far away to remove." );
 
 				// Show sampled output
 				static float sampleT = 0.5f;
@@ -7231,7 +7247,6 @@ namespace ImWidgets {
 				ImGui::TreePop();
 			}
 			DW_SsRecord( "Misc", _sy0, ImGui::GetCursorPos().y ); }  // end Misc block
-			EndCullSection( s_cull_widgets_h, s_cull_widgets_y ); }
 		}
 
 		s_open_all = 0;

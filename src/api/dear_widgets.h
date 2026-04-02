@@ -1476,17 +1476,32 @@ struct ImGradientStop
 	ImGradientStop( float pos, ImVec4 col ) : Position( pos ), Color( col ) {}
 };
 
+struct ImGradientAlphaStop
+{
+	float	Position;	// [0, 1]
+	float	Alpha;		// [0, 1]
+
+	ImGradientAlphaStop() : Position( 0.0f ), Alpha( 1.0f ) {}
+	ImGradientAlphaStop( float pos, float a ) : Position( pos ), Alpha( a ) {}
+};
+
 struct ImGradientData
 {
-	ImVector<ImGradientStop>	Stops;
-	ImWidgetsGradientInterp		Interpolation;
-	int							SelectedIdx;	// Runtime state for editor, -1 = none
+	ImVector<ImGradientStop>		Stops;
+	ImVector<ImGradientAlphaStop>	AlphaStops;		// Used when SplitAlpha == true
+	ImWidgetsGradientInterp			Interpolation;
+	int								SelectedIdx;		// Runtime state for editor, -1 = none
+	int								SelectedAlphaIdx;	// Runtime state for alpha track, -1 = none
+	bool							SplitAlpha;			// When true, color and alpha have independent keys
 
-	ImGradientData() : Interpolation( ImWidgetsGradientInterp_sRGB ), SelectedIdx( -1 )
+	ImGradientData() : Interpolation( ImWidgetsGradientInterp_sRGB ), SelectedIdx( -1 ), SelectedAlphaIdx( -1 ), SplitAlpha( false )
 	{
 		Stops.resize( 2 );
 		Stops[ 0 ] = ImGradientStop( 0.0f, ImVec4( 0.0f, 0.0f, 0.0f, 1.0f ) );
 		Stops[ 1 ] = ImGradientStop( 1.0f, ImVec4( 1.0f, 1.0f, 1.0f, 1.0f ) );
+		AlphaStops.resize( 2 );
+		AlphaStops[ 0 ] = ImGradientAlphaStop( 0.0f, 1.0f );
+		AlphaStops[ 1 ] = ImGradientAlphaStop( 1.0f, 1.0f );
 	}
 
 	void SortStops()
@@ -1505,6 +1520,21 @@ struct ImGradientData
 		}
 	}
 
+	void SortAlphaStops()
+	{
+		for ( int i = 1; i < AlphaStops.Size; ++i )
+		{
+			ImGradientAlphaStop key = AlphaStops[ i ];
+			int j = i - 1;
+			while ( j >= 0 && AlphaStops[ j ].Position > key.Position )
+			{
+				AlphaStops[ j + 1 ] = AlphaStops[ j ];
+				--j;
+			}
+			AlphaStops[ j + 1 ] = key;
+		}
+	}
+
 	int AddStop( float pos, ImVec4 col )
 	{
 		Stops.push_back( ImGradientStop( pos, col ) );
@@ -1517,11 +1547,31 @@ struct ImGradientData
 		return Stops.Size - 1;
 	}
 
+	int AddAlphaStop( float pos, float a )
+	{
+		AlphaStops.push_back( ImGradientAlphaStop( pos, a ) );
+		SortAlphaStops();
+		for ( int i = 0; i < AlphaStops.Size; ++i )
+		{
+			if ( AlphaStops[ i ].Position == pos )
+				return i;
+		}
+		return AlphaStops.Size - 1;
+	}
+
 	bool RemoveStop( int idx )
 	{
 		if ( Stops.Size <= 2 || idx < 0 || idx >= Stops.Size )
 			return false;
 		Stops.erase( Stops.Data + idx );
+		return true;
+	}
+
+	bool RemoveAlphaStop( int idx )
+	{
+		if ( AlphaStops.Size <= 2 || idx < 0 || idx >= AlphaStops.Size )
+			return false;
+		AlphaStops.erase( AlphaStops.Data + idx );
 		return true;
 	}
 };
@@ -2820,6 +2870,7 @@ namespace ImWidgets{
 	IMGUI_API void DrawColorRing( ImDrawList* pDrawList, ImVec2 const curPos, ImVec2 const size, float thickness_, ImWidgetsColor1DCallback func, void* pUserData, int division, float colorOffset, bool bIsBilinear );
 
 	IMGUI_API ImVec4 GradientSample( ImGradientData const& gradient, float t );
+	IMGUI_API float  GradientAlphaSample( ImGradientData const& gradient, float t );
 	IMGUI_API void DrawCheckerboard( ImDrawList* pDrawList, ImVec2 position, ImVec2 size, float cellSize, ImU32 col1, ImU32 col2 );
 	IMGUI_API void DrawGradientBar( ImDrawList* pDrawList, ImGradientData const& gradient, ImVec2 position, ImVec2 size, int resolution );
 

@@ -7252,7 +7252,44 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		out.z = ImClamp( out.z, 0.0f, 1.0f );
 		out.w = ImLerp( colL.w, colR.w, f ); // Alpha always linear
 
+		// Override alpha from separate alpha track when split
+		if ( gradient.SplitAlpha && gradient.AlphaStops.Size >= 2 )
+			out.w = GradientAlphaSample( gradient, t );
+
 		return out;
+	}
+
+	float GradientAlphaSample( ImGradientData const& gradient, float t )
+	{
+		if ( gradient.AlphaStops.Size == 0 )
+			return 1.0f;
+		if ( gradient.AlphaStops.Size == 1 )
+			return gradient.AlphaStops[ 0 ].Alpha;
+
+		t = ImClamp( t, 0.0f, 1.0f );
+
+		if ( t <= gradient.AlphaStops[ 0 ].Position )
+			return gradient.AlphaStops[ 0 ].Alpha;
+		if ( t >= gradient.AlphaStops[ gradient.AlphaStops.Size - 1 ].Position )
+			return gradient.AlphaStops[ gradient.AlphaStops.Size - 1 ].Alpha;
+
+		int rightIdx = 0;
+		for ( int i = 0; i < gradient.AlphaStops.Size; ++i )
+		{
+			if ( gradient.AlphaStops[ i ].Position >= t )
+			{
+				rightIdx = i;
+				break;
+			}
+		}
+		int leftIdx = rightIdx - 1;
+		if ( leftIdx < 0 )
+			leftIdx = 0;
+
+		float segLen = gradient.AlphaStops[ rightIdx ].Position - gradient.AlphaStops[ leftIdx ].Position;
+		float f = ( segLen > 1e-6f ) ? ( t - gradient.AlphaStops[ leftIdx ].Position ) / segLen : 0.0f;
+
+		return ImLerp( gradient.AlphaStops[ leftIdx ].Alpha, gradient.AlphaStops[ rightIdx ].Alpha, f );
 	}
 
 	void DrawCheckerboard( ImDrawList* pDrawList, ImVec2 position, ImVec2 size, float cellSize, ImU32 col1, ImU32 col2 )
@@ -7380,16 +7417,24 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const ImGuiStyle& style = g.Style;
 		ImWidgetsStyle& dwStyle = GetStyle();
 		const ImGuiID id = window->GetID( label );
+		// We use the same id for both color and alpha tracks; selectedAlpha vs selected distinguishes them
 		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
-		const float barHeight = ( size.y > 0.0f ) ? size.y : ImGui::GetFrameHeight();
+		const float baseBarHeight = ( size.y > 0.0f ) ? size.y : ImGui::GetFrameHeight();
 		const float markerHeight = dwStyle.Gradient_MarkerHeight;
 		const float markerThickness = dwStyle.Gradient_MarkerThickness;
+		const bool splitAlpha = gradient->SplitAlpha && alpha;
+		const float barHeight = ( splitAlpha && !s_InsideExpandedWidget ) ? baseBarHeight * 5.0f : baseBarHeight;
 
 		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
 
-		const ImRect bar_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, barHeight ) );
+		// Layout: [alpha_marker_bb (top)] [bar_bb (middle)] [color_marker_bb (bottom)]
+		// When not splitAlpha, alpha_marker_bb has zero height
+		const float alphaMarkerH = splitAlpha ? markerHeight : 0.0f;
+		const ImVec2 origin = window->DC.CursorPos;
+		const ImRect alpha_marker_bb( origin, origin + ImVec2( w, alphaMarkerH ) );
+		const ImRect bar_bb( ImVec2( origin.x, origin.y + alphaMarkerH ), ImVec2( origin.x + w, origin.y + alphaMarkerH + barHeight ) );
 		const ImRect marker_bb( ImVec2( bar_bb.Min.x, bar_bb.Max.y ), ImVec2( bar_bb.Max.x, bar_bb.Max.y + markerHeight ) );
-		const ImRect total_bb( bar_bb.Min, ImVec2( bar_bb.Max.x + ( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f ), marker_bb.Max.y ) );
+		const ImRect total_bb( origin, ImVec2( bar_bb.Max.x + ( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f ), marker_bb.Max.y ) );
 
 		ImGui::ItemSize( total_bb, style.FramePadding.y );
 		if ( !ImGui::ItemAdd( total_bb, id, &bar_bb, 0 ) )
@@ -7400,8 +7445,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		bool value_changed = false;
 		int& selected = gradient->SelectedIdx;
+		int& selectedAlpha = gradient->SelectedAlphaIdx;
 
-		// --- Find hovered marker ---
+		// --- Find hovered color marker (bottom) ---
 		int hovered_marker = -1;
 		float closest_dist = FLT_MAX;
 		for ( int i = 0; i < gradient->Stops.Size; ++i )
@@ -7415,9 +7461,36 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			}
 		}
 
+		// --- Find hovered alpha marker (top) ---
+		int hovered_alpha_marker = -1;
+		if ( splitAlpha )
+		{
+			float closest_alpha_dist = FLT_MAX;
+			for ( int i = 0; i < gradient->AlphaStops.Size; ++i )
+			{
+				float x = ImLerp( bar_bb.Min.x, bar_bb.Max.x, gradient->AlphaStops[ i ].Position );
+				float dist = ImAbs( g.IO.MousePos.x - x );
+				if ( dist < closest_alpha_dist && dist < markerHeight * 1.5f )
+				{
+					closest_alpha_dist = dist;
+					hovered_alpha_marker = i;
+				}
+			}
+
+			// Disambiguate: if mouse is in the top half, prefer alpha; bottom half, prefer color
+			float midY = bar_bb.Min.y + barHeight * 0.5f;
+			if ( hovered_marker >= 0 && hovered_alpha_marker >= 0 )
+			{
+				if ( g.IO.MousePos.y < midY )
+					hovered_marker = -1;
+				else
+					hovered_alpha_marker = -1;
+			}
+		}
+
 		// --- DRAWING ---
 		// Frame background
-		const ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
+		const ImU32 frame_col = ImGui::GetColorU32( ( g.ActiveId == id || g.ActiveId == id ) ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
 		ImGui::RenderFrame( bar_bb.Min, bar_bb.Max, frame_col, true, g.Style.FrameRounding );
 
 		// Checkerboard for transparency (only when alpha is enabled)
@@ -7435,23 +7508,22 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Border
 		window->DrawList->AddRect( bar_bb.Min, bar_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 
-		// Markers
+		// Color markers (bottom edge)
 		for ( int i = 0; i < gradient->Stops.Size; ++i )
 		{
 			float x = ImLerp( bar_bb.Min.x, bar_bb.Max.x, gradient->Stops[ i ].Position );
-			ImVec2 tip( x, marker_bb.Min.y );
 
 			bool isSelected = ( i == selected );
 			bool isHovered = ( i == hovered_marker );
 
-			// Draw triangle marker
+			// Draw triangle marker pointing up (tip at bar bottom edge)
 			ImVec2 p0( x, marker_bb.Min.y );
 			ImVec2 p1( x - markerHeight * 0.5f, marker_bb.Max.y );
 			ImVec2 p2( x + markerHeight * 0.5f, marker_bb.Max.y );
 
 			// Fill with stop color (opaque preview)
 			ImVec4 stopCol = gradient->Stops[ i ].Color;
-			stopCol.w = 1.0f; // Show opaque in marker
+			stopCol.w = 1.0f;
 			window->DrawList->AddTriangleFilled( p0, p1, p2, ImGui::GetColorU32( stopCol ) );
 
 			// Outline
@@ -7459,12 +7531,39 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float outlineThick = isSelected ? markerThickness * 2.0f : markerThickness;
 			window->DrawList->AddTriangle( p0, p1, p2, outlineCol, outlineThick );
 
-			// Alpha indicator: small horizontal line across marker proportional to alpha
-			if ( alpha && gradient->Stops[ i ].Color.w < 1.0f )
+			// Alpha indicator on color markers (only when not split)
+			if ( alpha && !splitAlpha && gradient->Stops[ i ].Color.w < 1.0f )
 			{
 				float alphaY = ImLerp( marker_bb.Min.y + 2.0f, marker_bb.Max.y - 1.0f, 1.0f - gradient->Stops[ i ].Color.w );
 				float halfW = markerHeight * 0.3f;
 				window->DrawList->AddLine( ImVec2( x - halfW, alphaY ), ImVec2( x + halfW, alphaY ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gradient_AlphaIndicator ] ), markerThickness );
+			}
+		}
+
+		// Alpha markers (top edge, inverted triangles) — only in split mode
+		if ( splitAlpha )
+		{
+			for ( int i = 0; i < gradient->AlphaStops.Size; ++i )
+			{
+				float x = ImLerp( bar_bb.Min.x, bar_bb.Max.x, gradient->AlphaStops[ i ].Position );
+
+				bool isSelected = ( i == selectedAlpha );
+				bool isHovered = ( i == hovered_alpha_marker );
+
+				// Draw inverted triangle marker: tip points down (at bar top edge), base at top
+				ImVec2 p0( x, alpha_marker_bb.Max.y );                              // tip (bottom)
+				ImVec2 p1( x + markerHeight * 0.5f, alpha_marker_bb.Min.y );        // base right (top)
+				ImVec2 p2( x - markerHeight * 0.5f, alpha_marker_bb.Min.y );        // base left (top)
+
+				// Fill: white-to-black proportional to alpha
+				float a = gradient->AlphaStops[ i ].Alpha;
+				ImU32 fillCol = IM_COL32( (int)( a * 255 ), (int)( a * 255 ), (int)( a * 255 ), 255 );
+				window->DrawList->AddTriangleFilled( p0, p1, p2, fillCol );
+
+				// Outline
+				ImU32 outlineCol = ImGui::GetColorU32( dwStyle.Colors[ isSelected ? StyleColor_Gradient_MarkerOutlineSelected : ( isHovered ? StyleColor_Gradient_MarkerOutlineHovered : StyleColor_Gradient_MarkerOutline ) ] );
+				float outlineThick = isSelected ? markerThickness * 2.0f : markerThickness;
+				window->DrawList->AddTriangle( p0, p1, p2, outlineCol, outlineThick );
 			}
 		}
 
@@ -7476,45 +7575,73 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImGui::PushID( id );
 
 		bool bar_contains_mouse = bar_bb.Contains( g.IO.MousePos );
-		bool marker_contains_mouse = marker_bb.Contains( g.IO.MousePos );
 
-		// Double-click on marker: open color picker
-		if ( hovered_marker >= 0 && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) && hovered )
+		// ========================
+		// Color stop interactions
+		// ========================
+
+		bool mouseInColorZone = !splitAlpha || g.IO.MousePos.y >= bar_bb.Min.y;
+
+		// Double-click on color marker: open color picker
+		if ( hovered_marker >= 0 && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) && hovered && mouseInColorZone )
 		{
 			selected = hovered_marker;
+			selectedAlpha = -1;
 			ImGui::OpenPopup( "##GradStopPicker" );
 		}
-		// Click on marker: select and start drag
-		else if ( hovered_marker >= 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered )
+		// Click on color marker: select and start drag
+		else if ( hovered_marker >= 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered && mouseInColorZone )
 		{
 			selected = hovered_marker;
+			selectedAlpha = -1;
 			ImGui::SetActiveID( id, window );
 			ImGui::SetFocusID( id, window );
 			ImGui::FocusWindow( window );
 			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
 		}
-		// Click on empty bar: add new stop
-		else if ( bar_contains_mouse && hovered_marker == -1 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered )
+		// Click on empty bar: in split mode, top half adds alpha key, bottom half adds color key
+		// In non-split mode, always adds color key
+		else if ( bar_contains_mouse && hovered_marker == -1 && hovered_alpha_marker == -1
+				  && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered )
 		{
 			float t = ImClamp( ( g.IO.MousePos.x - bar_bb.Min.x ) / bar_bb.GetWidth(), 0.0f, 1.0f );
-			ImVec4 col = GradientSample( *gradient, t );
-			int newIdx = gradient->AddStop( t, col );
-			selected = newIdx;
-			value_changed = true;
-			ImGui::SetActiveID( id, window );
-			ImGui::SetFocusID( id, window );
-			ImGui::FocusWindow( window );
-			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+			bool mouseInTopHalf = splitAlpha && g.IO.MousePos.y < bar_bb.Min.y + barHeight * 0.5f;
+			if ( mouseInTopHalf )
+			{
+				// Top half in split mode: add alpha key only
+				float a = GradientAlphaSample( *gradient, t );
+				int newIdx = gradient->AddAlphaStop( t, a );
+				selectedAlpha = newIdx;
+				selected = -1;
+				value_changed = true;
+				ImGui::SetActiveID( id, window );
+				ImGui::SetFocusID( id, window );
+				ImGui::FocusWindow( window );
+				ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+			}
+			else
+			{
+				// Bottom half (or non-split): add color key only
+				ImVec4 col = GradientSample( *gradient, t );
+				if ( splitAlpha ) col.w = 1.0f;
+				int newIdx = gradient->AddStop( t, col );
+				selected = newIdx;
+				selectedAlpha = -1;
+				value_changed = true;
+				ImGui::SetActiveID( id, window );
+				ImGui::SetFocusID( id, window );
+				ImGui::FocusWindow( window );
+				ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+			}
 		}
 
-		// Drag: reposition selected stop
+		// Drag color stop
 		if ( g.ActiveId == id && selected >= 0 && selected < gradient->Stops.Size && ImGui::IsMouseDragging( ImGuiMouseButton_Left ) )
 		{
 			float t = ImClamp( ( g.IO.MousePos.x - bar_bb.Min.x ) / bar_bb.GetWidth(), 0.0f, 1.0f );
 			ImVec4 draggedColor = gradient->Stops[ selected ].Color;
 			gradient->Stops[ selected ].Position = t;
 			gradient->SortStops();
-			// Re-find selected by matching color pointer (position may match others, color is unique during drag)
 			for ( int i = 0; i < gradient->Stops.Size; ++i )
 			{
 				if ( gradient->Stops[ i ].Position == t && gradient->Stops[ i ].Color.x == draggedColor.x
@@ -7537,17 +7664,80 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			}
 		}
 
-		// Release
+		// Release color drag
 		if ( g.ActiveId == id && ImGui::IsMouseReleased( ImGuiMouseButton_Left ) )
 		{
 			ImGui::ClearActiveID();
 		}
 
-		// Right-click context menu
+		// Right-click context menu for color stops
 		if ( hovered_marker >= 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) && hovered )
 		{
 			selected = hovered_marker;
+			selectedAlpha = -1;
 			ImGui::OpenPopup( "##GradStopCtx" );
+		}
+
+		// ========================
+		// Alpha stop interactions (split mode only)
+		// ========================
+
+		if ( splitAlpha )
+		{
+			bool mouseInAlphaZone = g.IO.MousePos.y < bar_bb.Min.y + barHeight * 0.5f;
+
+			// Double-click on alpha marker: open alpha editor
+			if ( hovered_alpha_marker >= 0 && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) && hovered && mouseInAlphaZone )
+			{
+				selectedAlpha = hovered_alpha_marker;
+				selected = -1;
+				ImGui::OpenPopup( "##GradAlphaPicker" );
+			}
+			// Click on alpha marker: select and start drag
+			else if ( hovered_alpha_marker >= 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && hovered && mouseInAlphaZone )
+			{
+				selectedAlpha = hovered_alpha_marker;
+				selected = -1;
+				ImGui::SetActiveID( id, window );
+				ImGui::SetFocusID( id, window );
+				ImGui::FocusWindow( window );
+				ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+			}
+
+			// Drag alpha stop
+			if ( g.ActiveId == id && selectedAlpha >= 0 && selectedAlpha < gradient->AlphaStops.Size && ImGui::IsMouseDragging( ImGuiMouseButton_Left ) )
+			{
+				float t = ImClamp( ( g.IO.MousePos.x - bar_bb.Min.x ) / bar_bb.GetWidth(), 0.0f, 1.0f );
+				float draggedAlpha = gradient->AlphaStops[ selectedAlpha ].Alpha;
+				gradient->AlphaStops[ selectedAlpha ].Position = t;
+				gradient->SortAlphaStops();
+				for ( int i = 0; i < gradient->AlphaStops.Size; ++i )
+				{
+					if ( gradient->AlphaStops[ i ].Position == t && gradient->AlphaStops[ i ].Alpha == draggedAlpha )
+					{
+						selectedAlpha = i;
+						break;
+					}
+				}
+				value_changed = true;
+
+				// Drag far above the alpha marker area: delete
+				if ( g.IO.MousePos.y < alpha_marker_bb.Min.y - markerHeight * 3.0f && gradient->AlphaStops.Size > 2 )
+				{
+					gradient->RemoveAlphaStop( selectedAlpha );
+					selectedAlpha = -1;
+					ImGui::ClearActiveID();
+					value_changed = true;
+				}
+			}
+
+			// Right-click context menu for alpha stops
+			if ( hovered_alpha_marker >= 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) && hovered )
+			{
+				selectedAlpha = hovered_alpha_marker;
+				selected = -1;
+				ImGui::OpenPopup( "##GradAlphaCtx" );
+			}
 		}
 
 		// Color picker popup
@@ -7555,7 +7745,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			if ( selected >= 0 && selected < gradient->Stops.Size )
 			{
-				ImGuiColorEditFlags pickerFlags = alpha ? ( ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf ) : ImGuiColorEditFlags_NoAlpha;
+				ImGuiColorEditFlags pickerFlags = ( alpha && !splitAlpha ) ? ( ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf ) : ImGuiColorEditFlags_NoAlpha;
 				if ( ImGui::ColorPicker4( "##picker", &gradient->Stops[ selected ].Color.x, pickerFlags ) )
 				{
 					value_changed = true;
@@ -7564,7 +7754,26 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImGui::EndPopup();
 		}
 
-		// Context menu popup
+		// Alpha editor popup (split mode)
+		if ( ImGui::BeginPopup( "##GradAlphaPicker" ) )
+		{
+			if ( selectedAlpha >= 0 && selectedAlpha < gradient->AlphaStops.Size )
+			{
+				ImGui::Text( "Alpha Stop %d", selectedAlpha );
+				ImGui::SetNextItemWidth( 200.0f );
+				if ( ImGui::SliderFloat( "##alpha", &gradient->AlphaStops[ selectedAlpha ].Alpha, 0.0f, 1.0f, "%.3f" ) )
+					value_changed = true;
+				ImGui::SetNextItemWidth( 200.0f );
+				if ( ImGui::SliderFloat( "##pos", &gradient->AlphaStops[ selectedAlpha ].Position, 0.0f, 1.0f, "pos: %.3f" ) )
+				{
+					gradient->SortAlphaStops();
+					value_changed = true;
+				}
+			}
+			ImGui::EndPopup();
+		}
+
+		// Context menu popup (color stops)
 		bool openPickerDeferred = false;
 		if ( ImGui::BeginPopup( "##GradStopCtx" ) )
 		{
@@ -7585,17 +7794,49 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( openPickerDeferred )
 			ImGui::OpenPopup( "##GradStopPicker" );
 
-		// Delete key
-		if ( selected >= 0 && ImGui::IsKeyPressed( ImGuiKey_Delete ) && hovered )
+		// Context menu popup (alpha stops)
+		bool openAlphaPickerDeferred = false;
+		if ( ImGui::BeginPopup( "##GradAlphaCtx" ) )
 		{
-			if ( gradient->RemoveStop( selected ) )
+			if ( ImGui::MenuItem( "Edit Alpha" ) )
 			{
-				selected = -1;
-				value_changed = true;
+				openAlphaPickerDeferred = true;
+			}
+			if ( ImGui::MenuItem( "Remove Alpha Stop", NULL, false, gradient->AlphaStops.Size > 2 ) )
+			{
+				if ( gradient->RemoveAlphaStop( selectedAlpha ) )
+				{
+					selectedAlpha = -1;
+					value_changed = true;
+				}
+			}
+			ImGui::EndPopup();
+		}
+		if ( openAlphaPickerDeferred )
+			ImGui::OpenPopup( "##GradAlphaPicker" );
+
+		// Delete key — works on whichever track is active
+		if ( ImGui::IsKeyPressed( ImGuiKey_Delete ) && hovered )
+		{
+			if ( selected >= 0 )
+			{
+				if ( gradient->RemoveStop( selected ) )
+				{
+					selected = -1;
+					value_changed = true;
+				}
+			}
+			else if ( selectedAlpha >= 0 )
+			{
+				if ( gradient->RemoveAlphaStop( selectedAlpha ) )
+				{
+					selectedAlpha = -1;
+					value_changed = true;
+				}
 			}
 		}
 
-		// Arrow key nudging
+		// Arrow key nudging — color track
 		if ( selected >= 0 && selected < gradient->Stops.Size && hovered )
 		{
 			ImGui::SetKeyOwner( ImGuiKey_LeftArrow, id );
@@ -7617,13 +7858,47 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			}
 		}
 
+		// Arrow key nudging — alpha track
+		if ( splitAlpha && selectedAlpha >= 0 && selectedAlpha < gradient->AlphaStops.Size && hovered )
+		{
+			ImGui::SetKeyOwner( ImGuiKey_LeftArrow, id );
+			ImGui::SetKeyOwner( ImGuiKey_RightArrow, id );
+			float step = 1.0f / ImMax( bar_bb.GetWidth(), 1.0f );
+			if ( ImGui::GetIO().KeyShift )
+				step *= 10.0f;
+			if ( ImGui::IsKeyPressed( ImGuiKey_LeftArrow ) )
+			{
+				gradient->AlphaStops[ selectedAlpha ].Position = ImClamp( gradient->AlphaStops[ selectedAlpha ].Position - step, 0.0f, 1.0f );
+				gradient->SortAlphaStops();
+				value_changed = true;
+			}
+			if ( ImGui::IsKeyPressed( ImGuiKey_RightArrow ) )
+			{
+				gradient->AlphaStops[ selectedAlpha ].Position = ImClamp( gradient->AlphaStops[ selectedAlpha ].Position + step, 0.0f, 1.0f );
+				gradient->SortAlphaStops();
+				value_changed = true;
+			}
+		}
+
 		// Tooltip
 		if ( hovered_marker >= 0 && hovered_marker < gradient->Stops.Size && hovered && g.ActiveId != id )
 		{
-			ImGui::SetTooltip( "Stop %d: pos=%.3f RGBA=(%.2f, %.2f, %.2f, %.2f)",
-				hovered_marker, gradient->Stops[ hovered_marker ].Position,
-				gradient->Stops[ hovered_marker ].Color.x, gradient->Stops[ hovered_marker ].Color.y,
-				gradient->Stops[ hovered_marker ].Color.z, gradient->Stops[ hovered_marker ].Color.w );
+			if ( splitAlpha )
+				ImGui::SetTooltip( "Color %d: pos=%.3f RGB=(%.2f, %.2f, %.2f)",
+					hovered_marker, gradient->Stops[ hovered_marker ].Position,
+					gradient->Stops[ hovered_marker ].Color.x, gradient->Stops[ hovered_marker ].Color.y,
+					gradient->Stops[ hovered_marker ].Color.z );
+			else
+				ImGui::SetTooltip( "Stop %d: pos=%.3f RGBA=(%.2f, %.2f, %.2f, %.2f)",
+					hovered_marker, gradient->Stops[ hovered_marker ].Position,
+					gradient->Stops[ hovered_marker ].Color.x, gradient->Stops[ hovered_marker ].Color.y,
+					gradient->Stops[ hovered_marker ].Color.z, gradient->Stops[ hovered_marker ].Color.w );
+		}
+		if ( splitAlpha && hovered_alpha_marker >= 0 && hovered_alpha_marker < gradient->AlphaStops.Size && hovered && g.ActiveId != id )
+		{
+			ImGui::SetTooltip( "Alpha %d: pos=%.3f alpha=%.3f",
+				hovered_alpha_marker, gradient->AlphaStops[ hovered_alpha_marker ].Position,
+				gradient->AlphaStops[ hovered_alpha_marker ].Alpha );
 		}
 
 		ImGui::PopID();
@@ -7642,8 +7917,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				ImGui::SameLine();
 				// Right: info / edit
 				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
+				if ( alpha )
+				{
+					if ( ImGui::Checkbox( "Split Alpha", &gradient->SplitAlpha ) )
+						value_changed = true;
+				}
 				ImGui::TextUnformatted( "Stops" );
-				ImGui::Text( "%d", gradient->Stops.Size );
+				ImGui::Text( "Color: %d  Alpha: %d", gradient->Stops.Size, gradient->AlphaStops.Size );
 				ImGui::Spacing();
 				ImGui::TextUnformatted( "Interpolation" );
 				ImGui::SetNextItemWidth( -FLT_MIN );
@@ -7652,7 +7932,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				if ( selected >= 0 && selected < gradient->Stops.Size )
 				{
 					ImGui::Separator();
-					ImGui::TextUnformatted( "Selected" );
+					ImGui::TextUnformatted( "Selected Color Stop" );
 					ImGui::Text( "%d", selected );
 					ImGui::Spacing();
 					ImGui::TextUnformatted( "Position" );
@@ -7676,7 +7956,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 						ImGui::SetNextItemWidth( -FLT_MIN );
 						if ( ImGui::DragFloat( "##b", &stopColor.z, 0.001f, 0.0f, 1.0f, "B: %.3f" ) )
 							value_changed = true;
-						if ( alpha )
+						if ( alpha && !splitAlpha )
 						{
 							ImGui::SetNextItemWidth( -FLT_MIN );
 							if ( ImGui::DragFloat( "##a", &stopColor.w, 0.001f, 0.0f, 1.0f, "A: %.3f" ) )
@@ -7686,6 +7966,25 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 						ImVec4 preview = stopColor; preview.w = 1.0f;
 						ImGui::ColorButton( "##preview", preview, 0, ImVec2( ImGui::GetContentRegionAvail().x, 20 ) );
 					}
+				}
+				if ( splitAlpha && selectedAlpha >= 0 && selectedAlpha < gradient->AlphaStops.Size )
+				{
+					ImGui::Separator();
+					ImGui::TextUnformatted( "Selected Alpha Stop" );
+					ImGui::Text( "%d", selectedAlpha );
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "Position" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					if ( ImGui::DragFloat( "##apos", &gradient->AlphaStops[ selectedAlpha ].Position, 0.001f, 0.0f, 1.0f, "%.3f" ) )
+					{
+						gradient->SortAlphaStops();
+						value_changed = true;
+					}
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "Alpha" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					if ( ImGui::DragFloat( "##aval", &gradient->AlphaStops[ selectedAlpha ].Alpha, 0.001f, 0.0f, 1.0f, "%.3f" ) )
+						value_changed = true;
 				}
 				ImGui::EndChild();
 			}
