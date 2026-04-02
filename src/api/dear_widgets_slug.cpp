@@ -2688,14 +2688,14 @@
 			return;
 		}
 		ImPlatform_BeginCustomShader_Render(d->program);
-		void* tempCB = ImPlatform_CreateAndBindTempPSCB(&d->params, sizeof(d->params));
+		void* tempCB = ImPlatform_PushShaderConstants(&d->params, sizeof(d->params));
 		ImPlatform_BindBuffers(d->vb, d->ib);
 		ImPlatform_SetShaderTexture(d->program, "curveTexture", 0, curveTex);
 		ImPlatform_SetShaderTexture(d->program, "bandTexture",  1, bandTex);
 		if (d->fillTex)
 			ImPlatform_SetShaderTexture(d->program, "fillTexture", 2, d->fillTex);
 		ImPlatform_DrawIndexed(0, d->indexCount, 0);
-		ImPlatform_DestroyTempPSCB(tempCB);
+		ImPlatform_PopShaderConstants(tempCB);
 		IM_FREE(d);
 	}
 

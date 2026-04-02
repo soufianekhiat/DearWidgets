@@ -16260,6 +16260,7 @@ namespace ImWidgets {
 		float t = ( v_max_f > v_min_f ) ? ImClamp( ( v_cur_f - v_min_f ) / ( v_max_f - v_min_f ), 0.0f, 1.0f ) : 0.0f;
 
 		// Drag interaction
+		const bool ccw = v_angle_min > v_angle_max;
 		bool value_changed = false;
 		if ( g.ActiveId == id )
 		{
@@ -16270,10 +16271,9 @@ namespace ImWidgets {
 				float dy = mouse.y - center.y;
 				float angle = ImAtan2( dy, dx );
 
-				// Clamp angle to arc range
-				// Normalize angles to a consistent range
-				float arc_start = v_angle_min;
-				float arc_end   = v_angle_max;
+				// For CCW arcs, swap to CW internally then invert t
+				float arc_start = ccw ? v_angle_max : v_angle_min;
+				float arc_end   = ccw ? v_angle_min : v_angle_max;
 
 				// Handle wrapping: ensure arc_end > arc_start
 				if ( arc_end < arc_start )
@@ -16298,6 +16298,7 @@ namespace ImWidgets {
 				{
 					t = rel / arc_span;
 				}
+				if ( ccw ) t = 1.0f - t;
 				t = ImClamp( t, 0.0f, 1.0f );
 
 				// Apply new value

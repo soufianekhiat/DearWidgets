@@ -4879,12 +4879,20 @@ namespace ImWidgets {
 				ImWidgets::SliderRingInt( "Int##SR", &ival, 0, 100 );
 
 				ImGui::Separator();
-				ImGui::Text( "Custom angles & thickness:" );
-				static float fval2 = 0.25f;
-				ImWidgets::SliderRingFloat( "Half##SR2", &fval2, 0.0f, 1.0f, -IM_PI, 0.0f, 12.0f );
+				ImGui::Text( "Clockwise:" );
+				static float fCW = 0.25f;
+				ImWidgets::SliderRingFloat( "CW Half##SR_CW", &fCW, 0.0f, 1.0f, -IM_PI, 0.0f, 12.0f );
 
-				static float fval3 = 0.75f;
-				ImWidgets::SliderRingFloat( "Full##SR3", &fval3, 0.0f, 1.0f, -IM_PI, IM_PI, 6.0f );
+				static float fCW2 = 0.75f;
+				ImWidgets::SliderRingFloat( "CW Full##SR_CW2", &fCW2, 0.0f, 1.0f, -IM_PI, IM_PI, 6.0f );
+
+				ImGui::Separator();
+				ImGui::Text( "Counter-clockwise:" );
+				static float fCCW = 0.25f;
+				ImWidgets::SliderRingFloat( "CCW Half##SR_CCW", &fCCW, 0.0f, 1.0f, 0.0f, -IM_PI, 12.0f );
+
+				static float fCCW2 = 0.75f;
+				ImWidgets::SliderRingFloat( "CCW Full##SR_CCW2", &fCCW2, 0.0f, 1.0f, IM_PI, -IM_PI, 6.0f );
 			}
 			DW_SsRecord( "SliderRing", _sy0, ImGui::GetCursorPos().y ); }
 
