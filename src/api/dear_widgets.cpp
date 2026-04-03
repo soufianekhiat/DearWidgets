@@ -3314,6 +3314,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Default config: focus on CPU path initially (user can enable GPU path later)
 		GlobalData.dashedLinesUseGPU = false;
 		// Ensure shader handles are zero-initialized to avoid random garbage checks
+		memset(&ctx->blurShader,        0, sizeof(ImDrawShader));
+		ctx->blurBackbufferCopy = NULL;
+		ctx->blurIntermediate = NULL;
+		ctx->blurTexW = ctx->blurTexH = 0;
 		memset(&ctx->markerShader,      0, sizeof(ImDrawShader));
 		memset(&ctx->lineShader,        0, sizeof(ImDrawShader));
 		memset(&ctx->slugShader,        0, sizeof(ImDrawShader));
@@ -9965,8 +9969,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const float ringGap    = 2.0f;
 
 		// Layout
-		const float outerSize = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
-		const float halfSize  = outerSize * 0.5f;
+		// size.x is the desired disc+ring footprint (same semantics as PrimariesWheel).
+		// Arcs are placed outside that footprint, so the total widget is larger.
+		const float discRingSize = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
+		const float outerSize    = discRingSize + 2.0f * ( arcGrabR + arcThick + arcGap );
+		const float halfSize     = outerSize * 0.5f;
 
 		// Radii from outside in
 		const float arcOuterR  = halfSize - arcGrabR;
@@ -11146,23 +11153,23 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// Transform Gizmo
 	//////////////////////////////////////////////////////////////////////////
 
-	// Helper: compute image corners for a given transform
-	static void ComputeImageCorners( ImVec2 canvasCenter, float canvasW, float canvasH,
-		const ImTransformImage& img, ImVec2* corners, ImVec2* edgeMids, ImVec2* outCenter,
+	// Helper: compute object corners from transform + size
+	static void ComputeObjectCorners( ImVec2 canvasCenter, float canvasW, float canvasH,
+		const ImTransformData& tr, ImVec2 size, ImVec2* corners, ImVec2* edgeMids, ImVec2* outCenter,
 		float* outHw, float* outHh, float* outCosR, float* outSinR )
 	{
-		float imgAR = img.TexSize.x / img.TexSize.y;
+		float imgAR = size.x / size.y;
 		float canvasAR = canvasW / canvasH;
 		float baseW, baseH;
 		if ( imgAR > canvasAR ) { baseW = canvasW; baseH = canvasW / imgAR; }
 		else                    { baseH = canvasH; baseW = canvasH * imgAR; }
 
-		float hw = baseW * img.Transform.Scale.x * 0.5f;
-		float hh = baseH * img.Transform.Scale.y * 0.5f;
-		ImVec2 center( canvasCenter.x + img.Transform.Translation.x,
-					   canvasCenter.y + img.Transform.Translation.y );
-		float cosR = ImCos( img.Transform.Rotation );
-		float sinR = ImSin( img.Transform.Rotation );
+		float hw = baseW * tr.Scale.x * 0.5f;
+		float hh = baseH * tr.Scale.y * 0.5f;
+		ImVec2 center( canvasCenter.x + tr.Translation.x,
+					   canvasCenter.y + tr.Translation.y );
+		float cosR = ImCos( tr.Rotation );
+		float sinR = ImSin( tr.Rotation );
 
 		ImVec2 local[ 4 ] = { { -hw, -hh }, { hw, -hh }, { hw, hh }, { -hw, hh } };
 		for ( int i = 0; i < 4; ++i )
@@ -11194,8 +11201,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return ( ImFabs( lx ) <= hw && ImFabs( ly ) <= hh );
 	}
 
-	bool ImageTransformGizmo( char const* label, ImTransformImage* images, int imageCount, int* selectedIndex,
-		ImTransformGizmoFlags flags, ImVec2 canvasSize )
+	bool TransformGizmo( char const* label, ImTransformData* transforms, ImVec2* sizes, int count, int* selectedIndex,
+		ImTransformGizmoCallbacks const* callbacks, ImTransformGizmoFlags flags, ImVec2 canvasSize )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
@@ -11235,17 +11242,26 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		dl->AddRect( canvasBB.Min, canvasBB.Max, colBorder );
 		dl->PushClipRect( canvasBB.Min, canvasBB.Max, true );
 
-		int sel = ( selectedIndex && *selectedIndex >= 0 && *selectedIndex < imageCount ) ? *selectedIndex : -1;
+		int sel = ( selectedIndex && *selectedIndex >= 0 && *selectedIndex < count ) ? *selectedIndex : -1;
 
-		// Draw all images (back to front, selected last)
-		for ( int n = 0; n < imageCount; ++n )
+		// Draw all objects (back to front)
+		for ( int n = 0; n < count; ++n )
 		{
 			ImVec2 corners[ 4 ], edgeMids[ 4 ], center;
 			float hw, hh, cosR, sinR;
-			ComputeImageCorners( canvasCenter, cw, ch, images[ n ], corners, edgeMids, &center, &hw, &hh, &cosR, &sinR );
+			ComputeObjectCorners( canvasCenter, cw, ch, transforms[ n ], sizes[ n ], corners, edgeMids, &center, &hw, &hh, &cosR, &sinR );
 
-			dl->AddImageQuad( images[ n ].Texture, corners[ 0 ], corners[ 1 ], corners[ 2 ], corners[ 3 ],
-				ImVec2( 0, 0 ), ImVec2( 1, 0 ), ImVec2( 1, 1 ), ImVec2( 0, 1 ) );
+			if ( callbacks && callbacks->DrawFn )
+			{
+				ImTransformGizmoDrawParams dp;
+				dp.DrawList = dl;
+				dp.Center   = center;
+				dp.HalfW    = hw;  dp.HalfH = hh;
+				dp.CosR     = cosR; dp.SinR = sinR;
+				dp.Index    = n;
+				for ( int i = 0; i < 4; ++i ) dp.Corners[ i ] = corners[ i ];
+				callbacks->DrawFn( dp, callbacks->DrawData );
+			}
 
 			if ( n == sel )
 			{
@@ -11268,7 +11284,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		if ( sel >= 0 )
 		{
-			ComputeImageCorners( canvasCenter, cw, ch, images[ sel ], selCorners, selEdgeMids,
+			ComputeObjectCorners( canvasCenter, cw, ch, transforms[ sel ], sizes[ sel ], selCorners, selEdgeMids,
 				&selCenter, &selHw, &selHh, &selCosR, &selSinR );
 
 			// Bounding box outline
@@ -11345,7 +11361,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		if ( g.ActiveId == id && sel >= 0 )
 		{
-			ImTransformData* tr = &images[ sel ].Transform;
+			ImTransformData* tr = &transforms[ sel ];
 			int action = storage->GetInt( actionKey, 0 );
 
 			if ( ImGui::IsMouseDown( 0 ) )
@@ -11442,7 +11458,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					storage->SetInt( actionKey, 3 );
 					float angle = ImAtan2( mouse.y - selCenter.y, mouse.x - selCenter.x );
 					storage->SetFloat( startAngleKey, angle );
-					storage->SetFloat( startRotKey, images[ sel ].Transform.Rotation );
+					storage->SetFloat( startRotKey, transforms[ sel ].Rotation );
 					ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
 					ImGui::SetActiveID( id, window );
 					ImGui::SetFocusID( id, window );
@@ -11465,8 +11481,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 								( mouse.x - selCenter.x ) * ( mouse.x - selCenter.x ) +
 								( mouse.y - selCenter.y ) * ( mouse.y - selCenter.y ) );
 							storage->SetFloat( startDistKey, dist );
-							storage->SetFloat( startScaleXKey, images[ sel ].Transform.Scale.x );
-							storage->SetFloat( startScaleYKey, images[ sel ].Transform.Scale.y );
+							storage->SetFloat( startScaleXKey, transforms[ sel ].Scale.x );
+							storage->SetFloat( startScaleYKey, transforms[ sel ].Scale.y );
 							ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
 							ImGui::SetActiveID( id, window );
 							ImGui::SetFocusID( id, window );
@@ -11496,8 +11512,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 							float ly = -mx * selSinR + my * selCosR;
 							float dist = ( i == 0 || i == 2 ) ? ImFabs( ly ) : ImFabs( lx );
 							storage->SetFloat( startDistKey, dist );
-							storage->SetFloat( startScaleXKey, images[ sel ].Transform.Scale.x );
-							storage->SetFloat( startScaleYKey, images[ sel ].Transform.Scale.y );
+							storage->SetFloat( startScaleXKey, transforms[ sel ].Scale.x );
+							storage->SetFloat( startScaleYKey, transforms[ sel ].Scale.y );
 							ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
 							ImGui::SetActiveID( id, window );
 							ImGui::SetFocusID( id, window );
@@ -11513,11 +11529,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			{
 				// Check images in reverse order (front to back) for selection
 				int hitImage = -1;
-				for ( int n = imageCount - 1; n >= 0; --n )
+				for ( int n = count - 1; n >= 0; --n )
 				{
 					ImVec2 c[ 4 ], center;
 					float hw, hh, cosR, sinR;
-					ComputeImageCorners( canvasCenter, cw, ch, images[ n ], c, NULL, &center, &hw, &hh, &cosR, &sinR );
+					ComputeObjectCorners( canvasCenter, cw, ch, transforms[ n ], sizes[ n ], c, NULL, &center, &hw, &hh, &cosR, &sinR );
 					if ( PointInRotatedRect( mouse, center, hw, hh, cosR, sinR ) )
 					{
 						hitImage = n;
@@ -11570,7 +11586,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				ImVec2 avail = ImGui::GetContentRegionAvail();
 				float widgetW = avail.x * 0.75f;
 				// Left: gizmo
-				if ( ImageTransformGizmo( "##exp", images, imageCount, selectedIndex, expFlags, ImVec2( widgetW, avail.y ) ) )
+				if ( TransformGizmo( "##exp", transforms, sizes, count, selectedIndex, callbacks, expFlags, ImVec2( widgetW, avail.y ) ) )
 					value_changed = true;
 				ImGui::SameLine();
 				// Right: info panel
@@ -11583,11 +11599,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 				// Layer info + ordering
 				ImGui::Separator();
-				ImGui::Text( "%d image%s", imageCount, imageCount != 1 ? "s" : "" );
-				int s = ( selectedIndex && *selectedIndex >= 0 && *selectedIndex < imageCount ) ? *selectedIndex : -1;
+				ImGui::Text( "%d object%s", count, count != 1 ? "s" : "" );
+				int s = ( selectedIndex && *selectedIndex >= 0 && *selectedIndex < count ) ? *selectedIndex : -1;
 				if ( s >= 0 )
 				{
-					ImTransformData& tr = images[ s ].Transform;
+					ImTransformData& tr = transforms[ s ];
 					ImGui::Separator();
 					ImGui::Text( "Selected: %d", s );
 
@@ -11596,11 +11612,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					ImGui::TextUnformatted( "Order" );
 					float hw = ( ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x ) * 0.5f;
 					bool canBack  = s > 0;
-					bool canFront = s < imageCount - 1;
+					bool canFront = s < count - 1;
 					if ( !canBack ) ImGui::BeginDisabled();
 					if ( ImGui::Button( "< Back##ord", ImVec2( hw, 0 ) ) )
 					{
-						ImSwap( images[ s ], images[ s - 1 ] );
+						ImSwap( transforms[ s ], transforms[ s - 1 ] ); ImSwap( sizes[ s ], sizes[ s - 1 ] );
+						if ( callbacks && callbacks->SwapFn ) callbacks->SwapFn( s, s - 1, callbacks->SwapData );
 						*selectedIndex = s - 1;
 						value_changed = true;
 					}
@@ -11609,7 +11626,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					if ( !canFront ) ImGui::BeginDisabled();
 					if ( ImGui::Button( "Front >##ord", ImVec2( hw, 0 ) ) )
 					{
-						ImSwap( images[ s ], images[ s + 1 ] );
+						ImSwap( transforms[ s ], transforms[ s + 1 ] ); ImSwap( sizes[ s ], sizes[ s + 1 ] );
+						if ( callbacks && callbacks->SwapFn ) callbacks->SwapFn( s, s + 1, callbacks->SwapData );
 						*selectedIndex = s + 1;
 						value_changed = true;
 					}
@@ -11617,10 +11635,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					if ( !canBack ) ImGui::BeginDisabled();
 					if ( ImGui::Button( "|< Background##ord", ImVec2( hw, 0 ) ) )
 					{
-						ImTransformImage tmp = images[ s ];
-						for ( int i = s; i > 0; --i )
-							images[ i ] = images[ i - 1 ];
-						images[ 0 ] = tmp;
+						for ( int i = s; i > 0; --i ) { ImSwap( transforms[ i ], transforms[ i - 1 ] ); ImSwap( sizes[ i ], sizes[ i - 1 ] ); if ( callbacks && callbacks->SwapFn ) callbacks->SwapFn( i, i - 1, callbacks->SwapData ); }
 						*selectedIndex = 0;
 						value_changed = true;
 					}
@@ -11629,11 +11644,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					if ( !canFront ) ImGui::BeginDisabled();
 					if ( ImGui::Button( "Foreground >|##ord", ImVec2( hw, 0 ) ) )
 					{
-						ImTransformImage tmp = images[ s ];
-						for ( int i = s; i < imageCount - 1; ++i )
-							images[ i ] = images[ i + 1 ];
-						images[ imageCount - 1 ] = tmp;
-						*selectedIndex = imageCount - 1;
+						for ( int i = s; i < count - 1; ++i ) { ImSwap( transforms[ i ], transforms[ i + 1 ] ); ImSwap( sizes[ i ], sizes[ i + 1 ] ); if ( callbacks && callbacks->SwapFn ) callbacks->SwapFn( i, i + 1, callbacks->SwapData ); }
+						*selectedIndex = count - 1;
 						value_changed = true;
 					}
 					if ( !canFront ) ImGui::EndDisabled();
@@ -18008,6 +18020,302 @@ namespace ImWidgets {
 		}
 
 		drawList->AddImageRounded( id, cur, cur + winSize, ImVec2( 0.0f, 0.0f ), uv, col, window->WindowRounding );
+	}
+
+	struct BlurConstants
+	{
+		float texel_size[2];
+		float mode;
+		float param0;
+		float param1;
+		float param2;
+		float win_center[2];
+		float win_half_px[2];
+		float win_rounding;
+		float pad0;
+		float mouse_uv[2];
+		float pad1;
+		float pad2;
+	};
+
+	// Render-time callback: captures backbuffer then sets up horizontal blur pass
+	// into the intermediate render texture.
+	static void BlurPass1Callback( const ImDrawList* /*parent_list*/, const ImDrawCmd* cmd )
+	{
+		ImWidgetsContext* ctx = gs_pContext;
+		if ( !ctx || !ctx->blurBackbufferCopy || !ctx->blurIntermediate || !ctx->blurShader.program )
+			return;
+
+		BlurConstants* cb = (BlurConstants*)cmd->UserCallbackData;
+
+		// Capture current backbuffer (everything behind this window)
+		ImPlatform_CopyBackbuffer( ctx->blurBackbufferCopy );
+
+		// Redirect rendering to intermediate texture
+		ImPlatform_BeginRenderToTexture( ctx->blurIntermediate );
+
+		// Set up horizontal blur shader
+		cb->param1 = 0.0f; // horizontal
+		ImPlatform_BeginCustomShader_Render( ctx->blurShader.program );
+		void* handle = ImPlatform_PushShaderConstants( cb, sizeof(BlurConstants) );
+		ImPlatform_SetShaderTexture( ctx->blurShader.program, "sceneTexture", 0, ctx->blurBackbufferCopy );
+		ImPlatform_PopShaderConstants( handle );
+		// Shader stays active — next ImGui draw command will use it
+	}
+
+	// Render-time callback: restore backbuffer, set up vertical blur pass
+	// reading from the intermediate texture.
+	static void BlurPass2Callback( const ImDrawList* /*parent_list*/, const ImDrawCmd* cmd )
+	{
+		ImWidgetsContext* ctx = gs_pContext;
+		BlurConstants* cb = (BlurConstants*)cmd->UserCallbackData;
+		if ( !ctx || !ctx->blurIntermediate || !ctx->blurShader.program )
+		{
+			if ( cb ) IM_FREE( cb );
+			return;
+		}
+
+		// Restore backbuffer as render target
+		ImPlatform_EndRenderToTexture();
+
+		// Set up vertical blur shader reading from intermediate
+		cb->param1 = 1.0f; // vertical
+		ImPlatform_BeginCustomShader_Render( ctx->blurShader.program );
+		void* handle = ImPlatform_PushShaderConstants( cb, sizeof(BlurConstants) );
+		ImPlatform_SetShaderTexture( ctx->blurShader.program, "sceneTexture", 0, ctx->blurIntermediate );
+		ImPlatform_PopShaderConstants( handle );
+		IM_FREE( cb );
+	}
+
+	// Render-time callback: captures backbuffer and sets up single-pass effect shader
+	static void BlurSinglePassCallback( const ImDrawList* /*parent_list*/, const ImDrawCmd* cmd )
+	{
+		ImWidgetsContext* ctx = gs_pContext;
+		BlurConstants* cb = (BlurConstants*)cmd->UserCallbackData;
+		if ( !ctx || !ctx->blurBackbufferCopy || !ctx->blurShader.program )
+		{
+			if ( cb ) IM_FREE( cb );
+			return;
+		}
+
+		ImPlatform_CopyBackbuffer( ctx->blurBackbufferCopy );
+		ImPlatform_BeginCustomShader_Render( ctx->blurShader.program );
+		void* handle = ImPlatform_PushShaderConstants( cb, sizeof(BlurConstants) );
+		ImPlatform_SetShaderTexture( ctx->blurShader.program, "sceneTexture", 0, ctx->blurBackbufferCopy );
+		ImPlatform_PopShaderConstants( handle );
+		IM_FREE( cb );
+	}
+
+	void BlurBackgroundNewFrame()
+	{
+#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+		ImWidgetsContext* ctx = gs_pContext;
+		if ( !ctx ) return;
+
+		// Query backbuffer size
+		unsigned int bbW = 0, bbH = 0;
+		ImPlatform_GetBackbufferSize( &bbW, &bbH );
+		if ( bbW == 0 || bbH == 0 ) return;
+
+		// (Re)create textures if backbuffer size changed
+		if ( !ctx->blurBackbufferCopy || ctx->blurTexW != bbW || ctx->blurTexH != bbH )
+		{
+			if ( ctx->blurBackbufferCopy )
+				ImPlatform_DestroyTexture( ctx->blurBackbufferCopy );
+			if ( ctx->blurIntermediate )
+				ImPlatform_DestroyTexture( ctx->blurIntermediate );
+
+			unsigned int pixelCount = bbW * bbH;
+			ImU8* zeros = (ImU8*)IM_ALLOC( pixelCount * 4 );
+			memset( zeros, 0, pixelCount * 4 );
+			ImPlatform_TextureDesc desc = ImPlatform_TextureDesc_Default( bbW, bbH );
+			ctx->blurBackbufferCopy = ImPlatform_CreateTexture( zeros, &desc );
+			ctx->blurIntermediate = ImPlatform_CreateRenderTexture( &desc );
+			IM_FREE( zeros );
+			ctx->blurTexW = bbW;
+			ctx->blurTexH = bbH;
+		}
+
+		// Lazy-load blur shader
+		if ( !ctx->blurShader.program )
+			CreateInternalShader( &ctx->blurShader, "blur", 0, NULL, 0, NULL );
+#endif
+	}
+
+	void SetCurrentWindowBlurBackground( ImWidgetsBgEffect effect, float param0, float param1, float param2, ImU32 tint )
+	{
+#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+		ImWidgetsContext* ctx = gs_pContext;
+		if ( !ctx || !ctx->blurBackbufferCopy || !ctx->blurShader.program )
+			return;
+
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		ImDrawList* drawList = ImGui::GetWindowDrawList();
+		// Use the full window rect (not InnerRect) so the effect covers
+		// the title bar area too and matches the window's visual shape.
+		ImVec2 winMin = window->Pos;
+		ImVec2 winMax = ImVec2( window->Pos.x + window->Size.x, window->Pos.y + window->Size.y );
+		float winW = winMax.x - winMin.x;
+		float winH = winMax.y - winMin.y;
+
+		float invW = 1.0f / (float)ctx->blurTexW;
+		float invH = 1.0f / (float)ctx->blurTexH;
+		ImVec2 uv0( winMin.x * invW, winMin.y * invH );
+		ImVec2 uv1( winMax.x * invW, winMax.y * invH );
+
+		// Window geometry for SDF
+		float wcx = ( winMin.x + winMax.x ) * 0.5f * invW; // center in UV
+		float wcy = ( winMin.y + winMax.y ) * 0.5f * invH;
+		float whpx = winW * 0.5f;  // half-size in pixels
+		float whpy = winH * 0.5f;
+		float rounding = window->WindowRounding;
+		ImVec2 mousePos = ImGui::GetIO().MousePos;
+		float mouseUvX = mousePos.x * invW;
+		float mouseUvY = mousePos.y * invH;
+
+		if ( effect == ImWidgetsBgEffect_Blur && ctx->blurIntermediate )
+		{
+			float radius = ( param0 > 0.0f ) ? param0 : 4.0f;
+
+			BlurConstants* cb = (BlurConstants*)IM_ALLOC( sizeof(BlurConstants) );
+			cb->texel_size[0] = invW;
+			cb->texel_size[1] = invH;
+			cb->mode = 0.0f;
+			cb->param0 = radius;
+			cb->param1 = 0.0f;
+			cb->param2 = 0.0f;
+			cb->win_center[0] = wcx;
+			cb->win_center[1] = wcy;
+			cb->win_half_px[0] = whpx;
+			cb->win_half_px[1] = whpy;
+			cb->win_rounding = rounding;
+			cb->pad0 = 0.0f;
+			cb->mouse_uv[0] = mouseUvX;
+			cb->mouse_uv[1] = mouseUvY;
+			cb->pad1 = 0.0f;
+			cb->pad2 = 0.0f;
+
+			// Pass 1: push fullscreen clip rect so the quad fills the entire intermediate RT
+			drawList->PushClipRectFullScreen();
+			drawList->AddCallback( BlurPass1Callback, cb );
+			drawList->AddImage( ctx->blurBackbufferCopy,
+				ImVec2( 0, 0 ), ImVec2( (float)ctx->blurTexW, (float)ctx->blurTexH ),
+				ImVec2( 0, 0 ), ImVec2( 1, 1 ), IM_COL32( 255, 255, 255, 255 ) );
+			drawList->PopClipRect();
+
+			// Pass 2: restore RT → bind vertical blur reading intermediate
+			drawList->AddCallback( BlurPass2Callback, cb );
+			// ImGui draws this quad into the backbuffer with vertical blur active
+			drawList->AddImageRounded( ctx->blurIntermediate, winMin, winMax, uv0, uv1, tint, window->WindowRounding );
+
+			// Reset to default ImGui state
+			drawList->AddCallback( ImDrawCallback_ResetRenderState, NULL );
+		}
+		else
+		{
+			// Single-pass effects
+			BlurConstants* cb = (BlurConstants*)IM_ALLOC( sizeof(BlurConstants) );
+			cb->texel_size[0] = invW;
+			cb->texel_size[1] = invH;
+			cb->mode = (float)effect;
+			cb->param2 = param2;
+			cb->win_center[0] = wcx;
+			cb->win_center[1] = wcy;
+			cb->win_half_px[0] = whpx;
+			cb->win_half_px[1] = whpy;
+			cb->win_rounding = rounding;
+			cb->pad0 = 0.0f;
+			cb->mouse_uv[0] = mouseUvX;
+			cb->mouse_uv[1] = mouseUvY;
+			cb->pad1 = 0.0f;
+			cb->pad2 = 0.0f;
+
+			switch ( effect )
+			{
+			default:
+			case ImWidgetsBgEffect_Blur:
+				cb->param0 = ( param0 > 0.0f ) ? param0 : 4.0f;
+				cb->param1 = 0.0f;
+				break;
+			case ImWidgetsBgEffect_GlassRefraction:
+				cb->param0 = ( param0 > 0.0f ) ? param0 : 0.3f;
+				cb->param1 = ( param1 > 0.0f ) ? param1 : 1.5f;
+				break;
+			case ImWidgetsBgEffect_FrostedGlass:
+				cb->param0 = ( param0 > 0.0f ) ? param0 : 6.0f;
+				cb->param1 = ( param1 > 0.0f ) ? param1 : 0.5f;
+				break;
+			case ImWidgetsBgEffect_Pixelate:
+				cb->param0 = ( param0 > 0.0f ) ? param0 : 8.0f;
+				cb->param1 = param1;
+				break;
+			case ImWidgetsBgEffect_ChromaticAberration:
+				cb->param0 = ( param0 > 0.0f ) ? param0 : 8.0f;
+				cb->param1 = ( param1 > 0.0f ) ? param1 : 8.0f;
+				break;
+			case ImWidgetsBgEffect_LiquidGlass:
+				cb->param0 = ( param0 > 0.0f ) ? param0 : 0.5f;
+				cb->param1 = ( param1 > 0.0f ) ? param1 : 0.3f;
+				break;
+			case ImWidgetsBgEffect_HeatHaze:
+				cb->param0 = ( param0 > 0.0f ) ? param0 : 4.0f;
+				cb->param1 = ( param1 > 0.0f ) ? param1 : 6.0f;
+				cb->param2 = ( param2 > 0.0f ) ? param2 : (float)ImGui::GetTime();
+				break;
+			case ImWidgetsBgEffect_Voronoi:
+				cb->param0 = ( param0 > 0.0f ) ? param0 : 12.0f;
+				cb->param1 = ( param1 > 0.0f ) ? param1 : 2.0f;
+				cb->param2 = ( param2 > 0.0f ) ? param2 : 1.5f;
+				break;
+			case ImWidgetsBgEffect_EdgeGlow:
+				cb->param0 = ( param0 > 0.0f ) ? param0 : 4.0f;
+				cb->param1 = param1;
+				break;
+			case ImWidgetsBgEffect_Halftone:
+				cb->param0 = ( param0 > 0.0f ) ? param0 : 6.0f;
+				cb->param1 = ( param1 > 0.0f ) ? param1 : 2.0f;
+				break;
+			case ImWidgetsBgEffect_MouseEdge:
+				cb->param0 = ( param0 > 0.0f ) ? param0 : 150.0f;
+				cb->param1 = ( param1 > 0.0f ) ? param1 : 3.0f;
+				break;
+			case ImWidgetsBgEffect_CRT:
+				cb->param0 = ( param0 > 0.0f ) ? param0 : 0.4f;
+				cb->param1 = ( param1 > 0.0f ) ? param1 : 1.0f;
+				break;
+			case ImWidgetsBgEffect_DotMatrix:
+				cb->param0 = ( param0 > 0.0f ) ? param0 : 6.0f;
+				cb->param1 = ( param1 >= 0.0f ) ? param1 : 0.8f;
+				break;
+			case ImWidgetsBgEffect_Glitch:
+				cb->param0 = ( param0 > 0.0f ) ? param0 : 0.5f;
+				cb->param1 = ( param1 > 0.0f ) ? param1 : 8.0f;
+				cb->param2 = (float)ImGui::GetTime();
+				break;
+			case ImWidgetsBgEffect_StainedGlass:
+				cb->param0 = ( param0 > 0.0f ) ? param0 : 12.0f;
+				cb->param1 = ( param1 > 0.0f ) ? param1 : 3.0f;
+				break;
+			case ImWidgetsBgEffect_Rain:
+				cb->param0 = ( param0 > 0.0f ) ? param0 : 0.6f;
+				cb->param1 = param1;
+				cb->param2 = ( param2 != 0.0f ) ? param2 : (float)ImGui::GetTime();
+				break;
+			case ImWidgetsBgEffect_Kaleidoscope:
+				cb->param0 = ( param0 > 0.0f ) ? param0 : 6.0f;
+				cb->param1 = param1;
+				cb->param2 = (float)ImGui::GetTime();
+				break;
+			}
+
+			// Callback: capture backbuffer + bind shader + push constants at render time
+			drawList->AddCallback( BlurSinglePassCallback, cb );
+			drawList->AddImageRounded( ctx->blurBackbufferCopy, winMin, winMax, uv0, uv1, tint, window->WindowRounding );
+			drawList->AddCallback( ImDrawCallback_ResetRenderState, NULL );
+		}
+#else
+		(void)effect; (void)param0; (void)param1; (void)param2; (void)tint;
+#endif
 	}
 
     // Config API

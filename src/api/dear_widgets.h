@@ -232,6 +232,12 @@ struct ImWidgetsContext
 	ImDrawShader					slugDebugShader;    // Slug GPU font debug shader (xcov/ycov/coverage as RGB)
 	ImDrawShader					slugFillShader;     // Slug GPU fill gradient shader (user linear/radial/diamond)
 	ImWidgets::ImWidgetsSlugState*	slugState;        // Per-context Slug font atlas cache
+
+	// Background blur / effects
+	ImDrawShader					blurShader;
+	ImTextureID						blurBackbufferCopy;
+	ImTextureID						blurIntermediate;
+	unsigned int					blurTexW, blurTexH;
 };
 
 enum ImWidgetsStyleColor
@@ -1769,21 +1775,34 @@ struct ImTransformData
 	ImTransformData() : Translation( 0.0f, 0.0f ), Rotation( 0.0f ), Scale( 1.0f, 1.0f ) {}
 };
 
-struct ImTransformImage
-{
-	ImTextureID		Texture;
-	ImVec2			TexSize;		// Original image dimensions
-	ImTransformData	Transform;
-
-	ImTransformImage() : Texture( ImTextureID() ), TexSize( 0, 0 ) {}
-	ImTransformImage( ImTextureID tex, ImVec2 size ) : Texture( tex ), TexSize( size ) {}
-};
-
 typedef int ImTransformGizmoFlags;
 enum ImTransformGizmoFlags_
 {
 	ImTransformGizmoFlags_None           = 0,
 	ImTransformGizmoFlags_NonUniformScale = 1 << 0,		// Show edge midpoint handles for non-uniform scaling
+};
+
+// Params passed to the draw callback for each object
+struct ImTransformGizmoDrawParams
+{
+	ImDrawList*	DrawList;
+	ImVec2		Center;			// screen-space center
+	ImVec2		Corners[4];		// screen-space corners: TL, TR, BR, BL
+	float		HalfW, HalfH;	// half-extents after scale
+	float		CosR, SinR;		// rotation basis
+	int			Index;
+};
+typedef void (*ImTransformGizmoDrawFn)( const ImTransformGizmoDrawParams& params, void* user_data );
+
+// Optional: called when the expanded panel reorders two objects
+typedef void (*ImTransformGizmoSwapFn)( int indexA, int indexB, void* user_data );
+
+struct ImTransformGizmoCallbacks
+{
+	ImTransformGizmoDrawFn	DrawFn   = nullptr;
+	void*					DrawData = nullptr;
+	ImTransformGizmoSwapFn	SwapFn   = nullptr;
+	void*					SwapData = nullptr;
 };
 
 typedef int ImColorWheelMode;
@@ -2370,6 +2389,27 @@ struct ImImageViewerState
 };
 
 namespace ImWidgets{
+	enum ImWidgetsBgEffect
+	{
+		ImWidgetsBgEffect_Blur = 0,
+		ImWidgetsBgEffect_GlassRefraction,
+		ImWidgetsBgEffect_FrostedGlass,
+		ImWidgetsBgEffect_Pixelate,
+		ImWidgetsBgEffect_ChromaticAberration,
+		ImWidgetsBgEffect_LiquidGlass,
+		ImWidgetsBgEffect_HeatHaze,
+		ImWidgetsBgEffect_Voronoi,
+		ImWidgetsBgEffect_EdgeGlow,
+		ImWidgetsBgEffect_Halftone,
+		ImWidgetsBgEffect_MouseEdge,
+		ImWidgetsBgEffect_CRT,
+		ImWidgetsBgEffect_DotMatrix,
+		ImWidgetsBgEffect_Glitch,
+		ImWidgetsBgEffect_StainedGlass,
+		ImWidgetsBgEffect_Rain,
+		ImWidgetsBgEffect_Kaleidoscope,
+		ImWidgetsBgEffect_COUNT,
+	};
 	extern ImGlobalData GlobalData;
 
 	ImWidgetsStyle& GetStyle();
@@ -3129,7 +3169,7 @@ namespace ImWidgets{
 	IMGUI_API bool ColorPicker( char const* label, ImVec4* color, ImColorPickerSpace space = ImColorPickerSpace_sRGB, int fixedAxis = 2, ImVec2 size = ImVec2( 0, 0 ) );
 
 	// Transform Gizmo
-	IMGUI_API bool ImageTransformGizmo( char const* label, ImTransformImage* images, int imageCount, int* selectedIndex, ImTransformGizmoFlags flags = ImTransformGizmoFlags_None, ImVec2 canvasSize = ImVec2( 0, 0 ) );
+	IMGUI_API bool TransformGizmo( char const* label, ImTransformData* transforms, ImVec2* sizes, int count, int* selectedIndex, ImTransformGizmoCallbacks const* callbacks = nullptr, ImTransformGizmoFlags flags = ImTransformGizmoFlags_None, ImVec2 canvasSize = ImVec2( 0, 0 ) );
 
 	// Color Warper
 	IMGUI_API void ColorConvertRGBtoHSL( float r, float g, float b, float& out_h, float& out_s, float& out_l );
@@ -3207,6 +3247,8 @@ namespace ImWidgets{
 	//////////////////////////////////////////////////////////////////////////
     // Note: it will break the rounding.
     IMGUI_API void SetCurrentWindowBackgroundImage( ImTextureID id, ImVec2 imgSize, bool fixedSize = false, ImU32 col = IM_COL32( 255, 255, 255, 255 ) );
+    IMGUI_API void SetCurrentWindowBlurBackground( ImWidgetsBgEffect effect, float param0 = 0.0f, float param1 = 0.0f, float param2 = 0.0f, ImU32 tint = IM_COL32( 255, 255, 255, 255 ) );
+    IMGUI_API void BlurBackgroundNewFrame();
 
     // Config
     IMGUI_API void SetDashedLinesUseGPU(bool enable);

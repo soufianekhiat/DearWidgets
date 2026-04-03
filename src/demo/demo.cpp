@@ -918,6 +918,7 @@ int main( int argc, char** argv )
 	ImWidgets::OwnTexture( clock_img );
 	ImWidgets::OwnTexture( man_img );
 
+
 	ImVec4 clear_color = ImVec4( 0.461f, 0.461f, 0.461f, 1.0f );
 	while ( ImPlatform_PlatformContinue() )
 	{
@@ -927,6 +928,9 @@ int main( int argc, char** argv )
 		{
 			continue;
 		}
+
+		// Capture previous frame's backbuffer for blur effects (before NewFrame clears state)
+		ImWidgets::BlurBackgroundNewFrame();
 
 		// New frame
 		ImPlatform_GfxAPINewFrame();
@@ -984,6 +988,162 @@ int main( int argc, char** argv )
 		}
 
 		ShowSampleOffscreen00();
+
+		// Background effect demo window
+		{
+			static int effectIdx = 0;
+			static float blur_radius = 4.0f;
+			static float glass_bevel = 0.3f;
+			static float glass_ior = 1.5f;
+			static float frost_radius = 6.0f;
+			static float frost_noise = 0.5f;
+			static float pixel_size = 8.0f;
+			static float chroma_strength = 8.0f;
+			static float chroma_samples = 8.0f;
+			static float liquid_strength = 0.5f;
+			static float liquid_bevel = 0.3f;
+			static float haze_amplitude = 4.0f;
+			static float haze_frequency = 6.0f;
+			static float voronoi_cells = 12.0f;
+			static float voronoi_edge = 2.0f;
+			static float voronoi_ior = 1.5f;
+			static float edge_intensity = 4.0f;
+			static float halftone_spacing = 6.0f;
+			static float halftone_sharp = 2.0f;
+			static float mouse_radius = 150.0f;
+			static float mouse_intensity = 3.0f;
+			static float crt_scanlines = 0.4f;
+			static float crt_barrel = 1.0f;
+			static float dot_cellsize = 6.0f;
+			static float dot_round = 0.8f;
+			static float glitch_intensity = 0.5f;
+			static float glitch_blocksize = 8.0f;
+			static float stained_cells = 12.0f;
+			static float stained_lead = 3.0f;
+			static float rain_density = 0.6f;
+			static float rain_trails = 1.0f;
+			static float rain_speed = 1.0f;
+			static float kal_segments = 6.0f;
+			static float kal_rotation = 0.0f;
+			static ImVec4 tint_color( 1.0f, 1.0f, 1.0f, 220.0f / 255.0f );
+			static bool noTitleBar = false;
+
+			ImGuiWindowFlags winFlags = noTitleBar ? ImGuiWindowFlags_NoTitleBar : 0;
+			ImGui::SetNextWindowBgAlpha( 0.0f );
+			ImGui::SetNextWindowSize( ImVec2( 340, 0 ), ImGuiCond_FirstUseEver );
+			ImGui::Begin( "Background Effect", NULL, winFlags );
+
+			ImWidgets::ImWidgetsBgEffect eff = (ImWidgets::ImWidgetsBgEffect)effectIdx;
+			float p0 = 0.0f, p1 = 0.0f, p2 = 0.0f;
+			switch ( eff )
+			{
+			default:
+			case ImWidgets::ImWidgetsBgEffect_Blur:                p0 = blur_radius; break;
+			case ImWidgets::ImWidgetsBgEffect_GlassRefraction:     p0 = glass_bevel; p1 = glass_ior; break;
+			case ImWidgets::ImWidgetsBgEffect_FrostedGlass:        p0 = frost_radius; p1 = frost_noise; break;
+			case ImWidgets::ImWidgetsBgEffect_Pixelate:            p0 = pixel_size; break;
+			case ImWidgets::ImWidgetsBgEffect_ChromaticAberration: p0 = chroma_strength; p1 = chroma_samples; break;
+			case ImWidgets::ImWidgetsBgEffect_LiquidGlass:         p0 = liquid_strength; p1 = liquid_bevel; break;
+			case ImWidgets::ImWidgetsBgEffect_HeatHaze:            p0 = haze_amplitude; p1 = haze_frequency; break;
+			case ImWidgets::ImWidgetsBgEffect_Voronoi:             p0 = voronoi_cells; p1 = voronoi_edge; p2 = voronoi_ior; break;
+			case ImWidgets::ImWidgetsBgEffect_EdgeGlow:            p0 = edge_intensity; break;
+			case ImWidgets::ImWidgetsBgEffect_Halftone:            p0 = halftone_spacing; p1 = halftone_sharp; break;
+			case ImWidgets::ImWidgetsBgEffect_MouseEdge:           p0 = mouse_radius; p1 = mouse_intensity; break;
+			case ImWidgets::ImWidgetsBgEffect_CRT:                 p0 = crt_scanlines; p1 = crt_barrel; break;
+			case ImWidgets::ImWidgetsBgEffect_DotMatrix:           p0 = dot_cellsize; p1 = dot_round; break;
+			case ImWidgets::ImWidgetsBgEffect_Glitch:              p0 = glitch_intensity; p1 = glitch_blocksize; break;
+			case ImWidgets::ImWidgetsBgEffect_StainedGlass:        p0 = stained_cells; p1 = stained_lead; break;
+			case ImWidgets::ImWidgetsBgEffect_Rain:                p0 = rain_density; p1 = rain_trails; p2 = (float)ImGui::GetTime() * rain_speed; break;
+			case ImWidgets::ImWidgetsBgEffect_Kaleidoscope:        p0 = kal_segments; p1 = kal_rotation; break;
+			}
+			ImU32 tint = ImGui::GetColorU32( tint_color );
+			ImWidgets::SetCurrentWindowBlurBackground( eff, p0, p1, p2, tint );
+
+			static const char* effectNames[] = {
+				"Blur", "Glass Refraction", "Frosted Glass", "Pixelate",
+				"Chromatic Aberration", "Liquid Glass", "Heat Haze",
+				"Voronoi Shatter", "Edge Glow", "Halftone", "Mouse Edge",
+				"CRT Scanlines", "Dot Matrix", "Glitch", "Stained Glass", "Rain", "Kaleidoscope"
+			};
+			ImGui::Combo( "Effect", &effectIdx, effectNames, ImWidgets::ImWidgetsBgEffect_COUNT );
+			ImGui::ColorEdit4( "Tint", &tint_color.x, ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf );
+			ImGui::Checkbox( "No Title Bar", &noTitleBar );
+			ImGui::Separator();
+
+			switch ( eff )
+			{
+			default:
+			case ImWidgets::ImWidgetsBgEffect_Blur:
+				ImGui::SliderFloat( "Blur Radius", &blur_radius, 0.5f, 32.0f );
+				break;
+			case ImWidgets::ImWidgetsBgEffect_GlassRefraction:
+				ImGui::SliderFloat( "Bevel", &glass_bevel, 0.01f, 0.8f );
+				ImGui::SliderFloat( "IOR", &glass_ior, 1.0f, 3.0f );
+				break;
+			case ImWidgets::ImWidgetsBgEffect_FrostedGlass:
+				ImGui::SliderFloat( "Blur Radius", &frost_radius, 1.0f, 20.0f );
+				ImGui::SliderFloat( "Noise Scale", &frost_noise, 0.1f, 2.0f );
+				break;
+			case ImWidgets::ImWidgetsBgEffect_Pixelate:
+				ImGui::SliderFloat( "Block Size (px)", &pixel_size, 2.0f, 32.0f );
+				break;
+			case ImWidgets::ImWidgetsBgEffect_ChromaticAberration:
+				ImGui::SliderFloat( "Strength", &chroma_strength, 1.0f, 30.0f );
+				ImGui::SliderFloat( "Samples", &chroma_samples, 4.0f, 16.0f );
+				break;
+			case ImWidgets::ImWidgetsBgEffect_LiquidGlass:
+				ImGui::SliderFloat( "Refraction", &liquid_strength, 0.1f, 2.0f );
+				ImGui::SliderFloat( "Bevel", &liquid_bevel, 0.01f, 0.8f );
+				break;
+			case ImWidgets::ImWidgetsBgEffect_HeatHaze:
+				ImGui::SliderFloat( "Amplitude", &haze_amplitude, 0.5f, 16.0f );
+				ImGui::SliderFloat( "Frequency", &haze_frequency, 1.0f, 20.0f );
+				break;
+			case ImWidgets::ImWidgetsBgEffect_Voronoi:
+				ImGui::SliderFloat( "Cells", &voronoi_cells, 2.0f, 40.0f );
+				ImGui::SliderFloat( "Edge Width", &voronoi_edge, 0.5f, 8.0f );
+				ImGui::SliderFloat( "IOR", &voronoi_ior, 1.0f, 3.0f );
+				break;
+			case ImWidgets::ImWidgetsBgEffect_EdgeGlow:
+				ImGui::SliderFloat( "Intensity", &edge_intensity, 0.5f, 10.0f );
+				break;
+			case ImWidgets::ImWidgetsBgEffect_Halftone:
+				ImGui::SliderFloat( "Dot Spacing", &halftone_spacing, 3.0f, 20.0f );
+				ImGui::SliderFloat( "Sharpness", &halftone_sharp, 0.5f, 8.0f );
+				break;
+			case ImWidgets::ImWidgetsBgEffect_MouseEdge:
+				ImGui::SliderFloat( "Radius (px)", &mouse_radius, 30.0f, 500.0f );
+				ImGui::SliderFloat( "Intensity", &mouse_intensity, 0.5f, 8.0f );
+				break;
+			case ImWidgets::ImWidgetsBgEffect_CRT:
+				ImGui::SliderFloat( "Scanline Darkness", &crt_scanlines, 0.0f, 1.0f );
+				ImGui::SliderFloat( "Barrel Distortion", &crt_barrel, 0.0f, 5.0f );
+				break;
+			case ImWidgets::ImWidgetsBgEffect_DotMatrix:
+				ImGui::SliderFloat( "Cell Size (px)", &dot_cellsize, 3.0f, 20.0f );
+				ImGui::SliderFloat( "Roundness", &dot_round, 0.0f, 1.0f );
+				break;
+			case ImWidgets::ImWidgetsBgEffect_Glitch:
+				ImGui::SliderFloat( "Intensity", &glitch_intensity, 0.05f, 2.0f );
+				ImGui::SliderFloat( "Block Size", &glitch_blocksize, 2.0f, 32.0f );
+				break;
+			case ImWidgets::ImWidgetsBgEffect_StainedGlass:
+				ImGui::SliderFloat( "Cells", &stained_cells, 2.0f, 40.0f );
+				ImGui::SliderFloat( "Lead Width", &stained_lead, 0.5f, 10.0f );
+				break;
+			case ImWidgets::ImWidgetsBgEffect_Rain:
+				ImGui::SliderFloat( "Rain Amount", &rain_density, 0.0f, 1.0f );
+				ImGui::SliderFloat( "Fog Blur", &rain_trails, 0.0f, 5.0f );
+				ImGui::SliderFloat( "Speed", &rain_speed, 0.1f, 4.0f );
+				break;
+			case ImWidgets::ImWidgetsBgEffect_Kaleidoscope:
+				ImGui::SliderFloat( "Segments", &kal_segments, 2.0f, 16.0f );
+				ImGui::SliderAngle( "Rotation", &kal_rotation );
+				break;
+			}
+
+			ImGui::End();
+		}
 
 		// Rendering
 		ImGui::Render();
@@ -2738,6 +2898,73 @@ namespace ImWidgets {
 		float gap     = ImGui::GetStyle().ItemSpacing.y;
 		ImDrawList* dl = ImGui::GetWindowDrawList();
 
+		// ── Arabic block ───────────────────────────────────────────────────────
+		if ( arabic_font )
+		{
+			ImGui::SeparatorText( "Arabic  (right-aligned)" );
+
+			static const char* k_ar_line1 = "\xd9\x86\xd8\xb5: \xd8\xa7\xd9\x84\xd8\xa3\xd8\xaf\xd9\x88\xd8\xa7\xd8\xaa \xd8\xa7\xd9\x84\xd8\xb9\xd8\xb2\xd9\x8a\xd8\xb2\xd8\xa9 \xe2\x80\x94 \xd8\xb9\xd8\xb1\xd8\xb6 \xd8\xa7\xd9\x84\xd9\x86\xd8\xb5\xd9\x88\xd8\xb5";
+			static const char* k_ar_line2 = "\xd8\xa7\xd9\x84\xd8\xa3\xd8\xaf\xd9\x88\xd8\xa7\xd8\xaa \xd8\xa7\xd9\x84\xd8\xb9\xd8\xb2\xd9\x8a\xd8\xb2\xd8\xa9 \xe2\x80\x94 TextColored()";
+			float h_ar1   = ImWidgets::CalcTextSize( arabic_font, font_size, k_ar_line1 ).y;
+			float h_ar2   = ImWidgets::CalcTextSize( arabic_font, font_size, k_ar_line2 ).y;
+			float wrap_w_ar = box_w - box_pad * 2.0f;
+			float wrap_h    = SlugCalcWrappedHeight( arabic_font, font_size, k_arabic_lorem, wrap_w_ar );
+			float box_h   = box_pad + h_ar1 + h_ar2 + wrap_h + box_pad + gap * 3.0f;
+
+			ImVec2 box_pos = ImGui::GetCursorScreenPos();
+			dl->AddRectFilled( box_pos, ImVec2( box_pos.x + box_w, box_pos.y + box_h ),
+							  ImGui::ColorConvertFloat4ToU32( bg_col_v ), 6.0f );
+
+			ImGui::Dummy( ImVec2( box_w, box_pad ) );     // top padding
+
+			auto t0 = std::chrono::high_resolution_clock::now();
+
+			// ── SlugText (RTL, right-aligned) ──
+			{
+				float asc = 0.0f;
+				const char* line = k_ar_line1;
+				ImVec2 sz  = ImWidgets::CalcTextSize( arabic_font, font_size, line, nullptr, &asc );
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+				ImWidgets::DrawText( dl, arabic_font, font_size,
+									ImVec2( pos.x + box_w - box_pad - sz.x, pos.y + asc ), hi_col_u, line );
+				ImGui::Dummy( ImVec2( box_w, sz.y ) );
+			}
+
+			//── SlugTextColored (RTL, right-aligned) ──
+			{
+				float asc = 0.0f;
+				const char* line = k_ar_line2;
+				ImVec2 sz  = ImWidgets::CalcTextSize( arabic_font, font_size, line, nullptr, &asc );
+				ImVec2 pos = ImGui::GetCursorScreenPos();
+				ImWidgets::DrawText( dl, arabic_font, font_size,
+									ImVec2( pos.x + box_w - box_pad - sz.x, pos.y + asc ),
+									ImGui::ColorConvertFloat4ToU32( col_v ), line );
+				ImGui::Dummy( ImVec2( box_w, sz.y ) );
+			}
+
+			// ── SlugTextWrapped (RTL) — full box width, right-aligned ──
+			ImGui::SetCursorPosX( ImGui::GetCursorPosX() + box_pad );
+			SlugTextWrapped( arabic_font, font_size, col_u, k_arabic_lorem, wrap_w_ar, /*right_align=*/true );
+
+			auto t1 = std::chrono::high_resolution_clock::now();
+			double dt_ms = std::chrono::duration<double, std::milli>( t1 - t0 ).count();
+
+			static float s_arabic_ring32[32]   = {};
+			static float s_arabic_ring128[128] = {};
+			static int   s_arabic_head         = 0;
+			s_arabic_ring32 [s_arabic_head %  32] = (float)dt_ms;
+			s_arabic_ring128[s_arabic_head % 128] = (float)dt_ms;
+			s_arabic_head++;
+			float s_arabic_avg32 = 0.0f, s_arabic_avg128 = 0.0f;
+			for ( int i = 0; i <  32; i++ ) s_arabic_avg32  += s_arabic_ring32[i];
+			for ( int i = 0; i < 128; i++ ) s_arabic_avg128 += s_arabic_ring128[i];
+			s_arabic_avg32  /=  32.0f;
+			s_arabic_avg128 /= 128.0f;
+
+			ImGui::Dummy( ImVec2( box_w, box_pad ) );     // bottom padding
+			ImGui::TextDisabled( "DrawText time: %.3f ms  (avg32: %.3f ms  avg128: %.3f ms)", dt_ms, s_arabic_avg32, s_arabic_avg128 );
+		}
+
 		// ── Latin block ────────────────────────────────────────────────────────
 		if ( latin_font )
 		{
@@ -2790,73 +3017,6 @@ namespace ImWidgets {
 
 			ImGui::Dummy( ImVec2( box_w, box_pad ) );     // bottom padding
 			ImGui::TextDisabled( "DrawText time: %.3f ms  (avg32: %.3f ms  avg128: %.3f ms)", dt_ms, s_latin_avg32, s_latin_avg128 );
-		}
-
-		// ── Arabic block ───────────────────────────────────────────────────────
-		if ( arabic_font )
-		{
-			ImGui::SeparatorText( "Arabic  (right-aligned)" );
-
-			static const char* k_ar_line1 = "\xd9\x86\xd8\xb5: \xd8\xa7\xd9\x84\xd8\xa3\xd8\xaf\xd9\x88\xd8\xa7\xd8\xaa \xd8\xa7\xd9\x84\xd8\xb9\xd8\xb2\xd9\x8a\xd8\xb2\xd8\xa9 \xe2\x80\x94 \xd8\xb9\xd8\xb1\xd8\xb6 \xd8\xa7\xd9\x84\xd9\x86\xd8\xb5\xd9\x88\xd8\xb5";
-			static const char* k_ar_line2 = "\xd8\xa7\xd9\x84\xd8\xa3\xd8\xaf\xd9\x88\xd8\xa7\xd8\xaa \xd8\xa7\xd9\x84\xd8\xb9\xd8\xb2\xd9\x8a\xd8\xb2\xd8\xa9 \xe2\x80\x94 TextColored()";
-			float h_ar1   = ImWidgets::CalcTextSize( arabic_font, font_size, k_ar_line1 ).y;
-			float h_ar2   = ImWidgets::CalcTextSize( arabic_font, font_size, k_ar_line2 ).y;
-			float wrap_w_ar = box_w - box_pad * 2.0f;
-			float wrap_h    = SlugCalcWrappedHeight( arabic_font, font_size, k_arabic_lorem, wrap_w_ar );
-			float box_h   = box_pad + h_ar1 + h_ar2 + wrap_h + box_pad + gap * 3.0f;
-
-			ImVec2 box_pos = ImGui::GetCursorScreenPos();
-			dl->AddRectFilled( box_pos, ImVec2( box_pos.x + box_w, box_pos.y + box_h ),
-			                   ImGui::ColorConvertFloat4ToU32( bg_col_v ), 6.0f );
-
-			ImGui::Dummy( ImVec2( box_w, box_pad ) );     // top padding
-
-			auto t0 = std::chrono::high_resolution_clock::now();
-
-			// ── SlugText (RTL, right-aligned) ──
-			{
-				float asc = 0.0f;
-				const char* line = k_ar_line1;
-				ImVec2 sz  = ImWidgets::CalcTextSize( arabic_font, font_size, line, nullptr, &asc );
-				ImVec2 pos = ImGui::GetCursorScreenPos();
-				ImWidgets::DrawText( dl, arabic_font, font_size,
-				                     ImVec2( pos.x + box_w - box_pad - sz.x, pos.y + asc ), hi_col_u, line );
-				ImGui::Dummy( ImVec2( box_w, sz.y ) );
-			}
-
-			//── SlugTextColored (RTL, right-aligned) ──
-			{
-				float asc = 0.0f;
-				const char* line = k_ar_line2;
-				ImVec2 sz  = ImWidgets::CalcTextSize( arabic_font, font_size, line, nullptr, &asc );
-				ImVec2 pos = ImGui::GetCursorScreenPos();
-				ImWidgets::DrawText( dl, arabic_font, font_size,
-				                     ImVec2( pos.x + box_w - box_pad - sz.x, pos.y + asc ),
-				                     ImGui::ColorConvertFloat4ToU32( col_v ), line );
-				ImGui::Dummy( ImVec2( box_w, sz.y ) );
-			}
-
-			// ── SlugTextWrapped (RTL) — full box width, right-aligned ──
-			ImGui::SetCursorPosX( ImGui::GetCursorPosX() + box_pad );
-			SlugTextWrapped( arabic_font, font_size, col_u, k_arabic_lorem, wrap_w_ar, /*right_align=*/true );
-
-			auto t1 = std::chrono::high_resolution_clock::now();
-			double dt_ms = std::chrono::duration<double, std::milli>( t1 - t0 ).count();
-
-			static float s_arabic_ring32[32]   = {};
-			static float s_arabic_ring128[128] = {};
-			static int   s_arabic_head         = 0;
-			s_arabic_ring32 [s_arabic_head %  32] = (float)dt_ms;
-			s_arabic_ring128[s_arabic_head % 128] = (float)dt_ms;
-			s_arabic_head++;
-			float s_arabic_avg32 = 0.0f, s_arabic_avg128 = 0.0f;
-			for ( int i = 0; i <  32; i++ ) s_arabic_avg32  += s_arabic_ring32[i];
-			for ( int i = 0; i < 128; i++ ) s_arabic_avg128 += s_arabic_ring128[i];
-			s_arabic_avg32  /=  32.0f;
-			s_arabic_avg128 /= 128.0f;
-
-			ImGui::Dummy( ImVec2( box_w, box_pad ) );     // bottom padding
-			ImGui::TextDisabled( "DrawText time: %.3f ms  (avg32: %.3f ms  avg128: %.3f ms)", dt_ms, s_arabic_avg32, s_arabic_avg128 );
 		}
 
 		if ( !latin_font && !arabic_font )
@@ -5468,17 +5628,20 @@ namespace ImWidgets {
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Transform Gizmo" ) )
 			{
-				static ImTransformImage gizmoImages[ 3 ];
+				// --- Images ---
+				static ImTransformData  gizmoTransforms[ 3 ];
+				static ImVec2           gizmoSizes[ 3 ];
+				static ImTextureID      gizmoTextures[ 3 ];
 				static bool gizmoInit = false;
 				if ( !gizmoInit )
 				{
-					gizmoImages[ 0 ] = ImTransformImage( astro_img, astro_size );
-					gizmoImages[ 1 ] = ImTransformImage( clock_img, clock_size );
-					gizmoImages[ 1 ].Transform.Translation = ImVec2( -120.0f, -60.0f );
-					gizmoImages[ 1 ].Transform.Scale = ImVec2( 0.4f, 0.4f );
-					gizmoImages[ 2 ] = ImTransformImage( man_img, man_size );
-					gizmoImages[ 2 ].Transform.Translation = ImVec2( 100.0f, 50.0f );
-					gizmoImages[ 2 ].Transform.Scale = ImVec2( 0.5f, 0.5f );
+					gizmoTextures[ 0 ] = astro_img;  gizmoSizes[ 0 ] = astro_size;
+					gizmoTextures[ 1 ] = clock_img;  gizmoSizes[ 1 ] = clock_size;
+					gizmoTransforms[ 1 ].Translation = ImVec2( -120.0f, -60.0f );
+					gizmoTransforms[ 1 ].Scale       = ImVec2( 0.4f, 0.4f );
+					gizmoTextures[ 2 ] = man_img;    gizmoSizes[ 2 ] = man_size;
+					gizmoTransforms[ 2 ].Translation = ImVec2( 100.0f, 50.0f );
+					gizmoTransforms[ 2 ].Scale       = ImVec2( 0.5f, 0.5f );
 					gizmoInit = true;
 				}
 
@@ -5491,11 +5654,28 @@ namespace ImWidgets {
 				if ( gizmoNonUniform )
 					gizmoFlags |= ImTransformGizmoFlags_NonUniformScale;
 
-				ImWidgets::ImageTransformGizmo( "##xform", gizmoImages, 3, &gizmoSel, gizmoFlags );
+				auto DrawImage = []( const ImTransformGizmoDrawParams& p, void* ud )
+				{
+					ImTextureID* textures = (ImTextureID*)ud;
+					p.DrawList->AddImageQuad( textures[ p.Index ],
+						p.Corners[ 0 ], p.Corners[ 1 ], p.Corners[ 2 ], p.Corners[ 3 ],
+						ImVec2( 0, 0 ), ImVec2( 1, 0 ), ImVec2( 1, 1 ), ImVec2( 0, 1 ) );
+				};
+				auto SwapImage = []( int a, int b, void* ud )
+				{
+					ImTextureID* textures = (ImTextureID*)ud;
+					ImSwap( textures[ a ], textures[ b ] );
+				};
+				ImTransformGizmoCallbacks imgCB;
+				imgCB.DrawFn   = DrawImage;
+				imgCB.DrawData = gizmoTextures;
+				imgCB.SwapFn   = SwapImage;
+				imgCB.SwapData = gizmoTextures;
+				ImWidgets::TransformGizmo( "##xform", gizmoTransforms, gizmoSizes, 3, &gizmoSel, &imgCB, gizmoFlags );
 
 				if ( gizmoSel >= 0 && gizmoSel < 3 )
 				{
-					ImTransformData* tr = &gizmoImages[ gizmoSel ].Transform;
+					ImTransformData* tr = &gizmoTransforms[ gizmoSel ];
 					ImGui::Text( "Selected: %d", gizmoSel );
 					float halfW = ImGui::GetContentRegionAvail().x * 0.5f - ImGui::GetStyle().ItemSpacing.x;
 					ImGui::SetNextItemWidth( halfW );
@@ -5514,6 +5694,106 @@ namespace ImWidgets {
 				else
 				{
 					ImGui::TextDisabled( "Click an image to select it" );
+				}
+
+				ImGui::Separator();
+				ImGui::TextUnformatted( "Shapes" );
+
+				// --- Shapes: drawn with ImDrawList, no textures needed ---
+				// shapeTypes[] owns the shape identity per slot so it follows layer reordering.
+				struct ShapeDrawData { int* types; ImU32* colors; };
+				static int   shapeTypes[ 3 ]  = { 0, 1, 2 };          // 0=circle, 1=quad, 2=triangle
+				static ImU32 shapeColorsMut[ 3 ] = {
+					IM_COL32( 90,  170, 255, 255 ),  // circle   - blue
+					IM_COL32( 255, 165, 60,  255 ),  // quad     - orange
+					IM_COL32( 100, 220, 100, 255 ),  // triangle - green
+				};
+				static ShapeDrawData shapeDrawData = { shapeTypes, shapeColorsMut };
+				static ImTransformData shapeTransforms[ 3 ];
+				static ImVec2          shapeSizes[ 3 ];
+				static bool shapeInit = false;
+				if ( !shapeInit )
+				{
+					const float SZ = 128.0f;
+					shapeSizes[ 0 ] = shapeSizes[ 1 ] = shapeSizes[ 2 ] = ImVec2( SZ, SZ );
+					shapeTransforms[ 1 ].Translation = ImVec2( -120.0f, -50.0f );
+					shapeTransforms[ 2 ].Translation = ImVec2( 110.0f, 40.0f );
+					shapeInit = true;
+				}
+
+				static int shapeSel = 0;
+
+				auto DrawShape = []( const ImTransformGizmoDrawParams& p, void* ud )
+				{
+					const ShapeDrawData* d = (const ShapeDrawData*)ud;
+					int  type = d->types[ p.Index ];
+					ImU32 col = d->colors[ p.Index ];
+					if ( type == 0 )
+					{
+						const int N = 32;
+						ImVec2 pts[ N ];
+						for ( int i = 0; i < N; ++i )
+						{
+							float a  = (float)i / N * 2.0f * IM_PI;
+							float lx = ImCos( a ) * p.HalfW;
+							float ly = ImSin( a ) * p.HalfH;
+							pts[ i ] = ImVec2( p.Center.x + lx * p.CosR - ly * p.SinR,
+							                   p.Center.y + lx * p.SinR + ly * p.CosR );
+						}
+						p.DrawList->AddConvexPolyFilled( pts, N, col );
+					}
+					else if ( type == 1 )
+					{
+						p.DrawList->AddQuadFilled( p.Corners[ 0 ], p.Corners[ 1 ], p.Corners[ 2 ], p.Corners[ 3 ], col );
+					}
+					else
+					{
+						float lpts[ 3 ][ 2 ] = { { 0, -p.HalfH }, { -p.HalfW, p.HalfH }, { p.HalfW, p.HalfH } };
+						ImVec2 pts[ 3 ];
+						for ( int i = 0; i < 3; ++i )
+						{
+							float lx = lpts[ i ][ 0 ], ly = lpts[ i ][ 1 ];
+							pts[ i ] = ImVec2( p.Center.x + lx * p.CosR - ly * p.SinR,
+							                   p.Center.y + lx * p.SinR + ly * p.CosR );
+						}
+						p.DrawList->AddTriangleFilled( pts[ 0 ], pts[ 1 ], pts[ 2 ], col );
+					}
+				};
+				auto SwapShape = []( int a, int b, void* ud )
+				{
+					ShapeDrawData* d = (ShapeDrawData*)ud;
+					ImSwap( d->types[ a ],  d->types[ b ] );
+					ImSwap( d->colors[ a ], d->colors[ b ] );
+				};
+				ImTransformGizmoCallbacks shapeCB;
+				shapeCB.DrawFn   = DrawShape;
+				shapeCB.DrawData = &shapeDrawData;
+				shapeCB.SwapFn   = SwapShape;
+				shapeCB.SwapData = &shapeDrawData;
+				ImWidgets::TransformGizmo( "##xformShapes", shapeTransforms, shapeSizes, 3, &shapeSel, &shapeCB, gizmoFlags );
+
+				if ( shapeSel >= 0 && shapeSel < 3 )
+				{
+					static const char* shapeNames[] = { "Circle", "Quad", "Triangle" };
+					ImTransformData* tr = &shapeTransforms[ shapeSel ];
+					ImGui::Text( "Selected: %s", shapeNames[ shapeTypes[ shapeSel ] ] );
+					float halfW = ImGui::GetContentRegionAvail().x * 0.5f - ImGui::GetStyle().ItemSpacing.x;
+					ImGui::SetNextItemWidth( halfW );
+					ImGui::DragFloat2( "Position##shapes", &tr->Translation.x, 1.0f );
+					ImGui::SameLine();
+					float deg = tr->Rotation * ( 180.0f / IM_PI );
+					ImGui::SetNextItemWidth( halfW );
+					if ( ImGui::DragFloat( "Rotation##shapes", &deg, 0.5f ) )
+						tr->Rotation = deg * ( IM_PI / 180.0f );
+					ImGui::SetNextItemWidth( halfW );
+					ImGui::DragFloat2( "Scale##shapes", &tr->Scale.x, 0.01f, 0.01f, 10.0f );
+					ImGui::SameLine();
+					if ( ImGui::Button( "Reset##shapes" ) )
+						*tr = ImTransformData();
+				}
+				else
+				{
+					ImGui::TextDisabled( "Click a shape to select it" );
 				}
 			}
 			DW_SsRecord( "Transform_Gizmo", _sy0, ImGui::GetCursorPos().y ); }
@@ -5905,10 +6185,15 @@ namespace ImWidgets {
 
 				float ringThick = 12.0f;
 
+				// HDRWheel adds arc overhead on top of the disc+ring size (colW), so columns are wider.
+				ImWidgetsStyle& hdrDwStyle = ImWidgets::GetStyle();
+				float arcOverhead = 2.0f * ( hdrDwStyle.HDRWheel_ArcGrabRadius + hdrDwStyle.HDRWheel_ArcThickness + hdrDwStyle.HDRWheel_ArcGap );
+				float hdrColW = colW + arcOverhead;
+
 				if ( ImGui::BeginTable( "##HDRWheels", 4, ImGuiTableFlags_NoSavedSettings ) )
 				{
 					for ( int i = 0; i < 4; ++i )
-						ImGui::TableSetupColumn( hdrNames[ i ], ImGuiTableColumnFlags_WidthFixed, colW );
+						ImGui::TableSetupColumn( hdrNames[ i ], ImGuiTableColumnFlags_WidthFixed, hdrColW );
 
 					for ( int i = 0; i < 4; ++i )
 					{
