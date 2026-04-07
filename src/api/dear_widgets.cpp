@@ -3323,6 +3323,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		memset(&ctx->slugShader,        0, sizeof(ImDrawShader));
 		memset(&ctx->slugColorShader,   0, sizeof(ImDrawShader));
 		memset(&ctx->slugFillShader,    0, sizeof(ImDrawShader));
+		memset(&ctx->strokeShader,     0, sizeof(ImDrawShader));
 		ctx->slugState = NULL;
 
 		// Register debug callback for slug draw commands in ImGui Metrics viewer
@@ -19353,3 +19354,7 @@ namespace ImWidgets
 // LaTeX math rendering (included at end so all symbols like gs_pContext are visible)
 #define _DEAR_WIDGETS_LATEX_INCLUDED
 #include "dear_widgets_latex.cpp"
+
+// Euler spiral stroke expansion
+#define _DEAR_WIDGETS_STROKE_INCLUDED
+#include "dear_widgets_stroke.cpp"

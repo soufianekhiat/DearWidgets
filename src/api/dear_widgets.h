@@ -233,6 +233,9 @@ struct ImWidgetsContext
 	ImDrawShader					slugFillShader;     // Slug GPU fill gradient shader (user linear/radial/diamond)
 	ImWidgets::ImWidgetsSlugState*	slugState;        // Per-context Slug font atlas cache
 
+	// Stroke expansion (Euler spiral, winding-number fill)
+	ImDrawShader					strokeShader;
+
 	// Background blur / effects
 	ImDrawShader					blurShader;
 	ImTextureID						blurBackbufferCopy;
@@ -1310,6 +1313,17 @@ struct ImWidgetsDashedLineBuffer
     float   _pad;          // offset 108 - padding
 };
 
+// Stroke fill constant buffer — winding number shader.
+// Holds directed line segments ("line soup") from Euler spiral stroke expansion.
+#define IMGUI_STROKE_MAX_SEGMENTS 1024
+struct ImWidgetsStrokeBuffer
+{
+    float   params[4];                        // [0]=num_segs, [1]=unused, [2]=aa_width, [3]=unused
+    float   color[4];                         // RGBA
+    float   bounds[4];                        // rect_min.x, rect_min.y, rect_max.x, rect_max.y
+    float   segments[IMGUI_STROKE_MAX_SEGMENTS * 4]; // p0.x, p0.y, p1.x, p1.y per segment
+};
+
 #define ImWidgets_Kibi (1024ull)
 #define ImWidgets_Mibi (ImWidgets_Kibi*1024ull)
 #define ImWidgets_Gibi (ImWidgets_Mibi*1024ull)
@@ -1460,6 +1474,24 @@ enum ImWidgetsJoin_
     ImWidgetsJoin_COUNT
 };
 typedef int ImWidgetsJoin;
+
+enum ImWidgetsPrimitive_
+{
+    ImWidgetsPrimitive_Line,
+    ImWidgetsPrimitive_Arc,
+
+    ImWidgetsPrimitive_COUNT
+};
+typedef int ImWidgetsPrimitive;
+
+enum ImWidgetsCorrectness_
+{
+    ImWidgetsCorrectness_Weak,
+    ImWidgetsCorrectness_Strong,
+
+    ImWidgetsCorrectness_COUNT
+};
+typedef int ImWidgetsCorrectness;
 
 typedef int ImWidgetsGradientInterp;
 enum ImWidgetsGradientInterp_
@@ -3256,7 +3288,6 @@ namespace ImWidgets{
     IMGUI_API void SetDashedLinesDebugJoins(bool enable);
     IMGUI_API bool GetDashedLinesDebugJoins();
 
-#if 1
     //////////////////////////////////////////////////////////////////////////
     // Polylines (Dashed/Stroked)
     //////////////////////////////////////////////////////////////////////////
@@ -3286,5 +3317,45 @@ namespace ImWidgets{
         ImWidgetsCap cap = ImWidgetsCap_Butt,
         ImWidgetsJoin join = ImWidgetsJoin_Mitter,
         float miter_limit = 4.0f);
-#endif
+
+    //////////////////////////////////////////////////////////////////////////
+    // Stroke Expansion (Euler Spiral) — based on Linebender HPG 2024 paper
+    //////////////////////////////////////////////////////////////////////////
+    // Stroke a cubic Bezier path with high-quality parallel curves via Euler spirals.
+    // points: 3*N+1 control points for N cubics [p0,p1,p2,p3, p4,p5,p6, ...]
+    IMGUI_API void DrawStrokedBezierPath(
+        ImDrawList* drawlist,
+        const ImVec2* points, int points_count,
+        ImU32 col, float thickness,
+        ImWidgetsCap cap = ImWidgetsCap_Round,
+        ImWidgetsJoin join = ImWidgetsJoin_Round,
+        float miter_limit = 4.0f,
+        float tolerance = 0.25f,
+        bool closed = false,
+        ImWidgetsPrimitive primitive = ImWidgetsPrimitive_Line,
+        ImWidgetsCorrectness correctness = ImWidgetsCorrectness_Weak);
+
+    // Stroke a single cubic Bezier curve.
+    IMGUI_API void DrawStrokedCubicBezier(
+        ImDrawList* drawlist,
+        ImVec2 p0, ImVec2 p1, ImVec2 p2, ImVec2 p3,
+        ImU32 col, float thickness,
+        ImWidgetsCap cap = ImWidgetsCap_Round,
+        float tolerance = 0.25f,
+        ImWidgetsPrimitive primitive = ImWidgetsPrimitive_Line,
+        ImWidgetsCorrectness correctness = ImWidgetsCorrectness_Weak);
+
+    // Stroke a polyline with Euler spiral offset curves (high-quality thick joins).
+    IMGUI_API void DrawStrokedPolyline(
+        ImDrawList* drawlist,
+        const ImVec2* points, int points_count,
+        ImU32 col, float thickness,
+        ImWidgetsCap cap = ImWidgetsCap_Round,
+        ImWidgetsJoin join = ImWidgetsJoin_Round,
+        float miter_limit = 4.0f,
+        bool closed = false);
+
+    // Debug
+    IMGUI_API void SetStrokeDebugWireframe(bool enable);
+    IMGUI_API bool GetStrokeDebugWireframe();
 }

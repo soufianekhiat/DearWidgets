@@ -105,6 +105,42 @@ static bool MathGetHAssembly(const stbtt_fontinfo* fi, int glyphID, float emScal
 	return true;
 }
 
+// Get italic correction for a glyph from the MATH table MathItalicsCorrectionInfo.
+// Returns the correction in em units (multiply by font_size to get pixels).
+static float MathGetItalicsCorrection(const stbtt_fontinfo* fi, int glyphID, float emScale) {
+	uint32_t mathLen = 0;
+	const uint8_t* math = MathFindTable(fi, 0x4D415448 /*'MATH'*/, &mathLen);
+	if (!math) return 0.0f;
+	uint16_t glyphInfoOff = MathR16(math + 6);
+	if (!glyphInfoOff) return 0.0f;
+	const uint8_t* glyphInfo = math + glyphInfoOff;
+	uint16_t italicsCorrOff = MathR16(glyphInfo);
+	if (!italicsCorrOff) return 0.0f;
+	const uint8_t* italicsCorr = glyphInfo + italicsCorrOff;
+	uint16_t covOff = MathR16(italicsCorr);
+	uint16_t count  = MathR16(italicsCorr + 2);
+	if (!covOff || !count) return 0.0f;
+	const uint8_t* cov = italicsCorr + covOff;
+	uint16_t covFmt = MathR16(cov);
+	int covIdx = -1;
+	if (covFmt == 1) {
+		uint16_t cnt = MathR16(cov + 2);
+		for (int i = 0; i < cnt; i++)
+			if (MathR16(cov + 4 + i * 2) == (uint16_t)glyphID) { covIdx = i; break; }
+	} else if (covFmt == 2) {
+		uint16_t cnt = MathR16(cov + 2);
+		for (int i = 0; i < cnt; i++) {
+			uint16_t startGI = MathR16(cov + 4 + i * 6);
+			uint16_t endGI   = MathR16(cov + 4 + i * 6 + 2);
+			uint16_t startCI = MathR16(cov + 4 + i * 6 + 4);
+			if ((uint16_t)glyphID >= startGI && (uint16_t)glyphID <= endGI) { covIdx = startCI + (glyphID - startGI); break; }
+		}
+	}
+	if (covIdx < 0 || covIdx >= (int)count) return 0.0f;
+	// MathValueRecord: int16 value, uint16 deviceTableOffset (we ignore device table)
+	return MathRS16(italicsCorr + 4 + covIdx * 4) * emScale;
+}
+
 // ---- Greek letter and command mapping ----
 struct LaTeXCommand { const char* name; ImWchar codepoint; };
 static const LaTeXCommand kCommands[] = {
@@ -859,20 +895,57 @@ static void LayoutBox(LaTeXBox* box, float fontSize) {
 		float w = bw, h = bh, d = bd;
 
 		if (isIntegral) {
-			// Integral-style: side placement, positioned relative to glyph bounds
-			// bh/bd are the integral glyph's actual ascent/descent (scaled 1.5x)
-			float supShift = bh * 0.65f;   // near top of the integral sign
-			float subShift = bd * 0.65f;   // near bottom of the integral sign
+			// Override integral glyph's box with actual ink bounds from stbtt, so
+			// DebugDrawBox and subscript positioning use the same source of truth.
+			{
+				ImFont* mf2 = LaTeXGetMathFont();
+				stbtt_fontinfo fi2; float emSc2 = 0;
+				if (mf2 && GetSlugFontInfo(mf2, &fi2, &emSc2)) {
+					int ix0, iy0, ix1, iy1;
+					int icp = (int)box->base->codepoint;
+					if (stbtt_GetCodepointBox(&fi2, icp, &ix0, &iy0, &ix1, &iy1)) {
+						float szg = fontSize * box->base->sizeFactor;
+						box->base->width  =  ix1 * emSc2 * szg;
+						box->base->height =  iy1 * emSc2 * szg;
+						box->base->depth  = -iy0 * emSc2 * szg;
+						bw = box->base->width;
+						bh = box->base->height;
+						bd = box->base->depth;
+					}
+				}
+			}
+			// Integral-style: side placement — BB-right-corner alignment of the first
+			// subscript glyph to the integral glyph. For wide subscripts, clamp subX
+			// so the subscript only intrudes at most halfway across the integral.
+			float supShift = bh * 0.65f;
+			LaTeXBox* firstSub = box->subscript;
+			if (firstSub && firstSub->type == LaTeXBox_HBox && firstSub->children.Size > 0)
+				firstSub = firstSub->children[0];
+			float firstW = firstSub ? firstSub->width  : 0.0f;
+			float firstD = firstSub ? firstSub->depth  : 0.0f;
+			float subX, subShift;
+			if (firstW <= bw * 0.5f) {
+				// Narrow subscript: BB-right-corner alignment
+				subX     = bw - firstW;
+				subShift = ImMax(0.0f, bd - firstD);
+			} else {
+				// Wide subscript (e.g. Omega): place right of the integral to avoid
+				// ink collision — the subscript extends rightward from the integral's
+				// ink right edge, baseline at the integral's ink bottom.
+				subX     = bw;
+				subShift = bd;
+			}
+			float supX     = bw;
 			if (box->superscript) {
-				box->superscript->shiftX = bw;
+				box->superscript->shiftX = supX;
 				box->superscript->shiftY = -supShift;
-				w = ImMax(w, bw + box->superscript->width);
+				w = ImMax(w, supX + box->superscript->width);
 				h = ImMax(h, supShift + box->superscript->height);
 			}
 			if (box->subscript) {
-				box->subscript->shiftX = bw;
+				box->subscript->shiftX = subX;
 				box->subscript->shiftY = subShift;
-				w = ImMax(w, bw + box->subscript->width);
+				w = ImMax(w, subX + box->subscript->width);
 				d = ImMax(d, subShift + box->subscript->depth);
 			}
 		} else if (isLimits) {
@@ -1075,12 +1148,26 @@ static void LayoutBox(LaTeXBox* box, float fontSize) {
 				char cUtf8[8]; EncodeUTF8(cuspCh, cUtf8);
 				float bAsc2 = 0;
 				ImVec2 bRef2 = CalcTextSize_Impl(mf, braceSz2, cUtf8, NULL, &bAsc2);
-				braceH = (box->delimLeft == 'O') ? bAsc2 : (bRef2.y - bAsc2);
+				if (box->delimLeft == 'O') {
+					// For overbrace: visual height is from inner tips to outer top.
+					// minYEm of the glyph is the inner-tip height above baseline (em units).
+					int cbx0, cby0, cbx1, cby1;
+					float cuspMinYEm = (stbtt_GetCodepointBox(&fi, (int)cuspCh, &cbx0, &cby0, &cbx1, &cby1)) ? cby0 * emSc : 0.0f;
+					braceH = bAsc2 - cuspMinYEm * braceSz2;
+				} else {
+					braceH = bRef2.y - bAsc2;
+				}
 			} else {
 				char cUtf8[8]; EncodeUTF8(cuspCh, cUtf8);
 				float bAsc = 0;
 				ImVec2 bRef = CalcTextSize_Impl(mf, sz, cUtf8, NULL, &bAsc);
-				braceH = (box->delimLeft == 'O') ? bAsc : (bRef.y - bAsc);
+				if (box->delimLeft == 'O') {
+					int cbx0, cby0, cbx1, cby1;
+					float cuspMinYEm = (stbtt_GetCodepointBox(&fi, (int)cuspCh, &cbx0, &cby0, &cbx1, &cby1)) ? cby0 * emSc : 0.0f;
+					braceH = bAsc - cuspMinYEm * sz;
+				} else {
+					braceH = bRef.y - bAsc;
+				}
 			}
 		}
 
@@ -1398,9 +1485,13 @@ static void RenderBox(ImDrawList* dl, LaTeXBox* box, ImFont* mathFont, float fon
 			int braceGI = hasMath ? stbtt_FindGlyphIndex(&fi, braceCh) : 0;
 			MathGlyphAssembly assembly;
 			bool hasAssembly = (braceGI > 0) && MathGetHAssembly(&fi, braceGI, emSc, &assembly) && assembly.partCount > 0;
-			float baseY = (box->delimLeft == 'O')
-				? py - (main ? main->height : 0) - sz * 0.05f
-				: py + (main ? main->depth : 0) + sz * 0.05f;
+			// For overbrace: inner tips are above baseline by minYEm; compensate so tips land near content top.
+			float braceMinYEm = 0.0f;
+			if (box->delimLeft == 'O' && hasMath) {
+				int cbx0, cby0, cbx1, cby1;
+				if (stbtt_GetCodepointBox(&fi, (int)braceCh, &cbx0, &cby0, &cbx1, &cby1))
+					braceMinYEm = cby0 * emSc;
+			}
 			if (hasAssembly) {
 				// Build the brace from assembly parts
 				// First pass: compute total width of non-extender parts
@@ -1433,6 +1524,9 @@ static void RenderBox(ImDrawList* dl, LaTeXBox* box, ImFont* mathFont, float fon
 				if (totalAsmW < 0.01f) totalAsmW = 1.0f;
 				// Scale font so assembled width = content width
 				float braceSz = sz * targetW / totalAsmW;
+				float baseY = (box->delimLeft == 'O')
+					? py - (main ? main->height : 0) + braceMinYEm * braceSz - sz * 0.02f
+					: py + (main ? main->depth : 0) + sz * 0.05f;
 				float braceOverlap = overlap * braceSz;
 				// Assembly glyphs pre-built during layout
 				// Render from content left edge
@@ -1451,6 +1545,9 @@ static void RenderBox(ImDrawList* dl, LaTeXBox* box, ImFont* mathFont, float fon
 				}
 			} else {
 				// Fallback: render single brace glyph centered
+				float baseY = (box->delimLeft == 'O')
+					? py - (main ? main->height : 0) + braceMinYEm * sz - sz * 0.02f
+					: py + (main ? main->depth : 0) + sz * 0.05f;
 				char bUtf8[8]; EncodeUTF8(braceCh, bUtf8);
 				ImVec2 bSz = CalcTextSize_Impl(mathFont, sz, bUtf8);
 				DrawText_Impl(dl, mathFont, sz, ImVec2(px + (cw - bSz.x) * 0.5f, baseY), col, bUtf8);
@@ -1849,9 +1946,13 @@ static void TessellateBox(LaTeXBox* box, ImFont* mathFont, float fontSize, float
             int braceGI = hasMath ? stbtt_FindGlyphIndex(&fi, braceCh) : 0;
             MathGlyphAssembly assembly;
             bool hasAssembly = (braceGI > 0) && MathGetHAssembly(&fi, braceGI, emSc, &assembly) && assembly.partCount > 0;
-            float baseY = (box->delimLeft == 'O')
-                ? py - (main ? main->height : 0) - sz * 0.05f
-                : py + (main ? main->depth : 0) + sz * 0.05f;
+            // For overbrace: inner tips sit above baseline by minYEm; compensate so tips land near content top.
+            float braceMinYEm = 0.0f;
+            if (box->delimLeft == 'O' && hasMath) {
+                int cbx0, cby0, cbx1, cby1;
+                if (stbtt_GetCodepointBox(&fi, (int)braceCh, &cbx0, &cby0, &cbx1, &cby1))
+                    braceMinYEm = cby0 * emSc;
+            }
             if (hasAssembly) {
                 float fixedW = 0; int extIdx = -1;
                 for (int i = 0; i < assembly.partCount; i++) {
@@ -1874,6 +1975,9 @@ static void TessellateBox(LaTeXBox* box, ImFont* mathFont, float fontSize, float
                 if (totalAsmW < 0.01f) totalAsmW = 1.0f;
                 float braceSz = sz * targetW / totalAsmW;
                 float braceOverlap = overlap * braceSz;
+                float baseY = (box->delimLeft == 'O')
+                    ? py - (main ? main->height : 0) + braceMinYEm * braceSz - sz * 0.02f
+                    : py + (main ? main->depth : 0) + sz * 0.05f;
                 float penX2 = px; int jc = 0;
                 for (int i = 0; i < assembly.partCount; i++) {
                     int copies = assembly.parts[i].isExtender ? extCopies : 1;
@@ -1887,6 +1991,9 @@ static void TessellateBox(LaTeXBox* box, ImFont* mathFont, float fontSize, float
                     }
                 }
             } else {
+                float baseY = (box->delimLeft == 'O')
+                    ? py - (main ? main->height : 0) + braceMinYEm * sz - sz * 0.02f
+                    : py + (main ? main->depth : 0) + sz * 0.05f;
                 char bUtf8[8]; EncodeUTF8(braceCh, bUtf8);
                 ImVec2 bSz = CalcTextSize_Impl(mathFont, sz, bUtf8);
                 TessLatexText(mathFont, sz, bUtf8, px + (cw - bSz.x) * 0.5f, baseY, outShape, tess_tol, iterations);

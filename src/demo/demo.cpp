@@ -3591,37 +3591,144 @@ namespace ImWidgets {
 			if ( ImGui::CollapsingHeader( "Thick line" ) )
 			{
 				float const size = CanvasSize();
-				ImGui::Dummy( ImVec2( size, 0.25f * size ) );
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 
-				static float line_width = 5.0f;
-				static float mitter_limit = 0.0f;
-				static float antialiasing = 1.0f / size;
+				static float line_width = 8.0f;
+				static float miter_limit = 4.0f;
+				static float tolerance = 0.25f;
+				static int cap_type = (int)ImWidgetsCap_Round;
+				static int join_type = (int)ImWidgetsJoin_Round;
+				static int path_type = 0; // 0=single cubic, 1=S-curve, 2=polyline
+				static bool show_wireframe = false;
+				static bool show_ctrl_poly = true;
+				static bool closed = false;
 
-				ImWidgetsStyle& widgetStyle = ImWidgets::GetStyle();
-				ImVec4 vBlue = widgetStyle.Colors[ StyleColor_Slider2D_CursorX ];
-				ImVec4 vOrange = widgetStyle.Colors[ StyleColor_Slider2D_CursorY ];
-				ImU32 uBlue = ImGui::GetColorU32( vBlue );
-				ImU32 uOrange = ImGui::GetColorU32( vOrange );
 				static ImVec4 color_v( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
 				static ImU32 color_col = ImGui::GetColorU32( color_v );
-				if ( ImGui::ColorEdit4( "ColA##DrawShape", &color_v.x ) )
+				if ( ImGui::ColorEdit4( "Color##ThickLine", &color_v.x ) )
 					color_col = ImGui::GetColorU32( color_v );
-				ImGui::DragFloat( "line_width", &line_width, 0.0125f, 0.0f, 16.0f );
-				ImGui::DragFloat( "antialiasing", &antialiasing, 0.0125f, 0.0f, 16.0f );
-				ImGui::SliderAngle( "mitter_limit", &mitter_limit );
+				ImGui::DragFloat( "Thickness##TL", &line_width, 0.125f, 0.5f, 100.0f );
+				ImGui::DragFloat( "Miter limit##TL", &miter_limit, 0.1f, 1.0f, 10.0f );
+				ImGui::DragFloat( "Tolerance##TL", &tolerance, 0.01f, 0.05f, 2.0f );
 
-				ImVec2 pos = ImGui::GetCursorScreenPos();
+				const char* cap_names[] = { "None", "Butt", "Square", "Round", "TriangleOut", "TriangleIn" };
+				ImGui::Combo( "Cap##TL", &cap_type, cap_names, ImWidgetsCap_COUNT );
+				const char* join_names[] = { "Round", "Miter", "Bevel" };
+				ImGui::Combo( "Join##TL", &join_type, join_names, ImWidgetsJoin_COUNT );
+				const char* path_names[] = { "Single Cubic", "S-Curve (2 cubics)", "Polyline (L-shape)" };
+				ImGui::Combo( "Path##TL", &path_type, path_names, 3 );
+				static int primitive_type = (int)ImWidgetsPrimitive_Line;
+				static int correctness_type = (int)ImWidgetsCorrectness_Weak;
+				const char* prim_names[] = { "Line", "Arc" };
+				ImGui::Combo( "Primitive##TL", &primitive_type, prim_names, ImWidgetsPrimitive_COUNT );
+				const char* corr_names[] = { "Weak", "Strong" };
+				ImGui::Combo( "Correctness##TL", &correctness_type, corr_names, ImWidgetsCorrectness_COUNT );
+				ImGui::Checkbox( "Control polygon##TL", &show_ctrl_poly );
+				ImGui::SameLine();
+				ImGui::Checkbox( "Wireframe##TL", &show_wireframe );
+				ImGui::SameLine();
+				ImGui::Checkbox( "Closed##TL", &closed );
 
-				ImVec2 pts[] = {
-					pos + ImVec2( size * 0.25f, size * 0.25f ),
-					pos + ImVec2( size * 0.72f, size * 0.25f ),
-					pos + ImVec2( size * 0.72f, size * 0.75f )
+				ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
+				ImVec2 canvas_size( size, size );
+				ImGui::InvisibleButton( "##thick_line_canvas", canvas_size );
+				bool canvas_hovered = ImGui::IsItemHovered();
+
+				// Draggable control points (relative to canvas, normalized 0-1)
+				static ImVec2 cp_cubic[4] = {
+					ImVec2( 0.1f, 0.8f ), ImVec2( 0.3f, 0.1f ),
+					ImVec2( 0.7f, 0.1f ), ImVec2( 0.9f, 0.8f )
+				};
+				static ImVec2 cp_scurve[7] = {
+					ImVec2( 0.05f, 0.5f ), ImVec2( 0.15f, 0.1f ), ImVec2( 0.35f, 0.1f ),
+					ImVec2( 0.5f, 0.5f ),
+					ImVec2( 0.65f, 0.9f ), ImVec2( 0.85f, 0.9f ), ImVec2( 0.95f, 0.5f )
+				};
+				static ImVec2 cp_poly[4] = {
+					ImVec2( 0.15f, 0.15f ), ImVec2( 0.75f, 0.15f ),
+					ImVec2( 0.75f, 0.85f ), ImVec2( 0.15f, 0.85f )
 				};
 
-				//pDrawList->AddLine( pts[ 0 ], pts[ 1 ], color_col, line_width );
+				// Determine active control point set
+				ImVec2* cp = NULL;
+				int cp_count = 0;
+				if (path_type == 0) { cp = cp_cubic; cp_count = 4; }
+				else if (path_type == 1) { cp = cp_scurve; cp_count = 7; }
+				else { cp = cp_poly; cp_count = 4; }
 
-				ImGui::Dummy( ImVec2( size, size ) );
+				// Drag logic
+				static int dragging = -1;
+				ImVec2 mouse = ImGui::GetMousePos();
+				float grab_r = 8.0f;
+
+				if (ImGui::IsMouseReleased(0)) dragging = -1;
+				if (canvas_hovered && ImGui::IsMouseClicked(0))
+				{
+					for (int i = 0; i < cp_count; ++i)
+					{
+						ImVec2 sp( canvas_pos.x + cp[i].x * size, canvas_pos.y + cp[i].y * size );
+						float dx = mouse.x - sp.x, dy = mouse.y - sp.y;
+						if (dx * dx + dy * dy < grab_r * grab_r * 4.0f)
+						{
+							dragging = i;
+							break;
+						}
+					}
+				}
+				if (dragging >= 0 && dragging < cp_count)
+				{
+					cp[dragging].x = ImClamp( (mouse.x - canvas_pos.x) / size, 0.0f, 1.0f );
+					cp[dragging].y = ImClamp( (mouse.y - canvas_pos.y) / size, 0.0f, 1.0f );
+				}
+
+				// Convert to screen-space points
+				ImVec2 sp[7];
+				for (int i = 0; i < cp_count; ++i)
+					sp[i] = ImVec2( canvas_pos.x + cp[i].x * size, canvas_pos.y + cp[i].y * size );
+
+				// Draw background
+				pDrawList->AddRectFilled( canvas_pos, ImVec2( canvas_pos.x + size, canvas_pos.y + size ),
+				                          IM_COL32( 30, 30, 30, 255 ) );
+
+				// Set debug wireframe from checkbox
+				ImWidgets::SetStrokeDebugWireframe( show_wireframe );
+
+				// Draw the stroked path
+				if (path_type == 0) // Single cubic
+				{
+					ImWidgets::DrawStrokedBezierPath( pDrawList, sp, 4, color_col, line_width,
+					                                    (ImWidgetsCap)cap_type, (ImWidgetsJoin)join_type,
+					                                    miter_limit, tolerance, closed,
+					                                    (ImWidgetsPrimitive)primitive_type,
+					                                    (ImWidgetsCorrectness)correctness_type );
+				}
+				else if (path_type == 1) // S-curve (2 cubics)
+				{
+					ImWidgets::DrawStrokedBezierPath( pDrawList, sp, 7, color_col, line_width,
+					                                   (ImWidgetsCap)cap_type, (ImWidgetsJoin)join_type,
+					                                   miter_limit, tolerance, closed,
+					                                   (ImWidgetsPrimitive)primitive_type,
+					                                   (ImWidgetsCorrectness)correctness_type );
+				}
+				else // Polyline
+				{
+					ImWidgets::DrawStrokedPolyline( pDrawList, sp, cp_count, color_col, line_width,
+					                                 (ImWidgetsCap)cap_type, (ImWidgetsJoin)join_type,
+					                                 miter_limit, closed );
+				}
+
+				// Draw control polygon
+				if (show_ctrl_poly)
+				{
+					ImU32 ctrl_col = IM_COL32( 255, 255, 255, 80 );
+					ImU32 handle_col = IM_COL32( 255, 200, 50, 200 );
+					for (int i = 0; i < cp_count - 1; ++i)
+						pDrawList->AddLine( sp[i], sp[i + 1], ctrl_col, 1.0f );
+					if (closed && cp_count > 2)
+						pDrawList->AddLine( sp[cp_count - 1], sp[0], ctrl_col, 1.0f );
+					for (int i = 0; i < cp_count; ++i)
+						pDrawList->AddCircleFilled( sp[i], grab_r, handle_col );
+				}
 			}
 			ShowDrawSquircleDemo();
 			EndCullSection( s_cull_cshader_h, s_cull_cshader_y ); }
