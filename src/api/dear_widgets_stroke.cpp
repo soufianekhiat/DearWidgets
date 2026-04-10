@@ -1,6 +1,9 @@
 // dear_widgets_stroke.cpp
-// Euler spiral stroke expansion — faithful port from Vello (linebender).
-// Reference: vello_shaders/src/cpu/flatten.rs
+// GPU stroke expansion — based on "Fast GPU stroke expansion" (HPG 2024).
+// Paper: https://arxiv.org/abs/2405.00127
+// Reference implementation: https://github.com/linebender/gpu-stroke-expansion-paper
+// CPU: Euler spiral stroke expansion (faithful port from Vello/linebender).
+// GPU: Winding-number pixel shader for zero-overdraw fill.
 // This file is #include'd from dear_widgets.cpp (unity build pattern).
 
 #ifdef _DEAR_WIDGETS_STROKE_INCLUDED
@@ -198,6 +201,20 @@ static void DW_CubicEvalAndDeriv(ImVec2 c0,ImVec2 c1,ImVec2 c2,ImVec2 c3,
     der.y=(c1.y-c0.y)*uu+(c2.y-c1.y)*(2*ut)+(c3.y-c2.y)*tt;
 }
 
+// De Casteljau subdivision: split cubic at parameter t into two cubics.
+static void DW_CubicSubdivide(ImVec2 p0, ImVec2 p1, ImVec2 p2, ImVec2 p3, float t,
+    ImVec2 left[4], ImVec2 right[4])
+{
+    ImVec2 m01(p0.x+(p1.x-p0.x)*t, p0.y+(p1.y-p0.y)*t);
+    ImVec2 m12(p1.x+(p2.x-p1.x)*t, p1.y+(p2.y-p1.y)*t);
+    ImVec2 m23(p2.x+(p3.x-p2.x)*t, p2.y+(p3.y-p2.y)*t);
+    ImVec2 m012(m01.x+(m12.x-m01.x)*t, m01.y+(m12.y-m01.y)*t);
+    ImVec2 m123(m12.x+(m23.x-m12.x)*t, m12.y+(m23.y-m12.y)*t);
+    ImVec2 mid(m012.x+(m123.x-m012.x)*t, m012.y+(m123.y-m012.y)*t);
+    left[0]=p0; left[1]=m01; left[2]=m012; left[3]=mid;
+    right[0]=mid; right[1]=m123; right[2]=m23; right[3]=p3;
+}
+
 static void DW_CubicToEulerSegs(ImVec2 c0,ImVec2 c1,ImVec2 c2,ImVec2 c3,
     float tolerance, ImVector<DW_EulerSeg>& out)
 {
@@ -222,6 +239,16 @@ static void DW_CubicToEulerSegs(ImVec2 c0,ImVec2 c1,ImVec2 c2,ImVec2 c3,
             if(t0_u>0){unsigned sh=0;ImU64 tmp=t0_u;while((tmp&1)==0){sh++;tmp>>=1;}t0_u>>=sh;dt*=(float)(1ULL<<sh);}
         } else { t0_u*=2; dt*=0.5f; }
     }
+}
+
+// Approximate arc length of a cubic using chord-length of Euler sub-segments.
+static float DW_CubicArcLength(ImVec2 c0, ImVec2 c1, ImVec2 c2, ImVec2 c3, float tol)
+{
+    ImVector<DW_EulerSeg> segs;
+    DW_CubicToEulerSegs(c0, c1, c2, c3, tol, segs);
+    float len = 0;
+    for (int i = 0; i < segs.Size; ++i) len += segs[i].ChordLen();
+    return len;
 }
 
 // ============================================================
@@ -592,7 +619,11 @@ static void DW_DoJoin(ImVec2 p0, ImVec2 last_tan, ImVec2 tan0, ImVec2 norm,
             fwd.push_back(ImVec2(p0.x - norm.x, p0.y - norm.y));
             bwd.push_back(ImVec2(p0.x + norm.x, p0.y + norm.y));
         } else if (join_style == ImWidgetsJoin_Mitter) {
-            if (2.f * hypot < (hypot + dot) * miter_limit * miter_limit) {
+            // Vello PR #1323: guard against near-collinear tangents producing
+            // degenerate miter geometry. Fall back to bevel when cross is tiny.
+            const float TANGENT_THRESH = 1e-6f;
+            if (2.f * hypot < (hypot + dot) * miter_limit * miter_limit
+                && ImFabs(cross) > TANGENT_THRESH * TANGENT_THRESH) {
                 float last_scale = half_w / sqrtf(ab.x*ab.x + ab.y*ab.y + 1e-12f);
                 ImVec2 last_norm(-ab.y * last_scale, ab.x * last_scale);
                 if (cross > 0.f) {
@@ -968,6 +999,247 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
 
 
 // ============================================================
+// Dash splitting — preserves cubic representation for smooth strokes.
+// Arc-length is measured via Euler sub-segment chord lengths, then
+// dash boundaries are mapped back to cubic t-parameters for De Casteljau split.
+// ============================================================
+
+// Build cumulative arc-length table for one cubic via Euler sub-segments.
+// Returns pairs of (t_in_cubic, cumulative_arc_length).
+struct DW_ArcLenEntry { float t; float len; };
+static float DW_BuildArcLenTable(ImVec2 c0, ImVec2 c1, ImVec2 c2, ImVec2 c3, float tol,
+    ImVector<DW_ArcLenEntry>& table)
+{
+    // Walk CubicToEuler subdivision to get (t, arc_len) pairs
+    ImVec2 lp=c0, lq(c1.x-c0.x,c1.y-c0.y);
+    if(lq.x*lq.x+lq.y*lq.y<1e-12f){ImVec2 tmp; DW_CubicEvalAndDeriv(c0,c1,c2,c3,1e-6f,tmp,lq);}
+    float lt=0, cum_len=0; ImU64 t0_u=0; float dt=1;
+    DW_ArcLenEntry e0={0,0}; table.push_back(e0);
+    for(int iter=0;iter<10000;++iter){
+        float t0f=(float)t0_u*dt; if(t0f>=1)break;
+        float t1=t0f+dt; if(t1>1)t1=1;
+        ImVec2 p1,q1; DW_CubicEvalAndDeriv(c0,c1,c2,c3,t1,p1,q1);
+        if(q1.x*q1.x+q1.y*q1.y<1e-12f){
+            ImVec2 pb,qb; DW_CubicEvalAndDeriv(c0,c1,c2,c3,t1-1e-6f,pb,qb);
+            q1=qb; if(t1<1){p1=pb;t1-=1e-6f;}
+        }
+        DW_CubicParams cp=DW_CubicParams::FromPointsDerivs(lp,p1,lq,q1,t1-lt);
+        if(cp.err*cp.chord_len<=tol || dt<1e-6f){
+            cum_len += cp.chord_len;
+            DW_ArcLenEntry e={t1, cum_len}; table.push_back(e);
+            lp=p1; lq=q1; lt=t1;
+            t0_u+=1;
+            if(t0_u>0){unsigned sh=0;ImU64 tmp=t0_u;while((tmp&1)==0){sh++;tmp>>=1;}t0_u>>=sh;dt*=(float)(1ULL<<sh);}
+        } else { t0_u*=2; dt*=0.5f; }
+    }
+    return cum_len;
+}
+
+// Find cubic t-parameter for a given arc length using the table.
+static float DW_ArcLenToT(const ImVector<DW_ArcLenEntry>& table, float target_len)
+{
+    if (table.Size < 2) return 0;
+    if (target_len <= 0) return 0;
+    if (target_len >= table[table.Size-1].len) return 1;
+    // Binary search
+    int lo = 0, hi = table.Size - 1;
+    while (lo < hi - 1) {
+        int mid = (lo + hi) / 2;
+        if (table[mid].len < target_len) lo = mid; else hi = mid;
+    }
+    float frac = (target_len - table[lo].len) / (table[hi].len - table[lo].len + 1e-9f);
+    return table[lo].t + frac * (table[hi].t - table[lo].t);
+}
+
+// Dash-split a cubic Bezier path, preserving cubic representation.
+// out_dashes: each entry is 3*N+1 control points for N cubics.
+static void DW_DashSplitCubicPath(
+    const ImVec2* cubics, int n_cubics, float tol, bool closed,
+    const float* dash_array, int dash_count, float dash_offset,
+    ImVector<ImVector<ImVec2>>& out_dashes)
+{
+    if (dash_count <= 0 || n_cubics <= 0) return;
+    float pattern_len = 0;
+    for (int i = 0; i < dash_count; ++i) pattern_len += dash_array[i];
+    if (pattern_len <= 0) return;
+
+    // Build extended cubic list (add closing line as degenerate cubic if closed)
+    ImVector<ImVec2> all_pts;
+    for (int i = 0; i <= n_cubics * 3; ++i) all_pts.push_back(cubics[i]);
+    int total_cubics = n_cubics;
+    if (closed) {
+        ImVec2 last = cubics[n_cubics * 3], first = cubics[0];
+        float dx = first.x-last.x, dy = first.y-last.y;
+        if (dx*dx+dy*dy > 1e-6f) {
+            // Add closing segment as degenerate cubic (straight line)
+            ImVec2 m1(last.x+dx*0.333f, last.y+dy*0.333f);
+            ImVec2 m2(last.x+dx*0.667f, last.y+dy*0.667f);
+            all_pts.push_back(m1); all_pts.push_back(m2); all_pts.push_back(first);
+            total_cubics++;
+        }
+    }
+
+    // Normalize dash offset
+    float off = fmodf(dash_offset, pattern_len);
+    if (off < 0) off += pattern_len;
+    int dash_idx = 0;
+    float remain = dash_array[0];
+    while (off > 0) {
+        if (off < remain) { remain -= off; break; }
+        off -= remain;
+        dash_idx = (dash_idx + 1) % dash_count;
+        remain = dash_array[dash_idx];
+    }
+    bool in_dash = (dash_idx % 2) == 0;
+
+    ImVector<ImVec2> cur_dash; // current dash sub-path (3*N+1 control points)
+
+    for (int ci = 0; ci < total_cubics; ++ci) {
+        ImVec2 c0=all_pts[ci*3], c1=all_pts[ci*3+1], c2=all_pts[ci*3+2], c3=all_pts[ci*3+3];
+
+        // Build arc-length table for this cubic
+        ImVector<DW_ArcLenEntry> arc_table;
+        float cubic_len = DW_BuildArcLenTable(c0, c1, c2, c3, tol, arc_table);
+        if (cubic_len < 1e-6f) continue;
+
+        // Current remaining cubic (gets subdivided as we split)
+        ImVec2 rem[4] = {c0, c1, c2, c3};
+        float rem_arc_start = 0; // arc length consumed so far within this cubic
+
+        while (rem_arc_start < cubic_len - 1e-6f) {
+            if (remain <= 0) {
+                dash_idx = (dash_idx + 1) % dash_count;
+                remain = dash_array[dash_idx];
+                in_dash = (dash_idx % 2) == 0;
+            }
+
+            float rem_len = cubic_len - rem_arc_start;
+            if (remain >= rem_len - 1e-4f) {
+                // Entire remaining cubic fits
+                if (in_dash) {
+                    if (cur_dash.Size == 0) cur_dash.push_back(rem[0]);
+                    cur_dash.push_back(rem[1]); cur_dash.push_back(rem[2]); cur_dash.push_back(rem[3]);
+                } else if (cur_dash.Size >= 4) {
+                    out_dashes.push_back(ImVector<ImVec2>());
+                    out_dashes[out_dashes.Size-1].swap(cur_dash);
+                    cur_dash.resize(0);
+                }
+                remain -= rem_len;
+                rem_arc_start = cubic_len;
+            } else {
+                // Split within this cubic
+                float target_arc = rem_arc_start + remain;
+                float t_global = DW_ArcLenToT(arc_table, target_arc);
+                // Convert global t to local t within remaining sub-cubic
+                float t0_global = DW_ArcLenToT(arc_table, rem_arc_start);
+                float t_local = (t0_global < 1.f - 1e-6f) ?
+                    (t_global - t0_global) / (1.f - t0_global) : 0.5f;
+                t_local = ImClamp(t_local, 0.001f, 0.999f);
+
+                ImVec2 left[4], right[4];
+                DW_CubicSubdivide(rem[0], rem[1], rem[2], rem[3], t_local, left, right);
+
+                if (in_dash) {
+                    if (cur_dash.Size == 0) cur_dash.push_back(left[0]);
+                    cur_dash.push_back(left[1]); cur_dash.push_back(left[2]); cur_dash.push_back(left[3]);
+                    out_dashes.push_back(ImVector<ImVec2>());
+                    out_dashes[out_dashes.Size-1].swap(cur_dash);
+                    cur_dash.resize(0);
+                }
+
+                rem_arc_start += remain;
+                remain = 0;
+                rem[0]=right[0]; rem[1]=right[1]; rem[2]=right[2]; rem[3]=right[3];
+            }
+        }
+    }
+
+    if (in_dash && cur_dash.Size >= 4) {
+        out_dashes.push_back(ImVector<ImVec2>());
+        out_dashes[out_dashes.Size-1].swap(cur_dash);
+    }
+}
+
+// Split a polyline at dash/gap boundaries.
+static void DW_DashSplitPolyline(
+    const ImVec2* pts, int n_pts, bool closed,
+    const float* dash_array, int dash_count, float dash_offset,
+    ImVector<ImVector<ImVec2>>& out_dashes)
+{
+    if (dash_count <= 0 || n_pts < 2) return;
+    float pattern_len = 0;
+    for (int i = 0; i < dash_count; ++i) pattern_len += dash_array[i];
+    if (pattern_len <= 0) return;
+
+    // Build extended point list for closed paths
+    ImVector<ImVec2> poly;
+    for (int i = 0; i < n_pts; ++i) poly.push_back(pts[i]);
+    if (closed) {
+        ImVec2 first=poly[0], last=poly[poly.Size-1];
+        float dx=first.x-last.x, dy=first.y-last.y;
+        if (dx*dx+dy*dy > 1e-6f) poly.push_back(first);
+    }
+
+    float off = fmodf(dash_offset, pattern_len);
+    if (off < 0) off += pattern_len;
+    int dash_idx = 0;
+    float remain = dash_array[0];
+    while (off > 0) {
+        if (off < remain) { remain -= off; break; }
+        off -= remain;
+        dash_idx = (dash_idx + 1) % dash_count;
+        remain = dash_array[dash_idx];
+    }
+    bool in_dash = (dash_idx % 2) == 0;
+
+    ImVector<ImVec2> cur_dash;
+    if (in_dash) cur_dash.push_back(poly[0]);
+
+    for (int i = 0; i < poly.Size - 1; ++i) {
+        ImVec2 a = poly[i], b = poly[i + 1];
+        float seg_dx = b.x-a.x, seg_dy = b.y-a.y;
+        float seg_len = sqrtf(seg_dx*seg_dx + seg_dy*seg_dy);
+        if (seg_len < 1e-6f) continue;
+
+        float consumed = 0;
+        while (consumed < seg_len - 1e-6f) {
+            if (remain <= 0) {
+                dash_idx = (dash_idx + 1) % dash_count;
+                remain = dash_array[dash_idx];
+                in_dash = (dash_idx % 2) == 0;
+                if (in_dash) {
+                    float t = consumed / seg_len;
+                    cur_dash.push_back(ImVec2(a.x+seg_dx*t, a.y+seg_dy*t));
+                }
+            }
+            float left = seg_len - consumed;
+            if (remain >= left - 1e-4f) {
+                if (in_dash) cur_dash.push_back(b);
+                remain -= left;
+                consumed = seg_len;
+            } else {
+                consumed += remain;
+                float t = consumed / seg_len;
+                ImVec2 split(a.x+seg_dx*t, a.y+seg_dy*t);
+                if (in_dash) {
+                    cur_dash.push_back(split);
+                    if (cur_dash.Size >= 2) {
+                        out_dashes.push_back(ImVector<ImVec2>());
+                        out_dashes[out_dashes.Size-1].swap(cur_dash);
+                    }
+                    cur_dash.resize(0);
+                }
+                remain = 0;
+            }
+        }
+    }
+    if (in_dash && cur_dash.Size >= 2) {
+        out_dashes.push_back(ImVector<ImVec2>());
+        out_dashes[out_dashes.Size-1].swap(cur_dash);
+    }
+}
+
+// ============================================================
 // Public API
 // ============================================================
 
@@ -1024,6 +1296,57 @@ void DrawStrokedPolyline(ImDrawList* drawlist,
     ImVec2 start_norm = DW_ComputeNorm(ts, hw);
     ImVec2 end_pt = closed ? points[0] : points[points_count-1];
     DW_StrokeRenderOutline(drawlist, fwd, bwd, col, hw, cap, closed, tol, points[0], end_pt, start_norm);
+}
+
+void DrawStrokedDashedBezierPath(ImDrawList* drawlist,
+    const ImVec2* points, int points_count, ImU32 col, float thickness,
+    const float* dash_array, int dash_count, float dash_offset,
+    ImWidgetsCap cap, ImWidgetsJoin join, float miter_limit, float tolerance,
+    bool closed,
+    ImWidgetsPrimitive primitive, ImWidgetsCorrectness correctness)
+{
+    if (!drawlist||!points||thickness<=0||(col&IM_COL32_A_MASK)==0) return;
+    int nc = (points_count-1)/3; if (nc <= 0) return;
+    if (!dash_array || dash_count <= 0) {
+        DrawStrokedBezierPath(drawlist, points, points_count, col, thickness,
+            cap, join, miter_limit, tolerance, closed, primitive, correctness);
+        return;
+    }
+
+    // Split cubic path at dash boundaries, preserving cubic representation
+    ImVector<ImVector<ImVec2>> dashes;
+    DW_DashSplitCubicPath(points, nc, tolerance, closed, dash_array, dash_count, dash_offset, dashes);
+
+    // Stroke each dash as a cubic path (smooth Euler spiral offset)
+    for (int i = 0; i < dashes.Size; ++i) {
+        ImVector<ImVec2>& dp = dashes[i];
+        if (dp.Size < 4) continue;
+        DrawStrokedBezierPath(drawlist, dp.Data, dp.Size, col, thickness,
+            cap, join, miter_limit, tolerance, false, primitive, correctness);
+    }
+}
+
+void DrawStrokedDashedPolyline(ImDrawList* drawlist,
+    const ImVec2* points, int points_count, ImU32 col, float thickness,
+    const float* dash_array, int dash_count, float dash_offset,
+    ImWidgetsCap cap, ImWidgetsJoin join, float miter_limit, bool closed)
+{
+    if (!drawlist||!points||points_count<2||thickness<=0||(col&IM_COL32_A_MASK)==0) return;
+    if (!dash_array || dash_count <= 0) {
+        DrawStrokedPolyline(drawlist, points, points_count, col, thickness,
+            cap, join, miter_limit, closed);
+        return;
+    }
+
+    ImVector<ImVector<ImVec2>> dashes;
+    DW_DashSplitPolyline(points, points_count, closed, dash_array, dash_count, dash_offset, dashes);
+
+    for (int i = 0; i < dashes.Size; ++i) {
+        ImVector<ImVec2>& dp = dashes[i];
+        if (dp.Size < 2) continue;
+        DrawStrokedPolyline(drawlist, dp.Data, dp.Size, col, thickness,
+            cap, join, miter_limit, false);
+    }
 }
 
 } // namespace ImWidgets

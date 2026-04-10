@@ -1,6 +1,15 @@
 #include <dear_widgets.h>
 #include <stdint.h>
 
+// D3DCompile + disk cache for complex shaders (DX11/DX12 only).
+// See DxbcCacheXxx helpers below; we compile shaders ourselves with D3DCompile
+// so we can cache bytecode on disk and skip the 20-minute compile on each run.
+#if (IM_CURRENT_GFX == IM_GFX_DIRECTX11) || (IM_CURRENT_GFX == IM_GFX_DIRECTX12)
+#include <windows.h>
+#include <d3dcompiler.h>
+#pragma comment(lib, "d3dcompiler.lib")
+#endif
+
 // Include stb_rect_pack first so stbrp_node is a proper named struct,
 // compatible with imgui_internal.h's 'struct stbrp_node;' forward declaration.
 #define STBRP_STATIC
@@ -3324,6 +3333,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		memset(&ctx->slugColorShader,   0, sizeof(ImDrawShader));
 		memset(&ctx->slugFillShader,    0, sizeof(ImDrawShader));
 		memset(&ctx->strokeShader,     0, sizeof(ImDrawShader));
+		memset(&ctx->imageInspectorShader, 0, sizeof(ImDrawShader));
 		ctx->slugState = NULL;
 
 		// Register debug callback for slug draw commands in ImGui Metrics viewer
@@ -3430,6 +3440,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				ImPlatform_DestroyShader( ctx->slugFillShader.vs );
 				ImPlatform_DestroyShader( ctx->slugFillShader.ps );
 				memset( &ctx->slugFillShader, 0, sizeof( ImDrawShader ) );
+			}
+			if ( ctx->imageInspectorShader.program )
+			{
+				ImPlatform_DestroyShaderProgram( ctx->imageInspectorShader.program );
+				ImPlatform_DestroyShader( ctx->imageInspectorShader.vs );
+				ImPlatform_DestroyShader( ctx->imageInspectorShader.ps );
+				memset( &ctx->imageInspectorShader, 0, sizeof( ImDrawShader ) );
 			}
 #endif  // IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 
@@ -4428,6 +4445,138 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return src;
 	}
 
+#if (IM_CURRENT_GFX == IM_GFX_DIRECTX11) || (IM_CURRENT_GFX == IM_GFX_DIRECTX12)
+	// ------------------------------------------------------------------------
+	// DXBC bytecode disk cache
+	// ------------------------------------------------------------------------
+	// Complex shaders (e.g. ImageInspector) can take 20+ minutes to compile via
+	// D3DCompile at default optimization. To avoid repeated recompilation, we
+	// cache the DXBC bytecode on disk keyed by a hash of the POST-inlined HLSL
+	// source. The cache is self-invalidating: any source change produces a new
+	// hash and therefore a new cache file. First launch is still slow; all
+	// subsequent launches load the cache in milliseconds.
+	//
+	// Cache location: ./shaders/dxbc_cache/<shader_name>_<entry>_<hash>.cso
+	// Cache file format: raw DXBC bytecode (no header).
+	// ------------------------------------------------------------------------
+	static ImU64 DxbcCacheFnvHash64(const void* data, size_t len)
+	{
+		ImU64 h = 14695981039346656037ull;
+		const unsigned char* p = (const unsigned char*)data;
+		for (size_t i = 0; i < len; i++)
+		{
+			h ^= (ImU64)p[i];
+			h *= 1099511628211ull;
+		}
+		return h;
+	}
+
+	static bool DxbcCacheBuildPath(char* out, size_t outSize, const char* shader_name, const char* entry, ImU64 hash)
+	{
+		// Ensure the cache directory exists. Ignore errors — SaveCachedBytecode
+		// will silently fail if the directory can't be created, which is fine.
+		CreateDirectoryA("./shaders", NULL);
+		CreateDirectoryA("./shaders/dxbc_cache", NULL);
+		ImFormatString(out, outSize, "./shaders/dxbc_cache/%s_%s_%016llx.cso",
+		               shader_name, entry, (unsigned long long)hash);
+		return true;
+	}
+
+	static ID3DBlob* DxbcCacheLoad(const char* cache_path)
+	{
+		size_t sz = 0;
+		void*  data = ImFileLoadToMemory(cache_path, "rb", &sz, 0);
+		if (!data || sz == 0)
+		{
+			if (data) IM_FREE(data);
+			return NULL;
+		}
+		ID3DBlob* blob = NULL;
+		HRESULT hr = D3DCreateBlob(sz, &blob);
+		if (FAILED(hr) || !blob)
+		{
+			IM_FREE(data);
+			return NULL;
+		}
+		memcpy(blob->GetBufferPointer(), data, sz);
+		IM_FREE(data);
+		return blob;
+	}
+
+	static bool DxbcCacheSave(const char* cache_path, const void* data, size_t size)
+	{
+		ImFileHandle f = ImFileOpen(cache_path, "wb");
+		if (!f) return false;
+		ImU64 written = ImFileWrite(data, 1, (ImU64)size, f);
+		ImFileClose(f);
+		return written == (ImU64)size;
+	}
+
+	// Compile HLSL source to DXBC, using disk cache if available. On cache miss,
+	// compiles with SKIP_OPTIMIZATION (fastest possible compile) and saves the
+	// resulting bytecode. The returned blob is owned by the caller and must be
+	// Release()'d.
+	//
+	// Why SKIP_OPTIMIZATION: fxc's default (LEVEL1) takes 20+ minutes on the
+	// ImageInspector uber-shader because of nested dispatches and transcendental
+	// functions in many code paths. SKIP_OPTIMIZATION drops that to seconds.
+	// Runtime performance is worse but that doesn't matter for an inspection
+	// widget rendering 1-2 megapixels at 60fps.
+	static ID3DBlob* CompileHlslWithDiskCache(
+		const char* source, size_t source_len,
+		const char* shader_name, const char* entry, const char* profile)
+	{
+		// Hash source + entry + profile for cache key
+		ImU64 hash = DxbcCacheFnvHash64(source, source_len);
+		hash ^= DxbcCacheFnvHash64(entry,   strlen(entry)) * 1099511628211ull;
+		hash ^= DxbcCacheFnvHash64(profile, strlen(profile)) * 1099511628211ull;
+
+		char cache_path[512];
+		DxbcCacheBuildPath(cache_path, sizeof(cache_path), shader_name, entry, hash);
+
+		// Cache hit?
+		ID3DBlob* blob = DxbcCacheLoad(cache_path);
+		if (blob)
+		{
+			fprintf(stderr, "[DXBC cache] HIT  %s/%s (%u bytes)\n",
+			        shader_name, entry, (unsigned int)blob->GetBufferSize());
+			return blob;
+		}
+
+		// Cache miss: compile from source with minimal optimization for speed.
+		fprintf(stderr, "[DXBC cache] MISS %s/%s -- compiling (this may take a while the first time; bytecode will be cached)...\n",
+		        shader_name, entry);
+
+		ID3DBlob* err_blob = NULL;
+		UINT flags = D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_SKIP_OPTIMIZATION;
+		HRESULT hr = D3DCompile(
+			source, source_len,
+			NULL, NULL, NULL,
+			entry, profile, flags, 0,
+			&blob, &err_blob);
+		if (FAILED(hr))
+		{
+			if (err_blob)
+			{
+				fprintf(stderr, "[DXBC cache] FAIL %s/%s: %s\n",
+				        shader_name, entry, (const char*)err_blob->GetBufferPointer());
+				err_blob->Release();
+			}
+			if (blob) { blob->Release(); blob = NULL; }
+			return NULL;
+		}
+		if (err_blob) err_blob->Release();
+
+		// Save to disk for next launch
+		if (DxbcCacheSave(cache_path, blob->GetBufferPointer(), blob->GetBufferSize()))
+		{
+			fprintf(stderr, "[DXBC cache] SAVE %s/%s (%u bytes) -> %s\n",
+			        shader_name, entry, (unsigned int)blob->GetBufferSize(), cache_path);
+		}
+		return blob;
+	}
+#endif  // DX11/DX12
+
 	void CreateInternalShader( ImDrawShader *shaders_out, char const *shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer )
 	{
 		// Note: sizeof_vs_const_buffer, vs_const_buffer, sizeof_ps_const_buffer, ps_const_buffer
@@ -4537,13 +4686,43 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		IM_ASSERT(vs_source != NULL && file_data_size_vs > 0);
 		IM_ASSERT(ps_source != NULL && file_data_size_vs > 0);
 
+		// On DX11/DX12, pre-compile HLSL to DXBC via the disk-cached path so
+		// complex shaders (like ImageInspector's uber-shader, which can take
+		// 20+ minutes to compile) only pay the cost once. The cache key is a
+		// hash of the post-inlined source, so any source change invalidates it.
+#if (IM_CURRENT_GFX == IM_GFX_DIRECTX11) || (IM_CURRENT_GFX == IM_GFX_DIRECTX12)
+		ID3DBlob* cached_vs_blob = CompileHlslWithDiskCache(vs_source, file_data_size_vs, shader_name, "main_vs", "vs_5_0");
+		ID3DBlob* cached_ps_blob = CompileHlslWithDiskCache(ps_source, file_data_size_ps, shader_name, "main_ps", "ps_5_0");
+		if (cached_vs_blob == NULL || cached_ps_blob == NULL)
+		{
+			char error_msg[256];
+			ImFormatString(error_msg, sizeof(error_msg), "Failed to compile shader '%s' via disk cache", shader_name);
+			IM_ASSERT(false && error_msg);
+			if (cached_vs_blob) cached_vs_blob->Release();
+			if (cached_ps_blob) cached_ps_blob->Release();
+			if (vs_source) IM_FREE(vs_source);
+			if (ps_source) IM_FREE(ps_source);
+			ImDrawShader zero = {};
+			memset(&zero, 0, sizeof(ImDrawShader));
+			memcpy(shaders_out, &zero, sizeof(ImDrawShader));
+			return;
+		}
+#endif
+
 		// Create vertex shader using new ImPlatform API
 		ImPlatform_ShaderDesc vs_desc = {};
 		vs_desc.stage = ImPlatform_ShaderStage_Vertex;
 		vs_desc.format = format;
+#if (IM_CURRENT_GFX == IM_GFX_DIRECTX11) || (IM_CURRENT_GFX == IM_GFX_DIRECTX12)
+		// Pass cached DXBC bytecode directly; ImPlatform skips its internal D3DCompile.
+		vs_desc.source_code   = NULL;
+		vs_desc.bytecode      = cached_vs_blob->GetBufferPointer();
+		vs_desc.bytecode_size = (unsigned int)cached_vs_blob->GetBufferSize();
+#else
 		vs_desc.source_code = vs_source;
 		vs_desc.bytecode = NULL;
 		vs_desc.bytecode_size = 0;
+#endif
 		vs_desc.entry_point = "main_vs"; // Standard entry point name in our shaders
 
 		ImPlatform_Shader vertex_shader = ImPlatform_CreateShader( &vs_desc );
@@ -4568,9 +4747,15 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImPlatform_ShaderDesc ps_desc = {};
 		ps_desc.stage = ImPlatform_ShaderStage_Fragment;
 		ps_desc.format = format;
+#if (IM_CURRENT_GFX == IM_GFX_DIRECTX11) || (IM_CURRENT_GFX == IM_GFX_DIRECTX12)
+		ps_desc.source_code   = NULL;
+		ps_desc.bytecode      = cached_ps_blob->GetBufferPointer();
+		ps_desc.bytecode_size = (unsigned int)cached_ps_blob->GetBufferSize();
+#else
 		ps_desc.source_code = ps_source;
 		ps_desc.bytecode = NULL;
 		ps_desc.bytecode_size = 0;
+#endif
 		ps_desc.entry_point = "main_ps"; // Standard entry point name in our shaders
 
 		ImPlatform_Shader pixel_shader = ImPlatform_CreateShader( &ps_desc );
@@ -4583,6 +4768,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 			// Clean up and return empty shader
 			if (vertex_shader) ImPlatform_DestroyShader(vertex_shader);
+#if (IM_CURRENT_GFX == IM_GFX_DIRECTX11) || (IM_CURRENT_GFX == IM_GFX_DIRECTX12)
+			if (cached_vs_blob) cached_vs_blob->Release();
+			if (cached_ps_blob) cached_ps_blob->Release();
+#endif
 			if (vs_source) IM_FREE(vs_source);
 			if (ps_source) IM_FREE(ps_source);
 			ImDrawShader zero = {};
@@ -4607,7 +4796,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		shaders_out->ps = pixel_shader;
 		shaders_out->program = program;
 
-		// Clean up source code
+		// Clean up source code + cached blobs (ImPlatform copied the bytes in CreateShader)
+#if (IM_CURRENT_GFX == IM_GFX_DIRECTX11) || (IM_CURRENT_GFX == IM_GFX_DIRECTX12)
+		if (cached_vs_blob) cached_vs_blob->Release();
+		if (cached_ps_blob) cached_ps_blob->Release();
+#endif
 		IM_FREE( vs_source );
 		IM_FREE( ps_source );
 	}
@@ -19358,3 +19551,7 @@ namespace ImWidgets
 // Euler spiral stroke expansion
 #define _DEAR_WIDGETS_STROKE_INCLUDED
 #include "dear_widgets_stroke.cpp"
+
+// Color-managed raw-buffer image inspector
+#define _DEAR_WIDGETS_IMAGE_INSPECTOR_INCLUDED
+#include "dear_widgets_image_inspector.cpp"

@@ -1,0 +1,269 @@
+#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 1972 "core.meta.slang"
+struct pixelOutput_0
+{
+    float4 output_0 [[color(0)]];
+};
+
+
+#line 1972
+struct pixelInput_0
+{
+    float4 col_0 [[user(COLOR)]];
+    float2 uv_0 [[user(TEXCOORD)]];
+};
+
+
+#line 15 "C:/git/DearWidgets/workingdir/shaders/hlsl_src/stroke.hlsl"
+struct SLANG_ParameterGroup_strokeBuffer_0
+{
+    float4 params_0;
+    float4 strokeColor_0;
+    float4 bounds_0;
+    array<float4, int(1024)> segments_0;
+};
+
+
+#line 4264 "core.meta.slang"
+struct KernelContext_0
+{
+    SLANG_ParameterGroup_strokeBuffer_0 constant* strokeBuffer_0;
+};
+
+
+#line 46 "C:/git/DearWidgets/workingdir/shaders/hlsl_src/stroke.hlsl"
+[[fragment]] pixelOutput_0 main_ps(pixelInput_0 _S1 [[stage_in]], float4 pos_0 [[position]], SLANG_ParameterGroup_strokeBuffer_0 constant* strokeBuffer_1 [[buffer(1)]])
+{
+
+#line 46
+    KernelContext_0 kernelContext_0;
+
+#line 46
+    (&kernelContext_0)->strokeBuffer_0 = strokeBuffer_1;
+
+
+    float2 _S2 = mix(strokeBuffer_1->bounds_0.xy, strokeBuffer_1->bounds_0.zw, _S1.uv_0.xy);
+    int _S3 = int(strokeBuffer_1->params_0.x);
+    float aa_0 = strokeBuffer_1->params_0.z;
+
+#line 65
+    float _S4 = _S2.y;
+
+
+
+    float _S5 = _S2.x;
+
+#line 69
+    float min_dist_sq_0 = 1.0e+10;
+
+#line 69
+    int i_0 = int(0);
+
+#line 69
+    int winding_0 = int(0);
+
+#line 59
+    for(;;)
+    {
+
+#line 59
+        if(i_0 < _S3)
+        {
+        }
+        else
+        {
+
+#line 59
+            break;
+        }
+        float2 p0_0 = strokeBuffer_1->segments_0[i_0].xy;
+        float2 p1_0 = strokeBuffer_1->segments_0[i_0].zw;
+
+
+        float _S6 = p0_0.y;
+
+#line 65
+        int winding_1;
+
+#line 65
+        if(_S6 <= _S4)
+        {
+            float _S7 = p1_0.y;
+
+#line 67
+            if(_S7 > _S4)
+            {
+                float _S8 = p0_0.x;
+                if(((p1_0.x - _S8) * (_S4 - _S6) - (_S5 - _S8) * (_S7 - _S6)) > 0.0)
+                {
+
+#line 70
+                    winding_1 = winding_0 + int(1);
+
+#line 70
+                }
+                else
+                {
+
+#line 70
+                    winding_1 = winding_0;
+
+#line 70
+                }
+
+#line 67
+            }
+            else
+            {
+
+#line 67
+                winding_1 = winding_0;
+
+#line 67
+            }
+
+#line 65
+        }
+        else
+        {
+
+#line 75
+            float _S9 = p1_0.y;
+
+#line 75
+            if(_S9 <= _S4)
+            {
+                float _S10 = p0_0.x;
+                if(((p1_0.x - _S10) * (_S4 - _S6) - (_S5 - _S10) * (_S9 - _S6)) < 0.0)
+                {
+
+#line 78
+                    winding_1 = winding_0 - int(1);
+
+#line 78
+                }
+                else
+                {
+
+#line 78
+                    winding_1 = winding_0;
+
+#line 78
+                }
+
+#line 75
+            }
+            else
+            {
+
+#line 75
+                winding_1 = winding_0;
+
+#line 75
+            }
+
+#line 65
+        }
+
+#line 83
+        float2 d_0 = p1_0 - p0_0;
+        float len_sq_0 = dot(d_0, d_0);
+
+#line 84
+        float t_0;
+        if(len_sq_0 > 9.99999993922529029e-09)
+        {
+
+#line 85
+            t_0 = saturate(dot(_S2 - p0_0, d_0) / len_sq_0);
+
+#line 85
+        }
+        else
+        {
+
+#line 85
+            t_0 = 0.0;
+
+#line 85
+        }
+
+        float2 diff_0 = _S2 - (p0_0 + d_0 * float2(t_0) );
+
+        float _S11 = min(min_dist_sq_0, dot(diff_0, diff_0));
+
+#line 59
+        int _S12 = i_0 + int(1);
+
+#line 59
+        min_dist_sq_0 = _S11;
+
+#line 59
+        i_0 = _S12;
+
+#line 59
+        winding_0 = winding_1;
+
+#line 59
+    }
+
+#line 93
+    float min_dist_0 = sqrt(min_dist_sq_0);
+
+    if(winding_0 == int(0))
+    {
+
+#line 95
+        bool _S13;
+
+
+        if(aa_0 > 0.0)
+        {
+
+#line 98
+            _S13 = min_dist_0 < aa_0;
+
+#line 98
+        }
+        else
+        {
+
+#line 98
+            _S13 = false;
+
+#line 98
+        }
+
+#line 98
+        if(_S13)
+        {
+
+#line 98
+            pixelOutput_0 _S14 = { float4((&kernelContext_0)->strokeBuffer_0->strokeColor_0.xyz, (&kernelContext_0)->strokeBuffer_0->strokeColor_0.w * (1.0 - min_dist_0 / aa_0)) };
+
+
+            return _S14;
+        }
+        discard_fragment();
+
+#line 103
+        pixelOutput_0 _S15 = { float4(0.0, 0.0, 0.0, 0.0) };
+        return _S15;
+    }
+    else
+    {
+
+#line 104
+        pixelOutput_0 _S16 = { (&kernelContext_0)->strokeBuffer_0->strokeColor_0 };
+
+#line 109
+        return _S16;
+    }
+
+#line 109
+}
+

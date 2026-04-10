@@ -236,6 +236,9 @@ struct ImWidgetsContext
 	// Stroke expansion (Euler spiral, winding-number fill)
 	ImDrawShader					strokeShader;
 
+	// Image Inspector: color-managed raw-buffer viewer (uber-shader for 44 sample-type/channel combos)
+	ImDrawShader					imageInspectorShader;
+
 	// Background blur / effects
 	ImDrawShader					blurShader;
 	ImTextureID						blurBackbufferCopy;
@@ -2420,6 +2423,208 @@ struct ImImageViewerState
 	ImImageViewerState() : Zoom( 1.0f ), Pan( 0.0f, 0.0f ), Pixels( NULL ), PixelSize( 0.0f, 0.0f ), PixelFormat( ImPlatform_PixelFormat_RGBA8 ) {}
 };
 
+// ============================================================================
+// ImageInspector: color-managed raw-buffer viewer
+// ============================================================================
+// A more advanced sibling of ImageViewer that displays any of 11 sample types ×
+// 1..4 channels via an HLSL uber-shader. The user supplies an ImImageBuffer
+// (Halide-style strided descriptor, defined in ImPlatform.h) and the widget
+// uploads its bytes ONCE into a packed RGBA32F GPU texture (re-uploading only
+// when ImImageBuffer.version changes). All view transforms (gamma, sRGB, log
+// curves, gamut, exposure, white point, tonemap, false color, NaN highlight,
+// mosaic decode) run in the shader; per-frame CPU cost is uniform updates only.
+//
+// The CPU-side inspector loupe walks the user's host pointer directly with
+// full precision (double[4] + int64[4] lanes for exact integer display) — the
+// user must keep the buffer alive while the widget is open.
+//
+// Not supported on backends without custom shader support (DX9). On those
+// backends the widget renders a "not supported" message and returns false.
+
+// Bayer / X-Trans color filter array patterns for raw photography.
+enum ImMosaicPattern
+{
+	ImMosaicPattern_None = 0,
+	ImMosaicPattern_BayerRGGB,
+	ImMosaicPattern_BayerGRBG,
+	ImMosaicPattern_BayerGBRG,
+	ImMosaicPattern_BayerBGGR,
+	ImMosaicPattern_XTrans6x6,
+	ImMosaicPattern_COUNT
+};
+
+// Whether mosaic data is shown raw (single channel passthrough) or demosaiced.
+enum ImMosaicMode
+{
+	ImMosaicMode_RawPassthrough = 0,    // Show as gray-with-tint (hot-pixel inspection)
+	ImMosaicMode_BilinearDemosaic,      // Cheap in-shader demosaic
+	ImMosaicMode_COUNT
+};
+
+// Input transfer (inverse OETF / EOTF): how raw values map to scene-linear.
+enum ImImageInspector_Transfer
+{
+	ImImageInspector_Transfer_Linear = 0,   // Pass-through
+	ImImageInspector_Transfer_Gamma,        // Power gamma (single float exponent)
+	ImImageInspector_Transfer_sRGB,         // Real piecewise sRGB curve
+	ImImageInspector_Transfer_Rec709,       // BT.709 OETF
+	ImImageInspector_Transfer_Rec1886,      // BT.1886 (display-referred)
+	ImImageInspector_Transfer_Cineon,       // Cineon log
+	ImImageInspector_Transfer_SLog2,        // Sony S-Log2
+	ImImageInspector_Transfer_SLog3,        // Sony S-Log3
+	ImImageInspector_Transfer_LogC3,        // ARRI LogC3 (EI 800)
+	ImImageInspector_Transfer_LogC4,        // ARRI LogC4
+	ImImageInspector_Transfer_CanonLog,     // Canon Log
+	ImImageInspector_Transfer_CanonLog2,    // Canon Log 2
+	ImImageInspector_Transfer_CanonLog3,    // Canon Log 3
+	ImImageInspector_Transfer_VLog,         // Panasonic V-Log
+	ImImageInspector_Transfer_RedLog3G10,   // RED Log3G10
+	ImImageInspector_Transfer_BMFilmGen5,   // Blackmagic Film Gen 5
+	ImImageInspector_Transfer_AppleLog,     // Apple Log
+	ImImageInspector_Transfer_FLog,         // Fujifilm F-Log
+	ImImageInspector_Transfer_DLog,         // DJI D-Log
+	ImImageInspector_Transfer_PQ,           // SMPTE ST.2084 (HDR10 EOTF)
+	ImImageInspector_Transfer_HLG,          // BT.2100 Hybrid Log-Gamma
+	ImImageInspector_Transfer_COUNT
+};
+
+// Output transfer (forward OETF): how working space maps to display.
+enum ImImageInspector_OutputTransfer
+{
+	ImImageInspector_OutputTransfer_Linear = 0,
+	ImImageInspector_OutputTransfer_Gamma,
+	ImImageInspector_OutputTransfer_sRGB,
+	ImImageInspector_OutputTransfer_PQ,
+	ImImageInspector_OutputTransfer_HLG,
+	ImImageInspector_OutputTransfer_COUNT
+};
+
+// Color primaries (gamut). Used for both input gamut and output gamut.
+// Picking the same value for both is a no-op (3x3 identity through working space).
+enum ImImageInspector_Gamut
+{
+	ImImageInspector_Gamut_Rec709 = 0,    // sRGB / BT.709 primaries
+	ImImageInspector_Gamut_Rec2020,       // BT.2020 / BT.2100
+	ImImageInspector_Gamut_DCIP3,         // DCI-P3 (D65)
+	ImImageInspector_Gamut_DisplayP3,     // Apple Display P3
+	ImImageInspector_Gamut_AdobeRGB,
+	ImImageInspector_Gamut_ProPhoto,      // ROMM RGB
+	ImImageInspector_Gamut_ACES_AP0,      // ACES AP0 (wide gamut)
+	ImImageInspector_Gamut_ACES_AP1,      // ACES AP1 / ACEScg
+	ImImageInspector_Gamut_COUNT
+};
+
+// HDR → SDR tonemap operators.
+enum ImImageInspector_Tonemap
+{
+	ImImageInspector_Tonemap_None = 0,    // Clip
+	ImImageInspector_Tonemap_Reinhard,
+	ImImageInspector_Tonemap_ReinhardExt, // Extended Reinhard with white point
+	ImImageInspector_Tonemap_ACES,        // ACES Filmic (Narkowicz approximation)
+	ImImageInspector_Tonemap_AGX,         // Troy Sobotka's AGX
+	ImImageInspector_Tonemap_PBRNeutral,  // Khronos PBR Neutral
+	ImImageInspector_Tonemap_Hable,       // Uncharted 2 / Hable
+	ImImageInspector_Tonemap_COUNT
+};
+
+// Spatial reconstruction filter. All filters run manually in shader (no HW sampler).
+enum ImImageInspector_Filter
+{
+	ImImageInspector_Filter_Nearest = 0,
+	ImImageInspector_Filter_Bilinear,
+	ImImageInspector_Filter_BicubicMitchell,   // Mitchell-Netravali (B=1/3, C=1/3)
+	ImImageInspector_Filter_BicubicCatmullRom, // Catmull-Rom (B=0, C=1/2)
+	ImImageInspector_Filter_Lanczos2,
+	ImImageInspector_Filter_Lanczos3,
+	ImImageInspector_Filter_COUNT
+};
+
+// False color palette (or off).
+enum ImImageInspector_FalseColor
+{
+	ImImageInspector_FalseColor_Off = 0,
+	ImImageInspector_FalseColor_Viridis,
+	ImImageInspector_FalseColor_Magma,
+	ImImageInspector_FalseColor_Inferno,
+	ImImageInspector_FalseColor_Plasma,
+	ImImageInspector_FalseColor_Cividis,
+	ImImageInspector_FalseColor_Turbo,
+	ImImageInspector_FalseColor_Cinematographer, // Exposure-scope colors
+	ImImageInspector_FalseColor_OutOfGamut,      // Highlight pixels with channels < 0 or > 1
+	ImImageInspector_FalseColor_COUNT
+};
+
+// Persistent state for the ImageInspector widget.
+// User-controllable fields are at the top; the GPU cache fields below should
+// not be touched directly — they're managed by the widget. Call
+// ImWidgets::ImageInspectorReleaseState() before destroying the state to free
+// the GPU texture.
+struct ImImageInspectorState
+{
+	// ---- View ----
+	float  Zoom;                  // 1.0 = fit image to widget
+	ImVec2 Pan;                   // Pan offset in image-space pixels
+
+	// ---- Color pipeline ----
+	int    InputTransfer;         // ImImageInspector_Transfer
+	int    InputGamut;            // ImImageInspector_Gamut
+	int    WorkingGamut;          // ImImageInspector_Gamut
+	int    OutputGamut;           // ImImageInspector_Gamut
+	int    OutputTransfer;        // ImImageInspector_OutputTransfer
+	int    Tonemap;               // ImImageInspector_Tonemap
+	int    Filter;                // ImImageInspector_Filter
+	int    FalseColor;            // ImImageInspector_FalseColor
+	float  Exposure;              // Stops (multiply by 2^Exposure)
+	float  Black, White;          // Black/white point in working space
+	float  Temperature, Tint;     // Color temperature adjustment (Kelvin offset, magenta/green)
+	float  Gamma;                 // Used when InputTransfer == _Gamma (e.g. 2.2)
+	float  ChannelMask[4];        // R/G/B/A multipliers (0..1)
+	ImVec4 NaNColor;              // Highlight color for NaN/Inf pixels (default magenta)
+
+	// ---- Mosaic (raw photography) ----
+	int    MosaicPattern;         // ImMosaicPattern (overrides any inferred pattern)
+	int    MosaicMode;            // ImMosaicMode (raw vs bilinear demosaic)
+
+	// ---- GPU cache (managed by widget — do not touch) ----
+	ImTextureID PackedTexture;
+	int         PackedTexW, PackedTexH;
+	ImU64       LastUploadedVersion;
+	int         LastUploadedWidth, LastUploadedHeight;
+	int         LastUploadedChannels;
+	int         LastUploadedSampleType;
+	int         GpuXStride, GpuYStride, GpuCStride;   // On-GPU strides (always tight)
+	bool        BufferTooLarge;
+	ImVector<unsigned char> Scratch;                  // Persistent scratch for tight-pack
+
+	ImImageInspectorState()
+		: Zoom( 1.0f ), Pan( 0.0f, 0.0f )
+		, InputTransfer( ImImageInspector_Transfer_sRGB )
+		, InputGamut( ImImageInspector_Gamut_Rec709 )
+		, WorkingGamut( ImImageInspector_Gamut_Rec709 )
+		, OutputGamut( ImImageInspector_Gamut_Rec709 )
+		, OutputTransfer( ImImageInspector_OutputTransfer_sRGB )
+		, Tonemap( ImImageInspector_Tonemap_None )
+		, Filter( ImImageInspector_Filter_Bilinear )
+		, FalseColor( ImImageInspector_FalseColor_Off )
+		, Exposure( 0.0f )
+		, Black( 0.0f ), White( 1.0f )
+		, Temperature( 0.0f ), Tint( 0.0f )
+		, Gamma( 2.2f )
+		, NaNColor( 1.0f, 0.0f, 1.0f, 1.0f )
+		, MosaicPattern( ImMosaicPattern_None )
+		, MosaicMode( ImMosaicMode_BilinearDemosaic )
+		, PackedTexture( ImTextureID_Invalid )
+		, PackedTexW( 0 ), PackedTexH( 0 )
+		, LastUploadedVersion( 0 )
+		, LastUploadedWidth( 0 ), LastUploadedHeight( 0 )
+		, LastUploadedChannels( 0 ), LastUploadedSampleType( 0 )
+		, GpuXStride( 0 ), GpuYStride( 0 ), GpuCStride( 0 )
+		, BufferTooLarge( false )
+	{
+		ChannelMask[ 0 ] = ChannelMask[ 1 ] = ChannelMask[ 2 ] = ChannelMask[ 3 ] = 1.0f;
+	}
+};
+
 namespace ImWidgets{
 	enum ImWidgetsBgEffect
 	{
@@ -3274,6 +3479,27 @@ namespace ImWidgets{
 	// Right-click shows a pixel-inspector loupe with RGBA values (requires state.Pixels).
 	IMGUI_API bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize = ImVec2( 0, 0 ) );
 
+	// Image Inspector: color-managed raw-buffer viewer with shader-side decode of any of the 11
+	// sample types × 1..4 channels described by ImImageBuffer. View transforms (gamma, sRGB,
+	// camera log curves, gamut, exposure, white point, tonemap, false color, NaN highlight,
+	// mosaic decode) are applied in a single HLSL uber-shader. Pan/zoom/double-click/inspector
+	// loupe UX matches ImageViewer. The widget uploads buffer.host to a packed RGBA32F texture
+	// once per buffer.version change; per-frame CPU cost is uniform updates only.
+	//
+	// The CPU-side inspector loupe reads buffer.host directly with full precision — the user
+	// must keep the buffer alive while the widget is open.
+	//
+	// Returns true if the user interacted with the widget. On backends without custom shader
+	// support (DX9), draws a "not supported" message and returns false.
+	IMGUI_API bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInspectorState& state, ImVec2 widgetSize = ImVec2( 0, 0 ) );
+
+	// Returns true if the current backend supports ImageInspector (i.e. has custom shader support).
+	IMGUI_API bool ImageInspectorSupported();
+
+	// Free GPU resources owned by an ImImageInspectorState (the packed texture). Call before
+	// destroying the state if you no longer need it. Safe to call multiple times.
+	IMGUI_API void ImageInspectorReleaseState( ImImageInspectorState& state );
+
 	//////////////////////////////////////////////////////////////////////////
 	// Window Customization
 	//////////////////////////////////////////////////////////////////////////
@@ -3350,6 +3576,31 @@ namespace ImWidgets{
         ImDrawList* drawlist,
         const ImVec2* points, int points_count,
         ImU32 col, float thickness,
+        ImWidgetsCap cap = ImWidgetsCap_Round,
+        ImWidgetsJoin join = ImWidgetsJoin_Round,
+        float miter_limit = 4.0f,
+        bool closed = false);
+
+    // Stroke a dashed cubic Bezier path. dash_array is alternating dash,gap lengths.
+    IMGUI_API void DrawStrokedDashedBezierPath(
+        ImDrawList* drawlist,
+        const ImVec2* points, int points_count,
+        ImU32 col, float thickness,
+        const float* dash_array, int dash_count, float dash_offset = 0.0f,
+        ImWidgetsCap cap = ImWidgetsCap_Round,
+        ImWidgetsJoin join = ImWidgetsJoin_Round,
+        float miter_limit = 4.0f,
+        float tolerance = 0.25f,
+        bool closed = false,
+        ImWidgetsPrimitive primitive = ImWidgetsPrimitive_Line,
+        ImWidgetsCorrectness correctness = ImWidgetsCorrectness_Weak);
+
+    // Stroke a dashed polyline.
+    IMGUI_API void DrawStrokedDashedPolyline(
+        ImDrawList* drawlist,
+        const ImVec2* points, int points_count,
+        ImU32 col, float thickness,
+        const float* dash_array, int dash_count, float dash_offset = 0.0f,
         ImWidgetsCap cap = ImWidgetsCap_Round,
         ImWidgetsJoin join = ImWidgetsJoin_Round,
         float miter_limit = 4.0f,

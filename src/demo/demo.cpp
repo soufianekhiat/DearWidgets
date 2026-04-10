@@ -3590,6 +3590,12 @@ namespace ImWidgets {
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Thick line" ) )
 			{
+				ImGui::TextWrapped( "GPU stroke expansion based on \"Fast GPU stroke expansion\" (Nehab, HPG 2024). "
+					"CPU: Euler spiral offset curves with ESPC flattening and cusp handling. "
+					"GPU: winding-number pixel shader for zero-overdraw fill." );
+				ImGui::TextDisabled( "Paper: https://arxiv.org/abs/2405.00127" );
+				ImGui::TextDisabled( "Ref: https://github.com/linebender/gpu-stroke-expansion-paper" );
+				ImGui::Spacing();
 				float const size = CanvasSize();
 				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 
@@ -3602,6 +3608,10 @@ namespace ImWidgets {
 				static bool show_wireframe = false;
 				static bool show_ctrl_poly = true;
 				static bool closed = false;
+				static bool dashed = false;
+				static float dash_len = 20.0f;
+				static float gap_len = 10.0f;
+				static float dash_offset = 0.0f;
 
 				static ImVec4 color_v( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
 				static ImU32 color_col = ImGui::GetColorU32( color_v );
@@ -3628,6 +3638,13 @@ namespace ImWidgets {
 				ImGui::Checkbox( "Wireframe##TL", &show_wireframe );
 				ImGui::SameLine();
 				ImGui::Checkbox( "Closed##TL", &closed );
+				ImGui::SameLine();
+				ImGui::Checkbox( "Dashed##TL", &dashed );
+				if (dashed) {
+					ImGui::DragFloat( "Dash##TL", &dash_len, 0.5f, 1.0f, 200.0f );
+					ImGui::DragFloat( "Gap##TL", &gap_len, 0.5f, 1.0f, 200.0f );
+					ImGui::DragFloat( "Dash Offset##TL", &dash_offset, 0.5f, -200.0f, 200.0f );
+				}
 
 				ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
 				ImVec2 canvas_size( size, size );
@@ -3694,27 +3711,37 @@ namespace ImWidgets {
 				ImWidgets::SetStrokeDebugWireframe( show_wireframe );
 
 				// Draw the stroked path
-				if (path_type == 0) // Single cubic
+				float dash_arr[2] = { dash_len, gap_len };
+				if (path_type == 2) // Polyline
 				{
-					ImWidgets::DrawStrokedBezierPath( pDrawList, sp, 4, color_col, line_width,
-					                                    (ImWidgetsCap)cap_type, (ImWidgetsJoin)join_type,
-					                                    miter_limit, tolerance, closed,
-					                                    (ImWidgetsPrimitive)primitive_type,
-					                                    (ImWidgetsCorrectness)correctness_type );
+					if (dashed)
+						ImWidgets::DrawStrokedDashedPolyline( pDrawList, sp, cp_count, color_col, line_width,
+						                                       dash_arr, 2, dash_offset,
+						                                       (ImWidgetsCap)cap_type, (ImWidgetsJoin)join_type,
+						                                       miter_limit, closed );
+					else
+						ImWidgets::DrawStrokedPolyline( pDrawList, sp, cp_count, color_col, line_width,
+						                                 (ImWidgetsCap)cap_type, (ImWidgetsJoin)join_type,
+						                                 miter_limit, closed );
 				}
-				else if (path_type == 1) // S-curve (2 cubics)
+				else if (dashed)
 				{
-					ImWidgets::DrawStrokedBezierPath( pDrawList, sp, 7, color_col, line_width,
+					int pc = (path_type == 0) ? 4 : 7;
+					ImWidgets::DrawStrokedDashedBezierPath( pDrawList, sp, pc, color_col, line_width,
+					                                         dash_arr, 2, dash_offset,
+					                                         (ImWidgetsCap)cap_type, (ImWidgetsJoin)join_type,
+					                                         miter_limit, tolerance, closed,
+					                                         (ImWidgetsPrimitive)primitive_type,
+					                                         (ImWidgetsCorrectness)correctness_type );
+				}
+				else
+				{
+					int pc = (path_type == 0) ? 4 : 7;
+					ImWidgets::DrawStrokedBezierPath( pDrawList, sp, pc, color_col, line_width,
 					                                   (ImWidgetsCap)cap_type, (ImWidgetsJoin)join_type,
 					                                   miter_limit, tolerance, closed,
 					                                   (ImWidgetsPrimitive)primitive_type,
 					                                   (ImWidgetsCorrectness)correctness_type );
-				}
-				else // Polyline
-				{
-					ImWidgets::DrawStrokedPolyline( pDrawList, sp, cp_count, color_col, line_width,
-					                                 (ImWidgetsCap)cap_type, (ImWidgetsJoin)join_type,
-					                                 miter_limit, closed );
 				}
 
 				// Draw control polygon
@@ -3730,6 +3757,108 @@ namespace ImWidgets {
 						pDrawList->AddCircleFilled( sp[i], grab_r, handle_col );
 				}
 			}
+			{ float _sy0 = ImGui::GetCursorPos().y;
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Dashed Polylines" ) )
+			{
+				ImGui::TextWrapped( "Arc-length accurate dashed polylines with proper caps and joins. "
+					"Based on \"Shader-Based Antialiased, Dashed, Stroked Polylines\" (Rougier, JCGT 2013)." );
+				ImGui::TextDisabled( "Paper: https://jcgt.org/published/0002/02/08/" );
+				ImGui::Spacing();
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				float avail = ImMin( ImGui::GetContentRegionAvail().x, 400.0f );
+				float side = ImMin( avail, ImGui::GetContentRegionAvail().y );
+				if ( side < 64.0f ) side = avail;
+				ImVec2 origin = ImGui::GetCursorScreenPos();
+				ImGui::InvisibleButton("##zone_dashed_poly", ImVec2(side, side));
+
+				static float thickness = 6.0f;
+				static float dash_len = 24.0f;
+				static float gap_len  = 12.0f;
+				static float offset   = 0.0f;
+				static bool  animate   = false;
+				static bool  closed    = false;
+				static int   cap_idx   = (int)ImWidgetsCap_Butt;
+				static int   join_idx  = (int)ImWidgetsJoin_Mitter;
+				static float miter_limit = 4.0f;
+				static int   path_type = 1;
+				const char* caps[] = { "None", "Butt", "Square", "Round", "TriangleOut", "TriangleIn" };
+				const char* joins[] = { "Round", "Mitter", "Bevel" };
+				const char* paths[] = { "ZigZag", "Sine", "Spiral", "RoundedRect", "Circle", "Infinity", "Rose (k=5)", "Heart", "Sawtooth", "Star", "Bezier S" };
+				ImGui::SetCursorScreenPos(origin + ImVec2(8, 6));
+				dl->AddRect(origin, origin + ImVec2(side, side), IM_COL32(64,64,64,255));
+
+				ImVec2 pts_stack[256];
+				ImVec2* pts = pts_stack;
+				int pts_count = 0;
+				float left = origin.x + 16.0f;
+				float right = origin.x + side - 16.0f;
+				float top = origin.y + 24.0f;
+				float bottom = origin.y + side - 24.0f;
+				float midx = (left + right) * 0.5f;
+				if (path_type == 0)
+				{
+					pts_stack[0] = ImVec2(left, top); pts_stack[1] = ImVec2(midx, bottom);
+					pts_stack[2] = ImVec2(right, top); pts_stack[3] = ImVec2(midx, top + (bottom-top)*0.5f);
+					pts_stack[4] = ImVec2(left, bottom); pts_stack[5] = ImVec2(midx, top + (bottom-top)*0.25f);
+					pts_stack[6] = ImVec2(right, bottom); pts_count = 7;
+				}
+				else if (path_type == 1)
+				{ int N = 64; for (int i = 0; i < N; ++i) { float t = (float)i / (float)(N - 1); pts_stack[i] = ImVec2(ImLerp(left, right, t), ImLerp(top + (bottom-top)*0.2f, bottom - (bottom-top)*0.2f, 0.5f + 0.4f * sinf(t * 4.0f * IM_PI))); } pts_count = N; }
+				else if (path_type == 2)
+				{ int N = 96; ImVec2 center((left+right)*0.5f,(top+bottom)*0.5f); float rx=(right-left)*0.45f, ry=(bottom-top)*0.45f; for (int i=0;i<N;++i) { float t=(float)i/(float)(N-1); float ang=t*4.f*IM_PI, r=0.1f+0.9f*t; pts_stack[i]=ImVec2(center.x+cosf(ang)*rx*r, center.y+sinf(ang)*ry*r); } pts_count=N; }
+				else if (path_type == 3)
+				{ float pad=28.f; ImVec2 pmin(left+pad,top+pad), pmax(right-pad,bottom-pad); float rx=(pmax.x-pmin.x)*0.18f, ry=(pmax.y-pmin.y)*0.18f; int seg=12, idx=0;
+				  for(int i=0;i<=seg;++i){float a=IM_PI*1.5f+(float)i/seg*IM_PI*0.5f; pts_stack[idx++]=ImVec2(pmax.x-rx+cosf(a)*rx,pmin.y+ry+sinf(a)*ry);}
+				  for(int i=0;i<=seg;++i){float a=(float)i/seg*IM_PI*0.5f; pts_stack[idx++]=ImVec2(pmax.x-rx+cosf(a)*rx,pmax.y-ry+sinf(a)*ry);}
+				  for(int i=0;i<=seg;++i){float a=IM_PI*0.5f+(float)i/seg*IM_PI*0.5f; pts_stack[idx++]=ImVec2(pmin.x+rx+cosf(a)*rx,pmax.y-ry+sinf(a)*ry);}
+				  for(int i=0;i<=seg;++i){float a=IM_PI+(float)i/seg*IM_PI*0.5f; pts_stack[idx++]=ImVec2(pmin.x+rx+cosf(a)*rx,pmin.y+ry+sinf(a)*ry);}
+				  pts_count=idx; }
+				else if (path_type == 4)
+				{ ImVec2 c((left+right)*0.5f,(top+bottom)*0.5f); float r=ImMin(right-left,bottom-top)*0.35f; int N=128; for(int i=0;i<N;++i){float a=2.f*IM_PI*(float)i/(float)N; pts_stack[i]=ImVec2(c.x+cosf(a)*r,c.y+sinf(a)*r);} pts_count=N; }
+				else if (path_type == 5)
+				{ ImVec2 c((left+right)*0.5f,(top+bottom)*0.5f); float sx=(right-left)*0.35f,sy=(bottom-top)*0.25f; int N=140; for(int i=0;i<N;++i){float t=2.f*IM_PI*(float)i/(float)(N-1); pts_stack[i]=ImVec2(c.x+cosf(t)*sx,c.y+sinf(t)*cosf(t)*sy);} pts_count=N; }
+				else if (path_type == 6)
+				{ ImVec2 c((left+right)*0.5f,(top+bottom)*0.5f); float a=ImMin(right-left,bottom-top)*0.35f; int N=220,k=5; for(int i=0;i<N;++i){float th=2.f*IM_PI*(float)i/(float)(N-1); float r=a*cosf(k*th); pts_stack[i]=ImVec2(c.x+r*cosf(th),c.y+r*sinf(th));} pts_count=N; }
+				else if (path_type == 7)
+				{ ImVec2 c((left+right)*0.5f,(top+bottom)*0.5f); float s=ImMin(right-left,bottom-top)*0.035f; int N=160,idx=0; for(int i=0;i<N;++i){float t=2.f*IM_PI*(float)i/(float)(N-1); pts_stack[idx++]=ImVec2(c.x+16.f*s*sinf(t)*sinf(t)*sinf(t), c.y-(13.f*cosf(t)-5.f*cosf(2*t)-2.f*cosf(3*t)-cosf(4*t))*s);} pts_count=N; }
+				else if (path_type == 8)
+				{ int teeth=12,idx=0; float h0=top+(bottom-top)*0.25f, h1=bottom-(bottom-top)*0.25f; for(int i=0;i<=teeth;++i){pts_stack[idx++]=ImVec2(ImLerp(left,right,(float)i/(float)teeth),(i%2)==0?h0:h1);} pts_count=teeth+1; }
+				else if (path_type == 9)
+				{ ImVec2 c((left+right)*0.5f,(top+bottom)*0.5f); float R=ImMin(right-left,bottom-top)*0.42f, r=R*0.45f; int idx=0; for(int i=0;i<10;++i){float ang=-IM_PI*0.5f+(float)i*(IM_PI/5.f); pts_stack[idx++]=ImVec2(c.x+cosf(ang)*((i%2)==0?R:r),c.y+sinf(ang)*((i%2)==0?R:r));} pts_count=10; }
+				else if (path_type == 10)
+				{ ImVec2 p0(left,(top+bottom)*0.5f),p1(left+(right-left)*0.25f,top),p2(left+(right-left)*0.25f,bottom),p3(left+(right-left)*0.5f,(top+bottom)*0.5f);
+				  ImVec2 q0=p3,q1(left+(right-left)*0.75f,bottom),q2(left+(right-left)*0.75f,top),q3(right,(top+bottom)*0.5f);
+				  int N=32,idx=0; for(int i=0;i<N;++i){float t=(float)i/(float)(N-1),u=1.f-t; pts_stack[idx++]=ImVec2(u*u*u*p0.x+3*u*u*t*p1.x+3*u*t*t*p2.x+t*t*t*p3.x,u*u*u*p0.y+3*u*u*t*p1.y+3*u*t*t*p2.y+t*t*t*p3.y);}
+				  for(int i=0;i<N;++i){float t=(float)i/(float)(N-1),u=1.f-t; pts_stack[idx++]=ImVec2(u*u*u*q0.x+3*u*u*t*q1.x+3*u*t*t*q2.x+t*t*t*q3.x,u*u*u*q0.y+3*u*u*t*q1.y+3*u*t*t*q2.y+t*t*t*q3.y);}
+				  pts_count=2*N; }
+
+				static ImVec4 col_v4 = ImVec4(1.0f, 0.784f, 0.157f, 1.0f);
+				ImU32 col = ImGui::ColorConvertFloat4ToU32(col_v4);
+				if (animate) offset += ImGui::GetIO().DeltaTime * 50.0f;
+				ImWidgets::DrawDashedPolylineAA(dl, pts, pts_count, col, thickness, dash_len, gap_len, offset, closed, (ImWidgetsCap_)cap_idx, (ImWidgetsJoin)join_idx, miter_limit);
+
+				ImGui::SetCursorScreenPos(origin + ImVec2(0, side + 6));
+				ImGui::SliderFloat("Thickness##dashed", &thickness, 1.0f, 24.0f);
+				ImGui::SliderFloat("Dash##dashed", &dash_len, 1.0f, 100.0f);
+				ImGui::SliderFloat("Gap##dashed", &gap_len, 0.0f, 100.0f);
+				ImGui::SliderFloat("Offset##dashed", &offset, -200.0f, 200.0f);
+				ImGui::Checkbox("Animate Offset##dashed", &animate);
+				ImGui::Checkbox("Closed##dashed", &closed);
+				ImGui::Combo("Cap##dashed", &cap_idx, caps, IM_ARRAYSIZE(caps));
+				ImGui::Combo("Join##dashed", &join_idx, joins, IM_ARRAYSIZE(joins));
+				ImGui::SliderFloat("Miter Limit##dashed", &miter_limit, 1.0f, 12.0f, "%.2f");
+				ImGui::Combo("Path##dashed", &path_type, paths, IM_ARRAYSIZE(paths));
+				ImGui::ColorEdit4("Color##dashed", &col_v4.x, ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf);
+				bool use_gpu = ImWidgets::GetDashedLinesUseGPU();
+				if (ImGui::Checkbox("GPU Path##dashed", &use_gpu))
+					ImWidgets::SetDashedLinesUseGPU(use_gpu);
+				bool debug_joins = ImWidgets::GetDashedLinesDebugJoins();
+				if (ImGui::Checkbox("Debug Joins (CPU)##dashed", &debug_joins))
+					ImWidgets::SetDashedLinesDebugJoins(debug_joins);
+			}
+			DW_SsRecord( "Dashed_Polylines", _sy0, ImGui::GetCursorPos().y ); }
+
 			ShowDrawSquircleDemo();
 			EndCullSection( s_cull_cshader_h, s_cull_cshader_y ); }
 				ImGui::TreePop();
@@ -5414,6 +5543,278 @@ namespace ImWidgets {
 			}
 			DW_SsRecord( "Image_Viewer", _sy0, ImGui::GetCursorPos().y ); }
 
+			{ float _sy0 = ImGui::GetCursorPos().y;
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Image Inspector" ) )
+			{
+				// Synthetic test buffers covering several sample-type / channel combinations.
+				// All bytes are kept alive in static storage so the inspector loupe can read them.
+				static bool inspectorInit = false;
+				static const int kU8W = 256, kU8H = 256;
+				static unsigned char inspectorU8Checker[ kU8W * kU8H * 4 ];
+				static const int kHdrW = 256, kHdrH = 256;
+				static float    inspectorHDR [ kHdrW * kHdrH * 4 ];
+				static const int kRadW = 128, kRadH = 128;
+				static unsigned short inspectorF16Radial[ kRadW * kRadH ];
+				static const int kPatW = 192, kPatH = 192;
+				static signed short inspectorI16Pattern[ kPatW * kPatH * 3 ];
+
+				if ( !inspectorInit )
+				{
+					inspectorInit = true;
+					// U8 RGBA checkerboard with hue gradient
+					for ( int y = 0; y < kU8H; y++ )
+					{
+						for ( int x = 0; x < kU8W; x++ )
+						{
+							int   off = ( y * kU8W + x ) * 4;
+							int   cell = ( ( x / 16 ) + ( y / 16 ) ) & 1;
+							float hue  = ( float )x / ( float )( kU8W - 1 );
+							float r = cell ? ( 0.5f + 0.5f * cosf( 6.2831853f * ( hue + 0.0f / 3.0f ) ) ) : 0.1f;
+							float g = cell ? ( 0.5f + 0.5f * cosf( 6.2831853f * ( hue + 1.0f / 3.0f ) ) ) : 0.1f;
+							float b = cell ? ( 0.5f + 0.5f * cosf( 6.2831853f * ( hue + 2.0f / 3.0f ) ) ) : 0.1f;
+							inspectorU8Checker[ off + 0 ] = ( unsigned char )( ImClamp( r, 0.0f, 1.0f ) * 255.0f );
+							inspectorU8Checker[ off + 1 ] = ( unsigned char )( ImClamp( g, 0.0f, 1.0f ) * 255.0f );
+							inspectorU8Checker[ off + 2 ] = ( unsigned char )( ImClamp( b, 0.0f, 1.0f ) * 255.0f );
+							inspectorU8Checker[ off + 3 ] = 255;
+						}
+					}
+					// HDR F32 RGBA gradient: x = exposure stops -10..+10, y = hue
+					for ( int y = 0; y < kHdrH; y++ )
+					{
+						for ( int x = 0; x < kHdrW; x++ )
+						{
+							float stops = ( ( float )x / ( float )( kHdrW - 1 ) ) * 20.0f - 10.0f;
+							float scale = powf( 2.0f, stops );
+							float hue   = ( float )y / ( float )( kHdrH - 1 );
+							float r = scale * ( 0.5f + 0.5f * cosf( 6.2831853f * ( hue + 0.0f / 3.0f ) ) );
+							float g = scale * ( 0.5f + 0.5f * cosf( 6.2831853f * ( hue + 1.0f / 3.0f ) ) );
+							float b = scale * ( 0.5f + 0.5f * cosf( 6.2831853f * ( hue + 2.0f / 3.0f ) ) );
+							int   off = ( y * kHdrW + x ) * 4;
+							inspectorHDR[ off + 0 ] = r;
+							inspectorHDR[ off + 1 ] = g;
+							inspectorHDR[ off + 2 ] = b;
+							inspectorHDR[ off + 3 ] = 1.0f;
+						}
+					}
+					// F16 single-channel radial gradient (IEEE half encoding)
+					for ( int y = 0; y < kRadH; y++ )
+					{
+						for ( int x = 0; x < kRadW; x++ )
+						{
+							float dx = ( ( float )x - kRadW * 0.5f ) / ( kRadW * 0.5f );
+							float dy = ( ( float )y - kRadH * 0.5f ) / ( kRadH * 0.5f );
+							float r  = sqrtf( dx * dx + dy * dy );
+							float v  = ImClamp( 1.0f - r, 0.0f, 1.0f );
+							// Encode float -> half (simple, no denormal handling)
+							unsigned int fb;
+							memcpy( &fb, &v, 4 );
+							unsigned int sign = ( fb >> 31 ) & 0x1u;
+							int          exp  = ( int )( ( fb >> 23 ) & 0xFFu ) - 127;
+							unsigned int mant = fb & 0x7FFFFFu;
+							unsigned short h;
+							if ( exp <= -15 )      h = ( unsigned short )( sign << 15 );
+							else if ( exp >= 16 )  h = ( unsigned short )( ( sign << 15 ) | ( 0x1Fu << 10 ) );
+							else                   h = ( unsigned short )( ( sign << 15 ) | ( ( unsigned int )( exp + 15 ) << 10 ) | ( mant >> 13 ) );
+							inspectorF16Radial[ y * kRadW + x ] = h;
+						}
+					}
+					// I16 RGB test pattern: gradient + center spike
+					for ( int y = 0; y < kPatH; y++ )
+					{
+						for ( int x = 0; x < kPatW; x++ )
+						{
+							int   off = ( y * kPatW + x ) * 3;
+							float r = ( float )x / ( float )( kPatW - 1 );
+							float g = ( float )y / ( float )( kPatH - 1 );
+							float dx = ( ( float )x - kPatW * 0.5f ) / ( kPatW * 0.5f );
+							float dy = ( ( float )y - kPatH * 0.5f ) / ( kPatH * 0.5f );
+							float b = ImClamp( 1.0f - sqrtf( dx * dx + dy * dy ), 0.0f, 1.0f );
+							inspectorI16Pattern[ off + 0 ] = ( signed short )( r * 32767.0f );
+							inspectorI16Pattern[ off + 1 ] = ( signed short )( g * 32767.0f );
+							inspectorI16Pattern[ off + 2 ] = ( signed short )( b * 32767.0f );
+						}
+					}
+				}
+
+				// Buffer descriptors (Halide-style strides)
+				static const char* inspectorNames[] = {
+					"U8 Checker (sRGB)", "F32 HDR Gradient", "F16 Radial", "I16 Pattern"
+				};
+				const int kInspectorCount = 4;
+				static int inspectorIdx = 0;
+				static ImImageInspectorState inspectorState;
+				static ImU64 inspectorU8Version  = 1;
+				static ImU64 inspectorHdrVersion = 1;
+				static ImU64 inspectorRadVersion = 1;
+				static ImU64 inspectorPatVersion = 1;
+
+				// Build current ImImageBuffer based on selection
+				ImImageBuffer buf;
+				memset( &buf, 0, sizeof( buf ) );
+				if ( inspectorIdx == 0 )
+				{
+					buf.host           = inspectorU8Checker;
+					buf.byte_offset    = 0;
+					buf.width          = kU8W;
+					buf.height         = kU8H;
+					buf.channels       = 4;
+					buf.x_stride_bytes = 4;
+					buf.y_stride_bytes = 4 * ( ptrdiff_t )kU8W;
+					buf.c_stride_bytes = 1;
+					buf.type           = ImSampleType_U8;
+					buf.version        = inspectorU8Version;
+				}
+				else if ( inspectorIdx == 1 )
+				{
+					buf.host           = inspectorHDR;
+					buf.byte_offset    = 0;
+					buf.width          = kHdrW;
+					buf.height         = kHdrH;
+					buf.channels       = 4;
+					buf.x_stride_bytes = 16;
+					buf.y_stride_bytes = 16 * ( ptrdiff_t )kHdrW;
+					buf.c_stride_bytes = 4;
+					buf.type           = ImSampleType_F32;
+					buf.version        = inspectorHdrVersion;
+				}
+				else if ( inspectorIdx == 2 )
+				{
+					buf.host           = inspectorF16Radial;
+					buf.byte_offset    = 0;
+					buf.width          = kRadW;
+					buf.height         = kRadH;
+					buf.channels       = 1;
+					buf.x_stride_bytes = 2;
+					buf.y_stride_bytes = 2 * ( ptrdiff_t )kRadW;
+					buf.c_stride_bytes = 2;
+					buf.type           = ImSampleType_F16;
+					buf.version        = inspectorRadVersion;
+				}
+				else
+				{
+					buf.host           = inspectorI16Pattern;
+					buf.byte_offset    = 0;
+					buf.width          = kPatW;
+					buf.height         = kPatH;
+					buf.channels       = 3;
+					buf.x_stride_bytes = 6;
+					buf.y_stride_bytes = 6 * ( ptrdiff_t )kPatW;
+					buf.c_stride_bytes = 2;
+					buf.type           = ImSampleType_I16;
+					buf.version        = inspectorPatVersion;
+				}
+
+				if ( ImGui::Combo( "Buffer##Inspector", &inspectorIdx, inspectorNames, kInspectorCount ) )
+				{
+					// Reset view but keep the texture cache around — version mismatch will trigger re-upload
+					inspectorState.Zoom = 1.0f;
+					inspectorState.Pan  = ImVec2( 0, 0 );
+				}
+
+				// View-transform controls
+				ImGui::PushItemWidth( 220 );
+				const char* xferNames[] = {
+					"Linear", "Gamma", "sRGB", "Rec.709", "Rec.1886", "Cineon",
+					"S-Log2", "S-Log3", "LogC3", "LogC4",
+					"Canon Log", "Canon Log 2", "Canon Log 3",
+					"V-Log", "Log3G10", "BMFilm Gen5", "Apple Log",
+					"F-Log", "D-Log", "PQ", "HLG"
+				};
+				IM_STATIC_ASSERT( IM_ARRAYSIZE( xferNames ) == ImImageInspector_Transfer_COUNT );
+				ImGui::Combo( "Input Transfer",  &inspectorState.InputTransfer,  xferNames, IM_ARRAYSIZE( xferNames ) );
+
+				const char* outXferNames[] = { "Linear", "Gamma", "sRGB", "PQ", "HLG" };
+				IM_STATIC_ASSERT( IM_ARRAYSIZE( outXferNames ) == ImImageInspector_OutputTransfer_COUNT );
+				ImGui::Combo( "Output Transfer", &inspectorState.OutputTransfer, outXferNames, IM_ARRAYSIZE( outXferNames ) );
+
+				const char* gamutNames[] = {
+					"Rec.709", "Rec.2020", "DCI-P3", "Display P3", "Adobe RGB",
+					"ProPhoto", "ACES AP0", "ACES AP1"
+				};
+				IM_STATIC_ASSERT( IM_ARRAYSIZE( gamutNames ) == ImImageInspector_Gamut_COUNT );
+				ImGui::Combo( "Input Gamut",     &inspectorState.InputGamut,    gamutNames, IM_ARRAYSIZE( gamutNames ) );
+				ImGui::Combo( "Working Gamut",   &inspectorState.WorkingGamut,  gamutNames, IM_ARRAYSIZE( gamutNames ) );
+				ImGui::Combo( "Output Gamut",    &inspectorState.OutputGamut,   gamutNames, IM_ARRAYSIZE( gamutNames ) );
+
+				const char* tonemapNames[] = {
+					"None", "Reinhard", "Reinhard Ext", "ACES Filmic", "AGX", "PBR Neutral", "Hable"
+				};
+				IM_STATIC_ASSERT( IM_ARRAYSIZE( tonemapNames ) == ImImageInspector_Tonemap_COUNT );
+				ImGui::Combo( "Tonemap",         &inspectorState.Tonemap,       tonemapNames, IM_ARRAYSIZE( tonemapNames ) );
+
+				const char* filterNames[] = {
+					"Nearest", "Bilinear", "Bicubic Mitchell", "Bicubic Catmull-Rom", "Lanczos2", "Lanczos3"
+				};
+				IM_STATIC_ASSERT( IM_ARRAYSIZE( filterNames ) == ImImageInspector_Filter_COUNT );
+				ImGui::Combo( "Filter",          &inspectorState.Filter,        filterNames, IM_ARRAYSIZE( filterNames ) );
+
+				const char* fcNames[] = {
+					"Off", "Viridis", "Magma", "Inferno", "Plasma", "Cividis", "Turbo", "Cinematographer", "Out of Gamut"
+				};
+				IM_STATIC_ASSERT( IM_ARRAYSIZE( fcNames ) == ImImageInspector_FalseColor_COUNT );
+				ImGui::Combo( "False Color",     &inspectorState.FalseColor,    fcNames, IM_ARRAYSIZE( fcNames ) );
+
+				ImGui::SliderFloat( "Exposure (stops)", &inspectorState.Exposure,    -10.0f, 10.0f );
+				ImGui::SliderFloat( "Black",            &inspectorState.Black,        -1.0f,  1.0f );
+				ImGui::SliderFloat( "White",            &inspectorState.White,         0.0f,  4.0f );
+				ImGui::SliderFloat( "Gamma",            &inspectorState.Gamma,         0.1f,  4.0f );
+				ImGui::SliderFloat( "Temperature",      &inspectorState.Temperature,  -1.0f,  1.0f );
+				ImGui::SliderFloat( "Tint",             &inspectorState.Tint,         -1.0f,  1.0f );
+				ImGui::PopItemWidth();
+
+				bool maskR = inspectorState.ChannelMask[ 0 ] > 0.5f;
+				bool maskG = inspectorState.ChannelMask[ 1 ] > 0.5f;
+				bool maskB = inspectorState.ChannelMask[ 2 ] > 0.5f;
+				bool maskA = inspectorState.ChannelMask[ 3 ] > 0.5f;
+				ImGui::Checkbox( "R", &maskR ); ImGui::SameLine();
+				ImGui::Checkbox( "G", &maskG ); ImGui::SameLine();
+				ImGui::Checkbox( "B", &maskB ); ImGui::SameLine();
+				ImGui::Checkbox( "A", &maskA );
+				inspectorState.ChannelMask[ 0 ] = maskR ? 1.0f : 0.0f;
+				inspectorState.ChannelMask[ 1 ] = maskG ? 1.0f : 0.0f;
+				inspectorState.ChannelMask[ 2 ] = maskB ? 1.0f : 0.0f;
+				inspectorState.ChannelMask[ 3 ] = maskA ? 1.0f : 0.0f;
+
+				ImGui::ColorEdit4( "NaN Color", &inspectorState.NaNColor.x, ImGuiColorEditFlags_NoInputs );
+
+				if ( ImGui::Button( "Inject NaN at center" ) && inspectorIdx == 1 )
+				{
+					int   cx  = kHdrW / 2;
+					int   cy  = kHdrH / 2;
+					int   off = ( cy * kHdrW + cx ) * 4;
+					unsigned int nan_bits = 0x7FC00000u;
+					float nan_val;
+					memcpy( &nan_val, &nan_bits, 4 );
+					inspectorHDR[ off + 0 ] = nan_val;
+					inspectorHdrVersion += 1;
+				}
+				ImGui::SameLine();
+				if ( ImGui::Button( "Regenerate HDR" ) )
+				{
+					for ( int y = 0; y < kHdrH; y++ )
+						for ( int x = 0; x < kHdrW; x++ )
+						{
+							float stops = ( ( float )x / ( float )( kHdrW - 1 ) ) * 20.0f - 10.0f;
+							float scale = powf( 2.0f, stops );
+							float hue   = ( float )y / ( float )( kHdrH - 1 );
+							float r = scale * ( 0.5f + 0.5f * cosf( 6.2831853f * ( hue + 0.0f / 3.0f ) ) );
+							float g = scale * ( 0.5f + 0.5f * cosf( 6.2831853f * ( hue + 1.0f / 3.0f ) ) );
+							float b = scale * ( 0.5f + 0.5f * cosf( 6.2831853f * ( hue + 2.0f / 3.0f ) ) );
+							int   off = ( y * kHdrW + x ) * 4;
+							inspectorHDR[ off + 0 ] = r;
+							inspectorHDR[ off + 1 ] = g;
+							inspectorHDR[ off + 2 ] = b;
+							inspectorHDR[ off + 3 ] = 1.0f;
+						}
+					inspectorHdrVersion += 1;
+				}
+
+				ImGui::Text( "Scroll: zoom  |  Left-drag: pan  |  Dbl-click: reset  |  Right-click: inspect" );
+				ImWidgets::ImageInspector( "##Inspector", buf, inspectorState );
+			}
+			DW_SsRecord( "Image_Inspector", _sy0, ImGui::GetCursorPos().y ); }
+
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
@@ -5429,248 +5830,6 @@ namespace ImWidgets {
 				ImGui::Text( "Direction: %.3f, %.3f, %.3f", upDir[ 0 ], upDir[ 1 ], upDir[ 2 ] );
 			}
 			DW_SsRecord( "Up_Vector", _sy0, ImGui::GetCursorPos().y ); }
-
-			{ float _sy0 = ImGui::GetCursorPos().y;
-			ApplyOpenAll();
-			if ( ImGui::CollapsingHeader( "Dashed Polylines" ) )
-			{
-				ImDrawList* dl = ImGui::GetWindowDrawList();
-				float avail = ImMin( ImGui::GetContentRegionAvail().x, 400.0f );
-				float side = ImMin( avail, ImGui::GetContentRegionAvail().y );
-				if ( side < 64.0f ) side = avail; // fallback if vertical space is tiny
-				ImVec2 origin = ImGui::GetCursorScreenPos();
-				ImGui::InvisibleButton("##zone_dashed_poly", ImVec2(side, side));
-
-				static float thickness = 6.0f;
-				static float dash_len = 24.0f;
-				static float gap_len  = 12.0f;
-				static float offset   = 0.0f;
-				static bool  animate   = false;
-				static bool  closed    = false;
-				static int   cap_idx   = (int)ImWidgetsCap_Butt;
-				static int   join_idx  = (int)ImWidgetsJoin_Mitter;
-				static float miter_limit = 4.0f;
-				static int   path_type = 1; // 0=ZigZag, 1=Sine, 2=Spiral, 3=RoundedRect, 4=Circle, 5=Infinity, 6=Rose, 7=Heart, 8=Sawtooth, 9=Star, 10=BezierS
-				const char* caps[] = { "None", "Butt", "Square", "Round", "TriangleOut", "TriangleIn" };
-				const char* joins[] = { "Round", "Mitter", "Bevel" };
-				const char* paths[] = { "ZigZag", "Sine", "Spiral", "RoundedRect", "Circle", "Infinity", "Rose (k=5)", "Heart", "Sawtooth", "Star", "Bezier S" };
-				ImGui::SetCursorScreenPos(origin + ImVec2(8, 6));
-				dl->AddRect(origin, origin + ImVec2(side, side), IM_COL32(64,64,64,255));
-
-				// Build path
-				ImVec2 pts_stack[256];
-				ImVec2* pts = pts_stack;
-				int pts_count = 0;
-				float left = origin.x + 16.0f;
-				float right = origin.x + side - 16.0f;
-				float top = origin.y + 24.0f;
-				float bottom = origin.y + side - 24.0f;
-				float midx = (left + right) * 0.5f;
-				if (path_type == 0)
-				{
-					pts_stack[0] = ImVec2(left, top);
-					pts_stack[1] = ImVec2(midx, bottom);
-					pts_stack[2] = ImVec2(right, top);
-					pts_stack[3] = ImVec2(midx, top + (bottom-top)*0.5f);
-					pts_stack[4] = ImVec2(left, bottom);
-					pts_stack[5] = ImVec2(midx, top + (bottom-top)*0.25f);
-					pts_stack[6] = ImVec2(right, bottom);
-					pts_count = 7;
-				}
-				else if (path_type == 1)
-				{
-					// Sine path across the rect
-					int N = 64;
-					for (int i = 0; i < N; ++i)
-					{
-						float t = (float)i / (float)(N - 1);
-						float x = ImLerp(left, right, t);
-						float y = ImLerp(top + (bottom-top)*0.2f, bottom - (bottom-top)*0.2f, 0.5f + 0.4f * sinf(t * 4.0f * IM_PI));
-						pts_stack[i] = ImVec2(x, y);
-					}
-					pts_count = N;
-				}
-				else if (path_type == 2)
-				{
-					// Spiral path centered in the rect
-					int N = 96;
-					ImVec2 center = ImVec2((left + right) * 0.5f, (top + bottom) * 0.5f);
-					float rx = (right - left) * 0.45f;
-					float ry = (bottom - top) * 0.45f;
-					for (int i = 0; i < N; ++i)
-					{
-						float t = (float)i / (float)(N - 1);
-						float ang = t * 4.0f * IM_PI;
-						float r = 0.1f + 0.9f * t; // from center outward
-						float x = center.x + cosf(ang) * rx * r;
-						float y = center.y + sinf(ang) * ry * r;
-						pts_stack[i] = ImVec2(x, y);
-					}
-					pts_count = N;
-				}
-				else if (path_type == 3)
-				{
-					// Rounded rectangle inside the zone
-					float pad = 28.0f;
-					ImVec2 pmin(left + pad, top + pad);
-					ImVec2 pmax(right - pad, bottom - pad);
-					float rx = (pmax.x - pmin.x) * 0.18f;
-					float ry = (pmax.y - pmin.y) * 0.18f;
-					int seg = 12;
-					int idx = 0;
-					// Top-right corner arc
-					for (int i = 0; i <= seg; ++i) { float a = IM_PI * 1.5f + (float)i/seg * IM_PI*0.5f; pts_stack[idx++] = ImVec2(pmax.x - rx + cosf(a)*rx, pmin.y + ry + sinf(a)*ry); }
-					// Bottom-right
-					for (int i = 0; i <= seg; ++i) { float a = 0.0f + (float)i/seg * IM_PI*0.5f;  pts_stack[idx++] = ImVec2(pmax.x - rx + cosf(a)*rx, pmax.y - ry + sinf(a)*ry); }
-					// Bottom-left
-					for (int i = 0; i <= seg; ++i) { float a = IM_PI*0.5f + (float)i/seg * IM_PI*0.5f; pts_stack[idx++] = ImVec2(pmin.x + rx + cosf(a)*rx, pmax.y - ry + sinf(a)*ry); }
-					// Top-left
-					for (int i = 0; i <= seg; ++i) { float a = IM_PI + (float)i/seg * IM_PI*0.5f;   pts_stack[idx++] = ImVec2(pmin.x + rx + cosf(a)*rx, pmin.y + ry + sinf(a)*ry); }
-					pts_count = idx;
-				}
-				else if (path_type == 4)
-				{
-					// Circle
-					ImVec2 c((left+right)*0.5f, (top+bottom)*0.5f);
-					float r = ImMin((right-left), (bottom-top)) * 0.35f;
-					int N = 128;
-					for (int i = 0; i < N; ++i)
-					{
-						float a = (2.0f*IM_PI) * (float)i / (float)N;
-						pts_stack[i] = ImVec2(c.x + cosf(a)*r, c.y + sinf(a)*r);
-					}
-					pts_count = N;
-				}
-				else if (path_type == 5)
-				{
-					// Infinity (lemniscate of Gerono)
-					ImVec2 c((left+right)*0.5f, (top+bottom)*0.5f);
-					float sx = (right-left)*0.35f, sy = (bottom-top)*0.25f;
-					int N = 140;
-					for (int i = 0; i < N; ++i)
-					{
-						float t = (2.0f*IM_PI) * (float)i / (float)(N-1);
-						float x = cosf(t);
-						float y = sinf(t) * cosf(t);
-						pts_stack[i] = ImVec2(c.x + x*sx, c.y + y*sy);
-					}
-					pts_count = N;
-				}
-				else if (path_type == 6)
-				{
-					// Rose curve r = a*cos(kθ) with k=5
-					ImVec2 c((left+right)*0.5f, (top+bottom)*0.5f);
-					float a = ImMin((right-left), (bottom-top))*0.35f;
-					int N = 220; int k = 5;
-					for (int i = 0; i < N; ++i)
-					{
-						float th = (2.0f*IM_PI) * (float)i / (float)(N-1);
-						float r = a * cosf(k*th);
-						pts_stack[i] = ImVec2(c.x + r*cosf(th), c.y + r*sinf(th));
-					}
-					pts_count = N;
-				}
-				else if (path_type == 7)
-				{
-					// Heart curve (scaled)
-					ImVec2 c((left+right)*0.5f, (top+bottom)*0.5f);
-					float s = ImMin((right-left), (bottom-top))*0.035f;
-					int N = 160; int idx = 0;
-					for (int i = 0; i < N; ++i)
-					{
-						float t = (2.0f*IM_PI) * (float)i / (float)(N-1);
-						float x = 16.0f*s*sinf(t)*sinf(t)*sinf(t);
-						float y = - (13.0f*cosf(t) - 5.0f*cosf(2*t) - 2.0f*cosf(3*t) - cosf(4*t)) * s;
-						pts_stack[idx++] = ImVec2(c.x + x, c.y + y);
-					}
-					pts_count = N;
-				}
-				else if (path_type == 8)
-				{
-					// Sawtooth across the rect
-					int teeth = 12; int idx = 0;
-					float w = (right-left);
-					float h0 = top + (bottom-top)*0.25f;
-					float h1 = bottom - (bottom-top)*0.25f;
-					for (int i = 0; i <= teeth; ++i)
-					{
-						float x = ImLerp(left, right, (float)i/(float)teeth);
-						float y = (i%2)==0 ? h0 : h1;
-						pts_stack[idx++] = ImVec2(x, y);
-					}
-					pts_count = (teeth+1);
-				}
-				else if (path_type == 9)
-				{
-					// 5-point star
-					ImVec2 c((left+right)*0.5f, (top+bottom)*0.5f);
-					float R = ImMin((right-left), (bottom-top))*0.42f;
-					float r = R*0.45f; int idx = 0;
-					for (int i = 0; i < 10; ++i)
-					{
-						float ang = -IM_PI*0.5f + (float)i * (IM_PI/5.0f);
-						float rad = (i%2)==0 ? R : r;
-						pts_stack[idx++] = ImVec2(c.x + cosf(ang)*rad, c.y + sinf(ang)*rad);
-					}
-					pts_count = 10;
-				}
-				else if (path_type == 10)
-				{
-					// Bezier S (two cubic segments)
-					ImVec2 p0(left, (top+bottom)*0.5f);
-					ImVec2 p1(left + (right-left)*0.25f, top);
-					ImVec2 p2(left + (right-left)*0.25f, bottom);
-					ImVec2 p3(left + (right-left)*0.5f, (top+bottom)*0.5f);
-					ImVec2 q0 = p3;
-					ImVec2 q1(left + (right-left)*0.75f, bottom);
-					ImVec2 q2(left + (right-left)*0.75f, top);
-					ImVec2 q3(right, (top+bottom)*0.5f);
-					int N = 32; int idx = 0;
-					for (int i = 0; i < N; ++i)
-					{
-						float t = (float)i/(float)(N-1);
-						float u = 1.0f - t;
-						ImVec2 a = ImVec2(u*u*u*p0.x + 3*u*u*t*p1.x + 3*u*t*t*p2.x + t*t*t*p3.x,
-						                    u*u*u*p0.y + 3*u*u*t*p1.y + 3*u*t*t*p2.y + t*t*t*p3.y);
-						pts_stack[idx++] = a;
-					}
-					for (int i = 0; i < N; ++i)
-					{
-						float t = (float)i/(float)(N-1);
-						float u = 1.0f - t;
-						ImVec2 b = ImVec2(u*u*u*q0.x + 3*u*u*t*q1.x + 3*u*t*t*q2.x + t*t*t*q3.x,
-						                    u*u*u*q0.y + 3*u*u*t*q1.y + 3*u*t*t*q2.y + t*t*t*q3.y);
-						pts_stack[idx++] = b;
-					}
-					pts_count = 2*N;
-				}
-
-				static ImVec4 col_v4 = ImVec4(1.0f, 0.784f, 0.157f, 1.0f);
-				ImU32 col = ImGui::ColorConvertFloat4ToU32(col_v4);
-				if (animate)
-					offset += ImGui::GetIO().DeltaTime * 50.0f;
-				ImWidgets::DrawDashedPolylineAA(dl, pts, pts_count, col, thickness, dash_len, gap_len, offset, closed, (ImWidgetsCap_)cap_idx, (ImWidgetsJoin)join_idx, miter_limit);
-
-				ImGui::SetCursorScreenPos(origin + ImVec2(0, side + 6));
-				ImGui::SliderFloat("Thickness##dashed", &thickness, 1.0f, 24.0f);
-				ImGui::SliderFloat("Dash##dashed", &dash_len, 1.0f, 100.0f);
-				ImGui::SliderFloat("Gap##dashed", &gap_len, 0.0f, 100.0f);
-				ImGui::SliderFloat("Offset##dashed", &offset, -200.0f, 200.0f);
-				ImGui::Checkbox("Animate Offset##dashed", &animate);
-				ImGui::Checkbox("Closed##dashed", &closed);
-				ImGui::Combo("Cap##dashed", &cap_idx, caps, IM_ARRAYSIZE(caps));
-				ImGui::Combo("Join##dashed", &join_idx, joins, IM_ARRAYSIZE(joins));
-				ImGui::SliderFloat("Miter Limit##dashed", &miter_limit, 1.0f, 12.0f, "%.2f");
-				ImGui::Combo("Path##dashed", &path_type, paths, IM_ARRAYSIZE(paths));
-				ImGui::ColorEdit4("Color##dashed", &col_v4.x, ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf);
-				bool use_gpu = ImWidgets::GetDashedLinesUseGPU();
-				if (ImGui::Checkbox("GPU Path##dashed", &use_gpu))
-					ImWidgets::SetDashedLinesUseGPU(use_gpu);
-				bool debug_joins = ImWidgets::GetDashedLinesDebugJoins();
-				if (ImGui::Checkbox("Debug Joins (CPU)##dashed", &debug_joins))
-					ImWidgets::SetDashedLinesDebugJoins(debug_joins);
-			}
-			DW_SsRecord( "Dashed_Polylines", _sy0, ImGui::GetCursorPos().y ); }
 
 			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
