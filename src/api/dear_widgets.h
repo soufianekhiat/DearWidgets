@@ -3517,6 +3517,18 @@ namespace ImWidgets{
     //////////////////////////////////////////////////////////////////////////
     // Polylines (Dashed/Stroked)
     //////////////////////////////////////////////////////////////////////////
+    // Draw a solid, anti-aliased polyline (Rougier 2013 SDF; selectable CPU/GPU
+    // path via Set/GetDashedLinesUseGPU). Equivalent to DrawDashedPolylineAA
+    // with no dashes — uses the same code paths but skips dash math.
+    IMGUI_API void DrawPolylineAA(
+        ImDrawList* drawlist,
+        const ImVec2* points, int points_count,
+        ImU32 col, float thickness,
+        bool closed = false,
+        ImWidgetsCap cap = ImWidgetsCap_Butt,
+        ImWidgetsJoin join = ImWidgetsJoin_Mitter,
+        float miter_limit = 4.0f);
+
     // Draw a dashed, anti-aliased polyline. Pattern alternates on/off lengths starting with ON.
     // - points: polyline vertices
     // - dashes: array of lengths [on, off, on, off, ...] in pixels; repeats

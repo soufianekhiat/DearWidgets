@@ -3759,6 +3759,263 @@ namespace ImWidgets {
 			}
 			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Thick Line Benchmark" ) )
+			{
+				ImGui::TextWrapped( "Side-by-side comparison of three thick-line algorithms on a regular grid of V-shapes "
+					"with increasing interior angle. Rendered left-to-right: "
+					"(1) Stroke = ImWidgets DrawStrokedPolyline (ESPC Euler-spiral expansion + GPU winding shader; "
+					"optional dashed variant via DrawStrokedDashedPolyline). "
+					"(2) Dashed = ImWidgets DrawDashedPolylineAA (Rougier-style antialiased dashed polyline; "
+					"selectable CPU vs GPU path). "
+					"(3) Polyline = ImGui built-in AddPolyline (CPU triangulated fringe). "
+					"Timing shown is the CPU submission cost over one frame." );
+				ImGui::Spacing();
+
+				static int   tlb_cols        = 8;
+				static int   tlb_rows        = 8;
+				static float tlb_line_width  = 4.0f;
+				static float tlb_min_deg     = 5.0f;
+				static float tlb_max_deg     = 175.0f;
+				static int   tlb_cap_type    = (int)ImWidgetsCap_Round;
+				static int   tlb_join_type   = (int)ImWidgetsJoin_Round;
+				static float tlb_miter_limit = 4.0f;
+				static float tlb_dash_len    = 8.0f;
+				static float tlb_gap_len     = 4.0f;
+				static float tlb_dash_offset = 0.0f;
+				static bool  tlb_show_grid    = true;
+				static bool  tlb_show_stroke  = true;
+				static bool  tlb_stroke_dash  = false;
+				static bool  tlb_show_dashed  = true;
+				static bool  tlb_dashed_dash  = true;   // canvas 2: dashed mode toggle
+				static bool  tlb_show_poly    = true;
+				static float tlb_canvas_scale = 1.0f;
+				static ImVec4 tlb_color_v( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
+				ImU32 tlb_color_col = ImGui::GetColorU32( tlb_color_v );
+
+				ImGui::SliderInt( "Grid Cols##TLB", &tlb_cols, 1, 32 );
+				ImGui::SliderInt( "Grid Rows##TLB", &tlb_rows, 1, 32 );
+				ImGui::SliderFloat( "Canvas Scale##TLB", &tlb_canvas_scale, 0.25f, 4.0f, "%.2fx" );
+				ImGui::SameLine();
+				if ( ImGui::SmallButton( "Reset##TLBScale" ) ) tlb_canvas_scale = 1.0f;
+				ImGui::DragFloat( "Thickness##TLB", &tlb_line_width, 0.125f, 0.5f, 50.0f );
+				ImGui::DragFloatRange2( "Angle Range (deg)##TLB", &tlb_min_deg, &tlb_max_deg,
+				                        0.5f, 1.0f, 179.0f, "Min: %.1f", "Max: %.1f" );
+				const char* tlb_cap_names[]  = { "None", "Butt", "Square", "Round", "TriangleOut", "TriangleIn" };
+				const char* tlb_join_names[] = { "Round", "Miter", "Bevel" };
+				ImGui::Combo( "Cap##TLB", &tlb_cap_type, tlb_cap_names, ImWidgetsCap_COUNT );
+				ImGui::Combo( "Join##TLB", &tlb_join_type, tlb_join_names, ImWidgetsJoin_COUNT );
+				ImGui::DragFloat( "Miter Limit##TLB", &tlb_miter_limit, 0.1f, 1.0f, 10.0f );
+				ImGui::DragFloat( "Dash Length##TLB",  &tlb_dash_len,   0.1f, 0.5f, 200.0f );
+				ImGui::DragFloat( "Gap Length##TLB",   &tlb_gap_len,    0.1f, 0.0f, 200.0f );
+				ImGui::DragFloat( "Dash Offset##TLB",  &tlb_dash_offset, 0.5f, -200.0f, 200.0f );
+				ImGui::Checkbox( "Show cell grid##TLB",         &tlb_show_grid );
+				ImGui::SameLine(); ImGui::Checkbox( "Draw Stroke##TLB",   &tlb_show_stroke );
+				ImGui::SameLine(); ImGui::Checkbox( "Stroke Dashed##TLB", &tlb_stroke_dash );
+				ImGui::SameLine(); ImGui::Checkbox( "Draw Dashed##TLB",   &tlb_show_dashed );
+				ImGui::SameLine(); ImGui::Checkbox( "Dashed Mode##TLB",   &tlb_dashed_dash );
+				ImGui::SameLine(); ImGui::Checkbox( "Draw Polyline##TLB", &tlb_show_poly );
+				// DrawDashedPolylineAA has two implementations — toggle the global here.
+				bool tlb_dashed_use_gpu = ImWidgets::GetDashedLinesUseGPU();
+				if ( ImGui::Checkbox( "Dashed GPU Path##TLB", &tlb_dashed_use_gpu ) )
+					ImWidgets::SetDashedLinesUseGPU( tlb_dashed_use_gpu );
+				if ( ImGui::ColorEdit4( "Color##TLB", &tlb_color_v.x ) )
+					tlb_color_col = ImGui::GetColorU32( tlb_color_v );
+
+				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
+
+				// Three square canvases side by side
+				float tlb_avail     = ImGui::GetContentRegionAvail().x;
+				float tlb_gap       = 10.0f;
+				float tlb_base_side = ImMin( ( tlb_avail - 2.0f * tlb_gap ) / 3.0f, 380.0f );
+				float tlb_side      = tlb_base_side * tlb_canvas_scale;
+				if ( tlb_side < 32.0f ) tlb_side = 32.0f;
+
+				ImVec2 tlb_origin_s = ImGui::GetCursorScreenPos();                                                   // Stroke
+				ImVec2 tlb_origin_d = ImVec2( tlb_origin_s.x + ( tlb_side + tlb_gap ),       tlb_origin_s.y );        // Dashed
+				ImVec2 tlb_origin_p = ImVec2( tlb_origin_s.x + ( tlb_side + tlb_gap ) * 2.f, tlb_origin_s.y );        // Polyline
+				ImGui::InvisibleButton( "##tlb_canvas", ImVec2( tlb_side * 3.0f + tlb_gap * 2.0f, tlb_side ) );
+
+				// Background panels
+				ImU32 bg_col     = IM_COL32( 30, 30, 30, 255 );
+				ImU32 border_col = IM_COL32( 80, 80, 80, 255 );
+				ImU32 label_col  = IM_COL32( 255, 255, 255, 220 );
+				pDrawList->AddRectFilled( tlb_origin_s, ImVec2( tlb_origin_s.x + tlb_side, tlb_origin_s.y + tlb_side ), bg_col );
+				pDrawList->AddRectFilled( tlb_origin_d, ImVec2( tlb_origin_d.x + tlb_side, tlb_origin_d.y + tlb_side ), bg_col );
+				pDrawList->AddRectFilled( tlb_origin_p, ImVec2( tlb_origin_p.x + tlb_side, tlb_origin_p.y + tlb_side ), bg_col );
+				pDrawList->AddRect( tlb_origin_s, ImVec2( tlb_origin_s.x + tlb_side, tlb_origin_s.y + tlb_side ), border_col );
+				pDrawList->AddRect( tlb_origin_d, ImVec2( tlb_origin_d.x + tlb_side, tlb_origin_d.y + tlb_side ), border_col );
+				pDrawList->AddRect( tlb_origin_p, ImVec2( tlb_origin_p.x + tlb_side, tlb_origin_p.y + tlb_side ), border_col );
+				pDrawList->AddText( ImVec2( tlb_origin_s.x + 4.0f, tlb_origin_s.y + 2.0f ), label_col,
+				                    tlb_stroke_dash ? "1: DrawStrokedPolyline (dashed)" : "1: DrawStrokedPolyline" );
+				const char* tlb_canvas2_label =
+				    tlb_dashed_dash
+				    ? ( tlb_dashed_use_gpu ? "2: DrawDashedPolylineAA (GPU)" : "2: DrawDashedPolylineAA (CPU)" )
+				    : ( tlb_dashed_use_gpu ? "2: DrawPolylineAA (GPU)"       : "2: DrawPolylineAA (CPU)"       );
+				pDrawList->AddText( ImVec2( tlb_origin_d.x + 4.0f, tlb_origin_d.y + 2.0f ), label_col, tlb_canvas2_label );
+				pDrawList->AddText( ImVec2( tlb_origin_p.x + 4.0f, tlb_origin_p.y + 2.0f ), label_col, "3: ImDrawList::AddPolyline" );
+
+				int   tlb_total  = tlb_cols * tlb_rows;
+				float tlb_cell_w = tlb_side / (float)tlb_cols;
+				float tlb_cell_h = tlb_side / (float)tlb_rows;
+				float tlb_arm    = ImMin( tlb_cell_w, tlb_cell_h ) * 0.40f;
+
+				// Optional cell grid overlay
+				if ( tlb_show_grid )
+				{
+					ImU32 grid_col = IM_COL32( 70, 70, 70, 200 );
+					ImVec2 origins[ 3 ] = { tlb_origin_s, tlb_origin_d, tlb_origin_p };
+					for ( int k = 0; k < 3; ++k )
+					{
+						for ( int c = 1; c < tlb_cols; ++c )
+						{
+							float x = origins[ k ].x + (float)c * tlb_cell_w;
+							pDrawList->AddLine( ImVec2( x, origins[ k ].y ),
+							                    ImVec2( x, origins[ k ].y + tlb_side ), grid_col, 1.0f );
+						}
+						for ( int r = 1; r < tlb_rows; ++r )
+						{
+							float y = origins[ k ].y + (float)r * tlb_cell_h;
+							pDrawList->AddLine( ImVec2( origins[ k ].x, y ),
+							                    ImVec2( origins[ k ].x + tlb_side, y ), grid_col, 1.0f );
+						}
+					}
+				}
+
+				// Lambda: fill a 3-point V-shape for cell index i, anchored at the given canvas origin.
+				// The opening angle increases linearly with i across the whole grid.
+				auto tlb_make_v = [&]( int i, ImVec2 origin, ImVec2 out_pts[ 3 ] )
+				{
+					int col_i = i % tlb_cols;
+					int row_i = i / tlb_cols;
+					ImVec2 center( origin.x + ( (float)col_i + 0.5f ) * tlb_cell_w,
+					               origin.y + ( (float)row_i + 0.5f ) * tlb_cell_h );
+					float t = ( tlb_total > 1 ) ? (float)i / (float)( tlb_total - 1 ) : 0.5f;
+					float angle_deg = ImLerp( tlb_min_deg, tlb_max_deg, t );
+					float half      = angle_deg * 0.5f * ( IM_PI / 180.0f );
+					float sh        = sinf( half );
+					float ch        = cosf( half );
+					// V opens upward: vertex sits low, both arms point up-left and up-right.
+					ImVec2 vertex( center.x, center.y + tlb_arm * 0.5f );
+					out_pts[ 0 ] = ImVec2( vertex.x - sh * tlb_arm, vertex.y - ch * tlb_arm );
+					out_pts[ 1 ] = vertex;
+					out_pts[ 2 ] = ImVec2( vertex.x + sh * tlb_arm, vertex.y - ch * tlb_arm );
+				};
+
+				// --- 1) Stroke: ImWidgets::DrawStrokedPolyline (solid or dashed) ----
+				double tlb_ms_stroke = 0.0;
+				if ( tlb_show_stroke )
+				{
+					float dash_arr_s[ 2 ] = { tlb_dash_len, tlb_gap_len };
+					auto ts0 = std::chrono::high_resolution_clock::now();
+					for ( int i = 0; i < tlb_total; ++i )
+					{
+						ImVec2 pts[ 3 ];
+						tlb_make_v( i, tlb_origin_s, pts );
+						if ( tlb_stroke_dash )
+						{
+							ImWidgets::DrawStrokedDashedPolyline( pDrawList, pts, 3, tlb_color_col, tlb_line_width,
+							                                       dash_arr_s, 2, tlb_dash_offset,
+							                                       (ImWidgetsCap)tlb_cap_type,
+							                                       (ImWidgetsJoin)tlb_join_type,
+							                                       tlb_miter_limit, false );
+						}
+						else
+						{
+							ImWidgets::DrawStrokedPolyline( pDrawList, pts, 3, tlb_color_col, tlb_line_width,
+							                                 (ImWidgetsCap)tlb_cap_type,
+							                                 (ImWidgetsJoin)tlb_join_type,
+							                                 tlb_miter_limit, false );
+						}
+					}
+					auto ts1 = std::chrono::high_resolution_clock::now();
+					tlb_ms_stroke = std::chrono::duration<double, std::milli>( ts1 - ts0 ).count();
+				}
+
+				// --- 2) Polyline AA: solid (DrawPolylineAA) or dashed (DrawDashedPolylineAA) ---
+				// Both share the same Rougier 2013 SDF code paths and respect the
+				// CPU/GPU global toggled above.
+				double tlb_ms_dashed = 0.0;
+				if ( tlb_show_dashed )
+				{
+					auto td0 = std::chrono::high_resolution_clock::now();
+					for ( int i = 0; i < tlb_total; ++i )
+					{
+						ImVec2 pts[ 3 ];
+						tlb_make_v( i, tlb_origin_d, pts );
+						if ( tlb_dashed_dash )
+						{
+							ImWidgets::DrawDashedPolylineAA( pDrawList, pts, 3, tlb_color_col, tlb_line_width,
+							                                  tlb_dash_len, tlb_gap_len, tlb_dash_offset,
+							                                  false,
+							                                  (ImWidgetsCap)tlb_cap_type,
+							                                  (ImWidgetsJoin)tlb_join_type,
+							                                  tlb_miter_limit );
+						}
+						else
+						{
+							ImWidgets::DrawPolylineAA( pDrawList, pts, 3, tlb_color_col, tlb_line_width,
+							                            false,
+							                            (ImWidgetsCap)tlb_cap_type,
+							                            (ImWidgetsJoin)tlb_join_type,
+							                            tlb_miter_limit );
+						}
+					}
+					auto td1 = std::chrono::high_resolution_clock::now();
+					tlb_ms_dashed = std::chrono::duration<double, std::milli>( td1 - td0 ).count();
+				}
+
+				// --- 3) Polyline: ImGui::AddPolyline ---------------------------------
+				double tlb_ms_poly = 0.0;
+				if ( tlb_show_poly )
+				{
+					auto tp0 = std::chrono::high_resolution_clock::now();
+					for ( int i = 0; i < tlb_total; ++i )
+					{
+						ImVec2 pts[ 3 ];
+						tlb_make_v( i, tlb_origin_p, pts );
+						pDrawList->AddPolyline( pts, 3, tlb_color_col, ImDrawFlags_None, tlb_line_width );
+					}
+					auto tp1 = std::chrono::high_resolution_clock::now();
+					tlb_ms_poly = std::chrono::duration<double, std::milli>( tp1 - tp0 ).count();
+				}
+
+				// --- Rolling 32-sample averages --------------------------------------
+				static float tlb_ring_stroke[ 32 ] = {};
+				static float tlb_ring_dashed[ 32 ] = {};
+				static float tlb_ring_poly  [ 32 ] = {};
+				static int   tlb_ring_head    = 0;
+				int slot = tlb_ring_head % 32;
+				tlb_ring_stroke[ slot ] = (float)tlb_ms_stroke;
+				tlb_ring_dashed[ slot ] = (float)tlb_ms_dashed;
+				tlb_ring_poly  [ slot ] = (float)tlb_ms_poly;
+				tlb_ring_head++;
+				float tlb_avg_stroke = 0.0f, tlb_avg_dashed = 0.0f, tlb_avg_poly = 0.0f;
+				for ( int i = 0; i < 32; ++i )
+				{
+					tlb_avg_stroke += tlb_ring_stroke[ i ];
+					tlb_avg_dashed += tlb_ring_dashed[ i ];
+					tlb_avg_poly   += tlb_ring_poly  [ i ];
+				}
+				tlb_avg_stroke /= 32.0f;
+				tlb_avg_dashed /= 32.0f;
+				tlb_avg_poly   /= 32.0f;
+
+				ImGui::Text( "V-shapes drawn: %d  (%d cols x %d rows)", tlb_total, tlb_cols, tlb_rows );
+				ImGui::Text( "1 DrawStrokedPolyline %s : %7.3f ms   (avg32: %7.3f ms)",
+				             tlb_stroke_dash ? "(dashed)" : "(solid) ", tlb_ms_stroke, tlb_avg_stroke );
+				ImGui::Text( "2 %-22s %s : %7.3f ms   (avg32: %7.3f ms)",
+				             tlb_dashed_dash ? "DrawDashedPolylineAA" : "DrawPolylineAA",
+				             tlb_dashed_use_gpu ? "(GPU)" : "(CPU)", tlb_ms_dashed, tlb_avg_dashed );
+				ImGui::Text( "3 AddPolyline               : %7.3f ms   (avg32: %7.3f ms)", tlb_ms_poly,   tlb_avg_poly );
+				if ( tlb_avg_stroke > 0.0f && tlb_avg_poly > 0.0f )
+					ImGui::TextDisabled( "Stroke vs Polyline: %.2fx", tlb_avg_stroke / tlb_avg_poly );
+				if ( tlb_avg_dashed > 0.0f && tlb_avg_stroke > 0.0f )
+					ImGui::TextDisabled( "Dashed vs Stroke:   %.2fx (dashing overhead)", tlb_avg_dashed / tlb_avg_stroke );
+			}
+			DW_SsRecord( "Thick_Line_Benchmark", _sy0, ImGui::GetCursorPos().y ); }
+
+			{ float _sy0 = ImGui::GetCursorPos().y;
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Dashed Polylines" ) )
 			{
 				ImGui::TextWrapped( "Arc-length accurate dashed polylines with proper caps and joins. "
