@@ -44,7 +44,7 @@ struct SLANG_ParameterGroup_vertexBuffer_natural_0
 };
 
 
-#line 1129
+#line 1135
 [[vertex]] PS_INPUT_0 main_vs(vertexInput_0 _S2 [[stage_in]], SLANG_ParameterGroup_vertexBuffer_natural_0 constant* vertexBuffer_0 [[buffer(0)]])
 {
     thread PS_INPUT_0 output_0;

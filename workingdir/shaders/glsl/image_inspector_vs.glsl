@@ -66,7 +66,7 @@ struct PS_INPUT_0
 };
 
 
-#line 1129
+#line 1135
 void main()
 {
     PS_INPUT_0 output_0;
@@ -75,16 +75,16 @@ void main()
     output_0.uv_0 = input_uv_0;
     PS_INPUT_0 _S2 = output_0;
 
-#line 1135
+#line 1141
     gl_Position = output_0.pos_0;
 
-#line 1135
+#line 1141
     entryPointParam_main_vs_col_0 = _S2.col_0;
 
-#line 1135
+#line 1141
     entryPointParam_main_vs_uv_0 = _S2.uv_0;
 
-#line 1135
+#line 1141
     return;
 }
 

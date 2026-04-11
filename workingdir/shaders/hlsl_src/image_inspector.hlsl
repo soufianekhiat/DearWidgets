@@ -473,10 +473,16 @@ float4 FetchPixelMosaic(int sx, int sy)
 // ============================================================================
 // Filter implementations (run on the demosaiced/decoded source values)
 // ============================================================================
+// Convention: pixel N occupies src-space [N, N+1], with its center at N+0.5.
+// This matches FilterBilinear/Bicubic/Lanczos (which subtract 0.5 before
+// flooring), the zoom-out subsample path in SampleSource, the C++ pixel-grid
+// overlay (which draws lines at integer src coordinates), and the CPU
+// inspector loupe (which uses floorf(mouseImg)). Using `floor(src + 0.5)`
+// here would put pixel centers on the grid intersections -- wrong.
 float4 FilterNearest(float2 src)
 {
-    int sx = int(floor(src.x + 0.5f));
-    int sy = int(floor(src.y + 0.5f));
+    int sx = int(floor(src.x));
+    int sy = int(floor(src.y));
     return FetchPixelMosaic(sx, sy);
 }
 

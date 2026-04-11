@@ -25,7 +25,7 @@ cbuffer PS_CONSTANT_BUFFER : register(b1)
     float  seg_start;     // reg6: cumulative arc-length at p0
     float  seg_end;       //       cumulative arc-length at p1
     float  total_length;  //       total polyline length
-    float  debug_joins;   //       1.0 = debug join visualization
+    float  debug_joins;   //       bit flags: 1=debug joins, 2=first seg of closed polyline, 4=last seg of closed polyline
 };
 
 struct VS_INPUT
@@ -52,6 +52,21 @@ PS_INPUT main_vs(VS_INPUT input)
 }
 
 // ImWidgetsCap: 0=None, 1=Butt, 2=Square, 3=Round, 4=TriangleOut, 5=TriangleIn
+//
+// Cap shapes (cap_dist returns the SDF "outside distance"; pixel is inside the
+// stroke when (cap_dist - t) < 0).
+//
+// TriangleOut = arrow tip extending OUTWARD past the segment endpoint by halfw,
+//   apex at (dx=t, dy=0). Inside region: dx + |dy| < t.
+//
+// TriangleIn  = V-notch carved INTO the stroke end (centerline missing, two
+//   triangular wings extend outward to (t, ±t)). Inside region:
+//   |dy| < t AND |dy| > dx.
+//
+// NOTE: these formulas were swapped relative to the enum names until recently.
+// The matching CPU geometry in dear_widgets.cpp's draw_subpath emits a single
+// outward apex for TriangleOut and a pentagon notch for TriangleIn — see
+// switch (cap) at lines ~19044 and ~19075.
 float cap_dist(int ctype, float dx, float dy, float t)
 {
     dx = abs(dx);
@@ -60,8 +75,8 @@ float cap_dist(int ctype, float dx, float dy, float t)
     if (ctype == 1) return max(dx + t, dy);
     if (ctype == 2) return max(dx, dy);
     if (ctype == 3) return sqrt(dx * dx + dy * dy);
-    if (ctype == 4) return max(dy, (t + dx - dy));
-    if (ctype == 5) return (dx + dy);
+    if (ctype == 4) return (dx + dy);                     // TriangleOut: arrow tip
+    if (ctype == 5) return max(dy, (t + dx - dy));        // TriangleIn:  V-notch
     return 1e10;
 }
 
@@ -120,7 +135,16 @@ float4 main_ps(PS_INPUT input) : SV_Target
     float seg_len = max(length(ba_vec), 1e-5);
     float2 ex = ba_vec / seg_len;
     float2 ey = float2(-ex.y, ex.x);
-    float halfw = 0.5 * thickness;
+
+    // Sub-pixel thickness: clamp to 1 px and modulate alpha (Rougier 2013).
+    // Without this, halfw - aa goes negative for thin lines and the gaussian
+    // fringe dims the body. Reference: solid-lines-2D.vert:136-139,
+    // dash-lines-2D.vert:148-151.
+    float effective_thickness = max(thickness, 1.0);
+    float4 effective_color    = color;
+    effective_color.a *= saturate(thickness);
+
+    float halfw = 0.5 * effective_thickness;
     float t = halfw - aa;
 
     float lx = dot(P - p0, ex);
@@ -132,15 +156,26 @@ float4 main_ps(PS_INPUT input) : SV_Target
     bool has_next = (dot(next_dir, next_dir) > 0.0001);
     int cap_type = (int)cap;
     int jtype = (int)join_type;
-    bool dbg = (debug_joins > 0.5);
+    // Decode bit flags: 1=debug joins, 2=first segment of closed polyline,
+    // 4=last segment of closed polyline (replaces the old seg_start<0.001
+    // heuristic which could misfire on degenerate polylines whose first
+    // segment has near-zero length).
+    int flags = (int)debug_joins;
+    bool dbg              = (flags & 1) != 0;
+    bool is_first_of_loop = (flags & 2) != 0;
+    bool is_last_of_loop  = (flags & 4) != 0;
 
     // --- Bisector clip: prevent overdraw between adjacent segments ---
+    // Use <= on the prev side and > on the next side so a pixel exactly on
+    // the bisector line is kept by exactly one neighbour (the "next" one).
+    // Without the asymmetry, bisector-aligned pixels would be drawn by both
+    // segments and double-alpha-blended (visible for translucent colours).
     if (has_prev)
     {
         float2 bisect = prev_dir + ex;
         if (dot(bisect, bisect) > 0.001)
         {
-            if (dot(P - p0, bisect) < 0.0)
+            if (dot(P - p0, bisect) <= 0.0)
                 return float4(0, 0, 0, 0);
         }
     }
@@ -197,13 +232,13 @@ float4 main_ps(PS_INPUT input) : SV_Target
     else
     {
         // For the closing vertex of closed polylines, wrap dx so the dash
-        // pattern is continuous around the loop.
-        // Detection: first segment has seg_start==0 with has_prev (closed),
-        //            last  segment has seg_end==total_length with has_next (closed).
+        // pattern is continuous around the loop. The is_first_of_loop and
+        // is_last_of_loop flags are set by the CPU emitter, replacing the old
+        // seg_start<0.001 heuristic.
         float dx_dash = dx;
-        if (has_prev && seg_start < 0.001 && lx < 0.0)
+        if (is_first_of_loop && has_prev && lx < 0.0)
             dx_dash = total_length + dx;   // wrap negative → end of polyline
-        if (has_next && seg_end > total_length - 0.001 && lx > seg_len)
+        if (is_last_of_loop && has_next && lx > seg_len)
             dx_dash = dx - total_length;   // wrap past-end → start of polyline
 
         float u = dx_dash + dash_offset;
@@ -212,13 +247,12 @@ float4 main_ps(PS_INPUT input) : SV_Target
 
         if (in_dash)
         {
+            // Dash body: rectangle of width 2*halfw, no per-dash cap shapes.
+            // (The previous code applied a buggy cap_type==5 special case here
+            // that carved out the centerline of long dashes; the reference uses
+            // a dash atlas to do this properly. Caps still apply at polyline
+            // endpoints, just not at every dash boundary.)
             d = abs(dy);
-            float to_start = m;
-            float to_end = dash_len - m;
-            float d_start = cap_dist(cap_type, to_start, abs(dy), t);
-            float d_end = cap_dist(cap_type, to_end, abs(dy), t);
-            if (cap_type == 5)
-                d = max(d, min(d_start, d_end));
         }
         else
         {
@@ -246,8 +280,9 @@ float4 main_ps(PS_INPUT input) : SV_Target
         if (has_prev && lx < 0.0)
         {
             float jd = join_dist(P, p0, ex, prev_dir, dy, jtype, halfw, miter_limit);
-            // Dash state at the vertex (seg_start); wrap for closing vertex
-            float v_al = (seg_start < 0.001) ? total_length : seg_start;
+            // Dash state at the vertex (seg_start); wrap for closing vertex of
+            // closed polylines (the first segment's p0 is also the polyline end).
+            float v_al = is_first_of_loop ? total_length : seg_start;
             float v_u = v_al + dash_offset;
             float v_m = v_u - period * floor(v_u / period);
             d = (v_m < dash_len) ? jd : max(d, jd);
@@ -272,19 +307,19 @@ float4 main_ps(PS_INPUT input) : SV_Target
         {
             // Debug: Green=Round(0), Red=Miter(1), Blue=Bevel(2)
             float3 dc = (jtype == 0) ? float3(0,1,0) : (jtype == 2) ? float3(0,0,1) : float3(1,0,0);
-            return float4(dc, color.a);
+            return float4(dc, effective_color.a);
         }
-        return float4(color.rgb, color.a);
+        return float4(effective_color.rgb, effective_color.a);
     }
     else
     {
         d /= max(aa, 1e-5);
-        float a = exp(-d * d) * color.a;
+        float a = exp(-d * d) * effective_color.a;
         if (dbg && zone >= 2)
         {
             float3 dc = (jtype == 0) ? float3(0,1,0) : (jtype == 2) ? float3(0,0,1) : float3(1,0,0);
             return float4(dc, a);
         }
-        return float4(color.rgb, a);
+        return float4(effective_color.rgb, a);
     }
 }

@@ -18661,7 +18661,7 @@ namespace ImWidgets
         ImWidgetsJoin join,
         float miter_limit)
     {
-        if (!drawlist || !points || points_count <= 1 || (col & IM_COL32_A_MASK) == 0)
+        if (!drawlist || !points || points_count <= 1 || thickness <= 0.0f || (col & IM_COL32_A_MASK) == 0)
             return;
 
         // Common inputs
@@ -18680,9 +18680,13 @@ namespace ImWidgets
                           gs_pContext->lineShader.ps != NULL &&
                           gs_pContext->lineShader.program != NULL);
         const bool enable_gpu_path = GlobalData.dashedLinesUseGPU; // user-configurable
+        // GPU shader cbuffer only holds a single (dash, gap) pair (float2 dash).
+        // Caller-provided N-element patterns (dashdot, etc.) must fall through to
+        // the CPU path, which already handles arbitrary patterns via DW_BuildOnIntervals.
+        const bool gpu_pattern_ok = (dashes == NULL || dashes_count <= 2);
         bool gpu_drew_any = false;
 
-        if (enable_gpu_path && shader_ok)
+        if (enable_gpu_path && shader_ok && gpu_pattern_ok)
         {
             // Swap to next pool on frame boundary (keeps previous frame's data alive for rendering)
             int current_frame = ImGui::GetFrameCount();
@@ -18762,7 +18766,14 @@ namespace ImWidgets
                 params.seg_start = acc_len;
                 params.seg_end = acc_len + len;
                 params.total_length = total_len;
-                params._pad = GlobalData.dashedLinesDebugJoins ? 1.0f : 0.0f;
+                // Bit flags: 1=debug joins, 2=first segment of closed polyline,
+                // 4=last segment of closed polyline. Replaces the shader-side
+                // seg_start<0.001 heuristic.
+                int flags = 0;
+                if (GlobalData.dashedLinesDebugJoins) flags |= 1;
+                if (closed && i == 0)                  flags |= 2;
+                if (closed && i == seg_count - 1)      flags |= 4;
+                params._pad = (float)flags;
 
                 // Compute bounding quad padding (must cover join/cap extensions)
                 float pad = halfw + 2.0f * aa + 2.0f;
@@ -18819,7 +18830,7 @@ namespace ImWidgets
         // Fall back to CPU path only when GPU path is disabled or unavailable.
         bool gpu_used = false;
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
-        gpu_used = enable_gpu_path && shader_ok && gpu_drew_any;
+        gpu_used = enable_gpu_path && shader_ok && gpu_pattern_ok && gpu_drew_any;
 #endif
         const bool want_cpu_base = !gpu_used;
 
@@ -18840,18 +18851,66 @@ namespace ImWidgets
         // to retract dash boundaries near acute corners to prevent inter-dash overdraw, and
         // for a solid line it would wrongly remove the polyline's real endpoints (e.g. the
         // right arm of a sharp V at ~10° opening would vanish because halfw*tan(85°) > arm_len).
-        const bool effectively_solid = (dashes == NULL || dashes_count <= 0 || gap_len_px <= 0.0f);
-        float pats_local[2] = { dash_len_px, gap_len_px };
-        DW_BuildOnIntervals(pd_local.total_len, pats_local, 2, dash_offset, intervals);
+        //
+        // Effectively-solid detection must look at the FULL caller array (not just dashes[0..1])
+        // so dashdot patterns like {4, 2, 1, 2} are not mistaken for solid.
+        bool effectively_solid = (dashes == NULL || dashes_count <= 0);
+        if (!effectively_solid)
+        {
+            // Solid if every gap entry (odd indices) is <= 0.
+            bool any_gap = false;
+            for (int di = 1; di < dashes_count; di += 2)
+            {
+                if (dashes[di] > 0.0f) { any_gap = true; break; }
+            }
+            effectively_solid = !any_gap;
+        }
+        // Build ON intervals using the caller's full pattern when it has >2 entries,
+        // otherwise fall back to the 2-element synthesis above (which handles the solid
+        // and convenience-overload paths).
+        if (dashes && dashes_count > 2)
+        {
+            DW_BuildOnIntervals(pd_local.total_len, dashes, dashes_count, dash_offset, intervals);
+        }
+        else
+        {
+            float pats_local[2] = { dash_len_px, gap_len_px };
+            DW_BuildOnIntervals(pd_local.total_len, pats_local, 2, dash_offset, intervals);
+        }
 
         // Build the full stroke outline for a subpath, handling caps, joins, and miter limit,
         // then render with AddConcavePolyFilled.
-        auto draw_subpath = [&](ImVector<ImVec2>& sp, bool trim_ends)
+        //
+        // sp_closed: when true, the subpath represents a closed polyline whose first and
+        // last vertices coincide (after the caller's pre-processing places the seam at a
+        // segment midpoint). In this mode, caps are skipped — the start/end L/R contours
+        // are at the same position so the strip naturally appears continuous.
+        auto draw_subpath = [&](ImVector<ImVec2>& sp, bool trim_ends, bool sp_closed)
         {
             if (sp.Size < 2) return;
             if (!want_cpu_base) return;
 
-            const float halfw = 0.5f * thickness;
+            // Sub-pixel thickness: clamp width to 1 px and scale alpha by the
+            // original thickness (Rougier 2013, solid-lines-2D.vert:136-139).
+            // Without this, CPU renders thin lines as a narrow aliased sliver,
+            // while the GPU shader correctly fades them to transparent. Keeping
+            // the two paths matched means thin strokes look identical whichever
+            // path is active.
+            float effective_thickness = thickness;
+            ImU32 effective_col = col;
+            if (effective_thickness < 1.0f)
+            {
+                int a = (int)((col >> IM_COL32_A_SHIFT) & 0xFF);
+                a = (int)((float)a * effective_thickness + 0.5f);
+                if (a < 0) a = 0; if (a > 255) a = 255;
+                effective_col = (col & ~IM_COL32_A_MASK) | ((ImU32)a << IM_COL32_A_SHIFT);
+                effective_thickness = 1.0f;
+            }
+            const float halfw = 0.5f * effective_thickness;
+            // For closed subpaths, treat cap as None so no cap geometry is emitted
+            // at the seam (which is now at a segment midpoint where both ends share
+            // the same position and tangent).
+            const ImWidgetsCap effective_cap = sp_closed ? ImWidgetsCap_None : cap;
 
             // Trim end/start segments that are too short for their join's inner
             // miter. The miter extends halfw*tan(α/2) along each segment; if the
@@ -19072,7 +19131,7 @@ namespace ImWidgets
             int n_scv = 0, n_sct = 0; // start cap vertices / triangles
             bool end_tri_in = false, start_tri_in = false;
 
-            switch (cap)
+            switch (effective_cap)
             {
             case ImWidgetsCap_Square:
                 end_cap_v[0] = end_pt + end_n_dir * halfw + end_t_dir * halfw;
@@ -19103,7 +19162,7 @@ namespace ImWidgets
             default: break;
             }
 
-            switch (cap)
+            switch (effective_cap)
             {
             case ImWidgetsCap_Square:
                 start_cap_v[0] = start_pt - start_n_dir * halfw - start_t_dir * halfw;
@@ -19134,6 +19193,61 @@ namespace ImWidgets
             default: break;
             }
 
+            // ==========================================================
+            // Anti-aliasing fringe contours.
+            // Build outer L/R contours at distance aa beyond the stroke
+            // body, with alpha 0. The rasterizer interpolates alpha across
+            // the fringe triangles to produce a linear edge gradient that
+            // visually approximates the GPU shader's gaussian fringe. This
+            // closes the biggest remaining CPU/GPU divergence (CPU was
+            // rendering hard-edged strokes while GPU had smooth fringes).
+            // Outward direction at each contour vertex = normalized sum of
+            // adjacent edge perpendiculars. For the L contour walking
+            // forward, +DW_Perp(edge) points outward; R contour uses the
+            // opposite sign.
+            // ==========================================================
+            ImVector<ImVec2> L_outer, R_outer;
+            L_outer.resize(L.Size);
+            R_outer.resize(R.Size);
+            auto compute_outer = [](const ImVector<ImVec2>& c, int i, float sign_k) -> ImVec2
+            {
+                ImVec2 sum(0, 0);
+                if (i > 0)
+                {
+                    ImVec2 e(c[i].x - c[i - 1].x, c[i].y - c[i - 1].y);
+                    float l = ImSqrt(e.x * e.x + e.y * e.y);
+                    if (l > 1e-6f)
+                    {
+                        ImVec2 p(-e.y / l * sign_k, e.x / l * sign_k);
+                        sum.x += p.x; sum.y += p.y;
+                    }
+                }
+                if (i < c.Size - 1)
+                {
+                    ImVec2 e(c[i + 1].x - c[i].x, c[i + 1].y - c[i].y);
+                    float l = ImSqrt(e.x * e.x + e.y * e.y);
+                    if (l > 1e-6f)
+                    {
+                        ImVec2 p(-e.y / l * sign_k, e.x / l * sign_k);
+                        sum.x += p.x; sum.y += p.y;
+                    }
+                }
+                float m = ImSqrt(sum.x * sum.x + sum.y * sum.y);
+                if (m > 1e-6f) { sum.x /= m; sum.y /= m; }
+                return sum;
+            };
+            for (int i = 0; i < L.Size; ++i)
+            {
+                ImVec2 n = compute_outer(L, i, +1.0f);
+                L_outer[i] = ImVec2(L[i].x + n.x * aa, L[i].y + n.y * aa);
+            }
+            for (int i = 0; i < R.Size; ++i)
+            {
+                ImVec2 n = compute_outer(R, i, -1.0f);
+                R_outer[i] = ImVec2(R[i].x + n.x * aa, R[i].y + n.y * aa);
+            }
+            const ImU32 fringe_col = effective_col & ~IM_COL32_A_MASK;  // alpha 0
+
             // --- Count triangles ---
             int nTri = 0;
             // Segment quads (+1 per TriangleIn notch on first/last segment)
@@ -19153,8 +19267,11 @@ namespace ImWidgets
             }
             // Cap triangles (non-TriangleIn)
             nTri += n_ect + n_sct;
+            // Fringe triangles: 2 per L edge + 2 per R edge
+            if (L.Size >= 2) nTri += 2 * (L.Size - 1);
+            if (R.Size >= 2) nTri += 2 * (R.Size - 1);
 
-            int nVtx = L.Size + R.Size + n_ecv + n_scv;
+            int nVtx = L.Size + R.Size + n_ecv + n_scv + L.Size + R.Size;
 
             // --- Emit primitives ---
             if (nTri > 0 && nVtx >= 3)
@@ -19165,10 +19282,14 @@ namespace ImWidgets
 
                 // Write all vertices
                 ImDrawVert* vw = drawlist->_VtxWritePtr;
-                for (int vi = 0; vi < L.Size; ++vi) { vw->pos = L[vi]; vw->uv = uv; vw->col = col; vw++; }
-                for (int vi = 0; vi < R.Size; ++vi) { vw->pos = R[vi]; vw->uv = uv; vw->col = col; vw++; }
-                for (int vi = 0; vi < n_ecv; ++vi) { vw->pos = end_cap_v[vi]; vw->uv = uv; vw->col = col; vw++; }
-                for (int vi = 0; vi < n_scv; ++vi) { vw->pos = start_cap_v[vi]; vw->uv = uv; vw->col = col; vw++; }
+                for (int vi = 0; vi < L.Size; ++vi) { vw->pos = L[vi]; vw->uv = uv; vw->col = effective_col; vw++; }
+                for (int vi = 0; vi < R.Size; ++vi) { vw->pos = R[vi]; vw->uv = uv; vw->col = effective_col; vw++; }
+                for (int vi = 0; vi < n_ecv; ++vi) { vw->pos = end_cap_v[vi]; vw->uv = uv; vw->col = effective_col; vw++; }
+                for (int vi = 0; vi < n_scv; ++vi) { vw->pos = start_cap_v[vi]; vw->uv = uv; vw->col = effective_col; vw++; }
+                // Fringe vertices (alpha 0) — must appear AFTER the body/caps
+                // so the body triangles' index bases (bL, bR, bE, bS) are unaffected.
+                for (int vi = 0; vi < L.Size; ++vi) { vw->pos = L_outer[vi]; vw->uv = uv; vw->col = fringe_col; vw++; }
+                for (int vi = 0; vi < R.Size; ++vi) { vw->pos = R_outer[vi]; vw->uv = uv; vw->col = fringe_col; vw++; }
                 drawlist->_VtxWritePtr = vw;
                 drawlist->_VtxCurrentIdx += (unsigned int)nVtx;
 
@@ -19177,6 +19298,8 @@ namespace ImWidgets
                 ImDrawIdx bR = idx_base + (ImDrawIdx)L.Size;
                 ImDrawIdx bE = idx_base + (ImDrawIdx)(L.Size + R.Size);
                 ImDrawIdx bS = bE + (ImDrawIdx)n_ecv;
+                ImDrawIdx bLO = bS + (ImDrawIdx)n_scv;               // L_outer fringe base
+                ImDrawIdx bRO = bLO + (ImDrawIdx)L.Size;              // R_outer fringe base
 
                 ImDrawIdx* iw = drawlist->_IdxWritePtr;
                 #define DW_TRI(a, b, c) do { *iw++ = (ImDrawIdx)(a); *iw++ = (ImDrawIdx)(b); *iw++ = (ImDrawIdx)(c); } while(0)
@@ -19250,12 +19373,12 @@ namespace ImWidgets
                 // --- End cap ---
                 ImDrawIdx L_last = bL + (ImDrawIdx)(L.Size - 1);
                 ImDrawIdx R_last = bR + (ImDrawIdx)(R.Size - 1);
-                if (cap == ImWidgetsCap_Square)
+                if (effective_cap == ImWidgetsCap_Square)
                 {
                     DW_TRI(L_last, bE, bE + 1);
                     DW_TRI(L_last, bE + 1, R_last);
                 }
-                else if (cap == ImWidgetsCap_Round)
+                else if (effective_cap == ImWidgetsCap_Round)
                 {
                     ImDrawIdx center = bE;
                     ImDrawIdx prev = L_last;
@@ -19267,7 +19390,7 @@ namespace ImWidgets
                     }
                     DW_TRI(center, prev, R_last);
                 }
-                else if (cap == ImWidgetsCap_TriangleOut)
+                else if (effective_cap == ImWidgetsCap_TriangleOut)
                 {
                     DW_TRI(L_last, bE, R_last);
                 }
@@ -19275,12 +19398,12 @@ namespace ImWidgets
                 // --- Start cap ---
                 ImDrawIdx L0 = bL;
                 ImDrawIdx R0 = bR;
-                if (cap == ImWidgetsCap_Square)
+                if (effective_cap == ImWidgetsCap_Square)
                 {
                     DW_TRI(R0, bS, bS + 1);
                     DW_TRI(R0, bS + 1, L0);
                 }
-                else if (cap == ImWidgetsCap_Round)
+                else if (effective_cap == ImWidgetsCap_Round)
                 {
                     ImDrawIdx center = bS;
                     ImDrawIdx prev = R0;
@@ -19292,9 +19415,25 @@ namespace ImWidgets
                     }
                     DW_TRI(center, prev, L0);
                 }
-                else if (cap == ImWidgetsCap_TriangleOut)
+                else if (effective_cap == ImWidgetsCap_TriangleOut)
                 {
                     DW_TRI(R0, bS, L0);
+                }
+
+                // --- Anti-aliasing fringe: L side ---
+                // One quad per L edge: (L[i], L[i+1], L_outer[i+1], L_outer[i])
+                // The outer vertices have alpha 0 so the rasterizer interpolates
+                // a linear gradient across the quad, producing a smooth edge.
+                for (int i = 0; i < L.Size - 1; ++i)
+                {
+                    DW_TRI(bL + i, bL + i + 1, bLO + i + 1);
+                    DW_TRI(bL + i, bLO + i + 1, bLO + i);
+                }
+                // --- Anti-aliasing fringe: R side ---
+                for (int i = 0; i < R.Size - 1; ++i)
+                {
+                    DW_TRI(bR + i, bRO + i + 1, bR + i + 1);
+                    DW_TRI(bR + i, bRO + i, bRO + i + 1);
                 }
 
                 #undef DW_TRI
@@ -19335,7 +19474,7 @@ namespace ImWidgets
             C.resize(A.Size + B.Size - b_start);
             for (int i = 0; i < A.Size; ++i) C[i] = A[i];
             for (int i = b_start; i < B.Size; ++i) C[A.Size + i - b_start] = B[i];
-            draw_subpath(C, false); // no trim: both ends border a gap, not another dash
+            draw_subpath(C, false, false); // no trim: both ends border a gap, not another dash
         }
 
         for (int k = 0; k < intervals.Size; ++k)
@@ -19348,9 +19487,48 @@ namespace ImWidgets
             if (s1 - s0 <= 0.0f) continue;
             subpath.resize(0);
             DW_ExtractSubpath(pd_local, s0, s1, subpath, false, 0.0f);
+
+            // When a single interval covers the ENTIRE closed polyline (either because
+            // it's effectively solid, or because the caller's dash pattern produced one
+            // long dash spanning the whole loop), the subpath is [v0, v1, …, v_{N-1}, v0].
+            // Treating this as an open polyline gives a visible discontinuity at v0
+            // because the first/last L-R contours use different segment normals (the
+            // start cap and end cap don't line up) and the actual join at v0 is never
+            // computed (the interior-join loop skips the first and last vertex).
+            //
+            // Fix: rotate the subpath so the seam falls at the MIDPOINT of the first
+            // segment. The new endpoints are at the same position with the same tangent
+            // (collinear with the segment they bisect), so L[0]==L[last] and
+            // R[0]==R[last] and the strip naturally appears continuous. v0 is now an
+            // interior vertex with a proper join. Pass sp_closed=true so caps aren't
+            // drawn at this artificial seam.
+            bool sp_closed = false;
+            const bool single_covers_all = (intervals.Size == 1 &&
+                                            intervals[0].x <= 1e-6f &&
+                                            ImFabs(intervals[0].y - pd_local.total_len) <= 1e-6f);
+            if (closed && single_covers_all && subpath.Size >= 3)
+            {
+                ImVec2 v0 = subpath[0];
+                ImVec2 v1 = subpath[1];
+                ImVec2 mid = ImVec2((v0.x + v1.x) * 0.5f, (v0.y + v1.y) * 0.5f);
+                // Build [mid, v1, v2, ..., v_{N-1}, v0, mid]
+                ImVector<ImVec2> rotated;
+                rotated.reserve(subpath.Size + 1);
+                rotated.push_back(mid);
+                for (int i = 1; i < subpath.Size - 1; ++i) // v1 .. v_{N-1}
+                    rotated.push_back(subpath[i]);
+                rotated.push_back(v0);
+                rotated.push_back(mid);
+                subpath.swap(rotated);
+                sp_closed = true;
+            }
+
             // Only trim endpoints when there are real inter-dash boundaries.
-            // See `effectively_solid` definition above.
-            draw_subpath(subpath, !effectively_solid);
+            // See `effectively_solid` definition above. Also skip trimming when the
+            // subpath is a rotated closed loop — its endpoints are the artificial seam,
+            // not a dash boundary.
+            const bool do_trim = !effectively_solid && !sp_closed;
+            draw_subpath(subpath, do_trim, sp_closed);
         }
 
         // Safety net: if nothing was drawn (e.g., degenerate dash pattern), draw a solid polyline

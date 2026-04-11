@@ -604,7 +604,7 @@ fn FetchPixelMosaic_0( sx_4 : i32,  sy_4 : i32) -> vec4<f32>
 
 fn FilterNearest_0( src_0 : vec2<f32>) -> vec4<f32>
 {
-    var _S30 : vec4<f32> = FetchPixelMosaic_0(i32(floor(src_0.x + 0.5f)), i32(floor(src_0.y + 0.5f)));
+    var _S30 : vec4<f32> = FetchPixelMosaic_0(i32(floor(src_0.x)), i32(floor(src_0.y)));
     return _S30;
 }
 

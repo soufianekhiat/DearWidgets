@@ -1245,15 +1245,14 @@ vec4 FetchPixelMosaic_0(int sx_4, int sy_4)
 }
 
 
-
-
+#line 482
 vec4 FilterNearest_0(vec2 src_0)
 {
 
 
-    vec4 _S30 = FetchPixelMosaic_0(int(floor(src_0.x + 0.5)), int(floor(src_0.y + 0.5)));
+    vec4 _S30 = FetchPixelMosaic_0(int(floor(src_0.x)), int(floor(src_0.y)));
 
-#line 480
+#line 486
     return _S30;
 }
 
@@ -1268,11 +1267,11 @@ vec4 FilterBilinear_0(vec2 src_1)
     vec4 c00_0 = FetchPixelMosaic_0(x0_0, y0_0);
     int _S31 = x0_0 + 1;
 
-#line 492
+#line 498
     vec4 c10_0 = FetchPixelMosaic_0(_S31, y0_0);
     int _S32 = y0_0 + 1;
 
-#line 493
+#line 499
     vec4 c01_0 = FetchPixelMosaic_0(x0_0, _S32);
     vec4 c11_0 = FetchPixelMosaic_0(_S31, _S32);
     vec4 _S33 = vec4(tx_1);
@@ -1292,7 +1291,7 @@ float MitchellWeight_0(float x_0, float B_0, float C_0)
     {
         float _S34 = 6.0 * C_0;
 
-#line 510
+#line 516
         return ((12.0 - 9.0 * B_0 - _S34) * ax3_0 + (-18.0 + 12.0 * B_0 + _S34) * ax2_0 + (6.0 - 2.0 * B_0)) * 0.1666666716337204;
     }
 
@@ -1317,13 +1316,13 @@ vec4 FilterBicubic_0(vec2 src_2, float B_1, float C_1)
     float _S36 = fy_1 - float(iy_0);
     const vec4 _S37 = vec4(0.0, 0.0, 0.0, 0.0);
 
-#line 532
+#line 538
     int j_1 = -1;
 
-#line 532
+#line 538
     vec4 sum_2 = _S37;
 
-#line 532
+#line 538
     float ws_0 = 0.0;
 
 
@@ -1332,76 +1331,76 @@ vec4 FilterBicubic_0(vec2 src_2, float B_1, float C_1)
     for(;;)
     {
 
-#line 536
+#line 542
         if(j_1 <= 2)
         {
         }
         else
         {
 
-#line 536
+#line 542
             break;
         }
         float _S38 = MitchellWeight_0(float(j_1) - _S36, B_1, C_1);
 
-#line 543
+#line 549
         int _S39 = iy_0 + j_1;
 
-#line 543
+#line 549
         int i_1 = -1;
 
-#line 539
+#line 545
         [[dont_unroll]]
         for(;;)
         {
 
-#line 539
+#line 545
             if(i_1 <= 2)
             {
             }
             else
             {
 
-#line 539
+#line 545
                 break;
             }
 
             float w_0 = MitchellWeight_0(float(i_1) - _S35, B_1, C_1) * _S38;
             vec4 _S40 = FetchPixelMosaic_0(ix_0 + i_1, _S39);
 
-#line 543
+#line 549
             vec4 sum_3 = sum_2 + w_0 * _S40;
             float ws_1 = ws_0 + w_0;
 
-#line 539
+#line 545
             i_1 = i_1 + 1;
 
-#line 539
+#line 545
             sum_2 = sum_3;
 
-#line 539
+#line 545
             ws_0 = ws_1;
 
-#line 539
+#line 545
         }
 
-#line 536
+#line 542
         j_1 = j_1 + 1;
 
-#line 536
+#line 542
     }
 
-#line 547
+#line 553
     if(ws_0 != 0.0)
     {
 
-#line 547
+#line 553
         sum_2 = sum_2 / ws_0;
 
-#line 547
+#line 553
     }
 
-#line 547
+#line 553
     return sum_2;
 }
 
@@ -1410,11 +1409,11 @@ float Sinc_0(float x_1)
     if((abs(x_1)) < 9.99999997475242708e-07)
     {
 
-#line 552
+#line 558
         return 1.0;
     }
 
-#line 553
+#line 559
     float px_0 = 3.14159274101257324 * x_1;
     return sin(px_0) / px_0;
 }
@@ -1425,11 +1424,11 @@ float LanczosWeight_0(float x_2, float a_0)
     if((abs(x_2)) >= a_0)
     {
 
-#line 560
+#line 566
         return 0.0;
     }
 
-#line 561
+#line 567
     return Sinc_0(x_2) * Sinc_0(x_2 / a_0);
 }
 
@@ -1443,93 +1442,93 @@ vec4 FilterLanczos_0(vec2 src_3, int a_1)
     float _S42 = fy_2 - float(iy_1);
     const vec4 _S43 = vec4(0.0, 0.0, 0.0, 0.0);
 
-#line 579
+#line 585
     float _S44 = float(a_1);
 
-#line 579
+#line 585
     int j_2 = -2;
 
-#line 579
+#line 585
     vec4 sum_4 = _S43;
 
-#line 579
+#line 585
     float ws_2 = 0.0;
 
-#line 577
+#line 583
     [[dont_unroll]]
     for(;;)
     {
 
-#line 577
+#line 583
         if(j_2 <= 3)
         {
         }
         else
         {
 
-#line 577
+#line 583
             break;
         }
         float _S45 = LanczosWeight_0(float(j_2) - _S42, _S44);
 
-#line 584
+#line 590
         int _S46 = iy_1 + j_2;
 
-#line 584
+#line 590
         int i_2 = -2;
 
-#line 580
+#line 586
         [[dont_unroll]]
         for(;;)
         {
 
-#line 580
+#line 586
             if(i_2 <= 3)
             {
             }
             else
             {
 
-#line 580
+#line 586
                 break;
             }
 
             float w_1 = LanczosWeight_0(float(i_2) - _S41, _S44) * _S45;
             vec4 _S47 = FetchPixelMosaic_0(ix_1 + i_2, _S46);
 
-#line 584
+#line 590
             vec4 sum_5 = sum_4 + w_1 * _S47;
             float ws_3 = ws_2 + w_1;
 
-#line 580
+#line 586
             i_2 = i_2 + 1;
 
-#line 580
+#line 586
             sum_4 = sum_5;
 
-#line 580
+#line 586
             ws_2 = ws_3;
 
-#line 580
+#line 586
         }
 
-#line 577
+#line 583
         j_2 = j_2 + 1;
 
-#line 577
+#line 583
     }
 
-#line 588
+#line 594
     if(ws_2 != 0.0)
     {
 
-#line 588
+#line 594
         sum_4 = sum_4 / ws_2;
 
-#line 588
+#line 594
     }
 
-#line 588
+#line 594
     return sum_4;
 }
 
@@ -1546,134 +1545,134 @@ vec4 SampleSource_0(vec2 src_4, float src_step_0)
 
         vec4 _S48 = FetchPixelMosaic_0(int(floor(src_4.x)), int(floor(src_4.y)));
 
-#line 602
+#line 608
         return _S48;
     }
 
-#line 602
+#line 608
     vec4 r_2;
 
-#line 607
+#line 613
     switch(ImageInspectorParams_0.formatPack_0.w)
     {
     case 0U:
         {
 
-#line 609
+#line 615
             vec4 _S49 = FilterNearest_0(src_4);
 
-#line 609
+#line 615
             r_2 = _S49;
 
-#line 609
+#line 615
             break;
         }
     case 1U:
         {
 
-#line 610
+#line 616
             vec4 _S50 = FilterBilinear_0(src_4);
 
-#line 610
+#line 616
             r_2 = _S50;
 
-#line 610
+#line 616
             break;
         }
     case 2U:
         {
 
-#line 611
+#line 617
             vec4 _S51 = FilterBicubic_0(src_4, 0.3333333432674408, 0.3333333432674408);
 
-#line 611
+#line 617
             r_2 = _S51;
 
-#line 611
+#line 617
             break;
         }
     case 3U:
         {
 
-#line 612
+#line 618
             vec4 _S52 = FilterBicubic_0(src_4, 0.0, 0.5);
 
-#line 612
+#line 618
             r_2 = _S52;
 
-#line 612
+#line 618
             break;
         }
     case 4U:
         {
 
-#line 613
+#line 619
             vec4 _S53 = FilterLanczos_0(src_4, 2);
 
-#line 613
+#line 619
             r_2 = _S53;
 
-#line 613
+#line 619
             break;
         }
     case 5U:
         {
 
-#line 614
+#line 620
             vec4 _S54 = FilterLanczos_0(src_4, 3);
 
-#line 614
+#line 620
             r_2 = _S54;
 
-#line 614
+#line 620
             break;
         }
     default:
         {
 
-#line 615
+#line 621
             vec4 _S55 = FilterBilinear_0(src_4);
 
-#line 615
+#line 621
             r_2 = _S55;
 
-#line 615
+#line 621
             break;
         }
     }
 
-#line 617
+#line 623
     return r_2;
 }
 
 
-#line 626
+#line 632
 float SrgbToLinear_0(float v_7)
 {
     if(v_7 <= 0.04044999927282333)
     {
 
-#line 628
+#line 634
         return v_7 / 12.92000007629394531;
     }
 
-#line 629
+#line 635
     return pow((v_7 + 0.05499999970197678) / 1.0549999475479126, 2.40000009536743164);
 }
 
 
-#line 638
+#line 644
 float Rec709Inverse_0(float v_8)
 {
 
     if(v_8 < 0.08100000023841858)
     {
 
-#line 641
+#line 647
         return v_8 / 4.5;
     }
 
-#line 642
+#line 648
     return pow((v_8 + 0.0989999994635582) / 1.09899997711181641, 2.22222232818603516);
 }
 
@@ -1696,11 +1695,11 @@ float SLog2Inverse_0(float v_11)
     if(v_11 >= 0.03000122308731079)
     {
 
-#line 662
+#line 668
         return (pow(10.0, (v_11 - 0.61659598350524902 - 0.02999999932944775) / 0.43269899487495422) - 0.03758399933576584) * 219.0 / 155.0;
     }
 
-#line 663
+#line 669
     return (v_11 - 0.03000122308731079) / 3.53881287574768066 * 219.0 / 155.0;
 }
 
@@ -1710,26 +1709,26 @@ float SLog3Inverse_0(float v_12)
     if(v_12 >= 0.16736099123954773)
     {
 
-#line 670
+#line 676
         return pow(10.0, (v_12 * 1023.0 - 420.0) / 261.5) * 0.1900000125169754 - 0.00999999977648258;
     }
 
-#line 671
+#line 677
     return (v_12 * 1023.0 - 95.0) * 0.01125000044703484 / 76.210296630859375;
 }
 
 float LogC3Inverse_0(float v_13)
 {
 
-#line 684
+#line 690
     if(v_13 > 0.89612150192260742)
     {
 
-#line 685
+#line 691
         return (pow(10.0, (v_13 - 0.38553699851036072) / 0.24718999862670898) - 0.0522719994187355) / 5.55555582046508789;
     }
 
-#line 686
+#line 692
     return (v_13 - 0.09280899912118912) / 5.36765480041503906;
 }
 
@@ -1744,7 +1743,7 @@ float LogC4Inverse_0(float v_14)
     if(v_14 < 0.0)
     {
 
-#line 697
+#line 703
         return v_14 * s_0 + t_0;
     }
     return (pow(2.0, 14.0 * ((v_14 - 0.09286412596702576) / 0.90713590383529663) + 6.0) - 64.0) / a_2;
@@ -1756,11 +1755,11 @@ float CanonLogInverse_0(float v_15)
     if(v_15 < 0.12512247264385223)
     {
 
-#line 706
+#line 712
         return - (pow(10.0, (0.12512247264385223 - v_15) / 0.45310178399085999) - 1.0) / 10.15960025787353516;
     }
 
-#line 707
+#line 713
     return (pow(10.0, (v_15 - 0.12512247264385223) / 0.45310178399085999) - 1.0) / 10.15960025787353516;
 }
 
@@ -1770,11 +1769,11 @@ float CanonLog2Inverse_0(float v_16)
     if(v_16 < 0.09286412596702576)
     {
 
-#line 714
+#line 720
         return - (pow(10.0, (0.09286412596702576 - v_16) / 0.24136076867580414) - 1.0) / 87.09937286376953125;
     }
 
-#line 715
+#line 721
     return (pow(10.0, (v_16 - 0.09286412596702576) / 0.24136076867580414) - 1.0) / 87.09937286376953125;
 }
 
@@ -1784,34 +1783,34 @@ float CanonLog3Inverse_0(float v_17)
     if(v_17 < 0.09746547043323517)
     {
 
-#line 722
+#line 728
         return - (pow(10.0, (0.12783901393413544 - v_17) / 0.36726844310760498) - 1.0) / 14.98324966430664062;
     }
 
-#line 723
+#line 729
     if(v_17 <= 0.15277890861034393)
     {
 
-#line 724
+#line 730
         return (v_17 - 0.12512218952178955) / 1.9754798412322998;
     }
 
-#line 725
+#line 731
     return (pow(10.0, (v_17 - 0.12240537256002426) / 0.36726844310760498) - 1.0) / 14.98324966430664062;
 }
 
 float VLogInverse_0(float v_18)
 {
 
-#line 735
+#line 741
     if(v_18 < 0.1809999942779541)
     {
 
-#line 736
+#line 742
         return (v_18 - 0.125) / 5.59999990463256836;
     }
 
-#line 737
+#line 743
     return pow(10.0, (v_18 - 0.59820598363876343) / 0.24151399731636047) - 0.00872999988496304;
 }
 
@@ -1820,23 +1819,23 @@ float Log3G10Inverse_0(float v_19)
 
     float x_3 = v_19 / 0.22249700129032135;
 
-#line 743
+#line 749
     float sign_x_0;
     if(x_3 < 0.0)
     {
 
-#line 744
+#line 750
         sign_x_0 = -1.0;
 
-#line 744
+#line 750
     }
     else
     {
 
-#line 744
+#line 750
         sign_x_0 = 1.0;
 
-#line 744
+#line 750
     }
     return sign_x_0 * (pow(10.0, abs(x_3)) - 1.0) * 0.00999999977648258;
 }
@@ -1844,45 +1843,45 @@ float Log3G10Inverse_0(float v_19)
 float BMFilmGen5Inverse_0(float v_20)
 {
 
-#line 756
+#line 762
     if(v_20 < 0.09246575087308884)
     {
 
-#line 757
+#line 763
         return (v_20 - 0.09286399930715561) / 8.28360557556152344;
     }
 
-#line 758
+#line 764
     return pow(2.0, (v_20 - 0.5300133228302002) / 0.08692876249551773) - 0.00549407256767154;
 }
 
 float AppleLogInverse_0(float v_21)
 {
 
-#line 770
+#line 776
     if(v_21 < 0.00964455958455801)
     {
 
-#line 771
+#line 777
         return v_21 / 47.28711318969726562 + -0.05641087889671326;
     }
 
-#line 772
+#line 778
     return pow(2.0, (v_21 - 0.69336944818496704) / 0.08550479263067245) - 0.00999999977648258;
 }
 
 float FLogInverse_0(float v_22)
 {
 
-#line 785
+#line 791
     if(v_22 < 0.10053777694702148)
     {
 
-#line 786
+#line 792
         return (v_22 - 0.09286399930715561) / 8.73563098907470703;
     }
 
-#line 787
+#line 793
     return (pow(10.0, (v_22 - 0.79045301675796509) / 0.34467598795890808) - 0.00946800038218498) / 0.55555599927902222;
 }
 
@@ -1892,18 +1891,18 @@ float DLogInverse_0(float v_23)
     if(v_23 <= 0.14000000059604645)
     {
 
-#line 794
+#line 800
         return (v_23 - 0.09290000051259995) / 6.02500009536743164;
     }
 
-#line 795
+#line 801
     return (pow(10.0, (v_23 - 0.80749499797821045) / 0.25562068819999695) - 0.01080000028014183) / 0.98919999599456787;
 }
 
 float PQInverse_0(float v_24)
 {
 
-#line 806
+#line 812
     float vp_0 = pow(max(v_24, 0.0), 0.01268331333994865);
 
 
@@ -1913,22 +1912,22 @@ float PQInverse_0(float v_24)
 float HLGInverse_0(float v_25)
 {
 
-#line 818
+#line 824
     if(v_25 <= 0.5)
     {
 
-#line 819
+#line 825
         return v_25 * v_25 / 3.0;
     }
 
-#line 820
+#line 826
     return (exp((v_25 - 0.55991071462631226) / 0.1788327693939209) + 0.28466892242431641) / 12.0;
 }
 
 vec3 ApplyInputTransfer_0(vec3 c_1)
 {
 
-#line 823
+#line 829
     vec3 r_3;
 
 
@@ -1938,7 +1937,7 @@ vec3 ApplyInputTransfer_0(vec3 c_1)
     case 0U:
         {
 
-#line 827
+#line 833
             r_3 = c_1;
 
             break;
@@ -1946,161 +1945,161 @@ vec3 ApplyInputTransfer_0(vec3 c_1)
     case 1U:
         {
 
-#line 830
+#line 836
             float g_2 = ImageInspectorParams_0.exposureParams_0.w;
 
-#line 830
+#line 836
             r_3 = vec3(pow(max(c_1.x, 0.0), g_2), pow(max(c_1.y, 0.0), g_2), pow(max(c_1.z, 0.0), g_2));
             break;
         }
     case 2U:
         {
 
-#line 831
+#line 837
             r_3 = vec3(SrgbToLinear_0(c_1.x), SrgbToLinear_0(c_1.y), SrgbToLinear_0(c_1.z));
             break;
         }
     case 3U:
         {
 
-#line 832
+#line 838
             r_3 = vec3(Rec709Inverse_0(c_1.x), Rec709Inverse_0(c_1.y), Rec709Inverse_0(c_1.z));
             break;
         }
     case 4U:
         {
 
-#line 833
+#line 839
             r_3 = vec3(Rec1886Inverse_0(c_1.x), Rec1886Inverse_0(c_1.y), Rec1886Inverse_0(c_1.z));
             break;
         }
     case 5U:
         {
 
-#line 834
+#line 840
             r_3 = vec3(CineonInverse_0(c_1.x), CineonInverse_0(c_1.y), CineonInverse_0(c_1.z));
             break;
         }
     case 6U:
         {
 
-#line 835
+#line 841
             r_3 = vec3(SLog2Inverse_0(c_1.x), SLog2Inverse_0(c_1.y), SLog2Inverse_0(c_1.z));
             break;
         }
     case 7U:
         {
 
-#line 836
+#line 842
             r_3 = vec3(SLog3Inverse_0(c_1.x), SLog3Inverse_0(c_1.y), SLog3Inverse_0(c_1.z));
             break;
         }
     case 8U:
         {
 
-#line 837
+#line 843
             r_3 = vec3(LogC3Inverse_0(c_1.x), LogC3Inverse_0(c_1.y), LogC3Inverse_0(c_1.z));
             break;
         }
     case 9U:
         {
 
-#line 838
+#line 844
             r_3 = vec3(LogC4Inverse_0(c_1.x), LogC4Inverse_0(c_1.y), LogC4Inverse_0(c_1.z));
             break;
         }
     case 10U:
         {
 
-#line 839
+#line 845
             r_3 = vec3(CanonLogInverse_0(c_1.x), CanonLogInverse_0(c_1.y), CanonLogInverse_0(c_1.z));
             break;
         }
     case 11U:
         {
 
-#line 840
+#line 846
             r_3 = vec3(CanonLog2Inverse_0(c_1.x), CanonLog2Inverse_0(c_1.y), CanonLog2Inverse_0(c_1.z));
             break;
         }
     case 12U:
         {
 
-#line 841
+#line 847
             r_3 = vec3(CanonLog3Inverse_0(c_1.x), CanonLog3Inverse_0(c_1.y), CanonLog3Inverse_0(c_1.z));
             break;
         }
     case 13U:
         {
 
-#line 842
+#line 848
             r_3 = vec3(VLogInverse_0(c_1.x), VLogInverse_0(c_1.y), VLogInverse_0(c_1.z));
             break;
         }
     case 14U:
         {
 
-#line 843
+#line 849
             r_3 = vec3(Log3G10Inverse_0(c_1.x), Log3G10Inverse_0(c_1.y), Log3G10Inverse_0(c_1.z));
             break;
         }
     case 15U:
         {
 
-#line 844
+#line 850
             r_3 = vec3(BMFilmGen5Inverse_0(c_1.x), BMFilmGen5Inverse_0(c_1.y), BMFilmGen5Inverse_0(c_1.z));
             break;
         }
     case 16U:
         {
 
-#line 845
+#line 851
             r_3 = vec3(AppleLogInverse_0(c_1.x), AppleLogInverse_0(c_1.y), AppleLogInverse_0(c_1.z));
             break;
         }
     case 17U:
         {
 
-#line 846
+#line 852
             r_3 = vec3(FLogInverse_0(c_1.x), FLogInverse_0(c_1.y), FLogInverse_0(c_1.z));
             break;
         }
     case 18U:
         {
 
-#line 847
+#line 853
             r_3 = vec3(DLogInverse_0(c_1.x), DLogInverse_0(c_1.y), DLogInverse_0(c_1.z));
             break;
         }
     case 19U:
         {
 
-#line 848
+#line 854
             r_3 = vec3(PQInverse_0(c_1.x), PQInverse_0(c_1.y), PQInverse_0(c_1.z));
             break;
         }
     case 20U:
         {
 
-#line 849
+#line 855
             r_3 = vec3(HLGInverse_0(c_1.x), HLGInverse_0(c_1.y), HLGInverse_0(c_1.z));
             break;
         }
     default:
         {
 
-#line 850
+#line 856
             r_3 = c_1;
             break;
         }
     }
 
-#line 853
+#line 859
     return r_3;
 }
 
 
-#line 1106
+#line 1112
 vec3 MulMatrix_0(vec4 r0_0, vec4 r1_0, vec4 r2_0, vec3 v_26)
 {
     return vec3(dot(r0_0.xyz, v_26), dot(r1_0.xyz, v_26), dot(r2_0.xyz, v_26));
@@ -2112,7 +2111,7 @@ vec3 MulMatrix_0(vec4 r0_0, vec4 r1_0, vec4 r2_0, vec3 v_26)
 vec3 ApplyTempTint_0(vec3 c_2, float temp_0, float tint_1)
 {
 
-#line 1114
+#line 1120
     vec3 _S56 = c_2;
 
 
@@ -2126,7 +2125,7 @@ vec3 ApplyTempTint_0(vec3 c_2, float temp_0, float tint_1)
 }
 
 
-#line 900
+#line 906
 vec3 TonemapReinhard_0(vec3 c_3)
 {
     return c_3 / (1.0 + c_3);
@@ -2148,11 +2147,11 @@ vec3 saturate_0(vec3 x_4)
 }
 
 
-#line 912 0
+#line 918 0
 vec3 TonemapACES_0(vec3 c_5)
 {
 
-#line 919
+#line 925
     return saturate_0(c_5 * (2.50999999046325684 * c_5 + 0.02999999932944775) / (c_5 * (2.43000006675720215 * c_5 + 0.5899999737739563) + 0.14000000059604645));
 }
 
@@ -2171,37 +2170,37 @@ vec3 TonemapAGX_0(vec3 c_6)
 }
 
 
-#line 943
+#line 949
 vec3 TonemapPBRNeutral_0(vec3 c_7)
 {
 
 
     float x_5 = min(c_7.x, min(c_7.y, c_7.z));
 
-#line 947
+#line 953
     float offset_0;
     if(x_5 < 0.07999999821186066)
     {
 
-#line 948
+#line 954
         offset_0 = x_5 - 6.25 * x_5 * x_5;
 
-#line 948
+#line 954
     }
     else
     {
 
-#line 948
+#line 954
         offset_0 = 0.03999999910593033;
 
-#line 948
+#line 954
     }
     vec3 _S57 = c_7 - offset_0;
     float peak_0 = max(_S57.x, max(_S57.y, _S57.z));
     if(peak_0 < 0.75999999046325684)
     {
 
-#line 951
+#line 957
         return _S57;
     }
     float newPeak_0 = 1.0 - 0.0576000027358532 / (peak_0 + 0.24000000953674316 - 0.75999999046325684);
@@ -2213,7 +2212,7 @@ vec3 TonemapPBRNeutral_0(vec3 c_7)
 vec3 TonemapHable_0(vec3 c_8)
 {
 
-#line 968
+#line 974
     vec3 _S58 = 0.15000000596046448 * c_8;
 
     return ((c_8 * (_S58 + 0.05000000074505806) + 0.00400000018998981) / (c_8 * (_S58 + 0.5) + 0.06000000238418579) - 0.06666666269302368) / 0.72512936592102051;
@@ -2222,7 +2221,7 @@ vec3 TonemapHable_0(vec3 c_8)
 vec3 ApplyTonemap_0(vec3 c_9)
 {
 
-#line 973
+#line 979
     vec3 r_4;
 
 
@@ -2232,7 +2231,7 @@ vec3 ApplyTonemap_0(vec3 c_9)
     case 0U:
         {
 
-#line 977
+#line 983
             r_4 = c_9;
 
             break;
@@ -2240,79 +2239,79 @@ vec3 ApplyTonemap_0(vec3 c_9)
     case 1U:
         {
 
-#line 979
+#line 985
             r_4 = TonemapReinhard_0(c_9);
             break;
         }
     case 2U:
         {
 
-#line 980
+#line 986
             r_4 = TonemapReinhardExt_0(c_9);
             break;
         }
     case 3U:
         {
 
-#line 981
+#line 987
             r_4 = TonemapACES_0(c_9);
             break;
         }
     case 4U:
         {
 
-#line 982
+#line 988
             r_4 = TonemapAGX_0(c_9);
             break;
         }
     case 5U:
         {
 
-#line 983
+#line 989
             r_4 = TonemapPBRNeutral_0(c_9);
             break;
         }
     case 6U:
         {
 
-#line 984
+#line 990
             r_4 = TonemapHable_0(c_9);
             break;
         }
     default:
         {
 
-#line 985
+#line 991
             r_4 = c_9;
             break;
         }
     }
 
-#line 988
+#line 994
     return r_4;
 }
 
 
-#line 632
+#line 638
 float LinearToSrgb_0(float v_28)
 {
     if(v_28 <= 0.00313080009073019)
     {
 
-#line 634
+#line 640
         return v_28 * 12.92000007629394531;
     }
 
-#line 635
+#line 641
     return 1.0549999475479126 * pow(max(v_28, 0.0), 0.4166666567325592) - 0.05499999970197678;
 }
 
 
-#line 859
+#line 865
 float PQForward_0(float v_29)
 {
 
-#line 866
+#line 872
     float lp_0 = pow(max(v_29, 0.0), 0.1593017578125);
     return pow((0.8359375 + 18.8515625 * lp_0) / (1.0 + 18.6875 * lp_0), 78.84375);
 }
@@ -2325,18 +2324,18 @@ float HLGForward_0(float v_30)
     if(v_30 <= 0.0833333358168602)
     {
 
-#line 876
+#line 882
         return sqrt(3.0 * v_30);
     }
 
-#line 877
+#line 883
     return 0.1788327693939209 * log(12.0 * v_30 - 0.28466892242431641) + 0.55991071462631226;
 }
 
 vec3 ApplyOutputTransfer_0(vec3 c_10)
 {
 
-#line 880
+#line 886
     vec3 r_5;
 
 
@@ -2346,7 +2345,7 @@ vec3 ApplyOutputTransfer_0(vec3 c_10)
     case 0U:
         {
 
-#line 884
+#line 890
             r_5 = c_10;
 
             break;
@@ -2354,44 +2353,44 @@ vec3 ApplyOutputTransfer_0(vec3 c_10)
     case 1U:
         {
 
-#line 887
+#line 893
             float g_3 = 1.0 / max(ImageInspectorParams_0.exposureParams_0.w, 0.00100000004749745);
 
-#line 887
+#line 893
             r_5 = vec3(pow(max(c_10.x, 0.0), g_3), pow(max(c_10.y, 0.0), g_3), pow(max(c_10.z, 0.0), g_3));
             break;
         }
     case 2U:
         {
 
-#line 888
+#line 894
             r_5 = vec3(LinearToSrgb_0(c_10.x), LinearToSrgb_0(c_10.y), LinearToSrgb_0(c_10.z));
             break;
         }
     case 3U:
         {
 
-#line 889
+#line 895
             r_5 = vec3(PQForward_0(c_10.x), PQForward_0(c_10.y), PQForward_0(c_10.z));
             break;
         }
     case 4U:
         {
 
-#line 890
+#line 896
             r_5 = vec3(HLGForward_0(c_10.x), HLGForward_0(c_10.y), HLGForward_0(c_10.z));
             break;
         }
     default:
         {
 
-#line 891
+#line 897
             r_5 = c_10;
             break;
         }
     }
 
-#line 894
+#line 900
     return r_5;
 }
 
@@ -2405,7 +2404,7 @@ float saturate_1(float x_6)
 }
 
 
-#line 996 0
+#line 1002 0
 vec3 PaletteViridis_0(float t_1)
 {
     float _S59 = saturate_1(t_1);
@@ -2413,7 +2412,7 @@ vec3 PaletteViridis_0(float t_1)
 }
 
 
-#line 1007
+#line 1013
 vec3 PaletteMagma_0(float t_2)
 {
     float _S60 = saturate_1(t_2);
@@ -2421,7 +2420,7 @@ vec3 PaletteMagma_0(float t_2)
 }
 
 
-#line 1018
+#line 1024
 vec3 PaletteInferno_0(float t_3)
 {
     float _S61 = saturate_1(t_3);
@@ -2429,7 +2428,7 @@ vec3 PaletteInferno_0(float t_3)
 }
 
 
-#line 1029
+#line 1035
 vec3 PalettePlasma_0(float t_4)
 {
     float _S62 = saturate_1(t_4);
@@ -2437,7 +2436,7 @@ vec3 PalettePlasma_0(float t_4)
 }
 
 
-#line 1040
+#line 1046
 vec3 PaletteCividis_0(float t_5)
 {
     float _S63 = saturate_1(t_5);
@@ -2452,7 +2451,7 @@ vec3 PaletteTurbo_0(float t_6)
 
     float _S64 = saturate_1(t_6);
 
-#line 1059
+#line 1065
     return vec3(0.13570000231266022, 0.09139999747276306, 0.10670000314712524) + _S64 * (vec3(4.59740018844604492, 2.18560004234313965, 12.59249973297119141) + _S64 * (vec3(-42.65999984741210938, 4.84100008010864258, -60.582000732421875) + _S64 * (vec3(132.1300048828125, -14.18500041961669922, 110.51000213623046875) + _S64 * (vec3(-152.94000244140625, 4.27740001678466797, -89.9010009765625) + _S64 * vec3(59.28599929809570312, 2.79929995536804199, 27.34300041198730469)))));
 }
 
@@ -2462,67 +2461,67 @@ vec3 PaletteCinema_0(float v_31)
     if(v_31 < 0.0)
     {
 
-#line 1065
+#line 1071
         return vec3(0.5, 0.0, 0.5);
     }
 
-#line 1066
+#line 1072
     if(v_31 < 0.03999999910593033)
     {
 
-#line 1066
+#line 1072
         return vec3(0.0, 0.0, 1.0);
     }
 
-#line 1067
+#line 1073
     if(v_31 < 0.10000000149011612)
     {
 
-#line 1067
+#line 1073
         return vec3(0.0, 0.5, 1.0);
     }
 
-#line 1068
+#line 1074
     if(v_31 < 0.18000000715255737)
     {
 
-#line 1068
+#line 1074
         return vec3(0.0, 1.0, 1.0);
     }
 
-#line 1069
+#line 1075
     if(v_31 < 0.41999998688697815)
     {
 
-#line 1069
+#line 1075
         return vec3(0.5, 1.0, 0.0);
     }
 
-#line 1070
+#line 1076
     if(v_31 < 0.77999997138977051)
     {
 
-#line 1070
+#line 1076
         return vec3(1.0, 1.0, 0.0);
     }
 
-#line 1071
+#line 1077
     if(v_31 < 0.94999998807907104)
     {
 
-#line 1071
+#line 1077
         return vec3(1.0, 0.5, 0.0);
     }
 
-#line 1072
+#line 1078
     if(v_31 <= 1.0)
     {
 
-#line 1072
+#line 1078
         return vec3(1.0, 0.0, 0.0);
     }
 
-#line 1073
+#line 1079
     return vec3(1.0, 1.0, 1.0);
 }
 
@@ -2531,16 +2530,16 @@ vec3 ApplyFalseColor_0(vec3 c_11)
 
     float _S65 = c_11.x;
 
-#line 1079
+#line 1085
     float _S66 = c_11.y;
 
-#line 1079
+#line 1085
     float _S67 = c_11.z;
 
-#line 1079
+#line 1085
     float v_32 = (_S65 + _S66 + _S67) * 0.3333333432674408;
 
-#line 1079
+#line 1085
     vec3 r_6;
 
     switch(ImageInspectorParams_0.pipelinePack_0.w)
@@ -2548,7 +2547,7 @@ vec3 ApplyFalseColor_0(vec3 c_11)
     case 0U:
         {
 
-#line 1081
+#line 1087
             r_6 = c_11;
 
             break;
@@ -2556,241 +2555,241 @@ vec3 ApplyFalseColor_0(vec3 c_11)
     case 1U:
         {
 
-#line 1083
+#line 1089
             r_6 = PaletteViridis_0(v_32);
             break;
         }
     case 2U:
         {
 
-#line 1084
+#line 1090
             r_6 = PaletteMagma_0(v_32);
             break;
         }
     case 3U:
         {
 
-#line 1085
+#line 1091
             r_6 = PaletteInferno_0(v_32);
             break;
         }
     case 4U:
         {
 
-#line 1086
+#line 1092
             r_6 = PalettePlasma_0(v_32);
             break;
         }
     case 5U:
         {
 
-#line 1087
+#line 1093
             r_6 = PaletteCividis_0(v_32);
             break;
         }
     case 6U:
         {
 
-#line 1088
+#line 1094
             r_6 = PaletteTurbo_0(v_32);
             break;
         }
     case 7U:
         {
 
-#line 1089
+#line 1095
             r_6 = PaletteCinema_0(v_32);
             break;
         }
     case 8U:
         {
 
-#line 1090
+#line 1096
             bool oog_0;
 
 
             if(_S65 < 0.0)
             {
 
-#line 1093
+#line 1099
                 oog_0 = true;
 
-#line 1093
+#line 1099
             }
             else
             {
 
-#line 1093
+#line 1099
                 oog_0 = _S66 < 0.0;
 
-#line 1093
+#line 1099
             }
 
-#line 1093
+#line 1099
             if(oog_0)
             {
 
-#line 1093
+#line 1099
                 oog_0 = true;
 
-#line 1093
+#line 1099
             }
             else
             {
 
-#line 1093
+#line 1099
                 oog_0 = _S67 < 0.0;
 
-#line 1093
+#line 1099
             }
 
-#line 1093
+#line 1099
             if(oog_0)
             {
 
-#line 1093
+#line 1099
                 oog_0 = true;
 
-#line 1093
+#line 1099
             }
             else
             {
 
-#line 1093
+#line 1099
                 oog_0 = _S65 > 1.0;
 
-#line 1093
+#line 1099
             }
             if(oog_0)
             {
 
-#line 1094
+#line 1100
                 oog_0 = true;
 
-#line 1094
+#line 1100
             }
             else
             {
 
-#line 1094
+#line 1100
                 oog_0 = _S66 > 1.0;
 
-#line 1094
+#line 1100
             }
 
-#line 1094
+#line 1100
             if(oog_0)
             {
 
-#line 1094
+#line 1100
                 oog_0 = true;
 
-#line 1094
+#line 1100
             }
             else
             {
 
-#line 1094
+#line 1100
                 oog_0 = _S67 > 1.0;
 
-#line 1094
+#line 1100
             }
             if(oog_0)
             {
 
-#line 1095
+#line 1101
                 r_6 = vec3(1.0, 1.0, 0.0);
 
-#line 1095
+#line 1101
             }
             else
             {
 
-#line 1095
+#line 1101
                 r_6 = c_11;
 
-#line 1095
+#line 1101
             }
             break;
         }
     default:
         {
 
-#line 1096
+#line 1102
             r_6 = c_11;
 
             break;
         }
     }
 
-#line 1100
+#line 1106
     return r_6;
 }
 
 
-#line 1100
+#line 1106
 layout(location = 0)
 out vec4 entryPointParam_main_ps_0;
 
 
-#line 1100
+#line 1106
 layout(location = 0)
 in vec4 input_col_0;
 
 
-#line 1100
+#line 1106
 layout(location = 1)
 in vec2 input_uv_0;
 
 
-#line 1141
+#line 1147
 void main()
 {
 
-#line 1148
+#line 1154
     float totalScale_0 = ImageInspectorParams_0.panZoom_0.z * ImageInspectorParams_0.panZoom_0.w;
 
-#line 1155
+#line 1161
     vec4 sampled_0 = SampleSource_0(ImageInspectorParams_0.imgSize_0.xy * 0.5 + ImageInspectorParams_0.panZoom_0.xy + (input_uv_0 - 0.5) * ImageInspectorParams_0.viewportPx_0.xy / totalScale_0, 1.0 / max(totalScale_0, 9.99999997475242708e-07));
     vec3 rgb_0 = sampled_0.xyz;
     float a_3 = sampled_0.w;
 
-#line 1157
+#line 1163
     bool _S68;
 
 
     if((any(bvec3((isnan(rgb_0))))))
     {
 
-#line 1160
+#line 1166
         _S68 = true;
 
-#line 1160
+#line 1166
     }
     else
     {
 
-#line 1160
+#line 1166
         _S68 = (any(bvec3((isinf(rgb_0)))));
 
-#line 1160
+#line 1166
     }
 
-#line 1160
+#line 1166
     if(_S68)
     {
 
-#line 1160
+#line 1166
         entryPointParam_main_ps_0 = vec4(ImageInspectorParams_0.nanColor_0.xyz, 1.0);
 
-#line 1160
+#line 1166
         return;
     }
 
-#line 1160
+#line 1166
     entryPointParam_main_ps_0 = vec4(ApplyFalseColor_0(ApplyOutputTransfer_0(MulMatrix_0(ImageInspectorParams_0.outGamut_r0_0, ImageInspectorParams_0.outGamut_r1_0, ImageInspectorParams_0.outGamut_r2_0, ApplyTonemap_0(ApplyTempTint_0((MulMatrix_0(ImageInspectorParams_0.inGamut_r0_0, ImageInspectorParams_0.inGamut_r1_0, ImageInspectorParams_0.inGamut_r2_0, ApplyInputTransfer_0(rgb_0)) - ImageInspectorParams_0.exposureParams_0.y) / max(ImageInspectorParams_0.exposureParams_0.z - ImageInspectorParams_0.exposureParams_0.y, 9.99999997475242708e-07) * (exp2((ImageInspectorParams_0.exposureParams_0.x))), ImageInspectorParams_0.tempTint_0.x, ImageInspectorParams_0.tempTint_0.y)))) * ImageInspectorParams_0.channelMask_0.xyz), a_3 * ImageInspectorParams_0.channelMask_0.w) * input_col_0;
 
-#line 1160
+#line 1166
     return;
 }
 
