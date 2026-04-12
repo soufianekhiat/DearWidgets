@@ -19248,6 +19248,137 @@ namespace ImWidgets
             }
             const ImU32 fringe_col = effective_col & ~IM_COL32_A_MASK;  // alpha 0
 
+            // ==========================================================
+            // Cap fringe. Build a cap boundary sequence for each cap
+            // (L_last → cap interior → R_last for end, R_0 → cap interior
+            // → L_0 for start), compute outward direction per vertex from
+            // adjacent boundary edges, and emit new fringe vertices with
+            // alpha 0. Fringe triangles are emitted at the end alongside
+            // the body fringe triangles.
+            //
+            // Each cap boundary vertex references one of the existing
+            // body/cap vertex slots via offsets-into-the-group:
+            //   bL group : [0,       L.Size)
+            //   bR group : [L.Size,  L.Size+R.Size)
+            //   bE group : [L+R,     L+R+n_ecv)
+            //   bS group : [L+R+n_ecv, L+R+n_ecv+n_scv)
+            // We store the offset here and add idx_base at emission time.
+            // ==========================================================
+            ImVec2    end_cap_bnd_pos[40];  // max 40 covers Round with up to 38 arc segs
+            ImDrawIdx end_cap_bnd_ofs[40];
+            ImVec2    start_cap_bnd_pos[40];
+            ImDrawIdx start_cap_bnd_ofs[40];
+            int n_ecb = 0;
+            int n_scb = 0;
+            const int ofs_bL = 0;
+            const int ofs_bR = L.Size;
+            const int ofs_bE = L.Size + R.Size;
+            const int ofs_bS = ofs_bE + n_ecv;
+            if (!sp_closed)
+            {
+                // End cap boundary: L_last → (interior cap points) → R_last
+                switch (effective_cap)
+                {
+                case ImWidgetsCap_Butt:
+                    end_cap_bnd_pos[0] = L[L.Size - 1]; end_cap_bnd_ofs[0] = (ImDrawIdx)(ofs_bL + L.Size - 1);
+                    end_cap_bnd_pos[1] = R[R.Size - 1]; end_cap_bnd_ofs[1] = (ImDrawIdx)(ofs_bR + R.Size - 1);
+                    n_ecb = 2;
+                    break;
+                case ImWidgetsCap_Square:
+                    end_cap_bnd_pos[0] = L[L.Size - 1]; end_cap_bnd_ofs[0] = (ImDrawIdx)(ofs_bL + L.Size - 1);
+                    end_cap_bnd_pos[1] = end_cap_v[0];  end_cap_bnd_ofs[1] = (ImDrawIdx)(ofs_bE + 0);
+                    end_cap_bnd_pos[2] = end_cap_v[1];  end_cap_bnd_ofs[2] = (ImDrawIdx)(ofs_bE + 1);
+                    end_cap_bnd_pos[3] = R[R.Size - 1]; end_cap_bnd_ofs[3] = (ImDrawIdx)(ofs_bR + R.Size - 1);
+                    n_ecb = 4;
+                    break;
+                case ImWidgetsCap_Round:
+                    end_cap_bnd_pos[n_ecb] = L[L.Size - 1]; end_cap_bnd_ofs[n_ecb] = (ImDrawIdx)(ofs_bL + L.Size - 1); n_ecb++;
+                    for (int s = 1; s < n_ecv; ++s)
+                    {
+                        end_cap_bnd_pos[n_ecb] = end_cap_v[s];
+                        end_cap_bnd_ofs[n_ecb] = (ImDrawIdx)(ofs_bE + s);
+                        n_ecb++;
+                    }
+                    end_cap_bnd_pos[n_ecb] = R[R.Size - 1]; end_cap_bnd_ofs[n_ecb] = (ImDrawIdx)(ofs_bR + R.Size - 1); n_ecb++;
+                    break;
+                case ImWidgetsCap_TriangleOut:
+                    end_cap_bnd_pos[0] = L[L.Size - 1]; end_cap_bnd_ofs[0] = (ImDrawIdx)(ofs_bL + L.Size - 1);
+                    end_cap_bnd_pos[1] = end_cap_v[0];  end_cap_bnd_ofs[1] = (ImDrawIdx)(ofs_bE + 0);
+                    end_cap_bnd_pos[2] = R[R.Size - 1]; end_cap_bnd_ofs[2] = (ImDrawIdx)(ofs_bR + R.Size - 1);
+                    n_ecb = 3;
+                    break;
+                default: break; // None, TriangleIn: no cap fringe
+                }
+                // Start cap boundary: R_0 → (interior cap points) → L_0
+                switch (effective_cap)
+                {
+                case ImWidgetsCap_Butt:
+                    start_cap_bnd_pos[0] = R[0]; start_cap_bnd_ofs[0] = (ImDrawIdx)(ofs_bR + 0);
+                    start_cap_bnd_pos[1] = L[0]; start_cap_bnd_ofs[1] = (ImDrawIdx)(ofs_bL + 0);
+                    n_scb = 2;
+                    break;
+                case ImWidgetsCap_Square:
+                    start_cap_bnd_pos[0] = R[0];           start_cap_bnd_ofs[0] = (ImDrawIdx)(ofs_bR + 0);
+                    start_cap_bnd_pos[1] = start_cap_v[0]; start_cap_bnd_ofs[1] = (ImDrawIdx)(ofs_bS + 0);
+                    start_cap_bnd_pos[2] = start_cap_v[1]; start_cap_bnd_ofs[2] = (ImDrawIdx)(ofs_bS + 1);
+                    start_cap_bnd_pos[3] = L[0];           start_cap_bnd_ofs[3] = (ImDrawIdx)(ofs_bL + 0);
+                    n_scb = 4;
+                    break;
+                case ImWidgetsCap_Round:
+                    start_cap_bnd_pos[n_scb] = R[0]; start_cap_bnd_ofs[n_scb] = (ImDrawIdx)(ofs_bR + 0); n_scb++;
+                    for (int s = 1; s < n_scv; ++s)
+                    {
+                        start_cap_bnd_pos[n_scb] = start_cap_v[s];
+                        start_cap_bnd_ofs[n_scb] = (ImDrawIdx)(ofs_bS + s);
+                        n_scb++;
+                    }
+                    start_cap_bnd_pos[n_scb] = L[0]; start_cap_bnd_ofs[n_scb] = (ImDrawIdx)(ofs_bL + 0); n_scb++;
+                    break;
+                case ImWidgetsCap_TriangleOut:
+                    start_cap_bnd_pos[0] = R[0];           start_cap_bnd_ofs[0] = (ImDrawIdx)(ofs_bR + 0);
+                    start_cap_bnd_pos[1] = start_cap_v[0]; start_cap_bnd_ofs[1] = (ImDrawIdx)(ofs_bS + 0);
+                    start_cap_bnd_pos[2] = L[0];           start_cap_bnd_ofs[2] = (ImDrawIdx)(ofs_bL + 0);
+                    n_scb = 3;
+                    break;
+                default: break;
+                }
+            }
+            // Compute cap fringe outer positions (cap_bnd + outward*aa).
+            // Reuses the outward-direction heuristic from the body fringe.
+            auto cap_outward = [](const ImVec2* seq, int n, int i) -> ImVec2
+            {
+                ImVec2 sum(0, 0);
+                if (i > 0)
+                {
+                    ImVec2 e(seq[i].x - seq[i - 1].x, seq[i].y - seq[i - 1].y);
+                    float l = ImSqrt(e.x * e.x + e.y * e.y);
+                    if (l > 1e-6f) { sum.x += -e.y / l; sum.y +=  e.x / l; }
+                }
+                if (i < n - 1)
+                {
+                    ImVec2 e(seq[i + 1].x - seq[i].x, seq[i + 1].y - seq[i].y);
+                    float l = ImSqrt(e.x * e.x + e.y * e.y);
+                    if (l > 1e-6f) { sum.x += -e.y / l; sum.y +=  e.x / l; }
+                }
+                float m = ImSqrt(sum.x * sum.x + sum.y * sum.y);
+                if (m > 1e-6f) { sum.x /= m; sum.y /= m; }
+                return sum;
+            };
+            ImVec2 end_cap_bnd_outer[40];
+            ImVec2 start_cap_bnd_outer[40];
+            for (int i = 0; i < n_ecb; ++i)
+            {
+                ImVec2 n = cap_outward(end_cap_bnd_pos, n_ecb, i);
+                end_cap_bnd_outer[i] = ImVec2(end_cap_bnd_pos[i].x + n.x * aa,
+                                              end_cap_bnd_pos[i].y + n.y * aa);
+            }
+            for (int i = 0; i < n_scb; ++i)
+            {
+                ImVec2 n = cap_outward(start_cap_bnd_pos, n_scb, i);
+                start_cap_bnd_outer[i] = ImVec2(start_cap_bnd_pos[i].x + n.x * aa,
+                                                start_cap_bnd_pos[i].y + n.y * aa);
+            }
+
             // --- Count triangles ---
             int nTri = 0;
             // Segment quads (+1 per TriangleIn notch on first/last segment)
@@ -19270,8 +19401,11 @@ namespace ImWidgets
             // Fringe triangles: 2 per L edge + 2 per R edge
             if (L.Size >= 2) nTri += 2 * (L.Size - 1);
             if (R.Size >= 2) nTri += 2 * (R.Size - 1);
+            // Cap fringe triangles: 2 per cap boundary edge
+            if (n_ecb >= 2) nTri += 2 * (n_ecb - 1);
+            if (n_scb >= 2) nTri += 2 * (n_scb - 1);
 
-            int nVtx = L.Size + R.Size + n_ecv + n_scv + L.Size + R.Size;
+            int nVtx = L.Size + R.Size + n_ecv + n_scv + L.Size + R.Size + n_ecb + n_scb;
 
             // --- Emit primitives ---
             if (nTri > 0 && nVtx >= 3)
@@ -19290,6 +19424,9 @@ namespace ImWidgets
                 // so the body triangles' index bases (bL, bR, bE, bS) are unaffected.
                 for (int vi = 0; vi < L.Size; ++vi) { vw->pos = L_outer[vi]; vw->uv = uv; vw->col = fringe_col; vw++; }
                 for (int vi = 0; vi < R.Size; ++vi) { vw->pos = R_outer[vi]; vw->uv = uv; vw->col = fringe_col; vw++; }
+                // Cap fringe vertices (alpha 0).
+                for (int vi = 0; vi < n_ecb; ++vi) { vw->pos = end_cap_bnd_outer[vi];   vw->uv = uv; vw->col = fringe_col; vw++; }
+                for (int vi = 0; vi < n_scb; ++vi) { vw->pos = start_cap_bnd_outer[vi]; vw->uv = uv; vw->col = fringe_col; vw++; }
                 drawlist->_VtxWritePtr = vw;
                 drawlist->_VtxCurrentIdx += (unsigned int)nVtx;
 
@@ -19300,6 +19437,8 @@ namespace ImWidgets
                 ImDrawIdx bS = bE + (ImDrawIdx)n_ecv;
                 ImDrawIdx bLO = bS + (ImDrawIdx)n_scv;               // L_outer fringe base
                 ImDrawIdx bRO = bLO + (ImDrawIdx)L.Size;              // R_outer fringe base
+                ImDrawIdx bECF = bRO + (ImDrawIdx)R.Size;             // end cap fringe base
+                ImDrawIdx bSCF = bECF + (ImDrawIdx)n_ecb;             // start cap fringe base
 
                 ImDrawIdx* iw = drawlist->_IdxWritePtr;
                 #define DW_TRI(a, b, c) do { *iw++ = (ImDrawIdx)(a); *iw++ = (ImDrawIdx)(b); *iw++ = (ImDrawIdx)(c); } while(0)
@@ -19435,6 +19574,29 @@ namespace ImWidgets
                     DW_TRI(bR + i, bRO + i + 1, bR + i + 1);
                     DW_TRI(bR + i, bRO + i, bRO + i + 1);
                 }
+                // --- Anti-aliasing fringe: end cap boundary ---
+                // Each cap_bnd[i] is already in the vertex buffer (body or cap
+                // vertex group) via its stored offset; cap_bnd_outer[i] is the
+                // new alpha-0 fringe vertex we just wrote. Two triangles per edge.
+                for (int i = 0; i < n_ecb - 1; ++i)
+                {
+                    ImDrawIdx a  = idx_base + end_cap_bnd_ofs[i];
+                    ImDrawIdx b  = idx_base + end_cap_bnd_ofs[i + 1];
+                    ImDrawIdx ao = bECF + (ImDrawIdx)i;
+                    ImDrawIdx bo = bECF + (ImDrawIdx)(i + 1);
+                    DW_TRI(a, b, bo);
+                    DW_TRI(a, bo, ao);
+                }
+                // --- Anti-aliasing fringe: start cap boundary ---
+                for (int i = 0; i < n_scb - 1; ++i)
+                {
+                    ImDrawIdx a  = idx_base + start_cap_bnd_ofs[i];
+                    ImDrawIdx b  = idx_base + start_cap_bnd_ofs[i + 1];
+                    ImDrawIdx ao = bSCF + (ImDrawIdx)i;
+                    ImDrawIdx bo = bSCF + (ImDrawIdx)(i + 1);
+                    DW_TRI(a, b, bo);
+                    DW_TRI(a, bo, ao);
+                }
 
                 #undef DW_TRI
                 drawlist->_IdxWritePtr = iw;
@@ -19474,7 +19636,11 @@ namespace ImWidgets
             C.resize(A.Size + B.Size - b_start);
             for (int i = 0; i < A.Size; ++i) C[i] = A[i];
             for (int i = b_start; i < B.Size; ++i) C[A.Size + i - b_start] = B[i];
-            draw_subpath(C, false, false); // no trim: both ends border a gap, not another dash
+            // trim_ends=true: the wrap subpath's inner polyline vertices can still
+            // be acute tips (e.g. a star) where the *last-segment* miter overshoots.
+            // The trim loops only fire when halfw*tan(α/2) > neighbour_length, so
+            // mid-segment endpoints from DW_ExtractSubpath are left alone.
+            draw_subpath(C, true, false);
         }
 
         for (int k = 0; k < intervals.Size; ++k)

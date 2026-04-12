@@ -261,10 +261,11 @@ static void EnsurePackedTexture( const ImImageBuffer& buffer, ImImageInspectorSt
 	}
 	state.BufferTooLarge = false;
 
-	// Allocate scratch padded to RGBA32F texel boundary
+	// Allocate scratch padded to RGBA32F texel boundary. Only the tail padding
+	// past total_bytes needs zeroing (done after the source copy below); the
+	// full-buffer memset would waste ~20 ms per upload on 192 MB photos.
 	size_t scratch_bytes = ( size_t )tex_w * ( size_t )tex_h * 16;
 	state.Scratch.resize( ( int )scratch_bytes );
-	memset( state.Scratch.Data, 0, scratch_bytes );
 
 	// Pack the source bytes tightly
 	const unsigned char* src_base = ( const unsigned char* )buffer.host + buffer.byte_offset;
@@ -300,20 +301,45 @@ static void EnsurePackedTexture( const ImImageBuffer& buffer, ImImageInspectorSt
 		}
 	}
 
-	// Destroy old texture and create the new one
-	if ( state.PackedTexture != ImTextureID_Invalid )
+	// Zero only the tail padding past the packed source bytes, so the final
+	// (possibly partial) RGBA32F row doesn't feed garbage to the GPU.
+	if ( scratch_bytes > total_bytes )
+		memset( dst + total_bytes, 0, scratch_bytes - total_bytes );
+
+	// Prefer in-place upload when dimensions match — for large RGBA32F
+	// inspectors (e.g. 4096×7716 / ~500 MB) destroy+create blocks the UI
+	// thread for hundreds of ms on every buffer.version bump.
+	bool dims_match = ( state.PackedTexture != ImTextureID_Invalid )
+	               && ( state.PackedTexW == tex_w )
+	               && ( state.PackedTexH == tex_h );
+
+	bool updated = false;
+	if ( dims_match )
 	{
-		ImPlatform_DestroyTexture( state.PackedTexture );
-		state.PackedTexture = ImTextureID_Invalid;
+		updated = ImPlatform_UpdateTexture(
+			state.PackedTexture,
+			state.Scratch.Data,
+			0, 0,
+			( unsigned int )tex_w,
+			( unsigned int )tex_h );
 	}
 
-	ImPlatform_TextureDesc desc = ImPlatform_TextureDesc_Default( ( unsigned int )tex_w, ( unsigned int )tex_h );
-	desc.format     = ImPlatform_PixelFormat_RGBA32F;
-	desc.min_filter = ImPlatform_TextureFilter_Nearest;
-	desc.mag_filter = ImPlatform_TextureFilter_Nearest;
-	desc.wrap_u     = ImPlatform_TextureWrap_Clamp;
-	desc.wrap_v     = ImPlatform_TextureWrap_Clamp;
-	state.PackedTexture = ImPlatform_CreateTexture( state.Scratch.Data, &desc );
+	if ( !updated )
+	{
+		if ( state.PackedTexture != ImTextureID_Invalid )
+		{
+			ImPlatform_DestroyTexture( state.PackedTexture );
+			state.PackedTexture = ImTextureID_Invalid;
+		}
+
+		ImPlatform_TextureDesc desc = ImPlatform_TextureDesc_Default( ( unsigned int )tex_w, ( unsigned int )tex_h );
+		desc.format     = ImPlatform_PixelFormat_RGBA32F;
+		desc.min_filter = ImPlatform_TextureFilter_Nearest;
+		desc.mag_filter = ImPlatform_TextureFilter_Nearest;
+		desc.wrap_u     = ImPlatform_TextureWrap_Clamp;
+		desc.wrap_v     = ImPlatform_TextureWrap_Clamp;
+		state.PackedTexture = ImPlatform_CreateTexture( state.Scratch.Data, &desc );
+	}
 
 	state.PackedTexW            = tex_w;
 	state.PackedTexH            = tex_h;

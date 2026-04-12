@@ -3784,9 +3784,10 @@ namespace ImWidgets {
 				static float tlb_dash_offset = 0.0f;
 				static bool  tlb_show_grid    = true;
 				static bool  tlb_show_stroke  = true;
-				static bool  tlb_stroke_dash  = false;
 				static bool  tlb_show_dashed  = true;
-				static bool  tlb_dashed_dash  = true;   // canvas 2: dashed mode toggle
+				// Single shared toggle: when true both canvas 1 (Stroke) and
+				// canvas 2 (PolylineAA) switch to their dashed variants.
+				static bool  tlb_dashed       = false;
 				static bool  tlb_show_poly    = true;
 				static float tlb_canvas_scale = 1.0f;
 				static ImVec4 tlb_color_v( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f );
@@ -3809,10 +3810,9 @@ namespace ImWidgets {
 				ImGui::DragFloat( "Gap Length##TLB",   &tlb_gap_len,    0.1f, 0.0f, 200.0f );
 				ImGui::DragFloat( "Dash Offset##TLB",  &tlb_dash_offset, 0.5f, -200.0f, 200.0f );
 				ImGui::Checkbox( "Show cell grid##TLB",         &tlb_show_grid );
+				ImGui::SameLine(); ImGui::Checkbox( "Dashed##TLB",        &tlb_dashed );
 				ImGui::SameLine(); ImGui::Checkbox( "Draw Stroke##TLB",   &tlb_show_stroke );
-				ImGui::SameLine(); ImGui::Checkbox( "Stroke Dashed##TLB", &tlb_stroke_dash );
-				ImGui::SameLine(); ImGui::Checkbox( "Draw Dashed##TLB",   &tlb_show_dashed );
-				ImGui::SameLine(); ImGui::Checkbox( "Dashed Mode##TLB",   &tlb_dashed_dash );
+				ImGui::SameLine(); ImGui::Checkbox( "Draw PolylineAA##TLB", &tlb_show_dashed );
 				ImGui::SameLine(); ImGui::Checkbox( "Draw Polyline##TLB", &tlb_show_poly );
 				// DrawDashedPolylineAA has two implementations — toggle the global here.
 				bool tlb_dashed_use_gpu = ImWidgets::GetDashedLinesUseGPU();
@@ -3846,9 +3846,9 @@ namespace ImWidgets {
 				pDrawList->AddRect( tlb_origin_d, ImVec2( tlb_origin_d.x + tlb_side, tlb_origin_d.y + tlb_side ), border_col );
 				pDrawList->AddRect( tlb_origin_p, ImVec2( tlb_origin_p.x + tlb_side, tlb_origin_p.y + tlb_side ), border_col );
 				pDrawList->AddText( ImVec2( tlb_origin_s.x + 4.0f, tlb_origin_s.y + 2.0f ), label_col,
-				                    tlb_stroke_dash ? "1: DrawStrokedPolyline (dashed)" : "1: DrawStrokedPolyline" );
+				                    tlb_dashed ? "1: DrawStrokedPolyline (dashed)" : "1: DrawStrokedPolyline" );
 				const char* tlb_canvas2_label =
-				    tlb_dashed_dash
+				    tlb_dashed
 				    ? ( tlb_dashed_use_gpu ? "2: DrawDashedPolylineAA (GPU)" : "2: DrawDashedPolylineAA (CPU)" )
 				    : ( tlb_dashed_use_gpu ? "2: DrawPolylineAA (GPU)"       : "2: DrawPolylineAA (CPU)"       );
 				pDrawList->AddText( ImVec2( tlb_origin_d.x + 4.0f, tlb_origin_d.y + 2.0f ), label_col, tlb_canvas2_label );
@@ -3911,7 +3911,7 @@ namespace ImWidgets {
 					{
 						ImVec2 pts[ 3 ];
 						tlb_make_v( i, tlb_origin_s, pts );
-						if ( tlb_stroke_dash )
+						if ( tlb_dashed )
 						{
 							ImWidgets::DrawStrokedDashedPolyline( pDrawList, pts, 3, tlb_color_col, tlb_line_width,
 							                                       dash_arr_s, 2, tlb_dash_offset,
@@ -3942,7 +3942,7 @@ namespace ImWidgets {
 					{
 						ImVec2 pts[ 3 ];
 						tlb_make_v( i, tlb_origin_d, pts );
-						if ( tlb_dashed_dash )
+						if ( tlb_dashed )
 						{
 							ImWidgets::DrawDashedPolylineAA( pDrawList, pts, 3, tlb_color_col, tlb_line_width,
 							                                  tlb_dash_len, tlb_gap_len, tlb_dash_offset,
@@ -4002,9 +4002,9 @@ namespace ImWidgets {
 
 				ImGui::Text( "V-shapes drawn: %d  (%d cols x %d rows)", tlb_total, tlb_cols, tlb_rows );
 				ImGui::Text( "1 DrawStrokedPolyline %s : %7.3f ms   (avg32: %7.3f ms)",
-				             tlb_stroke_dash ? "(dashed)" : "(solid) ", tlb_ms_stroke, tlb_avg_stroke );
+				             tlb_dashed ? "(dashed)" : "(solid) ", tlb_ms_stroke, tlb_avg_stroke );
 				ImGui::Text( "2 %-22s %s : %7.3f ms   (avg32: %7.3f ms)",
-				             tlb_dashed_dash ? "DrawDashedPolylineAA" : "DrawPolylineAA",
+				             tlb_dashed ? "DrawDashedPolylineAA" : "DrawPolylineAA",
 				             tlb_dashed_use_gpu ? "(GPU)" : "(CPU)", tlb_ms_dashed, tlb_avg_dashed );
 				ImGui::Text( "3 AddPolyline               : %7.3f ms   (avg32: %7.3f ms)", tlb_ms_poly,   tlb_avg_poly );
 				if ( tlb_avg_stroke > 0.0f && tlb_avg_poly > 0.0f )
