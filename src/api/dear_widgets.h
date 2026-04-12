@@ -1313,7 +1313,11 @@ struct ImWidgetsDashedLineBuffer
     float   seg_start;     // offset 96  - cumulative arc-length at p0
     float   seg_end;       // offset 100 - cumulative arc-length at p1
     float   total_length;  // offset 104 - total polyline length
-    float   _pad;          // offset 108 - padding
+    float   flags;         // offset 108 - bit flags (encoded as float, decoded
+                           //              on GPU via (int)flags): 1=debug joins,
+                           //              2=first segment of closed polyline,
+                           //              4=last segment of closed polyline.
+                           //              Must match lines.hlsl decoding.
 };
 
 // Stroke fill constant buffer — winding number shader.
@@ -3173,6 +3177,14 @@ namespace ImWidgets{
 
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 	IMGUI_API void CreateInternalShader( ImDrawShader* shaders_out, char const* shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer );
+
+	// Eagerly compile/load every internal shader used by Dear Widgets.
+	// Optional: shaders are lazily compiled on first use otherwise. Call this once
+	// after CreateContext() to pay the compile cost up-front (e.g. at app startup,
+	// before showing a UI) and avoid frame hitches on first widget draw.
+	// Idempotent: already-loaded shaders are skipped. Slug shaders are only loaded
+	// if ImWidgetsFeatures_RichFont or ImWidgetsFeatures_LaTeX is enabled.
+	IMGUI_API void PrebuildShaders();
 
 	IMGUI_API void DrawMarker( ImDrawList* pDrawList, ImVec2 start, ImVec2 size,
 							   ImU32 fg_color,

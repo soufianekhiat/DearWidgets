@@ -3293,6 +3293,42 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 //		IM_FREE( ps_source );
 	}
 
+	void PrebuildShaders()
+	{
+#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+		ImWidgetsContext* ctx = gs_pContext;
+		IM_ASSERT( ctx != NULL && "PrebuildShaders() requires an active ImWidgets context (call CreateContext() first)" );
+		if ( ctx == NULL )
+			return;
+
+		if ( ctx->markerShader.program == NULL )
+			CreateMarkersShaders( ctx );
+		if ( ctx->lineShader.program == NULL )
+			CreateInternalShader( &ctx->lineShader, "lines", 0, NULL, 0, NULL );
+		if ( ctx->strokeShader.program == NULL )
+			CreateInternalShader( &ctx->strokeShader, "stroke", 0, NULL, 0, NULL );
+		if ( ctx->imageInspectorShader.program == NULL )
+			CreateInternalShader( &ctx->imageInspectorShader, "image_inspector", 0, NULL, 0, NULL );
+		if ( ctx->blurShader.program == NULL )
+			CreateInternalShader( &ctx->blurShader, "blur", 0, NULL, 0, NULL );
+
+		// Slug family is feature-gated: matches CreateContext() behavior.
+		if ( GlobalData.features & ( ImWidgetsFeatures_RichFont | ImWidgetsFeatures_LaTeX ) )
+		{
+			if ( ctx->slugShader.program == NULL )
+				CreateInternalShader( &ctx->slugShader, "slug", 0, NULL, 0, NULL );
+			if ( ctx->slugColorShader.program == NULL )
+				CreateInternalShader( &ctx->slugColorShader, "slug_color", 0, NULL, 0, NULL );
+			if ( ctx->slugGradientShader.program == NULL )
+				CreateInternalShader( &ctx->slugGradientShader, "slug_gradient", 0, NULL, 0, NULL );
+			if ( ctx->slugDebugShader.program == NULL )
+				CreateInternalShader( &ctx->slugDebugShader, "slug_debug", 0, NULL, 0, NULL );
+			if ( ctx->slugFillShader.program == NULL )
+				CreateInternalShader( &ctx->slugFillShader, "slug_fill", 0, NULL, 0, NULL );
+		}
+#endif
+	}
+
 	void SetFeatures( ImWidgetsFeatures features )
 	{
 		GlobalData.features = features;
@@ -18768,12 +18804,13 @@ namespace ImWidgets
                 params.total_length = total_len;
                 // Bit flags: 1=debug joins, 2=first segment of closed polyline,
                 // 4=last segment of closed polyline. Replaces the shader-side
-                // seg_start<0.001 heuristic.
+                // seg_start<0.001 heuristic. See lines.hlsl decoding — must stay
+                // in sync with it.
                 int flags = 0;
                 if (GlobalData.dashedLinesDebugJoins) flags |= 1;
                 if (closed && i == 0)                  flags |= 2;
                 if (closed && i == seg_count - 1)      flags |= 4;
-                params._pad = (float)flags;
+                params.flags = (float)flags;
 
                 // Compute bounding quad padding (must cover join/cap extensions)
                 float pad = halfw + 2.0f * aa + 2.0f;
