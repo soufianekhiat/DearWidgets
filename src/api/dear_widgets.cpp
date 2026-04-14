@@ -17523,7 +17523,7 @@ namespace ImWidgets {
 	// Image Bento Grid
 	//////////////////////////////////////////////////////////////////////////
 
-	bool ImageBento( char const* label, ImTextureID* images, ImVec2* imageSizes, int imageCount, int* pSelectedIndex, int columnsPerRow, float cellAspect, float spacing )
+	bool ImageBento( char const* label, ImTextureID* images, ImVec2* imageSizes, int imageCount, int* pSelectedIndex, int columnsPerRow, float cellAspect, float spacing, char const* const* pItemIds, int* pReorderFrom, int* pReorderTo )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
@@ -17538,6 +17538,14 @@ namespace ImWidgets {
 		if ( columnsPerRow < 1 ) columnsPerRow = 1;
 		if ( cellAspect <= 0.0f ) cellAspect = 1.0f;
 
+		// Reorder is enabled only when the caller opts in via both
+		// stable per-item IDs AND a non-null out-param for the source
+		// index. We always initialise the out-params to -1 so the
+		// caller can detect "no reorder fired this frame".
+		bool const reorderEnabled = ( pItemIds != nullptr && pReorderFrom != nullptr && pReorderTo != nullptr );
+		if ( pReorderFrom ) *pReorderFrom = -1;
+		if ( pReorderTo   ) *pReorderTo   = -1;
+
 		float availW = ImGui::CalcItemWidth();
 		float cellW = ( availW - spacing * ( columnsPerRow - 1 ) ) / columnsPerRow;
 		float cellH = cellW / cellAspect;
@@ -17547,14 +17555,23 @@ namespace ImWidgets {
 		ImVec2 pos = window->DC.CursorPos;
 		ImRect total_bb( pos, ImVec2( pos.x + availW, pos.y + totalH ) );
 
+		// Reserve the grid's total layout space exactly as before so
+		// surrounding widgets position correctly. Do NOT ItemAdd a
+		// single item across the whole grid — per-cell items are used
+		// below so drag-reorder can rely on standard ButtonBehavior.
 		ImGui::ItemSize( total_bb );
-		if ( !ImGui::ItemAdd( total_bb, id ) )
-			return false;
 
 		bool value_changed = false;
+		int  new_selection = *pSelectedIndex;
+		int  reorder_from  = -1;
+		int  reorder_to    = -1;
+
 		ImDrawList* dl = window->DrawList;
-		ImVec2 mp = g.IO.MousePos;
-		int sel = *pSelectedIndex;
+
+		// Allow transient duplicate IDs during a swap — the same item
+		// may appear at its old and new index within a single frame
+		// depending on when the caller applies the reorder.
+		ImGui::PushItemFlag( ImGuiItemFlags_AllowDuplicateId, true );
 
 		for ( int i = 0; i < imageCount; i++ )
 		{
@@ -17564,18 +17581,65 @@ namespace ImWidgets {
 			float cy = pos.y + row * ( cellH + spacing );
 			ImVec2 cellMin( cx, cy );
 			ImVec2 cellMax( cx + cellW, cy + cellH );
+			ImRect bb( cellMin, cellMax );
+
+			// Per-cell ID. Content-based when the caller supplies ids;
+			// positional otherwise. Content-based is required for
+			// flicker-free drag-reorder (ImGui's ActiveId needs to
+			// follow the dragged item when the grid reshuffles).
+			ImGuiID cellId = pItemIds && pItemIds[ i ]
+				? window->GetID( pItemIds[ i ] )
+				: window->GetID( ( void const* )( intptr_t )i );
+
+			bool const visible = ImGui::ItemAdd( bb, cellId, nullptr, ImGuiItemFlags_NoNav );
+			bool hovered = false, held = false;
+			bool const pressed = visible
+				? ImGui::ButtonBehavior( bb, cellId, &hovered, &held,
+					ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight )
+				: false;
+			bool const item_active  = ( g.ActiveId == cellId );
+			bool const item_hovered = hovered;
+
+			// Drag-reorder — imgui_demo "Drag to reorder (simple)"
+			// pattern. Active cell + mouse off-cell → swap with the
+			// adjacent cell in the drag direction. Reset the drag
+			// delta so the next swap requires fresh movement.
+			if ( reorderEnabled && item_active && !item_hovered && reorder_from < 0 )
+			{
+				ImVec2 const dd = ImGui::GetMouseDragDelta( ImGuiMouseButton_Left );
+				int neighbour = i;
+				float const ax = dd.x < 0.0f ? -dd.x : dd.x;
+				float const ay = dd.y < 0.0f ? -dd.y : dd.y;
+				if ( ax > ay )
+				{
+					if ( dd.x < -1.0f ) neighbour = i - 1;
+					else if ( dd.x >  1.0f ) neighbour = i + 1;
+				}
+				else
+				{
+					if ( dd.y < -1.0f ) neighbour = i - columnsPerRow;
+					else if ( dd.y >  1.0f ) neighbour = i + columnsPerRow;
+				}
+
+				if ( neighbour != i && neighbour >= 0 && neighbour < imageCount )
+				{
+					reorder_from  = i;
+					reorder_to    = neighbour;
+					value_changed = true;
+					ImGui::ResetMouseDragDelta( ImGuiMouseButton_Left );
+				}
+			}
 
 			// Background
 			dl->AddRectFilled( cellMin, cellMax, IM_COL32( 20, 20, 20, 255 ), 2.0f );
 
 			// Center-crop UVs: fit the cell aspect ratio within the image
 			ImVec2 imgSz = imageSizes[ i ];
-			float imgAspect = imgSz.x / imgSz.y;
+			float imgAspect = imgSz.y > 0.0f ? imgSz.x / imgSz.y : 1.0f;
 			float uMin = 0.0f, vMin = 0.0f, uMax = 1.0f, vMax = 1.0f;
 
 			if ( imgAspect > cellAspect )
 			{
-				// Image is wider than cell: crop sides
 				float visibleFrac = cellAspect / imgAspect;
 				float margin = ( 1.0f - visibleFrac ) * 0.5f;
 				uMin = margin;
@@ -17583,27 +17647,38 @@ namespace ImWidgets {
 			}
 			else
 			{
-				// Image is taller than cell: crop top/bottom
 				float visibleFrac = imgAspect / cellAspect;
 				float margin = ( 1.0f - visibleFrac ) * 0.5f;
 				vMin = margin;
 				vMax = 1.0f - margin;
 			}
 
-			dl->AddImage( images[ i ], cellMin, cellMax, ImVec2( uMin, vMin ), ImVec2( uMax, vMax ) );
+			if ( images[ i ] )
+				dl->AddImage( images[ i ], cellMin, cellMax, ImVec2( uMin, vMin ), ImVec2( uMax, vMax ) );
 
-			// Selection / hover
-			bool hov = ImRect( cellMin, cellMax ).Contains( mp );
-			if ( i == sel )
-				dl->AddRect( cellMin, cellMax, IM_COL32( 255, 200, 50, 255 ), 2.0f, 0, 2.0f );
-			else if ( hov )
+			// Selection / hover / active outlines. Active (held) wins
+			// so the user sees which cell they are currently dragging.
+			if ( item_active )
+				dl->AddRect( cellMin, cellMax, IM_COL32( 255, 210,  60, 240 ), 2.0f, 0, 2.5f );
+			else if ( i == *pSelectedIndex )
+				dl->AddRect( cellMin, cellMax, IM_COL32( 255, 200,  50, 255 ), 2.0f, 0, 2.0f );
+			else if ( item_hovered )
 				dl->AddRect( cellMin, cellMax, IM_COL32( 200, 200, 200, 180 ), 2.0f, 0, 1.0f );
 
-			if ( hov && ImGui::IsMouseClicked( 0 ) && i != sel )
+			if ( pressed && i != *pSelectedIndex )
 			{
-				*pSelectedIndex = i;
+				new_selection = i;
 				value_changed = true;
 			}
+		}
+
+		ImGui::PopItemFlag();
+
+		*pSelectedIndex = new_selection;
+		if ( reorderEnabled )
+		{
+			*pReorderFrom = reorder_from;
+			*pReorderTo   = reorder_to;
 		}
 
 		// Label

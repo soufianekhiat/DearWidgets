@@ -3484,8 +3484,23 @@ namespace ImWidgets{
 	// Image Carousel
 	IMGUI_API bool ImageCarousel( char const* label, ImTextureID* images, ImVec2* imageSizes, int imageCount, int* pSelectedIndex, ImVec2 size = ImVec2( 0, 0 ) );
 
-	// Image Bento Grid: displays images in a uniform grid, cropping to a target cell aspect ratio (center crop)
-	IMGUI_API bool ImageBento( char const* label, ImTextureID* images, ImVec2* imageSizes, int imageCount, int* pSelectedIndex, int columnsPerRow = 4, float cellAspect = 1.0f, float spacing = 4.0f );
+	// Image Bento Grid: displays images in a uniform grid, cropping to a target cell aspect ratio (center crop).
+	//
+	// Drag-to-reorder support (optional):
+	//   - pItemIds   : array of `imageCount` C-strings. When non-null, each cell's ImGui ID is derived
+	//                  from its string instead of its position. This is required for clean drag-reorder
+	//                  — positional IDs cause a one-frame flicker when adjacent cells swap mid-drag
+	//                  because ImGui's ActiveId stays pinned at the old index rather than following
+	//                  the moved content. Strings must be unique per grid (duplicates across grids in
+	//                  other windows are fine).
+	//   - pReorderFrom / pReorderTo : out-params. When a swap is requested, the function writes the
+	//                  source and target indices (both in [0, imageCount)) and returns true. The caller
+	//                  is responsible for actually swapping the data — ImageBento itself never mutates
+	//                  the images/imageSizes arrays. Set to -1 on frames where no swap fires.
+	//                  Swaps are reported as ADJACENT only (|from-to| == 1 horizontal, or == columnsPerRow
+	//                  vertical). Multi-cell drags accumulate as multiple single-frame reports.
+	// Returns true if *pSelectedIndex changed OR a reorder was requested this frame.
+	IMGUI_API bool ImageBento( char const* label, ImTextureID* images, ImVec2* imageSizes, int imageCount, int* pSelectedIndex, int columnsPerRow = 4, float cellAspect = 1.0f, float spacing = 4.0f, char const* const* pItemIds = nullptr, int* pReorderFrom = nullptr, int* pReorderTo = nullptr );
 
 	// Image Viewer: pan (left-drag), zoom (scroll wheel), double-click to reset.
 	// Right-click shows a pixel-inspector loupe with RGBA values (requires state.Pixels).
