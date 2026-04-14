@@ -84,6 +84,14 @@ float cap_dist(int ctype, float dx, float dy, float t)
 // Both segments at a join compute the same value (symmetric SDF), so
 // the bisector split produces no seam with transparent colours.
 //
+// INVARIANT: this function must only be invoked from the JOIN ZONES — i.e.
+// when lx < 0 (pixel before segment start) or lx > seg_len (pixel past segment
+// end). The bevel clip `max(d, miter_d)` unconditionally adds the bisector
+// clip, which is correct in the join area but would wrongly narrow the body.
+// The reference (solid-lines-2D.frag:85-87) guards its bevel with
+// `(dx < segment.x || dx > segment.y)`; we rely on the CALLER calling this
+// only from the join zones (see main_ps body-vs-join branching).
+//
 // P_world:   pixel position in screen space
 // vertex:    join vertex position in screen space
 // cur_dir:   tangent of current segment (ex)
@@ -132,17 +140,26 @@ float4 main_ps(PS_INPUT input) : SV_Target
 {
     float2 P = lerp(rect_min, rect_max, input.uv.xy);
     float2 ba_vec = p1 - p0;
-    float seg_len = max(length(ba_vec), 1e-5);
-    float2 ex = ba_vec / seg_len;
+    // seg_len = seg_end - seg_start (pre-computed C++-side and carried in the
+    // cbuffer) instead of recomputing length(p1-p0) per pixel.
+    float seg_len = max(seg_end - seg_start, 1e-5);
+    float inv_len = 1.0 / seg_len;
+    float2 ex = ba_vec * inv_len;
     float2 ey = float2(-ex.y, ex.x);
 
     // Sub-pixel thickness: clamp to 1 px and modulate alpha (Rougier 2013).
     // Without this, halfw - aa goes negative for thin lines and the gaussian
     // fringe dims the body. Reference: solid-lines-2D.vert:136-139,
-    // dash-lines-2D.vert:148-151.
+    // dash-lines-2D.vert:148-151 — which CLAMPS alpha to thickness via
+    //     v_color.a = min(v_linewidth, v_color.a);
+    //     v_linewidth = max(v_linewidth, 1.0);
+    // i.e. for a translucent colour, alpha only drops if thickness < alpha.
+    // The earlier `alpha *= saturate(thickness)` over-dimmed translucent
+    // sub-pixel lines (0.5 alpha × 0.3 thickness = 0.15, reference = 0.3).
     float effective_thickness = max(thickness, 1.0);
     float4 effective_color    = color;
-    effective_color.a *= saturate(thickness);
+    if (thickness < 1.0)
+        effective_color.a = min(effective_color.a, thickness);
 
     float halfw = 0.5 * effective_thickness;
     float t = halfw - aa;
@@ -243,7 +260,49 @@ float4 main_ps(PS_INPUT input) : SV_Target
 
         float u = dx_dash + dash_offset;
         float m = u - period * floor(u / period);
+        // Half-open dash interval [0, dash_len). m == dash_len counts as gap.
+        // Matches CPU DW_BuildOnIntervals which advances state on
+        // pos >= dashes[idx], so both paths agree at the boundary.
         bool in_dash = (m < dash_len);
+
+        // Reference dash-lines-2D.frag:251-266: at "discontinuous" joins
+        // (turn > 15°), discard pixels whose current dash is entirely outside
+        // THIS segment's arc-length range. At sharp turns the two adjacent
+        // segments' join quads overlap and each segment would otherwise render
+        // a "phantom dash" that belongs to the other segment.
+        //
+        // GOTCHA: skip these discards when the closed-polyline wrap is active
+        // for the pixel. In the wrap case (is_first_of_loop at lx<0 or
+        // is_last_of_loop at lx>seg_len), dx_dash was shifted by ±total_length
+        // to get a continuous phase across the seam — dash_arc_start would
+        // then legitimately fall outside [seg_start, seg_end] in polyline
+        // coords, but the dash IS relevant to this segment's seam join.
+        {
+            const float THETA = 0.2617994;                   // 15° in radians
+            bool wrap_active = (is_first_of_loop && lx < 0.0) ||
+                               (is_last_of_loop  && lx > seg_len);
+            if (!wrap_active)
+            {
+                float dash_arc_start = dx_dash - m;
+                float dash_arc_end   = dash_arc_start + dash_len;
+                if (has_next)
+                {
+                    float cross_en = ex.x * next_dir.y - ex.y * next_dir.x;
+                    float dot_en   = dot(ex, next_dir);
+                    float angle_n  = atan2(cross_en, dot_en);
+                    if (abs(angle_n) > THETA && dash_arc_start > seg_end)
+                        return float4(0, 0, 0, 0);
+                }
+                if (has_prev)
+                {
+                    float cross_pe = prev_dir.x * ex.y - prev_dir.y * ex.x;
+                    float dot_pe   = dot(prev_dir, ex);
+                    float angle_pp = atan2(cross_pe, dot_pe);
+                    if (abs(angle_pp) > THETA && dash_arc_end < seg_start)
+                        return float4(0, 0, 0, 0);
+                }
+            }
+        }
 
         if (in_dash)
         {
@@ -280,21 +339,70 @@ float4 main_ps(PS_INPUT input) : SV_Target
         if (has_prev && lx < 0.0)
         {
             float jd = join_dist(P, p0, ex, prev_dir, dy, jtype, halfw, miter_limit);
+            float cross_pe = prev_dir.x * ex.y - prev_dir.y * ex.x;
+            float dot_pe   = dot(prev_dir, ex);
+            float angle_p  = atan2(cross_pe, dot_pe);
+
             // Dash state at the vertex (seg_start); wrap for closing vertex of
             // closed polylines (the first segment's p0 is also the polyline end).
             float v_al = is_first_of_loop ? total_length : seg_start;
-            float v_u = v_al + dash_offset;
-            float v_m = v_u - period * floor(v_u / period);
-            d = (v_m < dash_len) ? jd : max(d, jd);
+            float v_u  = v_al + dash_offset;
+            float v_m  = v_u - period * floor(v_u / period);
+            bool vertex_in_dash_p = (v_m < dash_len);
+            d = vertex_in_dash_p ? jd : max(d, jd);
+
+            // AA and cap-transformation only apply for MODERATE turns. At sharp
+            // turns the rotated formulas from the reference over-clip legitimate
+            // stroke geometry (the phantom-dash discard above handles the real
+            // sharp-turn issue: dashes entirely outside the segment's range).
+            if (abs(angle_p) < 1.5707963)                        // < PI/2 = 90°
+            {
+                if (vertex_in_dash_p)
+                {
+                    // Reference dash-lines-2D.frag:352-356: rotated-bisector AA.
+                    float a = angle_p + 1.5707963;               // + PI/2
+                    float f = abs(-lx * cos(a) - dy * sin(a));
+                    d       = max(f, d);
+                }
+                else if (cap_type == 2 || cap_type == 4 || cap_type == 5)
+                {
+                    // Reference cap transformation (dash-lines-2D.frag:301-313).
+                    float a  = angle_p * 0.5;                    // half-angle
+                    float xr = -lx * cos(a) - dy * sin(a);
+                    if (xr > 0.0)
+                        return float4(0, 0, 0, 0);
+                }
+            }
             zone = 2;
         }
         else if (has_next && lx > seg_len)
         {
             float jd = join_dist(P, p1, ex, next_dir, dy, jtype, halfw, miter_limit);
-            // Dash state at the vertex (seg_end)
+            float cross_en = ex.x * next_dir.y - ex.y * next_dir.x;
+            float dot_en   = dot(ex, next_dir);
+            float angle_n  = atan2(cross_en, dot_en);
+
             float v_u = seg_end + dash_offset;
             float v_m = v_u - period * floor(v_u / period);
-            d = (v_m < dash_len) ? jd : max(d, jd);
+            bool vertex_in_dash_n = (v_m < dash_len);
+            d = vertex_in_dash_n ? jd : max(d, jd);
+
+            if (abs(angle_n) < 1.5707963)
+            {
+                if (vertex_in_dash_n)
+                {
+                    float a = angle_n + 1.5707963;
+                    float f = abs((lx - seg_len) * cos(a) - dy * sin(a));
+                    d       = max(f, d);
+                }
+                else if (cap_type == 2 || cap_type == 4 || cap_type == 5)
+                {
+                    float a  = angle_n * 0.5;
+                    float xr = (lx - seg_len) * cos(a) - dy * sin(a);
+                    if (xr > 0.0)
+                        return float4(0, 0, 0, 0);
+                }
+            }
             zone = 3;
         }
     }

@@ -48,6 +48,23 @@
 #include <IconFontCppHeaders/IconsFontAwesome6.h>
 #include <IconFontCppHeaders/IconsFontAwesome6Brands.h>
 
+// Demo-only on-demand font downloader. The repo ships only the LaTeX math
+// font (workingdir/latex_fonts/); all other demo fonts are fetched by the
+// user via the "Download all fonts" / per-category buttons in the Slug section.
+#define FONT_DOWNLOADER_IMPLEMENTATION
+#include "font_downloader.h"
+#include "font_manifest.inl"
+
+// Wrapper: AddFontFromFileTTF asserts on missing files; we want graceful
+// null-returns so the UI can offer a Download button instead.
+static ImFont* AddFontIfExists( ImFontAtlas* atlas, const char* path, float size,
+                                const ImFontConfig* cfg = nullptr,
+                                const ImWchar* ranges = nullptr )
+{
+    if ( !ImDwDownload::FileExists( path ) ) return nullptr;
+    return atlas->AddFontFromFileTTF( path, size, cfg, ranges );
+}
+
 //static int grid_rows = 8;
 //static int grid_columns = 8;
 //static ImVector<float> grid_values;
@@ -644,6 +661,158 @@ ImFont* g_cairoPlayBoldFont     = nullptr;
 ImFont* g_cairoPlayXLightFont   = nullptr;
 ImFont* g_reemKufiInkFont       = nullptr;
 
+// Extra Velvetyne display fonts (overflow from the curated set).
+ImFont* g_ouvrieresFont         = nullptr;
+ImFont* g_picnicFont            = nullptr;
+
+// Fontshare display batch (sharpie lives in script; trenchSlab lives in serif).
+ImFont* g_comicoFont            = nullptr;
+ImFont* g_supremeFont           = nullptr;
+ImFont* g_sharpieFont           = nullptr;
+ImFont* g_bespokeStencilFont    = nullptr;
+ImFont* g_akturaFont            = nullptr;
+ImFont* g_britneyFont           = nullptr;
+ImFont* g_styroFont             = nullptr;
+ImFont* g_trenchSlabFont        = nullptr;
+ImFont* g_boxingFont            = nullptr;
+ImFont* g_kolaFont              = nullptr;
+ImFont* g_zinaFont              = nullptr;
+ImFont* g_kihimFont             = nullptr;
+ImFont* g_striperFont           = nullptr;
+ImFont* g_kohinoorZeroneFont    = nullptr;
+
+// Non-Google color fonts (SVG / COLRv0 / COLRv1).
+ImFont* g_notoColorEmojiSvgFont = nullptr;
+ImFont* g_twitterColorEmojiFont = nullptr;
+ImFont* g_openMojiColr0Font     = nullptr;
+ImFont* g_openMojiColr1Font     = nullptr;
+ImFont* g_fluentEmojiFont       = nullptr;
+ImFont* g_amiriQuranColoredFont = nullptr;
+
+// Non-Google Arabic fonts (aliftype / rastikerdar upstream).
+ImFont* g_vazirmatnFont         = nullptr;
+ImFont* g_amiriQuranFont        = nullptr;
+
+// Load a font into `slot` if slot is currently null AND the file exists on
+// disk. Idempotent: calling each frame is a no-op once loaded. Used both at
+// startup and when a new font arrives via the downloader UI (see
+// LoadOrRefreshDemoFonts).
+static inline void LoadFontIfMissing( ImFontAtlas* atlas, ImFont** slot,
+                                      const char* path, float size,
+                                      const ImFontConfig* cfg = nullptr,
+                                      const ImWchar* ranges = nullptr )
+{
+    if ( *slot != nullptr ) return;
+    if ( !ImDwDownload::FileExists( path ) ) return;
+    *slot = atlas->AddFontFromFileTTF( path, size, cfg, ranges );
+}
+
+// Walk every demo-font slot; load any whose file is present on disk but not
+// yet in the ImGui atlas. ImGui 1.92's dynamic atlas rebuilds on demand, so
+// fonts added here become renderable on the very next frame — no restart.
+static void LoadOrRefreshDemoFonts( ImGuiIO& io )
+{
+    ImFontConfig slugCfg;
+    slugCfg.FontLoader = ImWidgets::GetSlugFontLoader();
+    static const ImWchar arabicRanges[] = { 0x0020, 0x007E, 0x0600, 0x06FF, 0xFE70, 0xFEFF, 0 };
+    const float sz = 24.0f;
+
+    // Keepers / Code
+    LoadFontIfMissing( io.Fonts, &g_firaCodeFont,    "fonts/FiraCode[wght].ttf",       sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_monblockFont,    "fonts/Sligoil-Micro.otf",        sz, &slugCfg );
+
+    // Serif
+    LoadFontIfMissing( io.Fonts, &g_cinzelFont,      "fonts/Cinzel[wght].ttf",          sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_alfaSlabFont,    "fonts/AlfaSlabOne-Regular.ttf",   sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_classicalFont,   "fonts/CinzelDecorative-Regular.ttf", sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_foglihtenFont,   "fonts/UnifrakturCook-Bold.ttf",   sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_prida61Font,     "fonts/PlayfairDisplaySC-Regular.ttf", sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_steelworksFont,  "fonts/Rye-Regular.ttf",           sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_trenchSlabFont,  "fonts/TrenchSlab-Regular.otf",    sz, &slugCfg );
+
+    // Script / Handwriting — styles intentionally diverse (pencil, sharpie,
+    // brush, retro, felt-tip, copperplate, ...) rather than many variants
+    // of English-roundhand.
+    LoadFontIfMissing( io.Fonts, &g_allessaFont,     "fonts/Caveat[wght].ttf",          sz, &slugCfg );  // pencil
+    LoadFontIfMissing( io.Fonts, &g_brightMarchFont, "fonts/Sacramento-Regular.ttf",    sz, &slugCfg );  // monoline upright
+    LoadFontIfMissing( io.Fonts, &g_camoodFont,      "fonts/KaushanScript-Regular.ttf", sz, &slugCfg );  // bold brush
+    LoadFontIfMissing( io.Fonts, &g_cheronaFont,     "fonts/GreatVibes-Regular.ttf",    sz, &slugCfg );  // classic copperplate
+    LoadFontIfMissing( io.Fonts, &g_daelingFont,     "fonts/Pacifico-Regular.ttf",      sz, &slugCfg );  // retro 50s brush
+    LoadFontIfMissing( io.Fonts, &g_flowmeryFont,    "fonts/PermanentMarker-Regular.ttf", sz, &slugCfg ); // sharpie
+    LoadFontIfMissing( io.Fonts, &g_galinsFont,      "fonts/AlexBrush-Regular.ttf",     sz, &slugCfg );  // dry brush
+    LoadFontIfMissing( io.Fonts, &g_gallanteFont,    "fonts/ShadowsIntoLight.ttf",      sz, &slugCfg );  // loose marker
+    LoadFontIfMissing( io.Fonts, &g_kleymisskyFont,  "fonts/Yellowtail-Regular.ttf",    sz, &slugCfg );  // retro connected
+    LoadFontIfMissing( io.Fonts, &g_loveLightFont,   "fonts/LoveLight-Regular.ttf",     sz, &slugCfg );  // decorative
+    LoadFontIfMissing( io.Fonts, &g_metaforaAltFont, "fonts/LeckerliOne-Regular.ttf",   sz, &slugCfg );  // retro bold italic brush
+    LoadFontIfMissing( io.Fonts, &g_metaforaSsFont,  "fonts/Sail-Regular.ttf",          sz, &slugCfg );  // bold monoline display
+    LoadFontIfMissing( io.Fonts, &g_migullonFont,    "fonts/Satisfy-Regular.ttf",       sz, &slugCfg );  // casual brush
+    LoadFontIfMissing( io.Fonts, &g_milsskyFont,     "fonts/DancingScript[wght].ttf",   sz, &slugCfg );  // bouncy casual
+    LoadFontIfMissing( io.Fonts, &g_reginaFont,      "fonts/HomemadeApple-Regular.ttf", sz, &slugCfg );  // personal cursive
+    LoadFontIfMissing( io.Fonts, &g_retroHeartFont,  "fonts/PetitFormalScript-Regular.ttf", sz, &slugCfg );  // retro engraved
+    LoadFontIfMissing( io.Fonts, &g_rosehotFont,     "fonts/Melodrama-Regular.otf",     sz, &slugCfg );  // expressive script-display
+    LoadFontIfMissing( io.Fonts, &g_sophieFont,      "fonts/GochiHand-Regular.ttf",     sz, &slugCfg );  // felt-tip pen
+    LoadFontIfMissing( io.Fonts, &g_sharpieFont,     "fonts/Sharpie-Regular.otf",       sz, &slugCfg );  // marker handwriting
+
+    // Display / Decorative — curated Velvetyne picks (plus 3 overflow slots).
+    LoadFontIfMissing( io.Fonts, &g_bollgoFont,      "fonts/FlorDeRuina-Flor.otf",            sz, &slugCfg );  // baroque organic
+    LoadFontIfMissing( io.Fonts, &g_boucherFont,     "fonts/AMDAL-Regular.otf",               sz, &slugCfg );  // bold Tifinagh display
+    LoadFontIfMissing( io.Fonts, &g_dottedFont,      "fonts/Bianzhidai-NoBG-Base.otf",        sz, &slugCfg );  // pixel/weave (concept match for Dotted)
+    LoadFontIfMissing( io.Fonts, &g_franticallyFont, "fonts/Mess.otf",                        sz, &slugCfg );  // chaotic (concept match for Frantically)
+    LoadFontIfMissing( io.Fonts, &g_gimboFont,       "fonts/Pilowlava-Regular.otf",           sz, &slugCfg );  // bulbous molten
+    LoadFontIfMissing( io.Fonts, &g_gingaFont,       "fonts/Interlope-Regular.otf",           sz, &slugCfg );  // interlocking geometric
+    LoadFontIfMissing( io.Fonts, &g_magnoliaFont,    "fonts/Letters-Torn.otf",                sz, &slugCfg );  // abstract letterforms
+    LoadFontIfMissing( io.Fonts, &g_molgethFont,     "fonts/Fungal-Grow400Thickness500.ttf",  sz, &slugCfg );  // organic growing
+    LoadFontIfMissing( io.Fonts, &g_squareLilyFont,  "fonts/Lithops-Regular.otf",             sz, &slugCfg );  // rock-like organic
+    LoadFontIfMissing( io.Fonts, &g_ouvrieresFont,   "fonts/Ouvrieres-Affamees.otf",          sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_picnicFont,      "fonts/PicNic-Regular.otf",              sz, &slugCfg );
+
+    // Display / Decorative — Fontshare batch
+    LoadFontIfMissing( io.Fonts, &g_comicoFont,         "fonts/Comico-Regular.otf",         sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_supremeFont,        "fonts/Supreme-Regular.otf",        sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_bespokeStencilFont, "fonts/BespokeStencil-Regular.otf", sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_akturaFont,         "fonts/Aktura-Regular.otf",         sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_britneyFont,        "fonts/Britney-Regular.otf",        sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_styroFont,          "fonts/Styro-Regular.otf",          sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_boxingFont,         "fonts/Boxing-Regular.otf",         sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_kolaFont,           "fonts/Kola-Regular.otf",           sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_zinaFont,           "fonts/Zina-Regular.otf",           sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_kihimFont,          "fonts/Kihim-Regular.otf",          sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_striperFont,        "fonts/Striper-Regular.otf",        sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_kohinoorZeroneFont, "fonts/KohinoorZerone-Regular.otf", sz, &slugCfg );
+
+    // CFF Monochrome
+    LoadFontIfMissing( io.Fonts, &g_manbowClearFont, "fonts/Array-Regular.otf",         sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_manbowLinesFont, "fonts/Tanker-Regular.otf",        sz, &slugCfg );
+
+    // Color
+    LoadFontIfMissing( io.Fonts, &g_twemojiFont,         "fonts/Noto-COLRv1.ttf",        sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_coralPixelsFont,     "fonts/CoralPixels-Regular.ttf", sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_nablaFont,           "fonts/Nabla[EDPT,EHLT].ttf",   sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_primecolorCV1Font,   "fonts/BungeeSpice-Regular.ttf", sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_bungeeSpiceFont,     "fonts/BungeeSpice-Regular.ttf", sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_honkFont,            "fonts/Honk[MORF,SHLN].ttf",    sz, &slugCfg );
+
+    // Color — non-Google sources (SVG / COLRv0 / COLRv1)
+    LoadFontIfMissing( io.Fonts, &g_notoColorEmojiSvgFont, "fonts/NotoColorEmoji-SVG.otf",            sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_twitterColorEmojiFont, "fonts/TwitterColorEmoji-SVGinOT.ttf",     sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_openMojiColr0Font,     "fonts/OpenMoji-color-glyf_colr_0.ttf",    sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_openMojiColr1Font,     "fonts/OpenMoji-color-glyf_colr_1.ttf",    sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_fluentEmojiFont,       "fonts/FluentEmojiColor.ttf",              sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_amiriQuranColoredFont, "fonts/AmiriQuranColored.ttf",             sz, &slugCfg, arabicRanges );
+
+    // Arabic
+    LoadFontIfMissing( io.Fonts, &g_amiriFont,           "fonts/Amiri-Regular.ttf",         sz, &slugCfg, arabicRanges );
+    LoadFontIfMissing( io.Fonts, &g_arefRuqaaBoldFont,   "fonts/ArefRuqaaInk-Bold.ttf",     sz, &slugCfg, arabicRanges );
+    LoadFontIfMissing( io.Fonts, &g_arefRuqaaRegFont,    "fonts/ArefRuqaaInk-Regular.ttf",  sz, &slugCfg, arabicRanges );
+    LoadFontIfMissing( io.Fonts, &g_blakaInkFont,        "fonts/BlakaInk-Regular.ttf",      sz, &slugCfg, arabicRanges );
+    LoadFontIfMissing( io.Fonts, &g_reemKufiInkFont,     "fonts/ReemKufiInk-Regular.ttf",   sz, &slugCfg, arabicRanges );
+    LoadFontIfMissing( io.Fonts, &g_reemKufiFunFont,     "fonts/ReemKufiFun[wght].ttf",     sz, &slugCfg, arabicRanges );
+    LoadFontIfMissing( io.Fonts, &g_cairoPlayBoldFont,   "fonts/CairoPlay[slnt,wght].ttf",  sz, &slugCfg, arabicRanges );
+    LoadFontIfMissing( io.Fonts, &g_cairoPlayXLightFont, "fonts/CairoPlay[slnt,wght].ttf",  sz, &slugCfg, arabicRanges );
+    LoadFontIfMissing( io.Fonts, &g_vazirmatnFont,       "fonts/Vazirmatn-Regular.ttf",     sz, &slugCfg, arabicRanges );
+    LoadFontIfMissing( io.Fonts, &g_amiriQuranFont,      "fonts/AmiriQuran.ttf",            sz, &slugCfg, arabicRanges );
+}
+
 ImTextureID background;
 ImVec2 background_size;
 ImTextureID illlustration_img;
@@ -782,79 +951,99 @@ int main( int argc, char** argv )
 	// Load fonts (FontScaleDpi handles DPI scaling at render time)
 	io.Fonts->AddFontFromFileTTF( "../extern/FiraCode/distr/ttf/FiraCode-Medium.ttf", 16.0f );
 
-	// Use Slug font loader for all demo fonts (enables colored atlas for COLR/SVG fonts)
+	// Demo fonts load from canonical names matching their download URLs
+	// (see font_manifest.inl). LoadOrRefreshDemoFonts is idempotent — any
+	// missing files are re-checked each frame from ShowDrawTextDemo, so
+	// fonts downloaded via the UI become renderable without restart.
+	LoadOrRefreshDemoFonts( io );
+
+	// (legacy block below is no-op'd — replaced by LoadOrRefreshDemoFonts).
 	ImFontConfig slugCfg;
 	slugCfg.FontLoader = ImWidgets::GetSlugFontLoader();
+	(void)slugCfg;
+#if 0
+	g_firaCodeFont    = AddFontIfExists( io.Fonts, "fonts/FiraCode[wght].ttf",       24.0f, &slugCfg );
 
-	g_firaCodeFont    = io.Fonts->AddFontFromFileTTF( "fonts/FiraCode-Regular.ttf",                           24.0f, &slugCfg );
+	// Keepers (already on Google Fonts)
+	g_cinzelFont      = AddFontIfExists( io.Fonts, "fonts/Cinzel[wght].ttf",          24.0f, &slugCfg );
+	g_alfaSlabFont    = AddFontIfExists( io.Fonts, "fonts/AlfaSlabOne-Regular.ttf",   24.0f, &slugCfg );
+	g_loveLightFont   = AddFontIfExists( io.Fonts, "fonts/LoveLight-Regular.ttf",     24.0f, &slugCfg );
+	g_nablaFont       = AddFontIfExists( io.Fonts, "fonts/Nabla[EDPT,EHLT].ttf",      24.0f, &slugCfg );
+	g_bungeeSpiceFont = AddFontIfExists( io.Fonts, "fonts/BungeeSpice-Regular.ttf",   24.0f, &slugCfg );
+	g_coralPixelsFont = AddFontIfExists( io.Fonts, "fonts/CoralPixels-Regular.ttf",   24.0f, &slugCfg );
+	g_honkFont        = AddFontIfExists( io.Fonts, "fonts/Honk[MORF,SHLN].ttf",       24.0f, &slugCfg );
 
-	// Rasterized at 24 px just so ImGui holds the TTF data; Slug renders at any size.
-	g_cinzelFont      = io.Fonts->AddFontFromFileTTF( "fonts/Cinzel.ttf", 24.0f, &slugCfg );
-	g_alfaSlabFont    = io.Fonts->AddFontFromFileTTF( "fonts/AlfaSlabOne-Regular.ttf", 24.0f, &slugCfg );
-	g_dottedFont      = io.Fonts->AddFontFromFileTTF( "fonts/Dotted.ttf", 24.0f, &slugCfg );
-	g_flowmeryFont    = io.Fonts->AddFontFromFileTTF( "fonts/Flowmery-Regular.ttf", 24.0f, &slugCfg );
-	g_franticallyFont = io.Fonts->AddFontFromFileTTF( "fonts/Frantically-Regular (1).ttf", 24.0f, &slugCfg );
-	g_loveLightFont   = io.Fonts->AddFontFromFileTTF( "fonts/LoveLight-Regular.ttf", 24.0f, &slugCfg );
-	g_magnoliaFont    = io.Fonts->AddFontFromFileTTF( "fonts/Magnolia Floral Line Monogram.ttf", 24.0f, &slugCfg );
-	g_rosehotFont     = io.Fonts->AddFontFromFileTTF( "fonts/Rosehot.ttf", 24.0f, &slugCfg );
-	g_nablaFont       = io.Fonts->AddFontFromFileTTF( "fonts/Nabla-Regular-VariableFont_EDPT,EHLT.ttf", 24.0f, &slugCfg );
-	g_squareLilyFont  = io.Fonts->AddFontFromFileTTF( "fonts/Square Lily Monogram.ttf", 24.0f, &slugCfg );
-	// Ligature showcase fonts
-	g_allessaFont     = io.Fonts->AddFontFromFileTTF( "fonts/AllessaPersonalUse-4pRl.ttf", 24.0f, &slugCfg );
-	g_bollgoFont      = io.Fonts->AddFontFromFileTTF( "fonts/Bollgo-zr2pX.ttf", 24.0f, &slugCfg );
-	g_boucherFont     = io.Fonts->AddFontFromFileTTF( "fonts/BoucherDemoRegular-lxRoD.ttf", 24.0f, &slugCfg );
-	g_brightMarchFont = io.Fonts->AddFontFromFileTTF( "fonts/BrightMarchingRegular-9MA72.otf", 24.0f, &slugCfg );
-	g_camoodFont      = io.Fonts->AddFontFromFileTTF( "fonts/Camood-aYoaR.otf", 24.0f, &slugCfg );
-	g_cheronaFont     = io.Fonts->AddFontFromFileTTF( "fonts/Cherona-LVG73.otf", 24.0f, &slugCfg );
-	g_classicalFont   = io.Fonts->AddFontFromFileTTF( "fonts/ClassicalAestheticsDemoRegular-0vqjX.ttf", 24.0f, &slugCfg );
-	g_daelingFont     = io.Fonts->AddFontFromFileTTF( "fonts/Daeling-Jp65x.ttf", 24.0f, &slugCfg );
-	g_endlessFont     = io.Fonts->AddFontFromFileTTF( "fonts/EndlesslyExpandedDemoRegular-rvXlp.ttf", 24.0f, &slugCfg );
-	g_foglihtenFont   = io.Fonts->AddFontFromFileTTF( "fonts/Foglihtenno07calt-WpzEA.otf", 24.0f, &slugCfg );
-	g_galinsFont      = io.Fonts->AddFontFromFileTTF( "fonts/GalinsRegular-Wp5eY.otf", 24.0f, &slugCfg );
-	g_gallanteFont    = io.Fonts->AddFontFromFileTTF( "fonts/Gallante-AR1ap.otf", 24.0f, &slugCfg );
-	g_gimboFont       = io.Fonts->AddFontFromFileTTF( "fonts/Gimbo-ovZdA.ttf", 24.0f, &slugCfg );
-	g_gingaFont       = io.Fonts->AddFontFromFileTTF( "fonts/Ginga-r09p.ttf", 24.0f, &slugCfg );
-	g_kleymisskyFont  = io.Fonts->AddFontFromFileTTF( "fonts/Kleymissky-0xBG.otf", 24.0f, &slugCfg );
-	g_metaforaAltFont = io.Fonts->AddFontFromFileTTF( "fonts/MetaforaAlternateAndSwashRegular-KVRnW.ttf", 24.0f, &slugCfg );
-	g_metaforaSsFont  = io.Fonts->AddFontFromFileTTF( "fonts/MetaforaSs05Ss09Regular-vn5LZ.ttf", 24.0f, &slugCfg );
-	g_migullonFont    = io.Fonts->AddFontFromFileTTF( "fonts/Migullon-V4e6l.otf", 24.0f, &slugCfg );
-	g_milsskyFont     = io.Fonts->AddFontFromFileTTF( "fonts/MilsskyRegular-aYJOE.otf", 24.0f, &slugCfg );
-	g_molgethFont     = io.Fonts->AddFontFromFileTTF( "fonts/Molgeth-xRMpm.ttf", 24.0f, &slugCfg );
-	g_monblockFont    = io.Fonts->AddFontFromFileTTF( "fonts/Monblock-wo9Rn.otf", 24.0f, &slugCfg );
-	g_prida61Font     = io.Fonts->AddFontFromFileTTF( "fonts/Prida61-Groa.otf", 24.0f, &slugCfg );
-	g_reginaFont      = io.Fonts->AddFontFromFileTTF( "fonts/Regina-K7Yvl.ttf", 24.0f, &slugCfg );
-	g_retroHeartFont  = io.Fonts->AddFontFromFileTTF( "fonts/RetroHeartYou-1jvD4.otf", 24.0f, &slugCfg );
-	g_sophieFont      = io.Fonts->AddFontFromFileTTF( "fonts/SophiamelanieRegular-E4gee.otf", 24.0f, &slugCfg );
-	g_steelworksFont  = io.Fonts->AddFontFromFileTTF( "fonts/SteelworksVintageDemo-rR98.ttf", 24.0f, &slugCfg );
-	// Color fonts
-	g_twemojiFont        = io.Fonts->AddFontFromFileTTF( "fonts/Twemoji.Mozilla.ttf", 24.0f, &slugCfg );
-	g_aquaphonicDownpourFont = io.Fonts->AddFontFromFileTTF( "fonts/Aquaphonic-Downpour.otf", 24.0f, &slugCfg );
-	g_aquaphonicDrizzleFont  = io.Fonts->AddFontFromFileTTF( "fonts/Aquaphonic-Drizzle.otf", 24.0f, &slugCfg );
-	g_bungeeSpiceFont        = io.Fonts->AddFontFromFileTTF( "fonts/BungeeSpice-Regular.ttf", 24.0f, &slugCfg );
-	g_cimeroProFont          = io.Fonts->AddFontFromFileTTF( "fonts/CimeroPro.otf", 24.0f, &slugCfg );
-	g_colorTubeFont          = io.Fonts->AddFontFromFileTTF( "fonts/ColorTube.otf", 24.0f, &slugCfg );
-	g_fatternFont            = io.Fonts->AddFontFromFileTTF( "fonts/Fattern-GO6zm.otf", 24.0f, &slugCfg );
-	g_gilbertColorFont       = io.Fonts->AddFontFromFileTTF( "fonts/Gilbert-Color Bold Preview5.otf", 24.0f, &slugCfg );
-	g_manbowClearFont        = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Clear.otf", 24.0f, &slugCfg );
-	g_manbowLinesFont        = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Lines.otf", 24.0f, &slugCfg );
-	g_manbowSpotsFont        = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Spots.otf", 24.0f, &slugCfg );
-	g_manbowToneFont         = io.Fonts->AddFontFromFileTTF( "fonts/Manbow Tone.otf", 24.0f, &slugCfg );
-	g_multicoloreFont        = io.Fonts->AddFontFromFileTTF( "fonts/Multicolore Pro.otf", 24.0f, &slugCfg );
-	g_primecolorCV1Font      = io.Fonts->AddFontFromFileTTF( "fonts/Primecolor-CV1.ttf", 24.0f, &slugCfg );
-	g_primecolorGFont        = io.Fonts->AddFontFromFileTTF( "fonts/Primecolor-G.ttf", 24.0f, &slugCfg );
-	g_primecolorMFont        = io.Fonts->AddFontFromFileTTF( "fonts/Primecolor-M.ttf", 24.0f, &slugCfg );
+	// --- Replacements (original -> replacement) ---
+	g_monblockFont    = AddFontIfExists( io.Fonts, "fonts/Sligoil-Micro.otf",              24.0f, &slugCfg );  // Monblock -> Sligoil (Velvetyne)
+	g_classicalFont   = AddFontIfExists( io.Fonts, "fonts/CinzelDecorative-Regular.ttf",   24.0f, &slugCfg );  // Classical Aesthetics
+	g_foglihtenFont   = AddFontIfExists( io.Fonts, "fonts/UnifrakturCook-Bold.ttf",        24.0f, &slugCfg );  // Foglihten -> UnifrakturCook
+	g_prida61Font     = AddFontIfExists( io.Fonts, "fonts/PlayfairDisplaySC-Regular.ttf",  24.0f, &slugCfg );  // Prida 61 -> Playfair Display SC
+	g_steelworksFont  = AddFontIfExists( io.Fonts, "fonts/Rye-Regular.ttf",                24.0f, &slugCfg );  // Steelworks -> Rye
+	g_allessaFont     = AddFontIfExists( io.Fonts, "fonts/Allura-Regular.ttf",             24.0f, &slugCfg );  // Allessa -> Allura
+	g_brightMarchFont = AddFontIfExists( io.Fonts, "fonts/Sacramento-Regular.ttf",         24.0f, &slugCfg );  // Bright Marching -> Sacramento
+	g_camoodFont      = AddFontIfExists( io.Fonts, "fonts/KaushanScript-Regular.ttf",      24.0f, &slugCfg );  // Camood -> Kaushan Script
+	g_cheronaFont     = AddFontIfExists( io.Fonts, "fonts/GreatVibes-Regular.ttf",         24.0f, &slugCfg );  // Cherona -> Great Vibes
+	g_daelingFont     = AddFontIfExists( io.Fonts, "fonts/Parisienne-Regular.ttf",         24.0f, &slugCfg );  // Daeling -> Parisienne
+	g_flowmeryFont    = AddFontIfExists( io.Fonts, "fonts/PinyonScript-Regular.ttf",       24.0f, &slugCfg );  // Flowmery -> Pinyon Script
+	g_galinsFont      = AddFontIfExists( io.Fonts, "fonts/AlexBrush-Regular.ttf",          24.0f, &slugCfg );  // Galins -> Alex Brush
+	g_gallanteFont    = AddFontIfExists( io.Fonts, "fonts/Italianno-Regular.ttf",          24.0f, &slugCfg );  // Gallante -> Italianno
+	g_kleymisskyFont  = AddFontIfExists( io.Fonts, "fonts/Yellowtail-Regular.ttf",         24.0f, &slugCfg );  // Kleymissky -> Yellowtail
+	g_metaforaAltFont = AddFontIfExists( io.Fonts, "fonts/Tangerine-Regular.ttf",          24.0f, &slugCfg );  // Metafora Alt -> Tangerine
+	g_metaforaSsFont  = AddFontIfExists( io.Fonts, "fonts/Sail-Regular.ttf",               24.0f, &slugCfg );  // Metafora SS -> Sail
+	g_migullonFont    = AddFontIfExists( io.Fonts, "fonts/Satisfy-Regular.ttf",            24.0f, &slugCfg );  // Migullon -> Satisfy
+	g_milsskyFont     = AddFontIfExists( io.Fonts, "fonts/DancingScript[wght].ttf",        24.0f, &slugCfg );  // Milssky -> Dancing Script
+	g_reginaFont      = AddFontIfExists( io.Fonts, "fonts/Niconne-Regular.ttf",            24.0f, &slugCfg );  // Regina -> Niconne
+	g_retroHeartFont  = AddFontIfExists( io.Fonts, "fonts/PetitFormalScript-Regular.ttf",  24.0f, &slugCfg );  // Retro Heart -> Petit Formal Script
+	g_rosehotFont     = AddFontIfExists( io.Fonts, "fonts/Melodrama-Regular.otf",          24.0f, &slugCfg );  // Rosehot -> Melodrama (Fontshare)
+	g_sophieFont      = AddFontIfExists( io.Fonts, "fonts/EagleLake-Regular.ttf",          24.0f, &slugCfg );  // Sophiemelanie -> Eagle Lake
+	g_bollgoFont      = AddFontIfExists( io.Fonts, "fonts/Basteleur-Moonlight.otf",        24.0f, &slugCfg );  // Bollgo -> Basteleur (Velvetyne)
+	g_boucherFont     = AddFontIfExists( io.Fonts, "fonts/AlmendraSC-Regular.ttf",         24.0f, &slugCfg );  // Boucher -> Almendra SC
+	g_dottedFont      = AddFontIfExists( io.Fonts, "fonts/Codystar-Regular.ttf",           24.0f, &slugCfg );  // Dotted -> Codystar
+	g_franticallyFont = AddFontIfExists( io.Fonts, "fonts/RubikBeastly-Regular.ttf",       24.0f, &slugCfg );  // Frantically -> Rubik Beastly
+	g_gimboFont       = AddFontIfExists( io.Fonts, "fonts/Pilowlava-Regular.otf",          24.0f, &slugCfg );  // Gimbo -> Pilowlava (Velvetyne)
+	g_gingaFont       = AddFontIfExists( io.Fonts, "fonts/Ouroboros-Regular.otf",          24.0f, &slugCfg );  // Ginga -> Ouroboros (codeberg)
+	g_magnoliaFont    = AddFontIfExists( io.Fonts, "fonts/UncialAntiqua-Regular.ttf",      24.0f, &slugCfg );  // Magnolia -> Uncial Antiqua
+	g_molgethFont     = AddFontIfExists( io.Fonts, "fonts/Trickster-Reg.otf",              24.0f, &slugCfg );  // Molgeth -> Trickster (Velvetyne)
+	g_squareLilyFont  = AddFontIfExists( io.Fonts, "fonts/StalinistOne-Regular.ttf",       24.0f, &slugCfg );  // Square Lily -> Stalinist One
+	g_manbowClearFont = AddFontIfExists( io.Fonts, "fonts/Array-Regular.otf",              24.0f, &slugCfg );  // Manbow Clear -> Array (Fontshare, CFF)
+	g_manbowLinesFont = AddFontIfExists( io.Fonts, "fonts/Tanker-Regular.otf",             24.0f, &slugCfg );  // Manbow Lines -> Tanker (Fontshare, CFF)
+	g_twemojiFont     = AddFontIfExists( io.Fonts, "fonts/Noto-COLRv1.ttf",                24.0f, &slugCfg );  // Twemoji -> Noto Color Emoji (COLRv1)
+	g_primecolorCV1Font = AddFontIfExists( io.Fonts, "fonts/BungeeSpice-Regular.ttf",      24.0f, &slugCfg );  // Primecolor CV1 -> Bungee Spice (same file, 2 slots)
+	g_endlessFont     = nullptr;  // originally commented-out; kept for source compatibility
+
+	// --- Unmatched (no replacement found on Google Fonts / Fontshare /
+	// Velvetyne / Open Foundry). These slots stay null; their UI labels
+	// indicate no replacement is available. ---
+	g_manbowSpotsFont        = nullptr;  // no halftone/dot CFF on the 4 sources
+	g_manbowToneFont         = nullptr;  // no screentone CFF on the 4 sources
+	g_aquaphonicDownpourFont = nullptr;  // OT-SVG not shipped by any of the 4 sources
+	g_aquaphonicDrizzleFont  = nullptr;
+	g_cimeroProFont          = nullptr;
+	g_colorTubeFont          = nullptr;
+	g_gilbertColorFont       = nullptr;
+	g_multicoloreFont        = nullptr;
+	g_primecolorGFont        = nullptr;
+	g_primecolorMFont        = nullptr;
+	g_fatternFont            = nullptr;
+
 	// Arabic glyph range for Arabic fonts
 	static const ImWchar arabicRanges[] = { 0x0020, 0x007E, 0x0600, 0x06FF, 0xFE70, 0xFEFF, 0 };
-	g_amiriFont              = io.Fonts->AddFontFromFileTTF( "fonts/Amiri-Regular.ttf",                           24.0f, &slugCfg, arabicRanges );
-	g_arefRuqaaBoldFont      = io.Fonts->AddFontFromFileTTF( "fonts/ArefRuqaaInk-Bold.ttf",                        24.0f, &slugCfg, arabicRanges );
-	g_arefRuqaaRegFont       = io.Fonts->AddFontFromFileTTF( "fonts/ArefRuqaaInk-Regular.ttf",                     24.0f, &slugCfg, arabicRanges );
-	g_blakaInkFont           = io.Fonts->AddFontFromFileTTF( "fonts/BlakaInk-Regular.ttf",                         24.0f, &slugCfg, arabicRanges );
-	g_reemKufiInkFont        = io.Fonts->AddFontFromFileTTF( "fonts/ReemKufiInk-Regular.ttf",                      24.0f, &slugCfg, arabicRanges );
-	g_reemKufiFunFont        = io.Fonts->AddFontFromFileTTF( "fonts/ReemKufiFun-Regular.ttf",                      24.0f, &slugCfg, arabicRanges );
-	g_cairoPlayBoldFont      = io.Fonts->AddFontFromFileTTF( "fonts/CairoPlay-Bold.ttf",                           24.0f, &slugCfg, arabicRanges );
-	g_cairoPlayXLightFont    = io.Fonts->AddFontFromFileTTF( "fonts/CairoPlay-ExtraLight.ttf",                     24.0f, &slugCfg, arabicRanges );
-	g_coralPixelsFont        = io.Fonts->AddFontFromFileTTF( "fonts/CoralPixels-Regular.ttf", 24.0f, &slugCfg );
-	g_honkFont               = io.Fonts->AddFontFromFileTTF( "fonts/Honk-Regular-VariableFont_MORF,SHLN.ttf", 24.0f, &slugCfg );
+	g_amiriFont              = AddFontIfExists( io.Fonts, "fonts/Amiri-Regular.ttf",            24.0f, &slugCfg, arabicRanges );
+	g_arefRuqaaBoldFont      = AddFontIfExists( io.Fonts, "fonts/ArefRuqaaInk-Bold.ttf",         24.0f, &slugCfg, arabicRanges );
+	g_arefRuqaaRegFont       = AddFontIfExists( io.Fonts, "fonts/ArefRuqaaInk-Regular.ttf",      24.0f, &slugCfg, arabicRanges );
+	g_blakaInkFont           = AddFontIfExists( io.Fonts, "fonts/BlakaInk-Regular.ttf",          24.0f, &slugCfg, arabicRanges );
+	g_reemKufiInkFont        = AddFontIfExists( io.Fonts, "fonts/ReemKufiInk-Regular.ttf",       24.0f, &slugCfg, arabicRanges );
+	g_reemKufiFunFont        = AddFontIfExists( io.Fonts, "fonts/ReemKufiFun[wght].ttf",         24.0f, &slugCfg, arabicRanges );
+	// Cairo Play upstream is now a single variable font (slnt,wght axes); both
+	// demo slots load the same file — visually identical until we wire axis
+	// instancing into the Slug font loader.
+	g_cairoPlayBoldFont      = AddFontIfExists( io.Fonts, "fonts/CairoPlay[slnt,wght].ttf",      24.0f, &slugCfg, arabicRanges );
+	g_cairoPlayXLightFont    = AddFontIfExists( io.Fonts, "fonts/CairoPlay[slnt,wght].ttf",      24.0f, &slugCfg, arabicRanges );
+#endif
+
+	// Sync downloader statuses against what's on disk (so "Downloaded" labels
+	// render correctly for files that already exist).
+	ImDwDownload::RefreshStatuses();
 
 	// Load LaTeX math font (Latin Modern Math)
 	ImWidgets::LoadLaTeXFont();
@@ -1440,6 +1629,7 @@ int main( int argc, char** argv )
 	}
 
 	// Cleanup
+	ImDwDownload::Shutdown();
 	ImWidgets::DestroyContext( ctx );
 
 	ImPlatform_ShutdownGfxAPI();
@@ -1701,11 +1891,18 @@ namespace ImWidgets {
 		static float s_cull_h = 0; float s_cull_y;
 		if ( !BeginCullSection( s_cull_h, s_cull_y ) ) return;
 
+		// Hot-reload any fonts that arrived via the downloader, then render
+		// the Download UI. These run BEFORE the no-fonts-loaded early-exit
+		// so the user can always click Download even on a fresh clone.
+		ImDwDownload::Tick();
+		LoadOrRefreshDemoFonts( ImGui::GetIO() );
+		ImDwDownload::DrawDownloadAllButton();
+
 		if ( !g_cinzelFont && !g_alfaSlabFont && !g_dottedFont && !g_flowmeryFont &&
 		     !g_franticallyFont && !g_loveLightFont && !g_magnoliaFont &&
 		     !g_nablaFont && !g_rosehotFont && !g_squareLilyFont )
 		{
-			ImGui::TextDisabled( "No Slug fonts loaded." );
+			ImGui::TextDisabled( "No Slug fonts loaded yet — click \"Download all fonts\" above." );
 			return;
 		}
 
@@ -1759,62 +1956,88 @@ namespace ImWidgets {
 		static const char* kGrpSVG    = "Color: SVG";
 		static const char* kGrpColr1  = "Color: COLR v1 / Gradient";
 		static const char* kGrpArabic = "Arabic";
+		// Labels use the "orig -> replacement" form when the demo font was
+		// swapped out for a Google Fonts / Fontshare / Velvetyne equivalent
+		// (see workingdir/fonts/ and font_manifest.inl). Untouched entries
+		// show just the Google Fonts name.
 		static const FontEntry kFonts[] = {
-			{ &g_firaCodeFont,    "Fira Code",               kLatin,  kGrpCode },
-			{ &g_monblockFont,    "Monblock",                kLatin,  kGrpCode },
-			{ &g_cinzelFont,      "Cinzel",                  kLatin,  kGrpSerif },
-			{ &g_alfaSlabFont,    "Alfa Slab One",           kLatin,  kGrpSerif },
-			{ &g_classicalFont,   "Classical Aesthetics",    kLatin,  kGrpSerif },
-			{ &g_foglihtenFont,   "Foglihten No07",          kLatin,  kGrpSerif },
-			{ &g_prida61Font,     "Prida 61",                kLatin,  kGrpSerif },
-			{ &g_steelworksFont,  "Steelworks Vintage",      kLatin,  kGrpSerif },
-			{ &g_allessaFont,     "Allessa",                 kLatin,  kGrpScript },
-			{ &g_brightMarchFont, "Bright Marching",         kLatin,  kGrpScript },
-			{ &g_camoodFont,      "Camood",                  kLatin,  kGrpScript },
-			{ &g_cheronaFont,     "Cherona",                 kLatin,  kGrpScript },
-			{ &g_daelingFont,     "Daeling",                 kLatin,  kGrpScript },
-			{ &g_flowmeryFont,    "Flowmery",                kLatin,  kGrpScript },
-			{ &g_galinsFont,      "Galins",                  kLatin,  kGrpScript },
-			{ &g_gallanteFont,    "Gallante",                kLatin,  kGrpScript },
-			{ &g_kleymisskyFont,  "Kleymissky",              kLatin,  kGrpScript },
-			{ &g_loveLightFont,   "Love Light",              kLatin,  kGrpScript },
-			{ &g_metaforaAltFont, "Metafora Alternate",      kLatin,  kGrpScript },
-			{ &g_metaforaSsFont,  "Metafora Stylistic",      kLatin,  kGrpScript },
-			{ &g_migullonFont,    "Migullon",                kLatin,  kGrpScript },
-			{ &g_milsskyFont,     "Milssky",                 kLatin,  kGrpScript },
-			{ &g_reginaFont,      "Regina",                  kLatin,  kGrpScript },
-			{ &g_retroHeartFont,  "Retro Heart You",         kLatin,  kGrpScript },
-			{ &g_rosehotFont,     "Rosehot",                 kLatin,  kGrpScript },
-			{ &g_sophieFont,      "Sophiemelanie",           kLatin,  kGrpScript },
-			{ &g_bollgoFont,      "Bollgo",                  kLatin,  kGrpDisp },
-			{ &g_boucherFont,     "Boucher",                 kLatin,  kGrpDisp },
-			{ &g_dottedFont,      "Dotted",                  kLatin,  kGrpDisp },
-			//{ &g_endlessFont,     "Endlessly Expanded",      kLatin,  kGrpDisp },
-			{ &g_franticallyFont, "Frantically",             kLatin,  kGrpDisp },
-			{ &g_gimboFont,       "Gimbo",                   kLatin,  kGrpDisp },
-			{ &g_gingaFont,       "Ginga",                   kLatin,  kGrpDisp },
-			{ &g_magnoliaFont,    "Magnolia Monogram",       kLatin,  kGrpDisp },
-			{ &g_molgethFont,     "Molgeth",                 kLatin,  kGrpDisp },
-			{ &g_squareLilyFont,  "Square Lily Monogram",    kLatin,  kGrpDisp },
-			{ &g_manbowClearFont,        "Manbow Clear",     kLatin,  kGrpCFF },
-			{ &g_manbowLinesFont,        "Manbow Lines",     kLatin,  kGrpCFF },
-			{ &g_manbowSpotsFont,        "Manbow Spots",     kLatin,  kGrpCFF },
-			{ &g_manbowToneFont,         "Manbow Tone",      kLatin,  kGrpCFF },
-			{ &g_twemojiFont,            "Twemoji",          kEmoji,  kGrpColr0 },
-			{ &g_coralPixelsFont,        "Coral Pixels",     kLatin,  kGrpColr0 },
-			{ &g_aquaphonicDownpourFont, "Aquaphonic Downpour", kLatin, kGrpSVG },
-			{ &g_aquaphonicDrizzleFont,  "Aquaphonic Drizzle",  kLatin, kGrpSVG },
-			{ &g_cimeroProFont,          "Cimero Pro",       kLatin,  kGrpSVG },
-			{ &g_colorTubeFont,          "Color Tube",       kLatin,  kGrpSVG },
-			{ &g_gilbertColorFont,       "Gilbert Color Bold",kLatin, kGrpSVG },
-			{ &g_multicoloreFont,        "Multicolore Pro",  kLatin,  kGrpSVG },
-			{ &g_primecolorGFont,        "Primecolor G",     kLatin,  kGrpSVG },
-			{ &g_primecolorMFont,        "Primecolor M",     kLatin,  kGrpSVG },
-			{ &g_fatternFont,            "Fattern",           kLatin,  kGrpSVG },
-			{ &g_nablaFont,              "Nabla",             kLatin,  kGrpColr1 },
-			{ &g_primecolorCV1Font,      "Primecolor CV1",   kLatin,  kGrpColr1 },
-			{ &g_bungeeSpiceFont,        "Bungee Spice",     kLatin,  kGrpColr1 },
-			{ &g_honkFont,               "Honk",              kLatin,  kGrpColr1 },
+			{ &g_firaCodeFont,    "Fira Code",                              kLatin,  kGrpCode },
+			{ &g_monblockFont,    "Monblock -> Sligoil (Velvetyne)",         kLatin,  kGrpCode },
+			{ &g_cinzelFont,      "Cinzel",                                  kLatin,  kGrpSerif },
+			{ &g_alfaSlabFont,    "Alfa Slab One",                           kLatin,  kGrpSerif },
+			{ &g_classicalFont,   "Classical Aesthetics -> Cinzel Decorative", kLatin, kGrpSerif },
+			{ &g_foglihtenFont,   "Foglihten No07 -> UnifrakturCook",         kLatin,  kGrpSerif },
+			{ &g_prida61Font,     "Prida 61 -> Playfair Display SC",          kLatin,  kGrpSerif },
+			{ &g_steelworksFont,  "Steelworks Vintage -> Rye",                kLatin,  kGrpSerif },
+			{ &g_trenchSlabFont,  "Trench Slab (Fontshare)",                 kLatin,  kGrpSerif },
+			{ &g_akturaFont,      "Aktura (Fontshare)",                       kLatin,  kGrpSerif },
+			{ &g_britneyFont,     "Britney (Fontshare)",                      kLatin,  kGrpSerif },
+			{ &g_kihimFont,       "Kihim (Fontshare)",                        kLatin,  kGrpSerif },
+			{ &g_zinaFont,        "Zina (Fontshare)",                         kLatin,  kGrpSerif },
+			{ &g_allessaFont,     "Allessa -> Caveat",                        kLatin,  kGrpScript },
+			{ &g_brightMarchFont, "Bright Marching -> Sacramento",            kLatin,  kGrpScript },
+			{ &g_camoodFont,      "Camood -> Kaushan Script",                 kLatin,  kGrpScript },
+			{ &g_cheronaFont,     "Cherona -> Great Vibes",                   kLatin,  kGrpScript },
+			{ &g_daelingFont,     "Daeling -> Pacifico",                      kLatin,  kGrpScript },
+			{ &g_flowmeryFont,    "Flowmery -> Permanent Marker",             kLatin,  kGrpScript },
+			{ &g_galinsFont,      "Galins -> Alex Brush",                     kLatin,  kGrpScript },
+			{ &g_gallanteFont,    "Gallante -> Shadows Into Light",           kLatin,  kGrpScript },
+			{ &g_kleymisskyFont,  "Kleymissky -> Yellowtail",                 kLatin,  kGrpScript },
+			{ &g_loveLightFont,   "Love Light",                               kLatin,  kGrpScript },
+			{ &g_metaforaAltFont, "Metafora Alternate -> Leckerli One",       kLatin,  kGrpScript },
+			{ &g_metaforaSsFont,  "Metafora Stylistic -> Sail",               kLatin,  kGrpScript },
+			{ &g_migullonFont,    "Migullon -> Satisfy",                      kLatin,  kGrpScript },
+			{ &g_milsskyFont,     "Milssky -> Dancing Script",                kLatin,  kGrpScript },
+			{ &g_reginaFont,      "Regina -> Homemade Apple",                 kLatin,  kGrpScript },
+			{ &g_retroHeartFont,  "Retro Heart You -> Petit Formal Script",   kLatin,  kGrpScript },
+			{ &g_rosehotFont,     "Rosehot -> Melodrama (Fontshare)",         kLatin,  kGrpScript },
+			{ &g_sophieFont,      "Sophiemelanie -> Gochi Hand",              kLatin,  kGrpScript },
+			{ &g_sharpieFont,     "Sharpie (Fontshare)",                      kLatin,  kGrpScript },
+			{ &g_bollgoFont,      "Bollgo -> Flor de Ruina (Velvetyne)",      kLatin,  kGrpDisp },
+			{ &g_boucherFont,     "Boucher -> Amdal (Velvetyne)",             kLatin,  kGrpDisp },
+			{ &g_dottedFont,      "Dotted -> Bianzhidai (Velvetyne)",         kLatin,  kGrpDisp },
+			//{ &g_endlessFont,   "Endlessly Expanded",                       kLatin,  kGrpDisp },
+			{ &g_franticallyFont, "Frantically -> Mess (Velvetyne)",          kLatin,  kGrpDisp },
+			{ &g_gimboFont,       "Gimbo -> Pilowlava (Velvetyne)",           kLatin,  kGrpDisp },
+			{ &g_gingaFont,       "Ginga -> Interlope (Velvetyne)",           kLatin,  kGrpDisp },
+			{ &g_magnoliaFont,    "Magnolia -> Letters (Velvetyne)",          kLatin,  kGrpDisp },
+			{ &g_molgethFont,     "Molgeth -> Fungal (Velvetyne)",            kLatin,  kGrpDisp },
+			{ &g_squareLilyFont,  "Square Lily -> Lithops (Velvetyne)",       kLatin,  kGrpDisp },
+			{ &g_ouvrieresFont,   "Ouvrieres (Velvetyne)",                    kLatin,  kGrpDisp },
+			{ &g_picnicFont,      "Picnic (Velvetyne)",                       kLatin,  kGrpDisp },
+			{ &g_comicoFont,         "Comico (Fontshare)",                   kLatin,  kGrpDisp },
+			{ &g_supremeFont,        "Supreme (Fontshare)",                  kLatin,  kGrpDisp },
+			{ &g_bespokeStencilFont, "Bespoke Stencil (Fontshare)",          kLatin,  kGrpDisp },
+			{ &g_styroFont,          "Styro (Fontshare)",                    kLatin,  kGrpDisp },
+			{ &g_boxingFont,         "Boxing (Fontshare)",                   kLatin,  kGrpDisp },
+			{ &g_kolaFont,           "Kola (Fontshare)",                     kLatin,  kGrpDisp },
+			{ &g_striperFont,        "Striper (Fontshare)",                  kLatin,  kGrpDisp },
+			{ &g_kohinoorZeroneFont, "Kohinoor Zerone (Fontshare)",          kLatin,  kGrpDisp },
+			{ &g_manbowClearFont,        "Manbow Clear -> Array (Fontshare, CFF)", kLatin, kGrpCFF },
+			{ &g_manbowLinesFont,        "Manbow Lines -> Tanker (Fontshare, CFF)", kLatin, kGrpCFF },
+			{ &g_manbowSpotsFont,        "Manbow Spots (unmatched)",     kLatin,  kGrpCFF },
+			{ &g_manbowToneFont,         "Manbow Tone (unmatched)",      kLatin,  kGrpCFF },
+			{ &g_twemojiFont,            "Twemoji -> Noto Color Emoji (COLRv1)", kEmoji, kGrpColr0 },
+			{ &g_coralPixelsFont,        "Coral Pixels",                 kLatin,  kGrpColr0 },
+			{ &g_openMojiColr0Font,      "OpenMoji Color (COLRv0)",      kEmoji,  kGrpColr0 },
+			{ &g_aquaphonicDownpourFont, "Aquaphonic Downpour (unmatched)", kLatin, kGrpSVG },
+			{ &g_aquaphonicDrizzleFont,  "Aquaphonic Drizzle (unmatched)",  kLatin, kGrpSVG },
+			{ &g_cimeroProFont,          "Cimero Pro (unmatched)",       kLatin,  kGrpSVG },
+			{ &g_colorTubeFont,          "Color Tube (unmatched)",       kLatin,  kGrpSVG },
+			{ &g_gilbertColorFont,       "Gilbert Color Bold (unmatched)", kLatin, kGrpSVG },
+			{ &g_multicoloreFont,        "Multicolore Pro (unmatched)",  kLatin,  kGrpSVG },
+			{ &g_primecolorGFont,        "Primecolor G (unmatched)",     kLatin,  kGrpSVG },
+			{ &g_primecolorMFont,        "Primecolor M (unmatched)",     kLatin,  kGrpSVG },
+			{ &g_fatternFont,            "Fattern (unmatched)",           kLatin,  kGrpSVG },
+			{ &g_notoColorEmojiSvgFont,  "Noto Color Emoji (OT-SVG)",     kEmoji,  kGrpSVG },
+			{ &g_twitterColorEmojiFont,  "Twitter Color Emoji (SVGinOT)", kEmoji,  kGrpSVG },
+			{ &g_nablaFont,              "Nabla",                         kLatin,  kGrpColr1 },
+			{ &g_primecolorCV1Font,      "Primecolor CV1 -> Bungee Spice", kLatin, kGrpColr1 },
+			{ &g_bungeeSpiceFont,        "Bungee Spice",                  kLatin,  kGrpColr1 },
+			{ &g_honkFont,               "Honk",                          kLatin,  kGrpColr1 },
+			{ &g_openMojiColr1Font,      "OpenMoji Color (COLRv1)",       kEmoji,  kGrpColr1 },
+			{ &g_fluentEmojiFont,        "Microsoft Fluent Emoji (COLRv1)", kEmoji, kGrpColr1 },
+			{ &g_amiriQuranColoredFont,  "Amiri Quran Colored (COLR)",    kArabic, kGrpColr1 },
 			{ &g_cairoPlayBoldFont,      "Cairo Play Bold",       kArabic, kGrpArabic },
 			{ &g_cairoPlayXLightFont,    "Cairo Play ExtraLight", kArabic, kGrpArabic },
 			{ &g_arefRuqaaBoldFont,      "Aref Ruqaa Ink Bold",  kArabic, kGrpArabic },
@@ -1822,6 +2045,8 @@ namespace ImWidgets {
 			{ &g_blakaInkFont,           "Blaka Ink",             kArabic, kGrpArabic },
 			{ &g_reemKufiInkFont,        "Reem Kufi Ink",         kArabic, kGrpArabic },
 			{ &g_reemKufiFunFont,        "Reem Kufi Fun",         kArabic, kGrpArabic },
+			{ &g_vazirmatnFont,          "Vazirmatn (rastikerdar)", kArabic, kGrpArabic },
+			{ &g_amiriQuranFont,         "Amiri Quran (aliftype upstream)", kArabic, kGrpArabic },
 		};
 
 		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
@@ -1856,6 +2081,22 @@ namespace ImWidgets {
 		bool textCacheValid = ( text_cache_key == s_text_cache_key );
 		s_text_cache_key = text_cache_key;
 
+		// When font_size or any text buffer changes, every per-entry cache
+		// becomes stale. Clearing here is critical for the scroll-culled rows:
+		// they rely on `s_cached_font_h[i]` as est_h, and without invalidation
+		// off-screen rows at the new size use a size-mismatched height (from
+		// the previous font_size), which visibly pushes visible neighbours
+		// out of place. Clearing also lets the prewarm below re-populate.
+		if ( !textCacheValid )
+		{
+			for ( int k = 0; k < IM_ARRAYSIZE( s_cached_font_h ); ++k )
+			{
+				s_cached_font_h[k] = 0.0f;
+				s_cached_sz[k]     = ImVec2( 0.0f, 0.0f );
+				s_cached_asc[k]    = 0.0f;
+			}
+		}
+
 		// Pre-warm: compute one uncached CalcTextSize per frame so scrolling hits warm cache
 		if ( textCacheValid )
 		{
@@ -1882,15 +2123,52 @@ namespace ImWidgets {
 					groupY0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
 					groupOpen = ImGui::CollapsingHeader( nextGroup );
+					if ( groupOpen )
+					{
+						// Per-category bulk download button (see font_manifest.inl).
+						ImDwDownload::DrawCategoryDownloadButton( nextGroup );
+					}
 				}
 			}
 			if ( i >= nFonts ) break;
-			if ( !*kFonts[i].font ) continue;
 			if ( !groupOpen ) continue;
+
+			// Missing-font placeholder: offer a single-font download button
+			// in place of the glyph preview so the category remains visible.
+			if ( !*kFonts[i].font )
+			{
+				ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 0, 0, 0, 255 ) );
+				ImGui::Text( "%s:", kFonts[i].label );
+				ImGui::PopStyleColor();
+				// Pair this FontEntry with its manifest slot: label must START
+				// with display (not just contain it — substring match caused
+				// e.g. label "Classical Aesthetics -> Cinzel Decorative" to
+				// resolve to the standalone "Cinzel" entry, producing
+				// duplicate ImGui IDs).
+				int dlIdx = -1;
+				for ( int mi = 0; mi < ImDwDownload::kFontMetaCount; ++mi )
+				{
+					const ImDwDownload::Meta& m = ImDwDownload::kFontMeta[mi];
+					if ( std::strcmp( m.category, kFonts[i].group ) != 0 ) continue;
+					size_t dlen = std::strlen( m.display );
+					if ( std::strncmp( kFonts[i].label, m.display, dlen ) == 0 )
+					{
+						dlIdx = mi;
+						break;
+					}
+				}
+				ImGui::SameLine();
+				if ( dlIdx >= 0 ) ImDwDownload::DrawSingleFontDownloadButton( dlIdx );
+				else ImGui::TextDisabled( "(not in manifest)" );
+				continue;
+			}
 
 			// Per-font-line scroll culling: skip CalcTextSize + DrawText for off-screen entries
 			float entryY = ImGui::GetCursorScreenPos().y;
-			float est_h = ( s_cached_font_h[i] > 0 ) ? s_cached_font_h[i] : ( labelLineH + font_size * 1.5f + gap );
+			// First-frame cull estimate: match the visible-row formula below so
+			// culled rows don't over/undershoot before the measured height is
+			// cached. Must track the line_h floor used when rendering.
+			float est_h = ( s_cached_font_h[i] > 0 ) ? s_cached_font_h[i] : ( labelLineH + font_size * 1.95f + gap );
 			if ( entryY + est_h < fontClipRect.y || entryY > fontClipRect.w )
 			{
 				ImGui::Dummy( ImVec2( canvas_w, est_h ) );
@@ -1914,7 +2192,19 @@ namespace ImWidgets {
 				s_cached_sz[i]  = sz;
 				s_cached_asc[i] = asc;
 			}
-			float   line_h = sz.y + gap;
+			// Some display/script fonts report a shaped-ink bbox smaller than the
+			// font's natural line box — the shaped measurement only covers the
+			// glyphs in the current sample text, but many Script/Display fonts
+			// have tall flourishes on specific capitals (W/D/Q/P swashes) and
+			// generous designed leading that the tight ink bbox doesn't capture.
+			//
+			// At large font_size (100+ lp), the fixed `gap` (ImGui ItemSpacing,
+			// ~8 px) becomes a negligible fraction of the row, so undercounted
+			// sz.y leads to visible overlap between rows. Fix: floor at
+			// font_size * 1.8 (a conservative Script/Display line-height) and
+			// scale the trailing gap proportionally so spacing stays visually
+			// consistent across sizes.
+			float   line_h = ImMax( sz.y, font_size * 1.8f ) + gap + font_size * 0.15f;
 
 			// Font name in solid black
 			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 0, 0, 0, 255 ) );

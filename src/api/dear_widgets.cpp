@@ -18757,7 +18757,12 @@ namespace ImWidgets
 
             // (segments are heap-allocated individually below)
 
-            float halfw = 0.5f * thickness;
+            // Use the same sub-pixel clamp as the shader so the bounding quad
+            // covers the full 1-px-wide stroke when thickness < 1. Without this,
+            // the shader's effective_thickness = max(thickness, 1) would draw
+            // pixels outside the C++-computed bounding rect — previously masked
+            // by the +2*aa+2 safety buffer but latent.
+            float halfw = 0.5f * ImMax(thickness, 1.0f);
             float acc_len = 0.0f;
             for (int i = 0; i < seg_count; ++i)
             {
@@ -18841,6 +18846,13 @@ namespace ImWidgets
                 cb->params = params;
                 s_lineSegmentPool[s_lineSegmentPoolIdx].push_back(cb);
 
+                // Each segment is wrapped in its own Begin/EndCustomShader pair.
+                // Batching (one Begin before the loop + one End after) was tried
+                // earlier but produced visible ghosting on multi-segment polylines
+                // (sine with 64 segments showed 3 shifted copies, star/zigzag
+                // showed random artifacts). ImPlatform expects a Begin/End pair
+                // around each draw for the per-segment cbuffer to latch, so we
+                // honour that contract.
                 drawlist->AddCallback(DW_PrepareLineUniforms, cb);
                 ImPlatform_BeginCustomShader(drawlist, program);
                 drawlist->AddImageQuad((ImTextureID)gs_pContext->whiteImg,
@@ -18927,19 +18939,23 @@ namespace ImWidgets
             if (sp.Size < 2) return;
             if (!want_cpu_base) return;
 
-            // Sub-pixel thickness: clamp width to 1 px and scale alpha by the
-            // original thickness (Rougier 2013, solid-lines-2D.vert:136-139).
-            // Without this, CPU renders thin lines as a narrow aliased sliver,
-            // while the GPU shader correctly fades them to transparent. Keeping
-            // the two paths matched means thin strokes look identical whichever
-            // path is active.
+            // Sub-pixel thickness: clamp width to 1 px and clamp alpha to
+            // thickness (Rougier 2013, solid-lines-2D.vert:136-139):
+            //     v_color.a = min(v_linewidth, v_color.a);
+            //     v_linewidth = max(v_linewidth, 1.0);
+            // Note: *CLAMP* (min), not *multiply*. For a translucent colour with
+            // a sub-pixel line, alpha only drops if thickness < alpha. Earlier
+            // multiplicative form over-dimmed translucent thin lines.
             float effective_thickness = thickness;
             ImU32 effective_col = col;
             if (effective_thickness < 1.0f)
             {
                 int a = (int)((col >> IM_COL32_A_SHIFT) & 0xFF);
-                a = (int)((float)a * effective_thickness + 0.5f);
-                if (a < 0) a = 0; if (a > 255) a = 255;
+                // Convert thickness in [0, 1] to alpha in [0, 255] and clamp the
+                // colour's existing alpha down to that — matching the reference.
+                int cap = (int)(effective_thickness * 255.0f + 0.5f);
+                if (cap < 0) cap = 0; if (cap > 255) cap = 255;
+                if (a > cap) a = cap;
                 effective_col = (col & ~IM_COL32_A_MASK) | ((ImU32)a << IM_COL32_A_SHIFT);
                 effective_thickness = 1.0f;
             }
