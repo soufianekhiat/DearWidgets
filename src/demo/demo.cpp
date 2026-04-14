@@ -597,38 +597,24 @@ ImFont* g_firaCodeFont       = nullptr;
 ImFont* g_cinzelFont         = nullptr;
 ImFont* g_alfaSlabFont       = nullptr;
 ImFont* g_dottedFont         = nullptr;
-ImFont* g_flowmeryFont       = nullptr;
 ImFont* g_franticallyFont    = nullptr;
 ImFont* g_loveLightFont      = nullptr;
 ImFont* g_magnoliaFont       = nullptr;
-ImFont* g_rosehotFont        = nullptr;
 ImFont* g_squareLilyFont     = nullptr;
 // Ligature showcase
-ImFont* g_allessaFont        = nullptr;
 ImFont* g_bollgoFont         = nullptr;
-ImFont* g_boucherFont        = nullptr;
 ImFont* g_brightMarchFont    = nullptr;
 ImFont* g_camoodFont         = nullptr;
 ImFont* g_cheronaFont        = nullptr;
 ImFont* g_classicalFont      = nullptr;
-ImFont* g_daelingFont        = nullptr;
 ImFont* g_endlessFont        = nullptr;
 ImFont* g_foglihtenFont      = nullptr;
-ImFont* g_galinsFont         = nullptr;
-ImFont* g_gallanteFont       = nullptr;
 ImFont* g_gimboFont          = nullptr;
 ImFont* g_gingaFont          = nullptr;
-ImFont* g_kleymisskyFont     = nullptr;
-ImFont* g_metaforaAltFont    = nullptr;
 ImFont* g_metaforaSsFont     = nullptr;
-ImFont* g_migullonFont       = nullptr;
-ImFont* g_milsskyFont        = nullptr;
 ImFont* g_molgethFont        = nullptr;
 ImFont* g_monblockFont       = nullptr;
-ImFont* g_prida61Font        = nullptr;
 ImFont* g_reginaFont         = nullptr;
-ImFont* g_retroHeartFont     = nullptr;
-ImFont* g_sophieFont         = nullptr;
 ImFont* g_steelworksFont     = nullptr;
 // Color fonts
 ImFont* g_twemojiFont        = nullptr;
@@ -654,7 +640,6 @@ ImFont* g_notoZnamennyFont       = nullptr;
 // Arabic
 ImFont* g_amiriFont             = nullptr;
 ImFont* g_arefRuqaaBoldFont     = nullptr;
-ImFont* g_arefRuqaaRegFont      = nullptr;
 ImFont* g_blakaInkFont          = nullptr;
 ImFont* g_reemKufiFunFont       = nullptr;
 ImFont* g_cairoPlayBoldFont     = nullptr;
@@ -667,7 +652,6 @@ ImFont* g_picnicFont            = nullptr;
 
 // Fontshare display batch (sharpie lives in script; trenchSlab lives in serif).
 ImFont* g_comicoFont            = nullptr;
-ImFont* g_supremeFont           = nullptr;
 ImFont* g_sharpieFont           = nullptr;
 ImFont* g_bespokeStencilFont    = nullptr;
 ImFont* g_akturaFont            = nullptr;
@@ -683,7 +667,6 @@ ImFont* g_kohinoorZeroneFont    = nullptr;
 
 // Non-Google color fonts (SVG / COLRv0 / COLRv1).
 ImFont* g_notoColorEmojiSvgFont = nullptr;
-ImFont* g_twitterColorEmojiFont = nullptr;
 ImFont* g_openMojiColr0Font     = nullptr;
 ImFont* g_openMojiColr1Font     = nullptr;
 ImFont* g_fluentEmojiFont       = nullptr;
@@ -692,6 +675,34 @@ ImFont* g_amiriQuranColoredFont = nullptr;
 // Non-Google Arabic fonts (aliftype / rastikerdar upstream).
 ImFont* g_vazirmatnFont         = nullptr;
 ImFont* g_amiriQuranFont        = nullptr;
+
+// Ligature Showcase fonts — rich ligature sets across programming, classical
+// text, decorative script, and historical styles.
+ImFont* g_jetbrainsMonoFont     = nullptr;
+ImFont* g_victorMonoFont        = nullptr;
+ImFont* g_monaspaceNeonFont     = nullptr;
+ImFont* g_ebGaramondFont        = nullptr;
+ImFont* g_lobsterFont           = nullptr;
+ImFont* g_abrilFatfaceFont      = nullptr;
+ImFont* g_meaCulpaFont          = nullptr;
+ImFont* g_junicodeFont          = nullptr;
+ImFont* g_tapestryFont          = nullptr;
+// Extra-ornate Ligature Showcase additions.
+ImFont* g_birthstoneBounceFont  = nullptr;
+ImFont* g_monteCarloFont        = nullptr;
+ImFont* g_mrsSaintDelafieldFont = nullptr;
+ImFont* g_sansitaSwashedFont    = nullptr;
+ImFont* g_bodoniModaFont        = nullptr;
+ImFont* g_unifrakturMaguntiaFont = nullptr;
+ImFont* g_alluraFont            = nullptr;
+ImFont* g_grenzeGotischFont     = nullptr;
+ImFont* g_pirataOneFont         = nullptr;
+ImFont* g_ruthieFont            = nullptr;
+ImFont* g_leMurmureFont         = nullptr;
+ImFont* g_caudexFont            = nullptr;
+ImFont* g_unifrakturCookFont    = nullptr;
+ImFont* g_chomskyFont           = nullptr;
+ImFont* g_majorMonoFont         = nullptr;
 
 // Load a font into `slot` if slot is currently null AND the file exists on
 // disk. Idempotent: calling each frame is a no-op once loaded. Used both at
@@ -726,36 +737,22 @@ static void LoadOrRefreshDemoFonts( ImGuiIO& io )
     LoadFontIfMissing( io.Fonts, &g_alfaSlabFont,    "fonts/AlfaSlabOne-Regular.ttf",   sz, &slugCfg );
     LoadFontIfMissing( io.Fonts, &g_classicalFont,   "fonts/CinzelDecorative-Regular.ttf", sz, &slugCfg );
     LoadFontIfMissing( io.Fonts, &g_foglihtenFont,   "fonts/UnifrakturCook-Bold.ttf",   sz, &slugCfg );
-    LoadFontIfMissing( io.Fonts, &g_prida61Font,     "fonts/PlayfairDisplaySC-Regular.ttf", sz, &slugCfg );
     LoadFontIfMissing( io.Fonts, &g_steelworksFont,  "fonts/Rye-Regular.ttf",           sz, &slugCfg );
     LoadFontIfMissing( io.Fonts, &g_trenchSlabFont,  "fonts/TrenchSlab-Regular.otf",    sz, &slugCfg );
 
     // Script / Handwriting — styles intentionally diverse (pencil, sharpie,
     // brush, retro, felt-tip, copperplate, ...) rather than many variants
     // of English-roundhand.
-    LoadFontIfMissing( io.Fonts, &g_allessaFont,     "fonts/Caveat[wght].ttf",          sz, &slugCfg );  // pencil
     LoadFontIfMissing( io.Fonts, &g_brightMarchFont, "fonts/Sacramento-Regular.ttf",    sz, &slugCfg );  // monoline upright
     LoadFontIfMissing( io.Fonts, &g_camoodFont,      "fonts/KaushanScript-Regular.ttf", sz, &slugCfg );  // bold brush
     LoadFontIfMissing( io.Fonts, &g_cheronaFont,     "fonts/GreatVibes-Regular.ttf",    sz, &slugCfg );  // classic copperplate
-    LoadFontIfMissing( io.Fonts, &g_daelingFont,     "fonts/Pacifico-Regular.ttf",      sz, &slugCfg );  // retro 50s brush
-    LoadFontIfMissing( io.Fonts, &g_flowmeryFont,    "fonts/PermanentMarker-Regular.ttf", sz, &slugCfg ); // sharpie
-    LoadFontIfMissing( io.Fonts, &g_galinsFont,      "fonts/AlexBrush-Regular.ttf",     sz, &slugCfg );  // dry brush
-    LoadFontIfMissing( io.Fonts, &g_gallanteFont,    "fonts/ShadowsIntoLight.ttf",      sz, &slugCfg );  // loose marker
-    LoadFontIfMissing( io.Fonts, &g_kleymisskyFont,  "fonts/Yellowtail-Regular.ttf",    sz, &slugCfg );  // retro connected
     LoadFontIfMissing( io.Fonts, &g_loveLightFont,   "fonts/LoveLight-Regular.ttf",     sz, &slugCfg );  // decorative
-    LoadFontIfMissing( io.Fonts, &g_metaforaAltFont, "fonts/LeckerliOne-Regular.ttf",   sz, &slugCfg );  // retro bold italic brush
     LoadFontIfMissing( io.Fonts, &g_metaforaSsFont,  "fonts/Sail-Regular.ttf",          sz, &slugCfg );  // bold monoline display
-    LoadFontIfMissing( io.Fonts, &g_migullonFont,    "fonts/Satisfy-Regular.ttf",       sz, &slugCfg );  // casual brush
-    LoadFontIfMissing( io.Fonts, &g_milsskyFont,     "fonts/DancingScript[wght].ttf",   sz, &slugCfg );  // bouncy casual
     LoadFontIfMissing( io.Fonts, &g_reginaFont,      "fonts/HomemadeApple-Regular.ttf", sz, &slugCfg );  // personal cursive
-    LoadFontIfMissing( io.Fonts, &g_retroHeartFont,  "fonts/PetitFormalScript-Regular.ttf", sz, &slugCfg );  // retro engraved
-    LoadFontIfMissing( io.Fonts, &g_rosehotFont,     "fonts/Melodrama-Regular.otf",     sz, &slugCfg );  // expressive script-display
-    LoadFontIfMissing( io.Fonts, &g_sophieFont,      "fonts/GochiHand-Regular.ttf",     sz, &slugCfg );  // felt-tip pen
     LoadFontIfMissing( io.Fonts, &g_sharpieFont,     "fonts/Sharpie-Regular.otf",       sz, &slugCfg );  // marker handwriting
 
     // Display / Decorative — curated Velvetyne picks (plus 3 overflow slots).
     LoadFontIfMissing( io.Fonts, &g_bollgoFont,      "fonts/FlorDeRuina-Flor.otf",            sz, &slugCfg );  // baroque organic
-    LoadFontIfMissing( io.Fonts, &g_boucherFont,     "fonts/AMDAL-Regular.otf",               sz, &slugCfg );  // bold Tifinagh display
     LoadFontIfMissing( io.Fonts, &g_dottedFont,      "fonts/Bianzhidai-NoBG-Base.otf",        sz, &slugCfg );  // pixel/weave (concept match for Dotted)
     LoadFontIfMissing( io.Fonts, &g_franticallyFont, "fonts/Mess.otf",                        sz, &slugCfg );  // chaotic (concept match for Frantically)
     LoadFontIfMissing( io.Fonts, &g_gimboFont,       "fonts/Pilowlava-Regular.otf",           sz, &slugCfg );  // bulbous molten
@@ -768,7 +765,6 @@ static void LoadOrRefreshDemoFonts( ImGuiIO& io )
 
     // Display / Decorative — Fontshare batch
     LoadFontIfMissing( io.Fonts, &g_comicoFont,         "fonts/Comico-Regular.otf",         sz, &slugCfg );
-    LoadFontIfMissing( io.Fonts, &g_supremeFont,        "fonts/Supreme-Regular.otf",        sz, &slugCfg );
     LoadFontIfMissing( io.Fonts, &g_bespokeStencilFont, "fonts/BespokeStencil-Regular.otf", sz, &slugCfg );
     LoadFontIfMissing( io.Fonts, &g_akturaFont,         "fonts/Aktura-Regular.otf",         sz, &slugCfg );
     LoadFontIfMissing( io.Fonts, &g_britneyFont,        "fonts/Britney-Regular.otf",        sz, &slugCfg );
@@ -794,7 +790,6 @@ static void LoadOrRefreshDemoFonts( ImGuiIO& io )
 
     // Color — non-Google sources (SVG / COLRv0 / COLRv1)
     LoadFontIfMissing( io.Fonts, &g_notoColorEmojiSvgFont, "fonts/NotoColorEmoji-SVG.otf",            sz, &slugCfg );
-    LoadFontIfMissing( io.Fonts, &g_twitterColorEmojiFont, "fonts/TwitterColorEmoji-SVGinOT.ttf",     sz, &slugCfg );
     LoadFontIfMissing( io.Fonts, &g_openMojiColr0Font,     "fonts/OpenMoji-color-glyf_colr_0.ttf",    sz, &slugCfg );
     LoadFontIfMissing( io.Fonts, &g_openMojiColr1Font,     "fonts/OpenMoji-color-glyf_colr_1.ttf",    sz, &slugCfg );
     LoadFontIfMissing( io.Fonts, &g_fluentEmojiFont,       "fonts/FluentEmojiColor.ttf",              sz, &slugCfg );
@@ -803,7 +798,6 @@ static void LoadOrRefreshDemoFonts( ImGuiIO& io )
     // Arabic
     LoadFontIfMissing( io.Fonts, &g_amiriFont,           "fonts/Amiri-Regular.ttf",         sz, &slugCfg, arabicRanges );
     LoadFontIfMissing( io.Fonts, &g_arefRuqaaBoldFont,   "fonts/ArefRuqaaInk-Bold.ttf",     sz, &slugCfg, arabicRanges );
-    LoadFontIfMissing( io.Fonts, &g_arefRuqaaRegFont,    "fonts/ArefRuqaaInk-Regular.ttf",  sz, &slugCfg, arabicRanges );
     LoadFontIfMissing( io.Fonts, &g_blakaInkFont,        "fonts/BlakaInk-Regular.ttf",      sz, &slugCfg, arabicRanges );
     LoadFontIfMissing( io.Fonts, &g_reemKufiInkFont,     "fonts/ReemKufiInk-Regular.ttf",   sz, &slugCfg, arabicRanges );
     LoadFontIfMissing( io.Fonts, &g_reemKufiFunFont,     "fonts/ReemKufiFun[wght].ttf",     sz, &slugCfg, arabicRanges );
@@ -811,6 +805,32 @@ static void LoadOrRefreshDemoFonts( ImGuiIO& io )
     LoadFontIfMissing( io.Fonts, &g_cairoPlayXLightFont, "fonts/CairoPlay[slnt,wght].ttf",  sz, &slugCfg, arabicRanges );
     LoadFontIfMissing( io.Fonts, &g_vazirmatnFont,       "fonts/Vazirmatn-Regular.ttf",     sz, &slugCfg, arabicRanges );
     LoadFontIfMissing( io.Fonts, &g_amiriQuranFont,      "fonts/AmiriQuran.ttf",            sz, &slugCfg, arabicRanges );
+
+    // Ligature Showcase — canonical filenames match what the downloader pulls.
+    LoadFontIfMissing( io.Fonts, &g_jetbrainsMonoFont,   "fonts/JetBrainsMono[wght].ttf",                sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_victorMonoFont,      "fonts/VictorMono[wght].ttf",                   sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_monaspaceNeonFont,   "fonts/MonaspaceNeon-Regular.ttf",              sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_ebGaramondFont,      "fonts/EBGaramond[wght].ttf",                   sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_lobsterFont,         "fonts/Lobster-Regular.ttf",                    sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_abrilFatfaceFont,    "fonts/AbrilFatface-Regular.ttf",               sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_meaCulpaFont,        "fonts/MeaCulpa-Regular.ttf",                   sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_junicodeFont,        "fonts/Junicode-Regular.ttf",                   sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_tapestryFont,        "fonts/Tapestry-Regular.ttf",                   sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_birthstoneBounceFont,"fonts/BirthstoneBounce-Regular.ttf",           sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_monteCarloFont,      "fonts/MonteCarlo-Regular.ttf",                 sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_mrsSaintDelafieldFont,"fonts/MrsSaintDelafield-Regular.ttf",         sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_sansitaSwashedFont,  "fonts/SansitaSwashed[wght].ttf",               sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_bodoniModaFont,      "fonts/BodoniModa[opsz,wght].ttf",              sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_unifrakturMaguntiaFont, "fonts/UnifrakturMaguntia-Book.ttf",         sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_alluraFont,          "fonts/Allura-Regular.ttf",                     sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_grenzeGotischFont,   "fonts/GrenzeGotisch[wght].ttf",                sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_pirataOneFont,       "fonts/PirataOne-Regular.ttf",                  sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_ruthieFont,          "fonts/Ruthie-Regular.ttf",                     sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_leMurmureFont,       "fonts/le-murmure.ttf",                         sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_caudexFont,          "fonts/Caudex-Regular.ttf",                     sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_unifrakturCookFont,  "fonts/UnifrakturCook-Bold.ttf",                sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_chomskyFont,         "fonts/Chomsky.otf",                            sz, &slugCfg );
+    LoadFontIfMissing( io.Fonts, &g_majorMonoFont,       "fonts/MajorMonoDisplay-Regular.ttf",           sz, &slugCfg );
 }
 
 ImTextureID background;
@@ -1898,9 +1918,9 @@ namespace ImWidgets {
 		LoadOrRefreshDemoFonts( ImGui::GetIO() );
 		ImDwDownload::DrawDownloadAllButton();
 
-		if ( !g_cinzelFont && !g_alfaSlabFont && !g_dottedFont && !g_flowmeryFont &&
+		if ( !g_cinzelFont && !g_alfaSlabFont && !g_dottedFont &&
 		     !g_franticallyFont && !g_loveLightFont && !g_magnoliaFont &&
-		     !g_nablaFont && !g_rosehotFont && !g_squareLilyFont )
+		     !g_nablaFont && !g_squareLilyFont )
 		{
 			ImGui::TextDisabled( "No Slug fonts loaded yet — click \"Download all fonts\" above." );
 			return;
@@ -1946,7 +1966,13 @@ namespace ImWidgets {
 		ImGui::Checkbox( "Debug Shader (R=xcov G=ycov B=cov)##SlugShaderDbg", &ImWidgets::g_SlugDebugShader );
 
 		enum FontTextType { kLatin = 0, kEmoji = 1, kArabic = 2 };
-		struct FontEntry { ImFont** font; const char* label; FontTextType textType; const char* group; };
+		// `samplePrefix` is an optional per-font sample string prepended to the
+		// default text buffer when rendering. Used by the Ligature Showcase
+		// entries to seed each row with characters that actually trigger the
+		// font's specific ligature set (fi fl ct st for classical serifs,
+		// => -> for programming mono, æ œ for medieval, etc.). Unspecified /
+		// nullptr → render only the shared text_buf.
+		struct FontEntry { ImFont** font; const char* label; FontTextType textType; const char* group; const char* samplePrefix; };
 		static const char* kGrpCode   = "Programming / Code";
 		static const char* kGrpSerif  = "Serif";
 		static const char* kGrpScript = "Script / Handwriting";
@@ -1956,6 +1982,7 @@ namespace ImWidgets {
 		static const char* kGrpSVG    = "Color: SVG";
 		static const char* kGrpColr1  = "Color: COLR v1 / Gradient";
 		static const char* kGrpArabic = "Arabic";
+		static const char* kGrpLig    = "Ligature Showcase";
 		// Labels use the "orig -> replacement" form when the demo font was
 		// swapped out for a Google Fonts / Fontshare / Velvetyne equivalent
 		// (see workingdir/fonts/ and font_manifest.inl). Untouched entries
@@ -1967,34 +1994,20 @@ namespace ImWidgets {
 			{ &g_alfaSlabFont,    "Alfa Slab One",                           kLatin,  kGrpSerif },
 			{ &g_classicalFont,   "Classical Aesthetics -> Cinzel Decorative", kLatin, kGrpSerif },
 			{ &g_foglihtenFont,   "Foglihten No07 -> UnifrakturCook",         kLatin,  kGrpSerif },
-			{ &g_prida61Font,     "Prida 61 -> Playfair Display SC",          kLatin,  kGrpSerif },
 			{ &g_steelworksFont,  "Steelworks Vintage -> Rye",                kLatin,  kGrpSerif },
 			{ &g_trenchSlabFont,  "Trench Slab (Fontshare)",                 kLatin,  kGrpSerif },
 			{ &g_akturaFont,      "Aktura (Fontshare)",                       kLatin,  kGrpSerif },
 			{ &g_britneyFont,     "Britney (Fontshare)",                      kLatin,  kGrpSerif },
 			{ &g_kihimFont,       "Kihim (Fontshare)",                        kLatin,  kGrpSerif },
 			{ &g_zinaFont,        "Zina (Fontshare)",                         kLatin,  kGrpSerif },
-			{ &g_allessaFont,     "Allessa -> Caveat",                        kLatin,  kGrpScript },
 			{ &g_brightMarchFont, "Bright Marching -> Sacramento",            kLatin,  kGrpScript },
 			{ &g_camoodFont,      "Camood -> Kaushan Script",                 kLatin,  kGrpScript },
 			{ &g_cheronaFont,     "Cherona -> Great Vibes",                   kLatin,  kGrpScript },
-			{ &g_daelingFont,     "Daeling -> Pacifico",                      kLatin,  kGrpScript },
-			{ &g_flowmeryFont,    "Flowmery -> Permanent Marker",             kLatin,  kGrpScript },
-			{ &g_galinsFont,      "Galins -> Alex Brush",                     kLatin,  kGrpScript },
-			{ &g_gallanteFont,    "Gallante -> Shadows Into Light",           kLatin,  kGrpScript },
-			{ &g_kleymisskyFont,  "Kleymissky -> Yellowtail",                 kLatin,  kGrpScript },
 			{ &g_loveLightFont,   "Love Light",                               kLatin,  kGrpScript },
-			{ &g_metaforaAltFont, "Metafora Alternate -> Leckerli One",       kLatin,  kGrpScript },
 			{ &g_metaforaSsFont,  "Metafora Stylistic -> Sail",               kLatin,  kGrpScript },
-			{ &g_migullonFont,    "Migullon -> Satisfy",                      kLatin,  kGrpScript },
-			{ &g_milsskyFont,     "Milssky -> Dancing Script",                kLatin,  kGrpScript },
 			{ &g_reginaFont,      "Regina -> Homemade Apple",                 kLatin,  kGrpScript },
-			{ &g_retroHeartFont,  "Retro Heart You -> Petit Formal Script",   kLatin,  kGrpScript },
-			{ &g_rosehotFont,     "Rosehot -> Melodrama (Fontshare)",         kLatin,  kGrpScript },
-			{ &g_sophieFont,      "Sophiemelanie -> Gochi Hand",              kLatin,  kGrpScript },
 			{ &g_sharpieFont,     "Sharpie (Fontshare)",                      kLatin,  kGrpScript },
 			{ &g_bollgoFont,      "Bollgo -> Flor de Ruina (Velvetyne)",      kLatin,  kGrpDisp },
-			{ &g_boucherFont,     "Boucher -> Amdal (Velvetyne)",             kLatin,  kGrpDisp },
 			{ &g_dottedFont,      "Dotted -> Bianzhidai (Velvetyne)",         kLatin,  kGrpDisp },
 			//{ &g_endlessFont,   "Endlessly Expanded",                       kLatin,  kGrpDisp },
 			{ &g_franticallyFont, "Frantically -> Mess (Velvetyne)",          kLatin,  kGrpDisp },
@@ -2006,7 +2019,6 @@ namespace ImWidgets {
 			{ &g_ouvrieresFont,   "Ouvrieres (Velvetyne)",                    kLatin,  kGrpDisp },
 			{ &g_picnicFont,      "Picnic (Velvetyne)",                       kLatin,  kGrpDisp },
 			{ &g_comicoFont,         "Comico (Fontshare)",                   kLatin,  kGrpDisp },
-			{ &g_supremeFont,        "Supreme (Fontshare)",                  kLatin,  kGrpDisp },
 			{ &g_bespokeStencilFont, "Bespoke Stencil (Fontshare)",          kLatin,  kGrpDisp },
 			{ &g_styroFont,          "Styro (Fontshare)",                    kLatin,  kGrpDisp },
 			{ &g_boxingFont,         "Boxing (Fontshare)",                   kLatin,  kGrpDisp },
@@ -2030,7 +2042,6 @@ namespace ImWidgets {
 			{ &g_primecolorMFont,        "Primecolor M (unmatched)",     kLatin,  kGrpSVG },
 			{ &g_fatternFont,            "Fattern (unmatched)",           kLatin,  kGrpSVG },
 			{ &g_notoColorEmojiSvgFont,  "Noto Color Emoji (OT-SVG)",     kEmoji,  kGrpSVG },
-			{ &g_twitterColorEmojiFont,  "Twitter Color Emoji (SVGinOT)", kEmoji,  kGrpSVG },
 			{ &g_nablaFont,              "Nabla",                         kLatin,  kGrpColr1 },
 			{ &g_primecolorCV1Font,      "Primecolor CV1 -> Bungee Spice", kLatin, kGrpColr1 },
 			{ &g_bungeeSpiceFont,        "Bungee Spice",                  kLatin,  kGrpColr1 },
@@ -2041,12 +2052,41 @@ namespace ImWidgets {
 			{ &g_cairoPlayBoldFont,      "Cairo Play Bold",       kArabic, kGrpArabic },
 			{ &g_cairoPlayXLightFont,    "Cairo Play ExtraLight", kArabic, kGrpArabic },
 			{ &g_arefRuqaaBoldFont,      "Aref Ruqaa Ink Bold",  kArabic, kGrpArabic },
-			{ &g_arefRuqaaRegFont,       "Aref Ruqaa Ink Regular",kArabic, kGrpArabic },
 			{ &g_blakaInkFont,           "Blaka Ink",             kArabic, kGrpArabic },
 			{ &g_reemKufiInkFont,        "Reem Kufi Ink",         kArabic, kGrpArabic },
 			{ &g_reemKufiFunFont,        "Reem Kufi Fun",         kArabic, kGrpArabic },
 			{ &g_vazirmatnFont,          "Vazirmatn (rastikerdar)", kArabic, kGrpArabic },
 			{ &g_amiriQuranFont,         "Amiri Quran (aliftype upstream)", kArabic, kGrpArabic },
+			// Ligature Showcase — programming arrows, classical ct/st/Th,
+			// medieval æ/œ, decorative script flourishes. Sample text
+			// "=><=Dear Widgets!" already triggers => and <= for mono fonts;
+			// switch to something like "affection fluffy office Thirty" to
+			// see fi/fl/ffi/ct/st/Th on Cormorant / EB Garamond / Fraunces.
+			{ &g_jetbrainsMonoFont,   "JetBrains Mono (programming)",          kLatin, kGrpLig, "=> -> != === >= <= :: |> <- "              },
+			{ &g_victorMonoFont,      "Victor Mono (italic cursive)",          kLatin, kGrpLig, "=> -> != === /* */ // "                     },
+			{ &g_monaspaceNeonFont,   "Monaspace Neon (texture healing)",      kLatin, kGrpLig, "=> -> != === >= <= "                        },
+			{ &g_ebGaramondFont,      "EB Garamond (classical oldstyle)",      kLatin, kGrpLig, "fi fl ffi ffl ct st — "                     },
+			{ &g_lobsterFont,         "Lobster (retro script)",                kLatin, kGrpLig, "The fi Th — "                               },
+			{ &g_abrilFatfaceFont,    "Abril Fatface (Didone display)",        kLatin, kGrpLig, "fi fl Th — "                                },
+			{ &g_meaCulpaFont,        "Mea Culpa (extreme calligraphy)",       kLatin, kGrpLig, "fi fl Th — "                                },
+			// UTF-8 for medieval glyphs: æ=C3 A6, œ=C5 93, ſſ=C5 BF C5 BF, ſt=C5 BF t, Ð=C3 90, þ=C3 BE
+			{ &g_junicodeFont,        "Junicode (medieval historical)",        kLatin, kGrpLig, "\xC3\xA6 \xC5\x93 \xC5\xBF\xC5\xBF \xC5\xBFt \xC3\x90 \xC3\xBE — " },
+			{ &g_tapestryFont,        "Tapestry (ornate script)",              kLatin, kGrpLig, "fi fl — "                                   },
+			{ &g_birthstoneBounceFont, "Birthstone Bounce (bouncy flourished)",   kLatin, kGrpLig, "The fi Th — "                            },
+			{ &g_monteCarloFont,       "MonteCarlo (Spencerian flourishes)",      kLatin, kGrpLig, "The fi Th Q — "                          },
+			{ &g_mrsSaintDelafieldFont,"Mrs Saint Delafield (Spencerian)",        kLatin, kGrpLig, "The fi Th — "                            },
+			{ &g_sansitaSwashedFont,   "Sansita Swashed (sans + swashes)",        kLatin, kGrpLig, "fi fl Th Qu — "                          },
+			{ &g_bodoniModaFont,       "Bodoni Moda (variable Didone)",           kLatin, kGrpLig, "fi fl ffi ffl Th — "                     },
+			{ &g_unifrakturMaguntiaFont, "Unifraktur Maguntia (blackletter ligs)", kLatin, kGrpLig, "\xC5\xBF" "ch \xC5\xBF\xC5\xBF" "i ch ck ll tz \xC3\x9F — " },
+			{ &g_alluraFont,           "Allura (script word ligs: The/tion/ing)", kLatin, kGrpLig, "The tion ion ing are ous — "            },
+			{ &g_grenzeGotischFont,    "Grenze Gotisch (modern blackletter)",     kLatin, kGrpLig, "\xC5\xBF" "ch ch ck ll tz \xC3\x9F — "    },
+			{ &g_pirataOneFont,        "Pirata One (tattoo gothic)",              kLatin, kGrpLig, "ch ck tz Th The — "                      },
+			{ &g_ruthieFont,           "Ruthie (extra-ornate script)",            kLatin, kGrpLig, "The and of tion ing — "                  },
+			{ &g_leMurmureFont,        "Le Murmure (tall art-nouveau)",           kLatin, kGrpLig, "fi fl ff Th The — "                      },
+			{ &g_caudexFont,           "Caudex (medievalist scholarly)",          kLatin, kGrpLig, "\xC3\xA6 \xC5\x93 \xC5\xBF\xC5\xBF ct st Th \xC3\x9F — " },
+			{ &g_unifrakturCookFont,   "UnifrakturCook (sharper blackletter)",    kLatin, kGrpLig, "\xC5\xBF" "ch ch ck ll tz \xC3\x9F — "    },
+			{ &g_chomskyFont,          "Chomsky (NYT masthead gothic)",           kLatin, kGrpLig, "ct st sp Th \xC5\xBFt — "                },
+			{ &g_majorMonoFont,        "Major Mono Display (caps mono)",          kLatin, kGrpLig, "TH NG OO LY TT — "                       },
 		};
 
 		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
@@ -2105,6 +2145,11 @@ namespace ImWidgets {
 				if ( !*kFonts[pw].font || s_cached_sz[pw].y > 0 ) continue;
 				ImFont* pwf = *kFonts[pw].font;
 				const char* pws = ( kFonts[pw].textType == kEmoji ) ? emoji_buf : ( kFonts[pw].textType == kArabic ) ? arabic_buf : text_buf;
+				char pwsComposed[512];
+				if ( kFonts[pw].samplePrefix && kFonts[pw].textType == kLatin ) {
+					ImFormatString( pwsComposed, sizeof( pwsComposed ), "%s%s", kFonts[pw].samplePrefix, pws );
+					pws = pwsComposed;
+				}
 				s_cached_sz[pw] = ImWidgets::CalcTextSize( pwf, font_size, pws, nullptr, &s_cached_asc[pw] );
 				break; // one per frame
 			}
@@ -2178,6 +2223,14 @@ namespace ImWidgets {
 			const FontEntry& e = kFonts[i];
 			ImFont* f           = *e.font;
 			const char* drawStr = (e.textType == kEmoji) ? emoji_buf : (e.textType == kArabic) ? arabic_buf : text_buf;
+			// Prepend per-font ligature showcase (e.g. "fi fl ct st — ") so
+			// the row demonstrates the ligatures the font actually supports.
+			// Only used for Latin entries that explicitly set samplePrefix.
+			char drawComposed[512];
+			if ( e.samplePrefix && e.textType == kLatin ) {
+				ImFormatString( drawComposed, sizeof( drawComposed ), "%s%s", e.samplePrefix, drawStr );
+				drawStr = drawComposed;
+			}
 
 			float   asc   = 0.0f;
 			ImVec2  sz;
@@ -2206,10 +2259,55 @@ namespace ImWidgets {
 			// consistent across sizes.
 			float   line_h = ImMax( sz.y, font_size * 1.8f ) + gap + font_size * 0.15f;
 
-			// Font name in solid black
+			// Font name in solid black — struck-through when flagged for deletion.
+			// The little "[X]" / "[ ]" button at the end of the row toggles the
+			// flag; all flagged labels are written to workingdir/_fonts_to_delete.txt
+			// so Claude can pick them up for a batch removal pass.
+			static bool s_flagged[128] = {};
+			static bool s_flags_dirty = false;
 			ImGui::PushStyleColor( ImGuiCol_Text, IM_COL32( 0, 0, 0, 255 ) );
-			ImGui::Text( "%s:", e.label );
+			if ( s_flagged[i] ) {
+				// Strikethrough rendering via two text draws + a line.
+				ImVec2 tpos = ImGui::GetCursorScreenPos();
+				ImVec2 tsize = ImGui::CalcTextSize( e.label );
+				ImGui::Text( "%s:", e.label );
+				pDrawList->AddLine(
+					ImVec2( tpos.x, tpos.y + tsize.y * 0.55f ),
+					ImVec2( tpos.x + tsize.x, tpos.y + tsize.y * 0.55f ),
+					IM_COL32( 200, 0, 0, 255 ), 1.5f );
+			} else {
+				ImGui::Text( "%s:", e.label );
+			}
 			ImGui::PopStyleColor();
+			// Flag toggle right after the font-name label (a fixed right-edge
+			// alignment hid the button off-screen for narrow windows — inline
+			// next to the label is always visible).
+			ImGui::SameLine();
+			ImGui::PushID( i + 20000 );
+			const char* btn_lbl = s_flagged[i] ? "X" : "-";
+			if ( s_flagged[i] )
+				ImGui::PushStyleColor( ImGuiCol_Button, IM_COL32( 180, 40, 40, 255 ) );
+			if ( ImGui::SmallButton( btn_lbl ) ) {
+				s_flagged[i] = !s_flagged[i];
+				s_flags_dirty = true;
+			}
+			if ( s_flagged[i] )
+				ImGui::PopStyleColor();
+			if ( ImGui::IsItemHovered() )
+				ImGui::SetTooltip( s_flagged[i] ? "Flagged for deletion (click to unflag)" : "Flag this font for deletion" );
+			ImGui::PopID();
+			// Flush flag list to disk on any change so Claude can read it.
+			if ( s_flags_dirty ) {
+				FILE* fp = fopen( "_fonts_to_delete.txt", "w" );
+				if ( fp ) {
+					fprintf( fp, "# Fonts flagged for deletion (toggle in the Slug demo). One label per line.\n" );
+					for ( int k = 0; k < nFonts && k < 128; k++ ) {
+						if ( s_flagged[k] ) fprintf( fp, "%s\n", kFonts[k].label );
+					}
+					fclose( fp );
+				}
+				s_flags_dirty = false;
+			}
 
 			// Optional colored background spanning the full window width
 			ImVec2 pos     = ImGui::GetCursorScreenPos();
@@ -2261,21 +2359,15 @@ namespace ImWidgets {
 				{ "Bollgo", &g_bollgoFont },
 				{ "Gimbo", &g_gimboFont },
 				{ "Bright Matching", &g_brightMarchFont },
-				{ "Gallante", &g_gallanteFont },
 				{ "Love Light", &g_loveLightFont },
-				{ "Metafora Alternate", &g_metaforaAltFont },
 				{ "Metafora Stylistic", &g_metaforaSsFont },
-				{ "Migulon", &g_migullonFont },
-				{ "Sophiemelanie", &g_sophieFont },
 				{ "Classical Aesthetics", &g_classicalFont },
-				{ "Prida 61", &g_prida61Font },
 				{ "Foglighten No07", &g_foglihtenFont },
 				{ "Steelworks Vintage", &g_steelworksFont },
 				{ "Square Lily Monogram", &g_squareLilyFont },
 				{ "Molgeth", &g_molgethFont },
 				{ "Ginga", &g_gingaFont },
 				{ "Dotted", &g_dottedFont },
-				{ "Boucher", &g_boucherFont },
 				{ "Manbow Clear", &g_manbowClearFont },
 				{ "Manbow Lines", &g_manbowLinesFont },
 				{ "Manbow Spots", &g_manbowSpotsFont },
@@ -2330,21 +2422,15 @@ namespace ImWidgets {
 				{ "Bollgo", &g_bollgoFont },
 				{ "Gimbo", &g_gimboFont },
 				{ "Bright Matching", &g_brightMarchFont },
-				{ "Gallante", &g_gallanteFont },
 				{ "Love Light", &g_loveLightFont },
-				{ "Metafora Alternate", &g_metaforaAltFont },
 				{ "Metafora Stylistic", &g_metaforaSsFont },
-				{ "Migulon", &g_migullonFont },
-				{ "Sophiemelanie", &g_sophieFont },
 				{ "Classical Aesthetics", &g_classicalFont },
-				{ "Prida 61", &g_prida61Font },
 				{ "Foglighten No07", &g_foglihtenFont },
 				{ "Steelworks Vintage", &g_steelworksFont },
 				{ "Square Lily Monogram", &g_squareLilyFont },
 				{ "Molgeth", &g_molgethFont },
 				{ "Ginga", &g_gingaFont },
 				{ "Dotted", &g_dottedFont },
-				{ "Boucher", &g_boucherFont },
 				{ "Manbow Clear", &g_manbowClearFont },
 				{ "Manbow Lines", &g_manbowLinesFont },
 				{ "Manbow Spots", &g_manbowSpotsFont },
@@ -4845,7 +4931,7 @@ namespace ImWidgets {
 				static float alpha = 1.0f;
 				ImGui::SliderFloat( "alpha##ColorBand", &alpha, 0.0f, 1.0f );
 				float data[] = { ( float )frequency, alpha };
-				DrawProceduralColor1DBilinear(
+				DrawProceduralColor1DBilinearHorizontal(
 					ImGui::GetWindowDrawList(),
 					[]( float t, void* pUserData ) -> ImU32{
 						float fFrequency = ( ( float* )pUserData )[ 0 ];
@@ -4866,6 +4952,50 @@ namespace ImWidgets {
 #endif
 			}
 			DW_SsRecord( "Color_Bands", _sy0, ImGui::GetCursorPos().y ); }
+			{ float _sy0 = ImGui::GetCursorPos().y;
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Procedural Color Primitives" ) )
+			{
+				static float gamma  = 1.0f;
+				static float offset = 0.0f;
+				static float alpha  = 1.0f;
+				ImGui::SliderFloat( "Gamma##PCP",  &gamma,  0.1f, 4.0f );
+				ImGui::SliderFloat( "Offset##PCP", &offset, 0.0f, 1.0f );
+				ImGui::SliderFloat( "Alpha##PCP",  &alpha,  0.0f, 1.0f );
+				float hueData[] = { alpha, offset, gamma };
+				auto hueFunc = []( float tt, void* pUserData ) -> ImU32 {
+					float a   = ( ( float* )pUserData )[ 0 ];
+					float off = ( ( float* )pUserData )[ 1 ];
+					float gm  = ( ( float* )pUserData )[ 2 ];
+					float t = ImFmod( 1.0f + ImPow( tt, gm ) - off, 1.0f );
+					float r, g, b;
+					ImGui::ColorConvertHSVtoRGB( t, 1.0f, 1.0f, r, g, b );
+					return IM_COL32( ( int )( r * 255.0f ), ( int )( g * 255.0f ), ( int )( b * 255.0f ), ( int )( a * 255.0f ) );
+				};
+
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				ImVec2 p = ImGui::GetCursorScreenPos();
+
+				// Horizontal (existing primitive, post-rename)
+				ImWidgets::DrawProceduralColor1DBilinearHorizontal( dl, hueFunc, &hueData[ 0 ], 0.0f, 1.0f, p, ImVec2( 260.0f, 24.0f ), 64 );
+				// Vertical (new)
+				ImWidgets::DrawProceduralColor1DBilinearVertical( dl, hueFunc, &hueData[ 0 ], 0.0f, 1.0f, ImVec2( p.x + 270.0f, p.y ), ImVec2( 24.0f, 120.0f ), 48 );
+				// Arc (half ring)
+				ImWidgets::DrawProceduralColorArcBilinear( dl, ImVec2( p.x + 64.0f, p.y + 120.0f ), 32.0f, 60.0f, IM_PI, IM_PI, hueFunc, &hueData[ 0 ], 64, true );
+				// Spline (zig-zag)
+				ImVec2 pts[ 6 ] = {
+					ImVec2( p.x + 160.0f, p.y + 100.0f ),
+					ImVec2( p.x + 200.0f, p.y + 140.0f ),
+					ImVec2( p.x + 240.0f, p.y + 100.0f ),
+					ImVec2( p.x + 280.0f, p.y + 140.0f ),
+					ImVec2( p.x + 320.0f, p.y + 100.0f ),
+					ImVec2( p.x + 360.0f, p.y + 140.0f )
+				};
+				ImWidgets::DrawProceduralColorSplineBilinear( dl, pts, 6, 10.0f, hueFunc, &hueData[ 0 ], 96, false );
+
+				ImGui::Dummy( ImVec2( 380.0f, 200.0f ) );
+			}
+			DW_SsRecord( "Procedural_Color_Primitives", _sy0, ImGui::GetCursorPos().y ); }
 			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Color Ring" ) )
@@ -5905,6 +6035,121 @@ namespace ImWidgets {
 
 			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "SliderGradient" ) )
+			{
+				static ImGradientData gradRainbow;
+				static ImGradientData gradOkLch;
+				static bool gradInit = false;
+				if ( !gradInit )
+				{
+					// sRGB rainbow
+					gradRainbow.Stops.clear();
+					gradRainbow.Stops.push_back( { 0.00f, ImVec4( 1.0f, 0.0f, 0.0f, 1.0f ) } );
+					gradRainbow.Stops.push_back( { 0.33f, ImVec4( 0.0f, 1.0f, 0.0f, 1.0f ) } );
+					gradRainbow.Stops.push_back( { 0.66f, ImVec4( 0.0f, 0.0f, 1.0f, 1.0f ) } );
+					gradRainbow.Stops.push_back( { 1.00f, ImVec4( 1.0f, 0.0f, 0.0f, 1.0f ) } );
+					gradRainbow.Interpolation = ImWidgetsGradientInterp_sRGB;
+					// OkLCH blue-to-orange
+					gradOkLch.Stops.clear();
+					gradOkLch.Stops.push_back( { 0.0f, ImVec4( 0.1f, 0.25f, 0.85f, 1.0f ) } );
+					gradOkLch.Stops.push_back( { 1.0f, ImVec4( 1.0f, 0.55f, 0.05f, 1.0f ) } );
+					gradOkLch.Interpolation = ImWidgetsGradientInterp_OkLCH;
+					gradInit = true;
+				}
+
+				static float gradFloat = 0.5f;
+				static int   gradInt   = 50;
+				ImWidgets::SliderGradientFloat( "Float sRGB##SG", &gradFloat, 0.0f, 1.0f, &gradRainbow );
+				ImWidgets::SliderGradientInt(   "Int OkLCH##SG",  &gradInt,   0,    100,  &gradOkLch );
+			}
+			DW_SsRecord( "SliderGradient", _sy0, ImGui::GetCursorPos().y ); }
+
+			{ float _sy0 = ImGui::GetCursorPos().y;
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "SliderSplineGradient" ) )
+			{
+				static ImGradientData gradSSG;
+				static bool gradSSGInit = false;
+				if ( !gradSSGInit )
+				{
+					gradSSG.Stops.clear();
+					gradSSG.Stops.push_back( { 0.00f, ImVec4( 0.1f, 0.25f, 0.85f, 1.0f ) } );
+					gradSSG.Stops.push_back( { 0.50f, ImVec4( 1.0f, 1.0f,  1.0f,  1.0f ) } );
+					gradSSG.Stops.push_back( { 1.00f, ImVec4( 1.0f, 0.55f, 0.05f, 1.0f ) } );
+					gradSSG.Interpolation = ImWidgetsGradientInterp_OkLab;
+					gradSSGInit = true;
+				}
+
+				// S-curve (default)
+				static float val1 = 0.5f;
+				ImWidgets::SliderSplineGradientFloat( "S-Curve##SSG1", &val1, 0.0f, 1.0f, &gradSSG );
+
+				// Arc up
+				static const ImVec2 arcUp[ 4 ] = { ImVec2( 0.0f, 0.8f ), ImVec2( 0.25f, 0.0f ), ImVec2( 0.75f, 0.0f ), ImVec2( 1.0f, 0.8f ) };
+				static float val2 = 0.3f;
+				ImWidgets::SliderSplineGradientFloat( "Arc Up##SSG2", &val2, 0.0f, 1.0f, &gradSSG, arcUp );
+
+				// Wave (2 bezier segments)
+				static const ImVec2 wave[ 7 ] = {
+					ImVec2( 0.0f,  0.5f ),
+					ImVec2( 0.15f, 0.0f ),
+					ImVec2( 0.35f, 0.0f ),
+					ImVec2( 0.5f,  0.5f ),
+					ImVec2( 0.65f, 1.0f ),
+					ImVec2( 0.85f, 1.0f ),
+					ImVec2( 1.0f,  0.5f )
+				};
+				static float val3 = 0.5f;
+				ImWidgets::SliderSplineGradientFloat( "Wave##SSG3", &val3, 0.0f, 100.0f, &gradSSG, wave, 7, 80.0f, 6.0f );
+
+				// Int slider with straight bezier control points
+				static const ImVec2 straight[ 4 ] = { ImVec2( 0.0f, 0.5f ), ImVec2( 0.33f, 0.5f ), ImVec2( 0.66f, 0.5f ), ImVec2( 1.0f, 0.5f ) };
+				static int intVal = 50;
+				ImWidgets::SliderSplineGradientInt( "Int Straight##SSG4", &intVal, 0, 100, &gradSSG, straight );
+			}
+			DW_SsRecord( "SliderSplineGradient", _sy0, ImGui::GetCursorPos().y ); }
+
+			{ float _sy0 = ImGui::GetCursorPos().y;
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "SliderRing (Gradient)" ) )
+			{
+				static ImGradientData ringHueGrad;
+				static ImGradientData ringTempGrad;
+				static bool ringGradInit = false;
+				if ( !ringGradInit )
+				{
+					ringHueGrad.Stops.clear();
+					ringHueGrad.Stops.push_back( { 0.00f, ImVec4( 1.0f, 0.0f, 0.0f, 1.0f ) } );
+					ringHueGrad.Stops.push_back( { 0.33f, ImVec4( 0.0f, 1.0f, 0.0f, 1.0f ) } );
+					ringHueGrad.Stops.push_back( { 0.66f, ImVec4( 0.0f, 0.0f, 1.0f, 1.0f ) } );
+					ringHueGrad.Stops.push_back( { 1.00f, ImVec4( 1.0f, 0.0f, 0.0f, 1.0f ) } );
+					ringHueGrad.Interpolation = ImWidgetsGradientInterp_OkLCH;
+
+					ringTempGrad.Stops.clear();
+					ringTempGrad.Stops.push_back( { 0.0f, ImVec4( 0.3f, 0.55f, 1.0f, 1.0f ) } );
+					ringTempGrad.Stops.push_back( { 0.5f, ImVec4( 1.0f, 1.0f, 1.0f, 1.0f ) } );
+					ringTempGrad.Stops.push_back( { 1.0f, ImVec4( 1.0f, 0.65f, 0.2f, 1.0f ) } );
+					ringTempGrad.Interpolation = ImWidgetsGradientInterp_OkLab;
+					ringGradInit = true;
+				}
+
+				static float hueVal  = 0.3f;
+				static float tempVal = 0.5f;
+				static int   meter   = 40;
+
+				// Full-circle hue (wraps)
+				ImWidgets::SliderGradientRingFloat( "Hue##SRG",  &hueVal,  0.0f, 1.0f, &ringHueGrad,  52.0f, 14.0f );
+				ImGui::SameLine();
+				// Half-ring temperature arc (π sweep from π)
+				ImWidgets::SliderGradientRingFloat( "Temp##SRG", &tempVal, 0.0f, 1.0f, &ringTempGrad, 52.0f, 14.0f, IM_PI, IM_PI );
+				ImGui::SameLine();
+				// 3/4 pie meter (1.5π sweep from 0.75π)
+				ImWidgets::SliderGradientRingInt(   "Meter##SRG", &meter,  0,    100,  &ringTempGrad, 52.0f, 14.0f, 0.75f * IM_PI, 1.5f * IM_PI );
+			}
+			DW_SsRecord( "SliderRing_Gradient", _sy0, ImGui::GetCursorPos().y ); }
+
+			{ float _sy0 = ImGui::GetCursorPos().y;
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Slider2D Float" ) )
 			{
 				static ImVec2 slider2D;
@@ -6033,15 +6278,39 @@ namespace ImWidgets {
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Image Bento" ) )
 			{
-				static int bentoIdx = 0;
-				static int bentoColumns = 3;
-				static float bentoAspect = 1.0f;
-				ImTextureID bentoImages[] = { astro_img, clock_img, man_img, illlustration_img, bike_img };
-				ImVec2 bentoSizes[] = { astro_size, clock_size, man_size, illlustration_size, bike_size };
+				static int   bentoIdx     = 0;
+				static int   bentoColumns = 3;
+				static float bentoAspect  = 1.0f;
+				// Use static so reorder swaps persist between frames. Stable
+				// `pItemIds` are required for clean drag-reorder — without
+				// them ImGui's per-cell ID is positional and a swap would
+				// teleport input focus.
+				static ImTextureID bentoImages[] = { astro_img, clock_img, man_img, illlustration_img, bike_img };
+				static ImVec2      bentoSizes [] = { astro_size, clock_size, man_size, illlustration_size, bike_size };
+				static const char* bentoIds  [] = { "astro", "clock", "man", "illustration", "bike" };
 				ImGui::SliderInt( "Columns##Bento", &bentoColumns, 1, 6 );
 				ImGui::SliderFloat( "Aspect (W/H)##Bento", &bentoAspect, 0.25f, 4.0f, "%.2f" );
-				ImWidgets::ImageBento( "##Bento", bentoImages, bentoSizes, IM_ARRAYSIZE( bentoImages ), &bentoIdx, bentoColumns, bentoAspect );
-				ImGui::Text( "Selected: %d", bentoIdx );
+
+				int reorderFrom = -1, reorderTo = -1;
+				ImWidgets::ImageBento( "##Bento", bentoImages, bentoSizes,
+				                       IM_ARRAYSIZE( bentoImages ), &bentoIdx,
+				                       bentoColumns, bentoAspect, /*spacing=*/4.0f,
+				                       bentoIds, &reorderFrom, &reorderTo );
+				if ( reorderFrom >= 0 && reorderTo >= 0 &&
+				     reorderFrom < IM_ARRAYSIZE( bentoImages ) &&
+				     reorderTo   < IM_ARRAYSIZE( bentoImages ) )
+				{
+					// ImageBento itself never mutates the arrays — the caller
+					// must perform the swap. Adjacent-only swaps make it a
+					// straightforward std::swap on each parallel array.
+					ImTextureID tImg = bentoImages[reorderFrom]; bentoImages[reorderFrom] = bentoImages[reorderTo]; bentoImages[reorderTo] = tImg;
+					ImVec2      tSz  = bentoSizes [reorderFrom]; bentoSizes [reorderFrom] = bentoSizes [reorderTo]; bentoSizes [reorderTo] = tSz;
+					const char* tId  = bentoIds   [reorderFrom]; bentoIds   [reorderFrom] = bentoIds   [reorderTo]; bentoIds   [reorderTo] = tId;
+					// Keep the selection following the dragged item.
+					if      ( bentoIdx == reorderFrom ) bentoIdx = reorderTo;
+					else if ( bentoIdx == reorderTo   ) bentoIdx = reorderFrom;
+				}
+				ImGui::Text( "Selected: %d (drag a cell to reorder)", bentoIdx );
 			}
 			DW_SsRecord( "Image_Bento", _sy0, ImGui::GetCursorPos().y ); }
 
@@ -7085,7 +7354,7 @@ namespace ImWidgets {
 					{
 						int ch = ( imgCh >= 3 ) ? imgCh : 3;
 						ccHistData.Accumulate( imgData, imgW, imgH, ch,
-							ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved, ImHistogramMode_Luma,
+							ImPixelBitDepth_UInt8, ImPixelLayout_Interleaved, ImHistogramMode_Luma,
 							256, 1000000 );
 						STBI_FREE( imgData );
 					}
@@ -7338,7 +7607,7 @@ namespace ImWidgets {
 						}
 
 						paradeData.Accumulate( testImage.Data, kTestW, kTestH, 3,
-							ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved, ( ImParadeMode )paradeMode,
+							ImPixelBitDepth_UInt8, ImPixelLayout_Interleaved, ( ImParadeMode )paradeMode,
 							128, 128, 500000 );
 
 						// Create thumbnail texture (RGB -> RGBA)
@@ -7372,7 +7641,7 @@ namespace ImWidgets {
 						{
 							int ch = ( paradeImgCh >= 3 ) ? paradeImgCh : 3;
 							paradeData.Accumulate( paradeImgData, paradeImgW, paradeImgH, ch,
-								ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved, ( ImParadeMode )paradeMode,
+								ImPixelBitDepth_UInt8, ImPixelLayout_Interleaved, ( ImParadeMode )paradeMode,
 								128, 128, 1000000 );
 						}
 					}
@@ -7505,7 +7774,7 @@ namespace ImWidgets {
 						}
 
 						vectorData.Accumulate( testImage.Data, kTestW, kTestH, 3,
-							ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved,
+							ImPixelBitDepth_UInt8, ImPixelLayout_Interleaved,
 							256, 500000 );
 
 						// Create thumbnail texture (RGB -> RGBA)
@@ -7538,7 +7807,7 @@ namespace ImWidgets {
 						{
 							int ch = ( vectorImgCh >= 3 ) ? vectorImgCh : 3;
 							vectorData.Accumulate( vectorImgData, vectorImgW, vectorImgH, ch,
-								ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved,
+								ImPixelBitDepth_UInt8, ImPixelLayout_Interleaved,
 								256, 1000000 );
 						}
 					}
@@ -7674,7 +7943,7 @@ namespace ImWidgets {
 						}
 
 						histData.Accumulate( testImage.Data, kTestW, kTestH, 3,
-							ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved, ( ImHistogramMode )histMode,
+							ImPixelBitDepth_UInt8, ImPixelLayout_Interleaved, ( ImHistogramMode )histMode,
 							256, 500000 );
 
 						// Create thumbnail texture (RGB -> RGBA)
@@ -7707,7 +7976,7 @@ namespace ImWidgets {
 						{
 							int ch = ( histImgCh >= 3 ) ? histImgCh : 3;
 							histData.Accumulate( histImgData, histImgW, histImgH, ch,
-								ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved, ( ImHistogramMode )histMode,
+								ImPixelBitDepth_UInt8, ImPixelLayout_Interleaved, ( ImHistogramMode )histMode,
 								256, 1000000 );
 						}
 					}
@@ -7846,7 +8115,7 @@ namespace ImWidgets {
 						}
 
 						cieData.Accumulate( testImage.Data, kTestW, kTestH, 3,
-							ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved,
+							ImPixelBitDepth_UInt8, ImPixelLayout_Interleaved,
 							50000 );
 
 						// Create thumbnail texture (RGB -> RGBA)
@@ -7879,7 +8148,7 @@ namespace ImWidgets {
 						{
 							int ch = ( cieImgCh >= 3 ) ? cieImgCh : 3;
 							cieData.Accumulate( cieImgData, cieImgW, cieImgH, ch,
-								ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved,
+								ImPixelBitDepth_UInt8, ImPixelLayout_Interleaved,
 								50000 );
 						}
 					}
@@ -8038,7 +8307,7 @@ namespace ImWidgets {
 						}
 
 						tcHistData.Accumulate( testImage.Data, kTestW, kTestH, 3,
-							ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved, ( ImHistogramMode )tcMode,
+							ImPixelBitDepth_UInt8, ImPixelLayout_Interleaved, ( ImHistogramMode )tcMode,
 							256, 500000 );
 
 						// Create thumbnail texture (RGB -> RGBA)
@@ -8071,7 +8340,7 @@ namespace ImWidgets {
 						{
 							int ch = ( tcImgCh >= 3 ) ? tcImgCh : 3;
 							tcHistData.Accumulate( tcImgData, tcImgW, tcImgH, ch,
-								ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved, ( ImHistogramMode )tcMode,
+								ImPixelBitDepth_UInt8, ImPixelLayout_Interleaved, ( ImHistogramMode )tcMode,
 								256, 1000000 );
 						}
 					}
@@ -8227,7 +8496,7 @@ namespace ImWidgets {
 							}
 						}
 						warperSignal.Accumulate( testImg.Data, kW, kH, 3,
-							ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved );
+							ImPixelBitDepth_UInt8, ImPixelLayout_Interleaved );
 						// Create thumbnail for synthetic image
 						{
 							ImVector<ImU8> rgba;
@@ -8257,7 +8526,7 @@ namespace ImWidgets {
 						{
 							int ch = ( warperImgCh >= 3 ) ? warperImgCh : 3;
 							warperSignal.Accumulate( warperImgData, warperImgW, warperImgH, ch,
-								ImParadeBitDepth_UInt8, ImParadeLayout_Interleaved );
+								ImPixelBitDepth_UInt8, ImPixelLayout_Interleaved );
 						}
 					}
 					warperNeedsUpdate = false;

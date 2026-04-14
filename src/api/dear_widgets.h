@@ -56,10 +56,6 @@
 //	* ChromaticPlot: Bake some as much as possible values: provide different version: ChromaticPlotDynamic {From enum and compute info at each frame}, ChromaticPlotFromData {From Baked data}
 //
 // Write use case for:
-//	* HueToHue:
-//		- Color Remap
-//	* LumToSat:
-//		- Color Remap
 //	* ColorRing:
 //		- HDR Color Management {Shadow, MidTone, Highlight}
 //	* Grid2D_AoS_Float:
@@ -2071,13 +2067,13 @@ struct ImColorCurveData
 
 // ---- Parade Scope ----
 
-typedef int ImParadeBitDepth;
-enum ImParadeBitDepth_
+typedef int ImPixelBitDepth;
+enum ImPixelBitDepth_
 {
-	ImParadeBitDepth_UInt8 = 0,		// 8-bit  [0, 255]
-	ImParadeBitDepth_UInt10,		// 10-bit stored in uint16 [0, 1023]
-	ImParadeBitDepth_UInt16,		// 16-bit [0, 65535]
-	ImParadeBitDepth_COUNT
+	ImPixelBitDepth_UInt8 = 0,		// 8-bit  [0, 255]
+	ImPixelBitDepth_UInt10,		// 10-bit stored in uint16 [0, 1023]
+	ImPixelBitDepth_UInt16,		// 16-bit [0, 65535]
+	ImPixelBitDepth_COUNT
 };
 
 typedef int ImParadeMode;
@@ -2090,12 +2086,12 @@ enum ImParadeMode_
 	ImParadeMode_COUNT
 };
 
-typedef int ImParadeLayout;
-enum ImParadeLayout_
+typedef int ImPixelLayout;
+enum ImPixelLayout_
 {
-	ImParadeLayout_Interleaved = 0,	// RGBRGB... or RGBARGBA...
-	ImParadeLayout_Planar,			// RRR...GGG...BBB...
-	ImParadeLayout_COUNT
+	ImPixelLayout_Interleaved = 0,	// RGBRGB... or RGBARGBA...
+	ImPixelLayout_Planar,			// RRR...GGG...BBB...
+	ImPixelLayout_COUNT
 };
 
 typedef int ImParadeScale;
@@ -2115,9 +2111,9 @@ struct ImParadeScopeData
 	int				ChannelCount;	// Display channels (1..4 depending on mode)
 	ImU32			PeakCount;		// Max bin value (for normalization)
 	ImParadeMode	Mode;
-	ImParadeBitDepth BitDepth;
+	ImPixelBitDepth BitDepth;
 
-	ImParadeScopeData() : XBins( 0 ), YBins( 0 ), ChannelCount( 0 ), PeakCount( 0 ), Mode( ImParadeMode_RGB ), BitDepth( ImParadeBitDepth_UInt8 ) {}
+	ImParadeScopeData() : XBins( 0 ), YBins( 0 ), ChannelCount( 0 ), PeakCount( 0 ), Mode( ImParadeMode_RGB ), BitDepth( ImPixelBitDepth_UInt8 ) {}
 
 	void Clear()
 	{
@@ -2127,7 +2123,7 @@ struct ImParadeScopeData
 	}
 
 	void Accumulate( void const* data, int width, int height, int channels,
-					 ImParadeBitDepth bitDepth, ImParadeLayout layout, ImParadeMode mode,
+					 ImPixelBitDepth bitDepth, ImPixelLayout layout, ImParadeMode mode,
 					 int xBins = 128, int yBins = 128, int maxSamples = 1000000 );
 };
 
@@ -2138,9 +2134,9 @@ struct ImVectorScopeData
 	ImVector<ImU32>	Bins;			// [xBin * Resolution + yBin] — 2D chrominance histogram
 	int				Resolution;		// Square grid resolution (N x N)
 	ImU32			PeakCount;		// Max bin value (for normalization)
-	ImParadeBitDepth BitDepth;
+	ImPixelBitDepth BitDepth;
 
-	ImVectorScopeData() : Resolution( 0 ), PeakCount( 0 ), BitDepth( ImParadeBitDepth_UInt8 ) {}
+	ImVectorScopeData() : Resolution( 0 ), PeakCount( 0 ), BitDepth( ImPixelBitDepth_UInt8 ) {}
 
 	void Clear()
 	{
@@ -2151,7 +2147,7 @@ struct ImVectorScopeData
 
 	// Accumulate chrominance (Cb/Cr BT.709) from raw image data into 2D histogram.
 	void Accumulate( void const* data, int width, int height, int channels,
-					 ImParadeBitDepth bitDepth, ImParadeLayout layout,
+					 ImPixelBitDepth bitDepth, ImPixelLayout layout,
 					 int resolution = 256, int maxSamples = 1000000 );
 };
 
@@ -2167,7 +2163,7 @@ struct ImColorWarperOverlay
 	void Clear() { SampledRGB.clear(); SampleCount = 0; }
 
 	void Accumulate( void const* data, int width, int height, int channels,
-					 ImParadeBitDepth bitDepth, ImParadeLayout layout,
+					 ImPixelBitDepth bitDepth, ImPixelLayout layout,
 					 int maxSamples = 50000 );
 };
 
@@ -2200,9 +2196,9 @@ struct ImHistogramData
 	int				ChannelCount;	// Display channels (1..4 depending on mode)
 	ImU32			PeakCount;		// Max bin value (for normalization)
 	ImHistogramMode	Mode;
-	ImParadeBitDepth BitDepth;
+	ImPixelBitDepth BitDepth;
 
-	ImHistogramData() : BinCount( 0 ), ChannelCount( 0 ), PeakCount( 0 ), Mode( ImHistogramMode_RGB ), BitDepth( ImParadeBitDepth_UInt8 ) {}
+	ImHistogramData() : BinCount( 0 ), ChannelCount( 0 ), PeakCount( 0 ), Mode( ImHistogramMode_RGB ), BitDepth( ImPixelBitDepth_UInt8 ) {}
 
 	void Clear()
 	{
@@ -2212,7 +2208,7 @@ struct ImHistogramData
 	}
 
 	void Accumulate( void const* data, int width, int height, int channels,
-					 ImParadeBitDepth bitDepth, ImParadeLayout layout, ImHistogramMode mode,
+					 ImPixelBitDepth bitDepth, ImPixelLayout layout, ImHistogramMode mode,
 					 int binCount = 256, int maxSamples = 1000000 );
 };
 
@@ -2253,7 +2249,7 @@ struct ImCIEChromaticityData
 
 	// Sample RGB pixels from raw image data for chromaticity plotting.
 	void Accumulate( void const* data, int width, int height, int channels,
-					 ImParadeBitDepth bitDepth, ImParadeLayout layout,
+					 ImPixelBitDepth bitDepth, ImPixelLayout layout,
 					 int maxSamples = 50000 );
 };
 
@@ -3137,8 +3133,10 @@ namespace ImWidgets{
 	IMGUI_API void DrawSignetCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float width, float height, float height_ratio, float align01, float angle, float thickness, ImU32 col );
 	IMGUI_API void DrawSignetFilledCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float width, float height, float height_ratio, float align01, float angle, ImU32 col );
 
-	IMGUI_API void DrawProceduralColor1DNearest( ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX );
-	IMGUI_API void DrawProceduralColor1DBilinear( ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX );
+	IMGUI_API void DrawProceduralColor1DNearestHorizontal( ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX );
+	IMGUI_API void DrawProceduralColor1DNearestVertical( ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionY );
+	IMGUI_API void DrawProceduralColor1DBilinearHorizontal( ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX );
+	IMGUI_API void DrawProceduralColor1DBilinearVertical( ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionY );
 
 	IMGUI_API void DrawProceduralColor2DNearest( ImDrawList* pDrawList, ImWidgetsColor2DCallback func, void* pUserData, float minX, float maxX, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionX, int resolutionY );
 	IMGUI_API void DrawProceduralColor2DBilinear( ImDrawList* pDrawList, ImWidgetsColor2DCallback func, void* pUserData, float minX, float maxX, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionX, int resolutionY );
@@ -3148,12 +3146,16 @@ namespace ImWidgets{
 	IMGUI_API void DrawLumianceBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma );
 	IMGUI_API void DrawSaturationBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma );
 
+	IMGUI_API void DrawProceduralColorArcBilinear( ImDrawList* pDrawList, ImVec2 center, float innerRadius, float outerRadius, float startAngle, float sweepAngle, ImWidgetsColor1DCallback func, void* pUserData, int division, bool bilinear );
+	IMGUI_API void DrawProceduralColorSplineBilinear( ImDrawList* pDrawList, const ImVec2* points, int points_count, float thickness, ImWidgetsColor1DCallback func, void* pUserData, int resolution, bool closed );
+
 	IMGUI_API void DrawColorRing( ImDrawList* pDrawList, ImVec2 const curPos, ImVec2 const size, float thickness_, ImWidgetsColor1DCallback func, void* pUserData, int division, float colorOffset, bool bIsBilinear );
 
 	IMGUI_API ImVec4 GradientSample( ImGradientData const& gradient, float t );
 	IMGUI_API float  GradientAlphaSample( ImGradientData const& gradient, float t );
 	IMGUI_API void DrawCheckerboard( ImDrawList* pDrawList, ImVec2 position, ImVec2 size, float cellSize, ImU32 col1, ImU32 col2 );
 	IMGUI_API void DrawGradientBar( ImDrawList* pDrawList, ImGradientData const& gradient, ImVec2 position, ImVec2 size, int resolution );
+	IMGUI_API void DrawSplineGradient( ImDrawList* pDrawList, ImGradientData const& gradient, const ImVec2* points, int points_count, float thickness, int resolution, bool closed = false );
 
 	IMGUI_API float CurveEditorEvalEasing( ImCurveEditorSeg seg, float t );
 	IMGUI_API float CurveEditorSample( ImCurveEditorData const& curve, float x );
@@ -3393,6 +3395,21 @@ namespace ImWidgets{
 	IMGUI_API bool Slider2DFloat( char const* pLabel, float* pValueX, float* pValueY, float v_minX, float v_maxX, float v_minY, float v_maxY );
 	IMGUI_API bool Slider2DInt( char const* pLabel, int* pValueX, void* pValueY, int v_minX, int v_maxX, int v_minY, int v_maxY );
 
+	// SliderGradient: 1D slider with an ImGradientData-backed background. Color space comes from gradient->Interpolation.
+	IMGUI_API bool SliderGradientScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool SliderGradientFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool SliderGradientInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// SliderGradientRing: interactive ring/arc slider with gradient background.
+	// Full-circle overload: value wraps at boundaries (natural for hue).
+	IMGUI_API bool SliderGradientRingScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, float outerRadius, float thickness );
+	IMGUI_API bool SliderGradientRingFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, float outerRadius, float thickness );
+	IMGUI_API bool SliderGradientRingInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, float outerRadius, float thickness );
+	// Arc overload: caller specifies startAngle + sweepAngle (radians). Value is clamped (no wrap).
+	IMGUI_API bool SliderGradientRingScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle );
+	IMGUI_API bool SliderGradientRingFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle );
+	IMGUI_API bool SliderGradientRingInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle );
+
 	// Unit Field: DragFloat with built-in unit selector
 	IMGUI_API bool UnitField( char const* label, float* pValue, ImUnitDef* units, int unitCount, int* pSelectedUnit, float v_speed = 1.0f, float v_min = 0.0f, float v_max = 0.0f, const char* format = NULL );
 
@@ -3475,6 +3492,20 @@ namespace ImWidgets{
 	IMGUI_API bool SliderSplineInt( char const* label, int* value, int v_min, int v_max,
 									const ImVec2* control_points = NULL, int num_points = 4, float v_height = 0.0f,
 									float v_thickness = 0.0f, const char* format = "%d", ImGuiSliderFlags flags = 0 );
+
+	// SliderSplineGradient: spline-track slider with a gradient background rendered along the bezier path.
+	IMGUI_API bool SliderSplineGradientScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max,
+											   ImGradientData const* gradient,
+											   const ImVec2* control_points = NULL, int num_points = 4, float v_height = 0.0f,
+											   float v_thickness = 0.0f, const char* format = NULL, ImGuiSliderFlags flags = 0 );
+	IMGUI_API bool SliderSplineGradientFloat( char const* label, float* value, float v_min, float v_max,
+											  ImGradientData const* gradient,
+											  const ImVec2* control_points = NULL, int num_points = 4, float v_height = 0.0f,
+											  float v_thickness = 0.0f, const char* format = "%.3f", ImGuiSliderFlags flags = 0 );
+	IMGUI_API bool SliderSplineGradientInt( char const* label, int* value, int v_min, int v_max,
+											ImGradientData const* gradient,
+											const ImVec2* control_points = NULL, int num_points = 4, float v_height = 0.0f,
+											float v_thickness = 0.0f, const char* format = "%d", ImGuiSliderFlags flags = 0 );
 
 	IMGUI_API bool DragFloatPrecise( char const* label, float* value, float v_min = 0.0f, float v_max = 0.0f, const char* format = NULL, ImGuiSliderFlags flags = 0 );
 

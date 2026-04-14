@@ -32,6 +32,7 @@ namespace ImDwDownload
     static const char* kCSVG    = "Color: SVG";
     static const char* kCColr1  = "Color: COLR v1 / Gradient";
     static const char* kCArabic = "Arabic";
+    static const char* kCLig    = "Ligature Showcase";
 
     const Meta kFontMeta[] = {
         // ---- Programming / Code ----
@@ -56,9 +57,6 @@ namespace ImDwDownload
         { "UnifrakturCook-Bold.ttf", "Foglihten No07 -> UnifrakturCook", kCSerif, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/unifrakturcook/UnifrakturCook-Bold.ttf",
           nullptr },
-        { "PlayfairDisplaySC-Regular.ttf", "Prida 61 -> Playfair Display SC", kCSerif, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/playfairdisplaysc/PlayfairDisplaySC-Regular.ttf",
-          nullptr },
         { "Rye-Regular.ttf", "Steelworks Vintage -> Rye", kCSerif, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/rye/Rye-Regular.ttf",
           nullptr },
@@ -74,9 +72,6 @@ namespace ImDwDownload
         // bouncy casual, dry brush, bold brush, copperplate, Italian script,
         // retro connected, retro italic brush, formal engraved, bold display
         // script, expressive display script.
-        { "Caveat[wght].ttf", "Allessa -> Caveat", kCScript, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/caveat/Caveat%5Bwght%5D.ttf",
-          nullptr },  // pencil handwriting
         { "Sacramento-Regular.ttf", "Bright Marching -> Sacramento", kCScript, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/sacramento/Sacramento-Regular.ttf",
           nullptr },  // monoline upright
@@ -86,49 +81,15 @@ namespace ImDwDownload
         { "GreatVibes-Regular.ttf", "Cherona -> Great Vibes", kCScript, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/greatvibes/GreatVibes-Regular.ttf",
           nullptr },  // classic English copperplate
-        { "Pacifico-Regular.ttf", "Daeling -> Pacifico", kCScript, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/pacifico/Pacifico-Regular.ttf",
-          nullptr },  // retro 50s brush sign-painting
-        { "PermanentMarker-Regular.ttf", "Flowmery -> Permanent Marker", kCScript, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/apache/permanentmarker/PermanentMarker-Regular.ttf",
-          nullptr },  // bold sharpie
-        { "AlexBrush-Regular.ttf", "Galins -> Alex Brush", kCScript, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/alexbrush/AlexBrush-Regular.ttf",
-          nullptr },  // dry brush calligraphy
-        { "ShadowsIntoLight.ttf", "Gallante -> Shadows Into Light", kCScript, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/shadowsintolight/ShadowsIntoLight.ttf",
-          nullptr },  // loose marker handwriting
-        { "Yellowtail-Regular.ttf", "Kleymissky -> Yellowtail", kCScript, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/apache/yellowtail/Yellowtail-Regular.ttf",
-          nullptr },  // retro connected brush
         { "LoveLight-Regular.ttf", "Love Light", kCScript, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/lovelight/LoveLight-Regular.ttf",
           nullptr },  // decorative / glitter script (keeper)
-        { "LeckerliOne-Regular.ttf", "Metafora Alternate -> Leckerli One", kCScript, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/leckerlione/LeckerliOne-Regular.ttf",
-          nullptr },  // retro bold italic brush
         { "Sail-Regular.ttf", "Metafora Stylistic -> Sail", kCScript, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/sail/Sail-Regular.ttf",
           nullptr },  // bold monoline display script
-        { "Satisfy-Regular.ttf", "Migullon -> Satisfy", kCScript, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/apache/satisfy/Satisfy-Regular.ttf",
-          nullptr },  // casual friendly brush
-        { "DancingScript[wght].ttf", "Milssky -> Dancing Script", kCScript, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/dancingscript/DancingScript%5Bwght%5D.ttf",
-          nullptr },  // bouncy casual cursive
         { "HomemadeApple-Regular.ttf", "Regina -> Homemade Apple", kCScript, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/apache/homemadeapple/HomemadeApple-Regular.ttf",
           nullptr },  // personal cursive (photographed real hand)
-        { "PetitFormalScript-Regular.ttf", "Retro Heart You -> Petit Formal Script", kCScript, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/petitformalscript/PetitFormalScript-Regular.ttf",
-          nullptr },  // retro engraved formal
-        // Rosehot -> Melodrama (Fontshare zip) — expressive high-contrast script-display.
-        { "Melodrama-Regular.otf", "Rosehot -> Melodrama", kCScript, "Fontshare",
-          "https://api.fontshare.com/v2/fonts/download/melodrama",
-          "Melodrama_Complete/Fonts/OTF/Melodrama-Regular.otf" },
-        { "GochiHand-Regular.ttf", "Sophiemelanie -> Gochi Hand", kCScript, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/gochihand/GochiHand-Regular.ttf",
-          nullptr },  // felt-tip pen casual
         // Sharpie (Fontshare zip — marker handwriting).
         { "Sharpie-Regular.otf", "Sharpie", kCScript, "Fontshare",
           "https://api.fontshare.com/v2/fonts/download/sharpie",
@@ -139,10 +100,6 @@ namespace ImDwDownload
         { "FlorDeRuina-Flor.otf", "Bollgo -> Flor de Ruina", kCDisp, "Velvetyne",
           "https://gitlab.com/velvetyne/flor-des-ruina/-/archive/main/flor-des-ruina-main.zip",
           "flor-des-ruina-main/fonts/otf/FlorDeRuina-Flor.otf" },
-        // Boucher -> Amdal (bold Tifinagh display).
-        { "AMDAL-Regular.otf", "Boucher -> Amdal", kCDisp, "Velvetyne",
-          "https://gitlab.com/velvetyne/amdal/-/archive/master/amdal-master.zip",
-          "amdal-master/fonts/AMDAL-Regular.otf" },
         // Dotted -> Bianzhidai (plastic-weave pixel art — concept match for Dotted).
         { "Bianzhidai-NoBG-Base.otf", "Dotted -> Bianzhidai", kCDisp, "Velvetyne",
           "https://github.com/sdfggvfvj/bianzhidai-2.0/archive/main.zip",
@@ -183,9 +140,6 @@ namespace ImDwDownload
         { "Comico-Regular.otf", "Comico", kCDisp, "Fontshare",
           "https://api.fontshare.com/v2/fonts/download/comico",
           "Comico_Complete/Fonts/OTF/Comico-Regular.otf" },
-        { "Supreme-Regular.otf", "Supreme", kCDisp, "Fontshare",
-          "https://api.fontshare.com/v2/fonts/download/supreme",
-          "Supreme_Complete/Fonts/OTF/Supreme-Regular.otf" },
         { "BespokeStencil-Regular.otf", "Bespoke Stencil", kCDisp, "Fontshare",
           "https://api.fontshare.com/v2/fonts/download/bespoke-stencil",
           "BespokeStencil_Complete/Fonts/OTF/BespokeStencil-Regular.otf" },
@@ -269,11 +223,6 @@ namespace ImDwDownload
         { "NotoColorEmoji-SVG.otf", "Noto Color Emoji (OT-SVG)", kCSVG, "Adobe (GitHub)",
           "https://github.com/adobe-fonts/noto-emoji-svg/releases/download/2.100/NotoColorEmoji-SVG.otf",
           nullptr },
-        // Twitter Color Emoji SVGinOT (13rac1, CC-BY 4.0 art / MIT code) — Twemoji
-        // packaged as OT-SVG. Downloaded from the Win release zip.
-        { "TwitterColorEmoji-SVGinOT.ttf", "Twitter Color Emoji (SVGinOT)", kCSVG, "13rac1 (GitHub)",
-          "https://github.com/13rac1/twemoji-color-font/releases/download/v15.1.0/TwitterColorEmoji-SVGinOT-Win-15.1.0.zip",
-          "TwitterColorEmoji-SVGinOT-Win-15.1.0/TwitterColorEmoji-SVGinOT.ttf" },
 
         // ---- Color: COLR v1 / Gradient ----
         { "Nabla[EDPT,EHLT].ttf", "Nabla", kCColr1, "Google Fonts",
@@ -311,9 +260,6 @@ namespace ImDwDownload
         { "ArefRuqaaInk-Bold.ttf", "Aref Ruqaa Ink Bold", kCArabic, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/arefruqaaink/ArefRuqaaInk-Bold.ttf",
           nullptr },
-        { "ArefRuqaaInk-Regular.ttf", "Aref Ruqaa Ink Regular", kCArabic, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/arefruqaaink/ArefRuqaaInk-Regular.ttf",
-          nullptr },
         { "BlakaInk-Regular.ttf", "Blaka Ink", kCArabic, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/blakaink/BlakaInk-Regular.ttf",
           nullptr },
@@ -337,6 +283,103 @@ namespace ImDwDownload
         { "AmiriQuran.ttf", "Amiri Quran (upstream)", kCArabic, "aliftype (GitHub)",
           "https://github.com/aliftype/amiri/releases/download/1.003/Amiri-1.003.zip",
           "Amiri-1.003/AmiriQuran.ttf" },
+
+        // ---- Ligature Showcase ----
+        // Fonts chosen for rich ligature sets: programming (=>, ->, ::),
+        // classical text (fi, fl, ffi, ct, st, Th, sp), historical
+        // (medieval æ, œ), and decorative script (letter-pair flourishes).
+        // All open-source licenses (OFL / Apache / Fontshare).
+        { "JetBrainsMono[wght].ttf", "JetBrains Mono (programming)", kCLig, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/jetbrainsmono/JetBrainsMono%5Bwght%5D.ttf",
+          nullptr },
+        { "VictorMono[wght].ttf", "Victor Mono (programming + cursive italics)", kCLig, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/victormono/VictorMono%5Bwght%5D.ttf",
+          nullptr },
+        // Monaspace Neon (GitHub Next, OFL) — monospace with texture-healing
+        // auto-adjusting glyph widths; the release zip ships 5 style variants.
+        { "MonaspaceNeon-Regular.ttf", "Monaspace Neon (texture healing)", kCLig, "GitHub Next",
+          "https://github.com/githubnext/monaspace/releases/download/v1.400/monaspace-frozen-v1.400.zip",
+          "Frozen Fonts/Monaspace Neon/MonaspaceNeonFrozen-Regular.ttf" },
+        { "EBGaramond[wght].ttf", "EB Garamond (classical oldstyle)", kCLig, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/ebgaramond/EBGaramond%5Bwght%5D.ttf",
+          nullptr },
+        { "Lobster-Regular.ttf", "Lobster (retro script)", kCLig, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/lobster/Lobster-Regular.ttf",
+          nullptr },
+        { "AbrilFatface-Regular.ttf", "Abril Fatface (Didone display)", kCLig, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/abrilfatface/AbrilFatface-Regular.ttf",
+          nullptr },
+        { "MeaCulpa-Regular.ttf", "Mea Culpa (extreme calligraphy)", kCLig, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/meaculpa/MeaCulpa-Regular.ttf",
+          nullptr },
+        // Junicode (Peter S. Baker, OFL) — medievalist typography: insular
+        // characters, Old English / runic / medieval Latin ligatures.
+        { "Junicode-Regular.ttf", "Junicode (medieval historical)", kCLig, "psb1558 (GitHub)",
+          "https://github.com/psb1558/Junicode-font/releases/download/v2.222/Junicode_2.222.zip",
+          "Junicode/TTF/Junicode-Regular.ttf" },
+        { "Tapestry-Regular.ttf", "Tapestry (ornate script)", kCLig, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/tapestry/Tapestry-Regular.ttf",
+          nullptr },
+
+        { "BirthstoneBounce-Regular.ttf", "Birthstone Bounce (bouncy flourished)", kCLig, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/birthstonebounce/BirthstoneBounce-Regular.ttf",
+          nullptr },
+        { "MonteCarlo-Regular.ttf", "MonteCarlo (Spencerian with flourishes)", kCLig, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/montecarlo/MonteCarlo-Regular.ttf",
+          nullptr },
+        { "MrsSaintDelafield-Regular.ttf", "Mrs Saint Delafield (Spencerian)", kCLig, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/mrssaintdelafield/MrsSaintDelafield-Regular.ttf",
+          nullptr },
+        { "SansitaSwashed[wght].ttf", "Sansita Swashed (sans + swashes)", kCLig, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/sansitaswashed/SansitaSwashed%5Bwght%5D.ttf",
+          nullptr },
+        { "BodoniModa[opsz,wght].ttf", "Bodoni Moda (variable Didone w/ ligs)", kCLig, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/bodonimoda/BodoniModa%5Bopsz,wght%5D.ttf",
+          nullptr },
+        // Unusual 3+ char ligatures: Unifraktur Maguntia (OFL) — historical
+        // German blackletter with ſch / ſſi / ch / ck / ll / tz discretionary
+        // ligs absent from any Roman-serif font.
+        { "UnifrakturMaguntia-Book.ttf", "Unifraktur Maguntia (ſch/ſſi blackletter)", kCLig, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/unifrakturmaguntia/UnifrakturMaguntia-Book.ttf",
+          nullptr },
+        // Allura (OFL) — Sudtipos-style formal script with whole-syllable
+        // word ligatures (The / tion / ion / ing / are) rather than
+        // letter-pair flourishes.
+        { "Allura-Regular.ttf", "Allura (script word ligs: The/tion/ing)", kCLig, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/allura/Allura-Regular.ttf",
+          nullptr },
+        // Non-classical extensions: variable modern blackletter, tattoo gothic,
+        // Celtic uncial, extra-ornate script, Haskell programming, Velvetyne
+        // indie monospace. All pick up 3+ char ligature sets absent elsewhere.
+        { "GrenzeGotisch[wght].ttf", "Grenze Gotisch (variable modern blackletter)", kCLig, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/grenzegotisch/GrenzeGotisch%5Bwght%5D.ttf",
+          nullptr },
+        { "PirataOne-Regular.ttf", "Pirata One (tattoo gothic)", kCLig, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/pirataone/PirataOne-Regular.ttf",
+          nullptr },
+        { "Ruthie-Regular.ttf", "Ruthie (extra-ornate formal script)", kCLig, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/ruthie/Ruthie-Regular.ttf",
+          nullptr },
+        // Unconventional additions: Velvetyne tall art-nouveau, Tarot-inspired
+        // display, medievalist scholarly, sharper blackletter companion,
+        // NYT-masthead gothic, monospace caps display.
+        { "le-murmure.ttf", "Le Murmure (Velvetyne tall art-nouveau)", kCLig, "Velvetyne (GitLab)",
+          "https://gitlab.com/velvetyne/murmure/-/archive/main/murmure-main.zip",
+          "murmure-main/fonts/le-murmure.ttf" },
+        { "Caudex-Regular.ttf", "Caudex (medievalist scholarly)", kCLig, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/caudex/Caudex-Regular.ttf",
+          nullptr },
+        { "UnifrakturCook-Bold.ttf", "UnifrakturCook (sharper blackletter)", kCLig, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/unifrakturcook/UnifrakturCook-Bold.ttf",
+          nullptr },
+        // Chomsky (Fredrick R. Brennan, OFL) — NYT-masthead gothic-blackletter
+        // hybrid; ships OTF only from GitHub releases.
+        { "Chomsky.otf", "Chomsky (NYT masthead gothic)", kCLig, "ctrlcctrlv (GitHub)",
+          "https://github.com/ctrlcctrlv/chomsky/releases/download/v2.3/Chomsky.otf",
+          nullptr },
+        { "MajorMonoDisplay-Regular.ttf", "Major Mono Display (caps mono)", kCLig, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/majormonodisplay/MajorMonoDisplay-Regular.ttf",
+          nullptr },
     };
 
     const int kFontMetaCount = (int)( sizeof( kFontMeta ) / sizeof( kFontMeta[0] ) );

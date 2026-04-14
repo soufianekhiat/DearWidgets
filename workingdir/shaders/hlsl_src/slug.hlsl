@@ -425,8 +425,28 @@ float4 main_ps(PS_INPUT input) : SV_Target
 #ifdef SLUG_DEBUG
     return SlugRenderDebug(input.texcoord, input.banding, input.glyph);
 #elif defined(SLUG_GRADIENT)
-    // Linear gradient: compute t from em-space coordinate projected onto gradient line
-    float t = dot(input.texcoord, input.gradParams.xy) * input.gradParams.z + input.gradParams.w;
+    // Two gradient kinds share this permutation, distinguished by bit 24 of
+    // the packed glyph data (input.glyph.w bit 8). With the flag we can use
+    // the SAME (xy, scale, bias) layout for both, freeing up grad params to
+    // carry a real bias for radial — necessary for stop-range remapping
+    // (see the parser) which is what reproduces emoji rim-lighting falloffs.
+    //   linear: gradParams.xy = direction, .z = scale, .w = bias
+    //           t = dot(em, dir) * scale + bias
+    //   radial: gradParams.xy = center,    .z = scale, .w = bias
+    //           t = length(em - center) * scale + bias
+    // Centre/radius and direction are pre-baked into the same em-space the
+    // coverage band-texture runs in, so no inverse-transform here.
+    bool isRadial = (input.glyph.w & 0x100) != 0;
+    float t;
+    if (isRadial)
+    {
+        float2 d = input.texcoord - input.gradParams.xy;
+        t = length(d) * input.gradParams.z + input.gradParams.w;
+    }
+    else
+    {
+        t = dot(input.texcoord, input.gradParams.xy) * input.gradParams.z + input.gradParams.w;
+    }
     t = saturate(t);
     float4 gradColor = lerp(input.gradColor0, input.gradColor1, t);
     return float4(gradColor.rgb, gradColor.a * coverage);

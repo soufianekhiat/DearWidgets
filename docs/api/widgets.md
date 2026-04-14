@@ -292,9 +292,13 @@ Horizontal scrolling image strip. Returns `true` when the selection changes.
 ```cpp
 bool ImageBento(const char* label, ImTextureID* images, ImVec2* imageSizes,
                 int imageCount, int* pSelectedIndex,
-                int columnsPerRow = 4, float cellAspect = 1.0f, float spacing = 4.0f);
+                int columnsPerRow = 4, float cellAspect = 1.0f, float spacing = 4.0f,
+                const char* const* pItemIds = nullptr,
+                int* pReorderFrom = nullptr, int* pReorderTo = nullptr);
 ```
 Grid thumbnail gallery with center-crop to `cellAspect` ratio.
+
+**Drag-to-reorder (optional):** pass a `pItemIds` array of stable per-cell C-strings so each cell's ImGui ID follows the item rather than the position — required for clean drag-and-drop. When the user drags a cell over an adjacent cell, `*pReorderFrom`/`*pReorderTo` are set to the source/target indices and the function returns `true`. The caller is responsible for actually swapping the data — `ImageBento` never mutates the arrays. Swaps are reported one adjacent step at a time (`|from-to| == 1` horizontally, or `== columnsPerRow` vertically); multi-cell drags accumulate as multiple single-frame reports.
 
 ---
 

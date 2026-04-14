@@ -2,6 +2,8 @@
 // This file is #included from dear_widgets.cpp — do NOT compile separately.
 #ifdef _DEAR_WIDGETS_SLUG_INCLUDED
 #include "dear_widgets_slug.h"
+#include <cmath>     // cosf/sinf/tanf for COLR v1 rotate/skew origin math
+#include <cstdlib>   // std::abs for stop-distance tiebreak in gradient fallback
 
 // stb_rect_pack and stb_truetype are included from dear_widgets.cpp (before namespace)
 
@@ -100,13 +102,24 @@
 	{
 		int   glyphEntryIdx;  // index in SlugFontCache::glyphs (already-built outline)
 		ImU32 color;          // solid RGBA; IM_COL32(0,0,0,0) = use caller's text color (CPAL 0xFFFF)
-		// Linear gradient (if hasGradient is true, color field is ignored)
+		// Gradient (linear or radial). When hasGradient is true the renderer
+		// uses the gradient shader path and the `color` field is ignored.
+		// `isRadial` selects the gradient kind: false = linear, true = radial.
 		bool  hasGradient;
-		ImU32 gradColor0, gradColor1;  // gradient stop colors
-		float gradDirX, gradDirY;      // gradient direction in em-space (normalized)
-		float gradScale, gradBias;     // t = dot(emCoord, dir) * scale + bias
-		// COLR v1 PaintTranslate offset (em-space)
-		float translateX, translateY;
+		bool  isRadial;
+		ImU32 gradColor0, gradColor1;  // first / last stop colours
+		// Linear gradient: t = dot(emCoord, (gradDirX, gradDirY)) * gradScale + gradBias
+		// Radial gradient: t = length(emCoord - (gradDirX, gradDirY)) * gradScale
+		// Coordinates are in BAKED em-space (M_outer · M_inner already applied),
+		// so the shader doesn't need to invert any transform.
+		float gradDirX, gradDirY;
+		float gradScale, gradBias;
+		// COLR v1 affine transform, in em-space. Parsed into (linXX..linYY, translateX/Y)
+		// from the stack of Paint transform wrappers; used to bake the transform into the
+		// layer glyph's curves at build time so rendering stays axis-aligned.
+		// Identity = { 1, 0, 0, 1 } / { 0, 0 }.
+		float linXX, linXY, linYX, linYY;  // 2x2 linear part (default identity)
+		float translateX, translateY;      // 2x1 translation (default 0)
 	};
 
 	struct SlugShapedGlyph { int glyphID; float advanceX; float offsetX; float offsetY; };
@@ -474,49 +487,165 @@
 			return (int16_t)((p[0] << 8) | p[1]);
 		};
 
-		// Helper: resolve a paint node to (glyphID, fill paint pointer).
-		// Resolves paint tree nodes, accumulating translation offsets from PaintTranslate.
+		// Helper: resolve a paint node to (glyphID, fill paint pointer, affine).
+		// Resolves paint tree nodes, composing affine transforms from the wrapper chain.
 		// For PaintColrGlyph (fmt 11), recursively looks up the referenced glyph's paint tree.
-		struct PaintResolved { int glyphID; const uint8_t* fillPaint; float translateX; float translateY; };
+		//
+		// The accumulator (linXX..linYY, txAcc, tyAcc) represents the 2x3 affine
+		// currently in effect from all OUTER wrappers. When we unwrap an
+		// additional inner transform T_new, the combined transform is:
+		//   M_combined(v) = M_current(T_new(v))
+		// Expanding: let M = (L, t), T_new = (L', t'). Then
+		//   M_combined(v) = L·(L'·v + t') + t = (L·L')·v + (L·t' + t)
+		// So:   new_L = L · L'
+		//       new_t = L · t' + t
+		struct PaintResolved {
+			int           glyphID;
+			const uint8_t* fillPaint;
+			float         linXX, linXY, linYX, linYY;  // 2x2 linear
+			float         translateX, translateY;      // 2x1 translate
+		};
 		ImVector<PaintResolved> resolvedPaints;
 
-		auto ResolvePaint = [&](const uint8_t* paint, int recurseDepth, float txAcc, float tyAcc, auto& self) -> void {
-			if (recurseDepth > 4) return;
-			// Unwrap wrappers, accumulating translation offsets
+		// Compose inner transform (aL, aT) on top of the current accumulator.
+		// Updates txAcc/tyAcc and linXX..linYY in place.
+		auto ComposeInner = [](float& linXX, float& linXY, float& linYX, float& linYY,
+		                       float& txAcc, float& tyAcc,
+		                       float aXX, float aXY, float aYX, float aYY,
+		                       float aTX, float aTY) {
+			// new_t = L · aT + t
+			float newTX = linXX * aTX + linXY * aTY + txAcc;
+			float newTY = linYX * aTX + linYY * aTY + tyAcc;
+			// new_L = L · aL
+			float nXX = linXX * aXX + linXY * aYX;
+			float nXY = linXX * aXY + linXY * aYY;
+			float nYX = linYX * aXX + linYY * aYX;
+			float nYY = linYX * aXY + linYY * aYY;
+			linXX = nXX; linXY = nXY; linYX = nYX; linYY = nYY;
+			txAcc = newTX; tyAcc = newTY;
+		};
+
+		auto ResolvePaint = [&](const uint8_t* paint, int recurseDepth,
+		                        float linXX, float linXY, float linYX, float linYY,
+		                        float txAcc, float tyAcc, auto& self) -> void {
+			// Emoji fonts (Noto Color Emoji in particular) can nest paint
+			// graphs several levels deep via PaintColrGlyph + PaintComposite
+			// + transforms. Keep this generous so we don't clip complex
+			// glyphs silently.
+			if (recurseDepth > 12) return;
+			// Unwrap every COLR v1 transform wrapper and compose its affine
+			// into the current accumulator. Each transform's own 2x3 affine
+			// (T_new) is combined with the accumulator (L, t) as:
+			//   new_L = L · T_new_linear
+			//   new_t = L · T_new_translate + t
+			//
+			// Covered formats:
+			//   12/13 PaintTransform(+Var): full Affine2x3 — all 6 Fixed fields
+			//   14/15 PaintTranslate(+Var): translation only
+			//   16/17 PaintScale(+Var): diagonal scale
+			//   18/19 PaintScaleAroundCenter(+Var)
+			//   20/21 PaintScaleUniform(+Var)
+			//   22/23 PaintScaleUniformAroundCenter(+Var)
+			//   24/25 PaintRotate(+Var): rotation about origin
+			//   26/27 PaintRotateAroundCenter(+Var)
+			//   28/29 PaintSkew(+Var)
+			//   30/31 PaintSkewAroundCenter(+Var)
+			//
+			// PaintComposite (32) is handled AFTER the loop: it's a binary
+			// operator (source/backdrop), and many emoji fonts use it as
+			// SrcIn to clip a gradient fill to a glyph shape. Walking the
+			// source alone throws away the clip glyph (the shape disappears),
+			// so we recurse into both children below and let each add its
+			// own layers.
 			const uint8_t* p2 = paint;
-			for (int d2 = 0; d2 < 8; d2++) {
+			for (int d2 = 0; d2 < 12; d2++) {
 				uint8_t f = p2[0];
-				if (f == 14) { // PaintTranslate: fmt(1) + paintOffset(3) + dx(2) + dy(2) = 8 bytes
-					uint32_t off2 = ((uint32_t)p2[1] << 16) | ((uint32_t)p2[2] << 8) | p2[3];
-					int16_t dx = (int16_t)SlugTTU16(p2 + 4);
-					int16_t dy = (int16_t)SlugTTU16(p2 + 6);
-					txAcc += (float)dx * sc;
-					tyAcc += (float)dy * sc;
-					p2 = p2 + off2;
-				} else if (f == 15) { // PaintVarTranslate: fmt(1) + paintOffset(3) + dx(2) + dy(2) + varIdxBase(4) = 12
-					uint32_t off2 = ((uint32_t)p2[1] << 16) | ((uint32_t)p2[2] << 8) | p2[3];
-					int16_t dx = (int16_t)SlugTTU16(p2 + 4);
-					int16_t dy = (int16_t)SlugTTU16(p2 + 6);
-					txAcc += (float)dx * sc;
-					tyAcc += (float)dy * sc;
-					p2 = p2 + off2;
-				} else if (f >= 12 && f <= 21) { // Other transforms (Scale, Rotate, Transform) — skip for now
-					uint32_t off2 = ((uint32_t)p2[1] << 16) | ((uint32_t)p2[2] << 8) | p2[3];
-					p2 = p2 + off2;
-				} else break;
+				if (!(f >= 12 && f <= 31)) break;
+
+				uint32_t off2 = ((uint32_t)p2[1] << 16)
+				              | ((uint32_t)p2[2] << 8)
+				              |  (uint32_t)p2[3];
+
+				// Local transform T_new we'll compose with the accumulator.
+				float aXX = 1.0f, aXY = 0.0f, aYX = 0.0f, aYY = 1.0f;
+				float aTX = 0.0f, aTY = 0.0f;
+
+				if (f == 14 || f == 15) { // PaintTranslate
+					aTX = (float)(int16_t)SlugTTU16(p2 + 4) * sc;
+					aTY = (float)(int16_t)SlugTTU16(p2 + 6) * sc;
+				} else if (f == 12 || f == 13) { // PaintTransform — full Affine2x3
+					uint32_t tOff = ((uint32_t)p2[4] << 16) | ((uint32_t)p2[5] << 8) | (uint32_t)p2[6];
+					const uint8_t* aff = p2 + tOff;
+					// Affine2x3 layout: Fixed xx, yx, xy, yy, dx, dy (6 × int32.16.16)
+					aXX = (float)(int32_t)SlugTTU32(aff +  0) / 65536.0f;
+					aYX = (float)(int32_t)SlugTTU32(aff +  4) / 65536.0f;
+					aXY = (float)(int32_t)SlugTTU32(aff +  8) / 65536.0f;
+					aYY = (float)(int32_t)SlugTTU32(aff + 12) / 65536.0f;
+					aTX = (float)(int32_t)SlugTTU32(aff + 16) / 65536.0f * sc;
+					aTY = (float)(int32_t)SlugTTU32(aff + 20) / 65536.0f * sc;
+				} else if (f == 16 || f == 17) { // PaintScale(sx, sy)
+					aXX = F2D14(p2 + 4); aYY = F2D14(p2 + 6);
+				} else if (f == 18 || f == 19) { // PaintScaleAroundCenter
+					float sx = F2D14(p2 + 4); float sy = F2D14(p2 + 6);
+					float cx = (float)FWORD(p2 + 8) * sc;
+					float cy = (float)FWORD(p2 + 10) * sc;
+					aXX = sx; aYY = sy;
+					aTX = cx * (1.0f - sx); aTY = cy * (1.0f - sy);
+				} else if (f == 20 || f == 21) { // PaintScaleUniform(s)
+					float s = F2D14(p2 + 4);
+					aXX = s; aYY = s;
+				} else if (f == 22 || f == 23) { // PaintScaleUniformAroundCenter
+					float s = F2D14(p2 + 4);
+					float cx = (float)FWORD(p2 + 6) * sc;
+					float cy = (float)FWORD(p2 + 8) * sc;
+					aXX = s; aYY = s;
+					aTX = cx * (1.0f - s); aTY = cy * (1.0f - s);
+				} else if (f == 24 || f == 25) { // PaintRotate(angle)
+					// F2DOT14 angle in "180°" units → radians = value * π.
+					float ang = F2D14(p2 + 4) * 3.14159265358979323846f;
+					float co = cosf(ang), si = sinf(ang);
+					aXX = co; aXY = -si; aYX = si; aYY = co;
+				} else if (f == 26 || f == 27) { // PaintRotateAroundCenter
+					float ang = F2D14(p2 + 4) * 3.14159265358979323846f;
+					float cx  = (float)FWORD(p2 + 6) * sc;
+					float cy  = (float)FWORD(p2 + 8) * sc;
+					float co  = cosf(ang), si = sinf(ang);
+					aXX = co; aXY = -si; aYX = si; aYY = co;
+					aTX = cx * (1.0f - co) + cy * si;
+					aTY = -cx * si + cy * (1.0f - co);
+				} else if (f == 28 || f == 29) { // PaintSkew(xSkew, ySkew)
+					float xs = F2D14(p2 + 4) * 3.14159265358979323846f;
+					float ys = F2D14(p2 + 6) * 3.14159265358979323846f;
+					aXX = 1.0f; aXY = tanf(xs); aYX = tanf(ys); aYY = 1.0f;
+				} else if (f == 30 || f == 31) { // PaintSkewAroundCenter
+					float xs = F2D14(p2 + 4) * 3.14159265358979323846f;
+					float ys = F2D14(p2 + 6) * 3.14159265358979323846f;
+					float cx = (float)FWORD(p2 + 8) * sc;
+					float cy = (float)FWORD(p2 + 10) * sc;
+					aXX = 1.0f; aXY = tanf(xs); aYX = tanf(ys); aYY = 1.0f;
+					aTX = cy * tanf(xs); aTY = -cx * tanf(ys);
+				}
+				// else f == 32 (PaintComposite) — treat as identity and
+				// fall through to the source paint at offset [1..3].
+
+				ComposeInner(linXX, linXY, linYX, linYY, txAcc, tyAcc,
+				             aXX, aXY, aYX, aYY, aTX, aTY);
+
+				p2 = p2 + off2;
 			}
 			if (p2[0] == 10) { // PaintGlyph
 				uint32_t fOff = ((uint32_t)p2[1] << 16) | ((uint32_t)p2[2] << 8) | p2[3];
 				PaintResolved pr;
 				pr.glyphID = (int)SlugTTU16(p2 + 4);
 				pr.fillPaint = p2 + fOff;
+				pr.linXX = linXX; pr.linXY = linXY;
+				pr.linYX = linYX; pr.linYY = linYY;
 				pr.translateX = txAcc;
 				pr.translateY = tyAcc;
 				resolvedPaints.push_back(pr);
 			}
 			else if (p2[0] == 11) { // PaintColrGlyph — recurse into referenced glyph's paint tree
 				int refGlyphID = (int)SlugTTU16(p2 + 1);
-				// Binary search BaseGlyphList for refGlyphID
 				int lo2 = 0, hi2 = (int)numBGL - 1, found2 = -1;
 				while (lo2 <= hi2) {
 					int mid2 = (lo2 + hi2) / 2;
@@ -533,10 +662,12 @@
 						uint32_t refFirstIdx = SlugTTU32(refPaint + 2);
 						for (int ri = 0; ri < (int)refNL; ri++) {
 							uint32_t rloff = SlugTTU32(ll + 4 + (refFirstIdx + ri) * 4);
-							self(ll + rloff, recurseDepth + 1, txAcc, tyAcc, self);
+							self(ll + rloff, recurseDepth + 1,
+							     linXX, linXY, linYX, linYY, txAcc, tyAcc, self);
 						}
 					} else {
-						self(refPaint, recurseDepth + 1, txAcc, tyAcc, self);
+						self(refPaint, recurseDepth + 1,
+						     linXX, linXY, linYX, linYY, txAcc, tyAcc, self);
 					}
 				}
 			}
@@ -545,7 +676,59 @@
 				uint32_t firstIdx2 = SlugTTU32(p2 + 2);
 				for (int ri = 0; ri < (int)nL2; ri++) {
 					uint32_t rloff = SlugTTU32(ll + 4 + (firstIdx2 + ri) * 4);
-					self(ll + rloff, recurseDepth + 1, txAcc, tyAcc, self);
+					self(ll + rloff, recurseDepth + 1,
+					     linXX, linXY, linYX, linYY, txAcc, tyAcc, self);
+				}
+			}
+			else if (p2[0] == 32) { // PaintComposite
+				// Layout: fmt(1) + sourceOff(3) + compositeMode(1) + backdropOff(3) = 8.
+				// The common emoji pattern is SrcIn (mode 5):
+				//   source = fill-only paint (PaintSolid / PaintGradient — no glyph)
+				//   backdrop = PaintGlyph(shape, dummy_fill)
+				// meaning "fill the backdrop glyph with the source". Walking
+				// source alone yields no PaintGlyph → shape vanishes. Walking
+				// backdrop alone loses the source's gradient colour. Since
+				// we don't have proper CPU compositing, recurse into BOTH so
+				// at least the shape renders. For non-SrcIn modes (SrcOver
+				// etc.) this over-draws but produces a visually correct
+				// approximation for typical emoji layouts.
+				uint32_t sourceOff   = ((uint32_t)p2[1] << 16)
+				                     | ((uint32_t)p2[2] << 8)
+				                     |  (uint32_t)p2[3];
+				uint32_t backdropOff = ((uint32_t)p2[5] << 16)
+				                     | ((uint32_t)p2[6] << 8)
+				                     |  (uint32_t)p2[7];
+				// Snapshot resolvedPaints size so we can know if source
+				// produced a glyph layer; if not, we also need to
+				// propagate source's FILL to the backdrop glyph below.
+				int preSize = resolvedPaints.Size;
+				self(p2 + sourceOff, recurseDepth + 1,
+				     linXX, linXY, linYX, linYY, txAcc, tyAcc, self);
+				bool sourceProducedGlyph = (resolvedPaints.Size > preSize);
+				self(p2 + backdropOff, recurseDepth + 1,
+				     linXX, linXY, linYX, linYY, txAcc, tyAcc, self);
+				// SrcIn-style "fill glyph with gradient": when source was a
+				// fill-only paint (no glyph emitted) and backdrop now added
+				// glyph(s) with placeholder white fill, override the newly
+				// added glyph(s)' fill with the source paint's fill pointer.
+				// We can detect this by checking the source's top-level
+				// paint format is 2..9 (PaintSolid / Paint*Gradient).
+				if (!sourceProducedGlyph) {
+					const uint8_t* srcPaint = p2 + sourceOff;
+					// Unwrap transforms on source to find its terminal fill.
+					for (int sd = 0; sd < 8; sd++) {
+						uint8_t sf = srcPaint[0];
+						if (!(sf >= 12 && sf <= 31)) break;
+						uint32_t sOff = ((uint32_t)srcPaint[1] << 16)
+						              | ((uint32_t)srcPaint[2] << 8)
+						              |  (uint32_t)srcPaint[3];
+						srcPaint = srcPaint + sOff;
+					}
+					uint8_t tf = srcPaint[0];
+					if (tf >= 2 && tf <= 9) {
+						for (int bi = preSize; bi < resolvedPaints.Size; bi++)
+							resolvedPaints[bi].fillPaint = srcPaint;
+					}
 				}
 			}
 		};
@@ -554,24 +737,117 @@
 		{
 			resolvedPaints.clear();
 			if (topIsSinglePaint) {
-				ResolvePaint(p0, 0, 0.0f, 0.0f, ResolvePaint);
+				ResolvePaint(p0, 0, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, ResolvePaint);
 			} else {
 				uint32_t layerIdx = firstLayerIdx + (uint32_t)li;
 				if (layerIdx >= numLL) break;
 				uint32_t loff = SlugTTU32(ll + 4 + layerIdx * 4);
-				ResolvePaint(ll + loff, 0, 0.0f, 0.0f, ResolvePaint);
+				ResolvePaint(ll + loff, 0, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, ResolvePaint);
 			}
 
 			for (int ri = 0; ri < resolvedPaints.Size; ri++)
 			{
 			int layerGlyphID = resolvedPaints[ri].glyphID;
 			const uint8_t* fp = resolvedPaints[ri].fillPaint;
-			float layerTX = resolvedPaints[ri].translateX;
-			float layerTY = resolvedPaints[ri].translateY;
 
 			SlugColorLayer cl = {};
-			cl.translateX = layerTX;
-			cl.translateY = layerTY;
+			cl.linXX = resolvedPaints[ri].linXX;
+			cl.linXY = resolvedPaints[ri].linXY;
+			cl.linYX = resolvedPaints[ri].linYX;
+			cl.linYY = resolvedPaints[ri].linYY;
+			cl.translateX = resolvedPaints[ri].translateX;
+			cl.translateY = resolvedPaints[ri].translateY;
+
+			// Unwrap transform wrappers around the fill paint to find the
+			// terminal fill subtable AND accumulate them into M_inner. The
+			// gradient (linear or radial) is defined in PRE-transform em-
+			// space; to render it correctly in the BAKED em-space the shader
+			// sees, we have to compose M_outer (already in cl.linXX..) with
+			// M_inner and apply the result to the gradient's geometry.
+			//
+			// Without this, Noto/Fluent's gradient layers — which always wrap
+			// the gradient in a PaintTransform that rotates/scales the
+			// gradient line for the glyph — would render with a misplaced
+			// or wrongly-oriented gradient. (Or, before this whole block was
+			// added, with the transform falling into default:continue and
+			// the entire layer disappearing.)
+			float ixx = 1.0f, ixy = 0.0f, iyx = 0.0f, iyy = 1.0f;
+			float itx = 0.0f, ity = 0.0f;
+			for (int u = 0; u < 12; u++) {
+				uint8_t tf = fp[0];
+				if (!(tf >= 12 && tf <= 31)) break;
+
+				float aXX = 1.0f, aXY = 0.0f, aYX = 0.0f, aYY = 1.0f;
+				float aTX = 0.0f, aTY = 0.0f;
+				if (tf == 14 || tf == 15) {
+					aTX = (float)(int16_t)SlugTTU16(fp + 4) * sc;
+					aTY = (float)(int16_t)SlugTTU16(fp + 6) * sc;
+				} else if (tf == 12 || tf == 13) {
+					uint32_t tOff = ((uint32_t)fp[4] << 16) | ((uint32_t)fp[5] << 8) | (uint32_t)fp[6];
+					const uint8_t* aff = fp + tOff;
+					aXX = (float)(int32_t)SlugTTU32(aff +  0) / 65536.0f;
+					aYX = (float)(int32_t)SlugTTU32(aff +  4) / 65536.0f;
+					aXY = (float)(int32_t)SlugTTU32(aff +  8) / 65536.0f;
+					aYY = (float)(int32_t)SlugTTU32(aff + 12) / 65536.0f;
+					aTX = (float)(int32_t)SlugTTU32(aff + 16) / 65536.0f * sc;
+					aTY = (float)(int32_t)SlugTTU32(aff + 20) / 65536.0f * sc;
+				} else if (tf == 16 || tf == 17) {
+					aXX = F2D14(fp + 4); aYY = F2D14(fp + 6);
+				} else if (tf == 18 || tf == 19) {
+					float sx = F2D14(fp + 4); float sy = F2D14(fp + 6);
+					float cx = (float)FWORD(fp + 8) * sc;
+					float cy = (float)FWORD(fp + 10) * sc;
+					aXX = sx; aYY = sy;
+					aTX = cx * (1.0f - sx); aTY = cy * (1.0f - sy);
+				} else if (tf == 20 || tf == 21) {
+					float s = F2D14(fp + 4);
+					aXX = s; aYY = s;
+				} else if (tf == 22 || tf == 23) {
+					float s = F2D14(fp + 4);
+					float cx = (float)FWORD(fp + 6) * sc;
+					float cy = (float)FWORD(fp + 8) * sc;
+					aXX = s; aYY = s;
+					aTX = cx * (1.0f - s); aTY = cy * (1.0f - s);
+				} else if (tf == 24 || tf == 25) {
+					float ang = F2D14(fp + 4) * 3.14159265358979323846f;
+					float co = cosf(ang), si = sinf(ang);
+					aXX = co; aXY = -si; aYX = si; aYY = co;
+				} else if (tf == 26 || tf == 27) {
+					float ang = F2D14(fp + 4) * 3.14159265358979323846f;
+					float cx  = (float)FWORD(fp + 6) * sc;
+					float cy  = (float)FWORD(fp + 8) * sc;
+					float co  = cosf(ang), si = sinf(ang);
+					aXX = co; aXY = -si; aYX = si; aYY = co;
+					aTX = cx * (1.0f - co) + cy * si;
+					aTY = -cx * si + cy * (1.0f - co);
+				} else if (tf == 28 || tf == 29) {
+					float xs = F2D14(fp + 4) * 3.14159265358979323846f;
+					float ys = F2D14(fp + 6) * 3.14159265358979323846f;
+					aXX = 1.0f; aXY = tanf(xs); aYX = tanf(ys); aYY = 1.0f;
+				} else if (tf == 30 || tf == 31) {
+					float xs = F2D14(fp + 4) * 3.14159265358979323846f;
+					float ys = F2D14(fp + 6) * 3.14159265358979323846f;
+					float cx = (float)FWORD(fp + 8) * sc;
+					float cy = (float)FWORD(fp + 10) * sc;
+					aXX = 1.0f; aXY = tanf(xs); aYX = tanf(ys); aYY = 1.0f;
+					aTX = cy * tanf(xs); aTY = -cx * tanf(ys);
+				}
+				ComposeInner(ixx, ixy, iyx, iyy, itx, ity,
+				             aXX, aXY, aYX, aYY, aTX, aTY);
+
+				uint32_t off = ((uint32_t)fp[1] << 16) | ((uint32_t)fp[2] << 8) | (uint32_t)fp[3];
+				fp = fp + off;
+			}
+
+			// Total transform applied to gradient geometry: M_outer ∘ M_inner
+			// where M_outer was accumulated by ResolvePaint up to the PaintGlyph
+			// and is now sitting in cl.linXX..cl.translateY (we copied it from
+			// resolvedPaints[ri] above).
+			float mxx = cl.linXX, mxy = cl.linXY, myx = cl.linYX, myy = cl.linYY;
+			float mtx = cl.translateX, mty = cl.translateY;
+			ComposeInner(mxx, mxy, myx, myy, mtx, mty,
+			             ixx, ixy, iyx, iyy, itx, ity);
+
 			switch (fp[0])
 			{
 			case 2:  // PaintSolid
@@ -588,6 +864,13 @@
 				uint32_t clOff = ((uint32_t)fp[1] << 16) | ((uint32_t)fp[2] << 8) | fp[3];
 				float gx0 = (float)FWORD(fp + 4) * sc, gy0 = (float)FWORD(fp + 6) * sc;
 				float gx1 = (float)FWORD(fp + 8) * sc, gy1 = (float)FWORD(fp + 10) * sc;
+				// Bake M_total into the gradient endpoints so the gradient
+				// line lives in the same em-space the shader's input.texcoord
+				// is in (post-M_outer-baked).
+				float bgx0 = mxx * gx0 + mxy * gy0 + mtx;
+				float bgy0 = myx * gx0 + myy * gy0 + mty;
+				float bgx1 = mxx * gx1 + mxy * gy1 + mtx;
+				float bgy1 = myx * gx1 + myy * gy1 + mty;
 				const uint8_t* clp = fp + clOff;
 				uint16_t numStops = SlugTTU16(clp + 1);
 				if (numStops < 2) { if (numStops == 1) { cl.color = GetPalColor((int)SlugTTU16(clp+3+2), F2D14(clp+3+4)); } break; }
@@ -596,16 +879,116 @@
 				int pal1 = (int)SlugTTU16(lastStop + 2); float alp1 = F2D14(lastStop + 4);
 				cl.color = GetPalColor(pal0, alp0);  // solid fallback (always set)
 				cl.hasGradient = true;
+				cl.isRadial    = false;
 				cl.gradColor0 = cl.color;
 				cl.gradColor1 = GetPalColor(pal1, alp1);
-				float dx = gx1 - gx0, dy = gy1 - gy0;
+				float dx = bgx1 - bgx0, dy = bgy1 - bgy0;
 				float len2 = dx * dx + dy * dy;
 				if (len2 < 1e-10f) { cl.hasGradient = false; break; }
 				cl.gradDirX = dx / len2; cl.gradDirY = dy / len2;
 				float t0 = F2D14(clp + 3), t1 = F2D14(lastStop);
 				float tRange = (t1 - t0 > 1e-6f) ? (t1 - t0) : 1.0f;
 				cl.gradScale = 1.0f / tRange;
-				cl.gradBias = -(cl.gradDirX * gx0 + cl.gradDirY * gy0) / tRange - t0 / tRange;
+				cl.gradBias = -(cl.gradDirX * bgx0 + cl.gradDirY * bgy0) / tRange - t0 / tRange;
+				break;
+			}
+			case 6:  // PaintRadialGradient — full GPU radial via SLUG_GRADIENT permutation
+			case 7:  // PaintVarRadialGradient
+			{
+				// PaintRadialGradient layout (16 bytes):
+				//   uint8 format / Offset24 colorLine / FWORD x0,y0 / UFWORD r0
+				//   FWORD x1,y1 / UFWORD r1
+				// We approximate two-circle radial as a single-centre radial at
+				// (c1, r1) — exact for the c0==c1 && r0==0 idiom that nanoemoji
+				// emits for ALL emoji-style radial gradients (Noto Color Emoji,
+				// Microsoft Fluent Emoji, OpenMoji COLRv1).
+				uint32_t clOff = ((uint32_t)fp[1] << 16) | ((uint32_t)fp[2] << 8) | fp[3];
+				float cx1 = (float)FWORD(fp + 10) * sc;
+				float cy1 = (float)FWORD(fp + 12) * sc;
+				float r1  = (float)SlugTTU16(fp + 14) * sc;  // UFWORD (unsigned)
+
+				// Apply M_total: center → mapped point; radius → mean of column
+				// magnitudes (correct for uniform scale; reasonable approximation
+				// for non-uniform scale + rotation).
+				float bcx = mxx * cx1 + mxy * cy1 + mtx;
+				float bcy = myx * cx1 + myy * cy1 + mty;
+				float xMag = sqrtf(mxx * mxx + myx * myx);
+				float yMag = sqrtf(mxy * mxy + myy * myy);
+				float br   = r1 * 0.5f * (xMag + yMag);
+
+				const uint8_t* clp = fp + clOff;
+				uint16_t numStops = SlugTTU16(clp + 1);
+				if (numStops == 0) { cl.color = IM_COL32(0, 0, 0, 0); break; }
+				int  stopStride = (fp[0] == 7) ? 10 : 6;
+				const uint8_t* firstStop = clp + 3;
+				int  pal0  = (int)SlugTTU16(firstStop + 2);
+				float alp0 = F2D14(firstStop + 4);
+				cl.color = GetPalColor(pal0, alp0);
+
+				if (numStops < 2 || br <= 1e-6f) {
+					// Single-stop or degenerate radius — render flat.
+					break;
+				}
+				const uint8_t* lastStop = clp + 3 + (numStops - 1) * stopStride;
+				int   pal1 = (int)SlugTTU16(lastStop + 2);
+				float alp1 = F2D14(lastStop + 4);
+				cl.hasGradient = true;
+				cl.isRadial    = true;
+				cl.gradColor0 = cl.color;
+				cl.gradColor1 = GetPalColor(pal1, alp1);
+				// Stop-range remap: the gradient color line interpolates
+				// between gradColor0 (at stop offset t0) and gradColor1 (at
+				// stop offset t1). Shader formula: t = length(em-c)*scale +
+				// bias, where t=0 must correspond to length = t0*radius and
+				// t=1 to length = t1*radius. That gives:
+				//   scale = 1 / ((t1-t0) * radius)
+				//   bias  = -t0 / (t1-t0)
+				// Without this, a fade like "stop @ 0.7 alpha=1, stop @ 1.0
+				// alpha=0" would compress the entire transition across the
+				// whole radius, killing the rim-light look.
+				float t0_off = F2D14(firstStop);
+				float t1_off = F2D14(lastStop);
+				float tRange = (t1_off - t0_off > 1e-6f) ? (t1_off - t0_off) : 1.0f;
+				cl.gradDirX  = bcx;                    // center.x in baked em
+				cl.gradDirY  = bcy;                    // center.y in baked em
+				cl.gradScale = 1.0f / (br * tRange);   // 1 / ((t1-t0) * radius)
+				cl.gradBias  = -t0_off / tRange;       // -t0 / (t1-t0)
+				break;
+			}
+			case 8:  // PaintSweepGradient — flat-colour fallback
+			case 9:  // PaintVarSweepGradient
+			{
+				// No sweep shader yet; pick the most-opaque stop so the layer
+				// still renders rather than collapsing to a transparent fade
+				// stop. Ties broken toward the middle stop for a balanced hue.
+				uint32_t clOff = ((uint32_t)fp[1] << 16) | ((uint32_t)fp[2] << 8) | fp[3];
+				const uint8_t* clp = fp + clOff;
+				uint16_t numStops = SlugTTU16(clp + 1);
+				if (numStops == 0) { cl.color = IM_COL32(0, 0, 0, 0); break; }
+				int  stopStride = (fp[0] == 9) ? 10 : 6;
+				int   bestStop  = 0;
+				float bestAlpha = -1.0f;
+				int   midStop   = (int)(numStops / 2);
+				for (int s = 0; s < numStops; s++) {
+					const uint8_t* sp = clp + 3 + s * stopStride;
+					float a = F2D14(sp + 4);
+					bool better = (a > bestAlpha) ||
+					              (a == bestAlpha && std::abs(s - midStop) < std::abs(bestStop - midStop));
+					if (better) { bestAlpha = a; bestStop = s; }
+				}
+				const uint8_t* stop = clp + 3 + bestStop * stopStride;
+				int palIdx = (int)SlugTTU16(stop + 2);
+				float alp  = F2D14(stop + 4);
+				cl.color = GetPalColor(palIdx, alp);
+				break;
+			}
+			case 32: // PaintComposite — fill is itself a composite node. The
+			         // ResolvePaint unwrap above already follows the source
+			         // paint, so reaching this case means Composite appears
+			         // as the direct fill of a PaintGlyph (rare). Keep the
+			         // layer visible with a neutral default colour.
+			{
+				cl.color = IM_COL32(255, 255, 255, 255);
 				break;
 			}
 			default:
@@ -1024,10 +1407,19 @@
 		int   fillStackTop = 0;
 		fillStack[0] = 0;  // default: no inherited fill
 
-		// Transform accumulation stack for translate() in <g> elements
-		float txStack[32], tyStack[32];
-		int   txStackTop  = 0;
-		txStack[0] = tyStack[0] = 0.0f;
+		// Transform accumulation stack for <g transform="..."> elements.
+		// Full 2x3 affine so we can handle chained translate()/scale()/rotate()
+		// — Twitter Color Emoji wraps every glyph in
+		//     transform="translate(0 -6.75) translate(0,-1638.4) scale(56.88)"
+		// and the old translate-only code dropped the scale, rendering paths
+		// at 1/56× size (invisible). Matrix layout:
+		//     new_pt = (xx*x + xy*y + tx, yx*x + yy*y + ty)
+		float mxxStk[32], mxyStk[32], myxStk[32], myyStk[32];
+		float mtxStk[32], mtyStk[32];
+		int   mStkTop = 0;
+		mxxStk[0] = myyStk[0] = 1.0f;
+		mxyStk[0] = myxStk[0] = 0.0f;
+		mtxStk[0] = mtyStk[0] = 0.0f;
 
 		// Scan for <path, <g, </g> elements
 		const char* p = svgText;
@@ -1035,16 +1427,16 @@
 		{
 			if (*p != '<') { p++; continue; }
 
-			// </g> or </G> → pop fill stack
+			// </g> or </G> → pop fill + transform stacks
 			if (p + 3 < svgTextEnd && p[1] == '/' && (p[2] == 'g' || p[2] == 'G') &&
 			    (p[3] == '>' || ImIsSpace(p[3])))
 			{
 				if (fillStackTop > 0) fillStackTop--;
-				if (txStackTop  > 0) txStackTop--;
+				if (mStkTop      > 0) mStkTop--;
 				p += 3; continue;
 			}
 
-			// <g ...> or <G ...> → parse fill attribute, push to stack
+			// <g ...> or <G ...> → parse fill + transform, push to stacks
 			if (p + 2 < svgTextEnd && (p[1] == 'g' || p[1] == 'G') &&
 			    (p[2] == '>' || ImIsSpace(p[2])))
 			{
@@ -1058,25 +1450,84 @@
 					if (fval) gFill = SlugParseSVGColor(fval, flen);
 				}
 				if (fillStackTop < 31) fillStack[++fillStackTop] = gFill;
-				// Parse transform="translate(tx, ty)" if present (accumulate with parent)
-				float gtx = txStack[txStackTop], gty = tyStack[txStackTop];
+
+				// Parse transform="..." as a sequence of SVG transform functions
+				// and compose into a 2x3 matrix. Composition order matches SVG:
+				// transforms in the attribute apply left-to-right to coords
+				// (outermost first), so we multiply OUTER · INNER for each new
+				// entry. Supports translate(tx[,ty]), scale(sx[,sy]), rotate(deg)
+				// around origin, plus chained combinations. Unknown transforms
+				// are silently skipped.
+				float nxx = mxxStk[mStkTop], nxy = mxyStk[mStkTop];
+				float nyx = myxStk[mStkTop], nyy = myyStk[mStkTop];
+				float ntx = mtxStk[mStkTop], nty = mtyStk[mStkTop];
 				const char* gtp = SlugSVGFindAttr(p + 1, gEnd, "transform");
 				if (gtp) {
 					int gtlen = 0; const char* gtval = SlugSVGReadQuoted(gtp, &gtlen);
 					if (gtval) {
 						const char* tv = gtval, *te = gtval + gtlen;
-						while (tv + 9 <= te && strncmp(tv, "translate", 9) != 0) tv++;
-						if (tv + 9 <= te) {
-							tv += 9; while (tv < te && *tv != '(') tv++;
-							if (tv < te) {
-								tv++; // skip '('
-								gtx += SlugSVGParseFloat(&tv);
-								gty += SlugSVGParseFloat(&tv);
+						while (tv < te) {
+							while (tv < te && (*tv == ' ' || *tv == ',' || *tv == '\t' || *tv == '\n')) tv++;
+							if (tv >= te) break;
+							// Identify function name (alpha chars before '(')
+							const char* nameStart = tv;
+							while (tv < te && ((*tv >= 'a' && *tv <= 'z') || (*tv >= 'A' && *tv <= 'Z'))) tv++;
+							int nameLen = (int)(tv - nameStart);
+							while (tv < te && *tv != '(') tv++;
+							if (tv >= te) break;
+							tv++; // past '('
+							// Read up to 6 floats inside the parens
+							float args[6]; int nArgs = 0;
+							while (tv < te && *tv != ')' && nArgs < 6) {
+								while (tv < te && (*tv == ' ' || *tv == ',' || *tv == '\t' || *tv == '\n')) tv++;
+								if (tv >= te || *tv == ')') break;
+								args[nArgs++] = SlugSVGParseFloat(&tv);
 							}
+							while (tv < te && *tv != ')') tv++;
+							if (tv < te) tv++; // past ')'
+
+							// Compute the 2x3 matrix of this transform.
+							float axx = 1, axy = 0, ayx = 0, ayy = 1, atx = 0, aty = 0;
+							if (nameLen == 9 && strncmp(nameStart, "translate", 9) == 0) {
+								atx = (nArgs >= 1) ? args[0] : 0.0f;
+								aty = (nArgs >= 2) ? args[1] : 0.0f;
+							} else if (nameLen == 5 && strncmp(nameStart, "scale", 5) == 0) {
+								axx = (nArgs >= 1) ? args[0] : 1.0f;
+								ayy = (nArgs >= 2) ? args[1] : axx;
+							} else if (nameLen == 6 && strncmp(nameStart, "rotate", 6) == 0) {
+								float a = (nArgs >= 1) ? args[0] * 3.14159265358979323846f / 180.0f : 0.0f;
+								float co = cosf(a), si = sinf(a);
+								axx = co; axy = -si; ayx = si; ayy = co;
+								if (nArgs >= 3) {
+									// rotate(angle, cx, cy) = T(cx,cy) · R(angle) · T(-cx,-cy)
+									atx = args[1] - (co * args[1] - si * args[2]);
+									aty = args[2] - (si * args[1] + co * args[2]);
+								}
+							} else if (nameLen == 6 && strncmp(nameStart, "matrix", 6) == 0 && nArgs == 6) {
+								axx = args[0]; ayx = args[1];
+								axy = args[2]; ayy = args[3];
+								atx = args[4]; aty = args[5];
+							}
+							// else: unknown transform, skip (identity).
+
+							// Compose: new = current · local (local applied innermost).
+							float Cxx = nxx * axx + nxy * ayx;
+							float Cxy = nxx * axy + nxy * ayy;
+							float Cyx = nyx * axx + nyy * ayx;
+							float Cyy = nyx * axy + nyy * ayy;
+							float Ctx = nxx * atx + nxy * aty + ntx;
+							float Cty = nyx * atx + nyy * aty + nty;
+							nxx = Cxx; nxy = Cxy; nyx = Cyx; nyy = Cyy;
+							ntx = Ctx; nty = Cty;
 						}
 					}
 				}
-				if (txStackTop < 31) { txStack[++txStackTop] = gtx; tyStack[txStackTop] = gty; }
+				if (mStkTop < 31) {
+					mStkTop++;
+					mxxStk[mStkTop] = nxx; mxyStk[mStkTop] = nxy;
+					myxStk[mStkTop] = nyx; myyStk[mStkTop] = nyy;
+					mtxStk[mStkTop] = ntx; mtyStk[mStkTop] = nty;
+				}
 				p = gEnd + 1; continue;
 			}
 
@@ -1118,20 +1569,55 @@
 						}
 						if (gi2 >= 0)
 						{
-							// Parse path directly (no null-termination needed)
+							// Parse path directly (no null-termination needed).
+							// SlugParseSVGPath writes curve points in FONT-UNIT em-space
+							// (coords multiplied by sc, Y negated for Slug's Y-up).
 							int curvesBefore = groupCurves[gi2].Size;
 							SlugParseSVGPath(dval, dval + dlen, groupCurves[gi2], sc, /*negateY=*/true);
-							// Apply accumulated translate transform (font units → em-space, Y negated for Slug Y-up)
-							{
-								float ttx = txStack[txStackTop] * sc;
-								float tty = tyStack[txStackTop] * sc * (-1.0f);
-								if (ttx != 0.0f || tty != 0.0f) {
-									for (int tk = curvesBefore; tk < groupCurves[gi2].Size; tk++) {
-										SlugCurve& cv = groupCurves[gi2][tk];
-										cv.p1x += ttx; cv.p1y += tty;
-										cv.p2x += ttx; cv.p2y += tty;
-										cv.p3x += ttx; cv.p3y += tty;
-									}
+							// Apply the accumulated 2x3 affine from the <g> stack.
+							// The matrix is in SVG Y-down space; SlugParseSVGPath already
+							// flipped Y to font-up, so we compensate by reflecting the
+							// matrix rows around the X axis: effectively the transform
+							// applies in font-up space with adjusted sign on ty and on
+							// the y-mixing terms (xy, yx).
+							//
+							// Matrix was accumulated with SVG semantics:
+							//     new_pt_svg = M * pt_svg (pt_svg Y-down).
+							// Point on disk is pt_font = (x * sc, -y * sc).
+							// We want new_pt_font = f(new_pt_svg) such that the final
+							// coordinate matches the visually-intended transform:
+							//     new_pt_font.x = (M.xx * x - M.xy * y + M.tx) * sc
+							//     new_pt_font.y = -(M.yx * x - M.yy * y + M.ty) * sc
+							//                   = (-M.yx * x + M.yy * y - M.ty) * sc
+							// i.e. each curve point (ex, ey) in font-up em-space maps to:
+							//     fx = M.xx*ex + (-M.xy)*ey + M.tx*sc
+							//     fy = (-M.yx)*ex + M.yy*ey + (-M.ty)*sc
+							// (Note: ex is already x*sc; M.xx is dimensionless — mx is
+							//  already in *design units* so we divide by sc where we
+							//  apply it, equivalently multiply the m*ty by sc.)
+							//
+							// Simpler: convert curve points back to design units, apply
+							// the raw SVG matrix, then convert back.
+							float mxx = mxxStk[mStkTop], mxy = mxyStk[mStkTop];
+							float myx = myxStk[mStkTop], myy = myyStk[mStkTop];
+							float mtx = mtxStk[mStkTop], mty = mtyStk[mStkTop];
+							bool isIdentity = (mxx == 1.0f && myy == 1.0f && mxy == 0.0f && myx == 0.0f &&
+							                   mtx == 0.0f && mty == 0.0f);
+							if (!isIdentity) {
+								for (int tk = curvesBefore; tk < groupCurves[gi2].Size; tk++) {
+									SlugCurve& cv = groupCurves[gi2][tk];
+									#define SLUG_SVG_XF(px, py) do { \
+										float dx = (px) / sc;   /* back to design units   */ \
+										float dy = -(py) / sc;  /* flip to SVG Y-down    */ \
+										float nx = mxx * dx + mxy * dy + mtx; \
+										float ny = myx * dx + myy * dy + mty; \
+										(px) = nx * sc;         /* back to em-fraction   */ \
+										(py) = -ny * sc;        /* flip back to font-up  */ \
+									} while (0)
+									SLUG_SVG_XF(cv.p1x, cv.p1y);
+									SLUG_SVG_XF(cv.p2x, cv.p2y);
+									SLUG_SVG_XF(cv.p3x, cv.p3y);
+									#undef SLUG_SVG_XF
 								}
 							}
 							// Update group bounding box from newly added curves
@@ -1209,7 +1695,18 @@
 
 	// Build a glyph from a glyph index (gi) directly; cp is stored in the entry (0 for layer glyphs).
 	// skipColr = true when building a layer's outline — prevents recursive COLR lookup.
-	static bool SlugBuildGlyphByIndex(SlugFontCache* atlas, int gi, ImWchar cp, SlugGlyphEntry* outEntry, bool skipColr = false);
+	//
+	// Optional (linXX..linYY, tx, ty) bakes a 2x3 affine into the extracted
+	// curves before the bbox/band texture are built. Used for COLR v1 layers
+	// where the paint tree wraps the layer glyph in Transform / Scale /
+	// Rotate / Skew paint nodes — applying the transform here keeps the
+	// renderer simple (axis-aligned quads, diagonal jacobian). Default is
+	// identity (no change in behaviour for non-COLR-layer call sites).
+	static bool SlugBuildGlyphByIndex(SlugFontCache* atlas, int gi, ImWchar cp,
+	                                  SlugGlyphEntry* outEntry, bool skipColr = false,
+	                                  float linXX = 1.0f, float linXY = 0.0f,
+	                                  float linYX = 0.0f, float linYY = 1.0f,
+	                                  float tx = 0.0f, float ty = 0.0f);
 
 	static bool SlugBuildGlyph(SlugFontCache* atlas, ImWchar cp, SlugGlyphEntry* outEntry)
 	{
@@ -1218,7 +1715,11 @@
 		return SlugBuildGlyphByIndex(atlas, gi, cp, outEntry);
 	}
 
-	static bool SlugBuildGlyphByIndex(SlugFontCache* atlas, int gi, ImWchar cp, SlugGlyphEntry* outEntry, bool skipColr)
+	static bool SlugBuildGlyphByIndex(SlugFontCache* atlas, int gi, ImWchar cp,
+	                                  SlugGlyphEntry* outEntry, bool skipColr,
+	                                  float linXX, float linXY,
+	                                  float linYX, float linYY,
+	                                  float tx, float ty)
 	{
 		// ---- COLR: check for color layers (v0 first, fall back to v1) ----
 		// skipColr is set for recursive layer builds.
@@ -1252,33 +1753,57 @@
 			bool firstLayer = true;
 			for (int i = 0; i < nColrLayers; i++)
 			{
+				// Pre-fetch the layer's transform for COLR v1 so we can bake
+				// it into the extracted curves (keeps the renderer simple).
+				// COLR v0 always passes identity (no transforms at the v0 layer).
+				float lxx = 1.0f, lxy = 0.0f, lyx = 0.0f, lyy = 1.0f;
+				float ltx = 0.0f, lty = 0.0f;
+				if (isV1) {
+					lxx = v1Layers[i].linXX; lxy = v1Layers[i].linXY;
+					lyx = v1Layers[i].linYX; lyy = v1Layers[i].linYY;
+					ltx = v1Layers[i].translateX;
+					lty = v1Layers[i].translateY;
+				}
+
 				SlugGlyphEntry layerEntry = {};
 				layerEntry.colorLayerStart = -1;
-				if (!SlugBuildGlyphByIndex(atlas, layerGlyphIDs[i], 0, &layerEntry, /*skipColr=*/true))
+				if (!SlugBuildGlyphByIndex(atlas, layerGlyphIDs[i], 0, &layerEntry, /*skipColr=*/true,
+				                           lxx, lxy, lyx, lyy, ltx, lty))
 					continue;
 				// Skip layers with empty bounding box (no actual curves)
 				if ((layerEntry.maxXEm - layerEntry.minXEm) < 1e-5f || (layerEntry.maxYEm - layerEntry.minYEm) < 1e-5f)
 					continue;
 
 				SlugColorLayer cl = isV1 ? v1Layers[i] : SlugColorLayer{};
-				cl.glyphEntryIdx = (int)atlas->glyphs.Size;
+				// SlugBuildGlyphByIndex → SlugBuildGlyphFromCurves already
+				// push_back'd the built layerEntry onto atlas->glyphs. Point
+				// cl.glyphEntryIdx at THAT entry (Size - 1), don't duplicate.
+				// The previous code added a duplicate copy which wasted
+				// memory and — because all cl.glyphEntryIdx values pointed to
+				// the duplicate at position N+2i+1 rather than the original
+				// at N+2i — caused atlas->glyphs.Size to grow at double the
+				// expected rate and threw off the invalid-COLR discard logic
+				// below (which assumes one glyph per layer).
+				cl.glyphEntryIdx = (int)atlas->glyphs.Size - 1;
 				if (!isV1) cl.color = layerColors[i];
+				// Transform is now baked into the layer's curves/bbox — reset
+				// render-time offsets so EmitQuad doesn't double-apply them.
+				cl.linXX = 1.0f; cl.linXY = 0.0f;
+				cl.linYX = 0.0f; cl.linYY = 1.0f;
+				cl.translateX = 0.0f; cl.translateY = 0.0f;
 				atlas->colorLayers.push_back(cl);
-				atlas->glyphs.push_back(layerEntry);
-				SlugGlyphMapInsert(atlas, layerEntry.codepoint, atlas->glyphs.Size - 1);
 				e.colorLayerCount++;
 
-				// Include translation offset in base glyph bbox
-				float lTX = cl.translateX, lTY = cl.translateY;
+				// Base glyph bbox = union of layer bboxes (already post-transform).
 				if (firstLayer) {
-					e.minXEm = layerEntry.minXEm + lTX; e.maxXEm = layerEntry.maxXEm + lTX;
-					e.minYEm = layerEntry.minYEm + lTY; e.maxYEm = layerEntry.maxYEm + lTY;
+					e.minXEm = layerEntry.minXEm; e.maxXEm = layerEntry.maxXEm;
+					e.minYEm = layerEntry.minYEm; e.maxYEm = layerEntry.maxYEm;
 					firstLayer = false;
 				} else {
-					e.minXEm = ImMin(e.minXEm, layerEntry.minXEm + lTX);
-					e.maxXEm = ImMax(e.maxXEm, layerEntry.maxXEm + lTX);
-					e.minYEm = ImMin(e.minYEm, layerEntry.minYEm + lTY);
-					e.maxYEm = ImMax(e.maxYEm, layerEntry.maxYEm + lTY);
+					e.minXEm = ImMin(e.minXEm, layerEntry.minXEm);
+					e.maxXEm = ImMax(e.maxXEm, layerEntry.maxXEm);
+					e.minYEm = ImMin(e.minYEm, layerEntry.minYEm);
+					e.maxYEm = ImMax(e.maxYEm, layerEntry.maxYEm);
 				}
 			}
 			if (e.colorLayerCount > 0)
@@ -1377,6 +1902,29 @@
 			}
 		}
 		stbtt_FreeShape(&atlas->stbFont, verts);
+
+		// Bake optional COLR v1 affine transform into the curves.
+		// Skipped when the transform is identity (all non-layer call sites).
+		// Note emScale (`sc`) has already been applied at extraction above,
+		// so both curve coords and (tx, ty) are in the same em-fraction units.
+		bool hasLin = (linXX != 1.0f || linXY != 0.0f || linYX != 0.0f || linYY != 1.0f);
+		bool hasTr  = (tx != 0.0f || ty != 0.0f);
+		if (hasLin || hasTr)
+		{
+			for (int i = 0; i < curves.Size; i++)
+			{
+				SlugCurve& c = curves[i];
+				float p1x = linXX * c.p1x + linXY * c.p1y + tx;
+				float p1y = linYX * c.p1x + linYY * c.p1y + ty;
+				float p2x = linXX * c.p2x + linXY * c.p2y + tx;
+				float p2y = linYX * c.p2x + linYY * c.p2y + ty;
+				float p3x = linXX * c.p3x + linXY * c.p3y + tx;
+				float p3y = linYX * c.p3x + linYY * c.p3y + ty;
+				c.p1x = p1x; c.p1y = p1y;
+				c.p2x = p2x; c.p2y = p2y;
+				c.p3x = p3x; c.p3y = p3y;
+			}
+		}
 
 		// Compute bounding box from actual extracted curves (not stbtt_GetGlyphBox)
 		// to guarantee the bbox matches the curves exactly
@@ -2513,13 +3061,31 @@
 
 			ImU16 base = (ImU16)vertsGrad.Size;
 			SlugGradientVertex v = {};
-			v.tex[2] = fgz; v.tex[3] = fgw;
+			// Pack the radial/linear discriminator into bit 24 of tex.w
+			// (the bit-cast uint of glyph-data zw). Bits 0–7 are bandMaxX,
+			// bits 16–23 are bandMaxY, leaving bits 8–15 and 24–31 free for
+			// per-layer flags. Storing the flag here frees grd[0..3] to hold
+			// (a, b, scale, bias) for BOTH gradient kinds — necessary because
+			// proper stop-range handling for radial needs a real bias slot
+			// (without it the shader can't reproduce the falloff that creates
+			// the rim-lighting / halo effect emoji designers use).
+			unsigned int gw_with_flag = (unsigned int)(ge->bandMaxX & 0xFF)
+			                          | ((unsigned int)(ge->bandMaxY & 0xFF) << 16)
+			                          | ((cl.isRadial ? 1u : 0u) << 24);
+			float fgw_flag;
+			memcpy(&fgw_flag, &gw_with_flag, 4);
+			v.tex[2] = fgz; v.tex[3] = fgw_flag;
 			v.jac[0] = invSz; v.jac[1] = 0; v.jac[2] = 0; v.jac[3] = -invSz;
 			v.bnd[0] = ge->bandScaleX; v.bnd[1] = ge->bandScaleY;
 			v.bnd[2] = ge->bandOffsetX; v.bnd[3] = ge->bandOffsetY;
 			v.col[0] = c0R; v.col[1] = c0G; v.col[2] = c0B; v.col[3] = c0A;
-			v.grd[0] = cl.gradDirX; v.grd[1] = cl.gradDirY;
-			v.grd[2] = cl.gradScale; v.grd[3] = cl.gradBias;
+			// Same param layout for both kinds — the shader interprets
+			// (xy) as (dirX, dirY) when isRadial=0 or (centerX, centerY)
+			// when isRadial=1; (z, w) are always (scale, bias).
+			v.grd[0] = cl.gradDirX;
+			v.grd[1] = cl.gradDirY;
+			v.grd[2] = cl.gradScale;
+			v.grd[3] = cl.gradBias;
 			v.col2[0] = c1R; v.col2[1] = c1G; v.col2[2] = c1B; v.col2[3] = c1A;
 
 			v.pos[0]=sL; v.pos[1]=sT; v.pos[2]=-1; v.pos[3]=-1; v.tex[0]=uL; v.tex[1]=uT; vertsGrad.push_back(v);
@@ -2571,15 +3137,45 @@
 					const SlugGlyphEntry& le = atlas->glyphs[cl.glyphEntryIdx];
 					if ((le.maxXEm - le.minXEm) < 1e-5f || (le.maxYEm - le.minYEm) < 1e-5f)
 						continue;
-					// Apply COLR v1 PaintTranslate offset
 					float layerPenX = glyphPenX + cl.translateX * sz;
-					float layerPosY = glyphPosY - cl.translateY * sz; // Y-up in font, Y-down in screen
-					if (cl.hasGradient && gs_pContext->slugGradientShader.program)
+					float layerPosY = glyphPosY - cl.translateY * sz;
+					// CRITICAL: route ALL color layers through the gradient
+					// shader (degenerate gradient = same colour at both stops
+					// for solid fills). The previous split — solid layers to
+					// vertsColor, gradient layers to vertsGrad — caused the
+					// two batches to draw in shader-order rather than paint-
+					// order. For COLR v1 emoji (Fluent face, Noto, OpenMoji
+					// COLRv1) where solid layers are interleaved with
+					// gradient layers in z-order, that flipped the stack:
+					// e.g. the solid white eyes ended up *behind* the
+					// gradient face-background that should sit underneath
+					// them. Single-batch keeps the layer order intact.
+					if (gs_pContext->slugGradientShader.program)
 					{
-						EmitGradQuad(&le, layerPenX, layerPosY, cl);
+						if (cl.hasGradient)
+						{
+							EmitGradQuad(&le, layerPenX, layerPosY, cl);
+						}
+						else
+						{
+							ImU32 c = (cl.color != 0) ? cl.color : col;
+							SlugColorLayer sl = cl;
+							sl.hasGradient = true; // marker; ignored by EmitGradQuad
+							sl.isRadial = false;
+							sl.gradColor0 = c;
+							sl.gradColor1 = c;
+							sl.gradDirX = 0.0f; sl.gradDirY = 0.0f;
+							sl.gradScale = 0.0f; sl.gradBias = 0.0f;
+							EmitGradQuad(&le, layerPenX, layerPosY, sl);
+						}
 					}
 					else
 					{
+						// Fallback when gradient shader is unavailable:
+						// solid layers via color shader, gradient layers
+						// via solid (loses gradient). Z-order may be off
+						// in this fallback but the alternative is a blank
+						// glyph, so accept the regression.
 						ImU32 layerCol = (cl.color != 0) ? cl.color : col;
 						EmitQuad(vertsColor, idxsColor, &le, layerPenX, layerPosY, layerCol);
 					}
