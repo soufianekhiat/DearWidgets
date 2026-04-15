@@ -581,7 +581,6 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 
 	ImGuiContext&     g     = *GImGui;
 	const ImGuiID     id    = window->GetID( label );
-	const ImGuiStyle& style = g.Style;
 
 	// --- Widget rect ---
 	ImVec2 sz = widgetSize;

@@ -98,7 +98,8 @@ namespace DearWidgets
 			// Add specific paths as needed instead
 			//conf.IncludePaths.Add(@"[project.ExternPath]");
 
-			conf.Defines.Add("ImDrawIdx=ImU32");
+			conf.Defines.Add("ImDrawIdx=unsigned int");
+			conf.Defines.Add("IMGUI_USE_WCHAR32");
 			conf.Defines.Add("IMGUI_DEFINE_MATH_OPERATORS");
 			conf.Defines.Add("IMGUI_DISABLE_OBSOLETE_FUNCTIONS");
 			conf.Defines.Add( "NOMINMAX" );
@@ -135,7 +136,6 @@ namespace DearWidgets
 				conf.Defines.Add("__DEAR_DEBUG__");
 			else
 				conf.Defines.Add("__DEAR_RELEASE__");
-			//conf.Defines.Add("ImDrawIdx=unsigned int");
 			if (target.Platform == Platform.win64)
 			{
 				if (target.Optimization == Optimization.Debug)

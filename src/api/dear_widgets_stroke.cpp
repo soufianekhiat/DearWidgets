@@ -241,86 +241,12 @@ static void DW_CubicToEulerSegs(ImVec2 c0,ImVec2 c1,ImVec2 c2,ImVec2 c3,
     }
 }
 
-// Approximate arc length of a cubic using chord-length of Euler sub-segments.
-static float DW_CubicArcLength(ImVec2 c0, ImVec2 c1, ImVec2 c2, ImVec2 c3, float tol)
-{
-    ImVector<DW_EulerSeg> segs;
-    DW_CubicToEulerSegs(c0, c1, c2, c3, tol, segs);
-    float len = 0;
-    for (int i = 0; i < segs.Size; ++i) len += segs[i].ChordLen();
-    return len;
-}
-
 // ============================================================
 // flatten_euler — port of Vello's flatten_euler
 // Appends offset curve points to out[] (not including start point).
 // ============================================================
 
 enum DW_EspcRobust { DW_Espc_Normal, DW_Espc_LowK1, DW_Espc_LowDist };
-
-static void DW_FlattenEuler(const DW_EulerSeg& es, float offset,
-    ImVec2 start_p, ImVec2 end_p, float tol, ImVector<ImVec2>& out)
-{
-    float chord_len = sqrtf((es.p1.x-es.p0.x)*(es.p1.x-es.p0.x)+(es.p1.y-es.p0.y)*(es.p1.y-es.p0.y));
-    if(chord_len < 1e-6f){ out.push_back(end_p); return; }
-
-    float normalized_offset = offset / chord_len;
-    float dist_scaled = normalized_offset * es.params.ch;
-    float k0 = es.params.k0 - 0.5f * es.params.k1;
-    float k1 = es.params.k1;
-    float scale_mul = 0.5f * 0.7071067811865476f * sqrtf(chord_len / (es.params.ch * tol));
-
-    float a=0,b=0,integral=0,int0=0,n_frac;
-    DW_EspcRobust robust;
-
-    if(ImFabs(k1)<1e-3f){
-        float k=k0+0.5f*k1;
-        n_frac=sqrtf(ImFabs(k*(k*dist_scaled+1)));
-        robust=DW_Espc_LowK1;
-    } else if(ImFabs(dist_scaled)<1e-3f){
-        a=k1; b=k0;
-        int0=b*sqrtf(ImFabs(b));
-        float ab=a+b; integral=ab*sqrtf(ImFabs(ab))-int0;
-        n_frac=(ImFabs(a)>1e-9f)?(2.f/3)*integral/a:0;
-        robust=DW_Espc_LowDist;
-    } else {
-        a=-2*dist_scaled*k1;
-        b=-1-2*dist_scaled*k0;
-        int0=DW_EspcIntApprox(b);
-        integral=DW_EspcIntApprox(a+b)-int0;
-        float k_peak=k0-k1*b/a;
-        float ip=sqrtf(ImFabs(k_peak*(k_peak*dist_scaled+1)));
-        n_frac=(ImFabs(a)>1e-9f)?integral*ip/a:0;
-        robust=DW_Espc_Normal;
-    }
-
-    float n_f = ceilf(ImClamp(ImFabs(n_frac)*scale_mul, 1.f, 100.f));
-    int n = (int)n_f;
-
-    for(int i=0; i<n; ++i){
-        ImVec2 lp1;
-        if(i==n-1){
-            lp1 = end_p;
-        } else {
-            float t=(float)(i+1)/n_f;
-            float s;
-            switch(robust){
-            case DW_Espc_LowK1: s=t; break;
-            case DW_Espc_LowDist: {
-                float c=cbrtf(integral*t+int0);
-                s=(ImFabs(a)>1e-9f)?(c*ImFabs(c)-b)/a:t;
-            } break;
-            default: {
-                float inv=DW_EspcIntInvApprox(integral*t+int0);
-                s=(ImFabs(a)>1e-9f)?(inv-b)/a:t;
-            } break;
-            }
-            s=ImClamp(s,0.f,1.f);
-            lp1=es.EvalWithOffset(s, normalized_offset);
-        }
-        out.push_back(lp1);
-    }
-}
 
 // ============================================================
 // Range-aware flatten_offset — port of reference flatten_offset(es, range, offset, tol)
@@ -579,6 +505,8 @@ static void DW_FlattenCubicOffset(ImVec2 c0, ImVec2 c1, ImVec2 c2, ImVec2 c3,
     DW_StrokeContour& fwd_contour, DW_StrokeContour& bwd_contour,
     bool strong)
 {
+    IM_UNUSED(fwd_start); IM_UNUSED(fwd_end);
+    IM_UNUSED(bwd_start); IM_UNUSED(bwd_end);
     ImVector<DW_EulerSeg> segs;
     DW_CubicToEulerSegs(c0, c1, c2, c3, tol, segs);
     if (segs.Size == 0) return;
@@ -666,6 +594,7 @@ static void DW_StrokeBuildOutlineCubics(
     bool closed, bool strong,
     ImVector<ImVec2>& fwd, ImVector<ImVec2>& bwd)
 {
+    IM_UNUSED(cap_style);
     float join_thresh = 2.f * tol / (2.f * half_w);
     ImVec2 last_tan(0,0);
     bool started = false;
@@ -745,6 +674,7 @@ static void DW_StrokeBuildOutlinePolyline(
     bool closed,
     ImVector<ImVec2>& fwd, ImVector<ImVec2>& bwd)
 {
+    IM_UNUSED(cap_style);
     float join_thresh = 2.f * tol / (2.f * half_w);
     ImVec2 last_tan(0,0);
     bool started = false;

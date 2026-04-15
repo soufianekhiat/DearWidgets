@@ -26198,8 +26198,11 @@ KBTS_EXPORT kbts_load_font_error kbts_PlaceBlob(kbts_font *Font, kbts_load_font_
                       {
                         kbts_un GlyphId = Ids[IdIndex - 1];
 
-                        kbts__matrix_index SubtableMatrixIndex = kbts__GlyphLookupSubtableMatrixIndex(RunningSubtableIndex, SubtableCount, GlyphId, GlyphCount);
-                        GlyphLookupSubtableMatrix[SubtableMatrixIndex.WordIndex] |= 1u << SubtableMatrixIndex.BitIndex;
+                        if(GlyphId < GlyphCount)
+                        {
+                          kbts__matrix_index SubtableMatrixIndex = kbts__GlyphLookupSubtableMatrixIndex(RunningSubtableIndex, SubtableCount, GlyphId, GlyphCount);
+                          GlyphLookupSubtableMatrix[SubtableMatrixIndex.WordIndex] |= 1u << SubtableMatrixIndex.BitIndex;
+                        }
                       }
                     }
                   }
@@ -26227,8 +26230,11 @@ KBTS_EXPORT kbts_load_font_error kbts_PlaceBlob(kbts_font *Font, kbts_load_font_
                           {
                             kbts_un GlyphId = SequenceGlyphIds[InputIndex - 1];
 
-                            kbts__matrix_index SubtableMatrixIndex = kbts__GlyphLookupSubtableMatrixIndex(RunningSubtableIndex, SubtableCount, GlyphId, GlyphCount);
-                            GlyphLookupSubtableMatrix[SubtableMatrixIndex.WordIndex] |= 1u << SubtableMatrixIndex.BitIndex;
+                            if(GlyphId < GlyphCount)
+                            {
+                              kbts__matrix_index SubtableMatrixIndex = kbts__GlyphLookupSubtableMatrixIndex(RunningSubtableIndex, SubtableCount, GlyphId, GlyphCount);
+                              GlyphLookupSubtableMatrix[SubtableMatrixIndex.WordIndex] |= 1u << SubtableMatrixIndex.BitIndex;
+                            }
                           }
                         }
                       }
@@ -26305,22 +26311,31 @@ KBTS_EXPORT kbts_load_font_error kbts_PlaceBlob(kbts_font *Font, kbts_load_font_
                         KBTS__FOR(BacktrackIndex, 0, Unpacked.BacktrackCount)
                         {
                           kbts_un GlyphId = Unpacked.Backtrack[BacktrackIndex];
-                          kbts__matrix_index SubtableMatrixIndex = kbts__GlyphLookupSubtableMatrixIndex(RunningSubtableIndex, SubtableCount, GlyphId, GlyphCount);
-                          GlyphLookupSubtableMatrix[SubtableMatrixIndex.WordIndex] |= 1u << SubtableMatrixIndex.BitIndex;
+                          if(GlyphId < GlyphCount)
+                          {
+                            kbts__matrix_index SubtableMatrixIndex = kbts__GlyphLookupSubtableMatrixIndex(RunningSubtableIndex, SubtableCount, GlyphId, GlyphCount);
+                            GlyphLookupSubtableMatrix[SubtableMatrixIndex.WordIndex] |= 1u << SubtableMatrixIndex.BitIndex;
+                          }
                         }
 
                         KBTS__FOR(InputIndex, 1, Unpacked.InputCount)
                         {
                           kbts_un GlyphId = Unpacked.Input[InputIndex - 1];
-                          kbts__matrix_index SubtableMatrixIndex = kbts__GlyphLookupSubtableMatrixIndex(RunningSubtableIndex, SubtableCount, GlyphId, GlyphCount);
-                          GlyphLookupSubtableMatrix[SubtableMatrixIndex.WordIndex] |= 1u << SubtableMatrixIndex.BitIndex;
+                          if(GlyphId < GlyphCount)
+                          {
+                            kbts__matrix_index SubtableMatrixIndex = kbts__GlyphLookupSubtableMatrixIndex(RunningSubtableIndex, SubtableCount, GlyphId, GlyphCount);
+                            GlyphLookupSubtableMatrix[SubtableMatrixIndex.WordIndex] |= 1u << SubtableMatrixIndex.BitIndex;
+                          }
                         }
 
                         KBTS__FOR(LookaheadIndex, 0, Unpacked.LookaheadCount)
                         {
                           kbts_un GlyphId = Unpacked.Lookahead[LookaheadIndex];
-                          kbts__matrix_index SubtableMatrixIndex = kbts__GlyphLookupSubtableMatrixIndex(RunningSubtableIndex, SubtableCount, GlyphId, GlyphCount);
-                          GlyphLookupSubtableMatrix[SubtableMatrixIndex.WordIndex] |= 1u << SubtableMatrixIndex.BitIndex;
+                          if(GlyphId < GlyphCount)
+                          {
+                            kbts__matrix_index SubtableMatrixIndex = kbts__GlyphLookupSubtableMatrixIndex(RunningSubtableIndex, SubtableCount, GlyphId, GlyphCount);
+                            GlyphLookupSubtableMatrix[SubtableMatrixIndex.WordIndex] |= 1u << SubtableMatrixIndex.BitIndex;
+                          }
                         }
                       }
                     }

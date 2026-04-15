@@ -11,9 +11,34 @@
 #define IM_SUPPORT_LIGATURE 1
 #endif
 #if IM_SUPPORT_LIGATURE
+// Third-party single-header library — silence warnings we can't fix upstream.
 #define KB_TEXT_SHAPE_STATIC
 #define KB_TEXT_SHAPE_IMPLEMENTATION
+#if defined(_MSC_VER)
+#  pragma warning(push)
+#  pragma warning(disable: 4100) // unreferenced formal parameter
+#  pragma warning(disable: 4319) // zero extending 'unsigned int' to 'unsigned __int64' of greater size
+#  pragma warning(disable: 4505) // unreferenced function with internal linkage has been removed
+#  pragma warning(disable: 4701) // potentially uninitialized local variable
+#elif defined(__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wunused-function"
+#  pragma clang diagnostic ignored "-Wunused-parameter"
+#  pragma clang diagnostic ignored "-Wuninitialized"
+#elif defined(__GNUC__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wunused-function"
+#  pragma GCC diagnostic ignored "-Wunused-parameter"
+#  pragma GCC diagnostic ignored "-Wuninitialized"
+#endif
 #include "kb_text_shape.h"
+#if defined(_MSC_VER)
+#  pragma warning(pop)
+#elif defined(__clang__)
+#  pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#  pragma GCC diagnostic pop
+#endif
 #endif
 
 
@@ -4067,7 +4092,6 @@
 		const bool showCurves = (flags & 1) != 0;
 		const bool showCtrl   = (flags & 2) != 0;
 		const bool showBBox   = (flags & 4) != 0;
-		const bool showBands  = (flags & 8) != 0;
 
 		// Use the same shaping path as DrawText
 		struct DbgGlyph { int glyphID; float advanceX; float offsetX; float offsetY; };
@@ -4219,12 +4243,6 @@
 	// ================================================================
 	// Typography Pipeline: quadratic Bézier → cut → flatten → triangulate
 	// ================================================================
-
-	static float PolygonSignedArea(const ImVec2* pts, int n) {
-		float area = 0;
-		for (int i = 0, j = n - 1; i < n; j = i++) area += (pts[j].x - pts[i].x) * (pts[j].y + pts[i].y);
-		return area * 0.5f;
-	}
 
 	static bool PointInPolygon(const ImVec2* pts, int n, ImVec2 p) {
 		bool inside = false;
@@ -4442,47 +4460,6 @@
 				else negOut.push_back(segments[si]);
 			}
 		}
-	}
-
-	// Cut an entire QContour by a line → positive and negative side contour pieces
-	static void CutQContourByLine(QContour& contour, float a, float b, float c2,
-	                              ImVector<QContour>& posContours, ImVector<QContour>& negContours) {
-		ImVector<QBez> posCurves, negCurves;
-		for (int i = 0; i < contour.curveCount; i++)
-			CutQBezByLine(contour.curves[i], a, b, c2, posCurves, negCurves);
-
-		// Group consecutive curves into contours (they're ordered along the original contour)
-		auto GroupIntoContours = [](ImVector<QBez>& curves, ImVector<QContour>& out) {
-			if (curves.Size == 0) return;
-			out.push_back(QContour());
-			QContour* cur = &out.back();
-			cur->push_back(curves[0]);
-			for (int i = 1; i < curves.Size; i++) {
-				ImVec2 prevEnd = cur->curves[cur->curveCount-1].p2;
-				ImVec2 nextStart = curves[i].p0;
-				float d = (prevEnd.x-nextStart.x)*(prevEnd.x-nextStart.x) + (prevEnd.y-nextStart.y)*(prevEnd.y-nextStart.y);
-				if (d > 1.0f) {
-					// Gap → connect with a line segment (the cut line intersection)
-					QBez bridge = { prevEnd, ImVec2((prevEnd.x+nextStart.x)*0.5f,(prevEnd.y+nextStart.y)*0.5f), nextStart };
-					cur->push_back(bridge);
-				}
-				cur->push_back(curves[i]);
-			}
-			// Close: connect last to first
-			if (cur->curveCount > 0) {
-				ImVec2 last = cur->curves[cur->curveCount-1].p2;
-				ImVec2 first = cur->curves[0].p0;
-				float d = (last.x-first.x)*(last.x-first.x) + (last.y-first.y)*(last.y-first.y);
-				if (d > 0.1f) {
-					QBez bridge = { last, ImVec2((last.x+first.x)*0.5f,(last.y+first.y)*0.5f), first };
-					cur->push_back(bridge);
-				}
-			}
-			cur->area = QContourArea(*cur);
-		};
-
-		GroupIntoContours(posCurves, posContours);
-		GroupIntoContours(negCurves, negContours);
 	}
 
 	// Cut an outer contour + its contained holes by a line, producing properly
@@ -6073,6 +6050,7 @@
 	// Debug: render tessellation algorithm steps for a single glyph
 	void DrawTesselateDebug(ImDrawList* dl, ImFont* font, float font_size, const char* text, ImVec2 pos, float tess_tol, float spacing, float rowH)
 	{
+		IM_UNUSED(rowH);
 		if (!gs_pContext || !gs_pContext->slugState || !text || !*text) return;
 		if (!font) font = ImGui::GetFont();
 		if (font_size > 0.0f) font_size = SlugLpToPx(font_size);
@@ -6337,10 +6315,10 @@
 			char label[64];
 			snprintf(label, sizeof(label), "Step 1.%d (depth %d): Cut -> %d pieces", cutIdx++, step.depth, step.nResultPieces);
 			float curY = BeginRow(label, maxH);
-			float penX = pos.x + 10;
+			float rowPenX = pos.x + 10;
 
 			// Source contours (outer green + holes red)
-			ImVec2 srcOff(penX - srcBB.mnX, curY - srcBB.mnY);
+			ImVec2 srcOff(rowPenX - srcBB.mnX, curY - srcBB.mnY);
 			for (int so = 0; so < step.nSourceOuters; so++)
 				DrawQContourPolyline(dl, step.sourceOuters[so], srcOff, IM_COL32(80,255,80,255), 1.5f, tol);
 			for (int sh = 0; sh < step.nSourceHoles; sh++)
@@ -6383,20 +6361,20 @@
 						deferredIsects.push_back({ImVec2(isects[ip].pos.x+srcOff.x,isects[ip].pos.y+srcOff.y),isects[ip].isHole,ip});
 						if(lo<120)lo+=snprintf(lbl.text+lo,sizeof(lbl.text)-lo,"%s%s",isects[ip].isHole?"H":"C",ip<isects.Size-1?",":"");
 					}
-					lbl.screenPos=ImVec2(penX,curY+srcBB.h()+2);
+					lbl.screenPos=ImVec2(rowPenX,curY+srcBB.h()+2);
 					deferredLabels.push_back(lbl);
 				}
 			}
 
-			penX += srcBB.w() + spacing;
-			dl->AddText(ImVec2(penX - spacing * 0.5f - 5, curY + maxH * 0.4f), IM_COL32(200,200,200,255), ">");
+			rowPenX += srcBB.w() + spacing;
+			dl->AddText(ImVec2(rowPenX - spacing * 0.5f - 5, curY + maxH * 0.4f), IM_COL32(200,200,200,255), ">");
 
 			// Result pieces
 			for (int rp = 0; rp < step.nResultPieces; rp++) {
 				QBBox rb = ContourBBox(step.resultPieces[rp]);
-				ImVec2 off(penX - rb.mnX, curY - rb.mnY);
+				ImVec2 off(rowPenX - rb.mnX, curY - rb.mnY);
 				DrawQContourPolyline(dl, step.resultPieces[rp], off, kColors[rp % nColors], 2.0f, tol);
-				penX += rb.w() + spacing * 0.3f;
+				rowPenX += rb.w() + spacing * 0.3f;
 			}
 		}
 
@@ -6409,24 +6387,24 @@
 		{
 			char label[64]; snprintf(label, sizeof(label), "Step 2: %d leaf pieces (hole-free)", dbg.nLeafPieces);
 			float curY = BeginRow(label, leafMaxH);
-			float penX = pos.x + 10;
+			float rowPenX = pos.x + 10;
 			for (int lp = 0; lp < dbg.nLeafPieces; lp++) {
 				QBBox bb = ContourBBox(dbg.leafPieces[lp]);
-				ImVec2 off(penX - bb.mnX, curY - bb.mnY);
+				ImVec2 off(rowPenX - bb.mnX, curY - bb.mnY);
 				DrawQContourPolyline(dl, dbg.leafPieces[lp], off, kColors[lp % nColors], 2.0f, tol);
-				penX += bb.w() + spacing * 0.3f;
+				rowPenX += bb.w() + spacing * 0.3f;
 			}
 		}
 
 		// Step 3: Tessellated (filled) leaf pieces
 		{
 			float curY = BeginRow("Step 3: Tessellated (filled)", leafMaxH);
-			float penX = pos.x + 10;
+			float rowPenX = pos.x + 10;
 			ImVec2 wuv = ImGui::GetDrawListSharedData()->TexUvWhitePixel;
 			for (int lp = 0; lp < dbg.nLeafPieces; lp++) {
 				ImVector<ImVec2> pts; FlattenQContour(dbg.leafPieces[lp], pts, tol);
 				QBBox bb = ContourBBox(dbg.leafPieces[lp]);
-				float offX = penX - bb.mnX, offY = curY - bb.mnY;
+				float offX = rowPenX - bb.mnX, offY = curY - bb.mnY;
 				// Offset points BEFORE triangulation so vertices are in screen space
 				for (int pi = 0; pi < pts.Size; pi++) { pts[pi].x += offX; pts[pi].y += offY; }
 				ImU32 col2 = kColors[lp % nColors] & 0x00FFFFFF | 0xC0000000;
@@ -6437,7 +6415,7 @@
 					dl->AddTriangleFilled(tmp.vertices[t.a].pos, tmp.vertices[t.b].pos, tmp.vertices[t.c].pos, col2);
 					dl->AddTriangle(tmp.vertices[t.a].pos, tmp.vertices[t.b].pos, tmp.vertices[t.c].pos, IM_COL32(255,255,255,60), 0.5f);
 				}
-				penX += bb.w() + spacing * 0.3f;
+				rowPenX += bb.w() + spacing * 0.3f;
 			}
 		}
 
@@ -6699,6 +6677,7 @@
 	static int SlugLoader_GetColorLayers(SlugLoaderFontData* fd, int glyphID, ImWchar codepoint,
 	    int* outGlyphIDs, ImU32* outColors, int maxLayers)
 	{
+		IM_UNUSED(codepoint);
 		const uint8_t* data = (const uint8_t*)fd->fontInfo.data;
 
 		// --- COLR v0 ---

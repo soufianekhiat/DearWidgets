@@ -1,6 +1,8 @@
 #include <demo.h>
 
+#ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
+#endif
 
 // Map project-specific graphics API defines to ImPlatform defines
 #if defined(__DEAR_GFX_DX9__)
@@ -54,16 +56,6 @@
 #define FONT_DOWNLOADER_IMPLEMENTATION
 #include "font_downloader.h"
 #include "font_manifest.inl"
-
-// Wrapper: AddFontFromFileTTF asserts on missing files; we want graceful
-// null-returns so the UI can offer a Download button instead.
-static ImFont* AddFontIfExists( ImFontAtlas* atlas, const char* path, float size,
-                                const ImFontConfig* cfg = nullptr,
-                                const ImWchar* ranges = nullptr )
-{
-    if ( !ImDwDownload::FileExists( path ) ) return nullptr;
-    return atlas->AddFontFromFileTTF( path, size, cfg, ranges );
-}
 
 //static int grid_rows = 8;
 //static int grid_columns = 8;
@@ -1577,10 +1569,10 @@ int main( int argc, char** argv )
 					HWND hwnd = FindWindowA( NULL, "Dear Widgets Demo" );
 					if ( hwnd )
 					{
-						DWORD style   = (DWORD)GetWindowLongA( hwnd, GWL_STYLE );
+						DWORD winStyle = (DWORD)GetWindowLongA( hwnd, GWL_STYLE );
 						DWORD exstyle = (DWORD)GetWindowLongA( hwnd, GWL_EXSTYLE );
 						RECT  rc      = { 0, 0, 820, 1450 };
-						AdjustWindowRectEx( &rc, style, FALSE, exstyle );
+						AdjustWindowRectEx( &rc, winStyle, FALSE, exstyle );
 						SetWindowPos( hwnd, nullptr, 0, 0,
 						              rc.right - rc.left, rc.bottom - rc.top,
 						              SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE );
@@ -1665,31 +1657,7 @@ int main( int argc, char** argv )
 
 void ShowSampleOffscreen00()
 {
-	return;
-
-	ImGui::PushStyleVar( ImGuiStyleVar_WindowRounding, 8 );
-
-	ImGui::Begin( "Off Screen 00" );
-
-	ImDrawList* draw = ImGui::GetWindowDrawList();
-
-	ImVec2 cur = ImGui::GetCursorScreenPos();
-	ImVec2 size = ImGui::GetContentRegionAvail();
-
-	//draw->AddImageRounded( illlustration_img,
-	//					   cur + ImVec2( 0.0f - 50.0f, 0.0f ),
-	//					   cur + ImVec2( 0.0f + 50.0f, 50.0f ),
-	//					   ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 255), 8);
-
-#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
-	// DrawMarker now fully functional with new ImPlatform shader API
-	ImWidgets::DrawMarker( draw, cur, size, IM_COL32_WHITE, IM_COL32_BLACK_TRANS, 0.0f, 1.0f, 10.0f, 0.5f, ImWidgetsMarker_Disc, ImWidgetsDrawType_Outline );
-#endif
-	ImGui::Dummy( size );
-
-	ImGui::End();
-
-	ImGui::PopStyleVar( 1 );
+	// Intentionally empty: disabled offscreen demo.
 }
 
 namespace ImWidgets {
@@ -5830,7 +5798,6 @@ namespace ImWidgets {
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Button Capsule" ) )
 			{
-				ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 				float const size = CanvasSize();
 				static int value = 0;
 				static float length = size;
@@ -6194,20 +6161,20 @@ namespace ImWidgets {
 				if ( ImGui::ColorEdit4( "Highlight##SlugWidget", &slug_hi_v.x ) )
 					slug_hi_u = ImGui::ColorConvertFloat4ToU32( slug_hi_v );
 
-				ImFont* f = g_cinzelFont ? g_cinzelFont : g_firaCodeFont;
-				if ( f )
+				ImFont* slugFont = g_cinzelFont ? g_cinzelFont : g_firaCodeFont;
+				if ( slugFont )
 				{
 					float wrap_w = ImGui::GetContentRegionAvail().x;
 
 					ImGui::Separator();
 					ImGui::TextDisabled( "SlugText()" );
-					SlugText( f, slug_sz, slug_col_u, slug_buf );
+					SlugText( slugFont, slug_sz, slug_col_u, slug_buf );
 
 					ImGui::TextDisabled( "SlugTextColored()" );
-					SlugTextColored( f, slug_sz, slug_hi_v, slug_buf );
+					SlugTextColored( slugFont, slug_sz, slug_hi_v, slug_buf );
 
 					ImGui::TextDisabled( "SlugTextWrapped()" );
-					SlugTextWrapped( f, slug_sz, slug_col_u, slug_buf, wrap_w );
+					SlugTextWrapped( slugFont, slug_sz, slug_col_u, slug_buf, wrap_w );
 				}
 				else
 				{
@@ -8622,6 +8589,674 @@ namespace ImWidgets {
 				ImGui::TreePop();
 			}
 			DW_SsRecord( "Misc", _sy0, ImGui::GetCursorPos().y ); }  // end Misc block
+		}
+
+		ApplyOpenAll();
+		if ( ImGui::CollapsingHeader( "Extended (2026-04 batch)" ) )
+		{
+			ImGui::PushID( "_ext_2026_04" );
+			// DPI / scaling control. FontScaleDpi drives ImPlatform_LpToPx; sizes authored
+			// in "lp" (logical pixels) stay physically consistent across DPI settings.
+			{
+				float dpi = ImGui::GetStyle().FontScaleDpi;
+				if ( ImGui::SliderFloat( "FontScaleDpi (lp -> px)", &dpi, 0.5f, 4.0f, "%.2fx" ) )
+					ImGui::GetStyle().FontScaleDpi = dpi;
+				ImGui::SameLine();
+				ImGui::TextDisabled( "LpToPx(100)=%.1fpx   PxToLp(100)=%.1flp",
+					(double)ImPlatform_LpToPx( 100.0f ),
+					(double)ImPlatform_PxToLp( 100.0f ) );
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Patterns" ) )
+			{
+				static int patt = (int)ImWidgetsHatchPattern_Cross;
+				static float spacing = 10.0f, angle_deg = 0.0f, thickness = 1.0f;
+				const char* patt_names[] = { "Parallel", "Cross", "Diagonal", "DiagonalCross", "Dots", "ConcentricRings" };
+				ImGui::Combo( "Pattern", &patt, patt_names, IM_ARRAYSIZE( patt_names ) );
+				ImGui::SliderFloat( "Spacing", &spacing, 2.0f, 40.0f );
+				ImGui::SliderFloat( "Angle (deg)", &angle_deg, -180.0f, 180.0f );
+				ImGui::SliderFloat( "Thickness", &thickness, 0.5f, 4.0f );
+				ImGui::Spacing();
+				// Reserve canvas area AFTER the controls.
+				ImVec2 origin = ImGui::GetCursorScreenPos();
+				ImVec2 canvas = ImPlatform_LpToPx( ImVec2( 360, 240 ) );
+				ImGui::Dummy( canvas );
+				ImVec2 star[10];
+				float cx = origin.x + canvas.x * 0.5f, cy = origin.y + canvas.y * 0.5f;
+				for ( int i = 0; i < 10; ++i )
+				{
+					float r = ImPlatform_LpToPx( (i & 1) ? 40.0f : 90.0f );
+					float a = -IM_PI * 0.5f + i * IM_PI / 5.0f;
+					star[i] = ImVec2( cx + r * ImCos( a ), cy + r * ImSin( a ) );
+				}
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				dl->AddPolyline( star, 10, IM_COL32( 255, 255, 255, 120 ), ImDrawFlags_Closed, 1.0f );
+				ImWidgets::DrawHatchFill( dl, star, 10,
+					(ImWidgetsHatchPattern)patt, ImPlatform_LpToPx( spacing ),
+					angle_deg * IM_PI / 180.0f, ImPlatform_LpToPx( thickness ),
+					IM_COL32( 255, 200, 100, 220 ) );
+
+				ImGui::Separator();
+				ImGui::Text( "Stipple" );
+				static float density = 0.15f, jitter = 0.6f, radius = 1.2f;
+				ImGui::SliderFloat( "Density", &density, 0.05f, 1.0f );
+				ImGui::SliderFloat( "Jitter", &jitter, 0.0f, 1.0f );
+				ImGui::SliderFloat( "Radius", &radius, 0.5f, 4.0f );
+				ImGui::Spacing();
+				ImVec2 o2 = ImGui::GetCursorScreenPos();
+				ImVec2 stipple_sz = ImPlatform_LpToPx( ImVec2( 260, 200 ) );
+				ImGui::Dummy( stipple_sz );
+				ImVec2 quad[4] = {
+					ImVec2( o2.x + stipple_sz.x * 0.04f, o2.y + stipple_sz.y * 0.05f ),
+					ImVec2( o2.x + stipple_sz.x * 0.88f, o2.y + stipple_sz.y * 0.10f ),
+					ImVec2( o2.x + stipple_sz.x * 0.96f, o2.y + stipple_sz.y * 0.90f ),
+					ImVec2( o2.x + stipple_sz.x * 0.08f, o2.y + stipple_sz.y * 0.85f ),
+				};
+				dl->AddPolyline( quad, 4, IM_COL32( 255, 255, 255, 120 ), ImDrawFlags_Closed, 1.0f );
+				ImWidgets::DrawStippleFill( dl, quad, 4, density, jitter, ImPlatform_LpToPx( radius ),
+					IM_COL32( 120, 220, 255, 220 ) );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Iso-Contours" ) )
+			{
+				struct Fn { static float f( float x, float y, void* ud ) {
+					float* sc = (float*)ud;
+					x *= sc[0]; y *= sc[0];
+					return ImSin( x * 0.05f ) + ImCos( y * 0.05f );
+				} };
+				static float scale = 1.0f;
+				ImGui::SliderFloat( "Scale", &scale, 0.25f, 4.0f );
+				static float isos[] = { -0.8f, -0.4f, 0.0f, 0.4f, 0.8f };
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				ImVec2 p = ImGui::GetCursorScreenPos();
+				ImVec2 iso_sz = ImPlatform_LpToPx( ImVec2( 360, 240 ) );
+				ImGui::Dummy( iso_sz );
+				dl->AddRect( p, ImVec2( p.x + iso_sz.x, p.y + iso_sz.y ), IM_COL32( 255, 255, 255, 120 ) );
+				float ud[1] = { scale };
+				ImWidgets::DrawIsoContour( dl, p, iso_sz, 48, 32,
+					Fn::f, ud, isos, IM_ARRAYSIZE( isos ),
+					IM_COL32( 120, 255, 160, 255 ), ImPlatform_LpToPx( 1.5f ) );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Conic Gradient" ) )
+			{
+				static ImGradientData grad;
+				ImGui::Text( "Uses existing ImGradientData stops." );
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				ImVec2 p = ImGui::GetCursorScreenPos();
+				ImVec2 cg_sz = ImPlatform_LpToPx( ImVec2( 260, 260 ) );
+				ImGui::Dummy( cg_sz );
+				ImWidgets::DrawConicGradient( dl, ImVec2( p.x + cg_sz.x * 0.5f, p.y + cg_sz.y * 0.5f ),
+					ImPlatform_LpToPx( 120.0f ), grad, 0.0f, 192 );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Superellipse" ) )
+			{
+				static float rx = 80, ry = 60, nx = 4, ny = 4;
+				static int sides = 64;
+				ImGui::SliderFloat( "rx", &rx, 10, 120 );
+				ImGui::SliderFloat( "ry", &ry, 10, 120 );
+				ImGui::SliderFloat( "nx", &nx, 0.5f, 10.0f );
+				ImGui::SliderFloat( "ny", &ny, 0.5f, 10.0f );
+				ImGui::SliderInt( "sides", &sides, 16, 256 );
+				ImWidgetsShape sh;
+				ImVec2 se_sz = ImPlatform_LpToPx( ImVec2( 360, 300 ) );
+				ImWidgets::GenShapeSuperellipse( sh, ImVec2( se_sz.x * 0.5f, se_sz.y * 0.5f ),
+					ImPlatform_LpToPx( rx ), ImPlatform_LpToPx( ry ), nx, ny, sides );
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				ImVec2 o = ImGui::GetCursorScreenPos();
+				ImGui::Dummy( se_sz );
+				for ( int i = 0; i < sh.triangles.Size; ++i )
+				{
+					const ImWidgetsTriIdx& t = sh.triangles[i];
+					ImVec2 a( o.x + sh.vertices[t.a].pos.x, o.y + sh.vertices[t.a].pos.y );
+					ImVec2 b( o.x + sh.vertices[t.b].pos.x, o.y + sh.vertices[t.b].pos.y );
+					ImVec2 c( o.x + sh.vertices[t.c].pos.x, o.y + sh.vertices[t.c].pos.y );
+					dl->AddTriangleFilled( a, b, c, IM_COL32( 200, 150, 255, 200 ) );
+				}
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Coons Patch" ) )
+			{
+				static ImCoonsPatch P;
+				static bool init = false;
+				if ( !init )
+				{
+					init = true;
+					ImVec2 o( 40, 40 );
+					P.bottom[0] = ImVec2( o.x,       o.y + 200 );
+					P.bottom[1] = ImVec2( o.x + 80,  o.y + 220 );
+					P.bottom[2] = ImVec2( o.x + 180, o.y + 180 );
+					P.bottom[3] = ImVec2( o.x + 260, o.y + 210 );
+					P.top[0]    = ImVec2( o.x,       o.y );
+					P.top[1]    = ImVec2( o.x + 100, o.y - 20 );
+					P.top[2]    = ImVec2( o.x + 200, o.y + 20 );
+					P.top[3]    = ImVec2( o.x + 260, o.y );
+					P.left[0]   = P.bottom[0];
+					P.left[1]   = ImVec2( o.x - 10, o.y + 130 );
+					P.left[2]   = ImVec2( o.x + 20, o.y + 70 );
+					P.left[3]   = P.top[0];
+					P.right[0]  = P.bottom[3];
+					P.right[1]  = ImVec2( o.x + 280, o.y + 140 );
+					P.right[2]  = ImVec2( o.x + 240, o.y + 90 );
+					P.right[3]  = P.top[3];
+				}
+				static int resU = 16, resV = 16;
+				ImGui::SliderInt( "resU", &resU, 2, 48 );
+				ImGui::SliderInt( "resV", &resV, 2, 48 );
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				ImVec2 origin2 = ImGui::GetCursorScreenPos();
+				ImVec2 coons_sz = ImPlatform_LpToPx( ImVec2( 360, 260 ) );
+				ImGui::Dummy( coons_sz );
+				float dpi = ImPlatform_LpPxScale();
+				ImCoonsPatch Pd = P;
+				for ( int i = 0; i < 4; ++i )
+				{
+					Pd.bottom[i].x = origin2.x + P.bottom[i].x * dpi; Pd.bottom[i].y = origin2.y + P.bottom[i].y * dpi;
+					Pd.top[i].x    = origin2.x + P.top[i].x    * dpi; Pd.top[i].y    = origin2.y + P.top[i].y    * dpi;
+					Pd.left[i].x   = origin2.x + P.left[i].x   * dpi; Pd.left[i].y   = origin2.y + P.left[i].y   * dpi;
+					Pd.right[i].x  = origin2.x + P.right[i].x  * dpi; Pd.right[i].y  = origin2.y + P.right[i].y  * dpi;
+				}
+				ImWidgets::DrawCoonsPatchGradient( dl, Pd,
+					IM_COL32( 255, 80, 80, 255 ), IM_COL32( 80, 255, 80, 255 ),
+					IM_COL32( 80, 80, 255, 255 ), IM_COL32( 255, 255, 80, 255 ),
+					resU, resV );
+				ImWidgets::DrawCoonsPatchWireframe( dl, Pd, IM_COL32( 255, 255, 255, 100 ),
+					ImPlatform_LpToPx( 1.0f ), resU, resV );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Offset Path" ) )
+			{
+				static ImVec2 pts[] = {
+					ImVec2( 40, 40 ), ImVec2( 180, 30 ), ImVec2( 260, 120 ),
+					ImVec2( 220, 220 ), ImVec2( 80, 200 )
+				};
+				static float offset = 12.0f;
+				static int join = (int)ImWidgetsJoin_Round;
+				static float miter_limit = 4.0f;
+				ImGui::SliderFloat( "Offset", &offset, -40.0f, 40.0f );
+				const char* join_names[] = { "Round", "Mitter", "Bevel" };
+				ImGui::Combo( "Join", &join, join_names, IM_ARRAYSIZE( join_names ) );
+				ImGui::SliderFloat( "Miter limit", &miter_limit, 1.0f, 20.0f );
+				ImGui::Spacing();
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				ImVec2 o = ImGui::GetCursorScreenPos();
+				ImVec2 off_sz = ImPlatform_LpToPx( ImVec2( 360, 280 ) );
+				ImGui::Dummy( off_sz );
+				float off_dpi = ImPlatform_LpPxScale();
+				ImVec2 off[5];
+				for ( int i = 0; i < 5; ++i ) off[i] = ImVec2( o.x + pts[i].x * off_dpi, o.y + pts[i].y * off_dpi );
+				dl->AddPolyline( off, 5, IM_COL32( 255, 255, 255, 200 ), ImDrawFlags_Closed, ImPlatform_LpToPx( 1.5f ) );
+				ImWidgets::DrawOffsetOutline( dl, off, 5, ImPlatform_LpToPx( offset ), (ImWidgetsJoin)join,
+					miter_limit, ImPlatform_LpToPx( 1.5f ), IM_COL32( 255, 180, 80, 255 ), true );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Interactions" ) )
+			{
+				static float angle = 0.2f;
+				ImWidgets::SliderRingFloatEx( "Angle (wrap+delta)", &angle, -IM_PI, IM_PI,
+					-IM_PI, IM_PI, 0.0f, "%.2f",
+					ImWidgetsSliderFlags_AngleWrap | ImWidgetsSliderFlags_ShowDelta );
+
+				ImGui::Text( "Proportional multi-drag group (drag any bar, neighbors follow):" );
+				static float sliders[12] = { 0.3f, 0.35f, 0.4f, 0.45f, 0.5f, 0.5f, 0.5f, 0.45f, 0.4f, 0.35f, 0.3f, 0.25f };
+				static float pm_radius = 3.0f;
+				static int   pm_kernel = (int)ImWidgetsFalloff_Gaussian;
+				ImGui::SliderFloat( "Falloff radius (slots)", &pm_radius, 0.5f, 8.0f );
+				ImGui::Combo( "Kernel", &pm_kernel, "Linear\0Gaussian\0Smoothstep\0" );
+				ImGui::BeginGroup();
+				ImDrawList* pm_dl = ImGui::GetWindowDrawList();
+				ImVec2 pm_o = ImGui::GetCursorScreenPos();
+				const int N = IM_ARRAYSIZE( sliders );
+				const float bar_w = ImPlatform_LpToPx( 28.0f );
+				const float bar_h = ImPlatform_LpToPx( 120.0f );
+				const float gap   = ImPlatform_LpToPx( 6.0f );
+				ImGui::InvisibleButton( "##pm_area", ImVec2( (bar_w + gap) * N, bar_h ) );
+				ImWidgets::PushDragGroup( ImGui::GetID( "grp" ), pm_radius, (ImWidgetsFalloff)pm_kernel );
+				for ( int i = 0; i < N; ++i )
+				{
+					float old = sliders[i];
+					float g = ImWidgets::GetDragGroupDelta( i );
+					if ( g != 0.0f ) sliders[i] = ImClamp( sliders[i] + g, 0.0f, 1.0f );
+					float x0 = pm_o.x + i * (bar_w + gap);
+					float y0 = pm_o.y;
+					float y1 = pm_o.y + bar_h;
+					ImVec2 bmin( x0, y0 ), bmax( x0 + bar_w, y1 );
+					float fy = y1 - sliders[i] * bar_h;
+					pm_dl->AddRect( bmin, bmax, IM_COL32( 180, 180, 180, 200 ) );
+					pm_dl->AddRectFilled( ImVec2( bmin.x + 1, fy ), ImVec2( bmax.x - 1, bmax.y - 1 ),
+						IM_COL32( 120, 220, 255, 220 ) );
+					ImVec2 mouse = ImGui::GetIO().MousePos;
+					bool inside = mouse.x >= bmin.x && mouse.x <= bmax.x && mouse.y >= bmin.y && mouse.y <= bmax.y;
+					if ( ImGui::IsItemActive() && inside && ImGui::IsMouseDown( 0 ) )
+					{
+						float nv = ImClamp( (bmax.y - mouse.y) / bar_h, 0.0f, 1.0f );
+						float delta = nv - old;
+						sliders[i] = nv;
+						ImWidgets::SetDragGroupActive( i, delta );
+					}
+				}
+				ImWidgets::PopDragGroup();
+				ImGui::EndGroup();
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Vector Drawing Tool" ) )
+			{
+				ImGui::TextWrapped(
+					"Left-click empty: add anchor (drag to pull out tangent). "
+					"Left-click existing anchor: select (drag moves). "
+					"Click first anchor of active path to close. "
+					"Right-click: finish path open. Middle-drag / Shift+drag: pan. "
+					"Wheel: zoom. Delete: remove selected anchor." );
+				static ImVectorDrawingData vdt;
+				// Per-path style controls (for selected or most-recently-active path).
+				int pi = vdt.SelectedPath >= 0 ? vdt.SelectedPath
+					   : (vdt.ActivePath >= 0 ? vdt.ActivePath : (vdt.Paths.Size - 1));
+				if ( pi >= 0 && pi < vdt.Paths.Size )
+				{
+					ImVectorDrawingPath& p = vdt.Paths[pi];
+					const char* style_names[] = { "Polyline", "PolylineAA", "StrokedBezier",
+						"StrokedDashedBezier", "DashedPolyline" };
+					int s = (int)p.Style;
+					if ( ImGui::Combo( "Style", &s, style_names, IM_ARRAYSIZE( style_names ) ) )
+						p.Style = (ImVectorDrawingStyle)s;
+					ImGui::SliderFloat( "Thickness", &p.Thickness, 0.5f, 16.0f );
+					ImVec4 col = ImGui::ColorConvertU32ToFloat4( p.Color );
+					if ( ImGui::ColorEdit4( "Color", &col.x, ImGuiColorEditFlags_NoInputs ) )
+						p.Color = ImGui::ColorConvertFloat4ToU32( col );
+					if ( p.Style == ImVectorDrawingStyle_StrokedDashedBezier
+						|| p.Style == ImVectorDrawingStyle_DashedPolyline )
+					{
+						ImGui::SliderFloat( "Dash", &p.DashLen, 1.0f, 40.0f );
+						ImGui::SliderFloat( "Gap",  &p.GapLen,  1.0f, 40.0f );
+					}
+					ImGui::Checkbox( "Closed", &p.Closed );
+				}
+				if ( ImGui::Button( "Clear All" ) ) { vdt.Paths.clear(); vdt.ActivePath = -1; vdt.SelectedPath = -1; }
+				ImGui::SameLine();
+				if ( ImGui::Button( "Reset View" ) ) { vdt.PanOffset = ImVec2( 0, 0 ); vdt.Zoom = 1.0f; }
+				ImWidgets::VectorDrawingTool( "vdt", vdt, ImPlatform_LpToPx( ImVec2( 0, 380 ) ) );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Widgets" ) )
+			{
+				ImGui::Text( "ADSR envelope editor (scaling helpers: ImPlatform_LpToPx active):" );
+				ImGui::SameLine();
+				ImGui::TextDisabled( "(?)" );
+				if ( ImGui::IsItemHovered() )
+				{
+					ImGui::BeginTooltip();
+					ImGui::TextUnformatted(
+						"ADSR = Attack, Decay, Sustain, Release.\n"
+						"Standard shape used in audio synthesis for a note's amplitude over time:\n"
+						"  - Attack:  time from key-down to peak (value 1).\n"
+						"  - Decay:   time from peak down to the sustain level.\n"
+						"  - Sustain: held level while key is held (a level, not a time).\n"
+						"  - Release: time from sustain down to 0 after key-up.\n"
+						"Also applies to filter cutoff, pan, any time-varying parameter." );
+					ImGui::EndTooltip();
+				}
+				static float Aa = 0.08f, Dd = 0.12f, Ss = 0.6f, Rr = 0.25f;
+				ImWidgets::ADSREditor( "adsr", &Aa, &Dd, &Ss, &Rr, ImPlatform_LpToPx( ImVec2( 0, 140 ) ) );
+				ImGui::Text( "A=%.2f  D=%.2f  S=%.2f  R=%.2f", (double)Aa, (double)Dd, (double)Ss, (double)Rr );
+
+				ImGui::Separator();
+				ImGui::Text( "Font inspector:" );
+				static int fi_mode = 0;
+				const char* modes[] = { "Grid", "Metrics", "Curves", "Kerning" };
+				ImGui::Combo( "Mode", &fi_mode, modes, IM_ARRAYSIZE( modes ) );
+				ImWidgets::FontInspector( "font_ins", ImGui::GetFont(),
+					(ImFontInspectorMode)fi_mode, ImPlatform_LpToPx( 48.0f ), ImPlatform_LpToPx( ImVec2( 0, 260 ) ) );
+
+				ImGui::Separator();
+				ImGui::Text( "Stepped / Notched:" );
+				static float v = 0.5f;
+				ImWidgets::SliderRingSteppedFloat( "stepped", &v, 0.0f, 1.0f, 5 );
+				static float nv = 0.0f;
+				static float stops[] = { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f };
+				static const char* slabels[] = { "Off", "Low", "Mid", "High", "Max" };
+				ImWidgets::NotchedDial( "dial", &nv, stops, 5, slabels );
+
+				ImGui::Separator();
+				ImGui::Text( "Color-difference visualizer:" );
+				static ImVec4 cA( 0.85f, 0.35f, 0.4f, 1.0f );
+				static ImVec4 cB( 0.82f, 0.32f, 0.45f, 1.0f );
+				ImWidgets::ColorDifferenceVisualizer( "dE", &cA, &cB );
+
+				ImGui::Separator();
+				ImGui::Text( "Equation input ($..$ inline, $$..$$ block, multiline):" );
+				static int eq_align = 3; // 0=Top, 1=Center, 2=Bottom, 3=Baseline
+				const char* eq_align_names[] = { "Inline Top", "Inline Center", "Inline Bottom", "Inline Baseline" };
+				ImGui::Combo( "Inline alignment", &eq_align, eq_align_names, IM_ARRAYSIZE( eq_align_names ) );
+				int eq_flags = 0;
+				if ( eq_align == 0 ) eq_flags = ImWidgetsEquationFlags_AlignInlineTop;
+				else if ( eq_align == 1 ) eq_flags = ImWidgetsEquationFlags_AlignInlineCenter;
+				else if ( eq_align == 2 ) eq_flags = ImWidgetsEquationFlags_AlignInlineBottom;
+				else eq_flags = ImWidgetsEquationFlags_AlignInlineBaseline;
+				static char eq_buf[ 1024 ] =
+					"Mass-energy: $E = mc^2$.\n"
+					"\n"
+					"Euler:\n"
+					"$$e^{i\\pi} + 1 = 0$$\n"
+					"\n"
+					"Gaussian integral:\n"
+					"$$\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}$$\n";
+				ImWidgets::EquationInput( "eq", eq_buf, sizeof( eq_buf ),
+					ImPlatform_LpToPx( ImVec2( 0, 360 ) ), (ImWidgetsEquationFlags)eq_flags );
+
+				ImGui::TreePop();
+			}
+			ImGui::PopID();
+		}
+
+		ApplyOpenAll();
+		if ( ImGui::CollapsingHeader( "Audio (2026-04 batch B+C)" ) )
+		{
+			ImGui::PushID( "_audio_batch" );
+			// Live test signal buffer shared across widgets that need one.
+			static float time_acc = 0.0f;
+			time_acc += ImGui::GetIO().DeltaTime;
+			const int N = 512;
+			static float sig_mono[ 512 ];
+			static float sig_stereo[ 1024 ];
+			static float mags[ 256 ];
+			for ( int i = 0; i < N; ++i )
+			{
+				float t = time_acc + (float)i / 48000.0f;
+				float s = 0.5f * ImSin( 2.0f * IM_PI * 220.0f * t )
+						+ 0.3f * ImSin( 2.0f * IM_PI * 660.0f * t )
+						+ 0.15f * ImSin( 2.0f * IM_PI * 1760.0f * t );
+				sig_mono[ i ] = s;
+				sig_stereo[ 2 * i ] = s * ImCos( time_acc );
+				sig_stereo[ 2 * i + 1 ] = s * ImSin( time_acc );
+			}
+			// Fake spectrum: decaying bins with a moving peak.
+			for ( int i = 0; i < 256; ++i )
+			{
+				float t = (float)i / 255.0f;
+				mags[ i ] = 0.02f + 0.4f * expf( -ImFabs( t - 0.5f + 0.4f * ImSin( time_acc ) ) * 40.0f );
+			}
+
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Parametric EQ" ) )
+			{
+				static ImEQBand bands[ 4 ] = {};
+				static bool init = false;
+				if ( !init )
+				{
+					init = true;
+					bands[ 0 ] = ImEQBand(); bands[ 0 ].freq = 80.0f;    bands[ 0 ].type = ImEQBandType_HighPass; bands[ 0 ].Q = 0.707f;
+					bands[ 1 ] = ImEQBand(); bands[ 1 ].freq = 400.0f;   bands[ 1 ].gain_db = 3.0f;  bands[ 1 ].Q = 1.5f;
+					bands[ 2 ] = ImEQBand(); bands[ 2 ].freq = 3000.0f;  bands[ 2 ].gain_db = -4.0f; bands[ 2 ].Q = 2.0f;
+					bands[ 3 ] = ImEQBand(); bands[ 3 ].freq = 10000.0f; bands[ 3 ].type = ImEQBandType_HighShelf; bands[ 3 ].gain_db = 2.0f;
+				}
+				ImWidgets::ParametricEQEditor( "peq", bands, 4, 48000.0f, 20.0f, 20000.0f, -24.0f, 24.0f, ImPlatform_LpToPx( ImVec2( 0, 220 ) ) );
+				ImGui::TextDisabled( "Drag band; wheel = Q; right-click = type." );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Spectrum Analyzer" ) )
+			{
+				ImWidgets::SpectrumAnalyzer( "spec", mags, 256, 48000.0f, -96.0f, 0.0f, true, ImPlatform_LpToPx( ImVec2( 0, 140 ) ) );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Spectrogram" ) )
+			{
+				static ImSpectrogramData sgram;
+				if ( sgram.FrameCount == 0 )
+				{
+					sgram.FrameCount = 256; sgram.BinCount = 256;
+					sgram.History.resize( sgram.FrameCount * sgram.BinCount );
+					ImWidgets::SpectrogramInitViridis( sgram );
+				}
+				ImWidgets::SpectrogramPush( sgram, mags, 256 );
+				ImWidgets::Spectrogram( "sgram", sgram, 48000.0f, ImPlatform_LpToPx( ImVec2( 0, 160 ) ) );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Audio Vectorscope" ) )
+			{
+				ImWidgets::AudioVectorscope( "vsc", sig_stereo, N, 0.9f, ImPlatform_LpToPx( ImVec2( 220, 220 ) ) );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "LUFS Meter" ) )
+			{
+				static ImLUFSMeter lufs;
+				lufs.momentary_400ms = -18.0f + 6.0f * ImSin( time_acc * 1.3f );
+				lufs.short_term_3s   = -20.0f + 3.0f * ImSin( time_acc * 0.7f );
+				lufs.integrated      = -19.5f;
+				lufs.true_peak_dbtp  = -3.0f + 2.0f * ImSin( time_acc * 2.1f );
+				ImWidgets::LUFSMeter( "lufs", lufs, ImPlatform_LpToPx( ImVec2( 260, 200 ) ) );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Phase Correlation" ) )
+			{
+				float pc = 0.8f * ImSin( time_acc * 0.5f );
+				ImWidgets::PhaseCorrelationMeter( "pc", pc, ImPlatform_LpToPx( ImVec2( 320, 26 ) ) );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Goniometer" ) )
+			{
+				ImWidgets::Goniometer( "gon", sig_stereo, N, 0.9f, ImPlatform_LpToPx( ImVec2( 220, 220 ) ) );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Compressor Curve" ) )
+			{
+				static ImCompressorCurve comp;
+				ImWidgets::CompressorCurveEditor( "comp", &comp, ImPlatform_LpToPx( ImVec2( 0, 220 ) ) );
+				ImGui::TextDisabled( "Drag threshold; wheel = ratio; shift+wheel = knee." );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Oscilloscope" ) )
+			{
+				static ImOscilloscope osc;
+				if ( osc.Ring.Size == 0 ) osc.Ring.resize( 4096 );
+				ImWidgets::OscilloscopePush( osc, sig_mono, N );
+				ImGui::SliderFloat( "Trigger", &osc.TriggerLevel, -1.0f, 1.0f );
+				ImGui::SliderInt( "Edge", &osc.TriggerEdge, 0, 2 );
+				ImGui::SliderFloat( "Time base (s)", &osc.TimeBase_s, 0.001f, 0.1f, "%.4f" );
+				ImWidgets::Oscilloscope( "osc", osc, ImPlatform_LpToPx( ImVec2( 0, 180 ) ) );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Modulated Slider Ring" ) )
+			{
+				static float v = 0.5f;
+				float mod_lo = v - 0.15f + 0.1f * ImSin( time_acc * 2.0f );
+				float mod_hi = v + 0.15f + 0.1f * ImSin( time_acc * 3.0f );
+				ImWidgets::SliderRingModulated( "mod", &v, 0.0f, 1.0f, mod_lo, mod_hi );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Pitch Wheel" ) )
+			{
+				static int root = 0;
+				static unsigned int mask = 0b000010010001u; // C major triad
+				static int pw_mode = 0;
+				const char* names[] = { "Fifths", "Chromatic" };
+				ImGui::Combo( "Mode", &pw_mode, names, IM_ARRAYSIZE( names ) );
+				ImWidgets::PitchWheel( "pw", &root, &mask, (ImPitchWheelMode)pw_mode, ImPlatform_LpToPx( ImVec2( 240, 240 ) ) );
+				ImGui::TextDisabled( "Shift+click = set root.  Click = toggle note." );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Tempo Tap" ) )
+			{
+				static float bpm = 120.0f;
+				ImWidgets::TempoTap( "Tap", &bpm );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Piano Roll" ) )
+			{
+				static ImPianoRollData roll;
+				ImWidgets::PianoRoll( "roll", roll, ImPlatform_LpToPx( ImVec2( 0, 320 ) ) );
+				ImGui::TextDisabled( "Click empty = add note.  Alt+drag = resize.  Delete = remove." );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Step Sequencer" ) )
+			{
+				static ImStepSequencerData ss;
+				static bool init = false;
+				static const char* labels[] = { "Kick", "Snare", "Hat", "Tom" };
+				if ( !init ) { init = true; ss.Resize( 4, 16 ); for ( int i = 0; i < 4; ++i ) ss.TrackLabels.push_back( labels[ i ] ); }
+				int step = ( (int)( time_acc * 4.0f ) ) % 16;
+				ImWidgets::StepSequencer( "ss", ss, step, ImVec2( 0, 0 ) );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Mod Matrix" ) )
+			{
+				static ImModMatrixData mm;
+				static bool init = false;
+				if ( !init )
+				{
+					init = true;
+					mm.Sources.push_back( "LFO1" );   mm.Sources.push_back( "LFO2" );
+					mm.Sources.push_back( "ENV1" );   mm.Sources.push_back( "Vel" );
+					mm.Destinations.push_back( "Cut" ); mm.Destinations.push_back( "Res" );
+					mm.Destinations.push_back( "Pan" ); mm.Destinations.push_back( "Vol" );
+					mm.Destinations.push_back( "Amt" );
+					mm.Resize();
+				}
+				ImWidgets::ModMatrix( "mm", mm, ImVec2( 0, 0 ) );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "LFO Designer" ) )
+			{
+				static ImLFODesignerData lfo;
+				lfo.Phase += ImGui::GetIO().DeltaTime * lfo.Rate_Hz;
+				ImGui::SliderFloat( "Rate", &lfo.Rate_Hz, 0.1f, 8.0f );
+				ImWidgets::LFODesigner( "lfo", lfo, ImPlatform_LpToPx( ImVec2( 0, 180 ) ) );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Mixer Channel Strip" ) )
+			{
+				static ImMixerChannel c;
+				c.name = "Bus A";
+				c.peak_db      = -12.0f + 4.0f * ImSin( time_acc * 3.0f );
+				c.peak_hold_db = ImMax( c.peak_hold_db - 0.05f, c.peak_db );
+				c.send_count = 3;
+				ImWidgets::MixerChannelStrip( "mcs", c, ImPlatform_LpToPx( ImVec2( 80, 280 ) ) );
+				ImGui::TreePop();
+			}
+			ImGui::PopID();
+		}
+
+		ApplyOpenAll();
+		if ( ImGui::CollapsingHeader( "Color Grading / LookDev" ) )
+		{
+			ImGui::PushID( "_color_grade" );
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Lift / Gamma / Gain" ) )
+			{
+				static ImLiftGammaGain lgg;
+				ImWidgets::LiftGammaGainWheels( "lgg", &lgg );
+				ImVec4 test( 0.5f, 0.3f, 0.2f, 1.0f );
+				ImVec4 out = ImWidgets::LiftGammaGainApply( test, lgg );
+				ImGui::Text( "Sample: in (0.50, 0.30, 0.20) -> out (%.3f, %.3f, %.3f)",
+					(double)out.x, (double)out.y, (double)out.z );
+				ImGui::ColorButton( "in",  test, 0, ImPlatform_LpToPx( ImVec2( 60, 30 ) ) );
+				ImGui::SameLine();
+				ImGui::ColorButton( "out", out,  0, ImPlatform_LpToPx( ImVec2( 60, 30 ) ) );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "3D LUT Viewer" ) )
+			{
+				static ImColorLUT3D lut;
+				if ( lut.Size == 0 ) ImWidgets::InitIdentityLUT3D( lut, 9 );
+				ImGui::Text( "Size: %d  (identity)", lut.Size );
+				if ( ImGui::Button( "Reset identity" ) ) ImWidgets::InitIdentityLUT3D( lut, lut.Size > 0 ? lut.Size : 9 );
+				ImWidgets::ColorLUT3DViewer( "lut3d", &lut, ImVec2( 0, 0 ) );
+				ImGui::TextDisabled( "Click a cell to edit." );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "LookDev A/B" ) )
+			{
+				ImGui::TextWrapped(
+					"LookDev A/B compare with rotatable divider. "
+					"Demo uses the ImGui font atlas for both sides (sampling two different UV regions)." );
+				static ImLookDevState state;
+				ImTextureID fontTex = ImGui::GetIO().Fonts->TexRef.GetTexID();
+				ImWidgets::LookDevCompare( "ldv", fontTex, fontTex,
+					ImVec2( 0, 0 ),    ImVec2( 0.5f, 1 ),
+					ImVec2( 0.5f, 0 ), ImVec2( 1, 1 ),
+					&state, ImPlatform_LpToPx( ImVec2( 0, 240 ) ) );
+				ImGui::TextDisabled( "Drag yellow handle = slide.  Drag blue = rotate.  A/B button swaps." );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Volume Slice Viewer" ) )
+			{
+				static ImWidgets::ImVolumeSliceState vsv;
+				static ImVector<float> voxels;
+				if ( voxels.Size == 0 )
+				{
+					const int W = 64, H = 64, D = 64;
+					voxels.resize( W * H * D );
+					ImWidgets::VolumeGenerateTestField( voxels.Data, W, H, D, 0.0f );
+					vsv.Voxels = voxels.Data;
+					vsv.Width = W; vsv.Height = H; vsv.Depth = D;
+				}
+				ImWidgets::VolumeSliceViewer( "vsv", &vsv, ImVec2( 0, 0 ) );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "IsoContour Tiered (topographic)" ) )
+			{
+				struct Fn { static float f( float x, float y, void* ud )
+				{
+					float* sc = (float*)ud;
+					return 50.0f + 40.0f * ImSin( x * 0.02f * sc[0] ) + 30.0f * ImCos( y * 0.015f * sc[0] )
+						 + 10.0f * ImSin( ( x + y ) * 0.05f * sc[0] );
+				} };
+				static float scale = 1.0f;
+				static bool pre_log = false;
+				static ImIsoContourTier tiers[ 3 ] = {
+					ImIsoContourTier( 2.0f,  IM_COL32( 180, 200, 220, 80  ), 0.5f, false ),
+					ImIsoContourTier( 10.0f, IM_COL32( 200, 220, 240, 160 ), 1.0f, false ),
+					ImIsoContourTier( 40.0f, IM_COL32( 255, 240, 200, 255 ), 2.0f, false ),
+				};
+				ImGui::SliderFloat( "Scale", &scale, 0.25f, 4.0f );
+				ImGui::Checkbox( "Pre-log transform field", &pre_log );
+				ImGui::SliderFloat( "Minor spacing", &tiers[0].spacing, 0.5f, 10.0f );
+				ImGui::SliderFloat( "Medium spacing", &tiers[1].spacing, 1.0f, 40.0f );
+				ImGui::SliderFloat( "Major spacing", &tiers[2].spacing, 10.0f, 100.0f );
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				ImVec2 p = ImGui::GetCursorScreenPos();
+				ImVec2 iso_sz2 = ImPlatform_LpToPx( ImVec2( 460, 280 ) );
+				ImGui::Dummy( iso_sz2 );
+				dl->AddRect( p, ImVec2( p.x + iso_sz2.x, p.y + iso_sz2.y ), IM_COL32( 255, 255, 255, 100 ) );
+				float ud[1] = { scale };
+				// Scale the *thickness* of each tier; keep spacing as world-value units (not lp).
+				ImIsoContourTier tiers_scaled[ 3 ] = {
+					tiers[0], tiers[1], tiers[2]
+				};
+				for ( int i = 0; i < 3; ++i ) tiers_scaled[i].thickness = ImPlatform_LpToPx( tiers[i].thickness );
+				ImWidgets::DrawIsoContourTiered( dl, p, iso_sz2, 80, 48,
+					Fn::f, ud, tiers_scaled, 3, -FLT_MAX, FLT_MAX, pre_log );
+				ImGui::TreePop();
+			}
+			ImGui::PopID();
 		}
 
 		s_open_all = 0;

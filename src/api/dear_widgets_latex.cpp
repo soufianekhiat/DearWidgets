@@ -105,42 +105,6 @@ static bool MathGetHAssembly(const stbtt_fontinfo* fi, int glyphID, float emScal
 	return true;
 }
 
-// Get italic correction for a glyph from the MATH table MathItalicsCorrectionInfo.
-// Returns the correction in em units (multiply by font_size to get pixels).
-static float MathGetItalicsCorrection(const stbtt_fontinfo* fi, int glyphID, float emScale) {
-	uint32_t mathLen = 0;
-	const uint8_t* math = MathFindTable(fi, 0x4D415448 /*'MATH'*/, &mathLen);
-	if (!math) return 0.0f;
-	uint16_t glyphInfoOff = MathR16(math + 6);
-	if (!glyphInfoOff) return 0.0f;
-	const uint8_t* glyphInfo = math + glyphInfoOff;
-	uint16_t italicsCorrOff = MathR16(glyphInfo);
-	if (!italicsCorrOff) return 0.0f;
-	const uint8_t* italicsCorr = glyphInfo + italicsCorrOff;
-	uint16_t covOff = MathR16(italicsCorr);
-	uint16_t count  = MathR16(italicsCorr + 2);
-	if (!covOff || !count) return 0.0f;
-	const uint8_t* cov = italicsCorr + covOff;
-	uint16_t covFmt = MathR16(cov);
-	int covIdx = -1;
-	if (covFmt == 1) {
-		uint16_t cnt = MathR16(cov + 2);
-		for (int i = 0; i < cnt; i++)
-			if (MathR16(cov + 4 + i * 2) == (uint16_t)glyphID) { covIdx = i; break; }
-	} else if (covFmt == 2) {
-		uint16_t cnt = MathR16(cov + 2);
-		for (int i = 0; i < cnt; i++) {
-			uint16_t startGI = MathR16(cov + 4 + i * 6);
-			uint16_t endGI   = MathR16(cov + 4 + i * 6 + 2);
-			uint16_t startCI = MathR16(cov + 4 + i * 6 + 4);
-			if ((uint16_t)glyphID >= startGI && (uint16_t)glyphID <= endGI) { covIdx = startCI + (glyphID - startGI); break; }
-		}
-	}
-	if (covIdx < 0 || covIdx >= (int)count) return 0.0f;
-	// MathValueRecord: int16 value, uint16 deviceTableOffset (we ignore device table)
-	return MathRS16(italicsCorr + 4 + covIdx * 4) * emScale;
-}
-
 // ---- Greek letter and command mapping ----
 struct LaTeXCommand { const char* name; ImWchar codepoint; };
 static const LaTeXCommand kCommands[] = {
@@ -799,7 +763,6 @@ static void EncodeUTF8(ImWchar ch, char* utf8) {
 
 // Forward declarations for glyph measurement (defined in render section)
 static float GlyphWidthAtH(ImFont* font, float baseSz, ImWchar ch, float targetH);
-static float GlyphHeightAtW(ImFont* font, float baseSz, ImWchar ch, float targetW);
 
 static int s_layoutDepth = 0;
 static void LayoutBox(LaTeXBox* box, float fontSize) {
@@ -1329,25 +1292,6 @@ static float GlyphWidthAtH(ImFont* font, float baseSz, ImWchar ch, float targetH
 	return refSz.x * targetH / refSz.y;
 }
 
-// Draw a font glyph scaled to a target width. posX/posY = top-left of target area.
-static void DrawGlyphW(ImDrawList* dl, ImFont* font, float baseSz, ImWchar ch, float targetW, float posX, float posY, ImU32 col) {
-	char utf8[8]; EncodeUTF8(ch, utf8);
-	float asc = 0;
-	ImVec2 refSz = CalcTextSize_Impl(font, baseSz, utf8, NULL, &asc);
-	if (refSz.x < 1.0f) return;
-	float fontSz = baseSz * targetW / refSz.x;
-	float scaledAsc = asc * targetW / refSz.x;
-	DrawText_Impl(dl, font, fontSz, ImVec2(posX, posY + scaledAsc), col, utf8);
-}
-
-// Compute the height of a glyph scaled to a target width.
-static float GlyphHeightAtW(ImFont* font, float baseSz, ImWchar ch, float targetW) {
-	char utf8[8]; EncodeUTF8(ch, utf8);
-	ImVec2 refSz = CalcTextSize_Impl(font, baseSz, utf8);
-	if (refSz.x < 1.0f) return baseSz * 0.3f;
-	return refSz.y * targetW / refSz.x;
-}
-
 // x,y = position where y is the BASELINE (text drawn downward from ascent above y)
 static void RenderBox(ImDrawList* dl, LaTeXBox* box, ImFont* mathFont, float fontSize, float x, float y, ImU32 col) {
 	if (!box) return;
@@ -1483,7 +1427,7 @@ static void RenderBox(ImDrawList* dl, LaTeXBox* box, ImFont* mathFont, float fon
 			stbtt_fontinfo fi; float emSc = 0;
 			bool hasMath = GetSlugFontInfo(mathFont, &fi, &emSc);
 			int braceGI = hasMath ? stbtt_FindGlyphIndex(&fi, braceCh) : 0;
-			MathGlyphAssembly assembly;
+			MathGlyphAssembly assembly = {};
 			bool hasAssembly = (braceGI > 0) && MathGetHAssembly(&fi, braceGI, emSc, &assembly) && assembly.partCount > 0;
 			// For overbrace: inner tips are above baseline by minYEm; compensate so tips land near content top.
 			float braceMinYEm = 0.0f;
@@ -1944,7 +1888,7 @@ static void TessellateBox(LaTeXBox* box, ImFont* mathFont, float fontSize, float
             stbtt_fontinfo fi; float emSc = 0;
             bool hasMath = GetSlugFontInfo(mathFont, &fi, &emSc);
             int braceGI = hasMath ? stbtt_FindGlyphIndex(&fi, braceCh) : 0;
-            MathGlyphAssembly assembly;
+            MathGlyphAssembly assembly = {};
             bool hasAssembly = (braceGI > 0) && MathGetHAssembly(&fi, braceGI, emSc, &assembly) && assembly.partCount > 0;
             // For overbrace: inner tips sit above baseline by minYEm; compensate so tips land near content top.
             float braceMinYEm = 0.0f;

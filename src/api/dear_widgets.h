@@ -503,6 +503,30 @@ enum ImWidgetsStyleVar
 	StyleVar_ColorPicker_SliderResolution,
 	StyleVar_ColorPicker_ComponentSliderHeight,
 
+	// Hatching
+	StyleVar_Hatch_DefaultSpacing,
+	StyleVar_Hatch_DefaultThickness,
+	// Bezier curve editor
+	StyleVar_BezierCurve_KeyRadius,
+	StyleVar_BezierCurve_TangentRadius,
+	StyleVar_BezierCurve_LineThickness,
+	StyleVar_BezierCurve_SnapAngleDeg,
+	// Envelope
+	StyleVar_Envelope_StageHandleRadius,
+	StyleVar_Envelope_GuideLineAlpha,
+	StyleVar_Envelope_DefaultHeight,
+	// Font inspector
+	StyleVar_FontInspector_GlyphCell,
+	StyleVar_FontInspector_MetricAlpha,
+	// Notched dial
+	StyleVar_NotchedDial_TickLength,
+	StyleVar_NotchedDial_TickThickness,
+	// Delta-E
+	StyleVar_DeltaE_SwatchSize,
+	// Equation input
+	StyleVar_Equation_BlockPadding,
+	StyleVar_Equation_InlineBaselineOffset,
+
 	StyleVar_Count
 };
 
@@ -622,6 +646,30 @@ struct ImWidgetsStyle
 	float	ColorPicker_SliderWidth;			// Vertical slider width (px)
 	float	ColorPicker_SliderResolution;		// Vertical slider segment count
 	float	ColorPicker_ComponentSliderHeight;	// Component slider height (px)
+
+	// Hatching
+	float	Hatch_DefaultSpacing;
+	float	Hatch_DefaultThickness;
+	// Bezier curve editor (new)
+	float	BezierCurve_KeyRadius;
+	float	BezierCurve_TangentRadius;
+	float	BezierCurve_LineThickness;
+	float	BezierCurve_SnapAngleDeg;
+	// Envelope editor
+	float	Envelope_StageHandleRadius;
+	float	Envelope_GuideLineAlpha;
+	float	Envelope_DefaultHeight;
+	// Font inspector
+	float	FontInspector_GlyphCell;
+	float	FontInspector_MetricAlpha;
+	// Notched dial
+	float	NotchedDial_TickLength;
+	float	NotchedDial_TickThickness;
+	// Delta-E visualizer
+	float	DeltaE_SwatchSize;
+	// Equation input
+	float	Equation_BlockPadding;
+	float	Equation_InlineBaselineOffset;
 
 	ImVec4  Colors[ StyleColor_Count ];
 
@@ -892,6 +940,30 @@ struct ImWidgetsStyle
 		ColorPicker_SliderWidth          = 20.0f;
 		ColorPicker_SliderResolution     = 16.0f;
 		ColorPicker_ComponentSliderHeight = 16.0f;
+
+		// Hatching
+		Hatch_DefaultSpacing      = 8.0f;
+		Hatch_DefaultThickness    = 1.0f;
+		// Bezier curve editor
+		BezierCurve_KeyRadius     = 5.0f;
+		BezierCurve_TangentRadius = 4.0f;
+		BezierCurve_LineThickness = 2.0f;
+		BezierCurve_SnapAngleDeg  = 5.0f;
+		// Envelope editor
+		Envelope_StageHandleRadius = 5.0f;
+		Envelope_GuideLineAlpha    = 0.25f;
+		Envelope_DefaultHeight     = 160.0f;
+		// Font inspector
+		FontInspector_GlyphCell   = 72.0f;
+		FontInspector_MetricAlpha = 0.6f;
+		// Notched dial
+		NotchedDial_TickLength    = 6.0f;
+		NotchedDial_TickThickness = 1.0f;
+		// Delta-E
+		DeltaE_SwatchSize         = 48.0f;
+		// Equation input
+		Equation_BlockPadding         = 8.0f;
+		Equation_InlineBaselineOffset = 0.0f;
 	}
 
 	void ScaleAllSizes( float scale_factor )
@@ -1264,6 +1336,22 @@ private:
 		case StyleVar_ColorPicker_SliderWidth:			return &ColorPicker_SliderWidth;
 		case StyleVar_ColorPicker_SliderResolution:		return &ColorPicker_SliderResolution;
 		case StyleVar_ColorPicker_ComponentSliderHeight:	return &ColorPicker_ComponentSliderHeight;
+		case StyleVar_Hatch_DefaultSpacing:				return &Hatch_DefaultSpacing;
+		case StyleVar_Hatch_DefaultThickness:			return &Hatch_DefaultThickness;
+		case StyleVar_BezierCurve_KeyRadius:			return &BezierCurve_KeyRadius;
+		case StyleVar_BezierCurve_TangentRadius:		return &BezierCurve_TangentRadius;
+		case StyleVar_BezierCurve_LineThickness:		return &BezierCurve_LineThickness;
+		case StyleVar_BezierCurve_SnapAngleDeg:			return &BezierCurve_SnapAngleDeg;
+		case StyleVar_Envelope_StageHandleRadius:		return &Envelope_StageHandleRadius;
+		case StyleVar_Envelope_GuideLineAlpha:			return &Envelope_GuideLineAlpha;
+		case StyleVar_Envelope_DefaultHeight:			return &Envelope_DefaultHeight;
+		case StyleVar_FontInspector_GlyphCell:			return &FontInspector_GlyphCell;
+		case StyleVar_FontInspector_MetricAlpha:		return &FontInspector_MetricAlpha;
+		case StyleVar_NotchedDial_TickLength:			return &NotchedDial_TickLength;
+		case StyleVar_NotchedDial_TickThickness:		return &NotchedDial_TickThickness;
+		case StyleVar_DeltaE_SwatchSize:				return &DeltaE_SwatchSize;
+		case StyleVar_Equation_BlockPadding:			return &Equation_BlockPadding;
+		case StyleVar_Equation_InlineBaselineOffset:	return &Equation_InlineBaselineOffset;
 		default:										return nullptr;
 		}
 	}
@@ -2625,6 +2713,439 @@ struct ImImageInspectorState
 	}
 };
 
+//////////////////////////////////////////////////////////////////////////
+// Extended primitives, interactions & widgets (2026-04 refacto batch)
+//////////////////////////////////////////////////////////////////////////
+
+// Hatching / stippling patterns
+enum ImWidgetsHatchPattern_
+{
+	ImWidgetsHatchPattern_Parallel = 0,
+	ImWidgetsHatchPattern_Cross,
+	ImWidgetsHatchPattern_Diagonal,
+	ImWidgetsHatchPattern_DiagonalCross,
+	ImWidgetsHatchPattern_Dots,
+	ImWidgetsHatchPattern_ConcentricRings,
+	ImWidgetsHatchPattern_COUNT
+};
+typedef int ImWidgetsHatchPattern;
+
+// Cross-cutting slider flags (angle wrap, delta overlay, proportional drag, stepping)
+enum ImWidgetsSliderFlags_
+{
+	ImWidgetsSliderFlags_None             = 0,
+	ImWidgetsSliderFlags_AngleWrap        = 1 << 0, // angle wraps around 2pi
+	ImWidgetsSliderFlags_AngleClamp       = 1 << 1, // clamp to [amin, amax] (default if neither set)
+	ImWidgetsSliderFlags_ShowDelta        = 1 << 2, // show floating drag-delta overlay
+	ImWidgetsSliderFlags_ProportionalDrag = 1 << 3, // participate in PushDragGroup
+	ImWidgetsSliderFlags_Stepped          = 1 << 4  // snap to nearest stop
+};
+typedef int ImWidgetsSliderFlags;
+
+// Falloff kernel for proportional multi-drag
+enum ImWidgetsFalloff_
+{
+	ImWidgetsFalloff_Linear = 0,
+	ImWidgetsFalloff_Gaussian,
+	ImWidgetsFalloff_Smoothstep,
+	ImWidgetsFalloff_COUNT
+};
+typedef int ImWidgetsFalloff;
+
+// Scalar 2D callback (distinct from color ones; returns a float)
+typedef float ( *ImWidgetsScalar2DCallback )( float x, float y, void* user );
+
+// Tier descriptor for multi-level iso-contour rendering (topographic maps, etc).
+struct ImIsoContourTier
+{
+	float spacing;      // world-value interval (or log-step multiplier when log_spacing=true)
+	ImU32 color;        // line color
+	float thickness;    // stroke thickness in pixels
+	bool  log_spacing;  // when true, iso-values are at k*spacing in log domain (10^k*spacing style)
+
+	ImIsoContourTier() : spacing( 1.0f ), color( IM_COL32( 255, 255, 255, 255 ) ), thickness( 1.0f ), log_spacing( false ) {}
+	ImIsoContourTier( float s, ImU32 c, float t, bool lg = false ) : spacing( s ), color( c ), thickness( t ), log_spacing( lg ) {}
+};
+
+//////////////////////////////////////////////////////////////////////////
+// Audio widgets (2026-04 batch B + C)
+//////////////////////////////////////////////////////////////////////////
+
+// B1. Parametric EQ
+enum ImEQBandType_
+{
+	ImEQBandType_Peak = 0,
+	ImEQBandType_LowShelf,
+	ImEQBandType_HighShelf,
+	ImEQBandType_LowPass,
+	ImEQBandType_HighPass,
+	ImEQBandType_Notch,
+	ImEQBandType_BandPass,
+	ImEQBandType_COUNT
+};
+typedef int ImEQBandType;
+
+struct ImEQBand
+{
+	float freq;      // Hz
+	float gain_db;   // dB (peak/shelf) — ignored by pass/notch types
+	float Q;         // quality factor
+	bool  enabled;
+	ImEQBandType type;
+
+	ImEQBand() : freq( 1000.0f ), gain_db( 0.0f ), Q( 1.0f ), enabled( true ), type( ImEQBandType_Peak ) {}
+};
+
+// B3. Spectrogram
+struct ImSpectrogramData
+{
+	ImVector<float> History;     // size = FrameCount * BinCount
+	int             FrameCount;  // columns (time)
+	int             BinCount;    // rows (frequency)
+	int             WriteIdx;    // next frame column to overwrite
+	float           MinDb;
+	float           MaxDb;
+	ImU32           Colormap[ 256 ];  // precomputed; caller can fill or library fills with viridis
+
+	ImSpectrogramData() : FrameCount( 0 ), BinCount( 0 ), WriteIdx( 0 ), MinDb( -96.0f ), MaxDb( 0.0f )
+	{
+		for ( int i = 0; i < 256; ++i ) Colormap[ i ] = 0;
+	}
+};
+
+// B5. LUFS
+struct ImLUFSMeter
+{
+	float momentary_400ms;
+	float short_term_3s;
+	float integrated;
+	float loudness_range;
+	float true_peak_dbtp;
+
+	ImLUFSMeter() : momentary_400ms( -70.0f ), short_term_3s( -70.0f ),
+		integrated( -70.0f ), loudness_range( 0.0f ), true_peak_dbtp( -70.0f ) {}
+};
+
+// B8. Compressor curve
+struct ImCompressorCurve
+{
+	float threshold_db;
+	float ratio;
+	float knee_db;
+	float makeup_db;
+
+	ImCompressorCurve() : threshold_db( -18.0f ), ratio( 4.0f ), knee_db( 6.0f ), makeup_db( 0.0f ) {}
+};
+
+// B9. Oscilloscope
+struct ImOscilloscope
+{
+	ImVector<float> Ring;
+	int             WriteIdx;
+	float           SampleRate;
+	float           TriggerLevel;
+	int             TriggerEdge;  // 0 = rising, 1 = falling, 2 = free-run
+	float           TimeBase_s;
+	float           YGain;
+
+	ImOscilloscope() : WriteIdx( 0 ), SampleRate( 48000.0f ), TriggerLevel( 0.0f ),
+		TriggerEdge( 0 ), TimeBase_s( 0.010f ), YGain( 1.0f ) {}
+};
+
+// B11. Pitch / chord wheel
+enum ImPitchWheelMode_
+{
+	ImPitchWheelMode_FifthsCircle = 0,
+	ImPitchWheelMode_Chromatic,
+	ImPitchWheelMode_COUNT
+};
+typedef int ImPitchWheelMode;
+
+// C1. Piano roll
+struct ImMidiNote
+{
+	float start_beats;
+	float length_beats;
+	int   pitch_0_127;
+	float velocity_0_1;
+
+	ImMidiNote() : start_beats( 0.0f ), length_beats( 1.0f ), pitch_0_127( 60 ), velocity_0_1( 0.8f ) {}
+	ImMidiNote( float s, float l, int p, float v ) : start_beats( s ), length_beats( l ), pitch_0_127( p ), velocity_0_1( v ) {}
+};
+
+struct ImPianoRollData
+{
+	ImVector<ImMidiNote> Notes;
+	float PixelsPerBeat;
+	float PixelsPerPitch;
+	float ScrollX, ScrollY;
+	int   SelectedIdx;
+	float GridSnap_beats;
+	float LengthBeats;
+	int   LowestPitch, HighestPitch;
+
+	ImPianoRollData() : PixelsPerBeat( 48.0f ), PixelsPerPitch( 10.0f ),
+		ScrollX( 0 ), ScrollY( 0 ), SelectedIdx( -1 ), GridSnap_beats( 0.25f ),
+		LengthBeats( 16.0f ), LowestPitch( 36 ), HighestPitch( 96 ) {}
+};
+
+// C2. Step sequencer
+struct ImStepSequencerData
+{
+	int Tracks;
+	int Steps;
+	ImVector<float> Cells;   // Tracks*Steps, velocity 0..1 (0 = off)
+	ImVector<const char*> TrackLabels;
+
+	ImStepSequencerData() : Tracks( 0 ), Steps( 0 ) {}
+	void Resize( int tracks, int steps )
+	{
+		Tracks = tracks; Steps = steps;
+		Cells.resize( tracks * steps );
+		for ( int i = 0; i < Cells.Size; ++i ) Cells[ i ] = 0.0f;
+	}
+	float& At( int track, int step ) { return Cells[ track * Steps + step ]; }
+	float  At( int track, int step ) const { return Cells[ track * Steps + step ]; }
+};
+
+// C3. Modulation matrix
+struct ImModMatrixData
+{
+	ImVector<const char*> Sources;
+	ImVector<const char*> Destinations;
+	ImVector<float>       Depth;   // Sources.Size * Destinations.Size, -1..+1
+
+	ImModMatrixData() {}
+	void Resize()
+	{
+		Depth.resize( Sources.Size * Destinations.Size );
+		for ( int i = 0; i < Depth.Size; ++i ) Depth[ i ] = 0.0f;
+	}
+	float& At( int src, int dst ) { return Depth[ src * Destinations.Size + dst ]; }
+};
+
+// C4. LFO designer
+struct ImLFODesignerData
+{
+	ImVector<ImVec2> Shape;  // (0..1, 0..1) anchor points; cyclic
+	float Phase;
+	float Rate_Hz;
+	bool  Bipolar;
+
+	ImLFODesignerData() : Phase( 0.0f ), Rate_Hz( 1.0f ), Bipolar( false )
+	{
+		// Default = sine-like
+		for ( int i = 0; i <= 16; ++i )
+		{
+			float t = (float)i / 16.0f;
+			Shape.push_back( ImVec2( t, 0.5f + 0.5f * ImSin( t * 2.0f * IM_PI ) ) );
+		}
+	}
+};
+
+// C5. Mixer channel strip
+struct ImMixerChannel
+{
+	float volume_db;
+	float pan_m1_to_p1;
+	float peak_db;
+	float peak_hold_db;
+	bool  mute, solo, record;
+	float sends[ 8 ];
+	int   send_count;
+	const char* name;
+
+	ImMixerChannel() : volume_db( 0.0f ), pan_m1_to_p1( 0.0f ),
+		peak_db( -96.0f ), peak_hold_db( -96.0f ),
+		mute( false ), solo( false ), record( false ), send_count( 0 ), name( "Ch" )
+	{
+		for ( int i = 0; i < 8; ++i ) sends[ i ] = 0.0f;
+	}
+};
+
+//////////////////////////////////////////////////////////////////////////
+// Color grading (Phase D)
+//////////////////////////////////////////////////////////////////////////
+
+struct ImLiftGammaGain
+{
+	ImVec4 Lift;    // rgb + master in .w
+	ImVec4 Gamma;
+	ImVec4 Gain;
+
+	ImLiftGammaGain()
+		: Lift( 0, 0, 0, 0 ), Gamma( 1, 1, 1, 1 ), Gain( 1, 1, 1, 1 ) {}
+};
+
+struct ImColorLUT3D
+{
+	int              Size;          // edge length (17, 33, 65 typical)
+	ImVector<ImVec4> Entries;       // Size^3 RGBA
+	float            DomainMin[ 3 ];
+	float            DomainMax[ 3 ];
+
+	ImColorLUT3D() : Size( 0 )
+	{
+		DomainMin[ 0 ] = DomainMin[ 1 ] = DomainMin[ 2 ] = 0.0f;
+		DomainMax[ 0 ] = DomainMax[ 1 ] = DomainMax[ 2 ] = 1.0f;
+	}
+};
+
+//////////////////////////////////////////////////////////////////////////
+// LookDev (Phase E)
+//////////////////////////////////////////////////////////////////////////
+
+struct ImLookDevState
+{
+	float  DividerT;         // 0..1 along perpendicular-to-divider axis
+	float  DividerAngleRad;  // 0 = vertical divider, CW positive
+	bool   Swap;
+
+	ImLookDevState() : DividerT( 0.5f ), DividerAngleRad( 0.0f ), Swap( false ) {}
+};
+
+// Bezier surface patches
+struct ImCoonsPatch
+{
+	// Four cubic Bezier boundaries, each 4 control points.
+	// Order: bottom (u: 0->1), top (u: 0->1), left (v: 0->1), right (v: 0->1).
+	// Corners must match: bottom[0]==left[0], bottom[3]==right[0], top[0]==left[3], top[3]==right[3].
+	ImVec2 bottom[ 4 ];
+	ImVec2 top[ 4 ];
+	ImVec2 left[ 4 ];
+	ImVec2 right[ 4 ];
+};
+
+struct ImGregoryPatch
+{
+	// 20 control points Gregory patch. Corners[4] + two tangent CPs per edge (8) + two twist CPs per corner (8) = 20.
+	// Layout: [c00,c10,c11,c01, e_bot0,e_bot1, e_right0,e_right1, e_top0,e_top1, e_left0,e_left1,
+	//          t00a,t00b, t10a,t10b, t11a,t11b, t01a,t01b]
+	ImVec2 cp[ 20 ];
+};
+
+// Vector Drawing Tool: world-space bezier authoring canvas.
+// Path = sequence of ImVectorDrawingNode. Each node holds an anchor point plus
+// in/out tangents (relative to anchor). Successive nodes are joined with a cubic
+// bezier segment using the left node's OutTangent and the right node's InTangent.
+struct ImVectorDrawingNode
+{
+	ImVec2 Anchor;       // world-space position
+	ImVec2 InTangent;    // relative offset from Anchor, applied to the incoming segment's P2
+	ImVec2 OutTangent;   // relative offset from Anchor, applied to the outgoing segment's P1
+	bool   Broken;       // when false, In/Out mirror each other through the anchor
+
+	ImVectorDrawingNode() : Anchor( 0, 0 ), InTangent( 0, 0 ), OutTangent( 0, 0 ), Broken( false ) {}
+	ImVectorDrawingNode( ImVec2 p ) : Anchor( p ), InTangent( 0, 0 ), OutTangent( 0, 0 ), Broken( false ) {}
+};
+
+enum ImVectorDrawingStyle_
+{
+	ImVectorDrawingStyle_Polyline = 0,          // AddPolyline
+	ImVectorDrawingStyle_PolylineAA,            // DrawPolylineAA (SDF)
+	ImVectorDrawingStyle_StrokedBezier,         // DrawStrokedBezierPath (Euler spiral)
+	ImVectorDrawingStyle_StrokedDashedBezier,   // DrawStrokedDashedBezierPath
+	ImVectorDrawingStyle_DashedPolyline,        // DrawDashedPolylineAA
+	ImVectorDrawingStyle_COUNT
+};
+typedef int ImVectorDrawingStyle;
+
+struct ImVectorDrawingPath
+{
+	ImVector<ImVectorDrawingNode> Nodes;
+	bool                          Closed;
+	ImU32                         Color;
+	float                         Thickness;
+	ImVectorDrawingStyle          Style;
+	float                         DashLen;
+	float                         GapLen;
+
+	ImVectorDrawingPath()
+		: Closed( false ), Color( IM_COL32( 255, 220, 100, 255 ) ), Thickness( 2.0f ),
+		  Style( ImVectorDrawingStyle_StrokedBezier ), DashLen( 8.0f ), GapLen( 6.0f ) {}
+};
+
+struct ImVectorDrawingData
+{
+	ImVector<ImVectorDrawingPath> Paths;
+	ImVec2 PanOffset;   // world offset of view origin (screen-space pixels)
+	float  Zoom;        // world → screen multiplier
+	int    SelectedPath;
+	int    SelectedNode;
+	int    SelectedHandle; // 0 = anchor, 1 = in, 2 = out
+	// Authoring state: -1 if not currently creating a new path.
+	int    ActivePath;
+
+	ImVectorDrawingData()
+		: PanOffset( 0, 0 ), Zoom( 1.0f ), SelectedPath( -1 ), SelectedNode( -1 ),
+		  SelectedHandle( 0 ), ActivePath( -1 ) {}
+};
+
+// Envelope / ADSR
+struct ImEnvelopeStage
+{
+	float Duration;   // seconds (relative)
+	float Target;     // end value (0..1 typical)
+	float Curvature;  // -1..+1 (negative = concave, 0 = linear, positive = convex)
+
+	ImEnvelopeStage() : Duration( 0.1f ), Target( 0.0f ), Curvature( 0.0f ) {}
+	ImEnvelopeStage( float d, float t, float c = 0.0f ) : Duration( d ), Target( t ), Curvature( c ) {}
+};
+
+struct ImEnvelopeData
+{
+	ImVector<ImEnvelopeStage> Stages;     // sequential stages; first implicitly starts at value 0
+	float                     StartValue; // value before stage 0
+	bool                      Loop;       // loop from end back to LoopStage
+	int                       LoopStage;
+	bool                      Sustain;    // hold SustainStage end value until release
+	int                       SustainStage;
+	int                       SelectedIdx;
+
+	ImEnvelopeData()
+		: StartValue( 0.0f ), Loop( false ), LoopStage( 0 ), Sustain( false ),
+		  SustainStage( -1 ), SelectedIdx( -1 ) {}
+};
+
+// Font inspector mode
+enum ImFontInspectorMode_
+{
+	ImFontInspectorMode_Grid = 0,
+	ImFontInspectorMode_Metrics,
+	ImFontInspectorMode_Curves,
+	ImFontInspectorMode_Kerning,
+	ImFontInspectorMode_COUNT
+};
+typedef int ImFontInspectorMode;
+
+// Delta-E formulas
+enum ImDeltaEFormula_
+{
+	ImDeltaEFormula_E76 = 0,
+	ImDeltaEFormula_E94,
+	ImDeltaEFormula_E2000,
+	ImDeltaEFormula_EOK,
+	ImDeltaEFormula_COUNT
+};
+typedef int ImDeltaEFormula;
+
+// Equation input flags
+enum ImWidgetsEquationFlags_
+{
+	ImWidgetsEquationFlags_None             = 0,
+	ImWidgetsEquationFlags_ReadOnly         = 1 << 0,
+	ImWidgetsEquationFlags_ShowParseErrors  = 1 << 1,
+	ImWidgetsEquationFlags_InlineOnly       = 1 << 2,
+	ImWidgetsEquationFlags_BlockOnly        = 1 << 3,
+	// Inline vertical alignment (mutually exclusive; default is baseline/center).
+	ImWidgetsEquationFlags_AlignInlineTop    = 1 << 4,
+	ImWidgetsEquationFlags_AlignInlineCenter = 1 << 5,
+	ImWidgetsEquationFlags_AlignInlineBottom = 1 << 6,
+	// Align surrounding plain text instead of the math block (applied to the line).
+	ImWidgetsEquationFlags_AlignInlineBaseline = 1 << 7 // fallback if no flag given
+};
+typedef int ImWidgetsEquationFlags;
+
 namespace ImWidgets{
 	enum ImWidgetsBgEffect
 	{
@@ -3679,4 +4200,348 @@ namespace ImWidgets{
     // Debug
     IMGUI_API void SetStrokeDebugWireframe(bool enable);
     IMGUI_API bool GetStrokeDebugWireframe();
+
+    //////////////////////////////////////////////////////////////////////////
+    // Extended primitives (D1–D6)
+    //////////////////////////////////////////////////////////////////////////
+
+    // D1. Hatching & stippling fills (scanline-clip against arbitrary polygon)
+    IMGUI_API void DrawHatchFill(ImDrawList* drawlist,
+                                 const ImVec2* poly, int poly_count,
+                                 ImWidgetsHatchPattern pattern,
+                                 float spacing, float angle_rad,
+                                 float thickness, ImU32 col);
+    IMGUI_API void DrawStippleFill(ImDrawList* drawlist,
+                                   const ImVec2* poly, int poly_count,
+                                   float density, float jitter,
+                                   float radius, ImU32 col,
+                                   unsigned int seed = 1u);
+
+    // D2. Bezier surface patches
+    IMGUI_API void DrawCoonsPatch(ImDrawList* drawlist,
+                                  const ImCoonsPatch& patch,
+                                  ImU32 col, int resU = 16, int resV = 16);
+    IMGUI_API void DrawCoonsPatchGradient(ImDrawList* drawlist,
+                                          const ImCoonsPatch& patch,
+                                          ImU32 c00, ImU32 c10, ImU32 c11, ImU32 c01,
+                                          int resU = 16, int resV = 16);
+    IMGUI_API void DrawCoonsPatchWireframe(ImDrawList* drawlist,
+                                           const ImCoonsPatch& patch,
+                                           ImU32 col, float thickness,
+                                           int resU = 16, int resV = 16);
+    IMGUI_API void DrawGregoryPatch(ImDrawList* drawlist,
+                                    const ImGregoryPatch& patch,
+                                    ImU32 col, int resU = 16, int resV = 16);
+
+    // D3. Rounded path offsetting
+    IMGUI_API void OffsetPolyline(const ImVec2* in_pts, int n,
+                                  float offset, ImWidgetsJoin join,
+                                  float miter_limit,
+                                  ImVector<ImVec2>& out_pts, bool closed);
+    IMGUI_API void DrawOffsetOutline(ImDrawList* drawlist,
+                                     const ImVec2* pts, int n,
+                                     float offset, ImWidgetsJoin join,
+                                     float miter_limit, float thickness,
+                                     ImU32 col, bool closed);
+    IMGUI_API void DrawOffsetFilled(ImDrawList* drawlist,
+                                    const ImVec2* pts, int n,
+                                    float inset, ImU32 col, bool closed);
+
+    // D4. Iso-contours (marching squares)
+    IMGUI_API void DrawIsoContour(ImDrawList* drawlist,
+                                  ImVec2 pos, ImVec2 size,
+                                  int resX, int resY,
+                                  ImWidgetsScalar2DCallback f, void* user,
+                                  const float* iso_values, int iso_count,
+                                  ImU32 col, float thickness);
+    // Multi-tier iso-contour (major/medium/minor in one pass).
+    // Draws tiers in array order; put finest/faintest first, major last so it paints on top.
+    // pre_log_transform: replace each sample v with log(max(v, eps)) before contouring.
+    // min_value/max_value: limit iso enumeration to this value range.
+    IMGUI_API void DrawIsoContourTiered(ImDrawList* drawlist,
+                                        ImVec2 pos, ImVec2 size,
+                                        int resX, int resY,
+                                        ImWidgetsScalar2DCallback f, void* user,
+                                        const ImIsoContourTier* tiers, int tier_count,
+                                        float min_value = -FLT_MAX, float max_value = FLT_MAX,
+                                        bool pre_log_transform = false);
+
+    IMGUI_API void DrawIsoFilled(ImDrawList* drawlist,
+                                 ImVec2 pos, ImVec2 size,
+                                 int resX, int resY,
+                                 ImWidgetsScalar2DCallback f, void* user,
+                                 const float* band_edges, int band_edge_count,
+                                 const ImU32* band_cols);
+
+    // D5. Conic gradient fill
+    IMGUI_API void DrawConicGradient(ImDrawList* drawlist,
+                                     ImVec2 center, float radius,
+                                     const ImGradientData& gradient,
+                                     float start_angle_rad,
+                                     int resolution = 128);
+    IMGUI_API void DrawConicGradientRect(ImDrawList* drawlist,
+                                         ImVec2 min, ImVec2 max,
+                                         ImVec2 center_uv,
+                                         const ImGradientData& gradient,
+                                         float start_angle_rad,
+                                         int resolution = 128);
+
+    // D6. Superellipse (generalization of GenShapeSquircle)
+    IMGUI_API void GenShapeSuperellipse(ImWidgetsShape& shape,
+                                        ImVec2 center,
+                                        float rx, float ry,
+                                        float nx, float ny,
+                                        int sides);
+
+    //////////////////////////////////////////////////////////////////////////
+    // Interaction helpers (I1–I3)
+    //////////////////////////////////////////////////////////////////////////
+
+    // I1. Angle-wrap/clamp-aware ring slider (thin wrapper exposing flags).
+    IMGUI_API bool SliderRingFloatEx(const char* label, float* value,
+                                     float v_min, float v_max,
+                                     float v_angle_min, float v_angle_max,
+                                     float v_thickness,
+                                     const char* format,
+                                     ImWidgetsSliderFlags widgets_flags,
+                                     ImGuiSliderFlags imgui_flags = 0);
+
+    // I2. Delta overlays
+    IMGUI_API void PushDeltaOverlay(ImGuiID id, float start_value);
+    IMGUI_API void RenderDeltaOverlay(ImGuiID id, float current,
+                                      const char* fmt = nullptr);
+
+    // I3. Proportional multi-drag group
+    IMGUI_API void PushDragGroup(ImGuiID group_id,
+                                 float falloff_radius = 2.0f,
+                                 ImWidgetsFalloff kernel = ImWidgetsFalloff_Gaussian);
+    IMGUI_API void PopDragGroup();
+    // Reports the additive delta this frame for the given slider's group position.
+    // Returns 0 if not in a group or group is inactive.
+    IMGUI_API float GetDragGroupDelta(int group_slot);
+    IMGUI_API void  SetDragGroupActive(int group_slot, float drag_delta);
+
+    //////////////////////////////////////////////////////////////////////////
+    // New widgets (W1–W7)
+    //////////////////////////////////////////////////////////////////////////
+
+    // W2. Vector drawing tool (canvas with zoom/pan + bezier path authoring)
+    // Forward declarations — data types are defined outside namespace (see ImVectorDrawingData).
+    IMGUI_API bool VectorDrawingTool(const char* label,
+                                     struct ImVectorDrawingData& data,
+                                     ImVec2 size = ImVec2(0, 0));
+
+    // W3. Envelope / ADSR editors
+    IMGUI_API bool EnvelopeEditor(const char* label,
+                                  ImEnvelopeData& data,
+                                  ImVec2 size = ImVec2(0, 0));
+    IMGUI_API bool ADSREditor(const char* label,
+                              float* a, float* d, float* s, float* r,
+                              ImVec2 size = ImVec2(0, 0));
+    IMGUI_API float EnvelopeSample(const ImEnvelopeData& data, float t_seconds);
+
+    // W4. Font inspector (4 modes in one widget; mode is user-controlled)
+    IMGUI_API void FontInspector(const char* label,
+                                 ImFont* font,
+                                 ImFontInspectorMode mode = ImFontInspectorMode_Grid,
+                                 float display_size = 64.0f,
+                                 ImVec2 size = ImVec2(0, 0));
+
+    // W5. Stepped / notched sliders
+    IMGUI_API bool SliderRingSteppedFloat(const char* label, float* v,
+                                          float v_min, float v_max,
+                                          int step_count,
+                                          const char* format = nullptr);
+    IMGUI_API bool NotchedDial(const char* label, float* v,
+                               const float* stops, int stop_count,
+                               const char* const* stop_labels = nullptr);
+
+    // W6. Color-difference visualizer
+    IMGUI_API float ColorDeltaE76   (ImVec4 a, ImVec4 b);
+    IMGUI_API float ColorDeltaE94   (ImVec4 a, ImVec4 b, float kL = 1.0f, float kC = 1.0f, float kH = 1.0f);
+    IMGUI_API float ColorDeltaE2000 (ImVec4 a, ImVec4 b, float kL = 1.0f, float kC = 1.0f, float kH = 1.0f);
+    IMGUI_API float ColorDeltaEOK   (ImVec4 a, ImVec4 b);
+    IMGUI_API const char* DeltaEFormulaName(ImDeltaEFormula f);
+    IMGUI_API const char* DeltaEPerceptualLabel(float de); // "Imperceptible" / "Just noticeable" / ...
+    IMGUI_API void ColorDifferenceVisualizer(const char* label,
+                                             ImVec4* a, ImVec4* b,
+                                             ImDeltaEFormula formula = ImDeltaEFormula_E2000);
+
+    // W7. Equation input box (markdown-style $ / $$ delimited LaTeX)
+    IMGUI_API bool EquationInput(const char* label,
+                                 char* buf, size_t buf_size,
+                                 ImVec2 size = ImVec2(0, 0),
+                                 ImWidgetsEquationFlags flags = 0);
+
+    // DPI / scaling helpers have moved to ImPlatform:
+    //   ImPlatform_LpToPx(float | ImVec2)
+    //   ImPlatform_PxToLp(float | ImVec2)
+    //   ImPlatform_LpPxScale()
+    // (See extern/ImPlatform/ImPlatform/ImPlatform.h. The scale factor is
+    // ImGui::GetStyle().FontScaleDpi so it stays in lockstep with Slug text scaling.)
+
+    //////////////////////////////////////////////////////////////////////////
+    // Phase B — Audio meters & scopes
+    //////////////////////////////////////////////////////////////////////////
+
+    // B1. Parametric EQ editor
+    IMGUI_API bool ParametricEQEditor(const char* label,
+                                      ImEQBand* bands, int band_count,
+                                      float sample_rate,
+                                      float freq_min = 20.0f, float freq_max = 20000.0f,
+                                      float gain_min_db = -24.0f, float gain_max_db = 24.0f,
+                                      ImVec2 size = ImVec2(0, 0));
+    // Evaluate the summed biquad magnitude response (dB) at a given frequency.
+    IMGUI_API float EvalParametricEQ_dB(const ImEQBand* bands, int band_count,
+                                        float freq, float sample_rate);
+
+    // B2. Spectrum analyzer (bars + peak hold)
+    IMGUI_API void SpectrumAnalyzer(const char* label,
+                                    const float* magnitudes_linear, int bin_count,
+                                    float sample_rate,
+                                    float min_db = -96.0f, float max_db = 0.0f,
+                                    bool log_freq = true,
+                                    ImVec2 size = ImVec2(0, 0));
+
+    // B3. Spectrogram (scrolling waterfall)
+    IMGUI_API void Spectrogram(const char* label,
+                               ImSpectrogramData& data,
+                               float sample_rate,
+                               ImVec2 size = ImVec2(0, 0));
+    IMGUI_API void SpectrogramPush(ImSpectrogramData& data,
+                                   const float* magnitudes_linear, int bin_count);
+    IMGUI_API void SpectrogramInitViridis(ImSpectrogramData& data);
+
+    // B4. Audio vectorscope (Lissajous)
+    IMGUI_API void AudioVectorscope(const char* label,
+                                    const float* stereo_interleaved, int frame_count,
+                                    float decay = 0.92f,
+                                    ImVec2 size = ImVec2(0, 0));
+
+    // B5. LUFS meter
+    IMGUI_API void LUFSMeter(const char* label, const ImLUFSMeter& data,
+                             ImVec2 size = ImVec2(0, 0));
+
+    // B6. Phase correlation meter (-1..+1 horizontal needle)
+    IMGUI_API void PhaseCorrelationMeter(const char* label, float correlation,
+                                         ImVec2 size = ImVec2(0, 0));
+
+    // B7. Goniometer (audio vectorscope rotated 45deg + M/S overlay)
+    IMGUI_API void Goniometer(const char* label,
+                              const float* stereo_interleaved, int frame_count,
+                              float decay = 0.92f,
+                              ImVec2 size = ImVec2(0, 0));
+
+    // B8. Compressor transfer curve editor
+    IMGUI_API bool CompressorCurveEditor(const char* label, ImCompressorCurve* c,
+                                         ImVec2 size = ImVec2(0, 0));
+    IMGUI_API float CompressorApply_dB(const ImCompressorCurve& c, float input_db);
+
+    // B9. Oscilloscope with trigger
+    IMGUI_API void Oscilloscope(const char* label, ImOscilloscope& o,
+                                ImVec2 size = ImVec2(0, 0));
+    IMGUI_API void OscilloscopePush(ImOscilloscope& o, const float* samples, int n);
+
+    // B10. Modulated slider ring (mod-range arc overlay)
+    IMGUI_API bool SliderRingModulated(const char* label, float* value,
+                                       float v_min, float v_max,
+                                       float mod_min, float mod_max,
+                                       float v_angle_min = -0.75f * IM_PI,
+                                       float v_angle_max =  0.75f * IM_PI,
+                                       float v_thickness = 0.0f,
+                                       const char* format = NULL);
+
+    // B11. Pitch / chord wheel
+    IMGUI_API bool PitchWheel(const char* label,
+                              int* root_note_0_11,
+                              unsigned int* chord_mask_12bits,
+                              ImPitchWheelMode mode = ImPitchWheelMode_FifthsCircle,
+                              ImVec2 size = ImVec2(0, 0));
+
+    // B12. Tempo tap button
+    IMGUI_API bool TempoTap(const char* label, float* bpm_out, float timeout_s = 2.0f);
+
+    //////////////////////////////////////////////////////////////////////////
+    // Phase C — Audio authoring
+    //////////////////////////////////////////////////////////////////////////
+
+    IMGUI_API bool PianoRoll(const char* label, ImPianoRollData& data,
+                             ImVec2 size = ImVec2(0, 0));
+    IMGUI_API bool StepSequencer(const char* label, ImStepSequencerData& data,
+                                 int current_step = -1,
+                                 ImVec2 size = ImVec2(0, 0));
+    IMGUI_API bool ModMatrix(const char* label, ImModMatrixData& data,
+                             ImVec2 size = ImVec2(0, 0));
+    IMGUI_API bool LFODesigner(const char* label, ImLFODesignerData& data,
+                               ImVec2 size = ImVec2(0, 0));
+    IMGUI_API bool MixerChannelStrip(const char* label, ImMixerChannel& c,
+                                     ImVec2 size = ImVec2(60, 240));
+
+    //////////////////////////////////////////////////////////////////////////
+    // Phase D — Color grading
+    //////////////////////////////////////////////////////////////////////////
+
+    IMGUI_API bool LiftGammaGainWheels(const char* label, ImLiftGammaGain* lgg,
+                                       ImVec2 size = ImVec2(0, 0));
+    IMGUI_API ImVec4 LiftGammaGainApply(ImVec4 rgb, const ImLiftGammaGain& lgg);
+
+    IMGUI_API bool LoadCubeLUT(ImColorLUT3D& out, const char* filename);
+    IMGUI_API bool SaveCubeLUT(const ImColorLUT3D& in, const char* filename);
+    IMGUI_API ImVec4 SampleLUT3D(const ImColorLUT3D& lut, ImVec4 rgb_in);
+    IMGUI_API void  InitIdentityLUT3D(ImColorLUT3D& out, int size);
+    IMGUI_API bool  ColorLUT3DViewer(const char* label, ImColorLUT3D* lut,
+                                     ImVec2 size = ImVec2(0, 0));
+
+    //////////////////////////////////////////////////////////////////////////
+    // Phase E — LookDev A/B compare
+    //////////////////////////////////////////////////////////////////////////
+
+    IMGUI_API bool LookDevCompare(const char* label,
+                                  ImTextureID tex_a, ImTextureID tex_b,
+                                  ImVec2 a_uv_min, ImVec2 a_uv_max,
+                                  ImVec2 b_uv_min, ImVec2 b_uv_max,
+                                  ImLookDevState* state,
+                                  ImVec2 size = ImVec2(0, 0));
+
+    //////////////////////////////////////////////////////////////////////////
+    // Phase G — Volume Slice Viewer (CPU-side slice extraction path).
+    // Uses ImPlatform_CreateTexture3D for voxel upload (when the backend
+    // supports it); the widget itself extracts a 2D slice on CPU each frame
+    // and uploads it to a 2D texture for display. This keeps the widget
+    // backend-agnostic while the full GPU volume_slice shader lands later.
+    //////////////////////////////////////////////////////////////////////////
+
+    enum ImVolumeSliceAxis_
+    {
+        ImVolumeSliceAxis_X = 0,
+        ImVolumeSliceAxis_Y = 1,
+        ImVolumeSliceAxis_Z = 2
+    };
+    typedef int ImVolumeSliceAxis;
+
+    struct ImVolumeSliceState
+    {
+        // Source volume (caller-owned).
+        const float* Voxels;  // w*h*d floats, 0..1 range recommended
+        int Width, Height, Depth;
+        // View parameters.
+        ImVolumeSliceAxis Axis;
+        float SliceT;         // 0..1
+        float WindowMin, WindowMax;
+        float Gamma;
+        // Internal — widget reuses a cached 2D texture for display.
+        ImTextureID CachedTex;
+        int CachedW, CachedH;
+
+        ImVolumeSliceState()
+            : Voxels(NULL), Width(0), Height(0), Depth(0),
+              Axis(ImVolumeSliceAxis_Z), SliceT(0.5f),
+              WindowMin(0.0f), WindowMax(1.0f), Gamma(1.0f),
+              CachedTex(NULL), CachedW(0), CachedH(0) {}
+    };
+
+    IMGUI_API bool VolumeSliceViewer(const char* label, ImVolumeSliceState* state,
+                                     ImVec2 size = ImVec2(0, 0));
+    // Utility: generate a test 128x128x128 Perlin-ish volume (caller-owns buffer).
+    IMGUI_API void VolumeGenerateTestField(float* out_voxels, int w, int h, int d, float seed = 0.0f);
 }
