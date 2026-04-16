@@ -710,6 +710,49 @@ static inline void LoadFontIfMissing( ImFontAtlas* atlas, ImFont** slot,
     *slot = atlas->AddFontFromFileTTF( path, size, cfg, ranges );
 }
 
+// Curated (display-name, font-slot) pair used by the demo's font pickers.
+// Only fonts in this list AND present in the live ImGui atlas surface in the
+// pickers — guarantees no dead entries pointing to unloaded files.
+struct DemoFontChoice { const char* name; ImFont** ptr; };
+
+// Test if `f` is currently registered in the active atlas. After dynamic atlas
+// rebuilds, an old global slot may still hold a stale pointer; checking the
+// atlas vector is the source of truth.
+static inline bool DemoFontIsLive( ImFont* f )
+{
+    if ( !f ) return false;
+    const ImVector<ImFont*>& fonts = ImGui::GetIO().Fonts->Fonts;
+    for ( int i = 0; i < fonts.Size; ++i )
+        if ( fonts[i] == f ) return true;
+    return false;
+}
+
+// Render a font-picker ComboBox over a curated list, filtered to live atlas
+// entries. Updates *io_idx; returns the resolved ImFont* (null if none live).
+static inline ImFont* DemoFontPicker( const char* combo_label,
+                                      const DemoFontChoice* choices, int count,
+                                      int* io_idx )
+{
+    if ( !io_idx || !choices || count <= 0 ) return nullptr;
+    if ( *io_idx < 0 || *io_idx >= count || !DemoFontIsLive( *choices[*io_idx].ptr ) )
+    {
+        *io_idx = -1;
+        for ( int i = 0; i < count; ++i )
+            if ( DemoFontIsLive( *choices[i].ptr ) ) { *io_idx = i; break; }
+    }
+    if ( *io_idx < 0 ) return nullptr;
+    if ( ImGui::BeginCombo( combo_label, choices[*io_idx].name ) )
+    {
+        for ( int i = 0; i < count; ++i )
+        {
+            if ( !DemoFontIsLive( *choices[i].ptr ) ) continue;
+            if ( ImGui::Selectable( choices[i].name, i == *io_idx ) ) *io_idx = i;
+        }
+        ImGui::EndCombo();
+    }
+    return *choices[*io_idx].ptr;
+}
+
 // Walk every demo-font slot; load any whose file is present on disk but not
 // yet in the ImGui atlas. ImGui 1.92's dynamic atlas rebuilds on demand, so
 // fonts added here become renderable on the very next frame — no restart.
@@ -2317,51 +2360,34 @@ namespace ImWidgets {
 			static float dbgSize = 200.0f;
 			static float dbgTol = 0.5f;
 
-			struct FontChoice { const char* name; ImFont** ptr; };
-			static const FontChoice kDbgFonts[] = {
+			static const DemoFontChoice kDbgFonts[] = {
+				{ "Fira Code", &g_firaCodeFont },
 				{ "Monblock", &g_monblockFont },
 				{ "Cinzel", &g_cinzelFont },
-				{ "Fira Code", &g_firaCodeFont },
 				{ "Alfa Slab", &g_alfaSlabFont },
-				{ "Frantically", &g_franticallyFont },
-				{ "Bollgo", &g_bollgoFont },
-				{ "Gimbo", &g_gimboFont },
-				{ "Bright Matching", &g_brightMarchFont },
+				{ "Classical Aesthetics", &g_classicalFont },
+				{ "Foglighten", &g_foglihtenFont },
+				{ "Steelworks", &g_steelworksFont },
+				{ "Trench Slab", &g_trenchSlabFont },
+				{ "Bright March", &g_brightMarchFont },
 				{ "Love Light", &g_loveLightFont },
 				{ "Metafora Stylistic", &g_metaforaSsFont },
-				{ "Classical Aesthetics", &g_classicalFont },
-				{ "Foglighten No07", &g_foglihtenFont },
-				{ "Steelworks Vintage", &g_steelworksFont },
-				{ "Square Lily Monogram", &g_squareLilyFont },
-				{ "Molgeth", &g_molgethFont },
-				{ "Ginga", &g_gingaFont },
+				{ "Bollgo", &g_bollgoFont },
 				{ "Dotted", &g_dottedFont },
-				{ "Manbow Clear", &g_manbowClearFont },
-				{ "Manbow Lines", &g_manbowLinesFont },
-				{ "Manbow Spots", &g_manbowSpotsFont },
-				{ "Manbow Tone", &g_manbowToneFont },
-				{ "Multicolor Pro", &g_multicoloreFont },
-				{ "Fattern", &g_fatternFont },
-				{ "Aphaphonic Drizzle", &g_aquaphonicDrizzleFont },
+				{ "Frantically", &g_franticallyFont },
+				{ "Gimbo", &g_gimboFont },
+				{ "Ginga", &g_gingaFont },
+				{ "Molgeth", &g_molgethFont },
+				{ "Square Lily", &g_squareLilyFont },
 				{ "Nabla", &g_nablaFont },
 				{ "Bungee Spice", &g_bungeeSpiceFont },
 			};
-			int numDbgFonts = IM_ARRAYSIZE( kDbgFonts );
-
 			ImGui::InputText( "Character##DbgTess", dbgChar, sizeof( dbgChar ) );
-			if ( ImGui::BeginCombo( "Font##DbgTess", kDbgFonts[dbgFontIdx].name ) ) {
-				for ( int fi = 0; fi < numDbgFonts; fi++ ) {
-					if ( !*kDbgFonts[fi].ptr ) continue;
-					if ( ImGui::Selectable( kDbgFonts[fi].name, fi == dbgFontIdx ) ) dbgFontIdx = fi;
-				}
-				ImGui::EndCombo();
-			}
+			ImFont* dbgFont = DemoFontPicker( "Font##DbgTess", kDbgFonts, IM_ARRAYSIZE( kDbgFonts ), &dbgFontIdx );
 			ImGui::SliderFloat( "Size##DbgTess", &dbgSize, 32.0f, 400.0f, "%.0f lp" );
 			ImGui::SliderFloat( "Tess Tol##DbgTess", &dbgTol, 0.05f, 5.0f, "%.2f" );
 			static float dbgSpacing = 30.0f;
 			ImGui::SliderFloat( "Piece Spacing##DbgTess", &dbgSpacing, 0.0f, 100.0f, "%.0f lp" );
-
-			ImFont* dbgFont = *kDbgFonts[dbgFontIdx].ptr;
 			if ( dbgFont && dbgChar[0] )
 			{
 				ImVec2 dbgPos = ImGui::GetCursorScreenPos();
@@ -2380,44 +2406,29 @@ namespace ImWidgets {
 			static float s_cull_typofills_h = 0; float s_cull_typofills_y;
 			if ( BeginCullSection( s_cull_typofills_h, s_cull_typofills_y ) ) {
 			static int tyFontIdx = 0;
-			struct FontChoice { const char* name; ImFont** ptr; };
-			static const FontChoice kTypoFonts[] = {
+			static const DemoFontChoice kTypoFonts[] = {
+				{ "Fira Code", &g_firaCodeFont },
 				{ "Monblock", &g_monblockFont },
 				{ "Cinzel", &g_cinzelFont },
-				{ "Fira Code", &g_firaCodeFont },
 				{ "Alfa Slab", &g_alfaSlabFont },
-				{ "Frantically", &g_franticallyFont },
-				{ "Bollgo", &g_bollgoFont },
-				{ "Gimbo", &g_gimboFont },
-				{ "Bright Matching", &g_brightMarchFont },
+				{ "Classical Aesthetics", &g_classicalFont },
+				{ "Foglighten", &g_foglihtenFont },
+				{ "Steelworks", &g_steelworksFont },
+				{ "Trench Slab", &g_trenchSlabFont },
+				{ "Bright March", &g_brightMarchFont },
 				{ "Love Light", &g_loveLightFont },
 				{ "Metafora Stylistic", &g_metaforaSsFont },
-				{ "Classical Aesthetics", &g_classicalFont },
-				{ "Foglighten No07", &g_foglihtenFont },
-				{ "Steelworks Vintage", &g_steelworksFont },
-				{ "Square Lily Monogram", &g_squareLilyFont },
-				{ "Molgeth", &g_molgethFont },
-				{ "Ginga", &g_gingaFont },
+				{ "Bollgo", &g_bollgoFont },
 				{ "Dotted", &g_dottedFont },
-				{ "Manbow Clear", &g_manbowClearFont },
-				{ "Manbow Lines", &g_manbowLinesFont },
-				{ "Manbow Spots", &g_manbowSpotsFont },
-				{ "Manbow Tone", &g_manbowToneFont },
-				{ "Multicolor Pro", &g_multicoloreFont },
-				{ "Fattern", &g_fatternFont },
-				{ "Aphaphonic Drizzle", &g_aquaphonicDrizzleFont },
+				{ "Frantically", &g_franticallyFont },
+				{ "Gimbo", &g_gimboFont },
+				{ "Ginga", &g_gingaFont },
+				{ "Molgeth", &g_molgethFont },
+				{ "Square Lily", &g_squareLilyFont },
 				{ "Nabla", &g_nablaFont },
 				{ "Bungee Spice", &g_bungeeSpiceFont },
 			};
-			int numTypoFonts = IM_ARRAYSIZE( kTypoFonts );
-			if ( ImGui::BeginCombo( "Font##TypoFills", kTypoFonts[tyFontIdx].name ) ) {
-				for ( int fi = 0; fi < numTypoFonts; fi++ ) {
-					if ( !*kTypoFonts[fi].ptr ) continue;
-					if ( ImGui::Selectable( kTypoFonts[fi].name, fi == tyFontIdx ) ) tyFontIdx = fi;
-				}
-				ImGui::EndCombo();
-			}
-			ImFont* tyFont = *kTypoFonts[tyFontIdx].ptr;
+			ImFont* tyFont = DemoFontPicker( "Font##TypoFills", kTypoFonts, IM_ARRAYSIZE( kTypoFonts ), &tyFontIdx );
 			if ( !tyFont ) tyFont = g_monblockFont;
 			static float tySize = 64.0f;
 			static bool perChar = true;
@@ -2596,11 +2607,42 @@ namespace ImWidgets {
 	void ShowTypographyAnimations()
 	{
 		ApplyOpenAll();
-		if ( !g_dottedFont ) return;
-
-		ImFont* animFont = g_dottedFont;
+		// Use the curated demo-font list so the user can pick any live atlas
+		// font. If none of the curated slots are loaded (fresh clone, no
+		// downloads yet), fall back to ImGui::GetFont() so the section still
+		// renders the placeholder strings rather than being silent.
+		static const DemoFontChoice kAnimFonts[] = {
+			{ "Cinzel", &g_cinzelFont },
+			{ "Alfa Slab", &g_alfaSlabFont },
+			{ "Trench Slab", &g_trenchSlabFont },
+			{ "Classical Aesthetics", &g_classicalFont },
+			{ "Foglighten", &g_foglihtenFont },
+			{ "Steelworks", &g_steelworksFont },
+			{ "Monblock", &g_monblockFont },
+			{ "Bright March", &g_brightMarchFont },
+			{ "Love Light", &g_loveLightFont },
+			{ "Metafora Stylistic", &g_metaforaSsFont },
+			{ "Bollgo", &g_bollgoFont },
+			{ "Dotted", &g_dottedFont },
+			{ "Frantically", &g_franticallyFont },
+			{ "Gimbo", &g_gimboFont },
+			{ "Ginga", &g_gingaFont },
+			{ "Molgeth", &g_molgethFont },
+			{ "Square Lily", &g_squareLilyFont },
+			{ "Nabla", &g_nablaFont },
+			{ "Bungee Spice", &g_bungeeSpiceFont },
+		};
+		static int animFontIdx = 0;
+		ImFont* animFont = DemoFontPicker( "Font##TypoAnim", kAnimFonts, IM_ARRAYSIZE( kAnimFonts ), &animFontIdx );
+		if ( !animFont ) animFont = ImGui::GetFont();
+		if ( !animFont )
+		{
+			ImGui::TextDisabled( "Typography Animations needs a display font; none loaded." );
+			return;
+		}
 		static float animSize = 80.0f;
 		static float prevAnimSize = 0;
+		static ImFont* prevAnimFont = nullptr;
 
 		// --- Cache: tessellate once, reuse every frame ---
 		// Built every frame regardless of header state so opening the header is stall-free.
@@ -2618,9 +2660,10 @@ namespace ImWidgets {
 		};
 
 		// Invalidate cache on size change
-		bool needRebuild = (animSize != prevAnimSize);
+		bool needRebuild = (animSize != prevAnimSize) || (animFont != prevAnimFont);
 		if ( needRebuild ) {
 			prevAnimSize = animSize;
+			prevAnimFont = animFont;
 			for ( int i = 0; i < 6; i++ ) cache[i].valid = false;
 		}
 
@@ -2652,6 +2695,25 @@ namespace ImWidgets {
 
 		ImGui::SliderFloat( "Size##TypoAnim", &animSize, 32.0f, 200.0f, "%.0f lp" );
 		float gap = 8.0f;
+
+		// Diagnose: every animation depends on the Slug per-glyph tessellation
+		// cache. When the chosen font has no Slug data registered (e.g., the
+		// font was loaded without slugCfg, or ImGui's atlas dropped the font
+		// data after rebuild), all caches build empty and the section appears
+		// blank. Surface that explicitly so the user knows why.
+		bool any_cache_built = false;
+		for ( int ci = 0; ci < 6; ++ci )
+			if ( cache[ ci ].valid && ( cache[ ci ].glyphs.Size > 0 || cache[ ci ].whole.triangles.Size > 0 ) )
+				{ any_cache_built = true; break; }
+		if ( !any_cache_built )
+		{
+			ImGui::TextColored( ImVec4( 1, 0.6f, 0.4f, 1 ),
+				"Tessellation cache empty — Slug font data missing for '%s'. Try a different font (e.g., Cinzel, Alfa Slab).",
+				animFont == ImGui::GetFont() ? "<default>" : "selected" );
+			// Still render plain text below as a fallback so the user sees the strings.
+			for ( int i = 0; i < 6; ++i ) ImGui::Text( "%s", kTexts[ i ] );
+			return;
+		}
 
 		// Helper: draw a cached glyph shape at a screen position with a color
 		auto DrawGlyph = [&]( ImWidgetsShape& src, ImVec2 offset, ImU32 col ) {
@@ -4944,24 +5006,27 @@ namespace ImWidgets {
 				ImDrawList* dl = ImGui::GetWindowDrawList();
 				ImVec2 p = ImGui::GetCursorScreenPos();
 
-				// Horizontal (existing primitive, post-rename)
-				ImWidgets::DrawProceduralColor1DBilinearHorizontal( dl, hueFunc, &hueData[ 0 ], 0.0f, 1.0f, p, ImVec2( 260.0f, 24.0f ), 64 );
-				// Vertical (new)
-				ImWidgets::DrawProceduralColor1DBilinearVertical( dl, hueFunc, &hueData[ 0 ], 0.0f, 1.0f, ImVec2( p.x + 270.0f, p.y ), ImVec2( 24.0f, 120.0f ), 48 );
+				// Sized to roughly 2x original (previous /2.5 pass overshot at
+				// high DPI). Still routed through Lp so it scales with font size.
+				const float SX = ImPlatform_LpPxScale() * 0.8f;
+				// Horizontal
+				ImWidgets::DrawProceduralColor1DBilinearHorizontal( dl, hueFunc, &hueData[ 0 ], 0.0f, 1.0f, p, ImVec2( 260.0f * SX, 32.0f * SX ), 64 );
+				// Vertical
+				ImWidgets::DrawProceduralColor1DBilinearVertical( dl, hueFunc, &hueData[ 0 ], 0.0f, 1.0f, ImVec2( p.x + 280.0f * SX, p.y ), ImVec2( 32.0f * SX, 160.0f * SX ), 48 );
 				// Arc (half ring)
-				ImWidgets::DrawProceduralColorArcBilinear( dl, ImVec2( p.x + 64.0f, p.y + 120.0f ), 32.0f, 60.0f, IM_PI, IM_PI, hueFunc, &hueData[ 0 ], 64, true );
+				ImWidgets::DrawProceduralColorArcBilinear( dl, ImVec2( p.x + 80.0f * SX, p.y + 200.0f * SX ), 40.0f * SX, 80.0f * SX, IM_PI, IM_PI, hueFunc, &hueData[ 0 ], 64, true );
 				// Spline (zig-zag)
 				ImVec2 pts[ 6 ] = {
-					ImVec2( p.x + 160.0f, p.y + 100.0f ),
-					ImVec2( p.x + 200.0f, p.y + 140.0f ),
-					ImVec2( p.x + 240.0f, p.y + 100.0f ),
-					ImVec2( p.x + 280.0f, p.y + 140.0f ),
-					ImVec2( p.x + 320.0f, p.y + 100.0f ),
-					ImVec2( p.x + 360.0f, p.y + 140.0f )
+					ImVec2( p.x + 200.0f * SX, p.y + 200.0f * SX ),
+					ImVec2( p.x + 250.0f * SX, p.y + 250.0f * SX ),
+					ImVec2( p.x + 300.0f * SX, p.y + 200.0f * SX ),
+					ImVec2( p.x + 350.0f * SX, p.y + 250.0f * SX ),
+					ImVec2( p.x + 400.0f * SX, p.y + 200.0f * SX ),
+					ImVec2( p.x + 450.0f * SX, p.y + 250.0f * SX )
 				};
-				ImWidgets::DrawProceduralColorSplineBilinear( dl, pts, 6, 10.0f, hueFunc, &hueData[ 0 ], 96, false );
+				ImWidgets::DrawProceduralColorSplineBilinear( dl, pts, 6, 14.0f * SX, hueFunc, &hueData[ 0 ], 96, false );
 
-				ImGui::Dummy( ImVec2( 380.0f, 200.0f ) );
+				ImGui::Dummy( ImVec2( 480.0f * SX, 320.0f * SX ) );
 			}
 			DW_SsRecord( "Procedural_Color_Primitives", _sy0, ImGui::GetCursorPos().y ); }
 			{ float _sy0 = ImGui::GetCursorPos().y;
@@ -5997,6 +6062,17 @@ namespace ImWidgets {
 				};
 				static float fval7 = 0.5f;
 				ImWidgets::SliderSplineFloat( "Infinity##SS8", &fval7, 0.0f, 1.0f, infinity, 7, 200.0f );
+
+				// Right-to-left variant: mirror the X axis so the spline flows
+				// from 1.0 (left edge of the widget) down to 0.0 (right edge).
+				// Toggleable so the user can A/B against the default L->R sense.
+				static bool rtl = true;
+				ImGui::Checkbox( "Right-to-left##SS_RTL", &rtl );
+				static const ImVec2 arcUp_LTR[ 4 ] = { ImVec2( 0.0f, 0.8f ), ImVec2( 0.25f, 0.0f ), ImVec2( 0.75f, 0.0f ), ImVec2( 1.0f, 0.8f ) };
+				static const ImVec2 arcUp_RTL[ 4 ] = { ImVec2( 1.0f, 0.8f ), ImVec2( 0.75f, 0.0f ), ImVec2( 0.25f, 0.0f ), ImVec2( 0.0f, 0.8f ) };
+				static float fval_rtl = 0.25f;
+				ImWidgets::SliderSplineFloat( "RTL Arc##SS_RTL", &fval_rtl, 0.0f, 1.0f,
+					rtl ? arcUp_RTL : arcUp_LTR );
 			}
 			DW_SsRecord( "SliderSpline", _sy0, ImGui::GetCursorPos().y ); }
 
@@ -6073,6 +6149,41 @@ namespace ImWidgets {
 				static const ImVec2 straight[ 4 ] = { ImVec2( 0.0f, 0.5f ), ImVec2( 0.33f, 0.5f ), ImVec2( 0.66f, 0.5f ), ImVec2( 1.0f, 0.5f ) };
 				static int intVal = 50;
 				ImWidgets::SliderSplineGradientInt( "Int Straight##SSG4", &intVal, 0, 100, &gradSSG, straight );
+
+				// "Gradient follows cursor": rebuild the gradient each frame so
+				// the visible color band only fills up to the current value, and
+				// beyond the cursor it drops to a near-black desaturated tone.
+				// Color-channel driven (not just alpha) so the split is obvious
+				// against any background.
+				static bool grad_fill = true;
+				ImGui::Checkbox( "Fill gradient up to cursor##SSG_FILL", &grad_fill );
+				static float valFill = 0.35f;
+				if ( grad_fill )
+				{
+					ImGradientData dynG;
+					dynG.Interpolation = ImWidgetsGradientInterp_sRGB;
+					const int N = 48;
+					for ( int i = 0; i <= N; ++i )
+					{
+						float t = (float)i / (float)N;
+						ImVec4 c = ImWidgets::GradientSample( gradSSG, t );
+						if ( t > valFill )
+						{
+							// Strong darken + desaturate past the cursor — makes
+							// the "progress" split unmistakable.
+							float grey = 0.22f;
+							c.x = ImLerp( c.x, grey, 0.88f );
+							c.y = ImLerp( c.y, grey, 0.88f );
+							c.z = ImLerp( c.z, grey, 0.88f );
+						}
+						dynG.Stops.push_back( { t, c } );
+					}
+					ImWidgets::SliderSplineGradientFloat( "Fill##SSG_FILL", &valFill, 0.0f, 1.0f, &dynG );
+				}
+				else
+				{
+					ImWidgets::SliderSplineGradientFloat( "Fill##SSG_FILL", &valFill, 0.0f, 1.0f, &gradSSG );
+				}
 			}
 			DW_SsRecord( "SliderSplineGradient", _sy0, ImGui::GetCursorPos().y ); }
 
@@ -6104,14 +6215,17 @@ namespace ImWidgets {
 				static float tempVal = 0.5f;
 				static int   meter   = 40;
 
+				// Previous 3x bump was too large at high DPI; reduced by 2.5x.
+				const float SRG_R  = ImPlatform_LpToPx( 62.0f );
+				const float SRG_TH = ImPlatform_LpToPx( 16.0f );
 				// Full-circle hue (wraps)
-				ImWidgets::SliderGradientRingFloat( "Hue##SRG",  &hueVal,  0.0f, 1.0f, &ringHueGrad,  52.0f, 14.0f );
+				ImWidgets::SliderGradientRingFloat( "Hue##SRG",  &hueVal,  0.0f, 1.0f, &ringHueGrad,  SRG_R, SRG_TH );
 				ImGui::SameLine();
 				// Half-ring temperature arc (π sweep from π)
-				ImWidgets::SliderGradientRingFloat( "Temp##SRG", &tempVal, 0.0f, 1.0f, &ringTempGrad, 52.0f, 14.0f, IM_PI, IM_PI );
+				ImWidgets::SliderGradientRingFloat( "Temp##SRG", &tempVal, 0.0f, 1.0f, &ringTempGrad, SRG_R, SRG_TH, IM_PI, IM_PI );
 				ImGui::SameLine();
 				// 3/4 pie meter (1.5π sweep from 0.75π)
-				ImWidgets::SliderGradientRingInt(   "Meter##SRG", &meter,  0,    100,  &ringTempGrad, 52.0f, 14.0f, 0.75f * IM_PI, 1.5f * IM_PI );
+				ImWidgets::SliderGradientRingInt(   "Meter##SRG", &meter,  0,    100,  &ringTempGrad, SRG_R, SRG_TH, 0.75f * IM_PI, 1.5f * IM_PI );
 			}
 			DW_SsRecord( "SliderRing_Gradient", _sy0, ImGui::GetCursorPos().y ); }
 
@@ -6321,7 +6435,9 @@ namespace ImWidgets {
 				viewerState.PixelFormat = ImPlatform_PixelFormat_RGBA8;
 
 				ImGui::Text( "Scroll: zoom  |  Left-drag: pan  |  Dbl-click: reset  |  Right-click: inspect" );
+				ImGui::BeginChild( "##iv_75", ImVec2( ImGui::GetContentRegionAvail().x * 0.75f, 0 ), ImGuiChildFlags_AutoResizeY );
 				ImWidgets::ImageViewer( "##Viewer", viewerTexes[ viewerIdx ], viewerSizes[ viewerIdx ], viewerState );
+				ImGui::EndChild();
 
 			}
 			DW_SsRecord( "Image_Viewer", _sy0, ImGui::GetCursorPos().y ); }
@@ -6594,7 +6710,9 @@ namespace ImWidgets {
 				}
 
 				ImGui::Text( "Scroll: zoom  |  Left-drag: pan  |  Dbl-click: reset  |  Right-click: inspect" );
+				ImGui::BeginChild( "##ii_75", ImVec2( ImGui::GetContentRegionAvail().x * 0.75f, 0 ), ImGuiChildFlags_AutoResizeY );
 				ImWidgets::ImageInspector( "##Inspector", buf, inspectorState );
+				ImGui::EndChild();
 			}
 			DW_SsRecord( "Image_Inspector", _sy0, ImGui::GetCursorPos().y ); }
 
@@ -6644,7 +6762,7 @@ namespace ImWidgets {
 				ImGui::Combo( "Format##paint", &activePaint, "Binary Mask (R8)\0Grayscale (R8)\0Color (RGBA8)\0Color (RGBA32F)\0" );
 				ImPaintCanvasData& pc = canvases[ activePaint ];
 
-				PaintCanvas( "##PaintMain", &pc, ImVec2( 192, 0 ) );
+				PaintCanvas( "##PaintMain", &pc, ImPlatform_LpToPx( ImVec2( 480, 0 ) ) );
 
 				// Brush controls
 				if ( ImGui::RadioButton( "Brush##pc", pc.Tool == ImPaintTool_Brush ) ) pc.Tool = ImPaintTool_Brush;
@@ -7191,24 +7309,20 @@ namespace ImWidgets {
 				static float primContrast = 0.0f, primPivot = 0.5f;
 				static float primSaturation = 50.0f, primHue = 0.0f;
 
-				float ctrlW = ImGui::GetContentRegionAvail().x * 0.5f - ImGui::GetStyle().ItemSpacing.x;
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Temp", &primTemp, -100.0f, 100.0f, "%.1f" );
+				// Narrower sliders (~180 lp) so label + widget pairs don't consume
+				// the full row width. Drops from 0.5× avail → 4 sliders per row.
+				float ctrlW = ImPlatform_LpToPx( 180.0f );
+				ImGui::SetNextItemWidth( ctrlW ); ImGui::SliderFloat( "Temp", &primTemp, -100.0f, 100.0f, "%.1f" );
 				ImGui::SameLine();
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Tint", &primTint, -100.0f, 100.0f, "%.1f" );
+				ImGui::SetNextItemWidth( ctrlW ); ImGui::SliderFloat( "Tint", &primTint, -100.0f, 100.0f, "%.1f" );
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ctrlW ); ImGui::SliderFloat( "Contrast", &primContrast, -100.0f, 100.0f, "%.1f" );
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ctrlW ); ImGui::SliderFloat( "Pivot", &primPivot, 0.0f, 1.0f, "%.2f" );
 
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Contrast", &primContrast, -100.0f, 100.0f, "%.1f" );
+				ImGui::SetNextItemWidth( ctrlW ); ImGui::SliderFloat( "Saturation", &primSaturation, 0.0f, 100.0f, "%.1f" );
 				ImGui::SameLine();
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Pivot", &primPivot, 0.0f, 1.0f, "%.2f" );
-
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Saturation", &primSaturation, 0.0f, 100.0f, "%.1f" );
-				ImGui::SameLine();
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Hue", &primHue, -180.0f, 180.0f, "%.1f" );
+				ImGui::SetNextItemWidth( ctrlW ); ImGui::SliderFloat( "Hue", &primHue, -180.0f, 180.0f, "%.1f" );
 			}
 			DW_SsRecord( "Primaries_Wheels", _sy0, ImGui::GetCursorPos().y ); }
 
@@ -7275,24 +7389,18 @@ namespace ImWidgets {
 				static float hdrMidDetail = 0.0f;
 				static float hdrBlackOffset = 0.0f;
 
-				float ctrlW = ImGui::GetContentRegionAvail().x * 0.5f - ImGui::GetStyle().ItemSpacing.x;
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Temp##HDR", &hdrTemp, -100.0f, 100.0f, "%.1f" );
+				float ctrlW = ImPlatform_LpToPx( 180.0f );
+				ImGui::SetNextItemWidth( ctrlW ); ImGui::SliderFloat( "Temp##HDR", &hdrTemp, -100.0f, 100.0f, "%.1f" );
 				ImGui::SameLine();
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Tint##HDR", &hdrTint, -100.0f, 100.0f, "%.1f" );
+				ImGui::SetNextItemWidth( ctrlW ); ImGui::SliderFloat( "Tint##HDR", &hdrTint, -100.0f, 100.0f, "%.1f" );
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ctrlW ); ImGui::SliderFloat( "Contrast##HDR", &hdrContrast, -100.0f, 100.0f, "%.1f" );
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ctrlW ); ImGui::SliderFloat( "Pivot##HDR", &hdrPivot, 0.0f, 1.0f, "%.2f" );
 
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Contrast##HDR", &hdrContrast, -100.0f, 100.0f, "%.1f" );
+				ImGui::SetNextItemWidth( ctrlW ); ImGui::SliderFloat( "Mid Detail##HDR", &hdrMidDetail, -100.0f, 100.0f, "%.1f" );
 				ImGui::SameLine();
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Pivot##HDR", &hdrPivot, 0.0f, 1.0f, "%.2f" );
-
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Mid Detail##HDR", &hdrMidDetail, -100.0f, 100.0f, "%.1f" );
-				ImGui::SameLine();
-				ImGui::SetNextItemWidth( ctrlW );
-				ImGui::SliderFloat( "Black Offset##HDR", &hdrBlackOffset, -1.0f, 1.0f, "%.3f" );
+				ImGui::SetNextItemWidth( ctrlW ); ImGui::SliderFloat( "Black Offset##HDR", &hdrBlackOffset, -1.0f, 1.0f, "%.3f" );
 			}
 			DW_SsRecord( "HDR_Wheels", _sy0, ImGui::GetCursorPos().y ); }
 
@@ -7338,6 +7446,23 @@ namespace ImWidgets {
 					ccData[ ImColorCurveMode_HueVsSat ].AddKey( 0.42f, 1.0f );
 					ccInit = true;
 				}
+				// Helper: "Add default keys" — places one key per primary at the
+				// 6 canonical hue stops (R Y G C B M) at neutral. Red gets a
+				// single key at 0.0 (the curve wraps; a duplicate at 1.0 is
+				// redundant). Returns true if the curve was modified.
+				auto AddDefaultHueKeys = []( ImColorCurveData& d, ImColorCurveMode m ) -> bool
+				{
+					float neutral = 0.0f;
+					if ( m == ImColorCurveMode_HueVsSat ) neutral = 1.0f;
+					else if ( m == ImColorCurveMode_HueVsHue ) neutral = 0.0f;
+					else if ( m == ImColorCurveMode_HueVsLum ) neutral = 0.0f;
+					d.Keys.clear();
+					d.SelectedIdx = -1;
+					const float stops[] = { 0.0f, 1.0f / 6.0f, 2.0f / 6.0f, 0.5f, 4.0f / 6.0f, 5.0f / 6.0f };
+					for ( int i = 0; i < IM_ARRAYSIZE( stops ); ++i )
+						d.AddKey( stops[ i ], neutral );
+					return true;
+				};
 			{ float _sy0 = ImGui::GetCursorPos().y;
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Hue vs Hue" ) )
@@ -7345,8 +7470,10 @@ namespace ImWidgets {
 				ImGui::Checkbox( "Histogram##CC", &ccShowHistogram );
 				ImGui::SameLine();
 				ImGui::Checkbox( "Advanced Segments##CC", &ccAdvancedSegments );
-				ImHistogramData const* histPtr = ( ccShowHistogram && ccHistData.BinCount > 0 ) ? &ccHistData : NULL;
 				ImColorCurveData& curData = ccData[ ImColorCurveMode_HueVsHue ];
+				ImGui::SameLine();
+				if ( ImGui::Button( "Add default keys##CC_HH" ) ) AddDefaultHueKeys( curData, ImColorCurveMode_HueVsHue );
+				ImHistogramData const* histPtr = ( ccShowHistogram && ccHistData.BinCount > 0 ) ? &ccHistData : NULL;
 				ColorCurve( "##CC_HH", &curData, ImColorCurveMode_HueVsHue, histPtr, ccAdvancedSegments, ImVec2( 0, 150 ) );
 				if ( curData.SelectedIdx >= 0 && curData.SelectedIdx < curData.Keys.Size )
 				{
@@ -7371,8 +7498,10 @@ namespace ImWidgets {
 				ImGui::Checkbox( "Histogram##CC", &ccShowHistogram );
 				ImGui::SameLine();
 				ImGui::Checkbox( "Advanced Segments##CC", &ccAdvancedSegments );
-				ImHistogramData const* histPtr = ( ccShowHistogram && ccHistData.BinCount > 0 ) ? &ccHistData : NULL;
 				ImColorCurveData& curData = ccData[ ImColorCurveMode_HueVsSat ];
+				ImGui::SameLine();
+				if ( ImGui::Button( "Add default keys##CC_HS" ) ) AddDefaultHueKeys( curData, ImColorCurveMode_HueVsSat );
+				ImHistogramData const* histPtr = ( ccShowHistogram && ccHistData.BinCount > 0 ) ? &ccHistData : NULL;
 				ColorCurve( "##CC_HS", &curData, ImColorCurveMode_HueVsSat, histPtr, ccAdvancedSegments, ImVec2( 0, 150 ) );
 				if ( curData.SelectedIdx >= 0 && curData.SelectedIdx < curData.Keys.Size )
 				{
@@ -7397,8 +7526,10 @@ namespace ImWidgets {
 				ImGui::Checkbox( "Histogram##CC", &ccShowHistogram );
 				ImGui::SameLine();
 				ImGui::Checkbox( "Advanced Segments##CC", &ccAdvancedSegments );
-				ImHistogramData const* histPtr = ( ccShowHistogram && ccHistData.BinCount > 0 ) ? &ccHistData : NULL;
 				ImColorCurveData& curData = ccData[ ImColorCurveMode_HueVsLum ];
+				ImGui::SameLine();
+				if ( ImGui::Button( "Add default keys##CC_HL" ) ) AddDefaultHueKeys( curData, ImColorCurveMode_HueVsLum );
+				ImHistogramData const* histPtr = ( ccShowHistogram && ccHistData.BinCount > 0 ) ? &ccHistData : NULL;
 				ColorCurve( "##CC_HL", &curData, ImColorCurveMode_HueVsLum, histPtr, ccAdvancedSegments, ImVec2( 0, 150 ) );
 				if ( curData.SelectedIdx >= 0 && curData.SelectedIdx < curData.Keys.Size )
 				{
@@ -7631,7 +7762,7 @@ namespace ImWidgets {
 					else if ( paradeSource == 6 ) { thumbTex = astro_img;         thumbSize = astro_size; }
 					if ( thumbTex != ImTextureID_Invalid && thumbSize.x > 0.0f )
 					{
-						float thumbH = 120.0f;
+						float thumbH = ImPlatform_LpToPx( 240.0f );
 						float thumbW = thumbH * thumbSize.x / thumbSize.y;
 						ImGui::Image( thumbTex, ImVec2( thumbW, thumbH ) );
 					}
@@ -7797,7 +7928,7 @@ namespace ImWidgets {
 					else if ( vectorSource == 6 ) { thumbTex = astro_img;         thumbSize = astro_size; }
 					if ( thumbTex != ImTextureID_Invalid && thumbSize.x > 0.0f )
 					{
-						float thumbH = 240.0f;
+						float thumbH = ImPlatform_LpToPx( 240.0f );
 						float thumbW = thumbH * thumbSize.x / thumbSize.y;
 						ImGui::Image( thumbTex, ImVec2( thumbW, thumbH ) );
 					}
@@ -7966,7 +8097,7 @@ namespace ImWidgets {
 					else if ( histSource == 6 ) { thumbTex = astro_img;         thumbSize = astro_size; }
 					if ( thumbTex != ImTextureID_Invalid && thumbSize.x > 0.0f )
 					{
-						float thumbH = 120.0f;
+						float thumbH = ImPlatform_LpToPx( 240.0f );
 						float thumbW = thumbH * thumbSize.x / thumbSize.y;
 						ImGui::Image( thumbTex, ImVec2( thumbW, thumbH ) );
 					}
@@ -8138,7 +8269,7 @@ namespace ImWidgets {
 					else if ( cieSource == 6 ) { thumbTex = astro_img;         thumbSize = astro_size; }
 					if ( thumbTex != ImTextureID_Invalid && thumbSize.x > 0.0f )
 					{
-						float thumbH = 120.0f;
+						float thumbH = ImPlatform_LpToPx( 240.0f );
 						float thumbW = thumbH * thumbSize.x / thumbSize.y;
 						ImGui::Image( thumbTex, ImVec2( thumbW, thumbH ) );
 					}
@@ -8330,7 +8461,7 @@ namespace ImWidgets {
 					else if ( tcSource == 6 ) { thumbTex = astro_img;         thumbSize = astro_size; }
 					if ( thumbTex != ImTextureID_Invalid && thumbSize.x > 0.0f )
 					{
-						float thumbH = 120.0f;
+						float thumbH = ImPlatform_LpToPx( 240.0f );
 						float thumbW = thumbH * thumbSize.x / thumbSize.y;
 						ImGui::Image( thumbTex, ImVec2( thumbW, thumbH ) );
 					}
@@ -8514,7 +8645,7 @@ namespace ImWidgets {
 					else if ( warperSource == 6 ) { thumbTex = astro_img;         thumbSize = astro_size; }
 					if ( thumbTex != ImTextureID_Invalid && thumbSize.x > 0.0f )
 					{
-						float thumbH = 120.0f;
+						float thumbH = ImPlatform_LpToPx( 240.0f );
 						float thumbW = thumbH * thumbSize.x / thumbSize.y;
 						ImGui::Image( thumbTex, ImVec2( thumbW, thumbH ) );
 					}
@@ -8611,7 +8742,7 @@ namespace ImWidgets {
 			{
 				static int patt = (int)ImWidgetsHatchPattern_Cross;
 				static float spacing = 10.0f, angle_deg = 0.0f, thickness = 1.0f;
-				const char* patt_names[] = { "Parallel", "Cross", "Diagonal", "DiagonalCross", "Dots", "ConcentricRings" };
+				const char* patt_names[] = { "Parallel", "Cross", "Diagonal", "DiagonalCross", "Dots", "ConcentricRings", "BenDay", "Screentone" };
 				ImGui::Combo( "Pattern", &patt, patt_names, IM_ARRAYSIZE( patt_names ) );
 				ImGui::SliderFloat( "Spacing", &spacing, 2.0f, 40.0f );
 				ImGui::SliderFloat( "Angle (deg)", &angle_deg, -180.0f, 180.0f );
@@ -8697,31 +8828,65 @@ namespace ImWidgets {
 			{
 				static float rx = 80, ry = 60, nx = 4, ny = 4;
 				static int sides = 64;
+				static bool show_fill = true;
+				static bool show_edges = true;
+				static bool show_verts = false;
+				static bool show_tris = false;
+				static int focus_tri = -1;
+				static int tess_iter = 0;
 				ImGui::SliderFloat( "rx", &rx, 10, 120 );
 				ImGui::SliderFloat( "ry", &ry, 10, 120 );
 				ImGui::SliderFloat( "nx", &nx, 0.5f, 10.0f );
 				ImGui::SliderFloat( "ny", &ny, 0.5f, 10.0f );
 				ImGui::SliderInt( "sides", &sides, 16, 256 );
+				ImGui::SliderInt( "Tessellation iterations", &tess_iter, 0, 4 );
+				ImGui::Checkbox( "Fill", &show_fill ); ImGui::SameLine();
+				ImGui::Checkbox( "Edges", &show_edges ); ImGui::SameLine();
+				ImGui::Checkbox( "Vertices", &show_verts ); ImGui::SameLine();
+				ImGui::Checkbox( "Highlight triangle", &show_tris );
+				if ( show_tris )
+				{
+					int max_tri = 0; // computed after GenShape below
+					ImGui::SliderInt( "Triangle index", &focus_tri, -1, 1024 );
+					IM_UNUSED( max_tri );
+				}
 				ImWidgetsShape sh;
 				ImVec2 se_sz = ImPlatform_LpToPx( ImVec2( 360, 300 ) );
 				ImWidgets::GenShapeSuperellipse( sh, ImVec2( se_sz.x * 0.5f, se_sz.y * 0.5f ),
 					ImPlatform_LpToPx( rx ), ImPlatform_LpToPx( ry ), nx, ny, sides );
+				for ( int k = 0; k < tess_iter; ++k ) ImWidgets::ShapeTesselationUniform( sh );
 				ImDrawList* dl = ImGui::GetWindowDrawList();
 				ImVec2 o = ImGui::GetCursorScreenPos();
 				ImGui::Dummy( se_sz );
-				for ( int i = 0; i < sh.triangles.Size; ++i )
+				// Translate shape into canvas.
+				ImWidgetsShape shd = sh;
+				for ( int i = 0; i < shd.vertices.Size; ++i )
 				{
-					const ImWidgetsTriIdx& t = sh.triangles[i];
-					ImVec2 a( o.x + sh.vertices[t.a].pos.x, o.y + sh.vertices[t.a].pos.y );
-					ImVec2 b( o.x + sh.vertices[t.b].pos.x, o.y + sh.vertices[t.b].pos.y );
-					ImVec2 c( o.x + sh.vertices[t.c].pos.x, o.y + sh.vertices[t.c].pos.y );
-					dl->AddTriangleFilled( a, b, c, IM_COL32( 200, 150, 255, 200 ) );
+					shd.vertices[i].pos.x += o.x;
+					shd.vertices[i].pos.y += o.y;
 				}
+				if ( show_fill )
+					ImWidgets::DrawShape( dl, shd );
+				// NOTE: DrawShapeDebug re-fills the triangles with the shape's
+				// own per-vertex colors. That is intentional (it matches the
+				// Draw Shape / ImageShape demos), so with SuperEllipse's opaque
+				// white vertex colors the shape looks filled even with Fill off
+				// when any debug overlay is on. Acceptable.
+				if ( show_edges || show_verts || show_tris )
+					ImWidgets::DrawShapeDebug( dl, shd,
+						ImPlatform_LpToPx( show_edges ? 1.5f : 0.0f ),
+						IM_COL32( 255, 180, 80, 220 ),
+						show_tris ? IM_COL32( 120, 220, 255, 160 ) : 0u,
+						ImPlatform_LpToPx( show_verts ? 3.0f : 0.0f ),
+						IM_COL32( 255, 255, 255, 255 ),
+						show_tris ? focus_tri : -1 );
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Coons Patch" ) )
+			if ( ImGui::TreeNode( "Coons / Gregory Patch" ) )
 			{
+				static int patch_kind = 0; // 0 = Coons, 1 = Gregory
+				ImGui::Combo( "Patch type", &patch_kind, "Coons (4 cubic boundaries)\0Gregory (20 control points)\0" );
 				static ImCoonsPatch P;
 				static bool init = false;
 				if ( !init )
@@ -8761,12 +8926,46 @@ namespace ImWidgets {
 					Pd.left[i].x   = origin2.x + P.left[i].x   * dpi; Pd.left[i].y   = origin2.y + P.left[i].y   * dpi;
 					Pd.right[i].x  = origin2.x + P.right[i].x  * dpi; Pd.right[i].y  = origin2.y + P.right[i].y  * dpi;
 				}
-				ImWidgets::DrawCoonsPatchGradient( dl, Pd,
-					IM_COL32( 255, 80, 80, 255 ), IM_COL32( 80, 255, 80, 255 ),
-					IM_COL32( 80, 80, 255, 255 ), IM_COL32( 255, 255, 80, 255 ),
-					resU, resV );
-				ImWidgets::DrawCoonsPatchWireframe( dl, Pd, IM_COL32( 255, 255, 255, 100 ),
-					ImPlatform_LpToPx( 1.0f ), resU, resV );
+				if ( patch_kind == 0 )
+				{
+					ImWidgets::DrawCoonsPatchGradient( dl, Pd,
+						IM_COL32( 255, 80, 80, 255 ), IM_COL32( 80, 255, 80, 255 ),
+						IM_COL32( 80, 80, 255, 255 ), IM_COL32( 255, 255, 80, 255 ),
+						resU, resV );
+					ImWidgets::DrawCoonsPatchWireframe( dl, Pd, IM_COL32( 255, 255, 255, 100 ),
+						ImPlatform_LpToPx( 1.0f ), resU, resV );
+				}
+				else
+				{
+					// Build a Gregory patch from the Coons boundary: corner, two edge CPs
+					// per edge, and two twist CPs per corner (20 total). Seed twists from
+					// the nearest interior boundary tangent for a smooth default.
+					ImGregoryPatch G;
+					// Corners
+					G.cp[0] = Pd.bottom[0]; G.cp[1] = Pd.bottom[3];
+					G.cp[2] = Pd.top[3];    G.cp[3] = Pd.top[0];
+					// Bottom edge tangent CPs (2)
+					G.cp[4] = Pd.bottom[1]; G.cp[5] = Pd.bottom[2];
+					// Right edge (v dir, u=1)
+					G.cp[6] = Pd.right[1];  G.cp[7] = Pd.right[2];
+					// Top edge (u dir, v=1, reversed direction)
+					G.cp[8] = Pd.top[2];    G.cp[9] = Pd.top[1];
+					// Left edge (v dir, u=0)
+					G.cp[10] = Pd.left[2];  G.cp[11] = Pd.left[1];
+					// Twist CPs — two per corner. Use the average of adjacent edge CPs.
+					auto twist = [&](int a, int b, int c) {
+						return ImVec2((G.cp[a].x + G.cp[b].x + G.cp[c].x) / 3.0f,
+						              (G.cp[a].y + G.cp[b].y + G.cp[c].y) / 3.0f);
+					};
+					G.cp[12] = twist(0, 4, 11); G.cp[13] = twist(0, 11, 4);
+					G.cp[14] = twist(1, 5, 6);  G.cp[15] = twist(1, 6, 5);
+					G.cp[16] = twist(2, 7, 8);  G.cp[17] = twist(2, 8, 7);
+					G.cp[18] = twist(3, 9, 10); G.cp[19] = twist(3, 10, 9);
+					ImWidgets::DrawGregoryPatchGradient( dl, G,
+						IM_COL32( 255, 80, 80, 255 ), IM_COL32( 80, 255, 80, 255 ),
+						IM_COL32( 80, 80, 255, 255 ), IM_COL32( 255, 255, 80, 255 ),
+						resU, resV );
+				}
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
@@ -8799,11 +8998,6 @@ namespace ImWidgets {
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Interactions" ) )
 			{
-				static float angle = 0.2f;
-				ImWidgets::SliderRingFloatEx( "Angle (wrap+delta)", &angle, -IM_PI, IM_PI,
-					-IM_PI, IM_PI, 0.0f, "%.2f",
-					ImWidgetsSliderFlags_AngleWrap | ImWidgetsSliderFlags_ShowDelta );
-
 				ImGui::Text( "Proportional multi-drag group (drag any bar, neighbors follow):" );
 				static float sliders[12] = { 0.3f, 0.35f, 0.4f, 0.45f, 0.5f, 0.5f, 0.5f, 0.45f, 0.4f, 0.35f, 0.3f, 0.25f };
 				static float pm_radius = 3.0f;
@@ -8856,80 +9050,117 @@ namespace ImWidgets {
 					"Right-click: finish path open. Middle-drag / Shift+drag: pan. "
 					"Wheel: zoom. Delete: remove selected anchor." );
 				static ImVectorDrawingData vdt;
-				// Per-path style controls (for selected or most-recently-active path).
+				// Default style bucket — edits here seed new paths when you start drawing,
+				// and edit the current path once one exists. This means the Style/Color/
+				// Thickness controls are always visible instead of appearing only after
+				// the first click.
+				static ImVectorDrawingPath s_next_path_defaults;
 				int pi = vdt.SelectedPath >= 0 ? vdt.SelectedPath
 					   : (vdt.ActivePath >= 0 ? vdt.ActivePath : (vdt.Paths.Size - 1));
-				if ( pi >= 0 && pi < vdt.Paths.Size )
+				ImVectorDrawingPath& p = ( pi >= 0 && pi < vdt.Paths.Size )
+					? vdt.Paths[pi]
+					: s_next_path_defaults;
+				const char* style_names[] = { "Polyline", "PolylineAA", "StrokedBezier",
+					"StrokedDashedBezier", "DashedPolyline" };
+				int s = (int)p.Style;
+				if ( ImGui::Combo( "Style", &s, style_names, IM_ARRAYSIZE( style_names ) ) )
+					p.Style = (ImVectorDrawingStyle)s;
+				ImGui::SliderFloat( "Thickness", &p.Thickness, 0.5f, 16.0f );
+				ImVec4 col = ImGui::ColorConvertU32ToFloat4( p.Color );
+				if ( ImGui::ColorEdit4( "Color", &col.x, ImGuiColorEditFlags_NoInputs ) )
+					p.Color = ImGui::ColorConvertFloat4ToU32( col );
+				if ( p.Style == ImVectorDrawingStyle_StrokedDashedBezier
+					|| p.Style == ImVectorDrawingStyle_DashedPolyline )
 				{
-					ImVectorDrawingPath& p = vdt.Paths[pi];
-					const char* style_names[] = { "Polyline", "PolylineAA", "StrokedBezier",
-						"StrokedDashedBezier", "DashedPolyline" };
-					int s = (int)p.Style;
-					if ( ImGui::Combo( "Style", &s, style_names, IM_ARRAYSIZE( style_names ) ) )
-						p.Style = (ImVectorDrawingStyle)s;
-					ImGui::SliderFloat( "Thickness", &p.Thickness, 0.5f, 16.0f );
-					ImVec4 col = ImGui::ColorConvertU32ToFloat4( p.Color );
-					if ( ImGui::ColorEdit4( "Color", &col.x, ImGuiColorEditFlags_NoInputs ) )
-						p.Color = ImGui::ColorConvertFloat4ToU32( col );
-					if ( p.Style == ImVectorDrawingStyle_StrokedDashedBezier
-						|| p.Style == ImVectorDrawingStyle_DashedPolyline )
-					{
-						ImGui::SliderFloat( "Dash", &p.DashLen, 1.0f, 40.0f );
-						ImGui::SliderFloat( "Gap",  &p.GapLen,  1.0f, 40.0f );
-					}
-					ImGui::Checkbox( "Closed", &p.Closed );
+					ImGui::SliderFloat( "Dash", &p.DashLen, 1.0f, 40.0f );
+					ImGui::SliderFloat( "Gap",  &p.GapLen,  1.0f, 40.0f );
 				}
+				ImGui::Checkbox( "Closed", &p.Closed );
+				// Seed new paths created by the user with the defaults currently shown.
+				int prev_path_count = vdt.Paths.Size;
 				if ( ImGui::Button( "Clear All" ) ) { vdt.Paths.clear(); vdt.ActivePath = -1; vdt.SelectedPath = -1; }
 				ImGui::SameLine();
 				if ( ImGui::Button( "Reset View" ) ) { vdt.PanOffset = ImVec2( 0, 0 ); vdt.Zoom = 1.0f; }
 				ImWidgets::VectorDrawingTool( "vdt", vdt, ImPlatform_LpToPx( ImVec2( 0, 380 ) ) );
+				// If a new path was just created, copy the currently-shown defaults into it.
+				if ( vdt.Paths.Size > prev_path_count && prev_path_count >= 0 )
+				{
+					ImVectorDrawingPath& np = vdt.Paths.back();
+					np.Style     = s_next_path_defaults.Style;
+					np.Thickness = s_next_path_defaults.Thickness;
+					np.Color     = s_next_path_defaults.Color;
+					np.DashLen   = s_next_path_defaults.DashLen;
+					np.GapLen    = s_next_path_defaults.GapLen;
+					np.Closed    = s_next_path_defaults.Closed;
+				}
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Widgets" ) )
 			{
-				ImGui::Text( "ADSR envelope editor (scaling helpers: ImPlatform_LpToPx active):" );
-				ImGui::SameLine();
-				ImGui::TextDisabled( "(?)" );
-				if ( ImGui::IsItemHovered() )
+				ImGui::Text( "Envelope editor (multi-stage time-varying parameter):" );
+				static ImEnvelopeData env;
+				static bool env_init = false;
+				if ( !env_init )
 				{
-					ImGui::BeginTooltip();
-					ImGui::TextUnformatted(
-						"ADSR = Attack, Decay, Sustain, Release.\n"
-						"Standard shape used in audio synthesis for a note's amplitude over time:\n"
-						"  - Attack:  time from key-down to peak (value 1).\n"
-						"  - Decay:   time from peak down to the sustain level.\n"
-						"  - Sustain: held level while key is held (a level, not a time).\n"
-						"  - Release: time from sustain down to 0 after key-up.\n"
-						"Also applies to filter cutoff, pan, any time-varying parameter." );
-					ImGui::EndTooltip();
+					env_init = true;
+					env.Stages.clear();
+					env.Stages.push_back( ImEnvelopeStage( 0.2f, 1.0f, 0.0f ) );
+					env.Stages.push_back( ImEnvelopeStage( 0.4f, 0.6f, 0.0f ) );
+					env.Stages.push_back( ImEnvelopeStage( 0.4f, 0.0f, 0.0f ) );
 				}
-				static float Aa = 0.08f, Dd = 0.12f, Ss = 0.6f, Rr = 0.25f;
-				ImWidgets::ADSREditor( "adsr", &Aa, &Dd, &Ss, &Rr, ImPlatform_LpToPx( ImVec2( 0, 140 ) ) );
-				ImGui::Text( "A=%.2f  D=%.2f  S=%.2f  R=%.2f", (double)Aa, (double)Dd, (double)Ss, (double)Rr );
+				ImWidgets::EnvelopeEditor( "env", env, ImPlatform_LpToPx( ImVec2( 0, 160 ) ) );
 
 				ImGui::Separator();
 				ImGui::Text( "Font inspector:" );
 				static int fi_mode = 0;
 				const char* modes[] = { "Grid", "Metrics", "Curves", "Kerning" };
 				ImGui::Combo( "Mode", &fi_mode, modes, IM_ARRAYSIZE( modes ) );
-				ImWidgets::FontInspector( "font_ins", ImGui::GetFont(),
-					(ImFontInspectorMode)fi_mode, ImPlatform_LpToPx( 48.0f ), ImPlatform_LpToPx( ImVec2( 0, 260 ) ) );
+				// Curated picker — same font set as the other demos; includes the default.
+				struct FiFont { const char* name; ImFont* font; };
+				FiFont fi_list[] = {
+					{ "(default)",       ImGui::GetFont() },
+					{ "Fira Code",       g_firaCodeFont },
+					{ "Monblock",        g_monblockFont },
+					{ "Cinzel",          g_cinzelFont },
+					{ "Alfa Slab",       g_alfaSlabFont },
+					{ "Classical",       g_classicalFont },
+					{ "Foglighten",      g_foglihtenFont },
+					{ "Steelworks",      g_steelworksFont },
+					{ "Trench Slab",     g_trenchSlabFont },
+					{ "Bright March",    g_brightMarchFont },
+					{ "Dotted",          g_dottedFont },
+					{ "Gimbo",           g_gimboFont },
+				};
+				int fi_n = IM_ARRAYSIZE( fi_list );
+				static int fi_sel = 0;
+				if ( fi_sel < 0 || fi_sel >= fi_n || !fi_list[fi_sel].font )
+				{
+					fi_sel = 0;
+					for ( int i = 0; i < fi_n; ++i ) if ( fi_list[i].font ) { fi_sel = i; break; }
+				}
+				if ( ImGui::BeginCombo( "Font##fi", fi_list[fi_sel].name ) )
+				{
+					for ( int i = 0; i < fi_n; ++i )
+					{
+						if ( !fi_list[i].font ) continue;
+						if ( ImGui::Selectable( fi_list[i].name, i == fi_sel ) ) fi_sel = i;
+					}
+					ImGui::EndCombo();
+				}
+				ImWidgets::FontInspector( "font_ins", fi_list[fi_sel].font,
+					(ImFontInspectorMode)fi_mode, ImPlatform_LpToPx( 48.0f ), ImPlatform_LpToPx( ImVec2( 0, 320 ) ) );
 
 				ImGui::Separator();
 				ImGui::Text( "Stepped / Notched:" );
 				static float v = 0.5f;
 				ImWidgets::SliderRingSteppedFloat( "stepped", &v, 0.0f, 1.0f, 5 );
+				// Stepper and Notched on their own rows so the Stepper's ring
+				// has room and the dial's labels aren't cut off by SameLine.
 				static float nv = 0.0f;
 				static float stops[] = { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f };
 				static const char* slabels[] = { "Off", "Low", "Mid", "High", "Max" };
-				ImWidgets::NotchedDial( "dial", &nv, stops, 5, slabels );
-
-				ImGui::Separator();
-				ImGui::Text( "Color-difference visualizer:" );
-				static ImVec4 cA( 0.85f, 0.35f, 0.4f, 1.0f );
-				static ImVec4 cB( 0.82f, 0.32f, 0.45f, 1.0f );
-				ImWidgets::ColorDifferenceVisualizer( "dE", &cA, &cB );
+				ImWidgets::NotchedDial( "dial", &nv, stops, 5, slabels, ImPlatform_LpToPx( ImVec2( 220, 240 ) ) );
 
 				ImGui::Separator();
 				ImGui::Text( "Equation input ($..$ inline, $$..$$ block, multiline):" );
@@ -8958,226 +9189,9 @@ namespace ImWidgets {
 		}
 
 		ApplyOpenAll();
-		if ( ImGui::CollapsingHeader( "Audio (2026-04 batch B+C)" ) )
-		{
-			ImGui::PushID( "_audio_batch" );
-			// Live test signal buffer shared across widgets that need one.
-			static float time_acc = 0.0f;
-			time_acc += ImGui::GetIO().DeltaTime;
-			const int N = 512;
-			static float sig_mono[ 512 ];
-			static float sig_stereo[ 1024 ];
-			static float mags[ 256 ];
-			for ( int i = 0; i < N; ++i )
-			{
-				float t = time_acc + (float)i / 48000.0f;
-				float s = 0.5f * ImSin( 2.0f * IM_PI * 220.0f * t )
-						+ 0.3f * ImSin( 2.0f * IM_PI * 660.0f * t )
-						+ 0.15f * ImSin( 2.0f * IM_PI * 1760.0f * t );
-				sig_mono[ i ] = s;
-				sig_stereo[ 2 * i ] = s * ImCos( time_acc );
-				sig_stereo[ 2 * i + 1 ] = s * ImSin( time_acc );
-			}
-			// Fake spectrum: decaying bins with a moving peak.
-			for ( int i = 0; i < 256; ++i )
-			{
-				float t = (float)i / 255.0f;
-				mags[ i ] = 0.02f + 0.4f * expf( -ImFabs( t - 0.5f + 0.4f * ImSin( time_acc ) ) * 40.0f );
-			}
-
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Parametric EQ" ) )
-			{
-				static ImEQBand bands[ 4 ] = {};
-				static bool init = false;
-				if ( !init )
-				{
-					init = true;
-					bands[ 0 ] = ImEQBand(); bands[ 0 ].freq = 80.0f;    bands[ 0 ].type = ImEQBandType_HighPass; bands[ 0 ].Q = 0.707f;
-					bands[ 1 ] = ImEQBand(); bands[ 1 ].freq = 400.0f;   bands[ 1 ].gain_db = 3.0f;  bands[ 1 ].Q = 1.5f;
-					bands[ 2 ] = ImEQBand(); bands[ 2 ].freq = 3000.0f;  bands[ 2 ].gain_db = -4.0f; bands[ 2 ].Q = 2.0f;
-					bands[ 3 ] = ImEQBand(); bands[ 3 ].freq = 10000.0f; bands[ 3 ].type = ImEQBandType_HighShelf; bands[ 3 ].gain_db = 2.0f;
-				}
-				ImWidgets::ParametricEQEditor( "peq", bands, 4, 48000.0f, 20.0f, 20000.0f, -24.0f, 24.0f, ImPlatform_LpToPx( ImVec2( 0, 220 ) ) );
-				ImGui::TextDisabled( "Drag band; wheel = Q; right-click = type." );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Spectrum Analyzer" ) )
-			{
-				ImWidgets::SpectrumAnalyzer( "spec", mags, 256, 48000.0f, -96.0f, 0.0f, true, ImPlatform_LpToPx( ImVec2( 0, 140 ) ) );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Spectrogram" ) )
-			{
-				static ImSpectrogramData sgram;
-				if ( sgram.FrameCount == 0 )
-				{
-					sgram.FrameCount = 256; sgram.BinCount = 256;
-					sgram.History.resize( sgram.FrameCount * sgram.BinCount );
-					ImWidgets::SpectrogramInitViridis( sgram );
-				}
-				ImWidgets::SpectrogramPush( sgram, mags, 256 );
-				ImWidgets::Spectrogram( "sgram", sgram, 48000.0f, ImPlatform_LpToPx( ImVec2( 0, 160 ) ) );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Audio Vectorscope" ) )
-			{
-				ImWidgets::AudioVectorscope( "vsc", sig_stereo, N, 0.9f, ImPlatform_LpToPx( ImVec2( 220, 220 ) ) );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "LUFS Meter" ) )
-			{
-				static ImLUFSMeter lufs;
-				lufs.momentary_400ms = -18.0f + 6.0f * ImSin( time_acc * 1.3f );
-				lufs.short_term_3s   = -20.0f + 3.0f * ImSin( time_acc * 0.7f );
-				lufs.integrated      = -19.5f;
-				lufs.true_peak_dbtp  = -3.0f + 2.0f * ImSin( time_acc * 2.1f );
-				ImWidgets::LUFSMeter( "lufs", lufs, ImPlatform_LpToPx( ImVec2( 260, 200 ) ) );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Phase Correlation" ) )
-			{
-				float pc = 0.8f * ImSin( time_acc * 0.5f );
-				ImWidgets::PhaseCorrelationMeter( "pc", pc, ImPlatform_LpToPx( ImVec2( 320, 26 ) ) );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Goniometer" ) )
-			{
-				ImWidgets::Goniometer( "gon", sig_stereo, N, 0.9f, ImPlatform_LpToPx( ImVec2( 220, 220 ) ) );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Compressor Curve" ) )
-			{
-				static ImCompressorCurve comp;
-				ImWidgets::CompressorCurveEditor( "comp", &comp, ImPlatform_LpToPx( ImVec2( 0, 220 ) ) );
-				ImGui::TextDisabled( "Drag threshold; wheel = ratio; shift+wheel = knee." );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Oscilloscope" ) )
-			{
-				static ImOscilloscope osc;
-				if ( osc.Ring.Size == 0 ) osc.Ring.resize( 4096 );
-				ImWidgets::OscilloscopePush( osc, sig_mono, N );
-				ImGui::SliderFloat( "Trigger", &osc.TriggerLevel, -1.0f, 1.0f );
-				ImGui::SliderInt( "Edge", &osc.TriggerEdge, 0, 2 );
-				ImGui::SliderFloat( "Time base (s)", &osc.TimeBase_s, 0.001f, 0.1f, "%.4f" );
-				ImWidgets::Oscilloscope( "osc", osc, ImPlatform_LpToPx( ImVec2( 0, 180 ) ) );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Modulated Slider Ring" ) )
-			{
-				static float v = 0.5f;
-				float mod_lo = v - 0.15f + 0.1f * ImSin( time_acc * 2.0f );
-				float mod_hi = v + 0.15f + 0.1f * ImSin( time_acc * 3.0f );
-				ImWidgets::SliderRingModulated( "mod", &v, 0.0f, 1.0f, mod_lo, mod_hi );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Pitch Wheel" ) )
-			{
-				static int root = 0;
-				static unsigned int mask = 0b000010010001u; // C major triad
-				static int pw_mode = 0;
-				const char* names[] = { "Fifths", "Chromatic" };
-				ImGui::Combo( "Mode", &pw_mode, names, IM_ARRAYSIZE( names ) );
-				ImWidgets::PitchWheel( "pw", &root, &mask, (ImPitchWheelMode)pw_mode, ImPlatform_LpToPx( ImVec2( 240, 240 ) ) );
-				ImGui::TextDisabled( "Shift+click = set root.  Click = toggle note." );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Tempo Tap" ) )
-			{
-				static float bpm = 120.0f;
-				ImWidgets::TempoTap( "Tap", &bpm );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Piano Roll" ) )
-			{
-				static ImPianoRollData roll;
-				ImWidgets::PianoRoll( "roll", roll, ImPlatform_LpToPx( ImVec2( 0, 320 ) ) );
-				ImGui::TextDisabled( "Click empty = add note.  Alt+drag = resize.  Delete = remove." );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Step Sequencer" ) )
-			{
-				static ImStepSequencerData ss;
-				static bool init = false;
-				static const char* labels[] = { "Kick", "Snare", "Hat", "Tom" };
-				if ( !init ) { init = true; ss.Resize( 4, 16 ); for ( int i = 0; i < 4; ++i ) ss.TrackLabels.push_back( labels[ i ] ); }
-				int step = ( (int)( time_acc * 4.0f ) ) % 16;
-				ImWidgets::StepSequencer( "ss", ss, step, ImVec2( 0, 0 ) );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Mod Matrix" ) )
-			{
-				static ImModMatrixData mm;
-				static bool init = false;
-				if ( !init )
-				{
-					init = true;
-					mm.Sources.push_back( "LFO1" );   mm.Sources.push_back( "LFO2" );
-					mm.Sources.push_back( "ENV1" );   mm.Sources.push_back( "Vel" );
-					mm.Destinations.push_back( "Cut" ); mm.Destinations.push_back( "Res" );
-					mm.Destinations.push_back( "Pan" ); mm.Destinations.push_back( "Vol" );
-					mm.Destinations.push_back( "Amt" );
-					mm.Resize();
-				}
-				ImWidgets::ModMatrix( "mm", mm, ImVec2( 0, 0 ) );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "LFO Designer" ) )
-			{
-				static ImLFODesignerData lfo;
-				lfo.Phase += ImGui::GetIO().DeltaTime * lfo.Rate_Hz;
-				ImGui::SliderFloat( "Rate", &lfo.Rate_Hz, 0.1f, 8.0f );
-				ImWidgets::LFODesigner( "lfo", lfo, ImPlatform_LpToPx( ImVec2( 0, 180 ) ) );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Mixer Channel Strip" ) )
-			{
-				static ImMixerChannel c;
-				c.name = "Bus A";
-				c.peak_db      = -12.0f + 4.0f * ImSin( time_acc * 3.0f );
-				c.peak_hold_db = ImMax( c.peak_hold_db - 0.05f, c.peak_db );
-				c.send_count = 3;
-				ImWidgets::MixerChannelStrip( "mcs", c, ImPlatform_LpToPx( ImVec2( 80, 280 ) ) );
-				ImGui::TreePop();
-			}
-			ImGui::PopID();
-		}
-
-		ApplyOpenAll();
 		if ( ImGui::CollapsingHeader( "Color Grading / LookDev" ) )
 		{
 			ImGui::PushID( "_color_grade" );
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Lift / Gamma / Gain" ) )
-			{
-				static ImLiftGammaGain lgg;
-				ImWidgets::LiftGammaGainWheels( "lgg", &lgg );
-				ImVec4 test( 0.5f, 0.3f, 0.2f, 1.0f );
-				ImVec4 out = ImWidgets::LiftGammaGainApply( test, lgg );
-				ImGui::Text( "Sample: in (0.50, 0.30, 0.20) -> out (%.3f, %.3f, %.3f)",
-					(double)out.x, (double)out.y, (double)out.z );
-				ImGui::ColorButton( "in",  test, 0, ImPlatform_LpToPx( ImVec2( 60, 30 ) ) );
-				ImGui::SameLine();
-				ImGui::ColorButton( "out", out,  0, ImPlatform_LpToPx( ImVec2( 60, 30 ) ) );
-				ImGui::TreePop();
-			}
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "3D LUT Viewer" ) )
 			{
@@ -9193,31 +9207,149 @@ namespace ImWidgets {
 			if ( ImGui::TreeNode( "LookDev A/B" ) )
 			{
 				ImGui::TextWrapped(
-					"LookDev A/B compare with rotatable divider. "
-					"Demo uses the ImGui font atlas for both sides (sampling two different UV regions)." );
+					"A/B compare with rotatable divider. Pick two images to compare; "
+					"drag the yellow midpoint to slide the divider, blue handle to rotate, "
+					"and A/B button in the top-right corner to swap sides." );
+				static const char* img_names[] = {
+					"Astronaut", "Clock", "Man", "Illustration", "Bike", "Interior"
+				};
+				ImTextureID tex_arr[6] = { astro_img, clock_img, man_img, illlustration_img, bike_img, background };
+				static int idx_a = 0, idx_b = 2;
+				ImGui::SetNextItemWidth( ImPlatform_LpToPx( 160.0f ) );
+				ImGui::Combo( "Left (A)", &idx_a, img_names, IM_ARRAYSIZE( img_names ) );
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ImPlatform_LpToPx( 160.0f ) );
+				ImGui::Combo( "Right (B)", &idx_b, img_names, IM_ARRAYSIZE( img_names ) );
 				static ImLookDevState state;
-				ImTextureID fontTex = ImGui::GetIO().Fonts->TexRef.GetTexID();
-				ImWidgets::LookDevCompare( "ldv", fontTex, fontTex,
-					ImVec2( 0, 0 ),    ImVec2( 0.5f, 1 ),
-					ImVec2( 0.5f, 0 ), ImVec2( 1, 1 ),
-					&state, ImPlatform_LpToPx( ImVec2( 0, 240 ) ) );
-				ImGui::TextDisabled( "Drag yellow handle = slide.  Drag blue = rotate.  A/B button swaps." );
+				ImTextureID texA = tex_arr[idx_a];
+				ImTextureID texB = tex_arr[idx_b];
+				static bool s_ldv_maximized = false;
+				if ( ImGui::Button( "Maximize" ) ) s_ldv_maximized = true;
+				ImGui::SameLine();
+				ImGui::TextDisabled( "Opens a full-size comparison window." );
+				if ( texA != ImTextureID_Invalid && texB != ImTextureID_Invalid )
+				{
+					ImWidgets::LookDevCompare( "ldv", texA, texB,
+						ImVec2( 0, 0 ), ImVec2( 1, 1 ),
+						ImVec2( 0, 0 ), ImVec2( 1, 1 ),
+						&state, ImPlatform_LpToPx( ImVec2( 0, 360 ) ) );
+				}
+				else
+				{
+					ImGui::TextDisabled( "Images not loaded yet." );
+				}
+				if ( s_ldv_maximized && texA != ImTextureID_Invalid && texB != ImTextureID_Invalid )
+				{
+					ImGui::SetNextWindowSize( ImPlatform_LpToPx( ImVec2( 1200, 720 ) ), ImGuiCond_Appearing );
+					if ( ImGui::Begin( "Dear Widgets - LookDev (Maximized)",
+						&s_ldv_maximized, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings ) )
+					{
+						ImWidgets::LookDevCompare( "ldv_max", texA, texB,
+							ImVec2( 0, 0 ), ImVec2( 1, 1 ),
+							ImVec2( 0, 0 ), ImVec2( 1, 1 ),
+							&state, ImGui::GetContentRegionAvail() );
+					}
+					ImGui::End();
+				}
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Color Difference (shader)" ) )
+			{
+				ImGui::TextWrapped( "False-color ΔE map between two images. "
+					"Pick the formula (ΔE76 / ΔE-OK / ΔE94 / ΔE2000) and the color ramp." );
+				static const char* img_names_de[] = {
+					"Astronaut", "Clock", "Man", "Illustration", "Bike", "Interior"
+				};
+				ImTextureID tex_arr_de[6] = { astro_img, clock_img, man_img, illlustration_img, bike_img, background };
+				static int de_a = 0, de_b = 0; // default same image -> identical, dE=0
+				ImGui::SetNextItemWidth( ImPlatform_LpToPx( 160.0f ) );
+				ImGui::Combo( "Image A##de", &de_a, img_names_de, IM_ARRAYSIZE( img_names_de ) );
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ImPlatform_LpToPx( 160.0f ) );
+				ImGui::Combo( "Image B##de", &de_b, img_names_de, IM_ARRAYSIZE( img_names_de ) );
+				static ImWidgets::ImDeltaECompareState de_state;
+				ImTextureID ta = tex_arr_de[de_a];
+				ImTextureID tb = tex_arr_de[de_b];
+				if ( ta != ImTextureID_Invalid && tb != ImTextureID_Invalid )
+				{
+					ImWidgets::ColorDifferenceImageViewer( "de_img", ta, tb, &de_state,
+						ImPlatform_LpToPx( ImVec2( 0, 360 ) ) );
+				}
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "LookDev Inspector (shader)" ) )
+			{
+				ImGui::TextWrapped( "Shader-based A/B compare with per-side exposure, black, white, gamma. "
+					"Requires the lookdev_inspector shader to load successfully." );
+				static const char* img_names_ldi[] = {
+					"Astronaut", "Clock", "Man", "Illustration", "Bike", "Interior"
+				};
+				ImTextureID tex_arr_ldi[6] = { astro_img, clock_img, man_img, illlustration_img, bike_img, background };
+				static int ldi_a = 0, ldi_b = 2;
+				ImGui::SetNextItemWidth( ImPlatform_LpToPx( 160.0f ) );
+				ImGui::Combo( "Left (A)##ldi", &ldi_a, img_names_ldi, IM_ARRAYSIZE( img_names_ldi ) );
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ImPlatform_LpToPx( 160.0f ) );
+				ImGui::Combo( "Right (B)##ldi", &ldi_b, img_names_ldi, IM_ARRAYSIZE( img_names_ldi ) );
+				static ImLookDevInspectorState ldi_state;
+				ImTextureID ta = tex_arr_ldi[ldi_a];
+				ImTextureID tb = tex_arr_ldi[ldi_b];
+				if ( ta != ImTextureID_Invalid && tb != ImTextureID_Invalid )
+				{
+					ImWidgets::LookDevInspector( "ldi", ta, tb, &ldi_state,
+						ImPlatform_LpToPx( ImVec2( 0, 360 ) ) );
+				}
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Volume Slice Viewer" ) )
 			{
 				static ImWidgets::ImVolumeSliceState vsv;
+				static ImWidgets::ImVolumeViewerState vvs;
 				static ImVector<float> voxels;
-				if ( voxels.Size == 0 )
+				static int vol_field = 0;
+				static float vol_seed = 0.0f;
+				const char* field_names[] = { "Sum-of-sines", "Sphere", "Nested Spheres", "Torus", "Gyroid", "Spherical Noise" };
+				auto rebuild_field = [&]()
 				{
 					const int W = 64, H = 64, D = 64;
 					voxels.resize( W * H * D );
-					ImWidgets::VolumeGenerateTestField( voxels.Data, W, H, D, 0.0f );
+					ImWidgets::VolumeGenerateField( voxels.Data, W, H, D,
+						( ImWidgets::ImVolumeField )vol_field, vol_seed );
 					vsv.Voxels = voxels.Data;
 					vsv.Width = W; vsv.Height = H; vsv.Depth = D;
-				}
+					// Invalidate the VolumeViewer's 3D texture cache so it
+					// re-uploads on the next frame with the new voxels.
+					vvs.Tex3DLastVoxels = NULL;
+				};
+				if ( voxels.Size == 0 ) rebuild_field();
+
+				ImGui::SetNextItemWidth( ImPlatform_LpToPx( 200.0f ) );
+				if ( ImGui::Combo( "Field##Vol", &vol_field, field_names, IM_ARRAYSIZE( field_names ) ) ) rebuild_field();
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ImPlatform_LpToPx( 180.0f ) );
+				if ( ImGui::SliderFloat( "Seed##Vol", &vol_seed, 0.0f, 8.0f, "%.2f" ) ) rebuild_field();
+
+				ImGui::BeginChild( "##vsv_50", ImVec2( ImGui::GetContentRegionAvail().x * 0.5f, 0 ), ImGuiChildFlags_AutoResizeY );
 				ImWidgets::VolumeSliceViewer( "vsv", &vsv, ImVec2( 0, 0 ) );
+				ImGui::EndChild();
+
+				ImGui::Separator();
+				ImGui::TextUnformatted( "VolumeViewer (raymarch / MIP / iso-surface + 3-slice layout):" );
+				// Dedicated field/seed picker for the VolumeViewer — shares the
+				// same voxel buffer as the Slice viewer above, so selecting a
+				// field here updates both and triggers a 3D-texture re-upload.
+				ImGui::SetNextItemWidth( ImPlatform_LpToPx( 200.0f ) );
+				if ( ImGui::Combo( "Field##VolVV", &vol_field, field_names, IM_ARRAYSIZE( field_names ) ) ) rebuild_field();
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth( ImPlatform_LpToPx( 180.0f ) );
+				if ( ImGui::SliderFloat( "Seed##VolVV", &vol_seed, 0.0f, 8.0f, "%.2f" ) ) rebuild_field();
+
+				vvs.Voxels = voxels.Data;
+				vvs.Width = vsv.Width; vvs.Height = vsv.Height; vvs.Depth = vsv.Depth;
+				ImWidgets::VolumeViewer( "vv", &vvs );
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
@@ -9238,6 +9370,13 @@ namespace ImWidgets {
 				};
 				ImGui::SliderFloat( "Scale", &scale, 0.25f, 4.0f );
 				ImGui::Checkbox( "Pre-log transform field", &pre_log );
+				static int iso_resX = 80, iso_resY = 48;
+				ImGui::SliderInt( "Base resX", &iso_resX, 8, 256 );
+				ImGui::SliderInt( "Base resY", &iso_resY, 8, 256 );
+				static bool iso_half_pixel = true;
+				static int iso_subdiv = 1;
+				ImGui::Checkbox( "Half-pixel sampling", &iso_half_pixel );
+				ImGui::SliderInt( "Sub-sample (bilinear)", &iso_subdiv, 1, 4 );
 				ImGui::SliderFloat( "Minor spacing", &tiers[0].spacing, 0.5f, 10.0f );
 				ImGui::SliderFloat( "Medium spacing", &tiers[1].spacing, 1.0f, 40.0f );
 				ImGui::SliderFloat( "Major spacing", &tiers[2].spacing, 10.0f, 100.0f );
@@ -9247,13 +9386,13 @@ namespace ImWidgets {
 				ImGui::Dummy( iso_sz2 );
 				dl->AddRect( p, ImVec2( p.x + iso_sz2.x, p.y + iso_sz2.y ), IM_COL32( 255, 255, 255, 100 ) );
 				float ud[1] = { scale };
-				// Scale the *thickness* of each tier; keep spacing as world-value units (not lp).
 				ImIsoContourTier tiers_scaled[ 3 ] = {
 					tiers[0], tiers[1], tiers[2]
 				};
 				for ( int i = 0; i < 3; ++i ) tiers_scaled[i].thickness = ImPlatform_LpToPx( tiers[i].thickness );
-				ImWidgets::DrawIsoContourTiered( dl, p, iso_sz2, 80, 48,
-					Fn::f, ud, tiers_scaled, 3, -FLT_MAX, FLT_MAX, pre_log );
+				ImWidgets::DrawIsoContourTiered( dl, p, iso_sz2, iso_resX, iso_resY,
+					Fn::f, ud, tiers_scaled, 3, -FLT_MAX, FLT_MAX, pre_log,
+					iso_half_pixel, iso_subdiv );
 				ImGui::TreePop();
 			}
 			ImGui::PopID();
