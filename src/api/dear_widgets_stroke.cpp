@@ -4,9 +4,10 @@
 // Reference implementation: https://github.com/linebender/gpu-stroke-expansion-paper
 // CPU: Euler spiral stroke expansion (faithful port from Vello/linebender).
 // GPU: Winding-number pixel shader for zero-overdraw fill.
-// This file is #include'd from dear_widgets.cpp (unity build pattern).
+// Compiled as its own translation unit; resolved by the linker.
 
-#ifdef _DEAR_WIDGETS_STROKE_INCLUDED
+#include "dear_widgets.h"
+#include "imgui_internal.h"
 
 namespace ImWidgets {
 
@@ -742,9 +743,11 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
     if (fwd.Size < 2 || bwd.Size < 2 || (col & IM_COL32_A_MASK) == 0) return;
 
     // --- Lazy-init stroke shader ---
-    if (gs_pContext->strokeShader.program == NULL)
-        CreateInternalShader(&gs_pContext->strokeShader, "stroke", 0, NULL, 0, NULL);
-    ImPlatform_ShaderProgram program = gs_pContext->strokeShader.program;
+    ImWidgetsContext* ctx = GetCurrentContext();
+    if (!ctx) return;
+    if (ctx->strokeShader.program == NULL)
+        CreateInternalShader(&ctx->strokeShader, "stroke", 0, NULL, 0, NULL);
+    ImPlatform_ShaderProgram program = ctx->strokeShader.program;
     if (!program) return; // shader compile failed
 
     // --- Build cap point arrays (same as reference finish()) ---
@@ -913,7 +916,7 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
     dl->AddCallback(DW_PrepareStrokeUniforms, cb);
     ImPlatform_BeginCustomShader(dl, program);
     dl->AddImageQuad(
-        gs_pContext->whiteImg,
+        ctx->whiteImg,
         ImVec2(bx0, by0), ImVec2(bx1, by0), ImVec2(bx1, by1), ImVec2(bx0, by1),
         ImVec2(0, 0), ImVec2(1, 0), ImVec2(1, 1), ImVec2(0, 1),
         IM_COL32(255, 255, 255, 255));
@@ -1280,5 +1283,3 @@ void DrawStrokedDashedPolyline(ImDrawList* drawlist,
 }
 
 } // namespace ImWidgets
-
-#endif // _DEAR_WIDGETS_STROKE_INCLUDED

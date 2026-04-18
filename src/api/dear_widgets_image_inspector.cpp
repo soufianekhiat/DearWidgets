@@ -6,10 +6,10 @@
 // decode + color management. The user's bytes are uploaded once into a
 // packed RGBA32F texture; per-frame CPU cost is uniform updates only.
 //
-// This file is #included from dear_widgets.cpp (unity build) — do NOT
-// compile separately. The guard below makes the file empty when compiled
-// standalone.
-#ifdef _DEAR_WIDGETS_IMAGE_INSPECTOR_INCLUDED
+// Compiled as its own translation unit; resolved by the linker.
+#include "dear_widgets.h"
+#include "dear_widgets_internal.h"
+#include "imgui_internal.h"
 
 namespace ImWidgets {
 
@@ -550,13 +550,14 @@ static void II_DrawShaderQuad( ImDrawList* dl,
                                ImVec2 quadMin, ImVec2 quadMax,
                                ImVec2 pan, float zoom, float fitScale )
 {
-	if ( !gs_pContext || !gs_pContext->imageInspectorShader.program )
+	ImWidgetsContext* ctx = GetCurrentContext();
+	if ( !ctx || !ctx->imageInspectorShader.program )
 		return;
 	if ( state.PackedTexture == ImTextureID_Invalid )
 		return;
 
 	ImageInspectorDrawCallData* call = IM_NEW( ImageInspectorDrawCallData );
-	call->program       = gs_pContext->imageInspectorShader.program;
+	call->program       = ctx->imageInspectorShader.program;
 	call->packedTexture = state.PackedTexture;
 	II_FillParams( call->params, buffer, state,
 	               ImVec2( quadMax.x - quadMin.x, quadMax.y - quadMin.y ),
@@ -616,10 +617,11 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 	}
 
 	// --- Lazy shader init ---
-	if ( gs_pContext->imageInspectorShader.program == NULL )
+	ImWidgetsContext* ctx = GetCurrentContext();
+	if ( ctx && ctx->imageInspectorShader.program == NULL )
 	{
-		CreateInternalShader( &gs_pContext->imageInspectorShader, "image_inspector", 0, NULL, 0, NULL );
-		if ( gs_pContext->imageInspectorShader.program == NULL )
+		CreateInternalShader( &ctx->imageInspectorShader, "image_inspector", 0, NULL, 0, NULL );
+		if ( ctx->imageInspectorShader.program == NULL )
 		{
 			ImDrawList* dl = window->DrawList;
 			dl->AddRectFilled( bb.Min, bb.Max, IM_COL32( 30, 30, 30, 255 ) );
@@ -996,5 +998,3 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 }
 
 }  // namespace ImWidgets
-
-#endif  // _DEAR_WIDGETS_IMAGE_INSPECTOR_INCLUDED

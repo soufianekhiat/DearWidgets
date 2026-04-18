@@ -6960,6 +6960,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImGradientData const* gradient;
 	};
 
+	struct ImWidgetsGradientCutCallbackData
+	{
+		ImGradientData const* gradient;
+		float min;
+		float max;
+	};
+
 	static ImU32 ImWidgetsGradientCallback( float t, void* pUserData )
 	{
 		ImWidgetsGradientCallbackData const* data = ( ImWidgetsGradientCallbackData const* )pUserData;
@@ -6967,7 +6974,23 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return ImGui::GetColorU32( c );
 	}
 
-	bool SliderGradientScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, ImVec2 size )
+	static ImU32 ImWidgetsGradientCutCallback( float t, void* pUserData )
+	{
+		ImWidgetsGradientCutCallbackData const* data = ( ImWidgetsGradientCutCallbackData const* )pUserData;
+		ImVec4 c;
+		if ( t < data->min || t > data->max )
+		{
+			c = ImVec4( 0.0f, 0.0f, 0.0f, 0.0f );
+		}
+		else
+		{
+			c = GradientSample( *data->gradient, t );
+		}
+
+		return ImGui::GetColorU32( c );
+	}
+
+	bool SliderGradientScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, ImVec2 size, bool fill_up_to_cursor )
 	{
 		IM_ASSERT( gradient != NULL );
 
@@ -7017,10 +7040,29 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImVec2 trackSize( w, trackH );
 
 		int resolution = ImMax( 8, ( int )( w / 4.0f ) );
-		ImWidgetsGradientCallbackData gd;
-		gd.gradient = gradient;
-		DrawProceduralColor1DBilinearHorizontal( window->DrawList, &ImWidgetsGradientCallback, &gd,
-			0.0f, 1.0f, trackPos, trackSize, resolution );
+		if ( fill_up_to_cursor )
+		{
+			// Same callback trick as SliderSplineGradientCut: sample the gradient
+			// for t <= cursor, return fully transparent outside → the FrameBg
+			// above shows through past the cursor.
+			float v_min_f = ScalarToFloat( data_type, ( ImU64* )p_min );
+			float v_max_f = ScalarToFloat( data_type, ( ImU64* )p_max );
+			float v_cur_f = ScalarToFloat( data_type, ( ImU64* )p_value );
+			float t = ( v_max_f > v_min_f ) ? ImClamp( ( v_cur_f - v_min_f ) / ( v_max_f - v_min_f ), 0.0f, 1.0f ) : 0.0f;
+			ImWidgetsGradientCutCallbackData gd;
+			gd.gradient = gradient;
+			gd.min = 0.0f;
+			gd.max = t;
+			DrawProceduralColor1DBilinearHorizontal( window->DrawList, &ImWidgetsGradientCutCallback, &gd,
+				0.0f, 1.0f, trackPos, trackSize, resolution );
+		}
+		else
+		{
+			ImWidgetsGradientCallbackData gd;
+			gd.gradient = gradient;
+			DrawProceduralColor1DBilinearHorizontal( window->DrawList, &ImWidgetsGradientCallback, &gd,
+				0.0f, 1.0f, trackPos, trackSize, resolution );
+		}
 
 		// Slider behavior
 		ImRect grab_bb;
@@ -7044,14 +7086,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return value_changed;
 	}
 
-	bool SliderGradientFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, ImVec2 size )
+	bool SliderGradientFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, ImVec2 size, bool fill_up_to_cursor )
 	{
-		return SliderGradientScalar( label, ImGuiDataType_Float, v, &v_min, &v_max, gradient, size );
+		return SliderGradientScalar( label, ImGuiDataType_Float, v, &v_min, &v_max, gradient, size, fill_up_to_cursor );
 	}
 
-	bool SliderGradientInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, ImVec2 size )
+	bool SliderGradientInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, ImVec2 size, bool fill_up_to_cursor )
 	{
-		return SliderGradientScalar( label, ImGuiDataType_S32, v, &v_min, &v_max, gradient, size );
+		return SliderGradientScalar( label, ImGuiDataType_S32, v, &v_min, &v_max, gradient, size, fill_up_to_cursor );
 	}
 
 	static void WriteFloatToScalar( ImGuiDataType dtype, void* p, float v )
@@ -7097,7 +7139,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return local / sweepAngle;
 	}
 
-	static bool SliderRingImpl( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle, bool wrap )
+	static bool SliderRingImpl( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle, bool wrap, bool fill_up_to_cursor )
 	{
 		IM_ASSERT( gradient != NULL );
 		IM_ASSERT( outerRadius > 0.0f && thickness > 0.0f );
@@ -7168,13 +7210,67 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			}
 		}
 
-		// Draw gradient arc
 		ImDrawList* dl = window->DrawList;
-		ImWidgetsGradientCallbackData gd;
-		gd.gradient = gradient;
+
+		// Background ring — use ImGui's FrameBg color so the gradient sits on
+		// the same base ImGui uses for its native sliders (imgui_widgets.cpp
+		// RenderFrame). We fill the annulus by drawing the arc with the full
+		// outer-to-inner width in FrameBg, then overlay the gradient on top.
+		const ImU32 ring_frame_bg = ImGui::GetColorU32(
+			g.ActiveId == id ? ImGuiCol_FrameBgActive
+			: hovered        ? ImGuiCol_FrameBgHovered
+			                 : ImGuiCol_FrameBg );
+		{
+			int bg_division = ImMax( 16, ( int )( sweepAngle * outerRadius / 4.0f ) );
+			float da = sweepAngle / ( float )bg_division;
+			ImVec2 uv = ImGui::GetFontTexUvWhitePixel();
+			dl->PrimReserve( bg_division * 6, bg_division * 4 );
+			float ang = startAngle;
+			for ( int i = 0; i < bg_division; ++i )
+			{
+				float c0 = ImCos( ang ),          s0 = ImSin( ang );
+				float c1 = ImCos( ang + da ),     s1 = ImSin( ang + da );
+				ImVec2 o0 = center + ImVec2( outerRadius * c0, outerRadius * s0 );
+				ImVec2 o1 = center + ImVec2( outerRadius * c1, outerRadius * s1 );
+				ImVec2 i0 = center + ImVec2( innerR      * c0, innerR      * s0 );
+				ImVec2 i1 = center + ImVec2( innerR      * c1, innerR      * s1 );
+				dl->PrimWriteIdx( ( ImDrawIdx )( dl->_VtxCurrentIdx + 0 ) );
+				dl->PrimWriteIdx( ( ImDrawIdx )( dl->_VtxCurrentIdx + 1 ) );
+				dl->PrimWriteIdx( ( ImDrawIdx )( dl->_VtxCurrentIdx + 2 ) );
+				dl->PrimWriteIdx( ( ImDrawIdx )( dl->_VtxCurrentIdx + 0 ) );
+				dl->PrimWriteIdx( ( ImDrawIdx )( dl->_VtxCurrentIdx + 2 ) );
+				dl->PrimWriteIdx( ( ImDrawIdx )( dl->_VtxCurrentIdx + 3 ) );
+				dl->PrimWriteVtx( o0, uv, ring_frame_bg );
+				dl->PrimWriteVtx( o1, uv, ring_frame_bg );
+				dl->PrimWriteVtx( i1, uv, ring_frame_bg );
+				dl->PrimWriteVtx( i0, uv, ring_frame_bg );
+				ang += da;
+			}
+		}
+
+		// Gradient arc on top of the FrameBg. When fill_up_to_cursor is set,
+		// swap the per-vertex callback to the "cut" variant which returns
+		// fully-transparent past the cursor position — the FrameBg underneath
+		// shows through untouched.
 		int division = ImMax( 16, ( int )( sweepAngle * outerRadius / 4.0f ) );
-		DrawProceduralColorArcBilinear( dl, center, innerR, outerRadius, startAngle, sweepAngle,
-			&ImWidgetsGradientCallback, &gd, division, true );
+		if ( fill_up_to_cursor )
+		{
+			float denom = fMax - fMin;
+			float t = ( denom != 0.0f ) ? ImClamp( ( fVal - fMin ) / denom, 0.0f, 1.0f ) : 0.0f;
+			ImWidgetsGradientCutCallbackData gd;
+			gd.gradient = gradient;
+			gd.min = 0.0f;
+			gd.max = t;
+			DrawProceduralColorArcBilinear( dl, center, innerR, outerRadius, startAngle, sweepAngle,
+				&ImWidgetsGradientCutCallback, &gd, division, true );
+		}
+		else
+		{
+			ImWidgetsGradientCallbackData gd;
+			gd.gradient = gradient;
+			DrawProceduralColorArcBilinear( dl, center, innerR, outerRadius, startAngle, sweepAngle,
+				&ImWidgetsGradientCallback, &gd, division, true );
+		}
 
 		// Ring outlines
 		dl->AddCircle( center, outerRadius, ImGui::GetColorU32( ImGuiCol_Border ) );
@@ -7204,35 +7300,35 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 	// Full-circle overload: value wraps. Uses -π/2 start (top) and 2π sweep clockwise.
-	bool SliderGradientRingScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, float outerRadius, float thickness )
+	bool SliderGradientRingScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, float outerRadius, float thickness, bool fill_up_to_cursor )
 	{
-		return SliderRingImpl( label, data_type, p_value, p_min, p_max, gradient, outerRadius, thickness, -0.5f * IM_PI, 2.0f * IM_PI, true );
+		return SliderRingImpl( label, data_type, p_value, p_min, p_max, gradient, outerRadius, thickness, -0.5f * IM_PI, 2.0f * IM_PI, true, fill_up_to_cursor );
 	}
 
-	bool SliderGradientRingFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, float outerRadius, float thickness )
+	bool SliderGradientRingFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, float outerRadius, float thickness, bool fill_up_to_cursor )
 	{
-		return SliderGradientRingScalar( label, ImGuiDataType_Float, v, &v_min, &v_max, gradient, outerRadius, thickness );
+		return SliderGradientRingScalar( label, ImGuiDataType_Float, v, &v_min, &v_max, gradient, outerRadius, thickness, fill_up_to_cursor );
 	}
 
-	bool SliderGradientRingInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, float outerRadius, float thickness )
+	bool SliderGradientRingInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, float outerRadius, float thickness, bool fill_up_to_cursor )
 	{
-		return SliderGradientRingScalar( label, ImGuiDataType_S32, v, &v_min, &v_max, gradient, outerRadius, thickness );
+		return SliderGradientRingScalar( label, ImGuiDataType_S32, v, &v_min, &v_max, gradient, outerRadius, thickness, fill_up_to_cursor );
 	}
 
 	// Arc overload: clamped at arc endpoints.
-	bool SliderGradientRingScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle )
+	bool SliderGradientRingScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle, bool fill_up_to_cursor )
 	{
-		return SliderRingImpl( label, data_type, p_value, p_min, p_max, gradient, outerRadius, thickness, startAngle, sweepAngle, false );
+		return SliderRingImpl( label, data_type, p_value, p_min, p_max, gradient, outerRadius, thickness, startAngle, sweepAngle, false, fill_up_to_cursor );
 	}
 
-	bool SliderGradientRingFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle )
+	bool SliderGradientRingFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle, bool fill_up_to_cursor )
 	{
-		return SliderGradientRingScalar( label, ImGuiDataType_Float, v, &v_min, &v_max, gradient, outerRadius, thickness, startAngle, sweepAngle );
+		return SliderGradientRingScalar( label, ImGuiDataType_Float, v, &v_min, &v_max, gradient, outerRadius, thickness, startAngle, sweepAngle, fill_up_to_cursor );
 	}
 
-	bool SliderGradientRingInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle )
+	bool SliderGradientRingInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle, bool fill_up_to_cursor )
 	{
-		return SliderGradientRingScalar( label, ImGuiDataType_S32, v, &v_min, &v_max, gradient, outerRadius, thickness, startAngle, sweepAngle );
+		return SliderGradientRingScalar( label, ImGuiDataType_S32, v, &v_min, &v_max, gradient, outerRadius, thickness, startAngle, sweepAngle, fill_up_to_cursor );
 	}
 
 	bool SliderNScalar( char const* label, ImGuiDataType data_type, void* ordered_value, int value_count, void* p_min, void* p_max, float cursor_width, bool show_hover_by_region )
@@ -7861,6 +7957,19 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 										   &ImWidgetsGradientCallback, &data, resolution, closed );
 	}
 
+	void DrawSplineGradientCut( ImDrawList* pDrawList, ImGradientData const& gradient, float const min, float const max, const ImVec2* points, int points_count, float thickness, int resolution, bool closed )
+	{
+		if ( resolution < 1 )
+			resolution = 1;
+
+		ImWidgetsGradientCutCallbackData data;
+		data.gradient = &gradient;
+		data.min = min;
+		data.max = max;
+		DrawProceduralColorSplineBilinear( pDrawList, points, points_count, thickness,
+										  &ImWidgetsGradientCutCallback, &data, resolution, closed );
+	}
+
 	// ========================================================================
 	// Expand-to-window infrastructure
 	// ========================================================================
@@ -7869,7 +7978,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	// Draw a small expand button at the top-right corner of a widget.
 	// Returns pointer to the expanded-state bool, or NULL if inside an expanded window.
-	static bool* WidgetExpandButton( ImGuiID widget_id, ImRect const& bb )
+	bool* WidgetExpandButton( ImGuiID widget_id, ImRect const& bb )
 	{
 		if ( s_InsideExpandedWidget )
 			return NULL;
@@ -7917,7 +8026,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return ImGui::IsMouseHoveringRect( btnMin, btnMax );
 	}
 
-	static bool BeginExpandedWindow( char const* label, ImGuiID widget_id, bool* pOpen, ImVec2 defaultSize = ImVec2( 600, 500 ) )
+	bool BeginExpandedWindow( char const* label, ImGuiID widget_id, bool* pOpen, ImVec2 defaultSize )
 	{
 		char title[ 256 ];
 		char const* displayLabel = ( label[ 0 ] == '#' && label[ 1 ] == '#' ) ? label + 2 : label;
@@ -7927,7 +8036,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return ImGui::Begin( title, pOpen, ImGuiWindowFlags_NoCollapse );
 	}
 
-	static void EndExpandedWindow()
+	void EndExpandedWindow()
 	{
 		ImGui::End();
 		s_InsideExpandedWidget = false;
@@ -16834,147 +16943,147 @@ namespace ImWidgets {
 		return ( lo + hi ) * 0.5f;
 	}
 
-	static bool SliderSplineImpl( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, ImGradientData const* gradient, const ImVec2* control_points, int num_points, float v_height, float v_thickness, const char* format, ImGuiSliderFlags flags )
+	static bool SliderSplineImpl(char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, ImGradientData const* gradient, const ImVec2* control_points, int num_points, float v_height, float v_thickness, const char* format, bool fill_up_to_cursor, ImGuiSliderFlags flags)
 	{
-		IM_UNUSED( flags );
+		IM_UNUSED(flags);
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
-		if ( window->SkipItems )
+		if (window->SkipItems)
 			return false;
 
 		ImGuiContext& g = *GImGui;
 		const ImGuiStyle& imStyle = g.Style;
 		ImWidgetsStyle& dwStyle = GetStyle();
-		const ImGuiID id = window->GetID( label );
+		const ImGuiID id = window->GetID(label);
 
-		if ( format == NULL )
-			format = ImGui::DataTypeGetInfo( data_type )->PrintFmt;
+		if (format == NULL)
+			format = ImGui::DataTypeGetInfo(data_type)->PrintFmt;
 
 		// Default S-curve control points in [0,1]x[0,1] normalized space
 		static const ImVec2 defaultCP[ 4 ] = {
-			ImVec2( 0.0f, 0.5f ),
-			ImVec2( 0.33f, 0.0f ),
-			ImVec2( 0.66f, 1.0f ),
-			ImVec2( 1.0f, 0.5f )
+			ImVec2(0.0f, 0.5f),
+			ImVec2(0.33f, 0.0f),
+			ImVec2(0.66f, 1.0f),
+			ImVec2(1.0f, 0.5f)
 		};
 		const ImVec2* cp = control_points ? control_points : defaultCP;
-		if ( !control_points )
+		if (!control_points)
 			num_points = 4;
 
 		// Compute number of bezier segments: num_points = 3*N + 1
-		IM_ASSERT( num_points >= 4 && ( ( num_points - 1 ) % 3 ) == 0 );
-		const int num_segments = ( num_points - 1 ) / 3;
+		IM_ASSERT(num_points >= 4 && ((num_points - 1) % 3) == 0);
+		const int num_segments = (num_points - 1) / 3;
 
 		// Layout
 		const float w = ImGui::CalcItemWidth();
-		const float h = ( v_height > 0.0f ) ? v_height : w * 0.35f;
-		const ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
+		const float h = (v_height > 0.0f) ? v_height : w * 0.35f;
+		const ImVec2 label_size = ImGui::CalcTextSize(label, NULL, true);
 		const float grabRadius = dwStyle.SliderSpline_GrabRadius;
 		const float padding = grabRadius + 2.0f;
 
-		const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, h + padding * 2.0f ) );
-		const ImRect total_bb( frame_bb.Min, frame_bb.Max + ImVec2( label_size.x > 0.0f ? imStyle.ItemInnerSpacing.x + label_size.x : 0.0f, 0.0f ) );
+		const ImRect frame_bb(window->DC.CursorPos, window->DC.CursorPos + ImVec2(w, h + padding * 2.0f));
+		const ImRect total_bb(frame_bb.Min, frame_bb.Max + ImVec2(label_size.x > 0.0f ? imStyle.ItemInnerSpacing.x + label_size.x : 0.0f, 0.0f));
 
-		ImGui::ItemSize( total_bb, imStyle.FramePadding.y );
-		if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, 0 ) )
+		ImGui::ItemSize(total_bb, imStyle.FramePadding.y);
+		if (!ImGui::ItemAdd(total_bb, id, &frame_bb, 0))
 			return false;
 
 		// Interaction
-		bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.ItemFlags );
-		bool clicked = hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id );
-		bool make_active = ( clicked || g.NavActivateId == id );
-		if ( make_active && clicked )
-			ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
-		if ( make_active )
+		bool hovered = ImGui::ItemHoverable(frame_bb, id, g.LastItemData.ItemFlags);
+		bool clicked = hovered && ImGui::IsMouseClicked(0, ImGuiInputFlags_None, id);
+		bool make_active = (clicked || g.NavActivateId == id);
+		if (make_active && clicked)
+			ImGui::SetKeyOwner(ImGuiKey_MouseLeft, id);
+		if (make_active)
 		{
-			ImGui::SetActiveID( id, window );
-			ImGui::SetFocusID( id, window );
-			ImGui::FocusWindow( window );
-			g.ActiveIdUsingNavDirMask |= ( 1 << ImGuiDir_Left ) | ( 1 << ImGuiDir_Right );
+			ImGui::SetActiveID(id, window);
+			ImGui::SetFocusID(id, window);
+			ImGui::FocusWindow(window);
+			g.ActiveIdUsingNavDirMask |= (1 << ImGuiDir_Left) | (1 << ImGuiDir_Right);
 		}
 
 		// Map all control points from normalized space to screen space
-		const ImVec2 spline_min = ImVec2( frame_bb.Min.x + padding, frame_bb.Min.y + padding );
-		const ImVec2 spline_size = ImVec2( w - padding * 2.0f, h );
+		const ImVec2 spline_min = ImVec2(frame_bb.Min.x + padding, frame_bb.Min.y + padding);
+		const ImVec2 spline_size = ImVec2(w - padding * 2.0f, h);
 
 		ImVec2 sp[ 32 ]; // max ~10 segments (31 points)
-		int sp_count = ImMin( num_points, 31 );
-		for ( int i = 0; i < sp_count; i++ )
-			sp[ i ] = ImVec2( spline_min.x + cp[ i ].x * spline_size.x, spline_min.y + cp[ i ].y * spline_size.y );
+		int sp_count = ImMin(num_points, 31);
+		for (int i = 0; i < sp_count; i++)
+			sp[ i ] = ImVec2(spline_min.x + cp[ i ].x * spline_size.x, spline_min.y + cp[ i ].y * spline_size.y);
 
 		// Normalize value to [0..1]
-		float v_min_f = ScalarToFloat( data_type, ( ImU64* )p_min );
-		float v_max_f = ScalarToFloat( data_type, ( ImU64* )p_max );
-		float v_cur_f = ScalarToFloat( data_type, ( ImU64* )p_value );
-		float t = ( v_max_f > v_min_f ) ? ImClamp( ( v_cur_f - v_min_f ) / ( v_max_f - v_min_f ), 0.0f, 1.0f ) : 0.0f;
+		float v_min_f = ScalarToFloat(data_type, (ImU64*)p_min);
+		float v_max_f = ScalarToFloat(data_type, (ImU64*)p_max);
+		float v_cur_f = ScalarToFloat(data_type, (ImU64*)p_value);
+		float t = (v_max_f > v_min_f) ? ImClamp((v_cur_f - v_min_f) / (v_max_f - v_min_f), 0.0f, 1.0f) : 0.0f;
 
 		// Drag interaction
 		bool value_changed = false;
-		if ( g.ActiveId == id )
+		if (g.ActiveId == id)
 		{
-			if ( ImGui::IsMouseDown( 0 ) )
+			if (ImGui::IsMouseDown(0))
 			{
 				ImVec2 mouse = ImGui::GetIO().MousePos;
-				t = SplineFindClosestT( sp, num_segments, mouse );
-				t = ImClamp( t, 0.0f, 1.0f );
+				t = SplineFindClosestT(sp, num_segments, mouse);
+				t = ImClamp(t, 0.0f, 1.0f);
 
-				float new_val_f = v_min_f + t * ( v_max_f - v_min_f );
+				float new_val_f = v_min_f + t * (v_max_f - v_min_f);
 
-				switch ( data_type )
+				switch (data_type)
 				{
-				case ImGuiDataType_S8:
-				{
-					ImS8 v = ( ImS8 )ImClamp( ( int )ImRound( new_val_f ), -128, 127 );
-					if ( v != *( ImS8* )p_value ) { *( ImS8* )p_value = v; value_changed = true; }
-				} break;
-				case ImGuiDataType_U8:
-				{
-					ImU8 v = ( ImU8 )ImClamp( ( int )ImRound( new_val_f ), 0, 255 );
-					if ( v != *( ImU8* )p_value ) { *( ImU8* )p_value = v; value_changed = true; }
-				} break;
-				case ImGuiDataType_S16:
-				{
-					ImS16 v = ( ImS16 )ImClamp( ( int )ImRound( new_val_f ), -32768, 32767 );
-					if ( v != *( ImS16* )p_value ) { *( ImS16* )p_value = v; value_changed = true; }
-				} break;
-				case ImGuiDataType_U16:
-				{
-					ImU16 v = ( ImU16 )ImClamp( ( int )ImRound( new_val_f ), 0, 65535 );
-					if ( v != *( ImU16* )p_value ) { *( ImU16* )p_value = v; value_changed = true; }
-				} break;
-				case ImGuiDataType_S32:
-				{
-					int v = ( int )ImRound( new_val_f );
-					if ( v != *( int* )p_value ) { *( int* )p_value = v; value_changed = true; }
-				} break;
-				case ImGuiDataType_U32:
-				{
-					ImU32 v = ( ImU32 )ImMax( ImRound( new_val_f ), 0.0f );
-					if ( v != *( ImU32* )p_value ) { *( ImU32* )p_value = v; value_changed = true; }
-				} break;
-				case ImGuiDataType_S64:
-				{
-					ImS64 v = ( ImS64 )ImRound( new_val_f );
-					if ( v != *( ImS64* )p_value ) { *( ImS64* )p_value = v; value_changed = true; }
-				} break;
-				case ImGuiDataType_U64:
-				{
-					ImU64 v = ( ImU64 )ImMax( ImRound( new_val_f ), 0.0f );
-					if ( v != *( ImU64* )p_value ) { *( ImU64* )p_value = v; value_changed = true; }
-				} break;
-				case ImGuiDataType_Float:
-				{
-					if ( new_val_f != *( float* )p_value ) { *( float* )p_value = new_val_f; value_changed = true; }
-				} break;
-				case ImGuiDataType_Double:
-				{
-					double dv = ( double )( v_min_f + t * ( v_max_f - v_min_f ) );
-					if ( dv != *( double* )p_value ) { *( double* )p_value = dv; value_changed = true; }
-				} break;
-				default: break;
+					case ImGuiDataType_S8:
+					{
+						ImS8 v = (ImS8)ImClamp((int)ImRound(new_val_f), -128, 127);
+						if (v != *(ImS8*)p_value) { *(ImS8*)p_value = v; value_changed = true; }
+					} break;
+					case ImGuiDataType_U8:
+					{
+						ImU8 v = (ImU8)ImClamp((int)ImRound(new_val_f), 0, 255);
+						if (v != *(ImU8*)p_value) { *(ImU8*)p_value = v; value_changed = true; }
+					} break;
+					case ImGuiDataType_S16:
+					{
+						ImS16 v = (ImS16)ImClamp((int)ImRound(new_val_f), -32768, 32767);
+						if (v != *(ImS16*)p_value) { *(ImS16*)p_value = v; value_changed = true; }
+					} break;
+					case ImGuiDataType_U16:
+					{
+						ImU16 v = (ImU16)ImClamp((int)ImRound(new_val_f), 0, 65535);
+						if (v != *(ImU16*)p_value) { *(ImU16*)p_value = v; value_changed = true; }
+					} break;
+					case ImGuiDataType_S32:
+					{
+						int v = (int)ImRound(new_val_f);
+						if (v != *(int*)p_value) { *(int*)p_value = v; value_changed = true; }
+					} break;
+					case ImGuiDataType_U32:
+					{
+						ImU32 v = (ImU32)ImMax(ImRound(new_val_f), 0.0f);
+						if (v != *(ImU32*)p_value) { *(ImU32*)p_value = v; value_changed = true; }
+					} break;
+					case ImGuiDataType_S64:
+					{
+						ImS64 v = (ImS64)ImRound(new_val_f);
+						if (v != *(ImS64*)p_value) { *(ImS64*)p_value = v; value_changed = true; }
+					} break;
+					case ImGuiDataType_U64:
+					{
+						ImU64 v = (ImU64)ImMax(ImRound(new_val_f), 0.0f);
+						if (v != *(ImU64*)p_value) { *(ImU64*)p_value = v; value_changed = true; }
+					} break;
+					case ImGuiDataType_Float:
+					{
+						if (new_val_f != *(float*)p_value) { *(float*)p_value = new_val_f; value_changed = true; }
+					} break;
+					case ImGuiDataType_Double:
+					{
+						double dv = (double)(v_min_f + t * (v_max_f - v_min_f));
+						if (dv != *(double*)p_value) { *(double*)p_value = dv; value_changed = true; }
+					} break;
+					default: break;
 				}
 
-				v_cur_f = ScalarToFloat( data_type, ( ImU64* )p_value );
-				t = ( v_max_f > v_min_f ) ? ImClamp( ( v_cur_f - v_min_f ) / ( v_max_f - v_min_f ), 0.0f, 1.0f ) : 0.0f;
+				v_cur_f = ScalarToFloat(data_type, (ImU64*)p_value);
+				t = (v_max_f > v_min_f) ? ImClamp((v_cur_f - v_min_f) / (v_max_f - v_min_f), 0.0f, 1.0f) : 0.0f;
 			}
 			else
 			{
@@ -16984,30 +17093,54 @@ namespace ImWidgets {
 
 		// --- Drawing ---
 		ImDrawList* draw_list = ImGui::GetWindowDrawList();
-		const bool is_active = ( g.ActiveId == id );
-		const float trackThickness = ( v_thickness > 0.0f ) ? v_thickness : dwStyle.SliderSpline_TrackThickness;
+		const bool is_active = (g.ActiveId == id);
+		const float trackThickness = (v_thickness > 0.0f) ? v_thickness : dwStyle.SliderSpline_TrackThickness;
 
-		const ImU32 col_track      = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_SliderSpline_Track ] );
-		const ImU32 col_track_fill = ImGui::GetColorU32( dwStyle.Colors[ is_active ? StyleColor_SliderSpline_GrabActive : StyleColor_SliderSpline_TrackActive ] );
-		const ImU32 col_grab       = ImGui::GetColorU32( dwStyle.Colors[ is_active ? StyleColor_SliderSpline_GrabActive : StyleColor_SliderSpline_Grab ] );
+		const ImU32 col_track = ImGui::GetColorU32(dwStyle.Colors[ StyleColor_SliderSpline_Track ]);
+		const ImU32 col_track_fill = ImGui::GetColorU32(dwStyle.Colors[ is_active ? StyleColor_SliderSpline_GrabActive : StyleColor_SliderSpline_TrackActive ]);
+		const ImU32 col_grab = ImGui::GetColorU32(dwStyle.Colors[ is_active ? StyleColor_SliderSpline_GrabActive : StyleColor_SliderSpline_Grab ]);
 
 		// Draw background spline track (all segments)
 		const int segs_per_bezier = 32;
-		if ( gradient )
+		if (gradient)
 		{
 			// Tessellate the bezier into a polyline, then render the gradient along it.
 			ImVector<ImVec2> polyline;
-			polyline.reserve( num_segments * segs_per_bezier + 1 );
-			for ( int seg = 0; seg < num_segments; seg++ )
+			polyline.reserve(num_segments * segs_per_bezier + 1);
+			for (int seg = 0; seg < num_segments; seg++)
 			{
 				int base = seg * 3;
-				for ( int i = ( seg == 0 ? 0 : 1 ); i <= segs_per_bezier; i++ )
+				for (int i = (seg == 0 ? 0 : 1); i <= segs_per_bezier; i++)
 				{
-					float lt = ( float )i / ( float )segs_per_bezier;
-					polyline.push_back( ImBezierCubicCalc( sp[ base ], sp[ base + 1 ], sp[ base + 2 ], sp[ base + 3 ], lt ) );
+					float lt = (float)i / (float)segs_per_bezier;
+					polyline.push_back(ImBezierCubicCalc(sp[ base ], sp[ base + 1 ], sp[ base + 2 ], sp[ base + 3 ], lt));
 				}
 			}
-			DrawSplineGradient( draw_list, *gradient, polyline.Data, polyline.Size, trackThickness, polyline.Size, false );
+
+			// Background track — stroke the full polyline with ImGui's
+			// FrameBg color first. This matches how ImGui's native sliders
+			// render their track (imgui_widgets.cpp: RenderFrame with
+			// ImGuiCol_FrameBg / FrameBgHovered / FrameBgActive), so the
+			// gradient reads as a consistent overlay on the same base.
+			const ImU32 frame_bg = ImGui::GetColorU32(
+				g.ActiveId == id ? ImGuiCol_FrameBgActive
+				: hovered        ? ImGuiCol_FrameBgHovered
+				: ImGuiCol_FrameBg);
+			draw_list->PathClear();
+			for (int i = 0; i < polyline.Size; ++i)
+				draw_list->PathLineTo(polyline[ i ]);
+			draw_list->PathStroke(frame_bg, 0, trackThickness);
+
+			if (fill_up_to_cursor)
+			{
+				DrawSplineGradientCut(draw_list, *gradient, 0.0f, t, polyline.Data, polyline.Size,
+									  trackThickness, polyline.Size, false);
+			}
+			else
+			{
+				DrawSplineGradient(draw_list, *gradient, polyline.Data, polyline.Size,
+								   trackThickness, polyline.Size, false);
+			}
 		}
 		else
 		{
@@ -17061,7 +17194,7 @@ namespace ImWidgets {
 
 	bool SliderSplineScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, const ImVec2* control_points, int num_points, float v_height, float v_thickness, const char* format, ImGuiSliderFlags flags )
 	{
-		return SliderSplineImpl( label, data_type, p_value, p_min, p_max, NULL, control_points, num_points, v_height, v_thickness, format, flags );
+		return SliderSplineImpl( label, data_type, p_value, p_min, p_max, NULL, control_points, num_points, v_height, v_thickness, format, false, flags );
 	}
 
 	bool SliderSplineFloat( char const* label, float* value, float v_min, float v_max, const ImVec2* control_points, int num_points, float v_height, float v_thickness, const char* format, ImGuiSliderFlags flags )
@@ -17074,20 +17207,20 @@ namespace ImWidgets {
 		return SliderSplineScalar( label, ImGuiDataType_S32, value, &v_min, &v_max, control_points, num_points, v_height, v_thickness, format, flags );
 	}
 
-	bool SliderSplineGradientScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, ImGradientData const* gradient, const ImVec2* control_points, int num_points, float v_height, float v_thickness, const char* format, ImGuiSliderFlags flags )
+	bool SliderSplineGradientScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, ImGradientData const* gradient, const ImVec2* control_points, int num_points, float v_height, float v_thickness, const char* format, bool fill_up_to_cursor, ImGuiSliderFlags flags )
 	{
 		IM_ASSERT( gradient != NULL );
-		return SliderSplineImpl( label, data_type, p_value, p_min, p_max, gradient, control_points, num_points, v_height, v_thickness, format, flags );
+		return SliderSplineImpl( label, data_type, p_value, p_min, p_max, gradient, control_points, num_points, v_height, v_thickness, format, fill_up_to_cursor, flags );
 	}
 
-	bool SliderSplineGradientFloat( char const* label, float* value, float v_min, float v_max, ImGradientData const* gradient, const ImVec2* control_points, int num_points, float v_height, float v_thickness, const char* format, ImGuiSliderFlags flags )
+	bool SliderSplineGradientFloat( char const* label, float* value, float v_min, float v_max, ImGradientData const* gradient, const ImVec2* control_points, int num_points, float v_height, float v_thickness, const char* format, bool fill_up_to_cursor, ImGuiSliderFlags flags )
 	{
-		return SliderSplineGradientScalar( label, ImGuiDataType_Float, value, &v_min, &v_max, gradient, control_points, num_points, v_height, v_thickness, format, flags );
+		return SliderSplineGradientScalar( label, ImGuiDataType_Float, value, &v_min, &v_max, gradient, control_points, num_points, v_height, v_thickness, format, fill_up_to_cursor, flags );
 	}
 
-	bool SliderSplineGradientInt( char const* label, int* value, int v_min, int v_max, ImGradientData const* gradient, const ImVec2* control_points, int num_points, float v_height, float v_thickness, const char* format, ImGuiSliderFlags flags )
+	bool SliderSplineGradientInt( char const* label, int* value, int v_min, int v_max, ImGradientData const* gradient, const ImVec2* control_points, int num_points, float v_height, float v_thickness, const char* format, bool fill_up_to_cursor, ImGuiSliderFlags flags )
 	{
-		return SliderSplineGradientScalar( label, ImGuiDataType_S32, value, &v_min, &v_max, gradient, control_points, num_points, v_height, v_thickness, format, flags );
+		return SliderSplineGradientScalar( label, ImGuiDataType_S32, value, &v_min, &v_max, gradient, control_points, num_points, v_height, v_thickness, format, fill_up_to_cursor, flags );
 	}
 
 	bool DragFloatPrecise( char const* label, float* value, float v_min, float v_max, const char* format, ImGuiSliderFlags flags )
@@ -21643,586 +21776,8 @@ namespace ImWidgets
     //==================================================================
     // W2. Vector Drawing Tool (canvas with zoom/pan + bezier authoring)
     //==================================================================
-    // Convert world coords ↔ screen coords using (PanOffset, Zoom).
-    // World (0,0) maps to (canvas_min + PanOffset). Zoom scales from world units.
-    static inline ImVec2 DWE_VDTW2S(const ImVectorDrawingData& d, ImVec2 canvas_min, ImVec2 w)
-    {
-        return ImVec2(canvas_min.x + d.PanOffset.x + w.x * d.Zoom,
-                      canvas_min.y + d.PanOffset.y + w.y * d.Zoom);
-    }
-    static inline ImVec2 DWE_VDTS2W(const ImVectorDrawingData& d, ImVec2 canvas_min, ImVec2 s)
-    {
-        return ImVec2((s.x - canvas_min.x - d.PanOffset.x) / d.Zoom,
-                      (s.y - canvas_min.y - d.PanOffset.y) / d.Zoom);
-    }
-
-    // Flatten one path into a cubic Bezier control-point array [p0, p1, p2, p3, p4, p5, p6, ...]
-    // suitable for DrawStrokedBezierPath or a plain polyline (via evaluation).
-    static void DWE_VDTFlattenBezierCP(const ImVectorDrawingPath& path, ImVector<ImVec2>& cp)
-    {
-        cp.resize(0);
-        int n = path.Nodes.Size;
-        if (n < 2) return;
-        int end = path.Closed ? n : n - 1;
-        for (int i = 0; i < end; ++i)
-        {
-            const ImVectorDrawingNode& a = path.Nodes[i];
-            const ImVectorDrawingNode& b = path.Nodes[(i + 1) % n];
-            ImVec2 P0 = a.Anchor;
-            ImVec2 P1(a.Anchor.x + a.OutTangent.x, a.Anchor.y + a.OutTangent.y);
-            ImVec2 P2(b.Anchor.x + b.InTangent.x,  b.Anchor.y + b.InTangent.y);
-            ImVec2 P3 = b.Anchor;
-            if (cp.empty()) cp.push_back(P0);
-            cp.push_back(P1);
-            cp.push_back(P2);
-            cp.push_back(P3);
-        }
-    }
-
-    static void DWE_VDTFlattenPolyline(const ImVectorDrawingPath& path, int samples_per_seg,
-                                       ImVector<ImVec2>& out)
-    {
-        out.resize(0);
-        int n = path.Nodes.Size;
-        if (n < 2) return;
-        int end = path.Closed ? n : n - 1;
-        for (int i = 0; i < end; ++i)
-        {
-            const ImVectorDrawingNode& a = path.Nodes[i];
-            const ImVectorDrawingNode& b = path.Nodes[(i + 1) % n];
-            ImVec2 P0 = a.Anchor;
-            ImVec2 P1(a.Anchor.x + a.OutTangent.x, a.Anchor.y + a.OutTangent.y);
-            ImVec2 P2(b.Anchor.x + b.InTangent.x,  b.Anchor.y + b.InTangent.y);
-            ImVec2 P3 = b.Anchor;
-            if (out.empty()) out.push_back(P0);
-            for (int k = 1; k <= samples_per_seg; ++k)
-            {
-                float t = (float)k / (float)samples_per_seg;
-                out.push_back(DWE_CubicBezier(P0, P1, P2, P3, t));
-            }
-        }
-    }
-
-    bool VectorDrawingTool(const char* label, ImVectorDrawingData& data, ImVec2 size)
-    {
-        ImGuiWindow* win = ImGui::GetCurrentWindow();
-        if (win->SkipItems) return false;
-        if (size.x <= 0.0f) size.x = ImGui::GetContentRegionAvail().x;
-        if (size.y <= 0.0f) size.y = 360.0f;
-        ImGui::PushID(label);
-        ImVec2 canvas_min = ImGui::GetCursorScreenPos();
-        ImVec2 canvas_max(canvas_min.x + size.x, canvas_min.y + size.y);
-        ImGui::InvisibleButton("##vdt_canvas", size, ImGuiButtonFlags_MouseButtonLeft
-                                                     | ImGuiButtonFlags_MouseButtonRight
-                                                     | ImGuiButtonFlags_MouseButtonMiddle);
-        bool hovered = ImGui::IsItemHovered();
-        bool active = ImGui::IsItemActive();
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        dl->PushClipRect(canvas_min, canvas_max, true);
-        dl->AddRectFilled(canvas_min, canvas_max, IM_COL32(18, 22, 28, 255));
-
-        // Grid (world-space at fixed world spacing).
-        {
-            float grid_w = GetStyle().VectorDrawing_GridSpacing;
-            float grid_px = grid_w * data.Zoom;
-            if (grid_px >= 4.0f)
-            {
-                float x0 = canvas_min.x + ImFmod(data.PanOffset.x, grid_px);
-                float y0 = canvas_min.y + ImFmod(data.PanOffset.y, grid_px);
-                for (float x = x0; x < canvas_max.x; x += grid_px)
-                    dl->AddLine(ImVec2(x, canvas_min.y), ImVec2(x, canvas_max.y), IM_COL32(255, 255, 255, 15));
-                for (float y = y0; y < canvas_max.y; y += grid_px)
-                    dl->AddLine(ImVec2(canvas_min.x, y), ImVec2(canvas_max.x, y), IM_COL32(255, 255, 255, 15));
-            }
-            // World origin crosshair
-            ImVec2 o = DWE_VDTW2S(data, canvas_min, ImVec2(0, 0));
-            dl->AddLine(ImVec2(o.x - 10, o.y), ImVec2(o.x + 10, o.y), IM_COL32(200, 80, 80, 200));
-            dl->AddLine(ImVec2(o.x, o.y - 10), ImVec2(o.x, o.y + 10), IM_COL32(80, 180, 80, 200));
-        }
-
-        bool changed = false;
-        ImGuiIO& io = ImGui::GetIO();
-        ImVec2 mouse = io.MousePos;
-
-        // ---- Pan / zoom ----
-        if (hovered && ImGui::IsMouseDown(ImGuiMouseButton_Middle))
-        {
-            ImVec2 d = io.MouseDelta;
-            data.PanOffset.x += d.x;
-            data.PanOffset.y += d.y;
-        }
-        // Shift + left drag pans too (convenience when no middle button).
-        if (hovered && io.KeyShift && ImGui::IsMouseDown(ImGuiMouseButton_Left))
-        {
-            ImVec2 d = io.MouseDelta;
-            data.PanOffset.x += d.x;
-            data.PanOffset.y += d.y;
-        }
-        if (hovered && io.MouseWheel != 0.0f)
-        {
-            float old_zoom = data.Zoom;
-            float factor = ImPow(1.1f, io.MouseWheel);
-            data.Zoom = ImClamp(old_zoom * factor, 0.05f, 20.0f);
-            // Zoom around mouse: keep the world-point under the cursor stationary.
-            ImVec2 wbefore = DWE_VDTS2W(data, canvas_min, mouse);
-            // After zoom change, compute where wbefore lands; compensate via PanOffset.
-            ImVec2 safter  = ImVec2(canvas_min.x + data.PanOffset.x + wbefore.x * data.Zoom,
-                                    canvas_min.y + data.PanOffset.y + wbefore.y * data.Zoom);
-            data.PanOffset.x += (mouse.x - safter.x);
-            data.PanOffset.y += (mouse.y - safter.y);
-        }
-
-        // ---- Hit test existing nodes (anchors and handles) ----
-        int hit_path = -1, hit_node = -1, hit_handle = 0;
-        const float hitR = 7.0f;
-        for (int pi = 0; pi < data.Paths.Size && hovered; ++pi)
-        {
-            ImVectorDrawingPath& p = data.Paths[pi];
-            for (int ni = 0; ni < p.Nodes.Size; ++ni)
-            {
-                ImVec2 ap = DWE_VDTW2S(data, canvas_min, p.Nodes[ni].Anchor);
-                ImVec2 inp = DWE_VDTW2S(data, canvas_min,
-                                        ImVec2(p.Nodes[ni].Anchor.x + p.Nodes[ni].InTangent.x,
-                                               p.Nodes[ni].Anchor.y + p.Nodes[ni].InTangent.y));
-                ImVec2 outp = DWE_VDTW2S(data, canvas_min,
-                                         ImVec2(p.Nodes[ni].Anchor.x + p.Nodes[ni].OutTangent.x,
-                                                p.Nodes[ni].Anchor.y + p.Nodes[ni].OutTangent.y));
-                if (DWE_Len2(ImVec2(mouse.x - ap.x, mouse.y - ap.y)) < hitR) { hit_path = pi; hit_node = ni; hit_handle = 0; }
-                else if ((p.Nodes[ni].InTangent.x != 0.0f || p.Nodes[ni].InTangent.y != 0.0f)
-                         && DWE_Len2(ImVec2(mouse.x - inp.x, mouse.y - inp.y)) < hitR)
-                    { hit_path = pi; hit_node = ni; hit_handle = 1; }
-                else if ((p.Nodes[ni].OutTangent.x != 0.0f || p.Nodes[ni].OutTangent.y != 0.0f)
-                         && DWE_Len2(ImVec2(mouse.x - outp.x, mouse.y - outp.y)) < hitR)
-                    { hit_path = pi; hit_node = ni; hit_handle = 2; }
-            }
-        }
-
-        // ---- Click handling (only when NOT panning) ----
-        bool panning = io.KeyShift || ImGui::IsMouseDown(ImGuiMouseButton_Middle);
-
-        // Hover feedback: tell the user whether a click adds a new anchor or
-        // grabs an existing anchor/handle. Cursor + tooltip + a ghost ring at
-        // mouse position when over empty canvas. The actual highlight halo on
-        // hovered anchor/handle is drawn during the render loop below.
-        if (hovered && !panning)
-        {
-            if (hit_path >= 0)
-            {
-                ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-                if (hit_handle == 0)      ImGui::SetTooltip("Click to select / drag to move anchor");
-                else if (hit_handle == 1) ImGui::SetTooltip("Drag to adjust In tangent");
-                else                      ImGui::SetTooltip("Drag to adjust Out tangent");
-            }
-            else
-            {
-                ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-                ImGui::SetTooltip(data.ActivePath >= 0
-                    ? "Click to add anchor (right-click: finish path)"
-                    : "Click to start a new path");
-            }
-        }
-
-        if (hovered && !panning && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
-        {
-            ImVec2 w = DWE_VDTS2W(data, canvas_min, mouse);
-            if (hit_path >= 0)
-            {
-                // Authoring close-check: if clicking first node of active path, close it.
-                if (data.ActivePath >= 0 && hit_path == data.ActivePath && hit_node == 0
-                    && data.Paths[hit_path].Nodes.Size >= 3)
-                {
-                    data.Paths[hit_path].Closed = true;
-                    data.ActivePath = -1;
-                    data.SelectedPath = hit_path;
-                    data.SelectedNode = 0;
-                    data.SelectedHandle = 0;
-                    changed = true;
-                }
-                else
-                {
-                    // Select existing. Shift/Ctrl toggles multi-selection within the same path.
-                    bool shift = ImGui::GetIO().KeyShift;
-                    bool ctrl  = ImGui::GetIO().KeyCtrl;
-                    if (data.SelectedPath != hit_path) { data.SelectedNodes.clear(); }
-                    data.SelectedPath = hit_path;
-                    data.SelectedNode = hit_node;
-                    data.SelectedHandle = hit_handle;
-                    if (shift || ctrl)
-                    {
-                        bool in = false;
-                        for (int k = 0; k < data.SelectedNodes.Size; ++k)
-                            if (data.SelectedNodes[k] == hit_node) { in = true; data.SelectedNodes.erase(data.SelectedNodes.Data + k); break; }
-                        if (!in) data.SelectedNodes.push_back(hit_node);
-                    }
-                    else
-                    {
-                        data.SelectedNodes.clear();
-                        data.SelectedNodes.push_back(hit_node);
-                    }
-                }
-            }
-            else
-            {
-                // Add new anchor.
-                if (data.ActivePath < 0)
-                {
-                    ImVectorDrawingPath np;
-                    data.Paths.push_back(np);
-                    data.ActivePath = data.Paths.Size - 1;
-                }
-                ImVectorDrawingPath& p = data.Paths[data.ActivePath];
-                p.Nodes.push_back(ImVectorDrawingNode(w));
-                data.SelectedPath = data.ActivePath;
-                data.SelectedNode = p.Nodes.Size - 1;
-                data.SelectedHandle = 2; // drag to pull out tangent
-                changed = true;
-            }
-        }
-
-        // Drag-pull tangent on newly-placed anchor: while left-down after placement,
-        // set Out/In tangents based on drag.
-        if (active && !panning && data.SelectedPath >= 0 && data.SelectedNode >= 0
-            && ImGui::IsMouseDown(ImGuiMouseButton_Left))
-        {
-            ImVectorDrawingPath& p = data.Paths[data.SelectedPath];
-            if (data.SelectedNode < p.Nodes.Size)
-            {
-                ImVectorDrawingNode& n = p.Nodes[data.SelectedNode];
-                ImVec2 w = DWE_VDTS2W(data, canvas_min, mouse);
-                if (data.SelectedHandle == 0)
-                {
-                    // Move anchor. If multi-selected, translate the whole group by the same delta.
-                    ImVec2 delta(w.x - n.Anchor.x, w.y - n.Anchor.y);
-                    if (data.SelectedNodes.Size > 1)
-                    {
-                        for (int k = 0; k < data.SelectedNodes.Size; ++k)
-                        {
-                            int idx = data.SelectedNodes[k];
-                            if (idx < 0 || idx >= p.Nodes.Size) continue;
-                            p.Nodes[idx].Anchor.x += delta.x;
-                            p.Nodes[idx].Anchor.y += delta.y;
-                        }
-                    }
-                    else
-                    {
-                        n.Anchor = w;
-                    }
-                }
-                else if (data.SelectedHandle == 1)
-                {
-                    n.InTangent = ImVec2(w.x - n.Anchor.x, w.y - n.Anchor.y);
-                    if (!n.Broken) n.OutTangent = ImVec2(-n.InTangent.x, -n.InTangent.y);
-                }
-                else // 2 = out
-                {
-                    n.OutTangent = ImVec2(w.x - n.Anchor.x, w.y - n.Anchor.y);
-                    if (!n.Broken) n.InTangent = ImVec2(-n.OutTangent.x, -n.OutTangent.y);
-                }
-                changed = true;
-            }
-        }
-
-        // Right-click: if a path is active, finish it; otherwise open context menu.
-        if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
-        {
-            if (data.ActivePath >= 0)
-            {
-                data.ActivePath = -1;
-            }
-            else
-            {
-                if (hit_path >= 0) { data.SelectedPath = hit_path; data.SelectedNode = hit_node; }
-                ImGui::OpenPopup("##vdt_ctx");
-            }
-        }
-        if (ImGui::BeginPopup("##vdt_ctx"))
-        {
-            if (data.SelectedPath >= 0 && data.SelectedPath < data.Paths.Size)
-            {
-                ImVectorDrawingPath& p = data.Paths[data.SelectedPath];
-                if (data.SelectedNode >= 0 && data.SelectedNode < p.Nodes.Size)
-                {
-                    ImVectorDrawingNode& n = p.Nodes[data.SelectedNode];
-                    if (ImGui::MenuItem("Node: Make corner (tangents=0)"))
-                    {
-                        n.InTangent = ImVec2(0, 0); n.OutTangent = ImVec2(0, 0);
-                        changed = true;
-                    }
-                    if (ImGui::MenuItem("Node: Make smooth (mirror tangents)"))
-                    {
-                        n.OutTangent = ImVec2(-n.InTangent.x, -n.InTangent.y);
-                        n.Broken = false;
-                        changed = true;
-                    }
-                    if (ImGui::MenuItem("Node: Break tangents", NULL, n.Broken))
-                    {
-                        n.Broken = !n.Broken; changed = true;
-                    }
-                    if (ImGui::MenuItem("Node: Delete"))
-                    {
-                        p.Nodes.erase(p.Nodes.Data + data.SelectedNode);
-                        if (p.Nodes.empty())
-                            data.Paths.erase(data.Paths.Data + data.SelectedPath), data.SelectedPath = -1;
-                        data.SelectedNode = -1;
-                        changed = true;
-                    }
-                    ImGui::Separator();
-                }
-                if (ImGui::MenuItem("Path: Reverse direction"))
-                {
-                    for (int a = 0, b = p.Nodes.Size - 1; a < b; ++a, --b)
-                    {
-                        ImVectorDrawingNode tmp = p.Nodes[a];
-                        p.Nodes[a] = p.Nodes[b];
-                        p.Nodes[b] = tmp;
-                    }
-                    for (int i = 0; i < p.Nodes.Size; ++i)
-                    {
-                        ImVec2 t = p.Nodes[i].InTangent;
-                        p.Nodes[i].InTangent = p.Nodes[i].OutTangent;
-                        p.Nodes[i].OutTangent = t;
-                    }
-                    changed = true;
-                }
-                if (ImGui::MenuItem("Path: Toggle closed", NULL, p.Closed))
-                {
-                    p.Closed = !p.Closed; changed = true;
-                }
-                if (ImGui::MenuItem("Path: Duplicate"))
-                {
-                    ImVectorDrawingPath clone = p;
-                    for (int i = 0; i < clone.Nodes.Size; ++i)
-                    {
-                        clone.Nodes[i].Anchor.x += 20.0f;
-                        clone.Nodes[i].Anchor.y += 20.0f;
-                    }
-                    data.Paths.push_back(clone);
-                    changed = true;
-                }
-                if (ImGui::MenuItem("Path: Delete"))
-                {
-                    data.Paths.erase(data.Paths.Data + data.SelectedPath);
-                    data.SelectedPath = -1; data.SelectedNode = -1;
-                    changed = true;
-                }
-                ImGui::Separator();
-            }
-            if (ImGui::MenuItem("View: Reset (pan=0, zoom=1)"))
-            {
-                data.PanOffset = ImVec2(0, 0); data.Zoom = 1.0f;
-            }
-            ImGui::EndPopup();
-        }
-
-        // Delete selected node(s). If multi-selected, deletes all at once.
-        if (hovered && ImGui::IsKeyPressed(ImGuiKey_Delete)
-            && data.SelectedPath >= 0 && data.SelectedNode >= 0)
-        {
-            ImVectorDrawingPath& p = data.Paths[data.SelectedPath];
-            // Collect indices (descending).
-            ImVector<int> to_del;
-            if (!data.SelectedNodes.empty()) to_del = data.SelectedNodes;
-            else to_del.push_back(data.SelectedNode);
-            for (int i = 1; i < to_del.Size; ++i)
-            {
-                int k = to_del[i]; int j = i - 1;
-                while (j >= 0 && to_del[j] < k) { to_del[j + 1] = to_del[j]; --j; }
-                to_del[j + 1] = k;
-            }
-            for (int i = 0; i < to_del.Size; ++i)
-            {
-                int idx = to_del[i];
-                if (idx >= 0 && idx < p.Nodes.Size) p.Nodes.erase(p.Nodes.Data + idx);
-            }
-            if (p.Nodes.empty())
-            {
-                data.Paths.erase(data.Paths.Data + data.SelectedPath);
-                if (data.ActivePath == data.SelectedPath) data.ActivePath = -1;
-                data.SelectedPath = -1;
-            }
-            data.SelectedNode = -1;
-            data.SelectedNodes.clear();
-            if (!to_del.empty()) changed = true;
-        }
-
-        // ---- Render paths ----
-        for (int pi = 0; pi < data.Paths.Size; ++pi)
-        {
-            const ImVectorDrawingPath& p = data.Paths[pi];
-            if (p.Nodes.Size < 2) continue;
-            // Build screen-space CP list.
-            ImVector<ImVec2> cp_world; DWE_VDTFlattenBezierCP(p, cp_world);
-            ImVector<ImVec2> cp_screen; cp_screen.resize(cp_world.Size);
-            for (int i = 0; i < cp_world.Size; ++i)
-                cp_screen[i] = DWE_VDTW2S(data, canvas_min, cp_world[i]);
-            float th = p.Thickness;
-            switch (p.Style)
-            {
-            case ImVectorDrawingStyle_Polyline:
-                {
-                    ImVector<ImVec2> pl; DWE_VDTFlattenPolyline(p, 16, pl);
-                    for (int i = 0; i < pl.Size; ++i) pl[i] = DWE_VDTW2S(data, canvas_min, pl[i]);
-                    if (pl.Size >= 2)
-                        dl->AddPolyline(pl.Data, pl.Size, p.Color, p.Closed ? ImDrawFlags_Closed : 0, th);
-                }
-                break;
-            case ImVectorDrawingStyle_PolylineAA:
-                {
-                    ImVector<ImVec2> pl; DWE_VDTFlattenPolyline(p, 16, pl);
-                    for (int i = 0; i < pl.Size; ++i) pl[i] = DWE_VDTW2S(data, canvas_min, pl[i]);
-                    if (pl.Size >= 2)
-                        DrawPolylineAA(dl, pl.Data, pl.Size, p.Color, th, p.Closed);
-                }
-                break;
-            case ImVectorDrawingStyle_StrokedBezier:
-                if (cp_screen.Size >= 4)
-                    DrawStrokedBezierPath(dl, cp_screen.Data, cp_screen.Size, p.Color, th,
-                                          ImWidgetsCap_Round, ImWidgetsJoin_Round, 4.0f, 0.25f, p.Closed);
-                break;
-            case ImVectorDrawingStyle_StrokedDashedBezier:
-                if (cp_screen.Size >= 4)
-                {
-                    float dashes[2] = { p.DashLen, p.GapLen };
-                    DrawStrokedDashedBezierPath(dl, cp_screen.Data, cp_screen.Size, p.Color, th,
-                                                dashes, 2, 0.0f,
-                                                ImWidgetsCap_Round, ImWidgetsJoin_Round, 4.0f, 0.25f, p.Closed);
-                }
-                break;
-            case ImVectorDrawingStyle_DashedPolyline:
-                {
-                    ImVector<ImVec2> pl; DWE_VDTFlattenPolyline(p, 16, pl);
-                    for (int i = 0; i < pl.Size; ++i) pl[i] = DWE_VDTW2S(data, canvas_min, pl[i]);
-                    if (pl.Size >= 2)
-                        DrawDashedPolylineAA(dl, pl.Data, pl.Size, p.Color, th,
-                                             p.DashLen, p.GapLen, 0.0f, p.Closed);
-                }
-                break;
-            default: break;
-            }
-
-            // Handles (only for selected path, plus active authoring path).
-            bool show_handles = (pi == data.SelectedPath) || (pi == data.ActivePath);
-            if (show_handles)
-            {
-                for (int ni = 0; ni < p.Nodes.Size; ++ni)
-                {
-                    ImVec2 ap = DWE_VDTW2S(data, canvas_min, p.Nodes[ni].Anchor);
-                    ImVec2 inp = DWE_VDTW2S(data, canvas_min,
-                                            ImVec2(p.Nodes[ni].Anchor.x + p.Nodes[ni].InTangent.x,
-                                                   p.Nodes[ni].Anchor.y + p.Nodes[ni].InTangent.y));
-                    ImVec2 outp = DWE_VDTW2S(data, canvas_min,
-                                             ImVec2(p.Nodes[ni].Anchor.x + p.Nodes[ni].OutTangent.x,
-                                                    p.Nodes[ni].Anchor.y + p.Nodes[ni].OutTangent.y));
-                    ImWidgetsStyle& vdt_style = GetStyle();
-                    float vdt_ar = ImPlatform_LpToPx(vdt_style.VectorDrawing_AnchorRadius);
-                    float vdt_tr = ImPlatform_LpToPx(vdt_style.VectorDrawing_TangentRadius);
-                    if (p.Nodes[ni].InTangent.x != 0.0f || p.Nodes[ni].InTangent.y != 0.0f)
-                    {
-                        dl->AddLine(ap, inp, IM_COL32(255, 200, 80, 180), 1.0f);
-                        dl->AddCircleFilled(inp, vdt_tr, IM_COL32(255, 200, 80, 220));
-                    }
-                    if (p.Nodes[ni].OutTangent.x != 0.0f || p.Nodes[ni].OutTangent.y != 0.0f)
-                    {
-                        dl->AddLine(ap, outp, IM_COL32(255, 200, 80, 180), 1.0f);
-                        dl->AddCircleFilled(outp, vdt_tr, IM_COL32(255, 200, 80, 220));
-                    }
-                    bool sel = (pi == data.SelectedPath && ni == data.SelectedNode);
-                    if (!sel && pi == data.SelectedPath) {
-                        for (int k = 0; k < data.SelectedNodes.Size; ++k)
-                            if (data.SelectedNodes[k] == ni) { sel = true; break; }
-                    }
-                    float ar = sel ? vdt_ar * 1.25f : vdt_ar;
-                    dl->AddCircleFilled(ap, ar,
-                                        sel ? IM_COL32(255, 255, 0, 255) : IM_COL32(255, 255, 255, 255));
-                    dl->AddCircle(ap, ar, IM_COL32(0, 0, 0, 255), 16, 1.0f);
-                }
-                // First-node ring indicator when closing is possible.
-                if (pi == data.ActivePath && p.Nodes.Size >= 3)
-                {
-                    ImVec2 ap0 = DWE_VDTW2S(data, canvas_min, p.Nodes[0].Anchor);
-                    dl->AddCircle(ap0, 9.0f, IM_COL32(120, 220, 255, 200), 24, 1.5f);
-                }
-            }
-        }
-
-        // Hover feedback overlay: highlight the anchor/handle under the cursor,
-        // or draw a ghost ring at the mouse when the canvas is empty so the
-        // user can see exactly where a click would place a new anchor.
-        if (hovered && !panning)
-        {
-            float vdt_ar = ImPlatform_LpToPx(GetStyle().VectorDrawing_AnchorRadius);
-            float vdt_tr = ImPlatform_LpToPx(GetStyle().VectorDrawing_TangentRadius);
-            if (hit_path >= 0 && hit_node >= 0
-                && hit_path < data.Paths.Size
-                && hit_node < data.Paths[hit_path].Nodes.Size)
-            {
-                const ImVectorDrawingNode& hn = data.Paths[hit_path].Nodes[hit_node];
-                ImVec2 ap = DWE_VDTW2S(data, canvas_min, hn.Anchor);
-                if (hit_handle == 0)
-                {
-                    dl->AddCircle(ap, vdt_ar + 3.0f, IM_COL32(120, 220, 255, 230), 24, 2.0f);
-                }
-                else if (hit_handle == 1)
-                {
-                    ImVec2 inp = DWE_VDTW2S(data, canvas_min,
-                        ImVec2(hn.Anchor.x + hn.InTangent.x, hn.Anchor.y + hn.InTangent.y));
-                    dl->AddCircle(inp, vdt_tr + 3.0f, IM_COL32(120, 220, 255, 230), 16, 2.0f);
-                }
-                else
-                {
-                    ImVec2 outp = DWE_VDTW2S(data, canvas_min,
-                        ImVec2(hn.Anchor.x + hn.OutTangent.x, hn.Anchor.y + hn.OutTangent.y));
-                    dl->AddCircle(outp, vdt_tr + 3.0f, IM_COL32(120, 220, 255, 230), 16, 2.0f);
-                }
-            }
-            else
-            {
-                // Ghost ring at the mouse to show "click here adds an anchor".
-                dl->AddCircle(mouse, vdt_ar, IM_COL32(255, 255, 255, 140), 16, 1.0f);
-                dl->AddLine(ImVec2(mouse.x - 5, mouse.y), ImVec2(mouse.x + 5, mouse.y),
-                            IM_COL32(255, 255, 255, 200), 1.0f);
-                dl->AddLine(ImVec2(mouse.x, mouse.y - 5), ImVec2(mouse.x, mouse.y + 5),
-                            IM_COL32(255, 255, 255, 200), 1.0f);
-            }
-        }
-
-        // Status overlay.
-        {
-            char status[128];
-            ImFormatString(status, sizeof(status),
-                           "zoom=%.2fx  pan=(%.0f,%.0f)  paths=%d  %s",
-                           (double)data.Zoom, (double)data.PanOffset.x, (double)data.PanOffset.y,
-                           data.Paths.Size, data.ActivePath >= 0 ? "drawing" : "idle");
-            dl->AddText(ImVec2(canvas_min.x + 6, canvas_min.y + 4),
-                        IM_COL32(200, 200, 200, 200), status);
-        }
-        dl->AddRect(canvas_min, canvas_max, IM_COL32(255, 255, 255, 60));
-        dl->PopClipRect();
-        // Tangent-edit side panel (shown when a node is selected).
-        if (data.SelectedPath >= 0 && data.SelectedPath < data.Paths.Size
-            && data.SelectedNode >= 0
-            && data.SelectedNode < data.Paths[data.SelectedPath].Nodes.Size)
-        {
-            ImVectorDrawingNode& n = data.Paths[data.SelectedPath].Nodes[data.SelectedNode];
-            if (ImGui::CollapsingHeader("Selected node", ImGuiTreeNodeFlags_DefaultOpen))
-            {
-                if (PrecisionFloat("Anchor X", &n.Anchor.x, 1.0f, -1e6f, 1e6f, "%.2f")) changed = true;
-                if (PrecisionFloat("Anchor Y", &n.Anchor.y, 1.0f, -1e6f, 1e6f, "%.2f")) changed = true;
-                if (PrecisionFloat("In.x",  &n.InTangent.x, 1.0f, -1e4f, 1e4f, "%.2f")) changed = true;
-                if (PrecisionFloat("In.y",  &n.InTangent.y, 1.0f, -1e4f, 1e4f, "%.2f")) changed = true;
-                if (PrecisionFloat("Out.x", &n.OutTangent.x, 1.0f, -1e4f, 1e4f, "%.2f")) changed = true;
-                if (PrecisionFloat("Out.y", &n.OutTangent.y, 1.0f, -1e4f, 1e4f, "%.2f")) changed = true;
-                if (ImGui::Checkbox("Broken tangents", &n.Broken)) changed = true;
-                if (!n.Broken && ImGui::Button("Mirror: Out = -In"))
-                {
-                    n.OutTangent = ImVec2(-n.InTangent.x, -n.InTangent.y);
-                    changed = true;
-                }
-            }
-        }
-        ImGui::PopID();
-        return changed;
-    }
+    // Implementation has moved to dear_widgets_vector_drawing.cpp (included at
+    // the bottom of this file next to the other split widget modules).
 
 
     //==================================================================
@@ -22515,35 +22070,40 @@ namespace ImWidgets
         ImGui::BeginChild("##curves", size, true);
         static char buf[16] = "A";
         ImGui::InputText("Glyph", buf, sizeof(buf));
-        // Hard separator + extra pad ensures a positive gap between the InputText
-        // and any glyph ascenders. DrawTextDebugCurves treats `pos.y` as the glyph
-        // baseline; curves extend UPWARD from there by `ascent`, so we must
-        // guarantee `(tp.y - ascent) > bottom_of_InputText`.
         ImGui::Separator();
-        ImGui::Dummy(ImVec2(1, ImPlatform_LpToPx(6.0f)));
 
-        ImVec2 avail = ImGui::GetContentRegionAvail();
+        // Measure the curves' real height (ascent + |descent|) at the chosen
+        // render size, then VERTICALLY CENTER the curve box in the available
+        // content region below the InputText. User asked for the curves to sit
+        // in the middle of the free vertical space, not crammed against the
+        // textbox above or the next section below.
         float big = ImMax(display_size * 2.0f, 128.0f);
         ImFontBaked* baked = font->GetFontBaked(big);
-        float ascent  = baked ? baked->Ascent : big * 0.85f;
+        float ascent  = baked ? baked->Ascent  : big * 0.85f;
         float descent = baked ? baked->Descent : big * -0.20f; // descent is negative
-        // The box must be tall enough to hold the full glyph (ascent + descent)
-        // PLUS a top margin we'll use to keep ascenders inside the box.
-        float top_margin = ImPlatform_LpToPx(16.0f);
-        float needed = ascent + ImFabs(descent) + top_margin + ImPlatform_LpToPx(24.0f);
-        float box_h = ImMin(avail.y, needed);
-        if (box_h < ImPlatform_LpToPx(160.0f))
-            box_h = ImMin(avail.y, ImPlatform_LpToPx(160.0f));
+        float curve_h = ascent + ImFabs(descent);
+
+        ImVec2 avail = ImGui::GetContentRegionAvail();
+        float inner_pad = ImPlatform_LpToPx(8.0f); // small gutter inside the box
+        float box_h_min = ImMin(avail.y, curve_h + 2.0f * inner_pad);
+        // Use the full remaining height for the box, centering the glyph inside.
+        float box_h = ImMax(box_h_min, ImMin(avail.y, ImPlatform_LpToPx(200.0f)));
+        // Space above the box so it sits in the center of what's left.
+        float extra = avail.y - box_h;
+        float top_spacer = ImMax(0.0f, extra * 0.5f);
+        if (top_spacer > 0.0f) ImGui::Dummy(ImVec2(1, top_spacer));
+
         ImVec2 box_min = ImGui::GetCursorScreenPos();
         ImGui::Dummy(ImVec2(avail.x, box_h));
         ImVec2 box_max(box_min.x + avail.x, box_min.y + box_h);
         ImDrawList* dl = ImGui::GetWindowDrawList();
         dl->PushClipRect(box_min, box_max, true);
         dl->AddRect(box_min, box_max, IM_COL32(120, 120, 120, 80));
-        // Baseline placed at (top + top_margin + ascent) so ascenders land inside
-        // the box with the requested top margin.
-        ImVec2 tp(box_min.x + ImPlatform_LpToPx(20.0f), box_min.y + top_margin + ascent);
-        // Baseline reference line.
+
+        // Center the glyph vertically inside the box: top of ascent sits at
+        // (box_h - curve_h) / 2 down from the top, baseline = that + ascent.
+        float glyph_top = ImMax(inner_pad, (box_h - curve_h) * 0.5f);
+        ImVec2 tp(box_min.x + ImPlatform_LpToPx(20.0f), box_min.y + glyph_top + ascent);
         dl->AddLine(ImVec2(box_min.x + 6, tp.y), ImVec2(box_max.x - 6, tp.y),
                     IM_COL32(255, 180, 50, 120), 1.0f);
         DrawTextDebugCurves(dl, font, big, tp, buf, nullptr, /*flags=*/(1 | 2 | 4));
@@ -23489,21 +23049,23 @@ namespace ImWidgets
         dl->AddCircleFilled(rot_h, ldv_handle_r * 0.7f, IM_COL32(120, 220, 255, 230));
         dl->AddCircle(rot_h, ldv_handle_r * 0.7f, IM_COL32(0, 0, 0, 220), 12, 1.0f);
 
-        // Swap button top-right.
-        ImVec2 sb0(bb.Max.x - 28, bb.Min.y + 6);
-        ImVec2 sb1(bb.Max.x - 6, bb.Min.y + 22);
-        dl->AddRectFilled(sb0, sb1, IM_COL32(40, 44, 52, 230));
-        dl->AddText(ImVec2(sb0.x + 4, sb0.y + 1), IM_COL32(220, 220, 220, 230), "A/B");
-        dl->AddRect(sb0, sb1, IM_COL32(255, 255, 255, 120));
+        // Expand-to-window button in the top-right (replaced the old A/B swap
+        // button — swap is now a regular control exposed outside the widget).
+        ImGuiID ldv_id = ImGui::GetID("##ldv_expand");
+        bool* pExpanded = WidgetExpandButton(ldv_id, bb);
+        if (pExpanded && *pExpanded)
+        {
+            if (BeginExpandedWindow(label, ldv_id, pExpanded, ImPlatform_LpToPx(ImVec2(1280, 720))))
+            {
+                LookDevCompare("##ldv_modal", tex_a, tex_b,
+                               a_uv_min, a_uv_max, b_uv_min, b_uv_max,
+                               state, ImGui::GetContentRegionAvail());
+            }
+            EndExpandedWindow();
+        }
 
         ImVec2 mouse = ImGui::GetIO().MousePos;
         bool changed = false;
-        if (hovered && ImGui::IsMouseClicked(0)
-            && mouse.x >= sb0.x && mouse.x <= sb1.x && mouse.y >= sb0.y && mouse.y <= sb1.y)
-        {
-            state->Swap = !state->Swap;
-            changed = true;
-        }
 
         // Drag state-machine: 0 = idle, 1 = slide (move pivot freely), 2 = rotate around pivot.
         ImGuiStorage* st = ImGui::GetStateStorage();
@@ -23746,10 +23308,18 @@ namespace ImWidgets
         dl->AddCircleFilled(rot_h, hr * 0.7f, IM_COL32(120, 220, 255, 230));
         dl->AddCircle(rot_h, hr * 0.7f, IM_COL32(0, 0, 0, 220), 12, 1.0f);
 
-        ImVec2 sb0(bb.Max.x - 28, bb.Min.y + 6), sb1(bb.Max.x - 6, bb.Min.y + 22);
-        dl->AddRectFilled(sb0, sb1, IM_COL32(40, 44, 52, 230));
-        dl->AddText(ImVec2(sb0.x + 4, sb0.y + 1), IM_COL32(220, 220, 220, 230), "A/B");
-        dl->AddRect(sb0, sb1, IM_COL32(255, 255, 255, 120));
+        // Expand-to-window button in the top-right (replaced the old A/B swap
+        // button — swap is now a regular control exposed outside the widget).
+        ImGuiID ldi_id = ImGui::GetID("##ldi_expand");
+        bool* pExpanded = WidgetExpandButton(ldi_id, bb);
+        if (pExpanded && *pExpanded)
+        {
+            if (BeginExpandedWindow(label, ldi_id, pExpanded, ImPlatform_LpToPx(ImVec2(1280, 720))))
+            {
+                LookDevInspector("##ldi_modal", tex_a, tex_b, st, ImGui::GetContentRegionAvail());
+            }
+            EndExpandedWindow();
+        }
 
         // Drag handling (same model as LookDevCompare).
         ImGuiStorage* store = ImGui::GetStateStorage();
@@ -23760,22 +23330,17 @@ namespace ImWidgets
         ImVec2 mouse = ImGui::GetIO().MousePos;
         if (hovered && ImGui::IsMouseClicked(0))
         {
-            if (mouse.x >= sb0.x && mouse.x <= sb1.x && mouse.y >= sb0.y && mouse.y <= sb1.y)
-            { st->Divider.Swap = !st->Divider.Swap; changed = true; }
-            else
+            float dm = ImLengthSqr(ImVec2(mouse.x - pivot.x, mouse.y - pivot.y));
+            float dr = ImLengthSqr(ImVec2(mouse.x - rot_h.x, mouse.y - rot_h.y));
+            if (dr < (hr * 1.4f) * (hr * 1.4f))
             {
-                float dm = ImLengthSqr(ImVec2(mouse.x - pivot.x, mouse.y - pivot.y));
-                float dr = ImLengthSqr(ImVec2(mouse.x - rot_h.x, mouse.y - rot_h.y));
-                if (dr < (hr * 1.4f) * (hr * 1.4f))
-                {
-                    mode = 2;
-                    store->SetFloat(kStartMouse, ImAtan2(mouse.y - pivot.y, mouse.x - pivot.x));
-                    store->SetFloat(kStartAng, st->Divider.DividerAngleRad);
-                }
-                else if (dm < (hr * 1.8f) * (hr * 1.8f)) mode = 1;
-                else mode = 0;
-                store->SetInt(kMode, mode);
+                mode = 2;
+                store->SetFloat(kStartMouse, ImAtan2(mouse.y - pivot.y, mouse.x - pivot.x));
+                store->SetFloat(kStartAng, st->Divider.DividerAngleRad);
             }
+            else if (dm < (hr * 1.8f) * (hr * 1.8f)) mode = 1;
+            else mode = 0;
+            store->SetInt(kMode, mode);
         }
         if (!ImGui::IsMouseDown(0)) { mode = 0; store->SetInt(kMode, 0); }
         if (mode == 1 && ImGui::IsMouseDown(0))
@@ -24457,14 +24022,11 @@ namespace ImWidgets
     }
 }
 
-// LaTeX math rendering (included at end so all symbols like gs_pContext are visible)
+// LaTeX math rendering (kept inline — depends on slug's file-statics and the
+// stb_truetype setup in this TU).
 #define _DEAR_WIDGETS_LATEX_INCLUDED
 #include "dear_widgets_latex.cpp"
 
-// Euler spiral stroke expansion
-#define _DEAR_WIDGETS_STROKE_INCLUDED
-#include "dear_widgets_stroke.cpp"
-
-// Color-managed raw-buffer image inspector
-#define _DEAR_WIDGETS_IMAGE_INSPECTOR_INCLUDED
-#include "dear_widgets_image_inspector.cpp"
+// dear_widgets_image_inspector.cpp, dear_widgets_stroke.cpp and
+// dear_widgets_vector_drawing.cpp are each compiled as their own translation
+// unit and resolved by the linker — no unity-build include needed.

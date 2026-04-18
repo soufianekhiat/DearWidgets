@@ -1,6 +1,10 @@
 // dear_widgets_latex.cpp — LaTeX math expression parser, layout, and renderer.
 // Uses Slug GPU font rendering for glyph output.
-// This file is #included from dear_widgets.cpp — do NOT compile it separately.
+// Still #included from dear_widgets.cpp (unity build) because this file reaches
+// into slug's file-static helpers (DrawText_Impl, CalcTextSize_Impl,
+// SlugLpToPx, TesselateText_Impl) and into stb_truetype globals set up there.
+// Converting to a standalone TU would require promoting all of those to
+// external linkage — deferred.
 #ifdef _DEAR_WIDGETS_LATEX_INCLUDED
 #include "dear_widgets_latex.h"
 #include <string.h>

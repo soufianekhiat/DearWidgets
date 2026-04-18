@@ -1,3 +1,4 @@
+#pragma once
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
 #endif
@@ -2917,63 +2918,10 @@ struct ImGregoryPatch
 	ImVec2 cp[ 20 ];
 };
 
-// Vector Drawing Tool: world-space bezier authoring canvas.
-// Path = sequence of ImVectorDrawingNode. Each node holds an anchor point plus
-// in/out tangents (relative to anchor). Successive nodes are joined with a cubic
-// bezier segment using the left node's OutTangent and the right node's InTangent.
-struct ImVectorDrawingNode
-{
-	ImVec2 Anchor;       // world-space position
-	ImVec2 InTangent;    // relative offset from Anchor, applied to the incoming segment's P2
-	ImVec2 OutTangent;   // relative offset from Anchor, applied to the outgoing segment's P1
-	bool   Broken;       // when false, In/Out mirror each other through the anchor
-
-	ImVectorDrawingNode() : Anchor( 0, 0 ), InTangent( 0, 0 ), OutTangent( 0, 0 ), Broken( false ) {}
-	ImVectorDrawingNode( ImVec2 p ) : Anchor( p ), InTangent( 0, 0 ), OutTangent( 0, 0 ), Broken( false ) {}
-};
-
-enum ImVectorDrawingStyle_
-{
-	ImVectorDrawingStyle_Polyline = 0,          // AddPolyline
-	ImVectorDrawingStyle_PolylineAA,            // DrawPolylineAA (SDF)
-	ImVectorDrawingStyle_StrokedBezier,         // DrawStrokedBezierPath (Euler spiral)
-	ImVectorDrawingStyle_StrokedDashedBezier,   // DrawStrokedDashedBezierPath
-	ImVectorDrawingStyle_DashedPolyline,        // DrawDashedPolylineAA
-	ImVectorDrawingStyle_COUNT
-};
-typedef int ImVectorDrawingStyle;
-
-struct ImVectorDrawingPath
-{
-	ImVector<ImVectorDrawingNode> Nodes;
-	bool                          Closed;
-	ImU32                         Color;
-	float                         Thickness;
-	ImVectorDrawingStyle          Style;
-	float                         DashLen;
-	float                         GapLen;
-
-	ImVectorDrawingPath()
-		: Closed( false ), Color( IM_COL32( 255, 220, 100, 255 ) ), Thickness( 2.0f ),
-		  Style( ImVectorDrawingStyle_StrokedBezier ), DashLen( 8.0f ), GapLen( 6.0f ) {}
-};
-
-struct ImVectorDrawingData
-{
-	ImVector<ImVectorDrawingPath> Paths;
-	ImVec2 PanOffset;   // world offset of view origin (screen-space pixels)
-	float  Zoom;        // world → screen multiplier
-	int    SelectedPath;
-	int    SelectedNode;
-	int    SelectedHandle;       // 0 = anchor, 1 = in, 2 = out
-	ImVector<int> SelectedNodes; // multi-node selection (indices into SelectedPath's Nodes)
-	// Authoring state: -1 if not currently creating a new path.
-	int    ActivePath;
-
-	ImVectorDrawingData()
-		: PanOffset( 0, 0 ), Zoom( 1.0f ), SelectedPath( -1 ), SelectedNode( -1 ),
-		  SelectedHandle( 0 ), ActivePath( -1 ) {}
-};
+// Vector Drawing Tool types moved to dear_widgets_vector_drawing.h so the
+// widget implementation can live in its own translation unit. Downstream code
+// that includes dear_widgets.h keeps working with no changes.
+#include "dear_widgets_vector_drawing.h"
 
 // Envelope / ADSR
 struct ImEnvelopeStage
@@ -3571,6 +3519,7 @@ namespace ImWidgets{
 	IMGUI_API void DrawCheckerboard( ImDrawList* pDrawList, ImVec2 position, ImVec2 size, float cellSize, ImU32 col1, ImU32 col2 );
 	IMGUI_API void DrawGradientBar( ImDrawList* pDrawList, ImGradientData const& gradient, ImVec2 position, ImVec2 size, int resolution );
 	IMGUI_API void DrawSplineGradient( ImDrawList* pDrawList, ImGradientData const& gradient, const ImVec2* points, int points_count, float thickness, int resolution, bool closed = false );
+	IMGUI_API void DrawSplineGradientCut( ImDrawList* pDrawList, ImGradientData const& gradient, float const min, float const max, const ImVec2* points, int points_count, float thickness, int resolution, bool closed = false );
 
 	IMGUI_API float CurveEditorEvalEasing( ImCurveEditorSeg seg, float t );
 	IMGUI_API float CurveEditorSample( ImCurveEditorData const& curve, float x );
@@ -3811,19 +3760,23 @@ namespace ImWidgets{
 	IMGUI_API bool Slider2DInt( char const* pLabel, int* pValueX, void* pValueY, int v_minX, int v_maxX, int v_minY, int v_maxY );
 
 	// SliderGradient: 1D slider with an ImGradientData-backed background. Color space comes from gradient->Interpolation.
-	IMGUI_API bool SliderGradientScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ) );
-	IMGUI_API bool SliderGradientFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ) );
-	IMGUI_API bool SliderGradientInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ) );
+	// `fill_up_to_cursor` (default false): when true, the gradient renders only
+	// for t in [0, current value]. Past the cursor the ImGui FrameBg shows
+	// through — same idea / same callback trick as SliderSplineGradient.
+	IMGUI_API bool SliderGradientScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), bool fill_up_to_cursor = false );
+	IMGUI_API bool SliderGradientFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), bool fill_up_to_cursor = false );
+	IMGUI_API bool SliderGradientInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), bool fill_up_to_cursor = false );
 
 	// SliderGradientRing: interactive ring/arc slider with gradient background.
 	// Full-circle overload: value wraps at boundaries (natural for hue).
-	IMGUI_API bool SliderGradientRingScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, float outerRadius, float thickness );
-	IMGUI_API bool SliderGradientRingFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, float outerRadius, float thickness );
-	IMGUI_API bool SliderGradientRingInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, float outerRadius, float thickness );
+	// `fill_up_to_cursor` has identical semantics to SliderGradient above.
+	IMGUI_API bool SliderGradientRingScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, float outerRadius, float thickness, bool fill_up_to_cursor = false );
+	IMGUI_API bool SliderGradientRingFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, float outerRadius, float thickness, bool fill_up_to_cursor = false );
+	IMGUI_API bool SliderGradientRingInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, float outerRadius, float thickness, bool fill_up_to_cursor = false );
 	// Arc overload: caller specifies startAngle + sweepAngle (radians). Value is clamped (no wrap).
-	IMGUI_API bool SliderGradientRingScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle );
-	IMGUI_API bool SliderGradientRingFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle );
-	IMGUI_API bool SliderGradientRingInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle );
+	IMGUI_API bool SliderGradientRingScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle, bool fill_up_to_cursor = false );
+	IMGUI_API bool SliderGradientRingFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle, bool fill_up_to_cursor = false );
+	IMGUI_API bool SliderGradientRingInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle, bool fill_up_to_cursor = false );
 
 	// Unit Field: DragFloat with built-in unit selector
 	IMGUI_API bool UnitField( char const* label, float* pValue, ImUnitDef* units, int unitCount, int* pSelectedUnit, float v_speed = 1.0f, float v_min = 0.0f, float v_max = 0.0f, const char* format = NULL );
@@ -3909,18 +3862,27 @@ namespace ImWidgets{
 									float v_thickness = 0.0f, const char* format = "%d", ImGuiSliderFlags flags = 0 );
 
 	// SliderSplineGradient: spline-track slider with a gradient background rendered along the bezier path.
+	// `fill_up_to_cursor` (default false) compresses the full gradient into the [0, cursor] range
+	// along the spline and renders a plain track color from the cursor to 1. When false, the full
+	// gradient is painted across the entire spline.
 	IMGUI_API bool SliderSplineGradientScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max,
 											   ImGradientData const* gradient,
 											   const ImVec2* control_points = NULL, int num_points = 4, float v_height = 0.0f,
-											   float v_thickness = 0.0f, const char* format = NULL, ImGuiSliderFlags flags = 0 );
+											   float v_thickness = 0.0f, const char* format = NULL,
+											   bool fill_up_to_cursor = false,
+											   ImGuiSliderFlags flags = 0 );
 	IMGUI_API bool SliderSplineGradientFloat( char const* label, float* value, float v_min, float v_max,
 											  ImGradientData const* gradient,
 											  const ImVec2* control_points = NULL, int num_points = 4, float v_height = 0.0f,
-											  float v_thickness = 0.0f, const char* format = "%.3f", ImGuiSliderFlags flags = 0 );
+											  float v_thickness = 0.0f, const char* format = "%.3f",
+											  bool fill_up_to_cursor = false,
+											  ImGuiSliderFlags flags = 0 );
 	IMGUI_API bool SliderSplineGradientInt( char const* label, int* value, int v_min, int v_max,
 											ImGradientData const* gradient,
 											const ImVec2* control_points = NULL, int num_points = 4, float v_height = 0.0f,
-											float v_thickness = 0.0f, const char* format = "%d", ImGuiSliderFlags flags = 0 );
+											float v_thickness = 0.0f, const char* format = "%d",
+											bool fill_up_to_cursor = false,
+											ImGuiSliderFlags flags = 0 );
 
 	IMGUI_API bool DragFloatPrecise( char const* label, float* value, float v_min = 0.0f, float v_max = 0.0f, const char* format = NULL, ImGuiSliderFlags flags = 0 );
 
@@ -4228,11 +4190,9 @@ namespace ImWidgets{
     // New widgets (W1–W7)
     //////////////////////////////////////////////////////////////////////////
 
-    // W2. Vector drawing tool (canvas with zoom/pan + bezier path authoring)
-    // Forward declarations — data types are defined outside namespace (see ImVectorDrawingData).
-    IMGUI_API bool VectorDrawingTool(const char* label,
-                                     struct ImVectorDrawingData& data,
-                                     ImVec2 size = ImVec2(0, 0));
+    // W2. Vector drawing tool — declaration lives in dear_widgets_vector_drawing.h
+    // (included above). Left here as a breadcrumb so navigation by section still
+    // lands at the right spot.
 
     // W3. Envelope editor (general-purpose time-varying parameter).
     IMGUI_API bool EnvelopeEditor(const char* label,
@@ -4570,7 +4530,7 @@ namespace ImWidgets{
 
         ImVolumeViewerState()
             : Voxels(NULL), Width(0), Height(0), Depth(0),
-              Mode(ImVolumeViewerMode_ThreeSlice),
+              Mode(ImVolumeViewerMode_Raymarch),   // DDA raymarch is the headline mode
               SliceX(0.5f), SliceY(0.5f), SliceZ(0.5f),
               WindowMin(0.0f), WindowMax(1.0f), Gamma(1.0f),
               CamAzimuth(0.5f), CamElevation(0.3f), CamDistance(2.0f),
