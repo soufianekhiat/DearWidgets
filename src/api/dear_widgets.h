@@ -3763,9 +3763,13 @@ namespace ImWidgets{
 	// `fill_up_to_cursor` (default false): when true, the gradient renders only
 	// for t in [0, current value]. Past the cursor the ImGui FrameBg shows
 	// through — same idea / same callback trick as SliderSplineGradient.
-	IMGUI_API bool SliderGradientScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), bool fill_up_to_cursor = false );
-	IMGUI_API bool SliderGradientFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), bool fill_up_to_cursor = false );
-	IMGUI_API bool SliderGradientInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), bool fill_up_to_cursor = false );
+	// `right_to_left` (default false): mirror the cursor direction. t=0 places
+	// the grab at the right edge, t=1 at the left edge. Combined with
+	// `fill_up_to_cursor`, the fill grows from the right. Gradient colors keep
+	// their natural positions (blue at 0, orange at 1 for a blue→orange grad).
+	IMGUI_API bool SliderGradientScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), bool fill_up_to_cursor = false, bool right_to_left = false );
+	IMGUI_API bool SliderGradientFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), bool fill_up_to_cursor = false, bool right_to_left = false );
+	IMGUI_API bool SliderGradientInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), bool fill_up_to_cursor = false, bool right_to_left = false );
 
 	// SliderGradientRing: interactive ring/arc slider with gradient background.
 	// Full-circle overload: value wraps at boundaries (natural for hue).

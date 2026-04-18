@@ -6412,6 +6412,38 @@ namespace ImWidgets{
 						ImWidgets::SliderGradientFloat( "Float Fill##SG", &gradFillF, 0.0f, 1.0f, &gradRainbow, ImVec2( 0, 0 ), sg_fill );
 						static int gradFillI = 60;
 						ImWidgets::SliderGradientInt( "Int Fill##SG", &gradFillI, 0, 100, &gradOkLch, ImVec2( 0, 0 ), sg_fill );
+
+						// Right-to-left variant: use the right_to_left flag — grab
+						// travels from the right edge (value=v_min) to the left
+						// edge (value=v_max), and when fill_up_to_cursor is on the
+						// fill grows from the right. Gradient colors keep their
+						// natural positions (blue at 0, orange at 1 of the bar).
+						static float gradFillF_RTL = 0.35f;
+						ImWidgets::SliderGradientFloat( "Float Fill RTL##SG", &gradFillF_RTL, 0.0f, 1.0f, &gradRainbow, ImVec2( 0, 0 ), sg_fill, /*right_to_left=*/true );
+						static int gradFillI_RTL = 60;
+						ImWidgets::SliderGradientInt( "Int Fill RTL##SG", &gradFillI_RTL, 0, 100, &gradOkLch, ImVec2( 0, 0 ), sg_fill, /*right_to_left=*/true );
+
+						// Live-editable gradient + matching SliderGradient. The editor
+						// has alpha enabled so the user can drag alpha stops too — the
+						// bar feeds that gradient straight into SliderGradientFloat so
+						// the slider reacts in real time to stop edits.
+						ImGui::Separator();
+						ImGui::TextUnformatted( "Editable (alpha enabled):" );
+						static ImGradientData gradEditSG;
+						static bool gradEditSGInit = false;
+						if ( !gradEditSGInit )
+						{
+							gradEditSG.Stops.clear();
+							gradEditSG.Stops.push_back( { 0.00f, ImVec4( 0.1f, 0.25f, 0.85f, 1.0f ) } );
+							gradEditSG.Stops.push_back( { 0.50f, ImVec4( 1.0f, 1.0f,  1.0f,  0.2f ) } );
+							gradEditSG.Stops.push_back( { 1.00f, ImVec4( 1.0f, 0.55f, 0.05f, 1.0f ) } );
+							gradEditSG.Interpolation = ImWidgetsGradientInterp_OkLab;
+							gradEditSGInit = true;
+						}
+						ImWidgets::GradientEditor( "##SG_GradEdit", &gradEditSG, /*alpha=*/true );
+						static float gradEditVal = 0.5f;
+						ImWidgets::SliderGradientFloat( "Driven by editor##SG", &gradEditVal, 0.0f, 1.0f, &gradEditSG );
+						ImWidgets::SliderGradientFloat( "Driven (fill)##SG",    &gradEditVal, 0.0f, 1.0f, &gradEditSG, ImVec2( 0, 0 ), /*fill_up_to_cursor=*/true );
 					}
 					DW_SsRecord( "SliderGradient", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -6475,6 +6507,41 @@ namespace ImWidgets{
 							"Fill##SSG_FILL", &valFill, 0.0f, 1.0f, &gradSSG,
 							nullptr, 4, 0.0f, 0.0f, "%.3f",
 							grad_fill );
+
+						// Right-to-left variant: mirror control points across the X axis
+						// so the spline arc flows from right to left. Works transparently
+						// with fill_up_to_cursor — as the cursor grows, the filled arc
+						// walks right-to-left across the widget.
+						static const ImVec2 arcUp_RTL_SSG[ 4 ] = {
+							ImVec2( 1.0f, 0.8f ), ImVec2( 0.75f, 0.0f ),
+							ImVec2( 0.25f, 0.0f ), ImVec2( 0.0f, 0.8f )
+						};
+						static float valFillRTL = 0.35f;
+						ImWidgets::SliderSplineGradientFloat(
+							"Fill RTL##SSG_FILL", &valFillRTL, 0.0f, 1.0f, &gradSSG,
+							arcUp_RTL_SSG, 4, 0.0f, 0.0f, "%.3f",
+							grad_fill );
+
+						ImGui::Separator();
+						ImGui::TextUnformatted( "Editable (alpha enabled):" );
+						static ImGradientData gradEditSSG;
+						static bool gradEditSSGInit = false;
+						if ( !gradEditSSGInit )
+						{
+							gradEditSSG.Stops.clear();
+							gradEditSSG.Stops.push_back( { 0.00f, ImVec4( 0.85f, 0.15f, 0.45f, 1.0f ) } );
+							gradEditSSG.Stops.push_back( { 0.50f, ImVec4( 1.0f,  1.0f,  1.0f,  0.25f ) } );
+							gradEditSSG.Stops.push_back( { 1.00f, ImVec4( 0.15f, 0.65f, 0.95f, 1.0f ) } );
+							gradEditSSG.Interpolation = ImWidgetsGradientInterp_OkLab;
+							gradEditSSGInit = true;
+						}
+						ImWidgets::GradientEditor( "##SSG_GradEdit", &gradEditSSG, /*alpha=*/true );
+						static float gradEditValSSG = 0.5f;
+						ImWidgets::SliderSplineGradientFloat(
+							"Driven by editor##SSG", &gradEditValSSG, 0.0f, 1.0f, &gradEditSSG );
+						ImWidgets::SliderSplineGradientFloat(
+							"Driven (fill)##SSG", &gradEditValSSG, 0.0f, 1.0f, &gradEditSSG,
+							nullptr, 4, 0.0f, 0.0f, "%.3f", /*fill_up_to_cursor=*/true );
 					}
 					DW_SsRecord( "SliderSplineGradient", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -6533,6 +6600,40 @@ namespace ImWidgets{
 						ImWidgets::SliderGradientRingFloat( "Temp Fill##SRG", &tempFill, 0.0f, 1.0f, &ringTempGrad, SRG_R, SRG_TH, IM_PI, IM_PI, srg_fill );
 						ImGui::SameLine();
 						ImWidgets::SliderGradientRingInt( "Meter Fill##SRG", &meterFill, 0, 100, &ringTempGrad, SRG_R, SRG_TH, 0.75f * IM_PI, 1.5f * IM_PI, srg_fill );
+
+						// Right-to-left variants: negate the sweep angle so the arc
+						// progresses counter-clockwise. Works transparently with
+						// fill_up_to_cursor — the fill walks RTL around the ring.
+						static float hueFill_RTL  = 0.35f;
+						static float tempFill_RTL = 0.6f;
+						static int   meterFill_RTL = 30;
+						// Full ring RTL: start at -π/2 (top), sweep = -2π (full circle CCW).
+						ImWidgets::SliderGradientRingFloat( "Hue Fill RTL##SRG", &hueFill_RTL, 0.0f, 1.0f, &ringHueGrad, SRG_R, SRG_TH, -0.5f * IM_PI, -2.0f * IM_PI, srg_fill );
+						ImGui::SameLine();
+						// Half-ring RTL: start at 2π, sweep = -π (reverses the arc's direction).
+						ImWidgets::SliderGradientRingFloat( "Temp Fill RTL##SRG", &tempFill_RTL, 0.0f, 1.0f, &ringTempGrad, SRG_R, SRG_TH, 2.0f * IM_PI, -IM_PI, srg_fill );
+						ImGui::SameLine();
+						// 3/4 meter RTL: start at 2.25π, sweep = -1.5π.
+						ImWidgets::SliderGradientRingInt( "Meter Fill RTL##SRG", &meterFill_RTL, 0, 100, &ringTempGrad, SRG_R, SRG_TH, 2.25f * IM_PI, -1.5f * IM_PI, srg_fill );
+
+						ImGui::Separator();
+						ImGui::TextUnformatted( "Editable (alpha enabled):" );
+						static ImGradientData gradEditSRG;
+						static bool gradEditSRGInit = false;
+						if ( !gradEditSRGInit )
+						{
+							gradEditSRG.Stops.clear();
+							gradEditSRG.Stops.push_back( { 0.00f, ImVec4( 0.95f, 0.25f, 0.35f, 1.0f ) } );
+							gradEditSRG.Stops.push_back( { 0.50f, ImVec4( 1.0f,  1.0f,  1.0f,  0.2f ) } );
+							gradEditSRG.Stops.push_back( { 1.00f, ImVec4( 0.25f, 0.65f, 0.95f, 1.0f ) } );
+							gradEditSRG.Interpolation = ImWidgetsGradientInterp_OkLCH;
+							gradEditSRGInit = true;
+						}
+						ImWidgets::GradientEditor( "##SRG_GradEdit", &gradEditSRG, /*alpha=*/true );
+						static float gradEditValSRG = 0.5f;
+						ImWidgets::SliderGradientRingFloat( "Driven by editor##SRG", &gradEditValSRG, 0.0f, 1.0f, &gradEditSRG, SRG_R, SRG_TH );
+						ImGui::SameLine();
+						ImWidgets::SliderGradientRingFloat( "Driven (fill)##SRG", &gradEditValSRG, 0.0f, 1.0f, &gradEditSRG, SRG_R, SRG_TH, /*fill_up_to_cursor=*/true );
 					}
 					DW_SsRecord( "SliderRing_Gradient", _sy0, ImGui::GetCursorPos().y );
 				}

@@ -3793,12 +3793,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	{
 		float const sx = size.x / ( ( float )resolutionX );
 
-		float const dx = 1.0f / ( ( float )resolutionX );
-		float const hdx = 0.5f / ( ( float )resolutionX );
-
+		// Endpoint-inclusive sampling: t = i / (N - 1) so the first cell shows
+		// func(minX) and the last cell shows func(maxX) exactly. The previous
+		// midpoint convention ( (i+0.5)/N ) skipped the endpoint colors —
+		// important gradient info at t=0 / t=1 was never visible in the bar.
+		// For N=1 we collapse to a single midpoint sample (same as before).
+		float const denom = ( resolutionX > 1 ) ? ( float )( resolutionX - 1 ) : 1.0f;
 		for ( int i = 0; i < resolutionX; ++i )
 		{
-			float x0 = ScaleFromNormalized( ( ( float )i + 0 ) * dx + hdx, minX, maxX );
+			float t = ( resolutionX > 1 ) ? ( ( float )i / denom ) : 0.5f;
+			float x0 = ScaleFromNormalized( t, minX, maxX );
 
 			ImU32 const col = func( x0, pUserData );
 			pDrawList->AddRectFilledMultiColor( position + ImVec2( sx * ( i + 0 ), 0.0f ),
@@ -3811,13 +3815,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	{
 		float const sy = size.y / ( ( float )resolutionY );
 
-		float const dy = 1.0f / ( ( float )resolutionY );
-		float const hdy = 0.5f / ( ( float )resolutionY );
-
+		// See Horizontal variant comment — endpoint-inclusive sampling.
+		float const denom = ( resolutionY > 1 ) ? ( float )( resolutionY - 1 ) : 1.0f;
 		for ( int i = 0; i < resolutionY; ++i )
 		{
+			float t = ( resolutionY > 1 ) ? ( ( float )i / denom ) : 0.5f;
 			// Top-to-bottom in screen space maps maxY-to-minY in value space (matches 2D primitive convention).
-			float y0 = ScaleFromNormalized( ( ( float )i + 0 ) * dy + hdy, maxY, minY );
+			float y0 = ScaleFromNormalized( t, maxY, minY );
 
 			ImU32 const col = func( y0, pUserData );
 			pDrawList->AddRectFilledMultiColor( position + ImVec2( 0.0f, sy * ( i + 0 ) ),
@@ -3830,12 +3834,18 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	{
 		float const sx = size.x / ( ( float )resolutionX );
 
-		float const dx = 1.0f / ( ( float )resolutionX );
-
 		for ( int i = 0; i < resolutionX; ++i )
 		{
-			float x0 = ScaleFromNormalized( ( ( float )i + 0 ) * dx, minX, maxX );
-			float x1 = ScaleFromNormalized( ( ( float )i + 1 ) * dx, minX, maxX );
+			// Use (i/N) and ((i+1)/N) directly — guarantees the endpoints are
+			// exactly 0 and 1 (which then map to exactly minX and maxX after
+			// ScaleFromNormalized). Computing `dx*i` with dx=1/N loses precision
+			// for most N (e.g. 100*(1.0f/100) != 1.0f) so the final vertex's
+			// sampled `func(t)` fell slightly short of t=1 — visible as a thin
+			// off-by-one-stop band on Slider gradients.
+			float t0 = ( ( float )i ) / ( ( float )resolutionX );
+			float t1 = ( ( float )( i + 1 ) ) / ( ( float )resolutionX );
+			float x0 = ScaleFromNormalized( t0, minX, maxX );
+			float x1 = ScaleFromNormalized( t1, minX, maxX );
 
 			ImU32 const col_l = func( x0, pUserData );
 			ImU32 const col_r = func( x1, pUserData );
@@ -3849,13 +3859,15 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	{
 		float const sy = size.y / ( ( float )resolutionY );
 
-		float const dy = 1.0f / ( ( float )resolutionY );
-
 		for ( int i = 0; i < resolutionY; ++i )
 		{
+			// See comment in the Horizontal variant — same fence-post fix so
+			// the first / last evaluated t values are exactly 0 and 1.
+			float t0 = ( ( float )i ) / ( ( float )resolutionY );
+			float t1 = ( ( float )( i + 1 ) ) / ( ( float )resolutionY );
 			// Top-to-bottom in screen space maps maxY-to-minY in value space (matches 2D primitive convention).
-			float y0 = ScaleFromNormalized( ( ( float )i + 0 ) * dy, maxY, minY );
-			float y1 = ScaleFromNormalized( ( ( float )i + 1 ) * dy, maxY, minY );
+			float y0 = ScaleFromNormalized( t0, maxY, minY );
+			float y1 = ScaleFromNormalized( t1, maxY, minY );
 
 			ImU32 const col_t = func( y0, pUserData );
 			ImU32 const col_b = func( y1, pUserData );
@@ -3867,27 +3879,23 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	void DrawProceduralColor2DNearest( ImDrawList* pDrawList, ImWidgetsColor2DCallback func, void* pUserData, float minX, float maxX, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionX, int resolutionY )
 	{
-		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
-
 		float const sx = size.x / ( ( float )resolutionX );
 		float const sy = size.y / ( ( float )resolutionY );
 
-		float const dy = 1.0f / ( ( float )resolutionY );
-		float const dx = 1.0f / ( ( float )resolutionX );
-		float const hdx = 0.5f / ( ( float )resolutionX );
-		float const hdy = 0.5f / ( ( float )resolutionY );
+		// Endpoint-inclusive sampling on both axes so t=0 and t=1 in each
+		// dimension are visible (see 1D Nearest variants for rationale).
+		float const denomX = ( resolutionX > 1 ) ? ( float )( resolutionX - 1 ) : 1.0f;
+		float const denomY = ( resolutionY > 1 ) ? ( float )( resolutionY - 1 ) : 1.0f;
 
 		for ( int i = 0; i < resolutionX; ++i )
 		{
-			float x0;
-			float x1; ( void )x1;
-			x0 = ScaleFromNormalized( ( ( float )i + 0 ) * dx + hdx, minX, maxX );
+			float tx = ( resolutionX > 1 ) ? ( ( float )i / denomX ) : 0.5f;
+			float x0 = ScaleFromNormalized( tx, minX, maxX );
 
 			for ( int j = 0; j < resolutionY; ++j )
 			{
-				float y0;
-				float y1; ( void )y1;
-				y0 = ScaleFromNormalized( ( ( float )( j + 0 ) * dy + hdy ), maxY, minY );
+				float ty = ( resolutionY > 1 ) ? ( ( float )j / denomY ) : 0.5f;
+				float y0 = ScaleFromNormalized( ty, maxY, minY );
 
 				ImU32 const col00 = func( x0, y0, pUserData );
 				pDrawList->AddRectFilledMultiColor( position + ImVec2( sx * ( i + 0 ), sy * ( j + 0 ) ),
@@ -3970,6 +3978,22 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float acc = 0.0f;
 		auto sampleAt = [ & ]( float s, ImVec2& out_p, ImVec2& out_tan )
 		{
+			// Snap to exact endpoints. Summed seg_len drifts from total_len by
+			// a few ULPs on long polylines; without this, the last quad stops
+			// slightly short of `points[last]` and the first stop color bleeds
+			// into a 1-px band past the intended endpoint on Slider Gradients.
+			if ( s <= 0.0f )
+			{
+				out_p = points[ 0 ];
+				out_tan = seg_tan[ 0 ];
+				return;
+			}
+			if ( s >= total_len )
+			{
+				out_p = points[ closed ? 0 : ( points_count - 1 ) ];
+				out_tan = seg_tan[ seg_count - 1 ];
+				return;
+			}
 			while ( walk_idx < seg_count - 1 && acc + seg_len[ walk_idx ] < s )
 			{
 				acc += seg_len[ walk_idx ];
@@ -6990,7 +7014,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return ImGui::GetColorU32( c );
 	}
 
-	bool SliderGradientScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, ImVec2 size, bool fill_up_to_cursor )
+	bool SliderGradientScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, ImVec2 size, bool fill_up_to_cursor, bool right_to_left )
 	{
 		IM_ASSERT( gradient != NULL );
 
@@ -7039,20 +7063,27 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImVec2 trackPos( frame_bb.Min.x, trackY );
 		ImVec2 trackSize( w, trackH );
 
+		// Normalize the current value once — used for the gradient cut range,
+		// the grab-handle position, and nothing relies on ImGui's grab_bb any
+		// more (see "Grab handle" below for why).
+		float const v_min_f = ScalarToFloat( data_type, ( ImU64* )p_min );
+		float const v_max_f = ScalarToFloat( data_type, ( ImU64* )p_max );
+		float const v_cur_f = ScalarToFloat( data_type, ( ImU64* )p_value );
+		float const t = ( v_max_f > v_min_f )
+			? ImClamp( ( v_cur_f - v_min_f ) / ( v_max_f - v_min_f ), 0.0f, 1.0f )
+			: 0.0f;
+
 		int resolution = ImMax( 8, ( int )( w / 4.0f ) );
 		if ( fill_up_to_cursor )
 		{
 			// Same callback trick as SliderSplineGradientCut: sample the gradient
-			// for t <= cursor, return fully transparent outside → the FrameBg
-			// above shows through past the cursor.
-			float v_min_f = ScalarToFloat( data_type, ( ImU64* )p_min );
-			float v_max_f = ScalarToFloat( data_type, ( ImU64* )p_max );
-			float v_cur_f = ScalarToFloat( data_type, ( ImU64* )p_value );
-			float t = ( v_max_f > v_min_f ) ? ImClamp( ( v_cur_f - v_min_f ) / ( v_max_f - v_min_f ), 0.0f, 1.0f ) : 0.0f;
+			// for t inside the visible range, return fully transparent outside →
+			// the FrameBg shows through past the cursor. For right_to_left the
+			// visible range is [1 - t, 1] so the fill grows from the right.
 			ImWidgetsGradientCutCallbackData gd;
 			gd.gradient = gradient;
-			gd.min = 0.0f;
-			gd.max = t;
+			gd.min = right_to_left ? ( 1.0f - t ) : 0.0f;
+			gd.max = right_to_left ? 1.0f        : t;
 			DrawProceduralColor1DBilinearHorizontal( window->DrawList, &ImWidgetsGradientCutCallback, &gd,
 				0.0f, 1.0f, trackPos, trackSize, resolution );
 		}
@@ -7064,9 +7095,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				0.0f, 1.0f, trackPos, trackSize, resolution );
 		}
 
-		// Slider behavior
+		// Slider behavior. For right_to_left we swap p_min / p_max when feeding
+		// SliderBehavior so ImGui inverts the drag axis natively — dragging
+		// right moves the value toward v_min instead of v_max, which matches
+		// the mirrored grab position (t=0 at the right edge, t=1 at the left).
 		ImRect grab_bb;
-		const bool value_changed = ImGui::SliderBehavior( frame_bb, id, data_type, p_value, p_min, p_max, NULL,
+		const void* sb_min = right_to_left ? p_max : p_min;
+		const void* sb_max = right_to_left ? p_min : p_max;
+		const bool value_changed = ImGui::SliderBehavior( frame_bb, id, data_type, p_value, sb_min, sb_max, NULL,
 			ImGuiSliderFlags_NoInput | ImGuiSliderFlags_NoRoundToFormat, &grab_bb );
 		if ( value_changed )
 			ImGui::MarkItemEdited( id );
@@ -7075,25 +7111,33 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( label_size.x > 0.0f )
 			ImGui::RenderText( ImVec2( frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + style.FramePadding.y ), label );
 
-		// Grab handle
-		float grabCx = ( grab_bb.Min.x + grab_bb.Max.x ) * 0.5f;
+		// Grab handle — position the circle CENTER linearly between the left
+		// and right edges of the track. ImGui's SliderBehavior's grab_bb is
+		// inset inside the frame by an internal padding so the grab-rectangle
+		// stays fully inside; using its center would make our circle stop when
+		// its edge touches the frame, not its center. Other DearWidgets sliders
+		// (Ring, Spline) place the grab's center at the track extremes, which
+		// is what the user expects here too. right_to_left mirrors the axis.
+		float grabT = right_to_left ? ( 1.0f - t ) : t;
+		float grabCx = frame_bb.Min.x + grabT * ( frame_bb.Max.x - frame_bb.Min.x );
 		float grabCy = frame_bb.Min.y + h * 0.5f;
 		bool isActive = ( g.ActiveId == id );
 		ImU32 grabCol = ImGui::GetColorU32( dwStyle.Colors[ isActive ? StyleColor_SliderSpline_GrabActive : StyleColor_SliderSpline_Grab ] );
 		window->DrawList->AddCircleFilled( ImVec2( grabCx, grabCy ), grabR, grabCol );
 		window->DrawList->AddCircle( ImVec2( grabCx, grabCy ), grabR, IM_COL32( 0, 0, 0, 200 ), 0, 1.5f );
+		(void)grab_bb; // still used by SliderBehavior for interaction; we just don't render from it.
 
 		return value_changed;
 	}
 
-	bool SliderGradientFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, ImVec2 size, bool fill_up_to_cursor )
+	bool SliderGradientFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, ImVec2 size, bool fill_up_to_cursor, bool right_to_left )
 	{
-		return SliderGradientScalar( label, ImGuiDataType_Float, v, &v_min, &v_max, gradient, size, fill_up_to_cursor );
+		return SliderGradientScalar( label, ImGuiDataType_Float, v, &v_min, &v_max, gradient, size, fill_up_to_cursor, right_to_left );
 	}
 
-	bool SliderGradientInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, ImVec2 size, bool fill_up_to_cursor )
+	bool SliderGradientInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, ImVec2 size, bool fill_up_to_cursor, bool right_to_left )
 	{
-		return SliderGradientScalar( label, ImGuiDataType_S32, v, &v_min, &v_max, gradient, size, fill_up_to_cursor );
+		return SliderGradientScalar( label, ImGuiDataType_S32, v, &v_min, &v_max, gradient, size, fill_up_to_cursor, right_to_left );
 	}
 
 	static void WriteFloatToScalar( ImGuiDataType dtype, void* p, float v )
@@ -7121,22 +7165,28 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float dx = mousePos.x - center.x;
 		float dy = mousePos.y - center.y;
 		float angle = ImAtan2( dy, dx );
-		// Shift to [0, 2π) and then to local [0, 2π) from startAngle.
-		float local = angle - startAngle;
+		// Support both CW (sweepAngle > 0) and CCW (sweepAngle < 0) arcs. Walk
+		// the signed direction `dir`, measure the positive distance from the
+		// start angle along that direction, and normalize against |sweep|.
+		// Without the sign split, negative-sweep rings produced negative t and
+		// the grab snapped to 0 on click and couldn't be moved.
+		float dir = ( sweepAngle >= 0.0f ) ? 1.0f : -1.0f;
+		float absSweep = dir * sweepAngle;
+		float local = dir * ( angle - startAngle );
 		while ( local < 0.0f )                 local += 2.0f * IM_PI;
 		while ( local >= 2.0f * IM_PI )        local -= 2.0f * IM_PI;
 
 		if ( wrap )
-			return local / sweepAngle;
+			return local / absSweep;
 
-		// Arc: positions in the gap (local > sweepAngle) snap to the nearest endpoint.
-		if ( local > sweepAngle )
+		// Arc: positions in the gap (local > |sweep|) snap to the nearest endpoint.
+		if ( local > absSweep )
 		{
-			float distToEnd = local - sweepAngle;
+			float distToEnd = local - absSweep;
 			float distToStart = 2.0f * IM_PI - local;
-			local = ( distToEnd < distToStart ) ? sweepAngle : 0.0f;
+			local = ( distToEnd < distToStart ) ? absSweep : 0.0f;
 		}
-		return local / sweepAngle;
+		return local / absSweep;
 	}
 
 	static bool SliderRingImpl( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle, bool wrap, bool fill_up_to_cursor )
@@ -7221,7 +7271,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			: hovered        ? ImGuiCol_FrameBgHovered
 			                 : ImGuiCol_FrameBg );
 		{
-			int bg_division = ImMax( 16, ( int )( sweepAngle * outerRadius / 4.0f ) );
+			int bg_division = ImMax( 16, ( int )( ImFabs( sweepAngle ) * outerRadius / 4.0f ) );
 			float da = sweepAngle / ( float )bg_division;
 			ImVec2 uv = ImGui::GetFontTexUvWhitePixel();
 			dl->PrimReserve( bg_division * 6, bg_division * 4 );
@@ -7252,7 +7302,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// swap the per-vertex callback to the "cut" variant which returns
 		// fully-transparent past the cursor position — the FrameBg underneath
 		// shows through untouched.
-		int division = ImMax( 16, ( int )( sweepAngle * outerRadius / 4.0f ) );
+		int division = ImMax( 16, ( int )( ImFabs( sweepAngle ) * outerRadius / 4.0f ) );
 		if ( fill_up_to_cursor )
 		{
 			float denom = fMax - fMin;
@@ -16836,14 +16886,20 @@ namespace ImWidgets {
 		ImDrawList* draw_list = ImGui::GetWindowDrawList();
 		const bool is_active = ( g.ActiveId == id );
 
-		const ImU32 col_track       = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_SliderRing_Track ] );
+		// Background track uses ImGui's FrameBg so the widget reads like every
+		// other ImGui slider. Filled portion + grab stay on DearWidgets'
+		// SliderRing_TrackActive / SliderRing_Grab style colors.
+		const ImU32 col_frame_bg    = ImGui::GetColorU32(
+			is_active ? ImGuiCol_FrameBgActive
+			: hovered ? ImGuiCol_FrameBgHovered
+			          : ImGuiCol_FrameBg );
 		const ImU32 col_track_fill  = ImGui::GetColorU32( dwStyle.Colors[ is_active ? StyleColor_SliderRing_GrabActive : StyleColor_SliderRing_TrackActive ] );
 		const ImU32 col_grab        = ImGui::GetColorU32( dwStyle.Colors[ is_active ? StyleColor_SliderRing_GrabActive : StyleColor_SliderRing_Grab ] );
 
 		// Draw background track arc
 		const int arc_segments = 64;
 		draw_list->PathArcTo( center, midRadius, v_angle_min, v_angle_max, arc_segments );
-		draw_list->PathStroke( col_track, 0, trackThickness );
+		draw_list->PathStroke( col_frame_bg, 0, trackThickness );
 
 		// Draw filled portion (from min angle to current value angle)
 		float grab_angle = v_angle_min + t * ( v_angle_max - v_angle_min );
@@ -17096,7 +17152,10 @@ namespace ImWidgets {
 		const bool is_active = (g.ActiveId == id);
 		const float trackThickness = (v_thickness > 0.0f) ? v_thickness : dwStyle.SliderSpline_TrackThickness;
 
-		const ImU32 col_track = ImGui::GetColorU32(dwStyle.Colors[ StyleColor_SliderSpline_Track ]);
+		// col_track (StyleColor_SliderSpline_Track) is no longer used for the
+		// background — replaced by ImGuiCol_FrameBg so SliderSpline matches
+		// SliderGradient / ImGui's own sliders. Kept the style var registered
+		// for backward compat with user-authored themes.
 		const ImU32 col_track_fill = ImGui::GetColorU32(dwStyle.Colors[ is_active ? StyleColor_SliderSpline_GrabActive : StyleColor_SliderSpline_TrackActive ]);
 		const ImU32 col_grab = ImGui::GetColorU32(dwStyle.Colors[ is_active ? StyleColor_SliderSpline_GrabActive : StyleColor_SliderSpline_Grab ]);
 
@@ -17144,6 +17203,13 @@ namespace ImWidgets {
 		}
 		else
 		{
+			// Background track uses ImGui's FrameBg so the non-gradient spline
+			// slider reads the same as SliderGradient / native ImGui sliders.
+			// Filled portion stays on DearWidgets' SliderSpline_TrackActive.
+			const ImU32 frame_bg_no_grad = ImGui::GetColorU32(
+				g.ActiveId == id ? ImGuiCol_FrameBgActive
+				: hovered        ? ImGuiCol_FrameBgHovered
+				                 : ImGuiCol_FrameBg );
 			draw_list->PathClear();
 			for ( int seg = 0; seg < num_segments; seg++ )
 			{
@@ -17155,7 +17221,7 @@ namespace ImWidgets {
 					draw_list->PathLineTo( pt );
 				}
 			}
-			draw_list->PathStroke( col_track, 0, trackThickness );
+			draw_list->PathStroke( frame_bg_no_grad, 0, trackThickness );
 
 			// Draw filled portion from start to current t (solid track only; gradient encodes position)
 			if ( t > 0.001f )
