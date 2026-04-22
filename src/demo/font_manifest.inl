@@ -64,6 +64,25 @@ namespace ImDwDownload
         { "TrenchSlab-Regular.otf", "Trench Slab", kCSerif, "Fontshare",
           "https://api.fontshare.com/v2/fonts/download/trench-slab",
           "TrenchSlab_Complete/Fonts/OTF/TrenchSlab-Regular.otf" },
+        // Additional Serif -- Google Fonts
+        { "Alegreya[wght].ttf", "Alegreya", kCSerif, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/alegreya/Alegreya%5Bwght%5D.ttf",
+          nullptr },
+        { "Cormorant[wght].ttf", "Cormorant", kCSerif, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/cormorant/Cormorant%5Bwght%5D.ttf",
+          nullptr },
+        { "CormorantUnicase-Regular.ttf", "Cormorant Unicase", kCSerif, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/cormorantunicase/CormorantUnicase-Regular.ttf",
+          nullptr },
+        { "Fraunces[SOFT,WONK,opsz,wght].ttf", "Fraunces", kCSerif, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/fraunces/Fraunces%5BSOFT,WONK,opsz,wght%5D.ttf",
+          nullptr },
+        { "Italiana-Regular.ttf", "Italiana", kCSerif, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/italiana/Italiana-Regular.ttf",
+          nullptr },
+        { "YesevaOne-Regular.ttf", "Yeseva One", kCSerif, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/yesevaone/YesevaOne-Regular.ttf",
+          nullptr },
 
         // ---- Script / Handwriting ----
         // Script / Handwriting — chosen to span distinct traditions rather
@@ -94,6 +113,16 @@ namespace ImDwDownload
         { "Sharpie-Regular.otf", "Sharpie", kCScript, "Fontshare",
           "https://api.fontshare.com/v2/fonts/download/sharpie",
           "Sharpie_Complete/Fonts/OTF/Sharpie-Regular.otf" },
+        // Additional Script -- Google Fonts
+        { "Hurricane-Regular.ttf", "Hurricane", kCScript, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/hurricane/Hurricane-Regular.ttf",
+          nullptr },
+        { "ImperialScript-Regular.ttf", "Imperial Script", kCScript, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/imperialscript/ImperialScript-Regular.ttf",
+          nullptr },
+        { "Ephesis-Regular.ttf", "Ephesis", kCScript, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/ephesis/Ephesis-Regular.ttf",
+          nullptr },
 
         // ---- Display / Decorative — curated Velvetyne picks ----
         // Bollgo -> Flor de Ruina (baroque organic).
@@ -170,6 +199,9 @@ namespace ImDwDownload
         { "KohinoorZerone-Regular.otf", "Kohinoor Zerone", kCDisp, "Fontshare",
           "https://api.fontshare.com/v2/fonts/download/kohinoor-zerone",
           "KohinoorZerone_Complete/Fonts/OTF/KohinoorZerone-Regular.otf" },
+        { "Monoton-Regular.ttf", "Monoton", kCDisp, "Google Fonts",
+          "https://raw.githubusercontent.com/google/fonts/main/ofl/monoton/Monoton-Regular.ttf",
+          nullptr },
 
         // ---- CFF Monochrome ----
         // Manbow Clear -> Array (Fontshare zip — OTF/CFF for the cubic-Bezier demo).
@@ -180,12 +212,14 @@ namespace ImDwDownload
         { "Tanker-Regular.otf", "Manbow Lines -> Tanker", kCCFF, "Fontshare",
           "https://api.fontshare.com/v2/fonts/download/tanker",
           "Tanker_Complete/Fonts/OTF/Tanker-Regular.otf" },
-        // Manbow Spots — unmatched (no halftone/dot CFF on the 4 sources).
-        { "ManbowSpots_placeholder.otf", "Manbow Spots (unmatched)", kCCFF, nullptr,
-          nullptr, nullptr },
-        // Manbow Tone — unmatched (no screentone CFF on the 4 sources).
-        { "ManbowTone_placeholder.otf", "Manbow Tone (unmatched)", kCCFF, nullptr,
-          nullptr, nullptr },
+        // Manbow Spots — CC0, Typodermic Fonts (Ray Larabie), DaFont.
+        { "ManBow-Spots.otf", "Manbow Spots", kCCFF, "Typodermic (DaFont, CC0)",
+          "https://dl.dafont.com/dl/?f=manbow",
+          "Manbow Spots.otf" },
+        // Manbow Lines — CC0, Typodermic Fonts (Ray Larabie), DaFont.
+        { "ManBow-Lines.otf", "Manbow Lines", kCCFF, "Typodermic (DaFont, CC0)",
+          "https://dl.dafont.com/dl/?f=manbow",
+          "Manbow Lines.otf" },
 
         // ---- Color: COLR v0 ----
         { "Noto-COLRv1.ttf", "Twemoji -> Noto Color Emoji (COLRv1)", kCColr0, "Google Fonts",
@@ -200,25 +234,40 @@ namespace ImDwDownload
           nullptr },
 
         // ---- Color: SVG ----
-        // All unmatched: none of the 4 sources ship OT-SVG color fonts.
-        { "AquaphonicDownpour_placeholder.otf", "Aquaphonic Downpour (unmatched)", kCSVG, nullptr,
-          nullptr, nullptr },
-        { "AquaphonicDrizzle_placeholder.otf", "Aquaphonic Drizzle (unmatched)", kCSVG, nullptr,
-          nullptr, nullptr },
-        { "CimeroPro_placeholder.otf", "Cimero Pro (unmatched)", kCSVG, nullptr,
-          nullptr, nullptr },
+        // Aquaphonic (OT-SVG) — free for personal & commercial use, 1001fonts.
+        { "Aquaphonic-Downpour.otf", "Aquaphonic Downpour", kCSVG, "1001fonts",
+          "https://www.1001fonts.com/download/aquaphonic.zip",
+          "Aquaphonic-Downpour.otf" },
+        { "Aquaphonic-Drizzle.otf", "Aquaphonic Drizzle", kCSVG, "1001fonts",
+          "https://www.1001fonts.com/download/aquaphonic.zip",
+          "Aquaphonic-Drizzle.otf" },
+        // Cimero Pro (OT-SVG) — freeware, 1001fonts.
+        { "CimeroPro.otf", "Cimero Pro", kCSVG, "1001fonts",
+          "https://st.1001fonts.net/download/font/cimero-pro.zip",
+          "CimeroPro.otf" },
+        // Color Tube — no known free download URL; slot kept for reference.
         { "ColorTube_placeholder.otf", "Color Tube (unmatched)", kCSVG, nullptr,
           nullptr, nullptr },
-        { "GilbertColor_placeholder.otf", "Gilbert Color Bold (unmatched)", kCSVG, nullptr,
-          nullptr, nullptr },
-        { "Multicolore_placeholder.otf", "Multicolore Pro (unmatched)", kCSVG, nullptr,
-          nullptr, nullptr },
-        { "PrimecolorG_placeholder.ttf", "Primecolor G (unmatched)", kCSVG, nullptr,
-          nullptr, nullptr },
-        { "PrimecolorM_placeholder.ttf", "Primecolor M (unmatched)", kCSVG, nullptr,
-          nullptr, nullptr },
-        { "Fattern_placeholder.otf", "Fattern (unmatched)", kCSVG, nullptr,
-          nullptr, nullptr },
+        // Gilbert Color Bold (OT-SVG) — CC-BY-SA 4.0, direct OTF.
+        { "GilbertColorBold.otf", "Gilbert Color Bold", kCSVG, "CC-BY-SA 4.0",
+          "https://github.com/Fontself/TypeWithPride/raw/master/fonts/gilbert-color-bold-preview5.otf",
+          nullptr },
+        // Multicolore Pro (OT-SVG) — free for personal & commercial use, 1001fonts.
+        { "Multicolore-Pro.otf", "Multicolore Pro", kCSVG, "1001fonts",
+          "https://www.1001fonts.com/download/multicolore-pro.zip",
+          "Multicolore Pro.otf" },
+        // Primecolor (OT-SVG) — SIL OFL, 1001fonts.
+        { "Primecolor-G.ttf", "Primecolor G", kCSVG, "SIL OFL (1001fonts)",
+          "https://www.1001fonts.com/download/primecolor.zip",
+          "Primecolor-G.ttf" },
+        { "Primecolor-M.ttf", "Primecolor M", kCSVG, "SIL OFL (1001fonts)",
+          "https://www.1001fonts.com/download/primecolor.zip",
+          "Primecolor-M.ttf" },
+        // Fattern (OT-SVG) — free for commercial use, 1001fonts.
+        // st.1001fonts.net blocks bots (returns JPEG); use www.1001fonts.com instead.
+        { "Fattern.otf", "Fattern", kCSVG, "FCC (1001fonts)",
+          "https://www.1001fonts.com/download/fattern.zip",
+          "Fattern-GO6zm.otf" },
         // Noto Color Emoji SVG (Adobe, SIL OFL) — pure OT-SVG build of Noto Color Emoji.
         { "NotoColorEmoji-SVG.otf", "Noto Color Emoji (OT-SVG)", kCSVG, "Adobe (GitHub)",
           "https://github.com/adobe-fonts/noto-emoji-svg/releases/download/2.100/NotoColorEmoji-SVG.otf",

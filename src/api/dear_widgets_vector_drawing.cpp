@@ -1,5 +1,5 @@
 // dear_widgets_vector_drawing.cpp
-// Vector Drawing Tool widget — world-space bezier path authoring canvas.
+// Vector Drawing Tool widget -- world-space bezier path authoring canvas.
 // Extracted from dear_widgets.cpp as its own translation unit; compiled
 // standalone and resolved via the linker (not unity-build #include).
 
@@ -27,7 +27,7 @@ namespace ImWidgets {
     //==================================================================
     // W2. Vector Drawing Tool (canvas with zoom/pan + bezier authoring)
     //==================================================================
-    // Convert world coords ↔ screen coords using (PanOffset, Zoom).
+    // Convert world coords <-> screen coords using (PanOffset, Zoom).
     // World (0,0) maps to (canvas_min + PanOffset). Zoom scales from world units.
     static inline ImVec2 DWE_VDTW2S(const ImVectorDrawingData& d, ImVec2 canvas_min, ImVec2 w)
     {
@@ -215,7 +215,24 @@ namespace ImWidgets {
                 if (data.ActivePath >= 0 && hit_path == data.ActivePath && hit_node == 0
                     && data.Paths[hit_path].Nodes.Size >= 3)
                 {
-                    data.Paths[hit_path].Closed = true;
+                    // Derive InTangent for the first node so the closing segment
+                    // inherits curvature instead of going straight. Only set when
+                    // InTangent is zero (user never dragged it) to preserve
+                    // intentional tangent-less (straight) closing segments.
+                    ImVectorDrawingPath& cp = data.Paths[hit_path];
+                    ImVectorDrawingNode& n0 = cp.Nodes[0];
+                    if (n0.InTangent.x == 0.0f && n0.InTangent.y == 0.0f)
+                    {
+                        if (!n0.Broken && (n0.OutTangent.x != 0.0f || n0.OutTangent.y != 0.0f))
+                            n0.InTangent = ImVec2(-n0.OutTangent.x, -n0.OutTangent.y);
+                        else
+                        {
+                            const ImVectorDrawingNode& nL = cp.Nodes[cp.Nodes.Size - 1];
+                            if (nL.OutTangent.x != 0.0f || nL.OutTangent.y != 0.0f)
+                                n0.InTangent = ImVec2(-nL.OutTangent.x, -nL.OutTangent.y);
+                        }
+                    }
+                    cp.Closed = true;
                     data.ActivePath = -1;
                     data.SelectedPath = hit_path;
                     data.SelectedNode = 0;
@@ -433,60 +450,64 @@ namespace ImWidgets {
         for (int pi = 0; pi < data.Paths.Size; ++pi)
         {
             const ImVectorDrawingPath& p = data.Paths[pi];
-            if (p.Nodes.Size < 2) continue;
-            // Build screen-space CP list.
-            ImVector<ImVec2> cp_world; DWE_VDTFlattenBezierCP(p, cp_world);
-            ImVector<ImVec2> cp_screen; cp_screen.resize(cp_world.Size);
-            for (int i = 0; i < cp_world.Size; ++i)
-                cp_screen[i] = DWE_VDTW2S(data, canvas_min, cp_world[i]);
-            float th = p.Thickness;
-            switch (p.Style)
+            // Path drawing requires at least 2 nodes, but handles are drawn even
+            // for a single-node path so the first click is immediately visible.
+            if (p.Nodes.Size >= 2)
             {
-            case ImVectorDrawingStyle_Polyline:
+                ImVector<ImVec2> cp_world; DWE_VDTFlattenBezierCP(p, cp_world);
+                ImVector<ImVec2> cp_screen; cp_screen.resize(cp_world.Size);
+                for (int i = 0; i < cp_world.Size; ++i)
+                    cp_screen[i] = DWE_VDTW2S(data, canvas_min, cp_world[i]);
+                float th = p.Thickness;
+                switch (p.Style)
                 {
-                    ImVector<ImVec2> pl; DWE_VDTFlattenPolyline(p, 16, pl);
-                    for (int i = 0; i < pl.Size; ++i) pl[i] = DWE_VDTW2S(data, canvas_min, pl[i]);
-                    if (pl.Size >= 2)
-                        dl->AddPolyline(pl.Data, pl.Size, p.Color, p.Closed ? ImDrawFlags_Closed : 0, th);
+                case ImVectorDrawingStyle_Polyline:
+                    {
+                        ImVector<ImVec2> pl; DWE_VDTFlattenPolyline(p, 16, pl);
+                        for (int i = 0; i < pl.Size; ++i) pl[i] = DWE_VDTW2S(data, canvas_min, pl[i]);
+                        if (pl.Size >= 2)
+                            dl->AddPolyline(pl.Data, pl.Size, p.Color, p.Closed ? ImDrawFlags_Closed : 0, th);
+                    }
+                    break;
+                case ImVectorDrawingStyle_PolylineAA:
+                    {
+                        ImVector<ImVec2> pl; DWE_VDTFlattenPolyline(p, 16, pl);
+                        for (int i = 0; i < pl.Size; ++i) pl[i] = DWE_VDTW2S(data, canvas_min, pl[i]);
+                        if (pl.Size >= 2)
+                            DrawPolylineAA(dl, pl.Data, pl.Size, p.Color, th, p.Closed,
+                                           (ImWidgetsCap)p.Cap, (ImWidgetsJoin)p.Join);
+                    }
+                    break;
+                case ImVectorDrawingStyle_StrokedBezier:
+                    if (cp_screen.Size >= 4)
+                        DrawStrokedBezierPath(dl, cp_screen.Data, cp_screen.Size, p.Color, th,
+                                              (ImWidgetsCap)p.Cap, (ImWidgetsJoin)p.Join, 4.0f, 0.25f, p.Closed);
+                    break;
+                case ImVectorDrawingStyle_StrokedDashedBezier:
+                    if (cp_screen.Size >= 4)
+                    {
+                        float dashes[2] = { p.DashLen, p.GapLen };
+                        DrawStrokedDashedBezierPath(dl, cp_screen.Data, cp_screen.Size, p.Color, th,
+                                                    dashes, 2, 0.0f,
+                                                    (ImWidgetsCap)p.Cap, (ImWidgetsJoin)p.Join, 4.0f, 0.25f, p.Closed);
+                    }
+                    break;
+                case ImVectorDrawingStyle_DashedPolyline:
+                    {
+                        ImVector<ImVec2> pl; DWE_VDTFlattenPolyline(p, 16, pl);
+                        for (int i = 0; i < pl.Size; ++i) pl[i] = DWE_VDTW2S(data, canvas_min, pl[i]);
+                        if (pl.Size >= 2)
+                            DrawDashedPolylineAA(dl, pl.Data, pl.Size, p.Color, th,
+                                                 p.DashLen, p.GapLen, 0.0f, p.Closed,
+                                                 (ImWidgetsCap)p.Cap, (ImWidgetsJoin)p.Join);
+                    }
+                    break;
+                default: break;
                 }
-                break;
-            case ImVectorDrawingStyle_PolylineAA:
-                {
-                    ImVector<ImVec2> pl; DWE_VDTFlattenPolyline(p, 16, pl);
-                    for (int i = 0; i < pl.Size; ++i) pl[i] = DWE_VDTW2S(data, canvas_min, pl[i]);
-                    if (pl.Size >= 2)
-                        DrawPolylineAA(dl, pl.Data, pl.Size, p.Color, th, p.Closed,
-                                       (ImWidgetsCap)p.Cap, (ImWidgetsJoin)p.Join);
-                }
-                break;
-            case ImVectorDrawingStyle_StrokedBezier:
-                if (cp_screen.Size >= 4)
-                    DrawStrokedBezierPath(dl, cp_screen.Data, cp_screen.Size, p.Color, th,
-                                          (ImWidgetsCap)p.Cap, (ImWidgetsJoin)p.Join, 4.0f, 0.25f, p.Closed);
-                break;
-            case ImVectorDrawingStyle_StrokedDashedBezier:
-                if (cp_screen.Size >= 4)
-                {
-                    float dashes[2] = { p.DashLen, p.GapLen };
-                    DrawStrokedDashedBezierPath(dl, cp_screen.Data, cp_screen.Size, p.Color, th,
-                                                dashes, 2, 0.0f,
-                                                (ImWidgetsCap)p.Cap, (ImWidgetsJoin)p.Join, 4.0f, 0.25f, p.Closed);
-                }
-                break;
-            case ImVectorDrawingStyle_DashedPolyline:
-                {
-                    ImVector<ImVec2> pl; DWE_VDTFlattenPolyline(p, 16, pl);
-                    for (int i = 0; i < pl.Size; ++i) pl[i] = DWE_VDTW2S(data, canvas_min, pl[i]);
-                    if (pl.Size >= 2)
-                        DrawDashedPolylineAA(dl, pl.Data, pl.Size, p.Color, th,
-                                             p.DashLen, p.GapLen, 0.0f, p.Closed,
-                                             (ImWidgetsCap)p.Cap, (ImWidgetsJoin)p.Join);
-                }
-                break;
-            default: break;
             }
 
             // Handles (only for selected path, plus active authoring path).
+            // Runs even for single-node paths so the first placed anchor is visible.
             bool show_handles = (pi == data.SelectedPath) || (pi == data.ActivePath);
             if (show_handles)
             {
@@ -585,7 +606,7 @@ namespace ImWidgets {
         dl->AddRect(canvas_min, canvas_max, IM_COL32(255, 255, 255, 60));
         dl->PopClipRect();
 
-        // Expand-to-window button in the top-right of the canvas — mirrors the
+        // Expand-to-window button in the top-right of the canvas -- mirrors the
         // pattern used by Histogram / ToneCurve / ImageViewer. When inside an
         // already-expanded window, WidgetExpandButton returns NULL and the
         // block is a no-op (no nested expand).

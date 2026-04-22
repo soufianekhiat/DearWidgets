@@ -1,4 +1,4 @@
-// font_downloader.h — demo-only font downloader for DearWidgets
+// font_downloader.h -- demo-only font downloader for DearWidgets
 //
 // Pulls the ~60 preview fonts from Google Fonts / Fontshare / Velvetyne /
 // Open Foundry on demand, so the repo doesn't ship any licensed demo fonts
@@ -197,7 +197,7 @@ namespace ImDwDownload
     }
 
     // --- Download core ---
-    // Shells out to `curl` — on Windows this resolves via PATH (curl.exe is in
+    // Shells out to `curl` -- on Windows this resolves via PATH (curl.exe is in
     // system32 since Win10 1803). On Unix `popen` finds it in /usr/bin.
     // -L follows redirects (Google/Fontshare both redirect).
     // -f exits nonzero on 4xx/5xx.
@@ -209,7 +209,7 @@ namespace ImDwDownload
         char cmd[4096];
 #if defined(_WIN32)
         // Use the system-bundled curl (Win10 1803+) instead of whatever is
-        // first in PATH — avoids MSYS/Git-Bash-curl picking up a different
+        // first in PATH -- avoids MSYS/Git-Bash-curl picking up a different
         // cert bundle in mixed environments.
         //
         // NB: do NOT wrap the exe path in extra quotes. _popen invokes
@@ -248,7 +248,7 @@ namespace ImDwDownload
     {
         char cmd[4096];
 #if defined(_WIN32)
-        // Same cmd /c quoting trap as CurlDownload — don't quote the exe path.
+        // Same cmd /c quoting trap as CurlDownload -- don't quote the exe path.
         std::snprintf( cmd, sizeof( cmd ),
             "%%SystemRoot%%\\System32\\tar.exe -xf \"%s\" -C \"%s\" \"%s\" 2>&1",
             zip_path, out_dir, inner_path );
@@ -328,7 +328,7 @@ namespace ImDwDownload
             }
             if ( index < 0 )
             {
-                // nothing to do — worker exits, will be re-spawned on next job
+                // nothing to do -- worker exits, will be re-spawned on next job
                 break;
             }
 

@@ -23,9 +23,9 @@ struct ImGradientData {
 };
 ```
 Methods:
-- `int  AddStop(float pos, ImVec4 col)` — add a stop and return its sorted index.
-- `bool RemoveStop(int idx)` — remove stop (minimum 2 stops enforced).
-- `void SortStops()` — sort by position (called automatically by `AddStop`).
+- `int  AddStop(float pos, ImVec4 col)` -- add a stop and return its sorted index.
+- `bool RemoveStop(int idx)` -- remove stop (minimum 2 stops enforced).
+- `void SortStops()` -- sort by position (called automatically by `AddStop`).
 
 ---
 
@@ -53,17 +53,17 @@ struct ImCurveEditorData {
 };
 ```
 Methods:
-- `int  AddKey(ImVec2 pos, ImCurveEditorSeg seg)` — inserts a key, splitting the existing Bézier at that time via De Casteljau.
-- `bool RemoveKey(int idx)` — removes key (minimum 2 keys enforced).
-- `void SortKeys()` — sort by time.
+- `int  AddKey(ImVec2 pos, ImCurveEditorSeg seg)` -- inserts a key, splitting the existing Bezier at that time via De Casteljau.
+- `bool RemoveKey(int idx)` -- removes key (minimum 2 keys enforced).
+- `void SortKeys()` -- sort by time.
 
-**Segment types (`ImCurveEditorSeg`):** `StepStart`, `StepEnd`, `StepCenter`, `Linear`, `InQuad…InOutBounce`, `CubicBezier` (15+ easing types).
+**Segment types (`ImCurveEditorSeg`):** `StepStart`, `StepEnd`, `StepCenter`, `Linear`, `InQuad...InOutBounce`, `CubicBezier` (15+ easing types).
 
 **Tangent modes (`ImCurveEditorTangentMode`):** `Free`, `Aligned`, `Mirrored`.
 
 Helper:
 ```cpp
-float CurveEditorEvalEasing(ImCurveEditorSeg seg, float t); // t ∈ [0,1]
+float CurveEditorEvalEasing(ImCurveEditorSeg seg, float t); // t in [0,1]
 float CurveEditorSample(const ImCurveEditorData& curve, float x);
 const char* CurveEditorSegName(ImCurveEditorSeg seg);
 const char* CurveEditorTangentModeName(ImCurveEditorTangentMode mode);
@@ -152,7 +152,7 @@ Methods: `Init(int hueDivs, int satDivs)`, `Reset()`, `PointCount()`, `PointInde
 ### `ImColorWarperOverlay`
 ```cpp
 struct ImColorWarperOverlay {
-    ImVector<float> SampledRGB;  // [i*3+0..2] = r,g,b ∈ [0,1]
+    ImVector<float> SampledRGB;  // [i*3+0..2] = r,g,b in [0,1]
     int             SampleCount;
     void Accumulate(const void* data, int width, int height, int channels,
                     ImParadeBitDepth bitDepth, ImParadeLayout layout,
@@ -181,7 +181,7 @@ struct ImParadeScopeData {
 
 **Parade modes:** `Luma`, `RGB`, `YRGB`, `YCbCr`
 **Bit depths:** `UInt8` [0,255], `UInt10` [0,1023], `UInt16` [0,65535]
-**Layouts:** `Interleaved` (RGBRGB…), `Planar` (RRR…GGG…)
+**Layouts:** `Interleaved` (RGBRGB...), `Planar` (RRR...GGG...)
 **Scale:** `Linear`, `Log`, `InvLog`
 
 ### `ImVectorScopeData`
@@ -217,7 +217,7 @@ struct ImHistogramData {
 ### `ImCIEChromaticityData`
 ```cpp
 struct ImCIEChromaticityData {
-    ImVector<float> SampledRGB;  // [i*3+0..2] = r,g,b ∈ [0,1]
+    ImVector<float> SampledRGB;  // [i*3+0..2] = r,g,b in [0,1]
     int             SampleCount;
     void Accumulate(const void* data, int width, int height, int channels,
                     ImParadeBitDepth bitDepth, ImParadeLayout layout,
@@ -307,3 +307,65 @@ ImUnitDef ImUnitDef_Custom(const char* name, const char* abbr,
                             ImUnitConvertCallback toDisplay,
                             ImUnitConvertCallback toBase, void* pUserData = NULL);
 ```
+
+---
+
+## Vector Drawing Tool
+
+### `ImVectorDrawingNode`
+```cpp
+struct ImVectorDrawingNode {
+    ImVec2 Anchor;      // world-space anchor position
+    ImVec2 InTangent;   // offset from Anchor toward the incoming cubic control point
+    ImVec2 OutTangent;  // offset from Anchor toward the outgoing cubic control point
+    bool   Broken;      // when false, InTangent mirrors OutTangent through the anchor
+};
+```
+Consecutive nodes form a cubic Bezier segment using the left node's `OutTangent` as P1 and the right node's `InTangent` as P2 (relative offsets added to the respective anchors).
+
+### `ImVectorDrawingStyle_` (enum)
+
+| Value | Rendering | Notes |
+|---|---|---|
+| `ImVectorDrawingStyle_Polyline` | `ImDrawList::AddPolyline` | Cap/Join ignored |
+| `ImVectorDrawingStyle_PolylineAA` | `DrawPolylineAA` (SDF-AA) | Cap/Join applied |
+| `ImVectorDrawingStyle_StrokedBezier` | `DrawStrokedBezierPath` (Euler spiral) | Cap/Join applied |
+| `ImVectorDrawingStyle_StrokedDashedBezier` | `DrawStrokedDashedBezierPath` | Cap/Join applied |
+| `ImVectorDrawingStyle_DashedPolyline` | `DrawDashedPolylineAA` | Cap/Join applied |
+
+### `ImVectorDrawingPath`
+```cpp
+struct ImVectorDrawingPath {
+    ImVector<ImVectorDrawingNode> Nodes;
+    bool                          Closed;     // join last node back to first
+    ImU32                         Color;      // IM_COL32 packed RGBA
+    float                         Thickness;  // stroke width (lp)
+    ImVectorDrawingStyle          Style;      // rendering backend (see enum above)
+    float                         DashLen;    // dash length (lp), dashed styles only
+    float                         GapLen;     // gap length (lp); 0 = flush, <0 = overlap
+    int                           Cap;        // ImWidgetsCap_* -- open endpoint caps
+    int                           Join;       // ImWidgetsJoin_* -- corner joins
+};
+```
+Default: `Color` = amber, `Thickness` = 2, `Style` = `StrokedBezier`, `Cap` = `Butt`, `Join` = `Mitter`.
+
+### `ImVectorDrawingData`
+```cpp
+struct ImVectorDrawingData {
+    ImVector<ImVectorDrawingPath> Paths;
+    ImVec2  PanOffset;      // world offset of the view origin (screen-space pixels)
+    float   Zoom;           // world-to-screen multiplier (1.0 = 1:1)
+    int     SelectedPath;   // index into Paths (-1 = none)
+    int     SelectedNode;   // index into SelectedPath.Nodes (-1 = none)
+    int     SelectedHandle; // 0 = anchor, 1 = InTangent, 2 = OutTangent
+    ImVector<int> SelectedNodes; // multi-node indices within SelectedPath
+    int     ActivePath;     // path currently being drawn (-1 = idle)
+};
+```
+All indices default to `-1`. `Zoom` defaults to `1.0`. Paths are owned by this struct.
+
+```cpp
+bool VectorDrawingTool(const char* label, ImVectorDrawingData& data,
+                       ImVec2 size = ImVec2(0, 0));
+```
+Returns `true` when `data` was modified this frame.

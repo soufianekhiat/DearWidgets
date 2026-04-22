@@ -1,9 +1,9 @@
-# Typography — Slug GPU Text Rendering
+# Typography -- Slug GPU Text Rendering
 
 > **Requires:** `ImWidgetsFeatures_RichFont` set before `CreateContext()`.
 > Custom shader backend (`IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER`) is mandatory.
 
-Slug renders text directly from TrueType/OpenType bezier outlines on the GPU — no bitmap atlas, no SDF baking. Results are crisp at any scale, zoom, or viewing angle. Color fonts (COLR v0/v1) and gradient fills are supported natively.
+Slug renders text directly from TrueType/OpenType bezier outlines on the GPU -- no bitmap atlas, no SDF baking. Results are crisp at any scale, zoom, or viewing angle. Color fonts (COLR v0/v1) and gradient fills are supported natively.
 
 See [concepts/slug.md](../concepts/slug.md) for architecture details.
 
@@ -174,4 +174,4 @@ Step-by-step visualization of the tessellation algorithm for a single character.
 ```cpp
 extern bool g_SlugDebugShader;
 ```
-Set to `true` to use the debug shader: xcov→R, ycov→G, coverage→B instead of normal rendering.
+Set to `true` to use the debug shader: xcov->R, ycov->G, coverage->B instead of normal rendering.

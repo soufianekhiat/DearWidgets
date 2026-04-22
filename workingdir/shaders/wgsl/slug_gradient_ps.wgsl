@@ -256,8 +256,18 @@ struct pixelInput_0
 @fragment
 fn main_ps( _S47 : pixelInput_0, @builtin(position) position_0 : vec4<f32>) -> pixelOutput_0
 {
-    var gradColor_0 : vec4<f32> = mix(_S47.gradColor0_0, _S47.gradColor1_0, vec4<f32>(saturate(dot(_S47.texcoord_0, _S47.gradParams_0.xy) * _S47.gradParams_0.z + _S47.gradParams_0.w)));
-    var _S48 : pixelOutput_0 = pixelOutput_0( vec4<f32>(gradColor_0.xyz, gradColor_0.w * SlugRender_0(_S47.texcoord_0, _S47.banding_1, _S47.glyph_0)) );
+    var coverage_0 : f32 = SlugRender_0(_S47.texcoord_0, _S47.banding_1, _S47.glyph_0);
+    var t_0 : f32;
+    if((((_S47.glyph_0.w) & (i32(256)))) != i32(0))
+    {
+        t_0 = length(_S47.texcoord_0 - _S47.gradParams_0.xy) * _S47.gradParams_0.z + _S47.gradParams_0.w;
+    }
+    else
+    {
+        t_0 = dot(_S47.texcoord_0, _S47.gradParams_0.xy) * _S47.gradParams_0.z + _S47.gradParams_0.w;
+    }
+    var gradColor_0 : vec4<f32> = mix(_S47.gradColor0_0, _S47.gradColor1_0, vec4<f32>(saturate(t_0)));
+    var _S48 : pixelOutput_0 = pixelOutput_0( vec4<f32>(gradColor_0.xyz, gradColor_0.w * coverage_0) );
     return _S48;
 }
 

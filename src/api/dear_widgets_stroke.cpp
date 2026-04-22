@@ -1,5 +1,5 @@
 // dear_widgets_stroke.cpp
-// GPU stroke expansion — based on "Fast GPU stroke expansion" (HPG 2024).
+// GPU stroke expansion -- based on "Fast GPU stroke expansion" (HPG 2024).
 // Paper: https://arxiv.org/abs/2405.00127
 // Reference implementation: https://github.com/linebender/gpu-stroke-expansion-paper
 // CPU: Euler spiral stroke expansion (faithful port from Vello/linebender).
@@ -7,6 +7,7 @@
 // Compiled as its own translation unit; resolved by the linker.
 
 #include "dear_widgets.h"
+#include "dear_widgets_internal.h"
 #include "imgui_internal.h"
 
 namespace ImWidgets {
@@ -130,7 +131,7 @@ struct DW_EulerSeg {
 };
 
 // ============================================================
-// ESPC integral approximation — from flatten.rs
+// ESPC integral approximation -- from flatten.rs
 // ============================================================
 
 static float DW_EspcIntApprox(float x){
@@ -160,7 +161,7 @@ static float DW_EspcIntInvApprox(float x){
 }
 
 // ============================================================
-// CubicParams — error estimation
+// CubicParams -- error estimation
 // ============================================================
 
 struct DW_CubicParams {
@@ -243,14 +244,14 @@ static void DW_CubicToEulerSegs(ImVec2 c0,ImVec2 c1,ImVec2 c2,ImVec2 c3,
 }
 
 // ============================================================
-// flatten_euler — port of Vello's flatten_euler
+// flatten_euler -- port of Vello's flatten_euler
 // Appends offset curve points to out[] (not including start point).
 // ============================================================
 
 enum DW_EspcRobust { DW_Espc_Normal, DW_Espc_LowK1, DW_Espc_LowDist };
 
 // ============================================================
-// Range-aware flatten_offset — port of reference flatten_offset(es, range, offset, tol)
+// Range-aware flatten_offset -- port of reference flatten_offset(es, range, offset, tol)
 // Flattens sub-range [range_start, range_end] of an Euler spiral at given offset.
 // ============================================================
 
@@ -319,7 +320,7 @@ static void DW_FlattenEulerRange(const DW_EulerSeg& es, float range_start, float
 }
 
 // ============================================================
-// lower_es_evolute (Line version) — port of default Lowering::lower_es_evolute
+// lower_es_evolute (Line version) -- port of default Lowering::lower_es_evolute
 // Generates evolute curve points for the given range of an Euler segment.
 // ============================================================
 
@@ -349,7 +350,7 @@ static void DW_LowerEsEvolute(const DW_EulerSeg& es, float range_start, float ra
 }
 
 // ============================================================
-// ArcSegment lower_arc — exact port of reference Line::lower_arc
+// ArcSegment lower_arc -- exact port of reference Line::lower_arc
 // ArcSegment: p0, p1 are endpoints, k0 is signed arc angle.
 // ============================================================
 
@@ -401,7 +402,7 @@ static void DW_RoundCap(ImVector<ImVec2>& out, float tol,
 }
 
 // ============================================================
-// Stroke expansion — builds closed polygon, renders via AddConcavePolyFilled
+// Stroke expansion -- builds closed polygon, renders via AddConcavePolyFilled
 // Matches Vello production code structure: flatten_euler(+offset),
 // flatten_euler(-offset), draw_join, draw_cap per segment.
 // ============================================================
@@ -412,7 +413,7 @@ void SetStrokeDebugWireframe(bool v) { s_strokeDebugWireframe = v; }
 bool GetStrokeDebugWireframe()       { return s_strokeDebugWireframe; }
 
 // ============================================================
-// StrokeContour — cusp-aware offset path accumulator.
+// StrokeContour -- cusp-aware offset path accumulator.
 // Port of reference StrokeContour<Line>.
 // ============================================================
 
@@ -438,7 +439,7 @@ struct DW_StrokeContour {
 
     void Finalize() {
         if (!has_cusp) return;
-        // Stitch: evolute → rev_parallel_reversed → evolute
+        // Stitch: evolute -> rev_parallel_reversed -> evolute
         if (evo_points.Size > 0 && rev_points.Size > 0) {
             // Connect evolute end to rev_parallel end
             evo_points.push_back(rev_points[rev_points.Size - 1]);
@@ -525,7 +526,7 @@ static void DW_FlattenCubicOffset(ImVec2 c0, ImVec2 c1, ImVec2 c2, ImVec2 c3,
     // Snap first/last points to caller-provided endpoints for continuity
     if (fwd_contour.points.Size > 0) {
         // Replace first point added by this cubic with caller's start
-        // (only if this is the first segment overall — handled by caller)
+        // (only if this is the first segment overall -- handled by caller)
     }
 }
 
@@ -734,7 +735,7 @@ static void DW_PrepareStrokeUniforms(const ImDrawList*, const ImDrawCmd* cmd)
 }
 
 // Build line soup from fwd/bwd/cap arrays and render via winding-number shader.
-// Zero overdraw guaranteed — each pixel evaluated exactly once.
+// Zero overdraw guaranteed -- each pixel evaluated exactly once.
 static void DW_StrokeRenderOutline(ImDrawList* dl,
     ImVector<ImVec2>& fwd, ImVector<ImVec2>& bwd,
     ImU32 col, float half_w, ImWidgetsCap cap, bool closed,
@@ -800,20 +801,20 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
 
     if (closed) {
         // Closed path: two independent closed loops (matching reference finish_closed).
-        // Fwd loop (forward direction) — implicitly closed since closing join
+        // Fwd loop (forward direction) -- implicitly closed since closing join
         // brings fwd[last] back to fwd[0].
         for (int i = 0; i < fwd.Size - 1; ++i) {
             segs.push_back(fwd[i]);
             segs.push_back(fwd[i + 1]);
         }
-        // Bwd loop (REVERSE direction) — implicitly closed.
+        // Bwd loop (REVERSE direction) -- implicitly closed.
         for (int i = bwd.Size - 1; i > 0; --i) {
             segs.push_back(bwd[i]);
             segs.push_back(bwd[i - 1]);
         }
-        // No crossover segments — shader evaluates winding per-segment independently.
+        // No crossover segments -- shader evaluates winding per-segment independently.
     } else {
-        // Open path: single contour — fwd → end_cap → bwd(reversed) → start_cap → close
+        // Open path: single contour -- fwd -> end_cap -> bwd(reversed) -> start_cap -> close
         for (int i = 0; i < fwd.Size - 1; ++i) {
             segs.push_back(fwd[i]);
             segs.push_back(fwd[i + 1]);
@@ -828,7 +829,7 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
             segs.push_back(end_cap_pts[end_cap_pts.Size - 1]);
             segs.push_back(bwd[bwd.Size - 1]);
         } else {
-            // Butt/None: direct connection fwd.last → bwd.last
+            // Butt/None: direct connection fwd.last -> bwd.last
             segs.push_back(fwd[fwd.Size - 1]);
             segs.push_back(bwd[bwd.Size - 1]);
         }
@@ -848,7 +849,7 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
             segs.push_back(start_cap_pts[start_cap_pts.Size - 1]);
             segs.push_back(fwd[0]);
         } else {
-            // Butt/None: direct connection bwd[0] → fwd[0]
+            // Butt/None: direct connection bwd[0] -> fwd[0]
             segs.push_back(bwd[0]);
             segs.push_back(fwd[0]);
         }
@@ -932,7 +933,7 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
 
 
 // ============================================================
-// Dash splitting — preserves cubic representation for smooth strokes.
+// Dash splitting -- preserves cubic representation for smooth strokes.
 // Arc-length is measured via Euler sub-segment chord lengths, then
 // dash boundaries are mapped back to cubic t-parameters for De Casteljau split.
 // ============================================================
@@ -984,16 +985,63 @@ static float DW_ArcLenToT(const ImVector<DW_ArcLenEntry>& table, float target_le
     return table[lo].t + frac * (table[hi].t - table[lo].t);
 }
 
+// Compute cap_ext: outward axial extension of the cap past the body rectangle.
+// Mirrors lines.hlsl / DrawDashedPolylineAA so both line-drawing algorithms
+// agree on "gap == 0 -> flush" semantics.
+//
+// TriangleIn returns 0: its wings stay at the body edge and the V-notch is
+// carved INWARD from end_pt by halfw (DW_StrokeRenderOutline's end_cap_pts
+// construction -- apex at end_pt - ny where ny is the stroke direction). The
+// stroke renderer therefore does not extend the body outward for TriangleIn,
+// so the envelope = body and callers must not pre-inset.
+static inline float DW_DashCapExt(ImWidgetsCap cap, float thickness) {
+    if (cap == ImWidgetsCap_None ||
+        cap == ImWidgetsCap_Butt ||
+        cap == ImWidgetsCap_TriangleIn) return 0.0f;
+    return 0.5f * ImMax(thickness, 1.0f);
+}
+
+// Convert a user-facing envelope pattern to the BODY pattern that the split
+// walker consumes: even entries (dash envelopes) shrink by 2*cap_ext; odd
+// entries (gaps) expand by 2*cap_ext. The stroke renderer later extends
+// caps cap_ext outward from each sub-path endpoint, restoring the envelope.
+//
+// gap_orig + 2*cap_ext < 0 (bodies would overlap) is clamped to 0 -- bodies
+// stay flush, caps overlap fully. Stronger overlap is not representable in
+// the walker model without emitting multiple simultaneous dashes, which is
+// out of scope for the Euler-spiral stroke path.
+static void DW_DashPatternToBody(const float* dash_array, int dash_count, float cap_ext,
+                                 ImVector<float>& out_body)
+{
+    out_body.resize(0);
+    out_body.reserve(dash_count);
+    for (int i = 0; i < dash_count; ++i) {
+        float v = ((i % 2) == 0)
+            ? ImMax(0.0f, dash_array[i] - 2.0f * cap_ext)   // body length
+            : ImMax(0.0f, dash_array[i] + 2.0f * cap_ext);  // expanded gap
+        out_body.push_back(v);
+    }
+}
+
 // Dash-split a cubic Bezier path, preserving cubic representation.
 // out_dashes: each entry is 3*N+1 control points for N cubics.
+// dash_array entries are ENVELOPES (even) + gaps (odd); callers that want
+// flush-at-zero-gap behavior must pass cap_ext matching the cap type used
+// to stroke the resulting sub-paths.
 static void DW_DashSplitCubicPath(
     const ImVec2* cubics, int n_cubics, float tol, bool closed,
-    const float* dash_array, int dash_count, float dash_offset,
+    const float* dash_array, int dash_count, float dash_offset, float cap_ext,
     ImVector<ImVector<ImVec2>>& out_dashes)
 {
     if (dash_count <= 0 || n_cubics <= 0) return;
+
+    // Walk the BODY pattern (not the envelope pattern).
+    ImVector<float> body_pat;
+    DW_DashPatternToBody(dash_array, dash_count, cap_ext, body_pat);
+    const float* pat = body_pat.Data;
+
     float pattern_len = 0;
-    for (int i = 0; i < dash_count; ++i) pattern_len += dash_array[i];
+    for (int i = 0; i < dash_count; ++i) pattern_len += pat[i];
     if (pattern_len <= 0) return;
 
     // Build extended cubic list (add closing line as degenerate cubic if closed)
@@ -1016,12 +1064,16 @@ static void DW_DashSplitCubicPath(
     float off = fmodf(dash_offset, pattern_len);
     if (off < 0) off += pattern_len;
     int dash_idx = 0;
-    float remain = dash_array[0];
-    while (off > 0) {
-        if (off < remain) { remain -= off; break; }
+    float remain = pat[0];
+    // Safety guard: zero-length body entries (dash_envelope < 2*cap_ext) would
+    // infinite-loop here if we hit them with off > 0. Cap the advance count.
+    int off_guard = 0;
+    while (off > 0 && off_guard < dash_count * 4) {
+        if (remain > 0.0f && off < remain) { remain -= off; break; }
         off -= remain;
         dash_idx = (dash_idx + 1) % dash_count;
-        remain = dash_array[dash_idx];
+        remain = pat[dash_idx];
+        ++off_guard;
     }
     bool in_dash = (dash_idx % 2) == 0;
 
@@ -1042,7 +1094,7 @@ static void DW_DashSplitCubicPath(
         while (rem_arc_start < cubic_len - 1e-6f) {
             if (remain <= 0) {
                 dash_idx = (dash_idx + 1) % dash_count;
-                remain = dash_array[dash_idx];
+                remain = pat[dash_idx];
                 in_dash = (dash_idx % 2) == 0;
             }
 
@@ -1093,15 +1145,22 @@ static void DW_DashSplitCubicPath(
     }
 }
 
-// Split a polyline at dash/gap boundaries.
+// Split a polyline at dash/gap boundaries. dash_array entries are envelopes
+// (even) + gaps (odd); callers that want flush-at-zero-gap behavior must
+// pass cap_ext matching the cap type used to stroke the resulting sub-paths.
 static void DW_DashSplitPolyline(
     const ImVec2* pts, int n_pts, bool closed,
-    const float* dash_array, int dash_count, float dash_offset,
+    const float* dash_array, int dash_count, float dash_offset, float cap_ext,
     ImVector<ImVector<ImVec2>>& out_dashes)
 {
     if (dash_count <= 0 || n_pts < 2) return;
+
+    ImVector<float> body_pat;
+    DW_DashPatternToBody(dash_array, dash_count, cap_ext, body_pat);
+    const float* pat = body_pat.Data;
+
     float pattern_len = 0;
-    for (int i = 0; i < dash_count; ++i) pattern_len += dash_array[i];
+    for (int i = 0; i < dash_count; ++i) pattern_len += pat[i];
     if (pattern_len <= 0) return;
 
     // Build extended point list for closed paths
@@ -1116,12 +1175,14 @@ static void DW_DashSplitPolyline(
     float off = fmodf(dash_offset, pattern_len);
     if (off < 0) off += pattern_len;
     int dash_idx = 0;
-    float remain = dash_array[0];
-    while (off > 0) {
-        if (off < remain) { remain -= off; break; }
+    float remain = pat[0];
+    int off_guard = 0;
+    while (off > 0 && off_guard < dash_count * 4) {
+        if (remain > 0.0f && off < remain) { remain -= off; break; }
         off -= remain;
         dash_idx = (dash_idx + 1) % dash_count;
-        remain = dash_array[dash_idx];
+        remain = pat[dash_idx];
+        ++off_guard;
     }
     bool in_dash = (dash_idx % 2) == 0;
 
@@ -1138,7 +1199,7 @@ static void DW_DashSplitPolyline(
         while (consumed < seg_len - 1e-6f) {
             if (remain <= 0) {
                 dash_idx = (dash_idx + 1) % dash_count;
-                remain = dash_array[dash_idx];
+                remain = pat[dash_idx];
                 in_dash = (dash_idx % 2) == 0;
                 if (in_dash) {
                     float t = consumed / seg_len;
@@ -1246,9 +1307,12 @@ void DrawStrokedDashedBezierPath(ImDrawList* drawlist,
         return;
     }
 
-    // Split cubic path at dash boundaries, preserving cubic representation
+    // Split cubic path at dash boundaries, preserving cubic representation.
+    // Pass cap_ext so envelopes (dash_array[even]) translate to body-length
+    // sub-paths; the caps the stroke renderer adds restore the full envelope.
+    float cap_ext = DW_DashCapExt(cap, thickness);
     ImVector<ImVector<ImVec2>> dashes;
-    DW_DashSplitCubicPath(points, nc, tolerance, closed, dash_array, dash_count, dash_offset, dashes);
+    DW_DashSplitCubicPath(points, nc, tolerance, closed, dash_array, dash_count, dash_offset, cap_ext, dashes);
 
     // Stroke each dash as a cubic path (smooth Euler spiral offset)
     for (int i = 0; i < dashes.Size; ++i) {
@@ -1271,8 +1335,9 @@ void DrawStrokedDashedPolyline(ImDrawList* drawlist,
         return;
     }
 
+    float cap_ext = DW_DashCapExt(cap, thickness);
     ImVector<ImVector<ImVec2>> dashes;
-    DW_DashSplitPolyline(points, points_count, closed, dash_array, dash_count, dash_offset, dashes);
+    DW_DashSplitPolyline(points, points_count, closed, dash_array, dash_count, dash_offset, cap_ext, dashes);
 
     for (int i = 0; i < dashes.Size; ++i) {
         ImVector<ImVec2>& dp = dashes[i];

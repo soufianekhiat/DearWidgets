@@ -8,26 +8,26 @@ DearWidgets custom shaders are authored in HLSL and cross-compiled to GLSL, MSL,
 
 ```
 workingdir/
-├── bin/slang/bin/slangc.exe        # Bundled Slang compiler
-├── shaders/
-│   ├── hlsl_src/                   # Authoritative HLSL source files
-│   │   ├── template.hlsl           # Authoring template (not compiled directly)
-│   │   ├── slug.hlsl               # Slug monochrome glyph shader
-│   │   ├── slug_color.hlsl         # Slug COLR v0 color-layer shader
-│   │   ├── slug_gradient.hlsl      # Slug COLR v1 gradient shader
-│   │   ├── slug_debug.hlsl         # Slug debug visualization shader
-│   │   ├── markers.hlsl            # GPU shape markers
-│   │   ├── lines.hlsl              # GPU dashed polyline shader
-│   │   └── lines_copy.hlsl         # Dashed polyline copy pass
-│   ├── glsl/                       # Generated GLSL outputs
-│   ├── msl/                        # Generated MSL outputs (Metal)
-│   ├── wgsl/                       # Generated WGSL outputs (WebGPU via Naga)
-│   └── wgpu/                       # Generated WGPU outputs
-├── generate_shaders_all.bat        # Compile all shaders for all targets
-├── generate_glsl.bat               # Compile pixel shaders to GLSL only
-├── generate_msl.bat                # Compile markers pixel shader to MSL only
-├── generate_wgsl.bat               # Compile markers pixel shader to WGSL only
-└── generate_wgpu.bat               # Compile markers pixel shader to WGPU only
++-- bin/slang/bin/slangc.exe        # Bundled Slang compiler
++-- shaders/
+|   +-- hlsl_src/                   # Authoritative HLSL source files
+|   |   +-- template.hlsl           # Authoring template (not compiled directly)
+|   |   +-- slug.hlsl               # Slug monochrome glyph shader
+|   |   +-- slug_color.hlsl         # Slug COLR v0 color-layer shader
+|   |   +-- slug_gradient.hlsl      # Slug COLR v1 gradient shader
+|   |   +-- slug_debug.hlsl         # Slug debug visualization shader
+|   |   +-- markers.hlsl            # GPU shape markers
+|   |   +-- lines.hlsl              # GPU dashed polyline shader
+|   |   +-- lines_copy.hlsl         # Dashed polyline copy pass
+|   +-- glsl/                       # Generated GLSL outputs
+|   +-- msl/                        # Generated MSL outputs (Metal)
+|   +-- wgsl/                       # Generated WGSL outputs (WebGPU via Naga)
+|   +-- wgpu/                       # Generated WGPU outputs
++-- generate_shaders_all.bat        # Compile all shaders for all targets
++-- generate_glsl.bat               # Compile pixel shaders to GLSL only
++-- generate_msl.bat                # Compile markers pixel shader to MSL only
++-- generate_wgsl.bat               # Compile markers pixel shader to WGSL only
++-- generate_wgpu.bat               # Compile markers pixel shader to WGPU only
 ```
 
 ---
@@ -90,7 +90,7 @@ For `generate_shaders_all.bat` (full compilation):
 | `wgpu/<name>_vs.wgpu` | WGPU vertex shader |
 | `wgpu/<name>_ps.wgpu` | WGPU pixel shader |
 
-The `<name>` matches the HLSL source filename without extension (e.g., `slug.hlsl` → `slug_vs.glsl`, `slug_ps.glsl`).
+The `<name>` matches the HLSL source filename without extension (e.g., `slug.hlsl` -> `slug_vs.glsl`, `slug_ps.glsl`).
 
 ---
 

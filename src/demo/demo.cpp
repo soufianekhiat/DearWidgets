@@ -142,7 +142,7 @@ enum DW_SsPhase
 	DW_SsPhase_OpenAll = 2,  // force-open every CollapsingHeader / TreeNode
 	DW_SsPhase_Stabilize = 3,  // let layout re-measure with everything expanded
 	DW_SsPhase_RecordSections = 4,  // one frame pass: record section bounds via DW_SsRecord
-	DW_SsPhase_SectionCapture = 5,  // iterate recorded sections: scroll → resize → capture
+	DW_SsPhase_SectionCapture = 5,  // iterate recorded sections: scroll -> resize -> capture
 	DW_SsPhase_Showcase = 6,  // last: resize window to fit Showcase, capture showcase.png
 	DW_SsPhase_Done = 7,
 };
@@ -155,7 +155,7 @@ struct DW_ScreenshotState
 	DW_SsPhase phase = DW_SsPhase_Warmup;
 	int        phase_frames = 0;    // frames elapsed in current phase
 	bool       with_headers = true;   // include CollapsingHeader bar in capture
-	float      demo_win_w = 1300.0f; // width of the "Dear Widgets" ImGui window (default 2×650)
+	float      demo_win_w = 1300.0f; // width of the "Dear Widgets" ImGui window (default 2x650)
 	// section-capture state
 	int        section_index = 0;    // index into g_ss_sections[]
 	int        section_pass = 0;    // 0=scroll, 1=settle, 2=remeasure trigger, 3=capture
@@ -167,11 +167,11 @@ static DW_ScreenshotState g_ss;
 
 // Controls read by the demo rendering code (ApplyOpenAll, ShowDemo) each frame
 static int   g_ss_open_all = 0;      // -1=close all, 0=off, 1=open all CollapsingHeaders/TreeNodes
-static float g_ss_scroll_y = -1.0f;  // ≥0: override scroll position of "Dear Widgets" window
-static float g_ss_demo_win_h = -1.0f;  // ≥0: override "Dear Widgets" window height
+static float g_ss_scroll_y = -1.0f;  // >=0: override scroll position of "Dear Widgets" window
+static float g_ss_demo_win_h = -1.0f;  // >=0: override "Dear Widgets" window height
 static float g_ss_demo_area_x = 10.0f;   // x position for Demo+Samples windows (push off-screen during Showcase)
 static float g_ss_showcase_area_x = 5000.0f; // x position for Showcase window (off-screen except during Showcase phase)
-static float g_ss_showcase_h = 1400.0f; // constraint height — large enough to render all content without scroll
+static float g_ss_showcase_h = 1400.0f; // constraint height -- large enough to render all content without scroll
 static float g_ss_showcase_capture_h = -1.0f;   // measured content height used for actual crop (set after render)
 
 // Per-section bounds recorded during DW_SsPhase_RecordSections
@@ -189,7 +189,7 @@ struct DW_SsSection
 static DW_SsSection g_ss_sections[512];
 static int          g_ss_nsections = 0;
 static bool         g_ss_record_mode = false;
-static int          g_ss_remeasure_idx = -1;  // when ≥0, update that section's bounds in-place
+static int          g_ss_remeasure_idx = -1;  // when >=0, update that section's bounds in-place
 
 // Called from ShowDemo / sub-functions while g_ss_record_mode == true,
 // OR while g_ss_remeasure_idx == matching section index.
@@ -206,7 +206,7 @@ static void DW_SsRecord( const char* name, float y0, float y1 )
 			ImGuiWindow* dw = ImGui::FindWindowByName( "Dear Widgets" );
 			if ( dw )
 			{
-				// DC pos = GetCursorScreenPos().y = y + Pos.y − Scroll.y
+				// DC pos = GetCursorScreenPos().y = y + Pos.y - Scroll.y
 				s.dc_y0 = y0 + dw->Pos.y - dw->Scroll.y;
 				s.dc_y1 = y1 + dw->Pos.y - dw->Scroll.y;
 				s.dc_x0 = dw->InnerRect.Min.x + (ImGui::GetCursorPos().x - ImGui::GetStyle().WindowPadding.x);
@@ -217,7 +217,7 @@ static void DW_SsRecord( const char* name, float y0, float y1 )
 		return;
 	}
 	if ( !g_ss_record_mode || g_ss_nsections >= 512 ) return;
-	if ( y1 <= y0 + 2.0f ) return;   // section was closed – skip
+	if ( y1 <= y0 + 2.0f ) return;   // section was closed - skip
 	DW_SsSection& s = g_ss_sections[g_ss_nsections++];
 	ImStrncpy( s.name, name, sizeof( s.name ) );
 	s.start_y = y0;
@@ -225,7 +225,7 @@ static void DW_SsRecord( const char* name, float y0, float y1 )
 	s.indent_offset = ImGui::GetCursorPos().x - ImGui::GetStyle().WindowPadding.x;
 }
 
-// Resize the Win32 OS window so the client area is at least (client_w × client_h).
+// Resize the Win32 OS window so the client area is at least (client_w x client_h).
 static void DW_ResizeOsWindow( HWND hwnd, int client_w, int client_h )
 {
 	int screen_w = GetSystemMetrics( SM_CXSCREEN );
@@ -255,7 +255,7 @@ static bool DW_CaptureClientAreaPNG( HWND hwnd, const char* path,
 	int full_H = wrc.bottom - wrc.top;
 	if ( full_W <= 0 || full_H <= 0 ) return false;
 
-	// Client area origin in screen coords → non-client offsets
+	// Client area origin in screen coords -> non-client offsets
 	POINT client_origin = { 0, 0 };
 	ClientToScreen( hwnd, &client_origin );
 	int nc_left = client_origin.x - wrc.left;
@@ -288,7 +288,7 @@ static bool DW_CaptureClientAreaPNG( HWND hwnd, const char* path,
 
 	// Ask DWM to composite GPU content into a DC sized to the FULL window.
 	// This ensures the title bar occupies DC rows 0..nc_top-1 and the client
-	// area starts at nc_top — we then crop starting at dc_y to exclude it.
+	// area starts at nc_top -- we then crop starting at dc_y to exclude it.
 	HDC     hdc = GetDC( hwnd );
 	HDC     memdc = CreateCompatibleDC( hdc );
 	HBITMAP hbm = CreateCompatibleBitmap( hdc, full_W, full_H );
@@ -302,7 +302,7 @@ static bool DW_CaptureClientAreaPNG( HWND hwnd, const char* path,
 		fflush( stderr );
 	}
 
-	// Download pixels — BGRX (32-bit, alpha byte is 0)
+	// Download pixels -- BGRX (32-bit, alpha byte is 0)
 	ImVector<unsigned char> buf;
 	buf.resize( full_W * full_H * 4 );
 	BITMAPINFO bmi = {};
@@ -326,7 +326,7 @@ static bool DW_CaptureClientAreaPNG( HWND hwnd, const char* path,
 		return false;
 	}
 
-	// Crop and convert BGRX → RGBA
+	// Crop and convert BGRX -> RGBA
 	ImVector<unsigned char> crop;
 	crop.resize( clip_w * clip_h * 4 );
 	for ( int row = 0; row < clip_h; ++row )
@@ -335,9 +335,9 @@ static bool DW_CaptureClientAreaPNG( HWND hwnd, const char* path,
 		unsigned char* dst = &crop[row * clip_w * 4];
 		for ( int col = 0; col < clip_w; ++col, src += 4, dst += 4 )
 		{
-			dst[0] = src[2];  // R ← B
+			dst[0] = src[2];  // R <- B
 			dst[1] = src[1];  // G
-			dst[2] = src[0];  // B ← R
+			dst[2] = src[0];  // B <- R
 			dst[3] = 255;
 		}
 	}
@@ -347,7 +347,7 @@ static bool DW_CaptureClientAreaPNG( HWND hwnd, const char* path,
 
 static void DW_RunScreenshotCapture()
 {
-	// Use window title — more reliable than ImPlatform_App_GetHWND() in all configurations
+	// Use window title -- more reliable than ImPlatform_App_GetHWND() in all configurations
 	HWND hwnd = FindWindowA( NULL, "Dear Widgets Demo" );
 	if ( !hwnd )
 	{
@@ -619,6 +619,19 @@ ImFont* g_molgethFont = nullptr;
 ImFont* g_monblockFont = nullptr;
 ImFont* g_reginaFont = nullptr;
 ImFont* g_steelworksFont = nullptr;
+// Additional Serif -- Google Fonts
+ImFont* g_alegreyaFont = nullptr;
+ImFont* g_cormorantFont = nullptr;
+ImFont* g_cormorantUnicaseFont = nullptr;
+ImFont* g_frauncesFont = nullptr;
+ImFont* g_italianaFont = nullptr;
+ImFont* g_yesevaOneFont = nullptr;
+// Additional Script -- Google Fonts
+ImFont* g_hurricaneFont = nullptr;
+ImFont* g_imperialScriptFont = nullptr;
+ImFont* g_ephesisFont = nullptr;
+// Additional Display -- Google Fonts
+ImFont* g_monotonFont = nullptr;
 // Color fonts
 ImFont* g_twemojiFont = nullptr;
 ImFont* g_aquaphonicDownpourFont = nullptr;
@@ -679,7 +692,7 @@ ImFont* g_amiriQuranColoredFont = nullptr;
 ImFont* g_vazirmatnFont = nullptr;
 ImFont* g_amiriQuranFont = nullptr;
 
-// Ligature Showcase fonts — rich ligature sets across programming, classical
+// Ligature Showcase fonts -- rich ligature sets across programming, classical
 // text, decorative script, and historical styles.
 ImFont* g_jetbrainsMonoFont = nullptr;
 ImFont* g_victorMonoFont = nullptr;
@@ -723,7 +736,7 @@ static inline void LoadFontIfMissing( ImFontAtlas* atlas, ImFont** slot,
 
 // Curated (display-name, font-slot) pair used by the demo's font pickers.
 // Only fonts in this list AND present in the live ImGui atlas surface in the
-// pickers — guarantees no dead entries pointing to unloaded files.
+// pickers -- guarantees no dead entries pointing to unloaded files.
 struct DemoFontChoice
 {
 	const char* name; ImFont** ptr;
@@ -772,7 +785,7 @@ static inline ImFont* DemoFontPicker( const char* combo_label,
 
 // Walk every demo-font slot; load any whose file is present on disk but not
 // yet in the ImGui atlas. ImGui 1.92's dynamic atlas rebuilds on demand, so
-// fonts added here become renderable on the very next frame — no restart.
+// fonts added here become renderable on the very next frame -- no restart.
 static void LoadOrRefreshDemoFonts( ImGuiIO& io )
 {
 	ImFontConfig slugCfg;
@@ -791,8 +804,14 @@ static void LoadOrRefreshDemoFonts( ImGuiIO& io )
 	LoadFontIfMissing( io.Fonts, &g_foglihtenFont, "fonts/UnifrakturCook-Bold.ttf", sz, &slugCfg );
 	LoadFontIfMissing( io.Fonts, &g_steelworksFont, "fonts/Rye-Regular.ttf", sz, &slugCfg );
 	LoadFontIfMissing( io.Fonts, &g_trenchSlabFont, "fonts/TrenchSlab-Regular.otf", sz, &slugCfg );
+	LoadFontIfMissing( io.Fonts, &g_alegreyaFont, "fonts/Alegreya[wght].ttf", sz, &slugCfg );
+	LoadFontIfMissing( io.Fonts, &g_cormorantFont, "fonts/Cormorant[wght].ttf", sz, &slugCfg );
+	LoadFontIfMissing( io.Fonts, &g_cormorantUnicaseFont, "fonts/CormorantUnicase-Regular.ttf", sz, &slugCfg );
+	LoadFontIfMissing( io.Fonts, &g_frauncesFont, "fonts/Fraunces[SOFT,WONK,opsz,wght].ttf", sz, &slugCfg );
+	LoadFontIfMissing( io.Fonts, &g_italianaFont, "fonts/Italiana-Regular.ttf", sz, &slugCfg );
+	LoadFontIfMissing( io.Fonts, &g_yesevaOneFont, "fonts/YesevaOne-Regular.ttf", sz, &slugCfg );
 
-	// Script / Handwriting — styles intentionally diverse (pencil, sharpie,
+	// Script / Handwriting -- styles intentionally diverse (pencil, sharpie,
 	// brush, retro, felt-tip, copperplate, ...) rather than many variants
 	// of English-roundhand.
 	LoadFontIfMissing( io.Fonts, &g_brightMarchFont, "fonts/Sacramento-Regular.ttf", sz, &slugCfg );  // monoline upright
@@ -802,8 +821,11 @@ static void LoadOrRefreshDemoFonts( ImGuiIO& io )
 	LoadFontIfMissing( io.Fonts, &g_metaforaSsFont, "fonts/Sail-Regular.ttf", sz, &slugCfg );  // bold monoline display
 	LoadFontIfMissing( io.Fonts, &g_reginaFont, "fonts/HomemadeApple-Regular.ttf", sz, &slugCfg );  // personal cursive
 	LoadFontIfMissing( io.Fonts, &g_sharpieFont, "fonts/Sharpie-Regular.otf", sz, &slugCfg );  // marker handwriting
+	LoadFontIfMissing( io.Fonts, &g_hurricaneFont, "fonts/Hurricane-Regular.ttf", sz, &slugCfg );  // ultra bold brush
+	LoadFontIfMissing( io.Fonts, &g_imperialScriptFont, "fonts/ImperialScript-Regular.ttf", sz, &slugCfg );  // formal italic
+	LoadFontIfMissing( io.Fonts, &g_ephesisFont, "fonts/Ephesis-Regular.ttf", sz, &slugCfg );  // casual handwriting
 
-	// Display / Decorative — curated Velvetyne picks (plus 3 overflow slots).
+	// Display / Decorative -- curated Velvetyne picks (plus 3 overflow slots).
 	LoadFontIfMissing( io.Fonts, &g_bollgoFont, "fonts/FlorDeRuina-Flor.otf", sz, &slugCfg );  // baroque organic
 	LoadFontIfMissing( io.Fonts, &g_dottedFont, "fonts/Bianzhidai-NoBG-Base.otf", sz, &slugCfg );  // pixel/weave (concept match for Dotted)
 	LoadFontIfMissing( io.Fonts, &g_franticallyFont, "fonts/Mess.otf", sz, &slugCfg );  // chaotic (concept match for Frantically)
@@ -815,7 +837,7 @@ static void LoadOrRefreshDemoFonts( ImGuiIO& io )
 	LoadFontIfMissing( io.Fonts, &g_ouvrieresFont, "fonts/Ouvrieres-Affamees.otf", sz, &slugCfg );
 	LoadFontIfMissing( io.Fonts, &g_picnicFont, "fonts/PicNic-Regular.otf", sz, &slugCfg );
 
-	// Display / Decorative — Fontshare batch
+	// Display / Decorative -- Fontshare batch
 	LoadFontIfMissing( io.Fonts, &g_comicoFont, "fonts/Comico-Regular.otf", sz, &slugCfg );
 	LoadFontIfMissing( io.Fonts, &g_bespokeStencilFont, "fonts/BespokeStencil-Regular.otf", sz, &slugCfg );
 	LoadFontIfMissing( io.Fonts, &g_akturaFont, "fonts/Aktura-Regular.otf", sz, &slugCfg );
@@ -827,10 +849,13 @@ static void LoadOrRefreshDemoFonts( ImGuiIO& io )
 	LoadFontIfMissing( io.Fonts, &g_kihimFont, "fonts/Kihim-Regular.otf", sz, &slugCfg );
 	LoadFontIfMissing( io.Fonts, &g_striperFont, "fonts/Striper-Regular.otf", sz, &slugCfg );
 	LoadFontIfMissing( io.Fonts, &g_kohinoorZeroneFont, "fonts/KohinoorZerone-Regular.otf", sz, &slugCfg );
+	LoadFontIfMissing( io.Fonts, &g_monotonFont, "fonts/Monoton-Regular.ttf", sz, &slugCfg );  // neon tubing display
 
 	// CFF Monochrome
 	LoadFontIfMissing( io.Fonts, &g_manbowClearFont, "fonts/Array-Regular.otf", sz, &slugCfg );
 	LoadFontIfMissing( io.Fonts, &g_manbowLinesFont, "fonts/Tanker-Regular.otf", sz, &slugCfg );
+	LoadFontIfMissing( io.Fonts, &g_manbowSpotsFont, "fonts/ManBow-Spots.otf", sz, &slugCfg );
+	LoadFontIfMissing( io.Fonts, &g_manbowToneFont,  "fonts/ManBow-Lines.otf", sz, &slugCfg );
 
 	// Color
 	LoadFontIfMissing( io.Fonts, &g_twemojiFont, "fonts/Noto-COLRv1.ttf", sz, &slugCfg );
@@ -840,7 +865,15 @@ static void LoadOrRefreshDemoFonts( ImGuiIO& io )
 	LoadFontIfMissing( io.Fonts, &g_bungeeSpiceFont, "fonts/BungeeSpice-Regular.ttf", sz, &slugCfg );
 	LoadFontIfMissing( io.Fonts, &g_honkFont, "fonts/Honk[MORF,SHLN].ttf", sz, &slugCfg );
 
-	// Color — non-Google sources (SVG / COLRv0 / COLRv1)
+	// Color -- non-Google sources (SVG / COLRv0 / COLRv1)
+	LoadFontIfMissing( io.Fonts, &g_aquaphonicDownpourFont, "fonts/Aquaphonic-Downpour.otf", sz, &slugCfg );
+	LoadFontIfMissing( io.Fonts, &g_aquaphonicDrizzleFont,  "fonts/Aquaphonic-Drizzle.otf",  sz, &slugCfg );
+	LoadFontIfMissing( io.Fonts, &g_cimeroProFont,          "fonts/CimeroPro.otf",            sz, &slugCfg );
+	LoadFontIfMissing( io.Fonts, &g_gilbertColorFont,       "fonts/GilbertColorBold.otf",     sz, &slugCfg );
+	LoadFontIfMissing( io.Fonts, &g_multicoloreFont,        "fonts/Multicolore-Pro.otf",      sz, &slugCfg );
+	LoadFontIfMissing( io.Fonts, &g_primecolorGFont,        "fonts/Primecolor-G.ttf",         sz, &slugCfg );
+	LoadFontIfMissing( io.Fonts, &g_primecolorMFont,        "fonts/Primecolor-M.ttf",         sz, &slugCfg );
+	LoadFontIfMissing( io.Fonts, &g_fatternFont,            "fonts/Fattern.otf",              sz, &slugCfg );
 	LoadFontIfMissing( io.Fonts, &g_notoColorEmojiSvgFont, "fonts/NotoColorEmoji-SVG.otf", sz, &slugCfg );
 	LoadFontIfMissing( io.Fonts, &g_openMojiColr0Font, "fonts/OpenMoji-color-glyf_colr_0.ttf", sz, &slugCfg );
 	LoadFontIfMissing( io.Fonts, &g_openMojiColr1Font, "fonts/OpenMoji-color-glyf_colr_1.ttf", sz, &slugCfg );
@@ -858,7 +891,7 @@ static void LoadOrRefreshDemoFonts( ImGuiIO& io )
 	LoadFontIfMissing( io.Fonts, &g_vazirmatnFont, "fonts/Vazirmatn-Regular.ttf", sz, &slugCfg, arabicRanges );
 	LoadFontIfMissing( io.Fonts, &g_amiriQuranFont, "fonts/AmiriQuran.ttf", sz, &slugCfg, arabicRanges );
 
-	// Ligature Showcase — canonical filenames match what the downloader pulls.
+	// Ligature Showcase -- canonical filenames match what the downloader pulls.
 	LoadFontIfMissing( io.Fonts, &g_jetbrainsMonoFont, "fonts/JetBrainsMono[wght].ttf", sz, &slugCfg );
 	LoadFontIfMissing( io.Fonts, &g_victorMonoFont, "fonts/VictorMono[wght].ttf", sz, &slugCfg );
 	LoadFontIfMissing( io.Fonts, &g_monaspaceNeonFont, "fonts/MonaspaceNeon-Regular.ttf", sz, &slugCfg );
@@ -949,7 +982,7 @@ int main( int argc, char** argv )
 	// Using the new ImPlatform C API - following ImPlatform demo pattern
 	bool bGood;
 
-	// Create window — use a compact fixed size in screenshot mode for consistent output
+	// Create window -- use a compact fixed size in screenshot mode for consistent output
 #if DW_SCREENSHOT_SUPPORT
 	int win_w = g_ss.active ? g_ss.base_client_w : 1024;
 	int win_h = g_ss.active ? 960 : 764 * 2;
@@ -1026,12 +1059,12 @@ int main( int argc, char** argv )
 	io.Fonts->AddFontFromFileTTF( "../extern/FiraCode/distr/ttf/FiraCode-Medium.ttf", 16.0f );
 
 	// Demo fonts load from canonical names matching their download URLs
-	// (see font_manifest.inl). LoadOrRefreshDemoFonts is idempotent — any
+	// (see font_manifest.inl). LoadOrRefreshDemoFonts is idempotent -- any
 	// missing files are re-checked each frame from ShowDrawTextDemo, so
 	// fonts downloaded via the UI become renderable without restart.
 	LoadOrRefreshDemoFonts( io );
 
-	// (legacy block below is no-op'd — replaced by LoadOrRefreshDemoFonts).
+	// (legacy block below is no-op'd -- replaced by LoadOrRefreshDemoFonts).
 	ImFontConfig slugCfg;
 	slugCfg.FontLoader = ImWidgets::GetSlugFontLoader();
 	(void)slugCfg;
@@ -1088,17 +1121,17 @@ int main( int argc, char** argv )
 	// --- Unmatched (no replacement found on Google Fonts / Fontshare /
 	// Velvetyne / Open Foundry). These slots stay null; their UI labels
 	// indicate no replacement is available. ---
-	g_manbowSpotsFont = nullptr;  // no halftone/dot CFF on the 4 sources
-	g_manbowToneFont = nullptr;  // no screentone CFF on the 4 sources
-	g_aquaphonicDownpourFont = nullptr;  // OT-SVG not shipped by any of the 4 sources
-	g_aquaphonicDrizzleFont = nullptr;
-	g_cimeroProFont = nullptr;
-	g_colorTubeFont = nullptr;
-	g_gilbertColorFont = nullptr;
-	g_multicoloreFont = nullptr;
-	g_primecolorGFont = nullptr;
-	g_primecolorMFont = nullptr;
-	g_fatternFont = nullptr;
+	g_manbowSpotsFont = AddFontIfExists( io.Fonts, "fonts/ManBow-Spots.otf", 24.0f, &slugCfg );  // Manbow Spots (Typodermic, CC0)
+	g_manbowToneFont  = AddFontIfExists( io.Fonts, "fonts/ManBow-Lines.otf", 24.0f, &slugCfg ); // Manbow Lines (Typodermic, CC0)
+	g_aquaphonicDownpourFont = AddFontIfExists( io.Fonts, "fonts/Aquaphonic-Downpour.otf", 24.0f, &slugCfg );
+	g_aquaphonicDrizzleFont  = AddFontIfExists( io.Fonts, "fonts/Aquaphonic-Drizzle.otf",  24.0f, &slugCfg );
+	g_cimeroProFont    = AddFontIfExists( io.Fonts, "fonts/CimeroPro.otf",        24.0f, &slugCfg );
+	g_colorTubeFont    = nullptr;  // no known free download URL
+	g_gilbertColorFont = AddFontIfExists( io.Fonts, "fonts/GilbertColorBold.otf", 24.0f, &slugCfg );
+	g_multicoloreFont  = AddFontIfExists( io.Fonts, "fonts/Multicolore-Pro.otf",  24.0f, &slugCfg );
+	g_primecolorGFont  = AddFontIfExists( io.Fonts, "fonts/Primecolor-G.ttf",     24.0f, &slugCfg );
+	g_primecolorMFont  = AddFontIfExists( io.Fonts, "fonts/Primecolor-M.ttf",     24.0f, &slugCfg );
+	g_fatternFont      = AddFontIfExists( io.Fonts, "fonts/Fattern.otf",          24.0f, &slugCfg );
 
 	// Arabic glyph range for Arabic fonts
 	static const ImWchar arabicRanges[] = { 0x0020, 0x007E, 0x0600, 0x06FF, 0xFE70, 0xFEFF, 0 };
@@ -1109,7 +1142,7 @@ int main( int argc, char** argv )
 	g_reemKufiInkFont = AddFontIfExists( io.Fonts, "fonts/ReemKufiInk-Regular.ttf", 24.0f, &slugCfg, arabicRanges );
 	g_reemKufiFunFont = AddFontIfExists( io.Fonts, "fonts/ReemKufiFun[wght].ttf", 24.0f, &slugCfg, arabicRanges );
 	// Cairo Play upstream is now a single variable font (slnt,wght axes); both
-	// demo slots load the same file — visually identical until we wire axis
+	// demo slots load the same file -- visually identical until we wire axis
 	// instancing into the Slug font loader.
 	g_cairoPlayBoldFont = AddFontIfExists( io.Fonts, "fonts/CairoPlay[slnt,wght].ttf", 24.0f, &slugCfg, arabicRanges );
 	g_cairoPlayXLightFont = AddFontIfExists( io.Fonts, "fonts/CairoPlay[slnt,wght].ttf", 24.0f, &slugCfg, arabicRanges );
@@ -1296,28 +1329,28 @@ int main( int argc, char** argv )
 			ImGui::SetNextWindowSize( ImVec2( 340, 0 ), ImGuiCond_FirstUseEver );
 			ImGui::Begin( "Background Effect", NULL, winFlags );
 
-			ImWidgets::ImWidgetsBgEffect eff = (ImWidgets::ImWidgetsBgEffect)effectIdx;
+			ImWidgetsBgEffect eff = (ImWidgetsBgEffect)effectIdx;
 			float p0 = 0.0f, p1 = 0.0f, p2 = 0.0f;
 			switch ( eff )
 			{
 			default:
-			case ImWidgets::ImWidgetsBgEffect_Blur:                p0 = blur_radius; break;
-			case ImWidgets::ImWidgetsBgEffect_GlassRefraction:     p0 = glass_bevel; p1 = glass_ior; break;
-			case ImWidgets::ImWidgetsBgEffect_FrostedGlass:        p0 = frost_radius; p1 = frost_noise; break;
-			case ImWidgets::ImWidgetsBgEffect_Pixelate:            p0 = pixel_size; break;
-			case ImWidgets::ImWidgetsBgEffect_ChromaticAberration: p0 = chroma_strength; p1 = chroma_samples; break;
-			case ImWidgets::ImWidgetsBgEffect_LiquidGlass:         p0 = liquid_strength; p1 = liquid_bevel; break;
-			case ImWidgets::ImWidgetsBgEffect_HeatHaze:            p0 = haze_amplitude; p1 = haze_frequency; break;
-			case ImWidgets::ImWidgetsBgEffect_Voronoi:             p0 = voronoi_cells; p1 = voronoi_edge; p2 = voronoi_ior; break;
-			case ImWidgets::ImWidgetsBgEffect_EdgeGlow:            p0 = edge_intensity; break;
-			case ImWidgets::ImWidgetsBgEffect_Halftone:            p0 = halftone_spacing; p1 = halftone_sharp; break;
-			case ImWidgets::ImWidgetsBgEffect_MouseEdge:           p0 = mouse_radius; p1 = mouse_intensity; break;
-			case ImWidgets::ImWidgetsBgEffect_CRT:                 p0 = crt_scanlines; p1 = crt_barrel; break;
-			case ImWidgets::ImWidgetsBgEffect_DotMatrix:           p0 = dot_cellsize; p1 = dot_round; break;
-			case ImWidgets::ImWidgetsBgEffect_Glitch:              p0 = glitch_intensity; p1 = glitch_blocksize; break;
-			case ImWidgets::ImWidgetsBgEffect_StainedGlass:        p0 = stained_cells; p1 = stained_lead; break;
-			case ImWidgets::ImWidgetsBgEffect_Rain:                p0 = rain_density; p1 = rain_trails; p2 = (float)ImGui::GetTime() * rain_speed; break;
-			case ImWidgets::ImWidgetsBgEffect_Kaleidoscope:        p0 = kal_segments; p1 = kal_rotation; break;
+			case ImWidgetsBgEffect_Blur:                p0 = blur_radius; break;
+			case ImWidgetsBgEffect_GlassRefraction:     p0 = glass_bevel; p1 = glass_ior; break;
+			case ImWidgetsBgEffect_FrostedGlass:        p0 = frost_radius; p1 = frost_noise; break;
+			case ImWidgetsBgEffect_Pixelate:            p0 = pixel_size; break;
+			case ImWidgetsBgEffect_ChromaticAberration: p0 = chroma_strength; p1 = chroma_samples; break;
+			case ImWidgetsBgEffect_LiquidGlass:         p0 = liquid_strength; p1 = liquid_bevel; break;
+			case ImWidgetsBgEffect_HeatHaze:            p0 = haze_amplitude; p1 = haze_frequency; break;
+			case ImWidgetsBgEffect_Voronoi:             p0 = voronoi_cells; p1 = voronoi_edge; p2 = voronoi_ior; break;
+			case ImWidgetsBgEffect_EdgeGlow:            p0 = edge_intensity; break;
+			case ImWidgetsBgEffect_Halftone:            p0 = halftone_spacing; p1 = halftone_sharp; break;
+			case ImWidgetsBgEffect_MouseEdge:           p0 = mouse_radius; p1 = mouse_intensity; break;
+			case ImWidgetsBgEffect_CRT:                 p0 = crt_scanlines; p1 = crt_barrel; break;
+			case ImWidgetsBgEffect_DotMatrix:           p0 = dot_cellsize; p1 = dot_round; break;
+			case ImWidgetsBgEffect_Glitch:              p0 = glitch_intensity; p1 = glitch_blocksize; break;
+			case ImWidgetsBgEffect_StainedGlass:        p0 = stained_cells; p1 = stained_lead; break;
+			case ImWidgetsBgEffect_Rain:                p0 = rain_density; p1 = rain_trails; p2 = (float)ImGui::GetTime() * rain_speed; break;
+			case ImWidgetsBgEffect_Kaleidoscope:        p0 = kal_segments; p1 = kal_rotation; break;
 			}
 			ImU32 tint = ImGui::GetColorU32( tint_color );
 			ImWidgets::SetCurrentWindowBlurBackground( eff, p0, p1, p2, tint );
@@ -1328,7 +1361,7 @@ int main( int argc, char** argv )
 				"Voronoi Shatter", "Edge Glow", "Halftone", "Mouse Edge",
 				"CRT Scanlines", "Dot Matrix", "Glitch", "Stained Glass", "Rain", "Kaleidoscope"
 			};
-			ImGui::Combo( "Effect", &effectIdx, effectNames, ImWidgets::ImWidgetsBgEffect_COUNT );
+			ImGui::Combo( "Effect", &effectIdx, effectNames, ImWidgetsBgEffect_COUNT );
 			ImGui::ColorEdit4( "Tint", &tint_color.x, ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf );
 			ImGui::Checkbox( "No Title Bar", &noTitleBar );
 			ImGui::Separator();
@@ -1341,70 +1374,70 @@ int main( int argc, char** argv )
 			switch ( eff )
 			{
 			default:
-			case ImWidgets::ImWidgetsBgEffect_Blur:
+			case ImWidgetsBgEffect_Blur:
 				ImGui::SliderFloat( "Blur Radius##Blur", &blur_radius, 0.5f, 32.0f );
 				break;
-			case ImWidgets::ImWidgetsBgEffect_GlassRefraction:
+			case ImWidgetsBgEffect_GlassRefraction:
 				ImGui::SliderFloat( "Bevel##Glass", &glass_bevel, 0.01f, 0.8f );
 				ImGui::SliderFloat( "IOR##Glass", &glass_ior, 1.0f, 3.0f );
 				break;
-			case ImWidgets::ImWidgetsBgEffect_FrostedGlass:
+			case ImWidgetsBgEffect_FrostedGlass:
 				ImGui::SliderFloat( "Blur Radius##Frost", &frost_radius, 1.0f, 20.0f );
 				ImGui::SliderFloat( "Noise Scale##Frost", &frost_noise, 0.1f, 2.0f );
 				break;
-			case ImWidgets::ImWidgetsBgEffect_Pixelate:
+			case ImWidgetsBgEffect_Pixelate:
 				ImGui::SliderFloat( "Block Size (px)##Pixelate", &pixel_size, 2.0f, 32.0f );
 				break;
-			case ImWidgets::ImWidgetsBgEffect_ChromaticAberration:
+			case ImWidgetsBgEffect_ChromaticAberration:
 				ImGui::SliderFloat( "Strength##Chroma", &chroma_strength, 1.0f, 30.0f );
 				ImGui::SliderFloat( "Samples##Chroma", &chroma_samples, 4.0f, 16.0f );
 				break;
-			case ImWidgets::ImWidgetsBgEffect_LiquidGlass:
+			case ImWidgetsBgEffect_LiquidGlass:
 				ImGui::SliderFloat( "Refraction##Liquid", &liquid_strength, 0.1f, 2.0f );
 				ImGui::SliderFloat( "Bevel##Liquid", &liquid_bevel, 0.01f, 0.8f );
 				break;
-			case ImWidgets::ImWidgetsBgEffect_HeatHaze:
+			case ImWidgetsBgEffect_HeatHaze:
 				ImGui::SliderFloat( "Amplitude##Haze", &haze_amplitude, 0.5f, 16.0f );
 				ImGui::SliderFloat( "Frequency##Haze", &haze_frequency, 1.0f, 20.0f );
 				break;
-			case ImWidgets::ImWidgetsBgEffect_Voronoi:
+			case ImWidgetsBgEffect_Voronoi:
 				ImGui::SliderFloat( "Cells##Voronoi", &voronoi_cells, 2.0f, 40.0f );
 				ImGui::SliderFloat( "Edge Width##Voronoi", &voronoi_edge, 0.5f, 8.0f );
 				ImGui::SliderFloat( "IOR##Voronoi", &voronoi_ior, 1.0f, 3.0f );
 				break;
-			case ImWidgets::ImWidgetsBgEffect_EdgeGlow:
+			case ImWidgetsBgEffect_EdgeGlow:
 				ImGui::SliderFloat( "Intensity##EdgeGlow", &edge_intensity, 0.5f, 10.0f );
 				break;
-			case ImWidgets::ImWidgetsBgEffect_Halftone:
+			case ImWidgetsBgEffect_Halftone:
 				ImGui::SliderFloat( "Dot Spacing##Halftone", &halftone_spacing, 3.0f, 20.0f );
 				ImGui::SliderFloat( "Sharpness##Halftone", &halftone_sharp, 0.5f, 8.0f );
 				break;
-			case ImWidgets::ImWidgetsBgEffect_MouseEdge:
+			case ImWidgetsBgEffect_MouseEdge:
 				ImGui::SliderFloat( "Radius (px)##MouseEdge", &mouse_radius, 30.0f, 500.0f );
 				ImGui::SliderFloat( "Intensity##MouseEdge", &mouse_intensity, 0.5f, 8.0f );
 				break;
-			case ImWidgets::ImWidgetsBgEffect_CRT:
+			case ImWidgetsBgEffect_CRT:
 				ImGui::SliderFloat( "Scanline Darkness##CRT", &crt_scanlines, 0.0f, 1.0f );
 				ImGui::SliderFloat( "Barrel Distortion##CRT", &crt_barrel, 0.0f, 5.0f );
 				break;
-			case ImWidgets::ImWidgetsBgEffect_DotMatrix:
+			case ImWidgetsBgEffect_DotMatrix:
 				ImGui::SliderFloat( "Cell Size (px)##DotMatrix", &dot_cellsize, 3.0f, 20.0f );
 				ImGui::SliderFloat( "Roundness##DotMatrix", &dot_round, 0.0f, 1.0f );
 				break;
-			case ImWidgets::ImWidgetsBgEffect_Glitch:
+			case ImWidgetsBgEffect_Glitch:
 				ImGui::SliderFloat( "Intensity##Glitch", &glitch_intensity, 0.05f, 2.0f );
 				ImGui::SliderFloat( "Block Size##Glitch", &glitch_blocksize, 2.0f, 32.0f );
 				break;
-			case ImWidgets::ImWidgetsBgEffect_StainedGlass:
+			case ImWidgetsBgEffect_StainedGlass:
 				ImGui::SliderFloat( "Cells##Stained", &stained_cells, 2.0f, 40.0f );
 				ImGui::SliderFloat( "Lead Width##Stained", &stained_lead, 0.5f, 10.0f );
 				break;
-			case ImWidgets::ImWidgetsBgEffect_Rain:
+			case ImWidgetsBgEffect_Rain:
 				ImGui::SliderFloat( "Rain Amount##Rain", &rain_density, 0.0f, 1.0f );
 				ImGui::SliderFloat( "Fog Blur##Rain", &rain_trails, 0.0f, 5.0f );
 				ImGui::SliderFloat( "Speed##Rain", &rain_speed, 0.1f, 4.0f );
 				break;
-			case ImWidgets::ImWidgetsBgEffect_Kaleidoscope:
+			case ImWidgetsBgEffect_Kaleidoscope:
 				ImGui::SliderFloat( "Segments##Kal", &kal_segments, 2.0f, 16.0f );
 				ImGui::SliderAngle( "Rotation##Kal", &kal_rotation );
 				break;
@@ -1510,7 +1543,7 @@ int main( int argc, char** argv )
 			{
 				if ( g_ss.section_index >= g_ss_nsections )
 				{
-					// All sections captured — restore window then capture showcase.png last
+					// All sections captured -- restore window then capture showcase.png last
 					HWND hwnd = FindWindowA( NULL, "Dear Widgets Demo" );
 					if ( hwnd )
 						DW_ResizeOsWindow( hwnd, g_ss.base_client_w, g_ss.base_client_h );
@@ -1572,7 +1605,7 @@ int main( int argc, char** argv )
 					{
 						float hdr_skip = g_ss.with_headers ? 0.0f : ImGui::GetFrameHeightWithSpacing();
 
-						// Use DC positions for the crop — they reflect the actual on-screen
+						// Use DC positions for the crop -- they reflect the actual on-screen
 						// position including indent, and avail.y-driven content height.
 						float cap_x_f = (sec.dc_x0 > 0.0f)
 							? sec.dc_x0
@@ -1630,7 +1663,7 @@ int main( int argc, char** argv )
 			{
 				if ( g_ss.phase_frames == 1 )
 				{
-					// Resize OS window to 1450px client height — well above content height (~975px).
+					// Resize OS window to 1450px client height -- well above content height (~975px).
 					// The window may extend off-screen; PrintWindow(PW_RENDERFULLCONTENT) captures
 					// the full D3D backbuffer including off-screen portions, so this is fine.
 					HWND hwnd = FindWindowA( NULL, "Dear Widgets Demo" );
@@ -1660,7 +1693,7 @@ int main( int argc, char** argv )
 							+ win->TitleBarHeight   // field since imgui 2024/05/28
 							+ pad * 2.0f
 							+ 4.0f; // small rounding margin
-						fprintf( stderr, "[screenshot] Showcase content height measured: %.0fpx → capture %.0fpx\n",
+						fprintf( stderr, "[screenshot] Showcase content height measured: %.0fpx -> capture %.0fpx\n",
 								 win->ContentSize.y, g_ss_showcase_capture_h );
 						fflush( stderr );
 					}
@@ -1962,7 +1995,7 @@ namespace ImWidgets{
 			 !g_franticallyFont && !g_loveLightFont && !g_magnoliaFont &&
 			 !g_nablaFont && !g_squareLilyFont )
 		{
-			ImGui::TextDisabled( "No Slug fonts loaded yet — click \"Download all fonts\" above." );
+			ImGui::TextDisabled( "No Slug fonts loaded yet -- click \"Download all fonts\" above." );
 			return;
 		}
 
@@ -2013,8 +2046,8 @@ namespace ImWidgets{
 		// default text buffer when rendering. Used by the Ligature Showcase
 		// entries to seed each row with characters that actually trigger the
 		// font's specific ligature set (fi fl ct st for classical serifs,
-		// => -> for programming mono, æ œ for medieval, etc.). Unspecified /
-		// nullptr → render only the shared text_buf.
+		// => -> for programming mono, ae oe for medieval, etc.). Unspecified /
+		// nullptr -> render only the shared text_buf.
 		struct FontEntry
 		{
 			ImFont** font; const char* label; FontTextType textType; const char* group; const char* samplePrefix;
@@ -2044,15 +2077,24 @@ namespace ImWidgets{
 			{ &g_trenchSlabFont,  "Trench Slab (Fontshare)",                 kLatin,  kGrpSerif },
 			{ &g_akturaFont,      "Aktura (Fontshare)",                       kLatin,  kGrpSerif },
 			{ &g_britneyFont,     "Britney (Fontshare)",                      kLatin,  kGrpSerif },
-			{ &g_kihimFont,       "Kihim (Fontshare)",                        kLatin,  kGrpSerif },
-			{ &g_zinaFont,        "Zina (Fontshare)",                         kLatin,  kGrpSerif },
+			{ &g_kihimFont,            "Kihim (Fontshare)",         kLatin, kGrpSerif },
+			{ &g_zinaFont,             "Zina (Fontshare)",          kLatin, kGrpSerif },
+			{ &g_alegreyaFont,         "Alegreya",                  kLatin, kGrpSerif },
+			{ &g_cormorantFont,        "Cormorant",                 kLatin, kGrpSerif },
+			{ &g_cormorantUnicaseFont, "Cormorant Unicase",         kLatin, kGrpSerif },
+			{ &g_frauncesFont,         "Fraunces",                  kLatin, kGrpSerif },
+			{ &g_italianaFont,         "Italiana",                  kLatin, kGrpSerif },
+			{ &g_yesevaOneFont,        "Yeseva One",                kLatin, kGrpSerif },
 			{ &g_brightMarchFont, "Bright Marching -> Sacramento",            kLatin,  kGrpScript },
 			{ &g_camoodFont,      "Camood -> Kaushan Script",                 kLatin,  kGrpScript },
 			{ &g_cheronaFont,     "Cherona -> Great Vibes",                   kLatin,  kGrpScript },
 			{ &g_loveLightFont,   "Love Light",                               kLatin,  kGrpScript },
 			{ &g_metaforaSsFont,  "Metafora Stylistic -> Sail",               kLatin,  kGrpScript },
-			{ &g_reginaFont,      "Regina -> Homemade Apple",                 kLatin,  kGrpScript },
-			{ &g_sharpieFont,     "Sharpie (Fontshare)",                      kLatin,  kGrpScript },
+			{ &g_reginaFont,          "Regina -> Homemade Apple",   kLatin, kGrpScript },
+			{ &g_sharpieFont,         "Sharpie (Fontshare)",        kLatin, kGrpScript },
+			{ &g_hurricaneFont,       "Hurricane",                  kLatin, kGrpScript },
+			{ &g_imperialScriptFont,  "Imperial Script",            kLatin, kGrpScript },
+			{ &g_ephesisFont,         "Ephesis",                    kLatin, kGrpScript },
 			{ &g_bollgoFont,      "Bollgo -> Flor de Ruina (Velvetyne)",      kLatin,  kGrpDisp },
 			{ &g_dottedFont,      "Dotted -> Bianzhidai (Velvetyne)",         kLatin,  kGrpDisp },
 			//{ &g_endlessFont,   "Endlessly Expanded",                       kLatin,  kGrpDisp },
@@ -2071,22 +2113,23 @@ namespace ImWidgets{
 			{ &g_kolaFont,           "Kola (Fontshare)",                     kLatin,  kGrpDisp },
 			{ &g_striperFont,        "Striper (Fontshare)",                  kLatin,  kGrpDisp },
 			{ &g_kohinoorZeroneFont, "Kohinoor Zerone (Fontshare)",          kLatin,  kGrpDisp },
+			{ &g_monotonFont,        "Monoton",                              kLatin,  kGrpDisp },
 			{ &g_manbowClearFont,        "Manbow Clear -> Array (Fontshare, CFF)", kLatin, kGrpCFF },
 			{ &g_manbowLinesFont,        "Manbow Lines -> Tanker (Fontshare, CFF)", kLatin, kGrpCFF },
-			{ &g_manbowSpotsFont,        "Manbow Spots (unmatched)",     kLatin,  kGrpCFF },
-			{ &g_manbowToneFont,         "Manbow Tone (unmatched)",      kLatin,  kGrpCFF },
+			{ &g_manbowSpotsFont,        "Manbow Spots",                 kLatin,  kGrpCFF },
+			{ &g_manbowToneFont,         "Manbow Lines (DaFont)",         kLatin,  kGrpCFF },
 			{ &g_twemojiFont,            "Twemoji -> Noto Color Emoji (COLRv1)", kEmoji, kGrpColr0 },
 			{ &g_coralPixelsFont,        "Coral Pixels",                 kLatin,  kGrpColr0 },
 			{ &g_openMojiColr0Font,      "OpenMoji Color (COLRv0)",      kEmoji,  kGrpColr0 },
-			{ &g_aquaphonicDownpourFont, "Aquaphonic Downpour (unmatched)", kLatin, kGrpSVG },
-			{ &g_aquaphonicDrizzleFont,  "Aquaphonic Drizzle (unmatched)",  kLatin, kGrpSVG },
-			{ &g_cimeroProFont,          "Cimero Pro (unmatched)",       kLatin,  kGrpSVG },
-			{ &g_colorTubeFont,          "Color Tube (unmatched)",       kLatin,  kGrpSVG },
-			{ &g_gilbertColorFont,       "Gilbert Color Bold (unmatched)", kLatin, kGrpSVG },
-			{ &g_multicoloreFont,        "Multicolore Pro (unmatched)",  kLatin,  kGrpSVG },
-			{ &g_primecolorGFont,        "Primecolor G (unmatched)",     kLatin,  kGrpSVG },
-			{ &g_primecolorMFont,        "Primecolor M (unmatched)",     kLatin,  kGrpSVG },
-			{ &g_fatternFont,            "Fattern (unmatched)",           kLatin,  kGrpSVG },
+			{ &g_aquaphonicDownpourFont, "Aquaphonic Downpour",           kLatin,  kGrpSVG },
+			{ &g_aquaphonicDrizzleFont,  "Aquaphonic Drizzle",            kLatin,  kGrpSVG },
+			{ &g_cimeroProFont,          "Cimero Pro",                    kLatin,  kGrpSVG },
+			{ &g_colorTubeFont,          "Color Tube (unmatched)",        kLatin,  kGrpSVG },
+			{ &g_gilbertColorFont,       "Gilbert Color Bold",            kLatin,  kGrpSVG },
+			{ &g_multicoloreFont,        "Multicolore Pro",               kLatin,  kGrpSVG },
+			{ &g_primecolorGFont,        "Primecolor G",                  kLatin,  kGrpSVG },
+			{ &g_primecolorMFont,        "Primecolor M",                  kLatin,  kGrpSVG },
+			{ &g_fatternFont,            "Fattern",                       kLatin,  kGrpSVG },
 			{ &g_notoColorEmojiSvgFont,  "Noto Color Emoji (OT-SVG)",     kEmoji,  kGrpSVG },
 			{ &g_nablaFont,              "Nabla",                         kLatin,  kGrpColr1 },
 			{ &g_primecolorCV1Font,      "Primecolor CV1 -> Bungee Spice", kLatin, kGrpColr1 },
@@ -2094,7 +2137,7 @@ namespace ImWidgets{
 			{ &g_honkFont,               "Honk",                          kLatin,  kGrpColr1 },
 			{ &g_openMojiColr1Font,      "OpenMoji Color (COLRv1)",       kEmoji,  kGrpColr1 },
 			{ &g_fluentEmojiFont,        "Microsoft Fluent Emoji (COLRv1)", kEmoji, kGrpColr1 },
-			{ &g_amiriQuranColoredFont,  "Amiri Quran Colored (COLR)",    kArabic, kGrpColr1 },
+			{ &g_amiriFont,              "Amiri",                 kArabic, kGrpArabic },
 			{ &g_cairoPlayBoldFont,      "Cairo Play Bold",       kArabic, kGrpArabic },
 			{ &g_cairoPlayXLightFont,    "Cairo Play ExtraLight", kArabic, kGrpArabic },
 			{ &g_arefRuqaaBoldFont,      "Aref Ruqaa Ink Bold",  kArabic, kGrpArabic },
@@ -2103,36 +2146,37 @@ namespace ImWidgets{
 			{ &g_reemKufiFunFont,        "Reem Kufi Fun",         kArabic, kGrpArabic },
 			{ &g_vazirmatnFont,          "Vazirmatn (rastikerdar)", kArabic, kGrpArabic },
 			{ &g_amiriQuranFont,         "Amiri Quran (aliftype upstream)", kArabic, kGrpArabic },
-			// Ligature Showcase — programming arrows, classical ct/st/Th,
-			// medieval æ/œ, decorative script flourishes. Sample text
+			{ &g_amiriQuranColoredFont,  "Amiri Quran Colored (COLR)",      kArabic, kGrpArabic },
+			// Ligature Showcase -- programming arrows, classical ct/st/Th,
+			// medieval ae/oe, decorative script flourishes. Sample text
 			// "=><=Dear Widgets!" already triggers => and <= for mono fonts;
 			// switch to something like "affection fluffy office Thirty" to
 			// see fi/fl/ffi/ct/st/Th on Cormorant / EB Garamond / Fraunces.
 			{ &g_jetbrainsMonoFont,   "JetBrains Mono (programming)",          kLatin, kGrpLig, "=> -> != === >= <= :: |> <- "              },
 			{ &g_victorMonoFont,      "Victor Mono (italic cursive)",          kLatin, kGrpLig, "=> -> != === /* */ // "                     },
 			{ &g_monaspaceNeonFont,   "Monaspace Neon (texture healing)",      kLatin, kGrpLig, "=> -> != === >= <= "                        },
-			{ &g_ebGaramondFont,      "EB Garamond (classical oldstyle)",      kLatin, kGrpLig, "fi fl ffi ffl ct st — "                     },
-			{ &g_lobsterFont,         "Lobster (retro script)",                kLatin, kGrpLig, "The fi Th — "                               },
-			{ &g_abrilFatfaceFont,    "Abril Fatface (Didone display)",        kLatin, kGrpLig, "fi fl Th — "                                },
-			{ &g_meaCulpaFont,        "Mea Culpa (extreme calligraphy)",       kLatin, kGrpLig, "fi fl Th — "                                },
-			// UTF-8 for medieval glyphs: æ=C3 A6, œ=C5 93, ſſ=C5 BF C5 BF, ſt=C5 BF t, Ð=C3 90, þ=C3 BE
-			{ &g_junicodeFont,        "Junicode (medieval historical)",        kLatin, kGrpLig, "\xC3\xA6 \xC5\x93 \xC5\xBF\xC5\xBF \xC5\xBFt \xC3\x90 \xC3\xBE — " },
-			{ &g_tapestryFont,        "Tapestry (ornate script)",              kLatin, kGrpLig, "fi fl — "                                   },
-			{ &g_birthstoneBounceFont, "Birthstone Bounce (bouncy flourished)",   kLatin, kGrpLig, "The fi Th — "                            },
-			{ &g_monteCarloFont,       "MonteCarlo (Spencerian flourishes)",      kLatin, kGrpLig, "The fi Th Q — "                          },
-			{ &g_mrsSaintDelafieldFont,"Mrs Saint Delafield (Spencerian)",        kLatin, kGrpLig, "The fi Th — "                            },
-			{ &g_sansitaSwashedFont,   "Sansita Swashed (sans + swashes)",        kLatin, kGrpLig, "fi fl Th Qu — "                          },
-			{ &g_bodoniModaFont,       "Bodoni Moda (variable Didone)",           kLatin, kGrpLig, "fi fl ffi ffl Th — "                     },
-			{ &g_unifrakturMaguntiaFont, "Unifraktur Maguntia (blackletter ligs)", kLatin, kGrpLig, "\xC5\xBF" "ch \xC5\xBF\xC5\xBF" "i ch ck ll tz \xC3\x9F — " },
-			{ &g_alluraFont,           "Allura (script word ligs: The/tion/ing)", kLatin, kGrpLig, "The tion ion ing are ous — "            },
-			{ &g_grenzeGotischFont,    "Grenze Gotisch (modern blackletter)",     kLatin, kGrpLig, "\xC5\xBF" "ch ch ck ll tz \xC3\x9F — "    },
-			{ &g_pirataOneFont,        "Pirata One (tattoo gothic)",              kLatin, kGrpLig, "ch ck tz Th The — "                      },
-			{ &g_ruthieFont,           "Ruthie (extra-ornate script)",            kLatin, kGrpLig, "The and of tion ing — "                  },
-			{ &g_leMurmureFont,        "Le Murmure (tall art-nouveau)",           kLatin, kGrpLig, "fi fl ff Th The — "                      },
-			{ &g_caudexFont,           "Caudex (medievalist scholarly)",          kLatin, kGrpLig, "\xC3\xA6 \xC5\x93 \xC5\xBF\xC5\xBF ct st Th \xC3\x9F — " },
-			{ &g_unifrakturCookFont,   "UnifrakturCook (sharper blackletter)",    kLatin, kGrpLig, "\xC5\xBF" "ch ch ck ll tz \xC3\x9F — "    },
-			{ &g_chomskyFont,          "Chomsky (NYT masthead gothic)",           kLatin, kGrpLig, "ct st sp Th \xC5\xBFt — "                },
-			{ &g_majorMonoFont,        "Major Mono Display (caps mono)",          kLatin, kGrpLig, "TH NG OO LY TT — "                       },
+			{ &g_ebGaramondFont,      "EB Garamond (classical oldstyle)",      kLatin, kGrpLig, "fi fl ffi ffl ct st -- "                     },
+			{ &g_lobsterFont,         "Lobster (retro script)",                kLatin, kGrpLig, "The fi Th -- "                               },
+			{ &g_abrilFatfaceFont,    "Abril Fatface (Didone display)",        kLatin, kGrpLig, "fi fl Th -- "                                },
+			{ &g_meaCulpaFont,        "Mea Culpa (extreme calligraphy)",       kLatin, kGrpLig, "fi fl Th -- "                                },
+			// UTF-8 for medieval glyphs: ae=C3 A6, oe=C5 93, ss=C5 BF C5 BF, st=C5 BF t, Eth=C3 90, thorn=C3 BE
+			{ &g_junicodeFont,        "Junicode (medieval historical)",        kLatin, kGrpLig, "\xC3\xA6 \xC5\x93 \xC5\xBF\xC5\xBF \xC5\xBFt \xC3\x90 \xC3\xBE -- " },
+			{ &g_tapestryFont,        "Tapestry (ornate script)",              kLatin, kGrpLig, "fi fl -- "                                   },
+			{ &g_birthstoneBounceFont, "Birthstone Bounce (bouncy flourished)",   kLatin, kGrpLig, "The fi Th -- "                            },
+			{ &g_monteCarloFont,       "MonteCarlo (Spencerian flourishes)",      kLatin, kGrpLig, "The fi Th Q -- "                          },
+			{ &g_mrsSaintDelafieldFont,"Mrs Saint Delafield (Spencerian)",        kLatin, kGrpLig, "The fi Th -- "                            },
+			{ &g_sansitaSwashedFont,   "Sansita Swashed (sans + swashes)",        kLatin, kGrpLig, "fi fl Th Qu -- "                          },
+			{ &g_bodoniModaFont,       "Bodoni Moda (variable Didone)",           kLatin, kGrpLig, "fi fl ffi ffl Th -- "                     },
+			{ &g_unifrakturMaguntiaFont, "Unifraktur Maguntia (blackletter ligs)", kLatin, kGrpLig, "\xC5\xBF" "ch \xC5\xBF\xC5\xBF" "i ch ck ll tz \xC3\x9F -- " },
+			{ &g_alluraFont,           "Allura (script word ligs: The/tion/ing)", kLatin, kGrpLig, "The tion ion ing are ous -- "            },
+			{ &g_grenzeGotischFont,    "Grenze Gotisch (modern blackletter)",     kLatin, kGrpLig, "\xC5\xBF" "ch ch ck ll tz \xC3\x9F -- "    },
+			{ &g_pirataOneFont,        "Pirata One (tattoo gothic)",              kLatin, kGrpLig, "ch ck tz Th The -- "                      },
+			{ &g_ruthieFont,           "Ruthie (extra-ornate script)",            kLatin, kGrpLig, "The and of tion ing -- "                  },
+			{ &g_leMurmureFont,        "Le Murmure (tall art-nouveau)",           kLatin, kGrpLig, "fi fl ff Th The -- "                      },
+			{ &g_caudexFont,           "Caudex (medievalist scholarly)",          kLatin, kGrpLig, "\xC3\xA6 \xC5\x93 \xC5\xBF\xC5\xBF ct st Th \xC3\x9F -- " },
+			{ &g_unifrakturCookFont,   "UnifrakturCook (sharper blackletter)",    kLatin, kGrpLig, "\xC5\xBF" "ch ch ck ll tz \xC3\x9F -- "    },
+			{ &g_chomskyFont,          "Chomsky (NYT masthead gothic)",           kLatin, kGrpLig, "ct st sp Th \xC5\xBFt -- "                },
+			{ &g_majorMonoFont,        "Major Mono Display (caps mono)",          kLatin, kGrpLig, "TH NG OO LY TT -- "                       },
 		};
 
 		ImDrawList* pDrawList = ImGui::GetWindowDrawList();
@@ -2141,11 +2185,16 @@ namespace ImWidgets{
 
 		// Separate text buffer for emoji (Twemoji uses its own codepoints, not Latin text)
 		static char emoji_buf[256] = "\xF0\x9F\x98\x80\xF0\x9F\x94\xA5\xF0\x9F\x8C\x88\xF0\x9F\x8E\xA8\xF0\x9F\x9A\x80\xF0\x9F\x92\xA1\xF0\x9F\x8C\x8D";
-		// UTF-8 encoding of: 
+		// Emoji: smiley, fire, rainbow, art, rocket, bulb, earth (see escaped string above)
 		ImGui::InputText( "Emoji##SlugEmoji", emoji_buf, sizeof( emoji_buf ) );
-		// Arabic text buffer: الأدوات العزيزة (Dear Widgets)
+		// Arabic text buffer: (Dear Widgets in Arabic) (Dear Widgets)
 		static char arabic_buf[256] = "\xd8\xa7\xd9\x84\xd8\xa3\xd8\xaf\xd9\x88\xd8\xa7\xd8\xaa \xd8\xa7\xd9\x84\xd8\xb9\xd8\xb2\xd9\x8a\xd8\xb2\xd8\xa9";
 		ImGui::InputText( "Arabic##SlugArabic", arabic_buf, sizeof( arabic_buf ) );
+
+		static int s_open_fonts = 0;
+		if ( ImGui::Button( "Open Fonts" ) )  s_open_fonts = 1;
+		ImGui::SameLine();
+		if ( ImGui::Button( "Close Fonts" ) ) s_open_fonts = -1;
 
 		ImGui::Separator();
 		const char* currentGroup = NULL;
@@ -2213,7 +2262,8 @@ namespace ImWidgets{
 				if ( nextGroup != NULL )
 				{
 					groupY0 = ImGui::GetCursorPos().y;
-					ApplyOpenAll();
+					if ( s_open_fonts != 0 ) ImGui::SetNextItemOpen( s_open_fonts > 0, ImGuiCond_Always );
+					else ApplyOpenAll();
 					groupOpen = ImGui::CollapsingHeader( nextGroup );
 					if ( groupOpen )
 					{
@@ -2233,7 +2283,7 @@ namespace ImWidgets{
 				ImGui::Text( "%s:", kFonts[i].label );
 				ImGui::PopStyleColor();
 				// Pair this FontEntry with its manifest slot: label must START
-				// with display (not just contain it — substring match caused
+				// with display (not just contain it -- substring match caused
 				// e.g. label "Classical Aesthetics -> Cinzel Decorative" to
 				// resolve to the standalone "Cinzel" entry, producing
 				// duplicate ImGui IDs).
@@ -2270,7 +2320,7 @@ namespace ImWidgets{
 			const FontEntry& e = kFonts[i];
 			ImFont* f = *e.font;
 			const char* drawStr = (e.textType == kEmoji) ? emoji_buf : (e.textType == kArabic) ? arabic_buf : text_buf;
-			// Prepend per-font ligature showcase (e.g. "fi fl ct st — ") so
+			// Prepend per-font ligature showcase (e.g. "fi fl ct st -- ") so
 			// the row demonstrates the ligatures the font actually supports.
 			// Only used for Latin entries that explicitly set samplePrefix.
 			char drawComposed[512];
@@ -2294,7 +2344,7 @@ namespace ImWidgets{
 				s_cached_asc[i] = asc;
 			}
 			// Some display/script fonts report a shaped-ink bbox smaller than the
-			// font's natural line box — the shaped measurement only covers the
+			// font's natural line box -- the shaped measurement only covers the
 			// glyphs in the current sample text, but many Script/Display fonts
 			// have tall flourishes on specific capitals (W/D/Q/P swashes) and
 			// generous designed leading that the tight ink bbox doesn't capture.
@@ -2307,7 +2357,7 @@ namespace ImWidgets{
 			// consistent across sizes.
 			float   line_h = ImMax( sz.y, font_size * 1.8f ) + gap + font_size * 0.15f;
 
-			// Font name in solid black — struck-through when flagged for deletion.
+			// Font name in solid black -- struck-through when flagged for deletion.
 			// The little "[X]" / "[ ]" button at the end of the row toggles the
 			// flag; all flagged labels are written to workingdir/_fonts_to_delete.txt
 			// so Claude can pick them up for a batch removal pass.
@@ -2331,19 +2381,20 @@ namespace ImWidgets{
 			}
 			ImGui::PopStyleColor();
 			// Flag toggle right after the font-name label (a fixed right-edge
-			// alignment hid the button off-screen for narrow windows — inline
+			// alignment hid the button off-screen for narrow windows -- inline
 			// next to the label is always visible).
 			ImGui::SameLine();
 			ImGui::PushID( i + 20000 );
-			const char* btn_lbl = s_flagged[i] ? "X" : "-";
-			if ( s_flagged[i] )
+			bool was_flagged = s_flagged[i];
+			const char* btn_lbl = was_flagged ? "X" : "-";
+			if ( was_flagged )
 				ImGui::PushStyleColor( ImGuiCol_Button, IM_COL32( 180, 40, 40, 255 ) );
 			if ( ImGui::SmallButton( btn_lbl ) )
 			{
 				s_flagged[i] = !s_flagged[i];
 				s_flags_dirty = true;
 			}
-			if ( s_flagged[i] )
+			if ( was_flagged )
 				ImGui::PopStyleColor();
 			if ( ImGui::IsItemHovered() )
 				ImGui::SetTooltip( s_flagged[i] ? "Flagged for deletion (click to unflag)" : "Flag this font for deletion" );
@@ -2390,6 +2441,7 @@ namespace ImWidgets{
 			ImGui::Dummy( ImVec2( canvas_w, line_h ) );
 			s_cached_font_h[i] = ImGui::GetCursorScreenPos().y - entryY;
 		}
+		s_open_fonts = 0;
 
 		// Typography Fills section (inside GPU Text)
 		// ---- Debug Glyph Tessellation ----
@@ -2565,7 +2617,7 @@ namespace ImWidgets{
 						ImGui::Dummy( ImVec2( tsz.x, tsz.y + gap ) );
 					}
 
-					// Image fill text — cycle through all loaded images for per-character
+					// Image fill text -- cycle through all loaded images for per-character
 					{
 						// Collect all available images
 						ImTextureID allImages[8]; int nImages = 0;
@@ -2764,7 +2816,7 @@ namespace ImWidgets{
 				ImWidgets::TesselateText( animFont, animSize, kTexts[ci], cache[ci].whole, nullptr, tessTol, iterations );
 			}
 			cache[ci].valid = true;
-			break; // one entry per frame — spreads cost across 6 frames at startup
+			break; // one entry per frame -- spreads cost across 6 frames at startup
 		}
 
 		ApplyOpenAll();
@@ -2793,7 +2845,7 @@ namespace ImWidgets{
 		if ( !any_cache_built )
 		{
 			ImGui::TextColored( ImVec4( 1, 0.6f, 0.4f, 1 ),
-								"Tessellation cache empty — Slug font data missing for '%s'. Try a different font (e.g., Cinzel, Alfa Slab).",
+								"Tessellation cache empty -- Slug font data missing for '%s'. Try a different font (e.g., Cinzel, Alfa Slab).",
 								animFont == ImGui::GetFont() ? "<default>" : "selected" );
 			// Still render plain text below as a fallback so the user sees the strings.
 			for ( int i = 0; i < 6; ++i ) ImGui::Text( "%s", kTexts[i] );
@@ -3177,10 +3229,10 @@ namespace ImWidgets{
 		ImGui::Text( "Vtx: %d", shape.vertices.size() );
 	}
 
-	// ─────────────────────────────────────────────────────────────────────────
-	// Text Showcase — ImGui::Text / TextColored / TextWrapped equivalents
+	// -------------------------------------------------------------------------
+	// Text Showcase -- ImGui::Text / TextColored / TextWrapped equivalents
 	// using Slug DrawText, supporting LTR and RTL layouts.
-	// ─────────────────────────────────────────────────────────────────────────
+	// -------------------------------------------------------------------------
 
 	// Returns the total rendered height of SlugTextWrapped (same algorithm, no draw).
 	static float SlugCalcWrappedHeight( ImFont* font, float font_size,
@@ -3312,7 +3364,7 @@ namespace ImWidgets{
 
 			if ( line_w > 0.0f && line_w + gap + word_w > wrap_width )
 			{
-				// Overflow → flush current line, start fresh with current word
+				// Overflow -> flush current line, start fresh with current word
 				flush_line( line_end, line_w );
 				line_start = word_s;
 				line_end = word_e;
@@ -3356,7 +3408,7 @@ namespace ImWidgets{
 		ImGui::TextDisabled( "Slug requires custom shader support." );
 		return;
 #else
-		// ── Controls ───────────────────────────────────────────────────────────
+		// -- Controls -----------------------------------------------------------
 		static float  font_size = 18.0f;
 		static ImVec4 col_v( 0.93f, 0.90f, 0.85f, 1.0f );
 		static ImU32  col_u = ImGui::ColorConvertFloat4ToU32( col_v );
@@ -3409,7 +3461,7 @@ namespace ImWidgets{
 		float gap = ImGui::GetStyle().ItemSpacing.y;
 		ImDrawList* dl = ImGui::GetWindowDrawList();
 
-		// ── Arabic block ───────────────────────────────────────────────────────
+		// -- Arabic block -------------------------------------------------------
 		if ( arabic_font )
 		{
 			ImGui::SeparatorText( "Arabic  (right-aligned)" );
@@ -3430,7 +3482,7 @@ namespace ImWidgets{
 
 			auto t0 = std::chrono::high_resolution_clock::now();
 
-			// ── SlugText (RTL, right-aligned) ──
+			// -- SlugText (RTL, right-aligned) --
 			{
 				float asc = 0.0f;
 				const char* line = k_ar_line1;
@@ -3441,7 +3493,7 @@ namespace ImWidgets{
 				ImGui::Dummy( ImVec2( box_w, sz.y ) );
 			}
 
-			//── SlugTextColored (RTL, right-aligned) ──
+			//-- SlugTextColored (RTL, right-aligned) --
 			{
 				float asc = 0.0f;
 				const char* line = k_ar_line2;
@@ -3453,7 +3505,7 @@ namespace ImWidgets{
 				ImGui::Dummy( ImVec2( box_w, sz.y ) );
 			}
 
-			// ── SlugTextWrapped (RTL) — full box width, right-aligned ──
+			// -- SlugTextWrapped (RTL) -- full box width, right-aligned --
 			ImGui::SetCursorPosX( ImGui::GetCursorPosX() + box_pad );
 			SlugTextWrapped( arabic_font, font_size, col_u, k_arabic_lorem, wrap_w_ar, /*right_align=*/true );
 
@@ -3476,7 +3528,7 @@ namespace ImWidgets{
 			ImGui::TextDisabled( "DrawText time: %.3f ms  (avg32: %.3f ms  avg128: %.3f ms)", dt_ms, s_arabic_avg32, s_arabic_avg128 );
 		}
 
-		// ── Latin block ────────────────────────────────────────────────────────
+		// -- Latin block --------------------------------------------------------
 		if ( latin_font )
 		{
 			ImGui::SeparatorText( "Latin  (left-aligned)" );
@@ -3485,7 +3537,7 @@ namespace ImWidgets{
 			// then render text on top (draw-list order = render order).
 			float wrap_w = box_w - box_pad * 2.0f;
 			float h_line1 = ImWidgets::CalcTextSize( latin_font, font_size, "Text(): The quick brown fox jumps over the lazy dog." ).y;
-			float h_line2 = ImWidgets::CalcTextSize( latin_font, font_size, "TextColored(): Dear Widgets â GPU Text Showcase" ).y;
+			float h_line2 = ImWidgets::CalcTextSize( latin_font, font_size, "TextColored(): Dear Widgets -- GPU Text Showcase" ).y;
 			float wrap_h = SlugCalcWrappedHeight( latin_font, font_size, k_latin_lorem, wrap_w );
 			float box_h = box_pad + h_line1 + h_line2 + wrap_h + box_pad + gap * 3.0f;
 
@@ -3498,17 +3550,17 @@ namespace ImWidgets{
 
 			auto t0 = std::chrono::high_resolution_clock::now();
 
-			// ── SlugText ──
+			// -- SlugText --
 			SlugText( latin_font, font_size, hi_col_u,
 					  "Text(): The quick brown fox jumps over the lazy dog." );
 			ImGui::SetCursorPosX( ImGui::GetCursorPosX() + box_pad );
 
-			// ── SlugTextColored ──
+			// -- SlugTextColored --
 			SlugTextColored( latin_font, font_size, col_v,
 							 "TextColored(): Dear Widgets \xe2\x80\x94 GPU Text Showcase" );
 			ImGui::SetCursorPosX( ImGui::GetCursorPosX() + box_pad );
 
-			// ── SlugTextWrapped ──
+			// -- SlugTextWrapped --
 			SlugTextWrapped( latin_font, font_size, col_u, k_latin_lorem, wrap_w, false );
 
 			auto t1 = std::chrono::high_resolution_clock::now();
@@ -3565,7 +3617,7 @@ namespace ImWidgets{
 		ImGui::SliderFloat( "Light Angle", &light_angle, 0.0f, 89.0f, "%.0f deg" );
 		ImGui::SliderFloat( "View Angle", &view_angle, 0.0f, 89.0f, "%.0f deg" );
 
-		// Static state (colors, draw options) — declared here, UI shown after schema
+		// Static state (colors, draw options) -- declared here, UI shown after schema
 		static ImVec4 cvLo = ImVec4( 1.00f, 0.86f, 0.31f, 1.0f );
 		static ImVec4 cvLe = ImVec4( 1.00f, 0.63f, 0.20f, 1.0f );
 		static ImVec4 cvFr = ImVec4( 0.31f, 0.86f, 0.47f, 1.0f );
@@ -4085,7 +4137,7 @@ namespace ImWidgets{
 		if ( g_ss_scroll_y >= 0.0f )
 			ImGui::SetScrollY( g_ss_scroll_y );
 
-		// ─── Open / Close All ──────────────────────────────────────────────
+		// --- Open / Close All ----------------------------------------------
 		if ( ImGui::Button( "Open All" ) )
 		{
 			s_open_all = 1;
@@ -4096,6 +4148,17 @@ namespace ImWidgets{
 			s_open_all = -1; ImGui::SetScrollY( 0.0f );
 		}
 
+		// DPI / scaling control. FontScaleDpi drives ImPlatform_LpToPx; sizes authored
+		// in "lp" (logical pixels) stay physically consistent across DPI settings.
+		{
+			float dpi = ImGui::GetStyle().FontScaleDpi;
+			if ( ImGui::SliderFloat( "FontScaleDpi (lp -> px)", &dpi, 0.5f, 4.0f, "%.2fx" ) )
+				ImGui::GetStyle().FontScaleDpi = dpi;
+			ImGui::SameLine();
+			ImGui::TextDisabled( "LpToPx(100)=%.1fpx   PxToLp(100)=%.1flp",
+								 (double)ImPlatform_LpToPx( 100.0f ),
+								 (double)ImPlatform_PxToLp( 100.0f ) );
+		}
 		ApplyOpenAll();
 		if ( ImGui::CollapsingHeader( "Draw" ) )
 		{
@@ -4372,7 +4435,7 @@ namespace ImWidgets{
 						ImGui::SameLine(); ImGui::Checkbox( "Draw Stroke##TLB", &tlb_show_stroke );
 						ImGui::SameLine(); ImGui::Checkbox( "Draw PolylineAA##TLB", &tlb_show_dashed );
 						ImGui::SameLine(); ImGui::Checkbox( "Draw Polyline##TLB", &tlb_show_poly );
-						// DrawDashedPolylineAA has two implementations — toggle the global here.
+						// DrawDashedPolylineAA has two implementations -- toggle the global here.
 						bool tlb_dashed_use_gpu = ImWidgets::GetDashedLinesUseGPU();
 						if ( ImGui::Checkbox( "Dashed GPU Path##TLB", &tlb_dashed_use_gpu ) )
 							ImWidgets::SetDashedLinesUseGPU( tlb_dashed_use_gpu );
@@ -4928,6 +4991,22 @@ namespace ImWidgets{
 							ImGui::Text( "Vtx: %d", shape.vertices.size() );
 						}
 						DW_SsRecord( "Diamond_Gradient", _sy0, ImGui::GetCursorPos().y );
+					}
+					{
+						float _sy0 = ImGui::GetCursorPos().y;
+						ApplyOpenAll();
+						if ( ImGui::CollapsingHeader( "Conic Gradient" ) )
+						{
+							static ImGradientData s_conic_grad;
+							ImGui::Text( "Uses existing ImGradientData stops." );
+							ImDrawList* dl = ImGui::GetWindowDrawList();
+							ImVec2 p = ImGui::GetCursorScreenPos();
+							ImVec2 cg_sz = ImPlatform_LpToPx( ImVec2( 260, 260 ) );
+							ImGui::Dummy( cg_sz );
+							ImWidgets::DrawConicGradient( dl, ImVec2( p.x + cg_sz.x * 0.5f, p.y + cg_sz.y * 0.5f ),
+														  ImPlatform_LpToPx( 120.0f ), s_conic_grad, 0.0f, 192 );
+						}
+						DW_SsRecord( "Conic_Gradient", _sy0, ImGui::GetCursorPos().y );
 					}
 					{
 						float _sy0 = ImGui::GetCursorPos().y;
@@ -5679,8 +5758,8 @@ namespace ImWidgets{
 
 							ImVec2 pos = ImGui::GetCursorScreenPos();
 							DrawChromaticityPlot( pDrawList,
-												  ImWidgetsWhitePointChromaticPlot_D55,
-												  ImWidgetsObserverChromaticPlot_1964_10deg,
+												  ImWidgetsIlluminant_D55,
+												  ImWidgetsObserver_CIE1964_10deg,
 												  ImWidgetsColorSpace_sRGB,
 												  128,
 												  pos, ImVec2( size, size ),
@@ -5967,6 +6046,301 @@ namespace ImWidgets{
 				}
 				ImGui::TreePop();
 			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Patterns" ) )
+			{
+				static int patt = (int)ImWidgetsHatchPattern_Cross;
+				static float spacing = 10.0f, angle_deg = 0.0f, thickness = 1.0f;
+				const char* patt_names[] = { "Parallel", "Cross", "Diagonal", "DiagonalCross", "Dots", "ConcentricRings", "BenDay", "Screentone" };
+				ImGui::Combo( "Pattern", &patt, patt_names, IM_ARRAYSIZE( patt_names ) );
+				ImGui::SliderFloat( "Spacing", &spacing, 2.0f, 40.0f );
+				ImGui::SliderFloat( "Angle (deg)", &angle_deg, -180.0f, 180.0f );
+				ImGui::SliderFloat( "Thickness", &thickness, 0.5f, 4.0f );
+				ImGui::Spacing();
+				// Reserve canvas area AFTER the controls.
+				ImVec2 origin = ImGui::GetCursorScreenPos();
+				ImVec2 canvas = ImPlatform_LpToPx( ImVec2( 360, 240 ) );
+				ImGui::Dummy( canvas );
+				ImVec2 star[10];
+				float cx = origin.x + canvas.x * 0.5f, cy = origin.y + canvas.y * 0.5f;
+				for ( int i = 0; i < 10; ++i )
+				{
+					float r = ImPlatform_LpToPx( (i & 1) ? 40.0f : 90.0f );
+					float a = -IM_PI * 0.5f + i * IM_PI / 5.0f;
+					star[i] = ImVec2( cx + r * ImCos( a ), cy + r * ImSin( a ) );
+				}
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				dl->AddPolyline( star, 10, IM_COL32( 255, 255, 255, 120 ), ImDrawFlags_Closed, 1.0f );
+				ImWidgets::DrawHatchFill( dl, star, 10,
+										  (ImWidgetsHatchPattern)patt, ImPlatform_LpToPx( spacing ),
+										  angle_deg * IM_PI / 180.0f, ImPlatform_LpToPx( thickness ),
+										  IM_COL32( 255, 200, 100, 220 ) );
+
+				ImGui::Separator();
+				ImGui::Text( "Stipple" );
+				static float density = 0.15f, jitter = 0.6f, radius = 1.2f;
+				ImGui::SliderFloat( "Density", &density, 0.05f, 1.0f );
+				ImGui::SliderFloat( "Jitter", &jitter, 0.0f, 1.0f );
+				ImGui::SliderFloat( "Radius", &radius, 0.5f, 4.0f );
+				ImGui::Spacing();
+				ImVec2 o2 = ImGui::GetCursorScreenPos();
+				ImVec2 stipple_sz = ImPlatform_LpToPx( ImVec2( 260, 200 ) );
+				ImGui::Dummy( stipple_sz );
+				ImVec2 quad[4] = {
+					ImVec2( o2.x + stipple_sz.x * 0.04f, o2.y + stipple_sz.y * 0.05f ),
+					ImVec2( o2.x + stipple_sz.x * 0.88f, o2.y + stipple_sz.y * 0.10f ),
+					ImVec2( o2.x + stipple_sz.x * 0.96f, o2.y + stipple_sz.y * 0.90f ),
+					ImVec2( o2.x + stipple_sz.x * 0.08f, o2.y + stipple_sz.y * 0.85f ),
+				};
+				dl->AddPolyline( quad, 4, IM_COL32( 255, 255, 255, 120 ), ImDrawFlags_Closed, 1.0f );
+				ImWidgets::DrawStippleFill( dl, quad, 4, density, jitter, ImPlatform_LpToPx( radius ),
+											IM_COL32( 120, 220, 255, 220 ) );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Iso-Contours" ) )
+			{
+				struct Fn
+				{
+					static float f( float x, float y, void* ud )
+					{
+						float* sc = (float*)ud;
+						x *= sc[0]; y *= sc[0];
+						return ImSin( x * 0.05f ) + ImCos( y * 0.05f );
+					}
+				};
+				static float scale = 1.0f;
+				ImGui::SliderFloat( "Scale", &scale, 0.25f, 4.0f );
+				static float isos[] = { -0.8f, -0.4f, 0.0f, 0.4f, 0.8f };
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				ImVec2 p = ImGui::GetCursorScreenPos();
+				ImVec2 iso_sz = ImPlatform_LpToPx( ImVec2( 360, 240 ) );
+				ImGui::Dummy( iso_sz );
+				dl->AddRect( p, ImVec2( p.x + iso_sz.x, p.y + iso_sz.y ), IM_COL32( 255, 255, 255, 120 ) );
+				float ud[1] = { scale };
+				ImWidgets::DrawIsoContour( dl, p, iso_sz, 48, 32,
+										   Fn::f, ud, isos, IM_ARRAYSIZE( isos ),
+										   IM_COL32( 120, 255, 160, 255 ), ImPlatform_LpToPx( 1.5f ) );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Superellipse" ) )
+			{
+				static float rx = 80, ry = 60, nx = 4, ny = 4;
+				static int sides = 64;
+				static bool show_fill = true;
+				static bool show_edges = true;
+				static bool show_verts = false;
+				static bool show_tris = false;
+				static int focus_tri = -1;
+				static int tess_iter = 0;
+				ImGui::SliderFloat( "rx", &rx, 10, 120 );
+				ImGui::SliderFloat( "ry", &ry, 10, 120 );
+				ImGui::SliderFloat( "nx", &nx, 0.5f, 10.0f );
+				ImGui::SliderFloat( "ny", &ny, 0.5f, 10.0f );
+				ImGui::SliderInt( "sides", &sides, 16, 256 );
+				ImGui::SliderInt( "Tessellation iterations", &tess_iter, 0, 4 );
+				ImGui::Checkbox( "Fill", &show_fill ); ImGui::SameLine();
+				ImGui::Checkbox( "Edges", &show_edges ); ImGui::SameLine();
+				ImGui::Checkbox( "Vertices", &show_verts ); ImGui::SameLine();
+				ImGui::Checkbox( "Highlight triangle", &show_tris );
+				if ( show_tris )
+				{
+					int max_tri = 0; // computed after GenShape below
+					ImGui::SliderInt( "Triangle index", &focus_tri, -1, 1024 );
+					IM_UNUSED( max_tri );
+				}
+				ImWidgetsShape sh;
+				ImVec2 se_sz = ImPlatform_LpToPx( ImVec2( 360, 300 ) );
+				ImWidgets::GenShapeSuperellipse( sh, ImVec2( se_sz.x * 0.5f, se_sz.y * 0.5f ),
+												 ImPlatform_LpToPx( rx ), ImPlatform_LpToPx( ry ), nx, ny, sides );
+				for ( int k = 0; k < tess_iter; ++k ) ImWidgets::ShapeTesselationUniform( sh );
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				ImVec2 o = ImGui::GetCursorScreenPos();
+				ImGui::Dummy( se_sz );
+				// Translate shape into canvas.
+				ImWidgetsShape shd = sh;
+				for ( int i = 0; i < shd.vertices.Size; ++i )
+				{
+					shd.vertices[i].pos.x += o.x;
+					shd.vertices[i].pos.y += o.y;
+				}
+				if ( show_fill )
+					ImWidgets::DrawShape( dl, shd );
+				// NOTE: DrawShapeDebug re-fills the triangles with the shape's
+				// own per-vertex colors. That is intentional (it matches the
+				// Draw Shape / ImageShape demos), so with SuperEllipse's opaque
+				// white vertex colors the shape looks filled even with Fill off
+				// when any debug overlay is on. Acceptable.
+				if ( show_edges || show_verts || show_tris )
+					ImWidgets::DrawShapeDebug( dl, shd,
+											   ImPlatform_LpToPx( show_edges ? 1.5f : 0.0f ),
+											   IM_COL32( 255, 180, 80, 220 ),
+											   show_tris ? IM_COL32( 120, 220, 255, 160 ) : 0u,
+											   ImPlatform_LpToPx( show_verts ? 3.0f : 0.0f ),
+											   IM_COL32( 255, 255, 255, 255 ),
+											   show_tris ? focus_tri : -1 );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Coons / Gregory Patch" ) )
+			{
+				static int patch_kind = 0; // 0 = Coons, 1 = Gregory
+				ImGui::Combo( "Patch type", &patch_kind, "Coons (4 cubic boundaries)\0Gregory (20 control points)\0" );
+				static ImCoonsPatch P;
+				static bool init = false;
+				if ( !init )
+				{
+					init = true;
+					ImVec2 o( 40, 40 );
+					P.bottom[0] = ImVec2( o.x, o.y + 200 );
+					P.bottom[1] = ImVec2( o.x + 80, o.y + 220 );
+					P.bottom[2] = ImVec2( o.x + 180, o.y + 180 );
+					P.bottom[3] = ImVec2( o.x + 260, o.y + 210 );
+					P.top[0] = ImVec2( o.x, o.y );
+					P.top[1] = ImVec2( o.x + 100, o.y - 20 );
+					P.top[2] = ImVec2( o.x + 200, o.y + 20 );
+					P.top[3] = ImVec2( o.x + 260, o.y );
+					P.left[0] = P.bottom[0];
+					P.left[1] = ImVec2( o.x - 10, o.y + 130 );
+					P.left[2] = ImVec2( o.x + 20, o.y + 70 );
+					P.left[3] = P.top[0];
+					P.right[0] = P.bottom[3];
+					P.right[1] = ImVec2( o.x + 280, o.y + 140 );
+					P.right[2] = ImVec2( o.x + 240, o.y + 90 );
+					P.right[3] = P.top[3];
+				}
+				static int resU = 16, resV = 16;
+				ImGui::SliderInt( "resU", &resU, 2, 48 );
+				ImGui::SliderInt( "resV", &resV, 2, 48 );
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				ImVec2 origin2 = ImGui::GetCursorScreenPos();
+				ImVec2 coons_sz = ImPlatform_LpToPx( ImVec2( 360, 260 ) );
+				ImGui::Dummy( coons_sz );
+				float dpi = ImPlatform_LpPxScale();
+				ImCoonsPatch Pd = P;
+				for ( int i = 0; i < 4; ++i )
+				{
+					Pd.bottom[i].x = origin2.x + P.bottom[i].x * dpi; Pd.bottom[i].y = origin2.y + P.bottom[i].y * dpi;
+					Pd.top[i].x = origin2.x + P.top[i].x * dpi; Pd.top[i].y = origin2.y + P.top[i].y * dpi;
+					Pd.left[i].x = origin2.x + P.left[i].x * dpi; Pd.left[i].y = origin2.y + P.left[i].y * dpi;
+					Pd.right[i].x = origin2.x + P.right[i].x * dpi; Pd.right[i].y = origin2.y + P.right[i].y * dpi;
+				}
+				if ( patch_kind == 0 )
+				{
+					ImWidgets::DrawCoonsPatchGradient( dl, Pd,
+													   IM_COL32( 255, 80, 80, 255 ), IM_COL32( 80, 255, 80, 255 ),
+													   IM_COL32( 80, 80, 255, 255 ), IM_COL32( 255, 255, 80, 255 ),
+													   resU, resV );
+					ImWidgets::DrawCoonsPatchWireframe( dl, Pd, IM_COL32( 255, 255, 255, 100 ),
+														ImPlatform_LpToPx( 1.0f ), resU, resV );
+				}
+				else
+				{
+					// Build a Gregory patch from the Coons boundary: corner, two edge CPs
+					// per edge, and two twist CPs per corner (20 total). Seed twists from
+					// the nearest interior boundary tangent for a smooth default.
+					ImGregoryPatch G;
+					// Corners
+					G.cp[0] = Pd.bottom[0]; G.cp[1] = Pd.bottom[3];
+					G.cp[2] = Pd.top[3];    G.cp[3] = Pd.top[0];
+					// Bottom edge tangent CPs (2)
+					G.cp[4] = Pd.bottom[1]; G.cp[5] = Pd.bottom[2];
+					// Right edge (v dir, u=1)
+					G.cp[6] = Pd.right[1];  G.cp[7] = Pd.right[2];
+					// Top edge (u dir, v=1, reversed direction)
+					G.cp[8] = Pd.top[2];    G.cp[9] = Pd.top[1];
+					// Left edge (v dir, u=0)
+					G.cp[10] = Pd.left[2];  G.cp[11] = Pd.left[1];
+					// Twist CPs -- two per corner. Use the average of adjacent edge CPs.
+					auto twist = [ & ]( int a, int b, int c ){
+						return ImVec2( (G.cp[a].x + G.cp[b].x + G.cp[c].x) / 3.0f,
+									   (G.cp[a].y + G.cp[b].y + G.cp[c].y) / 3.0f );
+						};
+					G.cp[12] = twist( 0, 4, 11 ); G.cp[13] = twist( 0, 11, 4 );
+					G.cp[14] = twist( 1, 5, 6 );  G.cp[15] = twist( 1, 6, 5 );
+					G.cp[16] = twist( 2, 7, 8 );  G.cp[17] = twist( 2, 8, 7 );
+					G.cp[18] = twist( 3, 9, 10 ); G.cp[19] = twist( 3, 10, 9 );
+					ImWidgets::DrawGregoryPatchGradient( dl, G,
+														 IM_COL32( 255, 80, 80, 255 ), IM_COL32( 80, 255, 80, 255 ),
+														 IM_COL32( 80, 80, 255, 255 ), IM_COL32( 255, 255, 80, 255 ),
+														 resU, resV );
+				}
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Offset Path" ) )
+			{
+				static ImVec2 pts[] = {
+					ImVec2( 40, 40 ), ImVec2( 180, 30 ), ImVec2( 260, 120 ),
+					ImVec2( 220, 220 ), ImVec2( 80, 200 )
+				};
+				static float offset = 12.0f;
+				static int join = (int)ImWidgetsJoin_Round;
+				static float miter_limit = 4.0f;
+				ImGui::SliderFloat( "Offset", &offset, -40.0f, 40.0f );
+				const char* join_names[] = { "Round", "Mitter", "Bevel" };
+				ImGui::Combo( "Join", &join, join_names, IM_ARRAYSIZE( join_names ) );
+				ImGui::SliderFloat( "Miter limit", &miter_limit, 1.0f, 20.0f );
+				ImGui::Spacing();
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				ImVec2 o = ImGui::GetCursorScreenPos();
+				ImVec2 off_sz = ImPlatform_LpToPx( ImVec2( 360, 280 ) );
+				ImGui::Dummy( off_sz );
+				float off_dpi = ImPlatform_LpPxScale();
+				ImVec2 off[5];
+				for ( int i = 0; i < 5; ++i ) off[i] = ImVec2( o.x + pts[i].x * off_dpi, o.y + pts[i].y * off_dpi );
+				dl->AddPolyline( off, 5, IM_COL32( 255, 255, 255, 200 ), ImDrawFlags_Closed, ImPlatform_LpToPx( 1.5f ) );
+				ImWidgets::DrawOffsetOutline( dl, off, 5, ImPlatform_LpToPx( offset ), (ImWidgetsJoin)join,
+											  miter_limit, ImPlatform_LpToPx( 1.5f ), IM_COL32( 255, 180, 80, 255 ), true );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "IsoContour Tiered (topographic)" ) )
+			{
+				struct Fn
+				{
+					static float f( float x, float y, void* ud )
+					{
+						float* sc = (float*)ud;
+						return 50.0f + 40.0f * ImSin( x * 0.02f * sc[0] ) + 30.0f * ImCos( y * 0.015f * sc[0] )
+							+ 10.0f * ImSin( (x + y) * 0.05f * sc[0] );
+					}
+				};
+				static float scale = 1.0f;
+				static bool pre_log = false;
+				static ImIsoContourTier tiers[3] = {
+					ImIsoContourTier( 2.0f,  IM_COL32( 180, 200, 220, 80 ), 0.5f, false ),
+					ImIsoContourTier( 10.0f, IM_COL32( 200, 220, 240, 160 ), 1.0f, false ),
+					ImIsoContourTier( 40.0f, IM_COL32( 255, 240, 200, 255 ), 2.0f, false ),
+				};
+				ImGui::SliderFloat( "Scale", &scale, 0.25f, 4.0f );
+				ImGui::Checkbox( "Pre-log transform field", &pre_log );
+				static int iso_resX = 80, iso_resY = 48;
+				ImGui::SliderInt( "Base resX", &iso_resX, 8, 256 );
+				ImGui::SliderInt( "Base resY", &iso_resY, 8, 256 );
+				static bool iso_half_pixel = true;
+				static int iso_subdiv = 1;
+				ImGui::Checkbox( "Half-pixel sampling", &iso_half_pixel );
+				ImGui::SliderInt( "Sub-sample (bilinear)", &iso_subdiv, 1, 4 );
+				ImGui::SliderFloat( "Minor spacing", &tiers[0].spacing, 0.5f, 10.0f );
+				ImGui::SliderFloat( "Medium spacing", &tiers[1].spacing, 1.0f, 40.0f );
+				ImGui::SliderFloat( "Major spacing", &tiers[2].spacing, 10.0f, 100.0f );
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				ImVec2 p = ImGui::GetCursorScreenPos();
+				ImVec2 iso_sz2 = ImPlatform_LpToPx( ImVec2( 460, 280 ) );
+				ImGui::Dummy( iso_sz2 );
+				dl->AddRect( p, ImVec2( p.x + iso_sz2.x, p.y + iso_sz2.y ), IM_COL32( 255, 255, 255, 100 ) );
+				float ud[1] = { scale };
+				ImIsoContourTier tiers_scaled[3] = {
+					tiers[0], tiers[1], tiers[2]
+				};
+				for ( int i = 0; i < 3; ++i ) tiers_scaled[i].thickness = ImPlatform_LpToPx( tiers[i].thickness );
+				ImWidgets::DrawIsoContourTiered( dl, p, iso_sz2, iso_resX, iso_resY,
+												 Fn::f, ud, tiers_scaled, 3, -FLT_MAX, FLT_MAX, pre_log,
+												 iso_half_pixel, iso_subdiv );
+				ImGui::TreePop();
+			}
 		}
 		ApplyOpenAll();
 		if ( ImGui::CollapsingHeader( "Interactions" ) )
@@ -5994,7 +6368,7 @@ namespace ImWidgets{
 							}
 							ImPolyShapeData data = { &pos_norms[0], 3 };
 							bool hovered = IsMouseHovering( pos, pos + ImVec2( size, size ), Im_IsPolyConvexContains, &data );
-							pDrawList->AddConvexPolyFilled( &pos_norms[0], 3, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
+							pDrawList->AddConvexPolyFilled( &pos_norms[0], 3, IM_COL32( hovered ? 200 : 0, hovered ? 0 : 200, 0, 80 ) );
 							ImGui::Dummy( ImVec2( size, size ) );
 							pos = ImGui::GetCursorScreenPos();
 							ImVector<ImVec2> disk;
@@ -6009,7 +6383,7 @@ namespace ImWidgets{
 							}
 							data = { &disk[0], 32 };
 							hovered = IsMouseHovering( pos, pos + ImVec2( size, size ), Im_IsPolyConvexContains, &data );
-							pDrawList->AddConvexPolyFilled( &disk[0], 32, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
+							pDrawList->AddConvexPolyFilled( &disk[0], 32, IM_COL32( hovered ? 200 : 0, hovered ? 0 : 200, 0, 80 ) );
 
 							ImGui::Dummy( ImVec2( size, size ) );
 						}
@@ -6035,25 +6409,24 @@ namespace ImWidgets{
 							}
 							ImPolyShapeData data = { &pos_norms[0], sz };
 							bool hovered = IsMouseHovering( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), Im_IsPolyConcaveContains, &data );
-							pDrawList->AddConcavePolyFilled( &pos_norms[0], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
+							pDrawList->AddConcavePolyFilled( &pos_norms[0], sz, IM_COL32( hovered ? 200 : 0, hovered ? 0 : 200, 0, 80 ) );
 							ImGui::Dummy( ImVec2( size, size ) );
 							pos = ImGui::GetCursorScreenPos();
 							ImVector<ImVec2> ring;
-							sz = 64;
+							sz = 20; // 10-pointed star: alternating outer/inner vertices
 							ring.resize( sz );
-							srand( 97 );
+							float outer_r = size * 0.45f;
+							float inner_r = size * 0.18f;
 							for ( int k = 0; k < sz; ++k )
 							{
-								float angle = -((float)k) * 2.0f * IM_PI / 32.0f;
-								float cos0 = ImCos( angle );
-								float sin0 = ImSin( angle );
-								float r = (float)(rand() % ((int)ImRound( size )));
-								ring[k].x = pos.x + size * 0.5f + r * 0.5f * cos0;
-								ring[k].y = pos.y + size * 0.5f + r * 0.5f * sin0;
+								float angle = ( (float)k ) * 2.0f * IM_PI / (float)sz - IM_PI * 0.5f;
+								float r = ( k % 2 == 0 ) ? outer_r : inner_r;
+								ring[k].x = pos.x + size * 0.5f + r * ImCos( angle );
+								ring[k].y = pos.y + size * 0.5f + r * ImSin( angle );
 							}
 							data = { &ring[0], sz };
 							hovered = IsMouseHovering( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), Im_IsPolyConcaveContains, &data );
-							pDrawList->AddConcavePolyFilled( &ring[0], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
+							pDrawList->AddConcavePolyFilled( &ring[0], sz, IM_COL32( hovered ? 200 : 0, hovered ? 0 : 200, 0, 80 ) );
 							ImGui::Dummy( ImVec2( size, size ) );
 						}
 						DW_SsRecord( "Poly_Concave_Hovered", _sy0, ImGui::GetCursorPos().y );
@@ -6078,7 +6451,7 @@ namespace ImWidgets{
 							}
 							ImPolyHoleShapeData data = { &pos_norms[0], NULL, sz, 1, 1 };
 							bool hovered = IsMouseHovering( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), Im_IsPolyWithHoleContains, &data );
-							DrawShapeWithHole( pDrawList, &pos_norms[0], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
+							DrawShapeWithHole( pDrawList, &pos_norms[0], sz, IM_COL32( hovered ? 200 : 0, hovered ? 0 : 200, 0, 80 ) );
 							ImGui::Dummy( ImVec2( size, size ) );
 							pos = ImGui::GetCursorScreenPos();
 							ImVector<ImVec2> ring;
@@ -6106,12 +6479,118 @@ namespace ImWidgets{
 							}
 							data = { &ring[0], NULL, sz, 1, 1 };
 							hovered = IsMouseHovering( pos, pos + ImVec2( size, size ), Im_IsPolyWithHoleContains, &data );
-							DrawShapeWithHole( pDrawList, &ring[0], sz, IM_COL32( hovered ? 255 : 0, hovered ? 0 : 255, 0, 255 ) );
+							DrawShapeWithHole( pDrawList, &ring[0], sz, IM_COL32( hovered ? 200 : 0, hovered ? 0 : 200, 0, 80 ) );
 							ImGui::Dummy( ImVec2( size, size ) );
 						}
 						DW_SsRecord( "Poly_With_Hole_Hovered", _sy0, ImGui::GetCursorPos().y );
 					}
 					EndCullSection( s_cull_interact_h, s_cull_interact_y );
+				}
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Proportional Drag Group" ) )
+			{
+				ImGui::Text( "Proportional multi-drag group (drag any bar, neighbors follow):" );
+				static float sliders[12] = { 0.3f, 0.35f, 0.4f, 0.45f, 0.5f, 0.5f, 0.5f, 0.45f, 0.4f, 0.35f, 0.3f, 0.25f };
+				static float pm_radius = 3.0f;
+				static int   pm_kernel = (int)ImWidgetsFalloff_Gaussian;
+				ImGui::SliderFloat( "Falloff radius (slots)", &pm_radius, 0.5f, 8.0f );
+				ImGui::Combo( "Kernel", &pm_kernel, "Linear\0Gaussian\0Smoothstep\0" );
+				ImGui::BeginGroup();
+				ImDrawList* pm_dl = ImGui::GetWindowDrawList();
+				ImVec2 pm_o = ImGui::GetCursorScreenPos();
+				const int N = IM_ARRAYSIZE( sliders );
+				const float bar_w = ImPlatform_LpToPx( 28.0f );
+				const float bar_h = ImPlatform_LpToPx( 120.0f );
+				const float gap = ImPlatform_LpToPx( 6.0f );
+				ImGui::InvisibleButton( "##pm_area", ImVec2( (bar_w + gap) * N, bar_h ) );
+				ImWidgets::PushDragGroup( ImGui::GetID( "grp" ), pm_radius, (ImWidgetsFalloff)pm_kernel );
+				for ( int i = 0; i < N; ++i )
+				{
+					float old = sliders[i];
+					float g = ImWidgets::GetDragGroupDelta( i );
+					if ( g != 0.0f ) sliders[i] = ImClamp( sliders[i] + g, 0.0f, 1.0f );
+					float x0 = pm_o.x + i * (bar_w + gap);
+					float y0 = pm_o.y;
+					float y1 = pm_o.y + bar_h;
+					ImVec2 bmin( x0, y0 ), bmax( x0 + bar_w, y1 );
+					float fy = y1 - sliders[i] * bar_h;
+					pm_dl->AddRect( bmin, bmax, IM_COL32( 180, 180, 180, 200 ) );
+					pm_dl->AddRectFilled( ImVec2( bmin.x + 1, fy ), ImVec2( bmax.x - 1, bmax.y - 1 ),
+										  IM_COL32( 120, 220, 255, 220 ) );
+					ImVec2 mouse = ImGui::GetIO().MousePos;
+					bool inside = mouse.x >= bmin.x && mouse.x <= bmax.x && mouse.y >= bmin.y && mouse.y <= bmax.y;
+					if ( ImGui::IsItemActive() && inside && ImGui::IsMouseDown( 0 ) )
+					{
+						float nv = ImClamp( (bmax.y - mouse.y) / bar_h, 0.0f, 1.0f );
+						float delta = nv - old;
+						sliders[i] = nv;
+						ImWidgets::SetDragGroupActive( i, delta );
+					}
+				}
+				ImWidgets::PopDragGroup();
+				ImGui::EndGroup();
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Vector Drawing Tool" ) )
+			{
+				ImGui::TextWrapped(
+					"Left-click empty: add anchor (drag to pull out tangent). "
+					"Left-click existing anchor: select (drag moves). "
+					"Click first anchor of active path to close. "
+					"Right-click: finish path open. Middle-drag / Shift+drag: pan. "
+					"Wheel: zoom. Delete: remove selected anchor." );
+				static ImVectorDrawingData vdt;
+				// Default style bucket -- edits here seed new paths when you start drawing,
+				// and edit the current path once one exists. This means the Style/Color/
+				// Thickness controls are always visible instead of appearing only after
+				// the first click.
+				static ImVectorDrawingPath s_next_path_defaults;
+				int pi = vdt.SelectedPath >= 0 ? vdt.SelectedPath
+					: (vdt.ActivePath >= 0 ? vdt.ActivePath : (vdt.Paths.Size - 1));
+				ImVectorDrawingPath& p = (pi >= 0 && pi < vdt.Paths.Size)
+					? vdt.Paths[pi]
+					: s_next_path_defaults;
+				const char* style_names[] = { "Polyline", "PolylineAA", "StrokedBezier",
+					"StrokedDashedBezier", "DashedPolyline" };
+				int s = (int)p.Style;
+				if ( ImGui::Combo( "Style", &s, style_names, IM_ARRAYSIZE( style_names ) ) )
+					p.Style = (ImVectorDrawingStyle)s;
+				ImGui::SliderFloat( "Thickness", &p.Thickness, 0.5f, 16.0f );
+				ImVec4 col = ImGui::ColorConvertU32ToFloat4( p.Color );
+				if ( ImGui::ColorEdit4( "Color", &col.x, ImGuiColorEditFlags_NoInputs ) )
+					p.Color = ImGui::ColorConvertFloat4ToU32( col );
+				if ( p.Style == ImVectorDrawingStyle_StrokedDashedBezier
+					 || p.Style == ImVectorDrawingStyle_DashedPolyline )
+				{
+					ImGui::SliderFloat( "Dash", &p.DashLen, 1.0f, 40.0f );
+					ImGui::SliderFloat( "Gap", &p.GapLen, 1.0f, 40.0f );
+				}
+				ImGui::Checkbox( "Closed", &p.Closed );
+				// Seed new paths created by the user with the defaults currently shown.
+				int prev_path_count = vdt.Paths.Size;
+				if ( ImGui::Button( "Clear All" ) )
+				{
+					vdt.Paths.clear(); vdt.ActivePath = -1; vdt.SelectedPath = -1;
+				}
+				ImGui::SameLine();
+				if ( ImGui::Button( "Reset View" ) )
+				{
+					vdt.PanOffset = ImVec2( 0, 0 ); vdt.Zoom = 1.0f;
+				}
+				ImWidgets::VectorDrawingTool( "vdt", vdt, ImPlatform_LpToPx( ImVec2( 0, 380 ) ) );
+				// If a new path was just created, copy the currently-shown defaults into it.
+				if ( vdt.Paths.Size > prev_path_count && prev_path_count >= 0 )
+				{
+					ImVectorDrawingPath& np = vdt.Paths.back();
+					np.Style = s_next_path_defaults.Style;
+					np.Thickness = s_next_path_defaults.Thickness;
+					np.Color = s_next_path_defaults.Color;
+					np.DashLen = s_next_path_defaults.DashLen;
+					np.GapLen = s_next_path_defaults.GapLen;
+					np.Closed = s_next_path_defaults.Closed;
 				}
 				ImGui::TreePop();
 			}
@@ -6269,6 +6748,27 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "SliderN Vertical" ) )
+					{
+						static float vvalue[3] = { 0.25f, 10.0f, 100.0f };
+						static float vmin = 0.1f;
+						static float vmax = 150.0f;
+						ImGui::Text( "Hover per region of influence" );
+						ImGui::BeginGroup();
+						ImWidgets::SliderNVerticalScalar( "V1##SliderNVRegions", ImGuiDataType_Float, &vvalue, 3, &vmin, &vmax, 8.0f, true, ImVec2( 20.0f, 160.0f ) );
+						ImGui::SameLine();
+						ImWidgets::SliderNVerticalScalar( "V2##SliderNVGlobal", ImGuiDataType_Float, &vvalue, 3, &vmin, &vmax, 8.0f, false, ImVec2( 20.0f, 160.0f ) );
+						ImGui::EndGroup();
+						ImGui::DragFloat( "Near Plane##VN", &vvalue[0], 1.0f, vmin, vvalue[1] );
+						ImGui::DragFloat( "Focal Planes##VN", &vvalue[1], 1.0f, vvalue[0], vvalue[2] );
+						ImGui::DragFloat( "Far Planes##VN", &vvalue[2], 1.0f, vvalue[1], vmax );
+					}
+					DW_SsRecord( "SliderN Vertical", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
 					if ( ImGui::CollapsingHeader( "SliderRing" ) )
 					{
 						static float fval = 0.5f;
@@ -6403,7 +6903,7 @@ namespace ImWidgets{
 						ImWidgets::SliderGradientFloat( "Float sRGB##SG", &gradFloat, 0.0f, 1.0f, &gradRainbow );
 						ImWidgets::SliderGradientInt( "Int OkLCH##SG", &gradInt, 0, 100, &gradOkLch );
 
-						// Fill up to cursor: callback-swap trick — gradient renders
+						// Fill up to cursor: callback-swap trick -- gradient renders
 						// for t in [0, value], fully transparent past it, so the
 						// FrameBg under the track is what reads past the cursor.
 						static bool sg_fill = true;
@@ -6413,7 +6913,7 @@ namespace ImWidgets{
 						static int gradFillI = 60;
 						ImWidgets::SliderGradientInt( "Int Fill##SG", &gradFillI, 0, 100, &gradOkLch, ImVec2( 0, 0 ), sg_fill );
 
-						// Right-to-left variant: use the right_to_left flag — grab
+						// Right-to-left variant: use the right_to_left flag -- grab
 						// travels from the right edge (value=v_min) to the left
 						// edge (value=v_max), and when fill_up_to_cursor is on the
 						// fill grows from the right. Gradient colors keep their
@@ -6423,8 +6923,21 @@ namespace ImWidgets{
 						static int gradFillI_RTL = 60;
 						ImWidgets::SliderGradientInt( "Int Fill RTL##SG", &gradFillI_RTL, 0, 100, &gradOkLch, ImVec2( 0, 0 ), sg_fill, /*right_to_left=*/true );
 
+						// Range variant (two handles, cutoff on [lower, upper]).
+						// Both min and max are user-controlled -- outside the range the
+						// FrameBg shows through, same transparency trick as fill_up_to_cursor.
+						ImGui::Separator();
+						ImGui::TextUnformatted( "Range (cutoff min + max):" );
+						static float gradRangeLo = 0.2f, gradRangeHi = 0.75f;
+						ImWidgets::SliderGradientRangeFloat( "Float Range##SG", &gradRangeLo, &gradRangeHi, 0.0f, 1.0f, &gradRainbow );
+						static int gradRangeLoI = 20, gradRangeHiI = 70;
+						ImWidgets::SliderGradientRangeInt( "Int Range##SG", &gradRangeLoI, &gradRangeHiI, 0, 100, &gradOkLch );
+						// Range + RTL: lower handle sits on the right edge at value=v_min.
+						static float gradRangeLo_RTL = 0.25f, gradRangeHi_RTL = 0.8f;
+						ImWidgets::SliderGradientRangeFloat( "Float Range RTL##SG", &gradRangeLo_RTL, &gradRangeHi_RTL, 0.0f, 1.0f, &gradRainbow, ImVec2( 0, 0 ), /*right_to_left=*/true );
+
 						// Live-editable gradient + matching SliderGradient. The editor
-						// has alpha enabled so the user can drag alpha stops too — the
+						// has alpha enabled so the user can drag alpha stops too -- the
 						// bar feeds that gradient straight into SliderGradientFloat so
 						// the slider reacts in real time to stop edits.
 						ImGui::Separator();
@@ -6497,7 +7010,7 @@ namespace ImWidgets{
 						// beyond the cursor it drops to a near-black desaturated tone.
 						// Color-channel driven (not just alpha) so the split is obvious
 						// against any background.
-						// Fill-up-to-cursor is now a built-in feature of SliderSplineGradient —
+						// Fill-up-to-cursor is now a built-in feature of SliderSplineGradient --
 						// pass the flag and the widget handles the gradient compression +
 						// plain track rendering past the cursor internally.
 						static bool grad_fill = true;
@@ -6510,7 +7023,7 @@ namespace ImWidgets{
 
 						// Right-to-left variant: mirror control points across the X axis
 						// so the spline arc flows from right to left. Works transparently
-						// with fill_up_to_cursor — as the cursor grows, the filled arc
+						// with fill_up_to_cursor -- as the cursor grows, the filled arc
 						// walks right-to-left across the widget.
 						static const ImVec2 arcUp_RTL_SSG[ 4 ] = {
 							ImVec2( 1.0f, 0.8f ), ImVec2( 0.75f, 0.0f ),
@@ -6521,6 +7034,18 @@ namespace ImWidgets{
 							"Fill RTL##SSG_FILL", &valFillRTL, 0.0f, 1.0f, &gradSSG,
 							arcUp_RTL_SSG, 4, 0.0f, 0.0f, "%.3f",
 							grad_fill );
+
+						// Range along the spline -- two handles, gradient painted only
+						// on [lo, hi]. Same cut callback the "Fill" variant uses.
+						ImGui::Separator();
+						ImGui::TextUnformatted( "Range (cutoff min + max):" );
+						static float ssgRangeLo = 0.2f, ssgRangeHi = 0.75f;
+						ImWidgets::SliderSplineGradientRangeFloat( "Float Range##SSG", &ssgRangeLo, &ssgRangeHi, 0.0f, 1.0f, &gradSSG );
+						// On the Arc-Up control points:
+						static float ssgRangeLoArc = 0.15f, ssgRangeHiArc = 0.65f;
+						ImWidgets::SliderSplineGradientRangeFloat( "Arc Range##SSG", &ssgRangeLoArc, &ssgRangeHiArc, 0.0f, 1.0f, &gradSSG, arcUp );
+						static int ssgRangeLoI = 20, ssgRangeHiI = 70;
+						ImWidgets::SliderSplineGradientRangeInt( "Int Range##SSG", &ssgRangeLoI, &ssgRangeHiI, 0, 100, &gradSSG );
 
 						ImGui::Separator();
 						ImGui::TextUnformatted( "Editable (alpha enabled):" );
@@ -6581,13 +7106,13 @@ namespace ImWidgets{
 						// Full-circle hue (wraps)
 						ImWidgets::SliderGradientRingFloat( "Hue##SRG", &hueVal, 0.0f, 1.0f, &ringHueGrad, SRG_R, SRG_TH );
 						ImGui::SameLine();
-						// Half-ring temperature arc (π sweep from π)
+						// Half-ring temperature arc (PI sweep from PI)
 						ImWidgets::SliderGradientRingFloat( "Temp##SRG", &tempVal, 0.0f, 1.0f, &ringTempGrad, SRG_R, SRG_TH, IM_PI, IM_PI );
 						ImGui::SameLine();
-						// 3/4 pie meter (1.5π sweep from 0.75π)
+						// 3/4 pie meter (1.5PI sweep from 0.75PI)
 						ImWidgets::SliderGradientRingInt( "Meter##SRG", &meter, 0, 100, &ringTempGrad, SRG_R, SRG_TH, 0.75f * IM_PI, 1.5f * IM_PI );
 
-						// Fill up to cursor — same callback-swap approach applied to
+						// Fill up to cursor -- same callback-swap approach applied to
 						// the arc primitive. Gradient paints only on [0, value];
 						// past the cursor the arc's FrameBg fill shows through.
 						static bool srg_fill = true;
@@ -6603,18 +7128,34 @@ namespace ImWidgets{
 
 						// Right-to-left variants: negate the sweep angle so the arc
 						// progresses counter-clockwise. Works transparently with
-						// fill_up_to_cursor — the fill walks RTL around the ring.
+						// fill_up_to_cursor -- the fill walks RTL around the ring.
 						static float hueFill_RTL  = 0.35f;
 						static float tempFill_RTL = 0.6f;
 						static int   meterFill_RTL = 30;
-						// Full ring RTL: start at -π/2 (top), sweep = -2π (full circle CCW).
+						// Full ring RTL: start at -PI/2 (top), sweep = -2PI (full circle CCW).
 						ImWidgets::SliderGradientRingFloat( "Hue Fill RTL##SRG", &hueFill_RTL, 0.0f, 1.0f, &ringHueGrad, SRG_R, SRG_TH, -0.5f * IM_PI, -2.0f * IM_PI, srg_fill );
 						ImGui::SameLine();
-						// Half-ring RTL: start at 2π, sweep = -π (reverses the arc's direction).
+						// Half-ring RTL: start at 2PI, sweep = -PI (reverses the arc's direction).
 						ImWidgets::SliderGradientRingFloat( "Temp Fill RTL##SRG", &tempFill_RTL, 0.0f, 1.0f, &ringTempGrad, SRG_R, SRG_TH, 2.0f * IM_PI, -IM_PI, srg_fill );
 						ImGui::SameLine();
-						// 3/4 meter RTL: start at 2.25π, sweep = -1.5π.
+						// 3/4 meter RTL: start at 2.25PI, sweep = -1.5PI.
 						ImWidgets::SliderGradientRingInt( "Meter Fill RTL##SRG", &meterFill_RTL, 0, 100, &ringTempGrad, SRG_R, SRG_TH, 2.25f * IM_PI, -1.5f * IM_PI, srg_fill );
+
+						// Ring range -- arcs only, not full-circle (range-across-wrap is
+						// ambiguous). Two handles bound the cut gradient along the arc.
+						ImGui::Separator();
+						ImGui::TextUnformatted( "Range (arcs only, cutoff min + max):" );
+						static float rangeHueLo = 0.1f,  rangeHueHi = 0.6f;
+						static float rangeTempLo = 0.2f, rangeTempHi = 0.8f;
+						static int   rangeMeterLo = 20, rangeMeterHi = 70;
+						// Half-ring temperature: start=PI, sweep=PI.
+						ImWidgets::SliderGradientRingRangeFloat( "Temp Range##SRG", &rangeTempLo, &rangeTempHi, 0.0f, 1.0f, &ringTempGrad, SRG_R, SRG_TH, IM_PI, IM_PI );
+						ImGui::SameLine();
+						// 3/4 meter: start=0.75PI, sweep=1.5PI.
+						ImWidgets::SliderGradientRingRangeInt( "Meter Range##SRG", &rangeMeterLo, &rangeMeterHi, 0, 100, &ringTempGrad, SRG_R, SRG_TH, 0.75f * IM_PI, 1.5f * IM_PI );
+						ImGui::SameLine();
+						// 3/4 hue arc (not full) so the range is single-arc: start=-0.75PI, sweep=1.5PI.
+						ImWidgets::SliderGradientRingRangeFloat( "Hue Range##SRG", &rangeHueLo, &rangeHueHi, 0.0f, 1.0f, &ringHueGrad, SRG_R, SRG_TH, -0.75f * IM_PI, 1.5f * IM_PI );
 
 						ImGui::Separator();
 						ImGui::TextUnformatted( "Editable (alpha enabled):" );
@@ -6664,6 +7205,57 @@ namespace ImWidgets{
 					DW_SsRecord( "Slider2D_Int", _sy0, ImGui::GetCursorPos().y );
 				}
 
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Slider2D Range Float" ) )
+					{
+						static float rMinX = -0.5f, rMinY = -0.5f, rMaxX = 0.5f, rMaxY = 0.5f;
+						Slider2DRangeFloat( "Range 2D Float", &rMinX, &rMinY, &rMaxX, &rMaxY, -1.0f, 1.0f, -1.0f, 1.0f );
+						ImGui::InputFloat2( "Min", &rMinX );
+						ImGui::InputFloat2( "Max", &rMaxX );
+					}
+					DW_SsRecord( "Slider2D_RangeFloat", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Slider2D Range Int" ) )
+					{
+						static int riMinX = -2, riMinY = -2, riMaxX = 2, riMaxY = 2;
+						Slider2DRangeInt( "Range 2D Int", &riMinX, &riMinY, &riMaxX, &riMaxY, -5, 5, -5, 5 );
+						ImGui::InputInt2( "Min", &riMinX );
+						ImGui::InputInt2( "Max", &riMaxX );
+					}
+					DW_SsRecord( "Slider2D_RangeInt", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Slider2D Disc Float" ) )
+					{
+						static float jx = 0.0f, jy = 0.0f;
+						Slider2DDiscFloat( "Disc Float", &jx, &jy, -1.0f, 1.0f );
+						ImGui::InputFloat2( "Value", &jx );
+						ImGui::Text( "Radius: %.3f", sqrtf( jx * jx + jy * jy ) );
+					}
+					DW_SsRecord( "Slider2D_DiscFloat", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Slider2D Disc Int" ) )
+					{
+						static int dix = 0, diy = 0;
+						Slider2DDiscInt( "Disc Int", &dix, &diy, -10, 10 );
+						ImGui::InputInt2( "Value", &dix );
+					}
+					DW_SsRecord( "Slider2D_DiscInt", _sy0, ImGui::GetCursorPos().y );
+				}
+
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
@@ -6709,7 +7301,7 @@ namespace ImWidgets{
 							ImGui::TextDisabled( "No font loaded." );
 						}
 
-						// ── Arabic ──
+						// -- Arabic --
 						ImFont* fa = g_amiriFont;
 						if ( fa )
 						{
@@ -6718,7 +7310,7 @@ namespace ImWidgets{
 							float         wrap_ar = ImGui::GetContentRegionAvail().x;
 
 							ImGui::Separator();
-							ImGui::TextDisabled( "Arabic SlugText() â right-aligned" );
+							ImGui::TextDisabled( "Arabic SlugText() -- right-aligned" );
 							ImGui::DragFloat( "Arabic Size##SlugAr", &ar_sz, 0.5f, 8.0f, 72.0f, "%.0f lp" );
 							ImGui::InputText( "Arabic Text##SlugAr", ar_buf, sizeof( ar_buf ) );
 
@@ -6781,7 +7373,7 @@ namespace ImWidgets{
 						static int   bentoColumns = 3;
 						static float bentoAspect = 1.0f;
 						// Use static so reorder swaps persist between frames. Stable
-						// `pItemIds` are required for clean drag-reorder — without
+						// `pItemIds` are required for clean drag-reorder -- without
 						// them ImGui's per-cell ID is positional and a swap would
 						// teleport input focus.
 						static ImTextureID bentoImages[] = { astro_img, clock_img, man_img, illlustration_img, bike_img };
@@ -6799,7 +7391,7 @@ namespace ImWidgets{
 							 reorderFrom < IM_ARRAYSIZE( bentoImages ) &&
 							 reorderTo < IM_ARRAYSIZE( bentoImages ) )
 						{
-							// ImageBento itself never mutates the arrays — the caller
+							// ImageBento itself never mutates the arrays -- the caller
 							// must perform the swap. Adjacent-only swaps make it a
 							// straightforward std::swap on each parallel array.
 							ImTextureID tImg = bentoImages[reorderFrom]; bentoImages[reorderFrom] = bentoImages[reorderTo]; bentoImages[reorderTo] = tImg;
@@ -7028,7 +7620,7 @@ namespace ImWidgets{
 
 						if ( ImGui::Combo( "Buffer##Inspector", &inspectorIdx, inspectorNames, kInspectorCount ) )
 						{
-							// Reset view but keep the texture cache around — version mismatch will trigger re-upload
+							// Reset view but keep the texture cache around -- version mismatch will trigger re-upload
 							inspectorState.Zoom = 1.0f;
 							inspectorState.Pan = ImVec2( 0, 0 );
 						}
@@ -7747,7 +8339,7 @@ namespace ImWidgets{
 						static float primSaturation = 50.0f, primHue = 0.0f;
 
 						// Narrower sliders (~180 lp) so label + widget pairs don't consume
-						// the full row width. Drops from 0.5× avail → 4 sliders per row.
+						// the full row width. Drops from 0.5x avail -> 4 sliders per row.
 						float ctrlW = ImPlatform_LpToPx( 180.0f );
 						ImGui::SetNextItemWidth( ctrlW ); ImGui::SliderFloat( "Temp", &primTemp, -100.0f, 100.0f, "%.1f" );
 						ImGui::SameLine();
@@ -7850,7 +8442,7 @@ namespace ImWidgets{
 			if ( ImGui::TreeNode( "Color Analysis##Widgets" ) )
 			{
 
-				// Color Curve — one CollapsingHeader per mode so the screenshot system
+				// Color Curve -- one CollapsingHeader per mode so the screenshot system
 				// generates one image per curve type.
 				{
 					static bool             ccShowHistogram = true;
@@ -7886,7 +8478,7 @@ namespace ImWidgets{
 						ccData[ImColorCurveMode_HueVsSat].AddKey( 0.42f, 1.0f );
 						ccInit = true;
 					}
-					// Helper: "Add default keys" — places one key per primary at the
+					// Helper: "Add default keys" -- places one key per primary at the
 					// 6 canonical hue stops (R Y G C B M) at neutral. Red gets a
 					// single key at 0.0 (the curve wraps; a duplicate at 1.0 is
 					// redundant). Returns true if the curve was modified.
@@ -8244,7 +8836,7 @@ namespace ImWidgets{
 						}
 					}
 
-					ImWidgets::ParadeScope( "##ParadeMain", paradeData, paradeOverlay, (ImParadeScale)paradeScale, ImVec2( 0, 300 ) );
+					ImWidgets::ParadeScope( "##ParadeMain", paradeData, paradeOverlay, (ImParadeScale)paradeScale, ImPlatform_LpToPx( ImVec2( 0, 300 ) ) );
 					if ( paradeSource <= 2 )
 						ImGui::Text( "Source: 1920x1080 (generated)  Peak: %u", paradeData.PeakCount );
 					else if ( paradeImgData )
@@ -8422,7 +9014,7 @@ namespace ImWidgets{
 						}
 					}
 
-					ImWidgets::VectorScope( "##VectorMain", vectorData, vectorShowSkinTone, ImVec2( 600, 600 ) );
+					ImWidgets::VectorScope( "##VectorMain", vectorData, vectorShowSkinTone, ImPlatform_LpToPx( ImVec2( 600, 600 ) ) );
 					if ( vectorSource <= 2 )
 						ImGui::Text( "Source: 1920x1080 (generated)  Peak: %u", vectorData.PeakCount );
 					else if ( vectorImgData )
@@ -8603,7 +9195,7 @@ namespace ImWidgets{
 						}
 					}
 
-					ImWidgets::Histogram( "##HistMain", histData, (ImHistogramLayout)histLayout, (ImParadeScale)histXScale, (ImParadeScale)histYScale, ImVec2( 0, 300 ) );
+					ImWidgets::Histogram( "##HistMain", histData, (ImHistogramLayout)histLayout, (ImParadeScale)histXScale, (ImParadeScale)histYScale, ImPlatform_LpToPx( ImVec2( 0, 300 ) ) );
 					if ( histSource <= 2 )
 						ImGui::Text( "Source: 1920x1080 (generated)  Peak: %u", histData.PeakCount );
 					else if ( histImgData )
@@ -9263,413 +9855,15 @@ namespace ImWidgets{
 					ImGui::TreePop();
 				}
 				DW_SsRecord( "Misc", _sy0, ImGui::GetCursorPos().y ); }  // end Misc block
-		}
 
-		ApplyOpenAll();
-		if ( ImGui::CollapsingHeader( "Extended (2026-04 batch)" ) )
-		{
-			ImGui::PushID( "_ext_2026_04" );
-			// DPI / scaling control. FontScaleDpi drives ImPlatform_LpToPx; sizes authored
-			// in "lp" (logical pixels) stay physically consistent across DPI settings.
-			{
-				float dpi = ImGui::GetStyle().FontScaleDpi;
-				if ( ImGui::SliderFloat( "FontScaleDpi (lp -> px)", &dpi, 0.5f, 4.0f, "%.2fx" ) )
-					ImGui::GetStyle().FontScaleDpi = dpi;
-				ImGui::SameLine();
-				ImGui::TextDisabled( "LpToPx(100)=%.1fpx   PxToLp(100)=%.1flp",
-									 (double)ImPlatform_LpToPx( 100.0f ),
-									 (double)ImPlatform_PxToLp( 100.0f ) );
-			}
 			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Patterns" ) )
+			if ( ImGui::CollapsingHeader( "Font Inspector" ) )
 			{
-				static int patt = (int)ImWidgetsHatchPattern_Cross;
-				static float spacing = 10.0f, angle_deg = 0.0f, thickness = 1.0f;
-				const char* patt_names[] = { "Parallel", "Cross", "Diagonal", "DiagonalCross", "Dots", "ConcentricRings", "BenDay", "Screentone" };
-				ImGui::Combo( "Pattern", &patt, patt_names, IM_ARRAYSIZE( patt_names ) );
-				ImGui::SliderFloat( "Spacing", &spacing, 2.0f, 40.0f );
-				ImGui::SliderFloat( "Angle (deg)", &angle_deg, -180.0f, 180.0f );
-				ImGui::SliderFloat( "Thickness", &thickness, 0.5f, 4.0f );
-				ImGui::Spacing();
-				// Reserve canvas area AFTER the controls.
-				ImVec2 origin = ImGui::GetCursorScreenPos();
-				ImVec2 canvas = ImPlatform_LpToPx( ImVec2( 360, 240 ) );
-				ImGui::Dummy( canvas );
-				ImVec2 star[10];
-				float cx = origin.x + canvas.x * 0.5f, cy = origin.y + canvas.y * 0.5f;
-				for ( int i = 0; i < 10; ++i )
-				{
-					float r = ImPlatform_LpToPx( (i & 1) ? 40.0f : 90.0f );
-					float a = -IM_PI * 0.5f + i * IM_PI / 5.0f;
-					star[i] = ImVec2( cx + r * ImCos( a ), cy + r * ImSin( a ) );
-				}
-				ImDrawList* dl = ImGui::GetWindowDrawList();
-				dl->AddPolyline( star, 10, IM_COL32( 255, 255, 255, 120 ), ImDrawFlags_Closed, 1.0f );
-				ImWidgets::DrawHatchFill( dl, star, 10,
-										  (ImWidgetsHatchPattern)patt, ImPlatform_LpToPx( spacing ),
-										  angle_deg * IM_PI / 180.0f, ImPlatform_LpToPx( thickness ),
-										  IM_COL32( 255, 200, 100, 220 ) );
-
-				ImGui::Separator();
-				ImGui::Text( "Stipple" );
-				static float density = 0.15f, jitter = 0.6f, radius = 1.2f;
-				ImGui::SliderFloat( "Density", &density, 0.05f, 1.0f );
-				ImGui::SliderFloat( "Jitter", &jitter, 0.0f, 1.0f );
-				ImGui::SliderFloat( "Radius", &radius, 0.5f, 4.0f );
-				ImGui::Spacing();
-				ImVec2 o2 = ImGui::GetCursorScreenPos();
-				ImVec2 stipple_sz = ImPlatform_LpToPx( ImVec2( 260, 200 ) );
-				ImGui::Dummy( stipple_sz );
-				ImVec2 quad[4] = {
-					ImVec2( o2.x + stipple_sz.x * 0.04f, o2.y + stipple_sz.y * 0.05f ),
-					ImVec2( o2.x + stipple_sz.x * 0.88f, o2.y + stipple_sz.y * 0.10f ),
-					ImVec2( o2.x + stipple_sz.x * 0.96f, o2.y + stipple_sz.y * 0.90f ),
-					ImVec2( o2.x + stipple_sz.x * 0.08f, o2.y + stipple_sz.y * 0.85f ),
-				};
-				dl->AddPolyline( quad, 4, IM_COL32( 255, 255, 255, 120 ), ImDrawFlags_Closed, 1.0f );
-				ImWidgets::DrawStippleFill( dl, quad, 4, density, jitter, ImPlatform_LpToPx( radius ),
-											IM_COL32( 120, 220, 255, 220 ) );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Iso-Contours" ) )
-			{
-				struct Fn
-				{
-					static float f( float x, float y, void* ud )
-					{
-						float* sc = (float*)ud;
-						x *= sc[0]; y *= sc[0];
-						return ImSin( x * 0.05f ) + ImCos( y * 0.05f );
-					}
-				};
-				static float scale = 1.0f;
-				ImGui::SliderFloat( "Scale", &scale, 0.25f, 4.0f );
-				static float isos[] = { -0.8f, -0.4f, 0.0f, 0.4f, 0.8f };
-				ImDrawList* dl = ImGui::GetWindowDrawList();
-				ImVec2 p = ImGui::GetCursorScreenPos();
-				ImVec2 iso_sz = ImPlatform_LpToPx( ImVec2( 360, 240 ) );
-				ImGui::Dummy( iso_sz );
-				dl->AddRect( p, ImVec2( p.x + iso_sz.x, p.y + iso_sz.y ), IM_COL32( 255, 255, 255, 120 ) );
-				float ud[1] = { scale };
-				ImWidgets::DrawIsoContour( dl, p, iso_sz, 48, 32,
-										   Fn::f, ud, isos, IM_ARRAYSIZE( isos ),
-										   IM_COL32( 120, 255, 160, 255 ), ImPlatform_LpToPx( 1.5f ) );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Conic Gradient" ) )
-			{
-				static ImGradientData grad;
-				ImGui::Text( "Uses existing ImGradientData stops." );
-				ImDrawList* dl = ImGui::GetWindowDrawList();
-				ImVec2 p = ImGui::GetCursorScreenPos();
-				ImVec2 cg_sz = ImPlatform_LpToPx( ImVec2( 260, 260 ) );
-				ImGui::Dummy( cg_sz );
-				ImWidgets::DrawConicGradient( dl, ImVec2( p.x + cg_sz.x * 0.5f, p.y + cg_sz.y * 0.5f ),
-											  ImPlatform_LpToPx( 120.0f ), grad, 0.0f, 192 );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Superellipse" ) )
-			{
-				static float rx = 80, ry = 60, nx = 4, ny = 4;
-				static int sides = 64;
-				static bool show_fill = true;
-				static bool show_edges = true;
-				static bool show_verts = false;
-				static bool show_tris = false;
-				static int focus_tri = -1;
-				static int tess_iter = 0;
-				ImGui::SliderFloat( "rx", &rx, 10, 120 );
-				ImGui::SliderFloat( "ry", &ry, 10, 120 );
-				ImGui::SliderFloat( "nx", &nx, 0.5f, 10.0f );
-				ImGui::SliderFloat( "ny", &ny, 0.5f, 10.0f );
-				ImGui::SliderInt( "sides", &sides, 16, 256 );
-				ImGui::SliderInt( "Tessellation iterations", &tess_iter, 0, 4 );
-				ImGui::Checkbox( "Fill", &show_fill ); ImGui::SameLine();
-				ImGui::Checkbox( "Edges", &show_edges ); ImGui::SameLine();
-				ImGui::Checkbox( "Vertices", &show_verts ); ImGui::SameLine();
-				ImGui::Checkbox( "Highlight triangle", &show_tris );
-				if ( show_tris )
-				{
-					int max_tri = 0; // computed after GenShape below
-					ImGui::SliderInt( "Triangle index", &focus_tri, -1, 1024 );
-					IM_UNUSED( max_tri );
-				}
-				ImWidgetsShape sh;
-				ImVec2 se_sz = ImPlatform_LpToPx( ImVec2( 360, 300 ) );
-				ImWidgets::GenShapeSuperellipse( sh, ImVec2( se_sz.x * 0.5f, se_sz.y * 0.5f ),
-												 ImPlatform_LpToPx( rx ), ImPlatform_LpToPx( ry ), nx, ny, sides );
-				for ( int k = 0; k < tess_iter; ++k ) ImWidgets::ShapeTesselationUniform( sh );
-				ImDrawList* dl = ImGui::GetWindowDrawList();
-				ImVec2 o = ImGui::GetCursorScreenPos();
-				ImGui::Dummy( se_sz );
-				// Translate shape into canvas.
-				ImWidgetsShape shd = sh;
-				for ( int i = 0; i < shd.vertices.Size; ++i )
-				{
-					shd.vertices[i].pos.x += o.x;
-					shd.vertices[i].pos.y += o.y;
-				}
-				if ( show_fill )
-					ImWidgets::DrawShape( dl, shd );
-				// NOTE: DrawShapeDebug re-fills the triangles with the shape's
-				// own per-vertex colors. That is intentional (it matches the
-				// Draw Shape / ImageShape demos), so with SuperEllipse's opaque
-				// white vertex colors the shape looks filled even with Fill off
-				// when any debug overlay is on. Acceptable.
-				if ( show_edges || show_verts || show_tris )
-					ImWidgets::DrawShapeDebug( dl, shd,
-											   ImPlatform_LpToPx( show_edges ? 1.5f : 0.0f ),
-											   IM_COL32( 255, 180, 80, 220 ),
-											   show_tris ? IM_COL32( 120, 220, 255, 160 ) : 0u,
-											   ImPlatform_LpToPx( show_verts ? 3.0f : 0.0f ),
-											   IM_COL32( 255, 255, 255, 255 ),
-											   show_tris ? focus_tri : -1 );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Coons / Gregory Patch" ) )
-			{
-				static int patch_kind = 0; // 0 = Coons, 1 = Gregory
-				ImGui::Combo( "Patch type", &patch_kind, "Coons (4 cubic boundaries)\0Gregory (20 control points)\0" );
-				static ImCoonsPatch P;
-				static bool init = false;
-				if ( !init )
-				{
-					init = true;
-					ImVec2 o( 40, 40 );
-					P.bottom[0] = ImVec2( o.x, o.y + 200 );
-					P.bottom[1] = ImVec2( o.x + 80, o.y + 220 );
-					P.bottom[2] = ImVec2( o.x + 180, o.y + 180 );
-					P.bottom[3] = ImVec2( o.x + 260, o.y + 210 );
-					P.top[0] = ImVec2( o.x, o.y );
-					P.top[1] = ImVec2( o.x + 100, o.y - 20 );
-					P.top[2] = ImVec2( o.x + 200, o.y + 20 );
-					P.top[3] = ImVec2( o.x + 260, o.y );
-					P.left[0] = P.bottom[0];
-					P.left[1] = ImVec2( o.x - 10, o.y + 130 );
-					P.left[2] = ImVec2( o.x + 20, o.y + 70 );
-					P.left[3] = P.top[0];
-					P.right[0] = P.bottom[3];
-					P.right[1] = ImVec2( o.x + 280, o.y + 140 );
-					P.right[2] = ImVec2( o.x + 240, o.y + 90 );
-					P.right[3] = P.top[3];
-				}
-				static int resU = 16, resV = 16;
-				ImGui::SliderInt( "resU", &resU, 2, 48 );
-				ImGui::SliderInt( "resV", &resV, 2, 48 );
-				ImDrawList* dl = ImGui::GetWindowDrawList();
-				ImVec2 origin2 = ImGui::GetCursorScreenPos();
-				ImVec2 coons_sz = ImPlatform_LpToPx( ImVec2( 360, 260 ) );
-				ImGui::Dummy( coons_sz );
-				float dpi = ImPlatform_LpPxScale();
-				ImCoonsPatch Pd = P;
-				for ( int i = 0; i < 4; ++i )
-				{
-					Pd.bottom[i].x = origin2.x + P.bottom[i].x * dpi; Pd.bottom[i].y = origin2.y + P.bottom[i].y * dpi;
-					Pd.top[i].x = origin2.x + P.top[i].x * dpi; Pd.top[i].y = origin2.y + P.top[i].y * dpi;
-					Pd.left[i].x = origin2.x + P.left[i].x * dpi; Pd.left[i].y = origin2.y + P.left[i].y * dpi;
-					Pd.right[i].x = origin2.x + P.right[i].x * dpi; Pd.right[i].y = origin2.y + P.right[i].y * dpi;
-				}
-				if ( patch_kind == 0 )
-				{
-					ImWidgets::DrawCoonsPatchGradient( dl, Pd,
-													   IM_COL32( 255, 80, 80, 255 ), IM_COL32( 80, 255, 80, 255 ),
-													   IM_COL32( 80, 80, 255, 255 ), IM_COL32( 255, 255, 80, 255 ),
-													   resU, resV );
-					ImWidgets::DrawCoonsPatchWireframe( dl, Pd, IM_COL32( 255, 255, 255, 100 ),
-														ImPlatform_LpToPx( 1.0f ), resU, resV );
-				}
-				else
-				{
-					// Build a Gregory patch from the Coons boundary: corner, two edge CPs
-					// per edge, and two twist CPs per corner (20 total). Seed twists from
-					// the nearest interior boundary tangent for a smooth default.
-					ImGregoryPatch G;
-					// Corners
-					G.cp[0] = Pd.bottom[0]; G.cp[1] = Pd.bottom[3];
-					G.cp[2] = Pd.top[3];    G.cp[3] = Pd.top[0];
-					// Bottom edge tangent CPs (2)
-					G.cp[4] = Pd.bottom[1]; G.cp[5] = Pd.bottom[2];
-					// Right edge (v dir, u=1)
-					G.cp[6] = Pd.right[1];  G.cp[7] = Pd.right[2];
-					// Top edge (u dir, v=1, reversed direction)
-					G.cp[8] = Pd.top[2];    G.cp[9] = Pd.top[1];
-					// Left edge (v dir, u=0)
-					G.cp[10] = Pd.left[2];  G.cp[11] = Pd.left[1];
-					// Twist CPs — two per corner. Use the average of adjacent edge CPs.
-					auto twist = [ & ]( int a, int b, int c ){
-						return ImVec2( (G.cp[a].x + G.cp[b].x + G.cp[c].x) / 3.0f,
-									   (G.cp[a].y + G.cp[b].y + G.cp[c].y) / 3.0f );
-						};
-					G.cp[12] = twist( 0, 4, 11 ); G.cp[13] = twist( 0, 11, 4 );
-					G.cp[14] = twist( 1, 5, 6 );  G.cp[15] = twist( 1, 6, 5 );
-					G.cp[16] = twist( 2, 7, 8 );  G.cp[17] = twist( 2, 8, 7 );
-					G.cp[18] = twist( 3, 9, 10 ); G.cp[19] = twist( 3, 10, 9 );
-					ImWidgets::DrawGregoryPatchGradient( dl, G,
-														 IM_COL32( 255, 80, 80, 255 ), IM_COL32( 80, 255, 80, 255 ),
-														 IM_COL32( 80, 80, 255, 255 ), IM_COL32( 255, 255, 80, 255 ),
-														 resU, resV );
-				}
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Offset Path" ) )
-			{
-				static ImVec2 pts[] = {
-					ImVec2( 40, 40 ), ImVec2( 180, 30 ), ImVec2( 260, 120 ),
-					ImVec2( 220, 220 ), ImVec2( 80, 200 )
-				};
-				static float offset = 12.0f;
-				static int join = (int)ImWidgetsJoin_Round;
-				static float miter_limit = 4.0f;
-				ImGui::SliderFloat( "Offset", &offset, -40.0f, 40.0f );
-				const char* join_names[] = { "Round", "Mitter", "Bevel" };
-				ImGui::Combo( "Join", &join, join_names, IM_ARRAYSIZE( join_names ) );
-				ImGui::SliderFloat( "Miter limit", &miter_limit, 1.0f, 20.0f );
-				ImGui::Spacing();
-				ImDrawList* dl = ImGui::GetWindowDrawList();
-				ImVec2 o = ImGui::GetCursorScreenPos();
-				ImVec2 off_sz = ImPlatform_LpToPx( ImVec2( 360, 280 ) );
-				ImGui::Dummy( off_sz );
-				float off_dpi = ImPlatform_LpPxScale();
-				ImVec2 off[5];
-				for ( int i = 0; i < 5; ++i ) off[i] = ImVec2( o.x + pts[i].x * off_dpi, o.y + pts[i].y * off_dpi );
-				dl->AddPolyline( off, 5, IM_COL32( 255, 255, 255, 200 ), ImDrawFlags_Closed, ImPlatform_LpToPx( 1.5f ) );
-				ImWidgets::DrawOffsetOutline( dl, off, 5, ImPlatform_LpToPx( offset ), (ImWidgetsJoin)join,
-											  miter_limit, ImPlatform_LpToPx( 1.5f ), IM_COL32( 255, 180, 80, 255 ), true );
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Interactions" ) )
-			{
-				ImGui::Text( "Proportional multi-drag group (drag any bar, neighbors follow):" );
-				static float sliders[12] = { 0.3f, 0.35f, 0.4f, 0.45f, 0.5f, 0.5f, 0.5f, 0.45f, 0.4f, 0.35f, 0.3f, 0.25f };
-				static float pm_radius = 3.0f;
-				static int   pm_kernel = (int)ImWidgetsFalloff_Gaussian;
-				ImGui::SliderFloat( "Falloff radius (slots)", &pm_radius, 0.5f, 8.0f );
-				ImGui::Combo( "Kernel", &pm_kernel, "Linear\0Gaussian\0Smoothstep\0" );
-				ImGui::BeginGroup();
-				ImDrawList* pm_dl = ImGui::GetWindowDrawList();
-				ImVec2 pm_o = ImGui::GetCursorScreenPos();
-				const int N = IM_ARRAYSIZE( sliders );
-				const float bar_w = ImPlatform_LpToPx( 28.0f );
-				const float bar_h = ImPlatform_LpToPx( 120.0f );
-				const float gap = ImPlatform_LpToPx( 6.0f );
-				ImGui::InvisibleButton( "##pm_area", ImVec2( (bar_w + gap) * N, bar_h ) );
-				ImWidgets::PushDragGroup( ImGui::GetID( "grp" ), pm_radius, (ImWidgetsFalloff)pm_kernel );
-				for ( int i = 0; i < N; ++i )
-				{
-					float old = sliders[i];
-					float g = ImWidgets::GetDragGroupDelta( i );
-					if ( g != 0.0f ) sliders[i] = ImClamp( sliders[i] + g, 0.0f, 1.0f );
-					float x0 = pm_o.x + i * (bar_w + gap);
-					float y0 = pm_o.y;
-					float y1 = pm_o.y + bar_h;
-					ImVec2 bmin( x0, y0 ), bmax( x0 + bar_w, y1 );
-					float fy = y1 - sliders[i] * bar_h;
-					pm_dl->AddRect( bmin, bmax, IM_COL32( 180, 180, 180, 200 ) );
-					pm_dl->AddRectFilled( ImVec2( bmin.x + 1, fy ), ImVec2( bmax.x - 1, bmax.y - 1 ),
-										  IM_COL32( 120, 220, 255, 220 ) );
-					ImVec2 mouse = ImGui::GetIO().MousePos;
-					bool inside = mouse.x >= bmin.x && mouse.x <= bmax.x && mouse.y >= bmin.y && mouse.y <= bmax.y;
-					if ( ImGui::IsItemActive() && inside && ImGui::IsMouseDown( 0 ) )
-					{
-						float nv = ImClamp( (bmax.y - mouse.y) / bar_h, 0.0f, 1.0f );
-						float delta = nv - old;
-						sliders[i] = nv;
-						ImWidgets::SetDragGroupActive( i, delta );
-					}
-				}
-				ImWidgets::PopDragGroup();
-				ImGui::EndGroup();
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Vector Drawing Tool" ) )
-			{
-				ImGui::TextWrapped(
-					"Left-click empty: add anchor (drag to pull out tangent). "
-					"Left-click existing anchor: select (drag moves). "
-					"Click first anchor of active path to close. "
-					"Right-click: finish path open. Middle-drag / Shift+drag: pan. "
-					"Wheel: zoom. Delete: remove selected anchor." );
-				static ImVectorDrawingData vdt;
-				// Default style bucket — edits here seed new paths when you start drawing,
-				// and edit the current path once one exists. This means the Style/Color/
-				// Thickness controls are always visible instead of appearing only after
-				// the first click.
-				static ImVectorDrawingPath s_next_path_defaults;
-				int pi = vdt.SelectedPath >= 0 ? vdt.SelectedPath
-					: (vdt.ActivePath >= 0 ? vdt.ActivePath : (vdt.Paths.Size - 1));
-				ImVectorDrawingPath& p = (pi >= 0 && pi < vdt.Paths.Size)
-					? vdt.Paths[pi]
-					: s_next_path_defaults;
-				const char* style_names[] = { "Polyline", "PolylineAA", "StrokedBezier",
-					"StrokedDashedBezier", "DashedPolyline" };
-				int s = (int)p.Style;
-				if ( ImGui::Combo( "Style", &s, style_names, IM_ARRAYSIZE( style_names ) ) )
-					p.Style = (ImVectorDrawingStyle)s;
-				ImGui::SliderFloat( "Thickness", &p.Thickness, 0.5f, 16.0f );
-				ImVec4 col = ImGui::ColorConvertU32ToFloat4( p.Color );
-				if ( ImGui::ColorEdit4( "Color", &col.x, ImGuiColorEditFlags_NoInputs ) )
-					p.Color = ImGui::ColorConvertFloat4ToU32( col );
-				if ( p.Style == ImVectorDrawingStyle_StrokedDashedBezier
-					 || p.Style == ImVectorDrawingStyle_DashedPolyline )
-				{
-					ImGui::SliderFloat( "Dash", &p.DashLen, 1.0f, 40.0f );
-					ImGui::SliderFloat( "Gap", &p.GapLen, 1.0f, 40.0f );
-				}
-				ImGui::Checkbox( "Closed", &p.Closed );
-				// Seed new paths created by the user with the defaults currently shown.
-				int prev_path_count = vdt.Paths.Size;
-				if ( ImGui::Button( "Clear All" ) )
-				{
-					vdt.Paths.clear(); vdt.ActivePath = -1; vdt.SelectedPath = -1;
-				}
-				ImGui::SameLine();
-				if ( ImGui::Button( "Reset View" ) )
-				{
-					vdt.PanOffset = ImVec2( 0, 0 ); vdt.Zoom = 1.0f;
-				}
-				ImWidgets::VectorDrawingTool( "vdt", vdt, ImPlatform_LpToPx( ImVec2( 0, 380 ) ) );
-				// If a new path was just created, copy the currently-shown defaults into it.
-				if ( vdt.Paths.Size > prev_path_count && prev_path_count >= 0 )
-				{
-					ImVectorDrawingPath& np = vdt.Paths.back();
-					np.Style = s_next_path_defaults.Style;
-					np.Thickness = s_next_path_defaults.Thickness;
-					np.Color = s_next_path_defaults.Color;
-					np.DashLen = s_next_path_defaults.DashLen;
-					np.GapLen = s_next_path_defaults.GapLen;
-					np.Closed = s_next_path_defaults.Closed;
-				}
-				ImGui::TreePop();
-			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Widgets" ) )
-			{
-				ImGui::Text( "Envelope editor (multi-stage time-varying parameter):" );
-				static ImEnvelopeData env;
-				static bool env_init = false;
-				if ( !env_init )
-				{
-					env_init = true;
-					env.Stages.clear();
-					env.Stages.push_back( ImEnvelopeStage( 0.2f, 1.0f, 0.0f ) );
-					env.Stages.push_back( ImEnvelopeStage( 0.4f, 0.6f, 0.0f ) );
-					env.Stages.push_back( ImEnvelopeStage( 0.4f, 0.0f, 0.0f ) );
-				}
-				ImWidgets::EnvelopeEditor( "env", env, ImPlatform_LpToPx( ImVec2( 0, 160 ) ) );
-
-				ImGui::Separator();
 				ImGui::Text( "Font inspector:" );
 				static int fi_mode = 0;
 				const char* modes[] = { "Grid", "Metrics", "Curves", "Kerning" };
 				ImGui::Combo( "Mode", &fi_mode, modes, IM_ARRAYSIZE( modes ) );
-				// Curated picker — same font set as the other demos; includes the default.
+				// Curated picker -- same font set as the other demos; includes the default.
 				struct FiFont
 				{
 					const char* name; ImFont* font;
@@ -9709,15 +9903,19 @@ namespace ImWidgets{
 				}
 				ImWidgets::FontInspector( "font_ins", fi_list[fi_sel].font,
 										  (ImFontInspectorMode)fi_mode, ImPlatform_LpToPx( 48.0f ), ImPlatform_LpToPx( ImVec2( 0, 320 ) ) );
-
-				ImGui::Separator();
+			}
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Notched Dial" ) )
+			{
 				ImGui::Text( "Notched Dial:" );
 				static float nv = 0.0f;
 				static float stops[] = { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f };
 				static const char* slabels[] = { "Off", "Low", "Mid", "High", "Max" };
 				ImWidgets::NotchedDial( "dial", &nv, stops, 5, slabels, ImPlatform_LpToPx( ImVec2( 220, 240 ) ) );
-
-				ImGui::Separator();
+			}
+			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Equation Editor" ) )
+			{
 				ImGui::Text( "Equation input ($..$ inline, $$..$$ block, multiline):" );
 				static int eq_align = 3; // 0=Top, 1=Center, 2=Bottom, 3=Baseline
 				const char* eq_align_names[] = { "Inline Top", "Inline Center", "Inline Bottom", "Inline Baseline" };
@@ -9737,18 +9935,9 @@ namespace ImWidgets{
 					"$$\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}$$\n";
 				ImWidgets::EquationInput( "eq", eq_buf, sizeof( eq_buf ),
 										  ImPlatform_LpToPx( ImVec2( 0, 360 ) ), (ImWidgetsEquationFlags)eq_flags );
-
-				ImGui::TreePop();
 			}
-			ImGui::PopID();
-		}
-
-		ApplyOpenAll();
-		if ( ImGui::CollapsingHeader( "Color Grading / LookDev" ) )
-		{
-			ImGui::PushID( "_color_grade" );
 			ApplyOpenAll();
-			if ( ImGui::TreeNode( "3D LUT Viewer" ) )
+			if ( ImGui::CollapsingHeader( "3D LUT Viewer" ) )
 			{
 				static ImColorLUT3D lut;
 				if ( lut.Size == 0 ) ImWidgets::InitIdentityLUT3D( lut, 9 );
@@ -9756,10 +9945,9 @@ namespace ImWidgets{
 				if ( ImGui::Button( "Reset identity" ) ) ImWidgets::InitIdentityLUT3D( lut, lut.Size > 0 ? lut.Size : 9 );
 				ImWidgets::ColorLUT3DViewer( "lut3d", &lut, ImVec2( 0, 0 ) );
 				ImGui::TextDisabled( "Click a cell to edit." );
-				ImGui::TreePop();
 			}
 			ApplyOpenAll();
-			if ( ImGui::TreeNode( "LookDev A/B" ) )
+			if ( ImGui::CollapsingHeader( "LookDev A/B" ) )
 			{
 				ImGui::TextWrapped(
 					"A/B compare with rotatable divider. Pick two images to compare; "
@@ -9809,19 +9997,18 @@ namespace ImWidgets{
 					}
 					ImGui::End();
 				}
-				ImGui::TreePop();
 			}
 			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Color Difference (shader)" ) )
+			if ( ImGui::CollapsingHeader( "Color Difference (shader)" ) )
 			{
-				ImGui::TextWrapped( "False-color ΔE map between two images. "
-									"Pick the formula (ΔE76 / ΔE-OK / ΔE94 / ΔE2000) and the color ramp." );
+				ImGui::TextWrapped( "False-color dE map between two images. "
+									"Pick the formula (dE76 / dE-OK / dE94 / dE2000) and the color ramp." );
 				static const char* img_names_de[] = {
 					"Astronaut", "Clock", "Man", "Illustration", "Bike", "Interior"
 				};
 				ImTextureID tex_arr_de[6] = { astro_img, clock_img, man_img, illlustration_img, bike_img, background };
 				// Default to two different images so the false-color map has
-				// visible signal on first open (was Astronaut-vs-Astronaut → zero ΔE).
+				// visible signal on first open (was Astronaut-vs-Astronaut -> zero dE).
 				static int de_a = 0, de_b = 2;
 				ImGui::SetNextItemWidth( ImPlatform_LpToPx( 160.0f ) );
 				ImGui::Combo( "Image A##de", &de_a, img_names_de, IM_ARRAYSIZE( img_names_de ) );
@@ -9836,10 +10023,9 @@ namespace ImWidgets{
 					ImWidgets::ColorDifferenceImageViewer( "de_img", ta, tb, &de_state,
 														   ImPlatform_LpToPx( ImVec2( 0, 360 ) ) );
 				}
-				ImGui::TreePop();
 			}
 			ApplyOpenAll();
-			if ( ImGui::TreeNode( "LookDev Inspector (shader)" ) )
+			if ( ImGui::CollapsingHeader( "LookDev Inspector (shader)" ) )
 			{
 				ImGui::TextWrapped( "Shader-based A/B compare with per-side exposure, black, white, gamma. "
 									"Requires the lookdev_inspector shader to load successfully." );
@@ -9862,10 +10048,9 @@ namespace ImWidgets{
 					ImWidgets::LookDevInspector( "ldi", ta, tb, &ldi_state,
 												 ImPlatform_LpToPx( ImVec2( 0, 360 ) ) );
 				}
-				ImGui::TreePop();
 			}
 			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Volume Slice Viewer" ) )
+			if ( ImGui::CollapsingHeader( "Volume Slice Viewer" ) )
 			{
 				static ImWidgets::ImVolumeSliceState vsv;
 				static ImWidgets::ImVolumeViewerState vvs;
@@ -9898,7 +10083,7 @@ namespace ImWidgets{
 
 				ImGui::Separator();
 				ImGui::TextUnformatted( "VolumeViewer (raymarch / MIP / iso-surface + 3-slice layout):" );
-				// Dedicated field/seed picker for the VolumeViewer — shares the
+				// Dedicated field/seed picker for the VolumeViewer -- shares the
 				// same voxel buffer as the Slice viewer above, so selecting a
 				// field here updates both and triggers a 3D-texture re-upload.
 				ImGui::SetNextItemWidth( ImPlatform_LpToPx( 200.0f ) );
@@ -9909,60 +10094,12 @@ namespace ImWidgets{
 
 				vvs.Voxels = voxels.Data;
 				vvs.Width = vsv.Width; vvs.Height = vsv.Height; vvs.Depth = vsv.Depth;
-				// 75% width — sized similarly to the Volume Slice Viewer above.
+				// 75% width -- sized similarly to the Volume Slice Viewer above.
 				ImGui::BeginChild( "##vv_75", ImVec2( ImGui::GetContentRegionAvail().x * 0.75f, 0 ),
 					ImGuiChildFlags_AutoResizeY );
 				ImWidgets::VolumeViewer( "vv", &vvs );
 				ImGui::EndChild();
-				ImGui::TreePop();
 			}
-			ApplyOpenAll();
-			if ( ImGui::TreeNode( "IsoContour Tiered (topographic)" ) )
-			{
-				struct Fn
-				{
-					static float f( float x, float y, void* ud )
-					{
-						float* sc = (float*)ud;
-						return 50.0f + 40.0f * ImSin( x * 0.02f * sc[0] ) + 30.0f * ImCos( y * 0.015f * sc[0] )
-							+ 10.0f * ImSin( (x + y) * 0.05f * sc[0] );
-					}
-				};
-				static float scale = 1.0f;
-				static bool pre_log = false;
-				static ImIsoContourTier tiers[3] = {
-					ImIsoContourTier( 2.0f,  IM_COL32( 180, 200, 220, 80 ), 0.5f, false ),
-					ImIsoContourTier( 10.0f, IM_COL32( 200, 220, 240, 160 ), 1.0f, false ),
-					ImIsoContourTier( 40.0f, IM_COL32( 255, 240, 200, 255 ), 2.0f, false ),
-				};
-				ImGui::SliderFloat( "Scale", &scale, 0.25f, 4.0f );
-				ImGui::Checkbox( "Pre-log transform field", &pre_log );
-				static int iso_resX = 80, iso_resY = 48;
-				ImGui::SliderInt( "Base resX", &iso_resX, 8, 256 );
-				ImGui::SliderInt( "Base resY", &iso_resY, 8, 256 );
-				static bool iso_half_pixel = true;
-				static int iso_subdiv = 1;
-				ImGui::Checkbox( "Half-pixel sampling", &iso_half_pixel );
-				ImGui::SliderInt( "Sub-sample (bilinear)", &iso_subdiv, 1, 4 );
-				ImGui::SliderFloat( "Minor spacing", &tiers[0].spacing, 0.5f, 10.0f );
-				ImGui::SliderFloat( "Medium spacing", &tiers[1].spacing, 1.0f, 40.0f );
-				ImGui::SliderFloat( "Major spacing", &tiers[2].spacing, 10.0f, 100.0f );
-				ImDrawList* dl = ImGui::GetWindowDrawList();
-				ImVec2 p = ImGui::GetCursorScreenPos();
-				ImVec2 iso_sz2 = ImPlatform_LpToPx( ImVec2( 460, 280 ) );
-				ImGui::Dummy( iso_sz2 );
-				dl->AddRect( p, ImVec2( p.x + iso_sz2.x, p.y + iso_sz2.y ), IM_COL32( 255, 255, 255, 100 ) );
-				float ud[1] = { scale };
-				ImIsoContourTier tiers_scaled[3] = {
-					tiers[0], tiers[1], tiers[2]
-				};
-				for ( int i = 0; i < 3; ++i ) tiers_scaled[i].thickness = ImPlatform_LpToPx( tiers[i].thickness );
-				ImWidgets::DrawIsoContourTiered( dl, p, iso_sz2, iso_resX, iso_resY,
-												 Fn::f, ud, tiers_scaled, 3, -FLT_MAX, FLT_MAX, pre_log,
-												 iso_half_pixel, iso_subdiv );
-				ImGui::TreePop();
-			}
-			ImGui::PopID();
 		}
 
 		s_open_all = 0;

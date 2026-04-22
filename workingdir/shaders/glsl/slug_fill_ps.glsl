@@ -1111,41 +1111,41 @@ void main()
 {
     float coverage_0 = SlugRender_0(input_texcoord_0, input_banding_0, input_glyph_0);
 
-#line 436
+#line 456
     vec2 _S63 = input_color_0.xy;
     vec2 uv_0 = (gl_FragCoord.xy - _S63) / max(input_color_0.zw - _S63, vec2(1.0, 1.0));
 
     if((fillParams_0.fillGrad_0.x) < 2.5)
     {
 
-#line 439
+#line 459
         float ft_1;
 
 
         if((fillParams_0.fillGrad_0.x) < 0.5)
         {
 
-#line 443
+#line 463
             vec2 dir_0 = fillParams_0.fillUVEnd_0.xy - fillParams_0.fillUVStart_0.xy;
             float denom_0 = dot(dir_0, dir_0);
             if(denom_0 > 9.99999993922529029e-09)
             {
 
-#line 445
+#line 465
                 ft_1 = dot(uv_0 - fillParams_0.fillUVStart_0.xy, dir_0) / denom_0;
 
-#line 445
+#line 465
             }
             else
             {
 
-#line 445
+#line 465
                 ft_1 = 0.0;
 
-#line 445
+#line 465
             }
 
-#line 442
+#line 462
         }
         else
         {
@@ -1153,10 +1153,10 @@ void main()
             if((fillParams_0.fillGrad_0.x) < 1.5)
             {
 
-#line 446
+#line 466
                 ft_1 = length(uv_0 - fillParams_0.fillUVStart_0.xy) / max(length(fillParams_0.fillUVEnd_0.xy - fillParams_0.fillUVStart_0.xy), 0.00000999999974738);
 
-#line 446
+#line 466
             }
             else
             {
@@ -1164,22 +1164,22 @@ void main()
 
                 vec2 d_2 = (uv_0 - fillParams_0.fillUVStart_0.xy) / max(length(fillParams_0.fillUVEnd_0.xy - fillParams_0.fillUVStart_0.xy), 0.00000999999974738);
 
-#line 451
+#line 471
                 ft_1 = abs(d_2.x) + abs(d_2.y);
 
-#line 446
+#line 466
             }
 
-#line 442
+#line 462
         }
 
-#line 455
+#line 475
         vec4 fillCol_0 = lerpInColorSpace_0(fillParams_0.fillColor0_0, fillParams_0.fillColor1_0, saturate_0(ft_1), fillParams_0.fillGrad_0.y);
 
-#line 455
+#line 475
         entryPointParam_main_ps_0 = vec4(fillCol_0.xyz, fillCol_0.w * coverage_0);
 
-#line 455
+#line 475
         return;
     }
     else
@@ -1188,13 +1188,13 @@ void main()
 
         vec4 texColor_0 = (texture(sampler2D(fillTexture_0,fillSampler_0), (uv_0 * fillParams_0.fillUVEnd_0.xy + fillParams_0.fillUVStart_0.xy))) * fillParams_0.fillColor0_0;
 
-#line 461
+#line 481
         entryPointParam_main_ps_0 = vec4(texColor_0.xyz, texColor_0.w * coverage_0);
 
-#line 461
+#line 481
         return;
     }
 
-#line 461
+#line 481
 }
 

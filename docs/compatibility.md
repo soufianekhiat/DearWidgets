@@ -18,63 +18,69 @@ Features fall into three tiers based on what they actually call at runtime:
 
 | Feature | Key API | ImGui only | ImPlatform (any) | ImPlatform + Shader |
 |---|---|:---:|:---:|:---:|
-| **Style system** | `GetStyle`, `PushStyleColor`, `PushStyleVar` | ✓ | | |
-| **Slider2D** | `Slider2DFloat/Int/Scalar` | ✓ | | |
-| **SliderN** | `SliderNFloat/Int/Scalar` | ✓ | | |
-| **SliderRing** | `SliderRingFloat/Int/Scalar` | ✓ | | |
-| **SliderSpline** | `SliderSplineFloat/Int/Scalar` | ✓ | | |
-| **DragFloatPrecise** | `DragFloatPrecise` | ✓ | | |
-| **HueSelector** | `HueSelector` | ✓ | | |
-| **GradientEditor** | `GradientEditor`, `GradientSample`, `DrawGradientBar` | ✓ | | |
-| **CurveEditor** | `CurveEditor`, `CurveEditorSample`, `CurveEditorEvalEasing` | ✓ | | |
-| **ColorWheel** | `ColorWheel`, `PrimariesWheel`, `HDRWheel` | ✓ | | |
-| **ColorPicker** | `ColorPicker`, `ColorPickerSRGB/HSV/OkLab/OkLCH/CIELab/XYZ` | ✓ | | |
-| **ColorWarper** | `ColorWarper` | ✓ | | |
-| **ColorCurve** | `ColorCurve`, `ColorCurveSample` | ✓ | | |
-| **ToneCurve** | `ToneCurve`, `ToneCurveSample` | ✓ | | |
-| **ParadeScope** | `ParadeScope`, `ImParadeScopeData::Accumulate` | ✓ | | |
-| **VectorScope** | `VectorScope`, `ImVectorScopeData::Accumulate` | ✓ | | |
-| **Histogram** | `Histogram`, `ImHistogramData::Accumulate` | ✓ | | |
-| **CIEChromaticity** | `CIEChromaticity`, `ImCIEChromaticityData::Accumulate` | ✓ | | |
-| **UnitField** | `UnitField` | ✓ | | |
-| **UpVector** | `UpVector` | ✓ | | |
-| **ImageCarousel** | `ImageCarousel` | ✓ | | |
-| **ImageBento** | `ImageBento` | ✓ | | |
-| **ImageTransformGizmo** | `ImageTransformGizmo` | ✓ | | |
-| **Custom-shape buttons** | `ButtonEx*`, `ImageButtonEx*` | ✓ | | |
-| **Render frames** | `RenderFrame*` | ✓ | | |
-| **Nav cursors** | `RenderNavCursor*` | ✓ | | |
-| **Shape generation** | `GenShape*` | ✓ | | |
-| **Shape gradient fills** | `Shape*Gradient` (sRGB, OkLab, HSV…) | ✓ | | |
-| **Draw shapes** | `DrawShape`, `DrawImageShape`, `DrawShapeWithHole` | ✓ | | |
-| **Color bands / rings** | `DrawHueBand`, `DrawLumianceBand`, `DrawSaturationBand`, `DrawColorRing` | ✓ | | |
-| **Procedural color** | `DrawProceduralColor1D/2D` (nearest + bilinear) | ✓ | | |
-| **OkLab / OkLCH quads** | `DrawOkLabQuad`, `DrawOkLchQuad` | ✓ | | |
-| **Chromatic diagrams** | `DrawChromaticityPlot`, `DrawChromaticityPoints`, `DrawChromaticityLines` | ✓ | | |
-| **Graduation lines** | `DrawLinearLine/CircularGraduation`, `DrawLogLine/CircularGraduation` | ✓ | | |
-| **Draw cursors** | `DrawTriangleCursor`, `DrawSignetCursor` | ✓ | | |
-| **Checkerboard** | `DrawCheckerboard` | ✓ | | |
-| **Dashed polylines (CPU)** | `DrawDashedPolylineAA` with `SetDashedLinesUseGPU(false)` | ✓ | | |
-| **Color conversions** | `ColorConvert*`, `ImColorBlend*`, `KelvinTemperatureTosRGBColors` | ✓ | | |
-| **Window background** | `SetCurrentWindowBackgroundImage` | ✓ | | |
-| **Tessellated text** ¹ | `TesselateText`, `TesselateTextPerGlyph`, `ExtractTextContours` | ✓ ¹ | | |
-| **Gradient/image text fills** ¹ | `DrawImageText`, `DrawLinearGradientText`, `DrawRadialGradientText`, `DrawDiamondGradientText` | ✓ ¹ | | |
-| **Context lifecycle** | `CreateContext`, `DestroyContext`, `SetCurrentContext` | | ✓ ² | |
-| **System textures** | `GetWhiteTexture`, `OwnTexture` | | ✓ | |
-| **PaintCanvas** | `PaintCanvas`, `ImPaintCanvasData` | | ✓ | |
-| **ImageViewer (pixel inspector)** | `ImageViewer` with `state.Pixels` set | | ✓ ³ | |
-| **Dashed polylines (GPU)** | `DrawDashedPolylineAA` with `SetDashedLinesUseGPU(true)` | | | ✓ |
-| **Markers** | `DrawMarker` | | | ✓ `Markers` |
-| **Slug GPU text** | `DrawText`, `DrawTextGradient`, `CalcTextSize` | | | ✓ `RichFont` |
-| **Slug font loader** | `GetSlugFontLoader`, `SlugBuildGlyphByID` | | | ✓ `RichFont` |
-| **Slug debug** | `DrawTextDebugCurves`, `DrawTextDebugLayers`, `g_SlugDebugShader` | | | ✓ `RichFont` |
-| **LaTeX** | `LoadLaTeXFont`, `DrawLaTeX`, `CalcLaTeXSize`, `DrawLaTeXDebug`, `TesselateLaTeX` | | | ✓ `LaTeX` |
+| **Style system** | `GetStyle`, `PushStyleColor`, `PushStyleVar` | Y | | |
+| **Slider2D** | `Slider2DFloat/Int/Scalar` | Y | | |
+| **SliderN** | `SliderNFloat/Int/Scalar` | Y | | |
+| **SliderRing** | `SliderRingFloat/Int/Scalar` | Y | | |
+| **SliderGradientRing** | `SliderGradientRingFloat/Int/Scalar`, `SliderGradientRingRangeFloat/Int/Scalar` | Y | | |
+| **SliderSpline** | `SliderSplineFloat/Int/Scalar` | Y | | |
+| **SliderSplineGradient** | `SliderSplineGradientFloat/Int/Scalar`, `SliderSplineGradientRangeFloat/Int/Scalar` | Y | | |
+| **SliderGradient** | `SliderGradientFloat/Int/Scalar` | Y | | |
+| **SliderGradientRange** | `SliderGradientRangeFloat/Int/Scalar` | Y | | |
+| **DragFloatPrecise** | `DragFloatPrecise` | Y | | |
+| **HueSelector** | `HueSelector` | Y | | |
+| **GradientEditor** | `GradientEditor`, `GradientSample`, `DrawGradientBar` | Y | | |
+| **CurveEditor** | `CurveEditor`, `CurveEditorSample`, `CurveEditorEvalEasing` | Y | | |
+| **ColorWheel** | `ColorWheel`, `PrimariesWheel`, `HDRWheel` | Y | | |
+| **ColorPicker** | `ColorPicker`, `ColorPickerSRGB/HSV/OkLab/OkLCH/CIELab/XYZ` | Y | | |
+| **ColorWarper** | `ColorWarper` | Y | | |
+| **ColorCurve** | `ColorCurve`, `ColorCurveSample` | Y | | |
+| **ToneCurve** | `ToneCurve`, `ToneCurveSample` | Y | | |
+| **ParadeScope** | `ParadeScope`, `ImParadeScopeData::Accumulate` | Y | | |
+| **VectorScope** | `VectorScope`, `ImVectorScopeData::Accumulate` | Y | | |
+| **Histogram** | `Histogram`, `ImHistogramData::Accumulate` | Y | | |
+| **CIEChromaticity** | `CIEChromaticity`, `ImCIEChromaticityData::Accumulate` | Y | | |
+| **UnitField** | `UnitField` | Y | | |
+| **UpVector** | `UpVector` | Y | | |
+| **VectorDrawingTool** | `VectorDrawingTool`, `ImVectorDrawingData` | Y | | |
+| **ImageCarousel** | `ImageCarousel` | Y | | |
+| **ImageBento** | `ImageBento` | Y | | |
+| **ImageTransformGizmo** | `ImageTransformGizmo` | Y | | |
+| **Custom-shape buttons** | `ButtonEx*`, `ImageButtonEx*` | Y | | |
+| **Render frames** | `RenderFrame*` | Y | | |
+| **Nav cursors** | `RenderNavCursor*` | Y | | |
+| **Shape generation** | `GenShape*` | Y | | |
+| **Shape gradient fills** | `Shape*Gradient` (sRGB, OkLab, HSV...) | Y | | |
+| **Draw shapes** | `DrawShape`, `DrawImageShape`, `DrawShapeWithHole` | Y | | |
+| **Color bands / rings** | `DrawHueBand`, `DrawLumianceBand`, `DrawSaturationBand`, `DrawColorRing` | Y | | |
+| **Procedural color** | `DrawProceduralColor1D/2D` (nearest + bilinear) | Y | | |
+| **OkLab / OkLCH quads** | `DrawOkLabQuad`, `DrawOkLchQuad` | Y | | |
+| **Chromatic diagrams** | `DrawChromaticityPlot`, `DrawChromaticityPoints`, `DrawChromaticityLines` | Y | | |
+| **Graduation lines** | `DrawLinearLine/CircularGraduation`, `DrawLogLine/CircularGraduation` | Y | | |
+| **Draw cursors** | `DrawTriangleCursor`, `DrawSignetCursor` | Y | | |
+| **Checkerboard** | `DrawCheckerboard` | Y | | |
+| **Spline gradient strokes** | `DrawSplineGradient`, `DrawSplineGradientCut` | Y | | |
+| **Dashed polylines (CPU)** | `DrawDashedPolylineAA` with `SetDashedLinesUseGPU(false)` | Y | | |
+| **Color conversions** | `ColorConvert*`, `ImColorBlend*`, `KelvinTemperatureTosRGBColors` | Y | | |
+| **Window background** | `SetCurrentWindowBackgroundImage` | Y | | |
+| **Tessellated text** ^1 | `TesselateText`, `TesselateTextPerGlyph`, `ExtractTextContours` | Y ^1 | | |
+| **Gradient/image text fills** ^1 | `DrawImageText`, `DrawLinearGradientText`, `DrawRadialGradientText`, `DrawDiamondGradientText` | Y ^1 | | |
+| **Context lifecycle** | `CreateContext`, `DestroyContext`, `SetCurrentContext` | | Y ^2 | |
+| **System textures** | `GetWhiteTexture`, `OwnTexture` | | Y | |
+| **PaintCanvas** | `PaintCanvas`, `ImPaintCanvasData` | | Y | |
+| **ImageViewer (pixel inspector)** | `ImageViewer` with `state.Pixels` set | | Y ^3 | |
+| **Dashed polylines (GPU)** | `DrawDashedPolylineAA` with `SetDashedLinesUseGPU(true)` | | | Y |
+| **Markers** | `DrawMarker` | | | Y `Markers` |
+| **Slug GPU text** | `DrawText`, `DrawTextGradient`, `CalcTextSize` | | | Y `RichFont` |
+| **Slug font loader** | `GetSlugFontLoader`, `SlugBuildGlyphByID` | | | Y `RichFont` |
+| **Slug debug** | `DrawTextDebugCurves`, `DrawTextDebugLayers`, `g_SlugDebugShader` | | | Y `RichFont` |
+| **LaTeX** | `LoadLaTeXFont`, `DrawLaTeX`, `CalcLaTeXSize`, `DrawLaTeXDebug`, `TesselateLaTeX` | | | Y `LaTeX` |
 
-**¹ Tessellated text** — the algorithm itself is pure CPU (stbtt + bezier tessellation → `ImWidgetsShape` → `DrawShape`). It is listed as "ImGui only" in intent. In the current implementation it shares the Slug context initialised by `CreateContext`, so enabling `ImWidgetsFeatures_RichFont` is needed today.
+**^1 Tessellated text** -- the algorithm itself is pure CPU (stbtt + bezier tessellation -> `ImWidgetsShape` -> `DrawShape`). It is listed as "ImGui only" in intent. In the current implementation it shares the Slug context initialised by `CreateContext`, so enabling `ImWidgetsFeatures_RichFont` is needed today.
 
-**² `CreateContext`** — always calls `ImPlatform_CreateTexture` for the internal black/white system textures even when no shader feature is enabled. Destroying those textures on `DestroyContext` calls `ImPlatform_DestroyTexture`.
+**^2 `CreateContext`** -- always calls `ImPlatform_CreateTexture` for the internal black/white system textures even when no shader feature is enabled. Destroying those textures on `DestroyContext` calls `ImPlatform_DestroyTexture`.
 
-**³ `ImageViewer`** — pan/zoom display is pure ImGui (forwards a user-provided `ImTextureID`). The pixel-inspector loupe (right-click) reads `ImImageViewerState::PixelFormat` which is an `ImPlatform_PixelFormat` type; setting `state.Pixels = nullptr` disables the inspector and removes any runtime ImPlatform dependency.
+**^3 `ImageViewer`** -- pan/zoom display is pure ImGui (forwards a user-provided `ImTextureID`). The pixel-inspector loupe (right-click) reads `ImImageViewerState::PixelFormat` which is an `ImPlatform_PixelFormat` type; setting `state.Pixels = nullptr` disables the inspector and removes any runtime ImPlatform dependency.
 
 ---
 
@@ -82,13 +88,13 @@ Features fall into three tiers based on what they actually call at runtime:
 
 | Backend | ImGui only | ImPlatform (any) | ImPlatform + Shader |
 |---|:---:|:---:|:---:|
-| Any ImGui backend (no ImPlatform) | ✓ | — | — |
-| DirectX 9 | ✓ | ✓ | ✗ |
-| DirectX 10 | ✓ | ✓ | ✓ |
-| DirectX 11 | ✓ | ✓ | ✓ |
-| DirectX 12 | ✓ | ✓ | ✓ |
-| OpenGL 3+ | ✓ | ✓ | ✓ |
-| Vulkan | ✓ | ✓ | ✓ |
+| Any ImGui backend (no ImPlatform) | Y | -- | -- |
+| DirectX 9 | Y | Y | N |
+| DirectX 10 | Y | Y | Y |
+| DirectX 11 | Y | Y | Y |
+| DirectX 12 | Y | Y | Y |
+| OpenGL 3+ | Y | Y | Y |
+| Vulkan | Y | Y | Y |
 
 ---
 
@@ -96,7 +102,7 @@ Features fall into three tiers based on what they actually call at runtime:
 
 | Flag | Features Enabled | Tier |
 |---|---|---|
-| *(none — `CreateContext` only)* | All ImGui-only features + system textures | ImPlatform (any) |
+| *(none -- `CreateContext` only)* | All ImGui-only features + system textures | ImPlatform (any) |
 | `ImWidgetsFeatures_Markers` | GPU shape markers | ImPlatform + Shader |
 | `ImWidgetsFeatures_RichFont` | Slug GPU text, color fonts, gradient text, tessellated fills | ImPlatform + Shader |
 | `ImWidgetsFeatures_LaTeX` | LaTeX math rendering (implies `RichFont`) | ImPlatform + Shader |

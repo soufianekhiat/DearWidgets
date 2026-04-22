@@ -18,7 +18,7 @@ Each constant maps to a named `ImVec4` color stored in `ImWidgetsStyle::Colors[]
 | Slider2D | `StyleColor_Slider2D_CursorX` | X-axis cursor |
 | Slider2D | `StyleColor_Slider2D_CursorY` | Y-axis cursor |
 | SliderRing | `StyleColor_SliderRing_Track` | Inactive track arc |
-| SliderRing | `StyleColor_SliderRing_TrackActive` | Filled arc (min → current) |
+| SliderRing | `StyleColor_SliderRing_TrackActive` | Filled arc (min -> current) |
 | SliderRing | `StyleColor_SliderRing_Grab` | Grab handle |
 | SliderRing | `StyleColor_SliderRing_GrabActive` | Grab handle while dragging |
 | SliderSpline | `StyleColor_SliderSpline_Track` | Inactive track |
@@ -26,8 +26,8 @@ Each constant maps to a named `ImVec4` color stored in `ImWidgetsStyle::Colors[]
 | SliderSpline | `StyleColor_SliderSpline_Grab` | Grab handle |
 | SliderSpline | `StyleColor_SliderSpline_GrabActive` | Grab handle while dragging |
 | GradientEditor | `StyleColor_Gradient_MarkerOutline` | Stop marker border |
-| GradientEditor | `StyleColor_Gradient_MarkerOutlineHovered` | … when hovered |
-| GradientEditor | `StyleColor_Gradient_MarkerOutlineSelected` | … when selected |
+| GradientEditor | `StyleColor_Gradient_MarkerOutlineHovered` | ... when hovered |
+| GradientEditor | `StyleColor_Gradient_MarkerOutlineSelected` | ... when selected |
 | GradientEditor | `StyleColor_Gradient_AlphaIndicator` | Alpha strip overlay |
 | GradientEditor | `StyleColor_Gradient_Checkerboard1/2` | Transparency pattern |
 | CurveEditor | `StyleColor_CurveEditor_Line` | Curve line |

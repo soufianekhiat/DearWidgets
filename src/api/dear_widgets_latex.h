@@ -1,8 +1,7 @@
-// dear_widgets_latex.h — LaTeX math expression parser and layout engine.
-// Internal header included from dear_widgets.cpp. Do NOT compile separately.
-// Inspired by MicroTeX's architecture: tokenize → parse → box tree → layout → render.
+// dear_widgets_latex.h -- LaTeX math expression parser and layout engine.
+// Internal header for dear_widgets_latex.cpp (standalone TU).
+// Inspired by MicroTeX's architecture: tokenize -> parse -> box tree -> layout -> render.
 #pragma once
-// All ImGui/ImWidgets types are already available via dear_widgets.cpp's includes.
 
 namespace ImWidgets {
 
@@ -49,7 +48,13 @@ struct LaTeXBox {
 	float sizeFactor;  // 1.0 = display, 0.7 = script, 0.5 = scriptscript
 	ImU32 colorOverride; // 0 = inherit parent color
 
-	LaTeXBox() { memset(this, 0, sizeof(*this)); sizeFactor = 1.0f; }
+	LaTeXBox()
+		: type(LaTeXBox_Glyph), width(0.f), height(0.f), depth(0.f),
+		  shiftX(0.f), shiftY(0.f), codepoint(0), isMathItalic(false),
+		  ruleThickness(0.f), base(nullptr), superscript(nullptr), subscript(nullptr),
+		  matRows(0), matCols(0), delimLeft(0), delimRight(0),
+		  sizeFactor(1.0f), colorOverride(0)
+	{ memset(text, 0, sizeof(text)); }
 	~LaTeXBox() {
 		for (int i = 0; i < children.Size; i++) IM_DELETE(children[i]);
 		if (base) IM_DELETE(base);
@@ -58,7 +63,7 @@ struct LaTeXBox {
 	}
 };
 
-// ---- Parser: LaTeX string → box tree ----
+// ---- Parser: LaTeX string -> box tree ----
 LaTeXBox* LaTeXParse(const char* latex);
 
 // ---- Layout: compute widths/heights/positions ----

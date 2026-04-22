@@ -6,7 +6,7 @@ DearWidgets works in multiple color spaces throughout its widget and drawing API
 
 ## Storage Convention
 
-All widget output values (`ImVec4* color` parameters) are in **sRGB with premultiplied-alpha disabled** — i.e. straight-alpha sRGB, matching ImGui's standard `ImVec4` convention. Components are floats `[0, 1]` (HDR widgets may exceed 1.0 for the RGB components when `hdr_max > 1`).
+All widget output values (`ImVec4* color` parameters) are in **sRGB with premultiplied-alpha disabled** -- i.e. straight-alpha sRGB, matching ImGui's standard `ImVec4` convention. Components are floats `[0, 1]` (HDR widgets may exceed 1.0 for the RGB components when `hdr_max > 1`).
 
 ---
 
@@ -14,7 +14,7 @@ All widget output values (`ImVec4* color` parameters) are in **sRGB with premult
 
 ### sRGB
 
-The default for all color inputs/outputs. Non-linear (gamma ≈ 2.2 piecewise). Human-visible gamut encoded for display devices.
+The default for all color inputs/outputs. Non-linear (gamma ~= 2.2 piecewise). Human-visible gamut encoded for display devices.
 
 ### Linear sRGB
 
@@ -95,9 +95,9 @@ Used by `DrawChromaticityPlot` and `DrawChromaticityPoints`:
 
 ## Illuminants / White Points
 
-Available for `DrawChromaticityPlot` (`ImWidgetsIlluminance`): A, B, C, D50, D55, D65, D75, D93, E, F1–F12.
+Available for `DrawChromaticityPlot` (`ImWidgetsIlluminance`): A, B, C, D50, D55, D65, D75, D93, E, F1-F12.
 
 ## Observers
 
-- `ImWidgetsObserverChromaticPlot_1931_2deg` — CIE 1931 2° standard observer
-- `ImWidgetsObserverChromaticPlot_1964_10deg` — CIE 1964 10° supplementary observer
+- `ImWidgetsObserverChromaticPlot_1931_2deg` -- CIE 1931 2 deg standard observer
+- `ImWidgetsObserverChromaticPlot_1964_10deg` -- CIE 1964 10 deg supplementary observer

@@ -2,7 +2,7 @@
 
 > **Requires:** `ImWidgetsFeatures_LaTeX` (implies `ImWidgetsFeatures_RichFont`) set before `CreateContext()`.
 
-DearWidgets includes a self-contained LaTeX math renderer: tokenizer → parser → box tree → layout → render, using Latin Modern Math as the math font rendered via the Slug GPU pipeline.
+DearWidgets includes a self-contained LaTeX math renderer: tokenizer -> parser -> box tree -> layout -> render, using Latin Modern Math as the math font rendered via the Slug GPU pipeline.
 
 See [concepts/latex.md](../concepts/latex.md) for supported syntax and architecture.
 
@@ -102,7 +102,7 @@ ImWidgets::DrawShape(dl, shape);
 | Superscript / subscript | `x^2`, `a_n`, `x^{i+1}_{k}` |
 | Fractions | `\frac{a}{b}`, `\binom{n}{k}` |
 | Square root | `\sqrt{x}`, `\sqrt[3]{x}` |
-| Greek letters | `\alpha \beta \gamma \delta \pi \Sigma \Omega …` |
+| Greek letters | `\alpha \beta \gamma \delta \pi \Sigma \Omega ...` |
 | Binary operators | `+ - \times \div \pm \mp \cdot` |
 | Relations | `= \neq \leq \geq \approx \equiv \sim` |
 | Arrows | `\to \leftarrow \Rightarrow` |

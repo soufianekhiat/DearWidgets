@@ -1,0 +1,497 @@
+#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 53 "C:/git/DearWidgets/workingdir/shaders/hlsl_src/volume_viewer.hlsl"
+float2 ray_box_0(float3 ro_0, float3 rd_0, float3 bmin_0, float3 bmax_0)
+{
+    float3 inv_0 = float3(1.0)  / rd_0;
+    float3 t0_0 = (bmin_0 - ro_0) * inv_0;
+    float3 t1_0 = (bmax_0 - ro_0) * inv_0;
+    float3 tmin3_0 = min(t0_0, t1_0);
+    float3 tmax3_0 = max(t0_0, t1_0);
+
+
+    return float2(max(max(tmin3_0.x, tmin3_0.y), tmin3_0.z), min(min(tmax3_0.x, tmax3_0.y), tmax3_0.z));
+}
+
+
+#line 20
+struct SLANG_ParameterGroup_VolumeViewerParams_0
+{
+    float4 camRight_0;
+    float4 camUp_0;
+    float4 camForward_0;
+    float4 camPos_0;
+    float4 winPack_0;
+    uint4 modePack_0;
+    float4 volDims_0;
+    float4 bgColor_0;
+};
+
+
+#line 4264 "core.meta.slang"
+struct KernelContext_0
+{
+    SLANG_ParameterGroup_VolumeViewerParams_0 constant* VolumeViewerParams_0;
+    texture3d<float, access::sample> volume_0;
+    sampler volumeSampler_0;
+};
+
+
+#line 65 "C:/git/DearWidgets/workingdir/shaders/hlsl_src/volume_viewer.hlsl"
+float sample_vol_0(float3 uvw_0, KernelContext_0 thread* kernelContext_0)
+{
+
+    return ((kernelContext_0->volume_0).sample((kernelContext_0->volumeSampler_0), (uvw_0), level((0.0)))).x;
+}
+
+
+#line 65
+float sample_vol_1(float3 uvw_1, KernelContext_0 thread* kernelContext_1)
+{
+
+    return ((kernelContext_1->volume_0).sample((kernelContext_1->volumeSampler_0), (uvw_1), level((0.0)))).x;
+}
+
+float window_map_0(float v_0, float wmin_0, float wmax_0, float gamma_0)
+{
+
+    return pow(saturate((v_0 - wmin_0) / max(wmax_0 - wmin_0, 9.99999997475242708e-07)), 1.0 / max(gamma_0, 0.00009999999747379));
+}
+
+
+float3 apply_ramp_0(float t_0, uint mode_0)
+{
+    if(mode_0 == 1U)
+    {
+
+#line 80
+        float3 _S1 = float3(saturate(t_0)) ;
+
+#line 87
+        return saturate(float3(0.2669999897480011, 0.00499999988824129, 0.32899999618530273) + _S1 * (float3(0.15000000596046448, 1.38999998569488525, 0.80000001192092896) + _S1 * (float3(2.40000009536743164, -0.69999998807907104, -2.20000004768371582) + _S1 * float3(-1.89999997615814209, 0.44999998807907104, 1.5))));
+    }
+    return float3(t_0, t_0, t_0);
+}
+
+
+float3 gradient_0(float3 uvw_2, float3 inv_dims_0, KernelContext_0 thread* kernelContext_2)
+{
+    float3 _S2 = float3(inv_dims_0.x, 0.0, 0.0);
+
+#line 95
+    float _S3 = sample_vol_1(uvw_2 + _S2, kernelContext_2);
+
+#line 95
+    float _S4 = sample_vol_1(uvw_2 - _S2, kernelContext_2);
+
+#line 95
+    float gx_0 = _S3 - _S4;
+    float3 _S5 = float3(0.0, inv_dims_0.y, 0.0);
+
+#line 96
+    float _S6 = sample_vol_1(uvw_2 + _S5, kernelContext_2);
+
+#line 96
+    float _S7 = sample_vol_1(uvw_2 - _S5, kernelContext_2);
+
+#line 96
+    float gy_0 = _S6 - _S7;
+    float3 _S8 = float3(0.0, 0.0, inv_dims_0.z);
+
+#line 97
+    float _S9 = sample_vol_1(uvw_2 + _S8, kernelContext_2);
+
+#line 97
+    float _S10 = sample_vol_1(uvw_2 - _S8, kernelContext_2);
+    return float3(gx_0, gy_0, _S9 - _S10);
+}
+
+
+#line 98
+struct pixelOutput_0
+{
+    float4 output_0 [[color(0)]];
+};
+
+
+#line 98
+struct pixelInput_0
+{
+    float4 col_0 [[user(COLOR)]];
+    float2 uv_0 [[user(TEXCOORD)]];
+};
+
+
+#line 101
+[[fragment]] pixelOutput_0 main_ps(pixelInput_0 _S11 [[stage_in]], float4 pos_0 [[position]], SLANG_ParameterGroup_VolumeViewerParams_0 constant* VolumeViewerParams_1 [[buffer(1)]], texture3d<float, access::sample> volume_1 [[texture(1)]], sampler volumeSampler_1 [[sampler(1)]])
+{
+
+#line 101
+    KernelContext_0 kernelContext_3;
+
+#line 101
+    (&kernelContext_3)->VolumeViewerParams_0 = VolumeViewerParams_1;
+
+#line 101
+    (&kernelContext_3)->volume_0 = volume_1;
+
+#line 101
+    (&kernelContext_3)->volumeSampler_0 = volumeSampler_1;
+
+
+    thread float2 ndc_0 = _S11.uv_0 * float2(2.0)  - float2(1.0) ;
+    ndc_0.x = ndc_0.x * (&kernelContext_3)->VolumeViewerParams_0->camRight_0.w;
+
+
+
+    ndc_0.y = - ndc_0.y;
+
+    float3 ro_1 = (&kernelContext_3)->VolumeViewerParams_0->camPos_0.xyz;
+
+#line 111
+    float3 _S12 = float3((&kernelContext_3)->VolumeViewerParams_0->camUp_0.w) ;
+    float3 rd_1 = normalize((&kernelContext_3)->VolumeViewerParams_0->camForward_0.xyz + (&kernelContext_3)->VolumeViewerParams_0->camRight_0.xyz * float3(ndc_0.x)  * _S12 + (&kernelContext_3)->VolumeViewerParams_0->camUp_0.xyz * float3(ndc_0.y)  * _S12);
+
+
+
+    float3 _S13 = float3(0.0, 0.0, 0.0);
+
+#line 116
+    float3 _S14 = float3(1.0, 1.0, 1.0);
+
+#line 116
+    float2 t_1 = ray_box_0(ro_1, rd_1, _S13, _S14);
+    float _S15 = t_1.x;
+
+#line 117
+    float _S16 = t_1.y;
+
+#line 117
+    bool hit_0;
+
+#line 117
+    if(_S15 > _S16)
+    {
+
+#line 117
+        hit_0 = true;
+
+#line 117
+    }
+    else
+    {
+
+#line 117
+        hit_0 = _S16 < 0.0;
+
+#line 117
+    }
+
+#line 117
+    if(hit_0)
+    {
+
+#line 117
+        pixelOutput_0 _S17 = { (&kernelContext_3)->VolumeViewerParams_0->bgColor_0 * _S11.col_0 };
+        return _S17;
+    }
+    float ts_0 = max(_S15, 0.0);
+
+    float step_0 = max((&kernelContext_3)->VolumeViewerParams_0->camPos_0.w, 0.00009999999747379);
+
+    uint _S18 = min(max((&kernelContext_3)->VolumeViewerParams_0->modePack_0.z, 1U), uint((_S16 - ts_0) / step_0 + 1.0));
+
+    uint mode_1 = (&kernelContext_3)->VolumeViewerParams_0->modePack_0.x;
+    uint ramp_0 = (&kernelContext_3)->VolumeViewerParams_0->modePack_0.y;
+    float wmin_1 = (&kernelContext_3)->VolumeViewerParams_0->winPack_0.x;
+    float wmax_1 = (&kernelContext_3)->VolumeViewerParams_0->winPack_0.y;
+    float gamma_1 = (&kernelContext_3)->VolumeViewerParams_0->winPack_0.z;
+    float _S19 = (&kernelContext_3)->VolumeViewerParams_0->winPack_0.w;
+    float3 inv_dims_1 = float3(1.0)  / max((&kernelContext_3)->VolumeViewerParams_0->volDims_0.xyz, _S14);
+
+    float3 _S20 = (&kernelContext_3)->VolumeViewerParams_0->bgColor_0.xyz;
+
+#line 134
+    uint i_0;
+
+#line 134
+    float m_0;
+
+#line 134
+    float final_a_0;
+
+#line 134
+    float3 final_rgb_0;
+
+
+    if(mode_1 == 1U)
+    {
+
+#line 137
+        m_0 = 0.0;
+
+#line 137
+        i_0 = 0U;
+
+
+        for(;;)
+        {
+
+#line 140
+            if(i_0 < _S18)
+            {
+            }
+            else
+            {
+
+#line 140
+                break;
+            }
+
+#line 140
+            float _S21 = sample_vol_0(ro_1 + rd_1 * float3((ts_0 + float(i_0) * step_0)) , &kernelContext_3);
+
+
+
+            float _S22 = max(m_0, _S21);
+
+#line 140
+            uint i_1 = i_0 + 1U;
+
+#line 140
+            m_0 = _S22;
+
+#line 140
+            i_0 = i_1;
+
+#line 140
+        }
+
+#line 140
+        final_rgb_0 = apply_ramp_0(window_map_0(m_0, wmin_1, wmax_1, gamma_1), ramp_0);
+
+#line 140
+        final_a_0 = 1.0;
+
+#line 137
+    }
+    else
+    {
+
+#line 137
+        float3 hit_uvw_0;
+
+#line 150
+        if(mode_1 == 2U)
+        {
+
+#line 150
+            float _S23 = sample_vol_0(ro_1 + rd_1 * float3(ts_0) , &kernelContext_3);
+
+#line 150
+            m_0 = _S23;
+
+#line 150
+            i_0 = 1U;
+
+#line 155
+            for(;;)
+            {
+
+#line 155
+                if(i_0 < _S18)
+                {
+                }
+                else
+                {
+
+#line 155
+                    hit_0 = false;
+
+#line 155
+                    hit_uvw_0 = _S13;
+
+#line 155
+                    break;
+                }
+                float s_0 = ts_0 + float(i_0) * step_0;
+
+#line 157
+                float _S24 = sample_vol_0(ro_1 + rd_1 * float3(s_0) , &kernelContext_3);
+
+
+                if(((m_0 - _S19) * (_S24 - _S19)) < 0.0)
+                {
+
+                    float3 _S25 = ro_1 + rd_1 * float3((s_0 - step_0 + (_S19 - m_0) / max(_S24 - m_0, 9.99999997475242708e-07) * step_0)) ;
+
+#line 163
+                    hit_0 = true;
+
+#line 163
+                    hit_uvw_0 = _S25;
+
+                    break;
+                }
+
+#line 155
+                uint i_2 = i_0 + 1U;
+
+#line 155
+                m_0 = _S24;
+
+#line 155
+                i_0 = i_2;
+
+#line 155
+            }
+
+#line 169
+            if(hit_0)
+            {
+
+#line 169
+                float3 _S26 = gradient_0(hit_uvw_0, inv_dims_1, &kernelContext_3);
+
+
+                float gl_0 = length(_S26);
+                if(gl_0 > 9.99999997475242708e-07)
+                {
+
+#line 173
+                    final_rgb_0 = _S26 / float3(gl_0) ;
+
+#line 173
+                }
+                else
+                {
+
+#line 173
+                    final_rgb_0 = float3(0.0, 1.0, 0.0);
+
+#line 173
+                }
+
+                if((dot(final_rgb_0, rd_1)) > 0.0)
+                {
+
+#line 175
+                    final_rgb_0 = - final_rgb_0;
+
+#line 175
+                }
+                float diff_0 = max(dot(final_rgb_0, normalize(float3(0.40000000596046448, 0.69999998807907104, 0.5))), 0.0);
+
+#line 176
+                float _S27 = sample_vol_0(hit_uvw_0, &kernelContext_3);
+
+#line 176
+                final_rgb_0 = apply_ramp_0(window_map_0(_S27, wmin_1, wmax_1, gamma_1), ramp_0) * float3((0.20000000298023224 + 0.80000001192092896 * diff_0)) ;
+
+#line 176
+                final_a_0 = 1.0;
+
+#line 169
+            }
+            else
+            {
+
+#line 169
+                final_rgb_0 = _S20;
+
+#line 169
+                final_a_0 = 0.0;
+
+#line 169
+            }
+
+#line 150
+        }
+        else
+        {
+
+#line 150
+            i_0 = 0U;
+
+#line 150
+            m_0 = 0.0;
+
+#line 150
+            hit_uvw_0 = _S13;
+
+#line 186
+            for(;;)
+            {
+
+#line 186
+                if(i_0 < _S18)
+                {
+                }
+                else
+                {
+
+#line 186
+                    break;
+                }
+
+#line 186
+                float _S28 = sample_vol_0(ro_1 + rd_1 * float3((ts_0 + float(i_0) * step_0)) , &kernelContext_3);
+
+
+
+                float t01_0 = window_map_0(_S28, wmin_1, wmax_1, gamma_1);
+
+
+                float a_0 = saturate(t01_0 * step_0 * 4.0);
+                float _S29 = 1.0 - m_0;
+
+#line 194
+                float3 acc_rgb_0 = hit_uvw_0 + float3(_S29)  * apply_ramp_0(t01_0, ramp_0) * float3(a_0) ;
+                float acc_a_0 = m_0 + _S29 * a_0;
+                if(acc_a_0 > 0.99000000953674316)
+                {
+
+#line 196
+                    hit_uvw_0 = acc_rgb_0;
+
+#line 196
+                    m_0 = acc_a_0;
+
+#line 196
+                    break;
+                }
+
+#line 186
+                i_0 = i_0 + 1U;
+
+#line 186
+                m_0 = acc_a_0;
+
+#line 186
+                hit_uvw_0 = acc_rgb_0;
+
+#line 186
+            }
+
+#line 186
+            final_rgb_0 = hit_uvw_0 + (&kernelContext_3)->VolumeViewerParams_0->bgColor_0.xyz * float3((1.0 - m_0)) ;
+
+#line 186
+            final_a_0 = 1.0;
+
+#line 150
+        }
+
+#line 137
+    }
+
+#line 137
+    pixelOutput_0 _S30 = { float4(final_rgb_0, final_a_0) * _S11.col_0 };
+
+#line 202
+    return _S30;
+}
+

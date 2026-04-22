@@ -8,7 +8,7 @@ DearWidgets is an ImGui extension library providing GPU-accelerated widgets, col
 
 | Goal | Start here |
 |---|---|
-| Use the library for the first time | [context.md](api/context.md) — init, feature flags |
+| Use the library for the first time | [context.md](api/context.md) -- init, feature flags |
 | Understand which features need a custom shader backend | [compatibility.md](compatibility.md) |
 | Browse all widgets | [widgets.md](api/widgets.md) |
 | Draw shapes, gradients, markers | [drawlist.md](api/drawlist.md) |
@@ -36,14 +36,14 @@ Function-level reference grouped by category.
 
 ## Concepts (`./concepts/`)
 
-Architecture and design documents — useful when the API reference alone does not explain why something works the way it does.
+Architecture and design documents -- useful when the API reference alone does not explain why something works the way it does.
 
 | Document | Contents |
 |---|---|
-| [slug.md](concepts/slug.md) | Slug GPU font rendering — architecture, glyph cache, color fonts, limitations |
+| [slug.md](concepts/slug.md) | Slug GPU font rendering -- architecture, glyph cache, color fonts, limitations |
 | [latex.md](concepts/latex.md) | LaTeX box model, pipeline, math font, supported commands |
 | [color-spaces.md](concepts/color-spaces.md) | Color spaces used throughout the library |
-| [shaders.md](concepts/shaders.md) | Slang shader cross-compilation — HLSL authoring, slangc usage, output layout |
+| [shaders.md](concepts/shaders.md) | Slang shader cross-compilation -- HLSL authoring, slangc usage, output layout |
 
 ---
 
@@ -55,4 +55,4 @@ Task-oriented references that cut across multiple API areas.
 |---|---|
 | [compatibility.md](compatibility.md) | Per-feature table: ImGui only / ImPlatform / custom shader requirement |
 | [interactions.md](interactions.md) | Widget keyboard/mouse interaction reference |
-| [modals.md](modals.md) | Expand-to-window pattern — architecture and per-widget layout |
+| [modals.md](modals.md) | Expand-to-window pattern -- architecture and per-widget layout |

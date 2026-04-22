@@ -2,7 +2,7 @@
 
 ## What is Slug?
 
-Slug is an algorithm (originally by Eric Lengyel, Terathon Software) for rendering TrueType/OpenType glyphs directly on the GPU from their Bézier outline data. Unlike bitmap atlases or signed distance fields, Slug evaluates the exact coverage of each glyph curve per-pixel in the fragment shader.
+Slug is an algorithm (originally by Eric Lengyel, Terathon Software) for rendering TrueType/OpenType glyphs directly on the GPU from their Bezier outline data. Unlike bitmap atlases or signed distance fields, Slug evaluates the exact coverage of each glyph curve per-pixel in the fragment shader.
 
 DearWidgets implements its own Slug-inspired renderer integrated with the ImGui/ImPlatform pipeline.
 
@@ -33,7 +33,7 @@ Each ImFont gets a `SlugGlyphData` entry in the per-context `ImWidgetsSlugState`
 3. Per-band coverage tables (`xcov`, `ycov`) are precomputed and uploaded as a small per-glyph float buffer.
 4. A draw call is recorded as an `ImDrawCmd` with the Slug shader.
 
-Subsequent frames reuse the cached band data — no atlas needed.
+Subsequent frames reuse the cached band data -- no atlas needed.
 
 ### Shader Pipeline
 
@@ -72,7 +72,7 @@ ImVec2 sz = ImWidgets::CalcTextSize(nullptr, 0, "Hello, Slug!");
 
 ## Color Fonts
 
-Slug renders COLR v0 (simple color layers) and COLR v1 (gradients) using separate draw calls per layer, each with its own shader variant. No additional setup is needed — fonts with COLR tables are detected automatically.
+Slug renders COLR v0 (simple color layers) and COLR v1 (gradients) using separate draw calls per layer, each with its own shader variant. No additional setup is needed -- fonts with COLR tables are detected automatically.
 
 ---
 

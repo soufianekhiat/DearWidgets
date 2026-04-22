@@ -65,7 +65,7 @@ struct ImVectorDrawingData
 {
 	ImVector<ImVectorDrawingPath> Paths;
 	ImVec2 PanOffset;   // world offset of view origin (screen-space pixels)
-	float  Zoom;        // world → screen multiplier
+	float  Zoom;        // world -> screen multiplier
 	int    SelectedPath;
 	int    SelectedNode;
 	int    SelectedHandle;       // 0 = anchor, 1 = in, 2 = out

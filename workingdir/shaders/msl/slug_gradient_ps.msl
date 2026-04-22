@@ -554,10 +554,31 @@ struct pixelInput_0
 #line 422
     float _S54 = SlugRender_0(_S53.texcoord_0, _S53.banding_1, _S53.glyph_0, &kernelContext_3);
 
-#line 431
-    float4 gradColor_0 = mix(_S53.gradColor0_0, _S53.gradColor1_0, float4(saturate(dot(_S53.texcoord_0, _S53.gradParams_0.xy) * _S53.gradParams_0.z + _S53.gradParams_0.w)) );
+#line 422
+    float t_0;
 
-#line 431
+#line 441
+    if(((_S53.glyph_0.w) & int(256)) != int(0))
+    {
+
+#line 441
+        t_0 = length(_S53.texcoord_0 - _S53.gradParams_0.xy) * _S53.gradParams_0.z + _S53.gradParams_0.w;
+
+#line 441
+    }
+    else
+    {
+
+#line 441
+        t_0 = dot(_S53.texcoord_0, _S53.gradParams_0.xy) * _S53.gradParams_0.z + _S53.gradParams_0.w;
+
+#line 441
+    }
+
+#line 451
+    float4 gradColor_0 = mix(_S53.gradColor0_0, _S53.gradColor1_0, float4(saturate(t_0)) );
+
+#line 451
     pixelOutput_0 _S55 = { float4(gradColor_0.xyz, gradColor_0.w * _S54) };
     return _S55;
 }

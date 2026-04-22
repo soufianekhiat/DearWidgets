@@ -25,7 +25,7 @@ All expanded windows follow a consistent layout:
 
 ### Right panel convention
 
-All labels and controls are stacked vertically — label on top, full-width control below:
+All labels and controls are stacked vertically -- label on top, full-width control below:
 
 ```cpp
 ImGui::TextUnformatted( "Position" );
@@ -52,11 +52,11 @@ ImGui::DragFloat( "##pos", &value, 0.001f, 0.0f, 1.0f, "%.3f" );
 
 ### Infrastructure (in `dear_widgets.cpp`)
 
-- `s_InsideExpandedWidget` — static bool flag preventing recursive expand buttons
-- `WidgetExpandButton(widget_id, bb)` — draws the expand icon at the top-right of `bb`, returns `bool*` to the open state (stored in `window->StateStorage`), returns `NULL` when inside an expanded window
-- `IsMouseOverExpandButton(widget_id, bb)` — hit-test helper to suppress widget interaction when mouse is over the button
-- `BeginExpandedWindow(label, widget_id, pOpen, defaultSize)` — opens a resizable `ImGui::Begin` window with a stable ID (`###ExpandWdg_XXXXXXXX`), sets `s_InsideExpandedWidget = true`
-- `EndExpandedWindow()` — calls `ImGui::End()`, resets `s_InsideExpandedWidget = false`
+- `s_InsideExpandedWidget` -- static bool flag preventing recursive expand buttons
+- `WidgetExpandButton(widget_id, bb)` -- draws the expand icon at the top-right of `bb`, returns `bool*` to the open state (stored in `window->StateStorage`), returns `NULL` when inside an expanded window
+- `IsMouseOverExpandButton(widget_id, bb)` -- hit-test helper to suppress widget interaction when mouse is over the button
+- `BeginExpandedWindow(label, widget_id, pOpen, defaultSize)` -- opens a resizable `ImGui::Begin` window with a stable ID (`###ExpandWdg_XXXXXXXX`), sets `s_InsideExpandedWidget = true`
+- `EndExpandedWindow()` -- calls `ImGui::End()`, resets `s_InsideExpandedWidget = false`
 
 ### Per-widget pattern
 
