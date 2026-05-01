@@ -40,6 +40,7 @@ ImGui::DragFloat( "##pos", &value, 0.001f, 0.0f, 1.0f, "%.3f" );
 | GradientEditor | Stops (count), Interpolation (Combo), Selected: Position (DragFloat), Color (ColorEdit4) |
 | CurveEditor | Keys (count), Range X/Y, Selected: X/Y (DragFloat), Segment (Combo) |
 | ColorWheel | Mode, R/G/B/A (DragFloat, editable), HDR max, color preview swatch |
+| HDRWheel ^A | Y Value (DragFloat), Right Arc (DragFloat, when `rightValue != NULL`), Left Arc (DragFloat, when `leftValue != NULL`), R/G/B (DragFloat) |
 | ColorWarper | Mode, Space, Third Axis, Selected point: Offset X/Y (DragFloat), Pinned |
 | ColorCurve | Mode, Keys (count), Selected: Position/Value (DragFloat) |
 | ParadeScope | Overlay (Checkbox), Scale (Combo) |
@@ -47,6 +48,8 @@ ImGui::DragFloat( "##pos", &value, 0.001f, 0.0f, 1.0f, "%.3f" );
 | Histogram | Layout (Combo), X Scale (Combo), Y Scale (Combo) |
 | CIEChromaticity | Gamut (Combo), Background (Checkbox), Signal Color (Combo) |
 | ToneCurve | Mode, Channel (name + index), Keys (count), Selected: Input/Output (DragFloat) |
+
+**^A `HDRWheel`** -- replaces the former separate `PrimariesWheel`. When called with `rightValue = leftValue = NULL`, the widget renders without arc sliders (tighter footprint matching the old PrimariesWheel layout) and the right panel hides the corresponding arc DragFloats. With one or both arc pointers non-null, the matching DragFloat appears.
 
 ## Architecture
 

@@ -31,7 +31,7 @@ Features fall into three tiers based on what they actually call at runtime:
 | **HueSelector** | `HueSelector` | Y | | |
 | **GradientEditor** | `GradientEditor`, `GradientSample`, `DrawGradientBar` | Y | | |
 | **CurveEditor** | `CurveEditor`, `CurveEditorSample`, `CurveEditorEvalEasing` | Y | | |
-| **ColorWheel** | `ColorWheel`, `PrimariesWheel`, `HDRWheel` | Y | | |
+| **ColorWheel** | `ColorWheel`, `HDRWheel` ^4 | Y | | |
 | **ColorPicker** | `ColorPicker`, `ColorPickerSRGB/HSV/OkLab/OkLCH/CIELab/XYZ` | Y | | |
 | **ColorWarper** | `ColorWarper` | Y | | |
 | **ColorCurve** | `ColorCurve`, `ColorCurveSample` | Y | | |
@@ -60,6 +60,7 @@ Features fall into three tiers based on what they actually call at runtime:
 | **Draw cursors** | `DrawTriangleCursor`, `DrawSignetCursor` | Y | | |
 | **Checkerboard** | `DrawCheckerboard` | Y | | |
 | **Spline gradient strokes** | `DrawSplineGradient`, `DrawSplineGradientCut` | Y | | |
+| **Thick lines / curves** ^5 | `DrawThickLine`, `GetThickLineModeName`, `DrawStrokedPolyline`, `DrawStrokedBezierPath`, `DrawStrokedDashedPolyline`, `DrawStrokedDashedBezierPath`, `DrawStrokedCubicBezier` | Y | | |
 | **Dashed polylines (CPU)** | `DrawDashedPolylineAA` with `SetDashedLinesUseGPU(false)` | Y | | |
 | **Color conversions** | `ColorConvert*`, `ImColorBlend*`, `KelvinTemperatureTosRGBColors` | Y | | |
 | **Window background** | `SetCurrentWindowBackgroundImage` | Y | | |
@@ -81,6 +82,53 @@ Features fall into three tiers based on what they actually call at runtime:
 **^2 `CreateContext`** -- always calls `ImPlatform_CreateTexture` for the internal black/white system textures even when no shader feature is enabled. Destroying those textures on `DestroyContext` calls `ImPlatform_DestroyTexture`.
 
 **^3 `ImageViewer`** -- pan/zoom display is pure ImGui (forwards a user-provided `ImTextureID`). The pixel-inspector loupe (right-click) reads `ImImageViewerState::PixelFormat` which is an `ImPlatform_PixelFormat` type; setting `state.Pixels = nullptr` disables the inspector and removes any runtime ImPlatform dependency.
+
+**^4 `HDRWheel`** -- unified ColorWheel + gradient indicator ring + optional right/left arc sliders. Pass `rightValue = leftValue = NULL` (the default) to get the layout previously exposed as `PrimariesWheel` (no arcs, tighter footprint); pass non-null to get the arc-slider HDR layout. The standalone `PrimariesWheel` symbol has been removed.
+
+### ^5 `DrawThickLine` — runtime fallback details
+
+`DrawThickLine(ImDrawList*, ImVec2 const* points, int count, ImWidgetsThickLineDesc const&)` is a single dispatcher behind which sit five distinct line-rendering techniques. **The dispatcher itself is callable from an ImGui-only build**: every mode either uses ImGui-native primitives directly, links against unconditionally-compiled CPU code in `dear_widgets_stroke.cpp`, or — in the case of the GPU-accelerated AA mode — has an explicit runtime fallback that swaps the implementation to ImGui-native primitives without changing the caller-visible enum value or behavior.
+
+#### Per-mode tier and runtime path
+
+| `ImWidgetsThickLineMode` | Technique | Backend used | Tier when shader on | Tier when shader off |
+|---|---|---|---|---|
+| `AddPolyline` | ImGui's `ImDrawList::AddPolyline` | ImGui only | ImGui only | ImGui only |
+| `PolylineAA` | Rougier 2013 SDF polyline, GPU fast path with CPU fringe fallback inside `DrawPolylineAA` / `DrawDashedPolylineAA` | ImPlatform + Shader (GPU) **or** silently degraded to `AddPolyline` (+ software dash) when the function isn't compiled in | ImPlatform + Shader | ImGui only ^5a |
+| `StrokedPolyline` | Linebender Euler-spiral offset curves on the raw polyline (`DrawStrokedPolyline` / `DrawStrokedDashedPolyline`) | Pure CPU; not gated by `IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER` | ImGui only | ImGui only |
+| `StrokedBezierPath` | Same Euler-spiral renderer applied to a cubic Bezier path obtained by Catmull-Rom -> cubic conversion (`CatmullRomToCubicBezierPath`) of the input polyline (`DrawStrokedBezierPath` / `DrawStrokedDashedBezierPath`) | Pure CPU | ImGui only | ImGui only |
+| `ImGuiBezier` | Same Catmull-Rom -> cubic conversion; each cubic emitted via `ImDrawList::AddBezierCubic` (ImGui's own adaptive tessellation) | ImGui only | ImGui only | ImGui only |
+
+The "ImGui only" tier in the main feature row above is therefore not a compile-time downgrade — it is the **caller-visible** tier. The dispatcher is portable; the *quality* of `PolylineAA` rendering is what changes between shader-enabled and shader-less builds.
+
+**^5a `PolylineAA` runtime fallback** -- when `IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER` is not defined, `DrawPolylineAA` / `DrawDashedPolylineAA` are not linked. The dispatcher detects this at compile time and routes solid `PolylineAA` calls to `ImDrawList::AddPolyline`, and dashed `PolylineAA` calls to a software dash splitter (`DW_SoftwareDashedPolyline` in `dear_widgets.cpp`). The caller's `ImWidgetsThickLineMode_PolylineAA` enum value, descriptor fields, and saved-style files are all preserved — only the on-screen pixels differ. This is invisible to users of the four curve widgets that consume the mode through style.
+
+#### Dashed handling
+
+`ImWidgetsThickLineDesc::dashed` is orthogonal to the mode. It is honored by all modes that have a dashed primitive available, with a software splitter used wherever a native one isn't:
+
+- `AddPolyline` and `ImGuiBezier` -> always software dash via `DW_SoftwareDashedPolyline` (the latter tessellates the cubic path to a polyline first).
+- `PolylineAA` -> `DrawDashedPolylineAA` with shader; software dash without.
+- `StrokedPolyline` / `StrokedBezierPath` -> their `DrawStrokedDashed*` siblings; no fallback needed (CPU).
+
+The software dasher places dash N at arc-length `[N*period + offset, +dash_len]` rather than toggling state along the path, so **negative `gap_len` is supported** — it makes successive dashes overlap (period < dash_len), matching `DrawDashedPolylineAA`'s pattern semantics. Only `gap_len <= -dash_len` (period <= 0) is rejected and rendered solid, since infinite overlap would otherwise apply.
+
+#### Style integration
+
+The four curve-rendering widgets carry a `*_LineMode` (`int`) and `*_LineDashed` (`bool`) field in `ImWidgetsStyle` and route their curve emission through `DrawThickLine`:
+
+| Widget | Style fields | Internal sample source |
+|---|---|---|
+| `DrawChromaticityLines{,HDR}` | `ChromaticityLine_Mode`, `ChromaticityLine_Dashed`, `ChromaticityLine_Thickness` | Caller-supplied colors -> chromaticity (x,y) |
+| `CurveEditor` | `CurveEditor_LineMode`, `CurveEditor_LineDashed`, `CurveEditor_LineThickness` | One polyline accumulating Step / Linear / Bezier segments (sampled at 64 per smooth segment) |
+| `ColorCurve` | `ColorCurve_LineMode`, `ColorCurve_LineDashed`, `ColorCurve_LineThickness` | `ColorCurveSample` over `max(64, w/2)` samples |
+| `ToneCurve` | `ToneCurve_LineMode`, `ToneCurve_LineDashed`, `ToneCurve_LineThickness` | `ToneCurveSample` per channel |
+
+Style fields persist via `dw_style.ini` through the `DW_SI` / `DW_LI` (int) and `DW_SB` / `DW_LB` (bool) save/load macros. A style file written by a shader-enabled build remains valid in a shader-less build: `PolylineAA` simply renders via the runtime fallback there.
+
+#### Where to see it interactively
+
+The Demo's `Draw -> Thick Line` tree node (in `src/demo/demo.cpp`) exposes every descriptor field — mode combo, dashed checkbox, color, thickness, cap/join, miter limit, dash length / gap length / dash offset (gap slider includes negative range), tolerance — together with a curve-shape selector (Sinusoid / Lissajous / Spiral / Polyline kink) and a sample-count slider so each mode can be visually compared against the same input.
 
 ---
 

@@ -1,4 +1,4 @@
-#include <dear_widgets.h>
+﻿#include <dear_widgets.h>
 #include "dear_widgets_internal.h"
 #include <stdint.h>
 
@@ -5065,6 +5065,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			pDrawList->AddPolyline( &chromLine[ 0 ], chromeLineSamplesCount, borderColor, ImDrawFlags_Closed, borderThickness );
 		}
 
+		ImWidgetsStyle const& dwPlotStyle = GetStyle();
 		if ( showColorSpaceTriangle )
 		{
 			ImVec2 sRGBLines[] = { primR, primG, primB };
@@ -5075,7 +5076,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				vCur.x = curPos.x + ImRescale( vCur.x, minX, maxX, 0.0f, size.x );
 				vCur.y = curPos.y + ImRescale( vCur.y, minY, maxY, size.y, 0.0f );
 			}
-			pDrawList->AddPolyline( &sRGBLines[ 0 ], 3, IM_COL32( 255, 255, 255, 255 ), true, 5.0f );
+			pDrawList->AddPolyline( &sRGBLines[ 0 ], 3,
+				ImGui::GetColorU32( dwPlotStyle.Colors[ StyleColor_ChromaticityPlot_Triangle ] ),
+				true, LpToPx( dwPlotStyle.ChromaticityPlot_TriangleThickness ) );
 		}
 
 		if ( showWhitePoint )
@@ -5083,7 +5086,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImVec2 vWhitePoint = whitePoint;
 			vWhitePoint.x = curPos.x + ImRescale( vWhitePoint.x, minX, maxX, 0.0f, size.x );
 			vWhitePoint.y = curPos.y + ImRescale( vWhitePoint.y, minY, maxY, size.y, 0.0f );
-			pDrawList->AddCircleFilled( vWhitePoint, GetStyle().WhitePoint_Radius, IM_COL32( 0, 0, 0, 255 ), 4 );
+			pDrawList->AddCircleFilled( vWhitePoint, LpToPx( dwPlotStyle.WhitePoint_Radius ),
+				ImGui::GetColorU32( dwPlotStyle.Colors[ StyleColor_ChromaticityPlot_WhitePoint ] ), 16 );
 		}
 
 		if ( borderColor || showColorSpaceTriangle || showWhitePoint )
@@ -5215,7 +5219,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			colorStride );
 	}
 
-#pragma optimize( "", off )
 	void	DrawChromaticityLinesGeneric( ImDrawList* pDrawList,
 										  ImVec2 curPos,
 										  ImVec2 size,
@@ -5251,7 +5254,17 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			current += colorStride;
 		}
 
-		pDrawList->AddPolyline( &lines[ 0 ], color_count, plotColor, flags, thickness );
+		// Route through the unified DrawThickLine dispatcher. Mode + dashed come from the
+		// active ImWidgetsStyle; thickness/color come from the call's existing args so this
+		// call site stays backwards-compatible.
+		ImWidgetsStyle const& cls = GetStyle();
+		ImWidgetsThickLineDesc desc;
+		desc.color     = plotColor;
+		desc.thickness = thickness;
+		desc.mode      = (ImWidgetsThickLineMode)cls.ChromaticityLine_Mode;
+		desc.dashed    = cls.ChromaticityLine_Dashed;
+		IM_UNUSED(flags); // path is not closed for chromaticity locus
+		DrawThickLine( pDrawList, &lines[ 0 ], color_count, desc );
 		pDrawList->PopClipRect();
 	}
 
@@ -6137,7 +6150,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		//ImRect display_rect = bb;
 		display_rect.ClipWith( window->ClipRect );
 		ImWidgetsStyle& dwStyle = GetStyle();
-		const float thickness = dwStyle.NavCursor_Thickness;
+		const float thickness = LpToPx( dwStyle.NavCursor_Thickness );
 		if ( flags & ImGuiNavRenderCursorFlags_Compact )
 		{
 			func( window->DrawList, ImGui::GetColorU32( ImGuiCol_NavCursor ), thickness, data );
@@ -6145,7 +6158,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 		else
 		{
-			const float distance = dwStyle.NavCursor_Distance + thickness * 0.5f;
+			const float distance = LpToPx( dwStyle.NavCursor_Distance ) + thickness * 0.5f;
 			display_rect.Expand( ImVec2( distance, distance ) );
 			bool fully_visible = window->ClipRect.Contains( display_rect );
 			if ( !fully_visible )
@@ -6953,8 +6966,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float xCenter = curPos.x + center * w;
 		if ( width == 0.0f )
 		{
-			// TODO: add style for thickness or color
-			window->DrawList->AddLine( ImVec2( xCenter, curPos.y ), ImVec2( xCenter, curPos.y + hueHeight ), IM_COL32( 0, 0, 0, 255 ), dwstyle.HueSelector_Thickness_ZeroWidth );
+			window->DrawList->AddLine( ImVec2( xCenter, curPos.y ), ImVec2( xCenter, curPos.y + hueHeight ),
+				ImGui::GetColorU32( dwstyle.Colors[ StyleColor_HueSelector_ZeroWidthLine ] ),
+				LpToPx( dwstyle.HueSelector_Thickness_ZeroWidth ) );
 		}
 		else
 		{
@@ -6966,7 +6980,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// Render grab
 		float pos = ImLerp( cursor_bb.Min.x, cursor_bb.Max.x, *hueCenter );
-		DrawTriangleCursorFilled( window->DrawList, ImVec2( pos, cursor_bb.Min.y ), 0.0f, cursorSize, IM_COL32( 255, 255, 255, 255 ) );
+		DrawTriangleCursorFilled( window->DrawList, ImVec2( pos, cursor_bb.Min.y ), 0.0f, cursorSize,
+			ImGui::GetColorU32( dwstyle.Colors[ StyleColor_HueSelector_Cursor ] ) );
 
 		return value_changed;
 	}
@@ -7021,9 +7036,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImWidgetsStyle& dwStyle = GetStyle();
 		const ImGuiID id = window->GetID( label );
 
+		if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+		if ( size.y > 0.0f ) size.y = LpToPx( size.y );
+
 		float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
-		float trackH = dwStyle.SliderSpline_TrackThickness;
-		float grabR = dwStyle.SliderSpline_GrabRadius;
+		float trackH = LpToPx( dwStyle.SliderSpline_TrackThickness );
+		float grabR  = LpToPx( dwStyle.SliderSpline_GrabRadius );
 		float h = ( size.y > 0.0f ) ? size.y : ImMax( trackH, grabR * 2.0f + 2.0f );
 
 		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
@@ -7118,7 +7136,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		bool isActive = ( g.ActiveId == id );
 		ImU32 grabCol = ImGui::GetColorU32( dwStyle.Colors[ isActive ? StyleColor_SliderSpline_GrabActive : StyleColor_SliderSpline_Grab ] );
 		window->DrawList->AddCircleFilled( ImVec2( grabCx, grabCy ), grabR, grabCol );
-		window->DrawList->AddCircle( ImVec2( grabCx, grabCy ), grabR, IM_COL32( 0, 0, 0, 200 ), 0, 1.5f );
+		window->DrawList->AddCircle( ImVec2( grabCx, grabCy ), grabR, IM_COL32( 0, 0, 0, 200 ), 0, LpToPx( 1.5f ) );
 		(void)grab_bb; // still used by SliderBehavior for interaction; we just don't render from it.
 
 		return value_changed;
@@ -7197,7 +7215,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImWidgetsStyle& dwStyle = GetStyle();
 		const ImGuiID id = window->GetID( label );
 
-		float grabR = dwStyle.SliderRing_GrabRadius;
+		float grabR = LpToPx( dwStyle.SliderRing_GrabRadius );
 		float innerR = ImMax( 0.0f, outerRadius - thickness );
 		float pad = grabR + 1.0f;
 
@@ -7334,7 +7352,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		bool isActive = ( g.ActiveId == id );
 		ImU32 grabCol = ImGui::GetColorU32( dwStyle.Colors[ isActive ? StyleColor_SliderRing_GrabActive : StyleColor_SliderRing_Grab ] );
 		dl->AddCircleFilled( grabPos, grabR, grabCol );
-		dl->AddCircle( grabPos, grabR, IM_COL32( 0, 0, 0, 200 ), 0, 1.5f );
+		dl->AddCircle( grabPos, grabR, IM_COL32( 0, 0, 0, 200 ), 0, LpToPx( 1.5f ) );
 
 		// Label
 		if ( label_size.x > 0.0f )
@@ -7404,9 +7422,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImWidgetsStyle& dwStyle = GetStyle();
 		const ImGuiID id = window->GetID( label );
 
+		if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+		if ( size.y > 0.0f ) size.y = LpToPx( size.y );
+
 		float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
-		float trackH = dwStyle.SliderSpline_TrackThickness;
-		float grabR = dwStyle.SliderSpline_GrabRadius;
+		float trackH = LpToPx( dwStyle.SliderSpline_TrackThickness );
+		float grabR  = LpToPx( dwStyle.SliderSpline_GrabRadius );
 		float h = ( size.y > 0.0f ) ? size.y : ImMax( trackH, grabR * 2.0f + 2.0f );
 
 		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
@@ -7531,7 +7552,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		auto DrawHandle = [ & ]( float x, bool isActiveHandle ) {
 			ImU32 grabCol = ImGui::GetColorU32( dwStyle.Colors[ isActiveHandle ? StyleColor_SliderSpline_GrabActive : StyleColor_SliderSpline_Grab ] );
 			window->DrawList->AddCircleFilled( ImVec2( x, grabCy ), grabR, grabCol );
-			window->DrawList->AddCircle( ImVec2( x, grabCy ), grabR, IM_COL32( 0, 0, 0, 200 ), 0, 1.5f );
+			window->DrawList->AddCircle( ImVec2( x, grabCy ), grabR, IM_COL32( 0, 0, 0, 200 ), 0, LpToPx( 1.5f ) );
 		};
 		DrawHandle( xLow, activeHandle == 0 );
 		DrawHandle( xUp,  activeHandle == 1 );
@@ -7580,7 +7601,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImWidgetsStyle& dwStyle = GetStyle();
 		const ImGuiID id = window->GetID( label );
 
-		float grabR = dwStyle.SliderRing_GrabRadius;
+		float grabR = LpToPx( dwStyle.SliderRing_GrabRadius );
 		float innerR = ImMax( 0.0f, outerRadius - thickness );
 		float pad = grabR + 1.0f;
 
@@ -7733,7 +7754,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImVec2 p = RingPos( t );
 			ImU32 grabCol = ImGui::GetColorU32( dwStyle.Colors[ isActiveHandle ? StyleColor_SliderRing_GrabActive : StyleColor_SliderRing_Grab ] );
 			dl->AddCircleFilled( p, grabR, grabCol );
-			dl->AddCircle( p, grabR, IM_COL32( 0, 0, 0, 200 ), 0, 1.5f );
+			dl->AddCircle( p, grabR, IM_COL32( 0, 0, 0, 200 ), 0, LpToPx( 1.5f ) );
 		};
 		DrawHandle( tLower, activeHandle == 0 );
 		DrawHandle( tUpper, activeHandle == 1 );
@@ -7759,7 +7780,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return SliderGradientRingRangeImpl( label, ImGuiDataType_S32, v_lower, v_upper, &v_min, &v_max, gradient, outerRadius, thickness, startAngle, sweepAngle );
 	}
 
-
 	bool SliderNScalar( char const* label, ImGuiDataType data_type, void* ordered_value, int value_count, void* p_min, void* p_max, float cursor_width, bool show_hover_by_region )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
@@ -7772,7 +7792,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const ImGuiStyle& style = g.Style;
 		const ImGuiID id = window->GetID( label );
 		const float w = ImGui::CalcItemWidth();
-		const float cursor_width_px = ImPlatform_LpToPx( cursor_width );
+		const float cursor_width_px = LpToPx( cursor_width );
 
 		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
 
@@ -7937,9 +7957,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const ImGuiID id = window->GetID( label );
 
 		// Convert Lp → Px for all spatial sizes
-		float cursorH  = ImPlatform_LpToPx( cursor_height );
-		float widget_w = ( size.x > 0.0f ) ? ImPlatform_LpToPx( size.x ) : ImPlatform_LpToPx( 20.0f );
-		float widget_h = ( size.y > 0.0f ) ? ImPlatform_LpToPx( size.y ) : ImPlatform_LpToPx( 160.0f );
+		float cursorH  = LpToPx( cursor_height );
+		float widget_w = ( size.x > 0.0f ) ? LpToPx( size.x ) : LpToPx( 20.0f );
+		float widget_h = ( size.y > 0.0f ) ? LpToPx( size.y ) : LpToPx( 160.0f );
 
 		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
 
@@ -8108,15 +8128,15 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float downScale = 0.75f;
 		float dragX_placement = 0.75f;
 		float dragY_placement = 0.75f;
-		float dragX_thickness = ImTrunc( widgetStyle.Slider2D_DragThickness );
-		float dragY_thickness = ImTrunc( widgetStyle.Slider2D_DragThickness );
-		float border_thickness = widgetStyle.Slider2D_BorderThickness;
-		float line_thickness = widgetStyle.Slider2D_LineThickness;
+		float dragX_thickness = ImTrunc( LpToPx( widgetStyle.Slider2D_DragThickness ) );
+		float dragY_thickness = ImTrunc( LpToPx( widgetStyle.Slider2D_DragThickness ) );
+		float border_thickness = LpToPx( widgetStyle.Slider2D_BorderThickness );
+		float line_thickness = LpToPx( widgetStyle.Slider2D_LineThickness );
 		float text_lerp_x = 0.5f;
 		float text_lerp_y = 0.5f;
-		float cursor_radius = widgetStyle.Slider2D_CursorRadius;
+		float cursor_radius = LpToPx( widgetStyle.Slider2D_CursorRadius );
 		int cursor_segments = 4;
-		float fCursorOff = widgetStyle.Slider2D_CursorOffset;
+		float fCursorOff = LpToPx( widgetStyle.Slider2D_CursorOffset );
 
 		// Snap all rects to integer pixel boundaries for crisp borders
 		const ImRect frame_bb( ImTrunc( window->DC.CursorPos ), ImTrunc( window->DC.CursorPos + ImVec2( w, w ) ) );
@@ -8270,7 +8290,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			pDrawList->AddLine( ImVec2( frame_bb_drag.Max.x - fCursorOff, vCursorPos.y ), ImVec2( vCursorPos.x + fCursorOff, vCursorPos.y ), uOrange, line_thickness );
 
 		// Borders::Right
-		pDrawList->AddCircleFilled( ImVec2( frame_bb_drag.Max.x, vCursorPos.y ), widgetStyle.Slider2D_CornerRadius, uOrange, 3 );
+		pDrawList->AddCircleFilled( ImVec2( frame_bb_drag.Max.x, vCursorPos.y ), LpToPx( widgetStyle.Slider2D_CornerRadius ), uOrange, 3 );
 		// Handle Right::Y
 		pDrawList->AddNgonFilled( ImVec2( frame_bb_dragY.GetCenter().x, vCursorPos.y ), dragY_thickness * 0.5f, uOrange, 4 );
 		if ( fScaleY > fYLimit )
@@ -8278,19 +8298,19 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( fScaleY < 1.0f - fYLimit )
 			pDrawList->AddLine( ImVec2( frame_bb_drag.Max.x, frame_bb_drag.Max.y ), ImVec2( frame_bb_drag.Max.x, vCursorPos.y + fCursorOff ), uBlue, border_thickness );
 		// Borders::Top
-		pDrawList->AddCircleFilled( ImVec2( vCursorPos.x, frame_bb_drag.Min.y ), widgetStyle.Slider2D_CornerRadius, uOrange, 3 );
+		pDrawList->AddCircleFilled( ImVec2( vCursorPos.x, frame_bb_drag.Min.y ), LpToPx( widgetStyle.Slider2D_CornerRadius ), uOrange, 3 );
 		if ( fScaleX > fXLimit )
 			pDrawList->AddLine( ImVec2( frame_bb_drag.Min.x, frame_bb_drag.Min.y ), ImVec2( vCursorPos.x - fCursorOff, frame_bb_drag.Min.y ), uBlue, border_thickness );
 		if ( fScaleX < 1.0f - fXLimit )
 			pDrawList->AddLine( ImVec2( frame_bb_drag.Max.x, frame_bb_drag.Min.y ), ImVec2( vCursorPos.x + fCursorOff, frame_bb_drag.Min.y ), uBlue, border_thickness );
 		// Borders::Left
-		pDrawList->AddCircleFilled( ImVec2( frame_bb_drag.Min.x, vCursorPos.y ), widgetStyle.Slider2D_CornerRadius, uOrange, 3 );
+		pDrawList->AddCircleFilled( ImVec2( frame_bb_drag.Min.x, vCursorPos.y ), LpToPx( widgetStyle.Slider2D_CornerRadius ), uOrange, 3 );
 		if ( fScaleY > fYLimit )
 			pDrawList->AddLine( ImVec2( frame_bb_drag.Min.x, frame_bb_drag.Min.y ), ImVec2( frame_bb_drag.Min.x, vCursorPos.y - fCursorOff ), uBlue, border_thickness );
 		if ( fScaleY < 1.0f - fYLimit )
 			pDrawList->AddLine( ImVec2( frame_bb_drag.Min.x, frame_bb_drag.Max.y ), ImVec2( frame_bb_drag.Min.x, vCursorPos.y + fCursorOff ), uBlue, border_thickness );
 		// Borders::Bottom
-		pDrawList->AddCircleFilled( ImVec2( vCursorPos.x, frame_bb_drag.Max.y ), widgetStyle.Slider2D_CornerRadius, uOrange, 3 );
+		pDrawList->AddCircleFilled( ImVec2( vCursorPos.x, frame_bb_drag.Max.y ), LpToPx( widgetStyle.Slider2D_CornerRadius ), uOrange, 3 );
 		// Handle Bottom::X
 		pDrawList->AddNgonFilled( ImVec2( vCursorPos.x, frame_bb_dragX.GetCenter().y ), dragX_thickness * 0.5f, uOrange, 4 );
 		if ( fScaleX > fXLimit )
@@ -8353,13 +8373,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const ImGuiID id = window->GetID( label );
 		const float w = ImGui::CalcItemWidth();
 
-		// Style sizes: spatial sizes scale with DPI; line weights are already in pixels (match Slider2DScalar)
-		float handleR         = ImPlatform_LpToPx( dwStyle.Slider2DRange_HandleRadius );
-		float borderThk       = dwStyle.Slider2D_BorderThickness;
-		float lineThk         = dwStyle.Slider2D_LineThickness;
-		float cursorOff       = ImPlatform_LpToPx( dwStyle.Slider2D_CursorOffset );
-		float cornerR         = dwStyle.Slider2D_CornerRadius;
-		float dragX_thickness = ImTrunc( ImPlatform_LpToPx( dwStyle.Slider2D_DragThickness ) );
+		// Style sizes
+		float handleR         = LpToPx( dwStyle.Slider2DRange_HandleRadius );
+		float borderThk       = LpToPx( dwStyle.Slider2D_BorderThickness );
+		float lineThk         = LpToPx( dwStyle.Slider2D_LineThickness );
+		float cursorOff       = LpToPx( dwStyle.Slider2D_CursorOffset );
+		float cornerR         = LpToPx( dwStyle.Slider2D_CornerRadius );
+		float dragX_thickness = ImTrunc( LpToPx( dwStyle.Slider2D_DragThickness ) );
 		float dragY_thickness = dragX_thickness;
 
 		// Layout: 75% main drag area + bottom X strip + right Y strip (matches Slider2DFloat/Int)
@@ -8416,9 +8436,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float tx = MouseTX(), ty = MouseTY();
 			float tnMinX = NormX( p_minX ), tnMinY = NormY( p_minY );
 			float tnMaxX = NormX( p_maxX ), tnMaxY = NormY( p_maxY );
-			// Y inverted: higher value = lower screen Y
-			float sMinY_n = 1.0f - tnMinY;
-			float sMaxY_n = 1.0f - tnMaxY;
+			// Y not inverted: min value = top-left, max value = bottom-right
+			float sMinY_n = tnMinY;
+			float sMaxY_n = tnMaxY;
 			float rectY0  = ImMin( sMinY_n, sMaxY_n );
 			float rectY1  = ImMax( sMinY_n, sMaxY_n );
 			float rectX0  = ImMin( tnMinX, tnMaxX );
@@ -8456,7 +8476,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				int   active = storage->GetInt( activeKey, 0 );
 				float tx     = MouseTX(), ty = MouseTY();
 				float newX   = bMinXF + tx * denX;
-				float newY   = bMinYF + ( 1.0f - ty ) * denY;
+				float newY   = bMinYF + ty * denY;
 
 				if ( active == 1 )
 				{
@@ -8482,8 +8502,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					float initMnY = storage->GetFloat( initMnYKey, 0.0f );
 					float initMxX = storage->GetFloat( initMxXKey, 1.0f );
 					float initMxY = storage->GetFloat( initMxYKey, 1.0f );
-					float dtx     =  ( tx - initMx );
-					float dty     = -( ty - initMy );
+					float dtx     = ( tx - initMx );
+					float dty     = ( ty - initMy );
 					float rW      = initMxX - initMnX;
 					float rH      = initMxY - initMnY;
 					float newMnX  = ImClamp( initMnX + dtx, 0.0f, 1.0f - rW );
@@ -8522,7 +8542,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			char  xBuf[16], yBuf[16], tmpBuf[8];
 			float cursor_w      = dragX_thickness * 0.5f;  // already px
 			float cursor_h      = dragY_thickness * 0.5f;  // already px
-			float cursor_wLp    = ImPlatform_PxToLp( cursor_w );
+			float cursor_wLp    = PxToLp( cursor_w );
 
 			// SliderNScalar reserves cursor_w on each side inside its item width.
 			// SliderNVerticalScalar reserves cursor_h at top and bottom inside its height.
@@ -8548,8 +8568,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			memcpy( yBuf,           p_minY, elem_sz );
 			memcpy( yBuf + elem_sz, p_maxY, elem_sz );
 			window->DC.CursorPos = ImVec2( frame_bb_dragY.Min.x, frame_bb_dragY.Min.y - cursor_h );
-			ImVec2 stripYSizeLp  = ImPlatform_PxToLp( ImVec2( frame_bb_dragY.GetWidth(), frame_bb_dragY.GetHeight() + 2.0f * cursor_h ) );
-			float  cursorHLp     = ImPlatform_PxToLp( cursor_h );
+			ImVec2 stripYSizeLp  = PxToLp( ImVec2( frame_bb_dragY.GetWidth(), frame_bb_dragY.GetHeight() + 2.0f * cursor_h ) );
+			float  cursorHLp     = PxToLp( cursor_h );
 			if ( SliderNVerticalScalar( "##y", data_type, yBuf, 2, b_minY, b_maxY, cursorHLp, false, stripYSizeLp ) )
 			{
 				if ( ScalarToFloat( data_type, (ImU64*)yBuf ) > ScalarToFloat( data_type, (ImU64*)( yBuf + elem_sz ) ) )
@@ -8577,13 +8597,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImU32 uOrange = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Slider2DRange_MaxHandle ] );
 		ImU32 uFrame  = ImGui::GetColorU32( ImGuiCol_FrameBg );
 
-		// Normalized handle positions → screen coords inside frame_bb_drag (Y inverted)
+		// Normalized handle positions → screen coords inside frame_bb_drag (Y not inverted: min at top)
 		float tMinX = NormX( p_minX ), tMinY = NormY( p_minY );
 		float tMaxX = NormX( p_maxX ), tMaxY = NormY( p_maxY );
 		float sMinX = frame_bb_drag.Min.x + tMinX * drag_w;
-		float sMinY = frame_bb_drag.Min.y + ( 1.0f - tMinY ) * drag_h;
+		float sMinY = frame_bb_drag.Min.y + tMinY * drag_h;
 		float sMaxX = frame_bb_drag.Min.x + tMaxX * drag_w;
-		float sMaxY = frame_bb_drag.Min.y + ( 1.0f - tMaxY ) * drag_h;
+		float sMaxY = frame_bb_drag.Min.y + tMaxY * drag_h;
 
 		// Selection rect (sorted)
 		float selLeft   = ImMin( sMinX, sMaxX );
@@ -8642,12 +8662,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Orange L-shapes pointing inward at corner handles (when selection is large enough)
 		if ( selW > gap * 2.0f && selH > gap * 2.0f )
 		{
-			// sMinX/sMinY = bottom-left corner (Y inverted: minY value maps to screen bottom)
+			// sMinX/sMinY = top-left corner
 			dl->AddLine( ImVec2( sMinX, sMinY ), ImVec2( sMinX + gap, sMinY ), uOrange, lineThk );
-			dl->AddLine( ImVec2( sMinX, sMinY ), ImVec2( sMinX, sMinY - gap ), uOrange, lineThk );
-			// sMaxX/sMaxY = top-right corner
+			dl->AddLine( ImVec2( sMinX, sMinY ), ImVec2( sMinX, sMinY + gap ), uOrange, lineThk );
+			// sMaxX/sMaxY = bottom-right corner
 			dl->AddLine( ImVec2( sMaxX, sMaxY ), ImVec2( sMaxX - gap, sMaxY ), uOrange, lineThk );
-			dl->AddLine( ImVec2( sMaxX, sMaxY ), ImVec2( sMaxX, sMaxY + gap ), uOrange, lineThk );
+			dl->AddLine( ImVec2( sMaxX, sMaxY ), ImVec2( sMaxX, sMaxY - gap ), uOrange, lineThk );
 		}
 
 		// Body drag cross at selection center
@@ -8657,7 +8677,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// Diamond handles at both corner positions
 		int   activeHandle = ( g.ActiveId == id ) ? storage->GetInt( activeKey, 0 ) : 0;
-		float activeBoost  = ImPlatform_LpToPx( 2.0f );
+		float activeBoost  = LpToPx( 2.0f );
 		dl->AddNgonFilled( ImVec2( sMinX, sMinY ), handleR + ( activeHandle == 1 ? activeBoost : 0.0f ), uBlue, 4 );
 		dl->AddNgonFilled( ImVec2( sMaxX, sMaxY ), handleR + ( activeHandle == 2 ? activeBoost : 0.0f ), uBlue, 4 );
 
@@ -8677,8 +8697,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float  textX   = ImLerp( bbRight, frame_bb_dragY.Min.x - mnYSz.x, 0.5f );
 		dl->AddText( ImVec2( ImClamp( selLeft  - mnXSz.x * 0.5f, bbLeft, bbRight - mnXSz.x ), textY ), textCol, bufMnX );
 		dl->AddText( ImVec2( ImClamp( selRight - mxXSz.x * 0.5f, bbLeft, bbRight - mxXSz.x ), textY ), textCol, bufMxX );
-		dl->AddText( ImVec2( textX, ImClamp( selBottom - mnYSz.y * 0.5f, bbTop, bbBottom - mnYSz.y ) ), textCol, bufMnY );
-		dl->AddText( ImVec2( textX, ImClamp( selTop    - mxYSz.y * 0.5f, bbTop, bbBottom - mxYSz.y ) ), textCol, bufMxY );
+		dl->AddText( ImVec2( textX, ImClamp( selTop    - mnYSz.y * 0.5f, bbTop, bbBottom - mnYSz.y ) ), textCol, bufMnY );
+		dl->AddText( ImVec2( textX, ImClamp( selBottom - mxYSz.y * 0.5f, bbTop, bbBottom - mxYSz.y ) ), textCol, bufMxY );
 
 		return value_changed;
 	}
@@ -8736,7 +8756,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 
 		ImVec2 center = frame_bb.GetCenter();
-		float disc_r = frame_bb.GetWidth() * 0.5f - ImPlatform_LpToPx( 2.0f );
+		float disc_r = frame_bb.GetWidth() * 0.5f - LpToPx( 2.0f );
 
 		bool value_changed = false;
 		if ( g.ActiveId == id )
@@ -8767,20 +8787,19 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			}
 		}
 
-		// Outer box — standard FrameBg interaction colors via RenderFrame
+		// Disc frame: no outer rectangle — the disc itself is the frame. Use standard FrameBg interaction colors.
 		ImU32 frameCol = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
 		ImGui::RenderNavCursor( frame_bb, id );
-		ImGui::RenderFrame( frame_bb.Min, frame_bb.Max, frameCol, true, style.FrameRounding );
 
 		ImDrawList* dl = window->DrawList;
 
-		// Disc background: custom color or FrameBg fallback when alpha = 0
+		// Disc background: if user set an explicit alpha, use that color; otherwise use standard FrameBg (responsive to hover/active).
 		ImVec4 bgCol4 = dwStyle.Colors[ StyleColor_Slider2DDisc_Background ];
-		ImU32 discFill = ( bgCol4.w > 0.001f ) ? ImGui::GetColorU32( bgCol4 ) : ImGui::GetColorU32( ImGuiCol_FrameBg );
+		ImU32 discFill = ( bgCol4.w > 0.001f ) ? ImGui::GetColorU32( bgCol4 ) : frameCol;
 		dl->AddCircleFilled( center, disc_r, discFill, 64 );
 
 		// Outer ring — brighter when hovered or active
-		float ringThk = ImPlatform_LpToPx( dwStyle.Slider2DDisc_RingThickness );
+		float ringThk = LpToPx( dwStyle.Slider2DDisc_RingThickness );
 		ImU32 ringCol;
 		if ( g.ActiveId == id )
 			ringCol = ImGui::GetColorU32( ImGuiCol_SliderGrabActive );
@@ -8794,7 +8813,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Slider2DDisc_Grid ] );
 		dl->AddLine( ImVec2( center.x - disc_r, center.y ), ImVec2( center.x + disc_r, center.y ), gridCol, 1.0f );
 		dl->AddLine( ImVec2( center.x, center.y - disc_r ), ImVec2( center.x, center.y + disc_r ), gridCol, 1.0f );
-		int nRings = (int)dwStyle.Slider2DDisc_GridRings;
+		int nRings = dwStyle.Slider2DDisc_GridRings;
 		for ( int ri = 1; ri <= nRings; ++ri )
 			dl->AddCircle( center, disc_r * (float)ri / (float)( nRings + 1 ), gridCol, 48, 1.0f );
 
@@ -8812,12 +8831,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			dl->AddLine( center, handlePos, gridCol, 1.0f );
 
 		// CurveEditor-style handle: filled circle + outline (consistent with ToneCurve/CurveEditor key)
-		float handleR = ImPlatform_LpToPx( dwStyle.Slider2DDisc_CursorRadius );
+		float handleR = LpToPx( dwStyle.Slider2DDisc_CursorRadius );
 		if ( hovered || g.ActiveId == id )
-			handleR += ImPlatform_LpToPx( 1.5f );
+			handleR += LpToPx( 1.5f );
 		ImU32 cursorFill    = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Slider2DDisc_Cursor ] );
 		ImU32 cursorOutline = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Slider2DDisc_CursorOutline ] );
-		float outlineThk    = ImPlatform_LpToPx( dwStyle.Slider2DDisc_CursorOutlineThickness );
+		float outlineThk    = LpToPx( dwStyle.Slider2DDisc_CursorOutlineThickness );
 		dl->AddCircleFilled( handlePos, handleR, cursorFill );
 		dl->AddCircle( handlePos, handleR, cursorOutline, 0, outlineThk );
 
@@ -9149,11 +9168,15 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const ImGuiStyle& style = g.Style;
 		ImWidgetsStyle& dwStyle = GetStyle();
 		const ImGuiID id = window->GetID( label );
+
+		if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+		if ( size.y > 0.0f ) size.y = LpToPx( size.y );
+
 		// We use the same id for both color and alpha tracks; selectedAlpha vs selected distinguishes them
 		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float baseBarHeight = ( size.y > 0.0f ) ? size.y : ImGui::GetFrameHeight();
-		const float markerHeight = dwStyle.Gradient_MarkerHeight;
-		const float markerThickness = dwStyle.Gradient_MarkerThickness;
+		const float markerHeight = LpToPx( dwStyle.Gradient_MarkerHeight );
+		const float markerThickness = LpToPx( dwStyle.Gradient_MarkerThickness );
 		const bool splitAlpha = gradient->SplitAlpha && alpha;
 		const float barHeight = ( splitAlpha && !s_InsideExpandedWidget ) ? baseBarHeight * 5.0f : baseBarHeight;
 
@@ -9228,7 +9251,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Checkerboard for transparency (only when alpha is enabled)
 		if ( alpha )
 		{
-			DrawCheckerboard( window->DrawList, bar_bb.Min, bar_bb.GetSize(), dwStyle.Gradient_CheckerboardCellSize,
+			DrawCheckerboard( window->DrawList, bar_bb.Min, bar_bb.GetSize(), LpToPx( dwStyle.Gradient_CheckerboardCellSize ),
 							  ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gradient_Checkerboard1 ] ),
 							  ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gradient_Checkerboard2 ] ) );
 		}
@@ -10110,13 +10133,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			bool hov = ( hoveredTangent == -1 );
 			dl->AddLine( keyScreen, tanLeftScreen, hov ? tangentHovCol : tangentCol, hov ? lineThick : lineThick * 0.5f );
-			dl->AddCircleFilled( tanLeftScreen, hov ? handleRadius + 1.5f : handleRadius, hov ? tangentHovCol : tangentCol );
+			dl->AddCircleFilled( tanLeftScreen, hov ? handleRadius + LpToPx( 1.5f ) : handleRadius, hov ? tangentHovCol : tangentCol );
 		}
 		if ( showRight )
 		{
 			bool hov = ( hoveredTangent == 1 );
 			dl->AddLine( keyScreen, tanRightScreen, hov ? tangentHovCol : tangentCol, hov ? lineThick : lineThick * 0.5f );
-			dl->AddCircleFilled( tanRightScreen, hov ? handleRadius + 1.5f : handleRadius, hov ? tangentHovCol : tangentCol );
+			dl->AddCircleFilled( tanRightScreen, hov ? handleRadius + LpToPx( 1.5f ) : handleRadius, hov ? tangentHovCol : tangentCol );
 		}
 	}
 
@@ -10258,8 +10281,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const ImGuiStyle& style = g.Style;
 		const ImGuiID id = window->GetID( label );
 		ImWidgetsStyle& dwStyle = GetStyle();
+
+		if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+		if ( size.y > 0.0f ) size.y = LpToPx( size.y );
+
 		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
-		const float h = ( size.y > 0.0f ) ? size.y : dwStyle.CurveEditor_DefaultHeight;
+		const float h = ( size.y > 0.0f ) ? size.y : LpToPx( dwStyle.CurveEditor_DefaultHeight );
 
 		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
 		float fontH = ImGui::GetFontSize();
@@ -10282,9 +10309,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImVec2 const& rangeMin = curve->RangeMin;
 		ImVec2 const& rangeMax = curve->RangeMax;
 
-		const float keyRadius = dwStyle.CurveEditor_KeyRadius;
-		const float tangentRadius = dwStyle.CurveEditor_TangentRadius;
-		const float hitRadius = dwStyle.CurveEditor_HitRadius;
+		const float keyRadius     = LpToPx( dwStyle.CurveEditor_KeyRadius );
+		const float tangentRadius = LpToPx( dwStyle.CurveEditor_TangentRadius );
+		const float hitRadius     = LpToPx( dwStyle.CurveEditor_HitRadius );
 
 		// --- PAN (apply before drawing so range is up-to-date) ---
 		ImGuiID panKey = id + ImHashStr( "##pan" );
@@ -10363,7 +10390,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImVec2 zeroScreen = CurveToScreen( ImVec2( 0.0f, 0.0f ), frame_bb, rangeMin, rangeMax );
 			ImVec2 oneScreen  = CurveToScreen( ImVec2( 1.0f, 1.0f ), frame_bb, rangeMin, rangeMax );
 			ImU32 zeroCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_ZeroLine ] );
-			float zeroThick = dwStyle.CurveEditor_ZeroLineThickness;
+			float zeroThick = LpToPx( dwStyle.CurveEditor_ZeroLineThickness );
 			if ( zeroScreen.x > frame_bb.Min.x && zeroScreen.x < frame_bb.Max.x )
 				dl->AddLine( ImVec2( zeroScreen.x, frame_bb.Min.y ), ImVec2( zeroScreen.x, frame_bb.Max.y ), zeroCol, zeroThick );
 			if ( zeroScreen.y > frame_bb.Min.y && zeroScreen.y < frame_bb.Max.y )
@@ -10375,63 +10402,65 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				dl->AddLine( ImVec2( frame_bb.Min.x, oneScreen.y ), ImVec2( frame_bb.Max.x, oneScreen.y ), zeroCol, zeroThick );
 		}
 
-		// Draw curve segments
+		// Draw curve segments — accumulate one polyline across all segments and route through
+		// DrawThickLine so the user-selected line mode (AddPolyline / PolylineAA / Stroked*)
+		// applies uniformly. Step segments push their corner points; smooth segments are
+		// densely sampled.
 		ImU32 curveCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_Line ] );
-		float curveThickness = dwStyle.CurveEditor_LineThickness;
+		float curveThickness = LpToPx( dwStyle.CurveEditor_LineThickness );
 
-		for ( int seg = 0; seg < curve->Keys.Size - 1; ++seg )
+		if ( curve->Keys.Size >= 2 )
 		{
-			ImCurveEditorKey const& k0 = curve->Keys[ seg ];
-			ImCurveEditorKey const& k1 = curve->Keys[ seg + 1 ];
-			ImCurveEditorSeg segType = k0.Segment;
+			ImVector<ImVec2> curveLine;
+			curveLine.reserve( curve->Keys.Size * 64 );
+			curveLine.push_back( CurveToScreen( curve->Keys[ 0 ].Pos, frame_bb, rangeMin, rangeMax ) );
 
-			if ( segType == ImCurveEditorSeg_StepStart )
+			for ( int seg = 0; seg < curve->Keys.Size - 1; ++seg )
 			{
-				ImVec2 a = CurveToScreen( k0.Pos, frame_bb, rangeMin, rangeMax );
-				ImVec2 b = CurveToScreen( ImVec2( k1.Pos.x, k0.Pos.y ), frame_bb, rangeMin, rangeMax );
-				ImVec2 c = CurveToScreen( k1.Pos, frame_bb, rangeMin, rangeMax );
-				dl->AddLine( a, b, curveCol, curveThickness );
-				dl->AddLine( b, c, curveCol, curveThickness );
-			}
-			else if ( segType == ImCurveEditorSeg_StepEnd )
-			{
-				ImVec2 a = CurveToScreen( k0.Pos, frame_bb, rangeMin, rangeMax );
-				ImVec2 b = CurveToScreen( ImVec2( k0.Pos.x, k1.Pos.y ), frame_bb, rangeMin, rangeMax );
-				ImVec2 c = CurveToScreen( k1.Pos, frame_bb, rangeMin, rangeMax );
-				dl->AddLine( a, b, curveCol, curveThickness );
-				dl->AddLine( b, c, curveCol, curveThickness );
-			}
-			else if ( segType == ImCurveEditorSeg_StepCenter )
-			{
-				float midX = ( k0.Pos.x + k1.Pos.x ) * 0.5f;
-				ImVec2 a = CurveToScreen( k0.Pos, frame_bb, rangeMin, rangeMax );
-				ImVec2 b = CurveToScreen( ImVec2( midX, k0.Pos.y ), frame_bb, rangeMin, rangeMax );
-				ImVec2 c = CurveToScreen( ImVec2( midX, k1.Pos.y ), frame_bb, rangeMin, rangeMax );
-				ImVec2 d = CurveToScreen( k1.Pos, frame_bb, rangeMin, rangeMax );
-				dl->AddLine( a, b, curveCol, curveThickness );
-				dl->AddLine( b, c, curveCol, curveThickness );
-				dl->AddLine( c, d, curveCol, curveThickness );
-			}
-			else if ( segType == ImCurveEditorSeg_Linear )
-			{
-				ImVec2 a = CurveToScreen( k0.Pos, frame_bb, rangeMin, rangeMax );
-				ImVec2 b = CurveToScreen( k1.Pos, frame_bb, rangeMin, rangeMax );
-				dl->AddLine( a, b, curveCol, curveThickness );
-			}
-			else
-			{
-				// Easing or Bezier: sample polyline
-				int sampleCount = 64;
-				ImVec2 prev = CurveToScreen( k0.Pos, frame_bb, rangeMin, rangeMax );
-				for ( int s = 1; s <= sampleCount; ++s )
+				ImCurveEditorKey const& k0 = curve->Keys[ seg ];
+				ImCurveEditorKey const& k1 = curve->Keys[ seg + 1 ];
+				ImCurveEditorSeg segType = k0.Segment;
+
+				if ( segType == ImCurveEditorSeg_StepStart )
 				{
-					float lx = ImLerp( k0.Pos.x, k1.Pos.x, ( float )s / ( float )sampleCount );
-					float ly = CurveEditorSample( *curve, lx );
-					ImVec2 cur = CurveToScreen( ImVec2( lx, ly ), frame_bb, rangeMin, rangeMax );
-					dl->AddLine( prev, cur, curveCol, curveThickness );
-					prev = cur;
+					curveLine.push_back( CurveToScreen( ImVec2( k1.Pos.x, k0.Pos.y ), frame_bb, rangeMin, rangeMax ) );
+					curveLine.push_back( CurveToScreen( k1.Pos, frame_bb, rangeMin, rangeMax ) );
+				}
+				else if ( segType == ImCurveEditorSeg_StepEnd )
+				{
+					curveLine.push_back( CurveToScreen( ImVec2( k0.Pos.x, k1.Pos.y ), frame_bb, rangeMin, rangeMax ) );
+					curveLine.push_back( CurveToScreen( k1.Pos, frame_bb, rangeMin, rangeMax ) );
+				}
+				else if ( segType == ImCurveEditorSeg_StepCenter )
+				{
+					float midX = ( k0.Pos.x + k1.Pos.x ) * 0.5f;
+					curveLine.push_back( CurveToScreen( ImVec2( midX, k0.Pos.y ), frame_bb, rangeMin, rangeMax ) );
+					curveLine.push_back( CurveToScreen( ImVec2( midX, k1.Pos.y ), frame_bb, rangeMin, rangeMax ) );
+					curveLine.push_back( CurveToScreen( k1.Pos, frame_bb, rangeMin, rangeMax ) );
+				}
+				else if ( segType == ImCurveEditorSeg_Linear )
+				{
+					curveLine.push_back( CurveToScreen( k1.Pos, frame_bb, rangeMin, rangeMax ) );
+				}
+				else
+				{
+					// Easing or Bezier: sample
+					int const sampleCount = 64;
+					for ( int s = 1; s <= sampleCount; ++s )
+					{
+						float lx = ImLerp( k0.Pos.x, k1.Pos.x, ( float )s / ( float )sampleCount );
+						float ly = CurveEditorSample( *curve, lx );
+						curveLine.push_back( CurveToScreen( ImVec2( lx, ly ), frame_bb, rangeMin, rangeMax ) );
+					}
 				}
 			}
+
+			ImWidgetsThickLineDesc curveDesc;
+			curveDesc.color     = curveCol;
+			curveDesc.thickness = curveThickness;
+			curveDesc.mode      = (ImWidgetsThickLineMode)dwStyle.CurveEditor_LineMode;
+			curveDesc.dashed    = dwStyle.CurveEditor_LineDashed;
+			DrawThickLine( dl, curveLine.Data, curveLine.Size, curveDesc );
 		}
 
 		// Draw tangent handles for selected bezier key
@@ -10455,11 +10484,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImVec2 kScreen = CurveToScreen( curve->Keys[ i ].Pos, frame_bb, rangeMin, rangeMax );
 			bool isSelected = ( i == selected );
 			bool isHovered = ( i == hovered_key );
-			float radius = isHovered ? keyRadius + 2.0f : keyRadius;
+			float radius = isHovered ? keyRadius + LpToPx( 2.0f ) : keyRadius;
 			ImU32 keyCol = ImGui::GetColorU32( dwStyle.Colors[ isSelected ? StyleColor_CurveEditor_KeySelected : ( isHovered ? StyleColor_CurveEditor_KeyHovered : StyleColor_CurveEditor_Key ) ] );
 			ImU32 outCol = ImGui::GetColorU32( dwStyle.Colors[ isSelected ? StyleColor_CurveEditor_KeyOutlineSelected : ( isHovered ? StyleColor_CurveEditor_KeyOutlineHovered : StyleColor_CurveEditor_KeyOutline ) ] );
 			dl->AddCircleFilled( kScreen, radius, keyCol );
-			dl->AddCircle( kScreen, radius, outCol, 0, isSelected ? dwStyle.CurveEditor_KeyOutlineThickness * 1.33f : dwStyle.CurveEditor_KeyOutlineThickness );
+			dl->AddCircle( kScreen, radius, outCol, 0, isSelected ? LpToPx( dwStyle.CurveEditor_KeyOutlineThickness ) * 1.33f : LpToPx( dwStyle.CurveEditor_KeyOutlineThickness ) );
 		}
 
 		// Hover feedback: crosshair + "add" indicator when hovering empty space
@@ -11045,8 +11074,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImWidgetsStyle& dwStyle = GetStyle();
 		const ImGuiID id = window->GetID( label );
 
+		if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+		if ( size.y > 0.0f ) size.y = LpToPx( size.y );
+
 		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
-		const float sliderHeight = fixedIntensity ? 0.0f : dwStyle.ColorWheel_SliderHeight;
+		const float sliderHeight = fixedIntensity ? 0.0f : LpToPx( dwStyle.ColorWheel_SliderHeight );
 		const float spacing = fixedIntensity ? 0.0f : style.ItemInnerSpacing.y;
 		const float discDiameter = w;
 		const float discRadius = discDiameter * 0.5f;
@@ -11089,8 +11121,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// --- Dot position ---
 		float dotAngle = hue * 2.0f * IM_PI;
-		float dotRadius = dwStyle.ColorWheel_DotRadius;
-		float ringThick = dwStyle.ColorWheel_RingThickness;
+		float dotRadius = LpToPx( dwStyle.ColorWheel_DotRadius );
+		float ringThick = LpToPx( dwStyle.ColorWheel_RingThickness );
 		float innerDiscRadius = ringThick > 0.0f ? discRadius - ringThick - 1.0f : discRadius;
 		ImVec2 dotPos = discCenter + ImVec2( ImCos( dotAngle ) * sat * innerDiscRadius, ImSin( dotAngle ) * sat * innerDiscRadius );
 
@@ -11117,7 +11149,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// Disc background
 		ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
-		dl->AddCircleFilled( discCenter, discRadius + 1.0f, frame_col );
+		dl->AddCircleFilled( discCenter, discRadius + LpToPx( 1.0f ), frame_col );
 
 		// Outer hue ring
 		if ( ringThick > 0.0f )
@@ -11128,12 +11160,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 
 		// Color disc
-		DrawColorDisc( dl, discCenter, innerDiscRadius, mode, thirdAxis, ( int )dwStyle.ColorWheel_DiscSectors, ( int )dwStyle.ColorWheel_DiscRings );
+		DrawColorDisc( dl, discCenter, innerDiscRadius, mode, thirdAxis, dwStyle.ColorWheel_DiscSectors, dwStyle.ColorWheel_DiscRings );
 
 		// Disc outline
 		dl->AddCircle( discCenter, discRadius, ImGui::GetColorU32( ImGuiCol_Border ) );
 		if ( ringThick > 0.0f )
-			dl->AddCircle( discCenter, innerDiscRadius, ImGui::GetColorU32( ImGuiCol_Border ), 0, 0.5f );
+			dl->AddCircle( discCenter, innerDiscRadius, ImGui::GetColorU32( ImGuiCol_Border ), 0, LpToPx( 0.5f ) );
 
 		// Radial guide lines: hue line from center to disc edge + saturation ring
 		{
@@ -11164,10 +11196,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			dr = ImClamp( dr, 0.0f, 1.0f ); dg = ImClamp( dg, 0.0f, 1.0f ); db = ImClamp( db, 0.0f, 1.0f );
 			ImU32 dotFillCol = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
 
-			dl->AddCircleFilled( dotPos, dotRadius + 1.0f, IM_COL32( 0, 0, 0, 120 ) ); // Shadow
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) ); // Shadow
 			dl->AddCircleFilled( dotPos, dotRadius, dotFillCol );
-			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, 2.0f ); // White border
-			dl->AddCircle( dotPos, dotRadius + 1.0f, dotOutCol, 0, isDraggingDisc ? 2.0f : 1.0f );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, LpToPx( 2.0f ) ); // White border
+			dl->AddCircle( dotPos, dotRadius + LpToPx( 1.0f ), dotOutCol, 0, LpToPx( isDraggingDisc ? 2.0f : 1.0f ) );
 		}
 
 		// Master slider (hidden when fixedIntensity)
@@ -11397,93 +11429,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 	//////////////////////////////////////////////////////////////////////////
-	// Primaries Wheel (ColorWheel + circular gradient indicator ring)
-	//////////////////////////////////////////////////////////////////////////
-
-	bool PrimariesWheel( char const* label, ImVec4* color, float* yValue, float yMin, float yMax, ImColorWheelMode mode, float ringThickness, ImVec2 size )
-	{
-		ImGuiWindow* window = ImGui::GetCurrentWindow();
-		if ( window->SkipItems )
-			return false;
-
-		const ImGuiID id = window->GetID( label );
-		const float ringGap = 2.0f;
-		const float outerSize = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
-		const float innerSize = outerSize - 2.0f * ( ringThickness + ringGap );
-		const float margin = ringThickness + ringGap;
-
-		ImVec2 startPos = window->DC.CursorPos;
-		bool value_changed = false;
-
-		// 1) Draw gradient ring indicator
-		ImVec2 center( startPos.x + outerSize * 0.5f, startPos.y + outerSize * 0.5f );
-		float outerR = outerSize * 0.5f - 1.0f;
-		float innerR = outerR - ringThickness;
-		float t = ( yMax > yMin ) ? ImClamp( ( *yValue - yMin ) / ( yMax - yMin ), 0.0f, 1.0f ) : 0.0f;
-		DrawCircularGradientIndicator( window->DrawList, center, outerR, innerR, t );
-
-		// 2) Suppress inner ColorWheel's expand button
-		bool prevExpanded = s_InsideExpandedWidget;
-		s_InsideExpandedWidget = true;
-
-		// 3) Place ColorWheel inside (fixedIntensity, disc-only)
-		window->DC.CursorPos = ImVec2( startPos.x + margin, startPos.y + margin );
-		if ( ColorWheel( "##cw", color, mode, 1.0f, true, ImVec2( innerSize, innerSize ) ) )
-			value_changed = true;
-
-		s_InsideExpandedWidget = prevExpanded;
-
-		// 4) Ensure cursor advances past the full outer area
-		window->DC.CursorPos.x = startPos.x;
-		if ( window->DC.CursorPos.y < startPos.y + outerSize )
-			window->DC.CursorPos.y = startPos.y + outerSize;
-		window->DC.CursorMaxPos.x = ImMax( window->DC.CursorMaxPos.x, startPos.x + outerSize );
-		window->DC.CursorMaxPos.y = ImMax( window->DC.CursorMaxPos.y, startPos.y + outerSize );
-
-		// 5) Expand button at top-right of outer square
-		ImRect outerBB( startPos, startPos + ImVec2( outerSize, outerSize ) );
-		bool* pExpanded = WidgetExpandButton( id, outerBB );
-		if ( pExpanded && *pExpanded )
-		{
-			if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 800, 400 ) ) )
-			{
-				ImVec2 avail = ImGui::GetContentRegionAvail();
-				float widgetW = avail.x * 0.75f;
-				float widgetSize = ImMin( widgetW, avail.y );
-				// Left: larger PrimariesWheel
-				ImGui::SetNextItemWidth( widgetSize );
-				if ( PrimariesWheel( "##exp", color, yValue, yMin, yMax, mode, ringThickness ) )
-					value_changed = true;
-				ImGui::SameLine();
-				// Right: controls
-				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
-				ImGui::TextUnformatted( "Y Value" );
-				ImGui::SetNextItemWidth( -FLT_MIN );
-				if ( ImGui::DragFloat( "##yval", yValue, 0.01f, yMin, yMax, "%.2f" ) )
-					value_changed = true;
-				ImGui::Spacing();
-				ImGui::TextUnformatted( "Red" );
-				ImGui::SetNextItemWidth( -FLT_MIN );
-				if ( ImGui::DragFloat( "##r", &color->x, 0.01f, 0.0f, 1.0f, "%.3f" ) )
-					value_changed = true;
-				ImGui::TextUnformatted( "Green" );
-				ImGui::SetNextItemWidth( -FLT_MIN );
-				if ( ImGui::DragFloat( "##g", &color->y, 0.01f, 0.0f, 1.0f, "%.3f" ) )
-					value_changed = true;
-				ImGui::TextUnformatted( "Blue" );
-				ImGui::SetNextItemWidth( -FLT_MIN );
-				if ( ImGui::DragFloat( "##b", &color->z, 0.01f, 0.0f, 1.0f, "%.3f" ) )
-					value_changed = true;
-				ImGui::EndChild();
-			}
-			EndExpandedWindow();
-		}
-
-		return value_changed;
-	}
-
-	//////////////////////////////////////////////////////////////////////////
-	// HDR Wheel (PrimariesWheel + two arc sliders)
+	// HDR Wheel (ColorWheel disc + circular gradient indicator ring + optional arc sliders)
+	// When rightValue/leftValue are NULL, arc sliders are omitted (PrimariesWheel mode).
 	//////////////////////////////////////////////////////////////////////////
 
 	// Internal helper: arc slider interaction and drawing
@@ -11628,7 +11575,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	bool HDRWheel( char const* label, ImVec4* color, float* yValue, float yMin, float yMax,
 		float* rightValue, float rightMin, float rightMax,
 		float* leftValue, float leftMin, float leftMax,
-		ImColorWheelMode mode, float ringThickness, ImVec2 size )
+		ImColorWheelMode mode, ImVec2 size )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
@@ -11637,27 +11584,31 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImWidgetsStyle& dwStyle = GetStyle();
 		const ImGuiID id = window->GetID( label );
 
+		const bool hasArcs = ( rightValue != NULL ) || ( leftValue != NULL );
+
 		// Style values
-		const float arcGap     = dwStyle.HDRWheel_ArcGap;
-		const float arcThick   = dwStyle.HDRWheel_ArcThickness;
-		const float arcGrabR   = dwStyle.HDRWheel_ArcGrabRadius;
-		const float rightStart = dwStyle.HDRWheel_RightArcStart * ( IM_PI / 180.0f );
-		const float rightEnd   = dwStyle.HDRWheel_RightArcEnd   * ( IM_PI / 180.0f );
-		const float leftStart  = dwStyle.HDRWheel_LeftArcStart  * ( IM_PI / 180.0f );
-		const float leftEnd    = dwStyle.HDRWheel_LeftArcEnd    * ( IM_PI / 180.0f );
-		const float ringGap    = 2.0f;
+		const float arcGap        = LpToPx( dwStyle.HDRWheel_ArcGap );
+		const float arcThick      = LpToPx( dwStyle.HDRWheel_ArcThickness );
+		const float arcGrabR      = LpToPx( dwStyle.HDRWheel_ArcGrabRadius );
+		const float rightStart    = dwStyle.HDRWheel_RightArcStart * ( IM_PI / 180.0f );
+		const float rightEnd      = dwStyle.HDRWheel_RightArcEnd   * ( IM_PI / 180.0f );
+		const float leftStart     = dwStyle.HDRWheel_LeftArcStart  * ( IM_PI / 180.0f );
+		const float leftEnd       = dwStyle.HDRWheel_LeftArcEnd    * ( IM_PI / 180.0f );
+		const float ringThickness = LpToPx( dwStyle.HDRWheel_RingThickness );
+		const float ringGap       = LpToPx( dwStyle.HDRWheel_RingGap );
 
 		// Layout
-		// size.x is the desired disc+ring footprint (same semantics as PrimariesWheel).
-		// Arcs are placed outside that footprint, so the total widget is larger.
+		// size.x is the desired disc+ring footprint.
+		// Arcs (if present) are placed outside that footprint, so the total widget is larger.
 		const float discRingSize = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
-		const float outerSize    = discRingSize + 2.0f * ( arcGrabR + arcThick + arcGap );
+		const float arcOverhead  = hasArcs ? 2.0f * ( arcGrabR + arcThick + arcGap ) : 0.0f;
+		const float outerSize    = discRingSize + arcOverhead;
 		const float halfSize     = outerSize * 0.5f;
 
 		// Radii from outside in
-		const float arcOuterR  = halfSize - arcGrabR;
-		const float arcInnerR  = arcOuterR - arcThick;
-		const float ringOuterR = arcInnerR - arcGap;
+		const float arcOuterR  = hasArcs ? halfSize - arcGrabR : halfSize;
+		const float arcInnerR  = hasArcs ? arcOuterR - arcThick : halfSize;
+		const float ringOuterR = hasArcs ? arcInnerR - arcGap : halfSize;
 		const float ringInnerR = ringOuterR - ringThickness;
 		const float innerSize  = ( ringInnerR - ringGap ) * 2.0f;
 		const float margin     = halfSize - innerSize * 0.5f;
@@ -11670,31 +11621,36 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float yT = ( yMax > yMin ) ? ImClamp( ( *yValue - yMin ) / ( yMax - yMin ), 0.0f, 1.0f ) : 0.0f;
 		DrawCircularGradientIndicator( window->DrawList, center, ringOuterR, ringInnerR, yT );
 
-		// 2) Arc sliders
-		ImGuiID rightId = id + 1;
-		ImGuiID leftId  = id + 2;
+		// 2) Arc sliders (optional)
+		if ( hasArcs )
+		{
+			ImGuiID rightId = id + 1;
+			ImGuiID leftId  = id + 2;
 
-		ImU32 colRight    = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_HDRWheel_RightArc ] );
-		ImU32 colLeftMin  = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_HDRWheel_LeftArcMin ] );
-		ImU32 colLeftMax  = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_HDRWheel_LeftArcMax ] );
+			ImU32 colRight    = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_HDRWheel_RightArc ] );
+			ImU32 colLeftMin  = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_HDRWheel_LeftArcMin ] );
+			ImU32 colLeftMax  = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_HDRWheel_LeftArcMax ] );
 
-		if ( HDRWheelArcSlider( rightId, window->DrawList, center,
-				arcOuterR, arcInnerR, arcGrabR, rightStart, rightEnd,
-				rightValue, rightMin, rightMax, false, colRight, 0 ) )
-			value_changed = true;
+			if ( rightValue && HDRWheelArcSlider( rightId, window->DrawList, center,
+					arcOuterR, arcInnerR, arcGrabR, rightStart, rightEnd,
+					rightValue, rightMin, rightMax, false, colRight, 0 ) )
+				value_changed = true;
 
-		if ( HDRWheelArcSlider( leftId, window->DrawList, center,
-				arcOuterR, arcInnerR, arcGrabR, leftStart, leftEnd,
-				leftValue, leftMin, leftMax, true, colLeftMin, colLeftMax ) )
-			value_changed = true;
+			if ( leftValue && HDRWheelArcSlider( leftId, window->DrawList, center,
+					arcOuterR, arcInnerR, arcGrabR, leftStart, leftEnd,
+					leftValue, leftMin, leftMax, true, colLeftMin, colLeftMax ) )
+				value_changed = true;
+		}
 
 		// 3) Suppress inner ColorWheel's expand button
 		bool prevExpanded = s_InsideExpandedWidget;
 		s_InsideExpandedWidget = true;
 
-		// 4) Place ColorWheel inside (fixedIntensity, disc-only)
+		// 4) Place ColorWheel inside (fixedIntensity, disc-only).
+		// innerSize is in px; ColorWheel's size arg is lp so convert back.
 		window->DC.CursorPos = ImVec2( startPos.x + margin, startPos.y + margin );
-		if ( ColorWheel( "##cw", color, mode, 1.0f, true, ImVec2( innerSize, innerSize ) ) )
+		float innerSizeLp = PxToLp( innerSize );
+		if ( ColorWheel( "##cw", color, mode, 1.0f, true, ImVec2( innerSizeLp, innerSizeLp ) ) )
 			value_changed = true;
 
 		s_InsideExpandedWidget = prevExpanded;
@@ -11720,7 +11676,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				ImGui::SetNextItemWidth( widgetSize );
 				if ( HDRWheel( "##exp", color, yValue, yMin, yMax,
 						rightValue, rightMin, rightMax, leftValue, leftMin, leftMax,
-						mode, ringThickness ) )
+						mode ) )
 					value_changed = true;
 				ImGui::SameLine();
 				// Right: controls
@@ -11729,16 +11685,22 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				ImGui::SetNextItemWidth( -FLT_MIN );
 				if ( ImGui::DragFloat( "##yval", yValue, 0.01f, yMin, yMax, "%.2f" ) )
 					value_changed = true;
-				ImGui::Spacing();
-				ImGui::TextUnformatted( "Right Arc" );
-				ImGui::SetNextItemWidth( -FLT_MIN );
-				if ( ImGui::DragFloat( "##right", rightValue, 0.01f, rightMin, rightMax, "%.2f" ) )
-					value_changed = true;
-				ImGui::Spacing();
-				ImGui::TextUnformatted( "Left Arc" );
-				ImGui::SetNextItemWidth( -FLT_MIN );
-				if ( ImGui::DragFloat( "##left", leftValue, 0.01f, leftMin, leftMax, "%.2f" ) )
-					value_changed = true;
+				if ( rightValue )
+				{
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "Right Arc" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					if ( ImGui::DragFloat( "##right", rightValue, 0.01f, rightMin, rightMax, "%.2f" ) )
+						value_changed = true;
+				}
+				if ( leftValue )
+				{
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "Left Arc" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					if ( ImGui::DragFloat( "##left", leftValue, 0.01f, leftMin, leftMax, "%.2f" ) )
+						value_changed = true;
+				}
 				ImGui::Spacing();
 				ImGui::TextUnformatted( "Red" );
 				ImGui::SetNextItemWidth( -FLT_MIN );
@@ -11828,14 +11790,17 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const ImGuiID id = window->GetID( label );
 
 		const float w = ImGui::CalcItemWidth();
-		const float sliderWidth = dwStyle.ColorPicker_SliderWidth;
-		const float compSliderH = dwStyle.ColorPicker_ComponentSliderHeight;
+		const float sliderWidth = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float compSliderH = LpToPx( dwStyle.ColorPicker_ComponentSliderHeight );
 		const float spacing = style.ItemInnerSpacing.x;
 		const float vSpacing = style.ItemInnerSpacing.y;
 		const float planeSide = w - sliderWidth - spacing;
-		const int planeRes = ( int )dwStyle.ColorPicker_PlaneResolution;
-		const int sliderRes = ( int )dwStyle.ColorPicker_SliderResolution;
-		const float dotRadius = dwStyle.ColorPicker_DotRadius;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+		const float sliderHandleHH = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+		const float compHandleHW   = LpToPx( dwStyle.ColorPicker_ComponentHandleWidth ) * 0.5f;
 
 		const float totalH = planeSide + vSpacing + ( compSliderH + vSpacing ) * 3.0f;
 
@@ -11921,10 +11886,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			desc.spaceToSRGB( dr, dg, db, comp[0], comp[1], comp[2] );
 			dr = ImSaturate( dr ); dg = ImSaturate( dg ); db = ImSaturate( db );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			dl->AddCircleFilled( dotPos, dotRadius + 1.0f, IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
-			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, 2.0f );
-			dl->AddCircle( dotPos, dotRadius + 1.0f, dotOutCol, 0, isDraggingPlane ? 2.0f : 1.0f );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+			dl->AddCircle( dotPos, dotRadius + LpToPx( 1.0f ), dotOutCol, 0, dotOutlineThick );
 		}
 
 		// Crosshairs on plane
@@ -11950,7 +11915,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			// Slider handle
 			float handleT = ImSaturate( ImNormalize01( comp[ sliderAxis ], desc.axisMin[ sliderAxis ], desc.axisMax[ sliderAxis ] ) );
 			float handleY = ImLerp( vslider_bb.Min.y, vslider_bb.Max.y, handleT );
-			float hh = 3.0f;
+			float hh = sliderHandleHH;
 			ImVec2 handleMin( vslider_bb.Min.x - 1.0f, handleY - hh );
 			ImVec2 handleMax( vslider_bb.Max.x + 1.0f, handleY + hh );
 
@@ -11979,7 +11944,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			// Handle
 			float t = ImSaturate( ImNormalize01( comp[ci], desc.axisMin[ci], desc.axisMax[ci] ) );
 			float handleX = ImLerp( comp_bb[ci].Min.x, comp_bb[ci].Max.x, t );
-			float hw = 3.0f;
+			float hw = compHandleHW;
 			ImVec2 hMin( handleX - hw, comp_bb[ci].Min.y - 1.0f );
 			ImVec2 hMax( handleX + hw, comp_bb[ci].Max.y + 1.0f );
 			dl->AddRectFilled( hMin, hMax, IM_COL32_WHITE, 2.0f );
@@ -12648,6 +12613,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const ImGuiStyle& style = g.Style;
 		const ImGuiID id = window->GetID( label );
 
+		if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+		if ( size.y > 0.0f ) size.y = LpToPx( size.y );
+
 		if ( size.x <= 0.0f ) size.x = ImGui::CalcItemWidth();
 		if ( size.y <= 0.0f ) size.y = size.x * canvas->Height / canvas->Width;
 
@@ -12875,19 +12843,22 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const bool nonUniform = ( flags & ImTransformGizmoFlags_NonUniformScale ) != 0;
 
 		// Style
-		const float handleSz     = dwStyle.Gizmo_HandleSize;
-		const float rotHandleOff = dwStyle.Gizmo_RotationHandleOffset;
-		const float outlineThick = dwStyle.Gizmo_OutlineThickness;
-		const ImU32 colCanvas    = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gizmo_Canvas ] );
-		const ImU32 colOutline   = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gizmo_Outline ] );
-		const ImU32 colHandle    = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gizmo_Handle ] );
-		const ImU32 colHandleAct = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gizmo_HandleActive ] );
-		const ImU32 colBorder    = ImGui::GetColorU32( ImGuiCol_Border );
-		const ImU32 colOutlineDim = IM_COL32( 255, 255, 255, 60 );
+		const float handleSz      = LpToPx( dwStyle.Gizmo_HandleSize );
+		const float rotHandleOff  = LpToPx( dwStyle.Gizmo_RotationHandleOffset );
+		const float outlineThick  = LpToPx( dwStyle.Gizmo_OutlineThickness );
+		const float rotLineThick  = LpToPx( dwStyle.Gizmo_RotationLineThickness );
+		const float centerDotR    = LpToPx( dwStyle.Gizmo_CenterDotRadius );
+		const float edgeHandleSc  = dwStyle.Gizmo_EdgeHandleScale;
+		const ImU32 colCanvas     = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gizmo_Canvas ] );
+		const ImU32 colOutline    = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gizmo_Outline ] );
+		const ImU32 colHandle     = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gizmo_Handle ] );
+		const ImU32 colHandleAct  = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gizmo_HandleActive ] );
+		const ImU32 colOutlineDim = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gizmo_DimOutline ] );
+		const ImU32 colBorder     = ImGui::GetColorU32( ImGuiCol_Border );
 
 		// Canvas size
 		float cw = ( canvasSize.x > 0.0f ) ? canvasSize.x : ImGui::GetContentRegionAvail().x;
-		float ch = ( canvasSize.y > 0.0f ) ? canvasSize.y : 400.0f;
+		float ch = ( canvasSize.y > 0.0f ) ? canvasSize.y : LpToPx( dwStyle.Gizmo_DefaultCanvasHeight );
 
 		// Register item
 		ImRect canvasBB( window->DC.CursorPos, window->DC.CursorPos + ImVec2( cw, ch ) );
@@ -12957,7 +12928,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImVec2 upDir( selSinR, -selCosR );
 			rotHandle = ImVec2( topMid.x + upDir.x * rotHandleOff,
 								topMid.y + upDir.y * rotHandleOff );
-			dl->AddLine( topMid, rotHandle, colOutline, 1.0f );
+			dl->AddLine( topMid, rotHandle, colOutline, rotLineThick );
 
 			// Determine active action for coloring
 			ImGuiStorage* storage = &window->StateStorage;
@@ -12980,7 +12951,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			// Edge midpoint handles (non-uniform scale)
 			if ( nonUniform )
 			{
-				float edgeSz = handleSz * 0.8f;
+				float edgeSz = handleSz * edgeHandleSc;
 				for ( int i = 0; i < 4; ++i )
 				{
 					bool active = ( curAction == 4 && curHandle == i );
@@ -13001,8 +12972,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			}
 
 			// Center dot
-			dl->AddCircleFilled( selCenter, 3.0f, colOutline );
-			dl->AddCircle( selCenter, 3.0f, colBorder );
+			dl->AddCircleFilled( selCenter, centerDotR, colOutline );
+			dl->AddCircle( selCenter, centerDotR, colBorder );
 		}
 
 		dl->PopClipRect();
@@ -13813,15 +13784,19 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( data->Offsets.Size == 0 )
 			data->Init( data->HueDivisions, data->SatDivisions );
 
-		float pointRadius = dwStyle.ColorWarper_PointRadius;
-		float hitRadius = dwStyle.ColorWarper_HitRadius;
-		float gridThick = dwStyle.ColorWarper_GridThickness;
-		int discSectors = ( int )dwStyle.ColorWarper_DiscSectors;
-		int discRings = ( int )dwStyle.ColorWarper_DiscRings;
+		if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+		if ( size.y > 0.0f ) size.y = LpToPx( size.y );
 
-		// Layout
+		float pointRadius = LpToPx( dwStyle.ColorWarper_PointRadius );
+		float hitRadius   = LpToPx( dwStyle.ColorWarper_HitRadius );
+		float gridThick   = LpToPx( dwStyle.ColorWarper_GridThickness );
+		int discSectors = dwStyle.ColorWarper_DiscSectors;
+		int discRings = dwStyle.ColorWarper_DiscRings;
+
+		// Layout. Widget consumes 75% of requested size so other widgets can line up beside it.
 		float side = size.x > 0.0f ? size.x : ( size.y > 0.0f ? size.y : ImGui::GetContentRegionAvail().x );
 		if ( side < 50.0f ) side = 200.0f;
+		side *= 0.75f;
 		ImVec2 frameSize( side, side );
 		if ( label_size.x > 0.0f )
 			frameSize.x += style.ItemInnerSpacing.x + label_size.x;
@@ -13832,13 +13807,15 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( !ImGui::ItemAdd( frame_bb, id ) )
 			return false;
 
+		ImGui::PushID( id );
+
 		bool hovered = ImGui::ItemHoverable( content_bb, id, ImGuiItemFlags_None );
 		if ( IsMouseOverExpandButton( id, content_bb ) ) hovered = false;
 		bool value_changed = false;
 
 		ImDrawList* dl = window->DrawList;
 		ImVec2 center = content_bb.GetCenter();
-		float radius = side * 0.5f - 1.0f;
+		float radius = ( side * 0.5f - 1.0f ) * dwStyle.ColorWarper_DiscScale;
 
 		// Background
 		if ( mode == ImColorWarperMode_Circular )
@@ -13897,7 +13874,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			dl->PushClipRect( content_bb.Min, content_bb.Max, true );
 
-			float dotR = dwStyle.CIEChromaticity_SignalRadius;
+			float dotR = LpToPx( dwStyle.CIEChromaticity_SignalRadius );
 			float signalAlphaF = ImClamp( dwStyle.CIEChromaticity_SignalAlpha, 0.0f, 1.0f );
 			ImU8 alphaU8 = ( ImU8 )( signalAlphaF * 255.0f );
 
@@ -14320,6 +14297,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( value_changed )
 			ImGui::MarkItemEdited( id );
 
+		ImGui::PopID();
+
 		// Expand button
 		bool* pExpanded = WidgetExpandButton( id, content_bb );
 		if ( pExpanded && *pExpanded )
@@ -14652,8 +14631,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImWidgetsStyle& dwStyle = GetStyle();
 		const ImGuiID id = window->GetID( label );
 
+		if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+		if ( size.y > 0.0f ) size.y = LpToPx( size.y );
+
 		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
-		const float h = ( size.y > 0.0f ) ? size.y : dwStyle.ColorCurve_DefaultHeight;
+		const float h = ( size.y > 0.0f ) ? size.y : LpToPx( dwStyle.ColorCurve_DefaultHeight );
 
 		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
 
@@ -14682,8 +14664,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			curve->AddKey( 1.0f, defaultY );
 		}
 
-		float keyRadius = dwStyle.ColorCurve_KeyRadius;
-		float lineThick = dwStyle.ColorCurve_LineThickness;
+		float keyRadius = LpToPx( dwStyle.ColorCurve_KeyRadius );
+		float lineThick = LpToPx( dwStyle.ColorCurve_LineThickness );
 		float hitRadius = keyRadius * 1.6f;
 
 		ImDrawList* dl = window->DrawList;
@@ -14791,24 +14773,31 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			dl->AddLine( nLeft, nRight, neutralCol, 1.5f );
 		}
 
-		// Curve polyline
+		// Curve polyline — sample then route through DrawThickLine.
 		{
 			ImU32 curveCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorCurve_Line ] );
 			int sampleCount = ( int )( w * 0.5f );
 			if ( sampleCount < 64 ) sampleCount = 64;
 
-			ImVec2 prev = ColorCurveToScreen( 0.0f,
+			ImVector<ImVec2> ccLine;
+			ccLine.reserve( sampleCount + 1 );
+			ccLine.push_back( ColorCurveToScreen( 0.0f,
 				curve->Keys.Size > 0 ? ColorCurveSample( *curve, mode, 0.0f, advancedSegments ) : defaultY,
-				frame_bb, yMin, yMax );
+				frame_bb, yMin, yMax ) );
 
 			for ( int s = 1; s <= sampleCount; ++s )
 			{
 				float t = ( float )s / ( float )sampleCount;
 				float val = curve->Keys.Size > 0 ? ColorCurveSample( *curve, mode, t, advancedSegments ) : defaultY;
-				ImVec2 cur = ColorCurveToScreen( t, val, frame_bb, yMin, yMax );
-				dl->AddLine( prev, cur, curveCol, lineThick );
-				prev = cur;
+				ccLine.push_back( ColorCurveToScreen( t, val, frame_bb, yMin, yMax ) );
 			}
+
+			ImWidgetsThickLineDesc ccDesc;
+			ccDesc.color     = curveCol;
+			ccDesc.thickness = lineThick;
+			ccDesc.mode      = (ImWidgetsThickLineMode)dwStyle.ColorCurve_LineMode;
+			ccDesc.dashed    = dwStyle.ColorCurve_LineDashed;
+			DrawThickLine( dl, ccLine.Data, ccLine.Size, ccDesc );
 		}
 
 		// Keys
@@ -14817,7 +14806,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImVec2 kScreen = ColorCurveToScreen( curve->Keys[ i ].Position, curve->Keys[ i ].Value, frame_bb, yMin, yMax );
 			bool isSelected = ( i == selected );
 			bool isHovered = ( i == hovered_key );
-			float radius = isHovered ? keyRadius + 2.0f : keyRadius;
+			float radius = isHovered ? keyRadius + LpToPx( 2.0f ) : keyRadius;
 
 			// For hue modes, tint key with the hue at its position; indicate selection via outline
 			ImU32 keyCol;
@@ -15391,10 +15380,13 @@ namespace ImWidgets {
 
 		ImGuiID const id = window->GetID( label );
 
-		float gradMargin = dwStyle.ParadeScope_GradMargin;
+		if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+		if ( size.y > 0.0f ) size.y = LpToPx( size.y );
+
+		float gradMargin = LpToPx( dwStyle.ParadeScope_GradMargin );
 
 		if ( size.x <= 0.0f ) size.x = ImGui::GetContentRegionAvail().x;
-		if ( size.y <= 0.0f ) size.y = dwStyle.ParadeScope_DefaultHeight;
+		if ( size.y <= 0.0f ) size.y = LpToPx( dwStyle.ParadeScope_DefaultHeight );
 
 		ImRect const total_bb( window->DC.CursorPos, window->DC.CursorPos + size );
 		// Scope area is to the right of the graduation margin
@@ -15403,6 +15395,8 @@ namespace ImWidgets {
 		ImGui::ItemSize( total_bb, style.FramePadding.y );
 		if ( !ImGui::ItemAdd( total_bb, id ) )
 			return;
+
+		ImGui::PushID( id );
 
 		ImDrawList* dl = window->DrawList;
 
@@ -15425,8 +15419,8 @@ namespace ImWidgets {
 		ImU32 tickCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ParadeScope_GradTick ] );
 		ImU32 labelCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ParadeScope_GradLabel ] );
 		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ParadeScope_Grid ] );
-		float tickLen = dwStyle.ParadeScope_GradTickLength;
-		float tickThk = dwStyle.ParadeScope_GradTickThickness;
+		float tickLen = LpToPx( dwStyle.ParadeScope_GradTickLength );
+		float tickThk = LpToPx( dwStyle.ParadeScope_GradTickThickness );
 
 		float scopeW = scope_bb.GetWidth();
 
@@ -15504,6 +15498,7 @@ namespace ImWidgets {
 		if ( data.ChannelCount <= 0 || data.PeakCount == 0 || data.XBins <= 0 || data.YBins <= 0 )
 		{
 			dl->AddRect( scope_bb.Min, scope_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+			ImGui::PopID();
 			return;
 		}
 
@@ -15668,6 +15663,7 @@ namespace ImWidgets {
 			}
 			EndExpandedWindow();
 		}
+		ImGui::PopID();
 	}
 
 	// ========================================================================
@@ -15723,8 +15719,12 @@ namespace ImWidgets {
 
 		ImGuiID const id = window->GetID( label );
 
-		// Force square aspect ratio
-		float side = size.x > 0.0f ? size.x : ( size.y > 0.0f ? size.y : dwStyle.VectorScope_DefaultSize );
+		if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+		if ( size.y > 0.0f ) size.y = LpToPx( size.y );
+
+		// Force square aspect ratio. Widget consumes 75% of requested size so other widgets can line up beside it.
+		float side = size.x > 0.0f ? size.x : ( size.y > 0.0f ? size.y : LpToPx( dwStyle.VectorScope_DefaultSize ) );
+		side *= 0.75f;
 		size = ImVec2( side, side );
 
 		ImRect const total_bb( window->DC.CursorPos, window->DC.CursorPos + size );
@@ -15733,12 +15733,14 @@ namespace ImWidgets {
 		if ( !ImGui::ItemAdd( total_bb, id ) )
 			return;
 
+		ImGui::PushID( id );
+
 		ImDrawList* dl = window->DrawList;
 
 		float scopeW = total_bb.GetWidth();
 		float scopeH = total_bb.GetHeight();
 		ImVec2 center( total_bb.Min.x + scopeW * 0.5f, total_bb.Min.y + scopeH * 0.5f );
-		float radius = scopeW * 0.5f;
+		float radius = scopeW * 0.5f * dwStyle.VectorScope_DiscScale;
 
 		// Background
 		ImU32 bgCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_VectorScope_Background ] );
@@ -15747,7 +15749,7 @@ namespace ImWidgets {
 		// Graticule
 		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_VectorScope_Grid ] );
 		ImU32 gratCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_VectorScope_Graticule ] ); IM_UNUSED( gratCol );
-		float gratThk = dwStyle.VectorScope_GraticuleThickness;
+		float gratThk = LpToPx( dwStyle.VectorScope_GraticuleThickness );
 
 		// Center crosshair
 		dl->AddLine( ImVec2( total_bb.Min.x, center.y ), ImVec2( total_bb.Max.x, center.y ), gridCol );
@@ -15816,6 +15818,7 @@ namespace ImWidgets {
 		if ( data.Resolution <= 0 || data.PeakCount == 0 )
 		{
 			dl->AddRect( total_bb.Min, total_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+			ImGui::PopID();
 			return;
 		}
 
@@ -15921,6 +15924,7 @@ namespace ImWidgets {
 			}
 			EndExpandedWindow();
 		}
+		ImGui::PopID();
 	}
 
 	// ========================================================================
@@ -16086,11 +16090,14 @@ namespace ImWidgets {
 
 		ImGuiID const id = window->GetID( label );
 
-		float gradMarginL = dwStyle.Histogram_GradMarginLeft;
-		float gradMarginB = dwStyle.Histogram_GradMarginBottom;
+		if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+		if ( size.y > 0.0f ) size.y = LpToPx( size.y );
+
+		float gradMarginL = LpToPx( dwStyle.Histogram_GradMarginLeft );
+		float gradMarginB = LpToPx( dwStyle.Histogram_GradMarginBottom );
 
 		if ( size.x <= 0.0f ) size.x = ImGui::GetContentRegionAvail().x;
-		if ( size.y <= 0.0f ) size.y = dwStyle.Histogram_DefaultHeight;
+		if ( size.y <= 0.0f ) size.y = LpToPx( dwStyle.Histogram_DefaultHeight );
 
 		ImRect const total_bb( window->DC.CursorPos, window->DC.CursorPos + size );
 		// Scope area: right of left margin, above bottom margin
@@ -16100,6 +16107,8 @@ namespace ImWidgets {
 		ImGui::ItemSize( total_bb, style.FramePadding.y );
 		if ( !ImGui::ItemAdd( total_bb, id ) )
 			return;
+
+		ImGui::PushID( id );
 
 		ImDrawList* dl = window->DrawList;
 
@@ -16122,8 +16131,8 @@ namespace ImWidgets {
 		ImU32 tickCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Histogram_GradTick ] );
 		ImU32 labelCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Histogram_GradLabel ] );
 		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Histogram_Grid ] );
-		float tickLen = dwStyle.Histogram_GradTickLength;
-		float tickThk = dwStyle.Histogram_GradTickThickness;
+		float tickLen = LpToPx( dwStyle.Histogram_GradTickLength );
+		float tickThk = LpToPx( dwStyle.Histogram_GradTickThickness );
 
 		float scopeH = scope_bb.GetHeight();
 
@@ -16192,8 +16201,8 @@ namespace ImWidgets {
 				minorDiv = 9;
 				DrawLogLineGraduation( dl, gradStart, gradEnd,
 					tickThk, tickCol,
-					majorDiv, tickLen, tickThk, 0.0f, tickCol,
-					minorDiv, tickLen * 0.5f, tickThk * 0.5f, 0.0f, tickCol );
+					majorDiv, tickLen, tickThk, IM_PI, tickCol,
+					minorDiv, tickLen * 0.5f, tickThk * 0.5f, IM_PI, tickCol );
 			}
 			else if ( xScale == ImParadeScale_InvLog )
 			{
@@ -16201,8 +16210,8 @@ namespace ImWidgets {
 				minorDiv = 9;
 				DrawLogLineGraduation( dl, gradEnd, gradStart,
 					tickThk, tickCol,
-					majorDiv, tickLen, tickThk, 0.0f, tickCol,
-					minorDiv, tickLen * 0.5f, tickThk * 0.5f, 0.0f, tickCol );
+					majorDiv, tickLen, tickThk, IM_PI, tickCol,
+					minorDiv, tickLen * 0.5f, tickThk * 0.5f, IM_PI, tickCol );
 			}
 			else
 			{
@@ -16210,8 +16219,8 @@ namespace ImWidgets {
 				minorDiv = 4;
 				DrawLinearLineGraduation( dl, gradStart, gradEnd,
 					tickThk, tickCol,
-					majorDiv, tickLen, tickThk, 0.0f, tickCol,
-					minorDiv, tickLen * 0.5f, tickThk * 0.5f, 0.0f, tickCol );
+					majorDiv, tickLen, tickThk, IM_PI, tickCol,
+					minorDiv, tickLen * 0.5f, tickThk * 0.5f, IM_PI, tickCol );
 			}
 
 			// X-axis labels and vertical grid lines
@@ -16242,6 +16251,7 @@ namespace ImWidgets {
 		if ( data.ChannelCount <= 0 || data.PeakCount == 0 || data.BinCount <= 0 )
 		{
 			dl->AddRect( scope_bb.Min, scope_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+			ImGui::PopID();
 			return;
 		}
 
@@ -16426,6 +16436,7 @@ namespace ImWidgets {
 			}
 			EndExpandedWindow();
 		}
+		ImGui::PopID();
 	}
 
 	// ========================================================================
@@ -16486,19 +16497,30 @@ namespace ImWidgets {
 
 		ImGuiID const id = window->GetID( label );
 
-		float gradMargin = dwStyle.CIEChromaticity_GradMargin;
+		if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+		if ( size.y > 0.0f ) size.y = LpToPx( size.y );
 
-		// Square aspect ratio
-		float side = size.x > 0.0f ? size.x : ( size.y > 0.0f ? size.y : dwStyle.CIEChromaticity_DefaultSize );
-		size = ImVec2( side + gradMargin, side + gradMargin );
+		// Margins are absolute (lp). Defaults are tuned so scope ≈ 75% of total for the default size;
+		// user can override any individually via the Style Editor.
+		float leftM  = LpToPx( dwStyle.CIEChromaticity_GradMargin );       // left margin for Y-axis labels
+		float botM   = LpToPx( dwStyle.CIEChromaticity_GradMargin );       // bottom margin for X-axis labels
+		float rightM = LpToPx( dwStyle.CIEChromaticity_GradMarginRight );
+		float topM   = LpToPx( dwStyle.CIEChromaticity_GradMarginTop );
+
+		// size.x (if given) is the TOTAL widget width. Widget consumes 75% of it so other widgets can line up beside it.
+		float totalSide = size.x > 0.0f ? size.x : ( size.y > 0.0f ? size.y : LpToPx( dwStyle.CIEChromaticity_DefaultSize ) );
+		totalSide *= 0.75f;
+		size = ImVec2( totalSide, totalSide );
 
 		ImRect const total_bb( window->DC.CursorPos, window->DC.CursorPos + size );
-		ImRect const scope_bb( ImVec2( total_bb.Min.x + gradMargin, total_bb.Min.y ),
-							   ImVec2( total_bb.Max.x, total_bb.Max.y - gradMargin ) );
+		ImRect const scope_bb( ImVec2( total_bb.Min.x + leftM, total_bb.Min.y + topM ),
+							   ImVec2( total_bb.Max.x - rightM, total_bb.Max.y - botM ) );
 
 		ImGui::ItemSize( total_bb, style.FramePadding.y );
 		if ( !ImGui::ItemAdd( total_bb, id ) )
 			return;
+
+		ImGui::PushID( id );
 
 		ImDrawList* dl = window->DrawList;
 
@@ -16579,7 +16601,7 @@ namespace ImWidgets {
 		};
 
 		GamutDef const& gd = s_Gamuts[ gamut ];
-		float gamutThk = dwStyle.CIEChromaticity_GamutLineThickness;
+		float gamutThk = LpToPx( dwStyle.CIEChromaticity_GamutLineThickness );
 		ImU32 gamutCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_GamutLine ] );
 
 		// Map xy chromaticity to screen
@@ -16614,7 +16636,7 @@ namespace ImWidgets {
 
 		// White point
 		{
-			float wpR = dwStyle.CIEChromaticity_WhitePointRadius;
+			float wpR = LpToPx( dwStyle.CIEChromaticity_WhitePointRadius );
 			ImU32 wpCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_WhitePoint ] );
 			ImVec2 wp = xyToScreen( gd.w );
 			dl->AddCircle( wp, wpR, wpCol, 12, gamutThk );
@@ -16627,7 +16649,7 @@ namespace ImWidgets {
 		{
 			dl->PushClipRect( scope_bb.Min, scope_bb.Max, true );
 
-			float dotR = dwStyle.CIEChromaticity_SignalRadius;
+			float dotR = LpToPx( dwStyle.CIEChromaticity_SignalRadius );
 			float signalAlpha = ImClamp( dwStyle.CIEChromaticity_SignalAlpha, 0.0f, 1.0f );
 			ImU8 alphaU8 = ( ImU8 )( signalAlpha * 255.0f );
 
@@ -16721,6 +16743,7 @@ namespace ImWidgets {
 			}
 			EndExpandedWindow();
 		}
+		ImGui::PopID();
 	}
 
 	// ========================================================================
@@ -16915,15 +16938,23 @@ namespace ImWidgets {
 		int channelCount = ToneCurveChannelCount( mode );
 		int active = ImClamp( curve->ActiveChannel, 0, channelCount - 1 );
 
-		float gradMarginL = dwStyle.ToneCurve_GradMarginLeft;
-		float gradMarginB = dwStyle.ToneCurve_GradMarginBottom;
+		if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+		if ( size.y > 0.0f ) size.y = LpToPx( size.y );
+
+		// Margins are absolute (lp), user-controlled. Defaults tuned so scope ≈ 75% for typical default size.
+		float gradMarginL = LpToPx( dwStyle.ToneCurve_GradMarginLeft );
+		float gradMarginB = LpToPx( dwStyle.ToneCurve_GradMarginBottom );
+		float gradMarginR = LpToPx( dwStyle.ToneCurve_GradMarginRight );
+		float gradMarginT = LpToPx( dwStyle.ToneCurve_GradMarginTop );
 
 		if ( size.x <= 0.0f ) size.x = ImGui::GetContentRegionAvail().x;
-		if ( size.y <= 0.0f ) size.y = ( size.x - gradMarginL ) + gradMarginB; // 1:1 scope area
+		// Widget consumes 75% of requested width so other widgets can line up beside it.
+		size.x *= 0.75f;
+		if ( size.y <= 0.0f ) size.y = ( size.x - gradMarginL - gradMarginR ) + gradMarginB + gradMarginT; // 1:1 scope area
 
 		ImRect const total_bb( window->DC.CursorPos, window->DC.CursorPos + size );
-		ImRect const scope_bb( ImVec2( total_bb.Min.x + gradMarginL, total_bb.Min.y ),
-							   ImVec2( total_bb.Max.x, total_bb.Max.y - gradMarginB ) );
+		ImRect const scope_bb( ImVec2( total_bb.Min.x + gradMarginL, total_bb.Min.y + gradMarginT ),
+							   ImVec2( total_bb.Max.x - gradMarginR, total_bb.Max.y - gradMarginB ) );
 
 		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
 
@@ -16935,8 +16966,8 @@ namespace ImWidgets {
 		if ( IsMouseOverExpandButton( id, scope_bb ) ) hovered = false;
 		bool value_changed = false;
 
-		float keyRadius = dwStyle.ToneCurve_KeyRadius;
-		float lineThick = dwStyle.ToneCurve_LineThickness;
+		float keyRadius = LpToPx( dwStyle.ToneCurve_KeyRadius );
+		float lineThick = LpToPx( dwStyle.ToneCurve_LineThickness );
 		float hitRadius = keyRadius * 1.6f;
 		float scopeW = scope_bb.GetWidth();
 		float scopeH = scope_bb.GetHeight();
@@ -17036,10 +17067,15 @@ namespace ImWidgets {
 		ImVec4 channelColorsF[ 4 ];
 		ToneCurveGetChannelColors( mode, dwStyle, channelColorsF, 4 );
 
-		// Draw all channel curves
+		// Draw all channel curves — sample then route through DrawThickLine.
 		int sampleCount = ( int )( scopeW * 0.5f );
 		if ( sampleCount < 64 ) sampleCount = 64;
 
+		ImWidgetsThickLineMode tcMode = (ImWidgetsThickLineMode)dwStyle.ToneCurve_LineMode;
+		bool                   tcDashed = dwStyle.ToneCurve_LineDashed;
+
+		ImVector<ImVec2> tcLine;
+		tcLine.reserve( sampleCount + 1 );
 		for ( int ch = 0; ch < channelCount; ++ch )
 		{
 			ImColorCurveData const& chCurve = curve->Channels[ ch ];
@@ -17050,16 +17086,21 @@ namespace ImWidgets {
 			cf.w = alpha;
 			ImU32 curveCol = ImGui::GetColorU32( cf );
 
-			ImVec2 prev = ToneCurveToScreen( 0.0f, ToneCurveSample( chCurve, 0.0f, advancedSegments ), scope_bb );
-
+			tcLine.clear();
+			tcLine.push_back( ToneCurveToScreen( 0.0f, ToneCurveSample( chCurve, 0.0f, advancedSegments ), scope_bb ) );
 			for ( int s = 1; s <= sampleCount; ++s )
 			{
 				float t = ( float )s / ( float )sampleCount;
 				float val = ToneCurveSample( chCurve, t, advancedSegments );
-				ImVec2 cur = ToneCurveToScreen( t, val, scope_bb );
-				dl->AddLine( prev, cur, curveCol, thick );
-				prev = cur;
+				tcLine.push_back( ToneCurveToScreen( t, val, scope_bb ) );
 			}
+
+			ImWidgetsThickLineDesc tcDesc;
+			tcDesc.color     = curveCol;
+			tcDesc.thickness = thick;
+			tcDesc.mode      = tcMode;
+			tcDesc.dashed    = tcDashed;
+			DrawThickLine( dl, tcLine.Data, tcLine.Size, tcDesc );
 		}
 
 		// Keys (active channel only)
@@ -17074,7 +17115,7 @@ namespace ImWidgets {
 				ImVec2 kScreen = ToneCurveToScreen( activeCurve.Keys[ i ].Position, activeCurve.Keys[ i ].Value, scope_bb );
 				bool isSelected = ( i == activeCurve.SelectedIdx );
 				bool isHovered = ( i == hovered_key );
-				float radius = isHovered ? keyRadius + 2.0f : keyRadius;
+				float radius = isHovered ? keyRadius + LpToPx( 2.0f ) : keyRadius;
 
 				dl->AddCircleFilled( kScreen, radius, isSelected ? selCol : keyCol );
 				dl->AddCircle( kScreen, radius, outCol, 0, isSelected ? 2.0f : 1.5f );
@@ -17116,8 +17157,8 @@ namespace ImWidgets {
 
 		// Gradient bands (input/output axis indicators)
 		{
-			float bandThick = dwStyle.ToneCurve_BandThickness;
-			float bandGap = dwStyle.ToneCurve_BandGap;
+			float bandThick = LpToPx( dwStyle.ToneCurve_BandThickness );
+			float bandGap   = LpToPx( dwStyle.ToneCurve_BandGap );
 			int bandDiv = 32;
 
 			auto grayscaleFunc = []( float t, void* ) -> ImU32
@@ -17445,6 +17486,9 @@ namespace ImWidgets {
 		if ( ImGui::Button( "Revert Ref" ) )
 			style = ref ? *ref : ref_saved_style;
 		ImGui::SameLine();
+		if ( ImGui::Button( "Export..." ) )
+			SaveStyleToFile( "dw_style.ini" );
+		ImGui::SameLine();
 		ImGui::TextDisabled( "(?)" );
 		if ( ImGui::IsItemHovered() )
 			ImGui::SetTooltip(
@@ -17474,6 +17518,12 @@ namespace ImWidgets {
 				ImGui::Separator();
 
 				ImGui::SliderFloat( "HueSelector ZeroWidth", &style.HueSelector_Thickness_ZeroWidth, 0.0f, 10.0f );
+
+				// Names list shared by the four DrawThickLine selectors below.
+				char const* tlm_names[] = {
+					"AddPolyline", "PolylineAA", "StrokedPolyline", "StrokedBezierPath", "ImGuiBezier",
+				};
+				int const tlm_count = IM_ARRAYSIZE( tlm_names );
 
 				if ( ImGui::TreeNode( "Slider2D" ) )
 				{
@@ -17507,14 +17557,16 @@ namespace ImWidgets {
 					ImGui::SliderFloat( "HitRadius##CE", &style.CurveEditor_HitRadius, 2.0f, 30.0f );
 					ImGui::SliderFloat( "LineThickness##CE", &style.CurveEditor_LineThickness, 0.5f, 10.0f );
 					ImGui::SliderFloat( "KeyOutlineThickness##CE", &style.CurveEditor_KeyOutlineThickness, 0.5f, 5.0f );
+					ImGui::Combo( "LineMode##CE", &style.CurveEditor_LineMode, tlm_names, tlm_count );
+					ImGui::Checkbox( "LineDashed##CE", &style.CurveEditor_LineDashed );
 					ImGui::TreePop();
 				}
 				if ( ImGui::TreeNode( "Color Wheel" ) )
 				{
 					ImGui::SliderFloat( "DotRadius##CW", &style.ColorWheel_DotRadius, 1.0f, 20.0f );
 					ImGui::SliderFloat( "RingThickness##CW", &style.ColorWheel_RingThickness, 2.0f, 40.0f );
-					ImGui::SliderFloat( "DiscSectors##CW", &style.ColorWheel_DiscSectors, 12.0f, 256.0f );
-					ImGui::SliderFloat( "DiscRings##CW", &style.ColorWheel_DiscRings, 4.0f, 64.0f );
+					ImGui::SliderInt( "DiscSectors##CW", &style.ColorWheel_DiscSectors, 12, 256 );
+					ImGui::SliderInt( "DiscRings##CW", &style.ColorWheel_DiscRings, 4, 64 );
 					ImGui::SliderFloat( "SliderHeight##CW", &style.ColorWheel_SliderHeight, 8.0f, 60.0f );
 					ImGui::TreePop();
 				}
@@ -17535,14 +17587,17 @@ namespace ImWidgets {
 					ImGui::SliderFloat( "PointRadius##CWa", &style.ColorWarper_PointRadius, 1.0f, 20.0f );
 					ImGui::SliderFloat( "HitRadius##CWa", &style.ColorWarper_HitRadius, 2.0f, 30.0f );
 					ImGui::SliderFloat( "GridThickness##CWa", &style.ColorWarper_GridThickness, 0.5f, 5.0f );
-					ImGui::SliderFloat( "DiscSectors##CWa", &style.ColorWarper_DiscSectors, 12.0f, 256.0f );
-					ImGui::SliderFloat( "DiscRings##CWa", &style.ColorWarper_DiscRings, 4.0f, 64.0f );
+					ImGui::SliderInt( "DiscSectors##CWa", &style.ColorWarper_DiscSectors, 12, 256 );
+					ImGui::SliderInt( "DiscRings##CWa", &style.ColorWarper_DiscRings, 4, 64 );
+					ImGui::SliderFloat( "DiscScale##CWa", &style.ColorWarper_DiscScale, 0.3f, 1.0f );
 					ImGui::TreePop();
 				}
 				if ( ImGui::TreeNode( "Color Curve" ) )
 				{
 					ImGui::SliderFloat( "KeyRadius##CC", &style.ColorCurve_KeyRadius, 1.0f, 20.0f );
 					ImGui::SliderFloat( "LineThickness##CC", &style.ColorCurve_LineThickness, 0.5f, 10.0f );
+					ImGui::Combo( "LineMode##CC", &style.ColorCurve_LineMode, tlm_names, tlm_count );
+					ImGui::Checkbox( "LineDashed##CC", &style.ColorCurve_LineDashed );
 					ImGui::TreePop();
 				}
 				if ( ImGui::TreeNode( "Parade Scope" ) )
@@ -17557,6 +17612,7 @@ namespace ImWidgets {
 				{
 					ImGui::SliderFloat( "SignalAlpha##VS", &style.VectorScope_SignalAlpha, 0.0f, 1.0f );
 					ImGui::SliderFloat( "GraticuleThickness##VS", &style.VectorScope_GraticuleThickness, 0.5f, 5.0f );
+					ImGui::SliderFloat( "DiscScale##VS", &style.VectorScope_DiscScale, 0.3f, 1.0f );
 					ImGui::TreePop();
 				}
 				if ( ImGui::TreeNode( "Histogram" ) )
@@ -17574,7 +17630,22 @@ namespace ImWidgets {
 					ImGui::SliderFloat( "GamutLineThickness##CIE", &style.CIEChromaticity_GamutLineThickness, 0.5f, 5.0f );
 					ImGui::SliderFloat( "WhitePointRadius##CIE", &style.CIEChromaticity_WhitePointRadius, 1.0f, 20.0f );
 					ImGui::SliderFloat( "GradMargin##CIE", &style.CIEChromaticity_GradMargin, 0.0f, 80.0f );
+					ImGui::SliderFloat( "GradMarginRight##CIE", &style.CIEChromaticity_GradMarginRight, 0.0f, 80.0f );
+					ImGui::SliderFloat( "GradMarginTop##CIE", &style.CIEChromaticity_GradMarginTop, 0.0f, 80.0f );
 					ImGui::SliderFloat( "SignalAlpha##CIE", &style.CIEChromaticity_SignalAlpha, 0.0f, 1.0f );
+					ImGui::TreePop();
+				}
+				if ( ImGui::TreeNode( "Chromaticity Plot / Line / Point" ) )
+				{
+					ImGui::SliderInt( "PlotResolution##CP", &style.ChromaticityPlot_Resolution, 16, 512 );
+					ImGui::SliderInt( "PlotLineSamples##CP", &style.ChromaticityPlot_LineSamples, 16, 512 );
+					ImGui::SliderFloat( "PlotBorderThickness##CP", &style.ChromaticityPlot_BorderThickness, 0.5f, 10.0f );
+					ImGui::SliderFloat( "PlotTriangleThickness##CP", &style.ChromaticityPlot_TriangleThickness, 0.5f, 10.0f );
+					ImGui::SliderFloat( "LineThickness##CP", &style.ChromaticityLine_Thickness, 0.5f, 10.0f );
+					ImGui::SliderFloat( "PointRadius##CP", &style.ChromaticityPoint_Radius, 1.0f, 32.0f );
+					ImGui::SliderInt( "PointSegments##CP", &style.ChromaticityPoint_Segments, 3, 64 );
+					ImGui::Combo( "LineMode##CP", &style.ChromaticityLine_Mode, tlm_names, tlm_count );
+					ImGui::Checkbox( "LineDashed##CP", &style.ChromaticityLine_Dashed );
 					ImGui::TreePop();
 				}
 				if ( ImGui::TreeNode( "Tone Curve" ) )
@@ -17582,9 +17653,13 @@ namespace ImWidgets {
 					ImGui::SliderFloat( "KeyRadius##TC", &style.ToneCurve_KeyRadius, 1.0f, 20.0f );
 					ImGui::SliderFloat( "LineThickness##TC", &style.ToneCurve_LineThickness, 0.5f, 10.0f );
 					ImGui::SliderFloat( "GradMarginLeft##TC", &style.ToneCurve_GradMarginLeft, 0.0f, 80.0f );
+					ImGui::SliderFloat( "GradMarginRight##TC", &style.ToneCurve_GradMarginRight, 0.0f, 80.0f );
+					ImGui::SliderFloat( "GradMarginTop##TC", &style.ToneCurve_GradMarginTop, 0.0f, 60.0f );
 					ImGui::SliderFloat( "GradMarginBottom##TC", &style.ToneCurve_GradMarginBottom, 0.0f, 60.0f );
 					ImGui::SliderFloat( "BandThickness##TC", &style.ToneCurve_BandThickness, 1.0f, 30.0f );
 					ImGui::SliderFloat( "BandGap##TC", &style.ToneCurve_BandGap, 0.0f, 10.0f );
+					ImGui::Combo( "LineMode##TC", &style.ToneCurve_LineMode, tlm_names, tlm_count );
+					ImGui::Checkbox( "LineDashed##TC", &style.ToneCurve_LineDashed );
 					ImGui::TreePop();
 				}
 
@@ -17646,14 +17721,53 @@ namespace ImWidgets {
 				}
 				if ( ImGui::TreeNode( "Vector Drawing Tool" ) )
 				{
-					ImGui::SliderFloat( "AnchorRadius##VDT", &style.VectorDrawing_AnchorRadius, 2.0f, 12.0f );
-					ImGui::SliderFloat( "TangentRadius##VDT", &style.VectorDrawing_TangentRadius, 2.0f, 10.0f );
+					ImGui::SliderFloat( "AnchorRadius##VDT", &style.VectorDrawing_AnchorRadius, 1.0f, 12.0f );
+					ImGui::SliderFloat( "TangentRadius##VDT", &style.VectorDrawing_TangentRadius, 1.0f, 10.0f );
 					ImGui::SliderFloat( "GridSpacing##VDT", &style.VectorDrawing_GridSpacing, 10.0f, 200.0f );
+					ImGui::SliderFloat( "TangentLineThickness##VDT", &style.VectorDrawing_TangentLineThickness, 0.5f, 5.0f );
+					ImGui::SliderFloat( "AnchorOutlineThickness##VDT", &style.VectorDrawing_AnchorOutlineThickness, 0.5f, 5.0f );
+					ImGui::SliderFloat( "ClosingRingRadius##VDT", &style.VectorDrawing_ClosingRingRadius, 2.0f, 20.0f );
+					ImGui::SliderFloat( "ClosingRingThickness##VDT", &style.VectorDrawing_ClosingRingThickness, 0.5f, 5.0f );
+					ImGui::SliderFloat( "HoverRingGap##VDT", &style.VectorDrawing_HoverRingGap, 0.0f, 10.0f );
+					ImGui::SliderFloat( "HoverRingThickness##VDT", &style.VectorDrawing_HoverRingThickness, 0.5f, 5.0f );
+					ImGui::SliderFloat( "GhostRingThickness##VDT", &style.VectorDrawing_GhostRingThickness, 0.5f, 5.0f );
+					ImGui::SliderFloat( "CrosshairArmLength##VDT", &style.VectorDrawing_CrosshairArmLength, 2.0f, 20.0f );
+					ImGui::SliderFloat( "CrosshairThickness##VDT", &style.VectorDrawing_CrosshairThickness, 0.5f, 5.0f );
 					ImGui::TreePop();
 				}
 				if ( ImGui::TreeNode( "Precision Popup" ) )
 				{
 					ImGui::SliderFloat( "InputWidth (lp)##Prec", &style.PrecisionPopup_InputWidth, 60.0f, 240.0f );
+					ImGui::TreePop();
+				}
+				if ( ImGui::TreeNode( "Transform Gizmo" ) )
+				{
+					ImGui::SliderFloat( "HandleSize##Gz", &style.Gizmo_HandleSize, 2.0f, 30.0f );
+					ImGui::SliderFloat( "RotationHandleOffset##Gz", &style.Gizmo_RotationHandleOffset, 10.0f, 120.0f );
+					ImGui::SliderFloat( "OutlineThickness##Gz", &style.Gizmo_OutlineThickness, 0.5f, 8.0f );
+					ImGui::SliderFloat( "RotationLineThickness##Gz", &style.Gizmo_RotationLineThickness, 0.5f, 8.0f );
+					ImGui::SliderFloat( "CenterDotRadius##Gz", &style.Gizmo_CenterDotRadius, 1.0f, 16.0f );
+					ImGui::SliderFloat( "EdgeHandleScale##Gz", &style.Gizmo_EdgeHandleScale, 0.1f, 1.0f );
+					ImGui::SliderFloat( "DefaultCanvasHeight##Gz", &style.Gizmo_DefaultCanvasHeight, 100.0f, 800.0f );
+					ImGui::TreePop();
+				}
+				if ( ImGui::TreeNode( "HDR / Primaries Wheel" ) )
+				{
+					ImGui::SliderFloat( "RingThickness##HDR", &style.HDRWheel_RingThickness, 2.0f, 40.0f );
+					ImGui::SliderFloat( "RingGap##HDR", &style.HDRWheel_RingGap, 0.0f, 10.0f );
+					ImGui::SliderFloat( "ArcGap##HDR", &style.HDRWheel_ArcGap, 0.0f, 20.0f );
+					ImGui::SliderFloat( "ArcThickness##HDR", &style.HDRWheel_ArcThickness, 2.0f, 40.0f );
+					ImGui::SliderFloat( "ArcGrabRadius##HDR", &style.HDRWheel_ArcGrabRadius, 2.0f, 30.0f );
+					ImGui::TreePop();
+				}
+				if ( ImGui::TreeNode( "Color Picker" ) )
+				{
+					ImGui::SliderFloat( "DotRadius##CP", &style.ColorPicker_DotRadius, 2.0f, 30.0f );
+					ImGui::SliderFloat( "DotOutlineThickness##CP", &style.ColorPicker_DotOutlineThickness, 0.5f, 6.0f );
+					ImGui::SliderFloat( "SliderWidth##CP", &style.ColorPicker_SliderWidth, 10.0f, 80.0f );
+					ImGui::SliderFloat( "SliderHandleHeight##CP", &style.ColorPicker_SliderHandleHeight, 2.0f, 20.0f );
+					ImGui::SliderFloat( "ComponentSliderHeight##CP", &style.ColorPicker_ComponentSliderHeight, 8.0f, 60.0f );
+					ImGui::SliderFloat( "ComponentHandleWidth##CP", &style.ColorPicker_ComponentHandleWidth, 2.0f, 20.0f );
 					ImGui::TreePop();
 				}
 
@@ -17711,9 +17825,9 @@ namespace ImWidgets {
 				float dpi = ImGui::GetStyle().FontScaleDpi;
 				if ( ImGui::SliderFloat( "FontScaleDpi (lp -> px)", &dpi, 0.5f, 4.0f, "%.2fx" ) )
 					ImGui::GetStyle().FontScaleDpi = dpi;
-				ImGui::TextDisabled( "ImPlatform_LpPxScale() = %.3f   ImPlatform_LpToPx(100) = %.1f px",
+				ImGui::TextDisabled( "ImPlatform_LpPxScale() = %.3f   LpToPx(100) = %.1f px",
 					(double)ImPlatform_LpPxScale(),
-					(double)ImPlatform_LpToPx( 100.0f ) );
+					(double)LpToPx( 100.0f ) );
 
 				ImGui::Separator();
 				ImGui::TextDisabled( "ImGui baseline" );
@@ -17752,6 +17866,367 @@ namespace ImWidgets {
 		ImGui::End();
 	}
 
+	//////////////////////////////////////////////////////////////////////////
+	// Style File I/O
+	//////////////////////////////////////////////////////////////////////////
+	void SaveStyleToFile( const char* filename, const ImWidgetsStyle* style )
+	{
+		const ImWidgetsStyle& s = style ? *style : GetStyle();
+		FILE* fp = fopen( filename, "w" );
+		if ( !fp ) return;
+		fprintf( fp, "# DearWidgets style export\n" );
+#define DW_SF(f) fprintf( fp, #f "=%.6g\n", s.f )
+#define DW_SI(f) fprintf( fp, #f "=%d\n",   (int)s.f )
+#define DW_SB(f) fprintf( fp, #f "=%d\n",   s.f ? 1 : 0 )
+		DW_SF( HueSelector_Thickness_ZeroWidth );
+		DW_SF( Slider2D_DragThickness );
+		DW_SF( Slider2D_BorderThickness );
+		DW_SF( Slider2D_LineThickness );
+		DW_SF( Slider2D_CursorRadius );
+		DW_SF( Slider2D_CursorOffset );
+		DW_SF( Slider2D_CornerRadius );
+		DW_SF( Slider2DRange_FillAlpha );
+		DW_SF( Slider2DRange_HandleRadius );
+		DW_SF( Slider2DDisc_CursorRadius );
+		DW_SF( Slider2DDisc_CursorOutlineThickness );
+		DW_SF( Slider2DDisc_RingThickness );
+		DW_SI( Slider2DDisc_GridRings );
+		DW_SF( SliderRing_TrackThickness );
+		DW_SF( SliderRing_GrabRadius );
+		DW_SF( SliderSpline_TrackThickness );
+		DW_SF( SliderSpline_GrabRadius );
+		DW_SF( NavCursor_Thickness );
+		DW_SF( NavCursor_Distance );
+		DW_SF( WhitePoint_Radius );
+		DW_SF( PrecisionDrag_BlockSize );
+		DW_SF( Gradient_MarkerHeight );
+		DW_SF( Gradient_CheckerboardCellSize );
+		DW_SF( Gradient_MarkerThickness );
+		DW_SF( CurveEditor_DefaultHeight );
+		DW_SF( CurveEditor_KeyRadius );
+		DW_SF( CurveEditor_TangentRadius );
+		DW_SF( CurveEditor_HitRadius );
+		DW_SF( CurveEditor_LineThickness );
+		DW_SF( CurveEditor_KeyOutlineThickness );
+		DW_SF( CurveEditor_ZeroLineThickness );
+		DW_SF( ColorWheel_DotRadius );
+		DW_SF( ColorWheel_RingThickness );
+		DW_SI( ColorWheel_DiscSectors );
+		DW_SI( ColorWheel_DiscRings );
+		DW_SF( ColorWheel_SliderHeight );
+		DW_SF( ColorWarper_PointRadius );
+		DW_SF( ColorWarper_HitRadius );
+		DW_SF( ColorWarper_GridThickness );
+		DW_SI( ColorWarper_DiscSectors );
+		DW_SI( ColorWarper_DiscRings );
+		DW_SF( ColorWarper_DiscScale );
+		DW_SF( ColorCurve_DefaultHeight );
+		DW_SF( ColorCurve_KeyRadius );
+		DW_SF( ColorCurve_LineThickness );
+		DW_SF( ParadeScope_DefaultHeight );
+		DW_SF( ParadeScope_OverlayAlpha );
+		DW_SF( ParadeScope_GradTickLength );
+		DW_SF( ParadeScope_GradTickThickness );
+		DW_SF( ParadeScope_GradMargin );
+		DW_SF( VectorScope_DefaultSize );
+		DW_SF( VectorScope_SignalAlpha );
+		DW_SF( VectorScope_GraticuleThickness );
+		DW_SF( VectorScope_DiscScale );
+		DW_SF( Histogram_DefaultHeight );
+		DW_SF( Histogram_OverlayAlpha );
+		DW_SF( Histogram_GradTickLength );
+		DW_SF( Histogram_GradTickThickness );
+		DW_SF( Histogram_GradMarginLeft );
+		DW_SF( Histogram_GradMarginBottom );
+		DW_SF( CIEChromaticity_DefaultSize );
+		DW_SF( CIEChromaticity_SignalRadius );
+		DW_SF( CIEChromaticity_GamutLineThickness );
+		DW_SF( CIEChromaticity_WhitePointRadius );
+		DW_SF( CIEChromaticity_GradMargin );
+		DW_SF( CIEChromaticity_SignalAlpha );
+		DW_SF( CIEChromaticity_GradMarginRight );
+		DW_SF( CIEChromaticity_GradMarginTop );
+		DW_SI( ChromaticityPlot_Resolution );
+		DW_SI( ChromaticityPlot_LineSamples );
+		DW_SF( ChromaticityPlot_BorderThickness );
+		DW_SF( ChromaticityPlot_TriangleThickness );
+		DW_SF( ChromaticityLine_Thickness );
+		DW_SF( ChromaticityPoint_Radius );
+		DW_SI( ChromaticityPoint_Segments );
+		DW_SF( ToneCurve_DefaultHeight );
+		DW_SF( ToneCurve_KeyRadius );
+		DW_SF( ToneCurve_LineThickness );
+		DW_SF( ToneCurve_GradMarginLeft );
+		DW_SF( ToneCurve_GradMarginBottom );
+		DW_SF( ToneCurve_BandThickness );
+		DW_SF( ToneCurve_BandGap );
+		DW_SF( ToneCurve_GradMarginRight );
+		DW_SF( ToneCurve_GradMarginTop );
+		DW_SF( HDRWheel_RightArcStart );
+		DW_SF( HDRWheel_RightArcEnd );
+		DW_SF( HDRWheel_LeftArcStart );
+		DW_SF( HDRWheel_LeftArcEnd );
+		DW_SF( HDRWheel_ArcGap );
+		DW_SF( HDRWheel_ArcThickness );
+		DW_SF( HDRWheel_ArcGrabRadius );
+		DW_SF( HDRWheel_RingThickness );
+		DW_SF( HDRWheel_RingGap );
+		DW_SF( Gizmo_HandleSize );
+		DW_SF( Gizmo_RotationHandleOffset );
+		DW_SF( Gizmo_OutlineThickness );
+		DW_SF( Gizmo_RotationLineThickness );
+		DW_SF( Gizmo_CenterDotRadius );
+		DW_SF( Gizmo_EdgeHandleScale );
+		DW_SF( Gizmo_DefaultCanvasHeight );
+		DW_SF( ColorPicker_DotRadius );
+		DW_SI( ColorPicker_PlaneResolution );
+		DW_SF( ColorPicker_SliderWidth );
+		DW_SI( ColorPicker_SliderResolution );
+		DW_SF( ColorPicker_ComponentSliderHeight );
+		DW_SF( ColorPicker_DotOutlineThickness );
+		DW_SF( ColorPicker_SliderHandleHeight );
+		DW_SF( ColorPicker_ComponentHandleWidth );
+		DW_SF( Hatch_DefaultSpacing );
+		DW_SF( Hatch_DefaultThickness );
+		DW_SF( BezierCurve_KeyRadius );
+		DW_SF( BezierCurve_TangentRadius );
+		DW_SF( BezierCurve_LineThickness );
+		DW_SF( BezierCurve_SnapAngleDeg );
+		DW_SF( FontInspector_GlyphCell );
+		DW_SF( FontInspector_MetricAlpha );
+		DW_SF( NotchedDial_TickLength );
+		DW_SF( NotchedDial_TickThickness );
+		DW_SF( DeltaE_SwatchSize );
+		DW_SF( Equation_BlockPadding );
+		DW_SF( Equation_InlineBaselineOffset );
+		DW_SF( IsoContour_MajorThickness );
+		DW_SF( IsoContour_MediumThickness );
+		DW_SF( IsoContour_MinorThickness );
+		DW_SF( LookDev_DividerThickness );
+		DW_SF( LookDev_HandleRadius );
+		DW_SF( VolumeSlice_HandleRadius );
+		DW_SF( VectorDrawing_AnchorRadius );
+		DW_SF( VectorDrawing_TangentRadius );
+		DW_SF( VectorDrawing_GridSpacing );
+		DW_SF( VectorDrawing_TangentLineThickness );
+		DW_SF( VectorDrawing_AnchorOutlineThickness );
+		DW_SF( VectorDrawing_ClosingRingRadius );
+		DW_SF( VectorDrawing_ClosingRingThickness );
+		DW_SF( VectorDrawing_HoverRingGap );
+		DW_SF( VectorDrawing_HoverRingThickness );
+		DW_SF( VectorDrawing_GhostRingThickness );
+		DW_SF( VectorDrawing_CrosshairArmLength );
+		DW_SF( VectorDrawing_CrosshairThickness );
+		DW_SF( PrecisionPopup_InputWidth );
+		// Line-mode selectors (int) and dashed flags (bool) — DrawThickLine
+		DW_SI( ChromaticityLine_Mode );
+		DW_SB( ChromaticityLine_Dashed );
+		DW_SI( CurveEditor_LineMode );
+		DW_SB( CurveEditor_LineDashed );
+		DW_SI( ColorCurve_LineMode );
+		DW_SB( ColorCurve_LineDashed );
+		DW_SI( ToneCurve_LineMode );
+		DW_SB( ToneCurve_LineDashed );
+#undef DW_SF
+#undef DW_SI
+#undef DW_SB
+		for ( int i = 0; i < StyleColor_Count; ++i )
+		{
+			const ImVec4& c = s.Colors[ i ];
+			fprintf( fp, "Color_%s=%.6g,%.6g,%.6g,%.6g\n", s.GetColorName( (ImWidgetsStyleColor)i ), c.x, c.y, c.z, c.w );
+		}
+		fclose( fp );
+	}
+
+	bool LoadStyleFromFile( const char* filename, ImWidgetsStyle* style )
+	{
+		ImWidgetsStyle& s = style ? *style : GetStyle();
+		FILE* fp = fopen( filename, "r" );
+		if ( !fp ) return false;
+		char line[ 512 ];
+		while ( fgets( line, sizeof( line ), fp ) )
+		{
+			if ( line[ 0 ] == '#' || line[ 0 ] == '\n' || line[ 0 ] == '\r' ) continue;
+			char key[ 128 ] = {};
+			char val[ 256 ] = {};
+			if ( sscanf( line, "%127[^=]=%255s", key, val ) != 2 ) continue;
+			float fv = (float)atof( val );
+#define DW_LF(f) if ( strcmp( key, #f ) == 0 ) { s.f = fv;                continue; }
+#define DW_LI(f) if ( strcmp( key, #f ) == 0 ) { s.f = atoi( val );       continue; }
+#define DW_LB(f) if ( strcmp( key, #f ) == 0 ) { s.f = (atoi( val ) != 0); continue; }
+			DW_LF( HueSelector_Thickness_ZeroWidth )
+			DW_LF( Slider2D_DragThickness )
+			DW_LF( Slider2D_BorderThickness )
+			DW_LF( Slider2D_LineThickness )
+			DW_LF( Slider2D_CursorRadius )
+			DW_LF( Slider2D_CursorOffset )
+			DW_LF( Slider2D_CornerRadius )
+			DW_LF( Slider2DRange_FillAlpha )
+			DW_LF( Slider2DRange_HandleRadius )
+			DW_LF( Slider2DDisc_CursorRadius )
+			DW_LF( Slider2DDisc_CursorOutlineThickness )
+			DW_LF( Slider2DDisc_RingThickness )
+			DW_LI( Slider2DDisc_GridRings )
+			DW_LF( SliderRing_TrackThickness )
+			DW_LF( SliderRing_GrabRadius )
+			DW_LF( SliderSpline_TrackThickness )
+			DW_LF( SliderSpline_GrabRadius )
+			DW_LF( NavCursor_Thickness )
+			DW_LF( NavCursor_Distance )
+			DW_LF( WhitePoint_Radius )
+			DW_LF( PrecisionDrag_BlockSize )
+			DW_LF( Gradient_MarkerHeight )
+			DW_LF( Gradient_CheckerboardCellSize )
+			DW_LF( Gradient_MarkerThickness )
+			DW_LF( CurveEditor_DefaultHeight )
+			DW_LF( CurveEditor_KeyRadius )
+			DW_LF( CurveEditor_TangentRadius )
+			DW_LF( CurveEditor_HitRadius )
+			DW_LF( CurveEditor_LineThickness )
+			DW_LF( CurveEditor_KeyOutlineThickness )
+			DW_LF( CurveEditor_ZeroLineThickness )
+			DW_LF( ColorWheel_DotRadius )
+			DW_LF( ColorWheel_RingThickness )
+			DW_LI( ColorWheel_DiscSectors )
+			DW_LI( ColorWheel_DiscRings )
+			DW_LF( ColorWheel_SliderHeight )
+			DW_LF( ColorWarper_PointRadius )
+			DW_LF( ColorWarper_HitRadius )
+			DW_LF( ColorWarper_GridThickness )
+			DW_LI( ColorWarper_DiscSectors )
+			DW_LI( ColorWarper_DiscRings )
+			DW_LF( ColorWarper_DiscScale )
+			DW_LF( ColorCurve_DefaultHeight )
+			DW_LF( ColorCurve_KeyRadius )
+			DW_LF( ColorCurve_LineThickness )
+			DW_LF( ParadeScope_DefaultHeight )
+			DW_LF( ParadeScope_OverlayAlpha )
+			DW_LF( ParadeScope_GradTickLength )
+			DW_LF( ParadeScope_GradTickThickness )
+			DW_LF( ParadeScope_GradMargin )
+			DW_LF( VectorScope_DefaultSize )
+			DW_LF( VectorScope_SignalAlpha )
+			DW_LF( VectorScope_GraticuleThickness )
+			DW_LF( VectorScope_DiscScale )
+			DW_LF( Histogram_DefaultHeight )
+			DW_LF( Histogram_OverlayAlpha )
+			DW_LF( Histogram_GradTickLength )
+			DW_LF( Histogram_GradTickThickness )
+			DW_LF( Histogram_GradMarginLeft )
+			DW_LF( Histogram_GradMarginBottom )
+			DW_LF( CIEChromaticity_DefaultSize )
+			DW_LF( CIEChromaticity_SignalRadius )
+			DW_LF( CIEChromaticity_GamutLineThickness )
+			DW_LF( CIEChromaticity_WhitePointRadius )
+			DW_LF( CIEChromaticity_GradMargin )
+			DW_LF( CIEChromaticity_SignalAlpha )
+			DW_LF( CIEChromaticity_GradMarginRight )
+			DW_LF( CIEChromaticity_GradMarginTop )
+			DW_LI( ChromaticityPlot_Resolution )
+			DW_LI( ChromaticityPlot_LineSamples )
+			DW_LF( ChromaticityPlot_BorderThickness )
+			DW_LF( ChromaticityPlot_TriangleThickness )
+			DW_LF( ChromaticityLine_Thickness )
+			DW_LF( ChromaticityPoint_Radius )
+			DW_LI( ChromaticityPoint_Segments )
+			DW_LF( ToneCurve_DefaultHeight )
+			DW_LF( ToneCurve_KeyRadius )
+			DW_LF( ToneCurve_LineThickness )
+			DW_LF( ToneCurve_GradMarginLeft )
+			DW_LF( ToneCurve_GradMarginBottom )
+			DW_LF( ToneCurve_BandThickness )
+			DW_LF( ToneCurve_BandGap )
+			DW_LF( ToneCurve_GradMarginRight )
+			DW_LF( ToneCurve_GradMarginTop )
+			DW_LF( HDRWheel_RightArcStart )
+			DW_LF( HDRWheel_RightArcEnd )
+			DW_LF( HDRWheel_LeftArcStart )
+			DW_LF( HDRWheel_LeftArcEnd )
+			DW_LF( HDRWheel_ArcGap )
+			DW_LF( HDRWheel_ArcThickness )
+			DW_LF( HDRWheel_ArcGrabRadius )
+			DW_LF( HDRWheel_RingThickness )
+			DW_LF( HDRWheel_RingGap )
+			DW_LF( Gizmo_HandleSize )
+			DW_LF( Gizmo_RotationHandleOffset )
+			DW_LF( Gizmo_OutlineThickness )
+			DW_LF( Gizmo_RotationLineThickness )
+			DW_LF( Gizmo_CenterDotRadius )
+			DW_LF( Gizmo_EdgeHandleScale )
+			DW_LF( Gizmo_DefaultCanvasHeight )
+			DW_LF( ColorPicker_DotRadius )
+			DW_LI( ColorPicker_PlaneResolution )
+			DW_LF( ColorPicker_SliderWidth )
+			DW_LI( ColorPicker_SliderResolution )
+			DW_LF( ColorPicker_ComponentSliderHeight )
+			DW_LF( ColorPicker_DotOutlineThickness )
+			DW_LF( ColorPicker_SliderHandleHeight )
+			DW_LF( ColorPicker_ComponentHandleWidth )
+			DW_LF( Hatch_DefaultSpacing )
+			DW_LF( Hatch_DefaultThickness )
+			DW_LF( BezierCurve_KeyRadius )
+			DW_LF( BezierCurve_TangentRadius )
+			DW_LF( BezierCurve_LineThickness )
+			DW_LF( BezierCurve_SnapAngleDeg )
+			DW_LF( FontInspector_GlyphCell )
+			DW_LF( FontInspector_MetricAlpha )
+			DW_LF( NotchedDial_TickLength )
+			DW_LF( NotchedDial_TickThickness )
+			DW_LF( DeltaE_SwatchSize )
+			DW_LF( Equation_BlockPadding )
+			DW_LF( Equation_InlineBaselineOffset )
+			DW_LF( IsoContour_MajorThickness )
+			DW_LF( IsoContour_MediumThickness )
+			DW_LF( IsoContour_MinorThickness )
+			DW_LF( LookDev_DividerThickness )
+			DW_LF( LookDev_HandleRadius )
+			DW_LF( VolumeSlice_HandleRadius )
+			DW_LF( VectorDrawing_AnchorRadius )
+			DW_LF( VectorDrawing_TangentRadius )
+			DW_LF( VectorDrawing_GridSpacing )
+			DW_LF( VectorDrawing_TangentLineThickness )
+			DW_LF( VectorDrawing_AnchorOutlineThickness )
+			DW_LF( VectorDrawing_ClosingRingRadius )
+			DW_LF( VectorDrawing_ClosingRingThickness )
+			DW_LF( VectorDrawing_HoverRingGap )
+			DW_LF( VectorDrawing_HoverRingThickness )
+			DW_LF( VectorDrawing_GhostRingThickness )
+			DW_LF( VectorDrawing_CrosshairArmLength )
+			DW_LF( VectorDrawing_CrosshairThickness )
+			DW_LF( PrecisionPopup_InputWidth )
+			// Line-mode selectors (int) and dashed flags (bool) — DrawThickLine
+			DW_LI( ChromaticityLine_Mode )
+			DW_LB( ChromaticityLine_Dashed )
+			DW_LI( CurveEditor_LineMode )
+			DW_LB( CurveEditor_LineDashed )
+			DW_LI( ColorCurve_LineMode )
+			DW_LB( ColorCurve_LineDashed )
+			DW_LI( ToneCurve_LineMode )
+			DW_LB( ToneCurve_LineDashed )
+#undef DW_LF
+#undef DW_LI
+#undef DW_LB
+			if ( strncmp( key, "Color_", 6 ) == 0 )
+			{
+				const char* colorName = key + 6;
+				float r = 0.f, g = 0.f, b = 0.f, a = 1.f;
+				if ( sscanf( val, "%f,%f,%f,%f", &r, &g, &b, &a ) == 4 )
+				{
+					for ( int i = 0; i < StyleColor_Count; ++i )
+					{
+						if ( strcmp( colorName, s.GetColorName( (ImWidgetsStyleColor)i ) ) == 0 )
+						{
+							s.Colors[ i ] = ImVec4( r, g, b, a );
+							break;
+						}
+					}
+				}
+			}
+		}
+		fclose( fp );
+		return true;
+	}
+
 	bool SliderRingScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max, float v_angle_min, float v_angle_max, float v_thickness, const char* format, ImGuiSliderFlags flags )
 	{
 		IM_UNUSED( flags );
@@ -17781,8 +18256,8 @@ namespace ImWidgets {
 
 		// Geometry (computed before interaction for ring hit-test)
 		const ImVec2 center = frame_bb.GetCenter();
-		const float trackThickness = ( v_thickness > 0.0f ) ? v_thickness : dwStyle.SliderRing_TrackThickness;
-		const float grabRadius = dwStyle.SliderRing_GrabRadius;
+		const float trackThickness = LpToPx( ( v_thickness > 0.0f ) ? v_thickness : dwStyle.SliderRing_TrackThickness );
+		const float grabRadius = LpToPx( dwStyle.SliderRing_GrabRadius );
 		const float outerRadius = ( w * 0.5f ) - grabRadius;
 		const float innerRadius = outerRadius - trackThickness;
 		const float midRadius = ( outerRadius + innerRadius ) * 0.5f;
@@ -18074,10 +18549,10 @@ namespace ImWidgets {
 
 		// Layout
 		const float w = ImGui::CalcItemWidth();
-		const float h = (v_height > 0.0f) ? v_height : w * 0.35f;
+		const float h = (v_height > 0.0f) ? LpToPx(v_height) : w * 0.35f;
 		const ImVec2 label_size = ImGui::CalcTextSize(label, NULL, true);
-		const float grabRadius = dwStyle.SliderSpline_GrabRadius;
-		const float padding = grabRadius + 2.0f;
+		const float grabRadius = LpToPx( dwStyle.SliderSpline_GrabRadius );
+		const float padding = grabRadius + LpToPx( 2.0f );
 
 		const ImRect frame_bb(window->DC.CursorPos, window->DC.CursorPos + ImVec2(w, h + padding * 2.0f));
 		const ImRect total_bb(frame_bb.Min, frame_bb.Max + ImVec2(label_size.x > 0.0f ? imStyle.ItemInnerSpacing.x + label_size.x : 0.0f, 0.0f));
@@ -18193,7 +18668,7 @@ namespace ImWidgets {
 		// --- Drawing ---
 		ImDrawList* draw_list = ImGui::GetWindowDrawList();
 		const bool is_active = (g.ActiveId == id);
-		const float trackThickness = (v_thickness > 0.0f) ? v_thickness : dwStyle.SliderSpline_TrackThickness;
+		const float trackThickness = LpToPx( (v_thickness > 0.0f) ? v_thickness : dwStyle.SliderSpline_TrackThickness );
 
 		// col_track (StyleColor_SliderSpline_Track) is no longer used for the
 		// background -- replaced by ImGuiCol_FrameBg so SliderSpline matches
@@ -18376,10 +18851,10 @@ namespace ImWidgets {
 		const int num_segments = ( num_points - 1 ) / 3;
 
 		const float w = ImGui::CalcItemWidth();
-		const float h = ( v_height > 0.0f ) ? v_height : w * 0.35f;
+		const float h = ( v_height > 0.0f ) ? LpToPx( v_height ) : w * 0.35f;
 		const ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
-		const float grabRadius = dwStyle.SliderSpline_GrabRadius;
-		const float padding = grabRadius + 2.0f;
+		const float grabRadius = LpToPx( dwStyle.SliderSpline_GrabRadius );
+		const float padding = grabRadius + LpToPx( 2.0f );
 
 		const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, h + padding * 2.0f ) );
 		const ImRect total_bb( frame_bb.Min, frame_bb.Max + ImVec2( label_size.x > 0.0f ? imStyle.ItemInnerSpacing.x + label_size.x : 0.0f, 0.0f ) );
@@ -18471,7 +18946,7 @@ namespace ImWidgets {
 
 		ImDrawList* draw_list = ImGui::GetWindowDrawList();
 		const bool is_active = ( g.ActiveId == id );
-		const float trackThickness = ( v_thickness > 0.0f ) ? v_thickness : dwStyle.SliderSpline_TrackThickness;
+		const float trackThickness = LpToPx( ( v_thickness > 0.0f ) ? v_thickness : dwStyle.SliderSpline_TrackThickness );
 
 		// Build the polyline once; reused for FrameBg stroke and cut gradient.
 		const int segs_per_bezier = 32;
@@ -18613,7 +19088,7 @@ namespace ImWidgets {
 
 		if ( g.ActiveId == id )
 		{
-			float rungHeight = GetStyle().PrecisionDrag_BlockSize;
+			float rungHeight = LpToPx( GetStyle().PrecisionDrag_BlockSize );
 			float dy = g.IO.MouseClickedPos[ 0 ].y - g.IO.MousePos.y;
 			int rungOffset = ( int )ImFloor( ( dy + rungHeight * 0.5f ) / rungHeight );
 			activeRung = ImClamp( kDefaultRung + rungOffset, 0, kRungCount - 1 );
@@ -18699,7 +19174,7 @@ namespace ImWidgets {
 		if ( g.ActiveId == id )
 		{
 			ImDrawList* fgDl = ImGui::GetForegroundDrawList();
-			float rungHeight = GetStyle().PrecisionDrag_BlockSize;
+			float rungHeight = LpToPx( GetStyle().PrecisionDrag_BlockSize );
 			float rungWidth = 60.0f;
 			float anchorX = g.IO.MouseClickedPos[ 0 ].x;
 			float anchorY = g.IO.MouseClickedPos[ 0 ].y;
@@ -21768,6 +22243,261 @@ namespace ImWidgets
 namespace ImWidgets
 {
     //------------------------------------------------------------------
+    // DrawThickLine — unified line-rendering dispatcher
+    //------------------------------------------------------------------
+    char const* GetThickLineModeName(ImWidgetsThickLineMode mode)
+    {
+        switch (mode)
+        {
+        case ImWidgetsThickLineMode_AddPolyline:        return "AddPolyline";
+        case ImWidgetsThickLineMode_PolylineAA:         return "PolylineAA";
+        case ImWidgetsThickLineMode_StrokedPolyline:    return "StrokedPolyline";
+        case ImWidgetsThickLineMode_StrokedBezierPath:  return "StrokedBezierPath";
+        case ImWidgetsThickLineMode_ImGuiBezier:        return "ImGuiBezier";
+        default:                                        return "Unknown";
+        }
+    }
+
+    // Software fallbacks used when IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER is not defined.
+    // They keep DrawThickLine functional in shader-less builds without forcing every
+    // caller to drop back to plain AddPolyline.
+    namespace
+    {
+        // Software dash splitter. Places dash N at arc-length [N*period + offset, +dash_len].
+        // Negative gap_len means dashes overlap (period < dash_len) — this is allowed and
+        // matches DrawDashedPolylineAA's pattern semantics. Period <= 0 (gap_len <= -dash_len)
+        // would overlap infinitely; we render solid in that case.
+        void DW_SoftwareDashedPolyline(ImDrawList* dl, ImVec2 const* pts, int n,
+                                       ImU32 col, float thickness,
+                                       float dash_len, float gap_len, float dash_offset)
+        {
+            if (!dl || !pts || n < 2 || thickness <= 0.0f || (col & IM_COL32_A_MASK) == 0) return;
+            if (dash_len <= 0.0f)
+            {
+                dl->AddPolyline(pts, n, col, ImDrawFlags_None, thickness);
+                return;
+            }
+            float const period = dash_len + gap_len;
+            if (period <= 0.0f)
+            {
+                // Pathological: full overlap, every point covered by every dash. Render solid.
+                dl->AddPolyline(pts, n, col, ImDrawFlags_None, thickness);
+                return;
+            }
+
+            // Cumulative arc length table per vertex.
+            ImVector<float> arc;
+            arc.resize(n);
+            arc[0] = 0.0f;
+            for (int i = 0; i < n - 1; ++i)
+            {
+                float const dx = pts[i + 1].x - pts[i].x;
+                float const dy = pts[i + 1].y - pts[i].y;
+                arc[i + 1] = arc[i] + ImSqrt(dx * dx + dy * dy);
+            }
+            float const total_len = arc[n - 1];
+            if (total_len <= 1e-6f) return;
+
+            // Binary-search a position on the polyline at arc length s.
+            auto point_at = [&](float s) -> ImVec2
+            {
+                if (s <= 0.0f)        return pts[0];
+                if (s >= total_len)   return pts[n - 1];
+                int lo = 0, hi = n - 1;
+                while (lo + 1 < hi)
+                {
+                    int const mid = (lo + hi) >> 1;
+                    if (arc[mid] <= s) lo = mid;
+                    else               hi = mid;
+                }
+                float const seg = arc[hi] - arc[lo];
+                float const t   = (seg > 1e-6f) ? (s - arc[lo]) / seg : 0.0f;
+                return ImVec2(pts[lo].x + (pts[hi].x - pts[lo].x) * t,
+                              pts[lo].y + (pts[hi].y - pts[lo].y) * t);
+            };
+
+            // Range of dash indices whose interval overlaps [0, total_len].
+            int const N_first = (int)ImFloor((0.0f      - dash_offset) / period) - 1;
+            int const N_last  = (int)ImCeil ((total_len - dash_offset) / period) + 1;
+
+            ImVector<ImVec2> dashBuf;
+            dashBuf.reserve(16);
+            for (int Ni = N_first; Ni <= N_last; ++Ni)
+            {
+                float dash_start = dash_offset + (float)Ni * period;
+                float dash_end   = dash_start + dash_len;
+                if (dash_end <= 0.0f || dash_start >= total_len) continue;
+                if (dash_start < 0.0f)        dash_start = 0.0f;
+                if (dash_end   > total_len)   dash_end   = total_len;
+                if (dash_end - dash_start <= 1e-6f) continue;
+
+                dashBuf.clear();
+                dashBuf.push_back(point_at(dash_start));
+                // Preserve interior vertices whose arc[i] falls strictly inside the dash —
+                // keeps polyline corners intact within a single dash.
+                for (int i = 1; i < n - 1; ++i)
+                {
+                    if (arc[i] > dash_start && arc[i] < dash_end)
+                        dashBuf.push_back(pts[i]);
+                }
+                dashBuf.push_back(point_at(dash_end));
+                if (dashBuf.Size >= 2)
+                    dl->AddPolyline(dashBuf.Data, dashBuf.Size, col, ImDrawFlags_None, thickness);
+            }
+        }
+
+        // Uniform tessellation of a cubic Bezier path (3N+1 control points) into a
+        // dense polyline. Segment count adapts to chord length so visually short
+        // cubics get fewer samples than long ones.
+        void DW_TessellateCubicPathToPolyline(ImVec2 const* bez, int bez_count,
+                                              float tolerance, ImVector<ImVec2>& out)
+        {
+            int const nc = (bez_count - 1) / 3;
+            if (nc <= 0) return;
+            out.reserve(nc * 16);
+            out.push_back(bez[0]);
+            float const step_target = ImMax(tolerance * 4.0f, 1.0f);
+            for (int i = 0; i < nc; ++i)
+            {
+                ImVec2 const p0 = bez[i * 3 + 0];
+                ImVec2 const p1 = bez[i * 3 + 1];
+                ImVec2 const p2 = bez[i * 3 + 2];
+                ImVec2 const p3 = bez[i * 3 + 3];
+                float const chord_dx = p3.x - p0.x;
+                float const chord_dy = p3.y - p0.y;
+                float const chord    = ImSqrt(chord_dx * chord_dx + chord_dy * chord_dy);
+                int segs = (int)(chord / step_target);
+                if (segs < 8)  segs = 8;
+                if (segs > 64) segs = 64;
+                for (int s = 1; s <= segs; ++s)
+                {
+                    float const t  = (float)s / (float)segs;
+                    float const u  = 1.0f - t;
+                    float const u2 = u * u, u3 = u2 * u;
+                    float const t2 = t * t, t3 = t2 * t;
+                    out.push_back(ImVec2(
+                        u3 * p0.x + 3.0f * u2 * t * p1.x + 3.0f * u * t2 * p2.x + t3 * p3.x,
+                        u3 * p0.y + 3.0f * u2 * t * p1.y + 3.0f * u * t2 * p2.y + t3 * p3.y));
+                }
+            }
+        }
+    } // anonymous namespace
+
+    void DrawThickLine(ImDrawList* dl,
+                       ImVec2 const* points, int n,
+                       ImWidgetsThickLineDesc const& d)
+    {
+        if (!dl || !points || n < 2) return;
+
+        switch (d.mode)
+        {
+        case ImWidgetsThickLineMode_AddPolyline:
+            // ImGui native. No dashed primitive at this level — software-dash if asked.
+            if (d.dashed)
+                DW_SoftwareDashedPolyline(dl, points, n, d.color, d.thickness,
+                                          d.dash_len, d.gap_len, d.dash_offset);
+            else
+                dl->AddPolyline(points, n, d.color, ImDrawFlags_None, d.thickness);
+            return;
+
+        case ImWidgetsThickLineMode_PolylineAA:
+            // Only mode that depends on the custom-shader build flag. When the shader
+            // path isn't compiled in, silently fall back to AddPolyline (+ software dash).
+#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+            if (d.dashed)
+            {
+                float const pat[2] = { d.dash_len, d.gap_len };
+                DrawDashedPolylineAA(dl, points, n, d.color, d.thickness,
+                                     pat, 2, d.dash_offset,
+                                     /*closed*/false, d.cap, d.join, d.miter_limit);
+            }
+            else
+            {
+                DrawPolylineAA(dl, points, n, d.color, d.thickness,
+                               /*closed*/false, d.cap, d.join, d.miter_limit);
+            }
+#else
+            if (d.dashed)
+                DW_SoftwareDashedPolyline(dl, points, n, d.color, d.thickness,
+                                          d.dash_len, d.gap_len, d.dash_offset);
+            else
+                dl->AddPolyline(points, n, d.color, ImDrawFlags_None, d.thickness);
+#endif
+            return;
+
+        case ImWidgetsThickLineMode_StrokedPolyline:
+            // Euler-spiral primitives are CPU-only and unguarded — always available.
+            if (d.dashed)
+            {
+                float const pat[2] = { d.dash_len, d.gap_len };
+                DrawStrokedDashedPolyline(dl, points, n, d.color, d.thickness,
+                                          pat, 2, d.dash_offset,
+                                          d.cap, d.join, d.miter_limit, /*closed*/false);
+            }
+            else
+            {
+                DrawStrokedPolyline(dl, points, n, d.color, d.thickness,
+                                    d.cap, d.join, d.miter_limit, /*closed*/false);
+            }
+            return;
+
+        case ImWidgetsThickLineMode_StrokedBezierPath:
+        {
+            // Catmull-Rom -> cubic Bezier path -> Euler-spiral stroke. CPU, always available.
+            ImVector<ImVec2> bez;
+            CatmullRomToCubicBezierPath(points, n, bez);
+            if (bez.Size < 4) return;
+            if (d.dashed)
+            {
+                float const pat[2] = { d.dash_len, d.gap_len };
+                DrawStrokedDashedBezierPath(dl, bez.Data, bez.Size, d.color, d.thickness,
+                                            pat, 2, d.dash_offset,
+                                            d.cap, d.join, d.miter_limit, d.tolerance,
+                                            /*closed*/false);
+            }
+            else
+            {
+                DrawStrokedBezierPath(dl, bez.Data, bez.Size, d.color, d.thickness,
+                                      d.cap, d.join, d.miter_limit, d.tolerance,
+                                      /*closed*/false);
+            }
+            return;
+        }
+
+        case ImWidgetsThickLineMode_ImGuiBezier:
+        {
+            // Catmull-Rom -> cubic Bezier path; render each cubic via ImGui's AddBezierCubic.
+            // Dashed: tessellate to a polyline first, then software-dash. Always available.
+            ImVector<ImVec2> bez;
+            CatmullRomToCubicBezierPath(points, n, bez);
+            if (bez.Size < 4) return;
+            if (d.dashed)
+            {
+                ImVector<ImVec2> poly;
+                DW_TessellateCubicPathToPolyline(bez.Data, bez.Size, d.tolerance, poly);
+                DW_SoftwareDashedPolyline(dl, poly.Data, poly.Size, d.color, d.thickness,
+                                          d.dash_len, d.gap_len, d.dash_offset);
+            }
+            else
+            {
+                int const nc = (bez.Size - 1) / 3;
+                for (int i = 0; i < nc; ++i)
+                {
+                    int const j = i * 3;
+                    dl->AddBezierCubic(bez[j], bez[j + 1], bez[j + 2], bez[j + 3],
+                                       d.color, d.thickness, /*num_segments*/0);
+                }
+            }
+            return;
+        }
+
+        default:
+            dl->AddPolyline(points, n, d.color, ImDrawFlags_None, d.thickness);
+            return;
+        }
+    }
+
+    //------------------------------------------------------------------
     // Shared interaction helpers (precision popup, keyboard nudge, box select)
     //------------------------------------------------------------------
     bool BeginPrecisionPopup(const char* str_id, ImVec2 anchor)
@@ -21782,7 +22512,7 @@ namespace ImWidgets
                         float v_min, float v_max, const char* fmt)
     {
         if (!v) return false;
-        ImGui::SetNextItemWidth(ImPlatform_LpToPx(GetStyle().PrecisionPopup_InputWidth));
+        ImGui::SetNextItemWidth(LpToPx(GetStyle().PrecisionPopup_InputWidth));
         // EnterReturnsTrue is unsupported by InputScalar (asserts). Detect commits via IsItemDeactivatedAfterEdit instead.
         ImGui::InputFloat(label, v, step, step * 10.0f, fmt, ImGuiInputTextFlags_AutoSelectAll);
         bool changed = ImGui::IsItemDeactivatedAfterEdit();
@@ -21792,7 +22522,7 @@ namespace ImWidgets
     bool PrecisionInt(const char* label, int* v, int step, int v_min, int v_max)
     {
         if (!v) return false;
-        ImGui::SetNextItemWidth(ImPlatform_LpToPx(GetStyle().PrecisionPopup_InputWidth));
+        ImGui::SetNextItemWidth(LpToPx(GetStyle().PrecisionPopup_InputWidth));
         ImGui::InputInt(label, v, step, step * 10, ImGuiInputTextFlags_AutoSelectAll);
         bool changed = ImGui::IsItemDeactivatedAfterEdit();
         if (changed) *v = ImClamp(*v, v_min, v_max);
@@ -23273,10 +24003,10 @@ namespace ImWidgets
         float curve_h = ascent + ImFabs(descent);
 
         ImVec2 avail = ImGui::GetContentRegionAvail();
-        float inner_pad = ImPlatform_LpToPx(8.0f); // small gutter inside the box
+        float inner_pad = LpToPx(8.0f); // small gutter inside the box
         float box_h_min = ImMin(avail.y, curve_h + 2.0f * inner_pad);
         // Use the full remaining height for the box, centering the glyph inside.
-        float box_h = ImMax(box_h_min, ImMin(avail.y, ImPlatform_LpToPx(200.0f)));
+        float box_h = ImMax(box_h_min, ImMin(avail.y, LpToPx(200.0f)));
         // Space above the box so it sits in the center of what's left.
         float extra = avail.y - box_h;
         float top_spacer = ImMax(0.0f, extra * 0.5f);
@@ -23292,7 +24022,7 @@ namespace ImWidgets
         // Center the glyph vertically inside the box: top of ascent sits at
         // (box_h - curve_h) / 2 down from the top, baseline = that + ascent.
         float glyph_top = ImMax(inner_pad, (box_h - curve_h) * 0.5f);
-        ImVec2 tp(box_min.x + ImPlatform_LpToPx(20.0f), box_min.y + glyph_top + ascent);
+        ImVec2 tp(box_min.x + LpToPx(20.0f), box_min.y + glyph_top + ascent);
         dl->AddLine(ImVec2(box_min.x + 6, tp.y), ImVec2(box_max.x - 6, tp.y),
                     IM_COL32(255, 180, 50, 120), 1.0f);
         DrawTextDebugCurves(dl, font, big, tp, buf, nullptr, /*flags=*/(1 | 2 | 4));
@@ -23327,6 +24057,8 @@ namespace ImWidgets
     {
         if (!font) font = ImGui::GetFont();
         ImGui::PushID(label);
+        if (size.x > 0.0f) size.x = LpToPx(size.x);
+        if (size.y > 0.0f) size.y = LpToPx(size.y);
         if (size.x <= 0.0f) size.x = ImGui::GetContentRegionAvail().x;
         if (size.y <= 0.0f) size.y = 320.0f;
         ImFontBaked* baked_hdr = font->GetFontBaked(display_size > 0 ? display_size : ImGui::GetFontSize());
@@ -23350,11 +24082,13 @@ namespace ImWidgets
                      const char* const* stop_labels, ImVec2 size)
     {
         if (!stops || stop_count < 2) return false;
+        if (size.x > 0.0f) size.x = LpToPx(size.x);
+        if (size.y > 0.0f) size.y = LpToPx(size.y);
         // Default size -- 160 lp instead of 80 px (old default was basically
         // invisibly tiny on high DPI). Leave room at the bottom for labels when
         // provided so they don't get clipped by surrounding layout.
-        if (size.x <= 0.0f) size.x = ImPlatform_LpToPx(160.0f);
-        if (size.y <= 0.0f) size.y = ImPlatform_LpToPx(stop_labels ? 180.0f : 160.0f);
+        if (size.x <= 0.0f) size.x = LpToPx(160.0f);
+        if (size.y <= 0.0f) size.y = LpToPx(stop_labels ? 180.0f : 160.0f);
         ImVec2 pos = ImGui::GetCursorScreenPos();
         // Explicit MouseButtonLeft flag + capture IsItemActivated so a plain
         // click (no drag) still moves the notch. Previously the widget relied
@@ -23367,7 +24101,7 @@ namespace ImWidgets
         bool active    = ImGui::IsItemActive();
         IM_UNUSED(hovered);
         // Center the dial in the top portion; label strip lives below.
-        float labelStrip = stop_labels ? ImGui::GetTextLineHeight() + ImPlatform_LpToPx(6.0f) : 0.0f;
+        float labelStrip = stop_labels ? ImGui::GetTextLineHeight() + LpToPx(6.0f) : 0.0f;
         ImVec2 center(pos.x + size.x * 0.5f, pos.y + (size.y - labelStrip) * 0.5f);
         float radius = ImMin(size.x, size.y - labelStrip) * 0.42f;
         ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -23376,8 +24110,8 @@ namespace ImWidgets
         dl->AddCircle(center, radius, IM_COL32(200, 200, 200, 220), 64, 2.0f);
 
         ImWidgetsStyle& style = GetStyle();
-        float tick_len = ImPlatform_LpToPx(style.NotchedDial_TickLength) * 1.6f;
-        float tick_th  = ImPlatform_LpToPx(style.NotchedDial_TickThickness) * 1.5f;
+        float tick_len = LpToPx(style.NotchedDial_TickLength) * 1.6f;
+        float tick_th  = LpToPx(style.NotchedDial_TickThickness) * 1.5f;
         // Find current stop index (nearest).
         int cur = 0;
         float bestD = FLT_MAX;
@@ -23400,7 +24134,7 @@ namespace ImWidgets
             dl->AddLine(a, b, tc, tick_th + (i == cur ? 1.0f : 0.0f));
             if (stop_labels && stop_labels[i])
             {
-                float lrad = radius + tick_len + ImPlatform_LpToPx(10.0f);
+                float lrad = radius + tick_len + LpToPx(10.0f);
                 ImVec2 lp(center.x + ImCos(ang) * lrad, center.y + ImSin(ang) * lrad);
                 ImVec2 ts = ImGui::CalcTextSize(stop_labels[i]);
                 // Center each label on its tick direction.
@@ -23411,11 +24145,11 @@ namespace ImWidgets
         // Pointer -- thicker, with a filled disc at the tip for clarity.
         float t_cur = (float)cur / (float)(stop_count - 1);
         float ang_cur = arc_min + t_cur * (arc_max - arc_min);
-        ImVec2 tip(center.x + ImCos(ang_cur) * (radius - ImPlatform_LpToPx(4.0f)),
-                   center.y + ImSin(ang_cur) * (radius - ImPlatform_LpToPx(4.0f)));
-        dl->AddLine(center, tip, IM_COL32(255, 230, 140, 255), ImPlatform_LpToPx(3.0f));
-        dl->AddCircleFilled(tip, ImPlatform_LpToPx(5.0f), IM_COL32(255, 230, 140, 255), 16);
-        dl->AddCircleFilled(center, ImPlatform_LpToPx(4.0f), IM_COL32(230, 230, 230, 255), 16);
+        ImVec2 tip(center.x + ImCos(ang_cur) * (radius - LpToPx(4.0f)),
+                   center.y + ImSin(ang_cur) * (radius - LpToPx(4.0f)));
+        dl->AddLine(center, tip, IM_COL32(255, 230, 140, 255), LpToPx(3.0f));
+        dl->AddCircleFilled(tip, LpToPx(5.0f), IM_COL32(255, 230, 140, 255), 16);
+        dl->AddCircleFilled(center, LpToPx(4.0f), IM_COL32(230, 230, 230, 255), 16);
 
         bool changed = false;
         if (active || activated)
@@ -23441,9 +24175,11 @@ namespace ImWidgets
             if (nxt != cur) { *v = stops[nxt]; changed = true; }
         }
         // Precision popup on double-click: snap to nearest stop after entry.
+        char nd_prec_id[32];
+        ImFormatString(nd_prec_id, sizeof(nd_prec_id), "##nd_prec%08X", ImGui::GetID(label));
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
-            ImGui::OpenPopup("##nd_prec");
-        if (BeginPrecisionPopup("##nd_prec", ImGui::GetIO().MousePos))
+            ImGui::OpenPopup(nd_prec_id);
+        if (BeginPrecisionPopup(nd_prec_id, ImGui::GetIO().MousePos))
         {
             if (PrecisionFloat("Value", v, 0.0f, -FLT_MAX, FLT_MAX, "%.4f"))
             {
@@ -23668,6 +24404,8 @@ namespace ImWidgets
                        ImWidgetsEquationFlags flags)
     {
         ImGui::PushID(label);
+        if (size.x > 0.0f) size.x = LpToPx(size.x);
+        if (size.y > 0.0f) size.y = LpToPx(size.y);
         if (size.x <= 0.0f) size.x = ImGui::GetContentRegionAvail().x;
         if (size.y <= 0.0f) size.y = 120.0f;
         bool changed = false;
@@ -23961,7 +24699,7 @@ namespace ImWidgets
         int unroll = store->GetInt(kAxis, 2); // default Z (original behavior)
         bool wrap = store->GetInt(kWrap, 1) != 0;
         const char* axis_names[] = { "X", "Y", "Z" };
-        ImGui::SetNextItemWidth(ImPlatform_LpToPx(100.0f));
+        ImGui::SetNextItemWidth(LpToPx(100.0f));
         if (ImGui::Combo("Unroll axis", &unroll, axis_names, 3)) store->SetInt(kAxis, unroll);
         ImGui::SameLine();
         if (ImGui::Checkbox("Wrap", &wrap)) store->SetInt(kWrap, wrap ? 1 : 0);
@@ -24085,6 +24823,8 @@ namespace ImWidgets
     {
         if (!state) return false;
         ImGui::PushID(label);
+        if (size.x > 0.0f) size.x = LpToPx(size.x);
+        if (size.y > 0.0f) size.y = LpToPx(size.y);
         if (size.x <= 0.0f) size.x = ImGui::GetContentRegionAvail().x;
         if (size.y <= 0.0f) size.y = size.x * 9.0f / 16.0f;
         ImVec2 pos = ImGui::GetCursorScreenPos();
@@ -24174,8 +24914,8 @@ namespace ImWidgets
         ImVec2 lineB(pivot.x + s_max * tx, pivot.y + s_max * ty);
 
         ImWidgetsStyle& ldv_style = GetStyle();
-        float ldv_div_th   = ImPlatform_LpToPx(ldv_style.LookDev_DividerThickness);
-        float ldv_handle_r = ImPlatform_LpToPx(ldv_style.LookDev_HandleRadius);
+        float ldv_div_th   = LpToPx(ldv_style.LookDev_DividerThickness);
+        float ldv_handle_r = LpToPx(ldv_style.LookDev_HandleRadius);
         dl->AddLine(lineA, lineB, IM_COL32(255, 255, 255, 220), ldv_div_th);
 
         // Yellow slide/pivot handle: exactly at `pivot` (the authoritative state).
@@ -24185,7 +24925,7 @@ namespace ImWidgets
         // Blue rotation handle: offset from pivot along the tangent, clamped inside
         // the visible line segment so it's always hit-testable.
         float half_len = 0.5f * ImMax(0.0f, s_max - s_min);
-        float rot_dist = ImMin(ImPlatform_LpToPx(40.0f),
+        float rot_dist = ImMin(LpToPx(40.0f),
                                ImMax(8.0f, half_len - ldv_handle_r * 1.2f));
         ImVec2 rot_h(pivot.x + tx * rot_dist, pivot.y + ty * rot_dist);
         dl->AddLine(pivot, rot_h, IM_COL32(255, 220, 80, 180), 1.0f);
@@ -24198,7 +24938,7 @@ namespace ImWidgets
         bool* pExpanded = WidgetExpandButton(ldv_id, bb);
         if (pExpanded && *pExpanded)
         {
-            if (BeginExpandedWindow(label, ldv_id, pExpanded, ImPlatform_LpToPx(ImVec2(1280, 720))))
+            if (BeginExpandedWindow(label, ldv_id, pExpanded, LpToPx(ImVec2(1280, 720))))
             {
                 LookDevCompare("##ldv_modal", tex_a, tex_b,
                                a_uv_min, a_uv_max, b_uv_min, b_uv_max,
@@ -24343,6 +25083,8 @@ namespace ImWidgets
         }
 
         // Canvas.
+        if (size.x > 0.0f) size.x = LpToPx(size.x);
+        if (size.y > 0.0f) size.y = LpToPx(size.y);
         if (size.x <= 0.0f) size.x = ImGui::GetContentRegionAvail().x;
         if (size.y <= 0.0f) size.y = size.x * 9.0f / 16.0f;
         ImVec2 pos = ImGui::GetCursorScreenPos();
@@ -24440,13 +25182,13 @@ namespace ImWidgets
         ImVec2 lineA(pivot.x + s_min * tx, pivot.y + s_min * ty);
         ImVec2 lineB(pivot.x + s_max * tx, pivot.y + s_max * ty);
         ImWidgetsStyle& ss = GetStyle();
-        float div_th = ImPlatform_LpToPx(ss.LookDev_DividerThickness);
-        float hr     = ImPlatform_LpToPx(ss.LookDev_HandleRadius);
+        float div_th = LpToPx(ss.LookDev_DividerThickness);
+        float hr     = LpToPx(ss.LookDev_HandleRadius);
         dl->AddLine(lineA, lineB, IM_COL32(255, 255, 255, 220), div_th);
         dl->AddCircleFilled(pivot, hr, IM_COL32(255, 220, 80, 230));
         dl->AddCircle(pivot, hr, IM_COL32(0, 0, 0, 220), 12, 1.0f);
         float half_len = 0.5f * ImMax(0.0f, s_max - s_min);
-        float rot_dist = ImMin(ImPlatform_LpToPx(40.0f), ImMax(8.0f, half_len - hr * 1.2f));
+        float rot_dist = ImMin(LpToPx(40.0f), ImMax(8.0f, half_len - hr * 1.2f));
         ImVec2 rot_h(pivot.x + tx * rot_dist, pivot.y + ty * rot_dist);
         dl->AddCircleFilled(rot_h, hr * 0.7f, IM_COL32(120, 220, 255, 230));
         dl->AddCircle(rot_h, hr * 0.7f, IM_COL32(0, 0, 0, 220), 12, 1.0f);
@@ -24457,7 +25199,7 @@ namespace ImWidgets
         bool* pExpanded = WidgetExpandButton(ldi_id, bb);
         if (pExpanded && *pExpanded)
         {
-            if (BeginExpandedWindow(label, ldi_id, pExpanded, ImPlatform_LpToPx(ImVec2(1280, 720))))
+            if (BeginExpandedWindow(label, ldi_id, pExpanded, LpToPx(ImVec2(1280, 720))))
             {
                 LookDevInspector("##ldi_modal", tex_a, tex_b, st, ImGui::GetContentRegionAvail());
             }
@@ -24580,6 +25322,8 @@ namespace ImWidgets
         ImGui::SliderFloat("Mix B",  &st->MixB,     0.0f, 1.0f, "%.2f");
         ImGui::SliderFloat("Mix dE", &st->MixDeltaE, 0.0f, 1.0f, "%.2f");
 
+        if (size.x > 0.0f) size.x = LpToPx(size.x);
+        if (size.y > 0.0f) size.y = LpToPx(size.y);
         if (size.x <= 0.0f) size.x = ImGui::GetContentRegionAvail().x;
         if (size.y <= 0.0f) size.y = size.x * 9.0f / 16.0f;
         ImVec2 pos = ImGui::GetCursorScreenPos();
@@ -25123,14 +25867,14 @@ namespace ImWidgets
         if (ImGui::SliderFloat("Z slice", &st->SliceZ, 0.0f, 1.0f, "%.3f")) changed = true;
 
         if (size.x <= 0.0f) size.x = ImGui::GetContentRegionAvail().x;
-        float sub_w = size.x / 3.0f - ImPlatform_LpToPx(8.0f);
+        float sub_w = size.x / 3.0f - LpToPx(8.0f);
         // Each slice renders at sub_w; height is auto from aspect.
         ImGui::BeginGroup();
         ImGui::BeginGroup();
         ImGui::TextUnformatted("Sagittal (X)");
         ImGui::PushID("vv_x");
         ImGui::BeginChild("##vv_x_child", ImVec2(sub_w, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders);
-        VolumeSliceViewer("x", &st->CacheX, ImVec2(sub_w - ImPlatform_LpToPx(16.0f), 0));
+        VolumeSliceViewer("x", &st->CacheX, ImVec2(sub_w - LpToPx(16.0f), 0));
         ImGui::EndChild();
         ImGui::PopID();
         ImGui::EndGroup();
@@ -25139,7 +25883,7 @@ namespace ImWidgets
         ImGui::TextUnformatted("Coronal (Y)");
         ImGui::PushID("vv_y");
         ImGui::BeginChild("##vv_y_child", ImVec2(sub_w, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders);
-        VolumeSliceViewer("y", &st->CacheY, ImVec2(sub_w - ImPlatform_LpToPx(16.0f), 0));
+        VolumeSliceViewer("y", &st->CacheY, ImVec2(sub_w - LpToPx(16.0f), 0));
         ImGui::EndChild();
         ImGui::PopID();
         ImGui::EndGroup();
@@ -25148,7 +25892,7 @@ namespace ImWidgets
         ImGui::TextUnformatted("Axial (Z)");
         ImGui::PushID("vv_z");
         ImGui::BeginChild("##vv_z_child", ImVec2(sub_w, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders);
-        VolumeSliceViewer("z", &st->CacheZ, ImVec2(sub_w - ImPlatform_LpToPx(16.0f), 0));
+        VolumeSliceViewer("z", &st->CacheZ, ImVec2(sub_w - LpToPx(16.0f), 0));
         ImGui::EndChild();
         ImGui::PopID();
         ImGui::EndGroup();

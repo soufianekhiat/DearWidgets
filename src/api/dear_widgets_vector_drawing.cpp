@@ -1,4 +1,4 @@
-// dear_widgets_vector_drawing.cpp
+﻿// dear_widgets_vector_drawing.cpp
 // Vector Drawing Tool widget -- world-space bezier path authoring canvas.
 // Extracted from dear_widgets.cpp as its own translation unit; compiled
 // standalone and resolved via the linker (not unity-build #include).
@@ -91,6 +91,8 @@ namespace ImWidgets {
     {
         ImGuiWindow* win = ImGui::GetCurrentWindow();
         if (win->SkipItems) return false;
+        if (size.x > 0.0f) size.x = LpToPx(size.x);
+        if (size.y > 0.0f) size.y = LpToPx(size.y);
         if (size.x <= 0.0f) size.x = ImGui::GetContentRegionAvail().x;
         if (size.y <= 0.0f) size.y = 360.0f;
         ImGui::PushID(label);
@@ -511,6 +513,11 @@ namespace ImWidgets {
             bool show_handles = (pi == data.SelectedPath) || (pi == data.ActivePath);
             if (show_handles)
             {
+                ImWidgetsStyle& vdt_style = GetStyle();
+                float vdt_ar  = LpToPx(vdt_style.VectorDrawing_AnchorRadius);
+                float vdt_tr  = LpToPx(vdt_style.VectorDrawing_TangentRadius);
+                float vdt_tlt = LpToPx(vdt_style.VectorDrawing_TangentLineThickness);
+                float vdt_aot = LpToPx(vdt_style.VectorDrawing_AnchorOutlineThickness);
                 for (int ni = 0; ni < p.Nodes.Size; ++ni)
                 {
                     ImVec2 ap = DWE_VDTW2S(data, canvas_min, p.Nodes[ni].Anchor);
@@ -520,17 +527,14 @@ namespace ImWidgets {
                     ImVec2 outp = DWE_VDTW2S(data, canvas_min,
                                              ImVec2(p.Nodes[ni].Anchor.x + p.Nodes[ni].OutTangent.x,
                                                     p.Nodes[ni].Anchor.y + p.Nodes[ni].OutTangent.y));
-                    ImWidgetsStyle& vdt_style = GetStyle();
-                    float vdt_ar = ImPlatform_LpToPx(vdt_style.VectorDrawing_AnchorRadius);
-                    float vdt_tr = ImPlatform_LpToPx(vdt_style.VectorDrawing_TangentRadius);
                     if (p.Nodes[ni].InTangent.x != 0.0f || p.Nodes[ni].InTangent.y != 0.0f)
                     {
-                        dl->AddLine(ap, inp, IM_COL32(255, 200, 80, 180), 1.0f);
+                        dl->AddLine(ap, inp, IM_COL32(255, 200, 80, 180), vdt_tlt);
                         dl->AddCircleFilled(inp, vdt_tr, IM_COL32(255, 200, 80, 220));
                     }
                     if (p.Nodes[ni].OutTangent.x != 0.0f || p.Nodes[ni].OutTangent.y != 0.0f)
                     {
-                        dl->AddLine(ap, outp, IM_COL32(255, 200, 80, 180), 1.0f);
+                        dl->AddLine(ap, outp, IM_COL32(255, 200, 80, 180), vdt_tlt);
                         dl->AddCircleFilled(outp, vdt_tr, IM_COL32(255, 200, 80, 220));
                     }
                     bool sel = (pi == data.SelectedPath && ni == data.SelectedNode);
@@ -541,13 +545,15 @@ namespace ImWidgets {
                     float ar = sel ? vdt_ar * 1.25f : vdt_ar;
                     dl->AddCircleFilled(ap, ar,
                                         sel ? IM_COL32(255, 255, 0, 255) : IM_COL32(255, 255, 255, 255));
-                    dl->AddCircle(ap, ar, IM_COL32(0, 0, 0, 255), 16, 1.0f);
+                    dl->AddCircle(ap, ar, IM_COL32(0, 0, 0, 255), 16, vdt_aot);
                 }
                 // First-node ring indicator when closing is possible.
                 if (pi == data.ActivePath && p.Nodes.Size >= 3)
                 {
                     ImVec2 ap0 = DWE_VDTW2S(data, canvas_min, p.Nodes[0].Anchor);
-                    dl->AddCircle(ap0, 9.0f, IM_COL32(120, 220, 255, 200), 24, 1.5f);
+                    dl->AddCircle(ap0, LpToPx(vdt_style.VectorDrawing_ClosingRingRadius),
+                                  IM_COL32(120, 220, 255, 200), 24,
+                                  LpToPx(vdt_style.VectorDrawing_ClosingRingThickness));
                 }
             }
         }
@@ -557,8 +563,14 @@ namespace ImWidgets {
         // user can see exactly where a click would place a new anchor.
         if (hovered && !panning)
         {
-            float vdt_ar = ImPlatform_LpToPx(GetStyle().VectorDrawing_AnchorRadius);
-            float vdt_tr = ImPlatform_LpToPx(GetStyle().VectorDrawing_TangentRadius);
+            ImWidgetsStyle& hover_style = GetStyle();
+            float vdt_ar   = LpToPx(hover_style.VectorDrawing_AnchorRadius);
+            float vdt_tr   = LpToPx(hover_style.VectorDrawing_TangentRadius);
+            float vdt_hrg  = LpToPx(hover_style.VectorDrawing_HoverRingGap);
+            float vdt_hrt  = LpToPx(hover_style.VectorDrawing_HoverRingThickness);
+            float vdt_grt  = LpToPx(hover_style.VectorDrawing_GhostRingThickness);
+            float vdt_cal  = LpToPx(hover_style.VectorDrawing_CrosshairArmLength);
+            float vdt_ct   = LpToPx(hover_style.VectorDrawing_CrosshairThickness);
             if (hit_path >= 0 && hit_node >= 0
                 && hit_path < data.Paths.Size
                 && hit_node < data.Paths[hit_path].Nodes.Size)
@@ -567,29 +579,29 @@ namespace ImWidgets {
                 ImVec2 ap = DWE_VDTW2S(data, canvas_min, hn.Anchor);
                 if (hit_handle == 0)
                 {
-                    dl->AddCircle(ap, vdt_ar + 3.0f, IM_COL32(120, 220, 255, 230), 24, 2.0f);
+                    dl->AddCircle(ap, vdt_ar + vdt_hrg, IM_COL32(120, 220, 255, 230), 24, vdt_hrt);
                 }
                 else if (hit_handle == 1)
                 {
                     ImVec2 inp = DWE_VDTW2S(data, canvas_min,
                         ImVec2(hn.Anchor.x + hn.InTangent.x, hn.Anchor.y + hn.InTangent.y));
-                    dl->AddCircle(inp, vdt_tr + 3.0f, IM_COL32(120, 220, 255, 230), 16, 2.0f);
+                    dl->AddCircle(inp, vdt_tr + vdt_hrg, IM_COL32(120, 220, 255, 230), 16, vdt_hrt);
                 }
                 else
                 {
                     ImVec2 outp = DWE_VDTW2S(data, canvas_min,
                         ImVec2(hn.Anchor.x + hn.OutTangent.x, hn.Anchor.y + hn.OutTangent.y));
-                    dl->AddCircle(outp, vdt_tr + 3.0f, IM_COL32(120, 220, 255, 230), 16, 2.0f);
+                    dl->AddCircle(outp, vdt_tr + vdt_hrg, IM_COL32(120, 220, 255, 230), 16, vdt_hrt);
                 }
             }
             else
             {
                 // Ghost ring at the mouse to show "click here adds an anchor".
-                dl->AddCircle(mouse, vdt_ar, IM_COL32(255, 255, 255, 140), 16, 1.0f);
-                dl->AddLine(ImVec2(mouse.x - 5, mouse.y), ImVec2(mouse.x + 5, mouse.y),
-                            IM_COL32(255, 255, 255, 200), 1.0f);
-                dl->AddLine(ImVec2(mouse.x, mouse.y - 5), ImVec2(mouse.x, mouse.y + 5),
-                            IM_COL32(255, 255, 255, 200), 1.0f);
+                dl->AddCircle(mouse, vdt_ar, IM_COL32(255, 255, 255, 140), 16, vdt_grt);
+                dl->AddLine(ImVec2(mouse.x - vdt_cal, mouse.y), ImVec2(mouse.x + vdt_cal, mouse.y),
+                            IM_COL32(255, 255, 255, 200), vdt_ct);
+                dl->AddLine(ImVec2(mouse.x, mouse.y - vdt_cal), ImVec2(mouse.x, mouse.y + vdt_cal),
+                            IM_COL32(255, 255, 255, 200), vdt_ct);
             }
         }
 
@@ -615,15 +627,15 @@ namespace ImWidgets {
         bool* pExpanded = WidgetExpandButton(vdt_id, canvas_bb);
         if (pExpanded && *pExpanded)
         {
-            if (BeginExpandedWindow(label, vdt_id, pExpanded, ImPlatform_LpToPx(ImVec2(1200, 720))))
+            if (BeginExpandedWindow(label, vdt_id, pExpanded, LpToPx(ImVec2(1200, 720))))
             {
                 // Two-pane modal layout (no scrolling): canvas on the left,
                 // per-path options on the right. Left/right widths sum to the
                 // full content region so nothing clips or scrolls.
                 ImVec2 avail = ImGui::GetContentRegionAvail();
-                float panel_w = ImMax(ImPlatform_LpToPx(260.0f), avail.x * 0.25f);
+                float panel_w = ImMax(LpToPx(260.0f), avail.x * 0.25f);
                 float spacing = ImGui::GetStyle().ItemSpacing.x;
-                float canvas_w = ImMax(ImPlatform_LpToPx(200.0f), avail.x - panel_w - spacing);
+                float canvas_w = ImMax(LpToPx(200.0f), avail.x - panel_w - spacing);
 
                 ImGui::BeginChild("##vdt_modal_canvas", ImVec2(canvas_w, avail.y), false,
                                   ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);

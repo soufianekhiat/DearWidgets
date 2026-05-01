@@ -857,7 +857,7 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 		ImDrawList* fg = ImGui::GetForegroundDrawList();
 
 		fg->AddRectFilled( panelMin, panelMax, IM_COL32( 18, 18, 18, 235 ), rounding );
-		fg->AddRect( panelMin, panelMax, IM_COL32( 90, 90, 90, 220 ), rounding, 0, 1.0f );
+		fg->AddRect( panelMin, panelMax, IM_COL32( 90, 90, 90, 220 ), rounding, 0, LpToPx( 1.0f ) );
 
 		// --- Loupe (left square): show a small region of the image through the same shader ---
 		ImVec2 lTL  = ImVec2( panelMin.x + pad, panelMin.y + pad );
@@ -941,7 +941,7 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 		ImU32 swCol = inRange
 		            ? ImGui::ColorConvertFloat4ToU32( ImVec4( swColor.x, swColor.y, swColor.z, 1.0f ) )
 		            : IM_COL32( 45, 45, 45, 255 );
-		fg->AddRectFilled( sTL, sBR, swCol, 2.0f );
+		fg->AddRectFilled( sTL, sBR, swCol, LpToPx( 2.0f ) );
 		if ( !inRange )
 		{
 			fg->PushClipRect( sTL, sBR, true );
@@ -949,7 +949,7 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 				fg->AddLine( ImVec2( sTL.x + d, sTL.y ), ImVec2( sTL.x, sTL.y + d ), IM_COL32( 70, 70, 70, 255 ) );
 			fg->PopClipRect();
 		}
-		fg->AddRect( sTL, sBR, IM_COL32( 90, 90, 90, 180 ), 2.0f, 0, 1.0f );
+		fg->AddRect( sTL, sBR, IM_COL32( 90, 90, 90, 180 ), LpToPx( 2.0f ), 0, LpToPx( 1.0f ) );
 	}
 
 	// --- Expand button ---

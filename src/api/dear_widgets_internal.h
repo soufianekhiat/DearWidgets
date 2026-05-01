@@ -332,14 +332,16 @@ void Mat33RowMajorMulVec3( float& x, float& y, float& z, float* mat33RowMajor, f
 inline
 void ImU32ColorToImRGBColor(ImVector<float>& colorsConverted, ImU32* colors, int color_count)
 {
+	// Linearize from sRGB-encoded 8-bit to linear [0,1] so downstream matrix conversions
+	// (RGB->XYZ, chromaticity) are correct; without this the chromaticity line waves.
 	ImU32* current = colors;
 	colorsConverted.resize( 3 * color_count );
 	for ( int k = 0; k < color_count; ++k )
 	{
 		ImVec4 col = ( ImVec4 )ImColor( *current );
-		colorsConverted[ 3 * k + 0 ] = col.x;
-		colorsConverted[ 3 * k + 1 ] = col.y;
-		colorsConverted[ 3 * k + 2 ] = col.z;
+		colorsConverted[ 3 * k + 0 ] = ImsRGBToLinear( col.x );
+		colorsConverted[ 3 * k + 1 ] = ImsRGBToLinear( col.y );
+		colorsConverted[ 3 * k + 2 ] = ImsRGBToLinear( col.z );
 		++current;
 	}
 }
@@ -451,5 +453,50 @@ void   TesselateText_Impl(ImFont* font, float font_size, const char* text,
                           ImWidgetsShape& outShape, const char* text_end,
                           float tess_tol, int iterations);
 float  SlugLpToPx(float lp);
+
+// ── Lp ↔ Px unit conversion wrappers ────────────────────────────────────────
+// All DearWidgets internal code uses these instead of calling ImPlatform directly.
+// When ImPlatform is available, delegates to it; otherwise replicates the same
+// FontScaleDpi formula that SlugLpToPx uses.
+#ifdef IMPLATFORM_API
+inline float  LpToPx(float  lp) { return ImPlatform_LpToPx(lp); }
+inline float  PxToLp(float  px) { return ImPlatform_PxToLp(px); }
+inline ImVec2 LpToPx(ImVec2 lp) { return ImPlatform_LpToPx(lp); }
+inline ImVec2 PxToLp(ImVec2 px) { return ImPlatform_PxToLp(px); }
+#else
+inline float  LpToPx(float  lp) { return lp * ImGui::GetStyle().FontScaleDpi; }
+inline float  PxToLp(float  px) { float s = ImGui::GetStyle().FontScaleDpi; return s > 1e-3f ? px / s : px; }
+inline ImVec2 LpToPx(ImVec2 lp) { float s = ImGui::GetStyle().FontScaleDpi; return ImVec2(lp.x * s, lp.y * s); }
+inline ImVec2 PxToLp(ImVec2 px) { float s = ImGui::GetStyle().FontScaleDpi; return s > 1e-3f ? ImVec2(px.x / s, px.y / s) : px; }
+#endif
+
+// Catmull-Rom -> cubic Bezier path. Produces 3*(n-1)+1 control points so
+// DrawStrokedBezierPath / DrawStrokedDashedBezierPath can consume it directly.
+// Endpoints are clamped (P-1 = P0, Pn = Pn-1) so the curve still passes through them.
+//   B0 = Pi
+//   B1 = Pi   + (Pi+1 - Pi-1) / 6
+//   B2 = Pi+1 - (Pi+2 - Pi)   / 6
+//   B3 = Pi+1
+// Adjacent segments share endpoints, so we emit B0 once at the start and only
+// (B1, B2, B3) per segment afterward.
+inline void CatmullRomToCubicBezierPath(ImVec2 const* pts, int n, ImVector<ImVec2>& out)
+{
+    if (n < 2) { out.clear(); return; }
+    out.resize(3 * (n - 1) + 1);
+    out[0] = pts[0];
+    int w = 1;
+    for (int i = 0; i < n - 1; ++i)
+    {
+        ImVec2 const Pm1 = (i == 0)     ? pts[i]   : pts[i - 1];
+        ImVec2 const P0  = pts[i];
+        ImVec2 const P1  = pts[i + 1];
+        ImVec2 const P2  = (i + 2 < n)  ? pts[i + 2] : pts[i + 1];
+        ImVec2 const B1(P0.x + (P1.x - Pm1.x) / 6.0f, P0.y + (P1.y - Pm1.y) / 6.0f);
+        ImVec2 const B2(P1.x - (P2.x - P0.x)  / 6.0f, P1.y - (P2.y - P0.y)  / 6.0f);
+        out[w++] = B1;
+        out[w++] = B2;
+        out[w++] = P1;
+    }
+}
 
 } // namespace ImWidgets

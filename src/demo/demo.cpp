@@ -938,7 +938,6 @@ static void OnDpiChanged( float new_scale, void* /*user_data*/ )
 	style.ScaleAllSizes( new_scale );
 	style.FontScaleDpi = new_scale;
 	ImWidgets::GetStyle() = ImWidgetsStyle();
-	ImWidgets::GetStyle().ScaleAllSizes( new_scale );
 }
 
 namespace ImWidgets{
@@ -1158,7 +1157,6 @@ int main( int argc, char** argv )
 	ImGuiStyle& style = ImGui::GetStyle();
 	style.ScaleAllSizes( dpi_scale );
 	style.FontScaleDpi = dpi_scale;
-	ImWidgets::GetStyle().ScaleAllSizes( dpi_scale );
 #ifdef IMGUI_HAS_DOCK
 	io.ConfigDpiScaleFonts = true;
 #endif
@@ -4649,11 +4647,11 @@ namespace ImWidgets{
 						ImVec2 origin = ImGui::GetCursorScreenPos();
 						ImGui::InvisibleButton( "##zone_dashed_poly", ImVec2( side, side ) );
 
-						static float thickness = 12.0f;
-						static float dash_len = 64.0f;
+						static float thickness = 16.0f;
+						static float dash_len = 100.0f;
 						static float gap_len = 32.0f;
 						static float offset = 0.0f;
-						static bool  animate = false;
+						static bool  animate = true;
 						static bool  closed = false;
 						static int   cap_idx = (int)ImWidgetsCap_Round;
 						static int   join_idx = (int)ImWidgetsJoin_Round;
@@ -5643,12 +5641,10 @@ namespace ImWidgets{
 							ImDrawList* pDrawList = ImGui::GetWindowDrawList();
 							float const size = CanvasSize();
 
-							static int chromLinesampleCount = 128;
-							ImGui::SliderInt( "Chromatic Sample Count##Chromaticity", &chromLinesampleCount, 3, 256 );
-							static int resX = 64;
-							ImGui::SliderInt( "Resolution X##Chromaticity", &resX, 3, 256 );
-							static int resY = 64;
-							ImGui::SliderInt( "Resolution Y##Chromaticity", &resY, 3, 256 );
+							ImWidgetsStyle const& cpStyle = ImWidgets::GetStyle();
+							int chromLinesampleCount = cpStyle.ChromaticityPlot_LineSamples;
+							int resX = cpStyle.ChromaticityPlot_Resolution;
+							int resY = cpStyle.ChromaticityPlot_Resolution;
 							static int waveMin = 400;
 							static int waveMax = 700;
 							ImGui::SliderInt( "Wavelength Min##Chromaticity", &waveMin, 300, waveMax );
@@ -5690,8 +5686,7 @@ namespace ImWidgets{
 							ImGui::Checkbox( "Show Border##Chromaticity", &showBorder );
 							static ImVec4 borderColor = (ImVec4)ImColor( IM_COL32( 0, 0, 0, 255 ) );
 							ImGui::ColorEdit4( "Border Color##Chromaticity", &borderColor.x );
-							static float borderThickness = 3.0f;
-							ImGui::SliderFloat( "Border Thickness##Chromaticity", &borderThickness, 0.5f, 10.0f );
+							float borderThickness = ImPlatform_LpToPx( cpStyle.ChromaticityPlot_BorderThickness );
 
 							ImVec2 pos = ImGui::GetCursorScreenPos();
 							DrawChromaticityPlot( pDrawList,
@@ -5753,19 +5748,23 @@ namespace ImWidgets{
 
 							static ImVec4 lineColor = (ImVec4)ImColor( IM_COL32( 0, 0, 0, 255 ) );
 							ImGui::ColorEdit4( "Line Color##ChromaticityLines", &lineColor.x );
-							static float lineThickness = 5.0f;
-							ImGui::SliderFloat( "Border Thickness##ChromaticityLines", &lineThickness, 0.5f, 10.0f );
 
 							ImVec2 pos = ImGui::GetCursorScreenPos();
+							ImWidgetsStyle const& clpStyle = ImWidgets::GetStyle();
+							int plotRes       = clpStyle.ChromaticityPlot_Resolution;
+							int plotSamples   = clpStyle.ChromaticityPlot_LineSamples;
+							float plotBorder  = ImPlatform_LpToPx( clpStyle.ChromaticityPlot_BorderThickness );
+							float ptRadius    = ImPlatform_LpToPx( clpStyle.ChromaticityPoint_Radius );
+							int ptSegments    = clpStyle.ChromaticityPoint_Segments;
+							float lineThickness = ImPlatform_LpToPx( clpStyle.ChromaticityLine_Thickness );
 							DrawChromaticityPlot( pDrawList,
 												  ImWidgetsIlluminant_D55,
 												  ImWidgetsObserver_CIE1964_10deg,
 												  ImWidgetsColorSpace_sRGB,
-												  128,
+												  plotSamples,
 												  pos, ImVec2( size, size ),
-												  64, 64,
+												  plotRes, plotRes,
 												  IM_COL32( 255, 255, 255, 255 ),
-												  //IM_COL32( 21, 21, 21, 255 ),
 												  360.0f, 830.0f,
 												  vMin.x, vMax.x,
 												  vMin.y, vMax.y,
@@ -5773,7 +5772,7 @@ namespace ImWidgets{
 												  true,
 												  true,
 												  IM_COL32( 0, 0, 0, 255 ),
-												  2.0f );
+												  plotBorder );
 							DrawChromaticityLines( pDrawList,
 												   pos,
 												   ImVec2( size, size ),
@@ -5791,7 +5790,7 @@ namespace ImWidgets{
 													1,
 													vMin.x, vMax.x,
 													vMin.y, vMax.y,
-													IM_COL32( 255, 0, 0, 255 ), 16.0f, 4 );
+													IM_COL32( 255, 0, 0, 255 ), ptRadius, ptSegments );
 
 							ImGui::Dummy( ImVec2( size, size ) );
 						}
@@ -6047,6 +6046,185 @@ namespace ImWidgets{
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Thick Line##Draw" ) )
+			{
+				// Full parameter playground for ImWidgets::DrawThickLine.
+				static int   mode_idx       = (int)ImWidgetsThickLineMode_StrokedBezierPath;
+				static bool  dashed         = false;
+				static ImVec4 line_color    = ImVec4( 0.95f, 0.45f, 0.25f, 1.0f );
+				static float thickness_lp   = 4.0f;
+				static int   cap_idx        = (int)ImWidgetsCap_Butt;
+				static int   join_idx       = (int)ImWidgetsJoin_Round;
+				static float miter_limit    = 4.0f;
+				static float dash_len_lp    = 12.0f;
+				static float gap_len_lp     = 6.0f;
+				static float dash_offset_lp = 0.0f;
+				static float tolerance      = 0.25f;
+
+				// Sample-curve generator
+				static int   curve_idx      = 0;
+				static int   sample_count   = 32;
+				static float wave_amp_lp    = 60.0f;
+				static float wave_freq      = 2.0f;
+
+				char const* mode_names[] = {
+					"AddPolyline", "PolylineAA", "StrokedPolyline", "StrokedBezierPath", "ImGuiBezier",
+				};
+				char const* cap_names[]  = { "None", "Butt", "Square", "Round", "TriangleOut", "TriangleIn" };
+				char const* join_names[] = { "Round", "Mitter", "Bevel" };
+				char const* curve_names[] = { "Sinusoid", "Lissajous", "Spiral", "Polyline kink" };
+
+				if ( ImGui::BeginTable( "##TL_Params", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings ) )
+				{
+					ImGui::TableNextRow(); ImGui::TableNextColumn(); ImGui::TextUnformatted( "Mode" );
+					ImGui::TableNextColumn(); ImGui::SetNextItemWidth( -FLT_MIN );
+					ImGui::Combo( "##TL_mode", &mode_idx, mode_names, IM_ARRAYSIZE( mode_names ) );
+
+					ImGui::TableNextRow(); ImGui::TableNextColumn(); ImGui::TextUnformatted( "Dashed" );
+					ImGui::TableNextColumn(); ImGui::Checkbox( "##TL_dashed", &dashed );
+
+					ImGui::TableNextRow(); ImGui::TableNextColumn(); ImGui::TextUnformatted( "Color" );
+					ImGui::TableNextColumn(); ImGui::SetNextItemWidth( -FLT_MIN );
+					ImGui::ColorEdit4( "##TL_color", &line_color.x, ImGuiColorEditFlags_AlphaBar );
+
+					ImGui::TableNextRow(); ImGui::TableNextColumn(); ImGui::TextUnformatted( "Thickness (lp)" );
+					ImGui::TableNextColumn(); ImGui::SetNextItemWidth( -FLT_MIN );
+					ImGui::SliderFloat( "##TL_thick", &thickness_lp, 0.5f, 30.0f, "%.2f" );
+
+					ImGui::TableNextRow(); ImGui::TableNextColumn(); ImGui::TextUnformatted( "Cap" );
+					ImGui::TableNextColumn(); ImGui::SetNextItemWidth( -FLT_MIN );
+					ImGui::Combo( "##TL_cap", &cap_idx, cap_names, IM_ARRAYSIZE( cap_names ) );
+
+					ImGui::TableNextRow(); ImGui::TableNextColumn(); ImGui::TextUnformatted( "Join" );
+					ImGui::TableNextColumn(); ImGui::SetNextItemWidth( -FLT_MIN );
+					ImGui::Combo( "##TL_join", &join_idx, join_names, IM_ARRAYSIZE( join_names ) );
+
+					ImGui::TableNextRow(); ImGui::TableNextColumn(); ImGui::TextUnformatted( "Miter limit" );
+					ImGui::TableNextColumn(); ImGui::SetNextItemWidth( -FLT_MIN );
+					ImGui::SliderFloat( "##TL_miter", &miter_limit, 1.0f, 16.0f, "%.2f" );
+
+					ImGui::TableNextRow(); ImGui::TableNextColumn(); ImGui::TextUnformatted( "Dash length (lp)" );
+					ImGui::TableNextColumn(); ImGui::SetNextItemWidth( -FLT_MIN );
+					ImGui::SliderFloat( "##TL_dlen", &dash_len_lp, 0.5f, 80.0f, "%.2f" );
+
+					ImGui::TableNextRow(); ImGui::TableNextColumn(); ImGui::TextUnformatted( "Gap length (lp)" );
+					ImGui::TableNextColumn(); ImGui::SetNextItemWidth( -FLT_MIN );
+					// Negative gap = overlapping dashes (matches DrawDashedPolylineAA semantics).
+					ImGui::SliderFloat( "##TL_glen", &gap_len_lp, -40.0f, 80.0f, "%.2f" );
+
+					ImGui::TableNextRow(); ImGui::TableNextColumn(); ImGui::TextUnformatted( "Dash offset (lp)" );
+					ImGui::TableNextColumn(); ImGui::SetNextItemWidth( -FLT_MIN );
+					ImGui::SliderFloat( "##TL_doff", &dash_offset_lp, -80.0f, 80.0f, "%.2f" );
+
+					ImGui::TableNextRow(); ImGui::TableNextColumn(); ImGui::TextUnformatted( "Tolerance (px)" );
+					ImGui::TableNextColumn(); ImGui::SetNextItemWidth( -FLT_MIN );
+					ImGui::SliderFloat( "##TL_tol", &tolerance, 0.05f, 4.0f, "%.3f" );
+
+					ImGui::TableNextRow(); ImGui::TableNextColumn(); ImGui::TextUnformatted( "Curve" );
+					ImGui::TableNextColumn(); ImGui::SetNextItemWidth( -FLT_MIN );
+					ImGui::Combo( "##TL_curve", &curve_idx, curve_names, IM_ARRAYSIZE( curve_names ) );
+
+					ImGui::TableNextRow(); ImGui::TableNextColumn(); ImGui::TextUnformatted( "Samples" );
+					ImGui::TableNextColumn(); ImGui::SetNextItemWidth( -FLT_MIN );
+					ImGui::SliderInt( "##TL_n", &sample_count, 2, 256 );
+
+					ImGui::TableNextRow(); ImGui::TableNextColumn(); ImGui::TextUnformatted( "Wave amplitude (lp)" );
+					ImGui::TableNextColumn(); ImGui::SetNextItemWidth( -FLT_MIN );
+					ImGui::SliderFloat( "##TL_amp", &wave_amp_lp, 0.0f, 200.0f, "%.1f" );
+
+					ImGui::TableNextRow(); ImGui::TableNextColumn(); ImGui::TextUnformatted( "Wave frequency" );
+					ImGui::TableNextColumn(); ImGui::SetNextItemWidth( -FLT_MIN );
+					ImGui::SliderFloat( "##TL_freq", &wave_freq, 0.5f, 8.0f, "%.2f" );
+					ImGui::EndTable();
+				}
+
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				ImVec2 p = ImGui::GetCursorScreenPos();
+				float canvas_w = ImMin( ImGui::GetContentRegionAvail().x, ImPlatform_LpToPx( 800.0f ) );
+				float canvas_h = ImPlatform_LpToPx( 280.0f );
+				ImGui::Dummy( ImVec2( canvas_w, canvas_h ) );
+				dl->AddRect( p, ImVec2( p.x + canvas_w, p.y + canvas_h ), IM_COL32( 255, 255, 255, 60 ) );
+
+				// Generate the input polyline (in screen coords, px).
+				ImVector<ImVec2> pts;
+				pts.reserve( sample_count );
+				float const cx = p.x + canvas_w * 0.5f;
+				float const cy = p.y + canvas_h * 0.5f;
+				float const amp = ImPlatform_LpToPx( wave_amp_lp );
+				switch ( curve_idx )
+				{
+				case 0: // Sinusoid: x linear, y sin
+					for ( int i = 0; i < sample_count; ++i )
+					{
+						float t = (float)i / (float)( sample_count - 1 );
+						float x = p.x + t * canvas_w;
+						float y = cy + amp * ImSin( t * wave_freq * 2.0f * IM_PI );
+						pts.push_back( ImVec2( x, y ) );
+					}
+					break;
+				case 1: // Lissajous
+				{
+					float rx = canvas_w * 0.42f;
+					float ry = amp;
+					for ( int i = 0; i < sample_count; ++i )
+					{
+						float t = (float)i / (float)( sample_count - 1 );
+						float u = t * 2.0f * IM_PI;
+						pts.push_back( ImVec2( cx + rx * ImSin( wave_freq * u ),
+											   cy + ry * ImSin( ( wave_freq + 1.0f ) * u + 1.2f ) ) );
+					}
+					break;
+				}
+				case 2: // Spiral
+				{
+					float r_max = ImMin( canvas_w * 0.4f, amp * 2.0f );
+					if ( r_max < 4.0f ) r_max = canvas_h * 0.4f;
+					for ( int i = 0; i < sample_count; ++i )
+					{
+						float t = (float)i / (float)( sample_count - 1 );
+						float u = t * wave_freq * 2.0f * IM_PI;
+						float r = r_max * t;
+						pts.push_back( ImVec2( cx + r * ImCos( u ), cy + r * ImSin( u ) ) );
+					}
+					break;
+				}
+				case 3: // Polyline with sharp kinks (zig-zag)
+				{
+					int const n = ImMax( sample_count, 4 );
+					for ( int i = 0; i < n; ++i )
+					{
+						float t = (float)i / (float)( n - 1 );
+						float x = p.x + t * canvas_w;
+						float y = cy + amp * ( ( i & 1 ) ? 1.0f : -1.0f );
+						pts.push_back( ImVec2( x, y ) );
+					}
+					break;
+				}
+				}
+
+				ImWidgetsThickLineDesc desc;
+				desc.color       = ImGui::GetColorU32( line_color );
+				desc.mode        = (ImWidgetsThickLineMode)mode_idx;
+				desc.cap         = (ImWidgetsCap)cap_idx;
+				desc.join        = (ImWidgetsJoin)join_idx;
+				desc.thickness   = ImPlatform_LpToPx( thickness_lp );
+				desc.miter_limit = miter_limit;
+				desc.dash_len    = ImPlatform_LpToPx( dash_len_lp );
+				desc.gap_len     = ImPlatform_LpToPx( gap_len_lp );
+				desc.dash_offset = ImPlatform_LpToPx( dash_offset_lp );
+				desc.tolerance   = tolerance;
+				desc.dashed      = dashed;
+
+				dl->PushClipRect( p, ImVec2( p.x + canvas_w, p.y + canvas_h ), true );
+				ImWidgets::DrawThickLine( dl, pts.Data, pts.Size, desc );
+				dl->PopClipRect();
+
+				// Tiny readout: which mode is actually doing the rendering this frame.
+				ImGui::Text( "%s%s, %d samples", ImWidgets::GetThickLineModeName( desc.mode ),
+							 dashed ? " + dashed" : "", pts.Size );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Patterns" ) )
 			{
 				static int patt = (int)ImWidgetsHatchPattern_Cross;
@@ -6109,7 +6287,7 @@ namespace ImWidgets{
 						return ImSin( x * 0.05f ) + ImCos( y * 0.05f );
 					}
 				};
-				static float scale = 1.0f;
+				static float scale = 0.5f;
 				ImGui::SliderFloat( "Scale", &scale, 0.25f, 4.0f );
 				static float isos[] = { -0.8f, -0.4f, 0.0f, 0.4f, 0.8f };
 				ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -6580,7 +6758,7 @@ namespace ImWidgets{
 				{
 					vdt.PanOffset = ImVec2( 0, 0 ); vdt.Zoom = 1.0f;
 				}
-				ImWidgets::VectorDrawingTool( "vdt", vdt, ImPlatform_LpToPx( ImVec2( 0, 380 ) ) );
+				ImWidgets::VectorDrawingTool( "vdt", vdt, ImVec2( 0, 380 ) );
 				// If a new path was just created, copy the currently-shown defaults into it.
 				if ( vdt.Paths.Size > prev_path_count && prev_path_count >= 0 )
 				{
@@ -7103,14 +7281,22 @@ namespace ImWidgets{
 						// Previous 3x bump was too large at high DPI; reduced by 2.5x.
 						const float SRG_R = ImPlatform_LpToPx( 62.0f );
 						const float SRG_TH = ImPlatform_LpToPx( 16.0f );
-						// Full-circle hue (wraps)
-						ImWidgets::SliderGradientRingFloat( "Hue##SRG", &hueVal, 0.0f, 1.0f, &ringHueGrad, SRG_R, SRG_TH );
-						ImGui::SameLine();
-						// Half-ring temperature arc (PI sweep from PI)
-						ImWidgets::SliderGradientRingFloat( "Temp##SRG", &tempVal, 0.0f, 1.0f, &ringTempGrad, SRG_R, SRG_TH, IM_PI, IM_PI );
-						ImGui::SameLine();
-						// 3/4 pie meter (1.5PI sweep from 0.75PI)
-						ImWidgets::SliderGradientRingInt( "Meter##SRG", &meter, 0, 100, &ringTempGrad, SRG_R, SRG_TH, 0.75f * IM_PI, 1.5f * IM_PI );
+						// Render labels on one row, ring sliders on the next, using a 3-column table.
+						if ( ImGui::BeginTable( "##SRG_Basic", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoSavedSettings ) )
+						{
+							ImGui::TableNextRow();
+							ImGui::TableNextColumn(); ImGui::TextUnformatted( "Hue" );
+							ImGui::TableNextColumn(); ImGui::TextUnformatted( "Temp" );
+							ImGui::TableNextColumn(); ImGui::TextUnformatted( "Meter" );
+							ImGui::TableNextRow();
+							ImGui::TableNextColumn();
+							ImWidgets::SliderGradientRingFloat( "##SRG_Hue", &hueVal, 0.0f, 1.0f, &ringHueGrad, SRG_R, SRG_TH );
+							ImGui::TableNextColumn();
+							ImWidgets::SliderGradientRingFloat( "##SRG_Temp", &tempVal, 0.0f, 1.0f, &ringTempGrad, SRG_R, SRG_TH, IM_PI, IM_PI );
+							ImGui::TableNextColumn();
+							ImWidgets::SliderGradientRingInt( "##SRG_Meter", &meter, 0, 100, &ringTempGrad, SRG_R, SRG_TH, 0.75f * IM_PI, 1.5f * IM_PI );
+							ImGui::EndTable();
+						}
 
 						// Fill up to cursor -- same callback-swap approach applied to
 						// the arc primitive. Gradient paints only on [0, value];
@@ -7120,11 +7306,21 @@ namespace ImWidgets{
 						static float hueFill  = 0.35f;
 						static float tempFill = 0.6f;
 						static int   meterFill = 30;
-						ImWidgets::SliderGradientRingFloat( "Hue Fill##SRG", &hueFill, 0.0f, 1.0f, &ringHueGrad, SRG_R, SRG_TH, srg_fill );
-						ImGui::SameLine();
-						ImWidgets::SliderGradientRingFloat( "Temp Fill##SRG", &tempFill, 0.0f, 1.0f, &ringTempGrad, SRG_R, SRG_TH, IM_PI, IM_PI, srg_fill );
-						ImGui::SameLine();
-						ImWidgets::SliderGradientRingInt( "Meter Fill##SRG", &meterFill, 0, 100, &ringTempGrad, SRG_R, SRG_TH, 0.75f * IM_PI, 1.5f * IM_PI, srg_fill );
+						if ( ImGui::BeginTable( "##SRG_Fill", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoSavedSettings ) )
+						{
+							ImGui::TableNextRow();
+							ImGui::TableNextColumn(); ImGui::TextUnformatted( "Hue Fill" );
+							ImGui::TableNextColumn(); ImGui::TextUnformatted( "Temp Fill" );
+							ImGui::TableNextColumn(); ImGui::TextUnformatted( "Meter Fill" );
+							ImGui::TableNextRow();
+							ImGui::TableNextColumn();
+							ImWidgets::SliderGradientRingFloat( "##SRG_HueFill", &hueFill, 0.0f, 1.0f, &ringHueGrad, SRG_R, SRG_TH, srg_fill );
+							ImGui::TableNextColumn();
+							ImWidgets::SliderGradientRingFloat( "##SRG_TempFill", &tempFill, 0.0f, 1.0f, &ringTempGrad, SRG_R, SRG_TH, IM_PI, IM_PI, srg_fill );
+							ImGui::TableNextColumn();
+							ImWidgets::SliderGradientRingInt( "##SRG_MeterFill", &meterFill, 0, 100, &ringTempGrad, SRG_R, SRG_TH, 0.75f * IM_PI, 1.5f * IM_PI, srg_fill );
+							ImGui::EndTable();
+						}
 
 						// Right-to-left variants: negate the sweep angle so the arc
 						// progresses counter-clockwise. Works transparently with
@@ -7132,14 +7328,24 @@ namespace ImWidgets{
 						static float hueFill_RTL  = 0.35f;
 						static float tempFill_RTL = 0.6f;
 						static int   meterFill_RTL = 30;
-						// Full ring RTL: start at -PI/2 (top), sweep = -2PI (full circle CCW).
-						ImWidgets::SliderGradientRingFloat( "Hue Fill RTL##SRG", &hueFill_RTL, 0.0f, 1.0f, &ringHueGrad, SRG_R, SRG_TH, -0.5f * IM_PI, -2.0f * IM_PI, srg_fill );
-						ImGui::SameLine();
-						// Half-ring RTL: start at 2PI, sweep = -PI (reverses the arc's direction).
-						ImWidgets::SliderGradientRingFloat( "Temp Fill RTL##SRG", &tempFill_RTL, 0.0f, 1.0f, &ringTempGrad, SRG_R, SRG_TH, 2.0f * IM_PI, -IM_PI, srg_fill );
-						ImGui::SameLine();
-						// 3/4 meter RTL: start at 2.25PI, sweep = -1.5PI.
-						ImWidgets::SliderGradientRingInt( "Meter Fill RTL##SRG", &meterFill_RTL, 0, 100, &ringTempGrad, SRG_R, SRG_TH, 2.25f * IM_PI, -1.5f * IM_PI, srg_fill );
+						if ( ImGui::BeginTable( "##SRG_RTL", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoSavedSettings ) )
+						{
+							ImGui::TableNextRow();
+							ImGui::TableNextColumn(); ImGui::TextUnformatted( "Hue Fill RTL" );
+							ImGui::TableNextColumn(); ImGui::TextUnformatted( "Temp Fill RTL" );
+							ImGui::TableNextColumn(); ImGui::TextUnformatted( "Meter Fill RTL" );
+							ImGui::TableNextRow();
+							ImGui::TableNextColumn();
+							// Full ring RTL: start at -PI/2 (top), sweep = -2PI (full circle CCW).
+							ImWidgets::SliderGradientRingFloat( "##SRG_HueRTL", &hueFill_RTL, 0.0f, 1.0f, &ringHueGrad, SRG_R, SRG_TH, -0.5f * IM_PI, -2.0f * IM_PI, srg_fill );
+							ImGui::TableNextColumn();
+							// Half-ring RTL: start at 2PI, sweep = -PI.
+							ImWidgets::SliderGradientRingFloat( "##SRG_TempRTL", &tempFill_RTL, 0.0f, 1.0f, &ringTempGrad, SRG_R, SRG_TH, 2.0f * IM_PI, -IM_PI, srg_fill );
+							ImGui::TableNextColumn();
+							// 3/4 meter RTL: start at 2.25PI, sweep = -1.5PI.
+							ImWidgets::SliderGradientRingInt( "##SRG_MeterRTL", &meterFill_RTL, 0, 100, &ringTempGrad, SRG_R, SRG_TH, 2.25f * IM_PI, -1.5f * IM_PI, srg_fill );
+							ImGui::EndTable();
+						}
 
 						// Ring range -- arcs only, not full-circle (range-across-wrap is
 						// ambiguous). Two handles bound the cut gradient along the arc.
@@ -7148,14 +7354,24 @@ namespace ImWidgets{
 						static float rangeHueLo = 0.1f,  rangeHueHi = 0.6f;
 						static float rangeTempLo = 0.2f, rangeTempHi = 0.8f;
 						static int   rangeMeterLo = 20, rangeMeterHi = 70;
-						// Half-ring temperature: start=PI, sweep=PI.
-						ImWidgets::SliderGradientRingRangeFloat( "Temp Range##SRG", &rangeTempLo, &rangeTempHi, 0.0f, 1.0f, &ringTempGrad, SRG_R, SRG_TH, IM_PI, IM_PI );
-						ImGui::SameLine();
-						// 3/4 meter: start=0.75PI, sweep=1.5PI.
-						ImWidgets::SliderGradientRingRangeInt( "Meter Range##SRG", &rangeMeterLo, &rangeMeterHi, 0, 100, &ringTempGrad, SRG_R, SRG_TH, 0.75f * IM_PI, 1.5f * IM_PI );
-						ImGui::SameLine();
-						// 3/4 hue arc (not full) so the range is single-arc: start=-0.75PI, sweep=1.5PI.
-						ImWidgets::SliderGradientRingRangeFloat( "Hue Range##SRG", &rangeHueLo, &rangeHueHi, 0.0f, 1.0f, &ringHueGrad, SRG_R, SRG_TH, -0.75f * IM_PI, 1.5f * IM_PI );
+						if ( ImGui::BeginTable( "##SRG_Range", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoSavedSettings ) )
+						{
+							ImGui::TableNextRow();
+							ImGui::TableNextColumn(); ImGui::TextUnformatted( "Temp Range" );
+							ImGui::TableNextColumn(); ImGui::TextUnformatted( "Meter Range" );
+							ImGui::TableNextColumn(); ImGui::TextUnformatted( "Hue Range" );
+							ImGui::TableNextRow();
+							ImGui::TableNextColumn();
+							// Half-ring temperature: start=PI, sweep=PI.
+							ImWidgets::SliderGradientRingRangeFloat( "##SRG_TempRange", &rangeTempLo, &rangeTempHi, 0.0f, 1.0f, &ringTempGrad, SRG_R, SRG_TH, IM_PI, IM_PI );
+							ImGui::TableNextColumn();
+							// 3/4 meter: start=0.75PI, sweep=1.5PI.
+							ImWidgets::SliderGradientRingRangeInt( "##SRG_MeterRange", &rangeMeterLo, &rangeMeterHi, 0, 100, &ringTempGrad, SRG_R, SRG_TH, 0.75f * IM_PI, 1.5f * IM_PI );
+							ImGui::TableNextColumn();
+							// 3/4 hue arc (not full): start=-0.75PI, sweep=1.5PI.
+							ImWidgets::SliderGradientRingRangeFloat( "##SRG_HueRange", &rangeHueLo, &rangeHueHi, 0.0f, 1.0f, &ringHueGrad, SRG_R, SRG_TH, -0.75f * IM_PI, 1.5f * IM_PI );
+							ImGui::EndTable();
+						}
 
 						ImGui::Separator();
 						ImGui::TextUnformatted( "Editable (alpha enabled):" );
@@ -7172,9 +7388,18 @@ namespace ImWidgets{
 						}
 						ImWidgets::GradientEditor( "##SRG_GradEdit", &gradEditSRG, /*alpha=*/true );
 						static float gradEditValSRG = 0.5f;
-						ImWidgets::SliderGradientRingFloat( "Driven by editor##SRG", &gradEditValSRG, 0.0f, 1.0f, &gradEditSRG, SRG_R, SRG_TH );
-						ImGui::SameLine();
-						ImWidgets::SliderGradientRingFloat( "Driven (fill)##SRG", &gradEditValSRG, 0.0f, 1.0f, &gradEditSRG, SRG_R, SRG_TH, /*fill_up_to_cursor=*/true );
+						if ( ImGui::BeginTable( "##SRG_Driven", 2, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoSavedSettings ) )
+						{
+							ImGui::TableNextRow();
+							ImGui::TableNextColumn(); ImGui::TextUnformatted( "Driven by editor" );
+							ImGui::TableNextColumn(); ImGui::TextUnformatted( "Driven (fill)" );
+							ImGui::TableNextRow();
+							ImGui::TableNextColumn();
+							ImWidgets::SliderGradientRingFloat( "##SRG_Driven", &gradEditValSRG, 0.0f, 1.0f, &gradEditSRG, SRG_R, SRG_TH );
+							ImGui::TableNextColumn();
+							ImWidgets::SliderGradientRingFloat( "##SRG_DrivenFill", &gradEditValSRG, 0.0f, 1.0f, &gradEditSRG, SRG_R, SRG_TH, /*fill_up_to_cursor=*/true );
+							ImGui::EndTable();
+						}
 					}
 					DW_SsRecord( "SliderRing_Gradient", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -7780,7 +8005,7 @@ namespace ImWidgets{
 						ImGui::Combo( "Format##paint", &activePaint, "Binary Mask (R8)\0Grayscale (R8)\0Color (RGBA8)\0Color (RGBA32F)\0" );
 						ImPaintCanvasData& pc = canvases[activePaint];
 
-						PaintCanvas( "##PaintMain", &pc, ImPlatform_LpToPx( ImVec2( 480, 0 ) ) );
+						PaintCanvas( "##PaintMain", &pc, ImVec2( 480, 0 ) );
 
 						// Brush controls
 						if ( ImGui::RadioButton( "Brush##pc", pc.Tool == ImPaintTool_Brush ) ) pc.Tool = ImPaintTool_Brush;
@@ -8297,8 +8522,6 @@ namespace ImWidgets{
 
 						ImGui::Combo( "Mode##Prim", &primMode, "HSV\0OkLCH\0" );
 
-						float ringThick = 12.0f;
-
 						float outerSize = ImGui::GetContentRegionAvail().x / 4.0f - ImGui::GetStyle().ItemSpacing.x;
 						if ( outerSize < 100.0f ) outerSize = 100.0f;
 						if ( outerSize > 200.0f ) outerSize = 200.0f;
@@ -8315,7 +8538,7 @@ namespace ImWidgets{
 
 								ImGui::PushID( i );
 
-								PrimariesWheel( "##pw", &primColors[i], &primY[i], yMins[i], yMaxs[i], (ImColorWheelMode)primMode, ringThick, ImVec2( outerSize, outerSize ) );
+								HDRWheel( "##pw", &primColors[i], &primY[i], yMins[i], yMaxs[i], NULL, 0.0f, 0.0f, NULL, 0.0f, 0.0f, (ImColorWheelMode)primMode, ImVec2( outerSize, outerSize ) );
 
 								// YRGB readouts
 								float qw = outerSize * 0.25f - 1.0f;
@@ -8377,8 +8600,6 @@ namespace ImWidgets{
 						if ( colW < 100.0f ) colW = 100.0f;
 						if ( colW > 200.0f ) colW = 200.0f;
 
-						float ringThick = 12.0f;
-
 						// HDRWheel adds arc overhead on top of the disc+ring size (colW), so columns are wider.
 						ImWidgetsStyle& hdrDwStyle = ImWidgets::GetStyle();
 						float arcOverhead = 2.0f * (hdrDwStyle.HDRWheel_ArcGrabRadius + hdrDwStyle.HDRWheel_ArcThickness + hdrDwStyle.HDRWheel_ArcGap);
@@ -8399,7 +8620,7 @@ namespace ImWidgets{
 								HDRWheel( "##hw", &hdrColors[i], &hdrY[i], -1.0f, 1.0f,
 										  &hdrExposure[i], -4.0f, 4.0f,
 										  &hdrSaturation[i], 0.0f, 2.0f,
-										  ImColorWheelMode_OkLCH, ringThick, ImVec2( colW, colW ) );
+										  ImColorWheelMode_OkLCH, ImVec2( colW, colW ) );
 
 								// Readouts
 								float qw = colW * 0.5f - 1.0f;
@@ -8836,7 +9057,7 @@ namespace ImWidgets{
 						}
 					}
 
-					ImWidgets::ParadeScope( "##ParadeMain", paradeData, paradeOverlay, (ImParadeScale)paradeScale, ImPlatform_LpToPx( ImVec2( 0, 300 ) ) );
+					ImWidgets::ParadeScope( "##ParadeMain", paradeData, paradeOverlay, (ImParadeScale)paradeScale, ImVec2( 0, 300 ) );
 					if ( paradeSource <= 2 )
 						ImGui::Text( "Source: 1920x1080 (generated)  Peak: %u", paradeData.PeakCount );
 					else if ( paradeImgData )
@@ -9014,7 +9235,7 @@ namespace ImWidgets{
 						}
 					}
 
-					ImWidgets::VectorScope( "##VectorMain", vectorData, vectorShowSkinTone, ImPlatform_LpToPx( ImVec2( 600, 600 ) ) );
+					ImWidgets::VectorScope( "##VectorMain", vectorData, vectorShowSkinTone, ImVec2( 600, 600 ) );
 					if ( vectorSource <= 2 )
 						ImGui::Text( "Source: 1920x1080 (generated)  Peak: %u", vectorData.PeakCount );
 					else if ( vectorImgData )
@@ -9195,7 +9416,7 @@ namespace ImWidgets{
 						}
 					}
 
-					ImWidgets::Histogram( "##HistMain", histData, (ImHistogramLayout)histLayout, (ImParadeScale)histXScale, (ImParadeScale)histYScale, ImPlatform_LpToPx( ImVec2( 0, 300 ) ) );
+					ImWidgets::Histogram( "##HistMain", histData, (ImHistogramLayout)histLayout, (ImParadeScale)histXScale, (ImParadeScale)histYScale, ImVec2( 0, 300 ) );
 					if ( histSource <= 2 )
 						ImGui::Text( "Source: 1920x1080 (generated)  Peak: %u", histData.PeakCount );
 					else if ( histImgData )
@@ -9902,7 +10123,7 @@ namespace ImWidgets{
 					ImGui::EndCombo();
 				}
 				ImWidgets::FontInspector( "font_ins", fi_list[fi_sel].font,
-										  (ImFontInspectorMode)fi_mode, ImPlatform_LpToPx( 48.0f ), ImPlatform_LpToPx( ImVec2( 0, 320 ) ) );
+										  (ImFontInspectorMode)fi_mode, ImPlatform_LpToPx( 48.0f ), ImVec2( 0, 320 ) );
 			}
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Notched Dial" ) )
@@ -9911,7 +10132,7 @@ namespace ImWidgets{
 				static float nv = 0.0f;
 				static float stops[] = { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f };
 				static const char* slabels[] = { "Off", "Low", "Mid", "High", "Max" };
-				ImWidgets::NotchedDial( "dial", &nv, stops, 5, slabels, ImPlatform_LpToPx( ImVec2( 220, 240 ) ) );
+				ImWidgets::NotchedDial( "dial", &nv, stops, 5, slabels, ImVec2( 220, 240 ) );
 			}
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Equation Editor" ) )
@@ -9934,7 +10155,7 @@ namespace ImWidgets{
 					"Gaussian integral:\n"
 					"$$\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}$$\n";
 				ImWidgets::EquationInput( "eq", eq_buf, sizeof( eq_buf ),
-										  ImPlatform_LpToPx( ImVec2( 0, 360 ) ), (ImWidgetsEquationFlags)eq_flags );
+										  ImVec2( 0, 360 ), (ImWidgetsEquationFlags)eq_flags );
 			}
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "3D LUT Viewer" ) )
@@ -9978,7 +10199,7 @@ namespace ImWidgets{
 					ImWidgets::LookDevCompare( "ldv", texA, texB,
 											   ImVec2( 0, 0 ), ImVec2( 1, 1 ),
 											   ImVec2( 0, 0 ), ImVec2( 1, 1 ),
-											   &state, ImPlatform_LpToPx( ImVec2( 0, 360 ) ) );
+											   &state, ImVec2( 0, 360 ) );
 				}
 				else
 				{
@@ -10021,7 +10242,7 @@ namespace ImWidgets{
 				if ( ta != ImTextureID_Invalid && tb != ImTextureID_Invalid )
 				{
 					ImWidgets::ColorDifferenceImageViewer( "de_img", ta, tb, &de_state,
-														   ImPlatform_LpToPx( ImVec2( 0, 360 ) ) );
+														   ImVec2( 0, 360 ) );
 				}
 			}
 			ApplyOpenAll();
@@ -10046,7 +10267,7 @@ namespace ImWidgets{
 				if ( ta != ImTextureID_Invalid && tb != ImTextureID_Invalid )
 				{
 					ImWidgets::LookDevInspector( "ldi", ta, tb, &ldi_state,
-												 ImPlatform_LpToPx( ImVec2( 0, 360 ) ) );
+												 ImVec2( 0, 360 ) );
 				}
 			}
 			ApplyOpenAll();
