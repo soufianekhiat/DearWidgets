@@ -3326,7 +3326,7 @@ namespace ImWidgets{
 	// Measure text. font_size in lp. Returns (width, height) in physical pixels.
 	// out_ascent: if non-null, receives ascent in physical pixels (pass cursor.y + ascent as baseline to DrawText).
 	IMGUI_API ImVec2 CalcTextSize( ImFont* font, float font_size, char const* text, char const* text_end = nullptr, float* out_ascent = nullptr );
-	// Like CalcTextSize but runs the OpenType shaper (HarfBuzz) for accurate width of shaped text
+	// Like CalcTextSize but runs the OpenType shaper (kb_text_shape) for accurate width of shaped text
 	// (Arabic contextual forms, ligatures). Slower than CalcTextSize -- use only when alignment precision matters.
 	IMGUI_API float CalcShapedTextWidth( ImFont* font, float font_size, char const* text, char const* text_end = nullptr );
 	// Horizontal linear gradient: col_left at text start, col_right at text end. font_size in lp.

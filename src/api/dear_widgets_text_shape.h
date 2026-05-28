@@ -1,34 +1,11 @@
 #pragma once
-// dear_widgets_text_shape.h -- compile-time text-shaping backend abstraction.
+// dear_widgets_text_shape.h -- text-shaping API.
 //
-// ─── Backends ────────────────────────────────────────────────────────────────
+// ─── Backend ─────────────────────────────────────────────────────────────────
 //
-// DEFAULT: kb_text_shape
-//   A single-header shaper bundled with DearWidgets.  No external dependency.
-//   Used automatically when DW_SHAPER_BACKEND_HARFBUZZ is NOT defined.
-//
-// OPTIONAL: HarfBuzz
-//   A battle-tested open-source shaper (https://github.com/harfbuzz/harfbuzz).
-//   Provides better coverage for complex scripts (Arabic, Indic, CJK, etc.) and
-//   full OpenType feature support, at the cost of a compile-time dependency.
-//
-//   To enable HarfBuzz in your project:
-//     1. Get HarfBuzz source (git clone or download a release tarball).
-//        The only directory you need is  harfbuzz/src/.
-//     2. Add  harfbuzz/src/  to your include paths.
-//     3. Add the compile-time define  DW_SHAPER_BACKEND_HARFBUZZ.
-//     4. Compile  harfbuzz/src/harfbuzz-world.cc  as a separate translation
-//        unit in your project (it is a unity build that pulls in all of HarfBuzz
-//        via #include chains — one .cc file is all you add to your build).
-//        The DearWidgets wrapper  dear_widgets_harfbuzz_world.cpp  does this
-//        automatically when DW_SHAPER_BACKEND_HARFBUZZ is defined, so you only
-//        need to make sure that file is compiled and that harfbuzz/src/ is on
-//        the include path.
-//
-//   Note: extern/harfbuzz/ in this repository is kept for internal validation
-//   and performance testing only.  It is NOT part of the public API and will be
-//   removed before any public release.  External users must supply their own
-//   copy of HarfBuzz.
+// kb_text_shape
+//   A single-header shaper bundled with DearWidgets (src/api/kb_text_shape.h).
+//   No external dependency. This is the only shaping backend.
 //
 // ─────────────────────────────────────────────────────────────────────────────
 //
