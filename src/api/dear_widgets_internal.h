@@ -156,8 +156,10 @@ struct ImWidgetsContext
 	// VolumeViewer: Texture3D raymarching (DDA / MIP / iso-surface)
 	ImDrawShader					volumeViewerShader;
 
-	// Background blur / effects
-	ImDrawShader					blurShader;
+	// Background blur / effects. One shader variant per effect, compiled lazily
+	// (the blur.hlsl source is compiled once per BG_EFFECT value -- see
+	// CreateInternalShader's extra_define param). Indexed by ImWidgetsBgEffect.
+	ImDrawShader					bgEffectShaders[ ImWidgetsBgEffect_COUNT ];
 	ImTextureID						blurBackbufferCopy;
 	ImTextureID						blurIntermediate;
 	unsigned int					blurTexW, blurTexH;

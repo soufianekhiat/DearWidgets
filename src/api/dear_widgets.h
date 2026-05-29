@@ -3448,7 +3448,7 @@ namespace ImWidgets{
 										   int gap = 3, int strokeWidth = 3 );
 
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
-	IMGUI_API void CreateInternalShader( ImDrawShader* shaders_out, char const* shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer );
+	IMGUI_API void CreateInternalShader( ImDrawShader* shaders_out, char const* shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer, char const* extra_define = nullptr, char const* cache_suffix = nullptr );
 
 	// Eagerly compile/load every internal shader used by Dear Widgets.
 	// Optional: shaders are lazily compiled on first use otherwise. Call this once

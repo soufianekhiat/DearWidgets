@@ -3350,8 +3350,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			CreateInternalShader( &ctx->deltaECompareShader, "delta_e_compare", 0, NULL, 0, NULL );
 		if ( ctx->volumeViewerShader.program == NULL )
 			CreateInternalShader( &ctx->volumeViewerShader, "volume_viewer", 0, NULL, 0, NULL );
-		if ( ctx->blurShader.program == NULL )
-			CreateInternalShader( &ctx->blurShader, "blur", 0, NULL, 0, NULL );
+		// Background-effect shaders are compiled lazily per effect (see EnsureBgEffectShader),
+		// so the expensive-but-rarely-used variants never compile unless actually selected.
 
 		// Slug family is feature-gated: matches CreateContext() behavior.
 		if ( GlobalData.features & ( ImWidgetsFeatures_RichFont | ImWidgetsFeatures_LaTeX ) )
@@ -3391,7 +3391,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Default config: focus on CPU path initially (user can enable GPU path later)
 		GlobalData.dashedLinesUseGPU = false;
 		// Ensure shader handles are zero-initialized to avoid random garbage checks
-		memset(&ctx->blurShader,        0, sizeof(ImDrawShader));
+		memset(ctx->bgEffectShaders, 0, sizeof(ctx->bgEffectShaders));
 		ctx->blurBackbufferCopy = NULL;
 		ctx->blurIntermediate = NULL;
 		ctx->blurTexW = ctx->blurTexH = 0;
@@ -4677,7 +4677,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return src;
 	}
 
-	void CreateInternalShader( ImDrawShader *shaders_out, char const *shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer )
+	void CreateInternalShader( ImDrawShader *shaders_out, char const *shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer, char const* extra_define, char const* cache_suffix )
 	{
 		// Note: sizeof_vs_const_buffer, vs_const_buffer, sizeof_ps_const_buffer, ps_const_buffer
 		// are no longer used with the new ImPlatform API. Uniforms are set per-draw via ImPlatform_SetShaderUniform.
@@ -4767,6 +4767,35 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if (ps_source) { ps_source = HlslInlineIncludes(ps_source, filename_ps); file_data_size_ps = strlen(ps_source); }
 #endif
 
+		// Optional preprocessor define injection (used to compile per-variant shaders,
+		// e.g. the background-effect shader compiled once per effect via BG_EFFECT).
+		// Prepended to both stages so the define is visible everywhere.
+		if ( extra_define && extra_define[ 0 ] )
+		{
+			size_t dl = strlen( extra_define );
+			if ( vs_source )
+			{
+				size_t sl = strlen( vs_source );
+				char* ns = ( char* )IM_ALLOC( dl + sl + 2 );
+				memcpy( ns, extra_define, dl ); ns[ dl ] = '\n';
+				memcpy( ns + dl + 1, vs_source, sl ); ns[ dl + 1 + sl ] = '\0';
+				IM_FREE( vs_source ); vs_source = ns; file_data_size_vs = dl + 1 + sl;
+			}
+			if ( ps_source )
+			{
+				size_t sl = strlen( ps_source );
+				char* ns = ( char* )IM_ALLOC( dl + sl + 2 );
+				memcpy( ns, extra_define, dl ); ns[ dl ] = '\n';
+				memcpy( ns + dl + 1, ps_source, sl ); ns[ dl + 1 + sl ] = '\0';
+				IM_FREE( ps_source ); ps_source = ns; file_data_size_ps = dl + 1 + sl;
+			}
+		}
+
+		// Cache key: shader_name plus an optional per-variant suffix so distinct
+		// compile-time variants (e.g. BG_EFFECT values) cache to separate files.
+		char cache_key_buf[ 256 ];
+		ImFormatString( cache_key_buf, sizeof( cache_key_buf ), "%s%s", shader_name, ( cache_suffix && cache_suffix[ 0 ] ) ? cache_suffix : "" );
+
 		// Check if we successfully loaded the shader sources
 		if ( vs_source == NULL || ps_source == NULL || file_data_size_vs == 0 || file_data_size_ps == 0 )
 		{
@@ -4800,7 +4829,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		vs_desc.bytecode = NULL;
 		vs_desc.bytecode_size = 0;
 		vs_desc.entry_point = "main_vs"; // Standard entry point name in our shaders
-		vs_desc.cache_key = shader_name;
+		vs_desc.cache_key = cache_key_buf;
 		vs_desc.compile_flags = IMPLATFORM_SHADER_COMPILE_DEFAULT;
 
 		ImPlatform_Shader vertex_shader = ImPlatform_CreateShader( &vs_desc );
@@ -4829,7 +4858,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ps_desc.bytecode = NULL;
 		ps_desc.bytecode_size = 0;
 		ps_desc.entry_point = "main_ps"; // Standard entry point name in our shaders
-		ps_desc.cache_key = shader_name;
+		ps_desc.cache_key = cache_key_buf;
 		ps_desc.compile_flags = IMPLATFORM_SHADER_COMPILE_DEFAULT;
 
 		ImPlatform_Shader pixel_shader = ImPlatform_CreateShader( &ps_desc );
@@ -23639,15 +23668,39 @@ namespace ImWidgets {
 		float pad2;
 	};
 
+	// Compile (lazily, once) and return the shader variant for a background effect.
+	// blur.hlsl is compiled once per BG_EFFECT value, so only effects actually
+	// used ever pay a (now small) compile cost.
+	static ImDrawShader* EnsureBgEffectShader( ImWidgetsContext* ctx, int effect )
+	{
+		if ( effect < 0 || effect >= ImWidgetsBgEffect_COUNT ) effect = 0;
+		if ( ctx->bgEffectShaders[ effect ].program == NULL )
+		{
+			char def[ 32 ]; ImFormatString( def, sizeof( def ), "#define BG_EFFECT %d", effect );
+			char suf[ 16 ]; ImFormatString( suf, sizeof( suf ), "_%d", effect );
+			CreateInternalShader( &ctx->bgEffectShaders[ effect ], "blur", 0, NULL, 0, NULL, def, suf );
+		}
+		return &ctx->bgEffectShaders[ effect ];
+	}
+
+	// The active variant for a callback is the one matching cb->mode (the effect
+	// index, which == the BG_EFFECT the variant was compiled with).
+	static ImPlatform_Shader BgEffectProgramForCb( ImWidgetsContext* ctx, BlurConstants* cb )
+	{
+		int eff = cb ? (int)cb->mode : 0;
+		if ( eff < 0 || eff >= ImWidgetsBgEffect_COUNT ) eff = 0;
+		return ctx->bgEffectShaders[ eff ].program;
+	}
+
 	// Render-time callback: captures backbuffer then sets up horizontal blur pass
 	// into the intermediate render texture.
 	static void BlurPass1Callback( const ImDrawList* /*parent_list*/, const ImDrawCmd* cmd )
 	{
 		ImWidgetsContext* ctx = gs_pContext;
-		if ( !ctx || !ctx->blurBackbufferCopy || !ctx->blurIntermediate || !ctx->blurShader.program )
-			return;
-
 		BlurConstants* cb = (BlurConstants*)cmd->UserCallbackData;
+		ImPlatform_Shader prog = ctx ? BgEffectProgramForCb( ctx, cb ) : NULL;
+		if ( !ctx || !ctx->blurBackbufferCopy || !ctx->blurIntermediate || !prog )
+			return;
 
 		// Capture current backbuffer (everything behind this window)
 		ImPlatform_CopyBackbuffer( ctx->blurBackbufferCopy );
@@ -23657,9 +23710,9 @@ namespace ImWidgets {
 
 		// Set up horizontal blur shader
 		cb->param1 = 0.0f; // horizontal
-		ImPlatform_BeginCustomShader_Render( ctx->blurShader.program );
+		ImPlatform_BeginCustomShader_Render( prog );
 		void* handle = ImPlatform_PushShaderConstants( cb, sizeof(BlurConstants) );
-		ImPlatform_SetShaderTexture( ctx->blurShader.program, "sceneTexture", 0, ctx->blurBackbufferCopy );
+		ImPlatform_SetShaderTexture( prog, "sceneTexture", 0, ctx->blurBackbufferCopy );
 		ImPlatform_PopShaderConstants( handle );
 		// Shader stays active -- next ImGui draw command will use it
 	}
@@ -23670,7 +23723,8 @@ namespace ImWidgets {
 	{
 		ImWidgetsContext* ctx = gs_pContext;
 		BlurConstants* cb = (BlurConstants*)cmd->UserCallbackData;
-		if ( !ctx || !ctx->blurIntermediate || !ctx->blurShader.program )
+		ImPlatform_Shader prog = ctx ? BgEffectProgramForCb( ctx, cb ) : NULL;
+		if ( !ctx || !ctx->blurIntermediate || !prog )
 		{
 			if ( cb ) IM_FREE( cb );
 			return;
@@ -23681,9 +23735,9 @@ namespace ImWidgets {
 
 		// Set up vertical blur shader reading from intermediate
 		cb->param1 = 1.0f; // vertical
-		ImPlatform_BeginCustomShader_Render( ctx->blurShader.program );
+		ImPlatform_BeginCustomShader_Render( prog );
 		void* handle = ImPlatform_PushShaderConstants( cb, sizeof(BlurConstants) );
-		ImPlatform_SetShaderTexture( ctx->blurShader.program, "sceneTexture", 0, ctx->blurIntermediate );
+		ImPlatform_SetShaderTexture( prog, "sceneTexture", 0, ctx->blurIntermediate );
 		ImPlatform_PopShaderConstants( handle );
 		IM_FREE( cb );
 	}
@@ -23693,16 +23747,17 @@ namespace ImWidgets {
 	{
 		ImWidgetsContext* ctx = gs_pContext;
 		BlurConstants* cb = (BlurConstants*)cmd->UserCallbackData;
-		if ( !ctx || !ctx->blurBackbufferCopy || !ctx->blurShader.program )
+		ImPlatform_Shader prog = ctx ? BgEffectProgramForCb( ctx, cb ) : NULL;
+		if ( !ctx || !ctx->blurBackbufferCopy || !prog )
 		{
 			if ( cb ) IM_FREE( cb );
 			return;
 		}
 
 		ImPlatform_CopyBackbuffer( ctx->blurBackbufferCopy );
-		ImPlatform_BeginCustomShader_Render( ctx->blurShader.program );
+		ImPlatform_BeginCustomShader_Render( prog );
 		void* handle = ImPlatform_PushShaderConstants( cb, sizeof(BlurConstants) );
-		ImPlatform_SetShaderTexture( ctx->blurShader.program, "sceneTexture", 0, ctx->blurBackbufferCopy );
+		ImPlatform_SetShaderTexture( prog, "sceneTexture", 0, ctx->blurBackbufferCopy );
 		ImPlatform_PopShaderConstants( handle );
 		IM_FREE( cb );
 	}
@@ -23737,9 +23792,8 @@ namespace ImWidgets {
 			ctx->blurTexH = bbH;
 		}
 
-		// Lazy-load blur shader
-		if ( !ctx->blurShader.program )
-			CreateInternalShader( &ctx->blurShader, "blur", 0, NULL, 0, NULL );
+		// Per-effect blur shaders are compiled lazily in SetCurrentWindowBlurBackground
+		// (only the effect actually requested is compiled).
 #endif
 	}
 
@@ -23747,7 +23801,14 @@ namespace ImWidgets {
 	{
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 		ImWidgetsContext* ctx = gs_pContext;
-		if ( !ctx || !ctx->blurBackbufferCopy || !ctx->blurShader.program )
+		if ( !ctx || !ctx->blurBackbufferCopy )
+			return;
+
+		// Compile (once) the variant for this effect. The two-pass blur path uses
+		// effect 0's variant; single-pass uses the requested effect's variant.
+		if ( EnsureBgEffectShader( ctx, (int)effect )->program == NULL )
+			return;
+		if ( effect == ImWidgetsBgEffect_Blur && EnsureBgEffectShader( ctx, 0 )->program == NULL )
 			return;
 
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
