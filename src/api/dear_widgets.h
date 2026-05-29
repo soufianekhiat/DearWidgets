@@ -3687,6 +3687,59 @@ namespace ImWidgets{
 	IMGUI_API bool ColorPickerXYZ( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
 	IMGUI_API bool ColorPicker( char const* label, ImVec4* color, ImColorPickerSpace space = ImColorPickerSpace_sRGB, int fixedAxis = 2, ImVec2 size = ImVec2( 0, 0 ) );
 
+	// Physically-based skin color picker (forward-only biophysical model).
+	// Drives *color from melanin / eu-pheo blend / hemoglobin parameters; the
+	// input color is not read back (the param->color mapping is not invertible).
+	IMGUI_API bool ColorPickerSkin( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// Physically-based hair color picker (forward-only). Drives *color from
+	// melanin amount / pheomelanin redness / azimuthal roughness using the
+	// Chiang et al. 2016 melanin absorption model (PBRT/Blender/Unreal). The
+	// input color is not read back (the param->color mapping is not invertible).
+	IMGUI_API bool ColorPickerHair( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// Physically-based leaf / vegetation color picker (forward-only). Drives *color
+	// from chlorophyll / carotenoid / anthocyanin (+brown) pigment concentrations
+	// using the PROSPECT-D leaf optical-properties model (Feret et al. 2017). The
+	// input color is not read back (the param->color mapping is not invertible).
+	IMGUI_API bool ColorPickerLeaf( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// Physically-based forward color pickers (all forward-only: they drive *color
+	// from physical parameters and do not read it back). References are in the
+	// implementation comments (dear_widgets.cpp).
+	//   Blackbody : Planck's law along the Planckian locus (color temperature).
+	//   Pigment   : subtractive paint mixing via Kubelka-Munk theory.
+	//   Gem       : crystal-field (Beer-Lambert) gemstone body color.
+	//   Water     : bio-optical ocean/water color (chlorophyll/CDOM/turbidity).
+	//   Iris      : eye color from melanin absorption + Tyndall scattering.
+	//   Flame     : emission spectrum (blackbody continuum + atomic lines).
+	IMGUI_API bool ColorPickerBlackbody( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerPigment( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerGem( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerWater( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerIris( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerFlame( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// More forward-only physical pickers (references in dear_widgets.cpp).
+	//   Bruise     : healing hematoma chromophores (hemoglobin->biliverdin->bilirubin).
+	//   Nebula     : ionized-gas emission lines (Halpha/[OIII]/[NII]/[SII]).
+	//   Maillard   : food browning (Maillard/caramel, Arrhenius time-temperature).
+	//   Patina     : copper atmospheric weathering (metal->cuprite->green patina).
+	//   Subsurface : translucent material color (Jensen 2001 dipole diffusion).
+	IMGUI_API bool ColorPickerBruise( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerNebula( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerMaillard( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerPatina( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerSubsurface( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// More forward-only physical pickers (references in dear_widgets.cpp).
+	//   Discharge : gas-discharge / neon-tube emission (noble gas + Hg + phosphor).
+	//   Ice       : glacier/sea-ice color (pure-ice absorption + grain scattering).
+	//   Ochre     : earth-pigment (iron-oxide) Kubelka-Munk mixing.
+	IMGUI_API bool ColorPickerDischarge( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerIce( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerOchre( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
 	// Transform Gizmo
 	IMGUI_API bool TransformGizmo( char const* label, ImTransformData* transforms, ImVec2* sizes, int count, int* selectedIndex, ImTransformGizmoCallbacks const* callbacks = nullptr, ImTransformGizmoFlags flags = ImTransformGizmoFlags_None, ImVec2 canvasSize = ImVec2( 0, 0 ) );
 

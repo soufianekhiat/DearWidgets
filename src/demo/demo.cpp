@@ -151,6 +151,7 @@ struct DW_ScreenshotState
 {
 	bool       active = false;
 	char       out_dir[512] = {};
+	char       section_filter[128] = {}; // if set, capture only sections whose name contains this (and skip overview shots)
 	bool       done = false;
 	DW_SsPhase phase = DW_SsPhase_Warmup;
 	int        phase_frames = 0;    // frames elapsed in current phase
@@ -944,8 +945,40 @@ namespace ImWidgets{
 	void ShowShowcase();
 }
 
+// ---- Startup timing markers -------------------------------------------------
+// Prints elapsed time per startup phase (delta since previous mark + total since
+// the first mark) to stderr -- visible when launched from a console or with
+// --screenshot -- and to the debugger via OutputDebugString. Useful for finding
+// what dominates cold start (font atlas build, image loads, first-frame shader
+// compile, ...). Set DW_STARTUP_TIMING to 0 to compile it out.
+#ifndef DW_STARTUP_TIMING
+#define DW_STARTUP_TIMING 1
+#endif
+#if DW_STARTUP_TIMING
+static std::chrono::high_resolution_clock::time_point g_dwStartT0, g_dwStartPrev;
+static bool g_dwStartInit = false;
+static void DW_StartupMark( const char* label )
+{
+	auto now = std::chrono::high_resolution_clock::now();
+	if ( !g_dwStartInit ) { g_dwStartT0 = now; g_dwStartPrev = now; g_dwStartInit = true; }
+	double dms = std::chrono::duration<double, std::milli>( now - g_dwStartPrev ).count();
+	double tot = std::chrono::duration<double, std::milli>( now - g_dwStartT0 ).count();
+	g_dwStartPrev = now;
+	char buf[ 256 ];
+	snprintf( buf, sizeof( buf ), "[startup] +%8.2f ms  (total %9.2f ms)  %s\n", dms, tot, label );
+	fputs( buf, stderr ); fflush( stderr );
+#ifdef _WIN32
+	OutputDebugStringA( buf );
+#endif
+}
+#else
+static inline void DW_StartupMark( const char* ) {}
+#endif
+
 int main( int argc, char** argv )
 {
+	DW_StartupMark( "main entry" );
+
 	// Parse command-line arguments
 #if DW_SCREENSHOT_SUPPORT
 	for ( int i = 1; i < argc; ++i )
@@ -962,6 +995,10 @@ int main( int argc, char** argv )
 		else if ( strcmp( argv[i], "--width" ) == 0 && i + 1 < argc )
 		{
 			g_ss.demo_win_w = (float)atoi( argv[++i] );
+		}
+		else if ( strcmp( argv[i], "--section" ) == 0 && i + 1 < argc )
+		{
+			snprintf( g_ss.section_filter, sizeof( g_ss.section_filter ), "%s", argv[++i] );
 		}
 	}
 	if ( g_ss.active )
@@ -996,6 +1033,7 @@ int main( int argc, char** argv )
 		fprintf( stderr, "ImPlatform: Cannot create window.\n" );
 		return 1;
 	}
+	DW_StartupMark( "window created" );
 #if DW_SCREENSHOT_SUPPORT
 	if ( g_ss.active )
 	{
@@ -1016,6 +1054,7 @@ int main( int argc, char** argv )
 		fprintf( stderr, "ImPlatform: Cannot initialize the Graphics API.\n" );
 		return 1;
 	}
+	DW_StartupMark( "gfx API initialized" );
 
 	// Show window
 	bGood = ImPlatform_ShowWindow();
@@ -1024,6 +1063,7 @@ int main( int argc, char** argv )
 		fprintf( stderr, "ImPlatform: Cannot show the window.\n" );
 		return 1;
 	}
+	DW_StartupMark( "window shown" );
 
 	// Setup Dear ImGui context
 	IMGUI_CHECKVERSION();
@@ -1050,6 +1090,7 @@ int main( int argc, char** argv )
 	// Setup Dear ImGui style
 	ImGui::StyleColorsDark();
 	//ImGui::StyleColorsClassic();
+	DW_StartupMark( "imgui context + style" );
 
 	// Setup DPI scaling (cross-platform)
 	float dpi_scale = ImPlatform_GetDpiScale();
@@ -1062,6 +1103,7 @@ int main( int argc, char** argv )
 	// missing files are re-checked each frame from ShowDrawTextDemo, so
 	// fonts downloaded via the UI become renderable without restart.
 	LoadOrRefreshDemoFonts( io );
+	DW_StartupMark( "demo fonts loaded" );
 
 	// (legacy block below is no-op'd -- replaced by LoadOrRefreshDemoFonts).
 	ImFontConfig slugCfg;
@@ -1150,9 +1192,11 @@ int main( int argc, char** argv )
 	// Sync downloader statuses against what's on disk (so "Downloaded" labels
 	// render correctly for files that already exist).
 	ImDwDownload::RefreshStatuses();
+	DW_StartupMark( "download statuses refreshed" );
 
 	// Load LaTeX math font (Latin Modern Math)
 	ImWidgets::LoadLaTeXFont();
+	DW_StartupMark( "LaTeX font loaded" );
 
 	ImGuiStyle& style = ImGui::GetStyle();
 	style.ScaleAllSizes( dpi_scale );
@@ -1183,6 +1227,7 @@ int main( int argc, char** argv )
 		fprintf( stderr, "ImPlatform: Cannot initialize platform.\n" );
 		return 1;
 	}
+	DW_StartupMark( "platform backend init" );
 
 	bGood = ImPlatform_InitGfx();
 	if ( !bGood )
@@ -1190,10 +1235,12 @@ int main( int argc, char** argv )
 		fprintf( stderr, "ImPlatform: Cannot initialize graphics.\n" );
 		return 1;
 	}
+	DW_StartupMark( "gfx backend init (font atlas build/upload)" );
 
 	// Create ImWidgets context
 	ImWidgets::AddFeatures( ImWidgetsFeatures_Markers | ImWidgetsFeatures_RichFont | ImWidgetsFeatures_LaTeX );
 	ImWidgetsContext* ctx = ImWidgets::CreateContext();
+	DW_StartupMark( "ImWidgets context created" );
 
 	// Load test images
 	// Image from: https://www.pexels.com/fr-fr/photo/framboises-mures-dans-une-tasse-de-the-blanche-en-photographie-a-decalage-d-inclinaison-1152351/
@@ -1211,25 +1258,36 @@ int main( int argc, char** argv )
 	ImWidgets::OwnTexture( astro_img );
 	ImWidgets::OwnTexture( clock_img );
 	ImWidgets::OwnTexture( man_img );
+	DW_StartupMark( "demo images loaded" );
 
 
 	ImVec4 clear_color = ImVec4( 0.461f, 0.461f, 0.461f, 1.0f );
+	DW_StartupMark( "init complete -- entering main loop" );
+	static bool s_firstFrameMarked = false;
 	while ( ImPlatform_PlatformContinue() )
 	{
+		const bool dwFirst = !s_firstFrameMarked;
+
 		ImPlatform_PlatformEvents();
 
 		if ( !ImPlatform_GfxCheck() )
 		{
+			static int s_gfxCheckFails = 0;
+			if ( dwFirst && s_gfxCheckFails++ == 0 )
+				DW_StartupMark( "frame1: PlatformEvents done; GfxCheck FALSE -> spinning until renderable" );
 			continue;
 		}
+		if ( dwFirst ) DW_StartupMark( "frame1: GfxCheck ok -> render begins" );
 
 		// Capture previous frame's backbuffer for blur effects (before NewFrame clears state)
 		ImWidgets::BlurBackgroundNewFrame();
+		if ( dwFirst ) DW_StartupMark( "frame1: BlurBackgroundNewFrame" );
 
 		// New frame
 		ImPlatform_GfxAPINewFrame();
 		ImPlatform_PlatformNewFrame();
 		ImGui::NewFrame();
+		if ( dwFirst ) DW_StartupMark( "frame1: NewFrame (gfx+platform+imgui)" );
 
 		// Pre-warm tessellation cache on first frame so CollapsingHeaders open without stall
 		static bool s_tessWarmed = false;
@@ -1238,6 +1296,7 @@ int main( int argc, char** argv )
 			if ( g_dottedFont ) ImWidgets::PrewarmTessellationCache( g_dottedFont );
 			s_tessWarmed = true;
 		}
+		if ( dwFirst ) DW_StartupMark( "frame1: PrewarmTessellationCache" );
 
 		// Render UI
 		// In screenshot mode, force each window to a known position and size so captures
@@ -1250,6 +1309,7 @@ int main( int argc, char** argv )
 		}
 #endif
 		ImWidgets::ShowSamples();
+		if ( dwFirst ) DW_StartupMark( "frame1: ShowSamples()" );
 
 #if DW_SCREENSHOT_SUPPORT
 		if ( g_ss.active )
@@ -1260,6 +1320,7 @@ int main( int argc, char** argv )
 		}
 #endif
 		ImWidgets::ShowDemo();
+		if ( dwFirst ) DW_StartupMark( "frame1: ShowDemo()" );
 
 #if DW_SCREENSHOT_SUPPORT
 		if ( g_ss.active )
@@ -1271,6 +1332,7 @@ int main( int argc, char** argv )
 		}
 #endif
 		ImWidgets::ShowShowcase();
+		if ( dwFirst ) DW_StartupMark( "frame1: ShowShowcase()" );
 
 #if DW_SCREENSHOT_SUPPORT
 		if ( !g_ss.active )
@@ -1280,8 +1342,10 @@ int main( int argc, char** argv )
 			ImGui::ShowMetricsWindow();
 			ImGui::ShowDemoWindow();
 		}
+		if ( dwFirst ) DW_StartupMark( "frame1: StyleEditor/Metrics/DemoWindow" );
 
 		ShowSampleOffscreen00();
+		if ( dwFirst ) DW_StartupMark( "frame1: ShowSampleOffscreen00()" );
 
 		// Background effect demo window
 		{
@@ -1444,10 +1508,14 @@ int main( int argc, char** argv )
 			ImGui::End();
 		}
 
+		if ( dwFirst ) DW_StartupMark( "frame1: rest of UI (Background Effect window, etc.)" );
+
 		// Rendering
 		ImGui::Render();
+		if ( dwFirst ) DW_StartupMark( "frame1: ImGui::Render()" );
 		ImPlatform_GfxAPIClear( clear_color );
 		ImPlatform_GfxAPIRender( clear_color );
+		if ( dwFirst ) DW_StartupMark( "frame1: GfxAPIRender (GPU submit)" );
 
 #ifdef IMGUI_HAS_VIEWPORT
 		// Update and Render additional Platform Windows
@@ -1459,6 +1527,8 @@ int main( int argc, char** argv )
 #endif
 
 		ImPlatform_GfxAPISwapBuffer();
+
+		if ( !s_firstFrameMarked ) { DW_StartupMark( "frame1: SwapBuffer -> first frame presented" ); s_firstFrameMarked = true; }
 
 		// Screenshot state machine
 #if DW_SCREENSHOT_SUPPORT
@@ -1482,7 +1552,10 @@ int main( int argc, char** argv )
 				// Wait one extra frame so positions from imgui.ini are applied
 				if ( g_ss.phase_frames >= 2 )
 				{
-					DW_RunScreenshotCapture();  // full.png, showcase.png, shop_00.png
+					if ( g_ss.section_filter[0] == '\0' )
+						DW_RunScreenshotCapture();  // full.png, showcase.png, shop_00.png (skipped when filtering one section)
+					else
+						CreateDirectoryA( g_ss.out_dir, nullptr );  // ensure out dir exists (normally created by DW_RunScreenshotCapture)
 					g_ss.phase = DW_SsPhase_OpenAll;
 					g_ss.phase_frames = 0;
 				}
@@ -1599,7 +1672,8 @@ int main( int argc, char** argv )
 
 					HWND         hwnd = FindWindowA( NULL, "Dear Widgets Demo" );
 					ImGuiWindow* dw = ImGui::FindWindowByName( "Dear Widgets" );
-					if ( hwnd && dw && !dw->Hidden && !dw->Collapsed )
+					bool         want = ( g_ss.section_filter[0] == '\0' ) || ( strstr( sec.name, g_ss.section_filter ) != nullptr );
+					if ( want && hwnd && dw && !dw->Hidden && !dw->Collapsed )
 					{
 						float hdr_skip = g_ss.with_headers ? 0.0f : ImGui::GetFrameHeightWithSpacing();
 
@@ -1631,6 +1705,13 @@ int main( int argc, char** argv )
 						fprintf( stderr, "[screenshot] %s  %s  dc=(%.0f,%.0f)  h=%d\n",
 								 ok ? "OK  " : "FAIL", path, sec.dc_y0, sec.dc_y1, cap_h );
 						fflush( stderr );
+
+						// When filtering to a single section, stop once captured.
+						if ( g_ss.section_filter[0] != '\0' )
+						{
+							g_ss.done = true;
+							g_ss.phase = DW_SsPhase_Done;
+						}
 					}
 
 					// Advance running correct_scroll by the actual (DC-measured) section height
@@ -8500,6 +8581,264 @@ namespace ImWidgets{
 						ImGui::ColorEdit4( "Shared Color##PickerCmp", &pickerColor.x, ImGuiColorEditFlags_Float );
 					}
 					DW_SsRecord( "Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Skin Color Picker (Biophysical)" ) )
+					{
+						static ImVec4 skinColor( 0.8f, 0.6f, 0.5f, 1.0f );
+						ImGui::TextWrapped( "Physically-based skin tone from chromophores: melanin fraction (plane X), "
+							"eumelanin/pheomelanin blend (plane Y), and dermal hemoglobin (vertical slider). "
+							"Switch Mode to drive these from high-level age / gender / skin-care / skin-type controls." );
+
+						ColorPickerSkin( "##SkinPicker", &skinColor );
+
+						ImGui::ColorEdit4( "Color##Skin", &skinColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+					}
+					DW_SsRecord( "Skin_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Hair Color Picker (Biophysical)" ) )
+					{
+						static ImVec4 hairColor( 0.35f, 0.22f, 0.12f, 1.0f );
+						ImGui::TextWrapped( "Physically-based hair color from melanin (Marschner/d'Eon/Chiang fiber pigments): "
+							"eumelanin amount (plane X, blonde->black) x pheomelanin amount (plane Y, none->ginger/auburn), "
+							"with a redness (pheomelanin gain) vertical slider. Color is the single-strand Beer-Lambert "
+							"transmittance of the colored TRT lobe (integrated across the fiber cross-section), so pheomelanin "
+							"reads as a vivid ginger. Switch Mode to drive these from high-level shade / warmth / graying controls." );
+
+						ColorPickerHair( "##HairPicker", &hairColor );
+
+						ImGui::ColorEdit4( "Color##Hair", &hairColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+					}
+					DW_SsRecord( "Hair_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Leaf Color Picker (PROSPECT-D)" ) )
+					{
+						static ImVec4 leafColor( 0.25f, 0.45f, 0.12f, 1.0f );
+						ImGui::TextWrapped( "Physically-based leaf color from the PROSPECT-D leaf optical model (Feret et al. 2017): "
+							"chlorophyll a+b (plane X, green), carotenoids (plane Y, yellow/orange), and anthocyanins "
+							"(vertical slider, red/purple). Covers the full lifecycle green->yellow->orange->red->brown. "
+							"Switch Mode to drive these from high-level season / health / autumn-redness controls." );
+
+						ColorPickerLeaf( "##LeafPicker", &leafColor );
+
+						ImGui::ColorEdit4( "Color##Leaf", &leafColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+					}
+					DW_SsRecord( "Leaf_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Blackbody / Color Temperature (Planck)" ) )
+					{
+						static ImVec4 bbColor( 1.0f, 0.95f, 0.9f, 1.0f );
+						ImGui::TextWrapped( "Planck's law along the Planckian locus (CIE 15). Single gradient slider keyed with blackbody colors: "
+							"warm/orange at low Kelvin, white ~6500K, cool/blue at high Kelvin." );
+						ColorPickerBlackbody( "##BBPicker", &bbColor );
+						ImGui::ColorEdit4( "Color##BB", &bbColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+					}
+					DW_SsRecord( "Blackbody_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Pigment Mixing (Kubelka-Munk)" ) )
+					{
+						static ImVec4 pigColor( 0.3f, 0.5f, 0.2f, 1.0f );
+						ImGui::TextWrapped( "Subtractive paint mixing via Kubelka-Munk theory (Kubelka & Munk 1931; Haase & Meyer 1992). "
+							"Pick two paints; plane X = A->B mix, Y = white tint; slider = black. Yellow + blue makes green, like real paint." );
+						ColorPickerPigment( "##PigPicker", &pigColor );
+						ImGui::ColorEdit4( "Color##Pig", &pigColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+					}
+					DW_SsRecord( "Pigment_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Gemstone (Crystal-Field Absorption)" ) )
+					{
+						static ImVec4 gemColor( 0.7f, 0.05f, 0.1f, 1.0f );
+						ImGui::TextWrapped( "Gemstone body color from Beer-Lambert absorption by trace transition-metal ions (Nassau 1983; "
+							"Fritsch & Rossman 1987-88). Pick a gem; plane X = concentration, Y = path length; slider = clarity." );
+						ColorPickerGem( "##GemPicker", &gemColor );
+						ImGui::ColorEdit4( "Color##Gem", &gemColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+					}
+					DW_SsRecord( "Gemstone_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Water / Ocean (Bio-Optical)" ) )
+					{
+						static ImVec4 waterColor( 0.0f, 0.2f, 0.35f, 1.0f );
+						ImGui::TextWrapped( "Water color from a bio-optical model R ~ bb/(a+bb) (Morel & Prieur 1977; Gordon 1988) with pure-water "
+							"absorption (Pope & Fry 1997), chlorophyll and CDOM. Plane X = chlorophyll, Y = CDOM; slider = turbidity." );
+						ColorPickerWater( "##WaterPicker", &waterColor );
+						ImGui::ColorEdit4( "Color##Water", &waterColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+					}
+					DW_SsRecord( "Water_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Iris / Eye Color (Melanin + Tyndall)" ) )
+					{
+						static ImVec4 irisColor( 0.3f, 0.45f, 0.6f, 1.0f );
+						ImGui::TextWrapped( "Eye color: anterior melanin absorbs while the stroma scatters blue (Tyndall/Rayleigh) over a pigmented "
+							"epithelium - so blue eyes are structural, not a blue pigment. Plane X = anterior melanin (blue->brown), "
+							"Y = stromal scattering; slider = posterior melanin." );
+						ColorPickerIris( "##IrisPicker", &irisColor );
+						ImGui::ColorEdit4( "Color##Iris", &irisColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+					}
+					DW_SsRecord( "Iris_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Flame / Emission Spectrum" ) )
+					{
+						static ImVec4 flameColor( 0.2f, 0.8f, 0.3f, 1.0f );
+						ImGui::TextWrapped( "Additive emission: a blackbody flame continuum plus atomic emission lines for the chosen element "
+							"(NIST lines; flame tests). Plane X = flame temperature, Y = element line strength; slider = sodium contamination." );
+						ColorPickerFlame( "##FlamePicker", &flameColor );
+						ImGui::ColorEdit4( "Color##Flame", &flameColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+					}
+					DW_SsRecord( "Flame_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Bruise / Hematoma Healing" ) )
+					{
+						static ImVec4 bruiseColor( 0.5f, 0.2f, 0.3f, 1.0f );
+						ImGui::TextWrapped( "Bruise color as it heals: extravasated hemoglobin deoxygenates (red->purple), then heme breaks "
+							"down to biliverdin (green) and bilirubin (yellow). Chromophore dynamics after Randeberg et al. (J. Biomed. Opt.). "
+							"Plane X = days since injury, Y = severity; slider = skin melanin." );
+						ColorPickerBruise( "##BruisePicker", &bruiseColor );
+						ImGui::ColorEdit4( "Color##Bruise", &bruiseColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+					}
+					DW_SsRecord( "Bruise_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Emission Nebula" ) )
+					{
+						static ImVec4 nebulaColor( 0.6f, 0.2f, 0.3f, 1.0f );
+						ImGui::TextWrapped( "Color of an ionized gas cloud from its emission lines (Osterbrock & Ferland): hydrogen Balmer (Halpha), "
+							"high-ionization [O III] (green) + He, and low-ionization [N II]/[S II] (red). Plane X = ionization, Y = low-ionization; "
+							"slider = hydrogen strength." );
+						ColorPickerNebula( "##NebulaPicker", &nebulaColor );
+						ImGui::ColorEdit4( "Color##Nebula", &nebulaColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+					}
+					DW_SsRecord( "Nebula_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Maillard / Caramelization Browning" ) )
+					{
+						static ImVec4 maillardColor( 0.6f, 0.45f, 0.25f, 1.0f );
+						ImGui::TextWrapped( "Food browning: melanoidin/caramel pigments accumulate with Arrhenius time-temperature kinetics and absorb "
+							"toward short wavelengths (after Maillard-kinetics & CIELab browning studies). Plane X = temperature, Y = time; "
+							"slider = sugar(caramel)<->protein(Maillard)." );
+						ColorPickerMaillard( "##MaillardPicker", &maillardColor );
+						ImGui::ColorEdit4( "Color##Maillard", &maillardColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+					}
+					DW_SsRecord( "Maillard_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Copper / Bronze Patina" ) )
+					{
+						static ImVec4 patinaColor( 0.7f, 0.45f, 0.3f, 1.0f );
+						ImGui::TextWrapped( "Atmospheric weathering of copper: bright metal -> cuprite/tarnish (brown) -> basic sulfate/carbonate patina "
+							"(green) over years, faster in marine/industrial air (Graedel et al., Corrosion Science 1987). Plane X = age (years), "
+							"Y = environment; slider = humidity." );
+						ColorPickerPatina( "##PatinaPicker", &patinaColor );
+						ImGui::ColorEdit4( "Color##Patina", &patinaColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+					}
+					DW_SsRecord( "Patina_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Subsurface Translucency" ) )
+					{
+						static ImVec4 sssColor( 0.5f, 0.7f, 0.55f, 1.0f );
+						ImGui::TextWrapped( "Diffuse color of a translucent multiply-scattering material via the dipole model (Jensen et al., SIGGRAPH 2001). "
+							"Material sets the absorption hue; plane X = absorption, Y = scattering (opaque<->translucent); slider = IOR. "
+							"Try jade, wax, marble, milk, skin, amber." );
+						ColorPickerSubsurface( "##SubsurfacePicker", &sssColor );
+						ImGui::ColorEdit4( "Color##SSS", &sssColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+					}
+					DW_SsRecord( "Subsurface_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Gas-Discharge / Neon Tubes" ) )
+					{
+						static ImVec4 dischargeColor( 1.0f, 0.4f, 0.2f, 1.0f );
+						ImGui::TextWrapped( "Neon-tube color from low-pressure gas emission lines (NIST ASD; Waymouth). Pick the gas; plane X = mercury "
+							"additive (toward blue), Y = white phosphor coating (toward pastel/white); slider = phosphor white point. "
+							"Neon=red-orange, Ar+Hg=blue, helium=peach." );
+						ColorPickerDischarge( "##DischargePicker", &dischargeColor );
+						ImGui::ColorEdit4( "Color##Discharge", &dischargeColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+					}
+					DW_SsRecord( "Discharge_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Glacier / Sea Ice" ) )
+					{
+						static ImVec4 iceColor( 0.4f, 0.6f, 0.75f, 1.0f );
+						ImGui::TextWrapped( "Why ice is blue: pure ice absorbs red far more than blue (Warren & Brandt 2008), so with enough path it "
+							"turns deep blue, while fine grains/bubbles scatter and look white (Bohren 1983). Kubelka-Munk. Plane X = grain/scatter "
+							"(blue ice <-> snow), Y = path depth; slider = impurity/dirt." );
+						ColorPickerIce( "##IcePicker", &iceColor );
+						ImGui::ColorEdit4( "Color##Ice", &iceColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+					}
+					DW_SsRecord( "Ice_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Earth Pigments / Ochre (Kubelka-Munk)" ) )
+					{
+						static ImVec4 ochreColor( 0.6f, 0.35f, 0.12f, 1.0f );
+						ImGui::TextWrapped( "Subtractive mixing of natural iron-oxide earth pigments via Kubelka-Munk (masstones after Elias et al. 2006). "
+							"Pick two pigments; plane X = A->B mix, Y = chalk-white tint; slider = charcoal. Ochres, siennas, umbers - the oldest palette." );
+						ColorPickerOchre( "##OchrePicker", &ochreColor );
+						ImGui::ColorEdit4( "Color##Ochre", &ochreColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+					}
+					DW_SsRecord( "Ochre_Color_Picker", _sy0, ImGui::GetCursorPos().y );
 				}
 
 				{

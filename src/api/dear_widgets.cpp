@@ -11866,9 +11866,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			cbData.desc = &desc;
 			cbData.sliderValue = comp[ desc.sliderAxis ];
 
+			// Primitive flips its Y axis (top = maxY arg). Pass Y bounds swapped so
+			// the fill matches the dot/interaction convention (axisMin at top).
 			DrawProceduralColor2DBilinear( dl, ColorPickerPlaneCallback, &cbData,
 				desc.axisMin[ desc.planeAxisX ], desc.axisMax[ desc.planeAxisX ],
-				desc.axisMin[ desc.planeAxisY ], desc.axisMax[ desc.planeAxisY ],
+				desc.axisMax[ desc.planeAxisY ], desc.axisMin[ desc.planeAxisY ],
 				plane_bb.Min, plane_bb.GetSize(), planeRes, planeRes );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
@@ -12182,6 +12184,3215 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		case ImColorPickerSpace_XYZ:   return ColorPickerXYZ( label, color, size );
 		default: return false;
 		}
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Physically-Based Skin Color Picker
+	//
+	// Forward-only biophysical model: chromophore parameters -> reflectance
+	// spectrum -> XYZ -> sRGB. The mapping is not invertible, so this cannot
+	// reuse ColorPickerInternal (which derives params from the input color via
+	// the inverse conversion every frame). Spectral physics from Jacques (OMLC
+	// skin optics), melanin eu/pheo split and oxygenation from Donner & Jensen
+	// 2006; high-level aging controls after Iglesias-Guitian et al. 2015.
+	//////////////////////////////////////////////////////////////////////////
+
+	// Oxy/deoxy hemoglobin molar extinction coefficients [cm^-1/M], 380..780nm
+	// at 10nm steps (Prahl/Scott, omlc.org/spectra/hemoglobin).
+	#define s_Hb_samplesCount 41
+	static float s_Hb_min = 380.0f;
+	static float s_Hb_max = 780.0f;
+	static float s_Hb_oxy[ s_Hb_samplesCount ] = {
+		109564.0f, 167748.0f, 266232.0f, 466840.0f, 480360.0f, 246072.0f, 102580.0f, 62816.0f,
+		44480.0f, 33209.0f, 26629.0f, 23684.0f, 20933.0f, 20035.0f, 24202.0f, 39957.0f,
+		53236.0f, 43016.0f, 32613.0f, 44496.0f, 50104.0f, 14401.0f, 3200.0f, 1506.0f,
+		942.0f, 610.0f, 442.0f, 368.0f, 320.0f, 294.0f, 278.0f, 276.0f,
+		290.0f, 314.0f, 348.0f, 390.0f, 446.0f, 518.0f, 586.0f, 650.0f, 710.0f };
+	static float s_Hb_deoxy[ s_Hb_samplesCount ] = {
+		145232.0f, 167780.0f, 223296.0f, 303956.0f, 407560.0f, 528600.0f, 413280.0f, 103292.0f,
+		23389.0f, 16156.0f, 14550.0f, 16684.0f, 20862.0f, 25774.0f, 31590.0f, 39036.0f,
+		46592.0f, 53412.0f, 53788.0f, 45072.0f, 37020.0f, 28324.0f, 14677.0f, 9444.0f,
+		6510.0f, 5149.0f, 4345.0f, 3750.0f, 3227.0f, 2795.0f, 2408.0f, 2052.0f,
+		1794.0f, 1540.0f, 1326.0f, 1102.0f, 1116.0f, 1405.0f, 1549.0f, 1312.0f, 1075.0f };
+
+	// Forward spectral model: biophysical params -> saturated sRGB.
+	//   melanin: epidermal melanosome volume fraction (0..~0.43, light->dark)
+	//   blend:   eumelanin fraction of melanin (0=pheomelanin, 1=eumelanin)
+	//   blood:   dermal blood volume fraction (0..~0.10)
+	static void SkinParamsToSRGB( float& outR, float& outG, float& outB, float melanin, float blend, float blood )
+	{
+		const int   N = 81;            // 5nm sampling over 380..780nm
+		const float lamMin = 380.0f, lamMax = 780.0f;
+		const float dEpi = 0.050f;     // epidermis effective thickness [cm] (melanin darkening strength)
+		const float gammaOxy = 0.75f;  // blood oxygenation (Donner & Jensen)
+		const float hbConc = 150.0f;   // whole-blood hemoglobin [g/L]
+		const float hbFactor = 2.303f * hbConc / 64500.0f; // -> mua per unit eps
+
+		float X = 0.0f, Y = 0.0f, Z = 0.0f, norm = 0.0f;
+		for ( int i = 0; i < N; ++i )
+		{
+			float lam = lamMin + ( lamMax - lamMin ) * ( float )i / ( float )( N - 1 );
+
+			float muaBase = 0.244f + 85.3f * expf( -( lam - 154.0f ) / 66.2f );
+			float muaEu   = 6.6e10f * ImPow( lam, -3.33f );
+			float muaPheo = 2.9e14f * ImPow( lam, -4.75f );
+			float muaMel  = blend * muaEu + ( 1.0f - blend ) * muaPheo;
+			float muaEpi  = melanin * muaMel + ( 1.0f - melanin ) * muaBase;
+
+			float epsOxy   = ImFunctionFromData( lam, s_Hb_min, s_Hb_max, s_Hb_oxy, s_Hb_samplesCount );
+			float epsDeoxy = ImFunctionFromData( lam, s_Hb_min, s_Hb_max, s_Hb_deoxy, s_Hb_samplesCount );
+			float muaBlood = hbFactor * ( gammaOxy * epsOxy + ( 1.0f - gammaOxy ) * epsDeoxy );
+			float muaDerm  = blood * muaBlood + ( 1.0f - blood ) * muaBase;
+
+			float musp = 2.0e5f * ImPow( lam, -1.5f ) + 2.0e12f * ImPow( lam, -4.0f );
+
+			// Dermis: Kubelka-Munk infinite-layer diffuse reflectance.
+			float ratio = muaDerm / musp;
+			float Rderm = 1.0f + ratio - ImSqrt( ratio * ratio + 2.0f * ratio );
+			// Epidermis: double-pass absorbing filter over the dermis.
+			float Tepi = expf( -2.0f * muaEpi * dEpi );
+			float R = Tepi * Rderm;
+
+			float xb = ImFunctionFromData( lam, s_CIE_1931_2deg_min, s_CIE_1931_2deg_max, s_CIE_1931_2deg_X, s_CIE_1931_2deg_samplesCount );
+			float yb = ImFunctionFromData( lam, s_CIE_1931_2deg_min, s_CIE_1931_2deg_max, s_CIE_1931_2deg_Y, s_CIE_1931_2deg_samplesCount );
+			float zb = ImFunctionFromData( lam, s_CIE_1931_2deg_min, s_CIE_1931_2deg_max, s_CIE_1931_2deg_Z, s_CIE_1931_2deg_samplesCount );
+			float ill = ImFunctionFromData( lam, s_Illuminance_D65_min, s_Illuminance_D65_max, s_Illuminance_D65, s_Illuminance_D65_samplesCount );
+
+			X += R * ill * xb;
+			Y += R * ill * yb;
+			Z += R * ill * zb;
+			norm += ill * yb;
+		}
+		if ( norm > 0.0f ) { X /= norm; Y /= norm; Z /= norm; }
+
+		float r, g, b;
+		ColorConvertXYZtosRGB( r, g, b, X, Y, Z );
+		outR = ImSaturate( r ); outG = ImSaturate( g ); outB = ImSaturate( b );
+	}
+
+	// Precomputed skin-color LUT over (melanin, blend, blood) storing sRGB.
+	#define SKIN_MEL_N   32
+	#define SKIN_BLEND_N 16
+	#define SKIN_BLOOD_N 16
+	static const float SKIN_MEL_MIN = 0.0f,   SKIN_MEL_MAX = 0.43f;
+	static const float SKIN_BLOOD_MIN = 0.0f, SKIN_BLOOD_MAX = 0.10f;
+	static float s_SkinLUT[ SKIN_MEL_N * SKIN_BLEND_N * SKIN_BLOOD_N * 3 ];
+	static bool  s_SkinLUTBuilt = false;
+
+	static void BuildSkinColorLUT()
+	{
+		for ( int mi = 0; mi < SKIN_MEL_N; ++mi )
+		{
+			float mel = SKIN_MEL_MIN + ( SKIN_MEL_MAX - SKIN_MEL_MIN ) * ( float )mi / ( float )( SKIN_MEL_N - 1 );
+			for ( int bi = 0; bi < SKIN_BLEND_N; ++bi )
+			{
+				float blend = ( float )bi / ( float )( SKIN_BLEND_N - 1 );
+				for ( int hi = 0; hi < SKIN_BLOOD_N; ++hi )
+				{
+					float blood = SKIN_BLOOD_MIN + ( SKIN_BLOOD_MAX - SKIN_BLOOD_MIN ) * ( float )hi / ( float )( SKIN_BLOOD_N - 1 );
+					int idx = ( ( mi * SKIN_BLEND_N + bi ) * SKIN_BLOOD_N + hi ) * 3;
+					SkinParamsToSRGB( s_SkinLUT[ idx + 0 ], s_SkinLUT[ idx + 1 ], s_SkinLUT[ idx + 2 ], mel, blend, blood );
+				}
+			}
+		}
+		s_SkinLUTBuilt = true;
+	}
+
+	static void SampleSkinColorLUT( float& outR, float& outG, float& outB, float melanin, float blend, float blood )
+	{
+		if ( !s_SkinLUTBuilt )
+			BuildSkinColorLUT();
+
+		float fm = ImSaturate( ImNormalize01( melanin, SKIN_MEL_MIN, SKIN_MEL_MAX ) ) * ( float )( SKIN_MEL_N - 1 );
+		float fb = ImSaturate( blend ) * ( float )( SKIN_BLEND_N - 1 );
+		float fh = ImSaturate( ImNormalize01( blood, SKIN_BLOOD_MIN, SKIN_BLOOD_MAX ) ) * ( float )( SKIN_BLOOD_N - 1 );
+
+		int m0 = ( int )fm, b0 = ( int )fb, h0 = ( int )fh;
+		int m1 = ImMin( m0 + 1, SKIN_MEL_N - 1 );
+		int b1 = ImMin( b0 + 1, SKIN_BLEND_N - 1 );
+		int h1 = ImMin( h0 + 1, SKIN_BLOOD_N - 1 );
+		float dm = fm - ( float )m0, db = fb - ( float )b0, dh = fh - ( float )h0;
+
+		for ( int c = 0; c < 3; ++c )
+		{
+			#define SKIN_LUT_AT(mm,bb,hh) s_SkinLUT[ ( ( (mm) * SKIN_BLEND_N + (bb) ) * SKIN_BLOOD_N + (hh) ) * 3 + c ]
+			float c00 = ImLerp( SKIN_LUT_AT( m0, b0, h0 ), SKIN_LUT_AT( m1, b0, h0 ), dm );
+			float c10 = ImLerp( SKIN_LUT_AT( m0, b1, h0 ), SKIN_LUT_AT( m1, b1, h0 ), dm );
+			float c01 = ImLerp( SKIN_LUT_AT( m0, b0, h1 ), SKIN_LUT_AT( m1, b0, h1 ), dm );
+			float c11 = ImLerp( SKIN_LUT_AT( m0, b1, h1 ), SKIN_LUT_AT( m1, b1, h1 ), dm );
+			#undef SKIN_LUT_AT
+			float c0 = ImLerp( c00, c10, db );
+			float c1 = ImLerp( c01, c11, db );
+			float v = ImLerp( c0, c1, dh );
+			if ( c == 0 ) outR = v; else if ( c == 1 ) outG = v; else outB = v;
+		}
+	}
+
+	// High-level aging controls -> biophysical params (approximate; after
+	// Iglesias-Guitian et al. 2015). gender: 0=female, 1=male. age in years,
+	// skinCare and skinType in [0,1] (skinType ~ Fitzpatrick light->dark).
+	static void SkinHighLevelToBiophysical( float& melanin, float& blend, float& blood, float gender, float age, float skinCare, float skinType )
+	{
+		float ageNorm = ImSaturate( age / 90.0f );
+		float maleness = 1.0f - ImSaturate( gender ); // gender: 0=male, 1=female
+
+		// Skin type drives base melanin; men slightly more pigmented; melanin
+		// production tapers with age.
+		float mel = ImLerp( 0.02f, 0.40f, ImSaturate( skinType ) );
+		mel += 0.03f * maleness;
+		mel *= ( 1.0f - 0.10f * ageNorm );
+
+		// Human melanin is eumelanin-dominant; ages slightly browner.
+		float bl = 0.65f + 0.10f * ageNorm;
+
+		// Blood perfusion: better skin care -> rosier; declines with age; men
+		// marginally less ruddy at the surface.
+		float bld = ImLerp( 0.012f, 0.050f, ImSaturate( skinCare ) );
+		bld *= ( 1.0f - 0.30f * ageNorm );
+		bld -= 0.004f * maleness;
+
+		melanin = ImClamp( mel, SKIN_MEL_MIN, SKIN_MEL_MAX );
+		blend   = ImSaturate( bl );
+		blood   = ImClamp( bld, SKIN_BLOOD_MIN, SKIN_BLOOD_MAX );
+	}
+
+	struct ImSkinPlaneData { float blood; };
+	static ImU32 SkinPlaneCallback( float mel, float blend, void* pUserData )
+	{
+		ImSkinPlaneData* d = ( ImSkinPlaneData* )pUserData;
+		float r, g, b;
+		SampleSkinColorLUT( r, g, b, mel, blend, d->blood );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	struct ImSkinSliderData { float melanin, blend; };
+	static ImU32 SkinBloodCallback( float blood, void* pUserData )
+	{
+		ImSkinSliderData* d = ( ImSkinSliderData* )pUserData;
+		float r, g, b;
+		SampleSkinColorLUT( r, g, b, d->melanin, d->blend, blood );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerSkin( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		// Create keys first (inserts may shift/realloc storage), then grab stable pointers.
+		storage->GetIntRef( ImGui::GetID( "mode" ), 0 );
+		storage->GetFloatRef( ImGui::GetID( "mel" ), 0.12f );
+		storage->GetFloatRef( ImGui::GetID( "blend" ), 0.65f );
+		storage->GetFloatRef( ImGui::GetID( "blood" ), 0.02f );
+		storage->GetFloatRef( ImGui::GetID( "gender" ), 0.5f );
+		storage->GetFloatRef( ImGui::GetID( "age" ), 30.0f );
+		storage->GetFloatRef( ImGui::GetID( "care" ), 0.5f );
+		storage->GetFloatRef( ImGui::GetID( "type" ), 0.30f );
+		int*   pMode  = storage->GetIntRef( ImGui::GetID( "mode" ), 0 );
+		float* pMel   = storage->GetFloatRef( ImGui::GetID( "mel" ), 0.12f );
+		float* pBlend = storage->GetFloatRef( ImGui::GetID( "blend" ), 0.65f );
+		float* pBlood = storage->GetFloatRef( ImGui::GetID( "blood" ), 0.02f );
+		float* pGender = storage->GetFloatRef( ImGui::GetID( "gender" ), 0.5f );
+		float* pAge   = storage->GetFloatRef( ImGui::GetID( "age" ), 30.0f );
+		float* pCare  = storage->GetFloatRef( ImGui::GetID( "care" ), 0.5f );
+		float* pType  = storage->GetFloatRef( ImGui::GetID( "type" ), 0.30f );
+
+		bool changed = false;
+
+		const char* modes[] = { "Biophysical", "High-level (aging)" };
+		ImGui::Combo( "Mode##Skin", pMode, modes, IM_ARRAYSIZE( modes ) );
+
+		if ( *pMode == 1 )
+		{
+			bool hl = false;
+			hl |= ImGui::SliderFloat( "Gender##Skin", pGender, 0.0f, 1.0f, "%.2f (0=M, 1=F)" );
+			hl |= ImGui::SliderFloat( "Age##Skin", pAge, 0.0f, 90.0f, "%.0f yr" );
+			hl |= ImGui::SliderFloat( "Skin Care (sun protection)##Skin", pCare, 0.0f, 1.0f, "%.2f" );
+			hl |= ImGui::SliderFloat( "Melanin##Skin", pType, 0.0f, 1.0f, "%.2f" );
+			if ( hl )
+			{
+				SkinHighLevelToBiophysical( *pMel, *pBlend, *pBlood, *pGender, *pAge, *pCare, *pType );
+				changed = true;
+			}
+		}
+
+		// Geometry: melanin x blend plane + blood vertical slider.
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "blood", ImVec2( sliderW, planeSide ) );
+		const ImRect blood_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool bloodActive = ImGui::IsItemActive();
+
+		// Interaction (plane drives melanin/blend; slider drives blood).
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive )
+		{
+			float u = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f );
+			float v = ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f );
+			*pMel = ImLerp( SKIN_MEL_MIN, SKIN_MEL_MAX, u );
+			*pBlend = v;
+			changed = true;
+		}
+		if ( bloodActive )
+		{
+			float t = ImClamp( ( mp.y - blood_bb.Min.y ) / blood_bb.GetHeight(), 0.0f, 1.0f );
+			*pBlood = ImLerp( SKIN_BLOOD_MIN, SKIN_BLOOD_MAX, t );
+			changed = true;
+		}
+
+		// Draw plane fill.
+		{
+			ImSkinPlaneData cbData; cbData.blood = *pBlood;
+			// Primitive flips its Y axis (top = maxY arg). Pass swapped bounds so
+			// the fill matches the dot/interaction convention (blend 0 at top).
+			DrawProceduralColor2DBilinear( dl, SkinPlaneCallback, &cbData,
+				SKIN_MEL_MIN, SKIN_MEL_MAX, 1.0f, 0.0f,
+				plane_bb.Min, plane_bb.GetSize(), planeRes, planeRes );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+
+		// Dot + crosshair on plane.
+		{
+			float du = ImSaturate( ImNormalize01( *pMel, SKIN_MEL_MIN, SKIN_MEL_MAX ) );
+			float dv = ImSaturate( *pBlend );
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
+			float dr, dg, db;
+			SampleSkinColorLUT( dr, dg, db, *pMel, *pBlend, *pBlood );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
+			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+
+		// Blood slider fill + handle.
+		{
+			ImSkinSliderData cbData; cbData.melanin = *pMel; cbData.blend = *pBlend;
+			DrawProceduralColor1DBilinearVertical( dl, SkinBloodCallback, &cbData,
+				SKIN_BLOOD_MAX, SKIN_BLOOD_MIN, blood_bb.Min, blood_bb.GetSize(), sliderRes );
+			dl->AddRect( blood_bb.Min, blood_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+
+			float t = ImSaturate( ImNormalize01( *pBlood, SKIN_BLOOD_MIN, SKIN_BLOOD_MAX ) );
+			float handleY = ImLerp( blood_bb.Min.y, blood_bb.Max.y, t );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			ImVec2 hMin( blood_bb.Min.x - 1.0f, handleY - hh );
+			ImVec2 hMax( blood_bb.Max.x + 1.0f, handleY + hh );
+			float hr, hg, hb;
+			SampleSkinColorLUT( hr, hg, hb, *pMel, *pBlend, *pBlood );
+			ImU32 handleFill = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
+			dl->AddRectFilled( hMin, hMax, handleFill, 2.0f );
+			dl->AddRect( hMin, hMax, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		// Readouts.
+		ImGui::Text( "Melanin %.0f%%   Eumelanin %.0f%%   Blood %.1f%%",
+			ImNormalize01( *pMel, SKIN_MEL_MIN, SKIN_MEL_MAX ) * 100.0f, ( *pBlend ) * 100.0f, ( *pBlood ) * 100.0f );
+
+		// Forward-only output: drive color from current params.
+		float r, gg, b;
+		SampleSkinColorLUT( r, gg, b, *pMel, *pBlend, *pBlood );
+		color->x = r; color->y = gg; color->z = b;
+
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Hair Color Picker (Biophysical)
+	//////////////////////////////////////////////////////////////////////////
+
+	// Forward melanin model based on the Marschner/d'Eon/Chiang fiber pigments. The
+	// per-channel melanin absorption coefficients are sigma_a (Chiang/PBRT
+	// SigmaAFromConcentration): eumelanin (0.419,0.697,1.37), pheomelanin
+	// (0.187,0.4,1.05), in LINEAR RGB, per unit path length.
+	//
+	// We compute the *single-strand* color via Beer-Lambert transmittance
+	// exp(-sigma_a * path) integrated over the illuminated fiber cross-section -
+	// NOT Chiang's bulk multiple-scattering albedo fit. That bulk fit
+	// (sigma_a = (ln C / f(beta))^2) carries a square root that is the
+	// diffusion/Kubelka-Munk relationship for a dense scattering mass; it
+	// compresses the per-channel ratios and desaturates pheomelanin to copper.
+	// Strand transmittance is linear in sigma_a (no sqrt), so the channel ratios
+	// survive and pheomelanin reads as a vivid ginger - which is the recognizable
+	// "hair color" for a picker. Azimuthal roughness is a light-scattering
+	// parameter, not a pigment one, so it does not enter the color.
+	//
+	// eu01/pheo01 are perceptual 0..1 controls (geometric in concentration);
+	// redness is a global pheomelanin gain. Eumelanin needs a wider range (up to
+	// near-black) than pheomelanin (tops out at deep auburn), so they use
+	// separate CMAX values - which also matches natural hair (dark hair is
+	// eumelanin-rich; red hair never gets as dark).
+	static const float HAIR_CMIN      = 0.005f; // pigment concentration at amount=0 (none)
+	static const float HAIR_EU_CMAX   = 6.0f;   // eumelanin concentration at eu01=1 (black)
+	static const float HAIR_PHEO_CMAX = 2.5f;   // pheomelanin concentration at pheo01=1 (deep auburn)
+	static const float HAIR_REDNESS_MIN = 0.0f;
+	static const float HAIR_REDNESS_MAX = 2.0f;
+	static const float HAIR_IOR = 1.55f;        // hair fiber refractive index (Marschner)
+
+	static float HairPigmentConc( float amount01, float cmax )
+	{
+		// Geometric (log) spacing so the tonal range spreads evenly.
+		return HAIR_CMIN * expf( ImSaturate( amount01 ) * logf( cmax / HAIR_CMIN ) );
+	}
+
+	static void HairParamsToSRGB( float& outR, float& outG, float& outB, float eu01, float pheo01, float redness )
+	{
+		const float euA[ 3 ]   = { 0.419f, 0.697f, 1.37f }; // eumelanin sigma_a (linear RGB)
+		const float pheoA[ 3 ] = { 0.187f, 0.4f,   1.05f }; // pheomelanin sigma_a (linear RGB)
+
+		float ce = HairPigmentConc( eu01, HAIR_EU_CMAX );
+		float cp = HairPigmentConc( pheo01, HAIR_PHEO_CMAX ) * ImMax( redness, 0.0f );
+
+		float sigma[ 3 ];
+		for ( int i = 0; i < 3; ++i )
+			sigma[ i ] = ce * euA[ i ] + cp * pheoA[ i ];
+
+		// Colored TRT lobe (enter -> internal reflection -> exit) integrated over
+		// the illuminated cross-section. For a unit-radius circular fiber, a ray
+		// entering at normalized offset h refracts to internal angle gamma_t with
+		// sin(gamma_t)=h/eta; one traversal chord is 2*cos(gamma_t), TRT spans two.
+		const int N = 17;
+		float acc[ 3 ] = { 0.0f, 0.0f, 0.0f };
+		for ( int k = 0; k < N; ++k )
+		{
+			float h  = -1.0f + 2.0f * ( ( float )k + 0.5f ) / ( float )N; // [-1,1]
+			float st = h / HAIR_IOR;                                       // sin(gamma_t)
+			float ct = ImSqrt( ImMax( 1.0f - st * st, 0.0f ) );           // cos(gamma_t)
+			float path = 4.0f * ct;                                        // TRT: two chords of 2*cos(gamma_t)
+			for ( int i = 0; i < 3; ++i )
+				acc[ i ] += expf( -sigma[ i ] * path );
+		}
+		float inv = 1.0f / ( float )N;
+		outR = ImSaturate( ImLinearTosRGB( acc[ 0 ] * inv ) );
+		outG = ImSaturate( ImLinearTosRGB( acc[ 1 ] * inv ) );
+		outB = ImSaturate( ImLinearTosRGB( acc[ 2 ] * inv ) );
+	}
+
+	// High-level natural-hair controls -> biophysical params.
+	//   shade:   0=lightest blonde .. 1=black (drives eumelanin amount)
+	//   warmth:  0=neutral/ash .. 1=red/ginger (drives pheomelanin amount)
+	//   graying: 0=none .. 1=fully depigmented (white) - washes out both pigments
+	static void HairHighLevelToBiophysical( float& eu01, float& pheo01, float& redness, float shade, float warmth, float graying )
+	{
+		float gy = ImSaturate( graying );
+		eu01    = ImSaturate( shade ) * ( 1.0f - gy );
+		pheo01  = ImSaturate( warmth ) * ( 1.0f - gy );
+		redness = 1.0f;
+	}
+
+	struct ImHairPlaneData { float redness; };
+	static ImU32 HairPlaneCallback( float eu01, float pheo01, void* pUserData )
+	{
+		ImHairPlaneData* d = ( ImHairPlaneData* )pUserData;
+		float r, g, b;
+		HairParamsToSRGB( r, g, b, eu01, pheo01, d->redness );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	struct ImHairSliderData { float eu01, pheo01; };
+	static ImU32 HairRednessCallback( float redness, void* pUserData )
+	{
+		ImHairSliderData* d = ( ImHairSliderData* )pUserData;
+		float r, g, b;
+		HairParamsToSRGB( r, g, b, d->eu01, d->pheo01, redness );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerHair( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		// Create keys first (inserts may shift/realloc storage), then grab stable pointers.
+		storage->GetIntRef( ImGui::GetID( "mode" ), 0 );
+		storage->GetFloatRef( ImGui::GetID( "eu" ), 0.65f );
+		storage->GetFloatRef( ImGui::GetID( "pheo" ), 0.20f );
+		storage->GetFloatRef( ImGui::GetID( "red" ), 1.0f );
+		storage->GetFloatRef( ImGui::GetID( "shade" ), 0.65f );
+		storage->GetFloatRef( ImGui::GetID( "warmth" ), 0.20f );
+		storage->GetFloatRef( ImGui::GetID( "gray" ), 0.0f );
+		int*   pMode   = storage->GetIntRef( ImGui::GetID( "mode" ), 0 );
+		float* pEu     = storage->GetFloatRef( ImGui::GetID( "eu" ), 0.65f );
+		float* pPheo   = storage->GetFloatRef( ImGui::GetID( "pheo" ), 0.20f );
+		float* pRed    = storage->GetFloatRef( ImGui::GetID( "red" ), 1.0f );
+		float* pShade  = storage->GetFloatRef( ImGui::GetID( "shade" ), 0.65f );
+		float* pWarmth = storage->GetFloatRef( ImGui::GetID( "warmth" ), 0.20f );
+		float* pGray   = storage->GetFloatRef( ImGui::GetID( "gray" ), 0.0f );
+
+		bool changed = false;
+
+		const char* modes[] = { "Biophysical", "High-level (natural)" };
+		ImGui::Combo( "Mode##Hair", pMode, modes, IM_ARRAYSIZE( modes ) );
+
+		if ( *pMode == 1 )
+		{
+			bool hl = false;
+			hl |= ImGui::SliderFloat( "Shade (blonde->black)##Hair", pShade, 0.0f, 1.0f, "%.2f" );
+			hl |= ImGui::SliderFloat( "Warmth (red/ginger)##Hair", pWarmth, 0.0f, 1.0f, "%.2f" );
+			hl |= ImGui::SliderFloat( "Graying##Hair", pGray, 0.0f, 1.0f, "%.2f" );
+			if ( hl )
+			{
+				HairHighLevelToBiophysical( *pEu, *pPheo, *pRed, *pShade, *pWarmth, *pGray );
+				changed = true;
+			}
+		}
+
+		// Geometry: eumelanin x pheomelanin plane + redness vertical slider.
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "redness", ImVec2( sliderW, planeSide ) );
+		const ImRect red_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool redActive = ImGui::IsItemActive();
+
+		// Interaction (plane drives eumelanin/pheomelanin; slider drives redness).
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive )
+		{
+			float u = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f );
+			float v = ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f );
+			*pEu = u;
+			*pPheo = v;
+			changed = true;
+		}
+		if ( redActive )
+		{
+			float t = ImClamp( ( mp.y - red_bb.Min.y ) / red_bb.GetHeight(), 0.0f, 1.0f );
+			*pRed = ImLerp( HAIR_REDNESS_MIN, HAIR_REDNESS_MAX, t );
+			changed = true;
+		}
+
+		// Draw plane fill. Primitive flips Y (top = maxY arg); pass swapped bounds
+		// so pheomelanin 0 renders at top, matching the dot/interaction.
+		{
+			ImHairPlaneData cbData; cbData.redness = *pRed;
+			DrawProceduralColor2DBilinear( dl, HairPlaneCallback, &cbData,
+				0.0f, 1.0f, 1.0f, 0.0f,
+				plane_bb.Min, plane_bb.GetSize(), planeRes, planeRes );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+
+		// Dot + crosshair on plane.
+		{
+			float du = ImSaturate( *pEu );
+			float dv = ImSaturate( *pPheo );
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
+			float dr, dg, db;
+			HairParamsToSRGB( dr, dg, db, *pEu, *pPheo, *pRed );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
+			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+
+		// Redness slider fill + handle.
+		{
+			ImHairSliderData cbData; cbData.eu01 = *pEu; cbData.pheo01 = *pPheo;
+			DrawProceduralColor1DBilinearVertical( dl, HairRednessCallback, &cbData,
+				HAIR_REDNESS_MAX, HAIR_REDNESS_MIN, red_bb.Min, red_bb.GetSize(), sliderRes );
+			dl->AddRect( red_bb.Min, red_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+
+			float t = ImSaturate( ImNormalize01( *pRed, HAIR_REDNESS_MIN, HAIR_REDNESS_MAX ) );
+			float handleY = ImLerp( red_bb.Min.y, red_bb.Max.y, t );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			ImVec2 hMin( red_bb.Min.x - 1.0f, handleY - hh );
+			ImVec2 hMax( red_bb.Max.x + 1.0f, handleY + hh );
+			float hr, hg, hb;
+			HairParamsToSRGB( hr, hg, hb, *pEu, *pPheo, *pRed );
+			ImU32 handleFill = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
+			dl->AddRectFilled( hMin, hMax, handleFill, 2.0f );
+			dl->AddRect( hMin, hMax, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		// Readouts.
+		ImGui::Text( "Eumelanin %.0f%%   Pheomelanin %.0f%%   Redness %.2f",
+			ImSaturate( *pEu ) * 100.0f, ImSaturate( *pPheo ) * 100.0f, *pRed );
+
+		// Forward-only output: drive color from current params.
+		float r, gg, b;
+		HairParamsToSRGB( r, gg, b, *pEu, *pPheo, *pRed );
+		color->x = r; color->y = gg; color->z = b;
+
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Leaf / Vegetation Color Picker (PROSPECT-D)
+	//////////////////////////////////////////////////////////////////////////
+
+	// Forward leaf optical model: PROSPECT-D (Feret, Gitelson, Noble & Jacquemoud
+	// 2017, "PROSPECT-D: Towards modeling leaf optical properties through a complete
+	// lifecycle"). A leaf is a stack of N transparent plates; per wavelength the
+	// reflectance is built from the leaf refractive index n and a total absorption
+	// k = (Cab*Kab + Car*Kcar + Canth*Kanth + Cbrown*Kbrown + Cw*Kw + Cm*Km)/N via
+	// Fresnel surface terms (tav), a single-layer transmission using the exponential
+	// integral, and the Stokes N-layer stacking formula. Forward-only (pigments ->
+	// reflectance), so like the skin/hair pickers it cannot reuse ColorPickerInternal.
+	//
+	// Specific absorption coefficients + refractive index sampled at 10nm over the
+	// visible band (400..700nm) from the PROSPECT-D dataSpec (Feret et al. 2017).
+	#define s_Leaf_samplesCount 31
+	static const float s_Leaf_min = 400.0f;
+	static const float s_Leaf_max = 700.0f;
+	static const float s_Leaf_n[ s_Leaf_samplesCount ] = {
+		1.5115f, 1.5081f, 1.5032f, 1.5002f, 1.4980f, 1.4955f, 1.4937f, 1.4923f, 1.4910f, 1.4896f,
+		1.4880f, 1.4861f, 1.4836f, 1.4807f, 1.4774f, 1.4739f, 1.4701f, 1.4662f, 1.4624f, 1.4588f,
+		1.4559f, 1.4533f, 1.4510f, 1.4492f, 1.4480f, 1.4473f, 1.4468f, 1.4464f, 1.4458f, 1.4451f, 1.4444f };
+	static const float s_Leaf_Kab[ s_Leaf_samplesCount ] = { // chlorophyll a+b (cm2/ug)
+		6.48815e-02f, 7.14914e-02f, 6.98193e-02f, 7.24491e-02f, 7.37942e-02f, 5.87747e-02f, 4.38733e-02f, 3.97273e-02f, 3.67757e-02f, 2.96622e-02f,
+		1.90485e-02f, 9.70081e-03f, 4.33379e-03f, 4.06899e-03f, 6.78640e-03f, 9.30939e-03f, 1.10480e-02f, 1.35979e-02f, 1.69452e-02f, 1.94191e-02f,
+		2.08540e-02f, 2.31769e-02f, 2.65303e-02f, 2.79776e-02f, 3.12475e-02f, 3.90136e-02f, 4.74949e-02f, 6.61121e-02f, 6.89206e-02f, 3.36710e-02f, 1.22406e-02f };
+	static const float s_Leaf_Kcar[ s_Leaf_samplesCount ] = { // carotenoids (cm2/ug)
+		1.67340e-01f, 1.65882e-01f, 1.67164e-01f, 1.67551e-01f, 1.69569e-01f, 1.67441e-01f, 1.51672e-01f, 1.37008e-01f, 1.33271e-01f, 1.20655e-01f,
+		9.90044e-02f, 7.59473e-02f, 5.32106e-02f, 3.25209e-02f, 1.56048e-02f, 4.18898e-03f, 2.13163e-13f, 0.00000e+00f, 0.00000e+00f, 0.00000e+00f,
+		0.00000e+00f, 0.00000e+00f, 0.00000e+00f, 0.00000e+00f, 0.00000e+00f, 0.00000e+00f, 0.00000e+00f, 0.00000e+00f, 0.00000e+00f, 0.00000e+00f, 0.00000e+00f };
+	static const float s_Leaf_Kanth[ s_Leaf_samplesCount ] = { // anthocyanins (cm2/ug)
+		6.66747e-02f, 5.09515e-02f, 4.54286e-02f, 4.38612e-02f, 4.47865e-02f, 4.64136e-02f, 4.88393e-02f, 5.19406e-02f, 5.71515e-02f, 6.29224e-02f,
+		6.77709e-02f, 7.04719e-02f, 7.16821e-02f, 7.23492e-02f, 7.20633e-02f, 6.81398e-02f, 5.96515e-02f, 4.84808e-02f, 3.74120e-02f, 2.68029e-02f,
+		1.87401e-02f, 1.28011e-02f, 8.41103e-03f, 5.39765e-03f, 3.45303e-03f, 2.25247e-03f, 1.47128e-03f, 7.84759e-04f, 2.01097e-04f, 0.00000e+00f, 0.00000e+00f };
+	static const float s_Leaf_Kbrown[ s_Leaf_samplesCount ] = { // brown pigments (arbitrary)
+		5.27200e-01f, 5.17200e-01f, 5.07200e-01f, 4.97200e-01f, 4.85200e-01f, 4.73300e-01f, 4.60800e-01f, 4.50400e-01f, 4.40100e-01f, 4.27200e-01f,
+		4.14400e-01f, 4.05700e-01f, 3.96200e-01f, 3.86700e-01f, 3.65400e-01f, 3.51100e-01f, 3.40100e-01f, 3.22300e-01f, 3.01900e-01f, 2.82100e-01f,
+		2.63600e-01f, 2.46300e-01f, 2.30200e-01f, 2.15600e-01f, 2.02000e-01f, 1.89000e-01f, 1.76800e-01f, 1.64100e-01f, 1.50400e-01f, 1.37000e-01f, 1.24500e-01f };
+	static const float s_Leaf_Kwater[ s_Leaf_samplesCount ] = { // water (cm-1)
+		5.80000e-05f, 6.70000e-05f, 7.90000e-05f, 9.20000e-05f, 1.04000e-04f, 1.14000e-04f, 1.24000e-04f, 1.35000e-04f, 1.52000e-04f, 1.81000e-04f,
+		2.38000e-04f, 3.29000e-04f, 4.09000e-04f, 4.29000e-04f, 4.95000e-04f, 5.88000e-04f, 6.72000e-04f, 7.59000e-04f, 9.52000e-04f, 1.35600e-03f,
+		2.22400e-03f, 2.69100e-03f, 2.81000e-03f, 2.95500e-03f, 3.11100e-03f, 3.31500e-03f, 3.79100e-03f, 4.12200e-03f, 4.31800e-03f, 4.76000e-03f, 5.72200e-03f };
+	static const float s_Leaf_Kdry[ s_Leaf_samplesCount ] = { // dry matter (cm2/g)
+		1.09700e+02f, 6.30000e+01f, 3.56700e+01f, 2.02400e+01f, 1.09600e+01f, 6.66000e+00f, 4.57500e+00f, 3.46200e+00f, 2.80300e+00f, 2.57300e+00f,
+		2.41700e+00f, 2.32800e+00f, 2.30000e+00f, 2.30000e+00f, 2.30000e+00f, 2.30000e+00f, 2.30000e+00f, 2.30000e+00f, 2.30000e+00f, 2.30000e+00f,
+		2.30000e+00f, 2.30000e+00f, 2.30000e+00f, 2.30000e+00f, 2.30000e+00f, 2.30000e+00f, 2.30000e+00f, 2.30000e+00f, 2.30000e+00f, 2.30000e+00f, 2.30000e+00f };
+
+	// Fixed leaf properties (minor visible-hue effect; left as sensible constants).
+	static const float LEAF_CW = 0.012f;  // equivalent water thickness (cm)
+	static const float LEAF_CM = 0.008f;  // dry matter content (g/cm2)
+	static const float LEAF_N  = 1.5f;    // leaf structure parameter
+
+	// Exponential integral E1(x) for x>0 (Abramowitz & Stegun 5.1.53 / 5.1.56).
+	static float LeafExpIntE1( float x )
+	{
+		if ( x <= 0.0f ) return 0.0f;
+		if ( x <= 1.0f )
+			return -logf( x ) + ( -0.57721566f + x * ( 0.99999193f + x * ( -0.24991055f + x * ( 0.05519968f + x * ( -0.00976004f + x * 0.00107857f ) ) ) ) );
+		float num = x * x + 2.334733f * x + 0.250621f;
+		float den = x * x + 3.330657f * x + 1.681534f;
+		return ( expf( -x ) / x ) * ( num / den );
+	}
+
+	// Average transmittance of a dielectric interface over incidence 0..alfa
+	// (Stern 1964 / Allen 1973), as used by PROSPECT.
+	static float LeafTav( float alfaDeg, float n )
+	{
+		const float rd = 3.14159265358979f / 180.0f;
+		float n2 = n * n;
+		float np = n2 + 1.0f;
+		float nm = n2 - 1.0f;
+		float a  = ( n + 1.0f ) * ( n + 1.0f ) / 2.0f;
+		float k  = -( ( n2 - 1.0f ) * ( n2 - 1.0f ) ) / 4.0f;
+		float sa = sinf( alfaDeg * rd );
+		float sa2 = sa * sa;
+		float b1 = ( alfaDeg == 90.0f ) ? 0.0f : ImSqrt( ( sa2 - np / 2.0f ) * ( sa2 - np / 2.0f ) + k );
+		float b2 = sa2 - np / 2.0f;
+		float b  = b1 - b2;
+		float b3 = b * b * b;
+		float a3 = a * a * a;
+		float ts = ( k * k / ( 6.0f * b3 ) + k / b - b / 2.0f ) - ( k * k / ( 6.0f * a3 ) + k / a - a / 2.0f );
+		float tp1 = -2.0f * n2 * ( b - a ) / ( np * np );
+		float tp2 = -2.0f * n2 * np * logf( b / a ) / ( nm * nm );
+		float tp3 = n2 * ( 1.0f / b - 1.0f / a ) / 2.0f;
+		float tp4 = 16.0f * n2 * n2 * ( n2 * n2 + 1.0f ) * logf( ( 2.0f * np * b - nm * nm ) / ( 2.0f * np * a - nm * nm ) ) / ( np * np * np * nm * nm );
+		float tp5 = 16.0f * n2 * n2 * n2 * ( 1.0f / ( 2.0f * np * b - nm * nm ) - 1.0f / ( 2.0f * np * a - nm * nm ) ) / ( np * np * np );
+		float tp  = tp1 + tp2 + tp3 + tp4 + tp5;
+		return ( ts + tp ) / ( 2.0f * sa2 );
+	}
+
+	// Per-wavelength interface terms depend only on n(lambda) -> precompute once.
+	static float s_Leaf_talf[ s_Leaf_samplesCount ];
+	static float s_Leaf_ralf[ s_Leaf_samplesCount ];
+	static float s_Leaf_t12[ s_Leaf_samplesCount ];
+	static float s_Leaf_r12[ s_Leaf_samplesCount ];
+	static float s_Leaf_t21[ s_Leaf_samplesCount ];
+	static float s_Leaf_r21[ s_Leaf_samplesCount ];
+	static bool  s_LeafSurfBuilt = false;
+
+	static void LeafEnsureSurfaceTerms()
+	{
+		if ( s_LeafSurfBuilt ) return;
+		for ( int i = 0; i < s_Leaf_samplesCount; ++i )
+		{
+			float n = s_Leaf_n[ i ];
+			float talf = LeafTav( 40.0f, n );
+			float t12  = LeafTav( 90.0f, n );
+			s_Leaf_talf[ i ] = talf;
+			s_Leaf_ralf[ i ] = 1.0f - talf;
+			s_Leaf_t12[ i ]  = t12;
+			s_Leaf_r12[ i ]  = 1.0f - t12;
+			s_Leaf_t21[ i ]  = t12 / ( n * n );
+			s_Leaf_r21[ i ]  = 1.0f - t12 / ( n * n );
+		}
+		s_LeafSurfBuilt = true;
+	}
+
+	// Forward PROSPECT-D: pigment concentrations -> saturated sRGB (reflectance).
+	static void LeafParamsToSRGB( float& outR, float& outG, float& outB, float Cab, float Car, float Canth, float Cbrown, float Cw, float Cm, float Nstruct )
+	{
+		LeafEnsureSurfaceTerms();
+
+		float X = 0.0f, Y = 0.0f, Z = 0.0f, norm = 0.0f;
+		for ( int i = 0; i < s_Leaf_samplesCount; ++i )
+		{
+			float lam = s_Leaf_min + ( s_Leaf_max - s_Leaf_min ) * ( float )i / ( float )( s_Leaf_samplesCount - 1 );
+
+			float k = ( Cab * s_Leaf_Kab[ i ] + Car * s_Leaf_Kcar[ i ] + Canth * s_Leaf_Kanth[ i ]
+					  + Cbrown * s_Leaf_Kbrown[ i ] + Cw * s_Leaf_Kwater[ i ] + Cm * s_Leaf_Kdry[ i ] ) / Nstruct;
+
+			float tau = ( k <= 0.0f ) ? 1.0f : ( ( 1.0f - k ) * expf( -k ) + k * k * LeafExpIntE1( k ) );
+
+			float talf = s_Leaf_talf[ i ], ralf = s_Leaf_ralf[ i ];
+			float t12 = s_Leaf_t12[ i ], r12 = s_Leaf_r12[ i ];
+			float t21 = s_Leaf_t21[ i ], r21 = s_Leaf_r21[ i ];
+
+			float denom = 1.0f - r21 * r21 * tau * tau;
+			float Ta = talf * tau * t21 / denom;
+			float Ra = ralf + r21 * tau * Ta;
+			float t  = t12 * tau * t21 / denom;
+			float r  = r12 + r21 * tau * t;
+
+			// Stokes N-layer reflectance (with a guard for the near-zero-absorption limit).
+			float R;
+			if ( r + t >= 1.0f - 1e-6f || r <= 1e-6f || t <= 1e-6f )
+			{
+				float Tsub = t / ( t + ( 1.0f - t ) * ( Nstruct - 1.0f ) );
+				float Rsub = 1.0f - Tsub;
+				R = Ra + Ta * Rsub * t / ( 1.0f - Rsub * r );
+			}
+			else
+			{
+				float prod = ( 1.0f + r + t ) * ( 1.0f + r - t ) * ( 1.0f - r + t ) * ( 1.0f - r - t );
+				float D = ImSqrt( ImMax( prod, 0.0f ) );
+				float rq = r * r, tq = t * t;
+				float a = ( 1.0f + rq - tq + D ) / ( 2.0f * r );
+				float b = ( 1.0f - rq + tq + D ) / ( 2.0f * t );
+				float bNm1 = powf( b, Nstruct - 1.0f );
+				float bN2 = bNm1 * bNm1;
+				float a2 = a * a;
+				float dd = a2 * bN2 - 1.0f;
+				float Rsub = a * ( bN2 - 1.0f ) / dd;
+				R = Ra + Ta * Rsub * t / ( 1.0f - Rsub * r );
+			}
+
+			float xb = ImFunctionFromData( lam, s_CIE_1931_2deg_min, s_CIE_1931_2deg_max, s_CIE_1931_2deg_X, s_CIE_1931_2deg_samplesCount );
+			float yb = ImFunctionFromData( lam, s_CIE_1931_2deg_min, s_CIE_1931_2deg_max, s_CIE_1931_2deg_Y, s_CIE_1931_2deg_samplesCount );
+			float zb = ImFunctionFromData( lam, s_CIE_1931_2deg_min, s_CIE_1931_2deg_max, s_CIE_1931_2deg_Z, s_CIE_1931_2deg_samplesCount );
+			float ill = ImFunctionFromData( lam, s_Illuminance_D65_min, s_Illuminance_D65_max, s_Illuminance_D65, s_Illuminance_D65_samplesCount );
+
+			X += R * ill * xb;
+			Y += R * ill * yb;
+			Z += R * ill * zb;
+			norm += ill * yb;
+		}
+		if ( norm > 0.0f ) { X /= norm; Y /= norm; Z /= norm; }
+
+		float r, g, b;
+		ColorConvertXYZtosRGB( r, g, b, X, Y, Z );
+		outR = ImSaturate( r ); outG = ImSaturate( g ); outB = ImSaturate( b );
+	}
+
+	// Precomputed LUT over (chlorophyll, carotenoid, anthocyanin) at Cbrown=0.
+	#define LEAF_CAB_N   24
+	#define LEAF_CAR_N   12
+	#define LEAF_CANTH_N 12
+	static const float LEAF_CAB_MIN = 0.0f,   LEAF_CAB_MAX = 80.0f;
+	static const float LEAF_CAR_MIN = 0.0f,   LEAF_CAR_MAX = 30.0f;
+	static const float LEAF_CANTH_MIN = 0.0f, LEAF_CANTH_MAX = 40.0f;
+	static float s_LeafLUT[ LEAF_CAB_N * LEAF_CAR_N * LEAF_CANTH_N * 3 ];
+	static bool  s_LeafLUTBuilt = false;
+
+	static void BuildLeafColorLUT()
+	{
+		for ( int ai = 0; ai < LEAF_CAB_N; ++ai )
+		{
+			float Cab = ImLerp( LEAF_CAB_MIN, LEAF_CAB_MAX, ( float )ai / ( float )( LEAF_CAB_N - 1 ) );
+			for ( int ri = 0; ri < LEAF_CAR_N; ++ri )
+			{
+				float Car = ImLerp( LEAF_CAR_MIN, LEAF_CAR_MAX, ( float )ri / ( float )( LEAF_CAR_N - 1 ) );
+				for ( int ni = 0; ni < LEAF_CANTH_N; ++ni )
+				{
+					float Canth = ImLerp( LEAF_CANTH_MIN, LEAF_CANTH_MAX, ( float )ni / ( float )( LEAF_CANTH_N - 1 ) );
+					int idx = ( ( ai * LEAF_CAR_N + ri ) * LEAF_CANTH_N + ni ) * 3;
+					LeafParamsToSRGB( s_LeafLUT[ idx + 0 ], s_LeafLUT[ idx + 1 ], s_LeafLUT[ idx + 2 ], Cab, Car, Canth, 0.0f, LEAF_CW, LEAF_CM, LEAF_N );
+				}
+			}
+		}
+		s_LeafLUTBuilt = true;
+	}
+
+	static void SampleLeafColorLUT( float& outR, float& outG, float& outB, float Cab, float Car, float Canth )
+	{
+		if ( !s_LeafLUTBuilt )
+			BuildLeafColorLUT();
+
+		float fa = ImSaturate( ImNormalize01( Cab, LEAF_CAB_MIN, LEAF_CAB_MAX ) ) * ( float )( LEAF_CAB_N - 1 );
+		float fr = ImSaturate( ImNormalize01( Car, LEAF_CAR_MIN, LEAF_CAR_MAX ) ) * ( float )( LEAF_CAR_N - 1 );
+		float fn = ImSaturate( ImNormalize01( Canth, LEAF_CANTH_MIN, LEAF_CANTH_MAX ) ) * ( float )( LEAF_CANTH_N - 1 );
+
+		int a0 = ( int )fa, r0 = ( int )fr, n0 = ( int )fn;
+		int a1 = ImMin( a0 + 1, LEAF_CAB_N - 1 );
+		int r1 = ImMin( r0 + 1, LEAF_CAR_N - 1 );
+		int n1 = ImMin( n0 + 1, LEAF_CANTH_N - 1 );
+		float da = fa - ( float )a0, dr = fr - ( float )r0, dn = fn - ( float )n0;
+
+		for ( int c = 0; c < 3; ++c )
+		{
+			#define LEAF_LUT_AT(aa,rr,nn) s_LeafLUT[ ( ( (aa) * LEAF_CAR_N + (rr) ) * LEAF_CANTH_N + (nn) ) * 3 + c ]
+			float c00 = ImLerp( LEAF_LUT_AT( a0, r0, n0 ), LEAF_LUT_AT( a1, r0, n0 ), da );
+			float c10 = ImLerp( LEAF_LUT_AT( a0, r1, n0 ), LEAF_LUT_AT( a1, r1, n0 ), da );
+			float c01 = ImLerp( LEAF_LUT_AT( a0, r0, n1 ), LEAF_LUT_AT( a1, r0, n1 ), da );
+			float c11 = ImLerp( LEAF_LUT_AT( a0, r1, n1 ), LEAF_LUT_AT( a1, r1, n1 ), da );
+			#undef LEAF_LUT_AT
+			float c0 = ImLerp( c00, c10, dr );
+			float c1 = ImLerp( c01, c11, dr );
+			float v = ImLerp( c0, c1, dn );
+			if ( c == 0 ) outR = v; else if ( c == 1 ) outG = v; else outB = v;
+		}
+	}
+
+	// High-level seasonal controls -> pigment concentrations.
+	//   season: 0=lush/in-growth .. 1=dead/dry (chlorophyll collapses, brown rises)
+	//   health: 0=stressed .. 1=vigorous (scales chlorophyll)
+	//   redness: 0=yellow autumn (carotenoid only) .. 1=red autumn (anthocyanin)
+	static void LeafHighLevelToBiophysical( float& Cab, float& Car, float& Canth, float& Cbrown, float season, float health, float redness )
+	{
+		float s  = ImSaturate( season );
+		float h  = ImSaturate( health );
+		float rd = ImSaturate( redness );
+		Cab    = ImLerp( 65.0f, 0.0f, s ) * ( 0.35f + 0.65f * h );
+		Car    = ImLerp( 9.0f, 18.0f, s );
+		Canth  = rd * ImLerp( 0.0f, 35.0f, s * s );
+		Cbrown = ImSaturate( ( s - 0.65f ) / 0.35f );
+	}
+
+	struct ImLeafPlaneData { float canth; };
+	static ImU32 LeafPlaneCallback( float Cab, float Car, void* pUserData )
+	{
+		ImLeafPlaneData* d = ( ImLeafPlaneData* )pUserData;
+		float r, g, b;
+		SampleLeafColorLUT( r, g, b, Cab, Car, d->canth );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	struct ImLeafSliderData { float cab, car; };
+	static ImU32 LeafCanthCallback( float canth, void* pUserData )
+	{
+		ImLeafSliderData* d = ( ImLeafSliderData* )pUserData;
+		float r, g, b;
+		SampleLeafColorLUT( r, g, b, d->cab, d->car, canth );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerLeaf( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		// Create keys first (inserts may shift/realloc storage), then grab stable pointers.
+		storage->GetIntRef( ImGui::GetID( "mode" ), 0 );
+		storage->GetFloatRef( ImGui::GetID( "cab" ), 35.0f );
+		storage->GetFloatRef( ImGui::GetID( "car" ), 8.0f );
+		storage->GetFloatRef( ImGui::GetID( "canth" ), 0.0f );
+		storage->GetFloatRef( ImGui::GetID( "brown" ), 0.0f );
+		storage->GetFloatRef( ImGui::GetID( "season" ), 0.15f );
+		storage->GetFloatRef( ImGui::GetID( "health" ), 0.85f );
+		storage->GetFloatRef( ImGui::GetID( "redness" ), 0.4f );
+		int*   pMode    = storage->GetIntRef( ImGui::GetID( "mode" ), 0 );
+		float* pCab     = storage->GetFloatRef( ImGui::GetID( "cab" ), 35.0f );
+		float* pCar     = storage->GetFloatRef( ImGui::GetID( "car" ), 8.0f );
+		float* pCanth   = storage->GetFloatRef( ImGui::GetID( "canth" ), 0.0f );
+		float* pBrown   = storage->GetFloatRef( ImGui::GetID( "brown" ), 0.0f );
+		float* pSeason  = storage->GetFloatRef( ImGui::GetID( "season" ), 0.15f );
+		float* pHealth  = storage->GetFloatRef( ImGui::GetID( "health" ), 0.85f );
+		float* pRedness = storage->GetFloatRef( ImGui::GetID( "redness" ), 0.4f );
+
+		bool changed = false;
+
+		const char* modes[] = { "Biophysical", "High-level (season)" };
+		ImGui::Combo( "Mode##Leaf", pMode, modes, IM_ARRAYSIZE( modes ) );
+
+		if ( *pMode == 1 )
+		{
+			bool hl = false;
+			hl |= ImGui::SliderFloat( "Season (lush->dead)##Leaf", pSeason, 0.0f, 1.0f, "%.2f" );
+			hl |= ImGui::SliderFloat( "Health/Vigor##Leaf", pHealth, 0.0f, 1.0f, "%.2f" );
+			hl |= ImGui::SliderFloat( "Autumn Redness##Leaf", pRedness, 0.0f, 1.0f, "%.2f" );
+			if ( hl )
+			{
+				LeafHighLevelToBiophysical( *pCab, *pCar, *pCanth, *pBrown, *pSeason, *pHealth, *pRedness );
+				changed = true;
+			}
+		}
+
+		// Geometry: chlorophyll x carotenoid plane + anthocyanin vertical slider.
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "canth", ImVec2( sliderW, planeSide ) );
+		const ImRect canth_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool canthActive = ImGui::IsItemActive();
+
+		// Interaction (plane drives chlorophyll/carotenoid; slider drives anthocyanin).
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive )
+		{
+			float u = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f );
+			float v = ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f );
+			*pCab = ImLerp( LEAF_CAB_MIN, LEAF_CAB_MAX, u );
+			*pCar = ImLerp( LEAF_CAR_MIN, LEAF_CAR_MAX, v );
+			changed = true;
+		}
+		if ( canthActive )
+		{
+			float t = ImClamp( ( mp.y - canth_bb.Min.y ) / canth_bb.GetHeight(), 0.0f, 1.0f );
+			*pCanth = ImLerp( LEAF_CANTH_MIN, LEAF_CANTH_MAX, t );
+			changed = true;
+		}
+
+		// Draw plane fill. Primitive flips Y (top = maxY arg); pass swapped bounds
+		// so carotenoid 0 renders at top, matching the dot/interaction.
+		{
+			ImLeafPlaneData cbData; cbData.canth = *pCanth;
+			DrawProceduralColor2DBilinear( dl, LeafPlaneCallback, &cbData,
+				LEAF_CAB_MIN, LEAF_CAB_MAX, LEAF_CAR_MAX, LEAF_CAR_MIN,
+				plane_bb.Min, plane_bb.GetSize(), planeRes, planeRes );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+
+		// Dot + crosshair on plane (direct eval so brown pigment is reflected).
+		{
+			float du = ImSaturate( ImNormalize01( *pCab, LEAF_CAB_MIN, LEAF_CAB_MAX ) );
+			float dv = ImSaturate( ImNormalize01( *pCar, LEAF_CAR_MIN, LEAF_CAR_MAX ) );
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
+			float dr, dg, db;
+			LeafParamsToSRGB( dr, dg, db, *pCab, *pCar, *pCanth, *pBrown, LEAF_CW, LEAF_CM, LEAF_N );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
+			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+
+		// Anthocyanin slider fill + handle.
+		{
+			ImLeafSliderData cbData; cbData.cab = *pCab; cbData.car = *pCar;
+			DrawProceduralColor1DBilinearVertical( dl, LeafCanthCallback, &cbData,
+				LEAF_CANTH_MAX, LEAF_CANTH_MIN, canth_bb.Min, canth_bb.GetSize(), sliderRes );
+			dl->AddRect( canth_bb.Min, canth_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+
+			float t = ImSaturate( ImNormalize01( *pCanth, LEAF_CANTH_MIN, LEAF_CANTH_MAX ) );
+			float handleY = ImLerp( canth_bb.Min.y, canth_bb.Max.y, t );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			ImVec2 hMin( canth_bb.Min.x - 1.0f, handleY - hh );
+			ImVec2 hMax( canth_bb.Max.x + 1.0f, handleY + hh );
+			float hr, hg, hb;
+			LeafParamsToSRGB( hr, hg, hb, *pCab, *pCar, *pCanth, *pBrown, LEAF_CW, LEAF_CM, LEAF_N );
+			ImU32 handleFill = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
+			dl->AddRectFilled( hMin, hMax, handleFill, 2.0f );
+			dl->AddRect( hMin, hMax, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		// Readouts.
+		ImGui::Text( "Chl %.0f   Car %.0f   Anth %.0f   Brown %.2f  (ug/cm2)",
+			*pCab, *pCar, *pCanth, *pBrown );
+
+		// Forward-only output: drive color from current params (full PROSPECT incl. brown).
+		float r, gg, b;
+		LeafParamsToSRGB( r, gg, b, *pCab, *pCar, *pCanth, *pBrown, LEAF_CW, LEAF_CM, LEAF_N );
+		color->x = r; color->y = gg; color->z = b;
+
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Shared spectral sampling grid for the physical color pickers
+	//////////////////////////////////////////////////////////////////////////
+
+	// CIE 1931 2-deg observer + D65 sampled once onto a uniform 380..730nm grid
+	// (5nm). Lets the spectral pickers avoid per-frame ImFunctionFromData calls.
+	#define SPEC_N 71
+	static const float SPEC_MIN = 380.0f, SPEC_MAX = 730.0f;
+	static float s_SpecXbar[ SPEC_N ], s_SpecYbar[ SPEC_N ], s_SpecZbar[ SPEC_N ], s_SpecD65[ SPEC_N ];
+	static float s_SpecD65Ynorm = 1.0f;
+	static bool  s_SpecBuilt = false;
+
+	static void EnsureSpecTables()
+	{
+		if ( s_SpecBuilt ) return;
+		float norm = 0.0f;
+		for ( int i = 0; i < SPEC_N; ++i )
+		{
+			float lam = SPEC_MIN + ( SPEC_MAX - SPEC_MIN ) * ( float )i / ( float )( SPEC_N - 1 );
+			s_SpecXbar[ i ] = ImFunctionFromData( lam, s_CIE_1931_2deg_min, s_CIE_1931_2deg_max, s_CIE_1931_2deg_X, s_CIE_1931_2deg_samplesCount );
+			s_SpecYbar[ i ] = ImFunctionFromData( lam, s_CIE_1931_2deg_min, s_CIE_1931_2deg_max, s_CIE_1931_2deg_Y, s_CIE_1931_2deg_samplesCount );
+			s_SpecZbar[ i ] = ImFunctionFromData( lam, s_CIE_1931_2deg_min, s_CIE_1931_2deg_max, s_CIE_1931_2deg_Z, s_CIE_1931_2deg_samplesCount );
+			s_SpecD65[ i ]  = ImFunctionFromData( lam, s_Illuminance_D65_min, s_Illuminance_D65_max, s_Illuminance_D65, s_Illuminance_D65_samplesCount );
+			norm += s_SpecD65[ i ] * s_SpecYbar[ i ];
+		}
+		s_SpecD65Ynorm = ( norm > 0.0f ) ? norm : 1.0f;
+		s_SpecBuilt = true;
+	}
+
+	static const float SPEC_C2 = 1.438776e7f; // second radiation constant hc/k in nm.K
+
+	// --- Cached procedural-plane fill --------------------------------------
+	// The spectral pickers' plane colors depend only on their *non-plane* params
+	// (the side slider / combo / mode), which change rarely - but immediate mode
+	// re-evaluates the (res+1)^2 corner samples every frame. We cache the corner
+	// grid and recompute it only when a caller-supplied key changes; otherwise we
+	// just redraw the cached quads. Visual output is identical to
+	// DrawProceduralColor2DBilinear.
+	static inline ImU32 PlaneKeyMix( ImU32 h, ImU32 v ) { h ^= v + 0x9e3779b9u + ( h << 6 ) + ( h >> 2 ); return h; }
+	static inline ImU32 PlaneKeyF( ImU32 h, float f ) { return PlaneKeyMix( h, ( ImU32 )( int )( f * 1024.0f ) ); }
+	static inline ImU32 PlaneKeyI( ImU32 h, int i ) { return PlaneKeyMix( h, ( ImU32 )i ); }
+
+	static void DrawCachedProceduralColor2DBilinear( ImDrawList* dl, ImWidgetsColor2DCallback func, void* ud,
+		float minX, float maxX, float minY, float maxY, ImVec2 pos, ImVec2 size, int res,
+		ImU32* cache, int cacheCap, ImU32* pKey, ImU32 key )
+	{
+		int n1 = res + 1;
+		if ( res < 1 || n1 * n1 > cacheCap )
+		{
+			DrawProceduralColor2DBilinear( dl, func, ud, minX, maxX, minY, maxY, pos, size, res, res );
+			return;
+		}
+		if ( *pKey != key )
+		{
+			float dx = 1.0f / ( float )res, dy = 1.0f / ( float )res;
+			for ( int i = 0; i <= res; ++i )
+			{
+				float x = ScaleFromNormalized( ( float )i * dx, minX, maxX );
+				for ( int j = 0; j <= res; ++j )
+				{
+					float y = ScaleFromNormalized( ( float )j * dy, maxY, minY );
+					cache[ i * n1 + j ] = func( x, y, ud );
+				}
+			}
+			*pKey = key;
+		}
+		float sx = size.x / ( float )res, sy = size.y / ( float )res;
+		for ( int i = 0; i < res; ++i )
+			for ( int j = 0; j < res; ++j )
+			{
+				ImU32 c00 = cache[ i * n1 + j ];
+				ImU32 c10 = cache[ ( i + 1 ) * n1 + j ];
+				ImU32 c11 = cache[ ( i + 1 ) * n1 + ( j + 1 ) ];
+				ImU32 c01 = cache[ i * n1 + ( j + 1 ) ];
+				dl->AddRectFilledMultiColor( pos + ImVec2( sx * ( float )i, sy * ( float )j ),
+					pos + ImVec2( sx * ( float )( i + 1 ), sy * ( float )( j + 1 ) ), c00, c10, c11, c01 );
+			}
+	}
+	#define DW_PLANE_CACHE_CAP ( ( 64 + 1 ) * ( 64 + 1 ) )
+
+	//////////////////////////////////////////////////////////////////////////
+	// Blackbody / Color-Temperature Picker
+	//////////////////////////////////////////////////////////////////////////
+
+	// Planck's law (Planck 1901) integrated against the CIE 1931 observer, then
+	// normalized to unit luminance -> the Planckian-locus color (CIE 15:2004).
+	// Self-luminous, so no illuminant is applied.
+	static void BlackbodyToSRGB( float& outR, float& outG, float& outB, float tempK )
+	{
+		EnsureSpecTables();
+		float X = 0.0f, Y = 0.0f, Z = 0.0f;
+		for ( int i = 0; i < SPEC_N; ++i )
+		{
+			float lam = SPEC_MIN + ( SPEC_MAX - SPEC_MIN ) * ( float )i / ( float )( SPEC_N - 1 );
+			float Me = 1.0f / ( lam * lam * lam * lam * lam * ( expf( SPEC_C2 / ( lam * tempK ) ) - 1.0f ) );
+			X += Me * s_SpecXbar[ i ];
+			Y += Me * s_SpecYbar[ i ];
+			Z += Me * s_SpecZbar[ i ];
+		}
+		if ( Y > 0.0f ) { float iY = 1.0f / Y; X *= iY; Z *= iY; Y = 1.0f; }
+		float r, g, b;
+		ColorConvertXYZtosRGB( r, g, b, X, Y, Z );
+		float mx = ImMax( r, ImMax( g, b ) );
+		if ( mx > 1.0f ) { r /= mx; g /= mx; b /= mx; }
+		outR = ImSaturate( r ); outG = ImSaturate( g ); outB = ImSaturate( b );
+	}
+
+	bool ColorPickerBlackbody( char const* label, ImVec4* color, ImVec2 size )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		float* pT = storage->GetFloatRef( ImGui::GetID( "T" ), 6500.0f );
+
+		static ImGradientData s_bbGrad;
+		static bool s_bbBuilt = false;
+		if ( !s_bbBuilt )
+		{
+			s_bbGrad.Stops.clear();
+			const int NS = 24;
+			for ( int k = 0; k < NS; ++k )
+			{
+				float t = ( float )k / ( float )( NS - 1 );
+				float r, g, b;
+				BlackbodyToSRGB( r, g, b, ImLerp( 1000.0f, 12000.0f, t ) );
+				s_bbGrad.Stops.push_back( ImGradientStop( t, ImVec4( r, g, b, 1.0f ) ) );
+			}
+			s_bbBuilt = true;
+		}
+
+		bool changed = SliderGradientFloat( "Temperature##BB", pT, 1000.0f, 12000.0f, &s_bbGrad, size );
+		ImGui::Text( "%.0f K", *pT );
+
+		float r, g, b;
+		BlackbodyToSRGB( r, g, b, *pT );
+		color->x = r; color->y = g; color->z = b;
+
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Pigment Mixing Picker (Kubelka-Munk)
+	//////////////////////////////////////////////////////////////////////////
+
+	// Subtractive paint mixing via single-constant Kubelka-Munk theory
+	// (Kubelka & Munk 1931; Duncan 1940 for mixtures; Haase & Meyer, "Modeling
+	// Pigmented Materials for Realistic Image Synthesis", ACM TOG 11(4) 1992).
+	// Each paint's sRGB masstone is upsampled to a reflectance spectrum using
+	// Scott Burns' linear-RGB-to-spectrum basis; mixing averages K/S per
+	// wavelength by concentration, then converts back. Basis spectra + D65-
+	// weighted CMF data from spectral.js (R. van Wijnen, MIT), itself derived
+	// from the above references. 38-band visible grid.
+	#define KM_N 38
+	static const float s_KM_W[ KM_N ] = {
+		1.001161f, 1.001161f, 1.001160f, 1.001159f, 1.001153f, 1.001133f, 1.001085f, 1.000997f, 1.000865f, 1.000696f,
+		1.000505f, 1.000308f, 1.000120f, 0.999953f, 0.999822f, 0.999739f, 0.999710f, 0.999732f, 0.999799f, 0.999900f,
+		1.000020f, 1.000145f, 1.000260f, 1.000356f, 1.000428f, 1.000476f, 1.000507f, 1.000525f, 1.000535f, 1.000540f,
+		1.000543f, 1.000544f, 1.000544f, 1.000545f, 1.000545f, 1.000545f, 1.000545f, 1.000545f };
+	static const float s_KM_C[ KM_N ] = {
+		0.970585f, 0.970592f, 0.970625f, 0.970787f, 0.971369f, 0.973163f, 0.976740f, 0.981588f, 0.986280f, 0.989949f,
+		0.992493f, 0.994146f, 0.995184f, 0.995757f, 0.995913f, 0.995606f, 0.994598f, 0.992216f, 0.986236f, 0.967943f,
+		0.891285f, 0.536202f, 0.154108f, 0.057458f, 0.031535f, 0.022263f, 0.018202f, 0.016299f, 0.015366f, 0.014911f,
+		0.014695f, 0.014596f, 0.014547f, 0.014523f, 0.014512f, 0.014507f, 0.014504f, 0.014504f };
+	static const float s_KM_M[ KM_N ] = {
+		0.990674f, 0.990672f, 0.990663f, 0.990618f, 0.990451f, 0.989871f, 0.988287f, 0.984291f, 0.973935f, 0.941818f,
+		0.817390f, 0.432473f, 0.138454f, 0.053735f, 0.029217f, 0.021314f, 0.020135f, 0.024132f, 0.037224f, 0.076051f,
+		0.205375f, 0.541269f, 0.815842f, 0.912818f, 0.946340f, 0.959928f, 0.966261f, 0.969326f, 0.970855f, 0.971605f,
+		0.971963f, 0.972127f, 0.972209f, 0.972250f, 0.972268f, 0.972277f, 0.972280f, 0.972281f };
+	static const float s_KM_Y[ KM_N ] = {
+		0.021052f, 0.021056f, 0.021075f, 0.021165f, 0.021503f, 0.022674f, 0.025824f, 0.033488f, 0.051907f, 0.100749f,
+		0.239130f, 0.534804f, 0.797808f, 0.911450f, 0.953798f, 0.971242f, 0.979303f, 0.983380f, 0.985461f, 0.986435f,
+		0.986738f, 0.986618f, 0.986278f, 0.985861f, 0.985475f, 0.985177f, 0.984972f, 0.984846f, 0.984775f, 0.984738f,
+		0.984720f, 0.984711f, 0.984707f, 0.984705f, 0.984704f, 0.984703f, 0.984703f, 0.984703f };
+	static const float s_KM_R[ KM_N ] = {
+		0.031561f, 0.031552f, 0.031515f, 0.031332f, 0.030673f, 0.028648f, 0.024645f, 0.019296f, 0.014207f, 0.010294f,
+		0.007619f, 0.005898f, 0.004823f, 0.004230f, 0.004060f, 0.004353f, 0.005343f, 0.007692f, 0.013597f, 0.031698f,
+		0.107861f, 0.463813f, 0.847055f, 0.943185f, 0.968862f, 0.978031f, 0.982044f, 0.983924f, 0.984845f, 0.985294f,
+		0.985507f, 0.985605f, 0.985654f, 0.985678f, 0.985688f, 0.985694f, 0.985696f, 0.985697f };
+	static const float s_KM_G[ KM_N ] = {
+		0.009556f, 0.009558f, 0.009567f, 0.009613f, 0.009784f, 0.010379f, 0.012003f, 0.016098f, 0.026706f, 0.059556f,
+		0.186040f, 0.570580f, 0.861468f, 0.945879f, 0.970465f, 0.978414f, 0.979589f, 0.975534f, 0.962289f, 0.923122f,
+		0.793434f, 0.459270f, 0.185574f, 0.088177f, 0.054363f, 0.040629f, 0.034222f, 0.031119f, 0.029571f, 0.028811f,
+		0.028449f, 0.028282f, 0.028199f, 0.028158f, 0.028140f, 0.028131f, 0.028127f, 0.028126f };
+	static const float s_KM_B[ KM_N ] = {
+		0.979405f, 0.979401f, 0.979383f, 0.979294f, 0.978963f, 0.977814f, 0.974724f, 0.967198f, 0.949080f, 0.900850f,
+		0.763150f, 0.465922f, 0.201263f, 0.087752f, 0.045718f, 0.028471f, 0.020527f, 0.016530f, 0.014514f, 0.013600f,
+		0.013360f, 0.013549f, 0.013959f, 0.014443f, 0.014885f, 0.015225f, 0.015459f, 0.015602f, 0.015682f, 0.015725f,
+		0.015746f, 0.015756f, 0.015761f, 0.015763f, 0.015764f, 0.015765f, 0.015765f, 0.015765f };
+	static const float s_KM_CMFx[ KM_N ] = {
+		0.0000646920f, 0.0002194099f, 0.0011205744f, 0.0037666134f, 0.0118805536f, 0.0232864424f, 0.0345594182f, 0.0372237901f, 0.0324183761f, 0.0212332056f,
+		0.0104909908f, 0.0032958376f, 0.0005070352f, 0.0009486742f, 0.0062737181f, 0.0168646242f, 0.0286896490f, 0.0426748125f, 0.0562547481f, 0.0694703973f,
+		0.0830531517f, 0.0861260963f, 0.0904661377f, 0.0850038651f, 0.0709066691f, 0.0506288916f, 0.0354739619f, 0.0214682103f, 0.0125164568f, 0.0068045816f,
+		0.0034645658f, 0.0014976098f, 0.0007697005f, 0.0004073681f, 0.0001690104f, 0.0000952245f, 0.0000490310f, 0.0000199961f };
+	static const float s_KM_CMFy[ KM_N ] = {
+		0.0000018443f, 0.0000062053f, 0.0000310096f, 0.0001047484f, 0.0003536405f, 0.0009514714f, 0.0022822632f, 0.0042073290f, 0.0066887984f, 0.0098883960f,
+		0.0152494514f, 0.0214183109f, 0.0334229302f, 0.0513100135f, 0.0704020839f, 0.0878387073f, 0.0942490536f, 0.0979566703f, 0.0941521857f, 0.0867810237f,
+		0.0788565339f, 0.0635267026f, 0.0537414168f, 0.0426460644f, 0.0316173493f, 0.0208852059f, 0.0138601101f, 0.0081026402f, 0.0046301023f, 0.0024913800f,
+		0.0012593034f, 0.0005416465f, 0.0002779529f, 0.0001471081f, 0.0000610327f, 0.0000343873f, 0.0000177060f, 0.0000072210f };
+	static const float s_KM_CMFz[ KM_N ] = {
+		0.0003050171f, 0.0010368067f, 0.0053131363f, 0.0179543926f, 0.0570775815f, 0.1136516189f, 0.1733587262f, 0.1962065756f, 0.1860823707f, 0.1399504754f,
+		0.0891745294f, 0.0478962114f, 0.0281456254f, 0.0161376623f, 0.0077591019f, 0.0042961484f, 0.0020055092f, 0.0008614711f, 0.0003690387f, 0.0001914287f,
+		0.0001495556f, 0.0000923109f, 0.0000681349f, 0.0000288264f, 0.0000157672f, 0.0000039406f, 0.0000015840f, 0.0f, 0.0f, 0.0f,
+		0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+	static const float s_KM_XYZ2RGB[ 9 ] = {
+		 3.2409699419f, -1.5373831776f, -0.4986107603f,
+		-0.9692436363f,  1.8759675015f,  0.0415550574f,
+		 0.0556300797f, -0.2039769589f,  1.0569715142f };
+
+	static void KMUpsampleReflectance( float lr, float lg, float lb, float* R )
+	{
+		float w = ImMin( lr, ImMin( lg, lb ) );
+		lr -= w; lg -= w; lb -= w;
+		float c = ImMin( lg, lb ), m = ImMin( lr, lb ), y = ImMin( lr, lg );
+		float rr = ImMax( 0.0f, ImMin( lr - lb, lr - lg ) );
+		float gg = ImMax( 0.0f, ImMin( lg - lb, lg - lr ) );
+		float bb = ImMax( 0.0f, ImMin( lb - lg, lb - lr ) );
+		for ( int i = 0; i < KM_N; ++i )
+			R[ i ] = ImMax( 1e-7f, w * s_KM_W[ i ] + c * s_KM_C[ i ] + m * s_KM_M[ i ] + y * s_KM_Y[ i ] + rr * s_KM_R[ i ] + gg * s_KM_G[ i ] + bb * s_KM_B[ i ] );
+	}
+
+	struct ImPaint { const char* name; float r, g, b; };
+	static const ImPaint s_Paints[] = {
+		{ "Titanium White",       0.98f, 0.98f, 0.96f },
+		{ "Cadmium Yellow",       0.98f, 0.78f, 0.05f },
+		{ "Yellow Ochre",         0.74f, 0.52f, 0.10f },
+		{ "Cadmium Red",          0.86f, 0.12f, 0.10f },
+		{ "Quinacridone Magenta", 0.60f, 0.05f, 0.32f },
+		{ "Ultramarine Blue",     0.12f, 0.16f, 0.55f },
+		{ "Phthalo Blue",         0.06f, 0.16f, 0.45f },
+		{ "Phthalo Green",        0.00f, 0.42f, 0.34f },
+		{ "Burnt Sienna",         0.45f, 0.20f, 0.10f },
+		{ "Ivory Black",          0.04f, 0.04f, 0.05f } };
+	#define KM_PAINT_COUNT ( ( int )( sizeof( s_Paints ) / sizeof( s_Paints[ 0 ] ) ) )
+
+	static void PaintKS( int idx, float* KS )
+	{
+		float R[ KM_N ];
+		KMUpsampleReflectance( ImsRGBToLinear( s_Paints[ idx ].r ), ImsRGBToLinear( s_Paints[ idx ].g ), ImsRGBToLinear( s_Paints[ idx ].b ), R );
+		for ( int i = 0; i < KM_N; ++i )
+		{
+			float r = R[ i ];
+			KS[ i ] = ( 1.0f - r ) * ( 1.0f - r ) / ( 2.0f * r );
+		}
+	}
+
+	// Mix paints by concentration (single-constant KM): KS_mix = sum c_k KS_k,
+	// then R = 1 + KS - sqrt(KS^2 + 2 KS); R -> XYZ -> linear sRGB.
+	static void PigmentMixToSRGB( float& outR, float& outG, float& outB, const int* idx, const float* conc, int count )
+	{
+		float ksMix[ KM_N ];
+		float total = 0.0f;
+		for ( int k = 0; k < count; ++k ) total += conc[ k ];
+		if ( total <= 0.0f ) { outR = outG = outB = 1.0f; return; }
+
+		float KS[ KM_N ];
+		for ( int i = 0; i < KM_N; ++i ) ksMix[ i ] = 0.0f;
+		for ( int k = 0; k < count; ++k )
+		{
+			if ( conc[ k ] <= 0.0f ) continue;
+			PaintKS( idx[ k ], KS );
+			float wk = conc[ k ] / total;
+			for ( int i = 0; i < KM_N; ++i ) ksMix[ i ] += wk * KS[ i ];
+		}
+
+		float X = 0.0f, Y = 0.0f, Z = 0.0f;
+		for ( int i = 0; i < KM_N; ++i )
+		{
+			float ks = ksMix[ i ];
+			float R = 1.0f + ks - ImSqrt( ks * ks + 2.0f * ks );
+			X += s_KM_CMFx[ i ] * R;
+			Y += s_KM_CMFy[ i ] * R;
+			Z += s_KM_CMFz[ i ] * R;
+		}
+		float xyz[ 3 ] = { X, Y, Z };
+		float lr, lg, lb;
+		Mat33RowMajorMulVec3( lr, lg, lb, ( float* )s_KM_XYZ2RGB, xyz );
+		outR = ImSaturate( ImLinearTosRGB( lr ) );
+		outG = ImSaturate( ImLinearTosRGB( lg ) );
+		outB = ImSaturate( ImLinearTosRGB( lb ) );
+	}
+
+	struct ImPigmentData { int a, b; float black; };
+	static ImU32 PigmentPlaneCallback( float bFrac, float whiteAmt, void* pUserData )
+	{
+		ImPigmentData* d = ( ImPigmentData* )pUserData;
+		float kc = ImMax( 0.0f, 1.0f - whiteAmt - d->black );
+		int   idx[ 4 ]  = { d->a, d->b, 0 /*white*/, KM_PAINT_COUNT - 1 /*black*/ };
+		float conc[ 4 ] = { kc * ( 1.0f - bFrac ), kc * bFrac, whiteAmt, d->black };
+		float r, g, b;
+		PigmentMixToSRGB( r, g, b, idx, conc, 4 );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	struct ImPigmentSlider { int a, b; float bFrac, white; };
+	static ImU32 PigmentBlackCallback( float black, void* pUserData )
+	{
+		ImPigmentSlider* d = ( ImPigmentSlider* )pUserData;
+		float kc = ImMax( 0.0f, 1.0f - d->white - black );
+		int   idx[ 4 ]  = { d->a, d->b, 0, KM_PAINT_COUNT - 1 };
+		float conc[ 4 ] = { kc * ( 1.0f - d->bFrac ), kc * d->bFrac, d->white, black };
+		float r, g, b;
+		PigmentMixToSRGB( r, g, b, idx, conc, 4 );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerPigment( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		// Materialize all keys first: GetIntRef/GetFloatRef insert into a sorted
+		// vector (shifting/reallocating it), which would invalidate any pointer
+		// grabbed before a later insert. Create them, then grab stable pointers.
+		storage->GetIntRef( ImGui::GetID( "a" ), 1 );
+		storage->GetIntRef( ImGui::GetID( "b" ), 5 );
+		storage->GetFloatRef( ImGui::GetID( "bf" ), 0.5f );
+		storage->GetFloatRef( ImGui::GetID( "white" ), 0.0f );
+		storage->GetFloatRef( ImGui::GetID( "black" ), 0.0f );
+		int*   pA     = storage->GetIntRef( ImGui::GetID( "a" ), 1 ); // Cadmium Yellow
+		int*   pB     = storage->GetIntRef( ImGui::GetID( "b" ), 5 ); // Ultramarine Blue
+		float* pBFrac = storage->GetFloatRef( ImGui::GetID( "bf" ), 0.5f );
+		float* pWhite = storage->GetFloatRef( ImGui::GetID( "white" ), 0.0f );
+		float* pBlack = storage->GetFloatRef( ImGui::GetID( "black" ), 0.0f );
+
+		bool changed = false;
+
+		const char* names[ KM_PAINT_COUNT ];
+		for ( int i = 0; i < KM_PAINT_COUNT; ++i ) names[ i ] = s_Paints[ i ].name;
+		changed |= ImGui::Combo( "Paint A##Pig", pA, names, KM_PAINT_COUNT );
+		changed |= ImGui::Combo( "Paint B##Pig", pB, names, KM_PAINT_COUNT );
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "black", ImVec2( sliderW, planeSide ) );
+		const ImRect black_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool blackActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive )
+		{
+			*pBFrac = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f );
+			*pWhite = ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f );
+			changed = true;
+		}
+		if ( blackActive )
+		{
+			*pBlack = ImClamp( ( mp.y - black_bb.Min.y ) / black_bb.GetHeight(), 0.0f, 1.0f );
+			changed = true;
+		}
+
+		// Plane: X = A->B mix, Y = white tint (top=saturated, bottom=tinted).
+		{
+			ImPigmentData cbData; cbData.a = *pA; cbData.b = *pB; cbData.black = *pBlack;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pA ), *pB ), *pBlack );
+			DrawCachedProceduralColor2DBilinear( dl, PigmentPlaneCallback, &cbData,
+				0.0f, 1.0f, 1.0f, 0.0f,
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		// Dot.
+		{
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, ImSaturate( *pBFrac ) ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, ImSaturate( *pWhite ) ) );
+			float kc = ImMax( 0.0f, 1.0f - *pWhite - *pBlack );
+			int   idx[ 4 ]  = { *pA, *pB, 0, KM_PAINT_COUNT - 1 };
+			float conc[ 4 ] = { kc * ( 1.0f - *pBFrac ), kc * ( *pBFrac ), *pWhite, *pBlack };
+			float dr, dg, db; PigmentMixToSRGB( dr, dg, db, idx, conc, 4 );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
+			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		// Black slider.
+		{
+			ImPigmentSlider cbData; cbData.a = *pA; cbData.b = *pB; cbData.bFrac = *pBFrac; cbData.white = *pWhite;
+			DrawProceduralColor1DBilinearVertical( dl, PigmentBlackCallback, &cbData,
+				1.0f, 0.0f, black_bb.Min, black_bb.GetSize(), sliderRes );
+			dl->AddRect( black_bb.Min, black_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( *pBlack );
+			float handleY = ImLerp( black_bb.Min.y, black_bb.Max.y, t );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			dl->AddRectFilled( ImVec2( black_bb.Min.x - 1.0f, handleY - hh ), ImVec2( black_bb.Max.x + 1.0f, handleY + hh ), IM_COL32( 30, 30, 30, 255 ), 2.0f );
+			dl->AddRect( ImVec2( black_bb.Min.x - 1.0f, handleY - hh ), ImVec2( black_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		ImGui::Text( "%s + %s   White %.0f%%   Black %.0f%%", s_Paints[ *pA ].name, s_Paints[ *pB ].name, ( *pWhite ) * 100.0f, ( *pBlack ) * 100.0f );
+
+		float kc = ImMax( 0.0f, 1.0f - *pWhite - *pBlack );
+		int   oidx[ 4 ]  = { *pA, *pB, 0, KM_PAINT_COUNT - 1 };
+		float oconc[ 4 ] = { kc * ( 1.0f - *pBFrac ), kc * ( *pBFrac ), *pWhite, *pBlack };
+		float r, gg, b; PigmentMixToSRGB( r, gg, b, oidx, oconc, 4 );
+		color->x = r; color->y = gg; color->z = b;
+
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Gemstone Picker (crystal-field absorption)
+	//////////////////////////////////////////////////////////////////////////
+
+	// Body color from Beer-Lambert transmission through a crystal whose trace
+	// transition-metal ions absorb in Gaussian bands at documented wavelengths
+	// (Nassau, "The Physics and Chemistry of Color", 1983; Fritsch & Rossman,
+	// "An Update on Color in Gems", Gems & Gemology 1987-1988; Burns,
+	// "Mineralogical Applications of Crystal Field Theory", 1993). Optical depth
+	// = concentration x path; a clarity control adds scattering (cloudy stones).
+	struct ImGemBand { float center, width, strength; };
+	struct ImGemDef  { const char* name; ImGemBand bands[ 4 ]; int count; };
+	static const ImGemDef s_Gems[] = {
+		{ "Ruby (Cr3+)",             { { 410.0f, 40.0f, 1.1f }, { 558.0f, 55.0f, 1.5f } }, 2 },
+		{ "Emerald (Cr3+/V3+)",      { { 430.0f, 45.0f, 1.3f }, { 602.0f, 60.0f, 1.4f } }, 2 },
+		{ "Blue Sapphire (Fe-Ti)",   { { 620.0f, 95.0f, 1.7f }, { 380.0f, 45.0f, 0.6f } }, 2 },
+		{ "Amethyst (Fe)",           { { 545.0f, 85.0f, 1.2f } }, 1 },
+		{ "Citrine (Fe3+)",          { { 430.0f, 75.0f, 1.3f } }, 1 },
+		{ "Peridot (Fe2+)",          { { 450.0f, 40.0f, 0.7f }, { 635.0f, 55.0f, 1.0f } }, 2 },
+		{ "Aquamarine (Fe2+)",       { { 620.0f, 80.0f, 0.8f }, { 430.0f, 40.0f, 0.5f } }, 2 },
+		{ "Almandine Garnet (Fe2+)", { { 505.0f, 25.0f, 0.8f }, { 520.0f, 40.0f, 1.3f }, { 575.0f, 35.0f, 1.1f } }, 3 } };
+	#define GEM_COUNT ( ( int )( sizeof( s_Gems ) / sizeof( s_Gems[ 0 ] ) ) )
+
+	static void GemToSRGB( float& outR, float& outG, float& outB, int gemIdx, float conc, float pathMm, float clarity )
+	{
+		EnsureSpecTables();
+		const ImGemDef& gd = s_Gems[ gemIdx ];
+		float X = 0.0f, Y = 0.0f, Z = 0.0f;
+		for ( int i = 0; i < SPEC_N; ++i )
+		{
+			float lam = SPEC_MIN + ( SPEC_MAX - SPEC_MIN ) * ( float )i / ( float )( SPEC_N - 1 );
+			float A = 0.0f;
+			for ( int b = 0; b < gd.count; ++b )
+			{
+				float dnm = ( lam - gd.bands[ b ].center ) / gd.bands[ b ].width;
+				A += gd.bands[ b ].strength * expf( -dnm * dnm );
+			}
+			A *= conc * pathMm;
+			float T = expf( -A );
+			float R = ImLerp( T, ImSqrt( T ), ImSaturate( clarity ) ); // scattering lightens/desaturates
+			X += R * s_SpecD65[ i ] * s_SpecXbar[ i ];
+			Y += R * s_SpecD65[ i ] * s_SpecYbar[ i ];
+			Z += R * s_SpecD65[ i ] * s_SpecZbar[ i ];
+		}
+		float iN = 1.0f / s_SpecD65Ynorm; X *= iN; Y *= iN; Z *= iN;
+		float r, g, b;
+		ColorConvertXYZtosRGB( r, g, b, X, Y, Z );
+		outR = ImSaturate( r ); outG = ImSaturate( g ); outB = ImSaturate( b );
+	}
+
+	struct ImGemData { int gem; float clarity; };
+	static ImU32 GemPlaneCallback( float conc, float pathMm, void* pUserData )
+	{
+		ImGemData* d = ( ImGemData* )pUserData;
+		float r, g, b; GemToSRGB( r, g, b, d->gem, conc, pathMm, d->clarity );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+	struct ImGemSlider { int gem; float conc, pathMm; };
+	static ImU32 GemClarityCallback( float clarity, void* pUserData )
+	{
+		ImGemSlider* d = ( ImGemSlider* )pUserData;
+		float r, g, b; GemToSRGB( r, g, b, d->gem, d->conc, d->pathMm, clarity );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	static const float GEM_CONC_MIN = 0.1f,  GEM_CONC_MAX = 3.0f;
+	static const float GEM_PATH_MIN = 0.5f,  GEM_PATH_MAX = 15.0f;
+
+	bool ColorPickerGem( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		// Create keys first (inserts may shift/realloc storage), then grab stable pointers.
+		storage->GetIntRef( ImGui::GetID( "gem" ), 0 );
+		storage->GetFloatRef( ImGui::GetID( "conc" ), 1.0f );
+		storage->GetFloatRef( ImGui::GetID( "path" ), 5.0f );
+		storage->GetFloatRef( ImGui::GetID( "clarity" ), 0.0f );
+		int*   pGem     = storage->GetIntRef( ImGui::GetID( "gem" ), 0 );
+		float* pConc    = storage->GetFloatRef( ImGui::GetID( "conc" ), 1.0f );
+		float* pPath    = storage->GetFloatRef( ImGui::GetID( "path" ), 5.0f );
+		float* pClarity = storage->GetFloatRef( ImGui::GetID( "clarity" ), 0.0f );
+
+		bool changed = false;
+		const char* names[ GEM_COUNT ];
+		for ( int i = 0; i < GEM_COUNT; ++i ) names[ i ] = s_Gems[ i ].name;
+		changed |= ImGui::Combo( "Gem##Gem", pGem, names, GEM_COUNT );
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "clarity", ImVec2( sliderW, planeSide ) );
+		const ImRect clar_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool clarActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive )
+		{
+			*pConc = ImLerp( GEM_CONC_MIN, GEM_CONC_MAX, ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f ) );
+			*pPath = ImLerp( GEM_PATH_MIN, GEM_PATH_MAX, ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f ) );
+			changed = true;
+		}
+		if ( clarActive )
+		{
+			*pClarity = ImClamp( ( mp.y - clar_bb.Min.y ) / clar_bb.GetHeight(), 0.0f, 1.0f );
+			changed = true;
+		}
+
+		{
+			ImGemData cbData; cbData.gem = *pGem; cbData.clarity = *pClarity;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pGem ), *pClarity );
+			DrawCachedProceduralColor2DBilinear( dl, GemPlaneCallback, &cbData,
+				GEM_CONC_MIN, GEM_CONC_MAX, GEM_PATH_MAX, GEM_PATH_MIN,
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			float du = ImSaturate( ImNormalize01( *pConc, GEM_CONC_MIN, GEM_CONC_MAX ) );
+			float dv = ImSaturate( ImNormalize01( *pPath, GEM_PATH_MIN, GEM_PATH_MAX ) );
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
+			float dr, dg, db; GemToSRGB( dr, dg, db, *pGem, *pConc, *pPath, *pClarity );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
+			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			ImGemSlider cbData; cbData.gem = *pGem; cbData.conc = *pConc; cbData.pathMm = *pPath;
+			DrawProceduralColor1DBilinearVertical( dl, GemClarityCallback, &cbData,
+				1.0f, 0.0f, clar_bb.Min, clar_bb.GetSize(), sliderRes );
+			dl->AddRect( clar_bb.Min, clar_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( *pClarity );
+			float handleY = ImLerp( clar_bb.Min.y, clar_bb.Max.y, t );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; GemToSRGB( hr, hg, hb, *pGem, *pConc, *pPath, *pClarity );
+			ImU32 handleFill = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
+			dl->AddRectFilled( ImVec2( clar_bb.Min.x - 1.0f, handleY - hh ), ImVec2( clar_bb.Max.x + 1.0f, handleY + hh ), handleFill, 2.0f );
+			dl->AddRect( ImVec2( clar_bb.Min.x - 1.0f, handleY - hh ), ImVec2( clar_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		ImGui::Text( "Conc %.2f   Path %.1f mm   Clarity %.0f%%", *pConc, *pPath, ( 1.0f - *pClarity ) * 100.0f );
+
+		float r, gg, b; GemToSRGB( r, gg, b, *pGem, *pConc, *pPath, *pClarity );
+		color->x = r; color->y = gg; color->z = b;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Water / Ocean Picker (bio-optical model)
+	//////////////////////////////////////////////////////////////////////////
+
+	// Subsurface reflectance R ~= f * bb / (a + bb) (Morel & Prieur 1977; Gordon
+	// et al. 1988, f~=0.33). Absorption a = pure water (Pope & Fry 1997) +
+	// phytoplankton chlorophyll (Bricaud et al. 1995, peaks ~440/675nm) + CDOM
+	// (Bricaud et al. 1981, a_cdom = a440 * exp(-0.014(lam-440))). Backscatter bb
+	// = pure water (~lambda^-4.3) + mineral/particle (turbidity).
+	// Pure water absorption (1/cm), 400..700nm at 10nm (Pope & Fry 1997).
+	#define WATER_N 31
+	static const float s_Water_min = 400.0f, s_Water_max = 700.0f;
+	static float s_Water_abs_percm[ WATER_N ] = {
+		0.0000663f, 0.0000473f, 0.0000454f, 0.0000495f, 0.0000635f, 0.0000922f, 0.0000979f, 0.000106f, 0.000127f, 0.00015f,
+		0.000204f, 0.000325f, 0.000409f, 0.000434f, 0.000474f, 0.000565f, 0.000619f, 0.000695f, 0.000896f, 0.001351f,
+		0.002224f, 0.002644f, 0.002755f, 0.002916f, 0.003108f, 0.0034f, 0.0041f, 0.00439f, 0.00465f, 0.00516f, 0.00624f };
+
+	static void WaterToSRGB( float& outR, float& outG, float& outB, float chl, float cdom440, float turbidity )
+	{
+		EnsureSpecTables();
+		float X = 0.0f, Y = 0.0f, Z = 0.0f;
+		for ( int i = 0; i < SPEC_N; ++i )
+		{
+			float lam = SPEC_MIN + ( SPEC_MAX - SPEC_MIN ) * ( float )i / ( float )( SPEC_N - 1 );
+			float aw = ImFunctionFromData( lam, s_Water_min, s_Water_max, s_Water_abs_percm, WATER_N ) * 100.0f; // 1/cm -> 1/m
+			float d1 = ( lam - 440.0f ) / 30.0f, d2 = ( lam - 675.0f ) / 20.0f;
+			float aph = chl * ( 0.04f * expf( -d1 * d1 ) + 0.02f * expf( -d2 * d2 ) + 0.005f );
+			float acdom = cdom440 * expf( -0.014f * ( lam - 440.0f ) );
+			float a = aw + aph + acdom;
+			float bbw = 0.0005f * powf( 500.0f / lam, 4.32f );
+			float bbp = turbidity * 0.01f * ( 550.0f / lam );
+			float bb = bbw + bbp;
+			float R = 0.33f * bb / ( a + bb );
+			X += R * s_SpecD65[ i ] * s_SpecXbar[ i ];
+			Y += R * s_SpecD65[ i ] * s_SpecYbar[ i ];
+			Z += R * s_SpecD65[ i ] * s_SpecZbar[ i ];
+		}
+		float iN = 1.0f / s_SpecD65Ynorm; X *= iN; Y *= iN; Z *= iN;
+		float r, g, b;
+		ColorConvertXYZtosRGB( r, g, b, X, Y, Z );
+		outR = ImSaturate( r ); outG = ImSaturate( g ); outB = ImSaturate( b );
+	}
+
+	static const float WATER_CHL_MIN = 0.0f,  WATER_CHL_MAX = 30.0f;   // mg/m3
+	static const float WATER_CDOM_MIN = 0.0f, WATER_CDOM_MAX = 2.0f;   // 1/m at 440nm
+	static const float WATER_TURB_MIN = 0.0f, WATER_TURB_MAX = 5.0f;
+
+	struct ImWaterData { float turb; };
+	static ImU32 WaterPlaneCallback( float chl, float cdom, void* pUserData )
+	{
+		ImWaterData* d = ( ImWaterData* )pUserData;
+		float r, g, b; WaterToSRGB( r, g, b, chl, cdom, d->turb );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+	struct ImWaterSlider { float chl, cdom; };
+	static ImU32 WaterTurbCallback( float turb, void* pUserData )
+	{
+		ImWaterSlider* d = ( ImWaterSlider* )pUserData;
+		float r, g, b; WaterToSRGB( r, g, b, d->chl, d->cdom, turb );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerWater( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		// Create keys first (inserts may shift/realloc storage), then grab stable pointers.
+		storage->GetFloatRef( ImGui::GetID( "chl" ), 0.3f );
+		storage->GetFloatRef( ImGui::GetID( "cdom" ), 0.05f );
+		storage->GetFloatRef( ImGui::GetID( "turb" ), 0.2f );
+		float* pChl  = storage->GetFloatRef( ImGui::GetID( "chl" ), 0.3f );
+		float* pCdom = storage->GetFloatRef( ImGui::GetID( "cdom" ), 0.05f );
+		float* pTurb = storage->GetFloatRef( ImGui::GetID( "turb" ), 0.2f );
+
+		bool changed = false;
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "turb", ImVec2( sliderW, planeSide ) );
+		const ImRect turb_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool turbActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive )
+		{
+			*pChl  = ImLerp( WATER_CHL_MIN, WATER_CHL_MAX, ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f ) );
+			*pCdom = ImLerp( WATER_CDOM_MIN, WATER_CDOM_MAX, ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f ) );
+			changed = true;
+		}
+		if ( turbActive )
+		{
+			*pTurb = ImLerp( WATER_TURB_MIN, WATER_TURB_MAX, ImClamp( ( mp.y - turb_bb.Min.y ) / turb_bb.GetHeight(), 0.0f, 1.0f ) );
+			changed = true;
+		}
+
+		{
+			ImWaterData cbData; cbData.turb = *pTurb;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pTurb );
+			DrawCachedProceduralColor2DBilinear( dl, WaterPlaneCallback, &cbData,
+				WATER_CHL_MIN, WATER_CHL_MAX, WATER_CDOM_MAX, WATER_CDOM_MIN,
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			float du = ImSaturate( ImNormalize01( *pChl, WATER_CHL_MIN, WATER_CHL_MAX ) );
+			float dv = ImSaturate( ImNormalize01( *pCdom, WATER_CDOM_MIN, WATER_CDOM_MAX ) );
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
+			float dr, dg, db; WaterToSRGB( dr, dg, db, *pChl, *pCdom, *pTurb );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
+			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			ImWaterSlider cbData; cbData.chl = *pChl; cbData.cdom = *pCdom;
+			DrawProceduralColor1DBilinearVertical( dl, WaterTurbCallback, &cbData,
+				WATER_TURB_MAX, WATER_TURB_MIN, turb_bb.Min, turb_bb.GetSize(), sliderRes );
+			dl->AddRect( turb_bb.Min, turb_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( ImNormalize01( *pTurb, WATER_TURB_MIN, WATER_TURB_MAX ) );
+			float handleY = ImLerp( turb_bb.Min.y, turb_bb.Max.y, t );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; WaterToSRGB( hr, hg, hb, *pChl, *pCdom, *pTurb );
+			ImU32 handleFill = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
+			dl->AddRectFilled( ImVec2( turb_bb.Min.x - 1.0f, handleY - hh ), ImVec2( turb_bb.Max.x + 1.0f, handleY + hh ), handleFill, 2.0f );
+			dl->AddRect( ImVec2( turb_bb.Min.x - 1.0f, handleY - hh ), ImVec2( turb_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		ImGui::Text( "Chlorophyll %.1f mg/m3   CDOM %.2f   Turbidity %.1f", *pChl, *pCdom, *pTurb );
+
+		float r, gg, b; WaterToSRGB( r, gg, b, *pChl, *pCdom, *pTurb );
+		color->x = r; color->y = gg; color->z = b;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Iris / Eye Color Picker (melanin absorption + Tyndall scattering)
+	//////////////////////////////////////////////////////////////////////////
+
+	// Iris color is part pigment, part structural: an anterior melanin layer
+	// absorbs, while the low-melanin stroma scatters short wavelengths back
+	// (Tyndall/Rayleigh, ~lambda^-4) over an absorbing posterior epithelium - so
+	// blue eyes are structural (no blue pigment), brown eyes are melanin. Melanin
+	// absorption after Jacques (OMLC skin optics, eumelanin ~ lambda^-3.33);
+	// structural blue per the Tyndall scattering mechanism (e.g. Mason 1924;
+	// review Sturm & Larsson, Pigment Cell Melanoma Res. 2009).
+	static void IrisToSRGB( float& outR, float& outG, float& outB, float antMel, float stroma, float posMel )
+	{
+		EnsureSpecTables();
+		float ma = ImSaturate( antMel ) * 0.05f;
+		float mp = ImSaturate( posMel ) * 0.15f;
+		float X = 0.0f, Y = 0.0f, Z = 0.0f;
+		for ( int i = 0; i < SPEC_N; ++i )
+		{
+			float lam = SPEC_MIN + ( SPEC_MAX - SPEC_MIN ) * ( float )i / ( float )( SPEC_N - 1 );
+			float kmel = 6.6e10f * ImPow( lam, -3.33f ); // eumelanin absorption coefficient
+			float Ta = expf( -ma * kmel );               // anterior melanin filter
+			float rl = 500.0f / lam;
+			// Tyndall/Rayleigh backscatter fraction (kept modest so it doesn't wash
+			// to white); the rest penetrates and returns off the epithelium.
+			float B = ImSaturate( ImSaturate( stroma ) * 0.4f * rl * rl * rl * rl );
+			float Rp = expf( -mp * kmel );               // posterior epithelium reflectance (dark when pigmented)
+			float R = Ta * ( B + ( 1.0f - B ) * ( 1.0f - B ) * Rp );
+			X += R * s_SpecD65[ i ] * s_SpecXbar[ i ];
+			Y += R * s_SpecD65[ i ] * s_SpecYbar[ i ];
+			Z += R * s_SpecD65[ i ] * s_SpecZbar[ i ];
+		}
+		float iN = 1.0f / s_SpecD65Ynorm; X *= iN; Y *= iN; Z *= iN;
+		float r, g, b;
+		ColorConvertXYZtosRGB( r, g, b, X, Y, Z );
+		outR = ImSaturate( r ); outG = ImSaturate( g ); outB = ImSaturate( b );
+	}
+
+	struct ImIrisData { float posMel; };
+	static ImU32 IrisPlaneCallback( float antMel, float stroma, void* pUserData )
+	{
+		ImIrisData* d = ( ImIrisData* )pUserData;
+		float r, g, b; IrisToSRGB( r, g, b, antMel, stroma, d->posMel );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+	struct ImIrisSlider { float antMel, stroma; };
+	static ImU32 IrisPosCallback( float posMel, void* pUserData )
+	{
+		ImIrisSlider* d = ( ImIrisSlider* )pUserData;
+		float r, g, b; IrisToSRGB( r, g, b, d->antMel, d->stroma, posMel );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerIris( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		// Create keys first (inserts may shift/realloc storage), then grab stable pointers.
+		storage->GetFloatRef( ImGui::GetID( "ant" ), 0.08f );
+		storage->GetFloatRef( ImGui::GetID( "stroma" ), 0.85f );
+		storage->GetFloatRef( ImGui::GetID( "pos" ), 0.9f );
+		float* pAnt    = storage->GetFloatRef( ImGui::GetID( "ant" ), 0.08f );
+		float* pStroma = storage->GetFloatRef( ImGui::GetID( "stroma" ), 0.85f );
+		float* pPos    = storage->GetFloatRef( ImGui::GetID( "pos" ), 0.9f );
+
+		bool changed = false;
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "pos", ImVec2( sliderW, planeSide ) );
+		const ImRect pos_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool posActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive )
+		{
+			*pAnt    = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f );
+			*pStroma = ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f );
+			changed = true;
+		}
+		if ( posActive )
+		{
+			*pPos = ImClamp( ( mp.y - pos_bb.Min.y ) / pos_bb.GetHeight(), 0.0f, 1.0f );
+			changed = true;
+		}
+
+		{
+			ImIrisData cbData; cbData.posMel = *pPos;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pPos );
+			DrawCachedProceduralColor2DBilinear( dl, IrisPlaneCallback, &cbData,
+				0.0f, 1.0f, 1.0f, 0.0f,
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, ImSaturate( *pAnt ) ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, ImSaturate( *pStroma ) ) );
+			float dr, dg, db; IrisToSRGB( dr, dg, db, *pAnt, *pStroma, *pPos );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
+			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			ImIrisSlider cbData; cbData.antMel = *pAnt; cbData.stroma = *pStroma;
+			DrawProceduralColor1DBilinearVertical( dl, IrisPosCallback, &cbData,
+				1.0f, 0.0f, pos_bb.Min, pos_bb.GetSize(), sliderRes );
+			dl->AddRect( pos_bb.Min, pos_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( *pPos );
+			float handleY = ImLerp( pos_bb.Min.y, pos_bb.Max.y, t );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; IrisToSRGB( hr, hg, hb, *pAnt, *pStroma, *pPos );
+			ImU32 handleFill = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
+			dl->AddRectFilled( ImVec2( pos_bb.Min.x - 1.0f, handleY - hh ), ImVec2( pos_bb.Max.x + 1.0f, handleY + hh ), handleFill, 2.0f );
+			dl->AddRect( ImVec2( pos_bb.Min.x - 1.0f, handleY - hh ), ImVec2( pos_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		ImGui::Text( "Anterior melanin %.0f%%   Stroma scatter %.0f%%   Posterior melanin %.0f%%", ( *pAnt ) * 100.0f, ( *pStroma ) * 100.0f, ( *pPos ) * 100.0f );
+
+		float r, gg, b; IrisToSRGB( r, gg, b, *pAnt, *pStroma, *pPos );
+		color->x = r; color->y = gg; color->z = b;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Flame / Emission Spectrum Picker
+	//////////////////////////////////////////////////////////////////////////
+
+	// Additive emission: a blackbody continuum (Planck, the sooty flame glow)
+	// plus discrete atomic emission lines for the selected element (flame-test
+	// colors). Line wavelengths from the NIST Atomic Spectra Database; flame
+	// emission spectroscopy (Skoog et al., "Principles of Instrumental Analysis").
+	// Each contribution is integrated to XYZ and normalized to unit luminance,
+	// then combined - so continuum, element and sodium each keep their own hue.
+	struct ImFlameLine { float lam, intensity; };
+	struct ImFlameDef  { const char* name; ImFlameLine lines[ 6 ]; int count; };
+	static const ImFlameDef s_Flames[] = {
+		{ "None (continuum)", { { 0.0f, 0.0f } }, 0 },
+		{ "Sodium (Na)",      { { 589.3f, 1.0f } }, 1 },
+		{ "Potassium (K)",    { { 766.5f, 1.0f }, { 769.9f, 0.6f }, { 404.4f, 0.5f } }, 3 },
+		{ "Lithium (Li)",     { { 670.8f, 1.0f }, { 610.4f, 0.3f } }, 2 },
+		{ "Calcium (Ca)",     { { 422.7f, 0.7f }, { 558.9f, 0.5f }, { 612.2f, 0.45f }, { 616.2f, 0.35f } }, 4 },
+		{ "Copper (Cu)",      { { 510.5f, 0.6f }, { 515.3f, 0.5f }, { 521.8f, 1.0f }, { 578.2f, 0.4f } }, 4 },
+		{ "Strontium (Sr)",   { { 460.7f, 0.5f }, { 640.8f, 0.7f }, { 650.4f, 0.6f }, { 674.4f, 0.8f }, { 687.8f, 0.5f } }, 5 },
+		{ "Barium (Ba)",      { { 513.7f, 0.6f }, { 524.2f, 1.0f }, { 553.5f, 0.7f } }, 3 },
+		{ "Boron (B)",        { { 518.0f, 0.7f }, { 540.0f, 1.0f }, { 546.0f, 0.6f } }, 3 } };
+	#define FLAME_COUNT ( ( int )( sizeof( s_Flames ) / sizeof( s_Flames[ 0 ] ) ) )
+
+	static void FlameToSRGB( float& outR, float& outG, float& outB, int elem, float tempK, float lineStrength, float sodium )
+	{
+		EnsureSpecTables();
+		const ImFlameDef& fd = s_Flames[ elem ];
+		float Xc = 0, Yc = 0, Zc = 0;   // continuum
+		float Xl = 0, Yl = 0, Zl = 0;   // element lines
+		float Xs = 0, Ys = 0, Zs = 0;   // sodium contamination
+		const float sigma = 4.0f;
+		for ( int i = 0; i < SPEC_N; ++i )
+		{
+			float lam = SPEC_MIN + ( SPEC_MAX - SPEC_MIN ) * ( float )i / ( float )( SPEC_N - 1 );
+			float cont = 1.0f / ( lam * lam * lam * lam * lam * ( expf( SPEC_C2 / ( lam * tempK ) ) - 1.0f ) );
+			Xc += cont * s_SpecXbar[ i ]; Yc += cont * s_SpecYbar[ i ]; Zc += cont * s_SpecZbar[ i ];
+
+			float lineSum = 0.0f;
+			for ( int k = 0; k < fd.count; ++k )
+			{
+				float dl = ( lam - fd.lines[ k ].lam ) / sigma;
+				lineSum += fd.lines[ k ].intensity * expf( -dl * dl );
+			}
+			Xl += lineSum * s_SpecXbar[ i ]; Yl += lineSum * s_SpecYbar[ i ]; Zl += lineSum * s_SpecZbar[ i ];
+
+			float dna = ( lam - 589.3f ) / sigma;
+			float na = expf( -dna * dna );
+			Xs += na * s_SpecXbar[ i ]; Ys += na * s_SpecYbar[ i ]; Zs += na * s_SpecZbar[ i ];
+		}
+		// Normalize each contribution to unit luminance, then weight-combine. The
+		// continuum is broadband; lines are weighted modestly so the continuum
+		// keeps mixing in (a flame is not a pure monochromatic source).
+		const float lineW = lineStrength * 1.4f;
+		const float naW   = sodium * 1.4f;
+		float X = 0, Y = 0, Z = 0;
+		if ( Yc > 0.0f ) { float k = 1.0f / Yc; X += Xc * k; Y += 1.0f; Z += Zc * k; }
+		if ( Yl > 0.0f ) { float k = lineW / Yl; X += Xl * k; Y += lineW; Z += Zl * k; }
+		if ( Ys > 0.0f ) { float k = naW / Ys; X += Xs * k; Y += naW; Z += Zs * k; }
+		if ( Y > 0.0f ) { float iY = 1.0f / Y; X *= iY; Z *= iY; Y = 1.0f; }
+		float r, g, b;
+		ColorConvertXYZtosRGB( r, g, b, X, Y, Z );
+		// Narrow emission lines sit near the spectral locus (maximally saturated /
+		// often out of gamut). Real flames are broadband and scene-lit, so pull the
+		// result toward neutral - this both desaturates and brings it into gamut.
+		float lum = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+		const float desat = 0.32f;
+		r = ImLerp( r, lum, desat ); g = ImLerp( g, lum, desat ); b = ImLerp( b, lum, desat );
+		float mx = ImMax( r, ImMax( g, b ) );
+		if ( mx > 1.0f ) { r /= mx; g /= mx; b /= mx; }
+		outR = ImSaturate( r ); outG = ImSaturate( g ); outB = ImSaturate( b );
+	}
+
+	static const float FLAME_TEMP_MIN = 1000.0f, FLAME_TEMP_MAX = 3000.0f;
+
+	struct ImFlameData { int elem; float sodium; };
+	static ImU32 FlamePlaneCallback( float tempK, float lineStrength, void* pUserData )
+	{
+		ImFlameData* d = ( ImFlameData* )pUserData;
+		float r, g, b; FlameToSRGB( r, g, b, d->elem, tempK, lineStrength, d->sodium );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+	struct ImFlameSlider { int elem; float tempK, lineStrength; };
+	static ImU32 FlameSodiumCallback( float sodium, void* pUserData )
+	{
+		ImFlameSlider* d = ( ImFlameSlider* )pUserData;
+		float r, g, b; FlameToSRGB( r, g, b, d->elem, d->tempK, d->lineStrength, sodium );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerFlame( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		// Create keys first (inserts may shift/realloc storage), then grab stable pointers.
+		storage->GetIntRef( ImGui::GetID( "elem" ), 5 );
+		storage->GetFloatRef( ImGui::GetID( "temp" ), 1600.0f );
+		storage->GetFloatRef( ImGui::GetID( "line" ), 0.7f );
+		storage->GetFloatRef( ImGui::GetID( "na" ), 0.0f );
+		int*   pElem   = storage->GetIntRef( ImGui::GetID( "elem" ), 5 ); // Copper
+		float* pTemp   = storage->GetFloatRef( ImGui::GetID( "temp" ), 1600.0f );
+		float* pLine   = storage->GetFloatRef( ImGui::GetID( "line" ), 0.7f );
+		float* pSodium = storage->GetFloatRef( ImGui::GetID( "na" ), 0.0f );
+
+		bool changed = false;
+		const char* names[ FLAME_COUNT ];
+		for ( int i = 0; i < FLAME_COUNT; ++i ) names[ i ] = s_Flames[ i ].name;
+		changed |= ImGui::Combo( "Element##Flame", pElem, names, FLAME_COUNT );
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "na", ImVec2( sliderW, planeSide ) );
+		const ImRect na_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool naActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive )
+		{
+			*pTemp = ImLerp( FLAME_TEMP_MIN, FLAME_TEMP_MAX, ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f ) );
+			*pLine = ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f );
+			changed = true;
+		}
+		if ( naActive )
+		{
+			*pSodium = ImClamp( ( mp.y - na_bb.Min.y ) / na_bb.GetHeight(), 0.0f, 1.0f );
+			changed = true;
+		}
+
+		{
+			ImFlameData cbData; cbData.elem = *pElem; cbData.sodium = *pSodium;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pElem ), *pSodium );
+			DrawCachedProceduralColor2DBilinear( dl, FlamePlaneCallback, &cbData,
+				FLAME_TEMP_MIN, FLAME_TEMP_MAX, 1.0f, 0.0f,
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			float du = ImSaturate( ImNormalize01( *pTemp, FLAME_TEMP_MIN, FLAME_TEMP_MAX ) );
+			float dv = ImSaturate( *pLine );
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
+			float dr, dg, db; FlameToSRGB( dr, dg, db, *pElem, *pTemp, *pLine, *pSodium );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
+			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			ImFlameSlider cbData; cbData.elem = *pElem; cbData.tempK = *pTemp; cbData.lineStrength = *pLine;
+			DrawProceduralColor1DBilinearVertical( dl, FlameSodiumCallback, &cbData,
+				1.0f, 0.0f, na_bb.Min, na_bb.GetSize(), sliderRes );
+			dl->AddRect( na_bb.Min, na_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( *pSodium );
+			float handleY = ImLerp( na_bb.Min.y, na_bb.Max.y, t );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; FlameToSRGB( hr, hg, hb, *pElem, *pTemp, *pLine, *pSodium );
+			ImU32 handleFill = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
+			dl->AddRectFilled( ImVec2( na_bb.Min.x - 1.0f, handleY - hh ), ImVec2( na_bb.Max.x + 1.0f, handleY + hh ), handleFill, 2.0f );
+			dl->AddRect( ImVec2( na_bb.Min.x - 1.0f, handleY - hh ), ImVec2( na_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		ImGui::Text( "%s   Temp %.0f K   Line %.0f%%   Na %.0f%%", s_Flames[ *pElem ].name, *pTemp, ( *pLine ) * 100.0f, ( *pSodium ) * 100.0f );
+
+		float r, gg, b; FlameToSRGB( r, gg, b, *pElem, *pTemp, *pLine, *pSodium );
+		color->x = r; color->y = gg; color->z = b;
+		ImGui::PopID();
+		return changed;
+	}
+
+	static inline float SpecGauss( float lam, float c, float w ) { float d = ( lam - c ) / w; return expf( -d * d ); }
+
+	//////////////////////////////////////////////////////////////////////////
+	// Bruise / Hematoma Healing Picker
+	//////////////////////////////////////////////////////////////////////////
+
+	// Forward skin model whose chromophores evolve as a bruise heals: extravasated
+	// hemoglobin deoxygenates (red -> blue/purple), then heme breaks down to
+	// biliverdin (green) and bilirubin (yellow). Chromophore dynamics after
+	// Randeberg et al., "Performance of diffusion theory vs. Monte Carlo / the
+	// optical properties of bruised skin" and "Spectral characteristics of
+	// bruising" (J. Biomed. Opt. / Lasers Surg. Med.). Hemoglobin extinction from
+	// the OMLC tables (reused from the skin picker); biliverdin (~377 & 670nm) and
+	// bilirubin (~460nm) absorption as Gaussian bands at their documented peaks.
+	static void BruiseToSRGB( float& outR, float& outG, float& outB, float days, float severity, float melanin )
+	{
+		EnsureSpecTables();
+		float d = ImClamp( days, 0.0f, 14.0f );
+		// Blood is a small dermal volume fraction; it clears within ~a week, which
+		// lets the later breakdown pigments dominate (otherwise hemoglobin's strong
+		// green absorption masks the biliverdin/bilirubin phases).
+		float blood = ImSaturate( severity ) * 0.18f * expf( -d / 3.5f );
+		float gamma = 0.12f + 0.55f * expf( -d / 1.8f );                 // oxygenation: red day0 -> deoxy ~day2
+		float biliv = ImSaturate( severity ) * SpecGauss( d, 6.0f, 2.6f );  // green, peaks ~day6
+		float bili  = ImSaturate( severity ) * SpecGauss( d, 9.5f, 3.0f );  // yellow, peaks ~day9-10
+		float mel   = ImSaturate( melanin ) * 0.40f;
+
+		const float dEpi = 0.04f;
+		const float hbFactor = 2.303f * 150.0f / 64500.0f;
+		float X = 0.0f, Y = 0.0f, Z = 0.0f;
+		for ( int i = 0; i < SPEC_N; ++i )
+		{
+			float lam = SPEC_MIN + ( SPEC_MAX - SPEC_MIN ) * ( float )i / ( float )( SPEC_N - 1 );
+			float kmel = 6.6e10f * ImPow( lam, -3.33f );
+			float Ta   = expf( -mel * kmel * dEpi );
+			float epsOxy   = ImFunctionFromData( lam, s_Hb_min, s_Hb_max, s_Hb_oxy, s_Hb_samplesCount );
+			float epsDeoxy = ImFunctionFromData( lam, s_Hb_min, s_Hb_max, s_Hb_deoxy, s_Hb_samplesCount );
+			float muaBlood = blood * hbFactor * ( gamma * epsOxy + ( 1.0f - gamma ) * epsDeoxy );
+			float bvA = biliv * ( SpecGauss( lam, 660.0f, 80.0f ) + 0.7f * SpecGauss( lam, 410.0f, 50.0f ) );
+			float brA = bili  * ( SpecGauss( lam, 460.0f, 55.0f ) );
+			float muaBili = ( bvA + brA ) * 35.0f;
+			float muaBase = 0.244f + 85.3f * expf( -( lam - 154.0f ) / 66.2f );
+			float mua  = muaBlood + muaBili + 0.4f * muaBase;
+			float musp = 2.0e5f * ImPow( lam, -1.5f ) + 2.0e12f * ImPow( lam, -4.0f );
+			float ratio = mua / musp;
+			float Rderm = 1.0f + ratio - ImSqrt( ratio * ratio + 2.0f * ratio );
+			float R = Ta * Ta * Rderm;
+			X += R * s_SpecD65[ i ] * s_SpecXbar[ i ];
+			Y += R * s_SpecD65[ i ] * s_SpecYbar[ i ];
+			Z += R * s_SpecD65[ i ] * s_SpecZbar[ i ];
+		}
+		float iN = 1.0f / s_SpecD65Ynorm; X *= iN; Y *= iN; Z *= iN;
+		float r, g, b; ColorConvertXYZtosRGB( r, g, b, X, Y, Z );
+		outR = ImSaturate( r ); outG = ImSaturate( g ); outB = ImSaturate( b );
+	}
+
+	static const float BRUISE_DAYS_MIN = 0.0f, BRUISE_DAYS_MAX = 14.0f;
+	struct ImBruiseData { float mel; };
+	static ImU32 BruisePlaneCallback( float days, float severity, void* pUserData )
+	{
+		ImBruiseData* d = ( ImBruiseData* )pUserData;
+		float r, g, b; BruiseToSRGB( r, g, b, days, severity, d->mel );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+	struct ImBruiseSlider { float days, severity; };
+	static ImU32 BruiseMelCallback( float mel, void* pUserData )
+	{
+		ImBruiseSlider* d = ( ImBruiseSlider* )pUserData;
+		float r, g, b; BruiseToSRGB( r, g, b, d->days, d->severity, mel );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerBruise( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		storage->GetFloatRef( ImGui::GetID( "days" ), 1.0f );
+		storage->GetFloatRef( ImGui::GetID( "sev" ), 0.7f );
+		storage->GetFloatRef( ImGui::GetID( "mel" ), 0.12f );
+		float* pDays = storage->GetFloatRef( ImGui::GetID( "days" ), 1.0f );
+		float* pSev  = storage->GetFloatRef( ImGui::GetID( "sev" ), 0.7f );
+		float* pMel  = storage->GetFloatRef( ImGui::GetID( "mel" ), 0.12f );
+		bool changed = false;
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing; if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "mel", ImVec2( sliderW, planeSide ) );
+		const ImRect mel_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool melActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive ) { *pDays = ImLerp( BRUISE_DAYS_MIN, BRUISE_DAYS_MAX, ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f ) ); *pSev = ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f ); changed = true; }
+		if ( melActive ) { *pMel = ImClamp( ( mp.y - mel_bb.Min.y ) / mel_bb.GetHeight(), 0.0f, 1.0f ); changed = true; }
+
+		{
+			ImBruiseData cb; cb.mel = *pMel;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pMel );
+			DrawCachedProceduralColor2DBilinear( dl, BruisePlaneCallback, &cb, BRUISE_DAYS_MIN, BRUISE_DAYS_MAX, 1.0f, 0.0f, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			float du = ImSaturate( ImNormalize01( *pDays, BRUISE_DAYS_MIN, BRUISE_DAYS_MAX ) ), dv = ImSaturate( *pSev );
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
+			float dr, dg, db; BruiseToSRGB( dr, dg, db, *pDays, *pSev, *pMel );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
+			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			ImBruiseSlider cb; cb.days = *pDays; cb.severity = *pSev;
+			DrawProceduralColor1DBilinearVertical( dl, BruiseMelCallback, &cb, 1.0f, 0.0f, mel_bb.Min, mel_bb.GetSize(), sliderRes );
+			dl->AddRect( mel_bb.Min, mel_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( *pMel ), handleY = ImLerp( mel_bb.Min.y, mel_bb.Max.y, t ), hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; BruiseToSRGB( hr, hg, hb, *pDays, *pSev, *pMel );
+			dl->AddRectFilled( ImVec2( mel_bb.Min.x - 1.0f, handleY - hh ), ImVec2( mel_bb.Max.x + 1.0f, handleY + hh ), IM_COL32( ( int )( hr * 255 ), ( int )( hg * 255 ), ( int )( hb * 255 ), 255 ), 2.0f );
+			dl->AddRect( ImVec2( mel_bb.Min.x - 1.0f, handleY - hh ), ImVec2( mel_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+		ImGui::Text( "Day %.1f   Severity %.0f%%   Skin melanin %.0f%%", *pDays, ( *pSev ) * 100.0f, ( *pMel ) * 100.0f );
+		float r, gg, b; BruiseToSRGB( r, gg, b, *pDays, *pSev, *pMel );
+		color->x = r; color->y = gg; color->z = b;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Emission Nebula Picker
+	//////////////////////////////////////////////////////////////////////////
+
+	// Additive emission from the recombination + forbidden lines of an ionized gas
+	// cloud (Osterbrock & Ferland, "Astrophysics of Gaseous Nebulae and Active
+	// Galactic Nuclei"). Hydrogen Balmer (Halpha 656, Hbeta 486) is the base;
+	// high-ionization gas adds [O III] 500.7/495.9 (green) and He I 587.6;
+	// low-ionization/denser gas adds [N II] 654.8/658.4 and [S II] 671.6/673.1
+	// (reds). Line strengths drive chromaticity; integrated like the flame picker.
+	static void NebulaToSRGB( float& outR, float& outG, float& outB, float ionization, float lowion, float hydrogen )
+	{
+		EnsureSpecTables();
+		float H  = ImSaturate( hydrogen );
+		float O  = ImSaturate( ionization );
+		float N  = ImSaturate( lowion );
+		const float sigma = 3.0f;
+		float X = 0.0f, Y = 0.0f, Z = 0.0f;
+		for ( int i = 0; i < SPEC_N; ++i )
+		{
+			float lam = SPEC_MIN + ( SPEC_MAX - SPEC_MIN ) * ( float )i / ( float )( SPEC_N - 1 );
+			float e = 0.0f;
+			e += H * ( 1.00f * SpecGauss( lam, 656.3f, sigma ) + 0.35f * SpecGauss( lam, 486.1f, sigma ) + 0.12f * SpecGauss( lam, 434.0f, sigma ) ); // H Balmer
+			e += O * ( 1.00f * SpecGauss( lam, 500.7f, sigma ) + 0.34f * SpecGauss( lam, 495.9f, sigma ) + 0.25f * SpecGauss( lam, 587.6f, sigma ) ); // [OIII] + HeI
+			e += N * ( 1.00f * SpecGauss( lam, 658.4f, sigma ) + 0.34f * SpecGauss( lam, 654.8f, sigma ) + 0.6f * SpecGauss( lam, 671.6f, sigma ) + 0.45f * SpecGauss( lam, 673.1f, sigma ) ); // [NII]+[SII]
+			X += e * s_SpecXbar[ i ]; Y += e * s_SpecYbar[ i ]; Z += e * s_SpecZbar[ i ];
+		}
+		if ( Y > 0.0f ) { float iY = 1.0f / Y; X *= iY; Z *= iY; Y = 1.0f; }
+		float r, g, b; ColorConvertXYZtosRGB( r, g, b, X, Y, Z );
+		float lum = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+		const float desat = 0.18f;
+		r = ImLerp( r, lum, desat ); g = ImLerp( g, lum, desat ); b = ImLerp( b, lum, desat );
+		float mx = ImMax( r, ImMax( g, b ) ); if ( mx > 1.0f ) { r /= mx; g /= mx; b /= mx; }
+		outR = ImSaturate( r ); outG = ImSaturate( g ); outB = ImSaturate( b );
+	}
+
+	struct ImNebulaData { float hydrogen; };
+	static ImU32 NebulaPlaneCallback( float ion, float lowion, void* pUserData )
+	{
+		ImNebulaData* d = ( ImNebulaData* )pUserData;
+		float r, g, b; NebulaToSRGB( r, g, b, ion, lowion, d->hydrogen );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+	struct ImNebulaSlider { float ion, lowion; };
+	static ImU32 NebulaHCallback( float hydrogen, void* pUserData )
+	{
+		ImNebulaSlider* d = ( ImNebulaSlider* )pUserData;
+		float r, g, b; NebulaToSRGB( r, g, b, d->ion, d->lowion, hydrogen );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerNebula( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		storage->GetFloatRef( ImGui::GetID( "ion" ), 0.4f );
+		storage->GetFloatRef( ImGui::GetID( "low" ), 0.3f );
+		storage->GetFloatRef( ImGui::GetID( "h" ), 0.8f );
+		float* pIon = storage->GetFloatRef( ImGui::GetID( "ion" ), 0.4f );
+		float* pLow = storage->GetFloatRef( ImGui::GetID( "low" ), 0.3f );
+		float* pH   = storage->GetFloatRef( ImGui::GetID( "h" ), 0.8f );
+		bool changed = false;
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing; if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "h", ImVec2( sliderW, planeSide ) );
+		const ImRect h_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool hActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive ) { *pIon = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f ); *pLow = ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f ); changed = true; }
+		if ( hActive ) { *pH = ImClamp( ( mp.y - h_bb.Min.y ) / h_bb.GetHeight(), 0.0f, 1.0f ); changed = true; }
+
+		{
+			ImNebulaData cb; cb.hydrogen = *pH;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pH );
+			DrawCachedProceduralColor2DBilinear( dl, NebulaPlaneCallback, &cb, 0.0f, 1.0f, 1.0f, 0.0f, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, ImSaturate( *pIon ) ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, ImSaturate( *pLow ) ) );
+			float dr, dg, db; NebulaToSRGB( dr, dg, db, *pIon, *pLow, *pH );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
+			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			ImNebulaSlider cb; cb.ion = *pIon; cb.lowion = *pLow;
+			DrawProceduralColor1DBilinearVertical( dl, NebulaHCallback, &cb, 1.0f, 0.0f, h_bb.Min, h_bb.GetSize(), sliderRes );
+			dl->AddRect( h_bb.Min, h_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( *pH ), handleY = ImLerp( h_bb.Min.y, h_bb.Max.y, t ), hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; NebulaToSRGB( hr, hg, hb, *pIon, *pLow, *pH );
+			dl->AddRectFilled( ImVec2( h_bb.Min.x - 1.0f, handleY - hh ), ImVec2( h_bb.Max.x + 1.0f, handleY + hh ), IM_COL32( ( int )( hr * 255 ), ( int )( hg * 255 ), ( int )( hb * 255 ), 255 ), 2.0f );
+			dl->AddRect( ImVec2( h_bb.Min.x - 1.0f, handleY - hh ), ImVec2( h_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+		ImGui::Text( "Ionization [OIII] %.0f%%   Low-ion [NII/SII] %.0f%%   Hydrogen %.0f%%", ( *pIon ) * 100.0f, ( *pLow ) * 100.0f, ( *pH ) * 100.0f );
+		float r, gg, b; NebulaToSRGB( r, gg, b, *pIon, *pLow, *pH );
+		color->x = r; color->y = gg; color->z = b;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Maillard / Caramelization Browning Picker
+	//////////////////////////////////////////////////////////////////////////
+
+	// Food browning color: melanoidin (Maillard) + caramel pigments accumulate
+	// with an Arrhenius time-temperature dependence; the pigments absorb strongly
+	// toward short wavelengths (an exponential absorbance, as commonly fitted for
+	// browning). After the Maillard-kinetics literature (e.g. Martins, Jongen &
+	// van Boekel, "A review of Maillard reaction in food and implications to
+	// kinetic modelling", Trends Food Sci. Technol. 2000) and CIELab browning
+	// studies. sugar->protein slider tilts caramel (golden, selective) vs
+	// melanoidin (darker, flatter).
+	static void MaillardToSRGB( float& outR, float& outG, float& outB, float tempC, float minutes, float sugar )
+	{
+		EnsureSpecTables();
+		float Tk = tempC + 273.15f;
+		float k = 2.4e10f * expf( -100000.0f / ( 8.314f * Tk ) ); // Arrhenius rate (1/min)
+		float B = 1.0f - expf( -k * ImMax( minutes, 0.0f ) );       // browning extent 0..1
+		float sblue = ImLerp( 0.0042f, 0.0115f, ImSaturate( sugar ) ); // caramel steeper -> golden
+		const float optDepth = 7.0f;
+		float X = 0.0f, Y = 0.0f, Z = 0.0f;
+		for ( int i = 0; i < SPEC_N; ++i )
+		{
+			float lam = SPEC_MIN + ( SPEC_MAX - SPEC_MIN ) * ( float )i / ( float )( SPEC_N - 1 );
+			float A = optDepth * B * expf( -sblue * ( lam - 400.0f ) );
+			float R = 0.88f * expf( -A );
+			X += R * s_SpecD65[ i ] * s_SpecXbar[ i ];
+			Y += R * s_SpecD65[ i ] * s_SpecYbar[ i ];
+			Z += R * s_SpecD65[ i ] * s_SpecZbar[ i ];
+		}
+		float iN = 1.0f / s_SpecD65Ynorm; X *= iN; Y *= iN; Z *= iN;
+		float r, g, b; ColorConvertXYZtosRGB( r, g, b, X, Y, Z );
+		outR = ImSaturate( r ); outG = ImSaturate( g ); outB = ImSaturate( b );
+	}
+
+	static const float MAIL_TEMP_MIN = 100.0f, MAIL_TEMP_MAX = 230.0f;
+	static const float MAIL_TIME_MIN = 0.0f,   MAIL_TIME_MAX = 40.0f;
+	struct ImMaillardData { float sugar; };
+	static ImU32 MaillardPlaneCallback( float tempC, float minutes, void* pUserData )
+	{
+		ImMaillardData* d = ( ImMaillardData* )pUserData;
+		float r, g, b; MaillardToSRGB( r, g, b, tempC, minutes, d->sugar );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+	struct ImMaillardSlider { float tempC, minutes; };
+	static ImU32 MaillardSugarCallback( float sugar, void* pUserData )
+	{
+		ImMaillardSlider* d = ( ImMaillardSlider* )pUserData;
+		float r, g, b; MaillardToSRGB( r, g, b, d->tempC, d->minutes, sugar );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerMaillard( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		storage->GetFloatRef( ImGui::GetID( "temp" ), 180.0f );
+		storage->GetFloatRef( ImGui::GetID( "time" ), 8.0f );
+		storage->GetFloatRef( ImGui::GetID( "sugar" ), 0.5f );
+		float* pTemp  = storage->GetFloatRef( ImGui::GetID( "temp" ), 180.0f );
+		float* pTime  = storage->GetFloatRef( ImGui::GetID( "time" ), 8.0f );
+		float* pSugar = storage->GetFloatRef( ImGui::GetID( "sugar" ), 0.5f );
+		bool changed = false;
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing; if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "sugar", ImVec2( sliderW, planeSide ) );
+		const ImRect sug_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool sugActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive ) { *pTemp = ImLerp( MAIL_TEMP_MIN, MAIL_TEMP_MAX, ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f ) ); *pTime = ImLerp( MAIL_TIME_MIN, MAIL_TIME_MAX, ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f ) ); changed = true; }
+		if ( sugActive ) { *pSugar = ImClamp( ( mp.y - sug_bb.Min.y ) / sug_bb.GetHeight(), 0.0f, 1.0f ); changed = true; }
+
+		{
+			ImMaillardData cb; cb.sugar = *pSugar;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pSugar );
+			DrawCachedProceduralColor2DBilinear( dl, MaillardPlaneCallback, &cb, MAIL_TEMP_MIN, MAIL_TEMP_MAX, MAIL_TIME_MAX, MAIL_TIME_MIN, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			float du = ImSaturate( ImNormalize01( *pTemp, MAIL_TEMP_MIN, MAIL_TEMP_MAX ) ), dv = ImSaturate( ImNormalize01( *pTime, MAIL_TIME_MIN, MAIL_TIME_MAX ) );
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
+			float dr, dg, db; MaillardToSRGB( dr, dg, db, *pTemp, *pTime, *pSugar );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
+			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			ImMaillardSlider cb; cb.tempC = *pTemp; cb.minutes = *pTime;
+			DrawProceduralColor1DBilinearVertical( dl, MaillardSugarCallback, &cb, 1.0f, 0.0f, sug_bb.Min, sug_bb.GetSize(), sliderRes );
+			dl->AddRect( sug_bb.Min, sug_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( *pSugar ), handleY = ImLerp( sug_bb.Min.y, sug_bb.Max.y, t ), hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; MaillardToSRGB( hr, hg, hb, *pTemp, *pTime, *pSugar );
+			dl->AddRectFilled( ImVec2( sug_bb.Min.x - 1.0f, handleY - hh ), ImVec2( sug_bb.Max.x + 1.0f, handleY + hh ), IM_COL32( ( int )( hr * 255 ), ( int )( hg * 255 ), ( int )( hb * 255 ), 255 ), 2.0f );
+			dl->AddRect( ImVec2( sug_bb.Min.x - 1.0f, handleY - hh ), ImVec2( sug_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+		ImGui::Text( "Temp %.0f C   Time %.1f min   Sugar<->Protein %.0f%%", *pTemp, *pTime, ( *pSugar ) * 100.0f );
+		float r, gg, b; MaillardToSRGB( r, gg, b, *pTemp, *pTime, *pSugar );
+		color->x = r; color->y = gg; color->z = b;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Copper / Bronze Patina Picker
+	//////////////////////////////////////////////////////////////////////////
+
+	// Atmospheric weathering of copper: bright metal -> cuprite/tarnish (brown-red)
+	// -> basic sulfate/carbonate patina (green: brochantite, antlerite, malachite)
+	// over years, faster and greener in marine/industrial air. Stage sequence and
+	// timescales after Graedel, Nassau & Franey, "Copper patinas formed in the
+	// atmosphere", Corrosion Science 27 (1987). Three end-member reflectances are
+	// blended by a time/environment-driven weathering progress.
+	static void PatinaEndmembers( float lam, float& rCu, float& rOx, float& rPat )
+	{
+		float t = ImSaturate( ( lam - 460.0f ) / 180.0f );
+		rCu  = 0.30f + 0.62f * t;                         // bright copper: reddish (low blue, high red)
+		rOx  = 0.05f + 0.32f * ImSaturate( ( lam - 500.0f ) / 200.0f ); // cuprite: dark brown-red
+		rPat = 0.08f + 0.52f * SpecGauss( lam, 512.0f, 70.0f );         // green patina
+	}
+	static void PatinaToSRGB( float& outR, float& outG, float& outB, float years, float env, float humidity )
+	{
+		EnsureSpecTables();
+		float a = ImSaturate( ( years / 22.0f ) * ( 0.5f + env ) * ( 0.7f + 0.6f * ImSaturate( humidity ) ) );
+		float fCu  = ImSaturate( 1.0f - a * 2.0f );
+		float fPat = ImSaturate( a * 2.0f - 1.0f );
+		float fOx  = ImMax( 0.0f, 1.0f - fCu - fPat );
+		float X = 0.0f, Y = 0.0f, Z = 0.0f;
+		for ( int i = 0; i < SPEC_N; ++i )
+		{
+			float lam = SPEC_MIN + ( SPEC_MAX - SPEC_MIN ) * ( float )i / ( float )( SPEC_N - 1 );
+			float rCu, rOx, rPat; PatinaEndmembers( lam, rCu, rOx, rPat );
+			float R = fCu * rCu + fOx * rOx + fPat * rPat;
+			X += R * s_SpecD65[ i ] * s_SpecXbar[ i ];
+			Y += R * s_SpecD65[ i ] * s_SpecYbar[ i ];
+			Z += R * s_SpecD65[ i ] * s_SpecZbar[ i ];
+		}
+		float iN = 1.0f / s_SpecD65Ynorm; X *= iN; Y *= iN; Z *= iN;
+		float r, g, b; ColorConvertXYZtosRGB( r, g, b, X, Y, Z );
+		outR = ImSaturate( r ); outG = ImSaturate( g ); outB = ImSaturate( b );
+	}
+
+	static const float PAT_YEARS_MIN = 0.0f, PAT_YEARS_MAX = 40.0f;
+	struct ImPatinaData { float humidity; };
+	static ImU32 PatinaPlaneCallback( float years, float env, void* pUserData )
+	{
+		ImPatinaData* d = ( ImPatinaData* )pUserData;
+		float r, g, b; PatinaToSRGB( r, g, b, years, env, d->humidity );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+	struct ImPatinaSlider { float years, env; };
+	static ImU32 PatinaHumCallback( float humidity, void* pUserData )
+	{
+		ImPatinaSlider* d = ( ImPatinaSlider* )pUserData;
+		float r, g, b; PatinaToSRGB( r, g, b, d->years, d->env, humidity );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerPatina( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		storage->GetFloatRef( ImGui::GetID( "yr" ), 6.0f );
+		storage->GetFloatRef( ImGui::GetID( "env" ), 0.4f );
+		storage->GetFloatRef( ImGui::GetID( "hum" ), 0.5f );
+		float* pYr  = storage->GetFloatRef( ImGui::GetID( "yr" ), 6.0f );
+		float* pEnv = storage->GetFloatRef( ImGui::GetID( "env" ), 0.4f );
+		float* pHum = storage->GetFloatRef( ImGui::GetID( "hum" ), 0.5f );
+		bool changed = false;
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing; if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "hum", ImVec2( sliderW, planeSide ) );
+		const ImRect hum_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool humActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive ) { *pYr = ImLerp( PAT_YEARS_MIN, PAT_YEARS_MAX, ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f ) ); *pEnv = ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f ); changed = true; }
+		if ( humActive ) { *pHum = ImClamp( ( mp.y - hum_bb.Min.y ) / hum_bb.GetHeight(), 0.0f, 1.0f ); changed = true; }
+
+		{
+			ImPatinaData cb; cb.humidity = *pHum;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pHum );
+			DrawCachedProceduralColor2DBilinear( dl, PatinaPlaneCallback, &cb, PAT_YEARS_MIN, PAT_YEARS_MAX, 1.0f, 0.0f, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			float du = ImSaturate( ImNormalize01( *pYr, PAT_YEARS_MIN, PAT_YEARS_MAX ) ), dv = ImSaturate( *pEnv );
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
+			float dr, dg, db; PatinaToSRGB( dr, dg, db, *pYr, *pEnv, *pHum );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
+			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			ImPatinaSlider cb; cb.years = *pYr; cb.env = *pEnv;
+			DrawProceduralColor1DBilinearVertical( dl, PatinaHumCallback, &cb, 1.0f, 0.0f, hum_bb.Min, hum_bb.GetSize(), sliderRes );
+			dl->AddRect( hum_bb.Min, hum_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( *pHum ), handleY = ImLerp( hum_bb.Min.y, hum_bb.Max.y, t ), hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; PatinaToSRGB( hr, hg, hb, *pYr, *pEnv, *pHum );
+			dl->AddRectFilled( ImVec2( hum_bb.Min.x - 1.0f, handleY - hh ), ImVec2( hum_bb.Max.x + 1.0f, handleY + hh ), IM_COL32( ( int )( hr * 255 ), ( int )( hg * 255 ), ( int )( hb * 255 ), 255 ), 2.0f );
+			dl->AddRect( ImVec2( hum_bb.Min.x - 1.0f, handleY - hh ), ImVec2( hum_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+		ImGui::Text( "Age %.0f yr   Environment %.0f%%   Humidity %.0f%%", *pYr, ( *pEnv ) * 100.0f, ( *pHum ) * 100.0f );
+		float r, gg, b; PatinaToSRGB( r, gg, b, *pYr, *pEnv, *pHum );
+		color->x = r; color->y = gg; color->z = b;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Subsurface Translucency Picker
+	//////////////////////////////////////////////////////////////////////////
+
+	// Diffuse reflectance of a translucent, multiply-scattering material from the
+	// dipole diffusion model (Jensen, Marschner, Levoy & Hanrahan, "A Practical
+	// Model for Subsurface Light Transport", SIGGRAPH 2001). Per RGB channel,
+	// Rd(alpha') with reduced albedo alpha' = sigma_s' / (sigma_s' + sigma_a); the
+	// material sets the per-channel absorption ratios (its hue), scattering sets
+	// opacity/glow, IOR sets the boundary term.
+	struct ImSSSMat { const char* name; float aR, aG, aB; };
+	static const ImSSSMat s_SSSMats[] = {
+		{ "Jade",        1.00f, 0.18f, 0.70f },
+		{ "Marble",      0.10f, 0.10f, 0.13f },
+		{ "Wax",         0.10f, 0.16f, 0.45f },
+		{ "Milk",        0.05f, 0.06f, 0.10f },
+		{ "Skin",        0.20f, 0.55f, 0.75f },
+		{ "Amber/Honey", 0.08f, 0.30f, 1.00f } };
+	#define SSS_MAT_COUNT ( ( int )( sizeof( s_SSSMats ) / sizeof( s_SSSMats[ 0 ] ) ) )
+
+	static void SubsurfaceToSRGB( float& outR, float& outG, float& outB, int matIdx, float absMag, float sigmaS, float ior )
+	{
+		float Fdr = -1.440f / ( ior * ior ) + 0.710f / ior + 0.668f + 0.0636f * ior;
+		float A = ( 1.0f + Fdr ) / ( 1.0f - Fdr );
+		float aRGB[ 3 ] = { s_SSSMats[ matIdx ].aR, s_SSSMats[ matIdx ].aG, s_SSSMats[ matIdx ].aB };
+		float lin[ 3 ];
+		for ( int c = 0; c < 3; ++c )
+		{
+			float sa = absMag * aRGB[ c ];
+			float ss = ImMax( sigmaS, 1e-3f );
+			float ap = ss / ( ss + sa );                 // reduced albedo
+			float s = ImSqrt( 3.0f * ( 1.0f - ap ) );
+			float Rd = ( ap * 0.5f ) * ( 1.0f + expf( -( 4.0f / 3.0f ) * A * s ) ) * expf( -s );
+			lin[ c ] = Rd;
+		}
+		outR = ImSaturate( ImLinearTosRGB( lin[ 0 ] ) );
+		outG = ImSaturate( ImLinearTosRGB( lin[ 1 ] ) );
+		outB = ImSaturate( ImLinearTosRGB( lin[ 2 ] ) );
+	}
+
+	static const float SSS_ABS_MIN = 0.0f,  SSS_ABS_MAX = 3.0f;
+	static const float SSS_SS_MIN = 1.0f,    SSS_SS_MAX = 60.0f;
+	struct ImSSSData { int mat; float ior; };
+	static ImU32 SubsurfacePlaneCallback( float absMag, float sigmaS, void* pUserData )
+	{
+		ImSSSData* d = ( ImSSSData* )pUserData;
+		float r, g, b; SubsurfaceToSRGB( r, g, b, d->mat, absMag, sigmaS, d->ior );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+	struct ImSSSSlider { int mat; float absMag, sigmaS; };
+	static ImU32 SubsurfaceIorCallback( float ior, void* pUserData )
+	{
+		ImSSSSlider* d = ( ImSSSSlider* )pUserData;
+		float r, g, b; SubsurfaceToSRGB( r, g, b, d->mat, d->absMag, d->sigmaS, ior );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerSubsurface( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		storage->GetIntRef( ImGui::GetID( "mat" ), 0 );
+		storage->GetFloatRef( ImGui::GetID( "abs" ), 1.2f );
+		storage->GetFloatRef( ImGui::GetID( "ss" ), 20.0f );
+		storage->GetFloatRef( ImGui::GetID( "ior" ), 1.4f );
+		int*   pMat = storage->GetIntRef( ImGui::GetID( "mat" ), 0 );
+		float* pAbs = storage->GetFloatRef( ImGui::GetID( "abs" ), 1.2f );
+		float* pSS  = storage->GetFloatRef( ImGui::GetID( "ss" ), 20.0f );
+		float* pIor = storage->GetFloatRef( ImGui::GetID( "ior" ), 1.4f );
+		bool changed = false;
+
+		const char* names[ SSS_MAT_COUNT ];
+		for ( int i = 0; i < SSS_MAT_COUNT; ++i ) names[ i ] = s_SSSMats[ i ].name;
+		changed |= ImGui::Combo( "Material##SSS", pMat, names, SSS_MAT_COUNT );
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing; if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "ior", ImVec2( sliderW, planeSide ) );
+		const ImRect ior_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool iorActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive ) { *pAbs = ImLerp( SSS_ABS_MIN, SSS_ABS_MAX, ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f ) ); *pSS = ImLerp( SSS_SS_MAX, SSS_SS_MIN, ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f ) ); changed = true; } // top = high scattering, matching fill & dot
+		if ( iorActive ) { *pIor = ImLerp( 1.3f, 1.6f, ImClamp( ( mp.y - ior_bb.Min.y ) / ior_bb.GetHeight(), 0.0f, 1.0f ) ); changed = true; }
+
+		{
+			ImSSSData cb; cb.mat = *pMat; cb.ior = *pIor;
+			// Y: scattering high at top (opaque) -> low at bottom (translucent).
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pMat ), *pIor );
+			DrawCachedProceduralColor2DBilinear( dl, SubsurfacePlaneCallback, &cb, SSS_ABS_MIN, SSS_ABS_MAX, SSS_SS_MIN, SSS_SS_MAX, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			float du = ImSaturate( ImNormalize01( *pAbs, SSS_ABS_MIN, SSS_ABS_MAX ) ), dv = ImSaturate( ImNormalize01( *pSS, SSS_SS_MIN, SSS_SS_MAX ) );
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, 1.0f - dv ) );
+			float dr, dg, db; SubsurfaceToSRGB( dr, dg, db, *pMat, *pAbs, *pSS, *pIor );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
+			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			ImSSSSlider cb; cb.mat = *pMat; cb.absMag = *pAbs; cb.sigmaS = *pSS;
+			DrawProceduralColor1DBilinearVertical( dl, SubsurfaceIorCallback, &cb, 1.6f, 1.3f, ior_bb.Min, ior_bb.GetSize(), sliderRes );
+			dl->AddRect( ior_bb.Min, ior_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( ImNormalize01( *pIor, 1.3f, 1.6f ) ), handleY = ImLerp( ior_bb.Min.y, ior_bb.Max.y, t ), hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; SubsurfaceToSRGB( hr, hg, hb, *pMat, *pAbs, *pSS, *pIor );
+			dl->AddRectFilled( ImVec2( ior_bb.Min.x - 1.0f, handleY - hh ), ImVec2( ior_bb.Max.x + 1.0f, handleY + hh ), IM_COL32( ( int )( hr * 255 ), ( int )( hg * 255 ), ( int )( hb * 255 ), 255 ), 2.0f );
+			dl->AddRect( ImVec2( ior_bb.Min.x - 1.0f, handleY - hh ), ImVec2( ior_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+		ImGui::Text( "%s   Absorption %.2f   Scatter %.0f   IOR %.2f", s_SSSMats[ *pMat ].name, *pAbs, *pSS, *pIor );
+		float r, gg, b; SubsurfaceToSRGB( r, gg, b, *pMat, *pAbs, *pSS, *pIor );
+		color->x = r; color->y = gg; color->z = b;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Gas-Discharge / Neon-Tube Picker
+	//////////////////////////////////////////////////////////////////////////
+
+	// Additive line emission from an excited low-pressure gas (NIST Atomic Spectra
+	// Database; Waymouth, "Electric Discharge Lamps"). Each noble gas has a
+	// characteristic line set; a mercury additive (common in signage) injects the
+	// Hg blue/green lines, and an optional broadband phosphor coating (modeled as a
+	// Planck spectrum at a chosen white point) washes the tube toward pastel/white.
+	// Gas lines and phosphor are each integrated to XYZ, normalized to unit
+	// luminance, then weight-combined (as in the flame picker).
+	struct ImGasLine { float lam, inten; };
+	struct ImGasDef  { const char* name; ImGasLine lines[ 10 ]; int count; };
+	static const ImGasDef s_Gases[] = {
+		{ "Neon",     { { 585.2f, 1.0f }, { 588.2f, 0.5f }, { 594.5f, 0.6f }, { 609.6f, 0.4f }, { 614.3f, 0.5f }, { 640.2f, 0.9f }, { 650.7f, 0.7f }, { 692.9f, 0.5f }, { 703.2f, 0.4f } }, 9 },
+		{ "Argon",    { { 415.9f, 0.4f }, { 420.1f, 0.4f }, { 696.5f, 0.7f }, { 706.7f, 0.6f }, { 738.4f, 0.7f }, { 750.4f, 1.0f }, { 763.5f, 0.9f }, { 772.4f, 0.7f }, { 811.5f, 0.5f } }, 9 },
+		{ "Helium",   { { 447.1f, 0.5f }, { 471.3f, 0.3f }, { 492.2f, 0.3f }, { 501.6f, 0.4f }, { 587.6f, 1.0f }, { 667.8f, 0.6f }, { 706.5f, 0.4f } }, 7 },
+		{ "Krypton",  { { 427.4f, 0.5f }, { 446.4f, 0.4f }, { 557.0f, 0.6f }, { 587.1f, 0.7f }, { 605.6f, 0.5f }, { 642.1f, 0.5f } }, 6 },
+		{ "Xenon",    { { 462.4f, 0.6f }, { 467.1f, 0.6f }, { 473.4f, 0.5f }, { 480.7f, 0.7f }, { 492.3f, 0.6f }, { 541.9f, 0.4f } }, 6 },
+		{ "Hydrogen", { { 656.3f, 1.0f }, { 486.1f, 0.5f }, { 434.0f, 0.3f }, { 410.2f, 0.2f } }, 4 },
+		{ "Mercury",  { { 404.7f, 0.5f }, { 435.8f, 1.0f }, { 546.1f, 0.9f }, { 577.0f, 0.5f }, { 579.1f, 0.5f } }, 5 },
+		{ "Sodium",   { { 589.0f, 1.0f }, { 589.6f, 0.8f } }, 2 } };
+	#define GAS_COUNT ( ( int )( sizeof( s_Gases ) / sizeof( s_Gases[ 0 ] ) ) )
+
+	static void DischargeToSRGB( float& outR, float& outG, float& outB, int gasIdx, float mercury, float phosphor, float warmthN )
+	{
+		EnsureSpecTables();
+		const ImGasDef& gd = s_Gases[ gasIdx ];
+		static const ImGasLine hg[ 5 ] = { { 404.7f, 0.5f }, { 435.8f, 1.0f }, { 546.1f, 0.9f }, { 577.0f, 0.5f }, { 579.1f, 0.5f } };
+		const float sigma = 2.5f;
+		float warmthK = ImLerp( 2700.0f, 6500.0f, ImSaturate( warmthN ) );
+		float lX = 0, lY = 0, lZ = 0, pX = 0, pY = 0, pZ = 0;
+		for ( int i = 0; i < SPEC_N; ++i )
+		{
+			float lam = SPEC_MIN + ( SPEC_MAX - SPEC_MIN ) * ( float )i / ( float )( SPEC_N - 1 );
+			float e = 0.0f;
+			for ( int k = 0; k < gd.count; ++k ) e += gd.lines[ k ].inten * SpecGauss( lam, gd.lines[ k ].lam, sigma );
+			for ( int k = 0; k < 5; ++k ) e += mercury * hg[ k ].inten * SpecGauss( lam, hg[ k ].lam, sigma );
+			lX += e * s_SpecXbar[ i ]; lY += e * s_SpecYbar[ i ]; lZ += e * s_SpecZbar[ i ];
+			float bb = 1.0f / ( lam * lam * lam * lam * lam * ( expf( SPEC_C2 / ( lam * warmthK ) ) - 1.0f ) );
+			pX += bb * s_SpecXbar[ i ]; pY += bb * s_SpecYbar[ i ]; pZ += bb * s_SpecZbar[ i ];
+		}
+		float X = 0, Y = 0, Z = 0;
+		if ( lY > 0.0f ) { float k = 1.0f / lY; X += lX * k; Y += 1.0f; Z += lZ * k; }
+		if ( pY > 0.0f && phosphor > 0.0f ) { float w = phosphor * 2.0f; float k = w / pY; X += pX * k; Y += w; Z += pZ * k; }
+		if ( Y > 0.0f ) { float iY = 1.0f / Y; X *= iY; Z *= iY; Y = 1.0f; }
+		float r, g, b; ColorConvertXYZtosRGB( r, g, b, X, Y, Z );
+		float lum = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+		const float desat = 0.15f;
+		r = ImLerp( r, lum, desat ); g = ImLerp( g, lum, desat ); b = ImLerp( b, lum, desat );
+		float mx = ImMax( r, ImMax( g, b ) ); if ( mx > 1.0f ) { r /= mx; g /= mx; b /= mx; }
+		outR = ImSaturate( r ); outG = ImSaturate( g ); outB = ImSaturate( b );
+	}
+
+	struct ImDischargeData { int gas; float warmthN; };
+	static ImU32 DischargePlaneCallback( float mercury, float phosphor, void* pUserData )
+	{
+		ImDischargeData* d = ( ImDischargeData* )pUserData;
+		float r, g, b; DischargeToSRGB( r, g, b, d->gas, mercury, phosphor, d->warmthN );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+	struct ImDischargeSlider { int gas; float mercury, phosphor; };
+	static ImU32 DischargeWarmthCallback( float warmthN, void* pUserData )
+	{
+		ImDischargeSlider* d = ( ImDischargeSlider* )pUserData;
+		float r, g, b; DischargeToSRGB( r, g, b, d->gas, d->mercury, d->phosphor, warmthN );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerDischarge( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		storage->GetIntRef( ImGui::GetID( "gas" ), 0 );
+		storage->GetFloatRef( ImGui::GetID( "hg" ), 0.0f );
+		storage->GetFloatRef( ImGui::GetID( "phos" ), 0.0f );
+		storage->GetFloatRef( ImGui::GetID( "warm" ), 0.35f );
+		int*   pGas  = storage->GetIntRef( ImGui::GetID( "gas" ), 0 );
+		float* pHg   = storage->GetFloatRef( ImGui::GetID( "hg" ), 0.0f );
+		float* pPhos = storage->GetFloatRef( ImGui::GetID( "phos" ), 0.0f );
+		float* pWarm = storage->GetFloatRef( ImGui::GetID( "warm" ), 0.35f );
+		bool changed = false;
+
+		const char* names[ GAS_COUNT ];
+		for ( int i = 0; i < GAS_COUNT; ++i ) names[ i ] = s_Gases[ i ].name;
+		changed |= ImGui::Combo( "Gas##Disc", pGas, names, GAS_COUNT );
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing; if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "warm", ImVec2( sliderW, planeSide ) );
+		const ImRect warm_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool warmActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive ) { *pHg = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f ); *pPhos = ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f ); changed = true; }
+		if ( warmActive ) { *pWarm = ImClamp( ( mp.y - warm_bb.Min.y ) / warm_bb.GetHeight(), 0.0f, 1.0f ); changed = true; }
+
+		{
+			ImDischargeData cb; cb.gas = *pGas; cb.warmthN = *pWarm;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pGas ), *pWarm );
+			DrawCachedProceduralColor2DBilinear( dl, DischargePlaneCallback, &cb, 0.0f, 1.0f, 1.0f, 0.0f, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, ImSaturate( *pHg ) ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, ImSaturate( *pPhos ) ) );
+			float dr, dg, db; DischargeToSRGB( dr, dg, db, *pGas, *pHg, *pPhos, *pWarm );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
+			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			ImDischargeSlider cb; cb.gas = *pGas; cb.mercury = *pHg; cb.phosphor = *pPhos;
+			DrawProceduralColor1DBilinearVertical( dl, DischargeWarmthCallback, &cb, 1.0f, 0.0f, warm_bb.Min, warm_bb.GetSize(), sliderRes );
+			dl->AddRect( warm_bb.Min, warm_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( *pWarm ), handleY = ImLerp( warm_bb.Min.y, warm_bb.Max.y, t ), hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; DischargeToSRGB( hr, hg, hb, *pGas, *pHg, *pPhos, *pWarm );
+			dl->AddRectFilled( ImVec2( warm_bb.Min.x - 1.0f, handleY - hh ), ImVec2( warm_bb.Max.x + 1.0f, handleY + hh ), IM_COL32( ( int )( hr * 255 ), ( int )( hg * 255 ), ( int )( hb * 255 ), 255 ), 2.0f );
+			dl->AddRect( ImVec2( warm_bb.Min.x - 1.0f, handleY - hh ), ImVec2( warm_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+		ImGui::Text( "%s   Mercury %.0f%%   Phosphor %.0f%%   White %.0fK", s_Gases[ *pGas ].name, ( *pHg ) * 100.0f, ( *pPhos ) * 100.0f, ImLerp( 2700.0f, 6500.0f, *pWarm ) );
+		float r, gg, b; DischargeToSRGB( r, gg, b, *pGas, *pHg, *pPhos, *pWarm );
+		color->x = r; color->y = gg; color->z = b;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Glacier / Sea Ice Picker
+	//////////////////////////////////////////////////////////////////////////
+
+	// Ice is blue because pure ice absorbs red far more than blue; with enough
+	// path length the transmitted/backscattered light turns deep blue, while small
+	// grains/bubbles scatter strongly and look white (snow). Kubelka-Munk with
+	// K = pure-ice absorption (Warren & Brandt 2008, "Optical constants of ice")
+	// and S = scattering (grain/bubble size). Mechanism after Bohren, "Colors of
+	// snow, frozen waterfalls, and icebergs" (J. Opt. Soc. Am. 1983). Absorption
+	// (1/m) sampled 400..700nm at 50nm.
+	#define ICE_N 7
+	static const float s_Ice_min = 400.0f, s_Ice_max = 700.0f;
+	static float s_Ice_abs[ ICE_N ] = { 0.024f, 0.018f, 0.028f, 0.045f, 0.089f, 0.200f, 0.460f };
+
+	static void IceToSRGB( float& outR, float& outG, float& outB, float grain, float pathN, float impurity )
+	{
+		EnsureSpecTables();
+		float S = 3.0f * expf( ImSaturate( grain ) * logf( 500.0f / 3.0f ) ); // small grain (left) = low S = clear blue ice
+		float path = ImLerp( 10.0f, 150.0f, ImSaturate( pathN ) );
+		float dirt = ImSaturate( impurity ) * 0.6f;
+		float X = 0.0f, Y = 0.0f, Z = 0.0f;
+		for ( int i = 0; i < SPEC_N; ++i )
+		{
+			float lam = SPEC_MIN + ( SPEC_MAX - SPEC_MIN ) * ( float )i / ( float )( SPEC_N - 1 );
+			float a = ImFunctionFromData( lam, s_Ice_min, s_Ice_max, s_Ice_abs, ICE_N ) * path + dirt;
+			float ks = a / S;
+			float R = 1.0f + ks - ImSqrt( ks * ks + 2.0f * ks );
+			X += R * s_SpecD65[ i ] * s_SpecXbar[ i ];
+			Y += R * s_SpecD65[ i ] * s_SpecYbar[ i ];
+			Z += R * s_SpecD65[ i ] * s_SpecZbar[ i ];
+		}
+		float iN = 1.0f / s_SpecD65Ynorm; X *= iN; Y *= iN; Z *= iN;
+		float r, g, b; ColorConvertXYZtosRGB( r, g, b, X, Y, Z );
+		outR = ImSaturate( r ); outG = ImSaturate( g ); outB = ImSaturate( b );
+	}
+
+	struct ImIceData { float impurity; };
+	static ImU32 IcePlaneCallback( float grain, float pathN, void* pUserData )
+	{
+		ImIceData* d = ( ImIceData* )pUserData;
+		float r, g, b; IceToSRGB( r, g, b, grain, pathN, d->impurity );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+	struct ImIceSlider { float grain, pathN; };
+	static ImU32 IceImpurityCallback( float impurity, void* pUserData )
+	{
+		ImIceSlider* d = ( ImIceSlider* )pUserData;
+		float r, g, b; IceToSRGB( r, g, b, d->grain, d->pathN, impurity );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerIce( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		storage->GetFloatRef( ImGui::GetID( "grain" ), 0.2f );
+		storage->GetFloatRef( ImGui::GetID( "path" ), 0.5f );
+		storage->GetFloatRef( ImGui::GetID( "imp" ), 0.0f );
+		float* pGrain = storage->GetFloatRef( ImGui::GetID( "grain" ), 0.2f );
+		float* pPath  = storage->GetFloatRef( ImGui::GetID( "path" ), 0.5f );
+		float* pImp   = storage->GetFloatRef( ImGui::GetID( "imp" ), 0.0f );
+		bool changed = false;
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing; if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "imp", ImVec2( sliderW, planeSide ) );
+		const ImRect imp_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool impActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive ) { *pGrain = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f ); *pPath = ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f ); changed = true; }
+		if ( impActive ) { *pImp = ImClamp( ( mp.y - imp_bb.Min.y ) / imp_bb.GetHeight(), 0.0f, 1.0f ); changed = true; }
+
+		{
+			ImIceData cb; cb.impurity = *pImp;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pImp );
+			DrawCachedProceduralColor2DBilinear( dl, IcePlaneCallback, &cb, 0.0f, 1.0f, 1.0f, 0.0f, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, ImSaturate( *pGrain ) ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, ImSaturate( *pPath ) ) );
+			float dr, dg, db; IceToSRGB( dr, dg, db, *pGrain, *pPath, *pImp );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
+			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			ImIceSlider cb; cb.grain = *pGrain; cb.pathN = *pPath;
+			DrawProceduralColor1DBilinearVertical( dl, IceImpurityCallback, &cb, 1.0f, 0.0f, imp_bb.Min, imp_bb.GetSize(), sliderRes );
+			dl->AddRect( imp_bb.Min, imp_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( *pImp ), handleY = ImLerp( imp_bb.Min.y, imp_bb.Max.y, t ), hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; IceToSRGB( hr, hg, hb, *pGrain, *pPath, *pImp );
+			dl->AddRectFilled( ImVec2( imp_bb.Min.x - 1.0f, handleY - hh ), ImVec2( imp_bb.Max.x + 1.0f, handleY + hh ), IM_COL32( ( int )( hr * 255 ), ( int )( hg * 255 ), ( int )( hb * 255 ), 255 ), 2.0f );
+			dl->AddRect( ImVec2( imp_bb.Min.x - 1.0f, handleY - hh ), ImVec2( imp_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+		ImGui::Text( "Grain/scatter %.0f%%   Path depth %.0f%%   Impurity %.0f%%", ( *pGrain ) * 100.0f, ( *pPath ) * 100.0f, ( *pImp ) * 100.0f );
+		float r, gg, b; IceToSRGB( r, gg, b, *pGrain, *pPath, *pImp );
+		color->x = r; color->y = gg; color->z = b;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Earth Pigments / Ochre Picker (Kubelka-Munk)
+	//////////////////////////////////////////////////////////////////////////
+
+	// Subtractive mixing of natural iron-oxide earth pigments via single-constant
+	// Kubelka-Munk (reusing the spectral-upsampling + KM machinery of the pigment
+	// picker). Pigment masstones after iron-oxide reflectance studies (Elias et
+	// al., "The colour of ochres explained by their composition", Mater. Sci. Eng.
+	// B 2006). Plane X = ochre A->B mix, Y = chalk-white tint, slider = charcoal.
+	static void KMColorToKS( float sr, float sg, float sb, float* KS )
+	{
+		float R[ KM_N ];
+		KMUpsampleReflectance( ImsRGBToLinear( sr ), ImsRGBToLinear( sg ), ImsRGBToLinear( sb ), R );
+		for ( int i = 0; i < KM_N; ++i ) { float r = R[ i ]; KS[ i ] = ( 1.0f - r ) * ( 1.0f - r ) / ( 2.0f * r ); }
+	}
+	static void KMMixPaletteToSRGB( float& outR, float& outG, float& outB, const ImPaint* pal, const int* idx, const float* conc, int count )
+	{
+		float total = 0.0f; for ( int k = 0; k < count; ++k ) total += conc[ k ];
+		if ( total <= 0.0f ) { outR = outG = outB = 1.0f; return; }
+		float ksMix[ KM_N ]; for ( int i = 0; i < KM_N; ++i ) ksMix[ i ] = 0.0f;
+		float KS[ KM_N ];
+		for ( int k = 0; k < count; ++k )
+		{
+			if ( conc[ k ] <= 0.0f ) continue;
+			KMColorToKS( pal[ idx[ k ] ].r, pal[ idx[ k ] ].g, pal[ idx[ k ] ].b, KS );
+			float wk = conc[ k ] / total;
+			for ( int i = 0; i < KM_N; ++i ) ksMix[ i ] += wk * KS[ i ];
+		}
+		float X = 0, Y = 0, Z = 0;
+		for ( int i = 0; i < KM_N; ++i )
+		{
+			float ks = ksMix[ i ];
+			float R = 1.0f + ks - ImSqrt( ks * ks + 2.0f * ks );
+			X += s_KM_CMFx[ i ] * R; Y += s_KM_CMFy[ i ] * R; Z += s_KM_CMFz[ i ] * R;
+		}
+		float xyz[ 3 ] = { X, Y, Z }; float lr, lg, lb;
+		Mat33RowMajorMulVec3( lr, lg, lb, ( float* )s_KM_XYZ2RGB, xyz );
+		outR = ImSaturate( ImLinearTosRGB( lr ) ); outG = ImSaturate( ImLinearTosRGB( lg ) ); outB = ImSaturate( ImLinearTosRGB( lb ) );
+	}
+
+	static const ImPaint s_Ochres[] = {
+		{ "Yellow Ochre",   0.74f, 0.52f, 0.10f },
+		{ "Raw Sienna",     0.62f, 0.40f, 0.13f },
+		{ "Red Ochre",      0.55f, 0.13f, 0.08f },
+		{ "Burnt Sienna",   0.45f, 0.20f, 0.10f },
+		{ "Raw Umber",      0.32f, 0.26f, 0.16f },
+		{ "Burnt Umber",    0.25f, 0.16f, 0.11f },
+		{ "Green Earth",    0.42f, 0.45f, 0.30f },
+		{ "Chalk White",    0.93f, 0.92f, 0.88f },
+		{ "Charcoal Black", 0.05f, 0.05f, 0.05f } };
+	#define OCHRE_COUNT ( ( int )( sizeof( s_Ochres ) / sizeof( s_Ochres[ 0 ] ) ) )
+	#define OCHRE_WHITE_IDX 7
+	#define OCHRE_BLACK_IDX 8
+
+	struct ImOchreData { int a, b; float black; };
+	static ImU32 OchrePlaneCallback( float bFrac, float whiteAmt, void* pUserData )
+	{
+		ImOchreData* d = ( ImOchreData* )pUserData;
+		float kc = ImMax( 0.0f, 1.0f - whiteAmt - d->black );
+		int   idx[ 4 ]  = { d->a, d->b, OCHRE_WHITE_IDX, OCHRE_BLACK_IDX };
+		float conc[ 4 ] = { kc * ( 1.0f - bFrac ), kc * bFrac, whiteAmt, d->black };
+		float r, g, b; KMMixPaletteToSRGB( r, g, b, s_Ochres, idx, conc, 4 );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+	struct ImOchreSlider { int a, b; float bFrac, white; };
+	static ImU32 OchreBlackCallback( float black, void* pUserData )
+	{
+		ImOchreSlider* d = ( ImOchreSlider* )pUserData;
+		float kc = ImMax( 0.0f, 1.0f - d->white - black );
+		int   idx[ 4 ]  = { d->a, d->b, OCHRE_WHITE_IDX, OCHRE_BLACK_IDX };
+		float conc[ 4 ] = { kc * ( 1.0f - d->bFrac ), kc * d->bFrac, d->white, black };
+		float r, g, b; KMMixPaletteToSRGB( r, g, b, s_Ochres, idx, conc, 4 );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerOchre( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		storage->GetIntRef( ImGui::GetID( "a" ), 0 );
+		storage->GetIntRef( ImGui::GetID( "b" ), 2 );
+		storage->GetFloatRef( ImGui::GetID( "bf" ), 0.4f );
+		storage->GetFloatRef( ImGui::GetID( "white" ), 0.0f );
+		storage->GetFloatRef( ImGui::GetID( "black" ), 0.0f );
+		int*   pA     = storage->GetIntRef( ImGui::GetID( "a" ), 0 );
+		int*   pB     = storage->GetIntRef( ImGui::GetID( "b" ), 2 );
+		float* pBFrac = storage->GetFloatRef( ImGui::GetID( "bf" ), 0.4f );
+		float* pWhite = storage->GetFloatRef( ImGui::GetID( "white" ), 0.0f );
+		float* pBlack = storage->GetFloatRef( ImGui::GetID( "black" ), 0.0f );
+		bool changed = false;
+
+		const char* names[ OCHRE_COUNT ];
+		for ( int i = 0; i < OCHRE_COUNT; ++i ) names[ i ] = s_Ochres[ i ].name;
+		changed |= ImGui::Combo( "Pigment A##Ochre", pA, names, OCHRE_COUNT );
+		changed |= ImGui::Combo( "Pigment B##Ochre", pB, names, OCHRE_COUNT );
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing; if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "black", ImVec2( sliderW, planeSide ) );
+		const ImRect black_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool blackActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive ) { *pBFrac = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f ); *pWhite = ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f ); changed = true; }
+		if ( blackActive ) { *pBlack = ImClamp( ( mp.y - black_bb.Min.y ) / black_bb.GetHeight(), 0.0f, 1.0f ); changed = true; }
+
+		{
+			ImOchreData cb; cb.a = *pA; cb.b = *pB; cb.black = *pBlack;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pA ), *pB ), *pBlack );
+			DrawCachedProceduralColor2DBilinear( dl, OchrePlaneCallback, &cb, 0.0f, 1.0f, 1.0f, 0.0f, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, ImSaturate( *pBFrac ) ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, ImSaturate( *pWhite ) ) );
+			float kc = ImMax( 0.0f, 1.0f - *pWhite - *pBlack );
+			int   idx[ 4 ]  = { *pA, *pB, OCHRE_WHITE_IDX, OCHRE_BLACK_IDX };
+			float conc[ 4 ] = { kc * ( 1.0f - *pBFrac ), kc * ( *pBFrac ), *pWhite, *pBlack };
+			float dr, dg, db; KMMixPaletteToSRGB( dr, dg, db, s_Ochres, idx, conc, 4 );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
+			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			ImOchreSlider cb; cb.a = *pA; cb.b = *pB; cb.bFrac = *pBFrac; cb.white = *pWhite;
+			DrawProceduralColor1DBilinearVertical( dl, OchreBlackCallback, &cb, 1.0f, 0.0f, black_bb.Min, black_bb.GetSize(), sliderRes );
+			dl->AddRect( black_bb.Min, black_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( *pBlack ), handleY = ImLerp( black_bb.Min.y, black_bb.Max.y, t ), hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			dl->AddRectFilled( ImVec2( black_bb.Min.x - 1.0f, handleY - hh ), ImVec2( black_bb.Max.x + 1.0f, handleY + hh ), IM_COL32( 30, 28, 26, 255 ), 2.0f );
+			dl->AddRect( ImVec2( black_bb.Min.x - 1.0f, handleY - hh ), ImVec2( black_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+		ImGui::Text( "%s + %s   Chalk %.0f%%   Charcoal %.0f%%", s_Ochres[ *pA ].name, s_Ochres[ *pB ].name, ( *pWhite ) * 100.0f, ( *pBlack ) * 100.0f );
+		float kc = ImMax( 0.0f, 1.0f - *pWhite - *pBlack );
+		int   oidx[ 4 ]  = { *pA, *pB, OCHRE_WHITE_IDX, OCHRE_BLACK_IDX };
+		float oconc[ 4 ] = { kc * ( 1.0f - *pBFrac ), kc * ( *pBFrac ), *pWhite, *pBlack };
+		float r, gg, b; KMMixPaletteToSRGB( r, gg, b, s_Ochres, oidx, oconc, 4 );
+		color->x = r; color->y = gg; color->z = b;
+		ImGui::PopID();
+		return changed;
 	}
 
 	//////////////////////////////////////////////////////////////////////////

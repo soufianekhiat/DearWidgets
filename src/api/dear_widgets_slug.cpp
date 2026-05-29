@@ -52,6 +52,16 @@
 #include "dear_widgets_slug.h"
 #include <cmath>     // cosf/sinf/tanf for COLR v1 rotate/skew origin math
 #include <cstdlib>   // std::abs for stop-distance tiebreak in gradient fallback
+#include <chrono>    // PrewarmTessellationCache profiling
+#include <cstdio>    // PrewarmTessellationCache profiling output
+#include <thread>    // PrewarmTessellationCache parallel tessellation
+#include <atomic>    // PrewarmTessellationCache work distribution
+#include <vector>    // per-glyph result slots
+
+// Toggle startup tessellation-prewarm profiling (per-glyph + sub-phase timings to stderr).
+#ifndef DW_PROFILE_PREWARM
+#define DW_PROFILE_PREWARM 1
+#endif
 
 #ifndef IM_SUPPORT_LIGATURE
 #define IM_SUPPORT_LIGATURE 1
@@ -5725,6 +5735,9 @@ namespace ImWidgets {
 	// Tessellate a single glyph at kTessRefSize pixel scale (sc=atlas->emScale, sz=kTessRefSize, origin=(0,0)).
 	// flatTol: flatness tolerance in pixels (same scale as kTessRefSize -- passed directly to CDT/RecursiveCutQ).
 	// Outputs positions as (v.x, -v.y) -- y-flip already baked in.
+	// NOTE: must stay thread-safe -- PrewarmTessellationCache calls this in parallel
+	// across glyphs. It only READS the atlas (stbtt_GetGlyphShape is reentrant) and
+	// writes its own `out`; no shared mutable state.
 	static void TessGlyphFontUnits(SlugFontCache* atlas, int glyphID, float flatTol, DwTessGlyphData& out)
 	{
 		out.positions.resize(0);
@@ -5744,13 +5757,32 @@ namespace ImWidgets {
 				if (fabsf(qcontours[validQI[j]].area) > fabsf(qcontours[validQI[i]].area))
 					ImSwap(validQI[i], validQI[j]);
 
+		// Precompute each contour's bounding box (over the quadratic control points).
+		// PointInQContour is expensive (it re-flattens the whole contour every call),
+		// so a cheap bbox-contains-point test rejects almost all candidate outers up
+		// front -- crucial for fonts whose glyphs are many disjoint contours (dots).
+		ImVector<ImRect> qbb;
+		qbb.resize(qcontours.Size);
+		for (int vi = 0; vi < validQI.Size; vi++) {
+			int ci = validQI[vi];
+			const QContour& c = qcontours[ci];
+			ImRect bb(FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX);
+			for (int k = 0; k < c.curveCount; k++) {
+				bb.Add(c.curves[k].p0); bb.Add(c.curves[k].p1); bb.Add(c.curves[k].p2);
+			}
+			qbb[ci] = bb;
+		}
+
 		ImVector<int> parentQ;
 		parentQ.resize(qcontours.Size, -1);
 		for (int vi = 1; vi < validQI.Size; vi++) {
 			int ci = validQI[vi];
+			ImVec2 testP = qcontours[ci].curves[0].p0;
 			for (int oi = 0; oi < vi; oi++) {
 				int outerCI = validQI[oi];
-				if (parentQ[outerCI] == -1 && PointInQContour(qcontours[outerCI], qcontours[ci].curves[0].p0))
+				if (parentQ[outerCI] != -1) continue;
+				if (!qbb[outerCI].Contains(testP)) continue; // cheap bbox reject before the costly point-in-contour test
+				if (PointInQContour(qcontours[outerCI], testP))
 					{ parentQ[ci] = outerCI; break; }
 			}
 		}
@@ -5769,6 +5801,10 @@ namespace ImWidgets {
 				if (parentQ[ci] == outerCI) holes2.push_back(qcontours[ci]);
 			}
 			if (gs_useCDT) {
+				// NOTE: a batched single-pass CDT over all contours was tried and was
+				// SLOWER (CDT is super-linear in vertex count, so one huge triangulation
+				// costs more than many small disjoint ones). The cost is intrinsic to the
+				// glyph's contour/point volume, not per-call overhead.
 				CDTTriangulate(qcontours[outerCI], holes2.Data, holes2.Size, tmpShape, dummyUV, flatTol);
 			} else {
 				ImVector<QContour> outers;
@@ -5977,8 +6013,66 @@ namespace ImWidgets {
 		ImPool<DwTessGlyphData>& pool = state->tessGlyphPool;
 		float flatTol = (tess_tol > 0.0f) ? tess_tol : 0.5f;
 		int numGlyphs = atlas->stbFont.numGlyphs;
-		for (int glyphID = 0; glyphID < numGlyphs; glyphID++)
-			SlugTessGetOrBuild(atlas, pool, glyphID, flatTol);
+		if (numGlyphs <= 0) return;
+
+#if DW_PROFILE_PREWARM
+		auto profT0 = std::chrono::high_resolution_clock::now();
+#endif
+		// Phase 1 (parallel): tessellate each glyph into its own result slot. Safe to
+		// run across threads -- TessGlyphFontUnits only READS the atlas and writes a
+		// disjoint results[g]; no shared mutable state is touched here.
+		std::vector<DwTessGlyphData> results( (size_t)numGlyphs );
+		unsigned hw = std::thread::hardware_concurrency();
+		int nThreads = (int)( hw == 0u ? 4u : hw );
+		if (nThreads > numGlyphs) nThreads = numGlyphs;
+		if (nThreads < 1) nThreads = 1;
+
+		std::atomic<int> nextGlyph(0);
+		auto worker = [&]() {
+			for (;;) {
+				int g = nextGlyph.fetch_add(1, std::memory_order_relaxed);
+				if (g >= numGlyphs) break;
+				TessGlyphFontUnits(atlas, g, flatTol, results[(size_t)g]);
+			}
+		};
+		if (nThreads == 1) {
+			worker();
+		} else {
+			std::vector<std::thread> workers;
+			workers.reserve((size_t)nThreads);
+			for (int t = 0; t < nThreads; t++) workers.emplace_back(worker);
+			for (size_t t = 0; t < workers.size(); t++) workers[t].join();
+		}
+
+		// Phase 2 (single-threaded): publish results into the shared glyph pool + index
+		// map. Cheap (just bookkeeping + ImVector ownership swap, no recomputation).
+		if (numGlyphs > atlas->tessIdxByGlyphID.Size)
+			atlas->tessIdxByGlyphID.resize(numGlyphs, -1);
+#if DW_PROFILE_PREWARM
+		long long totalVerts = 0, totalTris = 0;
+#endif
+		for (int g = 0; g < numGlyphs; g++) {
+			if (atlas->tessIdxByGlyphID[g] != -1) continue; // already built (e.g. lazily on a draw)
+#if DW_PROFILE_PREWARM
+			totalVerts += results[(size_t)g].positions.Size;
+			totalTris  += results[(size_t)g].triangles.Size / 3;
+#endif
+			ImGuiID key = DwTessGlyphKey(atlas, g);
+			DwTessGlyphData* cached = pool.GetOrAddByKey(key);
+			cached->positions.swap(results[(size_t)g].positions);
+			cached->triangles.swap(results[(size_t)g].triangles);
+			cached->bb = results[(size_t)g].bb;
+			atlas->tessIdxByGlyphID[g] = pool.GetIndex(cached);
+		}
+
+#if DW_PROFILE_PREWARM
+		double totalMs = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - profT0).count();
+		char buf[256];
+		snprintf(buf, sizeof(buf),
+			"[prewarm] glyphs=%d  threads=%d  total=%.1f ms  (%.2f ms/glyph)  geom: %lld verts %lld tris\n",
+			numGlyphs, nThreads, totalMs, numGlyphs ? totalMs / numGlyphs : 0.0, totalVerts, totalTris);
+		fputs(buf, stderr); fflush(stderr);
+#endif
 	}
 
 	// (old per-glyph code removed -- replaced by QBez pipeline in TesselateText above)
