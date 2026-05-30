@@ -3546,9 +3546,9 @@ namespace ImWidgets{
 	// Schematic ephemerides (draw-only, no state/interaction).
 	IMGUI_API void DrawMoonEphemeris( ImDrawList* pDrawList, ImVec2 center, float radius,
 	                                  int year, int month, int day, float lonDeg, float latDeg,
-	                                  ImU32 litCol = IM_COL32( 235, 232, 220, 255 ),
-	                                  ImU32 darkCol = IM_COL32( 28, 30, 38, 255 ),
-	                                  ImU32 outlineCol = IM_COL32( 180, 180, 200, 255 ) );
+	                                  ImU32 litCol = IM_COL32( 190, 185, 172, 255 ),  // dimmed lunar albedo
+	                                  ImU32 darkCol = IM_COL32( 28, 36, 56, 255 ),    // earthshine tint
+	                                  ImU32 outlineCol = IM_COL32( 170, 175, 200, 255 ) );
 	IMGUI_API void DrawEarthSunEphemeris( ImDrawList* pDrawList, ImVec2 areaMin, ImVec2 areaSize,
 	                                      int year, int month, int day, int hour, int minute,
 	                                      float obsLon = 0.0f, float obsLat = 0.0f,
@@ -3753,6 +3753,10 @@ namespace ImWidgets{
 	IMGUI_API bool ColorPickerDischarge( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
 	IMGUI_API bool ColorPickerIce( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
 	IMGUI_API bool ColorPickerOchre( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	// Sky: Bruneton single-scatter atmosphere (Rayleigh + Mie + Ozone), baked
+	// transmittance LUT. Plane = elevation × time-of-day; sliders = view-az
+	// (sun-rel), day-of-year, observer latitude.
+	IMGUI_API bool ColorPickerSky( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
 
 	// Transform Gizmo
 	IMGUI_API bool TransformGizmo( char const* label, ImTransformData* transforms, ImVec2* sizes, int count, int* selectedIndex, ImTransformGizmoCallbacks const* callbacks = nullptr, ImTransformGizmoFlags flags = ImTransformGizmoFlags_None, ImVec2 canvasSize = ImVec2( 0, 0 ) );

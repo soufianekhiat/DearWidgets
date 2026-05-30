@@ -8888,6 +8888,23 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Sky (Bruneton single-scatter)" ) )
+					{
+						static ImVec4 skyColor( 0.4f, 0.6f, 0.9f, 1.0f );
+						ImGui::TextWrapped( "Physically-based sky colour: single-scatter Rayleigh + Mie + ozone (Chappuis bands), "
+							"baked transmittance LUT. Plane U = view elevation (horizon -> zenith), V = time of day (0 -> 24h). "
+							"Vertical slider = view azimuth relative to sun (0 = toward, pi = away). "
+							"Component sliders = day-of-year + observer latitude. Look for the cyan/green ozone twilight band "
+							"above the warm sunset glow (most visible near view-az = pi)." );
+						ColorPickerSky( "##SkyPicker", &skyColor );
+						ImGui::ColorEdit4( "Color##Sky", &skyColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+					}
+					DW_SsRecord( "Sky_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
 					if ( ImGui::CollapsingHeader( "Primaries Wheels (Lift/Gamma/Gain/Offset)" ) )
 					{
 						static ImVec4 primColors[4] = {

@@ -5754,36 +5754,224 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		int dir = waxing ? +1 : -1;
 		if ( southern ) dir = -dir;
 
-		double a_signed = (double)dir * (double)radius * c;
+		const double PI_ = 3.14159265358979323846;
+		float flip = southern ? -1.0f : 1.0f;
 
-		// Lit disc (full bright).
+		// 1. Lit base disc.
 		pDrawList->AddCircleFilled( center, radius, litCol, 96 );
 
-		// Unlit lune: outer semicircle on the dark side + terminator ellipse arc.
-		const int N = 64;
-		ImVector<ImVec2> pts;
-		pts.reserve( 2 * ( N + 1 ) );
-		const double PI_ = 3.14159265358979323846;
-		double sweepDir = -(double)dir; // dark side opposite of lit side
-		for ( int i = 0; i <= N; i++ )
-		{
-			double t = (double)i / (double)N;
-			double theta = -PI_ * 0.5 + sweepDir * t * PI_;
-			pts.push_back( ImVec2( center.x + (float)( cos( theta ) * (double)radius ),
-			                       center.y + (float)( sin( theta ) * (double)radius ) ) );
-		}
-		for ( int i = 0; i <= N; i++ )
-		{
-			double t = (double)i / (double)N;
-			double phi = t * PI_;
-			double x = a_signed * sin( phi );
-			double y = (double)radius * cos( phi );
-			pts.push_back( ImVec2( center.x + (float)x, center.y + (float)y ) );
-		}
-		pDrawList->AddConvexPolyFilled( pts.Data, pts.Size, darkCol );
+		// 2. Real-shape maria projected from selenographic (lat, lon). Each mare
+		// is an N-vertex procedurally-irregular polygon rendered as a stack of
+		// shrunk copies with low per-layer alpha — accumulates to a soft, dark
+		// patch matching the actual nearside maria layout. Drawn BEFORE the
+		// unlit lune so the dark-side overlay naturally clips maria there.
+		struct DwMareDef { float lat; float lon; float sLat; float sLon; int alpha; };
+		static const DwMareDef kMaria[] = {
+			{  32.0f, -16.0f, 18.0f, 22.0f, 320 }, // Imbrium
+			{  28.0f,  18.0f, 11.0f, 10.0f, 290 }, // Serenitatis
+			{   8.0f,  31.0f, 10.0f, 14.0f, 290 }, // Tranquillitatis
+			{  17.0f,  58.0f,  9.0f,  9.0f, 270 }, // Crisium
+			{  -8.0f,  51.0f, 10.0f,  6.0f, 260 }, // Fecunditatis
+			{ -15.0f,  35.0f,  6.0f,  5.0f, 240 }, // Nectaris
+			{ -19.0f, -17.0f,  9.0f, 10.0f, 270 }, // Nubium
+			{ -24.0f, -38.0f,  6.0f,  5.0f, 240 }, // Humorum
+			{  20.0f, -55.0f, 24.0f, 18.0f, 290 }, // Oceanus Procellarum (large)
+			{  13.0f,   4.0f,  4.0f,  5.0f, 200 }, // Vaporum
+			{  55.0f, -20.0f,  5.0f, 16.0f, 230 }, // Frigoris (west arc)
+			{  57.0f,  15.0f,  4.0f, 18.0f, 230 }, // Frigoris (east arc)
+		};
 
-		// Outline.
-		pDrawList->AddCircle( center, radius, outlineCol, 96, 1.5f );
+		// Hash-based jitter so each (mare, vertex) gets a stable pseudo-random
+		// offset in [-1, 1] without keeping a baked vertex table.
+		auto mareJitter = []( int mi, int vi ) -> float
+		{
+			ImU32 h = ( (ImU32)mi * 73856093u ) ^ ( (ImU32)vi * 19349663u );
+			h *= 2654435761u;
+			h ^= ( h >> 16 );
+			return ( (float)( h & 0xFFFFu ) / 65535.0f ) * 2.0f - 1.0f;
+		};
+
+		// Selenographic (lat, lon) → disc point, snapping back-hemisphere vertices
+		// to the limb so the polygon never inverts past the rim.
+		auto projLL = [ & ]( float lat_r, float lon_r ) -> ImVec2
+		{
+			float cosc = cosf( lat_r ) * cosf( lon_r );
+			float xd = radius * cosf( lat_r ) * sinf( lon_r ) * flip;
+			float yd = radius * sinf( lat_r ) * flip;
+			if ( cosc < 0.0f )
+			{
+				float mag = sqrtf( xd * xd + yd * yd );
+				if ( mag > 1e-6f )
+				{
+					xd = xd / mag * radius;
+					yd = yd / mag * radius;
+				}
+			}
+			return ImVec2( center.x + xd, center.y - yd );
+		};
+
+		const int MARE_VERTS = 18;
+		const float MARE_JITTER = 0.20f;
+		const int MARE_LAYERS = 10;
+		const ImU32 mareRGB = IM_COL32( 22, 20, 28, 0 ); // alpha set per-layer below
+		ImVec2 marePts[ MARE_VERTS ];
+		ImVec2 mareScaled[ MARE_VERTS ];
+		for ( int mi = 0; mi < IM_ARRAYSIZE( kMaria ); ++mi )
+		{
+			const DwMareDef& m = kMaria[ mi ];
+			ImVec2 centroid( 0.0f, 0.0f );
+			for ( int v = 0; v < MARE_VERTS; ++v )
+			{
+				float a = 2.0f * (float)PI_ * (float)v / (float)MARE_VERTS;
+				float jr = 1.0f + MARE_JITTER * mareJitter( mi, v );
+				float dlat = m.sLat * jr * sinf( a );
+				float dlon = m.sLon * jr * cosf( a );
+				float lat_r = ( m.lat + dlat ) * (float)PI_ / 180.0f;
+				float lon_r = ( m.lon + dlon ) * (float)PI_ / 180.0f;
+				marePts[ v ] = projLL( lat_r, lon_r );
+				centroid.x += marePts[ v ].x;
+				centroid.y += marePts[ v ].y;
+			}
+			centroid.x /= (float)MARE_VERTS;
+			centroid.y /= (float)MARE_VERTS;
+			int alphaPer = ImMax( 1, m.alpha / MARE_LAYERS );
+			ImU32 layerCol = ( mareRGB & 0x00FFFFFFu ) | ( (ImU32)alphaPer << 24 );
+			for ( int L = 0; L < MARE_LAYERS; ++L )
+			{
+				float t = (float)L / (float)( MARE_LAYERS - 1 );
+				float scale = 1.0f - 0.55f * t;
+				for ( int v = 0; v < MARE_VERTS; ++v )
+				{
+					mareScaled[ v ].x = centroid.x + ( marePts[ v ].x - centroid.x ) * scale;
+					mareScaled[ v ].y = centroid.y + ( marePts[ v ].y - centroid.y ) * scale;
+				}
+				pDrawList->AddConvexPolyFilled( mareScaled, MARE_VERTS, layerCol );
+			}
+		}
+
+		// 3. Smooth penumbra: 24 nested lunes with eased colour ramp from a
+		// dimmed-lit ridge at the outer edge to earthshine at the real terminator.
+		// Each lune is convex (outer dark-side semicircle + inner ellipse arc with
+		// signed semi-minor a = dir·R·c_layer). Increasing c expands the lune, so
+		// successively-smaller (c) lunes drawn on top form a smooth gradient ring.
+		const int N = 64;
+		double sweepDir = -(double)dir;
+		auto buildLune = [ & ]( double c_val, ImU32 col )
+		{
+			double a = (double)dir * (double)radius * c_val;
+			ImVector<ImVec2> p;
+			p.reserve( 2 * ( N + 1 ) );
+			for ( int i = 0; i <= N; i++ )
+			{
+				double t = (double)i / (double)N;
+				double theta = -PI_ * 0.5 + sweepDir * t * PI_;
+				p.push_back( ImVec2( center.x + (float)( cos( theta ) * (double)radius ),
+				                     center.y + (float)( sin( theta ) * (double)radius ) ) );
+			}
+			for ( int i = 0; i <= N; i++ )
+			{
+				double t = (double)i / (double)N;
+				double phi = t * PI_;
+				double x = a * sin( phi );
+				double y = (double)radius * cos( phi );
+				p.push_back( ImVec2( center.x + (float)x, center.y + (float)y ) );
+			}
+			pDrawList->AddConvexPolyFilled( p.Data, p.Size, col );
+		};
+
+		const int litR  = (int)( ( litCol  >> IM_COL32_R_SHIFT ) & 0xFFu );
+		const int litG  = (int)( ( litCol  >> IM_COL32_G_SHIFT ) & 0xFFu );
+		const int litB  = (int)( ( litCol  >> IM_COL32_B_SHIFT ) & 0xFFu );
+		const int eshR  = (int)( ( darkCol >> IM_COL32_R_SHIFT ) & 0xFFu );
+		const int eshG  = (int)( ( darkCol >> IM_COL32_G_SHIFT ) & 0xFFu );
+		const int eshB  = (int)( ( darkCol >> IM_COL32_B_SHIFT ) & 0xFFu );
+		// Outer "dim lit" target: 78% of lit (slight cool dim into the penumbra).
+		const int lDimR = ( litR * 78 ) / 100;
+		const int lDimG = ( litG * 78 ) / 100;
+		const int lDimB = ( litB * 78 ) / 100;
+		const int PEN_N = 24;
+		const double SPREAD = 0.06;
+		for ( int k = PEN_N; k >= 0; --k )
+		{
+			double c_val = c + ( (double)k / (double)PEN_N ) * SPREAD;
+			float t = (float)k / (float)PEN_N;
+			float et = powf( t, 0.55f );
+			int rr = eshR + (int)( ( lDimR - eshR ) * et );
+			int gg = eshG + (int)( ( lDimG - eshG ) * et );
+			int bb = eshB + (int)( ( lDimB - eshB ) * et );
+			ImU32 col = IM_COL32( rr, gg, bb, 255 );
+			buildLune( c_val, col );
+		}
+
+		// 4. Selenographic graticule (orthographic, observer at sub-Earth (0, 0)).
+		// Drawn after penumbra so the grid reads on both lit and dark sides.
+		const ImU32 gridCol = IM_COL32( 210, 220, 245, 65 );
+		const ImU32 eqCol   = IM_COL32( 255, 230, 180, 110 );
+		auto strokeStrip = [ & ]( ImVector<ImVec2>& s, ImU32 col, float w )
+		{
+			if ( s.Size >= 2 ) pDrawList->AddPolyline( s.Data, s.Size, col, ImDrawFlags_None, w );
+			s.clear();
+		};
+		static const int kParallels[] = { -60, -30, 0, 30, 60 };
+		for ( int pi_ = 0; pi_ < IM_ARRAYSIZE( kParallels ); ++pi_ )
+		{
+			float phi_p = (float)kParallels[ pi_ ] * (float)PI_ / 180.0f;
+			float sinP = sinf( phi_p ), cosP = cosf( phi_p );
+			ImU32 col = ( kParallels[ pi_ ] == 0 ) ? eqCol : gridCol;
+			float w = ( kParallels[ pi_ ] == 0 ) ? 1.4f : 1.0f;
+			ImVector<ImVec2> strip;
+			int steps = 128;
+			for ( int s = 0; s <= steps; ++s )
+			{
+				float lon_p = -(float)PI_ + 2.0f * (float)PI_ * (float)s / (float)steps;
+				float cosc = cosP * cosf( lon_p );
+				if ( cosc >= 0.0f )
+				{
+					float xd = radius * cosP * sinf( lon_p ) * flip;
+					float yd = radius * sinP * flip;
+					strip.push_back( ImVec2( center.x + xd, center.y - yd ) );
+				}
+				else
+				{
+					strokeStrip( strip, col, w );
+				}
+			}
+			strokeStrip( strip, col, w );
+		}
+		static const int kMeridians[] = { -180, -150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150 };
+		for ( int mi = 0; mi < IM_ARRAYSIZE( kMeridians ); ++mi )
+		{
+			float lon_m = (float)kMeridians[ mi ] * (float)PI_ / 180.0f;
+			float cosL = cosf( lon_m ), sinL = sinf( lon_m );
+			ImU32 col = ( kMeridians[ mi ] == 0 ) ? eqCol : gridCol;
+			float w = ( kMeridians[ mi ] == 0 ) ? 1.4f : 1.0f;
+			ImVector<ImVec2> strip;
+			int steps = 96;
+			for ( int s = 0; s <= steps; ++s )
+			{
+				float phi_p = -(float)PI_ * 0.5f + (float)PI_ * (float)s / (float)steps;
+				float sinP = sinf( phi_p ), cosP = cosf( phi_p );
+				float cosc = cosP * cosL;
+				if ( cosc >= 0.0f )
+				{
+					float xd = radius * cosP * sinL * flip;
+					float yd = radius * sinP * flip;
+					strip.push_back( ImVec2( center.x + xd, center.y - yd ) );
+				}
+				else
+				{
+					strokeStrip( strip, col, w );
+				}
+			}
+			strokeStrip( strip, col, w );
+		}
+
+		// 5. North-pole marker.
+		float pole_y = center.y - radius * flip;
+		pDrawList->AddCircleFilled( ImVec2( center.x, pole_y ), 3.0f, IM_COL32( 220, 80, 80, 255 ), 12 );
+
+		// 6. Outline.
+		pDrawList->AddCircle( center, radius, outlineCol, 96, 1.8f );
 	}
 
 	// Schematic Sun/Earth system. Left half: heliocentric (Sun + Earth orbit + Earth's
@@ -5912,11 +6100,15 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		double sun_dir_y = ( slen2 > 1e-3 ) ? ( sy_ / slen2 ) : 0.0;
 		double perp_x = -sun_dir_y, perp_y = sun_dir_x;
 
-		// Night region: outer arc on the far side of disc + terminator ellipse arc.
-		// Terminator semi-minor along sun direction = R * sin(alt) (signed):
-		//   alt > 0 (day): ellipse bulges toward sun → small night lune on far side.
-		//   alt < 0 (night): ellipse bulges away → large night region.
-		double a_ell = (double)obsR * sin_alt;
+		// Build the night / twilight regions as nested lunes carved out of the day disc.
+		// The visible terminator (90 deg from sub-solar) projects to a half-ellipse on
+		// the disc that bulges AWAY from the sub-solar projection (depth sin(alt) * R
+		// in the anti-sun direction). So a_ell uses a NEGATIVE sign on sin_alt — using
+		// +sin_alt bulges the wrong way and inverts day/night near zenith.
+		// Civil twilight uses a slightly deeper threshold (alt = -6 deg) by substituting
+		// sin(alt + 6 deg) instead, giving a strictly smaller polygon than the alt=0
+		// terminator — so the twilight ring is what's left between them.
+		auto buildLune = [ & ]( double a_ell, ImU32 col )
 		{
 			ImVector<ImVec2> npts;
 			int nseg = 48;
@@ -5937,7 +6129,86 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				npts.push_back( ImVec2( obsC.x + (float)dx, obsC.y + (float)dy ) );
 			}
 			if ( npts.Size >= 3 )
-				pDrawList->AddConvexPolyFilled( npts.Data, npts.Size, nightCol );
+				pDrawList->AddConvexPolyFilled( npts.Data, npts.Size, col );
+		};
+		double a_ell_twi = -(double)obsR * ImClamp( sin_alt, -1.0, 1.0 );
+		double sin_alt_n  = ImClamp( sin( alt + 6.0 * PI_ / 180.0 ), -1.0, 1.0 );
+		double a_ell_night = -(double)obsR * sin_alt_n;
+		buildLune( a_ell_twi,   IM_COL32( 200, 110,  60, 255 ) ); // civil twilight
+		buildLune( a_ell_night, nightCol );
+
+		// Lat/lon graticule (faint) overlaid AFTER day/night so it reads on both
+		// hemispheres. Parallels at +-60, +-30 and equator; meridians every 30 deg.
+		// Standard orthographic projection centred on the observer.
+		{
+			double obsLat_rad = (double)obsLat * PI_ / 180.0;
+			double obsLon_rad = (double)obsLon * PI_ / 180.0;
+			double sinL0 = sin( obsLat_rad ), cosL0 = cos( obsLat_rad );
+			const ImU32 gridCol = IM_COL32( 220, 230, 250,  60 );
+			const ImU32 eqCol   = IM_COL32( 255, 230, 180, 110 );
+
+			auto strokeStrip = [ & ]( ImVector<ImVec2>& s, ImU32 col, float w )
+			{
+				if ( s.Size >= 2 ) pDrawList->AddPolyline( s.Data, s.Size, col, ImDrawFlags_None, w );
+				s.clear();
+			};
+
+			static const int kParallels[] = { -60, -30, 0, 30, 60 };
+			for ( int pi_ = 0; pi_ < IM_ARRAYSIZE( kParallels ); pi_++ )
+			{
+				double phi_p = (double)kParallels[ pi_ ] * PI_ / 180.0;
+				double sinP = sin( phi_p ), cosP = cos( phi_p );
+				ImVector<ImVec2> strip;
+				int steps = 128;
+				ImU32 col = ( kParallels[ pi_ ] == 0 ) ? eqCol : gridCol;
+				float w   = ( kParallels[ pi_ ] == 0 ) ? 1.4f  : 1.0f;
+				for ( int s = 0; s <= steps; s++ )
+				{
+					double lon_p = -PI_ + 2.0 * PI_ * (double)s / (double)steps;
+					double dLam = lon_p - obsLon_rad;
+					double cosc = sinL0 * sinP + cosL0 * cosP * cos( dLam );
+					if ( cosc >= 0.0 )
+					{
+						double xd =  (double)obsR * cosP * sin( dLam );
+						double yd =  (double)obsR * ( cosL0 * sinP - sinL0 * cosP * cos( dLam ) );
+						strip.push_back( ImVec2( obsC.x + (float)xd, obsC.y - (float)yd ) );
+					}
+					else
+					{
+						strokeStrip( strip, col, w );
+					}
+				}
+				strokeStrip( strip, col, w );
+			}
+
+			static const int kMeridians[] = { -180, -150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150 };
+			for ( int mi = 0; mi < IM_ARRAYSIZE( kMeridians ); mi++ )
+			{
+				double lon_m = (double)kMeridians[ mi ] * PI_ / 180.0;
+				double dLam = lon_m - obsLon_rad;
+				double cosDL = cos( dLam ), sinDL = sin( dLam );
+				ImVector<ImVec2> strip;
+				int steps = 96;
+				ImU32 col = ( kMeridians[ mi ] == 0 ) ? eqCol : gridCol;
+				float w   = ( kMeridians[ mi ] == 0 ) ? 1.4f  : 1.0f;
+				for ( int s = 0; s <= steps; s++ )
+				{
+					double phi_p = -PI_ * 0.5 + PI_ * (double)s / (double)steps;
+					double sinP = sin( phi_p ), cosP = cos( phi_p );
+					double cosc = sinL0 * sinP + cosL0 * cosP * cosDL;
+					if ( cosc >= 0.0 )
+					{
+						double xd =  (double)obsR * cosP * sinDL;
+						double yd =  (double)obsR * ( cosL0 * sinP - sinL0 * cosP * cosDL );
+						strip.push_back( ImVec2( obsC.x + (float)xd, obsC.y - (float)yd ) );
+					}
+					else
+					{
+						strokeStrip( strip, col, w );
+					}
+				}
+				strokeStrip( strip, col, w );
+			}
 		}
 
 		// Outline + observer.
@@ -15674,6 +15945,612 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float oconc[ 4 ] = { kc * ( 1.0f - *pBFrac ), kc * ( *pBFrac ), *pWhite, *pBlack };
 		float r, gg, b; KMMixPaletteToSRGB( r, gg, b, s_Ochres, oidx, oconc, 4 );
 		color->x = r; color->y = gg; color->z = b;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// ColorPickerSky — Bruneton single-scatter atmosphere (Rayleigh + Mie + Ozone)
+	//
+	// Forward model only. Inputs: view elevation (plane U), time of day
+	// (plane V), view azimuth relative to sun (vertical slider), day of year
+	// + observer latitude (component sliders). The transmittance LUT is built
+	// lazily on first use. Per-plane-pixel cost is one single-scatter integral
+	// (14 steps) with three texture lookups each — fast enough for live drag.
+	//////////////////////////////////////////////////////////////////////////
+
+	namespace DwSky
+	{
+		constexpr float R_E = 6360000.0f;
+		constexpr float R_A = 6420000.0f;
+		constexpr float H_R = 8000.0f;
+		constexpr float H_M = 1200.0f;
+		constexpr float G_MIE = 0.76f;
+		constexpr float OZONE_PEAK = 25000.0f;
+		constexpr float OZONE_HW = 15000.0f;
+		constexpr int TLUT_H  = 32;
+		constexpr int TLUT_MU = 64;
+		constexpr int MSLUT_H = 16;
+		constexpr int MSLUT_MU = 32;
+		constexpr int MSLUT_DIRS = 12;
+	}
+
+	// Scattering / absorption coefficients in m^-1, RGB centres 680/550/440 nm.
+	static const float s_SkyBetaR[ 3 ]  = { 5.802e-6f, 13.558e-6f, 33.1e-6f };
+	static const float s_SkyBetaM[ 3 ]  = { 3.996e-6f,  3.996e-6f,  3.996e-6f };
+	static const float s_SkyBetaO3[ 3 ] = { 0.650e-6f,  1.881e-6f,  0.085e-6f };
+
+	static float s_SkyTransLUT[ DwSky::TLUT_H ][ DwSky::TLUT_MU ][ 3 ];
+	static bool  s_SkyTransLUTBuilt = false;
+
+	// Hillaire 2020 isotropic multi-scatter ambient LUT: keyed by (altitude, sun
+	// zenith). Built lazily after the T LUT. Captures orders 2..∞ via a single
+	// 2nd-order computation + geometric-series correction.
+	static float s_SkyMSLUT[ DwSky::MSLUT_H ][ DwSky::MSLUT_MU ][ 3 ];
+	static bool  s_SkyMSLUTBuilt = false;
+
+	static float DwSkyAtmTopDist( float r, float mu )
+	{
+		float disc = r * r * ( mu * mu - 1.0f ) + DwSky::R_A * DwSky::R_A;
+		if ( disc < 0 ) return 0.0f;
+		return -r * mu + sqrtf( disc );
+	}
+
+	static float DwSkyEarthDist( float r, float mu )
+	{
+		if ( mu >= 0 ) return 0.0f;
+		float disc = r * r * ( mu * mu - 1.0f ) + DwSky::R_E * DwSky::R_E;
+		if ( disc < 0 ) return 0.0f;
+		return -r * mu - sqrtf( disc );
+	}
+
+	static float DwSkyHAt( float r, float mu, float d )
+	{
+		float r2 = sqrtf( r * r + d * d + 2.0f * r * d * mu );
+		return ImMax( 0.0f, r2 - DwSky::R_E );
+	}
+
+	static float DwSkyMuAt( float r, float mu, float d )
+	{
+		float r2 = sqrtf( r * r + d * d + 2.0f * r * d * mu );
+		if ( r2 < 1.0f ) return mu;
+		return ( r * mu + d ) / r2;
+	}
+
+	static void BuildSkyTransmittanceLUT()
+	{
+		using namespace DwSky;
+		const int N = 32;
+		for ( int i = 0; i < TLUT_H; ++i )
+		{
+			float h = (float)i / (float)( TLUT_H - 1 ) * ( R_A - R_E );
+			float r = R_E + h;
+			for ( int j = 0; j < TLUT_MU; ++j )
+			{
+				float mu = -1.0f + 2.0f * (float)j / (float)( TLUT_MU - 1 );
+				float d_earth = DwSkyEarthDist( r, mu );
+				float d_top   = DwSkyAtmTopDist( r, mu );
+				if ( d_earth > 0.0f )
+				{
+					s_SkyTransLUT[ i ][ j ][ 0 ] = 0.0f;
+					s_SkyTransLUT[ i ][ j ][ 1 ] = 0.0f;
+					s_SkyTransLUT[ i ][ j ][ 2 ] = 0.0f;
+					continue;
+				}
+				if ( d_top <= 0.0f )
+				{
+					s_SkyTransLUT[ i ][ j ][ 0 ] = 1.0f;
+					s_SkyTransLUT[ i ][ j ][ 1 ] = 1.0f;
+					s_SkyTransLUT[ i ][ j ][ 2 ] = 1.0f;
+					continue;
+				}
+				float step = d_top / (float)N;
+				float od[ 3 ] = { 0.0f, 0.0f, 0.0f };
+				for ( int k = 0; k < N; ++k )
+				{
+					float d = ( (float)k + 0.5f ) * step;
+					float hh = DwSkyHAt( r, mu, d );
+					float rho_r = expf( -hh / H_R );
+					float rho_m = expf( -hh / H_M );
+					float rho_o = ImMax( 0.0f, 1.0f - fabsf( hh - OZONE_PEAK ) / OZONE_HW );
+					od[ 0 ] += ( s_SkyBetaR[ 0 ] * rho_r + s_SkyBetaM[ 0 ] * rho_m + s_SkyBetaO3[ 0 ] * rho_o ) * step;
+					od[ 1 ] += ( s_SkyBetaR[ 1 ] * rho_r + s_SkyBetaM[ 1 ] * rho_m + s_SkyBetaO3[ 1 ] * rho_o ) * step;
+					od[ 2 ] += ( s_SkyBetaR[ 2 ] * rho_r + s_SkyBetaM[ 2 ] * rho_m + s_SkyBetaO3[ 2 ] * rho_o ) * step;
+				}
+				s_SkyTransLUT[ i ][ j ][ 0 ] = expf( -od[ 0 ] );
+				s_SkyTransLUT[ i ][ j ][ 1 ] = expf( -od[ 1 ] );
+				s_SkyTransLUT[ i ][ j ][ 2 ] = expf( -od[ 2 ] );
+			}
+		}
+		s_SkyTransLUTBuilt = true;
+	}
+
+	static void DwSkyTLookup( float h, float mu, float out[ 3 ] )
+	{
+		using namespace DwSky;
+		float h_n  = ImClamp( h / ( R_A - R_E ), 0.0f, 1.0f );
+		float mu_n = ImClamp( ( mu + 1.0f ) * 0.5f, 0.0f, 1.0f );
+		float fi = h_n  * (float)( TLUT_H  - 1 );
+		float fj = mu_n * (float)( TLUT_MU - 1 );
+		int i0 = (int)fi; int j0 = (int)fj;
+		int i1 = ImMin( i0 + 1, TLUT_H  - 1 );
+		int j1 = ImMin( j0 + 1, TLUT_MU - 1 );
+		float si = fi - (float)i0; float sj = fj - (float)j0;
+		for ( int c = 0; c < 3; ++c )
+		{
+			float v00 = s_SkyTransLUT[ i0 ][ j0 ][ c ];
+			float v10 = s_SkyTransLUT[ i1 ][ j0 ][ c ];
+			float v01 = s_SkyTransLUT[ i0 ][ j1 ][ c ];
+			float v11 = s_SkyTransLUT[ i1 ][ j1 ][ c ];
+			out[ c ] = v00 * ( 1.0f - si ) * ( 1.0f - sj )
+			         + v10 *           si  * ( 1.0f - sj )
+			         + v01 * ( 1.0f - si ) *           sj
+			         + v11 *           si  *           sj;
+		}
+	}
+
+	// Raw single-scatter accumulator from arbitrary altitude r0. No tonemap.
+	// Used by both DwSkyColorBruneton and BuildSkyMultiScatterLUT (where it
+	// supplies the per-direction 2nd-order radiance samples).
+	static void DwSkySingleScatterRaw( float accum[ 3 ], float r0,
+	                                   float view_zen_rad, float sun_zen_rad,
+	                                   float view_sun_az_rad, int n_view )
+	{
+		using namespace DwSky;
+		accum[ 0 ] = accum[ 1 ] = accum[ 2 ] = 0.0f;
+
+		float mu_v = cosf( view_zen_rad );
+		float mu_s = cosf( sun_zen_rad );
+		float nu = mu_v * mu_s + sinf( view_zen_rad ) * sinf( sun_zen_rad ) * cosf( view_sun_az_rad );
+		nu = ImClamp( nu, -1.0f, 1.0f );
+
+		float d_atm = DwSkyAtmTopDist( r0, mu_v );
+		if ( d_atm <= 0.0f ) return;
+		float step = d_atm / (float)n_view;
+
+		float phr = ( 3.0f / ( 16.0f * IM_PI ) ) * ( 1.0f + nu * nu );
+		float g2 = G_MIE * G_MIE;
+		float denom = ( 2.0f + g2 ) * powf( 1.0f + g2 - 2.0f * G_MIE * nu, 1.5f );
+		float phm = ( 3.0f / ( 8.0f * IM_PI ) ) * ( ( 1.0f - g2 ) * ( 1.0f + nu * nu ) ) / denom;
+
+		float T_view_full[ 3 ];
+		DwSkyTLookup( r0 - R_E, mu_v, T_view_full );
+
+		for ( int i = 0; i < n_view; ++i )
+		{
+			float d_v = ( (float)i + 0.5f ) * step;
+			float h     = DwSkyHAt(  r0, mu_v, d_v );
+			float mu_vp = DwSkyMuAt( r0, mu_v, d_v );
+
+			float rho_r = expf( -h / H_R );
+			float rho_m = expf( -h / H_M );
+
+			float T_p_view[ 3 ], T_sun[ 3 ];
+			DwSkyTLookup( h, mu_vp, T_p_view );
+			DwSkyTLookup( h, mu_s,  T_sun  );
+
+			for ( int c = 0; c < 3; ++c )
+			{
+				float T_obs_to_p = T_view_full[ c ] / ImMax( T_p_view[ c ], 1e-12f );
+				T_obs_to_p = ImMin( T_obs_to_p, 1.0f );
+				float in_scat = ( s_SkyBetaR[ c ] * rho_r * phr + s_SkyBetaM[ c ] * rho_m * phm ) * T_sun[ c ];
+				accum[ c ] += T_obs_to_p * in_scat * step;
+			}
+		}
+	}
+
+	// Hillaire-style multi-scatter LUT: for each (h, mu_s) sample N view
+	// directions on a Fibonacci sphere, compute single-scatter from each,
+	// average to get L₂ (isotropic 2nd-order radiance), then geometric-series
+	// correction approximates orders 3..∞: L_ms = L₂ / (1 - f_ms).
+	static void BuildSkyMultiScatterLUT()
+	{
+		using namespace DwSky;
+		if ( !s_SkyTransLUTBuilt ) BuildSkyTransmittanceLUT();
+
+		const float GOLDEN = 1.6180339887498949f;
+		// Pre-compute Fibonacci-sphere directions (local frame, z=up).
+		float dirs[ MSLUT_DIRS ][ 3 ];
+		for ( int d = 0; d < MSLUT_DIRS; ++d )
+		{
+			float cos_t = 1.0f - 2.0f * ( (float)d + 0.5f ) / (float)MSLUT_DIRS;
+			float sin_t = sqrtf( ImMax( 0.0f, 1.0f - cos_t * cos_t ) );
+			float phi = 2.0f * IM_PI * (float)d / GOLDEN;
+			dirs[ d ][ 0 ] = sin_t * cosf( phi );
+			dirs[ d ][ 1 ] = sin_t * sinf( phi );
+			dirs[ d ][ 2 ] = cos_t;
+		}
+
+		for ( int i = 0; i < MSLUT_H; ++i )
+		{
+			float h = (float)i / (float)( MSLUT_H - 1 ) * ( R_A - R_E );
+			float r = R_E + h;
+			float rho_r = expf( -h / H_R );
+			float rho_m = expf( -h / H_M );
+			float f_local[ 3 ] = {
+				s_SkyBetaR[ 0 ] * rho_r + s_SkyBetaM[ 0 ] * rho_m,
+				s_SkyBetaR[ 1 ] * rho_r + s_SkyBetaM[ 1 ] * rho_m,
+				s_SkyBetaR[ 2 ] * rho_r + s_SkyBetaM[ 2 ] * rho_m
+			};
+			for ( int j = 0; j < MSLUT_MU; ++j )
+			{
+				float mu_s = -1.0f + 2.0f * (float)j / (float)( MSLUT_MU - 1 );
+				float sin_s = sqrtf( ImMax( 0.0f, 1.0f - mu_s * mu_s ) );
+				float sun_dir[ 3 ] = { sin_s, 0.0f, mu_s };
+				float sun_zen = acosf( ImClamp( mu_s, -1.0f, 1.0f ) );
+
+				float L2[ 3 ] = { 0.0f, 0.0f, 0.0f };
+				for ( int d = 0; d < MSLUT_DIRS; ++d )
+				{
+					float mu_v = dirs[ d ][ 2 ];
+					float nu = dirs[ d ][ 0 ] * sun_dir[ 0 ]
+					         + dirs[ d ][ 1 ] * sun_dir[ 1 ]
+					         + dirs[ d ][ 2 ] * sun_dir[ 2 ];
+					nu = ImClamp( nu, -1.0f, 1.0f );
+					float view_zen = acosf( ImClamp( mu_v, -1.0f, 1.0f ) );
+					float sv = sinf( view_zen ) * sinf( sun_zen );
+					float view_sun_az;
+					if ( fabsf( sv ) > 1e-6f )
+					{
+						float ca = ( nu - mu_v * mu_s ) / sv;
+						view_sun_az = acosf( ImClamp( ca, -1.0f, 1.0f ) );
+					}
+					else
+					{
+						view_sun_az = 0.0f;
+					}
+					float ss[ 3 ];
+					DwSkySingleScatterRaw( ss, r, view_zen, sun_zen, view_sun_az, 10 );
+					L2[ 0 ] += ss[ 0 ];
+					L2[ 1 ] += ss[ 1 ];
+					L2[ 2 ] += ss[ 2 ];
+				}
+				float inv_n = 1.0f / (float)MSLUT_DIRS;
+				for ( int c = 0; c < 3; ++c )
+				{
+					float L2_avg = L2[ c ] * inv_n;
+					float denom2 = ImMax( 1.0f - f_local[ c ], 1e-6f );
+					s_SkyMSLUT[ i ][ j ][ c ] = L2_avg / denom2;
+				}
+			}
+		}
+		s_SkyMSLUTBuilt = true;
+	}
+
+	static void DwSkyMSLookup( float h, float mu_s, float out[ 3 ] )
+	{
+		using namespace DwSky;
+		float h_n  = ImClamp( h / ( R_A - R_E ), 0.0f, 1.0f );
+		float mu_n = ImClamp( ( mu_s + 1.0f ) * 0.5f, 0.0f, 1.0f );
+		float fi = h_n  * (float)( MSLUT_H  - 1 );
+		float fj = mu_n * (float)( MSLUT_MU - 1 );
+		int i0 = (int)fi; int j0 = (int)fj;
+		int i1 = ImMin( i0 + 1, MSLUT_H  - 1 );
+		int j1 = ImMin( j0 + 1, MSLUT_MU - 1 );
+		float si = fi - (float)i0; float sj = fj - (float)j0;
+		for ( int c = 0; c < 3; ++c )
+		{
+			float v00 = s_SkyMSLUT[ i0 ][ j0 ][ c ];
+			float v10 = s_SkyMSLUT[ i1 ][ j0 ][ c ];
+			float v01 = s_SkyMSLUT[ i0 ][ j1 ][ c ];
+			float v11 = s_SkyMSLUT[ i1 ][ j1 ][ c ];
+			out[ c ] = v00 * ( 1.0f - si ) * ( 1.0f - sj )
+			         + v10 *           si  * ( 1.0f - sj )
+			         + v01 * ( 1.0f - si ) *           sj
+			         + v11 *           si  *           sj;
+		}
+	}
+
+	static void DwSkyColorBruneton( float& outR, float& outG, float& outB,
+	                                float view_zen_rad, float sun_zen_rad,
+	                                float view_sun_az_rad, int n_view = 14 )
+	{
+		using namespace DwSky;
+		if ( !s_SkyTransLUTBuilt ) BuildSkyTransmittanceLUT();
+		if ( !s_SkyMSLUTBuilt )    BuildSkyMultiScatterLUT();
+
+		float mu_v = cosf( view_zen_rad );
+		float mu_s = cosf( sun_zen_rad );
+		float nu = mu_v * mu_s + sinf( view_zen_rad ) * sinf( sun_zen_rad ) * cosf( view_sun_az_rad );
+		nu = ImClamp( nu, -1.0f, 1.0f );
+
+		float r0 = R_E;
+		float d_atm = DwSkyAtmTopDist( r0, mu_v );
+		if ( d_atm <= 0.0f ) { outR = outG = outB = 0.0f; return; }
+		float step = d_atm / (float)n_view;
+
+		float phr = ( 3.0f / ( 16.0f * IM_PI ) ) * ( 1.0f + nu * nu );
+		float g2 = G_MIE * G_MIE;
+		float denom = ( 2.0f + g2 ) * powf( 1.0f + g2 - 2.0f * G_MIE * nu, 1.5f );
+		float phm = ( 3.0f / ( 8.0f * IM_PI ) ) * ( ( 1.0f - g2 ) * ( 1.0f + nu * nu ) ) / denom;
+
+		float T_view_full[ 3 ];
+		DwSkyTLookup( 0.0f, mu_v, T_view_full );
+
+		float accum[ 3 ] = { 0.0f, 0.0f, 0.0f };
+		const float INV_4PI = 1.0f / ( 4.0f * IM_PI );
+		for ( int i = 0; i < n_view; ++i )
+		{
+			float d_v = ( (float)i + 0.5f ) * step;
+			float h     = DwSkyHAt(  r0, mu_v, d_v );
+			float mu_vp = DwSkyMuAt( r0, mu_v, d_v );
+
+			float rho_r = expf( -h / H_R );
+			float rho_m = expf( -h / H_M );
+
+			float T_p_view[ 3 ], T_sun[ 3 ], L_ms[ 3 ];
+			DwSkyTLookup( h, mu_vp, T_p_view );
+			DwSkyTLookup( h, mu_s,  T_sun  );
+			DwSkyMSLookup( h, mu_s, L_ms );
+
+			for ( int c = 0; c < 3; ++c )
+			{
+				float T_obs_to_p = T_view_full[ c ] / ImMax( T_p_view[ c ], 1e-12f );
+				T_obs_to_p = ImMin( T_obs_to_p, 1.0f );
+				// Single-scatter (directional, phase-weighted) + multi-scatter
+				// (isotropic ambient from MS LUT).
+				float in_scat_ss = ( s_SkyBetaR[ c ] * rho_r * phr + s_SkyBetaM[ c ] * rho_m * phm ) * T_sun[ c ];
+				float in_scat_ms = ( s_SkyBetaR[ c ] * rho_r       + s_SkyBetaM[ c ] * rho_m       ) * L_ms[ c ] * INV_4PI;
+				accum[ c ] += T_obs_to_p * ( in_scat_ss + in_scat_ms ) * step;
+			}
+		}
+
+		static const float sun_irr[ 3 ] = { 22.0f, 23.0f, 26.0f };
+		float col[ 3 ] = {
+			accum[ 0 ] * sun_irr[ 0 ],
+			accum[ 1 ] * sun_irr[ 1 ],
+			accum[ 2 ] * sun_irr[ 2 ]
+		};
+
+		// Purkinje shift (rod-dominant scotopic vision) at very low luminance.
+		// Twilight stays photopic (L > 0.01) so the ozone cyan/green band is
+		// preserved at full chroma; only deep night blends toward bluish.
+		float L_pre = 0.2126f * col[ 0 ] + 0.7152f * col[ 1 ] + 0.0722f * col[ 2 ];
+		const float L_PHOTOPIC = 0.01f;
+		const float L_SCOTOPIC = 1e-5f;
+		if ( L_pre > 1e-12f && L_pre < L_PHOTOPIC )
+		{
+			// CIE V'(λ) sampled at 680/550/440 nm → these RGB weights.
+			float scotopic_L = 0.04f * col[ 0 ] + 0.52f * col[ 1 ] + 0.78f * col[ 2 ];
+			float scotopic_tint[ 3 ] = { 0.34f, 0.48f, 1.00f };
+			float scot[ 3 ] = {
+				scotopic_tint[ 0 ] * scotopic_L,
+				scotopic_tint[ 1 ] * scotopic_L,
+				scotopic_tint[ 2 ] * scotopic_L
+			};
+			float log_L  = log10f( L_pre );
+			float log_lo = log10f( L_SCOTOPIC );
+			float log_hi = log10f( L_PHOTOPIC );
+			float t = ImClamp( ( log_L - log_lo ) / ( log_hi - log_lo ), 0.0f, 1.0f );
+			for ( int c = 0; c < 3; ++c )
+				col[ c ] = col[ c ] * t + scot[ c ] * ( 1.0f - t );
+		}
+
+		// Chromaticity-preserving HDR tonemap with sigmoid brightness ramp
+		// centred at twilight luminance. Night reads as semantically dark.
+		float max_c = ImMax( col[ 0 ], ImMax( col[ 1 ], col[ 2 ] ) );
+		if ( max_c < 1e-9f ) { outR = outG = outB = 0.0f; return; }
+		float L_out = 0.2126f * col[ 0 ] + 0.7152f * col[ 1 ] + 0.0722f * col[ 2 ];
+		float log_L_out = log10f( ImMax( L_out, 1e-12f ) );
+		// σ((log L + 2)·1.4): L=1→0.94, L=0.01→0.50, L=1e-4→0.10, L=1e-6→~0
+		float brightness = 1.0f / ( 1.0f + expf( -( log_L_out + 2.0f ) * 1.4f ) );
+		float inv_max = 1.0f / max_c;
+		for ( int c = 0; c < 3; ++c )
+		{
+			float v = ImClamp( col[ c ] * inv_max * brightness, 0.0f, 1.0f );
+			col[ c ] = powf( v, 1.0f / 2.2f ); // sRGB gamma
+		}
+		outR = col[ 0 ]; outG = col[ 1 ]; outB = col[ 2 ];
+	}
+
+	// Solar zenith / azimuth at observer (lat, lon=0) from year/DOY/UT-hour.
+	// Mirrors the math in DrawEarthSunEphemeris but with full equatorial-frame
+	// conversion so the picker plane reflects realistic daily variation.
+	static void DwSkySunZenithAz( float& sun_zen, float& sun_az,
+	                              int year, int doy, float hour_UT, float lat_deg )
+	{
+		static const int doy_normal[ 12 ] = { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
+		bool leap = ( ( year % 4 == 0 && year % 100 != 0 ) || ( year % 400 == 0 ) );
+		int days_in_year = leap ? 366 : 365;
+		if ( doy < 1 ) doy = 1; if ( doy > days_in_year ) doy = days_in_year;
+
+		int month = 1, day = 1;
+		for ( int m = 0; m < 12; ++m )
+		{
+			int off = doy_normal[ m ] + ( ( leap && m >= 2 ) ? 1 : 0 );
+			int dim = ( m == 1 && leap ) ? 29 : ( m == 1 ? 28 : ( ( m == 3 || m == 5 || m == 8 || m == 10 ) ? 30 : 31 ) );
+			if ( doy <= off + dim )
+			{
+				month = m + 1;
+				day = doy - off;
+				break;
+			}
+		}
+
+		double JD = DwJulianDate( year, month, day, (double)hour_UT );
+		double days_J = JD - 2451545.0;
+
+		double L_E = ( 100.46 + 0.9856 * days_J ) * ( 3.14159265358979323846 / 180.0 );
+		double sun_lon = L_E + 3.14159265358979323846;
+		double obliq = 23.44 * 3.14159265358979323846 / 180.0;
+		double sin_dec = sin( obliq ) * sin( sun_lon );
+		sin_dec = ImClamp( sin_dec, -1.0, 1.0 );
+		double dec = asin( sin_dec );
+		double ra  = atan2( sin( sun_lon ) * cos( obliq ), cos( sun_lon ) );
+
+		double gmst_h = fmod( 18.697374558 + 24.06570982441908 * days_J, 24.0 );
+		if ( gmst_h < 0 ) gmst_h += 24.0;
+		double lst = gmst_h * 15.0 * 3.14159265358979323846 / 180.0;
+
+		double ha = lst - ra;
+		double lat_r = (double)lat_deg * 3.14159265358979323846 / 180.0;
+		double sin_alt = sin( lat_r ) * sin( dec ) + cos( lat_r ) * cos( dec ) * cos( ha );
+		sin_alt = ImClamp( sin_alt, -1.0, 1.0 );
+		double alt = asin( sin_alt );
+		double cos_alt = cos( alt );
+
+		sun_zen = (float)( 3.14159265358979323846 * 0.5 - alt );
+
+		if ( cos_alt < 1e-6 )
+		{
+			sun_az = 0.0f;
+			return;
+		}
+		double sin_az = -cos( dec ) * sin( ha ) / cos_alt;
+		double cos_az = ( sin( dec ) - sin_alt * sin( lat_r ) ) / ( cos_alt * cos( lat_r ) );
+		sun_az = (float)atan2( sin_az, cos_az );
+	}
+
+	struct ImSkyPlaneData { float view_az_rel; int doy; float lat; int year; };
+	static ImU32 SkyPlaneCallback( float elev_deg, float time_h, void* pUserData )
+	{
+		ImSkyPlaneData* d = ( ImSkyPlaneData* )pUserData;
+		float sun_zen, sun_az;
+		DwSkySunZenithAz( sun_zen, sun_az, d->year, d->doy, time_h, d->lat );
+		float view_zen = ( IM_PI * 0.5f ) - elev_deg * IM_PI / 180.0f;
+		float r, g, b;
+		DwSkyColorBruneton( r, g, b, view_zen, sun_zen, d->view_az_rel );
+		return IM_COL32( (int)( r * 255.0f + 0.5f ), (int)( g * 255.0f + 0.5f ), (int)( b * 255.0f + 0.5f ), 255 );
+	}
+
+	struct ImSkySliderData { float elev_deg; float time_h; int doy; float lat; int year; };
+	static ImU32 SkyViewAzCallback( float view_az_rel, void* pUserData )
+	{
+		ImSkySliderData* d = ( ImSkySliderData* )pUserData;
+		float sun_zen, sun_az;
+		DwSkySunZenithAz( sun_zen, sun_az, d->year, d->doy, d->time_h, d->lat );
+		float view_zen = ( IM_PI * 0.5f ) - d->elev_deg * IM_PI / 180.0f;
+		float r, g, b;
+		DwSkyColorBruneton( r, g, b, view_zen, sun_zen, view_az_rel );
+		return IM_COL32( (int)( r * 255.0f + 0.5f ), (int)( g * 255.0f + 0.5f ), (int)( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerSky( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		// Two-pass key materialization to avoid storage-realloc pointer invalidation.
+		storage->GetFloatRef( ImGui::GetID( "vaz" ),  3.14159265f );
+		storage->GetIntRef  ( ImGui::GetID( "doy" ),  172         );
+		storage->GetFloatRef( ImGui::GetID( "lat" ),  48.85f      );
+		storage->GetFloatRef( ImGui::GetID( "elev" ), 30.0f       );
+		storage->GetFloatRef( ImGui::GetID( "time" ), 18.0f       );
+		float* pViewAz = storage->GetFloatRef( ImGui::GetID( "vaz" ),  3.14159265f );
+		int*   pDoy    = storage->GetIntRef  ( ImGui::GetID( "doy" ),  172         );
+		float* pLat    = storage->GetFloatRef( ImGui::GetID( "lat" ),  48.85f      );
+		float* pElev   = storage->GetFloatRef( ImGui::GetID( "elev" ), 30.0f       );
+		float* pTime   = storage->GetFloatRef( ImGui::GetID( "time" ), 18.0f       );
+
+		if ( !s_SkyTransLUTBuilt ) BuildSkyTransmittanceLUT();
+
+		bool changed = false;
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "viewaz", ImVec2( sliderW, planeSide ) );
+		const ImRect az_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool azActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive )
+		{
+			float u = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(),  0.0f, 1.0f );
+			float v = ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f );
+			*pElev = u * 90.0f;
+			*pTime = v * 24.0f;
+			changed = true;
+		}
+		if ( azActive )
+		{
+			float t = ImClamp( ( mp.y - az_bb.Min.y ) / az_bb.GetHeight(), 0.0f, 1.0f );
+			*pViewAz = ( 1.0f - t ) * IM_PI;
+			changed = true;
+		}
+
+		// Plane fill (cached on view-az / doy / lat).
+		{
+			ImSkyPlaneData cb; cb.view_az_rel = *pViewAz; cb.doy = *pDoy; cb.lat = *pLat; cb.year = 2026;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyF( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pDoy ), *pLat ), *pViewAz );
+			DrawCachedProceduralColor2DBilinear( dl, SkyPlaneCallback, &cb,
+				0.0f, 90.0f, 0.0f, 24.0f,
+				plane_bb.Min, plane_bb.GetSize(), planeRes,
+				s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+
+		// Crosshair + dot
+		{
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, ImSaturate( *pElev / 90.0f ) ),
+			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, ImSaturate( *pTime / 24.0f ) ) );
+			float sun_zen, sun_az;
+			DwSkySunZenithAz( sun_zen, sun_az, 2026, *pDoy, *pTime, *pLat );
+			float view_zen = ( IM_PI * 0.5f ) - ( *pElev * IM_PI / 180.0f );
+			float r, gg, b;
+			DwSkyColorBruneton( r, gg, b, view_zen, sun_zen, *pViewAz );
+			ImU32 dotFill = IM_COL32( (int)( r * 255.0f + 0.5f ), (int)( gg * 255.0f + 0.5f ), (int)( b * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
+			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+
+		// View-az slider (bottom = 0 toward sun, top = π anti-sun).
+		{
+			ImSkySliderData cb;
+			cb.elev_deg = *pElev; cb.time_h = *pTime; cb.doy = *pDoy; cb.lat = *pLat; cb.year = 2026;
+			DrawProceduralColor1DBilinearVertical( dl, SkyViewAzCallback, &cb,
+				IM_PI, 0.0f, az_bb.Min, az_bb.GetSize(), sliderRes );
+			dl->AddRect( az_bb.Min, az_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( 1.0f - *pViewAz / IM_PI );
+			float handleY = ImLerp( az_bb.Min.y, az_bb.Max.y, t );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			dl->AddRectFilled( ImVec2( az_bb.Min.x - 1.0f, handleY - hh ),
+			                   ImVec2( az_bb.Max.x + 1.0f, handleY + hh ),
+			                   IM_COL32( 30, 28, 26, 255 ), 2.0f );
+			dl->AddRect( ImVec2( az_bb.Min.x - 1.0f, handleY - hh ),
+			             ImVec2( az_bb.Max.x + 1.0f, handleY + hh ),
+			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		// Component sliders below.
+		changed |= ImGui::SliderInt  ( "Day of year##Sky",         pDoy,   1, 365 );
+		changed |= ImGui::SliderFloat( "Observer lat##Sky",        pLat,   -89.9f, 89.9f, "%.2f deg" );
+		changed |= ImGui::SliderAngle( "View az (from sun)##Sky",  pViewAz, 0.0f, 180.0f );
+
+		// Compose output color from current selection.
+		{
+			float sun_zen, sun_az;
+			DwSkySunZenithAz( sun_zen, sun_az, 2026, *pDoy, *pTime, *pLat );
+			float view_zen = ( IM_PI * 0.5f ) - ( *pElev * IM_PI / 180.0f );
+			float r, gg, b;
+			DwSkyColorBruneton( r, gg, b, view_zen, sun_zen, *pViewAz );
+			color->x = r; color->y = gg; color->z = b;
+		}
+
+		if ( planeActive || azActive ) changed = true;
 		ImGui::PopID();
 		return changed;
 	}
