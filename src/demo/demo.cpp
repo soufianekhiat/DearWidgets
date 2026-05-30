@@ -4249,6 +4249,50 @@ namespace ImWidgets{
 				}
 				ImGui::TreePop();
 			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Ephemerides##Draw" ) )
+			{
+				float _sy0 = ImGui::GetCursorPos().y;
+				static int s_year = 2026, s_month = 5, s_day = 30, s_hour = 12, s_minute = 0;
+				static float s_lon = 2.35f, s_lat = 48.85f; // Paris default
+
+				ImGui::TextWrapped( "Schematic ephemerides: moon phase (synodic, ref new moon 2000-01-06 18:14 UT), "
+				                    "and Sun/Earth system (heliocentric + observer-centric orthographic)." );
+
+				ImGui::DragInt( "Year",   &s_year,   1.0f, 1900, 2100 );
+				ImGui::DragInt( "Month",  &s_month,  0.1f, 1,    12 );
+				ImGui::DragInt( "Day",    &s_day,    0.1f, 1,    31 );
+				ImGui::DragInt( "Hour UT",   &s_hour,   0.1f, 0,    23 );
+				ImGui::DragInt( "Minute UT", &s_minute, 0.5f, 0,    59 );
+				ImGui::DragFloat( "Lon (deg)", &s_lon, 0.5f, -180.0f, 180.0f, "%.2f" );
+				ImGui::DragFloat( "Lat (deg)", &s_lat, 0.25f, -90.0f,  90.0f, "%.2f" );
+
+				ImGui::Spacing();
+				ImGui::TextDisabled( "Moon" );
+				{
+					ImDrawList* dl = ImGui::GetWindowDrawList();
+					ImVec2 p0 = ImGui::GetCursorScreenPos();
+					float r = 90.0f;
+					ImVec2 center( p0.x + r + 4.0f, p0.y + r + 4.0f );
+					ImWidgets::DrawMoonEphemeris( dl, center, r, s_year, s_month, s_day, s_lon, s_lat );
+					ImGui::Dummy( ImVec2( 2.0f * r + 8.0f, 2.0f * r + 8.0f ) );
+				}
+
+				ImGui::Spacing();
+				ImGui::TextDisabled( "Sun / Earth system" );
+				{
+					ImDrawList* dl = ImGui::GetWindowDrawList();
+					ImVec2 p0 = ImGui::GetCursorScreenPos();
+					ImVec2 sz( ImMin( ImGui::GetContentRegionAvail().x, 560.0f ), 240.0f );
+					dl->AddRectFilled( p0, ImVec2( p0.x + sz.x, p0.y + sz.y ), IM_COL32( 12, 14, 22, 255 ), 4.0f );
+					ImWidgets::DrawEarthSunEphemeris( dl, p0, sz, s_year, s_month, s_day, s_hour, s_minute, s_lon, s_lat );
+					dl->AddRect( p0, ImVec2( p0.x + sz.x, p0.y + sz.y ), IM_COL32( 90, 100, 120, 255 ), 4.0f );
+					ImGui::Dummy( sz );
+				}
+
+				DW_SsRecord( "Draw_Ephemerides", _sy0, ImGui::GetCursorPos().y );
+				ImGui::TreePop();
+			}
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Text##Draw" ) )

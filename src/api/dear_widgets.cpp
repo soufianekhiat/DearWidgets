@@ -5700,6 +5700,260 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		drawlist->PathStroke( mainCol, ImDrawFlags_None, mainLineThickness );
 	}
 
+	//////////////////////////////////////////////////////////////////////////
+	// Ephemerides (schematic moon phase + sun/earth system)
+	//////////////////////////////////////////////////////////////////////////
+
+	// Julian Date for Gregorian calendar at given UT hour (Meeus, Astronomical Algorithms ch. 7).
+	static double DwJulianDate( int year, int month, int day, double hourUT )
+	{
+		int y = year, m = month;
+		if ( m <= 2 ) { y -= 1; m += 12; }
+		int A = y / 100;
+		int B = 2 - A + A / 4;
+		double JD = (double)( (int)( 365.25 * (double)( y + 4716 ) ) )
+		          + (double)( (int)( 30.6001 * (double)( m + 1 ) ) )
+		          + (double)day + (double)B - 1524.5 + hourUT / 24.0;
+		return JD;
+	}
+
+	static int DwDayOfYear( int year, int month, int day )
+	{
+		static const int doy_normal[ 12 ] = { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
+		bool leap = ( ( year % 4 == 0 && year % 100 != 0 ) || ( year % 400 == 0 ) );
+		int idx = ImClamp( month - 1, 0, 11 );
+		int doy = doy_normal[ idx ] + day;
+		if ( leap && month > 2 ) doy += 1;
+		return doy;
+	}
+
+	// Schematic moon phase view. Phase derived from synodic months elapsed since the
+	// reference new moon of 2000 Jan 6 18:14 UT (Meeus). Northern-hemisphere convention
+	// (waxing on the right, waning on the left); flips for southern observers.
+	// Observer longitude shifts the date by a fraction-of-day so the phase reflects
+	// local civil date better.
+	void DrawMoonEphemeris( ImDrawList* pDrawList, ImVec2 center, float radius,
+	                        int year, int month, int day, float lonDeg, float latDeg,
+	                        ImU32 litCol, ImU32 darkCol, ImU32 outlineCol )
+	{
+		if ( !pDrawList || radius <= 0.0f ) return;
+
+		double JD = DwJulianDate( year, month, day, 12.0 );
+		JD += (double)lonDeg / 360.0; // tiny local-time shift
+
+		const double JD_REF_NEW_MOON = 2451550.25972;   // 2000 Jan 6, 18:14 UT
+		const double SYNODIC = 29.530588853;
+		double phase = ( JD - JD_REF_NEW_MOON ) / SYNODIC;
+		phase = phase - floor( phase ); // [0, 1)
+
+		double pa = 2.0 * 3.14159265358979323846 * phase;
+		double c = cos( pa );
+
+		bool waxing = ( phase < 0.5 );
+		bool southern = ( latDeg < 0.0f );
+		int dir = waxing ? +1 : -1;
+		if ( southern ) dir = -dir;
+
+		double a_signed = (double)dir * (double)radius * c;
+
+		// Lit disc (full bright).
+		pDrawList->AddCircleFilled( center, radius, litCol, 96 );
+
+		// Unlit lune: outer semicircle on the dark side + terminator ellipse arc.
+		const int N = 64;
+		ImVector<ImVec2> pts;
+		pts.reserve( 2 * ( N + 1 ) );
+		const double PI_ = 3.14159265358979323846;
+		double sweepDir = -(double)dir; // dark side opposite of lit side
+		for ( int i = 0; i <= N; i++ )
+		{
+			double t = (double)i / (double)N;
+			double theta = -PI_ * 0.5 + sweepDir * t * PI_;
+			pts.push_back( ImVec2( center.x + (float)( cos( theta ) * (double)radius ),
+			                       center.y + (float)( sin( theta ) * (double)radius ) ) );
+		}
+		for ( int i = 0; i <= N; i++ )
+		{
+			double t = (double)i / (double)N;
+			double phi = t * PI_;
+			double x = a_signed * sin( phi );
+			double y = (double)radius * cos( phi );
+			pts.push_back( ImVec2( center.x + (float)x, center.y + (float)y ) );
+		}
+		pDrawList->AddConvexPolyFilled( pts.Data, pts.Size, darkCol );
+
+		// Outline.
+		pDrawList->AddCircle( center, radius, outlineCol, 96, 1.5f );
+	}
+
+	// Schematic Sun/Earth system. Left half: heliocentric (Sun + Earth orbit + Earth's
+	// current orbital position with its day/night terminator and axis tilt). Right
+	// half: observer-centered orthographic Earth disc, day/night carved by the great
+	// circle 90 deg from the sub-solar point. If the sun is above the observer's
+	// horizon a small sun-glyph marks its position on the disc.
+	void DrawEarthSunEphemeris( ImDrawList* pDrawList, ImVec2 areaMin, ImVec2 areaSize,
+	                            int year, int month, int day, int hour, int minute,
+	                            float obsLon, float obsLat,
+	                            ImU32 sunCol, ImU32 dayCol, ImU32 nightCol, ImU32 outlineCol )
+	{
+		if ( !pDrawList || areaSize.x <= 0.0f || areaSize.y <= 0.0f ) return;
+		const double PI_ = 3.14159265358979323846;
+
+		int doy = DwDayOfYear( year, month, day );
+		double dayFrac = ( (double)hour + (double)minute / 60.0 ) / 24.0;
+		double dayOfYearFrac = (double)doy - 1.0 + dayFrac;
+
+		// Earth orbital angle, 0 at vernal equinox (~DOY 79).
+		double orbitAngle = 2.0 * PI_ * ( dayOfYearFrac - 79.0 ) / 365.25;
+
+		// Solar declination (deg) via simple axial-tilt projection.
+		double decl_rad = ( 23.44 * PI_ / 180.0 ) * sin( orbitAngle );
+
+		// Sub-solar longitude (deg), ignoring equation of time.
+		double UT_hour = (double)hour + (double)minute / 60.0;
+		double subsolar_lon_deg = -( UT_hour - 12.0 ) * 15.0;
+
+		float W = areaSize.x, H_ = areaSize.y;
+		float halfW = W * 0.5f;
+
+		// ---- Left half: heliocentric ----
+		ImVec2 heliosC( areaMin.x + halfW * 0.5f, areaMin.y + H_ * 0.5f );
+		float orbitR = ImMin( halfW, H_ ) * 0.36f;
+		float sunR = orbitR * 0.16f;
+		float earthMiniR = orbitR * 0.13f;
+
+		// Sun + simple rays.
+		pDrawList->AddCircleFilled( heliosC, sunR, sunCol, 48 );
+		for ( int i = 0; i < 12; i++ )
+		{
+			double a = 2.0 * PI_ * (double)i / 12.0;
+			pDrawList->AddLine(
+				ImVec2( heliosC.x + sunR * 1.2f * (float)cos( a ), heliosC.y + sunR * 1.2f * (float)sin( a ) ),
+				ImVec2( heliosC.x + sunR * 1.7f * (float)cos( a ), heliosC.y + sunR * 1.7f * (float)sin( a ) ),
+				IM_COL32( 255, 200, 100, 200 ), 1.5f );
+		}
+		// Orbit ring + equinox/solstice ticks.
+		pDrawList->AddCircle( heliosC, orbitR, IM_COL32( 120, 130, 150, 130 ), 64, 1.0f );
+		for ( int s = 0; s < 4; s++ )
+		{
+			double a = (double)s * PI_ * 0.5;
+			pDrawList->AddLine(
+				ImVec2( heliosC.x + ( orbitR - 5.0f ) * (float)cos( a ), heliosC.y + ( orbitR - 5.0f ) * (float)sin( a ) ),
+				ImVec2( heliosC.x + ( orbitR + 5.0f ) * (float)cos( a ), heliosC.y + ( orbitR + 5.0f ) * (float)sin( a ) ),
+				IM_COL32( 180, 180, 200, 200 ), 1.0f );
+		}
+		// Earth on orbit.
+		ImVec2 earthMini( heliosC.x + orbitR * (float)cos( orbitAngle ),
+		                  heliosC.y + orbitR * (float)sin( orbitAngle ) );
+		// Sun direction from earthMini (toward heliosC).
+		double sdx = (double)( heliosC.x - earthMini.x ), sdy = (double)( heliosC.y - earthMini.y );
+		double slen = sqrt( sdx * sdx + sdy * sdy );
+		if ( slen > 1e-6 ) { sdx /= slen; sdy /= slen; } else { sdx = -1.0; sdy = 0.0; }
+		// Night-fill disc.
+		pDrawList->AddCircleFilled( earthMini, earthMiniR, nightCol, 32 );
+		// Day semicircle on the sun-facing side.
+		{
+			ImVector<ImVec2> dpts;
+			int nseg = 32;
+			double px_ = -sdy, py_ = sdx; // perp to sun direction
+			for ( int i = 0; i <= nseg; i++ )
+			{
+				double a = (double)i * PI_ / (double)nseg;
+				double ca = cos( a ), sa = sin( a );
+				double dx = sdx * sa + px_ * ca;
+				double dy = sdy * sa + py_ * ca;
+				dpts.push_back( ImVec2( earthMini.x + earthMiniR * (float)dx, earthMini.y + earthMiniR * (float)dy ) );
+			}
+			pDrawList->AddConvexPolyFilled( dpts.Data, dpts.Size, dayCol );
+		}
+		// Earth's axis (schematic 23.44 deg tilt; projected component varies with orbit).
+		{
+			double tilt_screen = ( 23.44 * PI_ / 180.0 ) * sin( orbitAngle - PI_ * 0.5 );
+			ImVec2 axTop( earthMini.x + earthMiniR * (float)sin( tilt_screen ),
+			              earthMini.y - earthMiniR * (float)cos( tilt_screen ) );
+			ImVec2 axBot( earthMini.x - earthMiniR * (float)sin( tilt_screen ),
+			              earthMini.y + earthMiniR * (float)cos( tilt_screen ) );
+			pDrawList->AddLine( axBot, axTop, IM_COL32( 255, 255, 255, 200 ), 1.5f );
+			// North-pole dot.
+			pDrawList->AddCircleFilled( axTop, 2.5f, IM_COL32( 230, 90, 90, 255 ), 8 );
+		}
+		pDrawList->AddCircle( earthMini, earthMiniR, outlineCol, 32, 1.0f );
+
+		// ---- Right half: observer-centered Earth ----
+		ImVec2 obsC( areaMin.x + halfW + halfW * 0.5f, areaMin.y + H_ * 0.5f );
+		float obsR = ImMin( halfW, H_ ) * 0.40f;
+
+		// Solar altitude/azimuth at the observer (standard spherical astronomy).
+		double phi = (double)obsLat * PI_ / 180.0;
+		double H_hourangle = ( (double)obsLon - subsolar_lon_deg ) * PI_ / 180.0;
+		double sin_alt = sin( phi ) * sin( decl_rad ) + cos( phi ) * cos( decl_rad ) * cos( H_hourangle );
+		sin_alt = ImClamp( sin_alt, -1.0, 1.0 );
+		double alt = asin( sin_alt );
+		double cos_alt = cos( alt );
+		double sin_az = 0.0, cos_az = 1.0;
+		if ( cos_alt > 1e-6 )
+		{
+			cos_az = ( sin( decl_rad ) - sin_alt * sin( phi ) ) / ( cos_alt * cos( phi ) );
+			sin_az = -cos( decl_rad ) * sin( H_hourangle ) / cos_alt;
+			cos_az = ImClamp( cos_az, -1.0, 1.0 );
+			sin_az = ImClamp( sin_az, -1.0, 1.0 );
+		}
+
+		// Day-coloured base disc; we then carve the night region.
+		pDrawList->AddCircleFilled( obsC, obsR, dayCol, 64 );
+
+		// Sub-solar projected onto observer's local sky (orthographic):
+		//   r = R * cos(alt), in direction (sin(az) east, -cos(az) north→ -y is up).
+		double r_proj = (double)obsR * cos_alt;
+		double sx_ = r_proj * sin_az;
+		double sy_ = -r_proj * cos_az;
+		double slen2 = sqrt( sx_ * sx_ + sy_ * sy_ );
+		double sun_dir_x = ( slen2 > 1e-3 ) ? ( sx_ / slen2 ) : 1.0;
+		double sun_dir_y = ( slen2 > 1e-3 ) ? ( sy_ / slen2 ) : 0.0;
+		double perp_x = -sun_dir_y, perp_y = sun_dir_x;
+
+		// Night region: outer arc on the far side of disc + terminator ellipse arc.
+		// Terminator semi-minor along sun direction = R * sin(alt) (signed):
+		//   alt > 0 (day): ellipse bulges toward sun → small night lune on far side.
+		//   alt < 0 (night): ellipse bulges away → large night region.
+		double a_ell = (double)obsR * sin_alt;
+		{
+			ImVector<ImVec2> npts;
+			int nseg = 48;
+			double baseAngle = atan2( perp_y, perp_x );
+			for ( int i = 0; i <= nseg; i++ )
+			{
+				double t = (double)i / (double)nseg;
+				double theta = baseAngle + t * PI_;
+				npts.push_back( ImVec2( obsC.x + obsR * (float)cos( theta ),
+				                        obsC.y + obsR * (float)sin( theta ) ) );
+			}
+			for ( int i = 0; i <= nseg; i++ )
+			{
+				double t = (double)i / (double)nseg;
+				double phi2 = t * PI_;
+				double dx = perp_x * ( -cos( phi2 ) ) * (double)obsR + sun_dir_x * sin( phi2 ) * a_ell;
+				double dy = perp_y * ( -cos( phi2 ) ) * (double)obsR + sun_dir_y * sin( phi2 ) * a_ell;
+				npts.push_back( ImVec2( obsC.x + (float)dx, obsC.y + (float)dy ) );
+			}
+			if ( npts.Size >= 3 )
+				pDrawList->AddConvexPolyFilled( npts.Data, npts.Size, nightCol );
+		}
+
+		// Outline + observer.
+		pDrawList->AddCircle( obsC, obsR, outlineCol, 64, 1.5f );
+		pDrawList->AddCircleFilled( obsC, 4.0f, IM_COL32( 235, 70, 70, 255 ), 12 );
+		pDrawList->AddCircle( obsC, 4.0f, IM_COL32( 255, 255, 255, 220 ), 12, 1.0f );
+
+		// Sun glyph if above horizon.
+		if ( alt > 0.0 )
+		{
+			ImVec2 sunPos( obsC.x + (float)sx_, obsC.y + (float)sy_ );
+			pDrawList->AddCircleFilled( sunPos, 5.0f, sunCol, 16 );
+			pDrawList->AddCircle( sunPos, 5.0f, outlineCol, 16, 1.0f );
+		}
+	}
+
 	void Im_CircleFromRect( ImRect r, void* data )
 	{
 		ImCircle* c = ( ImCircle* )data;

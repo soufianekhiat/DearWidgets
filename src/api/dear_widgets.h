@@ -3543,6 +3543,20 @@ namespace ImWidgets{
 											  int division0, float height0, float thickness0, float angle0, ImU32 col0,
 											  int division1 = -1, float height1 = -1.0f, float thickness1 = -1.0f, float angle1 = -1.0f, ImU32 col1 = 0u );
 
+	// Schematic ephemerides (draw-only, no state/interaction).
+	IMGUI_API void DrawMoonEphemeris( ImDrawList* pDrawList, ImVec2 center, float radius,
+	                                  int year, int month, int day, float lonDeg, float latDeg,
+	                                  ImU32 litCol = IM_COL32( 235, 232, 220, 255 ),
+	                                  ImU32 darkCol = IM_COL32( 28, 30, 38, 255 ),
+	                                  ImU32 outlineCol = IM_COL32( 180, 180, 200, 255 ) );
+	IMGUI_API void DrawEarthSunEphemeris( ImDrawList* pDrawList, ImVec2 areaMin, ImVec2 areaSize,
+	                                      int year, int month, int day, int hour, int minute,
+	                                      float obsLon = 0.0f, float obsLat = 0.0f,
+	                                      ImU32 sunCol = IM_COL32( 255, 220, 80, 255 ),
+	                                      ImU32 dayCol = IM_COL32( 110, 165, 220, 255 ),
+	                                      ImU32 nightCol = IM_COL32( 25, 35, 60, 255 ),
+	                                      ImU32 outlineCol = IM_COL32( 180, 190, 210, 255 ) );
+
 	typedef void ( *ImInlineOffset )( void* data, ImVec2 offset );
 	typedef void ( *ImDrawShape )( ImDrawList* drawlist, ImU32 col, float thickness, void* data );
 	typedef void ( *ImDrawShapeFilled )( ImDrawList* drawlist, ImU32 col, void* data );
