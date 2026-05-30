@@ -4347,6 +4347,50 @@ namespace ImWidgets{
 				DW_SsRecord( "Draw_StarChart", _sy0, ImGui::GetCursorPos().y );
 				ImGui::TreePop();
 			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Sun path##Draw" ) )
+			{
+				float _sy0 = ImGui::GetCursorPos().y;
+				static float s_lat = 48.85f, s_lon = 2.35f;
+				static int   s_tz = 1, s_year = 2026;
+				static int   s_mode = (int)ImWidgets::ImWidgetsSunPathMode_Polar;
+
+				ImGui::TextWrapped( "Sun-path diagram with monthly arcs (Jan blue -> Jun yellow -> Dec blue) "
+				                    "and analemma figure-8 loops at fixed local clock times (06/09/12/15/18 h). "
+				                    "Equation of time + longitude offset from time-zone meridian create the analemma's east-west spread." );
+
+				ImGui::DragInt  ( "Year",        &s_year, 1.0f, 1900, 2100 );
+				ImGui::DragFloat( "Lat (deg)",   &s_lat,  0.25f, -90.0f, 90.0f, "%.2f" );
+				ImGui::DragFloat( "Lon (deg)",   &s_lon,  0.5f, -180.0f, 180.0f, "%.2f" );
+				ImGui::DragInt  ( "TZ offset h", &s_tz,   0.1f, -12, 14 );
+				const char* modes[] = { "Polar (sky dome)", "Cartesian (azimuth x altitude)" };
+				ImGui::Combo( "Mode", &s_mode, modes, IM_ARRAYSIZE( modes ) );
+
+				ImGui::Spacing();
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				ImVec2 p0 = ImGui::GetCursorScreenPos();
+				if ( s_mode == (int)ImWidgets::ImWidgetsSunPathMode_Polar )
+				{
+					ImVec2 sz( 460.0f, 460.0f );
+					dl->AddRectFilled( p0, ImVec2( p0.x + sz.x, p0.y + sz.y ),
+					                   IM_COL32( 18, 22, 32, 255 ), 4.0f );
+					ImWidgets::DrawSunPath( dl, p0, sz, s_lat, s_lon, s_tz, s_year,
+					                        ImWidgets::ImWidgetsSunPathMode_Polar );
+					ImGui::Dummy( sz );
+				}
+				else
+				{
+					ImVec2 sz( ImMin( ImGui::GetContentRegionAvail().x, 720.0f ), 320.0f );
+					dl->AddRectFilled( p0, ImVec2( p0.x + sz.x, p0.y + sz.y ),
+					                   IM_COL32( 18, 22, 32, 255 ), 4.0f );
+					ImWidgets::DrawSunPath( dl, p0, sz, s_lat, s_lon, s_tz, s_year,
+					                        ImWidgets::ImWidgetsSunPathMode_Cartesian );
+					ImGui::Dummy( sz );
+				}
+
+				DW_SsRecord( "Draw_SunPath", _sy0, ImGui::GetCursorPos().y );
+				ImGui::TreePop();
+			}
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Text##Draw" ) )

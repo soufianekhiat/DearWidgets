@@ -6820,6 +6820,299 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		pDrawList->AddCircle( center, radius, outlineCol, 96, 2.0f );
 	}
 
+	//////////////////////////////////////////////////////////////////////////
+	// DrawSunPath — sun-path diagram + analemma overlay.
+	//
+	// Polar mode: zenith-centred dome, sun arcs for 12 monthly representative
+	// days drawn from sunrise to sunset, plus analemma figure-8 loops at five
+	// fixed local clock-time hours (06h/09h/12h/15h/18h).
+	// Cartesian mode: same data unrolled — X = azimuth (0=N), Y = altitude.
+	//
+	// Math: solar declination from DOY (axial tilt projection); equation of
+	// time + longitude offset from time-zone meridian → solar time → hour
+	// angle; standard horizontal-coords formulas for (alt, az).
+	//////////////////////////////////////////////////////////////////////////
+
+	struct DwSunPathMonth { char const* label; int month_idx; int day_of_month; ImU32 color; };
+	static const DwSunPathMonth s_SunPathMonths[ 12 ] = {
+		{ "Jan",  1, 21, IM_COL32(  85, 130, 235, 220 ) },
+		{ "Feb",  2, 21, IM_COL32( 110, 150, 220, 220 ) },
+		{ "Mar",  3, 21, IM_COL32( 140, 170, 205, 220 ) },
+		{ "Apr",  4, 21, IM_COL32( 180, 190, 175, 220 ) },
+		{ "May",  5, 21, IM_COL32( 220, 205, 145, 220 ) },
+		{ "Jun",  6, 21, IM_COL32( 250, 215,  95, 220 ) },
+		{ "Jul",  7, 21, IM_COL32( 245, 210, 110, 220 ) },
+		{ "Aug",  8, 21, IM_COL32( 225, 200, 145, 220 ) },
+		{ "Sep",  9, 21, IM_COL32( 170, 185, 185, 220 ) },
+		{ "Oct", 10, 21, IM_COL32( 135, 165, 210, 220 ) },
+		{ "Nov", 11, 21, IM_COL32( 110, 145, 225, 220 ) },
+		{ "Dec", 12, 21, IM_COL32(  80, 125, 240, 220 ) },
+	};
+	static const int s_SunPathAnalemmaHours[ 5 ] = { 6, 9, 12, 15, 18 };
+	static const ImU32 s_SunPathAnalemmaCol = IM_COL32( 255, 232, 115, 235 );
+
+	static void DwSunPathSolarPos( int doy, float hour_local,
+	                                float lat_deg, float lon_deg, int tz_offset,
+	                                float& alt_deg, float& az_deg )
+	{
+		// Equation of time (Spencer 1971), minutes.
+		float B = 2.0f * IM_PI * (float)( doy - 81 ) / 364.0f;
+		float EoT_min = 9.87f * sinf( 2.0f * B ) - 7.53f * cosf( B ) - 1.5f * sinf( B );
+		// Longitude correction from time-zone meridian (4 min per degree).
+		float tz_meridian = (float)tz_offset * 15.0f;
+		float time_corr_min = 4.0f * ( lon_deg - tz_meridian ) + EoT_min;
+		float solar_time = hour_local + time_corr_min / 60.0f;
+		float H = ( solar_time - 12.0f ) * 15.0f * IM_PI / 180.0f;
+		float decl = ( 23.44f * IM_PI / 180.0f )
+		           * sinf( 2.0f * IM_PI * (float)( doy - 81 ) / 365.25f );
+		float lat = lat_deg * IM_PI / 180.0f;
+
+		float sin_alt = sinf( lat ) * sinf( decl )
+		              + cosf( lat ) * cosf( decl ) * cosf( H );
+		sin_alt = ImClamp( sin_alt, -1.0f, 1.0f );
+		float alt = asinf( sin_alt );
+
+		float cos_alt = cosf( alt );
+		float az;
+		if ( cos_alt < 1e-6f )
+		{
+			az = 0.0f;
+		}
+		else
+		{
+			float sin_az = -cosf( decl ) * sinf( H ) / cos_alt;
+			float cos_az = ( sinf( decl ) - sin_alt * sinf( lat ) ) / ( cos_alt * cosf( lat ) );
+			az = atan2f( sin_az, cos_az );
+		}
+		alt_deg = alt * 180.0f / IM_PI;
+		az_deg  = az  * 180.0f / IM_PI;
+		if ( az_deg < 0.0f ) az_deg += 360.0f;
+	}
+
+	void DrawSunPath( ImDrawList* pDrawList, ImVec2 areaMin, ImVec2 areaSize,
+	                  float obsLat, float obsLon, int tzOffset, int year,
+	                  ImWidgetsSunPathMode mode,
+	                  ImU32 bgCol, ImU32 outlineCol )
+	{
+		if ( !pDrawList || areaSize.x <= 0.0f || areaSize.y <= 0.0f ) return;
+
+		ImFont* font = ImGui::GetFont();
+
+		if ( mode == ImWidgetsSunPathMode_Polar )
+		{
+			float minDim = ImMin( areaSize.x, areaSize.y );
+			float R = ( minDim - 32.0f ) * 0.5f;
+			if ( R <= 8.0f ) return;
+			ImVec2 center( areaMin.x + areaSize.x * 0.5f,
+			               areaMin.y + areaSize.y * 0.5f );
+
+			// Background disc + altitude rings + azimuth spokes.
+			pDrawList->AddCircleFilled( center, R, bgCol, 96 );
+			const int kAltRings[ 5 ] = { 15, 30, 45, 60, 75 };
+			for ( int i = 0; i < 5; ++i )
+			{
+				float rr = R * ( 1.0f - (float)kAltRings[ i ] / 90.0f );
+				pDrawList->AddCircle( center, rr, IM_COL32( 58, 73, 95, 200 ), 64, 1.0f );
+			}
+			for ( int az = 0; az < 360; az += 30 )
+			{
+				float a = (float)az * IM_PI / 180.0f;
+				pDrawList->AddLine( center,
+					ImVec2( center.x + R * sinf( a ), center.y - R * cosf( a ) ),
+					IM_COL32( 58, 73, 95, 165 ), 1.0f );
+			}
+
+			// Cardinal labels via Slug.
+			struct Card { char const* lbl; int az; };
+			Card cards[ 4 ] = { { "N", 0 }, { "E", 90 }, { "S", 180 }, { "W", 270 } };
+			for ( int i = 0; i < 4; ++i )
+			{
+				float a = (float)cards[ i ].az * IM_PI / 180.0f;
+				ImVec2 cp( center.x + R * 1.09f * sinf( a ) - 5.0f,
+				           center.y - R * 1.09f * cosf( a ) - 8.0f );
+				ImWidgets::DrawText( pDrawList, font, 14.0f, cp,
+				                     IM_COL32( 230, 240, 250, 240 ), cards[ i ].lbl );
+			}
+
+			// Monthly sun arcs.
+			for ( int mi = 0; mi < IM_ARRAYSIZE( s_SunPathMonths ); ++mi )
+			{
+				DwSunPathMonth const& m = s_SunPathMonths[ mi ];
+				int doy = DwDayOfYear( year, m.month_idx, m.day_of_month );
+				ImVec2 prev( 0.0f, 0.0f );
+				bool havePrev = false;
+				const int N = 24 * 8;
+				for ( int h = 0; h <= N; ++h )
+				{
+					float t = (float)h / 8.0f;
+					float alt, az;
+					DwSunPathSolarPos( doy, t, obsLat, obsLon, tzOffset, alt, az );
+					if ( alt > 0.5f )
+					{
+						float r = R * ( 1.0f - alt / 90.0f );
+						float a = az * IM_PI / 180.0f;
+						ImVec2 p( center.x + r * sinf( a ), center.y - r * cosf( a ) );
+						if ( havePrev )
+							pDrawList->AddLine( prev, p, m.color, 2.0f );
+						prev = p; havePrev = true;
+					}
+					else
+					{
+						havePrev = false;
+					}
+				}
+			}
+
+			// Analemma figure-8 loops at fixed clock hours.
+			ImVector<ImVec2> loop;
+			for ( int hi = 0; hi < 5; ++hi )
+			{
+				int hour = s_SunPathAnalemmaHours[ hi ];
+				loop.clear();
+				for ( int doy = 1; doy <= 365; doy += 3 )
+				{
+					float alt, az;
+					DwSunPathSolarPos( doy, (float)hour, obsLat, obsLon, tzOffset, alt, az );
+					if ( alt > 0.5f )
+					{
+						float r = R * ( 1.0f - alt / 90.0f );
+						float a = az * IM_PI / 180.0f;
+						loop.push_back( ImVec2( center.x + r * sinf( a ),
+						                        center.y - r * cosf( a ) ) );
+					}
+				}
+				for ( int i = 0; i + 1 < loop.Size; ++i )
+					pDrawList->AddLine( loop[ i ], loop[ i + 1 ], s_SunPathAnalemmaCol, 1.0f );
+				if ( loop.Size > 3 )
+				{
+					pDrawList->AddLine( loop[ loop.Size - 1 ], loop[ 0 ], s_SunPathAnalemmaCol, 1.0f );
+					int top_idx = 0;
+					for ( int i = 1; i < loop.Size; ++i )
+						if ( loop[ i ].y < loop[ top_idx ].y ) top_idx = i;
+					char buf[ 8 ]; snprintf( buf, sizeof( buf ), "%02dh", hour );
+					ImVec2 lp( loop[ top_idx ].x + 4.0f, loop[ top_idx ].y - 14.0f );
+					ImWidgets::DrawText( pDrawList, font, 9.0f, lp,
+					                     IM_COL32( 255, 235, 130, 240 ), buf );
+				}
+			}
+
+			pDrawList->AddCircle( center, R, outlineCol, 96, 2.0f );
+		}
+		else // Cartesian
+		{
+			ImVec2 ar0( areaMin.x + 32.0f, areaMin.y + 8.0f );
+			ImVec2 sz( areaSize.x - 40.0f, areaSize.y - 30.0f );
+			if ( sz.x < 100.0f || sz.y < 60.0f ) return;
+
+			pDrawList->AddRectFilled( ar0, ImVec2( ar0.x + sz.x, ar0.y + sz.y ), bgCol );
+
+			for ( int az_d = 0; az_d <= 360; az_d += 30 )
+			{
+				float x = ar0.x + (float)az_d / 360.0f * sz.x;
+				pDrawList->AddLine( ImVec2( x, ar0.y ),
+				                    ImVec2( x, ar0.y + sz.y ),
+				                    IM_COL32( 58, 73, 95, 150 ), 1.0f );
+			}
+			for ( int alt_d = 0; alt_d <= 90; alt_d += 15 )
+			{
+				float y = ar0.y + sz.y - (float)alt_d / 90.0f * sz.y;
+				pDrawList->AddLine( ImVec2( ar0.x, y ),
+				                    ImVec2( ar0.x + sz.x, y ),
+				                    IM_COL32( 58, 73, 95, 150 ), 1.0f );
+			}
+
+			// Axis labels
+			struct AxCard { char const* lbl; int az; };
+			AxCard axc[ 5 ] = { { "N", 0 }, { "E", 90 }, { "S", 180 }, { "W", 270 }, { "N", 360 } };
+			for ( int i = 0; i < 5; ++i )
+			{
+				float x = ar0.x + (float)axc[ i ].az / 360.0f * sz.x - 5.0f;
+				ImVec2 lp( x, ar0.y + sz.y + 4.0f );
+				ImWidgets::DrawText( pDrawList, font, 11.0f, lp,
+				                     IM_COL32( 220, 230, 250, 220 ), axc[ i ].lbl );
+			}
+			for ( int alt_d = 0; alt_d <= 90; alt_d += 30 )
+			{
+				float y = ar0.y + sz.y - (float)alt_d / 90.0f * sz.y;
+				char buf[ 8 ]; snprintf( buf, sizeof( buf ), "%d", alt_d );
+				ImVec2 lp( ar0.x - 28.0f, y - 6.0f );
+				ImWidgets::DrawText( pDrawList, font, 9.0f, lp,
+				                     IM_COL32( 180, 195, 220, 220 ), buf );
+			}
+
+			auto projC = [ & ]( float az, float alt ) -> ImVec2
+			{
+				float az_n = fmodf( az, 360.0f );
+				if ( az_n < 0.0f ) az_n += 360.0f;
+				return ImVec2( ar0.x + az_n / 360.0f * sz.x,
+				               ar0.y + sz.y - alt / 90.0f * sz.y );
+			};
+
+			// Monthly arcs (skip lines that wrap across the azimuth seam).
+			for ( int mi = 0; mi < IM_ARRAYSIZE( s_SunPathMonths ); ++mi )
+			{
+				DwSunPathMonth const& m = s_SunPathMonths[ mi ];
+				int doy = DwDayOfYear( year, m.month_idx, m.day_of_month );
+				ImVec2 prev( 0.0f, 0.0f ); float prev_az = 0.0f;
+				bool havePrev = false;
+				const int N = 24 * 8;
+				for ( int h = 0; h <= N; ++h )
+				{
+					float t = (float)h / 8.0f;
+					float alt, az;
+					DwSunPathSolarPos( doy, t, obsLat, obsLon, tzOffset, alt, az );
+					if ( alt > 0.5f )
+					{
+						ImVec2 p = projC( az, alt );
+						if ( havePrev && fabsf( az - prev_az ) < 180.0f )
+							pDrawList->AddLine( prev, p, m.color, 2.0f );
+						prev = p; prev_az = az; havePrev = true;
+					}
+					else
+					{
+						havePrev = false;
+					}
+				}
+			}
+
+			// Analemmas
+			for ( int hi = 0; hi < 5; ++hi )
+			{
+				int hour = s_SunPathAnalemmaHours[ hi ];
+				ImVec2 prev( 0.0f, 0.0f ); float prev_az = 0.0f;
+				bool havePrev = false;
+				float top_y = FLT_MAX; ImVec2 top_pt( 0.0f, 0.0f );
+				for ( int doy = 1; doy <= 365; doy += 3 )
+				{
+					float alt, az;
+					DwSunPathSolarPos( doy, (float)hour, obsLat, obsLon, tzOffset, alt, az );
+					if ( alt > 0.5f )
+					{
+						ImVec2 p = projC( az, alt );
+						if ( havePrev && fabsf( az - prev_az ) < 180.0f )
+							pDrawList->AddLine( prev, p, s_SunPathAnalemmaCol, 1.0f );
+						prev = p; prev_az = az; havePrev = true;
+						if ( p.y < top_y ) { top_y = p.y; top_pt = p; }
+					}
+					else
+					{
+						havePrev = false;
+					}
+				}
+				if ( top_y < FLT_MAX )
+				{
+					char buf[ 8 ]; snprintf( buf, sizeof( buf ), "%02dh", hour );
+					ImVec2 lp( top_pt.x + 3.0f, top_pt.y - 13.0f );
+					ImWidgets::DrawText( pDrawList, font, 9.0f, lp,
+					                     IM_COL32( 255, 235, 130, 240 ), buf );
+				}
+			}
+
+			pDrawList->AddRect( ar0, ImVec2( ar0.x + sz.x, ar0.y + sz.y ),
+			                    outlineCol, 0.0f, 0, 1.0f );
+		}
+	}
+
 	void Im_CircleFromRect( ImRect r, void* data )
 	{
 		ImCircle* c = ( ImCircle* )data;

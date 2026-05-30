@@ -3584,6 +3584,23 @@ namespace ImWidgets{
 	                              ImU32 skyCol = IM_COL32( 8, 11, 22, 255 ),
 	                              ImU32 outlineCol = IM_COL32( 180, 195, 225, 230 ) );
 
+	// Sun-path diagram + analemma. Polar mode = zenith-centred dome (sun arcs
+	// are radial curves from sunrise to sunset); Cartesian = azimuth x altitude.
+	// Yellow analemma figure-8 loops are drawn at five fixed local clock hours
+	// (06h/09h/12h/15h/18h). Equation of time + longitude offset from time-zone
+	// meridian produce the east-west spread of the analemma.
+	enum ImWidgetsSunPathMode
+	{
+		ImWidgetsSunPathMode_Polar = 0,
+		ImWidgetsSunPathMode_Cartesian
+	};
+	IMGUI_API void DrawSunPath( ImDrawList* pDrawList, ImVec2 areaMin, ImVec2 areaSize,
+	                            float obsLat = 48.85f, float obsLon = 0.0f,
+	                            int tzOffset = 0, int year = 2026,
+	                            ImWidgetsSunPathMode mode = ImWidgetsSunPathMode_Polar,
+	                            ImU32 bgCol = IM_COL32( 12, 18, 30, 255 ),
+	                            ImU32 outlineCol = IM_COL32( 190, 205, 230, 240 ) );
+
 	typedef void ( *ImInlineOffset )( void* data, ImVec2 offset );
 	typedef void ( *ImDrawShape )( ImDrawList* drawlist, ImU32 col, float thickness, void* data );
 	typedef void ( *ImDrawShapeFilled )( ImDrawList* drawlist, ImU32 col, void* data );
