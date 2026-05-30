@@ -4293,6 +4293,60 @@ namespace ImWidgets{
 				DW_SsRecord( "Draw_Ephemerides", _sy0, ImGui::GetCursorPos().y );
 				ImGui::TreePop();
 			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Star chart##Draw" ) )
+			{
+				float _sy0 = ImGui::GetCursorPos().y;
+				static int s_year = 2026, s_month = 1, s_day = 15, s_hour = 21, s_minute = 0;
+				static float s_lon = 2.35f, s_lat = 48.85f;
+				static float s_mag = 5.5f;
+				static float s_scale = 1.0f;
+				static int s_culture = (int)ImWidgets::ImWidgetsSkyCulture_Western;
+				static bool s_showSS = true;
+
+				ImGui::TextWrapped( "Observer-centred sky chart: stars projected via alt/az, "
+				                    "culture-specific constellation figure lines + native star names, "
+				                    "solar system overlay (Moon with phase, 5 planets, Sun if above horizon). "
+				                    "Arabic / CJK labels use ImWidgets::DrawText (Slug GPU font) for BiDi + complex shaping." );
+
+				ImGui::DragInt( "Year",     &s_year,   1.0f, 1900, 2100 );
+				ImGui::DragInt( "Month",    &s_month,  0.1f, 1,    12 );
+				ImGui::DragInt( "Day",      &s_day,    0.1f, 1,    31 );
+				ImGui::DragInt( "Hour UT",  &s_hour,   0.1f, 0,    23 );
+				ImGui::DragInt( "Minute UT",&s_minute, 0.5f, 0,    59 );
+				ImGui::DragFloat( "Lon (deg)", &s_lon, 0.5f, -180.0f, 180.0f, "%.2f" );
+				ImGui::DragFloat( "Lat (deg)", &s_lat, 0.25f, -90.0f,  90.0f, "%.2f" );
+				ImGui::SliderFloat( "Mag limit",  &s_mag,   0.0f, 7.0f, "%.1f" );
+				ImGui::SliderFloat( "Star scale", &s_scale, 0.3f, 3.0f, "%.2f" );
+
+				int nCul = ImWidgets::GetSkyCultureCount();
+				char const* curCulName = ImWidgets::GetSkyCultureName( (ImWidgets::ImWidgetsSkyCulture)s_culture );
+				if ( ImGui::BeginCombo( "Sky culture", curCulName ) )
+				{
+					for ( int i = 0; i < nCul; ++i )
+					{
+						bool sel = ( s_culture == i );
+						char const* n = ImWidgets::GetSkyCultureName( (ImWidgets::ImWidgetsSkyCulture)i );
+						if ( ImGui::Selectable( n, sel ) ) s_culture = i;
+						if ( sel ) ImGui::SetItemDefaultFocus();
+					}
+					ImGui::EndCombo();
+				}
+				ImGui::Checkbox( "Show solar system", &s_showSS );
+
+				ImGui::Spacing();
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				ImVec2 p0 = ImGui::GetCursorScreenPos();
+				float R = 220.0f;
+				ImVec2 center( p0.x + R + 4.0f, p0.y + R + 4.0f );
+				ImWidgets::DrawStarChart( dl, center, R, s_year, s_month, s_day, s_hour, s_minute,
+				                          s_lon, s_lat, s_mag, s_scale,
+				                          (ImWidgets::ImWidgetsSkyCulture)s_culture, s_showSS );
+				ImGui::Dummy( ImVec2( 2.0f * R + 8.0f, 2.0f * R + 8.0f ) );
+
+				DW_SsRecord( "Draw_StarChart", _sy0, ImGui::GetCursorPos().y );
+				ImGui::TreePop();
+			}
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Text##Draw" ) )

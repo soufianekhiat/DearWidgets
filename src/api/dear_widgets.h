@@ -3557,6 +3557,33 @@ namespace ImWidgets{
 	                                      ImU32 nightCol = IM_COL32( 25, 35, 60, 255 ),
 	                                      ImU32 outlineCol = IM_COL32( 180, 190, 210, 255 ) );
 
+	// Sky cultures supported by DrawStarChart. Each defines its own
+	// constellation figure lines + native star names + solar-system body names.
+	enum ImWidgetsSkyCulture
+	{
+		ImWidgetsSkyCulture_Western = 0,    // IAU modern, 88 constellations
+		ImWidgetsSkyCulture_Chinese,        // Han-dynasty 28 lunar mansions
+		ImWidgetsSkyCulture_Arabic,         // Manazil al-Qamar (Arabic right-to-left text)
+		ImWidgetsSkyCulture_Polynesian,     // Maori navigation
+		ImWidgetsSkyCulture_COUNT
+	};
+
+	IMGUI_API char const* GetSkyCultureName( ImWidgetsSkyCulture culture );
+	IMGUI_API int         GetSkyCultureCount();
+
+	// Observer-centred sky chart. Stars projected via equatorial-to-horizon
+	// (alt/az). Culture-specific constellation figure lines + native star
+	// names + solar-system body names. Solar system overlay shows Moon
+	// (with phase), naked-eye planets, and Sun when above horizon.
+	IMGUI_API void DrawStarChart( ImDrawList* pDrawList, ImVec2 center, float radius,
+	                              int year, int month, int day, int hour, int minute,
+	                              float obsLon = 0.0f, float obsLat = 48.85f,
+	                              float magLimit = 5.5f, float starScale = 1.0f,
+	                              ImWidgetsSkyCulture culture = ImWidgetsSkyCulture_Western,
+	                              bool showSolarSystem = true,
+	                              ImU32 skyCol = IM_COL32( 8, 11, 22, 255 ),
+	                              ImU32 outlineCol = IM_COL32( 180, 195, 225, 230 ) );
+
 	typedef void ( *ImInlineOffset )( void* data, ImVec2 offset );
 	typedef void ( *ImDrawShape )( ImDrawList* drawlist, ImU32 col, float thickness, void* data );
 	typedef void ( *ImDrawShapeFilled )( ImDrawList* drawlist, ImU32 col, void* data );

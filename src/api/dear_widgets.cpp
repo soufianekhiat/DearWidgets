@@ -6225,6 +6225,601 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 	}
 
+	//////////////////////////////////////////////////////////////////////////
+	// DrawStarChart — observer-centred sky with stars + culture-specific
+	// constellation figure lines + solar-system overlay (Moon with phase,
+	// 5 naked-eye planets, Sun when above horizon).
+	//
+	// Sky culture data tables drive the rendering. Culture-specific labels
+	// (which may be CJK or right-to-left Arabic) are rendered via
+	// ImWidgets::DrawText which uses the Slug GPU font and supports BiDi.
+	//////////////////////////////////////////////////////////////////////////
+
+	// Star catalogue: name, RA hours, Dec degrees, V mag, spectral letter.
+	struct DwStarDef { char const* name; float ra_h; float dec_deg; float vmag; char spec; };
+	static const DwStarDef s_StarCatalog[] = {
+		{ "Sirius",     6.752f, -16.716f, -1.46f, 'A' },
+		{ "Canopus",    6.399f, -52.696f, -0.74f, 'F' },
+		{ "Arcturus",  14.261f,  19.182f, -0.05f, 'K' },
+		{ "Vega",      18.616f,  38.784f,  0.03f, 'A' },
+		{ "Capella",    5.278f,  45.998f,  0.08f, 'G' },
+		{ "Rigel",      5.242f,  -8.202f,  0.13f, 'B' },
+		{ "Procyon",    7.655f,   5.225f,  0.34f, 'F' },
+		{ "Achernar",   1.629f, -57.237f,  0.46f, 'B' },
+		{ "Betelgeuse", 5.919f,   7.407f,  0.50f, 'M' },
+		{ "Hadar",     14.064f, -60.373f,  0.61f, 'B' },
+		{ "Altair",    19.846f,   8.868f,  0.77f, 'A' },
+		{ "Aldebaran",  4.598f,  16.509f,  0.85f, 'K' },
+		{ "Spica",     13.420f, -11.161f,  1.04f, 'B' },
+		{ "Antares",   16.490f, -26.432f,  1.06f, 'M' },
+		{ "Pollux",     7.755f,  28.026f,  1.14f, 'K' },
+		{ "Fomalhaut", 22.961f, -29.622f,  1.16f, 'A' },
+		{ "Deneb",     20.690f,  45.280f,  1.25f, 'A' },
+		{ "Mimosa",    12.795f, -59.689f,  1.25f, 'B' },
+		{ "Regulus",   10.140f,  11.967f,  1.35f, 'B' },
+		{ "Adhara",     6.977f, -28.972f,  1.50f, 'B' },
+		{ "Castor",     7.577f,  31.889f,  1.58f, 'A' },
+		{ "Shaula",    17.560f, -37.104f,  1.62f, 'B' },
+		{ "Bellatrix",  5.418f,   6.350f,  1.64f, 'B' },
+		{ "Elnath",     5.438f,  28.608f,  1.65f, 'B' },
+		{ "Alnilam",    5.604f,  -1.202f,  1.69f, 'B' },
+		{ "Alnitak",    5.679f,  -1.943f,  1.74f, 'O' },
+		{ "Alioth",    12.900f,  55.960f,  1.76f, 'A' },
+		{ "Dubhe",     11.062f,  61.751f,  1.79f, 'K' },
+		{ "Mirfak",     3.405f,  49.861f,  1.79f, 'F' },
+		{ "Wezen",      7.140f, -26.393f,  1.83f, 'F' },
+		{ "Alkaid",    13.792f,  49.313f,  1.85f, 'B' },
+		{ "Saiph",      5.795f,  -9.670f,  2.06f, 'B' },
+		{ "Mizar",     13.399f,  54.925f,  2.04f, 'A' },
+		{ "Polaris",    2.530f,  89.264f,  1.97f, 'F' },
+		{ "Mintaka",    5.533f,  -0.299f,  2.23f, 'O' },
+		{ "Schedar",    0.675f,  56.537f,  2.24f, 'K' },
+		{ "Caph",       0.153f,  59.150f,  2.27f, 'F' },
+		{ "Merak",     11.031f,  56.382f,  2.34f, 'A' },
+		{ "Phecda",    11.897f,  53.695f,  2.41f, 'A' },
+		{ "Tsih",       0.945f,  60.717f,  2.47f, 'B' },
+		{ "Ruchbah",    1.430f,  60.235f,  2.66f, 'A' },
+		{ "Algieba",   10.333f,  19.842f,  2.28f, 'K' },
+		{ "Denebola",  11.818f,  14.572f,  2.14f, 'A' },
+		{ "Pleiades",   3.792f,  24.105f,  1.60f, 'B' },
+		{ "Megrez",    12.257f,  57.033f,  3.31f, 'A' },
+	};
+	static const int s_NStars = IM_ARRAYSIZE( s_StarCatalog );
+
+	// Planet J2000 mean-longitude orbital elements (degrees, deg/day).
+	struct DwPlanetDef { char const* name; float au; float L0; float n_deg; float incl; float node; ImU32 col; float size; };
+	static const DwPlanetDef s_PlanetData[] = {
+		{ "Mercury", 0.387f,  252.25f, 4.0923f,  7.00f,  48.33f, IM_COL32( 210, 175, 140, 255 ), 3.5f },
+		{ "Venus",   0.723f,  181.98f, 1.6022f,  3.39f,  76.68f, IM_COL32( 250, 230, 175, 255 ), 5.5f },
+		{ "Earth",   1.000f,  100.46f, 0.9856f,  0.00f,   0.00f, IM_COL32(   0,   0,   0,   0 ), 0.0f },
+		{ "Mars",    1.524f,  355.43f, 0.5240f,  1.85f,  49.56f, IM_COL32( 235, 120,  75, 255 ), 4.5f },
+		{ "Jupiter", 5.203f,   34.40f, 0.0831f,  1.30f, 100.46f, IM_COL32( 225, 195, 145, 255 ), 8.0f },
+		{ "Saturn",  9.582f,   49.94f, 0.0335f,  2.49f, 113.71f, IM_COL32( 235, 215, 160, 255 ), 7.0f },
+	};
+
+	// Sky-culture data. Each culture defines: constellation figure lines
+	// (pairs of star-name strings — looked up at draw time), star-label
+	// overrides, and per-body solar-system names ordered as
+	// { Sun, Moon, Mercury, Venus, Mars, Jupiter, Saturn }.
+	struct DwConstLine { char const* a; char const* b; };
+	struct DwStarLabel { char const* star; char const* label; };
+	struct DwSkyCultureData {
+		char const* id;
+		char const* display_name;
+		char const* subtitle;
+		ImU32       line_color;
+		ImU32       label_color;
+		int         n_lines;
+		DwConstLine const* lines;
+		int         n_labels;
+		DwStarLabel const* labels;
+		char const* ss_names[ 7 ];
+	};
+
+	// ---- Western (IAU modern) ----
+	static const DwConstLine s_Western_Lines[] = {
+		{ "Dubhe", "Merak" }, { "Merak", "Phecda" }, { "Phecda", "Megrez" },
+		{ "Megrez", "Dubhe" }, { "Megrez", "Alioth" }, { "Alioth", "Mizar" },
+		{ "Mizar", "Alkaid" },
+		{ "Betelgeuse", "Bellatrix" }, { "Betelgeuse", "Alnitak" },
+		{ "Bellatrix", "Mintaka" }, { "Mintaka", "Alnilam" },
+		{ "Alnilam", "Alnitak" }, { "Alnitak", "Saiph" },
+		{ "Saiph", "Rigel" }, { "Rigel", "Mintaka" },
+		{ "Caph", "Schedar" }, { "Schedar", "Tsih" }, { "Tsih", "Ruchbah" },
+		{ "Sirius", "Adhara" }, { "Adhara", "Wezen" },
+		{ "Aldebaran", "Elnath" },
+		{ "Castor", "Pollux" },
+		{ "Regulus", "Algieba" }, { "Algieba", "Denebola" },
+	};
+	static const DwStarLabel s_Western_Labels[] = {
+		{ "Sirius",     "Sirius"     },
+		{ "Vega",       "Vega"       },
+		{ "Polaris",    "Polaris"    },
+		{ "Betelgeuse", "Betelgeuse" },
+		{ "Rigel",      "Rigel"      },
+	};
+
+	// ---- Chinese (Han dynasty) ----
+	static const DwConstLine s_Chinese_Lines[] = {
+		{ "Dubhe", "Merak" }, { "Merak", "Phecda" }, { "Phecda", "Megrez" },
+		{ "Megrez", "Alioth" }, { "Alioth", "Mizar" }, { "Mizar", "Alkaid" },
+		{ "Mintaka", "Alnilam" }, { "Alnilam", "Alnitak" },
+		{ "Betelgeuse", "Bellatrix" }, { "Saiph", "Rigel" },
+		{ "Aldebaran", "Elnath" },
+		{ "Regulus", "Algieba" },
+		{ "Caph", "Schedar" }, { "Schedar", "Tsih" },
+	};
+	static const DwStarLabel s_Chinese_Labels[] = {
+		{ "Sirius",     "Tian Lang \xE5\xA4\xA9\xE7\x8B\xBC" },
+		{ "Aldebaran",  "Bi Su Wu \xE7\x95\xA2\xE5\xAE\xBF\xE4\xBA\x94" },
+		{ "Vega",       "Zhi Nu \xE7\xB9\x94\xE5\xA5\xB3" },
+		{ "Altair",     "Qian Niu \xE7\x89\xBD\xE7\x89\x9B" },
+		{ "Antares",    "Da Huo \xE5\xA4\xA7\xE7\x81\xAB" },
+		{ "Betelgeuse", "Shen Xiu Si \xE5\x8F\x83\xE5\xAE\xBF\xE5\x9B\x9B" },
+		{ "Rigel",      "Shen Xiu Qi \xE5\x8F\x83\xE5\xAE\xBF\xE4\xB8\x83" },
+		{ "Polaris",    "Bei Ji \xE5\x8C\x97\xE6\xA5\xB5" },
+		{ "Pleiades",   "Mao \xE6\x98\xB4" },
+		{ "Regulus",    "Xuan Yuan \xE8\xBB\x92\xE8\xBD\x95" },
+	};
+
+	// ---- Arabic (Manazil al-Qamar) ----
+	static const DwConstLine s_Arabic_Lines[] = {
+		// Al-Jawza' (Orion)
+		{ "Betelgeuse", "Bellatrix" }, { "Bellatrix", "Mintaka" },
+		{ "Mintaka", "Alnilam" }, { "Alnilam", "Alnitak" },
+		{ "Alnitak", "Saiph" }, { "Saiph", "Rigel" }, { "Rigel", "Mintaka" },
+		// Al-Asad al-Akbar (Greater Lion)
+		{ "Regulus", "Algieba" }, { "Algieba", "Denebola" },
+		// Banat Na'ash (Daughters of the Bier — Big Dipper)
+		{ "Dubhe", "Merak" }, { "Merak", "Phecda" }, { "Phecda", "Megrez" },
+		{ "Megrez", "Dubhe" }, { "Megrez", "Alioth" }, { "Alioth", "Mizar" },
+		{ "Mizar", "Alkaid" },
+	};
+	static const DwStarLabel s_Arabic_Labels[] = {
+		{ "Aldebaran",  "Al-Dabaran \xD9\xB1\xD9\x84\xD8\xAF\xD9\x8E\xD9\x91\xD8\xA8\xD8\xB1\xD8\xA7\xD9\x86" },
+		{ "Sirius",     "Al-Shi'ra \xD9\xB1\xD9\x84\xD8\xB4\xD9\x91\xD9\x90\xD8\xB9\xD8\xB1\xD9\x89" },
+		{ "Betelgeuse", "Yad al-Jawza' \xD9\x8A\xD9\x8E\xD8\xAF\xD9\x8F\x20\xD8\xA7\xD9\x84\xD8\xAC\xD9\x8E\xD9\x88\xD8\xB2\xD8\xA7\xD8\xA1" },
+		{ "Rigel",      "Rijl al-Jabbar \xD8\xB1\xD9\x90\xD8\xAC\xD9\x92\xD9\x84\x20\xD8\xA7\xD9\x84\xD8\xAC\xD9\x8E\xD8\xA8\xD9\x91\xD8\xA7\xD8\xB1" },
+		{ "Vega",       "Al-Nasr al-Waqi' \xD8\xA7\xD9\x84\xD9\x86\xD9\x8E\xD8\xB3\xD9\x92\xD8\xB1\x20\xD8\xA7\xD9\x84\xD9\x88\xD9\x8E\xD8\xA7\xD9\x82\xD9\x90\xD8\xB9" },
+		{ "Altair",     "Al-Nasr al-Ta'ir \xD8\xA7\xD9\x84\xD9\x86\xD9\x8E\xD8\xB3\xD9\x92\xD8\xB1\x20\xD8\xA7\xD9\x84\xD8\xB7\xD9\x91\xD8\xA7\xD8\xA6\xD9\x90\xD8\xB1" },
+		{ "Antares",    "Qalb al-'Aqrab \xD9\x82\xD9\x8E\xD9\x84\xD9\x92\xD8\xA8\x20\xD8\xA7\xD9\x84\xD8\xB9\xD9\x8E\xD9\x82\xD9\x92\xD8\xB1\xD9\x8E\xD8\xA8" },
+		{ "Fomalhaut",  "Fum al-Hut \xD9\x81\xD9\x8E\xD9\x85\xD9\x8F\x20\xD8\xA7\xD9\x84\xD8\xAD\xD9\x8F\xD9\x88\xD8\xAA" },
+		{ "Regulus",    "Qalb al-Asad \xD9\x82\xD9\x8E\xD9\x84\xD9\x92\xD8\xA8\x20\xD8\xA7\xD9\x84\xD8\xA3\xD9\x8E\xD8\xB3\xD9\x8E\xD8\xAF" },
+		{ "Polaris",    "Al-Jadi \xD9\xB1\xD9\x84\xD8\xAC\xD9\x8E\xD8\xAF\xD9\x92\xD9\x8A" },
+		{ "Capella",    "Al-'Ayyuq \xD9\xB1\xD9\x84\xD8\xB9\xD9\x8E\xD9\x8A\xD9\x91\xD9\x88\xD9\x82" },
+		{ "Pleiades",   "Al-Thurayya \xD9\xB1\xD9\x84\xD8\xAB\xD9\x91\xD9\x8F\xD8\xB1\xD9\x8E\xD9\x8A\xD9\x91\xD8\xA7" },
+	};
+
+	// ---- Polynesian (Maori navigation) ----
+	static const DwConstLine s_Polynesian_Lines[] = {
+		{ "Mintaka", "Alnilam" }, { "Alnilam", "Alnitak" },
+		{ "Rigel", "Saiph" }, { "Saiph", "Alnitak" },
+		{ "Betelgeuse", "Mintaka" },
+		{ "Pleiades", "Aldebaran" },
+	};
+	static const DwStarLabel s_Polynesian_Labels[] = {
+		{ "Sirius",     "Takurua"             },
+		{ "Canopus",    "Atutahi"             },
+		{ "Pleiades",   "Matariki"            },
+		{ "Vega",       "Whanui"              },
+		{ "Antares",    "Rehua"               },
+		{ "Achernar",   "Hine-i-Tapeka"       },
+		{ "Aldebaran",  "Parearau"            },
+		{ "Rigel",      "Puanga"              },
+		{ "Betelgeuse", "Putara"              },
+		{ "Altair",     "Poutu-te-rangi"      },
+	};
+
+	static const DwSkyCultureData s_SkyCultures[] = {
+		{ "western", "Western (IAU modern)",
+		  "Greek/Roman + Renaissance + Lacaille southern",
+		  IM_COL32( 110, 150, 215, 150 ), IM_COL32( 200, 215, 240, 200 ),
+		  IM_ARRAYSIZE( s_Western_Lines ), s_Western_Lines,
+		  IM_ARRAYSIZE( s_Western_Labels ), s_Western_Labels,
+		  { "Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn" } },
+		{ "chinese", "Chinese (Han dynasty)",
+		  "Three Enclosures + 28 Lunar Mansions",
+		  IM_COL32( 220,  95,  75, 165 ), IM_COL32( 255, 195, 165, 220 ),
+		  IM_ARRAYSIZE( s_Chinese_Lines ), s_Chinese_Lines,
+		  IM_ARRAYSIZE( s_Chinese_Labels ), s_Chinese_Labels,
+		  { "Ri \xE6\x97\xA5", "Yue \xE6\x9C\x88",
+		    "Chen Xing \xE8\xBE\xB0\xE6\x98\x9F", "Tai Bai \xE5\xA4\xAA\xE7\x99\xBD",
+		    "Ying Huo \xE7\x86\x92\xE6\x83\x91", "Sui Xing \xE6\xAD\xB2\xE6\x98\x9F",
+		    "Zhen Xing \xE9\x8E\xAE\xE6\x98\x9F" } },
+		{ "arabic", "Arabic (Manazil al-Qamar)",
+		  "Pre-Islamic Bedouin + Almagest tradition",
+		  IM_COL32( 215, 165,  75, 160 ), IM_COL32( 255, 220, 170, 220 ),
+		  IM_ARRAYSIZE( s_Arabic_Lines ), s_Arabic_Lines,
+		  IM_ARRAYSIZE( s_Arabic_Labels ), s_Arabic_Labels,
+		  { "Al-Shams \xD8\xA7\xD9\x84\xD8\xB4\xD9\x91\xD9\x8E\xD9\x85\xD8\xB3",
+		    "Al-Qamar \xD8\xA7\xD9\x84\xD9\x82\xD9\x85\xD8\xB1",
+		    "Utarid \xD8\xB9\xD9\x8F\xD8\xB7\xD8\xA7\xD8\xB1\xD8\xAF",
+		    "Al-Zuhara \xD8\xA7\xD9\x84\xD8\xB2\xD9\x91\xD9\x8F\xD9\x87\xD8\xB1\xD8\xA9",
+		    "Al-Mirrikh \xD8\xA7\xD9\x84\xD9\x85\xD9\x90\xD8\xB1\xD9\x91\xD9\x90\xD9\x8A\xD8\xAE",
+		    "Al-Mushtari \xD8\xA7\xD9\x84\xD9\x85\xD9\x8F\xD8\xB4\xD8\xAA\xD8\xB1\xD9\x8A",
+		    "Zuhal \xD8\xB2\xD9\x8F\xD8\xAD\xD9\x8E\xD9\x84" } },
+		{ "polynesian", "Polynesian (Maori navigation)",
+		  "Wayfinding asterisms for ocean voyaging",
+		  IM_COL32( 105, 215, 175, 160 ), IM_COL32( 180, 245, 215, 220 ),
+		  IM_ARRAYSIZE( s_Polynesian_Lines ), s_Polynesian_Lines,
+		  IM_ARRAYSIZE( s_Polynesian_Labels ), s_Polynesian_Labels,
+		  { "Ra", "Marama", "Aparangi", "Kopu",
+		    "Whetu-Ura", "Kopunui", "Rongo" } },
+	};
+	static const int s_NSkyCultures = IM_ARRAYSIZE( s_SkyCultures );
+
+	// Procedural filler stars (deterministic LCG, generated lazily once).
+	struct DwFillerStar { float ra_h; float dec_deg; float vmag; char spec; };
+	static DwFillerStar s_FillerStars[ 600 ];
+	static bool         s_FillerStarsBuilt = false;
+
+	static void DwBuildFillerStars()
+	{
+		const uint32_t SEED0 = 42u;
+		uint32_t seed = SEED0;
+		static const float weights[ 7 ] = { 0.001f, 0.011f, 0.061f, 0.161f, 0.561f, 0.861f, 1.0f };
+		static const char letters[ 7 ] = { 'O', 'B', 'A', 'F', 'G', 'K', 'M' };
+		for ( int i = 0; i < IM_ARRAYSIZE( s_FillerStars ); ++i )
+		{
+			seed = seed * 1103515245u + 12345u;
+			float r1 = (float)( seed >> 16 ) / 65535.0f;
+			seed = seed * 1103515245u + 12345u;
+			float r2 = (float)( seed >> 16 ) / 65535.0f;
+			seed = seed * 1103515245u + 12345u;
+			float r3 = (float)( seed >> 16 ) / 65535.0f;
+			seed = seed * 1103515245u + 12345u;
+			float r4 = (float)( seed >> 16 ) / 65535.0f;
+
+			s_FillerStars[ i ].ra_h = r1 * 24.0f;
+			s_FillerStars[ i ].dec_deg = asinf( 2.0f * r2 - 1.0f ) * 180.0f / IM_PI;
+			s_FillerStars[ i ].vmag = 3.5f + sqrtf( r3 ) * 3.0f;
+			char letter = 'G';
+			for ( int k = 0; k < 7; ++k )
+				if ( r4 <= weights[ k ] ) { letter = letters[ k ]; break; }
+			s_FillerStars[ i ].spec = letter;
+		}
+		s_FillerStarsBuilt = true;
+	}
+
+	static ImU32 DwStarSpecColor( char c )
+	{
+		switch ( c )
+		{
+			case 'O': return IM_COL32( 155, 175, 255, 255 );
+			case 'B': return IM_COL32( 175, 200, 255, 255 );
+			case 'A': return IM_COL32( 215, 225, 255, 255 );
+			case 'F': return IM_COL32( 245, 240, 220, 255 );
+			case 'G': return IM_COL32( 255, 230, 170, 255 );
+			case 'K': return IM_COL32( 255, 190, 130, 255 );
+			case 'M': return IM_COL32( 255, 140,  90, 255 );
+			default:  return IM_COL32( 255, 255, 255, 255 );
+		}
+	}
+
+	static float DwStarGMSTRad( double JD )
+	{
+		double h = fmod( 18.697374558 + 24.06570982441908 * ( JD - 2451545.0 ), 24.0 );
+		if ( h < 0.0 ) h += 24.0;
+		return (float)( h * 15.0 * 3.14159265358979323846 / 180.0 );
+	}
+
+	static void DwStarHelioXYZ( float L0_deg, float n_deg, float days_J, float au,
+	                            float incl_rad, float node_rad,
+	                            float& x, float& y, float& z )
+	{
+		float theta = ( L0_deg + n_deg * days_J ) * IM_PI / 180.0f;
+		float co = cosf( node_rad ), so = sinf( node_rad );
+		float ci = cosf( incl_rad ), si = sinf( incl_rad );
+		float ct = cosf( theta ),    st = sinf( theta );
+		x = au * ( co * ct - so * st * ci );
+		y = au * ( so * ct + co * st * ci );
+		z = au * st * si;
+	}
+
+	static void DwStarEclToEq( float lam, float beta, float& ra, float& dec )
+	{
+		const float OBLIQ = 23.44f * IM_PI / 180.0f;
+		float sin_dec = sinf( beta ) * cosf( OBLIQ ) + cosf( beta ) * sinf( OBLIQ ) * sinf( lam );
+		sin_dec = ImClamp( sin_dec, -1.0f, 1.0f );
+		dec = asinf( sin_dec );
+		ra  = atan2f( sinf( lam ) * cosf( OBLIQ ) - tanf( beta ) * sinf( OBLIQ ), cosf( lam ) );
+	}
+
+	static void DwStarEqToHorizon( float ra, float dec, float lst, float lat,
+	                               float& alt, float& az )
+	{
+		float ha = lst - ra;
+		float sin_alt = sinf( lat ) * sinf( dec ) + cosf( lat ) * cosf( dec ) * cosf( ha );
+		sin_alt = ImClamp( sin_alt, -1.0f, 1.0f );
+		alt = asinf( sin_alt );
+		float cos_alt = cosf( alt );
+		if ( cos_alt < 1e-6f ) { az = 0.0f; return; }
+		float sin_az = -cosf( dec ) * sinf( ha ) / cos_alt;
+		float cos_az = ( sinf( dec ) - sin_alt * sinf( lat ) ) / ( cos_alt * cosf( lat ) );
+		az = atan2f( sin_az, cos_az );
+	}
+
+	static int DwFindStarIdx( char const* name )
+	{
+		for ( int i = 0; i < s_NStars; ++i )
+			if ( strcmp( s_StarCatalog[ i ].name, name ) == 0 ) return i;
+		return -1;
+	}
+
+	char const* GetSkyCultureName( ImWidgetsSkyCulture culture )
+	{
+		int idx = (int)culture;
+		if ( idx < 0 || idx >= s_NSkyCultures ) return "?";
+		return s_SkyCultures[ idx ].display_name;
+	}
+
+	int GetSkyCultureCount() { return s_NSkyCultures; }
+
+	void DrawStarChart( ImDrawList* pDrawList, ImVec2 center, float radius,
+	                    int year, int month, int day, int hour, int minute,
+	                    float obsLon, float obsLat,
+	                    float magLimit, float starScale,
+	                    ImWidgetsSkyCulture culture,
+	                    bool showSolarSystem,
+	                    ImU32 skyCol, ImU32 outlineCol )
+	{
+		if ( !pDrawList || radius <= 0.0f ) return;
+		if ( !s_FillerStarsBuilt ) DwBuildFillerStars();
+
+		int cidx = (int)culture;
+		if ( cidx < 0 || cidx >= s_NSkyCultures ) cidx = 0;
+		DwSkyCultureData const& cul = s_SkyCultures[ cidx ];
+
+		double JD  = DwJulianDate( year, month, day, (double)hour + (double)minute / 60.0 );
+		float  lst = DwStarGMSTRad( JD ) + obsLon * IM_PI / 180.0f;
+		lst = fmodf( lst, 2.0f * IM_PI );
+		if ( lst < 0.0f ) lst += 2.0f * IM_PI;
+		float lat_r = obsLat * IM_PI / 180.0f;
+
+		// Sky disc background
+		pDrawList->AddCircleFilled( center, radius, skyCol, 96 );
+
+		// Altitude rings (30 and 60 deg)
+		{
+			const int kAltRings[] = { 30, 60 };
+			for ( int i = 0; i < IM_ARRAYSIZE( kAltRings ); ++i )
+			{
+				float rr = radius * cosf( (float)kAltRings[ i ] * IM_PI / 180.0f );
+				pDrawList->AddCircle( center, rr, IM_COL32( 55, 65, 90, 180 ), 64, 1.0f );
+			}
+		}
+		// Azimuth spokes
+		for ( int az = 0; az < 360; az += 30 )
+		{
+			float a = (float)az * IM_PI / 180.0f;
+			pDrawList->AddLine( center,
+				ImVec2( center.x + radius * sinf( a ), center.y - radius * cosf( a ) ),
+				IM_COL32( 55, 65, 90, 150 ), 1.0f );
+		}
+
+		auto projAltAz = [ & ]( float alt, float az ) -> ImVec2
+		{
+			float rp = radius * cosf( alt );
+			return ImVec2( center.x + rp * sinf( az ), center.y - rp * cosf( az ) );
+		};
+
+		// Visible named stars
+		struct Vis { int idx; float alt; float az; };
+		ImVector<Vis> visible;
+		visible.reserve( s_NStars );
+		for ( int i = 0; i < s_NStars; ++i )
+		{
+			if ( s_StarCatalog[ i ].vmag > magLimit ) continue;
+			float ra  = s_StarCatalog[ i ].ra_h * 15.0f * IM_PI / 180.0f;
+			float dec = s_StarCatalog[ i ].dec_deg * IM_PI / 180.0f;
+			float alt, az;
+			DwStarEqToHorizon( ra, dec, lst, lat_r, alt, az );
+			if ( alt > 0.0f )
+			{
+				Vis v; v.idx = i; v.alt = alt; v.az = az;
+				visible.push_back( v );
+			}
+		}
+
+		auto findVis = [ & ]( char const* name ) -> Vis*
+		{
+			int idx = DwFindStarIdx( name );
+			if ( idx < 0 ) return nullptr;
+			for ( int i = 0; i < visible.Size; ++i )
+				if ( visible[ i ].idx == idx ) return &visible[ i ];
+			return nullptr;
+		};
+
+		// Filler stars
+		for ( int i = 0; i < IM_ARRAYSIZE( s_FillerStars ); ++i )
+		{
+			DwFillerStar const& fs = s_FillerStars[ i ];
+			if ( fs.vmag > magLimit ) continue;
+			float ra  = fs.ra_h * 15.0f * IM_PI / 180.0f;
+			float dec = fs.dec_deg * IM_PI / 180.0f;
+			float alt, az;
+			DwStarEqToHorizon( ra, dec, lst, lat_r, alt, az );
+			if ( alt <= 0.0f ) continue;
+			ImVec2 p = projAltAz( alt, az );
+			float sz = starScale * ImMax( 0.5f, ( magLimit - fs.vmag ) * 0.32f );
+			ImU32 col = ( DwStarSpecColor( fs.spec ) & 0x00FFFFFFu ) | ( 180u << 24 );
+			pDrawList->AddCircleFilled( p, sz, col, 8 );
+		}
+
+		// Constellation figure lines for current culture
+		for ( int li = 0; li < cul.n_lines; ++li )
+		{
+			Vis* a = findVis( cul.lines[ li ].a );
+			Vis* b = findVis( cul.lines[ li ].b );
+			if ( a && b )
+			{
+				pDrawList->AddLine( projAltAz( a->alt, a->az ),
+				                    projAltAz( b->alt, b->az ),
+				                    cul.line_color, 1.0f );
+			}
+		}
+
+		// Named stars (drawn on top of filler + lines)
+		for ( int vi = 0; vi < visible.Size; ++vi )
+		{
+			Vis const& v = visible[ vi ];
+			DwStarDef const& s = s_StarCatalog[ v.idx ];
+			ImVec2 p = projAltAz( v.alt, v.az );
+			float sz = starScale * ImMax( 1.0f, 4.5f - 0.7f * ( s.vmag + 1.0f ) );
+			ImU32 col = DwStarSpecColor( s.spec );
+			if ( s.vmag < 1.4f )
+				pDrawList->AddCircleFilled( p, sz + 1.5f, IM_COL32( 220, 230, 250, 55 ), 12 );
+			pDrawList->AddCircleFilled( p, sz, col, 12 );
+		}
+
+		// Slug-based label rendering — supports BiDi (Arabic) + CJK.
+		ImFont* font = ImGui::GetFont();
+		const float cardinalFs = 14.0f;
+		const float labelFs    = 11.0f;
+
+		// Cardinal labels (N/E/S/W) at the rim
+		{
+			struct Card { char const* lbl; int az; } cards[] = {
+				{ "N", 0 }, { "E", 90 }, { "S", 180 }, { "W", 270 }
+			};
+			for ( int i = 0; i < 4; ++i )
+			{
+				float a = (float)cards[ i ].az * IM_PI / 180.0f;
+				ImVec2 cp( center.x + radius * 1.09f * sinf( a ) - 5.0f,
+				           center.y - radius * 1.09f * cosf( a ) - 8.0f );
+				ImWidgets::DrawText( pDrawList, font, cardinalFs, cp,
+				                     IM_COL32( 230, 235, 250, 230 ), cards[ i ].lbl );
+			}
+		}
+
+		// Star labels (culture-specific) via Slug
+		for ( int lbi = 0; lbi < cul.n_labels; ++lbi )
+		{
+			Vis* v = findVis( cul.labels[ lbi ].star );
+			if ( v && s_StarCatalog[ v->idx ].vmag < 2.5f )
+			{
+				ImVec2 p = projAltAz( v->alt, v->az );
+				ImVec2 lp( p.x + 6.0f, p.y - 5.0f );
+				ImWidgets::DrawText( pDrawList, font, labelFs, lp,
+				                     cul.label_color, cul.labels[ lbi ].label );
+			}
+		}
+
+		// Solar-system overlay (Moon with phase, 5 planets, Sun if above horizon)
+		if ( showSolarSystem )
+		{
+			double days_J = JD - 2451545.0;
+			float ex, ey, ez;
+			DwStarHelioXYZ( s_PlanetData[ 2 ].L0, s_PlanetData[ 2 ].n_deg, (float)days_J,
+			                s_PlanetData[ 2 ].au, 0.0f, 0.0f, ex, ey, ez );
+
+			// Planets: Mercury, Venus, Mars, Jupiter, Saturn
+			static const int planetIdx[ 5 ] = { 0, 1, 3, 4, 5 };
+			for ( int pi = 0; pi < 5; ++pi )
+			{
+				int idx = planetIdx[ pi ];
+				DwPlanetDef const& pd = s_PlanetData[ idx ];
+				float px, py, pz;
+				DwStarHelioXYZ( pd.L0, pd.n_deg, (float)days_J, pd.au,
+				                pd.incl * IM_PI / 180.0f, pd.node * IM_PI / 180.0f,
+				                px, py, pz );
+				float gx = px - ex, gy = py - ey, gz = pz - ez;
+				float d = sqrtf( gx * gx + gy * gy + gz * gz );
+				if ( d < 1e-6f ) continue;
+				float lam = atan2f( gy, gx );
+				float beta = asinf( gz / d );
+				float ra, dec;
+				DwStarEclToEq( lam, beta, ra, dec );
+				float alt, az;
+				DwStarEqToHorizon( ra, dec, lst, lat_r, alt, az );
+				if ( alt <= 0.0f ) continue;
+				ImVec2 p = projAltAz( alt, az );
+				ImU32 halo = ( pd.col & 0x00FFFFFFu ) | ( 60u << 24 );
+				pDrawList->AddCircleFilled( p, pd.size + 3.0f, halo, 16 );
+				pDrawList->AddCircleFilled( p, pd.size, pd.col, 16 );
+				pDrawList->AddCircle( p, pd.size, IM_COL32( 255, 255, 255, 230 ), 16, 1.0f );
+				if ( idx == 5 ) // Saturn ring
+				{
+					float rA = pd.size * 1.9f, rB = pd.size * 0.55f;
+					ImVec2 prev( p.x + rA, p.y );
+					const int nseg = 24;
+					for ( int s_i = 1; s_i <= nseg; ++s_i )
+					{
+						float ang = 2.0f * IM_PI * (float)s_i / (float)nseg;
+						ImVec2 cur( p.x + rA * cosf( ang ), p.y + rB * sinf( ang ) );
+						pDrawList->AddLine( prev, cur, IM_COL32( 235, 215, 160, 220 ), 1.2f );
+						prev = cur;
+					}
+				}
+				char const* lbl = cul.ss_names[ 2 + pi ];
+				ImVec2 lp( p.x + pd.size + 5.0f, p.y - 6.0f );
+				ImU32 lblCol = ( pd.col & 0x00FFFFFFu ) | ( 240u << 24 );
+				ImWidgets::DrawText( pDrawList, font, labelFs, lp, lblCol, lbl );
+			}
+
+			// Sun + Moon: compute sun's RA/Dec from Earth's helio position
+			float sun_ra, sun_dec;
+			{
+				float lam = atan2f( -ey, -ex );
+				DwStarEclToEq( lam, 0.0f, sun_ra, sun_dec );
+			}
+			// Moon (synodic phase from 2000-01-06 18:14 UT reference)
+			{
+				const double JD_REF = 2451550.25972;
+				const double SYNODIC = 29.530588853;
+				double phase = ( JD - JD_REF ) / SYNODIC;
+				phase = phase - floor( phase );
+				const float OBLIQ = 23.44f * IM_PI / 180.0f;
+				float sun_lon = atan2f( sinf( sun_ra ) * cosf( OBLIQ )
+				                           + tanf( sun_dec ) * sinf( OBLIQ ),
+				                         cosf( sun_ra ) );
+				float moon_lon = sun_lon + 2.0f * IM_PI * (float)phase;
+				float m_ra, m_dec;
+				DwStarEclToEq( moon_lon, 0.0f, m_ra, m_dec );
+				float m_alt, m_az;
+				DwStarEqToHorizon( m_ra, m_dec, lst, lat_r, m_alt, m_az );
+				if ( m_alt > 0.0f )
+				{
+					ImVec2 p = projAltAz( m_alt, m_az );
+					float illum = ( 1.0f - cosf( 2.0f * IM_PI * (float)phase ) ) * 0.5f;
+					int gray = (int)( 180.0f + 65.0f * illum );
+					ImU32 mcol = IM_COL32( gray, gray, gray - 12, 255 );
+					pDrawList->AddCircleFilled( p, 10.0f, IM_COL32( 220, 230, 245, 50 ), 24 );
+					pDrawList->AddCircleFilled( p, 7.0f, mcol, 24 );
+					pDrawList->AddCircle( p, 7.0f, IM_COL32( 255, 255, 255, 230 ), 24, 1.0f );
+					ImVec2 lp( p.x + 11.0f, p.y - 6.0f );
+					ImWidgets::DrawText( pDrawList, font, labelFs, lp,
+					                     IM_COL32( 220, 230, 245, 240 ), cul.ss_names[ 1 ] );
+				}
+			}
+			// Sun (only when above horizon)
+			{
+				float s_alt, s_az;
+				DwStarEqToHorizon( sun_ra, sun_dec, lst, lat_r, s_alt, s_az );
+				if ( s_alt > 0.0f )
+				{
+					ImVec2 p = projAltAz( s_alt, s_az );
+					pDrawList->AddCircleFilled( p, 9.0f, IM_COL32( 255, 220, 80, 255 ), 24 );
+					pDrawList->AddCircle( p, 9.0f, IM_COL32( 255, 255, 255, 230 ), 24, 1.0f );
+					for ( int i = 0; i < 8; ++i )
+					{
+						float a = 2.0f * IM_PI * (float)i / 8.0f;
+						pDrawList->AddLine(
+							ImVec2( p.x + 11.0f * cosf( a ), p.y + 11.0f * sinf( a ) ),
+							ImVec2( p.x + 16.0f * cosf( a ), p.y + 16.0f * sinf( a ) ),
+							IM_COL32( 255, 200, 100, 220 ), 2.0f );
+					}
+					ImVec2 lp( p.x + 18.0f, p.y - 6.0f );
+					ImWidgets::DrawText( pDrawList, font, labelFs, lp,
+					                     IM_COL32( 255, 220, 90, 240 ), cul.ss_names[ 0 ] );
+				}
+			}
+		}
+
+		// Outer disc outline
+		pDrawList->AddCircle( center, radius, outlineCol, 96, 2.0f );
+	}
+
 	void Im_CircleFromRect( ImRect r, void* data )
 	{
 		ImCircle* c = ( ImCircle* )data;
