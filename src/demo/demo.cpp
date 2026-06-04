@@ -10474,6 +10474,46 @@ namespace ImWidgets{
 				ImWidgets::NotchedDial( "dial", &nv, stops, 5, slabels, ImVec2( 220, 240 ) );
 			}
 			ApplyOpenAll();
+			if ( ImGui::CollapsingHeader( "Angle Dial" ) )
+			{
+				ImGui::TextWrapped( "Continuous angle dial. Value is in degrees "
+					"(0 = East, CCW positive). Drag to set, scroll to nudge "
+					"(+/-1, +/-10 with Shift), Ctrl snaps to 15, double-click to "
+					"type an exact value." );
+				ImGui::Spacing();
+
+				// Full-turn dial: a heading angle stored in degrees [-180, 180].
+				static float heading_deg = 30.0f;
+				ImGui::BeginGroup();
+				ImGui::TextUnformatted( "Full turn (degrees, [-180, 180])" );
+				ImWidgets::AngleDial( "##angle_full", &heading_deg, -180.0f, 180.0f );
+				ImGui::Text( "heading = %.1f deg", heading_deg );
+				ImGui::EndGroup();
+
+				ImGui::SameLine( 0.0f, ImGui::GetStyle().ItemSpacing.x * 3.0f );
+
+				// Radian-stored value: convert to/from degrees around the dial,
+				// exactly how the inspector's type_widgets::edit_angle wraps it.
+				static float rotation_rad = 0.0f;
+				ImGui::BeginGroup();
+				ImGui::TextUnformatted( "Stored in radians [-pi, pi]" );
+				float rot_deg = rotation_rad * 57.29577951308232f;
+				if ( ImWidgets::AngleDial( "##angle_rad", &rot_deg, -180.0f, 180.0f ) )
+					rotation_rad = rot_deg * 0.017453292519943295f;
+				ImGui::Text( "rotation = %.3f rad", rotation_rad );
+				ImGui::EndGroup();
+
+				ImGui::SameLine( 0.0f, ImGui::GetStyle().ItemSpacing.x * 3.0f );
+
+				// Clamped arc: a sub-360 range draws boundary ticks and clamps.
+				static float cone_deg = 20.0f;
+				ImGui::BeginGroup();
+				ImGui::TextUnformatted( "Clamped arc [0, 90]" );
+				ImWidgets::AngleDial( "##angle_arc", &cone_deg, 0.0f, 90.0f );
+				ImGui::Text( "cone = %.1f deg", cone_deg );
+				ImGui::EndGroup();
+			}
+			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Equation Editor" ) )
 			{
 				ImGui::Text( "Equation input ($..$ inline, $$..$$ block, multiline):" );

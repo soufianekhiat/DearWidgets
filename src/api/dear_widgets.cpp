@@ -23201,7 +23201,19 @@ namespace ImWidgets {
 	// Image Viewer
 	//////////////////////////////////////////////////////////////////////////
 
-	bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize )
+	// Draw-callback: activate an ImPlatform custom shader for the next draw command
+	// (the ImageViewer image quad). ImGui's backend has already bound b0 (ProjMtx)
+	// and will bind the quad's texture as PS slot t0 before issuing the draw, so the
+	// PS samples the image via texture0/sampler0. Paired with an
+	// ImDrawCallback_ResetRenderState that restores ImGui's default shaders.
+	static void ImageViewer_BindShader_cb( const ImDrawList*, const ImDrawCmd* cmd )
+	{
+		ImPlatform_ShaderProgram prog = ( ImPlatform_ShaderProgram )cmd->UserCallbackData;
+		if ( prog )
+			ImPlatform_BeginCustomShader_Render( prog );
+	}
+
+	bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize, ImPlatform_ShaderProgram shaderProgram )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
@@ -23328,7 +23340,14 @@ namespace ImWidgets {
 			float uMax = ( imgCenter.x + visW * 0.5f ) / imageSize.x;
 			float vMin = ( imgCenter.y - visH * 0.5f ) / imageSize.y;
 			float vMax = ( imgCenter.y + visH * 0.5f ) / imageSize.y;
+			// Optional custom shader: bind it around the image draw so the PS colors
+			// `image` (sampled as texture0). Applies here and — because ImageViewer
+			// re-enters itself for the expand/modal view — in the modal draw too.
+			if ( shaderProgram )
+				dl->AddCallback( ImageViewer_BindShader_cb, shaderProgram );
 			dl->AddImage( image, bb.Min, bb.Max, ImVec2( uMin, vMin ), ImVec2( uMax, vMax ) );
+			if ( shaderProgram )
+				dl->AddCallback( ImDrawCallback_ResetRenderState, NULL );
 		}
 
 		// Pixel-grid overlay (shown when zoomed in enough for pixels to be visible)
@@ -23562,8 +23581,9 @@ namespace ImWidgets {
 			{
 				ImVec2 avail = ImGui::GetContentRegionAvail();
 				float  widgetW = avail.x * 0.75f;
-				// Left: image viewer
-				if ( ImageViewer( "##exp", image, imageSize, state, ImVec2( widgetW, avail.y ) ) )
+				// Left: image viewer (same shader as the inline draw, so the modal
+				// shows the shaded result instead of the raw texture).
+				if ( ImageViewer( "##exp", image, imageSize, state, ImVec2( widgetW, avail.y ), shaderProgram ) )
 					changed = true;
 				ImGui::SameLine();
 				// Right: info panel
@@ -27468,6 +27488,114 @@ namespace ImWidgets
                 *v = stops[best_s];
                 changed = true;
             }
+            EndPrecisionPopup();
+        }
+        return changed;
+    }
+
+    // Continuous angle dial (degrees, 0 = East, CCW positive). See header.
+    bool AngleDial(char const* label, float* v_deg, float v_min_deg, float v_max_deg, ImVec2 size)
+    {
+        if (!v_deg) return false;
+        if (v_max_deg < v_min_deg) { float t = v_min_deg; v_min_deg = v_max_deg; v_max_deg = t; }
+        if (size.x > 0.0f) size.x = LpToPx(size.x);
+        if (size.y > 0.0f) size.y = LpToPx(size.y);
+        float readout = ImGui::GetTextLineHeight() + LpToPx(4.0f);
+        if (size.x <= 0.0f) size.x = LpToPx(96.0f);
+        if (size.y <= 0.0f) size.y = LpToPx(96.0f) + readout;
+
+        ImVec2 pos = ImGui::GetCursorScreenPos();
+        ImGui::InvisibleButton(label, size, ImGuiButtonFlags_MouseButtonLeft);
+        bool hovered   = ImGui::IsItemHovered();
+        bool active    = ImGui::IsItemActive();
+        bool activated = ImGui::IsItemActivated();
+
+        ImVec2 center(pos.x + size.x * 0.5f, pos.y + (size.y - readout) * 0.5f);
+        float  radius = ImMin(size.x, size.y - readout) * 0.42f;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+
+        const float span = v_max_deg - v_min_deg;
+        const bool  full = span >= 359.999f;
+        const ImU32 accent = IM_COL32(255, 230, 140, 255);
+        const float deg2rad = IM_PI / 180.0f;
+
+        // Screen point for a CCW-positive angle measured from East (y is down).
+        auto vec = [&](float deg, float r) -> ImVec2 {
+            float a = deg * deg2rad;
+            return ImVec2(center.x + ImCos(a) * r, center.y - ImSin(a) * r);
+        };
+
+        // Dial body.
+        dl->AddCircleFilled(center, radius + LpToPx(4.0f), IM_COL32(40, 44, 52, 220), 48);
+        dl->AddCircle(center, radius, IM_COL32(200, 200, 200, 220), 64, LpToPx(1.5f));
+        // Boundary ticks for a clamped arc.
+        if (!full)
+        {
+            for (int s = 0; s < 2; ++s)
+            {
+                float bd = s ? v_max_deg : v_min_deg;
+                ImVec2 a = vec(bd, radius + LpToPx(1.0f));
+                ImVec2 b = vec(bd, radius + LpToPx(7.0f));
+                dl->AddLine(a, b, IM_COL32(150, 150, 160, 220), LpToPx(1.5f));
+            }
+        }
+        // Cardinal ticks (every 45 deg) for orientation reference.
+        for (int k = 0; k < 8; ++k)
+        {
+            float bd = (float)k * 45.0f;
+            ImVec2 a = vec(bd, radius - LpToPx(2.0f));
+            ImVec2 b = vec(bd, radius);
+            dl->AddLine(a, b, IM_COL32(120, 120, 130, 160), LpToPx(1.0f));
+        }
+
+        // Pointer at the current value.
+        ImVec2 tip = vec(*v_deg, radius - LpToPx(3.0f));
+        dl->AddLine(center, tip, accent, LpToPx(2.5f));
+        dl->AddCircleFilled(tip, LpToPx(4.0f), accent, 16);
+        dl->AddCircleFilled(center, LpToPx(3.5f), IM_COL32(230, 230, 230, 255), 16);
+
+        bool changed = false;
+
+        auto apply = [&](float deg) {
+            if (full)
+            {
+                while (deg < v_min_deg) deg += 360.0f;
+                while (deg > v_max_deg) deg -= 360.0f;
+            }
+            deg = ImClamp(deg, v_min_deg, v_max_deg);
+            if (ImFabs(deg - *v_deg) > 1e-4f) { *v_deg = deg; changed = true; }
+        };
+
+        if (active || activated)
+        {
+            ImVec2 m = ImGui::GetIO().MousePos;
+            float  deg = ImAtan2(-(m.y - center.y), (m.x - center.x)) / deg2rad; // (-180,180]
+            if (ImGui::GetIO().KeyCtrl) deg = ImRound(deg / 15.0f) * 15.0f;      // snap
+            apply(deg);
+        }
+        if (hovered && ImGui::GetIO().MouseWheel != 0.0f)
+        {
+            float step = ImGui::GetIO().KeyShift ? 10.0f : 1.0f;
+            apply(*v_deg + ImGui::GetIO().MouseWheel * step);
+        }
+
+        // Value readout under the dial.
+        char buf[24];
+        ImFormatString(buf, sizeof(buf), "%.0f\xC2\xB0", *v_deg); // degree sign (UTF-8)
+        ImVec2 ts = ImGui::CalcTextSize(buf);
+        dl->AddText(ImVec2(center.x - ts.x * 0.5f, pos.y + size.y - readout + LpToPx(1.0f)),
+                    IM_COL32(220, 220, 220, 255), buf);
+
+        // Precision popup: type the exact angle in degrees.
+        char prec_id[40];
+        ImFormatString(prec_id, sizeof(prec_id), "##ad_prec%08X", ImGui::GetID(label));
+        if (hovered && ImGui::IsMouseDoubleClicked(0))
+            ImGui::OpenPopup(prec_id);
+        if (BeginPrecisionPopup(prec_id, ImGui::GetIO().MousePos))
+        {
+            float tmp = *v_deg;
+            if (PrecisionFloat("Degrees", &tmp, 0.0f, v_min_deg, v_max_deg, "%.2f\xC2\xB0"))
+                apply(tmp);
             EndPrecisionPopup();
         }
         return changed;

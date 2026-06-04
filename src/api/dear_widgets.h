@@ -3868,7 +3868,16 @@ namespace ImWidgets{
 
 	// Image Viewer: pan (left-drag), zoom (scroll wheel), double-click to reset.
 	// Right-click shows a pixel-inspector loupe with RGBA values (requires state.Pixels).
-	IMGUI_API bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize = ImVec2( 0, 0 ) );
+	//
+	// shaderProgram (optional): an ImPlatform custom shader program bound around the
+	// image draw. When non-NULL, the viewer wraps its AddImage with the shader so the
+	// PS colors/decodes `image` (sampled as texture0; ImGui's b0 ProjMtx and the
+	// default ImGui VS interface still apply — author the VS as a standard ImGui VS).
+	// Because the shader binds INSIDE the widget, it applies in BOTH the inline draw
+	// and the expand/modal draw (which re-enters ImageViewer recursively). Pass NULL
+	// (default) for a plain textured draw. The image draw in the right-click loupe is
+	// left un-shaded (raw texels) so the pixel inspector reflects source data.
+	IMGUI_API bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize = ImVec2( 0, 0 ), ImPlatform_ShaderProgram shaderProgram = nullptr );
 
 	// Image Inspector: color-managed raw-buffer viewer with shader-side decode of any of the 11
 	// sample types x 1..4 channels described by ImImageBuffer. View transforms (gamma, sRGB,
@@ -4173,6 +4182,17 @@ namespace ImWidgets{
                                float const* stops, int stop_count,
                                char const* const* stop_labels = nullptr,
                                ImVec2 size = ImVec2(0, 0));
+
+    // Continuous angle dial. Value is in DEGREES (the caller converts to/from
+    // radians if its data is stored that way). 0 deg points East (right), and
+    // positive degrees sweep counter-clockwise. When [v_min,v_max] spans a full
+    // turn (>= 360 deg) the dial wraps freely; a smaller span clamps to an arc.
+    // Drag to set, scroll wheel to nudge (+/-1 deg, +/-10 with Shift), hold
+    // Ctrl to snap to 15 deg, double-click for a type-exact precision popup.
+    // The current value is shown as a "NN deg" readout under the dial.
+    IMGUI_API bool AngleDial(char const* label, float* v_deg,
+                             float v_min_deg = -180.0f, float v_max_deg = 180.0f,
+                             ImVec2 size = ImVec2(0, 0));
 
     // W6. Color-difference visualizer
     IMGUI_API float ColorDeltaE76   (ImVec4 a, ImVec4 b);
