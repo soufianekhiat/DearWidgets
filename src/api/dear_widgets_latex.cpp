@@ -1,7 +1,51 @@
-// dear_widgets_latex.cpp — LaTeX math expression parser, layout, and renderer.
+// dear_widgets_latex.cpp -- LaTeX math expression parser, layout, and renderer.
 // Uses Slug GPU font rendering for glyph output.
-// This file is #included from dear_widgets.cpp — do NOT compile it separately.
-#ifdef _DEAR_WIDGETS_LATEX_INCLUDED
+// Compiled as its own translation unit; resolved by the linker.
+#include <stdint.h>   // uint8_t, uint16_t, uint32_t, int16_t
+// stb_rect_pack FIRST -- defines stbrp_node as a proper named struct before imgui_internal.h's forward decl
+#define STBRP_STATIC
+#define STB_RECT_PACK_IMPLEMENTATION
+#if defined(_MSC_VER)
+#  pragma warning(push)
+#  pragma warning(disable: 4505)
+#elif defined(__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wunused-function"
+#elif defined(__GNUC__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wunused-function"
+#endif
+#include "../../extern/ImPlatform/imgui/imstb_rectpack.h"
+#if defined(_MSC_VER)
+#  pragma warning(pop)
+#elif defined(__clang__)
+#  pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#  pragma GCC diagnostic pop
+#endif
+// stb_truetype private implementation (STATIC = all funcs local to this TU, no ODR conflict)
+#define STBTT_STATIC
+#define STB_TRUETYPE_IMPLEMENTATION
+#if defined(_MSC_VER)
+#  pragma warning(push)
+#  pragma warning(disable: 4505)
+#elif defined(__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wunused-function"
+#elif defined(__GNUC__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wunused-function"
+#endif
+#include "../../extern/ImPlatform/imgui/imstb_truetype.h"
+#if defined(_MSC_VER)
+#  pragma warning(pop)
+#elif defined(__clang__)
+#  pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#  pragma GCC diagnostic pop
+#endif
+#include "dear_widgets.h"
+#include "dear_widgets_internal.h"  // CalcTextSize_Impl, DrawText_Impl, TesselateText_Impl, SlugLpToPx
 #include "dear_widgets_latex.h"
 #include <string.h>
 #include <stdlib.h>
@@ -103,42 +147,6 @@ static bool MathGetHAssembly(const stbtt_fontinfo* fi, int glyphID, float emScal
 		out->parts[i].isExtender     = (MathR16(pr + 8) & 1) != 0;
 	}
 	return true;
-}
-
-// Get italic correction for a glyph from the MATH table MathItalicsCorrectionInfo.
-// Returns the correction in em units (multiply by font_size to get pixels).
-static float MathGetItalicsCorrection(const stbtt_fontinfo* fi, int glyphID, float emScale) {
-	uint32_t mathLen = 0;
-	const uint8_t* math = MathFindTable(fi, 0x4D415448 /*'MATH'*/, &mathLen);
-	if (!math) return 0.0f;
-	uint16_t glyphInfoOff = MathR16(math + 6);
-	if (!glyphInfoOff) return 0.0f;
-	const uint8_t* glyphInfo = math + glyphInfoOff;
-	uint16_t italicsCorrOff = MathR16(glyphInfo);
-	if (!italicsCorrOff) return 0.0f;
-	const uint8_t* italicsCorr = glyphInfo + italicsCorrOff;
-	uint16_t covOff = MathR16(italicsCorr);
-	uint16_t count  = MathR16(italicsCorr + 2);
-	if (!covOff || !count) return 0.0f;
-	const uint8_t* cov = italicsCorr + covOff;
-	uint16_t covFmt = MathR16(cov);
-	int covIdx = -1;
-	if (covFmt == 1) {
-		uint16_t cnt = MathR16(cov + 2);
-		for (int i = 0; i < cnt; i++)
-			if (MathR16(cov + 4 + i * 2) == (uint16_t)glyphID) { covIdx = i; break; }
-	} else if (covFmt == 2) {
-		uint16_t cnt = MathR16(cov + 2);
-		for (int i = 0; i < cnt; i++) {
-			uint16_t startGI = MathR16(cov + 4 + i * 6);
-			uint16_t endGI   = MathR16(cov + 4 + i * 6 + 2);
-			uint16_t startCI = MathR16(cov + 4 + i * 6 + 4);
-			if ((uint16_t)glyphID >= startGI && (uint16_t)glyphID <= endGI) { covIdx = startCI + (glyphID - startGI); break; }
-		}
-	}
-	if (covIdx < 0 || covIdx >= (int)count) return 0.0f;
-	// MathValueRecord: int16 value, uint16 deviceTableOffset (we ignore device table)
-	return MathRS16(italicsCorr + 4 + covIdx * 4) * emScale;
 }
 
 // ---- Greek letter and command mapping ----
@@ -263,7 +271,7 @@ struct Tokenizer {
 			// Greek/symbol lookup
 			ImWchar cp = LookupCommand(t.cmd, i);
 			if (cp) { t.type = TOK_CHAR; t.ch = cp; return t; }
-			// Unknown command — emit as CMD for parser to handle
+			// Unknown command -- emit as CMD for parser to handle
 			t.type = TOK_CMD;
 			return t;
 		}
@@ -271,7 +279,7 @@ struct Tokenizer {
 		t.type = TOK_CHAR;
 		// UTF-8 decode
 		unsigned char c = (unsigned char)*p;
-		if (c < 0x80) { t.ch = (c == '-') ? (ImWchar)0x2212 : (ImWchar)c; p++; } // hyphen → minus sign U+2212
+		if (c < 0x80) { t.ch = (c == '-') ? (ImWchar)0x2212 : (ImWchar)c; p++; } // hyphen -> minus sign U+2212
 		else {
 			unsigned int cp = 0;
 			p += ImTextCharFromUtf8(&cp, p, p + 4);
@@ -312,7 +320,7 @@ static LaTeXBox* ParseAtom(Tokenizer& tok, float sizeFactor) {
 	}
 
 	if (t.type == TOK_CMD) {
-		// Style hints that don't produce output and don't consume arguments — skip silently.
+		// Style hints that don't produce output and don't consume arguments -- skip silently.
 		// The caller's loop will continue and parse the next real atom.
 		if (strcmp(t.cmd, "displaystyle") == 0 || strcmp(t.cmd, "textstyle") == 0 ||
 		    strcmp(t.cmd, "scriptstyle") == 0 || strcmp(t.cmd, "scriptscriptstyle") == 0 ||
@@ -328,10 +336,10 @@ static LaTeXBox* ParseAtom(Tokenizer& tok, float sizeFactor) {
 			LaTeXBox* sp = IM_NEW(LaTeXBox); sp->type = LaTeXBox_Space;
 			sp->sizeFactor = sizeFactor; sp->width = 0; return sp;
 		}
-		// \text{...}, \mathrm{...}, \textrm{...} — upright (non-italic) text
+		// \text{...}, \mathrm{...}, \textrm{...} -- upright (non-italic) text
 		if (strcmp(t.cmd, "text") == 0 || strcmp(t.cmd, "mathrm") == 0 ||
 		    strcmp(t.cmd, "textrm") == 0 || strcmp(t.cmd, "operatorname") == 0) {
-			// Read raw text from braces into text[] — single DrawText call via kbts
+			// Read raw text from braces into text[] -- single DrawText call via kbts
 			while (*tok.p == ' ') tok.p++;
 			if (*tok.p == '{') {
 				tok.p++; // consume {
@@ -340,7 +348,7 @@ static LaTeXBox* ParseAtom(Tokenizer& tok, float sizeFactor) {
 				g->isMathItalic = false;
 				g->sizeFactor = sizeFactor;
 				int ti = 0;
-				while (*tok.p && *tok.p != '}' && ti < 62) g->text[ti++] = *tok.p++;
+				while (*tok.p && *tok.p != '}' && ti < (int)sizeof(g->text) - 1) g->text[ti++] = *tok.p++;
 				g->text[ti] = 0;
 				if (*tok.p == '}') tok.p++;
 				return g;
@@ -350,7 +358,7 @@ static LaTeXBox* ParseAtom(Tokenizer& tok, float sizeFactor) {
 			SetUpright(arg);
 			return arg;
 		}
-		// \overbrace{...} / \underbrace{...} — horizontal brace above/below content
+		// \overbrace{...} / \underbrace{...} -- horizontal brace above/below content
 		if (strcmp(t.cmd, "overbrace") == 0 || strcmp(t.cmd, "underbrace") == 0) {
 			bool over = (t.cmd[0] == 'o');
 			LaTeXBox* content = ParseAtom(tok, sizeFactor);
@@ -386,7 +394,7 @@ static LaTeXBox* ParseAtom(Tokenizer& tok, float sizeFactor) {
 			if (below) vbox->children.push_back(below);
 			return vbox;
 		}
-		// \binom{n}{k} — binomial coefficient (like frac but parens, no rule)
+		// \binom{n}{k} -- binomial coefficient (like frac but parens, no rule)
 		if (strcmp(t.cmd, "binom") == 0) {
 			LaTeXBox* frac = IM_NEW(LaTeXBox);
 			frac->type = LaTeXBox_Frac;
@@ -400,7 +408,7 @@ static LaTeXBox* ParseAtom(Tokenizer& tok, float sizeFactor) {
 			if (den) frac->children.push_back(den);
 			return frac;
 		}
-		// \boxed{expr} — box around expression
+		// \boxed{expr} -- box around expression
 		if (strcmp(t.cmd, "boxed") == 0) {
 			LaTeXBox* arg = ParseAtom(tok, sizeFactor);
 			LaTeXBox* hbox = IM_NEW(LaTeXBox);
@@ -410,7 +418,7 @@ static LaTeXBox* ParseAtom(Tokenizer& tok, float sizeFactor) {
 			if (arg) hbox->children.push_back(arg);
 			return hbox;
 		}
-		// \cancel{x} / \bcancel{x} — diagonal strikethrough
+		// \cancel{x} / \bcancel{x} -- diagonal strikethrough
 		if (strcmp(t.cmd, "cancel") == 0 || strcmp(t.cmd, "bcancel") == 0) {
 			LaTeXBox* arg = ParseAtom(tok, sizeFactor);
 			LaTeXBox* hbox = IM_NEW(LaTeXBox);
@@ -420,7 +428,7 @@ static LaTeXBox* ParseAtom(Tokenizer& tok, float sizeFactor) {
 			if (arg) hbox->children.push_back(arg);
 			return hbox;
 		}
-		// \color{name}{content} — colored sub-expression
+		// \color{name}{content} -- colored sub-expression
 		if (strcmp(t.cmd, "color") == 0) {
 			while (*tok.p == ' ') tok.p++;
 			char colorName[32] = {}; int ci = 0;
@@ -454,7 +462,7 @@ static LaTeXBox* ParseAtom(Tokenizer& tok, float sizeFactor) {
 			if (content) hbox->children.push_back(content);
 			return hbox;
 		}
-		// Commands that take one argument — parse the argument and return it (ignoring the style)
+		// Commands that take one argument -- parse the argument and return it (ignoring the style)
 		if (strcmp(t.cmd, "mathit") == 0 ||
 		    strcmp(t.cmd, "mathbf") == 0 ||
 		    strcmp(t.cmd, "boldsymbol") == 0 || strcmp(t.cmd, "overline") == 0 ||
@@ -466,7 +474,7 @@ static LaTeXBox* ParseAtom(Tokenizer& tok, float sizeFactor) {
 		    strcmp(t.cmd, "mathnormal") == 0 || strcmp(t.cmd, "bm") == 0) {
 			return ParseAtom(tok, sizeFactor);
 		}
-		// \mathbb{R} → double-struck letters (ℝ, ℕ, ℤ, ℚ, ℂ)
+		// \mathbb{R} -> double-struck letters (R, N, Z, Q, C)
 		if (strcmp(t.cmd, "mathbb") == 0) {
 			LaTeXBox* arg = ParseAtom(tok, sizeFactor);
 			if (arg && arg->type == LaTeXBox_Glyph) {
@@ -500,7 +508,7 @@ static LaTeXBox* ParseAtom(Tokenizer& tok, float sizeFactor) {
 				if (strcmp(t.cmd, kFuncNames[fi]) == 0) { isFunc = true; break; }
 			}
 			if (isFunc) {
-				// Single Glyph box with shaped text — rendered via kbts in one DrawText call
+				// Single Glyph box with shaped text -- rendered via kbts in one DrawText call
 				LaTeXBox* hbox = IM_NEW(LaTeXBox);
 				hbox->type = LaTeXBox_HBox;
 				hbox->sizeFactor = sizeFactor;
@@ -519,7 +527,7 @@ static LaTeXBox* ParseAtom(Tokenizer& tok, float sizeFactor) {
 				return hbox;
 			}
 		}
-		// \vec{x}, \hat{x}, \bar{x}, \dot{x}, \tilde{x} — accent over argument
+		// \vec{x}, \hat{x}, \bar{x}, \dot{x}, \tilde{x} -- accent over argument
 		// Store accent type in delimLeft (unused by HBox) for layout/render
 		if (strcmp(t.cmd, "vec") == 0 || strcmp(t.cmd, "hat") == 0 ||
 		    strcmp(t.cmd, "bar") == 0 || strcmp(t.cmd, "dot") == 0 ||
@@ -686,7 +694,7 @@ static LaTeXBox* ParseAtom(Tokenizer& tok, float sizeFactor) {
 			LaTeXBox* sp = IM_NEW(LaTeXBox); sp->type = LaTeXBox_Space;
 			sp->sizeFactor = sizeFactor; sp->width = 2.0f; return sp;
 		}
-		// Unknown command — return zero-width space (don't consume next token)
+		// Unknown command -- return zero-width space (don't consume next token)
 		{ LaTeXBox* sp = IM_NEW(LaTeXBox); sp->type = LaTeXBox_Space;
 		  sp->sizeFactor = sizeFactor; sp->width = 0; return sp; }
 	}
@@ -790,16 +798,18 @@ static ImWchar MathItalicize(ImWchar ch) {
 
 // UTF-8 encode helper
 static void EncodeUTF8(ImWchar ch, char* utf8) {
-	memset(utf8, 0, 8);
-	if (ch < 0x80) { utf8[0] = (char)ch; }
-	else if (ch < 0x800) { utf8[0] = (char)(0xC0 | (ch >> 6)); utf8[1] = (char)(0x80 | (ch & 0x3F)); }
-	else if (ch < 0x10000) { utf8[0] = (char)(0xE0 | (ch >> 12)); utf8[1] = (char)(0x80 | ((ch >> 6) & 0x3F)); utf8[2] = (char)(0x80 | (ch & 0x3F)); }
-	else { utf8[0] = (char)(0xF0 | (ch >> 18)); utf8[1] = (char)(0x80 | ((ch >> 12) & 0x3F)); utf8[2] = (char)(0x80 | ((ch >> 6) & 0x3F)); utf8[3] = (char)(0x80 | (ch & 0x3F)); }
+	if (ch < 0x80)
+		{ utf8[0] = (char)ch; utf8[1] = 0; }
+	else if (ch < 0x800)
+		{ utf8[0] = (char)(0xC0 | (ch >> 6)); utf8[1] = (char)(0x80 | (ch & 0x3F)); utf8[2] = 0; }
+	else if (ch < 0x10000)
+		{ utf8[0] = (char)(0xE0 | (ch >> 12)); utf8[1] = (char)(0x80 | ((ch >> 6) & 0x3F)); utf8[2] = (char)(0x80 | (ch & 0x3F)); utf8[3] = 0; }
+	else
+		{ utf8[0] = (char)(0xF0 | (ch >> 18)); utf8[1] = (char)(0x80 | ((ch >> 12) & 0x3F)); utf8[2] = (char)(0x80 | ((ch >> 6) & 0x3F)); utf8[3] = (char)(0x80 | (ch & 0x3F)); utf8[4] = 0; }
 }
 
 // Forward declarations for glyph measurement (defined in render section)
 static float GlyphWidthAtH(ImFont* font, float baseSz, ImWchar ch, float targetH);
-static float GlyphHeightAtW(ImFont* font, float baseSz, ImWchar ch, float targetW);
 
 static int s_layoutDepth = 0;
 static void LayoutBox(LaTeXBox* box, float fontSize) {
@@ -818,7 +828,7 @@ static void LayoutBox(LaTeXBox* box, float fontSize) {
 		ImVec2 tsz;
 		ImWchar ch = box->codepoint;
 		if (box->text[0]) {
-			// Shaped text string — measure the full string via kbts
+			// Shaped text string -- measure the full string via kbts
 			tsz = mf ? CalcTextSize_Impl(mf, sz, box->text, NULL, &asc) : ImVec2(sz * 0.5f, sz);
 		} else {
 			if (box->isMathItalic) ch = MathItalicize(ch);
@@ -878,7 +888,7 @@ static void LayoutBox(LaTeXBox* box, float fontSize) {
 		float bh = box->base ? box->base->height : sz * 0.7f;
 		float bd = box->base ? box->base->depth : 0;
 
-		// Check if base is a big operator → use limits layout (above/below)
+		// Check if base is a big operator -> use limits layout (above/below)
 		bool isLimits = false;
 		bool isIntegral = false;
 		if (box->base && box->base->type == LaTeXBox_Glyph) {
@@ -914,7 +924,7 @@ static void LayoutBox(LaTeXBox* box, float fontSize) {
 					}
 				}
 			}
-			// Integral-style: side placement — BB-right-corner alignment of the first
+			// Integral-style: side placement -- BB-right-corner alignment of the first
 			// subscript glyph to the integral glyph. For wide subscripts, clamp subX
 			// so the subscript only intrudes at most halfway across the integral.
 			float supShift = bh * 0.65f;
@@ -930,7 +940,7 @@ static void LayoutBox(LaTeXBox* box, float fontSize) {
 				subShift = ImMax(0.0f, bd - firstD);
 			} else {
 				// Wide subscript (e.g. Omega): place right of the integral to avoid
-				// ink collision — the subscript extends rightward from the integral's
+				// ink collision -- the subscript extends rightward from the integral's
 				// ink right edge, baseline at the integral's ink bottom.
 				subX     = bw;
 				subShift = bd;
@@ -1035,7 +1045,7 @@ static void LayoutBox(LaTeXBox* box, float fontSize) {
 		box->width  = radW + iw + padRight;
 		box->height = (inner ? inner->height : sz * 0.7f) + padTop;
 		box->depth  = inner ? inner->depth : 0;
-		// Position degree in crook — MicroTeX uses 55% of radical total height
+		// Position degree in crook -- MicroTeX uses 55% of radical total height
 		if (box->base) {
 			float totalRadH = box->height + box->depth;
 			float bottomRaise = totalRadH * 0.55f;
@@ -1329,25 +1339,6 @@ static float GlyphWidthAtH(ImFont* font, float baseSz, ImWchar ch, float targetH
 	return refSz.x * targetH / refSz.y;
 }
 
-// Draw a font glyph scaled to a target width. posX/posY = top-left of target area.
-static void DrawGlyphW(ImDrawList* dl, ImFont* font, float baseSz, ImWchar ch, float targetW, float posX, float posY, ImU32 col) {
-	char utf8[8]; EncodeUTF8(ch, utf8);
-	float asc = 0;
-	ImVec2 refSz = CalcTextSize_Impl(font, baseSz, utf8, NULL, &asc);
-	if (refSz.x < 1.0f) return;
-	float fontSz = baseSz * targetW / refSz.x;
-	float scaledAsc = asc * targetW / refSz.x;
-	DrawText_Impl(dl, font, fontSz, ImVec2(posX, posY + scaledAsc), col, utf8);
-}
-
-// Compute the height of a glyph scaled to a target width.
-static float GlyphHeightAtW(ImFont* font, float baseSz, ImWchar ch, float targetW) {
-	char utf8[8]; EncodeUTF8(ch, utf8);
-	ImVec2 refSz = CalcTextSize_Impl(font, baseSz, utf8);
-	if (refSz.x < 1.0f) return baseSz * 0.3f;
-	return refSz.y * targetW / refSz.x;
-}
-
 // x,y = position where y is the BASELINE (text drawn downward from ascent above y)
 static void RenderBox(ImDrawList* dl, LaTeXBox* box, ImFont* mathFont, float fontSize, float x, float y, ImU32 col) {
 	if (!box) return;
@@ -1359,7 +1350,7 @@ static void RenderBox(ImDrawList* dl, LaTeXBox* box, ImFont* mathFont, float fon
 	case LaTeXBox_Glyph: {
 		float sz = fontSize * box->sizeFactor;
 		if (box->text[0]) {
-			// Shaped text — single DrawText call through kbts for proper kerning
+			// Shaped text -- single DrawText call through kbts for proper kerning
 			DrawText_Impl(dl, mathFont, sz, ImVec2(px, py), col, box->text);
 		} else {
 			ImWchar ch = box->codepoint;
@@ -1375,14 +1366,14 @@ static void RenderBox(ImDrawList* dl, LaTeXBox* box, ImFont* mathFont, float fon
 	case LaTeXBox_HBox: {
 		for (int i = 0; i < box->children.Size; i++)
 			RenderBox(dl, box->children[i], mathFont, fontSize, px, py, col);
-		// Draw accent mark if present (stored in delimLeft) — font glyph at natural size
+		// Draw accent mark if present (stored in delimLeft) -- font glyph at natural size
 		if (box->delimLeft && box->delimLeft < 0xFFF0) {
 			float sz = fontSize * box->sizeFactor;
 			float contentH = box->height - sz * 0.25f;
 			float accentBaseY = py - contentH - sz * 0.05f;
 			// Map to standalone accent glyphs
 			ImWchar accentCh = 0;
-			if (box->delimLeft == 0x20D7) accentCh = 0x2192;      // vec → arrow
+			if (box->delimLeft == 0x20D7) accentCh = 0x2192;      // vec -> arrow
 			else if (box->delimLeft == 0x02C6) accentCh = 0x02C6;  // hat
 			else if (box->delimLeft == 0x00AF) accentCh = 0x00AF;  // bar
 			else if (box->delimLeft == 0x02D9) accentCh = 0x02D9;  // dot
@@ -1391,7 +1382,7 @@ static void RenderBox(ImDrawList* dl, LaTeXBox* box, ImFont* mathFont, float fon
 			if (accentCh) {
 				char utf8[8]; EncodeUTF8(accentCh, utf8);
 				float accentSz = sz * 0.7f;
-				// Render centered over content — position at content left edge
+				// Render centered over content -- position at content left edge
 				// so the glyph visually centers (advance width includes bearings)
 				DrawText_Impl(dl, mathFont, accentSz, ImVec2(px, accentBaseY), col, utf8);
 			}
@@ -1483,7 +1474,7 @@ static void RenderBox(ImDrawList* dl, LaTeXBox* box, ImFont* mathFont, float fon
 			stbtt_fontinfo fi; float emSc = 0;
 			bool hasMath = GetSlugFontInfo(mathFont, &fi, &emSc);
 			int braceGI = hasMath ? stbtt_FindGlyphIndex(&fi, braceCh) : 0;
-			MathGlyphAssembly assembly;
+			MathGlyphAssembly assembly = {};
 			bool hasAssembly = (braceGI > 0) && MathGetHAssembly(&fi, braceGI, emSc, &assembly) && assembly.partCount > 0;
 			// For overbrace: inner tips are above baseline by minYEm; compensate so tips land near content top.
 			float braceMinYEm = 0.0f;
@@ -1934,7 +1925,7 @@ static void TessellateBox(LaTeXBox* box, ImFont* mathFont, float fontSize, float
     case LaTeXBox_VBox: {
         for (int i = 0; i < box->children.Size; i++)
             TessellateBox(box->children[i], mathFont, fontSize, px, py, outShape, tess_tol, iterations);
-        // Extensible horizontal brace assembly — mirrors RenderBox exactly
+        // Extensible horizontal brace assembly -- mirrors RenderBox exactly
         if (box->delimRight == '{') {
             float sz = fontSize * box->sizeFactor;
             LaTeXBox* main = box->children.Size > 0 ? box->children[0] : NULL;
@@ -1944,7 +1935,7 @@ static void TessellateBox(LaTeXBox* box, ImFont* mathFont, float fontSize, float
             stbtt_fontinfo fi; float emSc = 0;
             bool hasMath = GetSlugFontInfo(mathFont, &fi, &emSc);
             int braceGI = hasMath ? stbtt_FindGlyphIndex(&fi, braceCh) : 0;
-            MathGlyphAssembly assembly;
+            MathGlyphAssembly assembly = {};
             bool hasAssembly = (braceGI > 0) && MathGetHAssembly(&fi, braceGI, emSc, &assembly) && assembly.partCount > 0;
             // For overbrace: inner tips sit above baseline by minYEm; compensate so tips land near content top.
             float braceMinYEm = 0.0f;
@@ -2033,4 +2024,3 @@ void TesselateLaTeX(float font_size, const char* latex, ImVec2 pos,
 }
 
 } // namespace ImWidgets
-#endif // _DEAR_WIDGETS_LATEX_INCLUDED

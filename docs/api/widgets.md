@@ -1,7 +1,7 @@
 # Widgets
 
 All widget functions follow Dear ImGui conventions:
-- Return `bool` — `true` when the value changed this frame.
+- Return `bool` -- `true` when the value changed this frame.
 - `label` is used as the ImGui ID; use `##hidden` suffix to hide it.
 - `size = ImVec2(0,0)` means "auto size" (fill available width, or use the style default height).
 
@@ -47,7 +47,7 @@ bool SliderRingInt(const char* label, int* value, int v_min, int v_max, ...);
 bool SliderRingScalar(const char* label, ImGuiDataType data_type,
                       void* p_value, void* p_min, void* p_max, ...);
 ```
-Circular arc slider. `v_angle_min/max` control the arc sweep in radians (default: ±135°). Style vars: `StyleVar_SliderRing_*`.
+Circular arc slider. `v_angle_min/max` control the arc sweep in radians (default: +/-135 deg). Style vars: `StyleVar_SliderRing_*`.
 
 ---
 
@@ -58,7 +58,7 @@ bool SliderSplineFloat(const char* label, float* value, float v_min, float v_max
                        float v_height = 0.0f, float v_thickness = 0.0f,
                        const char* format = "%.3f", ImGuiSliderFlags flags = 0);
 ```
-Slider whose track follows a cubic Bézier spline. `control_points` is an array of `ImVec2` in normalized `[0,1]×[0,1]` space. `num_points = 4` = single segment; `3N+1` = N chained segments. `NULL` uses a default S-curve. Style vars: `StyleVar_SliderSpline_*`.
+Slider whose track follows a cubic Bezier spline. `control_points` is an array of `ImVec2` in normalized `[0,1]x[0,1]` space. `num_points = 4` = single segment; `3N+1` = N chained segments. `NULL` uses a default S-curve. Style vars: `StyleVar_SliderSpline_*`.
 
 ---
 
@@ -69,6 +69,94 @@ bool DragFloatPrecise(const char* label, float* value,
                       const char* format = NULL, ImGuiSliderFlags flags = 0);
 ```
 `DragFloat` with a precision-drag mode: hold while over the block grid to nudge by small increments. Block size: `StyleVar_PrecisionDrag_BlockSize`.
+
+---
+
+### `SliderGradientFloat` / `SliderGradientInt` / `SliderGradientScalar`
+```cpp
+bool SliderGradientFloat(const char* label, float* v, float v_min, float v_max,
+                         const ImGradientData* gradient, ImVec2 size = {},
+                         bool fill_up_to_cursor = false, bool right_to_left = false);
+bool SliderGradientInt(const char* label, int* v, int v_min, int v_max,
+                       const ImGradientData* gradient, ImVec2 size = {},
+                       bool fill_up_to_cursor = false, bool right_to_left = false);
+bool SliderGradientScalar(const char* label, ImGuiDataType data_type,
+                          void* p_value, const void* p_min, const void* p_max,
+                          const ImGradientData* gradient, ImVec2 size = {},
+                          bool fill_up_to_cursor = false, bool right_to_left = false);
+```
+Horizontal gradient slider. The track is filled with a full `ImGradientData` gradient. When `fill_up_to_cursor` is true, only the `[0, cursor]` portion is painted; the rest is transparent (the FrameBg shows through). Style vars: `StyleVar_SliderSpline_*`.
+
+---
+
+### `SliderGradientRangeFloat` / `SliderGradientRangeInt` / `SliderGradientRangeScalar`
+```cpp
+bool SliderGradientRangeFloat(const char* label, float* v_lower, float* v_upper,
+                              float v_min, float v_max,
+                              const ImGradientData* gradient, ImVec2 size = {},
+                              bool right_to_left = false);
+bool SliderGradientRangeInt(const char* label, int* v_lower, int* v_upper,
+                            int v_min, int v_max,
+                            const ImGradientData* gradient, ImVec2 size = {},
+                            bool right_to_left = false);
+bool SliderGradientRangeScalar(const char* label, ImGuiDataType data_type,
+                               void* p_lower, void* p_upper,
+                               const void* p_min, const void* p_max,
+                               const ImGradientData* gradient, ImVec2 size = {},
+                               bool right_to_left = false);
+```
+Two-handle gradient slider. The gradient is painted only between the two handles; the FrameBg shows through elsewhere. Clicking picks the nearest handle; dragging it is clamped so `lower <= upper`.
+
+---
+
+### `SliderGradientRingFloat` / `SliderGradientRingInt` / `SliderGradientRingScalar`
+```cpp
+bool SliderGradientRingFloat(const char* label, float* v, float v_min, float v_max,
+                             const ImGradientData* gradient,
+                             float outerRadius, float thickness,
+                             float startAngle = -0.75f*IM_PI, float sweepAngle = 1.5f*IM_PI,
+                             bool fill_up_to_cursor = false);
+```
+Ring (arc) gradient slider. `startAngle` / `sweepAngle` define the arc; positive sweep is clockwise. `fill_up_to_cursor` paints only the portion up to the handle.
+
+---
+
+### `SliderGradientRingRangeFloat` / `SliderGradientRingRangeInt` / `SliderGradientRingRangeScalar`
+```cpp
+bool SliderGradientRingRangeFloat(const char* label, float* v_lower, float* v_upper,
+                                  float v_min, float v_max,
+                                  const ImGradientData* gradient,
+                                  float outerRadius, float thickness,
+                                  float startAngle, float sweepAngle);
+```
+Two-handle ring gradient slider. Gradient is painted between the two handles on the arc. Full-circle rings are not supported by the range variant (ambiguous wrap semantics) -- use two `SliderGradientRing` calls instead.
+
+---
+
+### `SliderSplineGradientFloat` / `SliderSplineGradientInt` / `SliderSplineGradientScalar`
+```cpp
+bool SliderSplineGradientFloat(const char* label, float* v, float v_min, float v_max,
+                               const ImGradientData* gradient,
+                               const ImVec2* control_points = NULL, int num_points = 4,
+                               float v_height = 0.f, float v_thickness = 0.f,
+                               const char* format = "%.3f",
+                               ImGuiSliderFlags flags = 0);
+```
+Spline-track gradient slider. Same spline parametrization as `SliderSplineFloat`. The track is painted with the gradient along the arc.
+
+---
+
+### `SliderSplineGradientRangeFloat` / `SliderSplineGradientRangeInt` / `SliderSplineGradientRangeScalar`
+```cpp
+bool SliderSplineGradientRangeFloat(const char* label, float* v_lower, float* v_upper,
+                                    float v_min, float v_max,
+                                    const ImGradientData* gradient,
+                                    const ImVec2* control_points = NULL, int num_points = 4,
+                                    float v_height = 0.f, float v_thickness = 0.f,
+                                    const char* format = "%.3f",
+                                    ImGuiSliderFlags flags = 0);
+```
+Two-handle spline gradient slider. Gradient paints between handles; FrameBg shows elsewhere.
 
 ---
 
@@ -91,7 +179,7 @@ Horizontal hue-range selector. Edits a center hue, width, and left/right feather
 bool GradientEditor(const char* label, ImGradientData* gradient,
                     bool alpha = true, ImVec2 size = ImVec2(0,0));
 ```
-Interactive multi-stop gradient editor. Left-click on the bar to add a stop; right-click a stop to delete; drag stops to reorder. See [data-types.md — ImGradientData](data-types.md#imgradientdata).
+Interactive multi-stop gradient editor. Left-click on the bar to add a stop; right-click a stop to delete; drag stops to reorder. See [data-types.md -- ImGradientData](data-types.md#imgradientdata).
 
 ---
 
@@ -100,7 +188,7 @@ Interactive multi-stop gradient editor. Left-click on the bar to add a stop; rig
 bool CurveEditor(const char* label, ImCurveEditorData* curve,
                  ImVec2 size = ImVec2(0,0));
 ```
-Interactive 2D animation curve editor with full Bézier handles. Left-click to add keys; Delete to remove. See [data-types.md — ImCurveEditorData](data-types.md#imcurveeditordata).
+Interactive 2D animation curve editor with full Bezier handles. Left-click to add keys; Delete to remove. See [data-types.md -- ImCurveEditorData](data-types.md#imcurveeditordata).
 
 ---
 
@@ -165,7 +253,7 @@ bool ColorWarper(const char* label, ImColorWarperData* data,
                  ImColorWarperSignalColor signalColor = ImColorWarperSignalColor_PixelColor,
                  float axisAngle = 0.0f, ImVec2 size = ImVec2(0,0));
 ```
-Mesh warp color grader. Drag control points on a hue/saturation grid to shift colors. Modes: `Circular` (polar disc), `Square` (cartesian), `ChromaLuma` (two-square layout). See [data-types.md — ImColorWarperData](data-types.md#imcolorwarperdata).
+Mesh warp color grader. Drag control points on a hue/saturation grid to shift colors. Modes: `Circular` (polar disc), `Square` (cartesian), `ChromaLuma` (two-square layout). See [data-types.md -- ImColorWarperData](data-types.md#imcolorwarperdata).
 
 ---
 
@@ -292,9 +380,13 @@ Horizontal scrolling image strip. Returns `true` when the selection changes.
 ```cpp
 bool ImageBento(const char* label, ImTextureID* images, ImVec2* imageSizes,
                 int imageCount, int* pSelectedIndex,
-                int columnsPerRow = 4, float cellAspect = 1.0f, float spacing = 4.0f);
+                int columnsPerRow = 4, float cellAspect = 1.0f, float spacing = 4.0f,
+                const char* const* pItemIds = nullptr,
+                int* pReorderFrom = nullptr, int* pReorderTo = nullptr);
 ```
 Grid thumbnail gallery with center-crop to `cellAspect` ratio.
+
+**Drag-to-reorder (optional):** pass a `pItemIds` array of stable per-cell C-strings so each cell's ImGui ID follows the item rather than the position -- required for clean drag-and-drop. When the user drags a cell over an adjacent cell, `*pReorderFrom`/`*pReorderTo` are set to the source/target indices and the function returns `true`. The caller is responsible for actually swapping the data -- `ImageBento` never mutates the arrays. Swaps are reported one adjacent step at a time (`|from-to| == 1` horizontally, or `== columnsPerRow` vertically); multi-cell drags accumulate as multiple single-frame reports.
 
 ---
 
@@ -304,6 +396,22 @@ bool ImageViewer(const char* label, ImTextureID image, ImVec2 imageSize,
                  ImImageViewerState& state, ImVec2 widgetSize = ImVec2(0,0));
 ```
 Pan (left-drag) and zoom (scroll wheel) image viewer. Double-click resets. Right-click opens a pixel-inspector loupe showing RGBA values when `state.Pixels` is set.
+
+---
+
+### `VectorDrawingTool`
+```cpp
+bool VectorDrawingTool(const char* label, ImVectorDrawingData& data, ImVec2 size = {});
+```
+Interactive bezier path authoring canvas with zoom/pan. Click to place anchors; drag tangent handles to shape curves; click the first anchor to close a path. Multiple paths are stored in `data.Paths`; `data.SelectedPath` / `data.SelectedNode` track the active selection.
+
+**Key types:**
+- `ImVectorDrawingData` -- canvas state: paths, pan/zoom, selection.
+- `ImVectorDrawingPath` -- one path: `Nodes`, `Color`, `Thickness`, `Style`, `DashLen`, `GapLen`, `Cap`, `Join`, `Closed`.
+- `ImVectorDrawingNode` -- one anchor: `Anchor`, `InTangent`, `OutTangent`, `Broken`.
+- `ImVectorDrawingStyle_` -- `Polyline`, `PolylineAA`, `StrokedBezier`, `StrokedDashedBezier`, `DashedPolyline`.
+
+`Cap` and `Join` accept `ImWidgetsCap_*` and `ImWidgetsJoin_*` values respectively. The plain `Polyline` style ignores cap/join.
 
 ---
 

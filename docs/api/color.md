@@ -8,31 +8,31 @@ All color conversion functions are in the `ImWidgets` namespace. Inputs and outp
 
 All functions follow the convention: `ColorConvertAtoB(out_x, out_y, out_z, in_x, in_y, in_z)`.
 
-### sRGB ↔ Linear
+### sRGB <-> Linear
 ```cpp
 void ColorConvertRGBtoLinear(float& out_L, float& out_a, float& out_b, float r, float g, float b);
 void ColorConvertLineartoRGB(float& out_r, float& out_g, float& out_b, float L, float a, float b);
 ```
 
-### sRGB ↔ HSV
+### sRGB <-> HSV
 ```cpp
 void ColorConvertRGBtoHSV(float& out_h, float& out_s, float& out_v, float r, float g, float b);
 void ColorConvertHSVtoRGB(float& out_r, float& out_g, float& out_b, float h, float s, float v);
 ```
 
-### sRGB ↔ HSL
+### sRGB <-> HSL
 ```cpp
 void ColorConvertRGBtoHSL(float r, float g, float b, float& out_h, float& out_s, float& out_l);
 void ColorConvertHSLtoRGB(float h, float s, float l, float& out_r, float& out_g, float& out_b);
 ```
 
-### sRGB ↔ HSY (BT.709 Luma)
+### sRGB <-> HSY (BT.709 Luma)
 ```cpp
 void ColorConvertRGBtoHSY(float r, float g, float b, float& out_h, float& out_s, float& out_y);
 void ColorConvertHSYtoRGB(float h, float s, float y, float& out_r, float& out_g, float& out_b);
 ```
 
-### sRGB ↔ HSP (Perceived brightness)
+### sRGB <-> HSP (Perceived brightness)
 ```cpp
 void ColorConvertRGBtoHSP(float r, float g, float b, float& out_h, float& out_s, float& out_p);
 void ColorConvertHSPtoRGB(float h, float s, float p, float& out_r, float& out_g, float& out_b);
@@ -40,13 +40,13 @@ void ColorConvertRGBtoHSPLog(float r, float g, float b, float& out_h, float& out
 void ColorConvertHSPLogtoRGB(float h, float s, float pLog, float& out_r, float& out_g, float& out_b);
 ```
 
-### sRGB ↔ OkLab
+### sRGB <-> OkLab
 ```cpp
 void ColorConvertRGBtoOKLAB(float& out_L, float& out_a, float& out_b, float r, float g, float b);
 void ColorConvertOKLABtoRGB(float& out_r, float& out_g, float& out_b, float L, float a, float b);
 ```
 
-### sRGB ↔ OkLCH
+### sRGB <-> OkLCH
 ```cpp
 void ColorConvertsRGBtoOKLCH(float& out_L, float& out_c, float& out_h, float r, float g, float b);
 void ColorConvertOKLCHtosRGB(float& out_r, float& out_g, float& out_b, float L, float c, float h);
@@ -54,13 +54,13 @@ void ColorConvertOKLCHtoOKLAB(float& out_L, float& out_a, float& out_b, float r,
 void ColorConvertOKLABtoOKLCH(float& out_r, float& out_g, float& out_b, float L, float a, float b);
 ```
 
-### sRGB ↔ XYZ (D65)
+### sRGB <-> XYZ (D65)
 ```cpp
 void ColorConvertsRGBtoXYZ(float& out_X, float& out_Y, float& out_Z, float r, float g, float b);
 void ColorConvertXYZtosRGB(float& out_r, float& out_g, float& out_b, float X, float Y, float Z);
 ```
 
-### XYZ ↔ CIE L*a*b* (D65)
+### XYZ <-> CIE L*a*b* (D65)
 ```cpp
 void ColorConvertXYZtoCIELab(float& out_L, float& out_a, float& out_b, float X, float Y, float Z);
 void ColorConvertCIELabtoXYZ(float& out_X, float& out_Y, float& out_Z, float L, float a, float b);
@@ -68,7 +68,7 @@ void ColorConvertsRGBtoCIELab(float& out_L, float& out_a, float& out_b, float r,
 void ColorConvertCIELabtosRGB(float& out_r, float& out_g, float& out_b, float L, float a, float b);
 ```
 
-### XYZ ↔ xyY
+### XYZ <-> xyY
 ```cpp
 void ColorConvertXYZtoxyY(float& out_x, float& out_y, float& out_Y, float X, float Y, float Z);
 void ColorConvertxyYtoXYZ(float& out_X, float& out_Y, float& out_Z, float x, float y, float Yval);
@@ -78,7 +78,7 @@ void ColorConvertxyYtoXYZ(float& out_X, float& out_Y, float& out_Z, float x, flo
 
 ## Color Blending
 
-All blend functions take two `ImU32` RGBA colors and a blend factor `t ∈ [0,1]`, and return the interpolated `ImU32`.
+All blend functions take two `ImU32` RGBA colors and a blend factor `t in [0,1]`, and return the interpolated `ImU32`.
 
 ```cpp
 ImU32 ImColorBlendsRGB(ImU32 col0, ImU32 col1, float t);      // sRGB interpolation
@@ -96,7 +96,7 @@ ImU32 ImColorBlendOkLCH(ImU32 col0, ImU32 col1, float t);     // OkLCH (perceptu
 ```cpp
 ImVec4 GradientSample(const ImGradientData& gradient, float t);
 ```
-Sample the gradient at position `t ∈ [0,1]`. Interpolation mode is taken from `gradient.Interpolation`.
+Sample the gradient at position `t in [0,1]`. Interpolation mode is taken from `gradient.Interpolation`.
 
 ---
 

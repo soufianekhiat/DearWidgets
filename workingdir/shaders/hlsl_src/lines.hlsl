@@ -80,9 +80,56 @@ float cap_dist(int ctype, float dx, float dy, float t)
     return 1e10;
 }
 
+// Evaluate a single dash's SDF at arc-position `u_rel` within its envelope.
+// Envelope spans [0, dash_len] along the segment axis. The body is inset so
+// body + outward caps reconstruct the envelope exactly — gap == 0 therefore
+// packs adjacent envelopes flush. Callers may pass u_rel outside [0, dash_len]
+// to probe a neighbour dash; the cap SDF still evaluates at far-outside
+// positions (returning a large value that does not contribute to the min).
+//
+// Per-cap-type layout (matches CPU geometry in dear_widgets.cpp and in
+// dear_widgets_stroke.cpp):
+//   None(0)/Butt(1):    cap_ext = 0       no outward extension, no inward notch
+//   Square(2)/Round(3)/
+//   TriangleOut(4):     cap_ext = halfw   cap extends OUTWARD past body by halfw
+//   TriangleIn(5):      cap_ext = 0       body fills envelope; V-notch carved
+//                                         INWARD by halfw at each envelope end
+float eval_dash_sdf(float u_rel, float dash_len,
+                    int cap_type, float abs_dy, float halfw, float t)
+{
+    if (cap_type == 5)
+    {
+        // TriangleIn: V-notch carved into the body at each end.
+        // Use progressive max so BOTH ends contribute even when
+        // dash_len < 2*halfw (cap regions overlap). Without this,
+        // the early-return on the start cap silently suppresses the
+        // end V-notch, leaving one side visually filled.
+        float d = abs_dy;
+        if (u_rel < halfw)
+            d = max(d, cap_dist(5, halfw - u_rel, abs_dy, t));
+        if (u_rel > dash_len - halfw)
+            d = max(d, cap_dist(5, u_rel - (dash_len - halfw), abs_dy, t));
+        return d;
+    }
+    float cap_ext = ((cap_type == 0) || (cap_type == 1)) ? 0.0 : halfw;
+    if (u_rel < cap_ext)
+        return cap_dist(cap_type, cap_ext - u_rel, abs_dy, t);
+    if (u_rel > dash_len - cap_ext)
+        return cap_dist(cap_type, u_rel - (dash_len - cap_ext), abs_dy, t);
+    return abs_dy;
+}
+
 // Compute SDF distance in a join region.
 // Both segments at a join compute the same value (symmetric SDF), so
 // the bisector split produces no seam with transparent colours.
+//
+// INVARIANT: this function must only be invoked from the JOIN ZONES — i.e.
+// when lx < 0 (pixel before segment start) or lx > seg_len (pixel past segment
+// end). The bevel clip `max(d, miter_d)` unconditionally adds the bisector
+// clip, which is correct in the join area but would wrongly narrow the body.
+// The reference (solid-lines-2D.frag:85-87) guards its bevel with
+// `(dx < segment.x || dx > segment.y)`; we rely on the CALLER calling this
+// only from the join zones (see main_ps body-vs-join branching).
 //
 // P_world:   pixel position in screen space
 // vertex:    join vertex position in screen space
@@ -132,17 +179,26 @@ float4 main_ps(PS_INPUT input) : SV_Target
 {
     float2 P = lerp(rect_min, rect_max, input.uv.xy);
     float2 ba_vec = p1 - p0;
-    float seg_len = max(length(ba_vec), 1e-5);
-    float2 ex = ba_vec / seg_len;
+    // seg_len = seg_end - seg_start (pre-computed C++-side and carried in the
+    // cbuffer) instead of recomputing length(p1-p0) per pixel.
+    float seg_len = max(seg_end - seg_start, 1e-5);
+    float inv_len = 1.0 / seg_len;
+    float2 ex = ba_vec * inv_len;
     float2 ey = float2(-ex.y, ex.x);
 
     // Sub-pixel thickness: clamp to 1 px and modulate alpha (Rougier 2013).
     // Without this, halfw - aa goes negative for thin lines and the gaussian
     // fringe dims the body. Reference: solid-lines-2D.vert:136-139,
-    // dash-lines-2D.vert:148-151.
+    // dash-lines-2D.vert:148-151 — which CLAMPS alpha to thickness via
+    //     v_color.a = min(v_linewidth, v_color.a);
+    //     v_linewidth = max(v_linewidth, 1.0);
+    // i.e. for a translucent colour, alpha only drops if thickness < alpha.
+    // The earlier `alpha *= saturate(thickness)` over-dimmed translucent
+    // sub-pixel lines (0.5 alpha × 0.3 thickness = 0.15, reference = 0.3).
     float effective_thickness = max(thickness, 1.0);
     float4 effective_color    = color;
-    effective_color.a *= saturate(thickness);
+    if (thickness < 1.0)
+        effective_color.a = min(effective_color.a, thickness);
 
     float halfw = 0.5 * effective_thickness;
     float t = halfw - aa;
@@ -196,10 +252,21 @@ float4 main_ps(PS_INPUT input) : SV_Target
     if (!has_next && dx > total_length + max_ext) return float4(0, 0, 0, 0);
 
     // --- Dash pattern ---
+    // New parametrization (2026-04-19):
+    //   dash_len = ENVELOPE length (cap-tip to cap-tip along the axis)
+    //   gap_len  = distance between adjacent envelopes (can be 0 or negative)
+    //   period   = dash_len + gap_len     must stay > 0
+    // Body rectangle of a dash is [cap_ext, dash_len - cap_ext] within its
+    // envelope, so gap_len == 0 makes adjacent caps flush; gap_len < 0 makes
+    // envelopes overlap (handled by evaluating SDF against 3 neighbour dashes).
+    //
+    // Solid sentinel: CPU sets dash = (1e9, 0) for plain polylines. We detect
+    // this via dash_len > 1e6 rather than gap_len < 0.5, because gap_len == 0
+    // is now a legitimate "flush dashes" mode, not solid.
     float dash_len = dash.x;
     float gap_len  = dash.y;
     float period = max(1e-5, dash_len + gap_len);
-    bool solid = (gap_len < 0.5);
+    bool solid = (dash_len > 1e6);
 
     float d = 0.0;
     int zone = 0; // 0=body, 1=cap, 2=join_p0, 3=join_p1
@@ -242,26 +309,71 @@ float4 main_ps(PS_INPUT input) : SV_Target
             dx_dash = dx - total_length;   // wrap past-end → start of polyline
 
         float u = dx_dash + dash_offset;
-        float m = u - period * floor(u / period);
-        bool in_dash = (m < dash_len);
+        float k = floor(u / period);
+        float u_rel = u - k * period;                    // position within primary envelope [0, period)
+        // envelope test (used by the join-zone logic below): true when the
+        // pixel lies inside the envelope of SOME dash (primary or a
+        // neighbour). For positive gaps this reduces to u_rel < dash_len;
+        // for gap <= 0 every pixel is inside at least one envelope.
+        bool in_dash = (u_rel < dash_len) || (gap_len <= 0.0);
 
-        if (in_dash)
+        // Reference dash-lines-2D.frag:251-266: at "discontinuous" joins
+        // (turn > 15°), discard pixels whose current dash is entirely outside
+        // THIS segment's arc-length range. At sharp turns the two adjacent
+        // segments' join quads overlap and each segment would otherwise render
+        // a "phantom dash" that belongs to the other segment.
+        //
+        // GOTCHA: skip these discards when the closed-polyline wrap is active
+        // for the pixel. In the wrap case (is_first_of_loop at lx<0 or
+        // is_last_of_loop at lx>seg_len), dx_dash was shifted by ±total_length
+        // to get a continuous phase across the seam — dash_arc_start would
+        // then legitimately fall outside [seg_start, seg_end] in polyline
+        // coords, but the dash IS relevant to this segment's seam join.
         {
-            // Dash body: rectangle of width 2*halfw, no per-dash cap shapes.
-            // (The previous code applied a buggy cap_type==5 special case here
-            // that carved out the centerline of long dashes; the reference uses
-            // a dash atlas to do this properly. Caps still apply at polyline
-            // endpoints, just not at every dash boundary.)
-            d = abs(dy);
+            const float THETA = 0.2617994;                   // 15° in radians
+            bool wrap_active = (is_first_of_loop && lx < 0.0) ||
+                               (is_last_of_loop  && lx > seg_len);
+            // Only apply the sharp-turn phantom-dash discard when there is
+            // a real gap between envelopes (gap > 0). With flush (gap == 0)
+            // or overlapping (gap < 0) envelopes, a "phantom" primary dash
+            // at one segment often coincides with a legitimate neighbour
+            // dash on the adjacent segment, and the 3-way SDF min already
+            // produces the right answer — discarding would wrongly kill
+            // the neighbour's contribution.
+            if (!wrap_active && gap_len > 0.0)
+            {
+                float dash_arc_start = dx_dash - u_rel;
+                float dash_arc_end   = dash_arc_start + dash_len;
+                if (has_next)
+                {
+                    float cross_en = ex.x * next_dir.y - ex.y * next_dir.x;
+                    float dot_en   = dot(ex, next_dir);
+                    float angle_n  = atan2(cross_en, dot_en);
+                    if (abs(angle_n) > THETA && dash_arc_start > seg_end)
+                        return float4(0, 0, 0, 0);
+                }
+                if (has_prev)
+                {
+                    float cross_pe = prev_dir.x * ex.y - prev_dir.y * ex.x;
+                    float dot_pe   = dot(prev_dir, ex);
+                    float angle_pp = atan2(cross_pe, dot_pe);
+                    if (abs(angle_pp) > THETA && dash_arc_end < seg_start)
+                        return float4(0, 0, 0, 0);
+                }
+            }
         }
-        else
-        {
-            float to_prev_end = m - dash_len;
-            float to_next_start = period - m;
-            float d1 = cap_dist(cap_type, to_prev_end, abs(dy), t);
-            float d2 = cap_dist(cap_type, to_next_start, abs(dy), t);
-            d = min(d1, d2);
-        }
+
+        // Evaluate the dash SDF against the primary envelope plus its two
+        // neighbours. For non-overlapping layouts (gap >= 0) only one of the
+        // three is ever inside its envelope, so the min collapses to that
+        // dash's cap/body value. For overlapping layouts (gap < 0) multiple
+        // envelopes can contain the pixel; the min produces the union of
+        // their strokes.
+        float a_dy = abs(dy);
+        float d0 = eval_dash_sdf(u_rel,          dash_len, cap_type, a_dy, halfw, t);
+        float dp = eval_dash_sdf(u_rel + period, dash_len, cap_type, a_dy, halfw, t);
+        float dn = eval_dash_sdf(u_rel - period, dash_len, cap_type, a_dy, halfw, t);
+        d = min(d0, min(dp, dn));
 
         // Cap at polyline endpoints (open polylines only)
         if (!has_prev && dx < 0.0)
@@ -280,21 +392,70 @@ float4 main_ps(PS_INPUT input) : SV_Target
         if (has_prev && lx < 0.0)
         {
             float jd = join_dist(P, p0, ex, prev_dir, dy, jtype, halfw, miter_limit);
+            float cross_pe = prev_dir.x * ex.y - prev_dir.y * ex.x;
+            float dot_pe   = dot(prev_dir, ex);
+            float angle_p  = atan2(cross_pe, dot_pe);
+
             // Dash state at the vertex (seg_start); wrap for closing vertex of
             // closed polylines (the first segment's p0 is also the polyline end).
             float v_al = is_first_of_loop ? total_length : seg_start;
-            float v_u = v_al + dash_offset;
-            float v_m = v_u - period * floor(v_u / period);
-            d = (v_m < dash_len) ? jd : max(d, jd);
+            float v_u  = v_al + dash_offset;
+            float v_m  = v_u - period * floor(v_u / period);
+            bool vertex_in_dash_p = (v_m < dash_len) || (gap_len <= 0.0);
+            d = vertex_in_dash_p ? jd : max(d, jd);
+
+            // AA and cap-transformation only apply for MODERATE turns. At sharp
+            // turns the rotated formulas from the reference over-clip legitimate
+            // stroke geometry (the phantom-dash discard above handles the real
+            // sharp-turn issue: dashes entirely outside the segment's range).
+            if (abs(angle_p) < 1.5707963)                        // < PI/2 = 90°
+            {
+                if (vertex_in_dash_p)
+                {
+                    // Reference dash-lines-2D.frag:352-356: rotated-bisector AA.
+                    float a = angle_p + 1.5707963;               // + PI/2
+                    float f = abs(-lx * cos(a) - dy * sin(a));
+                    d       = max(f, d);
+                }
+                else if (cap_type == 2 || cap_type == 4 || cap_type == 5)
+                {
+                    // Reference cap transformation (dash-lines-2D.frag:301-313).
+                    float a  = angle_p * 0.5;                    // half-angle
+                    float xr = -lx * cos(a) - dy * sin(a);
+                    if (xr > 0.0)
+                        return float4(0, 0, 0, 0);
+                }
+            }
             zone = 2;
         }
         else if (has_next && lx > seg_len)
         {
             float jd = join_dist(P, p1, ex, next_dir, dy, jtype, halfw, miter_limit);
-            // Dash state at the vertex (seg_end)
+            float cross_en = ex.x * next_dir.y - ex.y * next_dir.x;
+            float dot_en   = dot(ex, next_dir);
+            float angle_n  = atan2(cross_en, dot_en);
+
             float v_u = seg_end + dash_offset;
             float v_m = v_u - period * floor(v_u / period);
-            d = (v_m < dash_len) ? jd : max(d, jd);
+            bool vertex_in_dash_n = (v_m < dash_len) || (gap_len <= 0.0);
+            d = vertex_in_dash_n ? jd : max(d, jd);
+
+            if (abs(angle_n) < 1.5707963)
+            {
+                if (vertex_in_dash_n)
+                {
+                    float a = angle_n + 1.5707963;
+                    float f = abs((lx - seg_len) * cos(a) - dy * sin(a));
+                    d       = max(f, d);
+                }
+                else if (cap_type == 2 || cap_type == 4 || cap_type == 5)
+                {
+                    float a  = angle_n * 0.5;
+                    float xr = (lx - seg_len) * cos(a) - dy * sin(a);
+                    if (xr > 0.0)
+                        return float4(0, 0, 0, 0);
+                }
+            }
             zone = 3;
         }
     }

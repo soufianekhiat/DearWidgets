@@ -1,4 +1,4 @@
-// dear_widgets_image_inspector.cpp — Color-managed raw-buffer image viewer.
+// dear_widgets_image_inspector.cpp -- Color-managed raw-buffer image viewer.
 //
 // Companion to ImageViewer for inspecting raw image data of any sample type
 // (U8/I8/U16/I16/U32/I32/U64/I64/F16/F32/F64) and channel count (1..4) with
@@ -6,10 +6,10 @@
 // decode + color management. The user's bytes are uploaded once into a
 // packed RGBA32F texture; per-frame CPU cost is uniform updates only.
 //
-// This file is #included from dear_widgets.cpp (unity build) — do NOT
-// compile separately. The guard below makes the file empty when compiled
-// standalone.
-#ifdef _DEAR_WIDGETS_IMAGE_INSPECTOR_INCLUDED
+// Compiled as its own translation unit; resolved by the linker.
+#include "dear_widgets.h"
+#include "dear_widgets_internal.h"
+#include "imgui_internal.h"
 
 namespace ImWidgets {
 
@@ -20,7 +20,7 @@ namespace ImWidgets {
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 
 // ----------------------------------------------------------------------------
-// IEEE half → float decode (used by CPU inspector readback for F16)
+// IEEE half -> float decode (used by CPU inspector readback for F16)
 // ----------------------------------------------------------------------------
 static float II_HalfToFloat( unsigned short h )
 {
@@ -36,7 +36,7 @@ static float II_HalfToFloat( unsigned short h )
 		}
 		else
 		{
-			// Subnormal — normalize
+			// Subnormal -- normalize
 			while ( ( mant & 0x400u ) == 0 ) { mant <<= 1; exp--; }
 			exp++;
 			mant &= ~0x400u;
@@ -57,7 +57,7 @@ static float II_HalfToFloat( unsigned short h )
 }
 
 // ----------------------------------------------------------------------------
-// Gamut → XYZ (D65 unless noted) — standard published primaries
+// Gamut -> XYZ (D65 unless noted) -- standard published primaries
 // ----------------------------------------------------------------------------
 // Index by ImImageInspector_Gamut enum.
 static const float kGamutToXYZ[ ImImageInspector_Gamut_COUNT ][ 9 ] =
@@ -70,7 +70,7 @@ static const float kGamutToXYZ[ ImImageInspector_Gamut_COUNT ][ 9 ] =
 	{ 0.6369580f, 0.1446169f, 0.1688810f,
 	  0.2627002f, 0.6779981f, 0.0593017f,
 	  0.0000000f, 0.0280727f, 1.0609851f },
-	// DCI-P3 (D65 in this build — Display vs theatrical share primaries)
+	// DCI-P3 (D65 in this build -- Display vs theatrical share primaries)
 	{ 0.4451698f, 0.2771344f, 0.1722827f,
 	  0.2094917f, 0.7215953f, 0.0689131f,
 	  0.0000000f, 0.0470606f, 0.9073554f },
@@ -97,7 +97,7 @@ static const float kGamutToXYZ[ ImImageInspector_Gamut_COUNT ][ 9 ] =
 };
 
 // ----------------------------------------------------------------------------
-// 3×3 matrix helpers
+// 3x3 matrix helpers
 // ----------------------------------------------------------------------------
 static void II_Mat3Mul( const float a[ 9 ], const float b[ 9 ], float out[ 9 ] )
 {
@@ -116,7 +116,7 @@ static bool II_Mat3Inverse( const float m[ 9 ], float out[ 9 ] )
 		  m[ 0 ] * ( m[ 4 ] * m[ 8 ] - m[ 5 ] * m[ 7 ] )
 		- m[ 1 ] * ( m[ 3 ] * m[ 8 ] - m[ 5 ] * m[ 6 ] )
 		+ m[ 2 ] * ( m[ 3 ] * m[ 7 ] - m[ 4 ] * m[ 6 ] );
-	if ( det == 0.0f ) return false;
+	if ( fabsf(det) < 1e-6f ) return false;
 	float inv = 1.0f / det;
 	float r[ 9 ];
 	r[ 0 ] =  ( m[ 4 ] * m[ 8 ] - m[ 5 ] * m[ 7 ] ) * inv;
@@ -132,7 +132,7 @@ static bool II_Mat3Inverse( const float m[ 9 ], float out[ 9 ] )
 	return true;
 }
 
-// Build a 3×3 transform from gamut `from` → gamut `to`. Identity if equal.
+// Build a 3x3 transform from gamut `from` -> gamut `to`. Identity if equal.
 static void II_BuildGamutTransform( int from, int to, float out[ 9 ] )
 {
 	if ( from == to )
@@ -202,7 +202,7 @@ static void ImageInspectorFrameCleanup()
 }
 
 // ----------------------------------------------------------------------------
-// Render callback — uploads the whole cbuffer in one shot, then activates
+// Render callback -- uploads the whole cbuffer in one shot, then activates
 // the custom shader. Mirrors the marker widget pattern. The C++ struct
 // layout above MUST match the HLSL ImageInspectorParams cbuffer field order.
 // ----------------------------------------------------------------------------
@@ -218,7 +218,7 @@ static void ImageInspectorShaderCallback( const ImDrawList* /*parent_list*/, con
 }
 
 // ----------------------------------------------------------------------------
-// EnsurePackedTexture — tight-pack the source bytes and upload to GPU
+// EnsurePackedTexture -- tight-pack the source bytes and upload to GPU
 // ----------------------------------------------------------------------------
 // Re-uploads only when the buffer's version changes. The packed texture is a
 // flat byte array reshaped as a 2D RGBA32F texture (4096 wide, height as
@@ -276,7 +276,7 @@ static void EnsurePackedTexture( const ImImageBuffer& buffer, ImImageInspectorSt
 	          && ( buffer.c_stride_bytes == ( ptrdiff_t )sample_size );
 	if ( tight )
 	{
-		// Hot path for raw photography — single memcpy of the entire buffer
+		// Hot path for raw photography -- single memcpy of the entire buffer
 		memcpy( dst, src_base, total_bytes );
 	}
 	else
@@ -306,8 +306,8 @@ static void EnsurePackedTexture( const ImImageBuffer& buffer, ImImageInspectorSt
 	if ( scratch_bytes > total_bytes )
 		memset( dst + total_bytes, 0, scratch_bytes - total_bytes );
 
-	// Prefer in-place upload when dimensions match — for large RGBA32F
-	// inspectors (e.g. 4096×7716 / ~500 MB) destroy+create blocks the UI
+	// Prefer in-place upload when dimensions match -- for large RGBA32F
+	// inspectors (e.g. 4096x7716 / ~500 MB) destroy+create blocks the UI
 	// thread for hundreds of ms on every buffer.version bump.
 	bool dims_match = ( state.PackedTexture != ImTextureID_Invalid )
 	               && ( state.PackedTexW == tex_w )
@@ -354,7 +354,7 @@ static void EnsurePackedTexture( const ImImageBuffer& buffer, ImImageInspectorSt
 }
 
 // ----------------------------------------------------------------------------
-// CPU pixel readback — exact precision, all 11 sample types
+// CPU pixel readback -- exact precision, all 11 sample types
 // ----------------------------------------------------------------------------
 // Outputs into both a `double[4]` lane (for display formatting) and an
 // `int64[4]` lane (for exact integer values where the double would lose bits).
@@ -485,7 +485,7 @@ static void II_FillParams( ImageInspectorParams& p,
 	p.packedTexDims[ 0 ] = ( unsigned )state.PackedTexW;
 	p.packedTexDims[ 1 ] = ( unsigned )state.PackedTexH;
 	p.packedTexDims[ 2 ] = ( unsigned )( ImPlatform_ImageBufferTightByteSize( &buffer ) & 0xFFFFFFFFu );
-	p.packedTexDims[ 3 ] = 12;    // log2(4096) — kPackedTexWidth
+	p.packedTexDims[ 3 ] = 12;    // log2(4096) -- kPackedTexWidth
 
 	p.layoutPack[ 0 ] = ( unsigned )state.GpuXStride;
 	p.layoutPack[ 1 ] = ( unsigned )state.GpuYStride;
@@ -550,13 +550,14 @@ static void II_DrawShaderQuad( ImDrawList* dl,
                                ImVec2 quadMin, ImVec2 quadMax,
                                ImVec2 pan, float zoom, float fitScale )
 {
-	if ( !gs_pContext || !gs_pContext->imageInspectorShader.program )
+	ImWidgetsContext* ctx = GetCurrentContext();
+	if ( !ctx || !ctx->imageInspectorShader.program )
 		return;
 	if ( state.PackedTexture == ImTextureID_Invalid )
 		return;
 
 	ImageInspectorDrawCallData* call = IM_NEW( ImageInspectorDrawCallData );
-	call->program       = gs_pContext->imageInspectorShader.program;
+	call->program       = ctx->imageInspectorShader.program;
 	call->packedTexture = state.PackedTexture;
 	II_FillParams( call->params, buffer, state,
 	               ImVec2( quadMax.x - quadMin.x, quadMax.y - quadMin.y ),
@@ -571,7 +572,7 @@ static void II_DrawShaderQuad( ImDrawList* dl,
 #endif  // IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 
 // ============================================================================
-// ImageInspector — public widget function
+// ImageInspector -- public widget function
 // ============================================================================
 bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInspectorState& state, ImVec2 widgetSize )
 {
@@ -581,7 +582,6 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 
 	ImGuiContext&     g     = *GImGui;
 	const ImGuiID     id    = window->GetID( label );
-	const ImGuiStyle& style = g.Style;
 
 	// --- Widget rect ---
 	ImVec2 sz = widgetSize;
@@ -617,10 +617,11 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 	}
 
 	// --- Lazy shader init ---
-	if ( gs_pContext->imageInspectorShader.program == NULL )
+	ImWidgetsContext* ctx = GetCurrentContext();
+	if ( ctx && ctx->imageInspectorShader.program == NULL )
 	{
-		CreateInternalShader( &gs_pContext->imageInspectorShader, "image_inspector", 0, NULL, 0, NULL );
-		if ( gs_pContext->imageInspectorShader.program == NULL )
+		CreateInternalShader( &ctx->imageInspectorShader, "image_inspector", 0, NULL, 0, NULL );
+		if ( ctx->imageInspectorShader.program == NULL )
 		{
 			ImDrawList* dl = window->DrawList;
 			dl->AddRectFilled( bb.Min, bb.Max, IM_COL32( 30, 30, 30, 255 ) );
@@ -856,7 +857,7 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 		ImDrawList* fg = ImGui::GetForegroundDrawList();
 
 		fg->AddRectFilled( panelMin, panelMax, IM_COL32( 18, 18, 18, 235 ), rounding );
-		fg->AddRect( panelMin, panelMax, IM_COL32( 90, 90, 90, 220 ), rounding, 0, 1.0f );
+		fg->AddRect( panelMin, panelMax, IM_COL32( 90, 90, 90, 220 ), rounding, 0, LpToPx( 1.0f ) );
 
 		// --- Loupe (left square): show a small region of the image through the same shader ---
 		ImVec2 lTL  = ImVec2( panelMin.x + pad, panelMin.y + pad );
@@ -879,7 +880,7 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 		}
 		fg->PopClipRect();
 
-		// Loupe through custom shader: pan/zoom such that an 11×11 source region fits the loupe rect
+		// Loupe through custom shader: pan/zoom such that an 11x11 source region fits the loupe rect
 		const float loupePixels = 11.0f;
 		float loupeFitScale = squareSz / loupePixels;    // src px -> screen px
 		float loupeZoom     = 1.0f;
@@ -926,7 +927,7 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 		fg->AddText( ImVec2( tx, ty ), inRange ? colValue : colDim, chLine0 ); ty += lineH + lineGap;
 		fg->AddText( ImVec2( tx, ty ), inRange ? colValue : colDim, chLine1 );
 
-		// --- Color swatch (right square) — approximate via a 3-channel display ---
+		// --- Color swatch (right square) -- approximate via a 3-channel display ---
 		ImVec2 sTL = ImVec2( panelMax.x - pad - squareSz, panelMin.y + pad );
 		ImVec2 sBR = ImVec2( panelMax.x - pad,            panelMin.y + pad + squareSz );
 
@@ -940,7 +941,7 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 		ImU32 swCol = inRange
 		            ? ImGui::ColorConvertFloat4ToU32( ImVec4( swColor.x, swColor.y, swColor.z, 1.0f ) )
 		            : IM_COL32( 45, 45, 45, 255 );
-		fg->AddRectFilled( sTL, sBR, swCol, 2.0f );
+		fg->AddRectFilled( sTL, sBR, swCol, LpToPx( 2.0f ) );
 		if ( !inRange )
 		{
 			fg->PushClipRect( sTL, sBR, true );
@@ -948,7 +949,7 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 				fg->AddLine( ImVec2( sTL.x + d, sTL.y ), ImVec2( sTL.x, sTL.y + d ), IM_COL32( 70, 70, 70, 255 ) );
 			fg->PopClipRect();
 		}
-		fg->AddRect( sTL, sBR, IM_COL32( 90, 90, 90, 180 ), 2.0f, 0, 1.0f );
+		fg->AddRect( sTL, sBR, IM_COL32( 90, 90, 90, 180 ), LpToPx( 2.0f ), 0, LpToPx( 1.0f ) );
 	}
 
 	// --- Expand button ---
@@ -982,7 +983,7 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 		}
 	}
 #else
-	// Custom shader unsupported at compile time — render placeholder
+	// Custom shader unsupported at compile time -- render placeholder
 	ImDrawList* dl = window->DrawList;
 	dl->AddRectFilled( bb.Min, bb.Max, IM_COL32( 30, 30, 30, 255 ) );
 	dl->AddRect      ( bb.Min, bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
@@ -997,5 +998,3 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 }
 
 }  // namespace ImWidgets
-
-#endif  // _DEAR_WIDGETS_IMAGE_INSPECTOR_INCLUDED

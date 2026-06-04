@@ -1,17 +1,77 @@
-// dear_widgets_slug.cpp — Slug GPU font rendering: color fonts, gradients, ligatures, atlas baking.
-// This file is #included from dear_widgets.cpp — do NOT compile separately.
-#ifdef _DEAR_WIDGETS_SLUG_INCLUDED
-#include "dear_widgets_slug.h"
+// dear_widgets_slug.cpp -- Slug GPU font rendering: color fonts, gradients, ligatures, atlas baking.
+// Compiled as its own translation unit; resolved by the linker.
 
-// stb_rect_pack and stb_truetype are included from dear_widgets.cpp (before namespace)
+// stb_rect_pack -- atlas packing (STATIC = all funcs private to this TU, no ODR conflict with dear_widgets.cpp)
+#define STBRP_STATIC
+#define STB_RECT_PACK_IMPLEMENTATION
+#if defined(_MSC_VER)
+#  pragma warning(push)
+#  pragma warning(disable: 4505)
+#elif defined(__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wunused-function"
+#elif defined(__GNUC__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wunused-function"
+#endif
+#include "../../extern/ImPlatform/imgui/imstb_rectpack.h"
+#if defined(_MSC_VER)
+#  pragma warning(pop)
+#elif defined(__clang__)
+#  pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#  pragma GCC diagnostic pop
+#endif
+
+// stb_truetype -- glyph outline extraction (STATIC = all funcs private to this TU)
+#define STBTT_STATIC
+#define STB_TRUETYPE_IMPLEMENTATION
+#if defined(_MSC_VER)
+#  pragma warning(push)
+#  pragma warning(disable: 4505)
+#elif defined(__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wunused-function"
+#elif defined(__GNUC__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wunused-function"
+#endif
+#include "../../extern/ImPlatform/imgui/imstb_truetype.h"
+#if defined(_MSC_VER)
+#  pragma warning(pop)
+#elif defined(__clang__)
+#  pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#  pragma GCC diagnostic pop
+#endif
+
+#include "../../extern/CDT/CDT.h" // must be outside namespace
+
+#include "dear_widgets.h"
+#include "dear_widgets_internal.h"
+#include "dear_widgets_slug.h"
+#include <cmath>     // cosf/sinf/tanf for COLR v1 rotate/skew origin math
+#include <cstdlib>   // std::abs for stop-distance tiebreak in gradient fallback
+#include <chrono>    // PrewarmTessellationCache profiling
+#include <cstdio>    // PrewarmTessellationCache profiling output
+#include <thread>    // PrewarmTessellationCache parallel tessellation
+#include <atomic>    // PrewarmTessellationCache work distribution
+#include <vector>    // per-glyph result slots
+
+// Toggle startup tessellation-prewarm profiling (per-glyph + sub-phase timings to stderr).
+#ifndef DW_PROFILE_PREWARM
+#define DW_PROFILE_PREWARM 1
+#endif
 
 #ifndef IM_SUPPORT_LIGATURE
 #define IM_SUPPORT_LIGATURE 1
 #endif
+
+namespace ImWidgets {
+// Include inside the namespace so DwShaper_* declarations land in ImWidgets::,
+// matching the symbols exported by dear_widgets_text_shape.cpp.
 #if IM_SUPPORT_LIGATURE
-#define KB_TEXT_SHAPE_STATIC
-#define KB_TEXT_SHAPE_IMPLEMENTATION
-#include "kb_text_shape.h"
+#include "dear_widgets_text_shape.h"
 #endif
 
 
@@ -23,7 +83,7 @@
 
 	// Convert logical pixels (DPI-independent) to physical pixels.
 	// 1 lp = 1 px at 96 DPI / 1.0x scale. Scales by ImGui FontScaleDpi (set via ImGuiStyle).
-	static inline float SlugLpToPx(float lp) { return lp * ImGui::GetStyle().FontScaleDpi; }
+	float SlugLpToPx(float lp) { return lp * ImGui::GetStyle().FontScaleDpi; }
 
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
 
@@ -45,7 +105,7 @@
 	};
 
 	// Approximate one cubic Bezier as quadratic segments and push to curve list.
-	// Splits the cubic at midpoints recursively (depth=number of subdivisions, 2 → 4 quads).
+	// Splits the cubic at midpoints recursively (depth=number of subdivisions, 2 -> 4 quads).
 	static void SlugCubicToQuads(ImVector<SlugCurve>& curves,
 		float p0x, float p0y, float p1x, float p1y,
 		float p2x, float p2y, float p3x, float p3y, int depth = 2)
@@ -55,7 +115,7 @@
 			// Approximate this cubic segment as a single quadratic.
 			// Control point = intersection of tangent lines at endpoints:
 			//   Q = (3*P1 - P0 + 3*P2 - P3) / 4  (midpoint of the two inner control points,
-			//   adjusted — this is the standard cubic→quadratic approximation for a single segment)
+			//   adjusted -- this is the standard cubic->quadratic approximation for a single segment)
 			// For a pre-subdivided cubic, using the mid-control-point gives good results:
 			float qx = (3.0f * p1x - p0x + 3.0f * p2x - p3x) * 0.25f;
 			float qy = (3.0f * p1y - p0y + 3.0f * p2y - p3y) * 0.25f;
@@ -100,13 +160,24 @@
 	{
 		int   glyphEntryIdx;  // index in SlugFontCache::glyphs (already-built outline)
 		ImU32 color;          // solid RGBA; IM_COL32(0,0,0,0) = use caller's text color (CPAL 0xFFFF)
-		// Linear gradient (if hasGradient is true, color field is ignored)
+		// Gradient (linear or radial). When hasGradient is true the renderer
+		// uses the gradient shader path and the `color` field is ignored.
+		// `isRadial` selects the gradient kind: false = linear, true = radial.
 		bool  hasGradient;
-		ImU32 gradColor0, gradColor1;  // gradient stop colors
-		float gradDirX, gradDirY;      // gradient direction in em-space (normalized)
-		float gradScale, gradBias;     // t = dot(emCoord, dir) * scale + bias
-		// COLR v1 PaintTranslate offset (em-space)
-		float translateX, translateY;
+		bool  isRadial;
+		ImU32 gradColor0, gradColor1;  // first / last stop colours
+		// Linear gradient: t = dot(emCoord, (gradDirX, gradDirY)) * gradScale + gradBias
+		// Radial gradient: t = length(emCoord - (gradDirX, gradDirY)) * gradScale
+		// Coordinates are in BAKED em-space (M_outer * M_inner already applied),
+		// so the shader doesn't need to invert any transform.
+		float gradDirX, gradDirY;
+		float gradScale, gradBias;
+		// COLR v1 affine transform, in em-space. Parsed into (linXX..linYY, translateX/Y)
+		// from the stack of Paint transform wrappers; used to bake the transform into the
+		// layer glyph's curves at build time so rendering stays axis-aligned.
+		// Identity = { 1, 0, 0, 1 } / { 0, 0 }.
+		float linXX, linXY, linYX, linYY;  // 2x2 linear part (default identity)
+		float translateX, translateY;      // 2x1 translation (default 0)
 	};
 
 	struct SlugShapedGlyph { int glyphID; float advanceX; float offsetX; float offsetY; };
@@ -117,7 +188,7 @@
 	{
 		float pos[4];  // xy = screen-space position (undilated), zw = outward vertex normal
 		float tex[4];  // xy = em UV (undilated), zw = packed glyph data (bit-cast uint)
-		float jac[4];  // inverse Jacobian: maps screen-space offset → em-space offset
+		float jac[4];  // inverse Jacobian: maps screen-space offset -> em-space offset
 		               //   = (1/sz, 0, 0, -1/sz) for axis-aligned glyph at pixel size sz
 		float bnd[4];  // band transform: scaleX, scaleY, offsetX, offsetY
 		float col[4];  // RGBA vertex color as floats
@@ -179,8 +250,7 @@
 		uint32_t svgTableOffset;
 
 #if IM_SUPPORT_LIGATURE
-		kbts_shape_context* shapeCtx;  // text shaping context (RTL, ligatures, etc.)
-		kbts_font*          shapeFont; // font pushed to the shaping context
+		DwShaperCtx* shaperCtx;
 #endif
 
 		// Curve texture: RGBA32F, width = SLUG_TEX_WIDTH
@@ -232,7 +302,7 @@
 		ImVector<ImU16>              scratchIdxsGrad;
 
 		// Draw cache: skip ALL CPU work for static text (same text+pos+col+size across frames)
-		// Stores GPU VB/IB handles directly — cache hit = just register draw callbacks, zero upload
+		// Stores GPU VB/IB handles directly -- cache hit = just register draw callbacks, zero upload
 		struct SlugDrawCallInfo {
 			ImPlatform_VertexBuffer  vb;
 			ImPlatform_IndexBuffer   ib;
@@ -253,7 +323,7 @@
 	};
 
 	// Cached tessellation of a single glyph stored at kTessRefSize pixel scale (sc=atlas->emScale, sz=kTessRefSize).
-	// positions[i] = (v.x, -v.y) — y-flip already applied, ready to scale by (sz/kTessRefSize) and offset by (gx,gy).
+	// positions[i] = (v.x, -v.y) -- y-flip already applied, ready to scale by (sz/kTessRefSize) and offset by (gx,gy).
 	struct DwTessGlyphData
 	{
 		ImVector<ImVec2>          positions;  // font-unit coords
@@ -407,7 +477,7 @@
 		return numLayers;
 	}
 
-	// COLR v1 layer extraction: PaintColrLayers → PaintGlyph → PaintSolid / PaintLinearGradient.
+	// COLR v1 layer extraction: PaintColrLayers -> PaintGlyph -> PaintSolid / PaintLinearGradient.
 	// Returns layer count or 0. Fills outLayers with glyph IDs and fill info (solid or gradient).
 	static int SlugGetColrV1Layers(SlugFontCache* atlas, int glyphID,
 	                               ImVector<int>& outGlyphIDs, ImVector<SlugColorLayer>& outLayers)
@@ -474,49 +544,165 @@
 			return (int16_t)((p[0] << 8) | p[1]);
 		};
 
-		// Helper: resolve a paint node to (glyphID, fill paint pointer).
-		// Resolves paint tree nodes, accumulating translation offsets from PaintTranslate.
+		// Helper: resolve a paint node to (glyphID, fill paint pointer, affine).
+		// Resolves paint tree nodes, composing affine transforms from the wrapper chain.
 		// For PaintColrGlyph (fmt 11), recursively looks up the referenced glyph's paint tree.
-		struct PaintResolved { int glyphID; const uint8_t* fillPaint; float translateX; float translateY; };
+		//
+		// The accumulator (linXX..linYY, txAcc, tyAcc) represents the 2x3 affine
+		// currently in effect from all OUTER wrappers. When we unwrap an
+		// additional inner transform T_new, the combined transform is:
+		//   M_combined(v) = M_current(T_new(v))
+		// Expanding: let M = (L, t), T_new = (L', t'). Then
+		//   M_combined(v) = L*(L'*v + t') + t = (L*L')*v + (L*t' + t)
+		// So:   new_L = L * L'
+		//       new_t = L * t' + t
+		struct PaintResolved {
+			int           glyphID;
+			const uint8_t* fillPaint;
+			float         linXX, linXY, linYX, linYY;  // 2x2 linear
+			float         translateX, translateY;      // 2x1 translate
+		};
 		ImVector<PaintResolved> resolvedPaints;
 
-		auto ResolvePaint = [&](const uint8_t* paint, int recurseDepth, float txAcc, float tyAcc, auto& self) -> void {
-			if (recurseDepth > 4) return;
-			// Unwrap wrappers, accumulating translation offsets
+		// Compose inner transform (aL, aT) on top of the current accumulator.
+		// Updates txAcc/tyAcc and linXX..linYY in place.
+		auto ComposeInner = [](float& linXX, float& linXY, float& linYX, float& linYY,
+		                       float& txAcc, float& tyAcc,
+		                       float aXX, float aXY, float aYX, float aYY,
+		                       float aTX, float aTY) {
+			// new_t = L * aT + t
+			float newTX = linXX * aTX + linXY * aTY + txAcc;
+			float newTY = linYX * aTX + linYY * aTY + tyAcc;
+			// new_L = L * aL
+			float nXX = linXX * aXX + linXY * aYX;
+			float nXY = linXX * aXY + linXY * aYY;
+			float nYX = linYX * aXX + linYY * aYX;
+			float nYY = linYX * aXY + linYY * aYY;
+			linXX = nXX; linXY = nXY; linYX = nYX; linYY = nYY;
+			txAcc = newTX; tyAcc = newTY;
+		};
+
+		auto ResolvePaint = [&](const uint8_t* paint, int recurseDepth,
+		                        float linXX, float linXY, float linYX, float linYY,
+		                        float txAcc, float tyAcc, auto& self) -> void {
+			// Emoji fonts (Noto Color Emoji in particular) can nest paint
+			// graphs several levels deep via PaintColrGlyph + PaintComposite
+			// + transforms. Keep this generous so we don't clip complex
+			// glyphs silently.
+			if (recurseDepth > 12) return;
+			// Unwrap every COLR v1 transform wrapper and compose its affine
+			// into the current accumulator. Each transform's own 2x3 affine
+			// (T_new) is combined with the accumulator (L, t) as:
+			//   new_L = L * T_new_linear
+			//   new_t = L * T_new_translate + t
+			//
+			// Covered formats:
+			//   12/13 PaintTransform(+Var): full Affine2x3 -- all 6 Fixed fields
+			//   14/15 PaintTranslate(+Var): translation only
+			//   16/17 PaintScale(+Var): diagonal scale
+			//   18/19 PaintScaleAroundCenter(+Var)
+			//   20/21 PaintScaleUniform(+Var)
+			//   22/23 PaintScaleUniformAroundCenter(+Var)
+			//   24/25 PaintRotate(+Var): rotation about origin
+			//   26/27 PaintRotateAroundCenter(+Var)
+			//   28/29 PaintSkew(+Var)
+			//   30/31 PaintSkewAroundCenter(+Var)
+			//
+			// PaintComposite (32) is handled AFTER the loop: it's a binary
+			// operator (source/backdrop), and many emoji fonts use it as
+			// SrcIn to clip a gradient fill to a glyph shape. Walking the
+			// source alone throws away the clip glyph (the shape disappears),
+			// so we recurse into both children below and let each add its
+			// own layers.
 			const uint8_t* p2 = paint;
-			for (int d2 = 0; d2 < 8; d2++) {
+			for (int d2 = 0; d2 < 12; d2++) {
 				uint8_t f = p2[0];
-				if (f == 14) { // PaintTranslate: fmt(1) + paintOffset(3) + dx(2) + dy(2) = 8 bytes
-					uint32_t off2 = ((uint32_t)p2[1] << 16) | ((uint32_t)p2[2] << 8) | p2[3];
-					int16_t dx = (int16_t)SlugTTU16(p2 + 4);
-					int16_t dy = (int16_t)SlugTTU16(p2 + 6);
-					txAcc += (float)dx * sc;
-					tyAcc += (float)dy * sc;
-					p2 = p2 + off2;
-				} else if (f == 15) { // PaintVarTranslate: fmt(1) + paintOffset(3) + dx(2) + dy(2) + varIdxBase(4) = 12
-					uint32_t off2 = ((uint32_t)p2[1] << 16) | ((uint32_t)p2[2] << 8) | p2[3];
-					int16_t dx = (int16_t)SlugTTU16(p2 + 4);
-					int16_t dy = (int16_t)SlugTTU16(p2 + 6);
-					txAcc += (float)dx * sc;
-					tyAcc += (float)dy * sc;
-					p2 = p2 + off2;
-				} else if (f >= 12 && f <= 21) { // Other transforms (Scale, Rotate, Transform) — skip for now
-					uint32_t off2 = ((uint32_t)p2[1] << 16) | ((uint32_t)p2[2] << 8) | p2[3];
-					p2 = p2 + off2;
-				} else break;
+				if (!(f >= 12 && f <= 31)) break;
+
+				uint32_t off2 = ((uint32_t)p2[1] << 16)
+				              | ((uint32_t)p2[2] << 8)
+				              |  (uint32_t)p2[3];
+
+				// Local transform T_new we'll compose with the accumulator.
+				float aXX = 1.0f, aXY = 0.0f, aYX = 0.0f, aYY = 1.0f;
+				float aTX = 0.0f, aTY = 0.0f;
+
+				if (f == 14 || f == 15) { // PaintTranslate
+					aTX = (float)(int16_t)SlugTTU16(p2 + 4) * sc;
+					aTY = (float)(int16_t)SlugTTU16(p2 + 6) * sc;
+				} else if (f == 12 || f == 13) { // PaintTransform -- full Affine2x3
+					uint32_t tOff = ((uint32_t)p2[4] << 16) | ((uint32_t)p2[5] << 8) | (uint32_t)p2[6];
+					const uint8_t* aff = p2 + tOff;
+					// Affine2x3 layout: Fixed xx, yx, xy, yy, dx, dy (6 x int32.16.16)
+					aXX = (float)(int32_t)SlugTTU32(aff +  0) / 65536.0f;
+					aYX = (float)(int32_t)SlugTTU32(aff +  4) / 65536.0f;
+					aXY = (float)(int32_t)SlugTTU32(aff +  8) / 65536.0f;
+					aYY = (float)(int32_t)SlugTTU32(aff + 12) / 65536.0f;
+					aTX = (float)(int32_t)SlugTTU32(aff + 16) / 65536.0f * sc;
+					aTY = (float)(int32_t)SlugTTU32(aff + 20) / 65536.0f * sc;
+				} else if (f == 16 || f == 17) { // PaintScale(sx, sy)
+					aXX = F2D14(p2 + 4); aYY = F2D14(p2 + 6);
+				} else if (f == 18 || f == 19) { // PaintScaleAroundCenter
+					float sx = F2D14(p2 + 4); float sy = F2D14(p2 + 6);
+					float cx = (float)FWORD(p2 + 8) * sc;
+					float cy = (float)FWORD(p2 + 10) * sc;
+					aXX = sx; aYY = sy;
+					aTX = cx * (1.0f - sx); aTY = cy * (1.0f - sy);
+				} else if (f == 20 || f == 21) { // PaintScaleUniform(s)
+					float s = F2D14(p2 + 4);
+					aXX = s; aYY = s;
+				} else if (f == 22 || f == 23) { // PaintScaleUniformAroundCenter
+					float s = F2D14(p2 + 4);
+					float cx = (float)FWORD(p2 + 6) * sc;
+					float cy = (float)FWORD(p2 + 8) * sc;
+					aXX = s; aYY = s;
+					aTX = cx * (1.0f - s); aTY = cy * (1.0f - s);
+				} else if (f == 24 || f == 25) { // PaintRotate(angle)
+					// F2DOT14 angle in "180 deg" units -> radians = value * PI.
+					float ang = F2D14(p2 + 4) * 3.14159265358979323846f;
+					float co = cosf(ang), si = sinf(ang);
+					aXX = co; aXY = -si; aYX = si; aYY = co;
+				} else if (f == 26 || f == 27) { // PaintRotateAroundCenter
+					float ang = F2D14(p2 + 4) * 3.14159265358979323846f;
+					float cx  = (float)FWORD(p2 + 6) * sc;
+					float cy  = (float)FWORD(p2 + 8) * sc;
+					float co  = cosf(ang), si = sinf(ang);
+					aXX = co; aXY = -si; aYX = si; aYY = co;
+					aTX = cx * (1.0f - co) + cy * si;
+					aTY = -cx * si + cy * (1.0f - co);
+				} else if (f == 28 || f == 29) { // PaintSkew(xSkew, ySkew)
+					float xs = F2D14(p2 + 4) * 3.14159265358979323846f;
+					float ys = F2D14(p2 + 6) * 3.14159265358979323846f;
+					aXX = 1.0f; aXY = tanf(xs); aYX = tanf(ys); aYY = 1.0f;
+				} else if (f == 30 || f == 31) { // PaintSkewAroundCenter
+					float xs = F2D14(p2 + 4) * 3.14159265358979323846f;
+					float ys = F2D14(p2 + 6) * 3.14159265358979323846f;
+					float cx = (float)FWORD(p2 + 8) * sc;
+					float cy = (float)FWORD(p2 + 10) * sc;
+					aXX = 1.0f; aXY = tanf(xs); aYX = tanf(ys); aYY = 1.0f;
+					aTX = cy * tanf(xs); aTY = -cx * tanf(ys);
+				}
+				// else f == 32 (PaintComposite) -- treat as identity and
+				// fall through to the source paint at offset [1..3].
+
+				ComposeInner(linXX, linXY, linYX, linYY, txAcc, tyAcc,
+				             aXX, aXY, aYX, aYY, aTX, aTY);
+
+				p2 = p2 + off2;
 			}
 			if (p2[0] == 10) { // PaintGlyph
 				uint32_t fOff = ((uint32_t)p2[1] << 16) | ((uint32_t)p2[2] << 8) | p2[3];
 				PaintResolved pr;
 				pr.glyphID = (int)SlugTTU16(p2 + 4);
 				pr.fillPaint = p2 + fOff;
+				pr.linXX = linXX; pr.linXY = linXY;
+				pr.linYX = linYX; pr.linYY = linYY;
 				pr.translateX = txAcc;
 				pr.translateY = tyAcc;
 				resolvedPaints.push_back(pr);
 			}
-			else if (p2[0] == 11) { // PaintColrGlyph — recurse into referenced glyph's paint tree
+			else if (p2[0] == 11) { // PaintColrGlyph -- recurse into referenced glyph's paint tree
 				int refGlyphID = (int)SlugTTU16(p2 + 1);
-				// Binary search BaseGlyphList for refGlyphID
 				int lo2 = 0, hi2 = (int)numBGL - 1, found2 = -1;
 				while (lo2 <= hi2) {
 					int mid2 = (lo2 + hi2) / 2;
@@ -533,10 +719,12 @@
 						uint32_t refFirstIdx = SlugTTU32(refPaint + 2);
 						for (int ri = 0; ri < (int)refNL; ri++) {
 							uint32_t rloff = SlugTTU32(ll + 4 + (refFirstIdx + ri) * 4);
-							self(ll + rloff, recurseDepth + 1, txAcc, tyAcc, self);
+							self(ll + rloff, recurseDepth + 1,
+							     linXX, linXY, linYX, linYY, txAcc, tyAcc, self);
 						}
 					} else {
-						self(refPaint, recurseDepth + 1, txAcc, tyAcc, self);
+						self(refPaint, recurseDepth + 1,
+						     linXX, linXY, linYX, linYY, txAcc, tyAcc, self);
 					}
 				}
 			}
@@ -545,7 +733,59 @@
 				uint32_t firstIdx2 = SlugTTU32(p2 + 2);
 				for (int ri = 0; ri < (int)nL2; ri++) {
 					uint32_t rloff = SlugTTU32(ll + 4 + (firstIdx2 + ri) * 4);
-					self(ll + rloff, recurseDepth + 1, txAcc, tyAcc, self);
+					self(ll + rloff, recurseDepth + 1,
+					     linXX, linXY, linYX, linYY, txAcc, tyAcc, self);
+				}
+			}
+			else if (p2[0] == 32) { // PaintComposite
+				// Layout: fmt(1) + sourceOff(3) + compositeMode(1) + backdropOff(3) = 8.
+				// The common emoji pattern is SrcIn (mode 5):
+				//   source = fill-only paint (PaintSolid / PaintGradient -- no glyph)
+				//   backdrop = PaintGlyph(shape, dummy_fill)
+				// meaning "fill the backdrop glyph with the source". Walking
+				// source alone yields no PaintGlyph -> shape vanishes. Walking
+				// backdrop alone loses the source's gradient colour. Since
+				// we don't have proper CPU compositing, recurse into BOTH so
+				// at least the shape renders. For non-SrcIn modes (SrcOver
+				// etc.) this over-draws but produces a visually correct
+				// approximation for typical emoji layouts.
+				uint32_t sourceOff   = ((uint32_t)p2[1] << 16)
+				                     | ((uint32_t)p2[2] << 8)
+				                     |  (uint32_t)p2[3];
+				uint32_t backdropOff = ((uint32_t)p2[5] << 16)
+				                     | ((uint32_t)p2[6] << 8)
+				                     |  (uint32_t)p2[7];
+				// Snapshot resolvedPaints size so we can know if source
+				// produced a glyph layer; if not, we also need to
+				// propagate source's FILL to the backdrop glyph below.
+				int preSize = resolvedPaints.Size;
+				self(p2 + sourceOff, recurseDepth + 1,
+				     linXX, linXY, linYX, linYY, txAcc, tyAcc, self);
+				bool sourceProducedGlyph = (resolvedPaints.Size > preSize);
+				self(p2 + backdropOff, recurseDepth + 1,
+				     linXX, linXY, linYX, linYY, txAcc, tyAcc, self);
+				// SrcIn-style "fill glyph with gradient": when source was a
+				// fill-only paint (no glyph emitted) and backdrop now added
+				// glyph(s) with placeholder white fill, override the newly
+				// added glyph(s)' fill with the source paint's fill pointer.
+				// We can detect this by checking the source's top-level
+				// paint format is 2..9 (PaintSolid / Paint*Gradient).
+				if (!sourceProducedGlyph) {
+					const uint8_t* srcPaint = p2 + sourceOff;
+					// Unwrap transforms on source to find its terminal fill.
+					for (int sd = 0; sd < 8; sd++) {
+						uint8_t sf = srcPaint[0];
+						if (!(sf >= 12 && sf <= 31)) break;
+						uint32_t sOff = ((uint32_t)srcPaint[1] << 16)
+						              | ((uint32_t)srcPaint[2] << 8)
+						              |  (uint32_t)srcPaint[3];
+						srcPaint = srcPaint + sOff;
+					}
+					uint8_t tf = srcPaint[0];
+					if (tf >= 2 && tf <= 9) {
+						for (int bi = preSize; bi < resolvedPaints.Size; bi++)
+							resolvedPaints[bi].fillPaint = srcPaint;
+					}
 				}
 			}
 		};
@@ -554,24 +794,117 @@
 		{
 			resolvedPaints.clear();
 			if (topIsSinglePaint) {
-				ResolvePaint(p0, 0, 0.0f, 0.0f, ResolvePaint);
+				ResolvePaint(p0, 0, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, ResolvePaint);
 			} else {
 				uint32_t layerIdx = firstLayerIdx + (uint32_t)li;
 				if (layerIdx >= numLL) break;
 				uint32_t loff = SlugTTU32(ll + 4 + layerIdx * 4);
-				ResolvePaint(ll + loff, 0, 0.0f, 0.0f, ResolvePaint);
+				ResolvePaint(ll + loff, 0, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, ResolvePaint);
 			}
 
 			for (int ri = 0; ri < resolvedPaints.Size; ri++)
 			{
 			int layerGlyphID = resolvedPaints[ri].glyphID;
 			const uint8_t* fp = resolvedPaints[ri].fillPaint;
-			float layerTX = resolvedPaints[ri].translateX;
-			float layerTY = resolvedPaints[ri].translateY;
 
 			SlugColorLayer cl = {};
-			cl.translateX = layerTX;
-			cl.translateY = layerTY;
+			cl.linXX = resolvedPaints[ri].linXX;
+			cl.linXY = resolvedPaints[ri].linXY;
+			cl.linYX = resolvedPaints[ri].linYX;
+			cl.linYY = resolvedPaints[ri].linYY;
+			cl.translateX = resolvedPaints[ri].translateX;
+			cl.translateY = resolvedPaints[ri].translateY;
+
+			// Unwrap transform wrappers around the fill paint to find the
+			// terminal fill subtable AND accumulate them into M_inner. The
+			// gradient (linear or radial) is defined in PRE-transform em-
+			// space; to render it correctly in the BAKED em-space the shader
+			// sees, we have to compose M_outer (already in cl.linXX..) with
+			// M_inner and apply the result to the gradient's geometry.
+			//
+			// Without this, Noto/Fluent's gradient layers -- which always wrap
+			// the gradient in a PaintTransform that rotates/scales the
+			// gradient line for the glyph -- would render with a misplaced
+			// or wrongly-oriented gradient. (Or, before this whole block was
+			// added, with the transform falling into default:continue and
+			// the entire layer disappearing.)
+			float ixx = 1.0f, ixy = 0.0f, iyx = 0.0f, iyy = 1.0f;
+			float itx = 0.0f, ity = 0.0f;
+			for (int u = 0; u < 12; u++) {
+				uint8_t tf = fp[0];
+				if (!(tf >= 12 && tf <= 31)) break;
+
+				float aXX = 1.0f, aXY = 0.0f, aYX = 0.0f, aYY = 1.0f;
+				float aTX = 0.0f, aTY = 0.0f;
+				if (tf == 14 || tf == 15) {
+					aTX = (float)(int16_t)SlugTTU16(fp + 4) * sc;
+					aTY = (float)(int16_t)SlugTTU16(fp + 6) * sc;
+				} else if (tf == 12 || tf == 13) {
+					uint32_t tOff = ((uint32_t)fp[4] << 16) | ((uint32_t)fp[5] << 8) | (uint32_t)fp[6];
+					const uint8_t* aff = fp + tOff;
+					aXX = (float)(int32_t)SlugTTU32(aff +  0) / 65536.0f;
+					aYX = (float)(int32_t)SlugTTU32(aff +  4) / 65536.0f;
+					aXY = (float)(int32_t)SlugTTU32(aff +  8) / 65536.0f;
+					aYY = (float)(int32_t)SlugTTU32(aff + 12) / 65536.0f;
+					aTX = (float)(int32_t)SlugTTU32(aff + 16) / 65536.0f * sc;
+					aTY = (float)(int32_t)SlugTTU32(aff + 20) / 65536.0f * sc;
+				} else if (tf == 16 || tf == 17) {
+					aXX = F2D14(fp + 4); aYY = F2D14(fp + 6);
+				} else if (tf == 18 || tf == 19) {
+					float sx = F2D14(fp + 4); float sy = F2D14(fp + 6);
+					float cx = (float)FWORD(fp + 8) * sc;
+					float cy = (float)FWORD(fp + 10) * sc;
+					aXX = sx; aYY = sy;
+					aTX = cx * (1.0f - sx); aTY = cy * (1.0f - sy);
+				} else if (tf == 20 || tf == 21) {
+					float s = F2D14(fp + 4);
+					aXX = s; aYY = s;
+				} else if (tf == 22 || tf == 23) {
+					float s = F2D14(fp + 4);
+					float cx = (float)FWORD(fp + 6) * sc;
+					float cy = (float)FWORD(fp + 8) * sc;
+					aXX = s; aYY = s;
+					aTX = cx * (1.0f - s); aTY = cy * (1.0f - s);
+				} else if (tf == 24 || tf == 25) {
+					float ang = F2D14(fp + 4) * 3.14159265358979323846f;
+					float co = cosf(ang), si = sinf(ang);
+					aXX = co; aXY = -si; aYX = si; aYY = co;
+				} else if (tf == 26 || tf == 27) {
+					float ang = F2D14(fp + 4) * 3.14159265358979323846f;
+					float cx  = (float)FWORD(fp + 6) * sc;
+					float cy  = (float)FWORD(fp + 8) * sc;
+					float co  = cosf(ang), si = sinf(ang);
+					aXX = co; aXY = -si; aYX = si; aYY = co;
+					aTX = cx * (1.0f - co) + cy * si;
+					aTY = -cx * si + cy * (1.0f - co);
+				} else if (tf == 28 || tf == 29) {
+					float xs = F2D14(fp + 4) * 3.14159265358979323846f;
+					float ys = F2D14(fp + 6) * 3.14159265358979323846f;
+					aXX = 1.0f; aXY = tanf(xs); aYX = tanf(ys); aYY = 1.0f;
+				} else if (tf == 30 || tf == 31) {
+					float xs = F2D14(fp + 4) * 3.14159265358979323846f;
+					float ys = F2D14(fp + 6) * 3.14159265358979323846f;
+					float cx = (float)FWORD(fp + 8) * sc;
+					float cy = (float)FWORD(fp + 10) * sc;
+					aXX = 1.0f; aXY = tanf(xs); aYX = tanf(ys); aYY = 1.0f;
+					aTX = cy * tanf(xs); aTY = -cx * tanf(ys);
+				}
+				ComposeInner(ixx, ixy, iyx, iyy, itx, ity,
+				             aXX, aXY, aYX, aYY, aTX, aTY);
+
+				uint32_t off = ((uint32_t)fp[1] << 16) | ((uint32_t)fp[2] << 8) | (uint32_t)fp[3];
+				fp = fp + off;
+			}
+
+			// Total transform applied to gradient geometry: M_outer o M_inner
+			// where M_outer was accumulated by ResolvePaint up to the PaintGlyph
+			// and is now sitting in cl.linXX..cl.translateY (we copied it from
+			// resolvedPaints[ri] above).
+			float mxx = cl.linXX, mxy = cl.linXY, myx = cl.linYX, myy = cl.linYY;
+			float mtx = cl.translateX, mty = cl.translateY;
+			ComposeInner(mxx, mxy, myx, myy, mtx, mty,
+			             ixx, ixy, iyx, iyy, itx, ity);
+
 			switch (fp[0])
 			{
 			case 2:  // PaintSolid
@@ -588,6 +921,13 @@
 				uint32_t clOff = ((uint32_t)fp[1] << 16) | ((uint32_t)fp[2] << 8) | fp[3];
 				float gx0 = (float)FWORD(fp + 4) * sc, gy0 = (float)FWORD(fp + 6) * sc;
 				float gx1 = (float)FWORD(fp + 8) * sc, gy1 = (float)FWORD(fp + 10) * sc;
+				// Bake M_total into the gradient endpoints so the gradient
+				// line lives in the same em-space the shader's input.texcoord
+				// is in (post-M_outer-baked).
+				float bgx0 = mxx * gx0 + mxy * gy0 + mtx;
+				float bgy0 = myx * gx0 + myy * gy0 + mty;
+				float bgx1 = mxx * gx1 + mxy * gy1 + mtx;
+				float bgy1 = myx * gx1 + myy * gy1 + mty;
 				const uint8_t* clp = fp + clOff;
 				uint16_t numStops = SlugTTU16(clp + 1);
 				if (numStops < 2) { if (numStops == 1) { cl.color = GetPalColor((int)SlugTTU16(clp+3+2), F2D14(clp+3+4)); } break; }
@@ -596,16 +936,116 @@
 				int pal1 = (int)SlugTTU16(lastStop + 2); float alp1 = F2D14(lastStop + 4);
 				cl.color = GetPalColor(pal0, alp0);  // solid fallback (always set)
 				cl.hasGradient = true;
+				cl.isRadial    = false;
 				cl.gradColor0 = cl.color;
 				cl.gradColor1 = GetPalColor(pal1, alp1);
-				float dx = gx1 - gx0, dy = gy1 - gy0;
+				float dx = bgx1 - bgx0, dy = bgy1 - bgy0;
 				float len2 = dx * dx + dy * dy;
 				if (len2 < 1e-10f) { cl.hasGradient = false; break; }
 				cl.gradDirX = dx / len2; cl.gradDirY = dy / len2;
 				float t0 = F2D14(clp + 3), t1 = F2D14(lastStop);
 				float tRange = (t1 - t0 > 1e-6f) ? (t1 - t0) : 1.0f;
 				cl.gradScale = 1.0f / tRange;
-				cl.gradBias = -(cl.gradDirX * gx0 + cl.gradDirY * gy0) / tRange - t0 / tRange;
+				cl.gradBias = -(cl.gradDirX * bgx0 + cl.gradDirY * bgy0) / tRange - t0 / tRange;
+				break;
+			}
+			case 6:  // PaintRadialGradient -- full GPU radial via SLUG_GRADIENT permutation
+			case 7:  // PaintVarRadialGradient
+			{
+				// PaintRadialGradient layout (16 bytes):
+				//   uint8 format / Offset24 colorLine / FWORD x0,y0 / UFWORD r0
+				//   FWORD x1,y1 / UFWORD r1
+				// We approximate two-circle radial as a single-centre radial at
+				// (c1, r1) -- exact for the c0==c1 && r0==0 idiom that nanoemoji
+				// emits for ALL emoji-style radial gradients (Noto Color Emoji,
+				// Microsoft Fluent Emoji, OpenMoji COLRv1).
+				uint32_t clOff = ((uint32_t)fp[1] << 16) | ((uint32_t)fp[2] << 8) | fp[3];
+				float cx1 = (float)FWORD(fp + 10) * sc;
+				float cy1 = (float)FWORD(fp + 12) * sc;
+				float r1  = (float)SlugTTU16(fp + 14) * sc;  // UFWORD (unsigned)
+
+				// Apply M_total: center -> mapped point; radius -> mean of column
+				// magnitudes (correct for uniform scale; reasonable approximation
+				// for non-uniform scale + rotation).
+				float bcx = mxx * cx1 + mxy * cy1 + mtx;
+				float bcy = myx * cx1 + myy * cy1 + mty;
+				float xMag = sqrtf(mxx * mxx + myx * myx);
+				float yMag = sqrtf(mxy * mxy + myy * myy);
+				float br   = r1 * 0.5f * (xMag + yMag);
+
+				const uint8_t* clp = fp + clOff;
+				uint16_t numStops = SlugTTU16(clp + 1);
+				if (numStops == 0) { cl.color = IM_COL32(0, 0, 0, 0); break; }
+				int  stopStride = (fp[0] == 7) ? 10 : 6;
+				const uint8_t* firstStop = clp + 3;
+				int  pal0  = (int)SlugTTU16(firstStop + 2);
+				float alp0 = F2D14(firstStop + 4);
+				cl.color = GetPalColor(pal0, alp0);
+
+				if (numStops < 2 || br <= 1e-6f) {
+					// Single-stop or degenerate radius -- render flat.
+					break;
+				}
+				const uint8_t* lastStop = clp + 3 + (numStops - 1) * stopStride;
+				int   pal1 = (int)SlugTTU16(lastStop + 2);
+				float alp1 = F2D14(lastStop + 4);
+				cl.hasGradient = true;
+				cl.isRadial    = true;
+				cl.gradColor0 = cl.color;
+				cl.gradColor1 = GetPalColor(pal1, alp1);
+				// Stop-range remap: the gradient color line interpolates
+				// between gradColor0 (at stop offset t0) and gradColor1 (at
+				// stop offset t1). Shader formula: t = length(em-c)*scale +
+				// bias, where t=0 must correspond to length = t0*radius and
+				// t=1 to length = t1*radius. That gives:
+				//   scale = 1 / ((t1-t0) * radius)
+				//   bias  = -t0 / (t1-t0)
+				// Without this, a fade like "stop @ 0.7 alpha=1, stop @ 1.0
+				// alpha=0" would compress the entire transition across the
+				// whole radius, killing the rim-light look.
+				float t0_off = F2D14(firstStop);
+				float t1_off = F2D14(lastStop);
+				float tRange = (t1_off - t0_off > 1e-6f) ? (t1_off - t0_off) : 1.0f;
+				cl.gradDirX  = bcx;                    // center.x in baked em
+				cl.gradDirY  = bcy;                    // center.y in baked em
+				cl.gradScale = 1.0f / (br * tRange);   // 1 / ((t1-t0) * radius)
+				cl.gradBias  = -t0_off / tRange;       // -t0 / (t1-t0)
+				break;
+			}
+			case 8:  // PaintSweepGradient -- flat-colour fallback
+			case 9:  // PaintVarSweepGradient
+			{
+				// No sweep shader yet; pick the most-opaque stop so the layer
+				// still renders rather than collapsing to a transparent fade
+				// stop. Ties broken toward the middle stop for a balanced hue.
+				uint32_t clOff = ((uint32_t)fp[1] << 16) | ((uint32_t)fp[2] << 8) | fp[3];
+				const uint8_t* clp = fp + clOff;
+				uint16_t numStops = SlugTTU16(clp + 1);
+				if (numStops == 0) { cl.color = IM_COL32(0, 0, 0, 0); break; }
+				int  stopStride = (fp[0] == 9) ? 10 : 6;
+				int   bestStop  = 0;
+				float bestAlpha = -1.0f;
+				int   midStop   = (int)(numStops / 2);
+				for (int s = 0; s < numStops; s++) {
+					const uint8_t* sp = clp + 3 + s * stopStride;
+					float a = F2D14(sp + 4);
+					bool better = (a > bestAlpha) ||
+					              (a == bestAlpha && std::abs(s - midStop) < std::abs(bestStop - midStop));
+					if (better) { bestAlpha = a; bestStop = s; }
+				}
+				const uint8_t* stop = clp + 3 + bestStop * stopStride;
+				int palIdx = (int)SlugTTU16(stop + 2);
+				float alp  = F2D14(stop + 4);
+				cl.color = GetPalColor(palIdx, alp);
+				break;
+			}
+			case 32: // PaintComposite -- fill is itself a composite node. The
+			         // ResolvePaint unwrap above already follows the source
+			         // paint, so reaching this case means Composite appears
+			         // as the direct fill of a PaintGlyph (rare). Keep the
+			         // layer visible with a neutral default colour.
+			{
+				cl.color = IM_COL32(255, 255, 255, 255);
 				break;
 			}
 			default:
@@ -666,7 +1106,7 @@
 				return IM_COL32(r, g, b, 255);
 			}
 		}
-		// "none" → transparent (caller should skip)
+		// "none" -> transparent (caller should skip)
 		if (len >= 4 && s[0]=='n' && s[1]=='o' && s[2]=='n' && s[3]=='e') return 0;
 		return 0;
 	}
@@ -689,7 +1129,7 @@
 	}
 
 	// Parse SVG path `d` attribute into Slug curves.
-	// sc = emScale (font units → em), negateY = true to flip Y axis.
+	// sc = emScale (font units -> em), negateY = true to flip Y axis.
 	// dEnd is one-past-end; if NULL the string is assumed null-terminated.
 	static void SlugParseSVGPath(const char* d, const char* dEnd, ImVector<SlugCurve>& curves, float sc, bool negateY)
 	{
@@ -899,8 +1339,8 @@
 
 	// Parse fill colour from a `<path` element's attributes.
 	// Checks both fill="..." and style="...fill:...".
-	// outExplicit = true  → element has an explicit fill (even if "none"/transparent)
-	// outExplicit = false → no fill attribute found (caller should use inherited fill)
+	// outExplicit = true  -> element has an explicit fill (even if "none"/transparent)
+	// outExplicit = false -> no fill attribute found (caller should use inherited fill)
 	// Returns IM_COL32 colour or 0 for transparent / none.
 	static ImU32 SlugSVGPathFill(const char* elem, const char* elemEnd, bool* outExplicit = NULL)
 	{
@@ -1024,10 +1464,19 @@
 		int   fillStackTop = 0;
 		fillStack[0] = 0;  // default: no inherited fill
 
-		// Transform accumulation stack for translate() in <g> elements
-		float txStack[32], tyStack[32];
-		int   txStackTop  = 0;
-		txStack[0] = tyStack[0] = 0.0f;
+		// Transform accumulation stack for <g transform="..."> elements.
+		// Full 2x3 affine so we can handle chained translate()/scale()/rotate()
+		// -- Twitter Color Emoji wraps every glyph in
+		//     transform="translate(0 -6.75) translate(0,-1638.4) scale(56.88)"
+		// and the old translate-only code dropped the scale, rendering paths
+		// at 1/56x size (invisible). Matrix layout:
+		//     new_pt = (xx*x + xy*y + tx, yx*x + yy*y + ty)
+		float mxxStk[32], mxyStk[32], myxStk[32], myyStk[32];
+		float mtxStk[32], mtyStk[32];
+		int   mStkTop = 0;
+		mxxStk[0] = myyStk[0] = 1.0f;
+		mxyStk[0] = myxStk[0] = 0.0f;
+		mtxStk[0] = mtyStk[0] = 0.0f;
 
 		// Scan for <path, <g, </g> elements
 		const char* p = svgText;
@@ -1035,16 +1484,16 @@
 		{
 			if (*p != '<') { p++; continue; }
 
-			// </g> or </G> → pop fill stack
+			// </g> or </G> -> pop fill + transform stacks
 			if (p + 3 < svgTextEnd && p[1] == '/' && (p[2] == 'g' || p[2] == 'G') &&
 			    (p[3] == '>' || ImIsSpace(p[3])))
 			{
 				if (fillStackTop > 0) fillStackTop--;
-				if (txStackTop  > 0) txStackTop--;
+				if (mStkTop      > 0) mStkTop--;
 				p += 3; continue;
 			}
 
-			// <g ...> or <G ...> → parse fill attribute, push to stack
+			// <g ...> or <G ...> -> parse fill + transform, push to stacks
 			if (p + 2 < svgTextEnd && (p[1] == 'g' || p[1] == 'G') &&
 			    (p[2] == '>' || ImIsSpace(p[2])))
 			{
@@ -1058,25 +1507,84 @@
 					if (fval) gFill = SlugParseSVGColor(fval, flen);
 				}
 				if (fillStackTop < 31) fillStack[++fillStackTop] = gFill;
-				// Parse transform="translate(tx, ty)" if present (accumulate with parent)
-				float gtx = txStack[txStackTop], gty = tyStack[txStackTop];
+
+				// Parse transform="..." as a sequence of SVG transform functions
+				// and compose into a 2x3 matrix. Composition order matches SVG:
+				// transforms in the attribute apply left-to-right to coords
+				// (outermost first), so we multiply OUTER * INNER for each new
+				// entry. Supports translate(tx[,ty]), scale(sx[,sy]), rotate(deg)
+				// around origin, plus chained combinations. Unknown transforms
+				// are silently skipped.
+				float nxx = mxxStk[mStkTop], nxy = mxyStk[mStkTop];
+				float nyx = myxStk[mStkTop], nyy = myyStk[mStkTop];
+				float ntx = mtxStk[mStkTop], nty = mtyStk[mStkTop];
 				const char* gtp = SlugSVGFindAttr(p + 1, gEnd, "transform");
 				if (gtp) {
 					int gtlen = 0; const char* gtval = SlugSVGReadQuoted(gtp, &gtlen);
 					if (gtval) {
 						const char* tv = gtval, *te = gtval + gtlen;
-						while (tv + 9 <= te && strncmp(tv, "translate", 9) != 0) tv++;
-						if (tv + 9 <= te) {
-							tv += 9; while (tv < te && *tv != '(') tv++;
-							if (tv < te) {
-								tv++; // skip '('
-								gtx += SlugSVGParseFloat(&tv);
-								gty += SlugSVGParseFloat(&tv);
+						while (tv < te) {
+							while (tv < te && (*tv == ' ' || *tv == ',' || *tv == '\t' || *tv == '\n')) tv++;
+							if (tv >= te) break;
+							// Identify function name (alpha chars before '(')
+							const char* nameStart = tv;
+							while (tv < te && ((*tv >= 'a' && *tv <= 'z') || (*tv >= 'A' && *tv <= 'Z'))) tv++;
+							int nameLen = (int)(tv - nameStart);
+							while (tv < te && *tv != '(') tv++;
+							if (tv >= te) break;
+							tv++; // past '('
+							// Read up to 6 floats inside the parens
+							float args[6]; int nArgs = 0;
+							while (tv < te && *tv != ')' && nArgs < 6) {
+								while (tv < te && (*tv == ' ' || *tv == ',' || *tv == '\t' || *tv == '\n')) tv++;
+								if (tv >= te || *tv == ')') break;
+								args[nArgs++] = SlugSVGParseFloat(&tv);
 							}
+							while (tv < te && *tv != ')') tv++;
+							if (tv < te) tv++; // past ')'
+
+							// Compute the 2x3 matrix of this transform.
+							float axx = 1, axy = 0, ayx = 0, ayy = 1, atx = 0, aty = 0;
+							if (nameLen == 9 && strncmp(nameStart, "translate", 9) == 0) {
+								atx = (nArgs >= 1) ? args[0] : 0.0f;
+								aty = (nArgs >= 2) ? args[1] : 0.0f;
+							} else if (nameLen == 5 && strncmp(nameStart, "scale", 5) == 0) {
+								axx = (nArgs >= 1) ? args[0] : 1.0f;
+								ayy = (nArgs >= 2) ? args[1] : axx;
+							} else if (nameLen == 6 && strncmp(nameStart, "rotate", 6) == 0) {
+								float a = (nArgs >= 1) ? args[0] * 3.14159265358979323846f / 180.0f : 0.0f;
+								float co = cosf(a), si = sinf(a);
+								axx = co; axy = -si; ayx = si; ayy = co;
+								if (nArgs >= 3) {
+									// rotate(angle, cx, cy) = T(cx,cy) * R(angle) * T(-cx,-cy)
+									atx = args[1] - (co * args[1] - si * args[2]);
+									aty = args[2] - (si * args[1] + co * args[2]);
+								}
+							} else if (nameLen == 6 && strncmp(nameStart, "matrix", 6) == 0 && nArgs == 6) {
+								axx = args[0]; ayx = args[1];
+								axy = args[2]; ayy = args[3];
+								atx = args[4]; aty = args[5];
+							}
+							// else: unknown transform, skip (identity).
+
+							// Compose: new = current * local (local applied innermost).
+							float Cxx = nxx * axx + nxy * ayx;
+							float Cxy = nxx * axy + nxy * ayy;
+							float Cyx = nyx * axx + nyy * ayx;
+							float Cyy = nyx * axy + nyy * ayy;
+							float Ctx = nxx * atx + nxy * aty + ntx;
+							float Cty = nyx * atx + nyy * aty + nty;
+							nxx = Cxx; nxy = Cxy; nyx = Cyx; nyy = Cyy;
+							ntx = Ctx; nty = Cty;
 						}
 					}
 				}
-				if (txStackTop < 31) { txStack[++txStackTop] = gtx; tyStack[txStackTop] = gty; }
+				if (mStkTop < 31) {
+					mStkTop++;
+					mxxStk[mStkTop] = nxx; mxyStk[mStkTop] = nxy;
+					myxStk[mStkTop] = nyx; myyStk[mStkTop] = nyy;
+					mtxStk[mStkTop] = ntx; mtyStk[mStkTop] = nty;
+				}
 				p = gEnd + 1; continue;
 			}
 
@@ -1096,7 +1604,7 @@
 			bool hasExplicit = false;
 			ImU32 color = SlugSVGPathFill(elemStart, elemEnd, &hasExplicit);
 			if (!hasExplicit) color = fillStack[fillStackTop];
-			// color == 0 → transparent / none → skip
+			// color == 0 -> transparent / none -> skip
 			if (color != 0)
 			{
 				// Extract d="..." attribute
@@ -1118,20 +1626,55 @@
 						}
 						if (gi2 >= 0)
 						{
-							// Parse path directly (no null-termination needed)
+							// Parse path directly (no null-termination needed).
+							// SlugParseSVGPath writes curve points in FONT-UNIT em-space
+							// (coords multiplied by sc, Y negated for Slug's Y-up).
 							int curvesBefore = groupCurves[gi2].Size;
 							SlugParseSVGPath(dval, dval + dlen, groupCurves[gi2], sc, /*negateY=*/true);
-							// Apply accumulated translate transform (font units → em-space, Y negated for Slug Y-up)
-							{
-								float ttx = txStack[txStackTop] * sc;
-								float tty = tyStack[txStackTop] * sc * (-1.0f);
-								if (ttx != 0.0f || tty != 0.0f) {
-									for (int tk = curvesBefore; tk < groupCurves[gi2].Size; tk++) {
-										SlugCurve& cv = groupCurves[gi2][tk];
-										cv.p1x += ttx; cv.p1y += tty;
-										cv.p2x += ttx; cv.p2y += tty;
-										cv.p3x += ttx; cv.p3y += tty;
-									}
+							// Apply the accumulated 2x3 affine from the <g> stack.
+							// The matrix is in SVG Y-down space; SlugParseSVGPath already
+							// flipped Y to font-up, so we compensate by reflecting the
+							// matrix rows around the X axis: effectively the transform
+							// applies in font-up space with adjusted sign on ty and on
+							// the y-mixing terms (xy, yx).
+							//
+							// Matrix was accumulated with SVG semantics:
+							//     new_pt_svg = M * pt_svg (pt_svg Y-down).
+							// Point on disk is pt_font = (x * sc, -y * sc).
+							// We want new_pt_font = f(new_pt_svg) such that the final
+							// coordinate matches the visually-intended transform:
+							//     new_pt_font.x = (M.xx * x - M.xy * y + M.tx) * sc
+							//     new_pt_font.y = -(M.yx * x - M.yy * y + M.ty) * sc
+							//                   = (-M.yx * x + M.yy * y - M.ty) * sc
+							// i.e. each curve point (ex, ey) in font-up em-space maps to:
+							//     fx = M.xx*ex + (-M.xy)*ey + M.tx*sc
+							//     fy = (-M.yx)*ex + M.yy*ey + (-M.ty)*sc
+							// (Note: ex is already x*sc; M.xx is dimensionless -- mx is
+							//  already in *design units* so we divide by sc where we
+							//  apply it, equivalently multiply the m*ty by sc.)
+							//
+							// Simpler: convert curve points back to design units, apply
+							// the raw SVG matrix, then convert back.
+							float mxx = mxxStk[mStkTop], mxy = mxyStk[mStkTop];
+							float myx = myxStk[mStkTop], myy = myyStk[mStkTop];
+							float mtx = mtxStk[mStkTop], mty = mtyStk[mStkTop];
+							bool isIdentity = (mxx == 1.0f && myy == 1.0f && mxy == 0.0f && myx == 0.0f &&
+							                   mtx == 0.0f && mty == 0.0f);
+							if (!isIdentity) {
+								for (int tk = curvesBefore; tk < groupCurves[gi2].Size; tk++) {
+									SlugCurve& cv = groupCurves[gi2][tk];
+									#define SLUG_SVG_XF(px, py) do { \
+										float dx = (px) / sc;   /* back to design units   */ \
+										float dy = -(py) / sc;  /* flip to SVG Y-down    */ \
+										float nx = mxx * dx + mxy * dy + mtx; \
+										float ny = myx * dx + myy * dy + mty; \
+										(px) = nx * sc;         /* back to em-fraction   */ \
+										(py) = -ny * sc;        /* flip back to font-up  */ \
+									} while (0)
+									SLUG_SVG_XF(cv.p1x, cv.p1y);
+									SLUG_SVG_XF(cv.p2x, cv.p2y);
+									SLUG_SVG_XF(cv.p3x, cv.p3y);
+									#undef SLUG_SVG_XF
 								}
 							}
 							// Update group bounding box from newly added curves
@@ -1208,8 +1751,19 @@
 	// ---- Glyph builder ------------------------------------------------------
 
 	// Build a glyph from a glyph index (gi) directly; cp is stored in the entry (0 for layer glyphs).
-	// skipColr = true when building a layer's outline — prevents recursive COLR lookup.
-	static bool SlugBuildGlyphByIndex(SlugFontCache* atlas, int gi, ImWchar cp, SlugGlyphEntry* outEntry, bool skipColr = false);
+	// skipColr = true when building a layer's outline -- prevents recursive COLR lookup.
+	//
+	// Optional (linXX..linYY, tx, ty) bakes a 2x3 affine into the extracted
+	// curves before the bbox/band texture are built. Used for COLR v1 layers
+	// where the paint tree wraps the layer glyph in Transform / Scale /
+	// Rotate / Skew paint nodes -- applying the transform here keeps the
+	// renderer simple (axis-aligned quads, diagonal jacobian). Default is
+	// identity (no change in behaviour for non-COLR-layer call sites).
+	static bool SlugBuildGlyphByIndex(SlugFontCache* atlas, int gi, ImWchar cp,
+	                                  SlugGlyphEntry* outEntry, bool skipColr = false,
+	                                  float linXX = 1.0f, float linXY = 0.0f,
+	                                  float linYX = 0.0f, float linYY = 1.0f,
+	                                  float tx = 0.0f, float ty = 0.0f);
 
 	static bool SlugBuildGlyph(SlugFontCache* atlas, ImWchar cp, SlugGlyphEntry* outEntry)
 	{
@@ -1218,7 +1772,11 @@
 		return SlugBuildGlyphByIndex(atlas, gi, cp, outEntry);
 	}
 
-	static bool SlugBuildGlyphByIndex(SlugFontCache* atlas, int gi, ImWchar cp, SlugGlyphEntry* outEntry, bool skipColr)
+	static bool SlugBuildGlyphByIndex(SlugFontCache* atlas, int gi, ImWchar cp,
+	                                  SlugGlyphEntry* outEntry, bool skipColr,
+	                                  float linXX, float linXY,
+	                                  float linYX, float linYY,
+	                                  float tx, float ty)
 	{
 		// ---- COLR: check for color layers (v0 first, fall back to v1) ----
 		// skipColr is set for recursive layer builds.
@@ -1252,33 +1810,57 @@
 			bool firstLayer = true;
 			for (int i = 0; i < nColrLayers; i++)
 			{
+				// Pre-fetch the layer's transform for COLR v1 so we can bake
+				// it into the extracted curves (keeps the renderer simple).
+				// COLR v0 always passes identity (no transforms at the v0 layer).
+				float lxx = 1.0f, lxy = 0.0f, lyx = 0.0f, lyy = 1.0f;
+				float ltx = 0.0f, lty = 0.0f;
+				if (isV1) {
+					lxx = v1Layers[i].linXX; lxy = v1Layers[i].linXY;
+					lyx = v1Layers[i].linYX; lyy = v1Layers[i].linYY;
+					ltx = v1Layers[i].translateX;
+					lty = v1Layers[i].translateY;
+				}
+
 				SlugGlyphEntry layerEntry = {};
 				layerEntry.colorLayerStart = -1;
-				if (!SlugBuildGlyphByIndex(atlas, layerGlyphIDs[i], 0, &layerEntry, /*skipColr=*/true))
+				if (!SlugBuildGlyphByIndex(atlas, layerGlyphIDs[i], 0, &layerEntry, /*skipColr=*/true,
+				                           lxx, lxy, lyx, lyy, ltx, lty))
 					continue;
 				// Skip layers with empty bounding box (no actual curves)
 				if ((layerEntry.maxXEm - layerEntry.minXEm) < 1e-5f || (layerEntry.maxYEm - layerEntry.minYEm) < 1e-5f)
 					continue;
 
 				SlugColorLayer cl = isV1 ? v1Layers[i] : SlugColorLayer{};
-				cl.glyphEntryIdx = (int)atlas->glyphs.Size;
+				// SlugBuildGlyphByIndex -> SlugBuildGlyphFromCurves already
+				// push_back'd the built layerEntry onto atlas->glyphs. Point
+				// cl.glyphEntryIdx at THAT entry (Size - 1), don't duplicate.
+				// The previous code added a duplicate copy which wasted
+				// memory and -- because all cl.glyphEntryIdx values pointed to
+				// the duplicate at position N+2i+1 rather than the original
+				// at N+2i -- caused atlas->glyphs.Size to grow at double the
+				// expected rate and threw off the invalid-COLR discard logic
+				// below (which assumes one glyph per layer).
+				cl.glyphEntryIdx = (int)atlas->glyphs.Size - 1;
 				if (!isV1) cl.color = layerColors[i];
+				// Transform is now baked into the layer's curves/bbox -- reset
+				// render-time offsets so EmitQuad doesn't double-apply them.
+				cl.linXX = 1.0f; cl.linXY = 0.0f;
+				cl.linYX = 0.0f; cl.linYY = 1.0f;
+				cl.translateX = 0.0f; cl.translateY = 0.0f;
 				atlas->colorLayers.push_back(cl);
-				atlas->glyphs.push_back(layerEntry);
-				SlugGlyphMapInsert(atlas, layerEntry.codepoint, atlas->glyphs.Size - 1);
 				e.colorLayerCount++;
 
-				// Include translation offset in base glyph bbox
-				float lTX = cl.translateX, lTY = cl.translateY;
+				// Base glyph bbox = union of layer bboxes (already post-transform).
 				if (firstLayer) {
-					e.minXEm = layerEntry.minXEm + lTX; e.maxXEm = layerEntry.maxXEm + lTX;
-					e.minYEm = layerEntry.minYEm + lTY; e.maxYEm = layerEntry.maxYEm + lTY;
+					e.minXEm = layerEntry.minXEm; e.maxXEm = layerEntry.maxXEm;
+					e.minYEm = layerEntry.minYEm; e.maxYEm = layerEntry.maxYEm;
 					firstLayer = false;
 				} else {
-					e.minXEm = ImMin(e.minXEm, layerEntry.minXEm + lTX);
-					e.maxXEm = ImMax(e.maxXEm, layerEntry.maxXEm + lTX);
-					e.minYEm = ImMin(e.minYEm, layerEntry.minYEm + lTY);
-					e.maxYEm = ImMax(e.maxYEm, layerEntry.maxYEm + lTY);
+					e.minXEm = ImMin(e.minXEm, layerEntry.minXEm);
+					e.maxXEm = ImMax(e.maxXEm, layerEntry.maxXEm);
+					e.minYEm = ImMin(e.minYEm, layerEntry.minYEm);
+					e.maxYEm = ImMax(e.maxYEm, layerEntry.maxYEm);
 				}
 			}
 			if (e.colorLayerCount > 0)
@@ -1299,7 +1881,7 @@
 					return true;
 				}
 			}
-			// All layers failed or invalid — fall through to monochrome outline
+			// All layers failed or invalid -- fall through to monochrome outline
 		}
 		}  // end if (!skipColr)
 
@@ -1367,7 +1949,7 @@
 			}
 			case STBTT_vcubic:
 			{
-				// Approximate cubic as quadratics (subdivide 2 levels → 4 quads per cubic)
+				// Approximate cubic as quadratics (subdivide 2 levels -> 4 quads per cubic)
 				float cx0 = v.cx  * sc, cy0 = v.cy  * sc;
 				float cx1 = v.cx1 * sc, cy1 = v.cy1 * sc;
 				SlugCubicToQuads(curves, curX, curY, cx0, cy0, cx1, cy1, vx, vy);
@@ -1377,6 +1959,29 @@
 			}
 		}
 		stbtt_FreeShape(&atlas->stbFont, verts);
+
+		// Bake optional COLR v1 affine transform into the curves.
+		// Skipped when the transform is identity (all non-layer call sites).
+		// Note emScale (`sc`) has already been applied at extraction above,
+		// so both curve coords and (tx, ty) are in the same em-fraction units.
+		bool hasLin = (linXX != 1.0f || linXY != 0.0f || linYX != 0.0f || linYY != 1.0f);
+		bool hasTr  = (tx != 0.0f || ty != 0.0f);
+		if (hasLin || hasTr)
+		{
+			for (int i = 0; i < curves.Size; i++)
+			{
+				SlugCurve& c = curves[i];
+				float p1x = linXX * c.p1x + linXY * c.p1y + tx;
+				float p1y = linYX * c.p1x + linYY * c.p1y + ty;
+				float p2x = linXX * c.p2x + linXY * c.p2y + tx;
+				float p2y = linYX * c.p2x + linYY * c.p2y + ty;
+				float p3x = linXX * c.p3x + linXY * c.p3y + tx;
+				float p3y = linYX * c.p3x + linYY * c.p3y + ty;
+				c.p1x = p1x; c.p1y = p1y;
+				c.p2x = p2x; c.p2y = p2y;
+				c.p3x = p3x; c.p3y = p3y;
+			}
+		}
 
 		// Compute bounding box from actual extracted curves (not stbtt_GetGlyphBox)
 		// to guarantee the bbox matches the curves exactly
@@ -1444,7 +2049,7 @@
 		// Vertical bands partition the X-axis;   curves are sorted by descending max-Y.
 
 		// Adaptive band count: scale with sqrt(curve_count) weighted by glyph aspect ratio.
-		// More bands → finer acceleration, fewer wasted ray tests per pixel.
+		// More bands -> finer acceleration, fewer wasted ray tests per pixel.
 		// NBY capped at 255 (packed into 8 bits in glyph.w); NBX capped at 64 for safety.
 		int NBX, NBY;
 		if (nc == 0)
@@ -1460,12 +2065,12 @@
 			NBY = ImClamp((int)ceilf(sqrtC / sqA),       4, 64);
 		}
 
-		const float bsx = (float)NBX / glyphW;            // em → band-x scale
-		const float bsy = (float)NBY / glyphH;            // em → band-y scale
-		const float box = -minX * bsx;                    // em → band-x offset
-		const float boy = -minY * bsy;                    // em → band-y offset
+		const float bsx = (float)NBX / glyphW;            // em -> band-x scale
+		const float bsy = (float)NBY / glyphH;            // em -> band-y scale
+		const float box = -minX * bsx;                    // em -> band-x offset
+		const float boy = -minY * bsy;                    // em -> band-y offset
 
-		// Per-band curve lists — use persistent atlas scratch to avoid new[]/delete[] per glyph (Change 3)
+		// Per-band curve lists -- use persistent atlas scratch to avoid new[]/delete[] per glyph (Change 3)
 		// Only grow, never shrink: ImVector::resize() doesn't call constructors,
 		// so new slots must be memset to 0. Old slots just need Size reset to 0.
 		if (NBY > atlas->bandHScratch.Size) {
@@ -1637,7 +2242,7 @@
 		atlas->dirty = true;
 		*outEntry = e;
 
-		// hBand and vBand are atlas scratch — no delete needed
+		// hBand and vBand are atlas scratch -- no delete needed
 		return true;
 	}
 
@@ -1697,45 +2302,28 @@
 	}
 
 #if IM_SUPPORT_LIGATURE
-#ifdef _WIN32
-	// Separate function so __try can be used (not allowed in functions with C++ object unwinding)
-	static kbts_font* SlugTryShapePushFont(kbts_shape_context* ctx, void* data, int size)
-	{
-		kbts_font* f = NULL;
-		__try { f = kbts_ShapePushFontFromMemory(ctx, data, size, 0); }
-		__except(1) { f = NULL; }
-		return f;
-	}
-#endif
-	// Validate GSUB ligature subtables — reject fonts with malformed ComponentCount
-	// that would crash kbts_PlaceBlob via out-of-bounds array access.
 	static void SlugInitShaping(SlugFontCache* atlas, void* fontData, int fontDataSize)
 	{
 		// Only init shaping if font has a GSUB table
 		const uint8_t* raw = (const uint8_t*)fontData;
 		uint32_t fontStart = (uint32_t)atlas->stbFont.fontstart;
 		if (SlugFindTable(raw, fontStart, "GSUB") == 0)
-			return; // No GSUB → no shaping needed
+			return; // No GSUB -> no shaping needed
 
-		kbts_shape_context* ctx = kbts_CreateShapeContext(0, 0);
-#ifdef _WIN32
-		kbts_font* f = SlugTryShapePushFont(ctx, fontData, fontDataSize);
-#else
-		kbts_font* f = kbts_ShapePushFontFromMemory(ctx, fontData, fontDataSize, 0);
-#endif
-		if (f && f->Error == 0) {
-			// Default features: liga + calt cover standard ligatures and contextual alternates.
-			// ss01-ss10 (stylistic sets) are NOT pushed globally — they're per-font optional
-			// features that can break some fonts (e.g. Monblock's connected forms).
-			// Use kbts_ShapePushFeature() per-font if you need specific stylistic sets
-			// (e.g. FiraCode's =~ ligature requires ss07).
-			kbts_ShapePushFeature(ctx, KBTS_FEATURE_TAG_liga, 1);
-			kbts_ShapePushFeature(ctx, KBTS_FEATURE_TAG_calt, 1);
-			atlas->shapeCtx  = ctx;
-			atlas->shapeFont = f;
-		} else {
-			kbts_DestroyShapeContext(ctx);
+		DwShaperCtx* ctx = DwShaper_Create();
+		if (!DwShaper_PushFontFromMemory(ctx, fontData, fontDataSize))
+		{
+			DwShaper_Destroy(ctx);
+			return;
 		}
+		// Default features: liga + calt cover standard ligatures and contextual alternates.
+		// ss01-ss10 (stylistic sets) are NOT pushed globally -- they're per-font optional
+		// features that can break some fonts (e.g. Monblock's connected forms).
+		// Use DwShaper_PushFeature() per-font if you need specific stylistic sets
+		// (e.g. FiraCode's =~ ligature requires ss07).
+		DwShaper_PushFeature(ctx, DW_SHAPER_FEATURE_liga, 1);
+		DwShaper_PushFeature(ctx, DW_SHAPER_FEATURE_calt, 1);
+		atlas->shaperCtx = ctx;
 	}
 #endif
 
@@ -1746,7 +2334,7 @@
 			if (state->atlases[i]->imguiFont == font)
 				return state->atlases[i];
 
-		// Create new atlas — find font config by matching DstFont pointer
+		// Create new atlas -- find font config by matching DstFont pointer
 		if (!font)
 			return NULL;
 
@@ -1797,8 +2385,7 @@
 		atlas->svgTableOffset  = SlugFindTable(rawData, fontStart, "SVG ");
 
 #if IM_SUPPORT_LIGATURE
-		atlas->shapeCtx  = NULL;
-		atlas->shapeFont = NULL;
+		atlas->shaperCtx = NULL;
 		SlugInitShaping(atlas, cfg->FontData, cfg->FontDataSize);
 #endif
 
@@ -1859,7 +2446,7 @@
 		if (atlas->curveTexture) ImPlatform_DestroyTexture(atlas->curveTexture);
 		if (atlas->bandTexture)  ImPlatform_DestroyTexture(atlas->bandTexture);
 #if IM_SUPPORT_LIGATURE
-		if (atlas->shapeCtx)     kbts_DestroyShapeContext(atlas->shapeCtx);
+		if (atlas->shaperCtx)    DwShaper_Destroy(atlas->shaperCtx);
 #endif
 		for (int i = 0; i < atlas->vbibRecycled.Size; i++) {
 			if (atlas->vbibRecycled[i].vb) ImPlatform_DestroyVertexBuffer(atlas->vbibRecycled[i].vb);
@@ -1875,6 +2462,15 @@
 		IM_DELETE(atlas);
 	}
 
+	// Destroy all atlases and the state itself — called from dear_widgets.cpp DestroyContext.
+	void SlugDestroyState(ImWidgetsSlugState* state)
+	{
+		if (!state) return;
+		for (int k = 0; k < state->atlases.Size; ++k)
+			SlugDestroyAtlas(state->atlases[k]);
+		IM_DELETE(state);
+	}
+
 	// ---- Slug draw callbacks ------------------------------------------------
 	//
 	// DX11 path (reference implementation, single draw call):
@@ -1887,7 +2483,7 @@
 	//   tex.z bits 0-15 = bandTexX, bits 16-31 = bandTexY
 	//   tex.w bits 0-7  = bandMaxX, bits 16-23 = bandMaxY, bit 28 = E (even-odd flag)
 	//
-	//   All glyphs in one DrawText call share one VB/IB → one draw call.
+	//   All glyphs in one DrawText call share one VB/IB -> one draw call.
 	//   Per-glyph data is in the vertex stream, decoded in VS by SlugUnpack,
 	//   passed as nointerpolation int4 glyph and float4 banding to PS.
 	//
@@ -1897,11 +2493,11 @@
 
 	static void SlugRawDraw(const ImDrawList*, const ImDrawCmd* cmd); // forward decl for debug callback
 
-	// Debug callback for ImGui Metrics viewer — shows slug draw command info + mesh overlay.
+	// Debug callback for ImGui Metrics viewer -- shows slug draw command info + mesh overlay.
 	// Returns empty out_text for callbacks that aren't SlugRawDraw (imgui.cpp falls back to default display).
-	static void SlugDebugDrawCmdCallback(ImDrawList* overlay, const ImDrawList* /*draw_list*/,
-	                                     const ImDrawCmd* cmd, bool show_mesh, bool show_aabb,
-	                                     char* out_text, int text_size)
+	void SlugDebugDrawCmdCallback(ImDrawList* overlay, const ImDrawList* /*draw_list*/,
+	                              const ImDrawCmd* cmd, bool show_mesh, bool show_aabb,
+	                              char* out_text, int text_size)
 	{
 		// Only handle our own callbacks; leave others for default display
 		if (cmd->UserCallback != SlugRawDraw) {
@@ -1953,13 +2549,13 @@
 		ImPlatform_DrawIndexed(0, d->indexCount, 0);
 		if (d->debugQuads) IM_FREE(d->debugQuads);
 		IM_FREE(d);
-		// VB/IB are pool-owned — returned to recycled pool by frame-cycling logic
+		// VB/IB are pool-owned -- returned to recycled pool by frame-cycling logic
 	}
 
 	// ---- Public API implementation ------------------------------------------
 
-	static ImVec2 CalcTextSize_Impl(ImFont* font, float font_size,
-	                                const char* text, const char* text_end = nullptr, float* out_ascent = nullptr)
+	ImVec2 CalcTextSize_Impl(ImFont* font, float font_size,
+	                         const char* text, const char* text_end, float* out_ascent)
 	{
 		if (!gs_pContext || !text) { if (out_ascent) *out_ascent = 0.0f; return ImVec2(0, 0); }
 		if (!text_end) text_end = text + strlen(text);
@@ -2021,7 +2617,7 @@
 	                          const char* text, const char* text_end)
 	{
 		// Use the OpenType shaper for accurate advance width of shaped text (Arabic
-		// contextual forms, lam-alef ligatures, kerning). Slower than CalcTextSize —
+		// contextual forms, lam-alef ligatures, kerning). Slower than CalcTextSize --
 		// call only where alignment precision matters, not in tight measurement loops.
 		if (!gs_pContext || !text) return 0.0f;
 		if (!text_end) text_end = text + strlen(text);
@@ -2038,7 +2634,7 @@
 		SlugFontCache* atlas = SlugGetOrCreateAtlas(state, font);
 		if (!atlas) return 0.0f;
 
-		if (atlas->shapeCtx && atlas->shapeFont)
+		if (DwShaper_IsReady(atlas->shaperCtx))
 		{
 			// Skip shaping for synthetic codepoints (0x100000+ range)
 			unsigned int firstCp = 0;
@@ -2046,17 +2642,17 @@
 			if (firstCp < 0x100000)
 			{
 				int textLen = (int)(text_end - text);
-				kbts_ShapeBegin(atlas->shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
-				kbts_ShapeUtf8(atlas->shapeCtx, text, textLen, KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
-				kbts_ShapeEnd(atlas->shapeCtx);
+				DwShaper_Begin(atlas->shaperCtx);
+				DwShaper_PushUtf8(atlas->shaperCtx, text, textLen);
+				DwShaper_End(atlas->shaperCtx);
 
 				float width = 0.0f;
-				kbts_run run;
-				while (kbts_ShapeRun(atlas->shapeCtx, &run))
+				DwShaperRun run;
+				while (DwShaper_NextRun(atlas->shaperCtx, &run))
 				{
-					kbts_glyph* glyph;
-					while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph))
-						width += (float)glyph->AdvanceX * atlas->emScale * font_size;
+					DwShaperGlyph glyph;
+					while (DwShaper_NextGlyph(&run, &glyph))
+						width += (float)glyph.AdvanceX * atlas->emScale * font_size;
 				}
 				return width;
 			}
@@ -2150,7 +2746,7 @@
 	// Find or create a slot for the given key. Returns pointer to slot.
 	static SlugFontCache::SlugDrawCacheEntry* SlugDrawCacheSlot(SlugFontCache* atlas, ImU64 key)
 	{
-		// Grow when >75% full (entries are POD — safe to memcpy during rehash)
+		// Grow when >75% full (entries are POD -- safe to memcpy during rehash)
 		if (atlas->drawCacheCount * 4 >= atlas->drawCacheTable.Size * 3) {
 			int newSize = atlas->drawCacheTable.empty() ? 64 : atlas->drawCacheTable.Size * 2;
 			ImVector<SlugFontCache::SlugDrawCacheEntry> newTable;
@@ -2162,7 +2758,7 @@
 				int mask2 = newSize - 1;
 				int slot2 = (int)(e.key & (unsigned)mask2);
 				while (newTable[slot2].key) slot2 = (slot2 + 1) & mask2;
-				newTable[slot2] = e; // POD copy — GPU handles transfer ownership
+				newTable[slot2] = e; // POD copy -- GPU handles transfer ownership
 			}
 			atlas->drawCacheTable = newTable;
 		}
@@ -2179,8 +2775,8 @@
 		return &e;
 	}
 
-	static void DrawText_Impl(ImDrawList* pDrawList, ImFont* font, float font_size,
-	                          ImVec2 pos, ImU32 col, const char* text, const char* text_end = nullptr)
+	void DrawText_Impl(ImDrawList* pDrawList, ImFont* font, float font_size,
+	                   ImVec2 pos, ImU32 col, const char* text, const char* text_end)
 	{
 		if (!pDrawList || !gs_pContext || !text || text == text_end) return;
 		if (!text_end) text_end = text + strlen(text);
@@ -2255,7 +2851,7 @@
 			ImTextCharFromUtf8(&firstCp, text, text_end);
 			if (firstCp >= 0x100000) skipShaping = true;
 		}
-		if (atlas->shapeCtx && atlas->shapeFont && !skipShaping)
+		if (DwShaper_IsReady(atlas->shaperCtx) && !skipShaping)
 		{
 			int textLen = (int)(text_end - text);
 			ImU64 shapeKey = SlugFNV64(text, textLen);
@@ -2263,21 +2859,21 @@
 			if (cached) {
 				shapedGlyphs = *cached;
 			} else {
-				kbts_ShapeBegin(atlas->shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
-				kbts_ShapeUtf8(atlas->shapeCtx, text, textLen, KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
-				kbts_ShapeEnd(atlas->shapeCtx);
+				DwShaper_Begin(atlas->shaperCtx);
+				DwShaper_PushUtf8(atlas->shaperCtx, text, textLen);
+				DwShaper_End(atlas->shaperCtx);
 
-				kbts_run run;
-				while (kbts_ShapeRun(atlas->shapeCtx, &run))
+				DwShaperRun run;
+				while (DwShaper_NextRun(atlas->shaperCtx, &run))
 				{
-					kbts_glyph* glyph;
-					while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph))
+					DwShaperGlyph glyph;
+					while (DwShaper_NextGlyph(&run, &glyph))
 					{
 						SlugShapedGlyph sg;
-						sg.glyphID  = (int)glyph->Id;
-						sg.advanceX = (float)glyph->AdvanceX * atlas->emScale;
-						sg.offsetX  = (float)glyph->OffsetX  * atlas->emScale;
-						sg.offsetY  = (float)glyph->OffsetY  * atlas->emScale;
+						sg.glyphID  = (int)glyph.GlyphId;
+						sg.advanceX = (float)glyph.AdvanceX * atlas->emScale;
+						sg.offsetX  = (float)glyph.OffsetX  * atlas->emScale;
+						sg.offsetY  = (float)glyph.OffsetY  * atlas->emScale;
 						shapedGlyphs.push_back(sg);
 					}
 				}
@@ -2322,7 +2918,7 @@
 			{ ImPlatform_VertexFormat_Float4, offsetof(SlugGradientVertex, col2), "COLOR"    },
 		};
 
-		// Register draw callbacks from a draw cache entry (zero GPU upload — just bind existing VB/IB)
+		// Register draw callbacks from a draw cache entry (zero GPU upload -- just bind existing VB/IB)
 		auto RegisterCachedDraws = [&](SlugFontCache::SlugDrawCacheEntry* dc) {
 			for (int di = 0; di < dc->drawCount; di++) {
 				auto& d = dc->draws[di];
@@ -2495,7 +3091,7 @@
 			iBuf.push_back(base + 0); iBuf.push_back(base + 2); iBuf.push_back(base + 3);
 		};
 
-		// Gradient quad emitter (SLUG_GRADIENT permutation — 7 float4 vertex)
+		// Gradient quad emitter (SLUG_GRADIENT permutation -- 7 float4 vertex)
 		auto EmitGradQuad = [&](const SlugGlyphEntry* ge, float penX_, float posY_, const SlugColorLayer& cl)
 		{
 			float sL = penX_ + ge->minXEm * sz, sR = penX_ + ge->maxXEm * sz;
@@ -2513,13 +3109,31 @@
 
 			ImU16 base = (ImU16)vertsGrad.Size;
 			SlugGradientVertex v = {};
-			v.tex[2] = fgz; v.tex[3] = fgw;
+			// Pack the radial/linear discriminator into bit 24 of tex.w
+			// (the bit-cast uint of glyph-data zw). Bits 0-7 are bandMaxX,
+			// bits 16-23 are bandMaxY, leaving bits 8-15 and 24-31 free for
+			// per-layer flags. Storing the flag here frees grd[0..3] to hold
+			// (a, b, scale, bias) for BOTH gradient kinds -- necessary because
+			// proper stop-range handling for radial needs a real bias slot
+			// (without it the shader can't reproduce the falloff that creates
+			// the rim-lighting / halo effect emoji designers use).
+			unsigned int gw_with_flag = (unsigned int)(ge->bandMaxX & 0xFF)
+			                          | ((unsigned int)(ge->bandMaxY & 0xFF) << 16)
+			                          | ((cl.isRadial ? 1u : 0u) << 24);
+			float fgw_flag;
+			memcpy(&fgw_flag, &gw_with_flag, 4);
+			v.tex[2] = fgz; v.tex[3] = fgw_flag;
 			v.jac[0] = invSz; v.jac[1] = 0; v.jac[2] = 0; v.jac[3] = -invSz;
 			v.bnd[0] = ge->bandScaleX; v.bnd[1] = ge->bandScaleY;
 			v.bnd[2] = ge->bandOffsetX; v.bnd[3] = ge->bandOffsetY;
 			v.col[0] = c0R; v.col[1] = c0G; v.col[2] = c0B; v.col[3] = c0A;
-			v.grd[0] = cl.gradDirX; v.grd[1] = cl.gradDirY;
-			v.grd[2] = cl.gradScale; v.grd[3] = cl.gradBias;
+			// Same param layout for both kinds -- the shader interprets
+			// (xy) as (dirX, dirY) when isRadial=0 or (centerX, centerY)
+			// when isRadial=1; (z, w) are always (scale, bias).
+			v.grd[0] = cl.gradDirX;
+			v.grd[1] = cl.gradDirY;
+			v.grd[2] = cl.gradScale;
+			v.grd[3] = cl.gradBias;
 			v.col2[0] = c1R; v.col2[1] = c1G; v.col2[2] = c1B; v.col2[3] = c1A;
 
 			v.pos[0]=sL; v.pos[1]=sT; v.pos[2]=-1; v.pos[3]=-1; v.tex[0]=uL; v.tex[1]=uT; vertsGrad.push_back(v);
@@ -2531,7 +3145,7 @@
 			idxsGrad.push_back(base+0); idxsGrad.push_back(base+2); idxsGrad.push_back(base+3);
 		};
 
-		// Emit glyphs — either from shaped glyph list or codepoint iteration
+		// Emit glyphs -- either from shaped glyph list or codepoint iteration
 		int shapedIdx = 0;
 		p = text;
 		while (shapedGlyphs.Size > 0 ? (shapedIdx < shapedGlyphs.Size) : (p < text_end))
@@ -2571,15 +3185,45 @@
 					const SlugGlyphEntry& le = atlas->glyphs[cl.glyphEntryIdx];
 					if ((le.maxXEm - le.minXEm) < 1e-5f || (le.maxYEm - le.minYEm) < 1e-5f)
 						continue;
-					// Apply COLR v1 PaintTranslate offset
 					float layerPenX = glyphPenX + cl.translateX * sz;
-					float layerPosY = glyphPosY - cl.translateY * sz; // Y-up in font, Y-down in screen
-					if (cl.hasGradient && gs_pContext->slugGradientShader.program)
+					float layerPosY = glyphPosY - cl.translateY * sz;
+					// CRITICAL: route ALL color layers through the gradient
+					// shader (degenerate gradient = same colour at both stops
+					// for solid fills). The previous split -- solid layers to
+					// vertsColor, gradient layers to vertsGrad -- caused the
+					// two batches to draw in shader-order rather than paint-
+					// order. For COLR v1 emoji (Fluent face, Noto, OpenMoji
+					// COLRv1) where solid layers are interleaved with
+					// gradient layers in z-order, that flipped the stack:
+					// e.g. the solid white eyes ended up *behind* the
+					// gradient face-background that should sit underneath
+					// them. Single-batch keeps the layer order intact.
+					if (gs_pContext->slugGradientShader.program)
 					{
-						EmitGradQuad(&le, layerPenX, layerPosY, cl);
+						if (cl.hasGradient)
+						{
+							EmitGradQuad(&le, layerPenX, layerPosY, cl);
+						}
+						else
+						{
+							ImU32 c = (cl.color != 0) ? cl.color : col;
+							SlugColorLayer sl = cl;
+							sl.hasGradient = true; // marker; ignored by EmitGradQuad
+							sl.isRadial = false;
+							sl.gradColor0 = c;
+							sl.gradColor1 = c;
+							sl.gradDirX = 0.0f; sl.gradDirY = 0.0f;
+							sl.gradScale = 0.0f; sl.gradBias = 0.0f;
+							EmitGradQuad(&le, layerPenX, layerPosY, sl);
+						}
 					}
 					else
 					{
+						// Fallback when gradient shader is unavailable:
+						// solid layers via color shader, gradient layers
+						// via solid (loses gradient). Z-order may be off
+						// in this fallback but the alternative is a blank
+						// glyph, so accept the regression.
 						ImU32 layerCol = (cl.color != 0) ? cl.color : col;
 						EmitQuad(vertsColor, idxsColor, &le, layerPenX, layerPosY, layerCol);
 					}
@@ -2661,7 +3305,7 @@
 	struct SlugFillCBParams {
 		float fillColor0[4];   // gradient start color (or image tint)
 		float fillColor1[4];   // gradient end color (unused for image)
-		float fillBBox[4];     // (reserved — bbox from vertex color)
+		float fillBBox[4];     // (reserved -- bbox from vertex color)
 		float fillGrad[4];     // x=type (0=linear,1=radial,2=diamond,3=image), y=colorSpace (0-4), z,w=0
 		float fillUVStart[4];  // gradient UV start (or image uv_offset)
 		float fillUVEnd[4];    // gradient UV end (or image uv_scale)
@@ -2801,7 +3445,7 @@
 			ImTextCharFromUtf8(&firstCp, text, text_end);
 			if (firstCp >= 0x100000) skipShaping = true;
 		}
-		if (atlas->shapeCtx && atlas->shapeFont && !skipShaping)
+		if (DwShaper_IsReady(atlas->shaperCtx) && !skipShaping)
 		{
 			int textLen = (int)(text_end - text);
 			ImU64 shapeKey = SlugFNV64(text, textLen);
@@ -2809,21 +3453,21 @@
 			if (cached) {
 				shapedGlyphs = *cached;
 			} else {
-				kbts_ShapeBegin(atlas->shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
-				kbts_ShapeUtf8(atlas->shapeCtx, text, textLen, KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
-				kbts_ShapeEnd(atlas->shapeCtx);
+				DwShaper_Begin(atlas->shaperCtx);
+				DwShaper_PushUtf8(atlas->shaperCtx, text, textLen);
+				DwShaper_End(atlas->shaperCtx);
 
-				kbts_run run;
-				while (kbts_ShapeRun(atlas->shapeCtx, &run))
+				DwShaperRun run;
+				while (DwShaper_NextRun(atlas->shaperCtx, &run))
 				{
-					kbts_glyph* glyph;
-					while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph))
+					DwShaperGlyph glyph;
+					while (DwShaper_NextGlyph(&run, &glyph))
 					{
 						SlugShapedGlyph sg;
-						sg.glyphID  = (int)glyph->Id;
-						sg.advanceX = (float)glyph->AdvanceX * atlas->emScale;
-						sg.offsetX  = (float)glyph->OffsetX  * atlas->emScale;
-						sg.offsetY  = (float)glyph->OffsetY  * atlas->emScale;
+						sg.glyphID  = (int)glyph.GlyphId;
+						sg.advanceX = (float)glyph.AdvanceX * atlas->emScale;
+						sg.offsetX  = (float)glyph.OffsetX  * atlas->emScale;
+						sg.offsetY  = (float)glyph.OffsetY  * atlas->emScale;
 						shapedGlyphs.push_back(sg);
 					}
 				}
@@ -2880,7 +3524,7 @@
 
 		float penX = pos.x;
 
-		// Vertex/index buffers — single buffer, all quads use white color (gradient in PS)
+		// Vertex/index buffers -- single buffer, all quads use white color (gradient in PS)
 		ImVector<SlugVertex> verts;
 		ImVector<ImU16>      idxs;
 		verts.reserve(glyphCount * 4);
@@ -3471,27 +4115,26 @@
 		const bool showCurves = (flags & 1) != 0;
 		const bool showCtrl   = (flags & 2) != 0;
 		const bool showBBox   = (flags & 4) != 0;
-		const bool showBands  = (flags & 8) != 0;
 
 		// Use the same shaping path as DrawText
 		struct DbgGlyph { int glyphID; float advanceX; float offsetX; float offsetY; };
 		ImVector<DbgGlyph> shapedGlyphs;
 #if IM_SUPPORT_LIGATURE
-		if (atlas->shapeCtx && atlas->shapeFont)
+		if (DwShaper_IsReady(atlas->shaperCtx))
 		{
 			int textLen = (int)(text_end - text);
-			kbts_ShapeBegin(atlas->shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
-			kbts_ShapeUtf8(atlas->shapeCtx, text, textLen, KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
-			kbts_ShapeEnd(atlas->shapeCtx);
-			kbts_run run;
-			while (kbts_ShapeRun(atlas->shapeCtx, &run)) {
-				kbts_glyph* glyph;
-				while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph)) {
+			DwShaper_Begin(atlas->shaperCtx);
+			DwShaper_PushUtf8(atlas->shaperCtx, text, textLen);
+			DwShaper_End(atlas->shaperCtx);
+			DwShaperRun run;
+			while (DwShaper_NextRun(atlas->shaperCtx, &run)) {
+				DwShaperGlyph glyph;
+				while (DwShaper_NextGlyph(&run, &glyph)) {
 					DbgGlyph dg;
-					dg.glyphID  = (int)glyph->Id;
-					dg.advanceX = (float)glyph->AdvanceX * atlas->emScale;
-					dg.offsetX  = (float)glyph->OffsetX  * atlas->emScale;
-					dg.offsetY  = (float)glyph->OffsetY  * atlas->emScale;
+					dg.glyphID  = (int)glyph.GlyphId;
+					dg.advanceX = (float)glyph.AdvanceX * atlas->emScale;
+					dg.offsetX  = (float)glyph.OffsetX  * atlas->emScale;
+					dg.offsetY  = (float)glyph.OffsetY  * atlas->emScale;
 					shapedGlyphs.push_back(dg);
 				}
 			}
@@ -3621,14 +4264,8 @@
 
 
 	// ================================================================
-	// Typography Pipeline: quadratic Bézier → cut → flatten → triangulate
+	// Typography Pipeline: quadratic Bezier -> cut -> flatten -> triangulate
 	// ================================================================
-
-	static float PolygonSignedArea(const ImVec2* pts, int n) {
-		float area = 0;
-		for (int i = 0, j = n - 1; i < n; j = i++) area += (pts[j].x - pts[i].x) * (pts[j].y + pts[i].y);
-		return area * 0.5f;
-	}
 
 	static bool PointInPolygon(const ImVec2* pts, int n, ImVec2 p) {
 		bool inside = false;
@@ -3666,7 +4303,7 @@
 		outHalfLen = (maxP-minP)*0.5f; outHalfWidth = (maxQ-minQ)*0.5f;
 	}
 
-	// A quadratic Bézier segment in pixel coordinates
+	// A quadratic Bezier segment in pixel coordinates
 	struct QBez { ImVec2 p0, p1, p2; }; // start, control, end
 
 	// A contour: ordered ring of QBez curves (implicitly closed: last.p2 == first.p0)
@@ -3691,7 +4328,7 @@
 			curves[curveCount++] = q;
 		}
 
-		// Safe copy — allocates new buffer
+		// Safe copy -- allocates new buffer
 		void copyFrom(const QContour& o) {
 			area = o.area;
 			curveCount = o.curveCount;
@@ -3711,7 +4348,7 @@
 		              u*u*q.p0.y + 2*u*t*q.p1.y + t*t*q.p2.y);
 	}
 
-	// Split a quadratic at parameter t → two sub-curves
+	// Split a quadratic at parameter t -> two sub-curves
 	static void QBezSplit(const QBez& q, float t, QBez& left, QBez& right) {
 		ImVec2 m01(q.p0.x + t*(q.p1.x-q.p0.x), q.p0.y + t*(q.p1.y-q.p0.y));
 		ImVec2 m12(q.p1.x + t*(q.p2.x-q.p1.x), q.p1.y + t*(q.p2.y-q.p1.y));
@@ -3720,7 +4357,7 @@
 		right = { mid, m12, q.p2 };
 	}
 
-	// Flatten a quadratic Bézier to line segments (adaptive, with depth limit)
+	// Flatten a quadratic Bezier to line segments (adaptive, with depth limit)
 	static void FlattenQBezImpl(ImVector<ImVec2>& pts, const QBez& q, float tol, int depth) {
 		float dx = q.p2.x - q.p0.x, dy = q.p2.y - q.p0.y;
 		float lenSq = dx * dx + dy * dy;
@@ -3766,14 +4403,14 @@
 		return PointInPolygon(pts.Data, pts.Size, p);
 	}
 
-	// Cut a quadratic Bézier by line ax+by+c=0. Returns curve segments on each side.
+	// Cut a quadratic Bezier by line ax+by+c=0. Returns curve segments on each side.
 	// Robust: uses endpoint signs as ground truth, no arbitrary epsilon for root filtering.
 	static void CutQBezByLine(const QBez& q, float a, float b, float c2,
 	                          ImVector<QBez>& posOut, ImVector<QBez>& negOut) {
 		float d0 = a*q.p0.x + b*q.p0.y + c2;
 		float d2 = a*q.p2.x + b*q.p2.y + c2;
 
-		// Fast path: both endpoints clearly on the same side → no split needed
+		// Fast path: both endpoints clearly on the same side -> no split needed
 		if (d0 > 0 && d2 > 0) {
 			// Check if curve dips into negative side (control point)
 			float d1 = a*q.p1.x + b*q.p1.y + c2;
@@ -3784,7 +4421,7 @@
 			if (d1 <= 0) { negOut.push_back(q); return; } // entirely negative
 		}
 
-		// Need to find roots: d(t) = A2*t² + B2*t + C2 = 0
+		// Need to find roots: d(t) = A2*t^2 + B2*t + C2 = 0
 		float d1 = a*q.p1.x + b*q.p1.y + c2;
 		float A2 = d0 - 2*d1 + d2;
 		float B2 = 2*(d1 - d0);
@@ -3816,7 +4453,7 @@
 		}
 
 		if (nRoots == 0) {
-			// Entire curve on one side — use endpoint majority for robustness
+			// Entire curve on one side -- use endpoint majority for robustness
 			int nPos = (d0 >= 0 ? 1 : 0) + (d1 >= 0 ? 1 : 0) + (d2 >= 0 ? 1 : 0);
 			if (nPos >= 2) posOut.push_back(q); else negOut.push_back(q);
 		} else {
@@ -3836,7 +4473,7 @@
 			segments[nSegs++] = rem;
 
 			for (int si = 0; si < nSegs; si++) {
-				// Classify by midpoint — but verify with both endpoints for robustness
+				// Classify by midpoint -- but verify with both endpoints for robustness
 				float dS = a*segments[si].p0.x + b*segments[si].p0.y + c2;
 				float dE = a*segments[si].p2.x + b*segments[si].p2.y + c2;
 				float dM = a*QBezEval(segments[si], 0.5f).x + b*QBezEval(segments[si], 0.5f).y + c2;
@@ -3848,53 +4485,12 @@
 		}
 	}
 
-	// Cut an entire QContour by a line → positive and negative side contour pieces
-	static void CutQContourByLine(QContour& contour, float a, float b, float c2,
-	                              ImVector<QContour>& posContours, ImVector<QContour>& negContours) {
-		ImVector<QBez> posCurves, negCurves;
-		for (int i = 0; i < contour.curveCount; i++)
-			CutQBezByLine(contour.curves[i], a, b, c2, posCurves, negCurves);
-
-		// Group consecutive curves into contours (they're ordered along the original contour)
-		auto GroupIntoContours = [](ImVector<QBez>& curves, ImVector<QContour>& out) {
-			if (curves.Size == 0) return;
-			out.push_back(QContour());
-			QContour* cur = &out.back();
-			cur->push_back(curves[0]);
-			for (int i = 1; i < curves.Size; i++) {
-				ImVec2 prevEnd = cur->curves[cur->curveCount-1].p2;
-				ImVec2 nextStart = curves[i].p0;
-				float d = (prevEnd.x-nextStart.x)*(prevEnd.x-nextStart.x) + (prevEnd.y-nextStart.y)*(prevEnd.y-nextStart.y);
-				if (d > 1.0f) {
-					// Gap → connect with a line segment (the cut line intersection)
-					QBez bridge = { prevEnd, ImVec2((prevEnd.x+nextStart.x)*0.5f,(prevEnd.y+nextStart.y)*0.5f), nextStart };
-					cur->push_back(bridge);
-				}
-				cur->push_back(curves[i]);
-			}
-			// Close: connect last to first
-			if (cur->curveCount > 0) {
-				ImVec2 last = cur->curves[cur->curveCount-1].p2;
-				ImVec2 first = cur->curves[0].p0;
-				float d = (last.x-first.x)*(last.x-first.x) + (last.y-first.y)*(last.y-first.y);
-				if (d > 0.1f) {
-					QBez bridge = { last, ImVec2((last.x+first.x)*0.5f,(last.y+first.y)*0.5f), first };
-					cur->push_back(bridge);
-				}
-			}
-			cur->area = QContourArea(*cur);
-		};
-
-		GroupIntoContours(posCurves, posContours);
-		GroupIntoContours(negCurves, negContours);
-	}
-
 	// Cut an outer contour + its contained holes by a line, producing properly
 	// connected hole-free pieces. Cuts ALL curves from ALL contours, then groups
 	// them together so bridges naturally connect outer arcs to hole arcs.
 	//
-	// For "O": intersections sorted along cut = C,H,H,C → 2 C-shapes
-	// For "8": C,H,H,H,H,C → 2 C-shapes incorporating both holes
+	// For "O": intersections sorted along cut = C,H,H,C -> 2 C-shapes
+	// For "8": C,H,H,H,H,C -> 2 C-shapes incorporating both holes
 	static void CutContourGroupByLine(
 		QContour& outer, QContour* holes, int nHoles,
 		float a, float b, float c2,
@@ -3921,9 +4517,9 @@
 		ImVector<CurveArc> posArcs, negArcs;
 
 		// Split a contour's curves into arcs (connected runs).
-		// A "cut gap" has both endpoints near the cut line (ax+by+c ≈ 0) and
-		// significant distance → split there (genuine crossing).
-		// A "dip gap" is a small numerical artifact → bridge over (keep in same arc).
+		// A "cut gap" has both endpoints near the cut line (ax+by+c ~= 0) and
+		// significant distance -> split there (genuine crossing).
+		// A "dip gap" is a small numerical artifact -> bridge over (keep in same arc).
 		auto ExtractArcs = [&](ImVector<QBez>& curves, int start, int count,
 		                       ImVector<CurveArc>& arcs) {
 			if (count <= 0) return;
@@ -3937,7 +4533,7 @@
 			}
 			float bbSize = ImMax(bbMxX - bbMnX, bbMxY - bbMnY);
 			float lineTol = ImMax(bbSize * 0.02f, 1.0f);   // "near line" tolerance
-			float gapTol  = ImMax(bbSize * 0.01f, 2.0f);   // min gap dist² for cut gap
+			float gapTol  = ImMax(bbSize * 0.01f, 2.0f);   // min gap dist^2 for cut gap
 			float gapTolSq = gapTol * gapTol;
 
 			// Find all gaps and classify them
@@ -3969,7 +4565,7 @@
 				return;
 			}
 
-			// Find the largest cut gap — rotate to put it at the boundary
+			// Find the largest cut gap -- rotate to put it at the boundary
 			int bestCutGap = -1;
 			float bestCutDist = -1;
 			for (int gi = 0; gi < gaps.Size; gi++) {
@@ -4081,7 +4677,7 @@
 		// Build contours from arcs using the even-odd bridge rule.
 		// Sort all arc endpoints along the cut line. Between consecutive endpoints,
 		// alternate inside/outside (even-odd). Bridges connect at "inside" segments.
-		// This is topologically correct: C,H,H,C → bridges at C-H and H-C.
+		// This is topologically correct: C,H,H,C -> bridges at C-H and H-C.
 		auto BuildFromArcs = [&](ImVector<QBez>& curves, ImVector<CurveArc>& arcs, ImVector<QContour>& out) {
 			if (arcs.Size == 0) return;
 
@@ -4299,7 +4895,7 @@
 				}
 				if (inside) continue;
 
-				// Ear found — emit triangle and remove vertex
+				// Ear found -- emit triangle and remove vertex
 				ImWidgetsTriIdx tidx;
 				tidx.a = (ImDrawIdx)(baseVtx + idx[iPrev]);
 				tidx.b = (ImDrawIdx)(baseVtx + idx[i]);
@@ -4314,7 +4910,7 @@
 	}
 
 	// CDT-based triangulation: handles outer contour + holes directly.
-	// Uses Constrained Delaunay Triangulation (artem-ogre/CDT) — no recursive cutting needed.
+	// Uses Constrained Delaunay Triangulation (artem-ogre/CDT) -- no recursive cutting needed.
 	// Input: outer contour (QContour) + holes (QContour array)
 	// Output: triangulated shape (ImWidgetsShape)
 	static void CDTTriangulate(QContour& outer, QContour* holes, int nHoles,
@@ -4325,7 +4921,7 @@
 		FlattenQContour(outer, outerPts, tol);
 		if (outerPts.Size < 3) return;
 
-		// Build CDT vertices and edges — flatten directly into cdtVerts
+		// Build CDT vertices and edges -- flatten directly into cdtVerts
 		std::vector<CDT::V2d<float>> cdtVerts;
 		std::vector<CDT::Edge> cdtEdges;
 
@@ -4489,7 +5085,7 @@
 			for (int hi = 0; hi < holes.Size; hi++) {
 				if (holes[hi].curveCount == 0) continue;
 				if (fabsf(holes[hi].area) < minHoleArea) continue;
-				// Use hole centroid for containment test — more robust than first
+				// Use hole centroid for containment test -- more robust than first
 				// curve point which might fall on a cut line or bridge seam
 				QContour& hc = holes[hi];
 				float cx = 0, cy = 0;
@@ -4502,7 +5098,7 @@
 			}
 
 			if (containedHoles.Size == 0) {
-				// Leaf: no holes → flatten and triangulate
+				// Leaf: no holes -> flatten and triangulate
 				ImVector<ImVec2> pts;
 				FlattenQContour(outer, pts, tol);
 				EarClipTriangulate(pts, outShape, whiteUV);
@@ -4664,8 +5260,8 @@
 				ImVec2 cp1(gx + (float)v.cx * sc * sz, gy - (float)v.cy * sc * sz);
 				ImVec2 cp2(gx + (float)v.cx1 * sc * sz, gy - (float)v.cy1 * sc * sz);
 				ImVec2 p3(vx, vy);
-				// Cubic → quadratics using same algorithm as Slug atlas builder
-				// (recursive De Casteljau depth=2 → 4 quadratic segments per cubic)
+				// Cubic -> quadratics using same algorithm as Slug atlas builder
+				// (recursive De Casteljau depth=2 -> 4 quadratic segments per cubic)
 				ImVector<SlugCurve> tmpCurves;
 				SlugCubicToQuads(tmpCurves, p0.x, p0.y, cp1.x, cp1.y, cp2.x, cp2.y, p3.x, p3.y, 2);
 				for (int tci = 0; tci < tmpCurves.Size; tci++) {
@@ -4710,7 +5306,7 @@
 		}
 	}
 
-	#if 0 // === OLD TYPOGRAPHY CODE — replaced by QBez pipeline above ===
+	#if 0 // === OLD TYPOGRAPHY CODE -- replaced by QBez pipeline above ===
 	static bool PointInPolygon_OLD(const ImVec2* pts, int n, ImVec2 p)
 	{
 		bool inside = false;
@@ -4746,15 +5342,15 @@
 		struct ShGlyph { int glyphID; float advX, offX, offY; };
 		ImVector<ShGlyph> shaped;
 #if IM_SUPPORT_LIGATURE
-		if (atlas->shapeCtx && atlas->shapeFont) {
-			kbts_ShapeBegin(atlas->shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
-			kbts_ShapeUtf8(atlas->shapeCtx, text, (int)(text_end - text), KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
-			kbts_ShapeEnd(atlas->shapeCtx);
-			kbts_run run;
-			while (kbts_ShapeRun(atlas->shapeCtx, &run)) {
-				kbts_glyph* glyph;
-				while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph)) {
-					ShGlyph sg = { (int)glyph->Id, (float)glyph->AdvanceX * sc, (float)glyph->OffsetX * sc, (float)glyph->OffsetY * sc };
+		if (DwShaper_IsReady(atlas->shaperCtx)) {
+			DwShaper_Begin(atlas->shaperCtx);
+			DwShaper_PushUtf8(atlas->shaperCtx, text, (int)(text_end - text));
+			DwShaper_End(atlas->shaperCtx);
+			DwShaperRun run;
+			while (DwShaper_NextRun(atlas->shaperCtx, &run)) {
+				DwShaperGlyph glyph;
+				while (DwShaper_NextGlyph(&run, &glyph)) {
+					ShGlyph sg = { (int)glyph.GlyphId, (float)glyph.AdvanceX * sc, (float)glyph.OffsetX * sc, (float)glyph.OffsetY * sc };
 					shaped.push_back(sg);
 				}
 			}
@@ -5016,7 +5612,7 @@
 		}
 
 		if (containedHoles.Size == 0) {
-			// No holes — triangulate directly
+			// No holes -- triangulate directly
 			AddConcavePoly(outerPts, outShape, whiteUV);
 			return;
 		}
@@ -5113,7 +5709,7 @@
 		return a * 2654435761u ^ (ImU32)glyph_id * 2246822519u;
 	}
 
-	// O(1) tessellation cache lookup: uses per-atlas flat index (glyphID → ImPoolIdx) to skip
+	// O(1) tessellation cache lookup: uses per-atlas flat index (glyphID -> ImPoolIdx) to skip
 	// DwTessGlyphKey computation and ImGuiStorage binary search on every glyph render call.
 	// Tessellates and caches on first access; subsequent calls are a bounds check + array read.
 	static DwTessGlyphData* SlugTessGetOrBuild(SlugFontCache* atlas, ImPool<DwTessGlyphData>& pool,
@@ -5137,8 +5733,11 @@
 	}
 
 	// Tessellate a single glyph at kTessRefSize pixel scale (sc=atlas->emScale, sz=kTessRefSize, origin=(0,0)).
-	// flatTol: flatness tolerance in pixels (same scale as kTessRefSize — passed directly to CDT/RecursiveCutQ).
-	// Outputs positions as (v.x, -v.y) — y-flip already baked in.
+	// flatTol: flatness tolerance in pixels (same scale as kTessRefSize -- passed directly to CDT/RecursiveCutQ).
+	// Outputs positions as (v.x, -v.y) -- y-flip already baked in.
+	// NOTE: must stay thread-safe -- PrewarmTessellationCache calls this in parallel
+	// across glyphs. It only READS the atlas (stbtt_GetGlyphShape is reentrant) and
+	// writes its own `out`; no shared mutable state.
 	static void TessGlyphFontUnits(SlugFontCache* atlas, int glyphID, float flatTol, DwTessGlyphData& out)
 	{
 		out.positions.resize(0);
@@ -5158,13 +5757,32 @@
 				if (fabsf(qcontours[validQI[j]].area) > fabsf(qcontours[validQI[i]].area))
 					ImSwap(validQI[i], validQI[j]);
 
+		// Precompute each contour's bounding box (over the quadratic control points).
+		// PointInQContour is expensive (it re-flattens the whole contour every call),
+		// so a cheap bbox-contains-point test rejects almost all candidate outers up
+		// front -- crucial for fonts whose glyphs are many disjoint contours (dots).
+		ImVector<ImRect> qbb;
+		qbb.resize(qcontours.Size);
+		for (int vi = 0; vi < validQI.Size; vi++) {
+			int ci = validQI[vi];
+			const QContour& c = qcontours[ci];
+			ImRect bb(FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX);
+			for (int k = 0; k < c.curveCount; k++) {
+				bb.Add(c.curves[k].p0); bb.Add(c.curves[k].p1); bb.Add(c.curves[k].p2);
+			}
+			qbb[ci] = bb;
+		}
+
 		ImVector<int> parentQ;
 		parentQ.resize(qcontours.Size, -1);
 		for (int vi = 1; vi < validQI.Size; vi++) {
 			int ci = validQI[vi];
+			ImVec2 testP = qcontours[ci].curves[0].p0;
 			for (int oi = 0; oi < vi; oi++) {
 				int outerCI = validQI[oi];
-				if (parentQ[outerCI] == -1 && PointInQContour(qcontours[outerCI], qcontours[ci].curves[0].p0))
+				if (parentQ[outerCI] != -1) continue;
+				if (!qbb[outerCI].Contains(testP)) continue; // cheap bbox reject before the costly point-in-contour test
+				if (PointInQContour(qcontours[outerCI], testP))
 					{ parentQ[ci] = outerCI; break; }
 			}
 		}
@@ -5183,6 +5801,10 @@
 				if (parentQ[ci] == outerCI) holes2.push_back(qcontours[ci]);
 			}
 			if (gs_useCDT) {
+				// NOTE: a batched single-pass CDT over all contours was tried and was
+				// SLOWER (CDT is super-linear in vertex count, so one huge triangulation
+				// costs more than many small disjoint ones). The cost is intrinsic to the
+				// glyph's contour/point volume, not per-call overhead.
 				CDTTriangulate(qcontours[outerCI], holes2.Data, holes2.Size, tmpShape, dummyUV, flatTol);
 			} else {
 				ImVector<QContour> outers;
@@ -5229,7 +5851,7 @@
 		));
 	}
 
-	static void TesselateText_Impl(ImFont* font, float font_size, const char* text, ImWidgetsShape& outShape, const char* text_end, float tess_tol, int iterations)
+	void TesselateText_Impl(ImFont* font, float font_size, const char* text, ImWidgetsShape& outShape, const char* text_end, float tess_tol, int iterations)
 	{
 		outShape.vertices.resize(0);
 		outShape.triangles.resize(0);
@@ -5250,15 +5872,15 @@
 		struct ShGlyph { int glyphID; float advX, offX, offY; };
 		ImVector<ShGlyph> shaped;
 #if IM_SUPPORT_LIGATURE
-		if (atlas->shapeCtx && atlas->shapeFont) {
-			kbts_ShapeBegin(atlas->shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
-			kbts_ShapeUtf8(atlas->shapeCtx, text, (int)(text_end - text), KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
-			kbts_ShapeEnd(atlas->shapeCtx);
-			kbts_run run;
-			while (kbts_ShapeRun(atlas->shapeCtx, &run)) {
-				kbts_glyph* glyph;
-				while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph)) {
-					ShGlyph sg = { (int)glyph->Id, (float)glyph->AdvanceX * sc, (float)glyph->OffsetX * sc, (float)glyph->OffsetY * sc };
+		if (DwShaper_IsReady(atlas->shaperCtx)) {
+			DwShaper_Begin(atlas->shaperCtx);
+			DwShaper_PushUtf8(atlas->shaperCtx, text, (int)(text_end - text));
+			DwShaper_End(atlas->shaperCtx);
+			DwShaperRun run;
+			while (DwShaper_NextRun(atlas->shaperCtx, &run)) {
+				DwShaperGlyph glyph;
+				while (DwShaper_NextGlyph(&run, &glyph)) {
+					ShGlyph sg = { (int)glyph.GlyphId, (float)glyph.AdvanceX * sc, (float)glyph.OffsetX * sc, (float)glyph.OffsetY * sc };
 					shaped.push_back(sg);
 				}
 			}
@@ -5328,15 +5950,15 @@
 		struct ShGlyph { int glyphID; float advX, offX, offY; };
 		ImVector<ShGlyph> shaped;
 #if IM_SUPPORT_LIGATURE
-		if (atlas->shapeCtx && atlas->shapeFont) {
-			kbts_ShapeBegin(atlas->shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
-			kbts_ShapeUtf8(atlas->shapeCtx, text, (int)(text_end - text), KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
-			kbts_ShapeEnd(atlas->shapeCtx);
-			kbts_run run;
-			while (kbts_ShapeRun(atlas->shapeCtx, &run)) {
-				kbts_glyph* glyph;
-				while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph)) {
-					ShGlyph sg = { (int)glyph->Id, (float)glyph->AdvanceX * sc, (float)glyph->OffsetX * sc, (float)glyph->OffsetY * sc };
+		if (DwShaper_IsReady(atlas->shaperCtx)) {
+			DwShaper_Begin(atlas->shaperCtx);
+			DwShaper_PushUtf8(atlas->shaperCtx, text, (int)(text_end - text));
+			DwShaper_End(atlas->shaperCtx);
+			DwShaperRun run;
+			while (DwShaper_NextRun(atlas->shaperCtx, &run)) {
+				DwShaperGlyph glyph;
+				while (DwShaper_NextGlyph(&run, &glyph)) {
+					ShGlyph sg = { (int)glyph.GlyphId, (float)glyph.AdvanceX * sc, (float)glyph.OffsetX * sc, (float)glyph.OffsetY * sc };
 					shaped.push_back(sg);
 				}
 			}
@@ -5391,11 +6013,69 @@
 		ImPool<DwTessGlyphData>& pool = state->tessGlyphPool;
 		float flatTol = (tess_tol > 0.0f) ? tess_tol : 0.5f;
 		int numGlyphs = atlas->stbFont.numGlyphs;
-		for (int glyphID = 0; glyphID < numGlyphs; glyphID++)
-			SlugTessGetOrBuild(atlas, pool, glyphID, flatTol);
+		if (numGlyphs <= 0) return;
+
+#if DW_PROFILE_PREWARM
+		auto profT0 = std::chrono::high_resolution_clock::now();
+#endif
+		// Phase 1 (parallel): tessellate each glyph into its own result slot. Safe to
+		// run across threads -- TessGlyphFontUnits only READS the atlas and writes a
+		// disjoint results[g]; no shared mutable state is touched here.
+		std::vector<DwTessGlyphData> results( (size_t)numGlyphs );
+		unsigned hw = std::thread::hardware_concurrency();
+		int nThreads = (int)( hw == 0u ? 4u : hw );
+		if (nThreads > numGlyphs) nThreads = numGlyphs;
+		if (nThreads < 1) nThreads = 1;
+
+		std::atomic<int> nextGlyph(0);
+		auto worker = [&]() {
+			for (;;) {
+				int g = nextGlyph.fetch_add(1, std::memory_order_relaxed);
+				if (g >= numGlyphs) break;
+				TessGlyphFontUnits(atlas, g, flatTol, results[(size_t)g]);
+			}
+		};
+		if (nThreads == 1) {
+			worker();
+		} else {
+			std::vector<std::thread> workers;
+			workers.reserve((size_t)nThreads);
+			for (int t = 0; t < nThreads; t++) workers.emplace_back(worker);
+			for (size_t t = 0; t < workers.size(); t++) workers[t].join();
+		}
+
+		// Phase 2 (single-threaded): publish results into the shared glyph pool + index
+		// map. Cheap (just bookkeeping + ImVector ownership swap, no recomputation).
+		if (numGlyphs > atlas->tessIdxByGlyphID.Size)
+			atlas->tessIdxByGlyphID.resize(numGlyphs, -1);
+#if DW_PROFILE_PREWARM
+		long long totalVerts = 0, totalTris = 0;
+#endif
+		for (int g = 0; g < numGlyphs; g++) {
+			if (atlas->tessIdxByGlyphID[g] != -1) continue; // already built (e.g. lazily on a draw)
+#if DW_PROFILE_PREWARM
+			totalVerts += results[(size_t)g].positions.Size;
+			totalTris  += results[(size_t)g].triangles.Size / 3;
+#endif
+			ImGuiID key = DwTessGlyphKey(atlas, g);
+			DwTessGlyphData* cached = pool.GetOrAddByKey(key);
+			cached->positions.swap(results[(size_t)g].positions);
+			cached->triangles.swap(results[(size_t)g].triangles);
+			cached->bb = results[(size_t)g].bb;
+			atlas->tessIdxByGlyphID[g] = pool.GetIndex(cached);
+		}
+
+#if DW_PROFILE_PREWARM
+		double totalMs = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - profT0).count();
+		char buf[256];
+		snprintf(buf, sizeof(buf),
+			"[prewarm] glyphs=%d  threads=%d  total=%.1f ms  (%.2f ms/glyph)  geom: %lld verts %lld tris\n",
+			numGlyphs, nThreads, totalMs, numGlyphs ? totalMs / numGlyphs : 0.0, totalVerts, totalTris);
+		fputs(buf, stderr); fflush(stderr);
+#endif
 	}
 
-	// (old per-glyph code removed — replaced by QBez pipeline in TesselateText above)
+	// (old per-glyph code removed -- replaced by QBez pipeline in TesselateText above)
 	static void TesselateAndOffset(ImFont* font, float fontSize, const char* text, const char* text_end, ImVec2 pos, ImWidgetsShape& shape, float tess_tol, int iterations = 0)
 	{
 		TesselateText_Impl(font, fontSize, text, shape, text_end, tess_tol, iterations);
@@ -5477,6 +6157,7 @@
 	// Debug: render tessellation algorithm steps for a single glyph
 	void DrawTesselateDebug(ImDrawList* dl, ImFont* font, float font_size, const char* text, ImVec2 pos, float tess_tol, float spacing, float rowH)
 	{
+		IM_UNUSED(rowH);
 		if (!gs_pContext || !gs_pContext->slugState || !text || !*text) return;
 		if (!font) font = ImGui::GetFont();
 		if (font_size > 0.0f) font_size = SlugLpToPx(font_size);
@@ -5492,15 +6173,15 @@
 		struct ShGlyph { int glyphID; float advX, offX, offY; };
 		ImVector<ShGlyph> shaped;
 #if IM_SUPPORT_LIGATURE
-		if (atlas->shapeCtx && atlas->shapeFont) {
-			kbts_ShapeBegin(atlas->shapeCtx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
-			kbts_ShapeUtf8(atlas->shapeCtx, text, (int)(text_end - text), KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
-			kbts_ShapeEnd(atlas->shapeCtx);
-			kbts_run run;
-			while (kbts_ShapeRun(atlas->shapeCtx, &run)) {
-				kbts_glyph* glyph;
-				while (kbts_GlyphIteratorNext(&run.Glyphs, &glyph)) {
-					ShGlyph sg = { (int)glyph->Id, (float)glyph->AdvanceX * sc, (float)glyph->OffsetX * sc, (float)glyph->OffsetY * sc };
+		if (DwShaper_IsReady(atlas->shaperCtx)) {
+			DwShaper_Begin(atlas->shaperCtx);
+			DwShaper_PushUtf8(atlas->shaperCtx, text, (int)(text_end - text));
+			DwShaper_End(atlas->shaperCtx);
+			DwShaperRun run;
+			while (DwShaper_NextRun(atlas->shaperCtx, &run)) {
+				DwShaperGlyph glyph;
+				while (DwShaper_NextGlyph(&run, &glyph)) {
+					ShGlyph sg = { (int)glyph.GlyphId, (float)glyph.AdvanceX * sc, (float)glyph.OffsetX * sc, (float)glyph.OffsetY * sc };
 					shaped.push_back(sg);
 				}
 			}
@@ -5620,7 +6301,7 @@
 		ImGui::SetNextItemWidth(120);
 		ImGui::SliderFloat("Min hole %##TessDbg", &gs_minHolePct, 0.0f, 50.0f, "%.1f%%");
 
-		// Step 0: Slug rendering — compute real glyph height
+		// Step 0: Slug rendering -- compute real glyph height
 		{
 			float asc2 = 0;
 			ImVec2 textSz = CalcTextSize_Impl(font, sz, text, NULL, &asc2);
@@ -5741,10 +6422,10 @@
 			char label[64];
 			snprintf(label, sizeof(label), "Step 1.%d (depth %d): Cut -> %d pieces", cutIdx++, step.depth, step.nResultPieces);
 			float curY = BeginRow(label, maxH);
-			float penX = pos.x + 10;
+			float rowPenX = pos.x + 10;
 
 			// Source contours (outer green + holes red)
-			ImVec2 srcOff(penX - srcBB.mnX, curY - srcBB.mnY);
+			ImVec2 srcOff(rowPenX - srcBB.mnX, curY - srcBB.mnY);
 			for (int so = 0; so < step.nSourceOuters; so++)
 				DrawQContourPolyline(dl, step.sourceOuters[so], srcOff, IM_COL32(80,255,80,255), 1.5f, tol);
 			for (int sh = 0; sh < step.nSourceHoles; sh++)
@@ -5787,20 +6468,20 @@
 						deferredIsects.push_back({ImVec2(isects[ip].pos.x+srcOff.x,isects[ip].pos.y+srcOff.y),isects[ip].isHole,ip});
 						if(lo<120)lo+=snprintf(lbl.text+lo,sizeof(lbl.text)-lo,"%s%s",isects[ip].isHole?"H":"C",ip<isects.Size-1?",":"");
 					}
-					lbl.screenPos=ImVec2(penX,curY+srcBB.h()+2);
+					lbl.screenPos=ImVec2(rowPenX,curY+srcBB.h()+2);
 					deferredLabels.push_back(lbl);
 				}
 			}
 
-			penX += srcBB.w() + spacing;
-			dl->AddText(ImVec2(penX - spacing * 0.5f - 5, curY + maxH * 0.4f), IM_COL32(200,200,200,255), ">");
+			rowPenX += srcBB.w() + spacing;
+			dl->AddText(ImVec2(rowPenX - spacing * 0.5f - 5, curY + maxH * 0.4f), IM_COL32(200,200,200,255), ">");
 
 			// Result pieces
 			for (int rp = 0; rp < step.nResultPieces; rp++) {
 				QBBox rb = ContourBBox(step.resultPieces[rp]);
-				ImVec2 off(penX - rb.mnX, curY - rb.mnY);
+				ImVec2 off(rowPenX - rb.mnX, curY - rb.mnY);
 				DrawQContourPolyline(dl, step.resultPieces[rp], off, kColors[rp % nColors], 2.0f, tol);
-				penX += rb.w() + spacing * 0.3f;
+				rowPenX += rb.w() + spacing * 0.3f;
 			}
 		}
 
@@ -5813,24 +6494,24 @@
 		{
 			char label[64]; snprintf(label, sizeof(label), "Step 2: %d leaf pieces (hole-free)", dbg.nLeafPieces);
 			float curY = BeginRow(label, leafMaxH);
-			float penX = pos.x + 10;
+			float rowPenX = pos.x + 10;
 			for (int lp = 0; lp < dbg.nLeafPieces; lp++) {
 				QBBox bb = ContourBBox(dbg.leafPieces[lp]);
-				ImVec2 off(penX - bb.mnX, curY - bb.mnY);
+				ImVec2 off(rowPenX - bb.mnX, curY - bb.mnY);
 				DrawQContourPolyline(dl, dbg.leafPieces[lp], off, kColors[lp % nColors], 2.0f, tol);
-				penX += bb.w() + spacing * 0.3f;
+				rowPenX += bb.w() + spacing * 0.3f;
 			}
 		}
 
 		// Step 3: Tessellated (filled) leaf pieces
 		{
 			float curY = BeginRow("Step 3: Tessellated (filled)", leafMaxH);
-			float penX = pos.x + 10;
+			float rowPenX = pos.x + 10;
 			ImVec2 wuv = ImGui::GetDrawListSharedData()->TexUvWhitePixel;
 			for (int lp = 0; lp < dbg.nLeafPieces; lp++) {
 				ImVector<ImVec2> pts; FlattenQContour(dbg.leafPieces[lp], pts, tol);
 				QBBox bb = ContourBBox(dbg.leafPieces[lp]);
-				float offX = penX - bb.mnX, offY = curY - bb.mnY;
+				float offX = rowPenX - bb.mnX, offY = curY - bb.mnY;
 				// Offset points BEFORE triangulation so vertices are in screen space
 				for (int pi = 0; pi < pts.Size; pi++) { pts[pi].x += offX; pts[pi].y += offY; }
 				ImU32 col2 = kColors[lp % nColors] & 0x00FFFFFF | 0xC0000000;
@@ -5841,7 +6522,7 @@
 					dl->AddTriangleFilled(tmp.vertices[t.a].pos, tmp.vertices[t.b].pos, tmp.vertices[t.c].pos, col2);
 					dl->AddTriangle(tmp.vertices[t.a].pos, tmp.vertices[t.b].pos, tmp.vertices[t.c].pos, IM_COL32(255,255,255,60), 0.5f);
 				}
-				penX += bb.w() + spacing * 0.3f;
+				rowPenX += bb.w() + spacing * 0.3f;
 			}
 		}
 
@@ -5925,15 +6606,18 @@
 			static char tessDbgClipboard[2048];
 			{
 				int off = 0;
-				off += snprintf(tessDbgClipboard + off, sizeof(tessDbgClipboard) - off, "=== Tess Debug ===\n");
+				const int cap = (int)sizeof(tessDbgClipboard);
+				// Safe accumulator: clamps offset so a truncated snprintf can't push off past the buffer.
+				auto sapp = [&](int n) { if (n > 0) off = ImMin(off + n, cap - 1); };
+				sapp(snprintf(tessDbgClipboard + off, cap - off, "=== Tess Debug ===\n"));
 				for (int di = 0; di < deferredLabels.Size; di++)
-					off += snprintf(tessDbgClipboard + off, sizeof(tessDbgClipboard) - off, "%s\n", deferredLabels[di].text);
-				off += snprintf(tessDbgClipboard + off, sizeof(tessDbgClipboard) - off,
-					"isects=%d leafPieces=%d steps=%d\n", deferredIsects.Size, dbg.nLeafPieces, dbg.steps.Size);
+					sapp(snprintf(tessDbgClipboard + off, cap - off, "%s\n", deferredLabels[di].text));
+				sapp(snprintf(tessDbgClipboard + off, cap - off,
+					"isects=%d leafPieces=%d steps=%d\n", deferredIsects.Size, dbg.nLeafPieces, dbg.steps.Size));
 				for (int di = 0; di < deferredIsects.Size; di++)
-					off += snprintf(tessDbgClipboard + off, sizeof(tessDbgClipboard) - off,
+					sapp(snprintf(tessDbgClipboard + off, cap - off,
 						"  isect[%d] %s pos=(%.1f,%.1f)\n", di, deferredIsects[di].isHole ? "H" : "C",
-						deferredIsects[di].screenPos.x, deferredIsects[di].screenPos.y);
+						deferredIsects[di].screenPos.x, deferredIsects[di].screenPos.y));
 			}
 			ImGui::TextWrapped("%s", tessDbgClipboard);
 			if (ImGui::Button("Copy Debug to Clipboard"))
@@ -5994,11 +6678,11 @@
 	// CPU-rasterizes font glyphs into ImGui's bitmap atlas.
 	//
 	// Color support:
-	//   COLR v0    — full color (per-layer compositing into RGBA32 atlas)
-	//   COLR v1    — flat color only (uses first gradient stop; GPU gradients not available in atlas)
-	//   SVG        — monochrome fallback (SVG paths require a CPU vector rasterizer we don't have;
+	//   COLR v0    -- full color (per-layer compositing into RGBA32 atlas)
+	//   COLR v1    -- flat color only (uses first gradient stop; GPU gradients not available in atlas)
+	//   SVG        -- monochrome fallback (SVG paths require a CPU vector rasterizer we don't have;
 	//                would need NanoSVG, LunaSVG, or similar to render SVG path fills to bitmap)
-	//   Monochrome — full (Alpha8 atlas, tintable via vertex color)
+	//   Monochrome -- full (Alpha8 atlas, tintable via vertex color)
 	//
 	// Other limitations:
 	//   - No ligature/contextual shaping (atlas is per-codepoint; use GPU Slug path for shaped text)
@@ -6103,6 +6787,7 @@
 	static int SlugLoader_GetColorLayers(SlugLoaderFontData* fd, int glyphID, ImWchar codepoint,
 	    int* outGlyphIDs, ImU32* outColors, int maxLayers)
 	{
+		IM_UNUSED(codepoint);
 		const uint8_t* data = (const uint8_t*)fd->fontInfo.data;
 
 		// --- COLR v0 ---
@@ -6138,7 +6823,7 @@
 			}
 		}
 
-		// --- COLR v1 (via the existing SlugGetColrV1Layers — requires a temporary SlugFontCache) ---
+		// --- COLR v1 (via the existing SlugGetColrV1Layers -- requires a temporary SlugFontCache) ---
 		if (fd->colrOff && fd->cpalOff) {
 			const uint8_t* colr = data + fd->colrOff;
 			if (SlugTTU16(colr) >= 1) {
@@ -6162,7 +6847,7 @@
 			}
 		}
 
-		// --- SVG (parse paths, get colors — but we can only composite outlines, not SVG vector fills) ---
+		// --- SVG (parse paths, get colors -- but we can only composite outlines, not SVG vector fills) ---
 		// For SVG fonts, the atlas loader rasterizes the base glyph outline in monochrome for each
 		// color path. This gives correct shapes but gradients/effects are lost.
 		if (fd->svgOff) {
@@ -6174,7 +6859,7 @@
 				const uint8_t* rec = dl + 2 + i * 12;
 				uint16_t sg = SlugTTU16(rec), eg = SlugTTU16(rec + 2);
 				if (glyphID >= sg && glyphID <= eg) {
-					// SVG data exists for this glyph — render as monochrome with the base glyph outline
+					// SVG data exists for this glyph -- render as monochrome with the base glyph outline
 					// (full SVG vector rasterization would require a CPU SVG renderer)
 					// Use a single layer with white color so the glyph is tintable
 					outGlyphIDs[0] = glyphID;
@@ -6386,4 +7071,4 @@
 #endif  // IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER_WAS_UNDEF
 
 
-#endif // _DEAR_WIDGETS_SLUG_INCLUDED
+} // namespace ImWidgets

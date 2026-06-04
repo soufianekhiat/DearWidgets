@@ -2,7 +2,7 @@
 
 ## Overview
 
-`ImWidgetsContext` holds all GPU state for DearWidgets: shader handles, texture resources, and the Slug font atlas cache. It maps to — and must be paired with — a single `ImGuiContext`.
+`ImWidgetsContext` holds all GPU state for DearWidgets: shader handles, texture resources, and the Slug font atlas cache. It maps to -- and must be paired with -- a single `ImGuiContext`.
 
 ---
 
@@ -92,7 +92,7 @@ Manage the thread-local current context, mirroring ImGui's own pattern.
 ```cpp
 ImTextureID GetWhiteTexture();
 ```
-Returns the 4×4 white RGBA texture owned by the context (useful as a default for shape drawing).
+Returns the 4x4 white RGBA texture owned by the context (useful as a default for shape drawing).
 
 ---
 

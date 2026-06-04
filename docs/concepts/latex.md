@@ -4,7 +4,7 @@
 
 DearWidgets includes a self-contained LaTeX math typesetting engine. It parses a subset of LaTeX math mode syntax and lays out the result using a TeX-inspired box model, then renders it via the Slug GPU font pipeline using Latin Modern Math.
 
-Architecture mirrors [MicroTeX](https://github.com/NanoMichael/MicroTeX): **tokenize → parse → box tree → layout → render**.
+Architecture mirrors [MicroTeX](https://github.com/NanoMichael/MicroTeX): **tokenize -> parse -> box tree -> layout -> render**.
 
 ---
 
@@ -12,18 +12,18 @@ Architecture mirrors [MicroTeX](https://github.com/NanoMichael/MicroTeX): **toke
 
 ```
 latex string
-    │
-    ▼
+    |
+    v
 Tokenizer          (Tokenizer::Next)
-    │  TOK_CHAR, TOK_CMD, TOK_LBRACE, TOK_RBRACE, TOK_SUPER, TOK_SUB
-    ▼
+    |  TOK_CHAR, TOK_CMD, TOK_LBRACE, TOK_RBRACE, TOK_SUPER, TOK_SUB
+    v
 Parser             (ParseExpr / ParseAtom)
-    │  builds a tree of LaTeXBox nodes
-    ▼
+    |  builds a tree of LaTeXBox nodes
+    v
 Layout             (LaTeXLayout)
-    │  computes width / height / depth / shiftX / shiftY for each node
-    ▼
-Render             (RenderBox → ImWidgets::DrawText / Slug)
+    |  computes width / height / depth / shiftX / shiftY for each node
+    v
+Render             (RenderBox -> ImWidgets::DrawText / Slug)
 ```
 
 ---
@@ -35,8 +35,8 @@ Each node in the tree is a `LaTeXBox` with one of these types:
 | Type | Description |
 |---|---|
 | `LaTeXBox_Glyph` | Single Unicode codepoint, rendered as a Slug glyph |
-| `LaTeXBox_HBox` | Horizontal box — children laid out left-to-right |
-| `LaTeXBox_VBox` | Vertical box — numerator/denominator stacking |
+| `LaTeXBox_HBox` | Horizontal box -- children laid out left-to-right |
+| `LaTeXBox_VBox` | Vertical box -- numerator/denominator stacking |
 | `LaTeXBox_Script` | Base with optional superscript and/or subscript |
 | `LaTeXBox_Frac` | Fraction: numerator, rule line, denominator |
 | `LaTeXBox_Sqrt` | Square root with radical sign |
@@ -66,7 +66,7 @@ Scripts and nested fractions use relative `sizeFactor` scaling:
 ## Math Font
 
 The renderer uses **Latin Modern Math** (LM Math), an OpenType math font with:
-- Full Unicode math coverage (U+0000–U+1FFFF)
+- Full Unicode math coverage (U+0000-U+1FFFF)
 - Glyph assembly tables for large delimiters (`\left(`, `\right)`, etc.)
 - MATH table for axis height, rule thickness, and script kerning
 
@@ -80,9 +80,9 @@ The tokenizer applies the following automatic substitutions before the parser se
 
 | Input | Codepoint | Reason |
 |---|---|---|
-| `-` (hyphen-minus, ASCII 0x002D) | `−` (U+2212) | Proper mathematical minus sign |
+| `-` (hyphen-minus, ASCII 0x002D) | `-` (U+2212) | Proper mathematical minus sign |
 
-Letters `a–z`, `A–Z` are automatically rendered in math italic. Numbers and operators are upright. Use `\mathrm{...}` or `\textrm{...}` to force upright.
+Letters `a-z`, `A-Z` are automatically rendered in math italic. Numbers and operators are upright. Use `\mathrm{...}` or `\textrm{...}` to force upright.
 
 ---
 
@@ -94,7 +94,7 @@ Letters `a–z`, `A–Z` are automatically rendered in math italic. Numbers and 
 
 ## Supported Commands Reference
 
-See the complete list in [api/latex.md — Supported LaTeX Syntax](../api/latex.md#supported-latex-syntax).
+See the complete list in [api/latex.md -- Supported LaTeX Syntax](../api/latex.md#supported-latex-syntax).
 
 ---
 

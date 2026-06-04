@@ -107,16 +107,37 @@ void DrawColorRing(ImDrawList* pDrawList, ImVec2 curPos, ImVec2 size,
 typedef ImU32 (*ImWidgetsColor1DCallback)(float x, void*);
 typedef ImU32 (*ImWidgetsColor2DCallback)(float x, float y, void*);
 
+// Rectangular regions
 void DrawProceduralColor1DNearest(ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData,
                                    float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX);
 void DrawProceduralColor1DBilinear(ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData,
                                     float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX);
+void DrawProceduralColor1DNearestHorizontal(ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData,
+                                             float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX);
+void DrawProceduralColor1DBilinearHorizontal(ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData,
+                                              float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX);
+void DrawProceduralColor1DNearestVertical(ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData,
+                                           float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionY);
+void DrawProceduralColor1DBilinearVertical(ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData,
+                                            float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionY);
 void DrawProceduralColor2DNearest(ImDrawList* pDrawList, ImWidgetsColor2DCallback func, void* pUserData,
                                    float minX, float maxX, float minY, float maxY,
                                    ImVec2 position, ImVec2 size, int resolutionX, int resolutionY);
 void DrawProceduralColor2DBilinear(ImDrawList* pDrawList, ImWidgetsColor2DCallback func, void* pUserData,
                                     float minX, float maxX, float minY, float maxY,
                                     ImVec2 position, ImVec2 size, int resolutionX, int resolutionY);
+
+// Arc and spline shapes
+void DrawProceduralColorArcBilinear(ImDrawList* pDrawList, ImVec2 center,
+                                     float innerRadius, float outerRadius,
+                                     float startAngle, float sweepAngle,
+                                     ImWidgetsColor1DCallback func, void* pUserData,
+                                     int division, bool bilinear);
+void DrawProceduralColorSplineBilinear(ImDrawList* pDrawList,
+                                        const ImVec2* points, int points_count,
+                                        float thickness,
+                                        ImWidgetsColor1DCallback func, void* pUserData,
+                                        int resolution, bool closed);
 ```
 
 ---
@@ -129,6 +150,21 @@ void DrawGradientBar(ImDrawList* pDrawList, const ImGradientData& gradient,
 void DrawCheckerboard(ImDrawList* pDrawList, ImVec2 position, ImVec2 size,
                       float cellSize, ImU32 col1, ImU32 col2);
 ```
+
+## Spline Gradient Strokes
+
+```cpp
+void DrawSplineGradient(ImDrawList* pDrawList, const ImGradientData& gradient,
+                        const ImVec2* points, int points_count,
+                        float thickness, int resolution, bool closed = false);
+
+void DrawSplineGradientCut(ImDrawList* pDrawList, const ImGradientData& gradient,
+                           float min, float max,
+                           const ImVec2* points, int points_count,
+                           float thickness, int resolution, bool closed = false);
+```
+
+`DrawSplineGradient` paints a multi-stop gradient along a cubic Bezier spline. `DrawSplineGradientCut` restricts the painted region to the normalized arc range `[min, max]`; outside that range the stroke is fully transparent (FrameBg shows through), which is how gradient range slider widgets are rendered on their spline tracks.
 
 ---
 
@@ -238,15 +274,54 @@ void DrawDashedPolylineAA(ImDrawList* drawlist,
     const ImVec2* points, int points_count,
     ImU32 col, float thickness,
     float dash_len, float gap_len, float dash_offset,
-    bool closed = false, ...);
+    bool closed = false,
+    ImWidgetsCap cap = ImWidgetsCap_Butt,
+    ImWidgetsJoin join = ImWidgetsJoin_Mitter,
+    float miter_limit = 4.0f);
 ```
 
-`dashes` is an alternating `[on, off, on, off, …]` pattern in pixels.
+`dashes` is an alternating `[on, off, on, off, ...]` array in pixels.
 
-Cap types: `None`, `Butt`, `Square`, `Round`, `TriangleOut`, `TriangleIn`
-Join types: `Round`, `Mitter`, `Bevel`
+**Gap semantics (envelope parametrization):**
 
-GPU acceleration: enable with `SetDashedLinesUseGPU(true)` (requires shader support). CPU fallback is always available.
+`dash_len` is the cap-tip-to-cap-tip *envelope* length. `gap_len` is the distance between the edges of adjacent envelopes:
+
+| `gap_len` | Result |
+|---|---|
+| `= 0` | Dashes are back-to-back -- the trailing cap edge of one touches the leading cap edge of the next. No visible gap, regardless of cap style. |
+| `> 0` | Visible gap of exactly `gap_len` pixels between adjacent cap edges. |
+| `< 0` | Overlapping envelopes: caps from adjacent dashes interpenetrate by `|gap_len|` pixels. Useful for seamless joined-cap effects. |
+
+For outward caps (Square, Round, TriangleOut) the body rectangle is shorter than the envelope by `thickness` (one radius each side). For `TriangleIn` the envelope equals the body -- the notch is carved *inward*, so there is no outward extension and `gap_len = 0` is already flush.
+
+**Cap types:** `None`, `Butt`, `Square`, `Round`, `TriangleOut`, `TriangleIn`
+**Join types:** `Round`, `Mitter`, `Bevel`
+
+GPU acceleration: enable with `SetDashedLinesUseGPU(true)` (requires shader support). CPU and GPU paths produce identical results for the same parameters.
+
+### Euler-spiral stroke variants
+
+```cpp
+void DrawStrokedDashedBezierPath(ImDrawList* drawlist,
+    const ImVec2* points, int points_count,
+    ImU32 col, float thickness,
+    float dash_len, float gap_len, float dash_offset,
+    ImWidgetsCap cap = ImWidgetsCap_Round,
+    ImWidgetsJoin join = ImWidgetsJoin_Round,
+    float miter_limit = 4.0f,
+    bool closed = false);
+
+void DrawStrokedDashedPolyline(ImDrawList* drawlist,
+    const ImVec2* points, int points_count,
+    ImU32 col, float thickness,
+    float dash_len, float gap_len, float dash_offset,
+    ImWidgetsCap cap = ImWidgetsCap_Round,
+    ImWidgetsJoin join = ImWidgetsJoin_Round,
+    float miter_limit = 4.0f,
+    bool closed = false);
+```
+
+These use the Euler-spiral (fast GPU stroke expansion) path. Same `gap_len` semantics as above.
 
 ---
 

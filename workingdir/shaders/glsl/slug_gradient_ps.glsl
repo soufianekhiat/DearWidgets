@@ -542,14 +542,36 @@ in vec4 input_gradParams_0;
 #line 422 0
 void main()
 {
+    float coverage_0 = SlugRender_0(input_texcoord_0, input_banding_0, input_glyph_0);
 
-#line 431
-    vec4 gradColor_0 = mix(input_gradColor0_0, input_gradColor1_0, vec4(saturate_0(dot(input_texcoord_0, input_gradParams_0.xy) * input_gradParams_0.z + input_gradParams_0.w)));
+#line 424
+    float t_0;
 
-#line 431
-    entryPointParam_main_ps_0 = vec4(gradColor_0.xyz, gradColor_0.w * SlugRender_0(input_texcoord_0, input_banding_0, input_glyph_0));
+#line 441
+    if(((input_glyph_0.w) & 256) != 0)
+    {
 
-#line 431
+#line 441
+        t_0 = length(input_texcoord_0 - input_gradParams_0.xy) * input_gradParams_0.z + input_gradParams_0.w;
+
+#line 441
+    }
+    else
+    {
+
+#line 441
+        t_0 = dot(input_texcoord_0, input_gradParams_0.xy) * input_gradParams_0.z + input_gradParams_0.w;
+
+#line 441
+    }
+
+#line 451
+    vec4 gradColor_0 = mix(input_gradColor0_0, input_gradColor1_0, vec4(saturate_0(t_0)));
+
+#line 451
+    entryPointParam_main_ps_0 = vec4(gradColor_0.xyz, gradColor_0.w * coverage_0);
+
+#line 451
     return;
 }
 

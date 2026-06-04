@@ -555,7 +555,7 @@ struct pixelInput_0
 #line 422
     pixelOutput_0 _S55 = { _S53.color_0 * float4(_S54)  };
 
-#line 467
+#line 487
     return _S55;
 }
 

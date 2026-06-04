@@ -1,12 +1,15 @@
+#pragma once
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
 #endif
 #include <imgui.h>
-
+// imgui_internal.h is currently required by the public header for a small surface
+// of by-value internal types: ImRect (function params), ImGuiButtonFlags,
+// ImGuiNavRenderCursorFlags, ImGuiItemFlags. ImWidgetsAABB is now used in public
+// struct members and inline ImTrunc was replaced with truncf, so the surface is
+// shrinking — but these particular signatures still pull it in. Removing it
+// fully requires either replacing the param types or a typedef-only shim header.
 #include <imgui_internal.h>
-
-//#include <algorithm>
-//#include <string>
 #include <math.h>
 
 //-----------------------------------------------------------------------------
@@ -41,44 +44,14 @@
 
 #include <ImPlatform.h>
 
-//////////////////////////////////////////////////////////////////////////
-// Style TODO:
-//	* Expose Style
-//	* Line Thickness for Slider2D
-//	* Line Color for Slider2D
-//
-// Known issue:
-//	* Slider2DInt must take into account the half pixel
-//	* Move 2D must store state "IsDrag"
-//
-// Optim TODO:
-//	* ChromaticPlot draw only the internal MultiColorQuad where its needed "inside" or at least leave the option for style "transparency etc"
-//	* ChromaticPlot: Bake some as much as possible values: provide different version: ChromaticPlotDynamic {From enum and compute info at each frame}, ChromaticPlotFromData {From Baked data}
-//
-// Write use case for:
-//	* HueToHue:
-//		- Color Remap
-//	* LumToSat:
-//		- Color Remap
-//	* ColorRing:
-//		- HDR Color Management {Shadow, MidTone, Highlight}
-//	* Grid2D_AoS_Float:
-//		- Color Remap:
-//////////////////////////////////////////////////////////////////////////
+// Note: top-of-file TODO blocks have been removed. Open work items live in the
+// project issue tracker; bugfix-tier items are tracked as `// FIXME` comments
+// adjacent to the relevant declarations.
 
-//////////////////////////////////////////////////////////////////////////
-// Perf TODO:
-//		Cache the triangulation for concave shape/poly
-//		Find a way to cache shape with hole too
-// Create "Shape" struct
-//////////////////////////////////////////////////////////////////////////
-
+// Compatibility shim for pre-C++17 compilers: `constexpr if` -> regular branches.
+// Drop this when the minimum supported C++ standard is bumped to C++17.
 #if !__cpp_if_constexpr
 #define constexpr
-#endif
-
-#if 0
-#define nullptr NULL
 #endif
 
 // ImPlatform shader types
@@ -89,21 +62,6 @@ struct ImDrawShader
 	ImPlatform_ShaderProgram program; // Shader program handle
 	// Note: New ImPlatform API handles constant buffers internally via ImPlatform_SetShaderUniform
 	// The old vs_cst/ps_cst/cpu_*_data fields are no longer needed
-};
-
-struct ImWidgetsMarkerBuffer
-{
-	ImVec4	fg_color;
-	ImVec4	bg_color;
-
-	ImVec2	rotation;
-	float	linewidth;
-	float	size;
-
-	float	type;
-	float	antialiasing;
-	float	draw_type;
-	float	pad0;
 };
 
 enum ImWidgetsFeatures_
@@ -132,28 +90,6 @@ struct ImWidgetsVertexLine
 	ImVec2 angle;
 	ImU32 col;
 };
-struct ImWidgetsEdgeIdx
-{
-	ImDrawIdx a, b;
-	constexpr ImWidgetsEdgeIdx() : a( ( ImDrawIdx )( -1 ) ), b( ( ImDrawIdx )( -1 ) )
-	{}
-	constexpr ImWidgetsEdgeIdx( ImDrawIdx _a, ImDrawIdx _b ) : a( _a ), b( _b )
-	{}
-	ImWidgetsEdgeIdx& operator[] ( size_t idx )
-	{
-		IM_ASSERT( idx == 0 || idx == 1 );
-		return ( ( ImWidgetsEdgeIdx* )( void* )( char* )this )[ idx ];
-	}
-	ImWidgetsEdgeIdx operator[] ( size_t idx ) const
-	{
-		IM_ASSERT( idx == 0 || idx == 1 );
-		return ( ( const ImWidgetsEdgeIdx* )( const void* )( const char* )this )[ idx ];
-	}
-	bool operator== ( ImWidgetsEdgeIdx e ) const
-	{
-		return a == e.a && b == e.a;
-	}
-};
 struct ImWidgetsTriIdx
 {
 	ImDrawIdx a, b, c;
@@ -169,7 +105,7 @@ struct ImWidgetsTriIdx
 	ImDrawIdx operator[] ( size_t idx ) const
 	{
 		IM_ASSERT( idx == 0 || idx == 1 || idx == 2 );
-		return ( ( const ImDrawIdx* )( const void* )( const char* )this )[ idx ];
+		return ( ( ImDrawIdx const* )( void const* )( char const* )this )[ idx ];
 	}
 	ImWidgetsTriIdx& operator= ( ImWidgetsTriIdx const& rhs )
 	{
@@ -190,25 +126,9 @@ struct ImWidgetsShape
 struct ImWidgetsShapeLine
 {
 	ImVector<ImWidgetsVertexLine>	vertices;
-	//ImWidgetsVertexLine*			vertices;
-	//int vertices_count;
 	ImVector<ImWidgetsTriIdx>		triangles;
-	//ImDrawIdx*						triangles;
-	//int triangles_count;
-	float total_length;
+	float							total_length;
 	ImRect							bb;
-};
-
-struct ImWidgetsShapeCacheEntry
-{
-	ImU64				key;
-	ImWidgetsShape*		shape;  // Use pointer to avoid shallow copy issues with ImVector
-};
-
-struct ImWidgetsShapeCache
-{
-	ImVector<ImWidgetsShapeCacheEntry>	entries;
-	ImVector<int>                       map;    // S-2: open-addressed hash map, slot → entries index+1 (0=empty)
 };
 
 typedef ImU32( *ImWidgetsColor1DCallback )( float x, void* );
@@ -217,40 +137,24 @@ typedef ImU32( *ImWidgetsColor2DCallback )( float x, float y, void* );
 // Opaque Slug font rendering state (defined in dear_widgets.cpp, inside namespace ImWidgets)
 namespace ImWidgets { struct ImWidgetsSlugState; }
 
-struct ImWidgetsContext
-{
-	ImTextureID						blackImg; // 4x4 RGBA UInt8 Black Image: { Linear, Clamp }
-	ImTextureID						whiteImg; // 4x4 RGBA UInt8 White Image: { Linear, Clamp }
-	ImVector<ImTextureID>			ressources;
-	ImWidgetsFeatures				features;
-
-	ImDrawShader					markerShader;
-	ImDrawShader					lineShader;
-	ImDrawShader					slugShader;         // Slug GPU font rendering shader (monochrome glyphs)
-	ImDrawShader					slugColorShader;    // Slug GPU font rendering shader (COLR v0 color glyphs)
-	ImDrawShader					slugGradientShader; // Slug GPU font gradient shader (COLR v1 linear gradients)
-	ImDrawShader					slugDebugShader;    // Slug GPU font debug shader (xcov/ycov/coverage as RGB)
-	ImDrawShader					slugFillShader;     // Slug GPU fill gradient shader (user linear/radial/diamond)
-	ImWidgets::ImWidgetsSlugState*	slugState;        // Per-context Slug font atlas cache
-
-	// Stroke expansion (Euler spiral, winding-number fill)
-	ImDrawShader					strokeShader;
-
-	// Image Inspector: color-managed raw-buffer viewer (uber-shader for 44 sample-type/channel combos)
-	ImDrawShader					imageInspectorShader;
-
-	// Background blur / effects
-	ImDrawShader					blurShader;
-	ImTextureID						blurBackbufferCopy;
-	ImTextureID						blurIntermediate;
-	unsigned int					blurTexW, blurTexH;
-};
+struct ImWidgetsContext; // Opaque context -- full definition in dear_widgets_internal.h
 
 enum ImWidgetsStyleColor
 {
-	StyleColor_Value,
 	StyleColor_Slider2D_CursorX,    // Color for Slider2D X-axis cursor
 	StyleColor_Slider2D_CursorY,    // Color for Slider2D Y-axis cursor
+
+	// Slider2DRange
+	StyleColor_Slider2DRange_MinHandle,  // Min-corner handle
+	StyleColor_Slider2DRange_MaxHandle,  // Max-corner handle
+	StyleColor_Slider2DRange_Fill,       // Selection rectangle fill
+
+	// Slider2DDisc
+	StyleColor_Slider2DDisc_Background,  // Disc fill (transparent = use FrameBg)
+	StyleColor_Slider2DDisc_Cursor,      // Handle dot
+	StyleColor_Slider2DDisc_CursorOutline,  // Handle outline
+	StyleColor_Slider2DDisc_Ring,        // Outer ring
+	StyleColor_Slider2DDisc_Grid,        // Crosshair and concentric rings
 
 	// SliderRing
 	StyleColor_SliderRing_Track,           // Track arc color
@@ -371,6 +275,16 @@ enum ImWidgetsStyleColor
 	StyleColor_CIEChromaticity_GradTick,
 	StyleColor_CIEChromaticity_GradLabel,
 
+	// Chromaticity Plot / Line / Point (standalone helpers)
+	StyleColor_ChromaticityPlot_Triangle,       // Color space triangle outline
+	StyleColor_ChromaticityPlot_WhitePoint,     // White point marker fill
+	StyleColor_ChromaticityLine_Default,        // Default fallback line color
+	StyleColor_ChromaticityPoint_Default,       // Default fallback point color
+
+	// Hue Selector
+	StyleColor_HueSelector_ZeroWidthLine,       // Vertical line when width=0
+	StyleColor_HueSelector_Cursor,              // Triangle cursor fill
+
 	// Tone Curve
 	StyleColor_ToneCurve_Background,
 	StyleColor_ToneCurve_Grid,
@@ -393,6 +307,7 @@ enum ImWidgetsStyleColor
 	StyleColor_Gizmo_Outline,				// Bounding box outline
 	StyleColor_Gizmo_Handle,				// Handle fill
 	StyleColor_Gizmo_HandleActive,			// Handle fill when active
+	StyleColor_Gizmo_DimOutline,			// Unselected image outline (low alpha)
 
 	// Color Picker
 	StyleColor_ColorPicker_DotOutline,		// Dot outline (white)
@@ -415,6 +330,16 @@ enum ImWidgetsStyleVar
 	StyleVar_Slider2D_CursorRadius,
 	StyleVar_Slider2D_CursorOffset,
 	StyleVar_Slider2D_CornerRadius,
+
+	// Slider2DRange
+	StyleVar_Slider2DRange_FillAlpha,
+	StyleVar_Slider2DRange_HandleRadius,
+
+	// Slider2DDisc
+	StyleVar_Slider2DDisc_CursorRadius,
+	StyleVar_Slider2DDisc_CursorOutlineThickness,
+	StyleVar_Slider2DDisc_RingThickness,
+	// (Slider2DDisc_GridRings is an int count — accessed directly, not via PushStyleVar)
 
 	// SliderRing
 	StyleVar_SliderRing_TrackThickness,
@@ -447,16 +372,15 @@ enum ImWidgetsStyleVar
 	// Color Wheel
 	StyleVar_ColorWheel_DotRadius,
 	StyleVar_ColorWheel_RingThickness,
-	StyleVar_ColorWheel_DiscSectors,
-	StyleVar_ColorWheel_DiscRings,
+	// (ColorWheel_DiscSectors / DiscRings are int counts — accessed directly, not via PushStyleVar)
 	StyleVar_ColorWheel_SliderHeight,
 
 	// Color Warper
 	StyleVar_ColorWarper_PointRadius,
 	StyleVar_ColorWarper_HitRadius,
 	StyleVar_ColorWarper_GridThickness,
-	StyleVar_ColorWarper_DiscSectors,
-	StyleVar_ColorWarper_DiscRings,
+	// (ColorWarper_DiscSectors / DiscRings are int counts — accessed directly, not via PushStyleVar)
+	StyleVar_ColorWarper_DiscScale,
 
 	// Color Curve (Hue vs, Lum vs, Sat vs)
 	StyleVar_ColorCurve_DefaultHeight,
@@ -474,6 +398,7 @@ enum ImWidgetsStyleVar
 	StyleVar_VectorScope_DefaultSize,
 	StyleVar_VectorScope_SignalAlpha,
 	StyleVar_VectorScope_GraticuleThickness,
+	StyleVar_VectorScope_DiscScale,
 
 	// Histogram
 	StyleVar_Histogram_DefaultHeight,
@@ -490,6 +415,16 @@ enum ImWidgetsStyleVar
 	StyleVar_CIEChromaticity_WhitePointRadius,
 	StyleVar_CIEChromaticity_GradMargin,
 	StyleVar_CIEChromaticity_SignalAlpha,
+	StyleVar_CIEChromaticity_GradMarginRight,
+	StyleVar_CIEChromaticity_GradMarginTop,
+
+	// Chromaticity Plot / Line / Point
+	// (ChromaticityPlot_Resolution / LineSamples are int counts — accessed directly, not via PushStyleVar)
+	StyleVar_ChromaticityPlot_BorderThickness,  // Horseshoe outline thickness (lp)
+	StyleVar_ChromaticityPlot_TriangleThickness,// Color space triangle thickness (lp)
+	StyleVar_ChromaticityLine_Thickness,        // Polyline thickness (lp)
+	StyleVar_ChromaticityPoint_Radius,          // Point radius (lp)
+	// (ChromaticityPoint_Segments is an int count — accessed directly, not via PushStyleVar)
 
 	// Tone Curve
 	StyleVar_ToneCurve_DefaultHeight,
@@ -499,16 +434,95 @@ enum ImWidgetsStyleVar
 	StyleVar_ToneCurve_GradMarginBottom,
 	StyleVar_ToneCurve_BandThickness,
 	StyleVar_ToneCurve_BandGap,
+	StyleVar_ToneCurve_GradMarginRight,
+	StyleVar_ToneCurve_GradMarginTop,
+
+	// HDR Wheel
+	StyleVar_HDRWheel_RingThickness,
+	StyleVar_HDRWheel_RingGap,
+
+	// Transform Gizmo
+	StyleVar_Gizmo_HandleSize,
+	StyleVar_Gizmo_RotationHandleOffset,
+	StyleVar_Gizmo_OutlineThickness,
+	StyleVar_Gizmo_RotationLineThickness,
+	StyleVar_Gizmo_CenterDotRadius,
+	StyleVar_Gizmo_EdgeHandleScale,
+	StyleVar_Gizmo_DefaultCanvasHeight,
 
 	// Color Picker
 	StyleVar_ColorPicker_DotRadius,
-	StyleVar_ColorPicker_PlaneResolution,
+	// (ColorPicker_PlaneResolution is an int count — accessed directly, not via PushStyleVar)
 	StyleVar_ColorPicker_SliderWidth,
-	StyleVar_ColorPicker_SliderResolution,
+	// (ColorPicker_SliderResolution is an int count — accessed directly, not via PushStyleVar)
 	StyleVar_ColorPicker_ComponentSliderHeight,
+	StyleVar_ColorPicker_DotOutlineThickness,
+	StyleVar_ColorPicker_SliderHandleHeight,
+	StyleVar_ColorPicker_ComponentHandleWidth,
+
+	// Hatching
+	StyleVar_Hatch_DefaultSpacing,
+	StyleVar_Hatch_DefaultThickness,
+	// Bezier curve editor
+	StyleVar_BezierCurve_KeyRadius,
+	StyleVar_BezierCurve_TangentRadius,
+	StyleVar_BezierCurve_LineThickness,
+	StyleVar_BezierCurve_SnapAngleDeg,
+	// Font inspector
+	StyleVar_FontInspector_GlyphCell,
+	StyleVar_FontInspector_MetricAlpha,
+	// Notched dial
+	StyleVar_NotchedDial_TickLength,
+	StyleVar_NotchedDial_TickThickness,
+	// Delta-E
+	StyleVar_DeltaE_SwatchSize,
+	// Equation input
+	StyleVar_Equation_BlockPadding,
+	StyleVar_Equation_InlineBaselineOffset,
+	// Iso-contour tiers
+	StyleVar_IsoContour_MajorThickness,
+	StyleVar_IsoContour_MediumThickness,
+	StyleVar_IsoContour_MinorThickness,
+	// LookDev
+	StyleVar_LookDev_DividerThickness,
+	StyleVar_LookDev_HandleRadius,
+	// Volume slice viewer
+	StyleVar_VolumeSlice_HandleRadius,
+	// Vector drawing tool
+	StyleVar_VectorDrawing_AnchorRadius,
+	StyleVar_VectorDrawing_TangentRadius,
+	StyleVar_VectorDrawing_GridSpacing,
+	StyleVar_VectorDrawing_TangentLineThickness,
+	StyleVar_VectorDrawing_AnchorOutlineThickness,
+	StyleVar_VectorDrawing_ClosingRingRadius,
+	StyleVar_VectorDrawing_ClosingRingThickness,
+	StyleVar_VectorDrawing_HoverRingGap,
+	StyleVar_VectorDrawing_HoverRingThickness,
+	StyleVar_VectorDrawing_GhostRingThickness,
+	StyleVar_VectorDrawing_CrosshairArmLength,
+	StyleVar_VectorDrawing_CrosshairThickness,
+	// Precision popup input width
+	StyleVar_PrecisionPopup_InputWidth,
 
 	StyleVar_Count
 };
+
+// Unified line-rendering mode for DrawThickLine() — declared early so ImWidgetsStyle's
+// constructor can reference enum values. Every mode exists in every build; the only
+// mode that depends on the GPU custom-shader path is PolylineAA. When that path is
+// not compiled in (IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER undefined) PolylineAA silently
+// renders as AddPolyline at runtime — the caller-visible enum is unchanged.
+enum ImWidgetsThickLineMode_
+{
+	ImWidgetsThickLineMode_AddPolyline,         // ImGui default polyline
+	ImWidgetsThickLineMode_PolylineAA,          // Rougier SDF; silent runtime fallback to AddPolyline if shader unavailable
+	ImWidgetsThickLineMode_StrokedPolyline,     // Euler spirals on raw polyline (CPU, always available)
+	ImWidgetsThickLineMode_StrokedBezierPath,   // Euler spirals on Catmull-Rom -> cubic path (CPU, always available)
+	ImWidgetsThickLineMode_ImGuiBezier,         // ImGui AddBezierCubic per Catmull-Rom segment (always available)
+
+	ImWidgetsThickLineMode_COUNT
+};
+typedef int ImWidgetsThickLineMode;
 
 struct ImWidgetsStyle
 {
@@ -522,13 +536,23 @@ struct ImWidgetsStyle
 	float	Slider2D_CursorOffset;
 	float	Slider2D_CornerRadius;
 
+	// Slider2DRange
+	float	Slider2DRange_FillAlpha;
+	float	Slider2DRange_HandleRadius;     // corner handle size (lp)
+
+	// Slider2DDisc
+	float	Slider2DDisc_CursorRadius;
+	float	Slider2DDisc_CursorOutlineThickness;
+	float	Slider2DDisc_RingThickness;
+	int		Slider2DDisc_GridRings;             // Number of concentric grid rings (count)
+
 	// SliderRing
-	float	SliderRing_TrackThickness;			// Track arc thickness (px)
-	float	SliderRing_GrabRadius;				// Grab handle radius (px)
+	float	SliderRing_TrackThickness;			// Track arc thickness (lp)
+	float	SliderRing_GrabRadius;				// Grab handle radius (lp)
 
 	// SliderSpline
-	float	SliderSpline_TrackThickness;		// Spline track thickness (px)
-	float	SliderSpline_GrabRadius;			// Grab handle radius (px)
+	float	SliderSpline_TrackThickness;		// Spline track thickness (lp)
+	float	SliderSpline_GrabRadius;			// Grab handle radius (lp)
 
 	// General
 	float	NavCursor_Thickness;
@@ -549,197 +573,322 @@ struct ImWidgetsStyle
 	float	CurveEditor_LineThickness;
 	float	CurveEditor_KeyOutlineThickness;
 	float	CurveEditor_ZeroLineThickness;
+	ImWidgetsThickLineMode	CurveEditor_LineMode;
 
 	// Color Wheel
 	float	ColorWheel_DotRadius;
 	float	ColorWheel_RingThickness;
-	float	ColorWheel_DiscSectors;				// Disc angular resolution
-	float	ColorWheel_DiscRings;				// Disc radial resolution
-	float	ColorWheel_SliderHeight;			// Master slider height (px)
+	int		ColorWheel_DiscSectors;				// Disc angular resolution (count)
+	int		ColorWheel_DiscRings;				// Disc radial resolution (count)
+	float	ColorWheel_SliderHeight;			// Master slider height (lp)
 
 	// Color Warper
-	float	ColorWarper_PointRadius;			// Control point dot radius (px)
-	float	ColorWarper_HitRadius;				// Hit testing radius for points (px)
-	float	ColorWarper_GridThickness;			// Mesh grid line thickness (px)
-	float	ColorWarper_DiscSectors;			// Background disc angular resolution
-	float	ColorWarper_DiscRings;				// Background disc radial resolution
+	float	ColorWarper_PointRadius;			// Control point dot radius (lp)
+	float	ColorWarper_HitRadius;				// Hit testing radius for points (lp)
+	float	ColorWarper_GridThickness;			// Mesh grid line thickness (lp)
+	int		ColorWarper_DiscSectors;			// Background disc angular resolution (count)
+	int		ColorWarper_DiscRings;				// Background disc radial resolution (count)
+	float	ColorWarper_DiscScale;				// Disc radius as fraction of half-side (0..1)
 
 	// Color Curve
 	float	ColorCurve_DefaultHeight;
 	float	ColorCurve_KeyRadius;
 	float	ColorCurve_LineThickness;
+	ImWidgetsThickLineMode	ColorCurve_LineMode;
 
 	// Parade Scope
 	float	ParadeScope_DefaultHeight;
 	float	ParadeScope_OverlayAlpha;		// Max alpha in overlay mode (0..1)
-	float	ParadeScope_GradTickLength;		// Graduation tick mark length (px)
+	float	ParadeScope_GradTickLength;		// Graduation tick mark length (lp)
 	float	ParadeScope_GradTickThickness;	// Graduation tick line thickness
-	float	ParadeScope_GradMargin;			// Left margin for graduation labels (px)
+	float	ParadeScope_GradMargin;			// Left margin for graduation labels (lp)
 
 	// Vector Scope
-	float	VectorScope_DefaultSize;		// Default square side length (px)
+	float	VectorScope_DefaultSize;		// Default square side length (lp)
 	float	VectorScope_SignalAlpha;		// Max alpha for signal dots (0..1)
-	float	VectorScope_GraticuleThickness;	// Graticule line thickness (px)
+	float	VectorScope_GraticuleThickness;	// Graticule line thickness (lp)
+	float	VectorScope_DiscScale;			// Disc/graticule radius as fraction of half-side (0..1)
 
 	// Histogram
-	float	Histogram_DefaultHeight;		// Default widget height (px)
+	float	Histogram_DefaultHeight;		// Default widget height (lp)
 	float	Histogram_OverlayAlpha;			// Max alpha in overlay mode (0..1)
-	float	Histogram_GradTickLength;		// Graduation tick mark length (px)
+	float	Histogram_GradTickLength;		// Graduation tick mark length (lp)
 	float	Histogram_GradTickThickness;	// Graduation tick line thickness
-	float	Histogram_GradMarginLeft;		// Left margin for Y-axis labels (px)
-	float	Histogram_GradMarginBottom;		// Bottom margin for X-axis labels (px)
+	float	Histogram_GradMarginLeft;		// Left margin for Y-axis labels (lp)
+	float	Histogram_GradMarginBottom;		// Bottom margin for X-axis labels (lp)
 
 	// CIE Chromaticity
-	float	CIEChromaticity_DefaultSize;		// Default square side (px)
-	float	CIEChromaticity_SignalRadius;		// Signal dot radius (px)
-	float	CIEChromaticity_GamutLineThickness;	// Gamut triangle line thickness (px)
-	float	CIEChromaticity_WhitePointRadius;	// White point marker radius (px)
-	float	CIEChromaticity_GradMargin;			// Margin for graduation labels (px)
-	float	CIEChromaticity_SignalAlpha;			// Signal point alpha (0..1)
+	float	CIEChromaticity_DefaultSize;		// Default square side (lp)
+	float	CIEChromaticity_SignalRadius;		// Signal dot radius (lp)
+	float	CIEChromaticity_GamutLineThickness;	// Gamut triangle line thickness (lp)
+	float	CIEChromaticity_WhitePointRadius;	// White point marker radius (lp)
+	float	CIEChromaticity_GradMargin;			// Left/bottom margin for graduation labels (lp)
+	float	CIEChromaticity_SignalAlpha;		// Signal point alpha (0..1)
+	float	CIEChromaticity_GradMarginRight;	// Right margin (lp)
+	float	CIEChromaticity_GradMarginTop;		// Top margin (lp)
+
+	// Chromaticity Plot / Line / Point (standalone helpers)
+	int		ChromaticityPlot_Resolution;        // Procedural fill resolution per axis (count)
+	int		ChromaticityPlot_LineSamples;       // Horseshoe sample count
+	float	ChromaticityPlot_BorderThickness;   // Horseshoe outline thickness (lp)
+	float	ChromaticityPlot_TriangleThickness; // Color space triangle thickness (lp)
+	float	ChromaticityLine_Thickness;         // Polyline thickness (lp)
+	float	ChromaticityPoint_Radius;           // Point radius (lp)
+	int		ChromaticityPoint_Segments;         // Point circle segment count
+	ImWidgetsThickLineMode	ChromaticityLine_Mode;
 
 	// Tone Curve
-	float	ToneCurve_DefaultHeight;			// Default widget height (px)
-	float	ToneCurve_KeyRadius;				// Key dot radius (px)
-	float	ToneCurve_LineThickness;			// Curve line thickness (px)
-	float	ToneCurve_GradMarginLeft;			// Left margin for Y-axis labels (px)
-	float	ToneCurve_GradMarginBottom;			// Bottom margin for X-axis labels (px)
-	float	ToneCurve_BandThickness;			// Gradient band thickness (px)
-	float	ToneCurve_BandGap;					// Gap between scope and band (px)
+	float	ToneCurve_DefaultHeight;			// Default widget height (lp)
+	float	ToneCurve_KeyRadius;				// Key dot radius (lp)
+	float	ToneCurve_LineThickness;			// Curve line thickness (lp)
+	float	ToneCurve_GradMarginLeft;			// Left margin for Y-axis labels (lp)
+	float	ToneCurve_GradMarginBottom;			// Bottom margin for X-axis labels (lp)
+	float	ToneCurve_BandThickness;			// Gradient band thickness (lp)
+	float	ToneCurve_BandGap;					// Gap between scope and band (lp)
+	float	ToneCurve_GradMarginRight;			// Right margin (lp)
+	float	ToneCurve_GradMarginTop;			// Top margin (lp)
+	ImWidgetsThickLineMode	ToneCurve_LineMode;
 
-	// HDR Wheel
+	// HDR Wheel / Primaries Wheel
 	float	HDRWheel_RightArcStart;				// Right arc start angle in degrees (0=right, CW)
 	float	HDRWheel_RightArcEnd;				// Right arc end angle in degrees
 	float	HDRWheel_LeftArcStart;				// Left arc start angle in degrees
 	float	HDRWheel_LeftArcEnd;				// Left arc end angle in degrees
-	float	HDRWheel_ArcGap;					// Gap between indicator ring and arc sliders (px)
-	float	HDRWheel_ArcThickness;				// Arc slider track thickness (px)
-	float	HDRWheel_ArcGrabRadius;				// Arc slider grab handle radius (px)
+	float	HDRWheel_ArcGap;					// Gap between indicator ring and arc sliders (lp)
+	float	HDRWheel_ArcThickness;				// Arc slider track thickness (lp)
+	float	HDRWheel_ArcGrabRadius;				// Arc slider grab handle radius (lp)
+	float	HDRWheel_RingThickness;				// Gradient indicator ring thickness (lp)
+	float	HDRWheel_RingGap;					// Gap between indicator ring and inner ColorWheel (lp)
 
 	// Transform Gizmo
-	float	Gizmo_HandleSize;					// Corner handle half-size (px)
-	float	Gizmo_RotationHandleOffset;			// Distance from top edge to rotation handle (px)
-	float	Gizmo_OutlineThickness;				// Bounding box outline thickness (px)
+	float	Gizmo_HandleSize;					// Corner handle half-size (lp)
+	float	Gizmo_RotationHandleOffset;			// Distance from top edge to rotation handle (lp)
+	float	Gizmo_OutlineThickness;				// Bounding box outline thickness (lp)
+	float	Gizmo_RotationLineThickness;		// Rotation stem line thickness (lp)
+	float	Gizmo_CenterDotRadius;				// Selected-object center dot radius (lp)
+	float	Gizmo_EdgeHandleScale;				// Edge handle size as fraction of corner handle size
+	float	Gizmo_DefaultCanvasHeight;			// Canvas height when no size given (lp)
 
 	// Color Picker
-	float	ColorPicker_DotRadius;				// Dot indicator radius (px)
-	float	ColorPicker_PlaneResolution;		// 2D plane grid resolution per axis
-	float	ColorPicker_SliderWidth;			// Vertical slider width (px)
-	float	ColorPicker_SliderResolution;		// Vertical slider segment count
-	float	ColorPicker_ComponentSliderHeight;	// Component slider height (px)
+	float	ColorPicker_DotRadius;				// Dot indicator radius (lp)
+	int		ColorPicker_PlaneResolution;		// 2D plane grid resolution per axis (count)
+	float	ColorPicker_SliderWidth;			// Vertical slider width (lp)
+	int		ColorPicker_SliderResolution;		// Vertical slider segment count
+	float	ColorPicker_ComponentSliderHeight;	// Component slider height (lp)
+	float	ColorPicker_DotOutlineThickness;	// Dot outline ring thickness (lp)
+	float	ColorPicker_SliderHandleHeight;		// Vertical slider handle height (lp)
+	float	ColorPicker_ComponentHandleWidth;	// Component slider handle width (lp)
+
+	// Hatching
+	float	Hatch_DefaultSpacing;
+	float	Hatch_DefaultThickness;
+	// Bezier curve editor (new)
+	float	BezierCurve_KeyRadius;
+	float	BezierCurve_TangentRadius;
+	float	BezierCurve_LineThickness;
+	float	BezierCurve_SnapAngleDeg;
+	// Font inspector
+	float	FontInspector_GlyphCell;
+	float	FontInspector_MetricAlpha;
+	// Notched dial
+	float	NotchedDial_TickLength;
+	float	NotchedDial_TickThickness;
+	// Delta-E visualizer
+	float	DeltaE_SwatchSize;
+	// Equation input
+	float	Equation_BlockPadding;
+	float	Equation_InlineBaselineOffset;
+	// Iso-contour default tier thicknesses
+	float	IsoContour_MajorThickness;
+	float	IsoContour_MediumThickness;
+	float	IsoContour_MinorThickness;
+	// LookDev
+	float	LookDev_DividerThickness;
+	float	LookDev_HandleRadius;
+	// Volume slice viewer
+	float	VolumeSlice_HandleRadius;
+	// Vector drawing tool
+	float	VectorDrawing_AnchorRadius;
+	float	VectorDrawing_TangentRadius;
+	float	VectorDrawing_GridSpacing;
+	float	VectorDrawing_TangentLineThickness;		// (lp)
+	float	VectorDrawing_AnchorOutlineThickness;	// (lp)
+	float	VectorDrawing_ClosingRingRadius;		// First-node closing-ring radius (lp)
+	float	VectorDrawing_ClosingRingThickness;		// (lp)
+	float	VectorDrawing_HoverRingGap;				// Gap added to anchor radius for hover highlight (lp)
+	float	VectorDrawing_HoverRingThickness;		// (lp)
+	float	VectorDrawing_GhostRingThickness;		// Empty-canvas ghost ring thickness (lp)
+	float	VectorDrawing_CrosshairArmLength;		// Ghost crosshair arm length (lp)
+	float	VectorDrawing_CrosshairThickness;		// Ghost crosshair line thickness (lp)
+	// Precision popup input width (in lp)
+	float	PrecisionPopup_InputWidth;
+
+	// All bool flags grouped at the end so each one only contributes trailing padding
+	// rather than 3-byte holes between mid-struct floats. (Mode fields are typed enums
+	// and pack as int = 4 bytes so they stay grouped with the floats above.)
+	bool	CurveEditor_LineDashed;
+	bool	ColorCurve_LineDashed;
+	bool	ChromaticityLine_Dashed;
+	bool	ToneCurve_LineDashed;
 
 	ImVec4  Colors[ StyleColor_Count ];
 
 	ImWidgetsStyle()
 	{
-		HueSelector_Thickness_ZeroWidth = 2.0f;
+		HueSelector_Thickness_ZeroWidth = 5.0f;
 
 		Slider2D_DragThickness   = 8.0f;
 		Slider2D_BorderThickness = 2.0f;
 		Slider2D_LineThickness   = 2.0f;
-		Slider2D_CursorRadius    = 4.0f;
-		Slider2D_CursorOffset    = 16.0f;
-		Slider2D_CornerRadius    = 2.0f;
+		Slider2D_CursorRadius    = 7.048f;
+		Slider2D_CursorOffset    = 12.0f;
+		Slider2D_CornerRadius    = 4.0f;
 
-		NavCursor_Thickness      = 2.0f;
-		NavCursor_Distance       = 3.0f;
-		WhitePoint_Radius        = 5.0f;
-		PrecisionDrag_BlockSize  = 28.0f;
+		Slider2DRange_FillAlpha            = 0.15f;
+		Slider2DRange_HandleRadius         = 5.0f;
+
+		Slider2DDisc_CursorRadius          = 5.0f;
+		Slider2DDisc_CursorOutlineThickness = 1.5f;
+		Slider2DDisc_RingThickness         = 2.0f;
+		Slider2DDisc_GridRings             = 2;
+
+		NavCursor_Thickness      = 5.0f;
+		NavCursor_Distance       = 7.0f;
+		WhitePoint_Radius        = 12.0f;
+		PrecisionDrag_BlockSize  = 70.0f;
 
 		// Gradient Editor
-		Gradient_MarkerHeight        = 12.0f;
-		Gradient_CheckerboardCellSize = 6.0f;
-		Gradient_MarkerThickness     = 1.0f;
+		Gradient_MarkerHeight        = 30.0f;
+		Gradient_CheckerboardCellSize = 15.0f;
+		Gradient_MarkerThickness     = 2.0f;
 
 		// Curve Editor
-		CurveEditor_DefaultHeight    = 200.0f;
-		CurveEditor_KeyRadius        = 5.0f;
-		CurveEditor_TangentRadius    = 4.0f;
-		CurveEditor_HitRadius        = 8.0f;
-		CurveEditor_LineThickness    = 2.0f;
-		CurveEditor_KeyOutlineThickness = 1.5f;
-		CurveEditor_ZeroLineThickness = 1.0f;
+		CurveEditor_DefaultHeight    = 500.0f;
+		CurveEditor_KeyRadius        = 6.0f;
+		CurveEditor_TangentRadius    = 5.0f;
+		CurveEditor_HitRadius        = 22.0f;
+		CurveEditor_LineThickness    = 4.0f;
+		CurveEditor_KeyOutlineThickness = 2.0f;
+		CurveEditor_ZeroLineThickness = 2.0f;
+		CurveEditor_LineMode         = ImWidgetsThickLineMode_StrokedBezierPath;
+		CurveEditor_LineDashed       = false;
 
 		// Color Wheel
-		ColorWheel_DotRadius     = 6.0f;
-		ColorWheel_RingThickness = 12.0f;
-		ColorWheel_DiscSectors   = 96.0f;
-		ColorWheel_DiscRings     = 24.0f;
-		ColorWheel_SliderHeight  = 20.0f;
+		ColorWheel_DotRadius     = 8.0f;
+		ColorWheel_RingThickness = 16.0f;
+		ColorWheel_DiscSectors   = 64;
+		ColorWheel_DiscRings     = 16;
+		ColorWheel_SliderHeight  = 32.0f;
 
 		// Slider Ring
-		SliderRing_TrackThickness = 8.0f;
-		SliderRing_GrabRadius     = 7.0f;
+		SliderRing_TrackThickness = 12.0f;
+		SliderRing_GrabRadius     = 8.0f;
 
 		// Slider Spline
-		SliderSpline_TrackThickness = 4.0f;
-		SliderSpline_GrabRadius     = 7.0f;
+		SliderSpline_TrackThickness = 12.0f;
+		SliderSpline_GrabRadius     = 12.0f;
 
 		// Color Warper
-		ColorWarper_PointRadius  = 4.0f;
-		ColorWarper_HitRadius    = 8.0f;
-		ColorWarper_GridThickness = 1.0f;
-		ColorWarper_DiscSectors  = 96.0f;
-		ColorWarper_DiscRings    = 24.0f;
+		ColorWarper_PointRadius  = 8.0f;
+		ColorWarper_HitRadius    = 18.0f;
+		ColorWarper_GridThickness = 2.0f;
+		ColorWarper_DiscSectors  = 64;
+		ColorWarper_DiscRings    = 16;
+		ColorWarper_DiscScale    = 1.0f;  // extra disc shrink inside widget bbox (bbox already auto-shrinks to 75% of requested)
 
 		// Color Curve
-		ColorCurve_DefaultHeight = 150.0f;
-		ColorCurve_KeyRadius     = 5.0f;
-		ColorCurve_LineThickness = 2.0f;
+		ColorCurve_DefaultHeight = 375.0f;
+		ColorCurve_KeyRadius     = 8.0f;
+		ColorCurve_LineThickness = 4.0f;
+		ColorCurve_LineMode      = ImWidgetsThickLineMode_StrokedBezierPath;
+		ColorCurve_LineDashed    = false;
 
 		// Parade Scope
-		ParadeScope_DefaultHeight    = 200.0f;
-		ParadeScope_OverlayAlpha     = 0.6f;
-		ParadeScope_GradTickLength   = 6.0f;
-		ParadeScope_GradTickThickness = 1.0f;
+		ParadeScope_DefaultHeight    = 500.0f;
+		ParadeScope_OverlayAlpha     = 0.75f;
+		ParadeScope_GradTickLength   = 12.0f;
+		ParadeScope_GradTickThickness = 3.27f;
 		ParadeScope_GradMargin       = 40.0f;
 
 		// Vector Scope
-		VectorScope_DefaultSize        = 200.0f;
-		VectorScope_SignalAlpha        = 0.8f;
+		VectorScope_DefaultSize        = 500.0f;
+		VectorScope_SignalAlpha        = 0.75f;
 		VectorScope_GraticuleThickness = 1.0f;
+		VectorScope_DiscScale          = 1.0f;  // extra disc shrink inside widget bbox (bbox already auto-shrinks to 75% of requested)
 
 		// Histogram
-		Histogram_DefaultHeight      = 200.0f;
-		Histogram_OverlayAlpha       = 0.6f;
-		Histogram_GradTickLength     = 6.0f;
-		Histogram_GradTickThickness  = 1.0f;
-		Histogram_GradMarginLeft     = 40.0f;
-		Histogram_GradMarginBottom   = 20.0f;
+		Histogram_DefaultHeight      = 500.0f;
+		Histogram_OverlayAlpha       = 0.5f;
+		Histogram_GradTickLength     = 10.0f;
+		Histogram_GradTickThickness  = 3.0f;
+		Histogram_GradMarginLeft     = 42.0f;
+		Histogram_GradMarginBottom   = 24.0f;
 
 		// CIE Chromaticity
-		CIEChromaticity_DefaultSize        = 300.0f;
-		CIEChromaticity_SignalRadius       = 1.5f;
-		CIEChromaticity_GamutLineThickness = 1.5f;
-		CIEChromaticity_WhitePointRadius   = 4.0f;
-		CIEChromaticity_GradMargin         = 30.0f;
+		CIEChromaticity_DefaultSize        = 750.0f;
+		CIEChromaticity_SignalRadius       = 3.0f;
+		CIEChromaticity_GamutLineThickness = 3.0f;
+		CIEChromaticity_WhitePointRadius   = 10.0f;
+		CIEChromaticity_GradMargin         = 24.0f;  // left & bottom (lp)
 		CIEChromaticity_SignalAlpha        = 0.6f;
+		CIEChromaticity_GradMarginRight    = 64.0f;  // right (lp)
+		CIEChromaticity_GradMarginTop      = 16.0f;  // top (lp)
+
+		// Chromaticity Plot / Line / Point
+		ChromaticityPlot_Resolution        = 128;
+		ChromaticityPlot_LineSamples       = 128;
+		ChromaticityPlot_BorderThickness   = 2.0f;
+		ChromaticityPlot_TriangleThickness = 3.0f;
+		ChromaticityLine_Thickness         = 3.0f;
+		ChromaticityPoint_Radius           = 8.0f;
+		ChromaticityPoint_Segments         = 24;
+		ChromaticityLine_Mode              = ImWidgetsThickLineMode_StrokedBezierPath;
+		ChromaticityLine_Dashed            = false;
 
 		// Tone Curve
-		ToneCurve_DefaultHeight     = 200.0f;
-		ToneCurve_KeyRadius         = 5.0f;
-		ToneCurve_LineThickness     = 2.0f;
-		ToneCurve_GradMarginLeft    = 30.0f;
-		ToneCurve_GradMarginBottom  = 20.0f;
-		ToneCurve_BandThickness     = 8.0f;
-		ToneCurve_BandGap           = 2.0f;
+		ToneCurve_DefaultHeight     = 500.0f;
+		ToneCurve_KeyRadius         = 8.0f;
+		ToneCurve_LineThickness     = 4.0f;
+		ToneCurve_GradMarginLeft    = 24.0f;
+		ToneCurve_GradMarginBottom  = 24.0f;
+		ToneCurve_BandThickness     = 16.0f;
+		ToneCurve_BandGap           = 4.0f;
+		ToneCurve_GradMarginRight   = 0.0f;
+		ToneCurve_GradMarginTop     = 4.0f;
+		ToneCurve_LineMode          = ImWidgetsThickLineMode_StrokedBezierPath;
+		ToneCurve_LineDashed        = false;
 
-		// HDR Wheel
+		// HDR Wheel / Primaries Wheel
 		HDRWheel_RightArcStart   = -45.0f;
 		HDRWheel_RightArcEnd     = 45.0f;
 		HDRWheel_LeftArcStart    = 135.0f;
 		HDRWheel_LeftArcEnd      = 225.0f;
-		HDRWheel_ArcGap          = 4.0f;
+		HDRWheel_ArcGap          = 2.0f;
 		HDRWheel_ArcThickness    = 8.0f;
-		HDRWheel_ArcGrabRadius   = 7.0f;
+		HDRWheel_ArcGrabRadius   = 4.0f;
+		HDRWheel_RingThickness   = 8.0f;
+		HDRWheel_RingGap         = 2.0f;
 
 		// Transform Gizmo
-		Gizmo_HandleSize              = 5.0f;
-		Gizmo_RotationHandleOffset    = 25.0f;
-		Gizmo_OutlineThickness        = 1.5f;
+		Gizmo_HandleSize              = 6.0f;
+		Gizmo_RotationHandleOffset    = 62.0f;
+		Gizmo_OutlineThickness        = 3.0f;
+		Gizmo_RotationLineThickness   = 2.0f;
+		Gizmo_CenterDotRadius         = 4.0f;
+		Gizmo_EdgeHandleScale         = 0.8f;
+		Gizmo_DefaultCanvasHeight     = 400.0f;
 
-		Colors[ StyleColor_Value ] = ImVec4( 1.0f, 0.0f, 0.0f, 1.0f );
 		Colors[ StyleColor_Slider2D_CursorX ] = ImVec4( 91.0f / 255.0f, 194.0f / 255.0f, 231.0f / 255.0f, 1.0f ); // Blue
 		Colors[ StyleColor_Slider2D_CursorY ] = ImVec4( 255.0f / 255.0f, 128.0f / 255.0f, 64.0f / 255.0f, 1.0f ); // Orange
+
+		Colors[ StyleColor_Slider2DRange_MinHandle ]    = ImVec4(  91.0f/255.0f, 194.0f/255.0f, 231.0f/255.0f, 1.00f );
+		Colors[ StyleColor_Slider2DRange_MaxHandle ]    = ImVec4( 255.0f/255.0f, 128.0f/255.0f,  64.0f/255.0f, 1.00f );
+		Colors[ StyleColor_Slider2DRange_Fill      ]    = ImVec4(  91.0f/255.0f, 194.0f/255.0f, 231.0f/255.0f, 0.20f );
+		Colors[ StyleColor_Slider2DDisc_Background ]    = ImVec4( 0.0f, 0.0f, 0.0f, 0.0f );     // transparent → falls back to FrameBg
+		Colors[ StyleColor_Slider2DDisc_Cursor     ]    = ImVec4(  91.0f/255.0f, 194.0f/255.0f, 231.0f/255.0f, 1.00f );
+		Colors[ StyleColor_Slider2DDisc_CursorOutline ] = ImVec4(  20.0f/255.0f,  20.0f/255.0f,  20.0f/255.0f, 1.00f );
+		Colors[ StyleColor_Slider2DDisc_Ring       ]    = ImVec4( 255.0f/255.0f, 128.0f/255.0f,  64.0f/255.0f, 1.00f );
+		Colors[ StyleColor_Slider2DDisc_Grid       ]    = ImVec4( 1.0f,          1.0f,           1.0f,          0.15f );
 
 		// Gradient Editor Colors
 		Colors[ StyleColor_Gradient_MarkerOutline ]         = ImVec4( 40.0f / 255.0f, 40.0f / 255.0f, 40.0f / 255.0f, 1.0f );
@@ -860,6 +1009,15 @@ struct ImWidgetsStyle
 		Colors[ StyleColor_CIEChromaticity_GradTick ]       = ImVec4( 1.0f, 1.0f, 1.0f, 0.4f );
 		Colors[ StyleColor_CIEChromaticity_GradLabel ]      = ImVec4( 1.0f, 1.0f, 1.0f, 0.7f );
 
+		// Chromaticity Plot / Line / Point (standalone helpers)
+		Colors[ StyleColor_ChromaticityPlot_Triangle ]      = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
+		Colors[ StyleColor_ChromaticityPlot_WhitePoint ]    = ImVec4( 0.0f, 0.0f, 0.0f, 1.0f );
+		Colors[ StyleColor_ChromaticityLine_Default ]       = ImVec4( 0.0f, 0.0f, 0.0f, 1.0f );
+		Colors[ StyleColor_ChromaticityPoint_Default ]      = ImVec4( 1.0f, 0.0f, 0.0f, 1.0f );
+
+		Colors[ StyleColor_HueSelector_ZeroWidthLine ]      = ImVec4( 0.0f, 0.0f, 0.0f, 1.0f );
+		Colors[ StyleColor_HueSelector_Cursor ]             = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
+
 		// Tone Curve Colors
 		Colors[ StyleColor_ToneCurve_Background ]           = ImVec4( 0.06f, 0.06f, 0.06f, 1.0f );
 		Colors[ StyleColor_ToneCurve_Grid ]                 = ImVec4( 1.0f, 1.0f, 1.0f, 0.12f );
@@ -882,6 +1040,7 @@ struct ImWidgetsStyle
 		Colors[ StyleColor_Gizmo_Outline ]                 = ImVec4( 1.0f, 1.0f, 1.0f, 180.0f / 255.0f );
 		Colors[ StyleColor_Gizmo_Handle ]                  = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
 		Colors[ StyleColor_Gizmo_HandleActive ]            = ImVec4( 1.0f, 1.0f, 0.0f, 1.0f );
+		Colors[ StyleColor_Gizmo_DimOutline ]              = ImVec4( 1.0f, 1.0f, 1.0f, 60.0f / 255.0f );
 
 		// Color Picker Colors
 		Colors[ StyleColor_ColorPicker_DotOutline ]        = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
@@ -891,99 +1050,194 @@ struct ImWidgetsStyle
 		Colors[ StyleColor_ColorPicker_SliderHandle ]      = ImVec4( 1.0f, 1.0f, 1.0f, 1.0f );
 
 		// Color Picker Vars
-		ColorPicker_DotRadius            = 6.0f;
-		ColorPicker_PlaneResolution      = 24.0f;
-		ColorPicker_SliderWidth          = 20.0f;
-		ColorPicker_SliderResolution     = 16.0f;
-		ColorPicker_ComponentSliderHeight = 16.0f;
+		ColorPicker_DotRadius              = 8.0f;
+		ColorPicker_PlaneResolution        = 24;
+		ColorPicker_SliderWidth            = 24.0f;
+		ColorPicker_SliderResolution       = 16;
+		ColorPicker_ComponentSliderHeight  = 24.0f;
+		ColorPicker_DotOutlineThickness    = 1.0f;
+		ColorPicker_SliderHandleHeight     = 6.0f;
+		ColorPicker_ComponentHandleWidth   = 6.0f;
+
+		// Hatching
+		Hatch_DefaultSpacing      = 20.0f;
+		Hatch_DefaultThickness    = 2.0f;
+		// Bezier curve editor
+		BezierCurve_KeyRadius     = 12.0f;
+		BezierCurve_TangentRadius = 10.0f;
+		BezierCurve_LineThickness = 5.0f;
+		BezierCurve_SnapAngleDeg  = 5.0f;
+		// Font inspector
+		FontInspector_GlyphCell   = 180.0f;
+		FontInspector_MetricAlpha = 0.6f;
+		// Notched dial
+		NotchedDial_TickLength    = 16.0f;
+		NotchedDial_TickThickness = 2.0f;
+		// Delta-E
+		DeltaE_SwatchSize         = 128.0f;
+		// Equation input
+		Equation_BlockPadding         = 20.0f;
+		Equation_InlineBaselineOffset = 0.0f;
+
+		// Iso-contour default tier thicknesses (lp).
+		IsoContour_MajorThickness  = 5.0f;
+		IsoContour_MediumThickness = 2.0f;
+		IsoContour_MinorThickness  = 1.0f;
+		// LookDev.
+		LookDev_DividerThickness = 2.0f;
+		LookDev_HandleRadius     = 8.0f;
+		// Volume slice viewer.
+		VolumeSlice_HandleRadius = 15.0f;
+		// Vector drawing tool.
+		VectorDrawing_AnchorRadius           = 8.0f;
+		VectorDrawing_TangentRadius          = 5.0f;
+		VectorDrawing_GridSpacing            = 64.0f;
+		VectorDrawing_TangentLineThickness   = 2.0f;
+		VectorDrawing_AnchorOutlineThickness = 1.0f;
+		VectorDrawing_ClosingRingRadius      = 12.0f;
+		VectorDrawing_ClosingRingThickness   = 2.0f;
+		VectorDrawing_HoverRingGap           = 6.0f;
+		VectorDrawing_HoverRingThickness     = 4.0f;
+		VectorDrawing_GhostRingThickness     = 2.0f;
+		VectorDrawing_CrosshairArmLength     = 12.0f;
+		VectorDrawing_CrosshairThickness     = 1.0f;
+		// Precision popup input width (in lp).
+		PrecisionPopup_InputWidth = 300.0f;
 	}
 
 	void ScaleAllSizes( float scale_factor )
 	{
-		HueSelector_Thickness_ZeroWidth = ImTrunc( HueSelector_Thickness_ZeroWidth * scale_factor );
-		Slider2D_DragThickness   = ImTrunc( Slider2D_DragThickness * scale_factor );
-		Slider2D_BorderThickness = ImTrunc( Slider2D_BorderThickness * scale_factor );
-		Slider2D_LineThickness   = ImTrunc( Slider2D_LineThickness * scale_factor );
-		Slider2D_CursorRadius    = ImTrunc( Slider2D_CursorRadius * scale_factor );
-		Slider2D_CursorOffset    = ImTrunc( Slider2D_CursorOffset * scale_factor );
-		Slider2D_CornerRadius    = ImTrunc( Slider2D_CornerRadius * scale_factor );
-		NavCursor_Thickness      = ImTrunc( NavCursor_Thickness * scale_factor );
-		NavCursor_Distance       = ImTrunc( NavCursor_Distance * scale_factor );
-		WhitePoint_Radius        = ImTrunc( WhitePoint_Radius * scale_factor );
-		PrecisionDrag_BlockSize  = ImTrunc( PrecisionDrag_BlockSize * scale_factor );
+		HueSelector_Thickness_ZeroWidth = truncf( HueSelector_Thickness_ZeroWidth * scale_factor );
+		Slider2D_DragThickness   = truncf( Slider2D_DragThickness * scale_factor );
+		Slider2D_BorderThickness = truncf( Slider2D_BorderThickness * scale_factor );
+		Slider2D_LineThickness   = truncf( Slider2D_LineThickness * scale_factor );
+		Slider2D_CursorRadius    = truncf( Slider2D_CursorRadius * scale_factor );
+		Slider2D_CursorOffset    = truncf( Slider2D_CursorOffset * scale_factor );
+		Slider2D_CornerRadius    = truncf( Slider2D_CornerRadius * scale_factor );
+		NavCursor_Thickness      = truncf( NavCursor_Thickness * scale_factor );
+		NavCursor_Distance       = truncf( NavCursor_Distance * scale_factor );
+		WhitePoint_Radius        = truncf( WhitePoint_Radius * scale_factor );
+		PrecisionDrag_BlockSize  = truncf( PrecisionDrag_BlockSize * scale_factor );
 
-		Gradient_MarkerHeight         = ImTrunc( Gradient_MarkerHeight * scale_factor );
-		Gradient_CheckerboardCellSize = ImTrunc( Gradient_CheckerboardCellSize * scale_factor );
-		Gradient_MarkerThickness      = ImTrunc( Gradient_MarkerThickness * scale_factor );
+		Gradient_MarkerHeight         = truncf( Gradient_MarkerHeight * scale_factor );
+		Gradient_CheckerboardCellSize = truncf( Gradient_CheckerboardCellSize * scale_factor );
+		Gradient_MarkerThickness      = truncf( Gradient_MarkerThickness * scale_factor );
 
-		CurveEditor_DefaultHeight     = ImTrunc( CurveEditor_DefaultHeight * scale_factor );
-		CurveEditor_KeyRadius         = ImTrunc( CurveEditor_KeyRadius * scale_factor );
-		CurveEditor_TangentRadius     = ImTrunc( CurveEditor_TangentRadius * scale_factor );
-		CurveEditor_HitRadius         = ImTrunc( CurveEditor_HitRadius * scale_factor );
-		CurveEditor_LineThickness     = ImTrunc( CurveEditor_LineThickness * scale_factor );
-		CurveEditor_KeyOutlineThickness = ImTrunc( CurveEditor_KeyOutlineThickness * scale_factor );
-		CurveEditor_ZeroLineThickness = ImTrunc( CurveEditor_ZeroLineThickness * scale_factor );
+		CurveEditor_DefaultHeight     = truncf( CurveEditor_DefaultHeight * scale_factor );
+		CurveEditor_KeyRadius         = truncf( CurveEditor_KeyRadius * scale_factor );
+		CurveEditor_TangentRadius     = truncf( CurveEditor_TangentRadius * scale_factor );
+		CurveEditor_HitRadius         = truncf( CurveEditor_HitRadius * scale_factor );
+		CurveEditor_LineThickness     = truncf( CurveEditor_LineThickness * scale_factor );
+		CurveEditor_KeyOutlineThickness = truncf( CurveEditor_KeyOutlineThickness * scale_factor );
+		CurveEditor_ZeroLineThickness = truncf( CurveEditor_ZeroLineThickness * scale_factor );
 
-		ColorWheel_DotRadius     = ImTrunc( ColorWheel_DotRadius * scale_factor );
-		ColorWheel_RingThickness = ImTrunc( ColorWheel_RingThickness * scale_factor );
-		ColorWheel_SliderHeight  = ImTrunc( ColorWheel_SliderHeight * scale_factor );
+		ColorWheel_DotRadius     = truncf( ColorWheel_DotRadius * scale_factor );
+		ColorWheel_RingThickness = truncf( ColorWheel_RingThickness * scale_factor );
+		ColorWheel_SliderHeight  = truncf( ColorWheel_SliderHeight * scale_factor );
 
-		SliderRing_TrackThickness = ImTrunc( SliderRing_TrackThickness * scale_factor );
-		SliderRing_GrabRadius     = ImTrunc( SliderRing_GrabRadius * scale_factor );
+		SliderRing_TrackThickness = truncf( SliderRing_TrackThickness * scale_factor );
+		SliderRing_GrabRadius     = truncf( SliderRing_GrabRadius * scale_factor );
 
-		SliderSpline_TrackThickness = ImTrunc( SliderSpline_TrackThickness * scale_factor );
-		SliderSpline_GrabRadius     = ImTrunc( SliderSpline_GrabRadius * scale_factor );
+		SliderSpline_TrackThickness = truncf( SliderSpline_TrackThickness * scale_factor );
+		SliderSpline_GrabRadius     = truncf( SliderSpline_GrabRadius * scale_factor );
 
-		ColorWarper_PointRadius   = ImTrunc( ColorWarper_PointRadius * scale_factor );
-		ColorWarper_HitRadius    = ImTrunc( ColorWarper_HitRadius * scale_factor );
-		ColorWarper_GridThickness = ImTrunc( ColorWarper_GridThickness * scale_factor );
+		ColorWarper_PointRadius   = truncf( ColorWarper_PointRadius * scale_factor );
+		ColorWarper_HitRadius    = truncf( ColorWarper_HitRadius * scale_factor );
+		ColorWarper_GridThickness = truncf( ColorWarper_GridThickness * scale_factor );
 
-		ColorCurve_DefaultHeight = ImTrunc( ColorCurve_DefaultHeight * scale_factor );
-		ColorCurve_KeyRadius     = ImTrunc( ColorCurve_KeyRadius * scale_factor );
-		ColorCurve_LineThickness = ImTrunc( ColorCurve_LineThickness * scale_factor );
+		ColorCurve_DefaultHeight = truncf( ColorCurve_DefaultHeight * scale_factor );
+		ColorCurve_KeyRadius     = truncf( ColorCurve_KeyRadius * scale_factor );
+		ColorCurve_LineThickness = truncf( ColorCurve_LineThickness * scale_factor );
 
-		ParadeScope_DefaultHeight     = ImTrunc( ParadeScope_DefaultHeight * scale_factor );
-		ParadeScope_GradTickLength    = ImTrunc( ParadeScope_GradTickLength * scale_factor );
-		ParadeScope_GradTickThickness = ImTrunc( ParadeScope_GradTickThickness * scale_factor );
-		ParadeScope_GradMargin        = ImTrunc( ParadeScope_GradMargin * scale_factor );
+		ParadeScope_DefaultHeight     = truncf( ParadeScope_DefaultHeight * scale_factor );
+		ParadeScope_GradTickLength    = truncf( ParadeScope_GradTickLength * scale_factor );
+		ParadeScope_GradTickThickness = truncf( ParadeScope_GradTickThickness * scale_factor );
+		ParadeScope_GradMargin        = truncf( ParadeScope_GradMargin * scale_factor );
 
-		VectorScope_DefaultSize        = ImTrunc( VectorScope_DefaultSize * scale_factor );
-		VectorScope_GraticuleThickness = ImTrunc( VectorScope_GraticuleThickness * scale_factor );
+		VectorScope_DefaultSize        = truncf( VectorScope_DefaultSize * scale_factor );
+		VectorScope_GraticuleThickness = truncf( VectorScope_GraticuleThickness * scale_factor );
+		// VectorScope_DiscScale is a ratio — not scaled
 
-		Histogram_DefaultHeight      = ImTrunc( Histogram_DefaultHeight * scale_factor );
-		Histogram_GradTickLength     = ImTrunc( Histogram_GradTickLength * scale_factor );
-		Histogram_GradTickThickness  = ImTrunc( Histogram_GradTickThickness * scale_factor );
-		Histogram_GradMarginLeft     = ImTrunc( Histogram_GradMarginLeft * scale_factor );
-		Histogram_GradMarginBottom   = ImTrunc( Histogram_GradMarginBottom * scale_factor );
+		Histogram_DefaultHeight      = truncf( Histogram_DefaultHeight * scale_factor );
+		Histogram_GradTickLength     = truncf( Histogram_GradTickLength * scale_factor );
+		Histogram_GradTickThickness  = truncf( Histogram_GradTickThickness * scale_factor );
+		Histogram_GradMarginLeft     = truncf( Histogram_GradMarginLeft * scale_factor );
+		Histogram_GradMarginBottom   = truncf( Histogram_GradMarginBottom * scale_factor );
 
-		CIEChromaticity_DefaultSize        = ImTrunc( CIEChromaticity_DefaultSize * scale_factor );
-		CIEChromaticity_SignalRadius       = ImTrunc( CIEChromaticity_SignalRadius * scale_factor );
-		CIEChromaticity_GamutLineThickness = ImTrunc( CIEChromaticity_GamutLineThickness * scale_factor );
-		CIEChromaticity_WhitePointRadius   = ImTrunc( CIEChromaticity_WhitePointRadius * scale_factor );
-		CIEChromaticity_GradMargin         = ImTrunc( CIEChromaticity_GradMargin * scale_factor );
+		CIEChromaticity_DefaultSize        = truncf( CIEChromaticity_DefaultSize * scale_factor );
+		CIEChromaticity_SignalRadius       = truncf( CIEChromaticity_SignalRadius * scale_factor );
+		CIEChromaticity_GamutLineThickness = truncf( CIEChromaticity_GamutLineThickness * scale_factor );
+		CIEChromaticity_WhitePointRadius   = truncf( CIEChromaticity_WhitePointRadius * scale_factor );
+		CIEChromaticity_GradMargin         = truncf( CIEChromaticity_GradMargin * scale_factor );
+		CIEChromaticity_GradMarginRight    = truncf( CIEChromaticity_GradMarginRight * scale_factor );
+		CIEChromaticity_GradMarginTop      = truncf( CIEChromaticity_GradMarginTop * scale_factor );
+		// Chromaticity Plot / Line / Point — only lp fields are scaled; counts/segments are not.
+		ChromaticityPlot_BorderThickness   = truncf( ChromaticityPlot_BorderThickness * scale_factor );
+		ChromaticityPlot_TriangleThickness = truncf( ChromaticityPlot_TriangleThickness * scale_factor );
+		ChromaticityLine_Thickness         = truncf( ChromaticityLine_Thickness * scale_factor );
+		ChromaticityPoint_Radius           = truncf( ChromaticityPoint_Radius * scale_factor );
 
-		ToneCurve_DefaultHeight     = ImTrunc( ToneCurve_DefaultHeight * scale_factor );
-		ToneCurve_KeyRadius         = ImTrunc( ToneCurve_KeyRadius * scale_factor );
-		ToneCurve_LineThickness     = ImTrunc( ToneCurve_LineThickness * scale_factor );
-		ToneCurve_GradMarginLeft    = ImTrunc( ToneCurve_GradMarginLeft * scale_factor );
-		ToneCurve_GradMarginBottom  = ImTrunc( ToneCurve_GradMarginBottom * scale_factor );
-		ToneCurve_BandThickness     = ImTrunc( ToneCurve_BandThickness * scale_factor );
-		ToneCurve_BandGap           = ImTrunc( ToneCurve_BandGap * scale_factor );
+		ToneCurve_DefaultHeight     = truncf( ToneCurve_DefaultHeight * scale_factor );
+		ToneCurve_KeyRadius         = truncf( ToneCurve_KeyRadius * scale_factor );
+		ToneCurve_LineThickness     = truncf( ToneCurve_LineThickness * scale_factor );
+		ToneCurve_GradMarginLeft    = truncf( ToneCurve_GradMarginLeft * scale_factor );
+		ToneCurve_GradMarginBottom  = truncf( ToneCurve_GradMarginBottom * scale_factor );
+		ToneCurve_BandThickness     = truncf( ToneCurve_BandThickness * scale_factor );
+		ToneCurve_BandGap           = truncf( ToneCurve_BandGap * scale_factor );
+		ToneCurve_GradMarginRight   = truncf( ToneCurve_GradMarginRight * scale_factor );
+		ToneCurve_GradMarginTop     = truncf( ToneCurve_GradMarginTop * scale_factor );
 
-		HDRWheel_ArcGap             = ImTrunc( HDRWheel_ArcGap * scale_factor );
-		HDRWheel_ArcThickness       = ImTrunc( HDRWheel_ArcThickness * scale_factor );
-		HDRWheel_ArcGrabRadius      = ImTrunc( HDRWheel_ArcGrabRadius * scale_factor );
+		HDRWheel_ArcGap             = truncf( HDRWheel_ArcGap * scale_factor );
+		HDRWheel_ArcThickness       = truncf( HDRWheel_ArcThickness * scale_factor );
+		HDRWheel_ArcGrabRadius      = truncf( HDRWheel_ArcGrabRadius * scale_factor );
+		HDRWheel_RingThickness      = truncf( HDRWheel_RingThickness * scale_factor );
+		HDRWheel_RingGap            = truncf( HDRWheel_RingGap * scale_factor );
 
-		Gizmo_HandleSize             = ImTrunc( Gizmo_HandleSize * scale_factor );
-		Gizmo_RotationHandleOffset   = ImTrunc( Gizmo_RotationHandleOffset * scale_factor );
-		Gizmo_OutlineThickness       = ImTrunc( Gizmo_OutlineThickness * scale_factor );
+		Gizmo_HandleSize             = truncf( Gizmo_HandleSize * scale_factor );
+		Gizmo_RotationHandleOffset   = truncf( Gizmo_RotationHandleOffset * scale_factor );
+		Gizmo_OutlineThickness       = truncf( Gizmo_OutlineThickness * scale_factor );
+		Gizmo_RotationLineThickness  = truncf( Gizmo_RotationLineThickness * scale_factor );
+		Gizmo_CenterDotRadius        = truncf( Gizmo_CenterDotRadius * scale_factor );
+		// Gizmo_EdgeHandleScale is a ratio — not scaled
+		Gizmo_DefaultCanvasHeight    = truncf( Gizmo_DefaultCanvasHeight * scale_factor );
 
-		ColorPicker_DotRadius            = ImTrunc( ColorPicker_DotRadius * scale_factor );
-		ColorPicker_SliderWidth          = ImTrunc( ColorPicker_SliderWidth * scale_factor );
-		ColorPicker_ComponentSliderHeight = ImTrunc( ColorPicker_ComponentSliderHeight * scale_factor );
+		ColorPicker_DotRadius              = truncf( ColorPicker_DotRadius * scale_factor );
+		ColorPicker_SliderWidth            = truncf( ColorPicker_SliderWidth * scale_factor );
+		ColorPicker_ComponentSliderHeight  = truncf( ColorPicker_ComponentSliderHeight * scale_factor );
+		ColorPicker_DotOutlineThickness    = truncf( ColorPicker_DotOutlineThickness * scale_factor );
+		ColorPicker_SliderHandleHeight     = truncf( ColorPicker_SliderHandleHeight * scale_factor );
+		ColorPicker_ComponentHandleWidth   = truncf( ColorPicker_ComponentHandleWidth * scale_factor );
+		Hatch_DefaultSpacing      = truncf( Hatch_DefaultSpacing * scale_factor );
+		Hatch_DefaultThickness    = truncf( Hatch_DefaultThickness * scale_factor );
+		BezierCurve_KeyRadius     = truncf( BezierCurve_KeyRadius * scale_factor );
+		BezierCurve_TangentRadius = truncf( BezierCurve_TangentRadius * scale_factor );
+		BezierCurve_LineThickness = truncf( BezierCurve_LineThickness * scale_factor );
+		FontInspector_GlyphCell   = truncf( FontInspector_GlyphCell * scale_factor );
+		NotchedDial_TickLength    = truncf( NotchedDial_TickLength * scale_factor );
+		DeltaE_SwatchSize         = truncf( DeltaE_SwatchSize * scale_factor );
+		Equation_BlockPadding     = truncf( Equation_BlockPadding * scale_factor );
+		IsoContour_MajorThickness  = truncf( IsoContour_MajorThickness * scale_factor );
+		IsoContour_MediumThickness = truncf( IsoContour_MediumThickness * scale_factor );
+		IsoContour_MinorThickness  = truncf( IsoContour_MinorThickness * scale_factor );
+		LookDev_DividerThickness  = truncf( LookDev_DividerThickness * scale_factor );
+		LookDev_HandleRadius      = truncf( LookDev_HandleRadius * scale_factor );
+		VolumeSlice_HandleRadius  = truncf( VolumeSlice_HandleRadius * scale_factor );
+		VectorDrawing_AnchorRadius           = truncf( VectorDrawing_AnchorRadius * scale_factor );
+		VectorDrawing_TangentRadius          = truncf( VectorDrawing_TangentRadius * scale_factor );
+		VectorDrawing_GridSpacing            = truncf( VectorDrawing_GridSpacing * scale_factor );
+		VectorDrawing_TangentLineThickness   = truncf( VectorDrawing_TangentLineThickness * scale_factor );
+		VectorDrawing_AnchorOutlineThickness = truncf( VectorDrawing_AnchorOutlineThickness * scale_factor );
+		VectorDrawing_ClosingRingRadius      = truncf( VectorDrawing_ClosingRingRadius * scale_factor );
+		VectorDrawing_ClosingRingThickness   = truncf( VectorDrawing_ClosingRingThickness * scale_factor );
+		VectorDrawing_HoverRingGap           = truncf( VectorDrawing_HoverRingGap * scale_factor );
+		VectorDrawing_HoverRingThickness     = truncf( VectorDrawing_HoverRingThickness * scale_factor );
+		VectorDrawing_GhostRingThickness     = truncf( VectorDrawing_GhostRingThickness * scale_factor );
+		VectorDrawing_CrosshairArmLength     = truncf( VectorDrawing_CrosshairArmLength * scale_factor );
+		VectorDrawing_CrosshairThickness     = truncf( VectorDrawing_CrosshairThickness * scale_factor );
+		PrecisionPopup_InputWidth            = truncf( PrecisionPopup_InputWidth * scale_factor );
 	}
 
-	void PushColor( ImWidgetsStyleColor colorIndex, const ImVec4& color )
+	void PushColor( ImWidgetsStyleColor colorIndex, ImVec4 const& color )
 	{
 		ColorModifier modifier;
 		modifier.Index = colorIndex;
@@ -1012,7 +1266,7 @@ struct ImWidgetsStyle
 		*var = value;
 		m_VarStack.push_back( modifier );
 	}
-	void PushVar( ImWidgetsStyleVar varIndex, const ImVec2& value )
+	void PushVar( ImWidgetsStyleVar varIndex, ImVec2 const& value )
 	{
 		auto* var = GetVarVec2Addr( varIndex );
 		IM_ASSERT( var != nullptr );
@@ -1022,7 +1276,7 @@ struct ImWidgetsStyle
 		*var = value;
 		m_VarStack.push_back( modifier );
 	}
-	void PushVar( ImWidgetsStyleVar varIndex, const ImVec4& value )
+	void PushVar( ImWidgetsStyleVar varIndex, ImVec4 const& value )
 	{
 		auto* var = GetVarVec4Addr( varIndex );
 		IM_ASSERT( var != nullptr );
@@ -1048,13 +1302,20 @@ struct ImWidgetsStyle
 		}
 	}
 
-	const char* GetColorName( ImWidgetsStyleColor colorIndex ) const
+	char const* GetColorName( ImWidgetsStyleColor colorIndex ) const
 	{
 		switch ( colorIndex )
 		{
-		case StyleColor_Value: return "Value";
 		case StyleColor_Slider2D_CursorX: return "Slider2DCursorX";
 		case StyleColor_Slider2D_CursorY: return "Slider2DCursorY";
+		case StyleColor_Slider2DRange_MinHandle: return "Slider2DRangeMinHandle";
+		case StyleColor_Slider2DRange_MaxHandle: return "Slider2DRangeMaxHandle";
+		case StyleColor_Slider2DRange_Fill:      return "Slider2DRangeFill";
+		case StyleColor_Slider2DDisc_Background:      return "Slider2DDiscBackground";
+		case StyleColor_Slider2DDisc_Cursor:          return "Slider2DDiscCursor";
+		case StyleColor_Slider2DDisc_CursorOutline:   return "Slider2DDiscCursorOutline";
+		case StyleColor_Slider2DDisc_Ring:            return "Slider2DDiscRing";
+		case StyleColor_Slider2DDisc_Grid:            return "Slider2DDiscGrid";
 		case StyleColor_Gradient_MarkerOutline: return "GradientMarkerOutline";
 		case StyleColor_Gradient_MarkerOutlineHovered: return "GradientMarkerOutlineHovered";
 		case StyleColor_Gradient_MarkerOutlineSelected: return "GradientMarkerOutlineSelected";
@@ -1152,6 +1413,12 @@ struct ImWidgetsStyle
 		case StyleColor_CIEChromaticity_PrimaryB: return "CIEChromaticityPrimaryB";
 		case StyleColor_CIEChromaticity_GradTick: return "CIEChromaticityGradTick";
 		case StyleColor_CIEChromaticity_GradLabel: return "CIEChromaticityGradLabel";
+		case StyleColor_ChromaticityPlot_Triangle:   return "ChromaticityPlotTriangle";
+		case StyleColor_ChromaticityPlot_WhitePoint: return "ChromaticityPlotWhitePoint";
+		case StyleColor_ChromaticityLine_Default:    return "ChromaticityLineDefault";
+		case StyleColor_ChromaticityPoint_Default:   return "ChromaticityPointDefault";
+		case StyleColor_HueSelector_ZeroWidthLine:   return "HueSelectorZeroWidthLine";
+		case StyleColor_HueSelector_Cursor:          return "HueSelectorCursor";
 		case StyleColor_ToneCurve_Background: return "ToneCurveBackground";
 		case StyleColor_ToneCurve_Grid: return "ToneCurveGrid";
 		case StyleColor_ToneCurve_NeutralLine: return "ToneCurveNeutralLine";
@@ -1169,6 +1436,7 @@ struct ImWidgetsStyle
 		case StyleColor_Gizmo_Outline: return "GizmoOutline";
 		case StyleColor_Gizmo_Handle: return "GizmoHandle";
 		case StyleColor_Gizmo_HandleActive: return "GizmoHandleActive";
+		case StyleColor_Gizmo_DimOutline: return "GizmoDimOutline";
 		case StyleColor_ColorPicker_DotOutline: return "ColorPickerDotOutline";
 		case StyleColor_ColorPicker_DotOutlineActive: return "ColorPickerDotOutlineActive";
 		case StyleColor_ColorPicker_Crosshair: return "ColorPickerCrosshair";
@@ -1205,6 +1473,11 @@ private:
 		case StyleVar_Slider2D_CursorRadius:			return &Slider2D_CursorRadius;
 		case StyleVar_Slider2D_CursorOffset:			return &Slider2D_CursorOffset;
 		case StyleVar_Slider2D_CornerRadius:			return &Slider2D_CornerRadius;
+		case StyleVar_Slider2DRange_FillAlpha:				return &Slider2DRange_FillAlpha;
+		case StyleVar_Slider2DRange_HandleRadius:			return &Slider2DRange_HandleRadius;
+		case StyleVar_Slider2DDisc_CursorRadius:			return &Slider2DDisc_CursorRadius;
+		case StyleVar_Slider2DDisc_CursorOutlineThickness:	return &Slider2DDisc_CursorOutlineThickness;
+		case StyleVar_Slider2DDisc_RingThickness:			return &Slider2DDisc_RingThickness;
 		case StyleVar_NavCursor_Thickness:				return &NavCursor_Thickness;
 		case StyleVar_NavCursor_Distance:				return &NavCursor_Distance;
 		case StyleVar_WhitePoint_Radius:				return &WhitePoint_Radius;
@@ -1221,8 +1494,6 @@ private:
 		case StyleVar_CurveEditor_ZeroLineThickness:	return &CurveEditor_ZeroLineThickness;
 		case StyleVar_ColorWheel_DotRadius:				return &ColorWheel_DotRadius;
 		case StyleVar_ColorWheel_RingThickness:			return &ColorWheel_RingThickness;
-		case StyleVar_ColorWheel_DiscSectors:			return &ColorWheel_DiscSectors;
-		case StyleVar_ColorWheel_DiscRings:				return &ColorWheel_DiscRings;
 		case StyleVar_ColorWheel_SliderHeight:			return &ColorWheel_SliderHeight;
 		case StyleVar_SliderRing_TrackThickness:		return &SliderRing_TrackThickness;
 		case StyleVar_SliderRing_GrabRadius:			return &SliderRing_GrabRadius;
@@ -1231,8 +1502,7 @@ private:
 		case StyleVar_ColorWarper_PointRadius:			return &ColorWarper_PointRadius;
 		case StyleVar_ColorWarper_HitRadius:			return &ColorWarper_HitRadius;
 		case StyleVar_ColorWarper_GridThickness:		return &ColorWarper_GridThickness;
-		case StyleVar_ColorWarper_DiscSectors:			return &ColorWarper_DiscSectors;
-		case StyleVar_ColorWarper_DiscRings:			return &ColorWarper_DiscRings;
+		case StyleVar_ColorWarper_DiscScale:			return &ColorWarper_DiscScale;
 		case StyleVar_ColorCurve_DefaultHeight:			return &ColorCurve_DefaultHeight;
 		case StyleVar_ColorCurve_KeyRadius:				return &ColorCurve_KeyRadius;
 		case StyleVar_ColorCurve_LineThickness:			return &ColorCurve_LineThickness;
@@ -1244,6 +1514,7 @@ private:
 		case StyleVar_VectorScope_DefaultSize:			return &VectorScope_DefaultSize;
 		case StyleVar_VectorScope_SignalAlpha:			return &VectorScope_SignalAlpha;
 		case StyleVar_VectorScope_GraticuleThickness:	return &VectorScope_GraticuleThickness;
+		case StyleVar_VectorScope_DiscScale:			return &VectorScope_DiscScale;
 		case StyleVar_Histogram_DefaultHeight:			return &Histogram_DefaultHeight;
 		case StyleVar_Histogram_OverlayAlpha:			return &Histogram_OverlayAlpha;
 		case StyleVar_Histogram_GradTickLength:			return &Histogram_GradTickLength;
@@ -1256,6 +1527,12 @@ private:
 		case StyleVar_CIEChromaticity_WhitePointRadius:	return &CIEChromaticity_WhitePointRadius;
 		case StyleVar_CIEChromaticity_GradMargin:		return &CIEChromaticity_GradMargin;
 		case StyleVar_CIEChromaticity_SignalAlpha:		return &CIEChromaticity_SignalAlpha;
+		case StyleVar_CIEChromaticity_GradMarginRight:	return &CIEChromaticity_GradMarginRight;
+		case StyleVar_CIEChromaticity_GradMarginTop:	return &CIEChromaticity_GradMarginTop;
+		case StyleVar_ChromaticityPlot_BorderThickness:   return &ChromaticityPlot_BorderThickness;
+		case StyleVar_ChromaticityPlot_TriangleThickness: return &ChromaticityPlot_TriangleThickness;
+		case StyleVar_ChromaticityLine_Thickness:         return &ChromaticityLine_Thickness;
+		case StyleVar_ChromaticityPoint_Radius:           return &ChromaticityPoint_Radius;
 		case StyleVar_ToneCurve_DefaultHeight:			return &ToneCurve_DefaultHeight;
 		case StyleVar_ToneCurve_KeyRadius:				return &ToneCurve_KeyRadius;
 		case StyleVar_ToneCurve_LineThickness:			return &ToneCurve_LineThickness;
@@ -1263,11 +1540,55 @@ private:
 		case StyleVar_ToneCurve_GradMarginBottom:		return &ToneCurve_GradMarginBottom;
 		case StyleVar_ToneCurve_BandThickness:			return &ToneCurve_BandThickness;
 		case StyleVar_ToneCurve_BandGap:				return &ToneCurve_BandGap;
+		case StyleVar_ToneCurve_GradMarginRight:		return &ToneCurve_GradMarginRight;
+		case StyleVar_ToneCurve_GradMarginTop:			return &ToneCurve_GradMarginTop;
+		case StyleVar_HDRWheel_RingThickness:			return &HDRWheel_RingThickness;
+		case StyleVar_HDRWheel_RingGap:					return &HDRWheel_RingGap;
+		case StyleVar_Gizmo_HandleSize:					return &Gizmo_HandleSize;
+		case StyleVar_Gizmo_RotationHandleOffset:		return &Gizmo_RotationHandleOffset;
+		case StyleVar_Gizmo_OutlineThickness:			return &Gizmo_OutlineThickness;
+		case StyleVar_Gizmo_RotationLineThickness:		return &Gizmo_RotationLineThickness;
+		case StyleVar_Gizmo_CenterDotRadius:			return &Gizmo_CenterDotRadius;
+		case StyleVar_Gizmo_EdgeHandleScale:			return &Gizmo_EdgeHandleScale;
+		case StyleVar_Gizmo_DefaultCanvasHeight:		return &Gizmo_DefaultCanvasHeight;
 		case StyleVar_ColorPicker_DotRadius:			return &ColorPicker_DotRadius;
-		case StyleVar_ColorPicker_PlaneResolution:		return &ColorPicker_PlaneResolution;
 		case StyleVar_ColorPicker_SliderWidth:			return &ColorPicker_SliderWidth;
-		case StyleVar_ColorPicker_SliderResolution:		return &ColorPicker_SliderResolution;
 		case StyleVar_ColorPicker_ComponentSliderHeight:	return &ColorPicker_ComponentSliderHeight;
+		case StyleVar_ColorPicker_DotOutlineThickness:		return &ColorPicker_DotOutlineThickness;
+		case StyleVar_ColorPicker_SliderHandleHeight:		return &ColorPicker_SliderHandleHeight;
+		case StyleVar_ColorPicker_ComponentHandleWidth:		return &ColorPicker_ComponentHandleWidth;
+		case StyleVar_Hatch_DefaultSpacing:				return &Hatch_DefaultSpacing;
+		case StyleVar_Hatch_DefaultThickness:			return &Hatch_DefaultThickness;
+		case StyleVar_BezierCurve_KeyRadius:			return &BezierCurve_KeyRadius;
+		case StyleVar_BezierCurve_TangentRadius:		return &BezierCurve_TangentRadius;
+		case StyleVar_BezierCurve_LineThickness:		return &BezierCurve_LineThickness;
+		case StyleVar_BezierCurve_SnapAngleDeg:			return &BezierCurve_SnapAngleDeg;
+		case StyleVar_FontInspector_GlyphCell:			return &FontInspector_GlyphCell;
+		case StyleVar_FontInspector_MetricAlpha:		return &FontInspector_MetricAlpha;
+		case StyleVar_NotchedDial_TickLength:			return &NotchedDial_TickLength;
+		case StyleVar_NotchedDial_TickThickness:		return &NotchedDial_TickThickness;
+		case StyleVar_DeltaE_SwatchSize:				return &DeltaE_SwatchSize;
+		case StyleVar_Equation_BlockPadding:			return &Equation_BlockPadding;
+		case StyleVar_Equation_InlineBaselineOffset:	return &Equation_InlineBaselineOffset;
+		case StyleVar_IsoContour_MajorThickness:		return &IsoContour_MajorThickness;
+		case StyleVar_IsoContour_MediumThickness:		return &IsoContour_MediumThickness;
+		case StyleVar_IsoContour_MinorThickness:		return &IsoContour_MinorThickness;
+		case StyleVar_LookDev_DividerThickness:			return &LookDev_DividerThickness;
+		case StyleVar_LookDev_HandleRadius:				return &LookDev_HandleRadius;
+		case StyleVar_VolumeSlice_HandleRadius:			return &VolumeSlice_HandleRadius;
+		case StyleVar_VectorDrawing_AnchorRadius:			return &VectorDrawing_AnchorRadius;
+		case StyleVar_VectorDrawing_TangentRadius:			return &VectorDrawing_TangentRadius;
+		case StyleVar_VectorDrawing_GridSpacing:			return &VectorDrawing_GridSpacing;
+		case StyleVar_VectorDrawing_TangentLineThickness:	return &VectorDrawing_TangentLineThickness;
+		case StyleVar_VectorDrawing_AnchorOutlineThickness:	return &VectorDrawing_AnchorOutlineThickness;
+		case StyleVar_VectorDrawing_ClosingRingRadius:		return &VectorDrawing_ClosingRingRadius;
+		case StyleVar_VectorDrawing_ClosingRingThickness:	return &VectorDrawing_ClosingRingThickness;
+		case StyleVar_VectorDrawing_HoverRingGap:			return &VectorDrawing_HoverRingGap;
+		case StyleVar_VectorDrawing_HoverRingThickness:		return &VectorDrawing_HoverRingThickness;
+		case StyleVar_VectorDrawing_GhostRingThickness:		return &VectorDrawing_GhostRingThickness;
+		case StyleVar_VectorDrawing_CrosshairArmLength:		return &VectorDrawing_CrosshairArmLength;
+		case StyleVar_VectorDrawing_CrosshairThickness:		return &VectorDrawing_CrosshairThickness;
+		case StyleVar_PrecisionPopup_InputWidth:			return &PrecisionPopup_InputWidth;
 		default:										return nullptr;
 		}
 	}
@@ -1288,59 +1609,10 @@ private:
 	ImVector<VarModifier>	m_VarStack;
 };
 
-// Shader constant buffer for dashed line rendering.
-// Layout must match HLSL cbuffer packing (no field spans a 16-byte register boundary)
-// and GLSL std140 layout (vec2 aligned to 8, vec4 aligned to 16).
-// Registers: [0-15] p0+p1, [16-31] thickness+aa+dash, [32-47] dash_offset+cap+join+miter_limit,
-//            [48-63] rect_min+rect_max, [64-79] color.  Total: 80 bytes.
-struct ImWidgetsDashedLineBuffer
-{
-    ImVec2  p0;            // offset 0   - segment start (screen space)
-    ImVec2  p1;            // offset 8   - segment end   (screen space)
-    float   thickness;     // offset 16  - stroke width in pixels
-    float   aa;            // offset 20  - aa fringe in pixels
-    ImVec2  dash;          // offset 24  - x=dash length, y=gap length (pixels)
-    float   dash_offset;   // offset 32  - offset along path (pixels)
-    float   cap;           // offset 36  - cap type (ImWidgetsCap_)
-    float   join;          // offset 40  - join type (ImWidgetsJoin_)
-    float   miter_limit;   // offset 44  - miter limit ratio
-    ImVec2  rect_min;      // offset 48  - bounding quad min (screen space)
-    ImVec2  rect_max;      // offset 56  - bounding quad max (screen space)
-    ImVec4  color;         // offset 64  - RGBA
-    // --- Join/cap support (reg 5-6) ---
-    ImVec2  prev_dir;      // offset 80  - tangent of previous segment (0,0 = cap at p0)
-    ImVec2  next_dir;      // offset 88  - tangent of next segment (0,0 = cap at p1)
-    float   seg_start;     // offset 96  - cumulative arc-length at p0
-    float   seg_end;       // offset 100 - cumulative arc-length at p1
-    float   total_length;  // offset 104 - total polyline length
-    float   flags;         // offset 108 - bit flags (encoded as float, decoded
-                           //              on GPU via (int)flags): 1=debug joins,
-                           //              2=first segment of closed polyline,
-                           //              4=last segment of closed polyline.
-                           //              Must match lines.hlsl decoding.
-};
-
-// Stroke fill constant buffer — winding number shader.
-// Holds directed line segments ("line soup") from Euler spiral stroke expansion.
-#define IMGUI_STROKE_MAX_SEGMENTS 1024
-struct ImWidgetsStrokeBuffer
-{
-    float   params[4];                        // [0]=num_segs, [1]=unused, [2]=aa_width, [3]=unused
-    float   color[4];                         // RGBA
-    float   bounds[4];                        // rect_min.x, rect_min.y, rect_max.x, rect_max.y
-    float   segments[IMGUI_STROKE_MAX_SEGMENTS * 4]; // p0.x, p0.y, p1.x, p1.y per segment
-};
-
-#define ImWidgets_Kibi (1024ull)
-#define ImWidgets_Mibi (ImWidgets_Kibi*1024ull)
-#define ImWidgets_Gibi (ImWidgets_Mibi*1024ull)
-#define ImWidgets_Tebi (ImWidgets_Gibi*1024ull)
-#define ImWidgets_Pebi (ImWidgets_Tebi*1024ull)
-
 typedef int ImWidgetsLengthUnit;
 typedef int ImWidgetsChromaticPlot;
 typedef int ImWidgetsObserver;
-typedef int ImWidgetsIlluminance;
+typedef int ImWidgetsIlluminant;
 typedef int ImWidgetsColorSpace;
 typedef int ImWidgetsPointer;
 
@@ -1354,36 +1626,36 @@ enum ImWidgetsLengthUnit_
 enum ImWidgetsObserver_
 {
 	// Standard
-	ImWidgetsObserverChromaticPlot_1931_2deg = 0,
-	ImWidgetsObserverChromaticPlot_1964_10deg,
-	ImWidgetsObserverChromaticPlot_COUNT
+	ImWidgetsObserver_CIE1931_2deg = 0,
+	ImWidgetsObserver_CIE1964_10deg,
+	ImWidgetsObserver_COUNT
 };
 
-enum ImWidgetsIlluminance_
+enum ImWidgetsIlluminant_
 {
 	// White Points
-	ImWidgetsWhitePointChromaticPlot_A = 0,
-	ImWidgetsWhitePointChromaticPlot_B,
-	ImWidgetsWhitePointChromaticPlot_C,
-	ImWidgetsWhitePointChromaticPlot_D50,
-	ImWidgetsWhitePointChromaticPlot_D55,
-	ImWidgetsWhitePointChromaticPlot_D65,
-	ImWidgetsWhitePointChromaticPlot_D75,
-	ImWidgetsWhitePointChromaticPlot_D93,
-	ImWidgetsWhitePointChromaticPlot_E,
-	ImWidgetsWhitePointChromaticPlot_F1,
-	ImWidgetsWhitePointChromaticPlot_F2,
-	ImWidgetsWhitePointChromaticPlot_F3,
-	ImWidgetsWhitePointChromaticPlot_F4,
-	ImWidgetsWhitePointChromaticPlot_F5,
-	ImWidgetsWhitePointChromaticPlot_F6,
-	ImWidgetsWhitePointChromaticPlot_F7,
-	ImWidgetsWhitePointChromaticPlot_F8,
-	ImWidgetsWhitePointChromaticPlot_F9,
-	ImWidgetsWhitePointChromaticPlot_F10,
-	ImWidgetsWhitePointChromaticPlot_F11,
-	ImWidgetsWhitePointChromaticPlot_F12,
-	ImWidgetsWhitePointChromaticPlot_COUNT
+	ImWidgetsIlluminant_A = 0,
+	ImWidgetsIlluminant_B,
+	ImWidgetsIlluminant_C,
+	ImWidgetsIlluminant_D50,
+	ImWidgetsIlluminant_D55,
+	ImWidgetsIlluminant_D65,
+	ImWidgetsIlluminant_D75,
+	ImWidgetsIlluminant_D93,
+	ImWidgetsIlluminant_E,
+	ImWidgetsIlluminant_F1,
+	ImWidgetsIlluminant_F2,
+	ImWidgetsIlluminant_F3,
+	ImWidgetsIlluminant_F4,
+	ImWidgetsIlluminant_F5,
+	ImWidgetsIlluminant_F6,
+	ImWidgetsIlluminant_F7,
+	ImWidgetsIlluminant_F8,
+	ImWidgetsIlluminant_F9,
+	ImWidgetsIlluminant_F10,
+	ImWidgetsIlluminant_F11,
+	ImWidgetsIlluminant_F12,
+	ImWidgetsIlluminant_COUNT
 };
 
 enum ImWidgetsColorSpace_
@@ -1499,6 +1771,25 @@ enum ImWidgetsCorrectness_
     ImWidgetsCorrectness_COUNT
 };
 typedef int ImWidgetsCorrectness;
+
+// (ImWidgetsThickLineMode_ enum is declared before ImWidgetsStyle so the constructor
+//  can reference its values; the descriptor struct lives here next to ImWidgetsCap_/Join_.)
+
+// Descriptor passed to DrawThickLine. 32-bit fields first (no alignment holes); bool last.
+struct ImWidgetsThickLineDesc
+{
+    ImU32                  color       = IM_COL32_WHITE;
+    ImWidgetsThickLineMode mode        = ImWidgetsThickLineMode_AddPolyline;
+    ImWidgetsCap           cap         = ImWidgetsCap_Butt;
+    ImWidgetsJoin          join        = ImWidgetsJoin_Round;
+    float                  thickness   = 1.0f;     // px
+    float                  miter_limit = 4.0f;
+    float                  dash_len    = 8.0f;     // px (used only when dashed=true)
+    float                  gap_len     = 4.0f;     // px
+    float                  dash_offset = 0.0f;     // px
+    float                  tolerance   = 0.25f;    // px max chord error (Bezier modes)
+    bool                   dashed      = false;
+};
 
 typedef int ImWidgetsGradientInterp;
 enum ImWidgetsGradientInterp_
@@ -1785,7 +2076,7 @@ struct ImCurveEditorData
 				// De Casteljau level 2
 				float P012x = P01x + t*(P12x-P01x), P012y = P01y + t*(P12y-P01y);
 				float P123x = P12x + t*(P23x-P12x), P123y = P12y + t*(P23y-P12y);
-				// De Casteljau level 3 — split point
+				// De Casteljau level 3 -- split point
 				float P0123x = P012x + t*(P123x-P012x), P0123y = P012y + t*(P123y-P012y);
 				// Tangent handles relative to the split point
 				Keys[ newIdx ].TangentLeft  = ImVec2( P012x - P0123x, P012y - P0123y );
@@ -1807,7 +2098,7 @@ struct ImCurveEditorData
 
 struct ImTransformData
 {
-	ImVec2	Translation;	// Offset from canvas center (px)
+	ImVec2	Translation;	// Offset from canvas center (lp)
 	float	Rotation;		// Rotation angle (radians)
 	ImVec2	Scale;			// Scale factor (1,1 = fit to canvas)
 
@@ -1831,7 +2122,7 @@ struct ImTransformGizmoDrawParams
 	float		CosR, SinR;		// rotation basis
 	int			Index;
 };
-typedef void (*ImTransformGizmoDrawFn)( const ImTransformGizmoDrawParams& params, void* user_data );
+typedef void (*ImTransformGizmoDrawFn)( ImTransformGizmoDrawParams const& params, void* user_data );
 
 // Optional: called when the expanded panel reorders two objects
 typedef void (*ImTransformGizmoSwapFn)( int indexA, int indexB, void* user_data );
@@ -2049,7 +2340,7 @@ struct ImColorCurveData
 				// De Casteljau level 2
 				float P012x = P01x + t*(P12x-P01x), P012y = P01y + t*(P12y-P01y);
 				float P123x = P12x + t*(P23x-P12x), P123y = P12y + t*(P23y-P12y);
-				// De Casteljau level 3 — split point
+				// De Casteljau level 3 -- split point
 				float P0123x = P012x + t*(P123x-P012x), P0123y = P012y + t*(P123y-P012y);
 				// Tangent handles relative to the split point
 				Keys[ newIdx ].TangentLeft  = ImVec2( P012x - P0123x, P012y - P0123y );
@@ -2071,13 +2362,13 @@ struct ImColorCurveData
 
 // ---- Parade Scope ----
 
-typedef int ImParadeBitDepth;
-enum ImParadeBitDepth_
+typedef int ImPixelBitDepth;
+enum ImPixelBitDepth_
 {
-	ImParadeBitDepth_UInt8 = 0,		// 8-bit  [0, 255]
-	ImParadeBitDepth_UInt10,		// 10-bit stored in uint16 [0, 1023]
-	ImParadeBitDepth_UInt16,		// 16-bit [0, 65535]
-	ImParadeBitDepth_COUNT
+	ImPixelBitDepth_UInt8 = 0,		// 8-bit  [0, 255]
+	ImPixelBitDepth_UInt10,		// 10-bit stored in uint16 [0, 1023]
+	ImPixelBitDepth_UInt16,		// 16-bit [0, 65535]
+	ImPixelBitDepth_COUNT
 };
 
 typedef int ImParadeMode;
@@ -2090,20 +2381,20 @@ enum ImParadeMode_
 	ImParadeMode_COUNT
 };
 
-typedef int ImParadeLayout;
-enum ImParadeLayout_
+typedef int ImPixelLayout;
+enum ImPixelLayout_
 {
-	ImParadeLayout_Interleaved = 0,	// RGBRGB... or RGBARGBA...
-	ImParadeLayout_Planar,			// RRR...GGG...BBB...
-	ImParadeLayout_COUNT
+	ImPixelLayout_Interleaved = 0,	// RGBRGB... or RGBARGBA...
+	ImPixelLayout_Planar,			// RRR...GGG...BBB...
+	ImPixelLayout_COUNT
 };
 
 typedef int ImParadeScale;
 enum ImParadeScale_
 {
 	ImParadeScale_Linear = 0,		// Linear mapping
-	ImParadeScale_Log,				// Log2 — expands shadows / darks
-	ImParadeScale_InvLog,			// Inverse log2 — expands highlights / brights
+	ImParadeScale_Log,				// Log2 -- expands shadows / darks
+	ImParadeScale_InvLog,			// Inverse log2 -- expands highlights / brights
 	ImParadeScale_COUNT
 };
 
@@ -2115,9 +2406,9 @@ struct ImParadeScopeData
 	int				ChannelCount;	// Display channels (1..4 depending on mode)
 	ImU32			PeakCount;		// Max bin value (for normalization)
 	ImParadeMode	Mode;
-	ImParadeBitDepth BitDepth;
+	ImPixelBitDepth BitDepth;
 
-	ImParadeScopeData() : XBins( 0 ), YBins( 0 ), ChannelCount( 0 ), PeakCount( 0 ), Mode( ImParadeMode_RGB ), BitDepth( ImParadeBitDepth_UInt8 ) {}
+	ImParadeScopeData() : XBins( 0 ), YBins( 0 ), ChannelCount( 0 ), PeakCount( 0 ), Mode( ImParadeMode_RGB ), BitDepth( ImPixelBitDepth_UInt8 ) {}
 
 	void Clear()
 	{
@@ -2127,7 +2418,7 @@ struct ImParadeScopeData
 	}
 
 	void Accumulate( void const* data, int width, int height, int channels,
-					 ImParadeBitDepth bitDepth, ImParadeLayout layout, ImParadeMode mode,
+					 ImPixelBitDepth bitDepth, ImPixelLayout layout, ImParadeMode mode,
 					 int xBins = 128, int yBins = 128, int maxSamples = 1000000 );
 };
 
@@ -2135,12 +2426,12 @@ struct ImParadeScopeData
 
 struct ImVectorScopeData
 {
-	ImVector<ImU32>	Bins;			// [xBin * Resolution + yBin] — 2D chrominance histogram
+	ImVector<ImU32>	Bins;			// [xBin * Resolution + yBin] -- 2D chrominance histogram
 	int				Resolution;		// Square grid resolution (N x N)
 	ImU32			PeakCount;		// Max bin value (for normalization)
-	ImParadeBitDepth BitDepth;
+	ImPixelBitDepth BitDepth;
 
-	ImVectorScopeData() : Resolution( 0 ), PeakCount( 0 ), BitDepth( ImParadeBitDepth_UInt8 ) {}
+	ImVectorScopeData() : Resolution( 0 ), PeakCount( 0 ), BitDepth( ImPixelBitDepth_UInt8 ) {}
 
 	void Clear()
 	{
@@ -2151,7 +2442,7 @@ struct ImVectorScopeData
 
 	// Accumulate chrominance (Cb/Cr BT.709) from raw image data into 2D histogram.
 	void Accumulate( void const* data, int width, int height, int channels,
-					 ImParadeBitDepth bitDepth, ImParadeLayout layout,
+					 ImPixelBitDepth bitDepth, ImPixelLayout layout,
 					 int resolution = 256, int maxSamples = 1000000 );
 };
 
@@ -2167,7 +2458,7 @@ struct ImColorWarperOverlay
 	void Clear() { SampledRGB.clear(); SampleCount = 0; }
 
 	void Accumulate( void const* data, int width, int height, int channels,
-					 ImParadeBitDepth bitDepth, ImParadeLayout layout,
+					 ImPixelBitDepth bitDepth, ImPixelLayout layout,
 					 int maxSamples = 50000 );
 };
 
@@ -2200,9 +2491,9 @@ struct ImHistogramData
 	int				ChannelCount;	// Display channels (1..4 depending on mode)
 	ImU32			PeakCount;		// Max bin value (for normalization)
 	ImHistogramMode	Mode;
-	ImParadeBitDepth BitDepth;
+	ImPixelBitDepth BitDepth;
 
-	ImHistogramData() : BinCount( 0 ), ChannelCount( 0 ), PeakCount( 0 ), Mode( ImHistogramMode_RGB ), BitDepth( ImParadeBitDepth_UInt8 ) {}
+	ImHistogramData() : BinCount( 0 ), ChannelCount( 0 ), PeakCount( 0 ), Mode( ImHistogramMode_RGB ), BitDepth( ImPixelBitDepth_UInt8 ) {}
 
 	void Clear()
 	{
@@ -2212,7 +2503,7 @@ struct ImHistogramData
 	}
 
 	void Accumulate( void const* data, int width, int height, int channels,
-					 ImParadeBitDepth bitDepth, ImParadeLayout layout, ImHistogramMode mode,
+					 ImPixelBitDepth bitDepth, ImPixelLayout layout, ImHistogramMode mode,
 					 int binCount = 256, int maxSamples = 1000000 );
 };
 
@@ -2253,7 +2544,7 @@ struct ImCIEChromaticityData
 
 	// Sample RGB pixels from raw image data for chromaticity plotting.
 	void Accumulate( void const* data, int width, int height, int channels,
-					 ImParadeBitDepth bitDepth, ImParadeLayout layout,
+					 ImPixelBitDepth bitDepth, ImPixelLayout layout,
 					 int maxSamples = 50000 );
 };
 
@@ -2287,13 +2578,6 @@ struct ImToneCurveData
 	}
 };
 
-struct ImGlobalData
-{
-    ImWidgetsFeatures features;
-    bool             dashedLinesUseGPU;
-    bool             dashedLinesDebugJoins;
-};
-
 struct ImCircle
 {
 	ImVec2 center;
@@ -2315,16 +2599,16 @@ struct ImPolyHoleShapeData
 	ImVec2* pts;
 	ImRect* p_bb;
 	int pts_count;
-	int gap;
-	int strokeWidth;
+	float gap;
+	float strokeWidth;
 };
 
 // Unit Field
 typedef float (*ImUnitConvertCallback)(float value, void* pUserData);
 struct ImUnitDef
 {
-	const char* name;            // Full name: "meter", "foot", "inch"
-	const char* abbreviation;    // Short: "m", "ft", "in"
+	char const* name;            // Full name: "meter", "foot", "inch"
+	char const* abbreviation;    // Short: "m", "ft", "in"
 	float       mul;             // base_value * mul + add = display_value
 	float       add;             // (for Fahrenheit: mul=9/5, add=32)
 	ImUnitConvertCallback toDisplay;  // Custom: base -> display (if non-NULL, mul/add ignored)
@@ -2332,7 +2616,7 @@ struct ImUnitDef
 	void*       pUserData;       // Passed to callbacks
 };
 
-inline ImUnitDef ImUnitDef_Simple( const char* name, const char* abbr, float mul, float add = 0.0f )
+inline ImUnitDef ImUnitDef_Simple( char const* name, char const* abbr, float mul, float add = 0.0f )
 {
 	ImUnitDef u = {};
 	u.name = name;
@@ -2345,7 +2629,7 @@ inline ImUnitDef ImUnitDef_Simple( const char* name, const char* abbr, float mul
 	return u;
 }
 
-inline ImUnitDef ImUnitDef_Custom( const char* name, const char* abbr, ImUnitConvertCallback toDisplay, ImUnitConvertCallback toBase, void* pUserData = NULL )
+inline ImUnitDef ImUnitDef_Custom( char const* name, char const* abbr, ImUnitConvertCallback toDisplay, ImUnitConvertCallback toBase, void* pUserData = NULL )
 {
 	ImUnitDef u = {};
 	u.name = name;
@@ -2420,7 +2704,7 @@ struct ImImageViewerState
 
 	// Optional: provide a CPU copy of the texture pixels to show RGBA values in the inspector.
 	// If NULL, the inspector only shows (x, y) coordinates.
-	const void*            Pixels;      // CPU pixel buffer
+	void const*            Pixels;      // CPU pixel buffer
 	ImVec2                 PixelSize;   // Dimensions of the Pixels buffer (should match texture)
 	ImPlatform_PixelFormat PixelFormat;
 
@@ -2430,7 +2714,7 @@ struct ImImageViewerState
 // ============================================================================
 // ImageInspector: color-managed raw-buffer viewer
 // ============================================================================
-// A more advanced sibling of ImageViewer that displays any of 11 sample types ×
+// A more advanced sibling of ImageViewer that displays any of 11 sample types x
 // 1..4 channels via an HLSL uber-shader. The user supplies an ImImageBuffer
 // (Halide-style strided descriptor, defined in ImPlatform.h) and the widget
 // uploads its bytes ONCE into a packed RGBA32F GPU texture (re-uploading only
@@ -2439,7 +2723,7 @@ struct ImImageViewerState
 // mosaic decode) run in the shader; per-frame CPU cost is uniform updates only.
 //
 // The CPU-side inspector loupe walks the user's host pointer directly with
-// full precision (double[4] + int64[4] lanes for exact integer display) — the
+// full precision (double[4] + int64[4] lanes for exact integer display) -- the
 // user must keep the buffer alive while the widget is open.
 //
 // Not supported on backends without custom shader support (DX9). On those
@@ -2518,7 +2802,7 @@ enum ImImageInspector_Gamut
 	ImImageInspector_Gamut_COUNT
 };
 
-// HDR → SDR tonemap operators.
+// HDR -> SDR tonemap operators.
 enum ImImageInspector_Tonemap
 {
 	ImImageInspector_Tonemap_None = 0,    // Clip
@@ -2560,7 +2844,7 @@ enum ImImageInspector_FalseColor
 
 // Persistent state for the ImageInspector widget.
 // User-controllable fields are at the top; the GPU cache fields below should
-// not be touched directly — they're managed by the widget. Call
+// not be touched directly -- they're managed by the widget. Call
 // ImWidgets::ImageInspectorReleaseState() before destroying the state to free
 // the GPU texture.
 struct ImImageInspectorState
@@ -2589,7 +2873,7 @@ struct ImImageInspectorState
 	int    MosaicPattern;         // ImMosaicPattern (overrides any inferred pattern)
 	int    MosaicMode;            // ImMosaicMode (raw vs bilinear demosaic)
 
-	// ---- GPU cache (managed by widget — do not touch) ----
+	// ---- GPU cache (managed by widget -- do not touch) ----
 	ImTextureID PackedTexture;
 	int         PackedTexW, PackedTexH;
 	ImU64       LastUploadedVersion;
@@ -2597,8 +2881,8 @@ struct ImImageInspectorState
 	int         LastUploadedChannels;
 	int         LastUploadedSampleType;
 	int         GpuXStride, GpuYStride, GpuCStride;   // On-GPU strides (always tight)
-	bool        BufferTooLarge;
 	ImVector<unsigned char> Scratch;                  // Persistent scratch for tight-pack
+	bool        BufferTooLarge;                       // (placed last so the bool's trailing padding doesn't sit inside the struct)
 
 	ImImageInspectorState()
 		: Zoom( 1.0f ), Pan( 0.0f, 0.0f )
@@ -2629,40 +2913,224 @@ struct ImImageInspectorState
 	}
 };
 
-namespace ImWidgets{
-	enum ImWidgetsBgEffect
-	{
-		ImWidgetsBgEffect_Blur = 0,
-		ImWidgetsBgEffect_GlassRefraction,
-		ImWidgetsBgEffect_FrostedGlass,
-		ImWidgetsBgEffect_Pixelate,
-		ImWidgetsBgEffect_ChromaticAberration,
-		ImWidgetsBgEffect_LiquidGlass,
-		ImWidgetsBgEffect_HeatHaze,
-		ImWidgetsBgEffect_Voronoi,
-		ImWidgetsBgEffect_EdgeGlow,
-		ImWidgetsBgEffect_Halftone,
-		ImWidgetsBgEffect_MouseEdge,
-		ImWidgetsBgEffect_CRT,
-		ImWidgetsBgEffect_DotMatrix,
-		ImWidgetsBgEffect_Glitch,
-		ImWidgetsBgEffect_StainedGlass,
-		ImWidgetsBgEffect_Rain,
-		ImWidgetsBgEffect_Kaleidoscope,
-		ImWidgetsBgEffect_COUNT,
-	};
-	extern ImGlobalData GlobalData;
+//////////////////////////////////////////////////////////////////////////
+// Extended primitives, interactions & widgets (2026-04 refacto batch)
+//////////////////////////////////////////////////////////////////////////
 
+// Hatching / stippling patterns
+enum ImWidgetsHatchPattern_
+{
+	ImWidgetsHatchPattern_Parallel = 0,
+	ImWidgetsHatchPattern_Cross,
+	ImWidgetsHatchPattern_Diagonal,
+	ImWidgetsHatchPattern_DiagonalCross,
+	ImWidgetsHatchPattern_Dots,
+	ImWidgetsHatchPattern_ConcentricRings,
+	ImWidgetsHatchPattern_BenDay,        // Comic-book grid of uniform dots, offset on alternate rows.
+	ImWidgetsHatchPattern_Screentone,    // Halftone -- dot radius modulated across the pattern.
+	ImWidgetsHatchPattern_COUNT
+};
+typedef int ImWidgetsHatchPattern;
+
+// Cross-cutting slider flags (angle wrap, delta overlay, proportional drag, stepping)
+enum ImWidgetsSliderFlags_
+{
+	ImWidgetsSliderFlags_None             = 0,
+	ImWidgetsSliderFlags_AngleWrap        = 1 << 0, // angle wraps around 2pi
+	ImWidgetsSliderFlags_AngleClamp       = 1 << 1, // clamp to [amin, amax] (default if neither set)
+	ImWidgetsSliderFlags_ShowDelta        = 1 << 2, // show floating drag-delta overlay
+	ImWidgetsSliderFlags_ProportionalDrag = 1 << 3, // participate in PushDragGroup
+	ImWidgetsSliderFlags_Stepped          = 1 << 4  // snap to nearest stop
+};
+typedef int ImWidgetsSliderFlags;
+
+// Falloff kernel for proportional multi-drag
+enum ImWidgetsFalloff_
+{
+	ImWidgetsFalloff_Linear = 0,
+	ImWidgetsFalloff_Gaussian,
+	ImWidgetsFalloff_Smoothstep,
+	ImWidgetsFalloff_COUNT
+};
+typedef int ImWidgetsFalloff;
+
+// Scalar 2D callback (distinct from color ones; returns a float)
+typedef float ( *ImWidgetsScalar2DCallback )( float x, float y, void* user );
+
+// Tier descriptor for multi-level iso-contour rendering (topographic maps, etc).
+struct ImIsoContourTier
+{
+	float spacing;      // world-value interval (or log-step multiplier when log_spacing=true)
+	ImU32 color;        // line color
+	float thickness;    // stroke thickness in pixels
+	bool  log_spacing;  // when true, iso-values are at k*spacing in log domain (10^k*spacing style)
+
+	ImIsoContourTier() : spacing( 1.0f ), color( IM_COL32( 255, 255, 255, 255 ) ), thickness( 1.0f ), log_spacing( false ) {}
+	ImIsoContourTier( float s, ImU32 c, float t, bool lg = false ) : spacing( s ), color( c ), thickness( t ), log_spacing( lg ) {}
+};
+
+//////////////////////////////////////////////////////////////////////////
+// Color grading (Phase D)
+//////////////////////////////////////////////////////////////////////////
+
+struct ImColorLUT3D
+{
+	int              Size;          // edge length (17, 33, 65 typical)
+	ImVector<ImVec4> Entries;       // Size^3 RGBA
+	float            DomainMin[ 3 ];
+	float            DomainMax[ 3 ];
+
+	ImColorLUT3D() : Size( 0 )
+	{
+		DomainMin[ 0 ] = DomainMin[ 1 ] = DomainMin[ 2 ] = 0.0f;
+		DomainMax[ 0 ] = DomainMax[ 1 ] = DomainMax[ 2 ] = 1.0f;
+	}
+};
+
+//////////////////////////////////////////////////////////////////////////
+// LookDev (Phase E)
+//////////////////////////////////////////////////////////////////////////
+
+struct ImLookDevState
+{
+	// Pivot position, normalized to the canvas (0,0 = top-left corner, 1,1 = bottom-right).
+	// The divider line always passes through this point, so the yellow slide handle
+	// is anchored here -- and rotation naturally pivots around it.
+	ImVec2 PivotNormalized;
+	float  DividerAngleRad;  // 0 = vertical divider, CW positive
+	bool   Swap;
+
+	ImLookDevState() : PivotNormalized( 0.5f, 0.5f ), DividerAngleRad( 0.0f ), Swap( false ) {}
+};
+
+// Per-side tonemap controls for LookDevInspector.
+struct ImLookDevInspectorSide
+{
+	float ExposureStops;
+	float Black;
+	float White;
+	float Gamma;
+
+	ImLookDevInspectorSide() : ExposureStops( 0.0f ), Black( 0.0f ), White( 1.0f ), Gamma( 2.2f ) {}
+};
+
+enum ImLookDevInspectorControls_
+{
+	ImLookDevInspectorControls_Independent = 0,
+	ImLookDevInspectorControls_Unified     = 1,
+};
+typedef int ImLookDevInspectorControls;
+
+struct ImLookDevInspectorState
+{
+	ImLookDevState               Divider;     // shared pivot + angle + swap
+	ImLookDevInspectorSide       A;
+	ImLookDevInspectorSide       B;
+	ImLookDevInspectorControls   Controls;    // Independent vs Unified
+
+	ImLookDevInspectorState() : Controls( ImLookDevInspectorControls_Independent ) {}
+};
+
+// Bezier surface patches
+struct ImCoonsPatch
+{
+	// Four cubic Bezier boundaries, each 4 control points.
+	// Order: bottom (u: 0->1), top (u: 0->1), left (v: 0->1), right (v: 0->1).
+	// Corners must match: bottom[0]==left[0], bottom[3]==right[0], top[0]==left[3], top[3]==right[3].
+	ImVec2 bottom[ 4 ];
+	ImVec2 top[ 4 ];
+	ImVec2 left[ 4 ];
+	ImVec2 right[ 4 ];
+};
+
+struct ImGregoryPatch
+{
+	// 20 control points Gregory patch. Corners[4] + two tangent CPs per edge (8) + two twist CPs per corner (8) = 20.
+	// Layout: [c00,c10,c11,c01, e_bot0,e_bot1, e_right0,e_right1, e_top0,e_top1, e_left0,e_left1,
+	//          t00a,t00b, t10a,t10b, t11a,t11b, t01a,t01b]
+	ImVec2 cp[ 20 ];
+};
+
+// Vector Drawing Tool types moved to dear_widgets_vector_drawing.h so the
+// widget implementation can live in its own translation unit. Downstream code
+// that includes dear_widgets.h keeps working with no changes.
+#include "dear_widgets_vector_drawing.h"
+
+// Font inspector mode
+enum ImFontInspectorMode_
+{
+	ImFontInspectorMode_Grid = 0,
+	ImFontInspectorMode_Metrics,
+	ImFontInspectorMode_Curves,
+	ImFontInspectorMode_Kerning,
+	ImFontInspectorMode_COUNT
+};
+typedef int ImFontInspectorMode;
+
+// Delta-E formulas
+enum ImDeltaEFormula_
+{
+	ImDeltaEFormula_E76 = 0,
+	ImDeltaEFormula_E94,
+	ImDeltaEFormula_E2000,
+	ImDeltaEFormula_EOK,
+	ImDeltaEFormula_COUNT
+};
+typedef int ImDeltaEFormula;
+
+// Equation input flags
+enum ImWidgetsEquationFlags_
+{
+	ImWidgetsEquationFlags_None             = 0,
+	ImWidgetsEquationFlags_ReadOnly         = 1 << 0,
+	ImWidgetsEquationFlags_ShowParseErrors  = 1 << 1,
+	ImWidgetsEquationFlags_InlineOnly       = 1 << 2,
+	ImWidgetsEquationFlags_BlockOnly        = 1 << 3,
+	// Inline vertical alignment (mutually exclusive; default is baseline/center).
+	ImWidgetsEquationFlags_AlignInlineTop    = 1 << 4,
+	ImWidgetsEquationFlags_AlignInlineCenter = 1 << 5,
+	ImWidgetsEquationFlags_AlignInlineBottom = 1 << 6,
+	// Align surrounding plain text instead of the math block (applied to the line).
+	ImWidgetsEquationFlags_AlignInlineBaseline = 1 << 7 // fallback if no flag given
+};
+typedef int ImWidgetsEquationFlags;
+
+enum ImWidgetsBgEffect_
+{
+	ImWidgetsBgEffect_Blur = 0,
+	ImWidgetsBgEffect_GlassRefraction,
+	ImWidgetsBgEffect_FrostedGlass,
+	ImWidgetsBgEffect_Pixelate,
+	ImWidgetsBgEffect_ChromaticAberration,
+	ImWidgetsBgEffect_LiquidGlass,
+	ImWidgetsBgEffect_HeatHaze,
+	ImWidgetsBgEffect_Voronoi,
+	ImWidgetsBgEffect_EdgeGlow,
+	ImWidgetsBgEffect_Halftone,
+	ImWidgetsBgEffect_MouseEdge,
+	ImWidgetsBgEffect_CRT,
+	ImWidgetsBgEffect_DotMatrix,
+	ImWidgetsBgEffect_Glitch,
+	ImWidgetsBgEffect_StainedGlass,
+	ImWidgetsBgEffect_Rain,
+	ImWidgetsBgEffect_Kaleidoscope,
+	ImWidgetsBgEffect_COUNT,
+};
+typedef int ImWidgetsBgEffect;
+
+namespace ImWidgets{
 	ImWidgetsStyle& GetStyle();
 	IMGUI_API void  ShowStyleEditor( ImWidgetsStyle* ref = NULL );
+	IMGUI_API void  SaveStyleToFile( char const* filename, ImWidgetsStyle const* style = NULL );
+	IMGUI_API bool  LoadStyleFromFile( char const* filename, ImWidgetsStyle* style = NULL );
 
 	inline
-	const char* GetStyleColorName( ImWidgetsStyleColor colorIndex )
+	char const* GetStyleColorName( ImWidgetsStyleColor colorIndex )
 	{
-		GetStyle().GetColorName( colorIndex );
+		return GetStyle().GetColorName( colorIndex );
 	}
 	inline
-	void PushStyleColor( ImWidgetsStyleColor colorIndex, const ImVec4& color )
+	void PushStyleColor( ImWidgetsStyleColor colorIndex, ImVec4 const& color )
 	{
 		GetStyle().PushColor( colorIndex, color );
 	}
@@ -2677,12 +3145,12 @@ namespace ImWidgets{
 		GetStyle().PushVar( varIndex, value );
 	}
 	inline
-	void PushStyleVar( ImWidgetsStyleVar varIndex, const ImVec2& value )
+	void PushStyleVar( ImWidgetsStyleVar varIndex, ImVec2 const& value )
 	{
 		GetStyle().PushVar( varIndex, value );
 	}
 	inline
-	void PushStyleVar( ImWidgetsStyleVar varIndex, const ImVec4& value )
+	void PushStyleVar( ImWidgetsStyleVar varIndex, ImVec4 const& value )
 	{
 		GetStyle().PushVar( varIndex, value );
 	}
@@ -2696,30 +3164,10 @@ namespace ImWidgets{
 	// Helpers
 	//////////////////////////////////////////////////////////////////////////
 	inline
-	float ImCbrt( float x )
-	{
-		return cbrtf( x );
-		//return ImPow( x, 1.0f / 3.0f );
-	}
-
-	inline
-	float ImTan2( float x, float y )
-	{
-		return atan2f( y, x );
-	}
-
-	inline
-	float ImFract(float x)
-	{
-		return x - ImFloor( x );
-	}
-
-	inline
 	float ImRound(float x)
 	{
 		return roundf(x);
 	}
-
 	inline
 	float ImSmoothStep(float edge0, float edge1, float x)
 	{
@@ -2728,133 +3176,12 @@ namespace ImWidgets{
 		// Evaluate polynomial
 		return x * x * (3.0f - 2.0f * x);
 	}
-
-	inline
-	int LoadShaderFile( size_t* file_data_size, char** file_data, char const* filename )
-	{
-		*file_data_size = 0;
-		// Load with 1 padding byte so the buffer is NUL-terminated for APIs expecting C-strings
-		*file_data = ( char* )ImFileLoadToMemory( filename, "rb", file_data_size, 1 );
-		if ( !*file_data )
-			return 0;
-
-		return 1;
-	}
-
-	inline
-	float ImDot( ImVec4 const& a, ImVec4 const& b )
-	{
-		return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
-	}
-	inline
-	float ImDot3( ImVec4 const& a, ImVec4 const& b )
-	{
-		return a.x * b.x + a.y * b.y + a.z * b.z;
-	}
-	inline
-	float ImDot3( float* a, float* b )
-	{
-		return a[ 0 ] * b[ 0 ] + a[ 1 ] * b[ 1 ] + a[ 2 ] * b[ 2 ];
-	}
-	inline
-	float	ImNormalize01(float const x, float const _min, float const _max)
-	{
-		return ( x - _min ) / ( _max - _min );
-	}
-	inline
-	float	ImScaleFromNormalized(float const x, float const newMin, float const newMax)
-	{
-		return x * ( newMax - newMin ) + newMin;
-	}
-	inline
-	float	ImRescale(float const x, float const _min, float const _max, float const newMin, float const newMax)
-	{
-		return ImScaleFromNormalized( ImNormalize01( x, _min, _max ), newMin, newMax );
-	}
-	template < typename Type >
-	inline
-	Type	Normalize01(Type const x, Type const _min, Type const _max)
-	{
-		return ( x - _min ) / ( _max - _min );
-	}
-	template < typename Type >
-	inline
-	Type	ScaleFromNormalized(Type const x, Type const newMin, Type const newMax)
-	{
-		return x * ( newMax - newMin ) + newMin;
-	}
-	template < typename Type >
-	inline
-	Type	Rescale(Type const x, Type const _min, Type const _max, Type const newMin, Type const newMax)
-	{
-		return ScaleFromNormalized( Normalize01( x, _min, _max ), newMin, newMax );
-	}
-
-	inline
-	float  ImLengthSqr3( const ImVec4& lhs )
-	{
-		return ( lhs.x * lhs.x ) + ( lhs.y * lhs.y ) + ( lhs.z * lhs.z );
-	}
 	inline
 	float ImLength(ImVec2 v)
 	{
 		return ImSqrt( ImLengthSqr( v ) );
 	}
-	inline
-	float ImLengthL1(ImVec2 v)
-	{
-		return ImAbs( v.x ) + ImAbs( v.y );
-	}
-	inline
-	ImVec2 ImNormalized(ImVec2 v)
-	{
-		return v / ImLength( v );
-	}
-	inline
-	ImVec2 ImHalfTurn(ImVec2 v)
-	{
-		return ImVec2(-v.y, v.x);
-	}
-	inline
-	ImVec2 ImAntiHalfTurn(ImVec2 v)
-	{
-		return ImVec2(v.y, -v.x);
-	}
-	inline
-	float ImLength(ImVec4 v)
-	{
-		return ImSqrt( ImLengthSqr( v ) );
-	}
-	inline
-	float ImLength3(ImVec4 v)
-	{
-		return ImSqrt( ImLengthSqr3( v ) );
-	}
-	float	ImLinearSample( float t, float* buffer, int count );
-	inline
-	float	ImFunctionFromData( float const x, float const minX, float const maxX, float* data, int const samples_count )
-	{
-		float const t = ImSaturate( ImNormalize01( x, minX, maxX ) );
 
-		return ImLinearSample( t, data, samples_count );
-	}
-
-	inline
-	float	ImsRGBToLinear( float x )
-	{
-		if ( x <= 0.04045f )
-			return x / 12.92f;
-		else
-			return ImPow( ( x + 0.055f ) / 1.055f, 2.4f);
-	}
-	inline
-	float	ImLinearTosRGB( float x )
-	{
-		if ( x <= 0.0031308f )
-			return 12.92f * x;
-		else
-			return 1.055f * ImPow( x, 1.0f / 2.4f) - 0.055f;
-	}
 	// Right-to-Left, like operator '=' or like standard function in C, memcpy, ...
 	IMGUI_API void	ColorConvertsRGBtosRGB( float& out_r, float& out_g, float& out_b, float r, float g, float b );
 	IMGUI_API void	ColorConvertRGBtoLinear( float& out_L, float& out_a, float& out_b, float r, float g, float b );
@@ -2882,48 +3209,9 @@ namespace ImWidgets{
 
 	ImU32	KelvinTemperatureTosRGBColors( float temperature ); // [ 1000 K; 12000 K ]
 
-	inline
-	void Mat33RowMajorMulVec3( float& x, float& y, float& z, float* mat33RowMajor, float* vec3 )
-	{
-		x = ImDot3( mat33RowMajor + 0, vec3 );
-		y = ImDot3( mat33RowMajor + 3, vec3 );
-		z = ImDot3( mat33RowMajor + 6, vec3 );
-	}
-
-	inline
-	void ImU32ColorToImRGBColor(ImVector<float>& colorsConverted, ImU32* colors, int color_count)
-	{
-		ImU32* current = colors;
-		colorsConverted.resize( 3 * color_count );
-		for ( int k = 0; k < color_count; ++k )
-		{
-			ImVec4 col = ( ImVec4 )ImColor( *current );
-			colorsConverted[ 3 * k + 0 ] = col.x;
-			colorsConverted[ 3 * k + 1 ] = col.y;
-			colorsConverted[ 3 * k + 2 ] = col.z;
-			++current;
-		}
-	}
-
-	inline
-	void ImComputeRect( ImRect* p_bb, ImVec2* pts, int pts_count )
-	{
-		ImRect& bb = *p_bb;
-		bb.Min = ImVec2( FLT_MAX, FLT_MAX );
-		bb.Max = ImVec2( -FLT_MAX, -FLT_MAX );
-		for ( int k = 0; k < pts_count; ++k )
-		{
-			bb.Min.x = ImMin( bb.Min.x, pts[ k ].x );
-			bb.Min.y = ImMin( bb.Min.y, pts[ k ].y );
-			bb.Max.x = ImMax( bb.Max.x, pts[ k ].x );
-			bb.Max.y = ImMax( bb.Max.y, pts[ k ].y );
-		}
-	}
-
 	//////////////////////////////////////////////////////////////////////////
 	// Color Functions
 	//////////////////////////////////////////////////////////////////////////
-	IMGUI_API ImU32	ImColorFrom_xyz( float x, float y, float z, float* xyzToRGB, float gamma );
 
 	//IMGUI_API void ColorConvertHWBtoRGB( float h, float w, float b, float& r, float& g, float& b );
 
@@ -2936,29 +3224,6 @@ namespace ImWidgets{
 	IMGUI_API ImU32 ImColorBlendLab( ImU32 col0, ImU32 col1, float t );
 	IMGUI_API ImU32 ImColorBlendOklab( ImU32 col0, ImU32 col1, float t );
 	IMGUI_API ImU32 ImColorBlendOkLCH( ImU32 col0, ImU32 col1, float t );
-
-	//////////////////////////////////////////////////////////////////////////
-	// Scalar Helpers
-	//////////////////////////////////////////////////////////////////////////
-	void	ScaleData( ImGuiDataType data_type, void* p_data, double value );
-	void	ScaleData( ImGuiDataType data_type, void* p_data, ImU64 value );
-	bool	IsNegativeScalar( ImGuiDataType data_type, ImU64* src );
-	bool	IsPositiveScalar( ImGuiDataType data_type, ImU64* src );
-	void	EqualScalar( ImGuiDataType data_type, ImU64* p_target, ImU64* p_source );
-	void	SetScalarIndirect( ImGuiDataType data_type, void* p_source, int idx, ImU64* value );
-	float	ScalarToFloat( ImGuiDataType data_type, ImU64* p_source );
-	float	ScalarIndirectToFloat( ImGuiDataType data_type, void* p_source, int idx );
-	ImU64	ScalarIndirectToScalar( ImGuiDataType data_type, void* p_source, int idx );
-	ImU64	FloatToScalar( ImGuiDataType data_type, float f_value );
-	ImU64	AddScalar( ImGuiDataType data_type, void* p_a, void* p_b );
-	ImU64	SubScalar( ImGuiDataType data_type, void* p_a, void* p_b );
-	ImU64	MulScalar( ImGuiDataType data_type, void* p_a, void* p_b );
-	ImU64	DivScalar( ImGuiDataType data_type, void* p_a, void* p_b );
-	ImU64	ClampScalar( ImGuiDataType data_type, void* p_value, void* p_min, void* p_max );
-	ImU64	Normalize01( ImGuiDataType data_type, void* p_value, void const* p_min, void const* p_max );
-	//void	MemoryString( std::string& sResult, ImU64 const uMemoryByte );
-	//void	MemoryString( std::string& sResult, ImU64 const uMemoryByte );
-	//void	MemoryString( std::string& sResult, ImU64 const uMemoryByte );
 
 	//////////////////////////////////////////////////////////////////////////
 	// Geometry Generation
@@ -2985,7 +3250,7 @@ namespace ImWidgets{
 	void	GenShapeSquircle( ImWidgetsShape& shape, ImVec2 center, float radius, int side_count, float n = 4.0f );
 	// S-1: Tessellate a concave polygon and cache the result. pts should be in local/normalized coords;
 	// origin is added back after tessellation (same pattern as GenShapeRect with r.Min).
-	void	GenShapeConcavePoly( ImWidgetsShape& shape, const ImVec2* pts, int pts_count, ImVec2 origin = ImVec2( 0.0f, 0.0f ) );
+	void	GenShapeConcavePoly( ImWidgetsShape& shape, ImVec2 const* pts, int pts_count, ImVec2 origin = ImVec2( 0.0f, 0.0f ) );
 
 	// TODO
 	//void	GenShapeFromBezierCubicCurve( ImShape& shape, ImVector<ImVec2>& path, float thickness, int num_segments = 0 );
@@ -3038,11 +3303,11 @@ namespace ImWidgets{
 	// Uses the current ImGui font by extracting its TTF outline data for GPU Bezier rendering.
 	// Produces crisp results at any scale or viewing angle without texture atlases or distance fields.
 	//
-	// FONT SIZE UNIT — Logical Pixels (lp):
+	// FONT SIZE UNIT -- Logical Pixels (lp):
 	//   All font_size parameters are in logical pixels (DPI-independent).
 	//   1 lp = 1 physical pixel at 96 DPI / 1.0x scale.
 	//   At 2x DPI (192 DPI / Windows 200%), 1 lp = 2 physical pixels.
-	//   The library converts lp → physical pixels internally using ImGui::GetStyle().FontScaleDpi.
+	//   The library converts lp -> physical pixels internally using ImGui::GetStyle().FontScaleDpi.
 	//   Set FontScaleDpi at startup: ImGui::GetStyle().FontScaleDpi = ImPlatform_GetDpiScale();
 	//   Return values (CalcTextSize, CalcShapedTextWidth, CalcLaTeXSize) are in PHYSICAL pixels,
 	//   consistent with ImGui cursor positions and layout.
@@ -3055,56 +3320,56 @@ namespace ImWidgets{
 #undef DrawTextA
 #endif
 	// Use current ImGui font/size at pos (uses GetFontSize() which is already DPI-scaled)
-	IMGUI_API void DrawText( ImDrawList* pDrawList, ImVec2 pos, ImU32 col, const char* text, const char* text_end = nullptr );
+	IMGUI_API void DrawText( ImDrawList* pDrawList, ImVec2 pos, ImU32 col, char const* text, char const* text_end = nullptr );
 	// Explicit font and size in logical pixels (pass nullptr/0 to use current ImGui font/size)
-	IMGUI_API void DrawText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, ImU32 col, const char* text, const char* text_end = nullptr );
+	IMGUI_API void DrawText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, ImU32 col, char const* text, char const* text_end = nullptr );
 	// Measure text. font_size in lp. Returns (width, height) in physical pixels.
 	// out_ascent: if non-null, receives ascent in physical pixels (pass cursor.y + ascent as baseline to DrawText).
-	IMGUI_API ImVec2 CalcTextSize( ImFont* font, float font_size, const char* text, const char* text_end = nullptr, float* out_ascent = nullptr );
-	// Like CalcTextSize but runs the OpenType shaper (HarfBuzz) for accurate width of shaped text
-	// (Arabic contextual forms, ligatures). Slower than CalcTextSize — use only when alignment precision matters.
-	IMGUI_API float CalcShapedTextWidth( ImFont* font, float font_size, const char* text, const char* text_end = nullptr );
+	IMGUI_API ImVec2 CalcTextSize( ImFont* font, float font_size, char const* text, char const* text_end = nullptr, float* out_ascent = nullptr );
+	// Like CalcTextSize but runs the OpenType shaper (kb_text_shape) for accurate width of shaped text
+	// (Arabic contextual forms, ligatures). Slower than CalcTextSize -- use only when alignment precision matters.
+	IMGUI_API float CalcShapedTextWidth( ImFont* font, float font_size, char const* text, char const* text_end = nullptr );
 	// Horizontal linear gradient: col_left at text start, col_right at text end. font_size in lp.
-	IMGUI_API void DrawTextGradient( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, ImU32 col_left, ImU32 col_right, const char* text, const char* text_end = nullptr );
+	IMGUI_API void DrawTextGradient( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, ImU32 col_left, ImU32 col_right, char const* text, char const* text_end = nullptr );
 	// ---- Typography: tesselated text for gradient/image fills ----
 	// font_size in lp. tess_tol: curve flattening tolerance (lower = more segments, smoother). 0 = auto.
 	// Convert text to CPU-tesselated geometry (ImWidgetsShape) for use with gradient/image fill functions.
-	IMGUI_API void TesselateText( ImFont* font, float font_size, const char* text, ImWidgetsShape& outShape, const char* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
+	IMGUI_API void TesselateText( ImFont* font, float font_size, char const* text, ImWidgetsShape& outShape, char const* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
 	// Same as TesselateText but returns per-glyph shapes (preserves ligatures/calt from full text shaping).
-	IMGUI_API void TesselateTextPerGlyph( ImFont* font, float font_size, const char* text, ImVector<ImWidgetsShape>& outShapes, const char* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
+	IMGUI_API void TesselateTextPerGlyph( ImFont* font, float font_size, char const* text, ImVector<ImWidgetsShape>& outShapes, char const* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
 	// Pre-tessellate every glyph in the font and populate the cache. Call once at startup (after the
 	// first ImGui::NewFrame) to eliminate stalls when TesselateText/TesselateTextPerGlyph first runs.
 	IMGUI_API void PrewarmTessellationCache( ImFont* font, float tess_tol = 0.0f );
 	// Extract raw contour points (explicitly closed, for DrawShapeWithHole). font_size in lp. Debug/internal use.
-	IMGUI_API void ExtractTextContours( ImFont* font, float font_size, const char* text, const char* text_end, ImVec2 offset, ImVector<ImVec2>& outPoly, ImRect& outBB, float tess_tol = 0.0f );
+	IMGUI_API void ExtractTextContours( ImFont* font, float font_size, char const* text, char const* text_end, ImVec2 offset, ImVector<ImVec2>& outPoly, ImRect& outBB, float tess_tol = 0.0f );
 	// Debug: draw the tessellation algorithm steps for a single character. font_size in lp.
-	IMGUI_API void DrawTesselateDebug( ImDrawList* dl, ImFont* font, float font_size, const char* text, ImVec2 pos, float tess_tol, float spacing, float rowH );
+	IMGUI_API void DrawTesselateDebug( ImDrawList* dl, ImFont* font, float font_size, char const* text, ImVec2 pos, float tess_tol, float spacing, float rowH );
 	// Text filled with an image texture. font_size in lp.
-	IMGUI_API void DrawImageText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, ImTextureID tex, const char* text, const char* text_end = nullptr, ImU32 tint = IM_COL32_WHITE, ImVec2 uv_offset = ImVec2(0,0), ImVec2 uv_scale = ImVec2(1,1), float tess_tol = 0.0f, int iterations = 0 );
+	IMGUI_API void DrawImageText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, ImTextureID tex, char const* text, char const* text_end = nullptr, ImU32 tint = IM_COL32_WHITE, ImVec2 uv_offset = ImVec2(0,0), ImVec2 uv_scale = ImVec2(1,1), float tess_tol = 0.0f, int iterations = 0 );
 	// Text filled with gradients (supports all color spaces via function pointers). font_size in lp.
-	IMGUI_API void DrawLinearGradientText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB = nullptr, pfsRGB2Space sRGB2Space = nullptr, const char* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
-	IMGUI_API void DrawRadialGradientText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB = nullptr, pfsRGB2Space sRGB2Space = nullptr, const char* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
-	IMGUI_API void DrawDiamondGradientText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB = nullptr, pfsRGB2Space sRGB2Space = nullptr, const char* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
+	IMGUI_API void DrawLinearGradientText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, char const* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB = nullptr, pfsRGB2Space sRGB2Space = nullptr, char const* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
+	IMGUI_API void DrawRadialGradientText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, char const* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB = nullptr, pfsRGB2Space sRGB2Space = nullptr, char const* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
+	IMGUI_API void DrawDiamondGradientText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, char const* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB = nullptr, pfsRGB2Space sRGB2Space = nullptr, char const* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
 	// GPU gradient text rendering (requires ImPlatform + SLUG_FILL shader). No CPU tessellation.
 	// Gradient is computed per-pixel on GPU. Falls back to CPU tessellation if shader unavailable. font_size in lp.
 	// colorSpace: 0=sRGB, 1=Linear, 2=OkLab, 3=OkLch, 4=HSV (matches ImWidgetsGradientInterp_)
-	IMGUI_API void DrawLinearGradientTextGPU( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end = nullptr, bool perChar = false, int colorSpace = 0 );
-	IMGUI_API void DrawRadialGradientTextGPU( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end = nullptr, bool perChar = false, int colorSpace = 0 );
-	IMGUI_API void DrawDiamondGradientTextGPU( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end = nullptr, bool perChar = false, int colorSpace = 0 );
+	IMGUI_API void DrawLinearGradientTextGPU( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, char const* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, char const* text_end = nullptr, bool perChar = false, int colorSpace = 0 );
+	IMGUI_API void DrawRadialGradientTextGPU( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, char const* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, char const* text_end = nullptr, bool perChar = false, int colorSpace = 0 );
+	IMGUI_API void DrawDiamondGradientTextGPU( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, char const* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, char const* text_end = nullptr, bool perChar = false, int colorSpace = 0 );
 	// GPU image text rendering. Image is sampled per-pixel within glyph coverage. font_size in lp.
-	IMGUI_API void DrawImageTextGPU( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, ImTextureID tex, ImU32 tint = IM_COL32_WHITE, ImVec2 uv_offset = ImVec2(0,0), ImVec2 uv_scale = ImVec2(1,1), const char* text_end = nullptr, bool perChar = false );
+	IMGUI_API void DrawImageTextGPU( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, char const* text, ImTextureID tex, ImU32 tint = IM_COL32_WHITE, ImVec2 uv_offset = ImVec2(0,0), ImVec2 uv_scale = ImVec2(1,1), char const* text_end = nullptr, bool perChar = false );
 	// GPU image text with per-character texture cycling. textures[i % nTextures] is used for glyph i.
-	IMGUI_API void DrawImageTextGPU( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, const ImTextureID* textures, int nTextures, ImU32 tint = IM_COL32_WHITE, ImVec2 uv_offset = ImVec2(0,0), ImVec2 uv_scale = ImVec2(1,1), const char* text_end = nullptr );
+	IMGUI_API void DrawImageTextGPU( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, char const* text, ImTextureID const* textures, int nTextures, ImU32 tint = IM_COL32_WHITE, ImVec2 uv_offset = ImVec2(0,0), ImVec2 uv_scale = ImVec2(1,1), char const* text_end = nullptr );
 	// Debug: draw curve outlines, control points, and bounding boxes for Slug glyphs. font_size in lp.
 	// flags: 1=curves, 2=control points, 4=bounding boxes, 8=band grid, 0xFF=all
-	IMGUI_API void DrawTextDebugCurves( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, const char* text_end = nullptr, int flags = 0xFF );
+	IMGUI_API void DrawTextDebugCurves( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, char const* text, char const* text_end = nullptr, int flags = 0xFF );
 	// Debug: draw each color layer's quad as a flat semi-transparent rectangle (no Slug shader). font_size in lp.
-	IMGUI_API void DrawTextDebugLayers( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, const char* text, const char* text_end = nullptr );
+	IMGUI_API void DrawTextDebugLayers( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, char const* text, char const* text_end = nullptr );
 	// Set to true to use the debug shader (xcov=R, ycov=G, coverage=B) instead of normal rendering.
 	IMGUI_API extern bool g_SlugDebugShader;
 	// ImFontLoader backend: rasterizes Slug glyphs (including color/gradient) into ImGui's bitmap atlas.
 	// Use with: cfg.FontLoader = ImWidgets::GetSlugFontLoader();
-	IMGUI_API const ImFontLoader* GetSlugFontLoader();
+	IMGUI_API ImFontLoader const* GetSlugFontLoader();
 	IMGUI_API bool GetSlugFontInfo(ImFont* font, void* outStbttFontInfo, float* outEmScale); // outStbttFontInfo = stbtt_fontinfo*
 	IMGUI_API void SlugBuildGlyphByID(ImFont* font, int glyphID);
 	// LaTeX math rendering via Slug GPU fonts. font_size in lp.
@@ -3112,14 +3377,14 @@ namespace ImWidgets{
 	// latex: LaTeX math string (e.g. "x^2 + \\frac{\\alpha}{\\beta} = 0")
 	// Call during font loading phase (before CreateContext) to load the Latin Modern Math font.
 	IMGUI_API void LoadLaTeXFont();
-	IMGUI_API void DrawLaTeX( ImDrawList* pDrawList, float font_size, ImVec2 pos, ImU32 col, const char* latex );
+	IMGUI_API void DrawLaTeX( ImDrawList* pDrawList, float font_size, ImVec2 pos, ImU32 col, char const* latex );
 	// Measure the bounding box of a LaTeX expression. font_size in lp. Returns size in physical pixels.
-	IMGUI_API ImVec2 CalcLaTeXSize( float font_size, const char* latex );
+	IMGUI_API ImVec2 CalcLaTeXSize( float font_size, char const* latex );
 	// Debug: draw bounding boxes for each glyph/box in a LaTeX expression. font_size in lp.
-	IMGUI_API void DrawLaTeXDebug( ImDrawList* pDrawList, float font_size, ImVec2 pos, const char* latex );
+	IMGUI_API void DrawLaTeXDebug( ImDrawList* pDrawList, float font_size, ImVec2 pos, char const* latex );
 	// Tessellate a LaTeX expression into an ImWidgetsShape for gradient/image fills. font_size in lp.
 	// pos = top-left corner (same convention as DrawLaTeX). Use CalcLaTeXSize for layout size.
-	IMGUI_API void TesselateLaTeX( float font_size, const char* latex, ImVec2 pos, ImWidgetsShape& outShape, float tess_tol = 0.25f, int iterations = 0 );
+	IMGUI_API void TesselateLaTeX( float font_size, char const* latex, ImVec2 pos, ImWidgetsShape& outShape, float tess_tol = 0.25f, int iterations = 0 );
 
 	//////////////////////////////////////////////////////////////////////////
 	// DrawList
@@ -3137,8 +3402,10 @@ namespace ImWidgets{
 	IMGUI_API void DrawSignetCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float width, float height, float height_ratio, float align01, float angle, float thickness, ImU32 col );
 	IMGUI_API void DrawSignetFilledCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float width, float height, float height_ratio, float align01, float angle, ImU32 col );
 
-	IMGUI_API void DrawProceduralColor1DNearest( ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX );
-	IMGUI_API void DrawProceduralColor1DBilinear( ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX );
+	IMGUI_API void DrawProceduralColor1DNearestHorizontal( ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX );
+	IMGUI_API void DrawProceduralColor1DNearestVertical( ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionY );
+	IMGUI_API void DrawProceduralColor1DBilinearHorizontal( ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX );
+	IMGUI_API void DrawProceduralColor1DBilinearVertical( ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionY );
 
 	IMGUI_API void DrawProceduralColor2DNearest( ImDrawList* pDrawList, ImWidgetsColor2DCallback func, void* pUserData, float minX, float maxX, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionX, int resolutionY );
 	IMGUI_API void DrawProceduralColor2DBilinear( ImDrawList* pDrawList, ImWidgetsColor2DCallback func, void* pUserData, float minX, float maxX, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionX, int resolutionY );
@@ -3148,17 +3415,22 @@ namespace ImWidgets{
 	IMGUI_API void DrawLumianceBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma );
 	IMGUI_API void DrawSaturationBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma );
 
+	IMGUI_API void DrawProceduralColorArcBilinear( ImDrawList* pDrawList, ImVec2 center, float innerRadius, float outerRadius, float startAngle, float sweepAngle, ImWidgetsColor1DCallback func, void* pUserData, int division, bool bilinear );
+	IMGUI_API void DrawProceduralColorSplineBilinear( ImDrawList* pDrawList, ImVec2 const* points, int points_count, float thickness, ImWidgetsColor1DCallback func, void* pUserData, int resolution, bool closed );
+
 	IMGUI_API void DrawColorRing( ImDrawList* pDrawList, ImVec2 const curPos, ImVec2 const size, float thickness_, ImWidgetsColor1DCallback func, void* pUserData, int division, float colorOffset, bool bIsBilinear );
 
 	IMGUI_API ImVec4 GradientSample( ImGradientData const& gradient, float t );
 	IMGUI_API float  GradientAlphaSample( ImGradientData const& gradient, float t );
 	IMGUI_API void DrawCheckerboard( ImDrawList* pDrawList, ImVec2 position, ImVec2 size, float cellSize, ImU32 col1, ImU32 col2 );
 	IMGUI_API void DrawGradientBar( ImDrawList* pDrawList, ImGradientData const& gradient, ImVec2 position, ImVec2 size, int resolution );
+	IMGUI_API void DrawSplineGradient( ImDrawList* pDrawList, ImGradientData const& gradient, ImVec2 const* points, int points_count, float thickness, int resolution, bool closed = false );
+	IMGUI_API void DrawSplineGradientCut( ImDrawList* pDrawList, ImGradientData const& gradient, float const min, float const max, ImVec2 const* points, int points_count, float thickness, int resolution, bool closed = false );
 
 	IMGUI_API float CurveEditorEvalEasing( ImCurveEditorSeg seg, float t );
 	IMGUI_API float CurveEditorSample( ImCurveEditorData const& curve, float x );
-	IMGUI_API const char* CurveEditorSegName( ImCurveEditorSeg seg );
-	IMGUI_API const char* CurveEditorTangentModeName( ImCurveEditorTangentMode mode );
+	IMGUI_API char const* CurveEditorSegName( ImCurveEditorSeg seg );
+	IMGUI_API char const* CurveEditorTangentModeName( ImCurveEditorTangentMode mode );
 
 	IMGUI_API void DrawOkLabQuad( ImDrawList* pDrawList, ImVec2 start, ImVec2 size, float L, int resX = 16, int resY = 16 );
 	IMGUI_API void DrawOkLchQuad( ImDrawList* pDrawList, ImVec2 start, ImVec2 size, float L, int resX = 16, int resY = 16 );
@@ -3176,7 +3448,7 @@ namespace ImWidgets{
 										   int gap = 3, int strokeWidth = 3 );
 
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
-	IMGUI_API void CreateInternalShader( ImDrawShader* shaders_out, char const* shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer );
+	IMGUI_API void CreateInternalShader( ImDrawShader* shaders_out, char const* shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer, char const* extra_define = nullptr, char const* cache_suffix = nullptr );
 
 	// Eagerly compile/load every internal shader used by Dear Widgets.
 	// Optional: shaders are lazily compiled on first use otherwise. Call this once
@@ -3197,36 +3469,8 @@ namespace ImWidgets{
 							   ImWidgetsDrawType draw_type );
 #endif
 
-	// TODO: find a clean way expose the style of the draws:
-	// Triangle of ColorSpace
-	// White PointDrawChromaticityPlotGeneric( ImDrawList* pDrawList,
-	IMGUI_API
-	void	DrawChromaticityPlotGeneric( ImDrawList* pDrawList,
-										 ImVec2 curPos,
-										 ImVec2 size,
-										 ImVec2 primR, ImVec2 primG, ImVec2 primB,
-										 ImVec2 whitePoint,
-										 float* xyzToRGB,
-										 int const chromeLineSamplesCount,
-										 float* observerX, float* observerY, float* observerZ,
-										 int const observerSampleCount,
-										 float const observerWavelengthMin, float const observerWavelengthMax,
-										 float* standardCIE,
-										 int const standardCIESampleCount,
-										 float const standardCIEWavelengthMin, float const standardCIEWavelengthMax,
-										 float gamma,
-										 int resX, int resY,
-										 ImU32 maskColor,
-										 float wavelengthMin = 400.0f, float wavelengthMax = 700.0f,
-										 float minX = 0.0f, float maxX = 0.8f,
-										 float minY = 0.0f, float maxY = 0.9f,
-										 bool showColorSpaceTriangle = true,
-										 bool showWhitePoint = true,
-										 bool showBorder = true,
-										 ImU32 borderColor = IM_COL32( 0, 0, 0, 255 ),
-										 float borderThickness = 1.0f );
 	IMGUI_API void DrawChromaticityPlot( ImDrawList* draw,
-										 ImWidgetsIlluminance illuminance,
+										 ImWidgetsIlluminant illuminance,
 										 ImWidgetsObserver observer,
 										 ImWidgetsColorSpace colorSpace,
 										 int chromeLineSamplesCount,
@@ -3241,17 +3485,6 @@ namespace ImWidgets{
 										 bool showBorder = true,
 										 ImU32 borderColor = IM_COL32( 0, 0, 0, 255 ),
 										 float borderThickness = 1.0f );
-	IMGUI_API
-	void	DrawChromaticityPointsGeneric( ImDrawList* pDrawList,
-										   ImVec2 curPos,
-										   ImVec2 size,
-										   float* rgbToXYZ,
-										   float* colors4, // AoS
-										   int color_count,
-										   float minX, float maxX,
-										   float minY, float maxY,
-										   ImU32 plotColor, float radius, int num_segments,
-										   int colorStride = 4 ); // 4 for rgba,rgba,rgba,...; 3 for rgb,rgb,rgb,... or anything else
 	IMGUI_API void DrawChromaticityPoints( ImDrawList* pDrawList,
 										   ImVec2 curPos,
 										   ImVec2 size,
@@ -3269,17 +3502,6 @@ namespace ImWidgets{
 										  float minX, float maxX,
 										  float minY, float maxY,
 										  ImU32 plotColor, float radius, int num_segments,
-										  int colorStride = 4 ); // 4 for rgba,rgba,rgba,...; 3 for rgb,rgb,rgb,... or anything else );
-	IMGUI_API
-	void	DrawChromaticityLinesGeneric( ImDrawList* pDrawList,
-										  ImVec2 curPos,
-										  ImVec2 size,
-										  float* rgbToXYZ,
-										  float* colors4, // AoS
-										  int color_count,
-										  float minX, float maxX,
-										  float minY, float maxY,
-										  ImU32 plotColor, ImDrawFlags flags, float thickness,
 										  int colorStride = 4 ); // 4 for rgba,rgba,rgba,...; 3 for rgb,rgb,rgb,... or anything else );
 	IMGUI_API void DrawChromaticityLines( ImDrawList* pDrawList,
 										  ImVec2 curPos,
@@ -3343,7 +3565,7 @@ namespace ImWidgets{
 	//////////////////////////////////////////////////////////////////////////
 	// Interactions
 	//////////////////////////////////////////////////////////////////////////
-	IMGUI_API bool IsBoundingBoxWellFormed( const ImVec2& r_min, const ImVec2& r_max, ImVec2* pts, int pts_count );
+	IMGUI_API bool IsBoundingBoxWellFormed( ImVec2 const& r_min, ImVec2 const& r_max, ImVec2* pts, int pts_count );
 
 	IMGUI_API bool Im_IsCircleContains( ImVec2 p, void* data );
 	IMGUI_API bool Im_IsCapsuleHContains( ImVec2 p, void* data );
@@ -3352,11 +3574,11 @@ namespace ImWidgets{
 	IMGUI_API bool Im_IsPolyConcaveContains( ImVec2 p, void* data );
 	IMGUI_API bool Im_IsPolyWithHoleContains( ImVec2 p, void* data );
 
-	IMGUI_API bool IsMouseHovering( const ImVec2& r_min, const ImVec2& r_max, IsContains contains, void* data, bool clip = true );
-	IMGUI_API bool ItemHoverable( const ImRect& bb, ImGuiID id, ImGuiItemFlags item_flags, IsContains isContains, void* extra_data );
+	IMGUI_API bool IsMouseHovering( ImVec2 const& r_min, ImVec2 const& r_max, IsContains contains, void* data, bool clip = true );
+	IMGUI_API bool ItemHoverable( ImRect const& bb, ImGuiID id, ImGuiItemFlags item_flags, IsContains isContains, void* extra_data );
 
-	//typedef bool ( *ImItemHoverableFunc )( const ImRect& bb, ImGuiID id, ImGuiItemFlags item_flags, void* extra_data );
-	IMGUI_API bool ButtonBehaviorEx( const ImRect& bb, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags, IsContains isContains, void* extra_data );
+	//typedef bool ( *ImItemHoverableFunc )( ImRect const& bb, ImGuiID id, ImGuiItemFlags item_flags, void* extra_data );
+	IMGUI_API bool ButtonBehaviorEx( ImRect const& bb, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags, IsContains isContains, void* extra_data );
 	IMGUI_API bool ButtonBehaviorCircle( ImVec2 center, float radius, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
 	IMGUI_API bool ButtonBehaviorCapsuleH( ImVec2 pos, float length, float radius, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
 	IMGUI_API bool ButtonBehaviorCapsuleV( ImVec2 pos, float length, float radius, ImGuiID id, bool* out_hovered, bool* out_held, ImGuiButtonFlags flags );
@@ -3367,34 +3589,79 @@ namespace ImWidgets{
 	//////////////////////////////////////////////////////////////////////////
 	// Widgets
 	//////////////////////////////////////////////////////////////////////////
-	IMGUI_API bool ButtonEx( const char* label, const ImVec2& size_arg, ImRect bb, ImVec2 text_offset, ImGuiButtonFlags flags,
+	IMGUI_API bool ButtonEx( char const* label, ImVec2 const& size_arg, ImRect bb, ImVec2 text_offset, ImGuiButtonFlags flags,
 							 IsContains isContains, ImDrawShape outline, ImDrawShapeFilled fill, ImDrawShapeFilledTex fill_tex, ImInlineOffset offset, FromRect from_rect,
 							 void* extra_data,
 							 ImTextureID* tex = NULL, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
-	IMGUI_API bool ButtonExCircle( const char* label, float radius, ImGuiButtonFlags flags );
-	IMGUI_API bool ButtonExCapsuleH( const char* label, float length, float thickness, ImGuiButtonFlags flags );
-	IMGUI_API bool ButtonExCapsuleV( const char* label, float length, float thickness, ImGuiButtonFlags flags );
-	IMGUI_API bool ButtonExConvex( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImGuiButtonFlags flags );
-	IMGUI_API bool ButtonExConcave( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags );
-	IMGUI_API bool ButtonExWithHole( const char* label, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags );
+	IMGUI_API bool ButtonExCircle( char const* label, float radius, ImGuiButtonFlags flags );
+	IMGUI_API bool ButtonExCapsuleH( char const* label, float length, float thickness, ImGuiButtonFlags flags );
+	IMGUI_API bool ButtonExCapsuleV( char const* label, float length, float thickness, ImGuiButtonFlags flags );
+	IMGUI_API bool ButtonExConvex( char const* label, ImVec2 const& size_arg, ImVec2* pts, int pts_count, ImGuiButtonFlags flags );
+	IMGUI_API bool ButtonExConcave( char const* label, ImVec2 const& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags );
+	IMGUI_API bool ButtonExWithHole( char const* label, ImVec2 const& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags );
 
-	IMGUI_API bool ImageButtonExCircle( const char* label, ImTextureID tex, float radius, ImGuiButtonFlags flags, ImU32 col = IM_COL32_WHITE, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
-	IMGUI_API bool ImageButtonExCapsuleH( const char* label, ImTextureID tex, float length, float thickness, ImGuiButtonFlags flags, ImU32 col = IM_COL32_WHITE, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
-	IMGUI_API bool ImageButtonExCapsuleV( const char* label, ImTextureID tex, float length, float thickness, ImGuiButtonFlags flags, ImU32 col = IM_COL32_WHITE, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
-	IMGUI_API bool ImageButtonExConvex( const char* label, ImTextureID tex, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImGuiButtonFlags flags, ImU32 col = IM_COL32_WHITE, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
-	IMGUI_API bool ImageButtonExConcave( const char* label, ImTextureID tex, const ImVec2& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags, ImU32 col = IM_COL32_WHITE, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
+	IMGUI_API bool ImageButtonExCircle( char const* label, ImTextureID tex, float radius, ImGuiButtonFlags flags, ImU32 col = IM_COL32_WHITE, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
+	IMGUI_API bool ImageButtonExCapsuleH( char const* label, ImTextureID tex, float length, float thickness, ImGuiButtonFlags flags, ImU32 col = IM_COL32_WHITE, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
+	IMGUI_API bool ImageButtonExCapsuleV( char const* label, ImTextureID tex, float length, float thickness, ImGuiButtonFlags flags, ImU32 col = IM_COL32_WHITE, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
+	IMGUI_API bool ImageButtonExConvex( char const* label, ImTextureID tex, ImVec2 const& size_arg, ImVec2* pts, int pts_count, ImGuiButtonFlags flags, ImU32 col = IM_COL32_WHITE, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
+	IMGUI_API bool ImageButtonExConcave( char const* label, ImTextureID tex, ImVec2 const& size_arg, ImVec2* pts, int pts_count, ImVec2 text_offset, ImGuiButtonFlags flags, ImU32 col = IM_COL32_WHITE, ImVec2 uv_min = { 0.0f, 0.0f }, ImVec2 uv_max = { 1.0f, 1.0f } );
 
 	IMGUI_API bool HueSelector( char const* label, float hueHeight, float cursorHeight, float* hueCenter, float* hueWidth, float* featherLeft, float* featherRight, int division = 32, float alpha = 1.0f, float hideHueAlpha = 0.75f, float offset = 0.0f );
 	IMGUI_API bool SliderNScalar( char const* label, ImGuiDataType data_type, void* ordered_value, int value_count, void* p_min, void* p_max, float cursor_width, bool show_hover_by_region );
 	IMGUI_API bool SliderNFloat( char const* label, float* ordered_value, int value_count, float v_min, float v_max, float cursor_width, bool show_hover_by_region );
 	IMGUI_API bool SliderNInt( char const* label, int* ordered_value, int value_count, int v_min, int v_max, float cursor_width, bool show_hover_by_region );
+	IMGUI_API bool SliderNVerticalScalar( char const* label, ImGuiDataType data_type, void* ordered_value, int value_count, void* p_min, void* p_max, float cursor_height, bool show_hover_by_region, ImVec2 size = ImVec2( 0.0f, 0.0f ) );
+	IMGUI_API bool SliderNVerticalFloat( char const* label, float* ordered_value, int value_count, float v_min, float v_max, float cursor_height, bool show_hover_by_region, ImVec2 size = ImVec2( 0.0f, 0.0f ) );
+	IMGUI_API bool SliderNVerticalInt( char const* label, int* ordered_value, int value_count, int v_min, int v_max, float cursor_height, bool show_hover_by_region, ImVec2 size = ImVec2( 0.0f, 0.0f ) );
 	// TODO: Add bool flipY
 	IMGUI_API bool Slider2DScalar( char const* pLabel, ImGuiDataType data_type, void* pValueX, void* pValueY, void* p_minX, void* p_maxX, void* p_minY, void* p_maxY );
 	IMGUI_API bool Slider2DFloat( char const* pLabel, float* pValueX, float* pValueY, float v_minX, float v_maxX, float v_minY, float v_maxY );
 	IMGUI_API bool Slider2DInt( char const* pLabel, int* pValueX, void* pValueY, int v_minX, int v_maxX, int v_minY, int v_maxY );
+	IMGUI_API bool Slider2DRangeScalar( char const* label, ImGuiDataType data_type, void* pMinX, void* pMinY, void* pMaxX, void* pMaxY, void* bMinX, void* bMaxX, void* bMinY, void* bMaxY );
+	IMGUI_API bool Slider2DRangeFloat( char const* label, float* pMinX, float* pMinY, float* pMaxX, float* pMaxY, float bMinX, float bMaxX, float bMinY, float bMaxY );
+	IMGUI_API bool Slider2DRangeInt( char const* label, int* pMinX, int* pMinY, int* pMaxX, int* pMaxY, int bMinX, int bMaxX, int bMinY, int bMaxY );
+	IMGUI_API bool Slider2DDiscScalar( char const* label, ImGuiDataType data_type, void* pValueX, void* pValueY, void* p_min, void* p_max );
+	IMGUI_API bool Slider2DDiscFloat( char const* label, float* pValueX, float* pValueY, float v_min, float v_max );
+	IMGUI_API bool Slider2DDiscInt( char const* label, int* pValueX, int* pValueY, int v_min, int v_max );
+
+	// SliderGradient: 1D slider with an ImGradientData-backed background. Color space comes from gradient->Interpolation.
+	// `fill_up_to_cursor` (default false): when true, the gradient renders only
+	// for t in [0, current value]. Past the cursor the ImGui FrameBg shows
+	// through -- same idea / same callback trick as SliderSplineGradient.
+	// `right_to_left` (default false): mirror the cursor direction. t=0 places
+	// the grab at the right edge, t=1 at the left edge. Combined with
+	// `fill_up_to_cursor`, the fill grows from the right. Gradient colors keep
+	// their natural positions (blue at 0, orange at 1 for a blue->orange grad).
+	IMGUI_API bool SliderGradientScalar( char const* label, ImGuiDataType data_type, void* p_value, void const* p_min, void const* p_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), bool fill_up_to_cursor = false, bool right_to_left = false );
+	IMGUI_API bool SliderGradientFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), bool fill_up_to_cursor = false, bool right_to_left = false );
+	IMGUI_API bool SliderGradientInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), bool fill_up_to_cursor = false, bool right_to_left = false );
+
+	// SliderGradientRange: two-handle horizontal range slider with gradient cut between handles.
+	// Picks nearest handle on click. Lower is clamped to <= upper; upper to >= lower.
+	IMGUI_API bool SliderGradientRangeScalar( char const* label, ImGuiDataType data_type, void* p_lower, void* p_upper, void const* p_min, void const* p_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), bool right_to_left = false );
+	IMGUI_API bool SliderGradientRangeFloat( char const* label, float* v_lower, float* v_upper, float v_min, float v_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), bool right_to_left = false );
+	IMGUI_API bool SliderGradientRangeInt( char const* label, int* v_lower, int* v_upper, int v_min, int v_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), bool right_to_left = false );
+
+	// SliderGradientRing: interactive ring/arc slider with gradient background.
+	// Full-circle overload: value wraps at boundaries (natural for hue).
+	// `fill_up_to_cursor` has identical semantics to SliderGradient above.
+	IMGUI_API bool SliderGradientRingScalar( char const* label, ImGuiDataType data_type, void* p_value, void const* p_min, void const* p_max, ImGradientData const* gradient, float outerRadius, float thickness, bool fill_up_to_cursor = false );
+	IMGUI_API bool SliderGradientRingFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, float outerRadius, float thickness, bool fill_up_to_cursor = false );
+	IMGUI_API bool SliderGradientRingInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, float outerRadius, float thickness, bool fill_up_to_cursor = false );
+	// Arc overload: caller specifies startAngle + sweepAngle (radians). Value is clamped (no wrap).
+	IMGUI_API bool SliderGradientRingScalar( char const* label, ImGuiDataType data_type, void* p_value, void const* p_min, void const* p_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle, bool fill_up_to_cursor = false );
+	IMGUI_API bool SliderGradientRingFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle, bool fill_up_to_cursor = false );
+	IMGUI_API bool SliderGradientRingInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle, bool fill_up_to_cursor = false );
+
+	// SliderGradientRingRange: two-handle arc range slider with gradient cut between handles.
+	// Non-wrap arcs only (caller supplies startAngle + signed sweepAngle). For full hue rings
+	// prefer two separate SliderGradientRing calls (wrap semantics are ambiguous for range).
+	IMGUI_API bool SliderGradientRingRangeScalar( char const* label, ImGuiDataType data_type, void* p_lower, void* p_upper, void const* p_min, void const* p_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle );
+	IMGUI_API bool SliderGradientRingRangeFloat( char const* label, float* v_lower, float* v_upper, float v_min, float v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle );
+	IMGUI_API bool SliderGradientRingRangeInt( char const* label, int* v_lower, int* v_upper, int v_min, int v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle );
 
 	// Unit Field: DragFloat with built-in unit selector
-	IMGUI_API bool UnitField( char const* label, float* pValue, ImUnitDef* units, int unitCount, int* pSelectedUnit, float v_speed = 1.0f, float v_min = 0.0f, float v_max = 0.0f, const char* format = NULL );
+	IMGUI_API bool UnitField( char const* label, float* pValue, ImUnitDef* units, int unitCount, int* pSelectedUnit, float v_speed = 1.0f, float v_min = 0.0f, float v_max = 0.0f, char const* format = NULL );
 
 	// Paint Canvas
 	IMGUI_API bool PaintCanvas( char const* label, ImPaintCanvasData* canvas, ImVec2 size = ImVec2( 0, 0 ) );
@@ -3405,8 +3672,11 @@ namespace ImWidgets{
 	IMGUI_API void DrawColorDisc( ImDrawList* pDrawList, ImVec2 center, float radius, ImColorWheelMode mode, float thirdAxis, int numSectors = 64, int numRings = 16 );
 	IMGUI_API void DrawCircularGradientIndicator( ImDrawList* pDrawList, ImVec2 center, float outerRadius, float innerRadius, float t );
 	IMGUI_API bool ColorWheel( char const* label, ImVec4* color, ImColorWheelMode mode = ImColorWheelMode_HSV, float hdr_max = 1.0f, bool fixedIntensity = false, ImVec2 size = ImVec2( 0, 0 ) );
-	IMGUI_API bool PrimariesWheel( char const* label, ImVec4* color, float* yValue, float yMin, float yMax, ImColorWheelMode mode = ImColorWheelMode_HSV, float ringThickness = 12.0f, ImVec2 size = ImVec2( 0, 0 ) );
-	IMGUI_API bool HDRWheel( char const* label, ImVec4* color, float* yValue, float yMin, float yMax, float* rightValue, float rightMin, float rightMax, float* leftValue, float leftMin, float leftMax, ImColorWheelMode mode = ImColorWheelMode_HSV, float ringThickness = 12.0f, ImVec2 size = ImVec2( 0, 0 ) );
+	// HDRWheel: unified ColorWheel + gradient indicator ring + optional right/left arc sliders.
+	// Pass rightValue = leftValue = NULL to disable arc sliders (compact layout: indicator
+	// ring + ColorWheel only). With either pointer non-null, the corresponding side arc
+	// slider is drawn — the widget grows by 2*(ArcGrabRadius + ArcThickness + ArcGap) lp.
+	IMGUI_API bool HDRWheel( char const* label, ImVec4* color, float* yValue, float yMin, float yMax, float* rightValue = NULL, float rightMin = 0.0f, float rightMax = 0.0f, float* leftValue = NULL, float leftMin = 0.0f, float leftMax = 0.0f, ImColorWheelMode mode = ImColorWheelMode_HSV, ImVec2 size = ImVec2( 0, 0 ) );
 
 	// Color Picker
 	IMGUI_API bool ColorPickerSRGB( char const* label, ImVec4* color, int fixedAxis = 2, ImVec2 size = ImVec2( 0, 0 ) );
@@ -3416,6 +3686,59 @@ namespace ImWidgets{
 	IMGUI_API bool ColorPickerCIELab( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
 	IMGUI_API bool ColorPickerXYZ( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
 	IMGUI_API bool ColorPicker( char const* label, ImVec4* color, ImColorPickerSpace space = ImColorPickerSpace_sRGB, int fixedAxis = 2, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// Physically-based skin color picker (forward-only biophysical model).
+	// Drives *color from melanin / eu-pheo blend / hemoglobin parameters; the
+	// input color is not read back (the param->color mapping is not invertible).
+	IMGUI_API bool ColorPickerSkin( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// Physically-based hair color picker (forward-only). Drives *color from
+	// melanin amount / pheomelanin redness / azimuthal roughness using the
+	// Chiang et al. 2016 melanin absorption model (PBRT/Blender/Unreal). The
+	// input color is not read back (the param->color mapping is not invertible).
+	IMGUI_API bool ColorPickerHair( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// Physically-based leaf / vegetation color picker (forward-only). Drives *color
+	// from chlorophyll / carotenoid / anthocyanin (+brown) pigment concentrations
+	// using the PROSPECT-D leaf optical-properties model (Feret et al. 2017). The
+	// input color is not read back (the param->color mapping is not invertible).
+	IMGUI_API bool ColorPickerLeaf( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// Physically-based forward color pickers (all forward-only: they drive *color
+	// from physical parameters and do not read it back). References are in the
+	// implementation comments (dear_widgets.cpp).
+	//   Blackbody : Planck's law along the Planckian locus (color temperature).
+	//   Pigment   : subtractive paint mixing via Kubelka-Munk theory.
+	//   Gem       : crystal-field (Beer-Lambert) gemstone body color.
+	//   Water     : bio-optical ocean/water color (chlorophyll/CDOM/turbidity).
+	//   Iris      : eye color from melanin absorption + Tyndall scattering.
+	//   Flame     : emission spectrum (blackbody continuum + atomic lines).
+	IMGUI_API bool ColorPickerBlackbody( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerPigment( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerGem( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerWater( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerIris( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerFlame( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// More forward-only physical pickers (references in dear_widgets.cpp).
+	//   Bruise     : healing hematoma chromophores (hemoglobin->biliverdin->bilirubin).
+	//   Nebula     : ionized-gas emission lines (Halpha/[OIII]/[NII]/[SII]).
+	//   Maillard   : food browning (Maillard/caramel, Arrhenius time-temperature).
+	//   Patina     : copper atmospheric weathering (metal->cuprite->green patina).
+	//   Subsurface : translucent material color (Jensen 2001 dipole diffusion).
+	IMGUI_API bool ColorPickerBruise( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerNebula( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerMaillard( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerPatina( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerSubsurface( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// More forward-only physical pickers (references in dear_widgets.cpp).
+	//   Discharge : gas-discharge / neon-tube emission (noble gas + Hg + phosphor).
+	//   Ice       : glacier/sea-ice color (pure-ice absorption + grain scattering).
+	//   Ochre     : earth-pigment (iron-oxide) Kubelka-Munk mixing.
+	IMGUI_API bool ColorPickerDischarge( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerIce( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	IMGUI_API bool ColorPickerOchre( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
 
 	// Transform Gizmo
 	IMGUI_API bool TransformGizmo( char const* label, ImTransformData* transforms, ImVec2* sizes, int count, int* selectedIndex, ImTransformGizmoCallbacks const* callbacks = nullptr, ImTransformGizmoFlags flags = ImTransformGizmoFlags_None, ImVec2 canvasSize = ImVec2( 0, 0 ) );
@@ -3433,50 +3756,91 @@ namespace ImWidgets{
 
 	IMGUI_API float ColorCurveDefaultValue( ImColorCurveMode mode );
 	IMGUI_API void  ColorCurveRange( ImColorCurveMode mode, float* out_min, float* out_max );
-	IMGUI_API const char* ColorCurveModeName( ImColorCurveMode mode );
+	IMGUI_API char const* ColorCurveModeName( ImColorCurveMode mode );
 	IMGUI_API float ColorCurveSample( ImColorCurveData const& curve, ImColorCurveMode mode, float x, bool advancedSegments = false );
 	IMGUI_API bool  ColorCurve( char const* label, ImColorCurveData* curve, ImColorCurveMode mode, ImHistogramData const* histogramOverlay = NULL, bool advancedSegments = false, ImVec2 size = ImVec2( 0, 0 ) );
 
-	IMGUI_API const char* ParadeModeName( ImParadeMode mode );
+	IMGUI_API char const* ParadeModeName( ImParadeMode mode );
 	IMGUI_API void  ParadeScope( char const* label, ImParadeScopeData const& data, bool overlay = false, ImParadeScale scale = ImParadeScale_Linear, ImVec2 size = ImVec2( 0, 0 ) );
 
 	IMGUI_API void  VectorScope( char const* label, ImVectorScopeData const& data, bool showSkinToneLine = true, ImVec2 size = ImVec2( 0, 0 ) );
 
-	IMGUI_API const char* HistogramModeName( ImHistogramMode mode );
+	IMGUI_API char const* HistogramModeName( ImHistogramMode mode );
 	IMGUI_API void  Histogram( char const* label, ImHistogramData const& data, ImHistogramLayout layout = ImHistogramLayout_Overlapped, ImParadeScale xScale = ImParadeScale_Linear, ImParadeScale yScale = ImParadeScale_Linear, ImVec2 size = ImVec2( 0, 0 ) );
 
-	IMGUI_API const char* CIEChromaticityGamutName( ImCIEChromaticityGamut gamut );
+	IMGUI_API char const* CIEChromaticityGamutName( ImCIEChromaticityGamut gamut );
 	IMGUI_API void  CIEChromaticity( char const* label, ImCIEChromaticityData const& data, ImCIEChromaticityGamut gamut = ImCIEChromaticityGamut_sRGB_Rec709, bool showBackground = false, ImCIEChromaticitySignalColor signalColor = ImCIEChromaticitySignalColor_Flat, ImVec2 size = ImVec2( 0, 0 ) );
 
 	IMGUI_API int   ToneCurveChannelCount( ImHistogramMode mode );
-	IMGUI_API const char* ToneCurveChannelName( ImHistogramMode mode, int channel );
+	IMGUI_API char const* ToneCurveChannelName( ImHistogramMode mode, int channel );
 	IMGUI_API float ToneCurveSample( ImColorCurveData const& curve, float x, bool advancedSegments = false );
 	IMGUI_API bool  ToneCurve( char const* label, ImToneCurveData* curve, ImHistogramMode mode, ImHistogramData const* histogramOverlay = NULL, bool advancedSegments = false, ImVec2 size = ImVec2( 0, 0 ) );
 
 	IMGUI_API bool SliderRingScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max,
 									float v_angle_min = -0.75f * IM_PI, float v_angle_max = 0.75f * IM_PI,
-									float v_thickness = 0.0f, const char* format = NULL, ImGuiSliderFlags flags = 0 );
+									float v_thickness = 0.0f, char const* format = NULL, ImGuiSliderFlags flags = 0 );
 	IMGUI_API bool SliderRingFloat( char const* label, float* value, float v_min, float v_max,
 									float v_angle_min = -0.75f * IM_PI, float v_angle_max = 0.75f * IM_PI,
-									float v_thickness = 0.0f, const char* format = "%.3f", ImGuiSliderFlags flags = 0 );
+									float v_thickness = 0.0f, char const* format = "%.3f", ImGuiSliderFlags flags = 0 );
 	IMGUI_API bool SliderRingInt( char const* label, int* value, int v_min, int v_max,
 								  float v_angle_min = -0.75f * IM_PI, float v_angle_max = 0.75f * IM_PI,
-								  float v_thickness = 0.0f, const char* format = "%d", ImGuiSliderFlags flags = 0 );
+								  float v_thickness = 0.0f, char const* format = "%d", ImGuiSliderFlags flags = 0 );
 
 	// Spline Slider: slider whose track follows cubic bezier curve(s).
 	// control_points: ImVec2 array in normalized [0,1]x[0,1] space mapped to widget rect. NULL = default S-curve.
 	// num_points: 4 for single bezier, 7 for two chained segments, 3N+1 for N segments.
 	IMGUI_API bool SliderSplineScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max,
-									   const ImVec2* control_points = NULL, int num_points = 4, float v_height = 0.0f,
-									   float v_thickness = 0.0f, const char* format = NULL, ImGuiSliderFlags flags = 0 );
+									   ImVec2 const* control_points = NULL, int num_points = 4, float v_height = 0.0f,
+									   float v_thickness = 0.0f, char const* format = NULL, ImGuiSliderFlags flags = 0 );
 	IMGUI_API bool SliderSplineFloat( char const* label, float* value, float v_min, float v_max,
-									  const ImVec2* control_points = NULL, int num_points = 4, float v_height = 0.0f,
-									  float v_thickness = 0.0f, const char* format = "%.3f", ImGuiSliderFlags flags = 0 );
+									  ImVec2 const* control_points = NULL, int num_points = 4, float v_height = 0.0f,
+									  float v_thickness = 0.0f, char const* format = "%.3f", ImGuiSliderFlags flags = 0 );
 	IMGUI_API bool SliderSplineInt( char const* label, int* value, int v_min, int v_max,
-									const ImVec2* control_points = NULL, int num_points = 4, float v_height = 0.0f,
-									float v_thickness = 0.0f, const char* format = "%d", ImGuiSliderFlags flags = 0 );
+									ImVec2 const* control_points = NULL, int num_points = 4, float v_height = 0.0f,
+									float v_thickness = 0.0f, char const* format = "%d", ImGuiSliderFlags flags = 0 );
 
-	IMGUI_API bool DragFloatPrecise( char const* label, float* value, float v_min = 0.0f, float v_max = 0.0f, const char* format = NULL, ImGuiSliderFlags flags = 0 );
+	// SliderSplineGradient: spline-track slider with a gradient background rendered along the bezier path.
+	// `fill_up_to_cursor` (default false) compresses the full gradient into the [0, cursor] range
+	// along the spline and renders a plain track color from the cursor to 1. When false, the full
+	// gradient is painted across the entire spline.
+	IMGUI_API bool SliderSplineGradientScalar( char const* label, ImGuiDataType data_type, void* p_value, void* p_min, void* p_max,
+											   ImGradientData const* gradient,
+											   ImVec2 const* control_points = NULL, int num_points = 4, float v_height = 0.0f,
+											   float v_thickness = 0.0f, char const* format = NULL,
+											   bool fill_up_to_cursor = false,
+											   ImGuiSliderFlags flags = 0 );
+	IMGUI_API bool SliderSplineGradientFloat( char const* label, float* value, float v_min, float v_max,
+											  ImGradientData const* gradient,
+											  ImVec2 const* control_points = NULL, int num_points = 4, float v_height = 0.0f,
+											  float v_thickness = 0.0f, char const* format = "%.3f",
+											  bool fill_up_to_cursor = false,
+											  ImGuiSliderFlags flags = 0 );
+	IMGUI_API bool SliderSplineGradientInt( char const* label, int* value, int v_min, int v_max,
+											ImGradientData const* gradient,
+											ImVec2 const* control_points = NULL, int num_points = 4, float v_height = 0.0f,
+											float v_thickness = 0.0f, char const* format = "%d",
+											bool fill_up_to_cursor = false,
+											ImGuiSliderFlags flags = 0 );
+
+	// SliderSplineGradientRange: two-handle range slider along a bezier spline. Gradient renders
+	// only on [tLower, tUpper] via DrawSplineGradientCut. FrameBg stroke shows elsewhere.
+	IMGUI_API bool SliderSplineGradientRangeScalar( char const* label, ImGuiDataType data_type, void* p_lower, void* p_upper, void* p_min, void* p_max,
+	                                                ImGradientData const* gradient,
+	                                                ImVec2 const* control_points = NULL, int num_points = 4, float v_height = 0.0f,
+	                                                float v_thickness = 0.0f, char const* format = NULL,
+	                                                ImGuiSliderFlags flags = 0 );
+	IMGUI_API bool SliderSplineGradientRangeFloat( char const* label, float* v_lower, float* v_upper, float v_min, float v_max,
+	                                               ImGradientData const* gradient,
+	                                               ImVec2 const* control_points = NULL, int num_points = 4, float v_height = 0.0f,
+	                                               float v_thickness = 0.0f, char const* format = "%.3f",
+	                                               ImGuiSliderFlags flags = 0 );
+	IMGUI_API bool SliderSplineGradientRangeInt( char const* label, int* v_lower, int* v_upper, int v_min, int v_max,
+	                                             ImGradientData const* gradient,
+	                                             ImVec2 const* control_points = NULL, int num_points = 4, float v_height = 0.0f,
+	                                             float v_thickness = 0.0f, char const* format = "%d",
+	                                             ImGuiSliderFlags flags = 0 );
+
+	IMGUI_API bool DragFloatPrecise( char const* label, float* value, float v_min = 0.0f, float v_max = 0.0f, char const* format = NULL, ImGuiSliderFlags flags = 0 );
 
 	// Up Vector selector (hemisphere picker)
 	IMGUI_API bool UpVector( char const* label, float* direction, int defaultUpAxis = 1, ImVec2 size = ImVec2( 0, 0 ) );
@@ -3489,13 +3853,13 @@ namespace ImWidgets{
 	// Drag-to-reorder support (optional):
 	//   - pItemIds   : array of `imageCount` C-strings. When non-null, each cell's ImGui ID is derived
 	//                  from its string instead of its position. This is required for clean drag-reorder
-	//                  — positional IDs cause a one-frame flicker when adjacent cells swap mid-drag
+	//                  -- positional IDs cause a one-frame flicker when adjacent cells swap mid-drag
 	//                  because ImGui's ActiveId stays pinned at the old index rather than following
 	//                  the moved content. Strings must be unique per grid (duplicates across grids in
 	//                  other windows are fine).
 	//   - pReorderFrom / pReorderTo : out-params. When a swap is requested, the function writes the
 	//                  source and target indices (both in [0, imageCount)) and returns true. The caller
-	//                  is responsible for actually swapping the data — ImageBento itself never mutates
+	//                  is responsible for actually swapping the data -- ImageBento itself never mutates
 	//                  the images/imageSizes arrays. Set to -1 on frames where no swap fires.
 	//                  Swaps are reported as ADJACENT only (|from-to| == 1 horizontal, or == columnsPerRow
 	//                  vertical). Multi-cell drags accumulate as multiple single-frame reports.
@@ -3507,18 +3871,18 @@ namespace ImWidgets{
 	IMGUI_API bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize = ImVec2( 0, 0 ) );
 
 	// Image Inspector: color-managed raw-buffer viewer with shader-side decode of any of the 11
-	// sample types × 1..4 channels described by ImImageBuffer. View transforms (gamma, sRGB,
+	// sample types x 1..4 channels described by ImImageBuffer. View transforms (gamma, sRGB,
 	// camera log curves, gamut, exposure, white point, tonemap, false color, NaN highlight,
 	// mosaic decode) are applied in a single HLSL uber-shader. Pan/zoom/double-click/inspector
 	// loupe UX matches ImageViewer. The widget uploads buffer.host to a packed RGBA32F texture
 	// once per buffer.version change; per-frame CPU cost is uniform updates only.
 	//
-	// The CPU-side inspector loupe reads buffer.host directly with full precision — the user
+	// The CPU-side inspector loupe reads buffer.host directly with full precision -- the user
 	// must keep the buffer alive while the widget is open.
 	//
 	// Returns true if the user interacted with the widget. On backends without custom shader
 	// support (DX9), draws a "not supported" message and returns false.
-	IMGUI_API bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInspectorState& state, ImVec2 widgetSize = ImVec2( 0, 0 ) );
+	IMGUI_API bool ImageInspector( char const* label, ImImageBuffer const& buffer, ImImageInspectorState& state, ImVec2 widgetSize = ImVec2( 0, 0 ) );
 
 	// Returns true if the current backend supports ImageInspector (i.e. has custom shader support).
 	IMGUI_API bool ImageInspectorSupported();
@@ -3544,12 +3908,23 @@ namespace ImWidgets{
     //////////////////////////////////////////////////////////////////////////
     // Polylines (Dashed/Stroked)
     //////////////////////////////////////////////////////////////////////////
+
+    // Unified line-drawing entry point. Selects between AddPolyline / PolylineAA /
+    // StrokedPolyline / StrokedBezierPath based on desc.mode; honors desc.dashed
+    // when the mode supports it (silent fallback to solid otherwise).
+    IMGUI_API void DrawThickLine(ImDrawList* dl,
+                                 ImVec2 const* points, int point_count,
+                                 ImWidgetsThickLineDesc const& desc);
+
+    // Human-readable mode name for combos / save files.
+    IMGUI_API char const* GetThickLineModeName(ImWidgetsThickLineMode mode);
+
     // Draw a solid, anti-aliased polyline (Rougier 2013 SDF; selectable CPU/GPU
     // path via Set/GetDashedLinesUseGPU). Equivalent to DrawDashedPolylineAA
-    // with no dashes — uses the same code paths but skips dash math.
+    // with no dashes -- uses the same code paths but skips dash math.
     IMGUI_API void DrawPolylineAA(
         ImDrawList* drawlist,
-        const ImVec2* points, int points_count,
+        ImVec2 const* points, int points_count,
         ImU32 col, float thickness,
         bool closed = false,
         ImWidgetsCap cap = ImWidgetsCap_Butt,
@@ -3564,9 +3939,9 @@ namespace ImWidgets{
     // Caps and joins are approximations using ImDrawList path stroking.
     IMGUI_API void DrawDashedPolylineAA(
         ImDrawList* drawlist,
-        const ImVec2* points, int points_count,
+        ImVec2 const* points, int points_count,
         ImU32 col, float thickness,
-        const float* dashes, int dashes_count, float dash_offset,
+        float const* dashes, int dashes_count, float dash_offset,
         bool closed = false,
         ImWidgetsCap cap = ImWidgetsCap_Butt,
         ImWidgetsJoin join = ImWidgetsJoin_Mitter,
@@ -3575,7 +3950,7 @@ namespace ImWidgets{
     // Convenience: single on/off lengths.
     IMGUI_API void DrawDashedPolylineAA(
         ImDrawList* drawlist,
-        const ImVec2* points, int points_count,
+        ImVec2 const* points, int points_count,
         ImU32 col, float thickness,
         float dash_len, float gap_len, float dash_offset,
         bool closed = false,
@@ -3584,13 +3959,13 @@ namespace ImWidgets{
         float miter_limit = 4.0f);
 
     //////////////////////////////////////////////////////////////////////////
-    // Stroke Expansion (Euler Spiral) — based on Linebender HPG 2024 paper
+    // Stroke Expansion (Euler Spiral) -- based on Linebender HPG 2024 paper
     //////////////////////////////////////////////////////////////////////////
     // Stroke a cubic Bezier path with high-quality parallel curves via Euler spirals.
     // points: 3*N+1 control points for N cubics [p0,p1,p2,p3, p4,p5,p6, ...]
     IMGUI_API void DrawStrokedBezierPath(
         ImDrawList* drawlist,
-        const ImVec2* points, int points_count,
+        ImVec2 const* points, int points_count,
         ImU32 col, float thickness,
         ImWidgetsCap cap = ImWidgetsCap_Round,
         ImWidgetsJoin join = ImWidgetsJoin_Round,
@@ -3613,7 +3988,7 @@ namespace ImWidgets{
     // Stroke a polyline with Euler spiral offset curves (high-quality thick joins).
     IMGUI_API void DrawStrokedPolyline(
         ImDrawList* drawlist,
-        const ImVec2* points, int points_count,
+        ImVec2 const* points, int points_count,
         ImU32 col, float thickness,
         ImWidgetsCap cap = ImWidgetsCap_Round,
         ImWidgetsJoin join = ImWidgetsJoin_Round,
@@ -3623,9 +3998,9 @@ namespace ImWidgets{
     // Stroke a dashed cubic Bezier path. dash_array is alternating dash,gap lengths.
     IMGUI_API void DrawStrokedDashedBezierPath(
         ImDrawList* drawlist,
-        const ImVec2* points, int points_count,
+        ImVec2 const* points, int points_count,
         ImU32 col, float thickness,
-        const float* dash_array, int dash_count, float dash_offset = 0.0f,
+        float const* dash_array, int dash_count, float dash_offset = 0.0f,
         ImWidgetsCap cap = ImWidgetsCap_Round,
         ImWidgetsJoin join = ImWidgetsJoin_Round,
         float miter_limit = 4.0f,
@@ -3637,9 +4012,9 @@ namespace ImWidgets{
     // Stroke a dashed polyline.
     IMGUI_API void DrawStrokedDashedPolyline(
         ImDrawList* drawlist,
-        const ImVec2* points, int points_count,
+        ImVec2 const* points, int points_count,
         ImU32 col, float thickness,
-        const float* dash_array, int dash_count, float dash_offset = 0.0f,
+        float const* dash_array, int dash_count, float dash_offset = 0.0f,
         ImWidgetsCap cap = ImWidgetsCap_Round,
         ImWidgetsJoin join = ImWidgetsJoin_Round,
         float miter_limit = 4.0f,
@@ -3648,4 +4023,479 @@ namespace ImWidgets{
     // Debug
     IMGUI_API void SetStrokeDebugWireframe(bool enable);
     IMGUI_API bool GetStrokeDebugWireframe();
+
+    //////////////////////////////////////////////////////////////////////////
+    // Extended primitives (D1-D6)
+    //////////////////////////////////////////////////////////////////////////
+
+    // D1. Hatching & stippling fills (scanline-clip against arbitrary polygon)
+    IMGUI_API void DrawHatchFill(ImDrawList* drawlist,
+                                 ImVec2 const* poly, int poly_count,
+                                 ImWidgetsHatchPattern pattern,
+                                 float spacing, float angle_rad,
+                                 float thickness, ImU32 col);
+    IMGUI_API void DrawStippleFill(ImDrawList* drawlist,
+                                   ImVec2 const* poly, int poly_count,
+                                   float density, float jitter,
+                                   float radius, ImU32 col,
+                                   unsigned int seed = 1u);
+
+    // D2. Bezier surface patches
+    IMGUI_API void DrawCoonsPatch(ImDrawList* drawlist,
+                                  ImCoonsPatch const& patch,
+                                  ImU32 col, int resU = 16, int resV = 16);
+    IMGUI_API void DrawCoonsPatchGradient(ImDrawList* drawlist,
+                                          ImCoonsPatch const& patch,
+                                          ImU32 c00, ImU32 c10, ImU32 c11, ImU32 c01,
+                                          int resU = 16, int resV = 16);
+    IMGUI_API void DrawCoonsPatchWireframe(ImDrawList* drawlist,
+                                           ImCoonsPatch const& patch,
+                                           ImU32 col, float thickness,
+                                           int resU = 16, int resV = 16);
+    IMGUI_API void DrawGregoryPatch(ImDrawList* drawlist,
+                                    ImGregoryPatch const& patch,
+                                    ImU32 col, int resU = 16, int resV = 16);
+    IMGUI_API void DrawGregoryPatchGradient(ImDrawList* drawlist,
+                                            ImGregoryPatch const& patch,
+                                            ImU32 col_bl, ImU32 col_br,
+                                            ImU32 col_tr, ImU32 col_tl,
+                                            int resU = 16, int resV = 16);
+
+    // D3. Rounded path offsetting
+    IMGUI_API void OffsetPolyline(ImVec2 const* in_pts, int n,
+                                  float offset, ImWidgetsJoin join,
+                                  float miter_limit,
+                                  ImVector<ImVec2>& out_pts, bool closed);
+    IMGUI_API void DrawOffsetOutline(ImDrawList* drawlist,
+                                     ImVec2 const* pts, int n,
+                                     float offset, ImWidgetsJoin join,
+                                     float miter_limit, float thickness,
+                                     ImU32 col, bool closed);
+    IMGUI_API void DrawOffsetFilled(ImDrawList* drawlist,
+                                    ImVec2 const* pts, int n,
+                                    float inset, ImU32 col, bool closed);
+
+    // D4. Iso-contours (marching squares)
+    IMGUI_API void DrawIsoContour(ImDrawList* drawlist,
+                                  ImVec2 pos, ImVec2 size,
+                                  int resX, int resY,
+                                  ImWidgetsScalar2DCallback f, void* user,
+                                  float const* iso_values, int iso_count,
+                                  ImU32 col, float thickness);
+    // Multi-tier iso-contour (major/medium/minor in one pass).
+    // Draws tiers in array order; put finest/faintest first, major last so it paints on top.
+    // pre_log_transform: replace each sample v with log(max(v, eps)) before contouring.
+    // min_value/max_value: limit iso enumeration to this value range.
+    // half_pixel_sample: sample each cell at (i+0.5)*dx instead of i*dx.
+    // sample_subdiv: internal sub-sampling per cell (1=off, 2=2x density via bilinear).
+    IMGUI_API void DrawIsoContourTiered(ImDrawList* drawlist,
+                                        ImVec2 pos, ImVec2 size,
+                                        int resX, int resY,
+                                        ImWidgetsScalar2DCallback f, void* user,
+                                        ImIsoContourTier const* tiers, int tier_count,
+                                        float min_value = -FLT_MAX, float max_value = FLT_MAX,
+                                        bool pre_log_transform = false,
+                                        bool half_pixel_sample = true,
+                                        int sample_subdiv = 1);
+
+    IMGUI_API void DrawIsoFilled(ImDrawList* drawlist,
+                                 ImVec2 pos, ImVec2 size,
+                                 int resX, int resY,
+                                 ImWidgetsScalar2DCallback f, void* user,
+                                 float const* band_edges, int band_edge_count,
+                                 ImU32 const* band_cols);
+
+    // D5. Conic gradient fill
+    IMGUI_API void DrawConicGradient(ImDrawList* drawlist,
+                                     ImVec2 center, float radius,
+                                     ImGradientData const& gradient,
+                                     float start_angle_rad,
+                                     int resolution = 128);
+    IMGUI_API void DrawConicGradientRect(ImDrawList* drawlist,
+                                         ImVec2 min, ImVec2 max,
+                                         ImVec2 center_uv,
+                                         ImGradientData const& gradient,
+                                         float start_angle_rad,
+                                         int resolution = 128);
+
+    // D6. Superellipse (generalization of GenShapeSquircle)
+    IMGUI_API void GenShapeSuperellipse(ImWidgetsShape& shape,
+                                        ImVec2 center,
+                                        float rx, float ry,
+                                        float nx, float ny,
+                                        int sides);
+
+    //////////////////////////////////////////////////////////////////////////
+    // Interaction helpers (I1-I3)
+    //////////////////////////////////////////////////////////////////////////
+
+    // I1. Angle-wrap/clamp-aware ring slider (thin wrapper exposing flags).
+    IMGUI_API bool SliderRingFloatEx(char const* label, float* value,
+                                     float v_min, float v_max,
+                                     float v_angle_min, float v_angle_max,
+                                     float v_thickness,
+                                     char const* format,
+                                     ImWidgetsSliderFlags widgets_flags,
+                                     ImGuiSliderFlags imgui_flags = 0);
+
+    // I2. Delta overlays
+    IMGUI_API void PushDeltaOverlay(ImGuiID id, float start_value);
+    IMGUI_API void RenderDeltaOverlay(ImGuiID id, float current,
+                                      char const* fmt = nullptr);
+
+    // I3. Proportional multi-drag group
+    IMGUI_API void PushDragGroup(ImGuiID group_id,
+                                 float falloff_radius = 2.0f,
+                                 ImWidgetsFalloff kernel = ImWidgetsFalloff_Gaussian);
+    IMGUI_API void PopDragGroup();
+    // Reports the additive delta this frame for the given slider's group position.
+    // Returns 0 if not in a group or group is inactive.
+    IMGUI_API float GetDragGroupDelta(int group_slot);
+    IMGUI_API void  SetDragGroupActive(int group_slot, float drag_delta);
+
+    //////////////////////////////////////////////////////////////////////////
+    // New widgets (W1-W7)
+    //////////////////////////////////////////////////////////////////////////
+
+    // W2. Vector drawing tool -- declaration lives in dear_widgets_vector_drawing.h
+    // (included above). Left here as a breadcrumb so navigation by section still
+    // lands at the right spot.
+
+    // W4. Font inspector (4 modes in one widget; mode is user-controlled)
+    IMGUI_API void FontInspector(char const* label,
+                                 ImFont* font,
+                                 ImFontInspectorMode mode = ImFontInspectorMode_Grid,
+                                 float display_size = 64.0f,
+                                 ImVec2 size = ImVec2(0, 0));
+
+    // W5. Notched dial
+    IMGUI_API bool NotchedDial(char const* label, float* v,
+                               float const* stops, int stop_count,
+                               char const* const* stop_labels = nullptr,
+                               ImVec2 size = ImVec2(0, 0));
+
+    // W6. Color-difference visualizer
+    IMGUI_API float ColorDeltaE76   (ImVec4 a, ImVec4 b);
+    IMGUI_API float ColorDeltaE94   (ImVec4 a, ImVec4 b, float kL = 1.0f, float kC = 1.0f, float kH = 1.0f);
+    IMGUI_API float ColorDeltaE2000 (ImVec4 a, ImVec4 b, float kL = 1.0f, float kC = 1.0f, float kH = 1.0f);
+    IMGUI_API float ColorDeltaEOK   (ImVec4 a, ImVec4 b);
+    IMGUI_API char const* DeltaEFormulaName(ImDeltaEFormula f);
+    IMGUI_API char const* DeltaEPerceptualLabel(float de); // "Imperceptible" / "Just noticeable" / ...
+    IMGUI_API void ColorDifferenceVisualizer(char const* label,
+                                             ImVec4* a, ImVec4* b,
+                                             ImDeltaEFormula formula = ImDeltaEFormula_E2000);
+
+    // W7. Equation input box (markdown-style $ / $$ delimited LaTeX)
+    IMGUI_API bool EquationInput(char const* label,
+                                 char* buf, size_t buf_size,
+                                 ImVec2 size = ImVec2(0, 0),
+                                 ImWidgetsEquationFlags flags = 0);
+
+    // DPI / scaling helpers have moved to ImPlatform:
+    //   ImPlatform_LpToPx(float | ImVec2)
+    //   ImPlatform_PxToLp(float | ImVec2)
+    //   ImPlatform_LpPxScale()
+    // (See extern/ImPlatform/ImPlatform/ImPlatform.h.)
+
+    //////////////////////////////////////////////////////////////////////////
+    // Shared interaction helpers (used across the polish-pass widgets)
+    //////////////////////////////////////////////////////////////////////////
+
+    // Precision popup: shared "double-click a handle to type exact values" widget.
+    // Typical flow:
+    //   if (hover && IsMouseDoubleClicked(0)) ImGui::OpenPopup("##prec");
+    //   if (ImWidgets::BeginPrecisionPopup("##prec", anchor_screen_pos)) {
+    //       ImWidgets::PrecisionFloat("Value", &v);
+    //       ImWidgets::EndPrecisionPopup();
+    //   }
+    IMGUI_API bool BeginPrecisionPopup(char const* str_id, ImVec2 anchor_screen_pos);
+    IMGUI_API void EndPrecisionPopup();
+    IMGUI_API bool PrecisionFloat(char const* label, float* v, float step = 0.0f,
+                                  float v_min = -FLT_MAX, float v_max = FLT_MAX,
+                                  char const* fmt = "%.4f");
+    IMGUI_API bool PrecisionInt  (char const* label, int*   v, int step = 1,
+                                  int v_min = -INT_MAX, int v_max = INT_MAX);
+
+    // Keyboard nudge: returns the delta in value units when an arrow key is
+    // pressed while the caller's widget is hovered or active. Scales by:
+    //   Shift   -> x10
+    //   Ctrl    -> x0.1
+    // Use SetKeyOwner at call site if the widget is active to suppress other consumers.
+    IMGUI_API ImVec2 KeyboardNudgeXY();
+    IMGUI_API float  KeyboardNudge1D(bool horizontal = true);
+
+    // Axis-constrain: when Shift is held, snap drag delta to the dominant axis.
+    IMGUI_API ImVec2 AxisConstrain(ImVec2 drag_delta);
+
+    // ------------------------------------------------------------------
+    // Shared curve data model (consolidation target -- new widgets should
+    // prefer this over the older ImCurveEditorData / ImColorCurveData types,
+    // which remain supported for existing ColorCurve/ToneCurve/CurveEditor
+    // widgets and will be ported onto this type in a follow-up pass).
+    // ------------------------------------------------------------------
+    enum ImCurveInterp_
+    {
+        ImCurveInterp_Linear = 0,
+        ImCurveInterp_Step,          // piecewise constant (right-hold)
+        ImCurveInterp_CubicBezier,   // uses TangentL / TangentR of adjacent keys
+        ImCurveInterp_COUNT
+    };
+    typedef int ImCurveInterp;
+
+    // Rubber-band / box selection helper.
+    struct ImBoxSelectState
+    {
+        ImVec2 Start;
+        ImVec2 End;
+        bool   Active;
+        ImBoxSelectState() : Start( 0, 0 ), End( 0, 0 ), Active( false ) {}
+    };
+    // Call each frame. Starts a box select when the user clicks on empty area
+    // inside the canvas (caller passes hovered_item as "nothing hit" predicate).
+    // Updates state in-place. Returns true while the selection rect is active.
+    IMGUI_API bool BoxSelectUpdate(ImBoxSelectState* state, ImVec2 canvas_min,
+                                   ImVec2 canvas_max, bool hovered_empty);
+    IMGUI_API void BoxSelectDraw  (ImBoxSelectState const* state, ImDrawList* dl,
+                                   ImU32 fill = IM_COL32( 120, 220, 255, 40 ),
+                                   ImU32 border = IM_COL32( 120, 220, 255, 200 ));
+    // Returns the sorted screen-space rect that the current/just-ended box covers.
+    IMGUI_API ImRect BoxSelectRect(ImBoxSelectState const* state);
+
+    // ------------------------------------------------------------------
+    // Shared curve data (ImCurveKey / ImCurveData / ImCurveEval)
+    // ------------------------------------------------------------------
+    struct ImCurveKey
+    {
+        ImVec2        Pos;          // (x, y) in user space
+        ImVec2        TangentL;     // Bezier handle into previous segment (relative)
+        ImVec2        TangentR;     // Bezier handle into next segment (relative)
+        ImCurveInterp InterpToNext; // interpolation style used for segment (this_key -> next_key)
+        int           Flags;        // bit 0 = broken tangents, bit 1 = selected
+
+        ImCurveKey() : Pos( 0, 0 ), TangentL( -0.1f, 0.0f ), TangentR( 0.1f, 0.0f ),
+                       InterpToNext( ImCurveInterp_CubicBezier ), Flags( 0 ) {}
+        ImCurveKey( ImVec2 p ) : Pos( p ), TangentL( -0.1f, 0.0f ), TangentR( 0.1f, 0.0f ),
+                                 InterpToNext( ImCurveInterp_CubicBezier ), Flags( 0 ) {}
+    };
+
+    struct ImCurveData
+    {
+        ImVector<ImCurveKey> Keys;
+        int                  SelectedIdx;  // -1 if none
+
+        ImCurveData() : SelectedIdx( -1 ) {}
+    };
+
+    // Evaluate Y at a given X. Returns the endpoint value when x is outside
+    // [Keys[0].Pos.x, Keys.back().Pos.x]. Requires Keys sorted by Pos.x.
+    IMGUI_API float ImCurveEval(ImCurveData const& c, float x);
+    // Insert a key at (p.x, p.y) keeping Keys sorted by Pos.x; returns its index.
+    IMGUI_API int   ImCurveAdd (ImCurveData& c, ImVec2 p);
+    IMGUI_API void  ImCurveRemove(ImCurveData& c, int idx);
+    IMGUI_API void  ImCurveSort(ImCurveData& c);
+
+    //////////////////////////////////////////////////////////////////////////
+    // Phase D -- Color grading
+    //////////////////////////////////////////////////////////////////////////
+
+    IMGUI_API bool LoadCubeLUT(ImColorLUT3D& out, char const* filename);
+    IMGUI_API bool SaveCubeLUT(ImColorLUT3D const& in, char const* filename);
+    IMGUI_API ImVec4 SampleLUT3D(ImColorLUT3D const& lut, ImVec4 rgb_in);
+    IMGUI_API void  InitIdentityLUT3D(ImColorLUT3D& out, int size);
+    IMGUI_API bool  ColorLUT3DViewer(char const* label, ImColorLUT3D* lut,
+                                     ImVec2 size = ImVec2(0, 0));
+
+    //////////////////////////////////////////////////////////////////////////
+    // Phase E -- LookDev A/B compare
+    //////////////////////////////////////////////////////////////////////////
+
+    IMGUI_API bool LookDevCompare(char const* label,
+                                  ImTextureID tex_a, ImTextureID tex_b,
+                                  ImVec2 a_uv_min, ImVec2 a_uv_max,
+                                  ImVec2 b_uv_min, ImVec2 b_uv_max,
+                                  ImLookDevState* state,
+                                  ImVec2 size = ImVec2(0, 0));
+
+    // LookDevInspector -- A/B compare with per-side exposure/black/white/gamma via
+    // a dedicated shader (`lookdev_inspector.hlsl`). The shader samples both
+    // textures across the widget rect, selects A or B based on the divider line,
+    // and applies side-specific tonemap. Falls back to LookDevCompare if the
+    // backend does not support custom shaders.
+    IMGUI_API bool LookDevInspector(char const* label,
+                                    ImTextureID tex_a, ImTextureID tex_b,
+                                    ImLookDevInspectorState* state,
+                                    ImVec2 size = ImVec2(0, 0));
+
+    // Shader-based dE compare.
+    enum ImDeltaEFormulaShader_
+    {
+        ImDeltaEFormulaShader_E76    = 0,
+        ImDeltaEFormulaShader_EOK    = 1,
+        ImDeltaEFormulaShader_E94    = 2,
+        ImDeltaEFormulaShader_E2000  = 3,
+        ImDeltaEFormulaShader_COUNT
+    };
+    typedef int ImDeltaEFormulaShader;
+
+    enum ImDeltaEColorRamp_
+    {
+        ImDeltaEColorRamp_Gray = 0,
+        ImDeltaEColorRamp_Viridis,
+        ImDeltaEColorRamp_Turbo,
+        ImDeltaEColorRamp_Magma,
+        ImDeltaEColorRamp_COUNT
+    };
+    typedef int ImDeltaEColorRamp;
+
+    struct ImDeltaECompareState
+    {
+        ImDeltaEFormulaShader Formula;
+        ImDeltaEColorRamp     Ramp;
+        float                 MaxDeltaE;     // maps dE=MaxDeltaE -> ramp top
+        float                 Threshold;     // overlay red above this dE
+        bool                  ShowThreshold;
+        float                 MixA;          // 0..1 layer of raw A underneath
+        float                 MixB;
+        float                 MixDeltaE;
+
+        ImDeltaECompareState()
+            : Formula( ImDeltaEFormulaShader_E76 ), Ramp( ImDeltaEColorRamp_Viridis ),
+              MaxDeltaE( 20.0f ), Threshold( 5.0f ), ShowThreshold( false ),
+              MixA( 0.0f ), MixB( 0.0f ), MixDeltaE( 1.0f ) {}
+    };
+
+    IMGUI_API bool ColorDifferenceImageViewer(char const* label,
+                                              ImTextureID tex_a, ImTextureID tex_b,
+                                              ImDeltaECompareState* state,
+                                              ImVec2 size = ImVec2(0, 0));
+
+    //////////////////////////////////////////////////////////////////////////
+    // Phase G -- Volume Slice Viewer (CPU-side slice extraction path).
+    // Uses ImPlatform_CreateTexture3D for voxel upload (when the backend
+    // supports it); the widget itself extracts a 2D slice on CPU each frame
+    // and uploads it to a 2D texture for display. This keeps the widget
+    // backend-agnostic while the full GPU volume_slice shader lands later.
+    //////////////////////////////////////////////////////////////////////////
+
+    enum ImVolumeSliceAxis_
+    {
+        ImVolumeSliceAxis_X = 0,
+        ImVolumeSliceAxis_Y = 1,
+        ImVolumeSliceAxis_Z = 2
+    };
+    typedef int ImVolumeSliceAxis;
+
+    struct ImVolumeSliceState
+    {
+        // Source volume (caller-owned).
+        float const* Voxels;  // w*h*d floats, 0..1 range recommended
+        int Width, Height, Depth;
+        // View parameters.
+        ImVolumeSliceAxis Axis;
+        float SliceT;         // 0..1
+        float WindowMin, WindowMax;
+        float Gamma;
+        // Internal -- widget reuses a cached 2D texture for display.
+        ImTextureID CachedTex;
+        int CachedW, CachedH;
+
+        ImVolumeSliceState()
+            : Voxels(NULL), Width(0), Height(0), Depth(0),
+              Axis(ImVolumeSliceAxis_Z), SliceT(0.5f),
+              WindowMin(0.0f), WindowMax(1.0f), Gamma(1.0f),
+              CachedTex(NULL), CachedW(0), CachedH(0) {}
+    };
+
+    IMGUI_API bool VolumeSliceViewer(char const* label, ImVolumeSliceState* state,
+                                     ImVec2 size = ImVec2(0, 0));
+    // Utility: generate a test 128x128x128 Perlin-ish volume (caller-owns buffer).
+    IMGUI_API void VolumeGenerateTestField(float* out_voxels, int w, int h, int d, float seed = 0.0f);
+    enum ImVolumeField_
+    {
+        ImVolumeField_Sines = 0,        // sum-of-sines (VolumeGenerateTestField)
+        ImVolumeField_Sphere,           // centered radial falloff
+        ImVolumeField_NestedSpheres,    // concentric shells, for MIP/iso demo
+        ImVolumeField_Torus,            // ring around the Y axis
+        ImVolumeField_Gyroid,           // Schoen gyroid (TPMS) implicit
+        ImVolumeField_SphericalNoise,   // 3D value noise inside a radial window
+        ImVolumeField_COUNT
+    };
+    typedef int ImVolumeField;
+    IMGUI_API void VolumeGenerateField(float* out_voxels, int w, int h, int d,
+                                       ImVolumeField mode, float seed = 0.0f);
+
+    //////////////////////////////////////////////////////////////////////////
+    // VolumeViewer -- combined volumetric widget with multiple rendering modes.
+    //
+    // Phase 1 (this session): 3-slice axial/sagittal/coronal layout using three
+    // existing VolumeSliceViewer instances sharing the same voxel data.
+    //
+    // Phase 2 (follow-up): Raymarch (DDA), MIP, and Iso-Surface modes require a
+    // Texture3D-sampling pixel shader (`volume_viewer.hlsl`) and are stubbed
+    // today; the UI exposes them with a "Coming soon" message.
+    //////////////////////////////////////////////////////////////////////////
+    enum ImVolumeViewerMode_
+    {
+        ImVolumeViewerMode_ThreeSlice = 0,
+        ImVolumeViewerMode_Raymarch   = 1,  // stub
+        ImVolumeViewerMode_MIP        = 2,  // stub
+        ImVolumeViewerMode_IsoSurface = 3,  // stub
+        ImVolumeViewerMode_COUNT
+    };
+    typedef int ImVolumeViewerMode;
+
+    struct ImVolumeViewerState
+    {
+        // Source volume (caller-owned) -- same contract as ImVolumeSliceState.
+        float const* Voxels;
+        int Width, Height, Depth;
+
+        ImVolumeViewerMode Mode;
+
+        // Per-axis slice positions (used by 3-slice mode).
+        float SliceX;   // 0..1
+        float SliceY;   // 0..1
+        float SliceZ;   // 0..1
+
+        // Shared display controls.
+        float WindowMin;
+        float WindowMax;
+        float Gamma;
+
+        // Orbital camera (raymarch modes; stubs today).
+        float CamAzimuth;   // radians
+        float CamElevation; // radians
+        float CamDistance;  // world units
+
+        // Raymarch-specific (stubs today).
+        float StepSize;
+        float IsoThreshold;
+
+        // Internal per-axis slice caches so the three views don't alloc per frame.
+        ImVolumeSliceState CacheX;
+        ImVolumeSliceState CacheY;
+        ImVolumeSliceState CacheZ;
+
+        // Cached Texture3D (raymarch modes). Re-uploaded when Voxels pointer or
+        // dims change. Leaked on widget destruction -- acceptable for runtime state.
+        ImTextureID Tex3D;
+        float const* Tex3DLastVoxels;
+        int Tex3DLastW, Tex3DLastH, Tex3DLastD;
+
+        // Color ramp (raymarch/MIP modes). 0 = gray, 1 = viridis.
+        int ColorRamp;
+
+        ImVolumeViewerState()
+            : Voxels(NULL), Width(0), Height(0), Depth(0),
+              Mode(ImVolumeViewerMode_Raymarch),   // DDA raymarch is the headline mode
+              SliceX(0.5f), SliceY(0.5f), SliceZ(0.5f),
+              WindowMin(0.0f), WindowMax(1.0f), Gamma(1.0f),
+              CamAzimuth(0.5f), CamElevation(0.3f), CamDistance(2.0f),
+              StepSize(0.01f), IsoThreshold(0.5f),
+              Tex3D(NULL), Tex3DLastVoxels(NULL), Tex3DLastW(0), Tex3DLastH(0), Tex3DLastD(0),
+              ColorRamp(1) {}
+    };
+
+    IMGUI_API bool VolumeViewer(char const* label, ImVolumeViewerState* state,
+                                ImVec2 size = ImVec2(0, 0));
 }

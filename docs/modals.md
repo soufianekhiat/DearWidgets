@@ -25,7 +25,7 @@ All expanded windows follow a consistent layout:
 
 ### Right panel convention
 
-All labels and controls are stacked vertically — label on top, full-width control below:
+All labels and controls are stacked vertically -- label on top, full-width control below:
 
 ```cpp
 ImGui::TextUnformatted( "Position" );
@@ -40,6 +40,7 @@ ImGui::DragFloat( "##pos", &value, 0.001f, 0.0f, 1.0f, "%.3f" );
 | GradientEditor | Stops (count), Interpolation (Combo), Selected: Position (DragFloat), Color (ColorEdit4) |
 | CurveEditor | Keys (count), Range X/Y, Selected: X/Y (DragFloat), Segment (Combo) |
 | ColorWheel | Mode, R/G/B/A (DragFloat, editable), HDR max, color preview swatch |
+| HDRWheel ^A | Y Value (DragFloat), Right Arc (DragFloat, when `rightValue != NULL`), Left Arc (DragFloat, when `leftValue != NULL`), R/G/B (DragFloat) |
 | ColorWarper | Mode, Space, Third Axis, Selected point: Offset X/Y (DragFloat), Pinned |
 | ColorCurve | Mode, Keys (count), Selected: Position/Value (DragFloat) |
 | ParadeScope | Overlay (Checkbox), Scale (Combo) |
@@ -48,15 +49,17 @@ ImGui::DragFloat( "##pos", &value, 0.001f, 0.0f, 1.0f, "%.3f" );
 | CIEChromaticity | Gamut (Combo), Background (Checkbox), Signal Color (Combo) |
 | ToneCurve | Mode, Channel (name + index), Keys (count), Selected: Input/Output (DragFloat) |
 
+**^A `HDRWheel`** -- replaces the former separate `PrimariesWheel`. When called with `rightValue = leftValue = NULL`, the widget renders without arc sliders (tighter footprint matching the old PrimariesWheel layout) and the right panel hides the corresponding arc DragFloats. With one or both arc pointers non-null, the matching DragFloat appears.
+
 ## Architecture
 
 ### Infrastructure (in `dear_widgets.cpp`)
 
-- `s_InsideExpandedWidget` — static bool flag preventing recursive expand buttons
-- `WidgetExpandButton(widget_id, bb)` — draws the expand icon at the top-right of `bb`, returns `bool*` to the open state (stored in `window->StateStorage`), returns `NULL` when inside an expanded window
-- `IsMouseOverExpandButton(widget_id, bb)` — hit-test helper to suppress widget interaction when mouse is over the button
-- `BeginExpandedWindow(label, widget_id, pOpen, defaultSize)` — opens a resizable `ImGui::Begin` window with a stable ID (`###ExpandWdg_XXXXXXXX`), sets `s_InsideExpandedWidget = true`
-- `EndExpandedWindow()` — calls `ImGui::End()`, resets `s_InsideExpandedWidget = false`
+- `s_InsideExpandedWidget` -- static bool flag preventing recursive expand buttons
+- `WidgetExpandButton(widget_id, bb)` -- draws the expand icon at the top-right of `bb`, returns `bool*` to the open state (stored in `window->StateStorage`), returns `NULL` when inside an expanded window
+- `IsMouseOverExpandButton(widget_id, bb)` -- hit-test helper to suppress widget interaction when mouse is over the button
+- `BeginExpandedWindow(label, widget_id, pOpen, defaultSize)` -- opens a resizable `ImGui::Begin` window with a stable ID (`###ExpandWdg_XXXXXXXX`), sets `s_InsideExpandedWidget = true`
+- `EndExpandedWindow()` -- calls `ImGui::End()`, resets `s_InsideExpandedWidget = false`
 
 ### Per-widget pattern
 

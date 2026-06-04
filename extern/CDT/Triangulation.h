@@ -1042,8 +1042,8 @@ void Triangulation<T, TNearPointLocator>::insertVertices(
         VertInd(nNewVertices) >= overAllocationVerticesThreshold;
     if(isOverPreAllocated)
     {
-        capacityTriangles *= overAllocationFactor;
-        capacityVertices *= overAllocationFactor;
+        capacityTriangles = static_cast<std::size_t>(static_cast<T>(capacityTriangles) * overAllocationFactor);
+        capacityVertices  = static_cast<std::size_t>(static_cast<T>(capacityVertices)  * overAllocationFactor);
     }
     triangles.reserve(capacityTriangles);
     vertices.reserve(capacityVertices);

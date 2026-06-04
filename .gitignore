@@ -39,3 +39,9 @@ tmp
 sharpmakes/bin
 workingdir/bin/slang
 *.txt
+
+# Demo fonts - not redistributed. Downloaded on-demand by the demo UI
+# (see workingdir/fonts_manifest.inl and DownloadFonts buttons).
+# LaTeX math fonts (workingdir/latex_fonts/) ARE redistributed.
+workingdir/fonts/*.ttf
+workingdir/fonts/*.otf

@@ -1,0 +1,134 @@
+#include <metal_stdlib>
+#include <metal_math>
+#include <metal_texture>
+using namespace metal;
+
+#line 52 "C:/git/DearWidgets/workingdir/shaders/hlsl_src/lookdev_inspector.hlsl"
+float3 apply_tone_0(float3 rgb_0, float4 params_0)
+{
+
+
+
+    float _S1 = params_0.y;
+
+
+
+    return pow(max((rgb_0 * float3(exp2(params_0.x))  - float3(_S1) ) / float3(max(params_0.z - _S1, 9.99999997475242708e-07)) , float3(0.0) ), float3((1.0 / max(params_0.w, 0.00009999999747379))) );
+}
+
+
+#line 90 "core"
+struct pixelOutput_0
+{
+    float4 output_0 [[color(0)]];
+};
+
+
+#line 90
+struct pixelInput_0
+{
+    float4 col_0 [[user(COLOR)]];
+    float2 uv_0 [[user(TEXCOORD)]];
+};
+
+
+#line 13 "C:/git/DearWidgets/workingdir/shaders/hlsl_src/lookdev_inspector.hlsl"
+struct SLANG_ParameterGroup_LookDevInspectorParams_0
+{
+    float4 sideA_0;
+    float4 sideB_0;
+    float4 divider_0;
+    float4 canvas_0;
+};
+
+
+#line 4264 "core.meta.slang"
+struct KernelContext_0
+{
+    SLANG_ParameterGroup_LookDevInspectorParams_0 constant* LookDevInspectorParams_0;
+    texture2d<float, access::sample> texture1_0;
+    sampler sampler1_0;
+    texture2d<float, access::sample> texture0_0;
+    sampler sampler0_0;
+};
+
+
+#line 64 "C:/git/DearWidgets/workingdir/shaders/hlsl_src/lookdev_inspector.hlsl"
+[[fragment]] pixelOutput_0 main_ps(pixelInput_0 _S2 [[stage_in]], float4 pos_0 [[position]], SLANG_ParameterGroup_LookDevInspectorParams_0 constant* LookDevInspectorParams_1 [[buffer(1)]], texture2d<float, access::sample> texture1_1 [[texture(1)]], sampler sampler1_1 [[sampler(1)]], texture2d<float, access::sample> texture0_1 [[texture(0)]], sampler sampler0_1 [[sampler(0)]])
+{
+
+#line 64
+    KernelContext_0 kernelContext_0;
+
+#line 64
+    (&kernelContext_0)->LookDevInspectorParams_0 = LookDevInspectorParams_1;
+
+#line 64
+    (&kernelContext_0)->texture1_0 = texture1_1;
+
+#line 64
+    (&kernelContext_0)->sampler1_0 = sampler1_1;
+
+#line 64
+    (&kernelContext_0)->texture0_0 = texture0_1;
+
+#line 64
+    (&kernelContext_0)->sampler0_0 = sampler0_1;
+
+#line 69
+    float aspect_0 = (&kernelContext_0)->LookDevInspectorParams_0->canvas_0.x / max((&kernelContext_0)->LookDevInspectorParams_0->canvas_0.y, 1.0);
+
+#line 75
+    bool onB_0 = ((_S2.uv_0.x * aspect_0 - (&kernelContext_0)->LookDevInspectorParams_0->divider_0.x * aspect_0) * cos((&kernelContext_0)->LookDevInspectorParams_0->divider_0.z) + (_S2.uv_0.y - (&kernelContext_0)->LookDevInspectorParams_0->divider_0.y) * sin((&kernelContext_0)->LookDevInspectorParams_0->divider_0.z)) < 0.0;
+
+#line 75
+    bool onB_1;
+    if(((&kernelContext_0)->LookDevInspectorParams_0->divider_0.w) > 0.5)
+    {
+
+#line 76
+        onB_1 = !onB_0;
+
+#line 76
+    }
+    else
+    {
+
+#line 76
+        onB_1 = onB_0;
+
+#line 76
+    }
+
+    thread float4 c_0;
+    if(onB_1)
+    {
+        float4 _S3 = (((&kernelContext_0)->texture1_0).sample(((&kernelContext_0)->sampler1_0), (_S2.uv_0)));
+
+#line 81
+        c_0 = _S3;
+        c_0.xyz = apply_tone_0(_S3.xyz, (&kernelContext_0)->LookDevInspectorParams_0->sideB_0);
+
+#line 79
+    }
+    else
+    {
+
+#line 86
+        float4 _S4 = (((&kernelContext_0)->texture0_0).sample(((&kernelContext_0)->sampler0_0), (_S2.uv_0)));
+
+#line 86
+        c_0 = _S4;
+        c_0.xyz = apply_tone_0(_S4.xyz, (&kernelContext_0)->LookDevInspectorParams_0->sideA_0);
+
+#line 79
+    }
+
+#line 89
+    c_0.xyz = saturate(c_0.xyz);
+
+#line 89
+    pixelOutput_0 _S5 = { c_0 * _S2.col_0 };
+    return _S5;
+}
+
