@@ -17546,7 +17546,10 @@ namespace ImWidgets {
 		if ( pReorderFrom ) *pReorderFrom = -1;
 		if ( pReorderTo   ) *pReorderTo   = -1;
 
-		float availW = ImGui::CalcItemWidth();
+		// Fill the full content region width — CalcItemWidth() defaults
+		// to a fraction of the window (ItemWidth ≈ 65%) which would
+		// leave a gap to the right of the grid.
+		float availW = ImGui::GetContentRegionAvail().x;
 		float cellW = ( availW - spacing * ( columnsPerRow - 1 ) ) / columnsPerRow;
 		float cellH = cellW / cellAspect;
 		int rows = ( imageCount + columnsPerRow - 1 ) / columnsPerRow;
