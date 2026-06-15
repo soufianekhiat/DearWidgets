@@ -2096,6 +2096,45 @@ struct ImCurveEditorData
 	}
 };
 
+// Control mesh for the GridWarp widget: a Cols x Rows lattice of 2-D offsets
+// (normalized canvas units, [-1,1]) applied on top of the uniform base grid.
+// Offsets are stored row-major; (0,0) at every node = identity warp.
+struct ImGridWarpData
+{
+	int					Cols;
+	int					Rows;
+	ImVector<ImVec2>	Offsets;	// size Cols*Rows, row-major; node offset
+	int					SelectedIdx;	// dragged/selected node, -1 = none
+
+	ImGridWarpData() : Cols( 0 ), Rows( 0 ), SelectedIdx( -1 ) { Init( 4, 4 ); }
+
+	void Init( int cols, int rows )
+	{
+		Cols = cols < 2 ? 2 : cols;
+		Rows = rows < 2 ? 2 : rows;
+		Offsets.resize( Cols * Rows );
+		for ( int i = 0; i < Offsets.Size; ++i )
+			Offsets[ i ] = ImVec2( 0.0f, 0.0f );
+		SelectedIdx = -1;
+	}
+
+	void Reset()
+	{
+		for ( int i = 0; i < Offsets.Size; ++i )
+			Offsets[ i ] = ImVec2( 0.0f, 0.0f );
+	}
+
+	ImVec2&			At( int c, int r )			{ return Offsets[ r * Cols + c ]; }
+	ImVec2 const&	At( int c, int r ) const	{ return Offsets[ r * Cols + c ]; }
+
+	// Uniform base position of node (c,r) in [0,1]^2.
+	ImVec2 Base( int c, int r ) const
+	{
+		return ImVec2( Cols > 1 ? (float)c / (float)( Cols - 1 ) : 0.5f,
+		               Rows > 1 ? (float)r / (float)( Rows - 1 ) : 0.5f );
+	}
+};
+
 struct ImTransformData
 {
 	ImVec2	Translation;	// Offset from canvas center (lp)
@@ -3668,6 +3707,12 @@ namespace ImWidgets{
 
 	IMGUI_API bool GradientEditor( char const* label, ImGradientData* gradient, bool alpha = true, ImVec2 size = ImVec2( 0, 0 ) );
 	IMGUI_API bool CurveEditor( char const* label, ImCurveEditorData* curve, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// Free-form deformation grid editor: drag the lattice nodes to warp. When
+	// `background` is non-zero it is drawn behind the grid (e.g. the node's
+	// input image) so the deformation can be judged against real content.
+	// Edits ImGridWarpData::Offsets; returns true while a node is being moved.
+	IMGUI_API bool GridWarp( char const* label, ImGridWarpData* grid, ImTextureID background = 0, ImVec2 size = ImVec2( 0, 0 ) );
 
 	IMGUI_API void DrawColorDisc( ImDrawList* pDrawList, ImVec2 center, float radius, ImColorWheelMode mode, float thirdAxis, int numSectors = 64, int numRings = 16 );
 	IMGUI_API void DrawCircularGradientIndicator( ImDrawList* pDrawList, ImVec2 center, float outerRadius, float innerRadius, float t );

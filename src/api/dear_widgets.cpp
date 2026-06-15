@@ -10958,6 +10958,132 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
 	}
 
+	bool GridWarp( char const* label, ImGridWarpData* grid, ImTextureID background, ImVec2 size )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems || grid == NULL || grid->Cols < 2 || grid->Rows < 2 )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		const ImGuiID id = window->GetID( label );
+
+		if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+		if ( size.y > 0.0f ) size.y = LpToPx( size.y );
+
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
+		const float h = ( size.y > 0.0f ) ? size.y : w; // square by default
+
+		const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, h ) );
+		ImGui::ItemSize( frame_bb, style.FramePadding.y );
+		if ( !ImGui::ItemAdd( frame_bb, id ) )
+			return false;
+
+		const bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.ItemFlags );
+		const float cw = frame_bb.GetWidth();
+		const float ch = frame_bb.GetHeight();
+
+		auto toScreen = [ & ]( ImVec2 p ) -> ImVec2 {
+			return ImVec2( frame_bb.Min.x + p.x * cw, frame_bb.Min.y + p.y * ch );
+		};
+		auto nodePos = [ & ]( int c, int r ) -> ImVec2 {
+			ImVec2 b = grid->Base( c, r );
+			ImVec2 o = grid->At( c, r );
+			return ImVec2( b.x + o.x, b.y + o.y );
+		};
+
+		ImDrawList* dl = window->DrawList;
+		bool value_changed = false;
+
+		const float handleR = LpToPx( 4.0f );
+		const float hitR    = LpToPx( 8.0f );
+
+		// --- hit test nearest node ---
+		int hovered_pt = -1;
+		if ( hovered )
+		{
+			float best = hitR * hitR;
+			for ( int r = 0; r < grid->Rows; ++r )
+				for ( int c = 0; c < grid->Cols; ++c )
+				{
+					ImVec2 s = toScreen( nodePos( c, r ) );
+					float d = ImLengthSqr( g.IO.MousePos - s );
+					if ( d < best ) { best = d; hovered_pt = r * grid->Cols + c; }
+				}
+		}
+
+		// --- drag state ---
+		ImGuiID dragKey = id + ImHashStr( "##gw_drag" );
+		int* pDrag = ImGui::GetStateStorage()->GetIntRef( dragKey, -1 );
+
+		if ( hovered_pt >= 0 && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) )
+		{
+			*pDrag = hovered_pt;
+			grid->SelectedIdx = hovered_pt;
+			ImGui::SetActiveID( id, window );
+			ImGui::FocusWindow( window );
+		}
+		if ( *pDrag >= 0 )
+		{
+			if ( ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+			{
+				int c = *pDrag % grid->Cols;
+				int r = *pDrag / grid->Cols;
+				ImVec2 b = grid->Base( c, r );
+				ImVec2 nrm( ( g.IO.MousePos.x - frame_bb.Min.x ) / ImMax( cw, 1.0f ),
+				            ( g.IO.MousePos.y - frame_bb.Min.y ) / ImMax( ch, 1.0f ) );
+				ImVec2 off( ImClamp( nrm.x - b.x, -1.0f, 1.0f ),
+				            ImClamp( nrm.y - b.y, -1.0f, 1.0f ) );
+				ImVec2& cur = grid->At( c, r );
+				if ( cur.x != off.x || cur.y != off.y ) { cur = off; value_changed = true; }
+			}
+			else
+			{
+				*pDrag = -1;
+				if ( g.ActiveId == id ) ImGui::ClearActiveID();
+			}
+		}
+
+		// --- draw ---
+		ImU32 frame_col = ImGui::GetColorU32( ImGuiCol_FrameBg );
+		ImGui::RenderFrame( frame_bb.Min, frame_bb.Max, frame_col, true, style.FrameRounding );
+
+		dl->PushClipRect( frame_bb.Min, frame_bb.Max, true );
+
+		if ( background != 0 )
+			dl->AddImage( background, frame_bb.Min, frame_bb.Max );
+
+		// Deformed lattice lines.
+		ImU32 lineCol = ImGui::GetColorU32( ImGuiCol_PlotLines, 0.9f );
+		for ( int r = 0; r < grid->Rows; ++r )
+			for ( int c = 0; c < grid->Cols; ++c )
+			{
+				ImVec2 s = toScreen( nodePos( c, r ) );
+				if ( c + 1 < grid->Cols )
+					dl->AddLine( s, toScreen( nodePos( c + 1, r ) ), lineCol, 1.5f );
+				if ( r + 1 < grid->Rows )
+					dl->AddLine( s, toScreen( nodePos( c, r + 1 ) ), lineCol, 1.5f );
+			}
+
+		// Node handles.
+		ImU32 nodeCol     = ImGui::GetColorU32( ImGuiCol_SliderGrab );
+		ImU32 nodeColHi   = ImGui::GetColorU32( ImGuiCol_SliderGrabActive );
+		ImU32 nodeOutline = ImGui::GetColorU32( ImGuiCol_Text, 0.6f );
+		for ( int r = 0; r < grid->Rows; ++r )
+			for ( int c = 0; c < grid->Cols; ++c )
+			{
+				int idx = r * grid->Cols + c;
+				ImVec2 s = toScreen( nodePos( c, r ) );
+				bool hot = ( idx == hovered_pt ) || ( idx == grid->SelectedIdx );
+				dl->AddCircleFilled( s, handleR, hot ? nodeColHi : nodeCol );
+				dl->AddCircle( s, handleR, nodeOutline );
+			}
+
+		dl->PopClipRect();
+
+		return value_changed;
+	}
+
 	void DrawColorDisc( ImDrawList* pDrawList, ImVec2 center, float radius, ImColorWheelMode mode, float thirdAxis, int numSectors, int numRings )
 	{
 		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
