@@ -620,7 +620,9 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 	ImWidgetsContext* ctx = GetCurrentContext();
 	if ( ctx && ctx->imageInspectorShader.program == NULL )
 	{
-		CreateInternalShader( &ctx->imageInspectorShader, "image_inspector", 0, NULL, 0, NULL );
+		// See dear_widgets.cpp PrebuildShaders for why this needs OPTIMIZATION_LOW.
+		CreateInternalShader( &ctx->imageInspectorShader, "image_inspector", 0, NULL, 0, NULL,
+		                      nullptr, nullptr, IMPLATFORM_SHADER_COMPILE_OPTIMIZATION_LOW );
 		if ( ctx->imageInspectorShader.program == NULL )
 		{
 			ImDrawList* dl = window->DrawList;

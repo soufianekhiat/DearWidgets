@@ -54,6 +54,17 @@ namespace ImWidgets{
     ImGlobalData GlobalData;
 	bool g_SlugDebugShader = false;
 
+	// Forward declarations: definitions live further down in this file. Earlier
+	// widgets (SliderRing / SliderSpline / their gradient variants) call the
+	// shared popup helper for Ctrl+Click + double-click precision input, so the
+	// declaration needs to precede them.
+	bool BeginPrecisionPopup(const char* str_id, ImVec2 anchor);
+	void EndPrecisionPopup();
+	bool DW_SliderScalarPopup(
+		ImRect const& labelRect, ImGuiID id,
+		ImGuiDataType data_type, void* p_value, void const* p_min, void const* p_max,
+		char const* axisLabel );
+
 	//////////////////////////////////////////////////////////////////////////
 	// Data
 	//////////////////////////////////////////////////////////////////////////
@@ -3343,13 +3354,24 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( ctx->strokeShader.program == NULL )
 			CreateInternalShader( &ctx->strokeShader, "stroke", 0, NULL, 0, NULL );
 		if ( ctx->imageInspectorShader.program == NULL )
-			CreateInternalShader( &ctx->imageInspectorShader, "image_inspector", 0, NULL, 0, NULL );
+			// image_inspector is an uber-shader with many [branch] switches
+			// (11 sample types x 7 tonemaps x 8 false-colour palettes x ...).
+			// At default optimisation FXC unrolls / constant-folds through them
+			// and the compile blows out to ~19 minutes for 920 KB of bytecode.
+			// At OPTIMIZATION_LOW the [branch] hints survive and compile time
+			// drops to seconds; runtime cost is negligible for an inspector tool.
+			CreateInternalShader( &ctx->imageInspectorShader, "image_inspector", 0, NULL, 0, NULL,
+			                      nullptr, nullptr, IMPLATFORM_SHADER_COMPILE_OPTIMIZATION_LOW );
+		// Same compile-flag treatment for the other inspector uber-shaders.
 		if ( ctx->lookDevInspectorShader.program == NULL )
-			CreateInternalShader( &ctx->lookDevInspectorShader, "lookdev_inspector", 0, NULL, 0, NULL );
+			CreateInternalShader( &ctx->lookDevInspectorShader, "lookdev_inspector", 0, NULL, 0, NULL,
+			                      nullptr, nullptr, IMPLATFORM_SHADER_COMPILE_OPTIMIZATION_LOW );
 		if ( ctx->deltaECompareShader.program == NULL )
-			CreateInternalShader( &ctx->deltaECompareShader, "delta_e_compare", 0, NULL, 0, NULL );
+			CreateInternalShader( &ctx->deltaECompareShader, "delta_e_compare", 0, NULL, 0, NULL,
+			                      nullptr, nullptr, IMPLATFORM_SHADER_COMPILE_OPTIMIZATION_LOW );
 		if ( ctx->volumeViewerShader.program == NULL )
-			CreateInternalShader( &ctx->volumeViewerShader, "volume_viewer", 0, NULL, 0, NULL );
+			CreateInternalShader( &ctx->volumeViewerShader, "volume_viewer", 0, NULL, 0, NULL,
+			                      nullptr, nullptr, IMPLATFORM_SHADER_COMPILE_OPTIMIZATION_LOW );
 		// Background-effect shaders are compiled lazily per effect (see EnsureBgEffectShader),
 		// so the expensive-but-rarely-used variants never compile unless actually selected.
 
@@ -4677,7 +4699,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return src;
 	}
 
-	void CreateInternalShader( ImDrawShader *shaders_out, char const *shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer, char const* extra_define, char const* cache_suffix )
+	void CreateInternalShader( ImDrawShader *shaders_out, char const *shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer, char const* extra_define, char const* cache_suffix, unsigned int compile_flags )
 	{
 		// Note: sizeof_vs_const_buffer, vs_const_buffer, sizeof_ps_const_buffer, ps_const_buffer
 		// are no longer used with the new ImPlatform API. Uniforms are set per-draw via ImPlatform_SetShaderUniform.
@@ -4830,7 +4852,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		vs_desc.bytecode_size = 0;
 		vs_desc.entry_point = "main_vs"; // Standard entry point name in our shaders
 		vs_desc.cache_key = cache_key_buf;
-		vs_desc.compile_flags = IMPLATFORM_SHADER_COMPILE_DEFAULT;
+		vs_desc.compile_flags = compile_flags;
 
 		ImPlatform_Shader vertex_shader = ImPlatform_CreateShader( &vs_desc );
 		if (vertex_shader == NULL)
@@ -4859,7 +4881,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ps_desc.bytecode_size = 0;
 		ps_desc.entry_point = "main_ps"; // Standard entry point name in our shaders
 		ps_desc.cache_key = cache_key_buf;
-		ps_desc.compile_flags = IMPLATFORM_SHADER_COMPILE_DEFAULT;
+		ps_desc.compile_flags = compile_flags;
 
 		ImPlatform_Shader pixel_shader = ImPlatform_CreateShader( &ps_desc );
 		if (pixel_shader == NULL)
@@ -5282,6 +5304,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 			current += colorStride;
 		}
+
+		// Defensive against the VtxOffset desync (see DW_EnsureFreshVtxOffset doc) —
+		// the chromaticity locus polyline disappears if some upstream widget has left
+		// _CmdHeader.VtxOffset = 0 while VtxBuffer.Size > 64K.
+		DW_EnsureFreshVtxOffset( pDrawList );
 
 		// Route through the unified DrawThickLine dispatcher. Mode + dashed come from the
 		// active ImWidgetsStyle; thickness/color come from the call's existing args so this
@@ -5750,12 +5777,27 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		double c = cos( pa );
 
 		bool waxing = ( phase < 0.5 );
-		bool southern = ( latDeg < 0.0f );
 		int dir = waxing ? +1 : -1;
-		if ( southern ) dir = -dir;
 
 		const double PI_ = 3.14159265358979323846;
-		float flip = southern ? -1.0f : 1.0f;
+
+		// Continuous Northern/Southern orientation. Outside ±LAT_BAND latitude the
+		// rotation is exactly 0 or π (matching the old binary flip). Inside the band,
+		// smoothstep interpolates so crossing the equator no longer "snaps" the moon.
+		// Band is tight (±2°) so far from the equator the orientation is essentially
+		// the historical Northern/Southern view, only the immediate transition is smoothed.
+		const float LAT_BAND_DEG = 2.0f;
+		float blendT = ImClamp( ( latDeg + LAT_BAND_DEG ) / ( 2.0f * LAT_BAND_DEG ), 0.0f, 1.0f );
+		blendT = blendT * blendT * ( 3.0f - 2.0f * blendT );
+		const float rotAngle = ( 1.0f - blendT ) * (float)PI_;
+		const float cosR = cosf( rotAngle );
+		const float sinR = sinf( rotAngle );
+
+		// Image-space relative (dx, dy) → absolute screen position with smooth rotation.
+		auto applyRot = [ cosR, sinR, &center ]( float dx, float dy ) -> ImVec2
+		{
+			return ImVec2( center.x + dx * cosR - dy * sinR, center.y + dx * sinR + dy * cosR );
+		};
 
 		// 1. Lit base disc.
 		pDrawList->AddCircleFilled( center, radius, litCol, 96 );
@@ -5796,8 +5838,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		auto projLL = [ & ]( float lat_r, float lon_r ) -> ImVec2
 		{
 			float cosc = cosf( lat_r ) * cosf( lon_r );
-			float xd = radius * cosf( lat_r ) * sinf( lon_r ) * flip;
-			float yd = radius * sinf( lat_r ) * flip;
+			float xd = radius * cosf( lat_r ) * sinf( lon_r );
+			float yd = radius * sinf( lat_r );
 			if ( cosc < 0.0f )
 			{
 				float mag = sqrtf( xd * xd + yd * yd );
@@ -5807,7 +5849,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					yd = yd / mag * radius;
 				}
 			}
-			return ImVec2( center.x + xd, center.y - yd );
+			// Selenographic +y (north) corresponds to image -y (up on screen).
+			return applyRot( xd, -yd );
 		};
 
 		const int MARE_VERTS = 18;
@@ -5865,16 +5908,15 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			{
 				double t = (double)i / (double)N;
 				double theta = -PI_ * 0.5 + sweepDir * t * PI_;
-				p.push_back( ImVec2( center.x + (float)( cos( theta ) * (double)radius ),
-				                     center.y + (float)( sin( theta ) * (double)radius ) ) );
+				p.push_back( applyRot( (float)( cos( theta ) * (double)radius ),
+				                       (float)( sin( theta ) * (double)radius ) ) );
 			}
 			for ( int i = 0; i <= N; i++ )
 			{
 				double t = (double)i / (double)N;
 				double phi = t * PI_;
-				double x = a * sin( phi );
-				double y = (double)radius * cos( phi );
-				p.push_back( ImVec2( center.x + (float)x, center.y + (float)y ) );
+				p.push_back( applyRot( (float)( a * sin( phi ) ),
+				                       (float)( (double)radius * cos( phi ) ) ) );
 			}
 			pDrawList->AddConvexPolyFilled( p.Data, p.Size, col );
 		};
@@ -5927,9 +5969,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				float cosc = cosP * cosf( lon_p );
 				if ( cosc >= 0.0f )
 				{
-					float xd = radius * cosP * sinf( lon_p ) * flip;
-					float yd = radius * sinP * flip;
-					strip.push_back( ImVec2( center.x + xd, center.y - yd ) );
+					float xd = radius * cosP * sinf( lon_p );
+					float yd = radius * sinP;
+					strip.push_back( applyRot( xd, -yd ) );
 				}
 				else
 				{
@@ -5954,9 +5996,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				float cosc = cosP * cosL;
 				if ( cosc >= 0.0f )
 				{
-					float xd = radius * cosP * sinL * flip;
-					float yd = radius * sinP * flip;
-					strip.push_back( ImVec2( center.x + xd, center.y - yd ) );
+					float xd = radius * cosP * sinL;
+					float yd = radius * sinP;
+					strip.push_back( applyRot( xd, -yd ) );
 				}
 				else
 				{
@@ -5967,8 +6009,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 
 		// 5. North-pole marker.
-		float pole_y = center.y - radius * flip;
-		pDrawList->AddCircleFilled( ImVec2( center.x, pole_y ), 3.0f, IM_COL32( 220, 80, 80, 255 ), 12 );
+		pDrawList->AddCircleFilled( applyRot( 0.0f, -radius ), 3.0f, IM_COL32( 220, 80, 80, 255 ), 12 );
 
 		// 6. Outline.
 		pDrawList->AddCircle( center, radius, outlineCol, 96, 1.8f );
@@ -6561,7 +6602,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	                    float magLimit, float starScale,
 	                    ImWidgetsSkyCulture culture,
 	                    bool showSolarSystem,
-	                    ImU32 skyCol, ImU32 outlineCol )
+	                    ImU32 skyCol, ImU32 outlineCol,
+	                    ImFont* labelFont )
 	{
 		if ( !pDrawList || radius <= 0.0f ) return;
 		if ( !s_FillerStarsBuilt ) DwBuildFillerStars();
@@ -6673,11 +6715,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 
 		// Slug-based label rendering — supports BiDi (Arabic) + CJK.
-		ImFont* font = ImGui::GetFont();
+		ImFont* defaultFont = ImGui::GetFont();
+		ImFont* starLabelFont = labelFont ? labelFont : defaultFont;
 		const float cardinalFs = 14.0f;
 		const float labelFs    = 11.0f;
 
-		// Cardinal labels (N/E/S/W) at the rim
+		// Cardinal labels (N/E/S/W) at the rim — always Latin, always use the default font.
 		{
 			struct Card { char const* lbl; int az; } cards[] = {
 				{ "N", 0 }, { "E", 90 }, { "S", 180 }, { "W", 270 }
@@ -6687,12 +6730,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				float a = (float)cards[ i ].az * IM_PI / 180.0f;
 				ImVec2 cp( center.x + radius * 1.09f * sinf( a ) - 5.0f,
 				           center.y - radius * 1.09f * cosf( a ) - 8.0f );
-				ImWidgets::DrawText( pDrawList, font, cardinalFs, cp,
+				ImWidgets::DrawText( pDrawList, defaultFont, cardinalFs, cp,
 				                     IM_COL32( 230, 235, 250, 230 ), cards[ i ].lbl );
 			}
 		}
 
-		// Star labels (culture-specific) via Slug
+		// Star labels (culture-specific) via Slug — Arabic / CJK need their own font.
 		for ( int lbi = 0; lbi < cul.n_labels; ++lbi )
 		{
 			Vis* v = findVis( cul.labels[ lbi ].star );
@@ -6700,7 +6743,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			{
 				ImVec2 p = projAltAz( v->alt, v->az );
 				ImVec2 lp( p.x + 6.0f, p.y - 5.0f );
-				ImWidgets::DrawText( pDrawList, font, labelFs, lp,
+				ImWidgets::DrawText( pDrawList, starLabelFont, labelFs, lp,
 				                     cul.label_color, cul.labels[ lbi ].label );
 			}
 		}
@@ -6754,7 +6797,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				char const* lbl = cul.ss_names[ 2 + pi ];
 				ImVec2 lp( p.x + pd.size + 5.0f, p.y - 6.0f );
 				ImU32 lblCol = ( pd.col & 0x00FFFFFFu ) | ( 240u << 24 );
-				ImWidgets::DrawText( pDrawList, font, labelFs, lp, lblCol, lbl );
+				ImWidgets::DrawText( pDrawList, starLabelFont, labelFs, lp, lblCol, lbl );
 			}
 
 			// Sun + Moon: compute sun's RA/Dec from Earth's helio position
@@ -6788,7 +6831,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					pDrawList->AddCircleFilled( p, 7.0f, mcol, 24 );
 					pDrawList->AddCircle( p, 7.0f, IM_COL32( 255, 255, 255, 230 ), 24, 1.0f );
 					ImVec2 lp( p.x + 11.0f, p.y - 6.0f );
-					ImWidgets::DrawText( pDrawList, font, labelFs, lp,
+					ImWidgets::DrawText( pDrawList, starLabelFont, labelFs, lp,
 					                     IM_COL32( 220, 230, 245, 240 ), cul.ss_names[ 1 ] );
 				}
 			}
@@ -6810,7 +6853,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 							IM_COL32( 255, 200, 100, 220 ), 2.0f );
 					}
 					ImVec2 lp( p.x + 18.0f, p.y - 6.0f );
-					ImWidgets::DrawText( pDrawList, font, labelFs, lp,
+					ImWidgets::DrawText( pDrawList, starLabelFont, labelFs, lp,
 					                     IM_COL32( 255, 220, 90, 240 ), cul.ss_names[ 0 ] );
 				}
 			}
@@ -9554,8 +9597,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImGuiContext& g = *GImGui;
 		const ImGuiStyle& style = g.Style;
 		const ImGuiID id = window->GetID( label );
-		ImGuiID idX = window->GetID( id );
-		ImGuiID idY = window->GetID( idX );
+		// Deterministic sub-ids derived from `id`. Using window->GetID(id) instead
+		// (re-hashing the parent hash) could in principle collide with another
+		// widget's main hash; the XOR mask guarantees these strip ids never collide
+		// with any widget's primary `id` since nobody else applies the same mask.
+		ImGuiID idX = id ^ 0x5A0D2D58u;
+		ImGuiID idY = id ^ 0xA5F0DA37u;
 		const float w = ImGui::CalcItemWidth();
 
 		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
@@ -9602,6 +9649,22 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		bool hovered = ImGui::ItemHoverable( frame_bb_drag, id, g.LastItemData.ItemFlags );
 
+		// Value-label regions: the gaps between the main drag and the X / Y strips
+		// where the formatted value text is rendered later. We hit-test these for the
+		// numeric-edit popup so a drag on the slider stays a drag, and a click on the
+		// readout opens the popup — no conflict between the two intents.
+		const ImRect xLabelRect(
+			ImVec2( frame_bb_drag.Min.x, frame_bb_drag.Max.y ),
+			ImVec2( frame_bb_drag.Max.x, frame_bb_dragX.Min.y ) );
+		const ImRect yLabelRect(
+			ImVec2( frame_bb_drag.Max.x, frame_bb_drag.Min.y ),
+			ImVec2( frame_bb_dragY.Min.x, frame_bb_drag.Max.y ) );
+		const ImVec2 mp = g.IO.MousePos;
+		const bool labelHovered = xLabelRect.Contains( mp ) || yLabelRect.Contains( mp );
+		const bool labelTriggered = labelHovered && (
+			( g.IO.KeyCtrl && ImGui::IsMouseClicked( 0 ) )
+			|| ImGui::IsMouseDoubleClicked( 0 ) );
+
 		bool clicked = hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id );
 		bool make_active = ( clicked || g.NavActivateId == id );
 		if ( make_active && clicked )
@@ -9613,6 +9676,34 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImGui::SetFocusID( id, window );
 			ImGui::FocusWindow( window );
 			g.ActiveIdUsingNavDirMask |= ( 1 << ImGuiDir_Left ) | ( 1 << ImGuiDir_Right );
+		}
+
+		// Precision popup — opened by Ctrl+Click / double-click on either value label.
+		char precisionPopupId[ 32 ];
+		ImFormatString( precisionPopupId, sizeof( precisionPopupId ), "##s2dprec_%08X", (unsigned)id );
+		if ( labelTriggered )
+		{
+			ImGui::ClearActiveID();
+			ImGui::OpenPopup( precisionPopupId );
+		}
+		bool value_changedPrec = false;
+		if ( BeginPrecisionPopup( precisionPopupId, mp ) )
+		{
+			ImGui::SetNextItemWidth( LpToPx( GetStyle().PrecisionPopup_InputWidth ) );
+			ImGui::InputScalar( "X", data_type, p_valueX, NULL, NULL, NULL, ImGuiInputTextFlags_AutoSelectAll );
+			if ( ImGui::IsItemDeactivatedAfterEdit() )
+			{
+				ClampScalar( data_type, p_valueX, p_minX, p_maxX );
+				value_changedPrec = true;
+			}
+			ImGui::SetNextItemWidth( LpToPx( GetStyle().PrecisionPopup_InputWidth ) );
+			ImGui::InputScalar( "Y", data_type, p_valueY, NULL, NULL, NULL, ImGuiInputTextFlags_AutoSelectAll );
+			if ( ImGui::IsItemDeactivatedAfterEdit() )
+			{
+				ClampScalar( data_type, p_valueY, p_minY, p_maxY );
+				value_changedPrec = true;
+			}
+			EndPrecisionPopup();
 		}
 
 		// Draw frame
@@ -9628,7 +9719,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( value_changedX || value_changedY )
 			ImGui::MarkItemEdited( id );
 
-		if ( !ImGui::ItemAdd( total_bb, idX, &frame_bb_dragX, 0 ) )
+		// X strip lives in its own bb and gets its own item id — using total_bb here
+		// (the entire widget rect) made the strip overlap the main drag for layout
+		// purposes and conflict with the main item's id.
+		if ( !ImGui::ItemAdd( frame_bb_dragX, idX, &frame_bb_dragX, 0 ) )
 			return false;
 
 		hovered = ImGui::ItemHoverable( frame_bb_dragX, idX, g.LastItemData.ItemFlags );
@@ -9653,7 +9747,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImGui::RenderNavCursor( frame_bb_dragX, idX );
 		ImGui::RenderFrame( frame_bb_dragX.Min, frame_bb_dragX.Max, frame_col, true, g.Style.FrameRounding );
 
-		if ( !ImGui::ItemAdd( total_bb, idY, &frame_bb_dragX, 0 ) )
+		// Y strip lives in its own bb. Previous code mistakenly passed total_bb and
+		// frame_bb_dragX here, registering idY against the X strip's geometry and
+		// double-counting the whole widget area for layout.
+		if ( !ImGui::ItemAdd( frame_bb_dragY, idY, &frame_bb_dragY, 0 ) )
 			return false;
 
 		hovered = ImGui::ItemHoverable( frame_bb_dragY, idY, g.LastItemData.ItemFlags );
@@ -9785,7 +9882,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			uTextCol,
 			pBufferY );
 
-		return value_changedX || value_changedY || value_changedXS || value_changedYS;
+		return value_changedX || value_changedY || value_changedXS || value_changedYS || value_changedPrec;
 	}
 
 	bool Slider2DFloat( char const* pLabel, float* pValueX, float* pValueY, float v_minX, float v_maxX, float v_minY, float v_maxY )
@@ -9873,7 +9970,46 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		auto MouseTX = [&]() -> float { return ImClamp( ( g.IO.MousePos.x - frame_bb_drag.Min.x ) / drag_w, 0.0f, 1.0f ); };
 		auto MouseTY = [&]() -> float { return ImClamp( ( g.IO.MousePos.y - frame_bb_drag.Min.y ) / drag_h, 0.0f, 1.0f ); };
 
-		if ( hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id ) )
+		// Value-label regions: gaps between the main drag and the X / Y strips where
+		// the formatted readouts are rendered. Hit-testing these for popup-trigger
+		// keeps slider drags and numeric edits cleanly separated.
+		const ImRect xLabelRect(
+			ImVec2( frame_bb_drag.Min.x, frame_bb_drag.Max.y ),
+			ImVec2( frame_bb_drag.Max.x, frame_bb_dragX.Min.y ) );
+		const ImRect yLabelRect(
+			ImVec2( frame_bb_drag.Max.x, frame_bb_drag.Min.y ),
+			ImVec2( frame_bb_dragY.Min.x, frame_bb_drag.Max.y ) );
+		const ImVec2 mp = g.IO.MousePos;
+		const bool labelHovered = xLabelRect.Contains( mp ) || yLabelRect.Contains( mp );
+		const bool labelTriggered = labelHovered && (
+			( g.IO.KeyCtrl && ImGui::IsMouseClicked( 0 ) )
+			|| ImGui::IsMouseDoubleClicked( 0 ) );
+		char rangePopId[ 32 ];
+		ImFormatString( rangePopId, sizeof( rangePopId ), "##s2drngprec_%08X", (unsigned)id );
+		if ( labelTriggered )
+		{
+			ImGui::ClearActiveID();
+			ImGui::OpenPopup( rangePopId );
+		}
+		if ( BeginPrecisionPopup( rangePopId, mp ) )
+		{
+			float const inW = LpToPx( GetStyle().PrecisionPopup_InputWidth );
+			ImGui::SetNextItemWidth( inW );
+			ImGui::InputScalar( "Min X", data_type, p_minX, NULL, NULL, NULL, ImGuiInputTextFlags_AutoSelectAll );
+			if ( ImGui::IsItemDeactivatedAfterEdit() ) { ClampScalar( data_type, p_minX, b_minX, b_maxX ); value_changed = true; }
+			ImGui::SetNextItemWidth( inW );
+			ImGui::InputScalar( "Max X", data_type, p_maxX, NULL, NULL, NULL, ImGuiInputTextFlags_AutoSelectAll );
+			if ( ImGui::IsItemDeactivatedAfterEdit() ) { ClampScalar( data_type, p_maxX, b_minX, b_maxX ); value_changed = true; }
+			ImGui::SetNextItemWidth( inW );
+			ImGui::InputScalar( "Min Y", data_type, p_minY, NULL, NULL, NULL, ImGuiInputTextFlags_AutoSelectAll );
+			if ( ImGui::IsItemDeactivatedAfterEdit() ) { ClampScalar( data_type, p_minY, b_minY, b_maxY ); value_changed = true; }
+			ImGui::SetNextItemWidth( inW );
+			ImGui::InputScalar( "Max Y", data_type, p_maxY, NULL, NULL, NULL, ImGuiInputTextFlags_AutoSelectAll );
+			if ( ImGui::IsItemDeactivatedAfterEdit() ) { ClampScalar( data_type, p_maxY, b_minY, b_maxY ); value_changed = true; }
+			EndPrecisionPopup();
+		}
+
+		if ( hovered && !labelHovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id ) )
 		{
 			float tx = MouseTX(), ty = MouseTY();
 			float tnMinX = NormX( p_minX ), tnMinY = NormY( p_minY );
@@ -10728,12 +10864,18 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float outlineThick = isSelected ? markerThickness * 2.0f : markerThickness;
 			window->DrawList->AddTriangle( p0, p1, p2, outlineCol, outlineThick );
 
-			// Alpha indicator on color markers (only when not split)
+			// Alpha indicator: small vertical tick on the right edge of the triangle
+			// base, rising from base toward tip as alpha decreases. Doesn't cross the
+			// triangle body, doesn't obscure the outline.
 			if ( alpha && !splitAlpha && gradient->Stops[ i ].Color.w < 1.0f )
 			{
-				float alphaY = ImLerp( marker_bb.Min.y + 2.0f, marker_bb.Max.y - 1.0f, 1.0f - gradient->Stops[ i ].Color.w );
-				float halfW = markerHeight * 0.3f;
-				window->DrawList->AddLine( ImVec2( x - halfW, alphaY ), ImVec2( x + halfW, alphaY ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gradient_AlphaIndicator ] ), markerThickness );
+				float tickX = p2.x + LpToPx( 2.0f );
+				float tickTopY = ImLerp( marker_bb.Max.y, marker_bb.Min.y + LpToPx( 2.0f ), 1.0f - gradient->Stops[ i ].Color.w );
+				window->DrawList->AddLine(
+					ImVec2( tickX, marker_bb.Max.y ),
+					ImVec2( tickX, tickTopY ),
+					ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gradient_AlphaIndicator ] ),
+					markerThickness );
 			}
 		}
 
@@ -11805,6 +11947,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// --- DRAWING ---
 
+		// Defensive against the VtxOffset desync (see DW_EnsureFreshVtxOffset doc) —
+		// the curve polyline emitted further below disappears if some upstream widget
+		// has left _CmdHeader.VtxOffset = 0 while VtxBuffer.Size > 64K.
+		DW_EnsureFreshVtxOffset( dl );
+
 		// Frame background
 		ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
 		ImGui::RenderFrame( frame_bb.Min, frame_bb.Max, frame_col, true, g.Style.FrameRounding );
@@ -11865,6 +12012,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 				if ( segType == ImCurveEditorSeg_StepStart )
 				{
+					// CurveEditorSample returns k0.y for the whole [k0.x, k1.x] segment.
+					// Hold at k0.y until k1.x, then jump vertically to k1.Pos so the
+					// polyline visibly passes through k1. Visual: horizontal at k0.y
+					// then vertical to k1 — a discrete step that ends ON the next key.
 					curveLine.push_back( CurveToScreen( ImVec2( k1.Pos.x, k0.Pos.y ), frame_bb, rangeMin, rangeMax ) );
 					curveLine.push_back( CurveToScreen( k1.Pos, frame_bb, rangeMin, rangeMax ) );
 				}
@@ -11897,10 +12048,27 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				}
 			}
 
+			// If every segment is step/linear, force AddPolyline so the sharp corners we
+			// pushed stay sharp — the configured mode (default StrokedBezierPath) runs
+			// Catmull-Rom across the whole polyline and rounds the step transitions.
+			bool any_smooth_seg = false;
+			for ( int s = 0; s < curve->Keys.Size - 1; ++s )
+			{
+				ImCurveEditorSeg t = curve->Keys[ s ].Segment;
+				if ( t != ImCurveEditorSeg_StepStart && t != ImCurveEditorSeg_StepEnd
+				     && t != ImCurveEditorSeg_StepCenter && t != ImCurveEditorSeg_Linear )
+				{
+					any_smooth_seg = true;
+					break;
+				}
+			}
+
 			ImWidgetsThickLineDesc curveDesc;
 			curveDesc.color     = curveCol;
 			curveDesc.thickness = curveThickness;
-			curveDesc.mode      = (ImWidgetsThickLineMode)dwStyle.CurveEditor_LineMode;
+			curveDesc.mode      = any_smooth_seg
+				? (ImWidgetsThickLineMode)dwStyle.CurveEditor_LineMode
+				: ImWidgetsThickLineMode_AddPolyline;
 			curveDesc.dashed    = dwStyle.CurveEditor_LineDashed;
 			DrawThickLine( dl, curveLine.Data, curveLine.Size, curveDesc );
 		}
@@ -15266,7 +15434,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	static const float WATER_CHL_MIN = 0.0f,  WATER_CHL_MAX = 30.0f;   // mg/m3
 	static const float WATER_CDOM_MIN = 0.0f, WATER_CDOM_MAX = 2.0f;   // 1/m at 440nm
-	static const float WATER_TURB_MIN = 0.0f, WATER_TURB_MAX = 5.0f;
+	static const float WATER_TURB_MIN = 0.0f, WATER_TURB_MAX = 10.0f;
 
 	struct ImWaterData { float turb; };
 	static ImU32 WaterPlaneCallback( float chl, float cdom, void* pUserData )
@@ -15302,7 +15470,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		storage->GetFloatRef( ImGui::GetID( "turb" ), 0.2f );
 		float* pChl  = storage->GetFloatRef( ImGui::GetID( "chl" ), 0.3f );
 		float* pCdom = storage->GetFloatRef( ImGui::GetID( "cdom" ), 0.05f );
-		float* pTurb = storage->GetFloatRef( ImGui::GetID( "turb" ), 0.2f );
+		float* pTurb = storage->GetFloatRef( ImGui::GetID( "turb" ), 5.0f );
 
 		bool changed = false;
 
@@ -16856,8 +17024,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		constexpr float G_MIE = 0.76f;
 		constexpr float OZONE_PEAK = 25000.0f;
 		constexpr float OZONE_HW = 15000.0f;
-		constexpr int TLUT_H  = 32;
-		constexpr int TLUT_MU = 64;
+		// LUT resolutions — doubled vs the original Hillaire/Bruneton minimums.
+		// The ozone band has a 30 km full-width; at shallow grazing geometry the
+		// integration step needs to resolve it or the band's chromatic signature
+		// collapses to a uniform attenuation and the green/cyan twilight band
+		// becomes invisible. TLUT_MU especially matters near mu=0 (horizon).
+		constexpr int TLUT_H  = 64;
+		constexpr int TLUT_MU = 128;
 		constexpr int MSLUT_H = 16;
 		constexpr int MSLUT_MU = 32;
 		constexpr int MSLUT_DIRS = 12;
@@ -16866,7 +17039,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// Scattering / absorption coefficients in m^-1, RGB centres 680/550/440 nm.
 	static const float s_SkyBetaR[ 3 ]  = { 5.802e-6f, 13.558e-6f, 33.1e-6f };
 	static const float s_SkyBetaM[ 3 ]  = { 3.996e-6f,  3.996e-6f,  3.996e-6f };
-	static const float s_SkyBetaO3[ 3 ] = { 0.650e-6f,  1.881e-6f,  0.085e-6f };
+	// Hillaire 2020 baseline values. Per-channel ratio (G ≈ 2.9·R, B ≈ 0.13·R)
+	// matches the integrated Chappuis band cross-section sampled at 680/550/440 nm.
+	// We scale by 1.6× — the un-scaled coefficients produce a band so thin
+	// chromatically that it disappears against the dominant Rayleigh blue at the
+	// demo's plane resolution. The scaled values keep the same chromaticity but
+	// raise contrast so the teal twilight stripe between horizon glow and zenith
+	// blue is actually visible.
+	static const float s_SkyBetaO3[ 3 ] = { 0.650e-6f * 1.6f, 1.881e-6f * 1.6f, 0.085e-6f * 1.6f };
 
 	static float s_SkyTransLUT[ DwSky::TLUT_H ][ DwSky::TLUT_MU ][ 3 ];
 	static bool  s_SkyTransLUTBuilt = false;
@@ -16908,7 +17088,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	static void BuildSkyTransmittanceLUT()
 	{
 		using namespace DwSky;
-		const int N = 32;
+		// At shallow grazing geometry (mu ≈ 0) d_top reaches ~1100 km, so each
+		// integration step at N=32 is ~35 km — coarser than the ozone layer's
+		// 30 km full width. Use N=96 so the band is sampled densely enough to
+		// preserve its chromatic signature in the LUT.
+		const int N = 96;
 		for ( int i = 0; i < TLUT_H; ++i )
 		{
 			float h = (float)i / (float)( TLUT_H - 1 ) * ( R_A - R_E );
@@ -17131,7 +17315,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	static void DwSkyColorBruneton( float& outR, float& outG, float& outB,
 	                                float view_zen_rad, float sun_zen_rad,
-	                                float view_sun_az_rad, int n_view = 14 )
+	                                float view_sun_az_rad, float obs_alt_m = 0.0f,
+	                                int n_view = 14 )
 	{
 		using namespace DwSky;
 		if ( !s_SkyTransLUTBuilt ) BuildSkyTransmittanceLUT();
@@ -17142,7 +17327,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float nu = mu_v * mu_s + sinf( view_zen_rad ) * sinf( sun_zen_rad ) * cosf( view_sun_az_rad );
 		nu = ImClamp( nu, -1.0f, 1.0f );
 
-		float r0 = R_E;
+		// Observer altitude above sea level (clamped to the LUT-supported range).
+		float h_obs = ImClamp( obs_alt_m, 0.0f, R_A - R_E );
+		float r0 = R_E + h_obs;
 		float d_atm = DwSkyAtmTopDist( r0, mu_v );
 		if ( d_atm <= 0.0f ) { outR = outG = outB = 0.0f; return; }
 		float step = d_atm / (float)n_view;
@@ -17153,7 +17340,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float phm = ( 3.0f / ( 8.0f * IM_PI ) ) * ( ( 1.0f - g2 ) * ( 1.0f + nu * nu ) ) / denom;
 
 		float T_view_full[ 3 ];
-		DwSkyTLookup( 0.0f, mu_v, T_view_full );
+		DwSkyTLookup( h_obs, mu_v, T_view_full );
 
 		float accum[ 3 ] = { 0.0f, 0.0f, 0.0f };
 		const float INV_4PI = 1.0f / ( 4.0f * IM_PI );
@@ -17190,12 +17377,27 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			accum[ 2 ] * sun_irr[ 2 ]
 		};
 
-		// Purkinje shift (rod-dominant scotopic vision) at very low luminance.
-		// Twilight stays photopic (L > 0.01) so the ozone cyan/green band is
-		// preserved at full chroma; only deep night blends toward bluish.
+		// Night-sky baseline. The actual perceived night sky isn't pure black —
+		// integrated starlight + airglow (OH bands, O₂ Atmospheric band) provide
+		// a small residual luminance that the dark-adapted eye reads as a dim
+		// blue-violet. Inject a tiny scotopic-tinted baseline when raw radiance
+		// is below twilight so chromaticity normalization has something to
+		// extract; the sigmoid brightness ramp keeps it dim.
 		float L_pre = 0.2126f * col[ 0 ] + 0.7152f * col[ 1 ] + 0.0722f * col[ 2 ];
 		const float L_PHOTOPIC = 0.01f;
 		const float L_SCOTOPIC = 1e-5f;
+		if ( L_pre < L_PHOTOPIC )
+		{
+			const float NIGHT_FLOOR = 1.2e-4f;
+			col[ 0 ] += 0.18f * NIGHT_FLOOR;
+			col[ 1 ] += 0.42f * NIGHT_FLOOR;
+			col[ 2 ] += 1.00f * NIGHT_FLOOR;
+			L_pre = 0.2126f * col[ 0 ] + 0.7152f * col[ 1 ] + 0.0722f * col[ 2 ];
+		}
+
+		// Purkinje shift (rod-dominant scotopic vision) at very low luminance.
+		// Twilight stays photopic (L > 0.01) so the ozone cyan/green band is
+		// preserved at full chroma; only deep night blends toward bluish.
 		if ( L_pre > 1e-12f && L_pre < L_PHOTOPIC )
 		{
 			// CIE V'(λ) sampled at 680/550/440 nm → these RGB weights.
@@ -17289,27 +17491,33 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		sun_az = (float)atan2( sin_az, cos_az );
 	}
 
-	struct ImSkyPlaneData { float view_az_rel; int doy; float lat; int year; };
-	static ImU32 SkyPlaneCallback( float elev_deg, float time_h, void* pUserData )
+	struct ImSkyPlaneData { float view_az_rel; int doy; float lat; float obs_alt_m; int year; };
+	// Plane axes: U = time of day (0..24 h), V = view elevation (0..90 deg,
+	// flipped via DrawCachedProceduralColor2DBilinear so zenith sits at the
+	// top of the plane and horizon at the bottom — matches the user's
+	// sky-dome intuition).
+	static ImU32 SkyPlaneCallback( float time_h, float elev_deg, void* pUserData )
 	{
 		ImSkyPlaneData* d = ( ImSkyPlaneData* )pUserData;
 		float sun_zen, sun_az;
 		DwSkySunZenithAz( sun_zen, sun_az, d->year, d->doy, time_h, d->lat );
 		float view_zen = ( IM_PI * 0.5f ) - elev_deg * IM_PI / 180.0f;
 		float r, g, b;
-		DwSkyColorBruneton( r, g, b, view_zen, sun_zen, d->view_az_rel );
+		DwSkyColorBruneton( r, g, b, view_zen, sun_zen, d->view_az_rel, d->obs_alt_m );
 		return IM_COL32( (int)( r * 255.0f + 0.5f ), (int)( g * 255.0f + 0.5f ), (int)( b * 255.0f + 0.5f ), 255 );
 	}
 
-	struct ImSkySliderData { float elev_deg; float time_h; int doy; float lat; int year; };
-	static ImU32 SkyViewAzCallback( float view_az_rel, void* pUserData )
+	// Vertical slider sweeps OBSERVER ALTITUDE (ground -> space). All other
+	// state is the current plane selection + the component-slider values.
+	struct ImSkyAltSliderData { float elev_deg; float time_h; float view_az_rel; int doy; float lat; int year; };
+	static ImU32 SkyAltSliderCallback( float obs_alt_m, void* pUserData )
 	{
-		ImSkySliderData* d = ( ImSkySliderData* )pUserData;
+		ImSkyAltSliderData* d = ( ImSkyAltSliderData* )pUserData;
 		float sun_zen, sun_az;
 		DwSkySunZenithAz( sun_zen, sun_az, d->year, d->doy, d->time_h, d->lat );
 		float view_zen = ( IM_PI * 0.5f ) - d->elev_deg * IM_PI / 180.0f;
 		float r, g, b;
-		DwSkyColorBruneton( r, g, b, view_zen, sun_zen, view_az_rel );
+		DwSkyColorBruneton( r, g, b, view_zen, sun_zen, d->view_az_rel, obs_alt_m );
 		return IM_COL32( (int)( r * 255.0f + 0.5f ), (int)( g * 255.0f + 0.5f ), (int)( b * 255.0f + 0.5f ), 255 );
 	}
 
@@ -17326,16 +17534,24 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImGui::PushID( label );
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		// Two-pass key materialization to avoid storage-realloc pointer invalidation.
-		storage->GetFloatRef( ImGui::GetID( "vaz" ),  3.14159265f );
+		// State: time × elevation on the plane; observer altitude on the vertical
+		// slider; day-of-year + latitude + view-azimuth as component sliders.
+		// Default view azimuth = 0 (looking toward the sun). The ozone Chappuis
+		// twilight band — the cyan/teal stripe between the warm horizon glow and
+		// the deep blue zenith — is brightest in this direction at sunset/sunrise.
+		// Looking away (az = π) shows the Belt of Venus (pink anti-solar band) instead.
+		storage->GetFloatRef( ImGui::GetID( "vaz" ),  0.0f        );
 		storage->GetIntRef  ( ImGui::GetID( "doy" ),  172         );
 		storage->GetFloatRef( ImGui::GetID( "lat" ),  48.85f      );
 		storage->GetFloatRef( ImGui::GetID( "elev" ), 30.0f       );
-		storage->GetFloatRef( ImGui::GetID( "time" ), 18.0f       );
-		float* pViewAz = storage->GetFloatRef( ImGui::GetID( "vaz" ),  3.14159265f );
+		storage->GetFloatRef( ImGui::GetID( "time" ), 19.0f       );
+		storage->GetFloatRef( ImGui::GetID( "oalt" ), 0.0f        );
+		float* pViewAz = storage->GetFloatRef( ImGui::GetID( "vaz" ),  0.0f        );
 		int*   pDoy    = storage->GetIntRef  ( ImGui::GetID( "doy" ),  172         );
 		float* pLat    = storage->GetFloatRef( ImGui::GetID( "lat" ),  48.85f      );
 		float* pElev   = storage->GetFloatRef( ImGui::GetID( "elev" ), 30.0f       );
 		float* pTime   = storage->GetFloatRef( ImGui::GetID( "time" ), 18.0f       );
+		float* pObsAlt = storage->GetFloatRef( ImGui::GetID( "oalt" ), 0.0f        );
 
 		if ( !s_SkyTransLUTBuilt ) BuildSkyTransmittanceLUT();
 
@@ -17355,47 +17571,55 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
 		bool planeActive = ImGui::IsItemActive();
 		ImGui::SameLine( 0.0f, spacing );
-		ImGui::InvisibleButton( "viewaz", ImVec2( sliderW, planeSide ) );
-		const ImRect az_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
-		bool azActive = ImGui::IsItemActive();
+		ImGui::InvisibleButton( "obsalt", ImVec2( sliderW, planeSide ) );
+		const ImRect alt_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool altActive = ImGui::IsItemActive();
+
+		const float OBS_ALT_MAX_M = 60000.0f; // top of atmosphere (Karman ≈ 100 km)
 
 		ImVec2 mp = g.IO.MousePos;
 		if ( planeActive )
 		{
 			float u = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(),  0.0f, 1.0f );
 			float v = ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f );
-			*pElev = u * 90.0f;
-			*pTime = v * 24.0f;
+			*pTime = u * 24.0f;            // X = time of day (left=midnight, right=24h)
+			*pElev = ( 1.0f - v ) * 90.0f; // Y = elevation (top=zenith, bottom=horizon)
 			changed = true;
 		}
-		if ( azActive )
+		if ( altActive )
 		{
-			float t = ImClamp( ( mp.y - az_bb.Min.y ) / az_bb.GetHeight(), 0.0f, 1.0f );
-			*pViewAz = ( 1.0f - t ) * IM_PI;
+			float t = ImClamp( ( mp.y - alt_bb.Min.y ) / alt_bb.GetHeight(), 0.0f, 1.0f );
+			*pObsAlt = ( 1.0f - t ) * OBS_ALT_MAX_M; // top = space, bottom = ground
 			changed = true;
 		}
 
-		// Plane fill (cached on view-az / doy / lat).
+		// Plane fill (cached on view-az / doy / lat / obs altitude).
+		// DrawCachedProceduralColor2DBilinear maps maxY → screen top, minY → screen bottom
+		// (see line `ScaleFromNormalized(j*dy, maxY, minY)`). So for zenith-at-top we pass
+		// minY=0 (horizon), maxY=90 (zenith) — matching the click handler below which
+		// converts screen v to elevation via `(1 - v) * 90` (top click → elev 90 → zenith).
 		{
-			ImSkyPlaneData cb; cb.view_az_rel = *pViewAz; cb.doy = *pDoy; cb.lat = *pLat; cb.year = 2026;
+			ImSkyPlaneData cb;
+			cb.view_az_rel = *pViewAz; cb.doy = *pDoy; cb.lat = *pLat;
+			cb.obs_alt_m   = *pObsAlt; cb.year = 2026;
 			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
-			ImU32 key = PlaneKeyF( PlaneKeyF( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pDoy ), *pLat ), *pViewAz );
+			ImU32 key = PlaneKeyF( PlaneKeyF( PlaneKeyF( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pDoy ), *pLat ), *pViewAz ), *pObsAlt );
 			DrawCachedProceduralColor2DBilinear( dl, SkyPlaneCallback, &cb,
-				0.0f, 90.0f, 0.0f, 24.0f,
+				0.0f, 24.0f, 0.0f, 90.0f,
 				plane_bb.Min, plane_bb.GetSize(), planeRes,
 				s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 
-		// Crosshair + dot
+		// Crosshair + dot. X position from time, Y position from elev (flipped).
 		{
-			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, ImSaturate( *pElev / 90.0f ) ),
-			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, ImSaturate( *pTime / 24.0f ) ) );
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, ImSaturate( *pTime / 24.0f ) ),
+			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, ImSaturate( 1.0f - *pElev / 90.0f ) ) );
 			float sun_zen, sun_az;
 			DwSkySunZenithAz( sun_zen, sun_az, 2026, *pDoy, *pTime, *pLat );
 			float view_zen = ( IM_PI * 0.5f ) - ( *pElev * IM_PI / 180.0f );
 			float r, gg, b;
-			DwSkyColorBruneton( r, gg, b, view_zen, sun_zen, *pViewAz );
+			DwSkyColorBruneton( r, gg, b, view_zen, sun_zen, *pViewAz, *pObsAlt );
 			ImU32 dotFill = IM_COL32( (int)( r * 255.0f + 0.5f ), (int)( gg * 255.0f + 0.5f ), (int)( b * 255.0f + 0.5f ), 255 );
 			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
 			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
@@ -17405,27 +17629,31 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
 		}
 
-		// View-az slider (bottom = 0 toward sun, top = π anti-sun).
+		// Vertical slider: observer altitude — bottom = ground (0 m),
+		// top = top-of-atmosphere (~60 km). The gradient previews the sky
+		// colour at the current plane selection as altitude is swept.
 		{
-			ImSkySliderData cb;
-			cb.elev_deg = *pElev; cb.time_h = *pTime; cb.doy = *pDoy; cb.lat = *pLat; cb.year = 2026;
-			DrawProceduralColor1DBilinearVertical( dl, SkyViewAzCallback, &cb,
-				IM_PI, 0.0f, az_bb.Min, az_bb.GetSize(), sliderRes );
-			dl->AddRect( az_bb.Min, az_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
-			float t = ImSaturate( 1.0f - *pViewAz / IM_PI );
-			float handleY = ImLerp( az_bb.Min.y, az_bb.Max.y, t );
+			ImSkyAltSliderData cb;
+			cb.elev_deg = *pElev; cb.time_h = *pTime;
+			cb.view_az_rel = *pViewAz; cb.doy = *pDoy; cb.lat = *pLat; cb.year = 2026;
+			DrawProceduralColor1DBilinearVertical( dl, SkyAltSliderCallback, &cb,
+				OBS_ALT_MAX_M, 0.0f, alt_bb.Min, alt_bb.GetSize(), sliderRes );
+			dl->AddRect( alt_bb.Min, alt_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( 1.0f - *pObsAlt / OBS_ALT_MAX_M );
+			float handleY = ImLerp( alt_bb.Min.y, alt_bb.Max.y, t );
 			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
-			dl->AddRectFilled( ImVec2( az_bb.Min.x - 1.0f, handleY - hh ),
-			                   ImVec2( az_bb.Max.x + 1.0f, handleY + hh ),
+			dl->AddRectFilled( ImVec2( alt_bb.Min.x - 1.0f, handleY - hh ),
+			                   ImVec2( alt_bb.Max.x + 1.0f, handleY + hh ),
 			                   IM_COL32( 30, 28, 26, 255 ), 2.0f );
-			dl->AddRect( ImVec2( az_bb.Min.x - 1.0f, handleY - hh ),
-			             ImVec2( az_bb.Max.x + 1.0f, handleY + hh ),
+			dl->AddRect( ImVec2( alt_bb.Min.x - 1.0f, handleY - hh ),
+			             ImVec2( alt_bb.Max.x + 1.0f, handleY + hh ),
 			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
 		}
 
 		// Component sliders below.
-		changed |= ImGui::SliderInt  ( "Day of year##Sky",         pDoy,   1, 365 );
-		changed |= ImGui::SliderFloat( "Observer lat##Sky",        pLat,   -89.9f, 89.9f, "%.2f deg" );
+		changed |= ImGui::SliderFloat( "Observer altitude##Sky",   pObsAlt, 0.0f, OBS_ALT_MAX_M, "%.0f m" );
+		changed |= ImGui::SliderInt  ( "Day of year##Sky",         pDoy,    1, 365 );
+		changed |= ImGui::SliderFloat( "Observer lat##Sky",        pLat,    -89.9f, 89.9f, "%.2f deg" );
 		changed |= ImGui::SliderAngle( "View az (from sun)##Sky",  pViewAz, 0.0f, 180.0f );
 
 		// Compose output color from current selection.
@@ -17434,11 +17662,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			DwSkySunZenithAz( sun_zen, sun_az, 2026, *pDoy, *pTime, *pLat );
 			float view_zen = ( IM_PI * 0.5f ) - ( *pElev * IM_PI / 180.0f );
 			float r, gg, b;
-			DwSkyColorBruneton( r, gg, b, view_zen, sun_zen, *pViewAz );
+			DwSkyColorBruneton( r, gg, b, view_zen, sun_zen, *pViewAz, *pObsAlt );
 			color->x = r; color->y = gg; color->z = b;
 		}
 
-		if ( planeActive || azActive ) changed = true;
+		if ( planeActive || altActive ) changed = true;
 		ImGui::PopID();
 		return changed;
 	}
@@ -19962,6 +20190,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// --- DRAWING ---
 
+		// Defensive against the VtxOffset desync (see DW_EnsureFreshVtxOffset doc) —
+		// our channel polylines disappear if some upstream widget has left
+		// _CmdHeader.VtxOffset = 0 while VtxBuffer.Size > 64K.
+		DW_EnsureFreshVtxOffset( dl );
+
 		// Frame background
 		ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
 		ImGui::RenderFrame( frame_bb.Min, frame_bb.Max, frame_col, true, g.Style.FrameRounding );
@@ -22268,6 +22501,11 @@ namespace ImWidgets {
 
 		// --- DRAWING ---
 
+		// Defensive against the VtxOffset desync (see DW_EnsureFreshVtxOffset doc) —
+		// our per-channel polylines disappear if some upstream widget has left
+		// _CmdHeader.VtxOffset = 0 while VtxBuffer.Size > 64K.
+		DW_EnsureFreshVtxOffset( dl );
+
 		// Background
 		ImU32 bgCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ToneCurve_Background ] );
 		dl->AddRectFilled( scope_bb.Min, scope_bb.Max, bgCol );
@@ -23704,6 +23942,11 @@ namespace ImWidgets {
 		if ( label_size.x > 0.0f )
 			ImGui::RenderText( ImVec2( frame_bb.Max.x + imStyle.ItemInnerSpacing.x, frame_bb.Min.y + imStyle.FramePadding.y ), label );
 
+		// Ctrl+Click / double-click on the centered value readout opens a precision popup.
+		ImRect labelRect( text_pos, text_pos + text_size );
+		if ( DW_SliderScalarPopup( labelRect, id, data_type, p_value, p_min, p_max, "value" ) )
+			value_changed = true;
+
 		return value_changed;
 	}
 
@@ -24031,6 +24274,11 @@ namespace ImWidgets {
 		// Draw label
 		if ( label_size.x > 0.0f )
 			ImGui::RenderText( ImVec2( frame_bb.Max.x + imStyle.ItemInnerSpacing.x, frame_bb.Min.y + imStyle.FramePadding.y ), label );
+
+		// Ctrl+Click / double-click on the spline's bottom value readout opens a precision popup.
+		ImRect labelRect( text_pos, text_pos + text_size );
+		if ( DW_SliderScalarPopup( labelRect, id, data_type, p_value, p_min, p_max, "value" ) )
+			value_changed = true;
 
 		return value_changed;
 	}
@@ -24468,13 +24716,28 @@ namespace ImWidgets {
 	// Up Vector
 	//////////////////////////////////////////////////////////////////////////
 
-	static void UpVectorBuildView( float yaw, float pitch, float right[ 3 ], float up[ 3 ], float fwd[ 3 ] )
+	// Permute an internal "Y-is-up" 3-vector into the caller's "upAxis-is-up" convention,
+	// in place. upAxis: 0=X, 1=Y (no-op), 2=Z. After permutation, internal Y maps to
+	// upAxis, internal Z maps to the next axis (or X for upAxis=0). Applied to all 3D
+	// points (hemisphere, grid, axis tips) AND to the camera basis so the projection
+	// stays consistent — only the user-facing axis assignment changes.
+	static inline void UpVectorPermuteYup( int upAxis, float v[ 3 ] )
+	{
+		if ( upAxis == 2 )      { float t = v[ 1 ]; v[ 1 ] = v[ 2 ]; v[ 2 ] = t; }   // Y↔Z
+		else if ( upAxis == 0 ) { float t = v[ 0 ]; v[ 0 ] = v[ 1 ]; v[ 1 ] = t; }   // X↔Y
+		// upAxis == 1: identity
+	}
+
+	static void UpVectorBuildView( float yaw, float pitch, int upAxis, float right[ 3 ], float up[ 3 ], float fwd[ 3 ] )
 	{
 		float cy = ImCos( yaw ), sy = ImSin( yaw );
 		float cp = ImCos( pitch ), sp = ImSin( pitch );
 		right[ 0 ] = cy;   right[ 1 ] = 0.0f; right[ 2 ] = sy;
 		up[ 0 ] = -sy * sp; up[ 1 ] = cp;      up[ 2 ] = cy * sp;
 		fwd[ 0 ] = -sy * cp; fwd[ 1 ] = -sp;    fwd[ 2 ] = cy * cp;
+		UpVectorPermuteYup( upAxis, right );
+		UpVectorPermuteYup( upAxis, up );
+		UpVectorPermuteYup( upAxis, fwd );
 	}
 
 	static ImVec2 UpVectorProject( const float p[ 3 ], const float right[ 3 ], const float up[ 3 ], ImVec2 center, float radius )
@@ -24542,17 +24805,21 @@ namespace ImWidgets {
 		ImGuiID pitchKey = id ^ 0xBEEF0003;
 		int* pDragMode = window->StateStorage.GetIntRef( dragKey, 0 );
 
-		// Default view: top-down looking at hemisphere from above the default axis
-		float defaultYaw = 0.0f, defaultPitch = IM_PI * 0.5f - 0.01f;
-		if ( defaultUpAxis == 0 ) { defaultYaw = IM_PI * 0.5f; defaultPitch = IM_PI * 0.5f - 0.01f; }
-		if ( defaultUpAxis == 2 ) { defaultYaw = 0.0f; defaultPitch = 0.0f; }
+		// Default view: tilted top-down so the dome is visible (45° from straight-down
+		// instead of 90°/0° per axis like before — the old "look perfectly down" view
+		// only showed the equator silhouette, hiding the fact that the hemisphere is
+		// actually on the up-axis. A small tilt keeps the dome visible regardless of
+		// convention so the user can see "this side is the +up half-sphere".
+		float defaultYaw = 0.0f;
+		float defaultPitch = IM_PI * 0.25f;
 
 		float* pYaw = window->StateStorage.GetFloatRef( yawKey, defaultYaw );
 		float* pPitch = window->StateStorage.GetFloatRef( pitchKey, defaultPitch );
 
-		// Build view
+		// Build view (permuted into upAxis convention so the convention's up axis
+		// is the screen-up direction).
 		float vRight[ 3 ], vUp[ 3 ], vFwd[ 3 ];
-		UpVectorBuildView( *pYaw, *pPitch, vRight, vUp, vFwd );
+		UpVectorBuildView( *pYaw, *pPitch, defaultUpAxis, vRight, vUp, vFwd );
 
 		ImDrawList* dl = window->DrawList;
 		bool hovered = ImGui::ItemHoverable( disc_bb, id, g.LastItemData.ItemFlags );
@@ -24608,7 +24875,7 @@ namespace ImWidgets {
 					*pYaw -= g.IO.MouseDelta.x * sensitivity;
 					*pPitch += g.IO.MouseDelta.y * sensitivity;
 					*pPitch = ImClamp( *pPitch, -IM_PI * 0.5f + 0.01f, IM_PI * 0.5f - 0.01f );
-					UpVectorBuildView( *pYaw, *pPitch, vRight, vUp, vFwd );
+					UpVectorBuildView( *pYaw, *pPitch, defaultUpAxis, vRight, vUp, vFwd );
 				}
 				else
 				{
@@ -24645,6 +24912,10 @@ namespace ImWidgets {
 				float p10[ 3 ] = { cLat0 * ImCos( lon1 ), sLat0, cLat0 * ImSin( lon1 ) };
 				float p01[ 3 ] = { cLat1 * ImCos( lon0 ), sLat1, cLat1 * ImSin( lon0 ) };
 				float p11[ 3 ] = { cLat1 * ImCos( lon1 ), sLat1, cLat1 * ImSin( lon1 ) };
+				UpVectorPermuteYup( defaultUpAxis, p00 );
+				UpVectorPermuteYup( defaultUpAxis, p10 );
+				UpVectorPermuteYup( defaultUpAxis, p01 );
+				UpVectorPermuteYup( defaultUpAxis, p11 );
 
 				// Backface cull: check if facing viewer
 				float mid[ 3 ] = { ( p00[ 0 ] + p11[ 0 ] ) * 0.5f, ( p00[ 1 ] + p11[ 1 ] ) * 0.5f, ( p00[ 2 ] + p11[ 2 ] ) * 0.5f };
@@ -24679,6 +24950,7 @@ namespace ImWidgets {
 			{
 				float lon = ( float )s / slices * IM_PI * 2.0f;
 				float p[ 3 ] = { cLat * ImCos( lon ), sLat, cLat * ImSin( lon ) };
+				UpVectorPermuteYup( defaultUpAxis, p );
 				float vd = p[ 0 ] * vFwd[ 0 ] + p[ 1 ] * vFwd[ 1 ] + p[ 2 ] * vFwd[ 2 ];
 				ImVec2 sp = UpVectorProject( p, vRight, vUp, discCenter, discRadius );
 				if ( s > 0 && vd < 0.0f )
@@ -24696,6 +24968,7 @@ namespace ImWidgets {
 				float lat = ( float )r2 / ( rings * 2 ) * IM_PI - IM_PI * 0.5f;
 				float cLat = ImCos( lat ), sLat = ImSin( lat );
 				float p[ 3 ] = { cLat * ImCos( lon ), sLat, cLat * ImSin( lon ) };
+				UpVectorPermuteYup( defaultUpAxis, p );
 				float vd = p[ 0 ] * vFwd[ 0 ] + p[ 1 ] * vFwd[ 1 ] + p[ 2 ] * vFwd[ 2 ];
 				ImVec2 sp = UpVectorProject( p, vRight, vUp, discCenter, discRadius );
 				if ( r2 > 0 && vd < 0.0f )
@@ -27799,6 +28072,47 @@ namespace ImWidgets
     }
     void EndPrecisionPopup() { ImGui::EndPopup(); }
 
+    // Shared helper used by SliderRing / SliderSpline / their gradient variants:
+    // detects Ctrl+Click or double-click on a hovered widget area and opens a
+    // tiny popup with a single InputScalar bound to the slider's value. Returns
+    // true if the popup committed an edit (caller should fold this into its
+    // value-changed flag).
+    // Opens a precision popup when the user Ctrl+clicks or double-clicks inside
+    // `labelRect` (the rect of the rendered value text). Caller passes the rect
+    // they used to draw the readout, so the popup trigger lines up with the
+    // visible numeric label and doesn't conflict with slider-drag clicks.
+    bool DW_SliderScalarPopup(
+        ImRect const& labelRect, ImGuiID id,
+        ImGuiDataType data_type, void* p_value, void const* p_min, void const* p_max,
+        char const* axisLabel )
+    {
+        ImGuiContext& g = *GImGui;
+        bool labelHovered = labelRect.Contains( g.IO.MousePos );
+        bool trigger = labelHovered && (
+            ( g.IO.KeyCtrl && ImGui::IsMouseClicked( 0 ) )
+            || ImGui::IsMouseDoubleClicked( 0 ) );
+        char popId[ 32 ];
+        ImFormatString( popId, sizeof( popId ), "##slprec_%08X", (unsigned)id );
+        if ( trigger )
+        {
+            ImGui::ClearActiveID();
+            ImGui::OpenPopup( popId );
+        }
+        bool changed = false;
+        if ( BeginPrecisionPopup( popId, g.IO.MousePos ) )
+        {
+            ImGui::SetNextItemWidth( LpToPx( GetStyle().PrecisionPopup_InputWidth ) );
+            ImGui::InputScalar( axisLabel, data_type, p_value, NULL, NULL, NULL, ImGuiInputTextFlags_AutoSelectAll );
+            if ( ImGui::IsItemDeactivatedAfterEdit() )
+            {
+                ClampScalar( data_type, p_value, (void*)p_min, (void*)p_max );
+                changed = true;
+            }
+            EndPrecisionPopup();
+        }
+        return changed;
+    }
+
     bool PrecisionFloat(const char* label, float* v, float step,
                         float v_min, float v_max, const char* fmt)
     {
@@ -30387,7 +30701,8 @@ namespace ImWidgets
 
         // Lazy-init the shader the first time the widget is used (mirrors ImageInspector).
         if (gs_pContext && gs_pContext->lookDevInspectorShader.program == NULL)
-            CreateInternalShader(&gs_pContext->lookDevInspectorShader, "lookdev_inspector", 0, NULL, 0, NULL);
+            CreateInternalShader(&gs_pContext->lookDevInspectorShader, "lookdev_inspector", 0, NULL, 0, NULL,
+                                 nullptr, nullptr, IMPLATFORM_SHADER_COMPILE_OPTIMIZATION_LOW);
         bool have_shader = gs_pContext
             && (uintptr_t)gs_pContext->lookDevInspectorShader.program >= 0x10000;
         if (have_shader && tex_a != ImTextureID_Invalid && tex_b != ImTextureID_Invalid)
@@ -30624,7 +30939,8 @@ namespace ImWidgets
         dl->PushClipRect(bb.Min, bb.Max, true);
 
         if (gs_pContext && gs_pContext->deltaECompareShader.program == NULL)
-            CreateInternalShader(&gs_pContext->deltaECompareShader, "delta_e_compare", 0, NULL, 0, NULL);
+            CreateInternalShader(&gs_pContext->deltaECompareShader, "delta_e_compare", 0, NULL, 0, NULL,
+                                 nullptr, nullptr, IMPLATFORM_SHADER_COMPILE_OPTIMIZATION_LOW);
         bool have_shader = gs_pContext
             && (uintptr_t)gs_pContext->deltaECompareShader.program >= 0x10000;
         if (have_shader && tex_a != ImTextureID_Invalid && tex_b != ImTextureID_Invalid)
@@ -30964,7 +31280,8 @@ namespace ImWidgets
             // Ensure Texture3D cached and up-to-date.
             bool have_t3d_support = ImPlatform_SupportsTexture3D();
             if (gs_pContext && gs_pContext->volumeViewerShader.program == NULL)
-                CreateInternalShader(&gs_pContext->volumeViewerShader, "volume_viewer", 0, NULL, 0, NULL);
+                CreateInternalShader(&gs_pContext->volumeViewerShader, "volume_viewer", 0, NULL, 0, NULL,
+                                     nullptr, nullptr, IMPLATFORM_SHADER_COMPILE_OPTIMIZATION_LOW);
             bool shader_ok = gs_pContext
                 && (uintptr_t)gs_pContext->volumeViewerShader.program >= 0x10000;
             if (have_t3d_support && shader_ok)

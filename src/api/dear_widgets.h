@@ -3448,7 +3448,13 @@ namespace ImWidgets{
 										   int gap = 3, int strokeWidth = 3 );
 
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
-	IMGUI_API void CreateInternalShader( ImDrawShader* shaders_out, char const* shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer, char const* extra_define = nullptr, char const* cache_suffix = nullptr );
+	// compile_flags: IMPLATFORM_SHADER_COMPILE_* bitmask. Default is the
+	// backend's moderate optimization. Lower it (OPTIMIZATION_LOW or
+	// SKIP_OPTIMIZATION) for large uber-shaders where the optimizer goes
+	// polynomial — e.g. image_inspector with its many [branch] switches over
+	// 11 sample types x 7 tonemaps x 8 false-colour palettes takes ~19 min
+	// at the default level but seconds with LOW.
+	IMGUI_API void CreateInternalShader( ImDrawShader* shaders_out, char const* shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer, char const* extra_define = nullptr, char const* cache_suffix = nullptr, unsigned int compile_flags = IMPLATFORM_SHADER_COMPILE_DEFAULT );
 
 	// Eagerly compile/load every internal shader used by Dear Widgets.
 	// Optional: shaders are lazily compiled on first use otherwise. Call this once
@@ -3582,7 +3588,11 @@ namespace ImWidgets{
 	                              ImWidgetsSkyCulture culture = ImWidgetsSkyCulture_Western,
 	                              bool showSolarSystem = true,
 	                              ImU32 skyCol = IM_COL32( 8, 11, 22, 255 ),
-	                              ImU32 outlineCol = IM_COL32( 180, 195, 225, 230 ) );
+	                              ImU32 outlineCol = IM_COL32( 180, 195, 225, 230 ),
+	                              // Optional label font. When the culture uses non-Latin
+	                              // glyphs (Arabic, CJK), pass a font with the matching
+	                              // ranges; otherwise the active ImGui font is used.
+	                              ImFont* labelFont = nullptr );
 
 	// Sun-path diagram + analemma. Polar mode = zenith-centred dome (sun arcs
 	// are radial curves from sunrise to sunset); Cartesian = azimuth x altitude.

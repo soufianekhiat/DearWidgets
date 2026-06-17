@@ -1383,7 +1383,7 @@ int main( int argc, char** argv )
 			static float rain_speed = 1.0f;
 			static float kal_segments = 6.0f;
 			static float kal_rotation = 0.0f;
-			static ImVec4 tint_color( 1.0f, 1.0f, 1.0f, 220.0f / 255.0f );
+			static ImVec4 tint_color( 1.0f, 1.0f, 1.0f, 1.0f );
 			static bool noTitleBar = false;
 
 			ImGuiWindowFlags winFlags = noTitleBar ? ImGuiWindowFlags_NoTitleBar : 0;
@@ -4339,9 +4339,17 @@ namespace ImWidgets{
 				ImVec2 p0 = ImGui::GetCursorScreenPos();
 				float R = 220.0f;
 				ImVec2 center( p0.x + R + 4.0f, p0.y + R + 4.0f );
+				// Pass the Arabic font when the Arabic culture is active so star labels
+				// shape correctly (the default ImGui font has no Arabic glyphs / shaper).
+				ImFont* chartLabelFont = nullptr;
+				if ( (ImWidgets::ImWidgetsSkyCulture)s_culture == ImWidgets::ImWidgetsSkyCulture_Arabic )
+					chartLabelFont = g_amiriFont;
 				ImWidgets::DrawStarChart( dl, center, R, s_year, s_month, s_day, s_hour, s_minute,
 				                          s_lon, s_lat, s_mag, s_scale,
-				                          (ImWidgets::ImWidgetsSkyCulture)s_culture, s_showSS );
+				                          (ImWidgets::ImWidgetsSkyCulture)s_culture, s_showSS,
+				                          IM_COL32( 8, 11, 22, 255 ),
+				                          IM_COL32( 180, 195, 225, 230 ),
+				                          chartLabelFont );
 				ImGui::Dummy( ImVec2( 2.0f * R + 8.0f, 2.0f * R + 8.0f ) );
 
 				DW_SsRecord( "Draw_StarChart", _sy0, ImGui::GetCursorPos().y );
@@ -8190,9 +8198,46 @@ namespace ImWidgets{
 					ApplyOpenAll();
 					if ( ImGui::CollapsingHeader( "Up Vector" ) )
 					{
-						static float upDir[3] = { 0.0f, 1.0f, 0.0f };
-						ImWidgets::UpVector( "##UpVec", upDir );
-						ImGui::Text( "Direction: %.3f, %.3f, %.3f", upDir[0], upDir[1], upDir[2] );
+						// Four convention variants — each variant's "up" axis is shown vertically
+						// in the hemisphere render, with the dome facing the viewer.
+						// Handedness only flips the sign of one horizontal axis on read-back.
+						struct Variant { const char* label; int upAxis; bool leftHanded; };
+						static const Variant variants[] = {
+							{ "Y-up RH (OpenGL / Maya)", 1, false },
+							{ "Y-up LH (Unity / DX)",    1, true  },
+							{ "Z-up RH (Blender / Max)", 2, false },
+							{ "Z-up LH (Unreal)",        2, true  },
+						};
+
+						static float upDirs[ IM_ARRAYSIZE( variants ) ][ 3 ] = {
+							{ 0.0f, 1.0f, 0.0f },
+							{ 0.0f, 1.0f, 0.0f },
+							{ 0.0f, 0.0f, 1.0f },
+							{ 0.0f, 0.0f, 1.0f },
+						};
+
+						for ( int i = 0; i < IM_ARRAYSIZE( variants ); ++i )
+						{
+							ImGui::PushID( i );
+							ImGui::TextUnformatted( variants[ i ].label );
+							// For LH conventions flip the non-up horizontal axis when handing
+							// the direction to the widget (which works in RH internally), and
+							// undo that flip on write-back. The flipped axis is the one that
+							// isn't the up axis and isn't X (so Z for Y-up, Y for Z-up).
+							int flipIdx = ( variants[ i ].upAxis == 1 ) ? 2 : 1;
+							float dirIn[ 3 ] = { upDirs[ i ][ 0 ], upDirs[ i ][ 1 ], upDirs[ i ][ 2 ] };
+							if ( variants[ i ].leftHanded ) dirIn[ flipIdx ] = -dirIn[ flipIdx ];
+							if ( ImWidgets::UpVector( "##UpVec", dirIn, variants[ i ].upAxis ) )
+							{
+								if ( variants[ i ].leftHanded ) dirIn[ flipIdx ] = -dirIn[ flipIdx ];
+								upDirs[ i ][ 0 ] = dirIn[ 0 ];
+								upDirs[ i ][ 1 ] = dirIn[ 1 ];
+								upDirs[ i ][ 2 ] = dirIn[ 2 ];
+							}
+							ImGui::Text( "Direction: %.3f, %.3f, %.3f", upDirs[ i ][ 0 ], upDirs[ i ][ 1 ], upDirs[ i ][ 2 ] );
+							ImGui::Separator();
+							ImGui::PopID();
+						}
 					}
 					DW_SsRecord( "Up_Vector", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -8986,14 +9031,17 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
-					if ( ImGui::CollapsingHeader( "Sky (Bruneton single-scatter)" ) )
+					if ( ImGui::CollapsingHeader( "Sky (Bruneton multi-scatter)" ) )
 					{
 						static ImVec4 skyColor( 0.4f, 0.6f, 0.9f, 1.0f );
-						ImGui::TextWrapped( "Physically-based sky colour: single-scatter Rayleigh + Mie + ozone (Chappuis bands), "
-							"baked transmittance LUT. Plane U = view elevation (horizon -> zenith), V = time of day (0 -> 24h). "
-							"Vertical slider = view azimuth relative to sun (0 = toward, pi = away). "
-							"Component sliders = day-of-year + observer latitude. Look for the cyan/green ozone twilight band "
-							"above the warm sunset glow (most visible near view-az = pi)." );
+						ImGui::TextWrapped( "Physically-based sky colour: Rayleigh + Mie + ozone (Chappuis bands) with "
+							"single-scatter direct integral plus a multi-scatter LUT (Hillaire 2020), baked transmittance LUT. "
+							"Plane: X = time of day (0 -> 24h), Y = view elevation (bottom = horizon, top = zenith). "
+							"Vertical slider = observer altitude (ground -> top of atmosphere). "
+							"Component sliders = day-of-year + observer latitude + view azimuth (0 = toward sun, pi = away). "
+							"Default view-az = 0 (toward sun) — at twilight columns (~18-20h for mid-latitudes) look for "
+							"the warm orange glow at the very bottom and a thin cyan/teal stripe just above it from "
+							"ozone preferentially absorbing the green-yellow-red band (Chappuis) along the long horizon path." );
 						ColorPickerSky( "##SkyPicker", &skyColor );
 						ImGui::ColorEdit4( "Color##Sky", &skyColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 					}
@@ -9099,8 +9147,10 @@ namespace ImWidgets{
 						if ( colW > 200.0f ) colW = 200.0f;
 
 						// HDRWheel adds arc overhead on top of the disc+ring size (colW), so columns are wider.
+						// Widget computes its arcOverhead in PX (via LpToPx), so we must too — otherwise
+						// at DPI > 1 the column is too narrow and the right-side arc spills into the next cell.
 						ImWidgetsStyle& hdrDwStyle = ImWidgets::GetStyle();
-						float arcOverhead = 2.0f * (hdrDwStyle.HDRWheel_ArcGrabRadius + hdrDwStyle.HDRWheel_ArcThickness + hdrDwStyle.HDRWheel_ArcGap);
+						float arcOverhead = 2.0f * ImPlatform_LpToPx(hdrDwStyle.HDRWheel_ArcGrabRadius + hdrDwStyle.HDRWheel_ArcThickness + hdrDwStyle.HDRWheel_ArcGap);
 						float hdrColW = colW + arcOverhead;
 
 						if ( ImGui::BeginTable( "##HDRWheels", 4, ImGuiTableFlags_NoSavedSettings ) )
@@ -10319,7 +10369,10 @@ namespace ImWidgets{
 				ApplyOpenAll();
 				if ( ImGui::CollapsingHeader( "Color Warper" ) )
 				{
-					float const size = CanvasSize();
+					// CanvasSize() returns pixels; ColorWarper expects logical-pixel sizing
+					// and re-applies LpToPx internally. Pass 0 so the widget auto-sizes to
+					// 75% of the available content width, like other big square widgets.
+					float const size = 0.0f;
 					static ImColorWarperData warperData;
 					static bool warperInited = false;
 					if ( !warperInited )
