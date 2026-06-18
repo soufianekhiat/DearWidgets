@@ -3252,6 +3252,48 @@ namespace ImWidgets{
 	// origin is added back after tessellation (same pattern as GenShapeRect with r.Min).
 	void	GenShapeConcavePoly( ImWidgetsShape& shape, ImVec2 const* pts, int pts_count, ImVec2 origin = ImVec2( 0.0f, 0.0f ) );
 
+	// Tessellated bands and discs (UVs laid down for procedural-colour fills).
+	//   VerticalBand   : rectangle × N horizontal stripes        (uv.y = top→bottom, uv.x = 0→1 across)
+	//   HorizontalBand : rectangle × N vertical stripes          (uv.x = left→right, uv.y = 0→1 across)
+	//   RectGrid       : rectangle × Nx × Ny grid                (uv = [0,1]²)
+	//   DiscRings      : full disc, polar grid sectors × rings   (uv.x = angle/2π, uv.y = r/R)
+	//   Annulus        : ring (annulus), one radial division     (same polar UVs, v = (r-rIn)/(rOut-rIn))
+	//   AnnulusRings   : ring with multiple sub-rings
+	void	GenShapeVerticalBand  ( ImWidgetsShape& shape, ImRect const& r, int divisions );
+	void	GenShapeHorizontalBand( ImWidgetsShape& shape, ImRect const& r, int divisions );
+	void	GenShapeRectGrid      ( ImWidgetsShape& shape, ImRect const& r, int divisionsX, int divisionsY );
+	void	GenShapeDiscRings     ( ImWidgetsShape& shape, ImVec2 center, float radius, int numSectors, int numRings );
+	void	GenShapeAnnulus       ( ImWidgetsShape& shape, ImVec2 center, float innerRadius, float outerRadius, int numSectors );
+	void	GenShapeAnnulusRings  ( ImWidgetsShape& shape, ImVec2 center, float innerRadius, float outerRadius, int numSectors, int numRings );
+	// Partial annulus arc (no caching — startAngle/sweepAngle usually animate per frame).
+	void	GenShapeAnnulusArc    ( ImWidgetsShape& shape, ImVec2 center, float innerRadius, float outerRadius, float startAngle, float sweepAngle, int divisions );
+	// Barycentric-subdivided triangle (A, B, C). Vertex.uv = (w_A, w_B); w_C is implicit = 1 - w_A - w_B.
+	// Use ShapeFillProceduralColor2D with a callback that derives w_C and computes the triangle mix.
+	void	GenShapeTriangleSubdiv( ImWidgetsShape& shape, ImVec2 A, ImVec2 B, ImVec2 C, int subdivisions );
+
+	// Pour a procedural-colour callback into a shape's vertex colours.
+	// 1D variant samples uv.y (sample_v=true) or uv.x (sample_v=false).
+	// 2D variant samples both axes.
+	void	ShapeFillProceduralColor1D( ImWidgetsShape& shape, ImWidgetsColor1DCallback func, void* pUserData, bool sample_v );
+	void	ShapeFillProceduralColor2D( ImWidgetsShape& shape, ImWidgetsColor2DCallback func, void* pUserData );
+	void	ShapeFillSolidColor       ( ImWidgetsShape& shape, ImU32 col );
+
+	// One-shot draws: GenShape → fill colour → DrawShape (no caller boilerplate).
+	void	DrawShapeProceduralColorVerticalBand  ( ImDrawList* pDrawList, ImRect const& bb, int divisions,
+	                                                 ImWidgetsColor1DCallback func, void* pUserData );
+	void	DrawShapeProceduralColorHorizontalBand( ImDrawList* pDrawList, ImRect const& bb, int divisions,
+	                                                 ImWidgetsColor1DCallback func, void* pUserData );
+	void	DrawShapeProceduralColorRectGrid      ( ImDrawList* pDrawList, ImRect const& bb, int divisionsX, int divisionsY,
+	                                                 ImWidgetsColor2DCallback func, void* pUserData );
+	void	DrawShapeProceduralColorDiscRings     ( ImDrawList* pDrawList, ImVec2 center, float radius,
+	                                                 int numSectors, int numRings,
+	                                                 ImWidgetsColor2DCallback func, void* pUserData );
+	void	DrawShapeProceduralColorAnnulus       ( ImDrawList* pDrawList, ImVec2 center, float innerRadius, float outerRadius,
+	                                                 int numSectors, ImWidgetsColor1DCallback func, void* pUserData );
+	void	DrawShapeProceduralColorAnnulusRings  ( ImDrawList* pDrawList, ImVec2 center, float innerRadius, float outerRadius,
+	                                                 int numSectors, int numRings,
+	                                                 ImWidgetsColor2DCallback func, void* pUserData );
+
 	// TODO
 	//void	GenShapeFromBezierCubicCurve( ImShape& shape, ImVector<ImVec2>& path, float thickness, int num_segments = 0 );
 	//void	GenShapeFromBezierQuadraticCurve( ImShape& sshape, ImVector<ImVec2>& path, float thickness, int num_segments = 0 );
@@ -3811,6 +3853,62 @@ namespace ImWidgets{
 	// transmittance LUT. Plane = elevation × time-of-day; sliders = view-az
 	// (sun-rel), day-of-year, observer latitude.
 	IMGUI_API bool ColorPickerSky( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// Stellar photosphere colour (Planck blackbody + line blanketing + TiO bands).
+	// Plane = log Teff × log g (dwarf→supergiant); slider = metallicity [Fe/H].
+	// Reference: Mamajek 2022 dwarf colour-temperature sequence.
+	IMGUI_API bool ColorPickerStar( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// Vascular tissue colour (Beer-Lambert oxy/deoxy haemoglobin + melanin layer).
+	// Plane = SpO2 × dermal blood-volume fraction; slider = melanin density.
+	// Reference: Prahl haemoglobin extinction coefficient tables (OMLC).
+	IMGUI_API bool ColorPickerHemoglobin( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// Volumetric cloud lighting (Schneider & Vos 2015 Beer-Powder, dual HG).
+	// Plane = optical depth × cos(view, sun); slider = extinction coefficient.
+	// Reference: "Real-Time Volumetric Cloudscapes of Horizon Zero Dawn" SIGGRAPH 2015.
+	IMGUI_API bool ColorPickerCloud( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// Streetlight gas-discharge spectrum — mercury vapour + sodium D-line (LPS/HPS)
+	// + tri-phosphor fluorescent overlay. Plane = Hg↔Na mix × pressure; slider = phosphor coating.
+	IMGUI_API bool ColorPickerStreetlight( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// === Artist-oriented colour pickers (for asset creation) =================
+
+	// Harmony palette — pick anchor + scheme (complement/split/triad/tetrad/square/analogous).
+	// `color` = currently-active swatch. `out_palette` (up to 5 entries) and `out_count`
+	// expose the full palette to the caller.
+	IMGUI_API bool ColorPickerPaletteHarmony( char const* label, ImVec4* color,
+	                                          ImVec4* out_palette = nullptr, int* out_count = nullptr );
+
+	// Trichromatic mixer — barycentric mix of 3 artist primaries (defaults to Y/M/C).
+	// Subtractive (absorbance-space) mixing; slider = white↔black tint.
+	IMGUI_API bool ColorPickerTrichromaticMixer( char const* label, ImVec4* color );
+
+	// Weathered metal — base metal (Steel/Iron/Copper/Brass/Aluminum/Gold) + patina
+	// coverage + roughness + grime. Outputs sRGB albedo; F0 follows the metal preset.
+	IMGUI_API bool ColorPickerWeatheredMetal( char const* label, ImVec4* color );
+
+	// Fabric dye — substrate (linen / cotton / wool / silk) tinted by a dye colour
+	// via Beer-Lambert. Plane = dye hue × saturation; slider = dye intensity.
+	IMGUI_API bool ColorPickerFabricDye( char const* label, ImVec4* color );
+
+	// Mood-palette picker — curated 5-swatch palettes by mood word (warm/cool/melancholy/
+	// fresh/vintage/pastel/neon/earth/sunset/ocean). Plane = palette position × lightness shift;
+	// slider = saturation crush.
+	IMGUI_API bool ColorPickerMoodPalette( char const* label, ImVec4* color, ImVec4 out_palette[ 5 ] = nullptr );
+
+	// Toon ramp — pick a midtone, get back a 3-stop shadow/mid/highlight ramp with
+	// warm-cool hue shift. `color` = midtone; `out_ramp[3]` = full ramp.
+	IMGUI_API bool ColorPickerToonRamp( char const* label, ImVec4* color, ImVec4 out_ramp[ 3 ] = nullptr );
+
+	// Adobe-style harmony wheel: circular disc (hue around angle, saturation along radius)
+	// with multiple handles arranged by the chosen harmony scheme. Combos let the user
+	// pick the colour-space cylinder (HSV/HSL/HSY/HSP/OkLCH) and the scheme (mono/analogous/
+	// complement/split-complement/triad/tetrad/square/compound). `color` = currently
+	// active swatch; optional `out_palette` (up to 5 entries) + `out_count` expose all.
+	IMGUI_API bool ColorPickerHarmonyWheel( char const* label, ImVec4* color,
+	                                        ImVec4* out_palette = nullptr, int* out_count = nullptr );
 
 	// Transform Gizmo
 	IMGUI_API bool TransformGizmo( char const* label, ImTransformData* transforms, ImVec2* sizes, int count, int* selectedIndex, ImTransformGizmoCallbacks const* callbacks = nullptr, ImTransformGizmoFlags flags = ImTransformGizmoFlags_None, ImVec2 canvasSize = ImVec2( 0, 0 ) );

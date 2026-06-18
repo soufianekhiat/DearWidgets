@@ -2022,7 +2022,7 @@ namespace ImWidgets{
 				static ImWidgetsShape shape;
 #ifdef DEAR_WIDGETS_TESSELATION
 				static int tess = 2;
-				ImGui::SliderInt( "Tess", &tess, 0, 16 );
+				ImGui::SliderInt( "Tess##DrawShape", &tess, 0, 16 );
 #endif
 
 				// Render debug controls
@@ -3277,7 +3277,7 @@ namespace ImWidgets{
 		static float squircle_n = 4.0f;
 #ifdef DEAR_WIDGETS_TESSELATION
 		static int tess = 1;
-		ImGui::SliderInt( "Tess", &tess, 0, 16 );
+		ImGui::SliderInt( "Tess##DrawSquircle", &tess, 0, 16 );
 #endif
 
 		// Render debug controls
@@ -5054,20 +5054,20 @@ namespace ImWidgets{
 							static ImU32 colb = ImGui::GetColorU32( colb_v );
 #ifdef DEAR_WIDGETS_TESSELATION
 							static int tess = 5;
-							ImGui::SliderInt( "Tess", &tess, 0, 16 );
+							ImGui::SliderInt( "Tess##LinearGrad", &tess, 0, 16 );
 #endif
 							ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
-							Slider2DFloat( "uv0", &uv_start.x, &uv_start.y, 0.0f, 1.0f, -1.0f, 2.0f );
+							Slider2DFloat( "uv0##LinearGrad", &uv_start.x, &uv_start.y, 0.0f, 1.0f, -1.0f, 2.0f );
 							ImGui::PopItemWidth();
 							ImGui::SameLine();
-							Slider2DFloat( "uv1", &uv_end.x, &uv_end.y, 0.0f, 1.0f, -1.0f, 2.0f );
+							Slider2DFloat( "uv1##LinearGrad", &uv_end.x, &uv_end.y, 0.0f, 1.0f, -1.0f, 2.0f );
 							ImGui::PopItemWidth();
 							ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
-							if ( ImGui::ColorEdit4( "ColA##DrawShape", &cola_v.x ) )
+							if ( ImGui::ColorEdit4( "ColA##DrawShape##LinearGrad", &cola_v.x ) )
 								cola = ImGui::GetColorU32( cola_v );
 							ImGui::PopItemWidth();
 							ImGui::SameLine();
-							if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
+							if ( ImGui::ColorEdit4( "ColB##DrawShape##LinearGrad", &colb_v.x ) )
 								colb = ImGui::GetColorU32( colb_v );
 							ImGui::PopItemWidth();
 							ImVec2 pos = ImGui::GetCursorScreenPos();
@@ -5138,20 +5138,20 @@ namespace ImWidgets{
 							static ImU32 colb = ImGui::GetColorU32( colb_v );
 #ifdef DEAR_WIDGETS_TESSELATION
 							static int tess = 5;
-							ImGui::SliderInt( "Tess", &tess, 0, 16 );
+							ImGui::SliderInt( "Tess##RadialGrad", &tess, 0, 16 );
 #endif
 							ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
-							Slider2DFloat( "uv0", &uv_start.x, &uv_start.y, 0.0f, 1.0f, -1.0f, 2.0f );
+							Slider2DFloat( "uv0##RadialGrad", &uv_start.x, &uv_start.y, 0.0f, 1.0f, -1.0f, 2.0f );
 							ImGui::PopItemWidth();
 							ImGui::SameLine();
-							Slider2DFloat( "uv1", &uv_end.x, &uv_end.y, 0.0f, 1.0f, -1.0f, 2.0f );
+							Slider2DFloat( "uv1##RadialGrad", &uv_end.x, &uv_end.y, 0.0f, 1.0f, -1.0f, 2.0f );
 							ImGui::PopItemWidth();
 							ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
-							if ( ImGui::ColorEdit4( "ColA##DrawShape", &cola_v.x ) )
+							if ( ImGui::ColorEdit4( "ColA##DrawShape##RadialGrad", &cola_v.x ) )
 								cola = ImGui::GetColorU32( cola_v );
 							ImGui::PopItemWidth();
 							ImGui::SameLine();
-							if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
+							if ( ImGui::ColorEdit4( "ColB##DrawShape##RadialGrad", &colb_v.x ) )
 								colb = ImGui::GetColorU32( colb_v );
 							ImGui::PopItemWidth();
 							ImVec2 pos = ImGui::GetCursorScreenPos();
@@ -5187,20 +5187,20 @@ namespace ImWidgets{
 							static ImU32 colb = ImGui::GetColorU32( colb_v );
 #ifdef DEAR_WIDGETS_TESSELATION
 							static int tess = 5;
-							ImGui::SliderInt( "Tess", &tess, 0, 16 );
+							ImGui::SliderInt( "Tess##DiamondGrad", &tess, 0, 16 );
 #endif
 							ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
-							Slider2DFloat( "uv0", &uv_start.x, &uv_start.y, 0.0f, 1.0f, -1.0f, 2.0f );
+							Slider2DFloat( "uv0##DiamondGrad", &uv_start.x, &uv_start.y, 0.0f, 1.0f, -1.0f, 2.0f );
 							ImGui::PopItemWidth();
 							ImGui::SameLine();
-							Slider2DFloat( "uv1", &uv_end.x, &uv_end.y, 0.0f, 1.0f, -1.0f, 2.0f );
+							Slider2DFloat( "uv1##DiamondGrad", &uv_end.x, &uv_end.y, 0.0f, 1.0f, -1.0f, 2.0f );
 							ImGui::PopItemWidth();
 							ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
-							if ( ImGui::ColorEdit4( "ColA##DrawShape", &cola_v.x ) )
+							if ( ImGui::ColorEdit4( "ColA##DrawShape##DiamondGrad", &cola_v.x ) )
 								cola = ImGui::GetColorU32( cola_v );
 							ImGui::PopItemWidth();
 							ImGui::SameLine();
-							if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
+							if ( ImGui::ColorEdit4( "ColB##DrawShape##DiamondGrad", &colb_v.x ) )
 								colb = ImGui::GetColorU32( colb_v );
 							ImGui::PopItemWidth();
 							ImVec2 pos = ImGui::GetCursorScreenPos();
@@ -5259,7 +5259,7 @@ namespace ImWidgets{
 							static int division = 12;
 #ifdef DEAR_WIDGETS_TESSELATION
 							static int tess = 0;
-							ImGui::SliderInt( "Tess", &tess, 0, 16 );
+							ImGui::SliderInt( "Tess##ConicGrad", &tess, 0, 16 );
 #endif
 							ImGui::SliderFloat( "Thickness", &edge_thickness, 0.0f, 16.0f );
 							ImGui::SliderFloat( "Vrtx Radius", &vertex_radius, 0.0f, 64.0f );
@@ -5313,7 +5313,7 @@ namespace ImWidgets{
 							static ImU32 colb = ImGui::GetColorU32( colb_v );
 #ifdef DEAR_WIDGETS_TESSELATION
 							static int tess = 5;
-							ImGui::SliderInt( "Tess", &tess, 0, 16 );
+							ImGui::SliderInt( "Tess##ImageShapeGrad", &tess, 0, 16 );
 #endif
 							ImGui::SliderFloat( "Thickness", &edge_thickness, 0.0f, 16.0f );
 							ImGui::SliderFloat( "Vrtx Radius", &vertex_radius, 0.0f, 64.0f );
@@ -5324,17 +5324,17 @@ namespace ImWidgets{
 							if ( ImGui::ColorEdit4( "Vertices##DrawShape", &vertex_col_v.x ) )
 								vertex_col = ImGui::GetColorU32( vertex_col_v );
 							ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
-							Slider2DFloat( "uv0", &uv_start.x, &uv_start.y, 0.0f, 1.0f, -1.0f, 2.0f );
+							Slider2DFloat( "uv0##ImageShapeGrad", &uv_start.x, &uv_start.y, 0.0f, 1.0f, -1.0f, 2.0f );
 							ImGui::PopItemWidth();
 							ImGui::SameLine();
-							Slider2DFloat( "uv1", &uv_end.x, &uv_end.y, 0.0f, 1.0f, -1.0f, 2.0f );
+							Slider2DFloat( "uv1##ImageShapeGrad", &uv_end.x, &uv_end.y, 0.0f, 1.0f, -1.0f, 2.0f );
 							ImGui::PopItemWidth();
 							ImGui::PushMultiItemsWidths( 2, ImGui::CalcItemWidth() );
-							if ( ImGui::ColorEdit4( "ColA##DrawShape", &cola_v.x ) )
+							if ( ImGui::ColorEdit4( "ColA##DrawShape##ImageShapeGrad", &cola_v.x ) )
 								cola = ImGui::GetColorU32( cola_v );
 							ImGui::PopItemWidth();
 							ImGui::SameLine();
-							if ( ImGui::ColorEdit4( "ColB##DrawShape", &colb_v.x ) )
+							if ( ImGui::ColorEdit4( "ColB##DrawShape##ImageShapeGrad", &colb_v.x ) )
 								colb = ImGui::GetColorU32( colb_v );
 							ImGui::PopItemWidth();
 							ImVec2 pos = ImGui::GetCursorScreenPos();
@@ -5524,6 +5524,111 @@ namespace ImWidgets{
 #endif
 						}
 						DW_SsRecord( "Color_Bands", _sy0, ImGui::GetCursorPos().y );
+					}
+					{
+						float _sy0 = ImGui::GetCursorPos().y;
+						ApplyOpenAll();
+						if ( ImGui::CollapsingHeader( "Tessellated Shape Color (ImWidgetsShape)" ) )
+						{
+							ImGui::TextWrapped( "Shape-based color bands and discs. Each shape is a tessellated "
+								"ImWidgetsShape (vertices + triangles + UVs) generated by GenShape*, then its "
+								"vertex colors are written by ShapeFillProceduralColor*, then DrawShape pushes it to "
+								"the drawlist. Same machinery as text/gradient fills - just different topologies." );
+							float const tsWidth = ImGui::GetContentRegionAvail().x;
+							static int tsDivisions = 32;
+							static int tsSectors = 64;
+							static int tsRings = 12;
+							static float tsBandH = 32.0f;
+							ImGui::SliderInt( "Divisions / Sectors##TS", &tsDivisions, 2, 128 );
+							ImGui::SliderInt( "Disc sectors##TS",  &tsSectors,  6, 256 );
+							ImGui::SliderInt( "Disc rings##TS",    &tsRings,    1,  64 );
+							ImGui::SliderFloat( "Band height##TS", &tsBandH, 8.0f, 128.0f );
+
+							ImDrawList* dl = ImGui::GetWindowDrawList();
+							float dummy[1] = { 1.0f };
+
+							ImGui::Text( "Horizontal hue band (GenShapeHorizontalBand)" );
+							{
+								ImVec2 p = ImGui::GetCursorScreenPos();
+								ImRect bb( p, p + ImVec2( tsWidth, tsBandH ) );
+								DrawShapeProceduralColorHorizontalBand( dl, bb, tsDivisions,
+									[]( float t, void* )->ImU32 {
+										float r, g, b; ImGui::ColorConvertHSVtoRGB( t, 1.0f, 1.0f, r, g, b );
+										return IM_COL32( (int)(r*255), (int)(g*255), (int)(b*255), 255 );
+									}, dummy );
+								ImGui::InvisibleButton( "ShapeHueBand##TS", ImVec2( tsWidth, tsBandH ) );
+							}
+
+							ImGui::Text( "Vertical brightness band (GenShapeVerticalBand)" );
+							{
+								ImVec2 p = ImGui::GetCursorScreenPos();
+								ImRect bb( p, p + ImVec2( tsBandH * 2.0f, tsBandH * 4.0f ) );
+								DrawShapeProceduralColorVerticalBand( dl, bb, tsDivisions,
+									[]( float t, void* )->ImU32 {
+										int g = (int)((1.0f - t) * 255.0f);
+										return IM_COL32( g, g, g, 255 );
+									}, dummy );
+								ImGui::InvisibleButton( "ShapeVBand##TS", bb.GetSize() );
+							}
+
+							ImGui::Text( "Rect grid 2D color (GenShapeRectGrid)" );
+							{
+								ImVec2 p = ImGui::GetCursorScreenPos();
+								float side = ImMin( tsWidth, 256.0f );
+								ImRect bb( p, p + ImVec2( side, side ) );
+								DrawShapeProceduralColorRectGrid( dl, bb, tsDivisions, tsDivisions,
+									[]( float u, float v, void* )->ImU32 {
+										float r, g, b; ImGui::ColorConvertHSVtoRGB( u, 1.0f - v, 1.0f, r, g, b );
+										return IM_COL32( (int)(r*255), (int)(g*255), (int)(b*255), 255 );
+									}, dummy );
+								ImGui::InvisibleButton( "ShapeGrid##TS", bb.GetSize() );
+							}
+
+							ImGui::Text( "Disc with rings (GenShapeDiscRings) - HSV wheel" );
+							{
+								ImVec2 p = ImGui::GetCursorScreenPos();
+								float side = ImMin( tsWidth, 256.0f );
+								ImVec2 c = p + ImVec2( side * 0.5f, side * 0.5f );
+								float radius = side * 0.5f - 4.0f;
+								DrawShapeProceduralColorDiscRings( dl, c, radius, tsSectors, tsRings,
+									[]( float u, float v, void* )->ImU32 {
+										float r, g, b; ImGui::ColorConvertHSVtoRGB( u, v, 1.0f, r, g, b );
+										return IM_COL32( (int)(r*255), (int)(g*255), (int)(b*255), 255 );
+									}, dummy );
+								ImGui::InvisibleButton( "ShapeDisc##TS", ImVec2( side, side ) );
+							}
+
+							ImGui::Text( "Annulus (1-ring rim, GenShapeAnnulus) - hue wheel" );
+							{
+								ImVec2 p = ImGui::GetCursorScreenPos();
+								float side = ImMin( tsWidth, 256.0f );
+								ImVec2 c = p + ImVec2( side * 0.5f, side * 0.5f );
+								float rOut = side * 0.5f - 4.0f;
+								float rIn = rOut * 0.65f;
+								DrawShapeProceduralColorAnnulus( dl, c, rIn, rOut, tsSectors,
+									[]( float t, void* )->ImU32 {
+										float r, g, b; ImGui::ColorConvertHSVtoRGB( t, 1.0f, 1.0f, r, g, b );
+										return IM_COL32( (int)(r*255), (int)(g*255), (int)(b*255), 255 );
+									}, dummy );
+								ImGui::InvisibleButton( "ShapeAnnulus##TS", ImVec2( side, side ) );
+							}
+
+							ImGui::Text( "Annulus with rings (GenShapeAnnulusRings) - hue × value rim" );
+							{
+								ImVec2 p = ImGui::GetCursorScreenPos();
+								float side = ImMin( tsWidth, 256.0f );
+								ImVec2 c = p + ImVec2( side * 0.5f, side * 0.5f );
+								float rOut = side * 0.5f - 4.0f;
+								float rIn = rOut * 0.45f;
+								DrawShapeProceduralColorAnnulusRings( dl, c, rIn, rOut, tsSectors, tsRings,
+									[]( float u, float v, void* )->ImU32 {
+										float r, g, b; ImGui::ColorConvertHSVtoRGB( u, 1.0f, v, r, g, b );
+										return IM_COL32( (int)(r*255), (int)(g*255), (int)(b*255), 255 );
+									}, dummy );
+								ImGui::InvisibleButton( "ShapeAnnulusRings##TS", ImVec2( side, side ) );
+							}
+						}
+						DW_SsRecord( "Tessellated_Shape_Color", _sy0, ImGui::GetCursorPos().y );
 					}
 					{
 						float _sy0 = ImGui::GetCursorPos().y;
@@ -8771,9 +8876,15 @@ namespace ImWidgets{
 				}
 
 				{
+				float _sy0_phys = ImGui::GetCursorPos().y;
+				ApplyOpenAll();
+				if ( ImGui::CollapsingHeader( "Physically-Based Color Pickers" ) )
+				{
+
+				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
-					if ( ImGui::CollapsingHeader( "Skin Color Picker (Biophysical)" ) )
+					if ( ImGui::TreeNode( "Skin Color Picker (Biophysical)" ) )
 					{
 						static ImVec4 skinColor( 0.8f, 0.6f, 0.5f, 1.0f );
 						ImGui::TextWrapped( "Physically-based skin tone from chromophores: melanin fraction (plane X), "
@@ -8783,6 +8894,7 @@ namespace ImWidgets{
 						ColorPickerSkin( "##SkinPicker", &skinColor );
 
 						ImGui::ColorEdit4( "Color##Skin", &skinColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
 					}
 					DW_SsRecord( "Skin_Color_Picker", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -8790,7 +8902,7 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
-					if ( ImGui::CollapsingHeader( "Hair Color Picker (Biophysical)" ) )
+					if ( ImGui::TreeNode( "Hair Color Picker (Biophysical)" ) )
 					{
 						static ImVec4 hairColor( 0.35f, 0.22f, 0.12f, 1.0f );
 						ImGui::TextWrapped( "Physically-based hair color from melanin (Marschner/d'Eon/Chiang fiber pigments): "
@@ -8802,6 +8914,7 @@ namespace ImWidgets{
 						ColorPickerHair( "##HairPicker", &hairColor );
 
 						ImGui::ColorEdit4( "Color##Hair", &hairColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
 					}
 					DW_SsRecord( "Hair_Color_Picker", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -8809,7 +8922,7 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
-					if ( ImGui::CollapsingHeader( "Leaf Color Picker (PROSPECT-D)" ) )
+					if ( ImGui::TreeNode( "Leaf Color Picker (PROSPECT-D)" ) )
 					{
 						static ImVec4 leafColor( 0.25f, 0.45f, 0.12f, 1.0f );
 						ImGui::TextWrapped( "Physically-based leaf color from the PROSPECT-D leaf optical model (Feret et al. 2017): "
@@ -8820,6 +8933,7 @@ namespace ImWidgets{
 						ColorPickerLeaf( "##LeafPicker", &leafColor );
 
 						ImGui::ColorEdit4( "Color##Leaf", &leafColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
 					}
 					DW_SsRecord( "Leaf_Color_Picker", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -8827,13 +8941,14 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
-					if ( ImGui::CollapsingHeader( "Blackbody / Color Temperature (Planck)" ) )
+					if ( ImGui::TreeNode( "Blackbody / Color Temperature (Planck)" ) )
 					{
 						static ImVec4 bbColor( 1.0f, 0.95f, 0.9f, 1.0f );
 						ImGui::TextWrapped( "Planck's law along the Planckian locus (CIE 15). Single gradient slider keyed with blackbody colors: "
 							"warm/orange at low Kelvin, white ~6500K, cool/blue at high Kelvin." );
 						ColorPickerBlackbody( "##BBPicker", &bbColor );
 						ImGui::ColorEdit4( "Color##BB", &bbColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
 					}
 					DW_SsRecord( "Blackbody_Color_Picker", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -8841,13 +8956,14 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
-					if ( ImGui::CollapsingHeader( "Pigment Mixing (Kubelka-Munk)" ) )
+					if ( ImGui::TreeNode( "Pigment Mixing (Kubelka-Munk)" ) )
 					{
 						static ImVec4 pigColor( 0.3f, 0.5f, 0.2f, 1.0f );
 						ImGui::TextWrapped( "Subtractive paint mixing via Kubelka-Munk theory (Kubelka & Munk 1931; Haase & Meyer 1992). "
 							"Pick two paints; plane X = A->B mix, Y = white tint; slider = black. Yellow + blue makes green, like real paint." );
 						ColorPickerPigment( "##PigPicker", &pigColor );
 						ImGui::ColorEdit4( "Color##Pig", &pigColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
 					}
 					DW_SsRecord( "Pigment_Color_Picker", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -8855,13 +8971,14 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
-					if ( ImGui::CollapsingHeader( "Gemstone (Crystal-Field Absorption)" ) )
+					if ( ImGui::TreeNode( "Gemstone (Crystal-Field Absorption)" ) )
 					{
 						static ImVec4 gemColor( 0.7f, 0.05f, 0.1f, 1.0f );
 						ImGui::TextWrapped( "Gemstone body color from Beer-Lambert absorption by trace transition-metal ions (Nassau 1983; "
 							"Fritsch & Rossman 1987-88). Pick a gem; plane X = concentration, Y = path length; slider = clarity." );
 						ColorPickerGem( "##GemPicker", &gemColor );
 						ImGui::ColorEdit4( "Color##Gem", &gemColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
 					}
 					DW_SsRecord( "Gemstone_Color_Picker", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -8869,13 +8986,14 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
-					if ( ImGui::CollapsingHeader( "Water / Ocean (Bio-Optical)" ) )
+					if ( ImGui::TreeNode( "Water / Ocean (Bio-Optical)" ) )
 					{
 						static ImVec4 waterColor( 0.0f, 0.2f, 0.35f, 1.0f );
 						ImGui::TextWrapped( "Water color from a bio-optical model R ~ bb/(a+bb) (Morel & Prieur 1977; Gordon 1988) with pure-water "
 							"absorption (Pope & Fry 1997), chlorophyll and CDOM. Plane X = chlorophyll, Y = CDOM; slider = turbidity." );
 						ColorPickerWater( "##WaterPicker", &waterColor );
 						ImGui::ColorEdit4( "Color##Water", &waterColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
 					}
 					DW_SsRecord( "Water_Color_Picker", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -8883,7 +9001,7 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
-					if ( ImGui::CollapsingHeader( "Iris / Eye Color (Melanin + Tyndall)" ) )
+					if ( ImGui::TreeNode( "Iris / Eye Color (Melanin + Tyndall)" ) )
 					{
 						static ImVec4 irisColor( 0.3f, 0.45f, 0.6f, 1.0f );
 						ImGui::TextWrapped( "Eye color: anterior melanin absorbs while the stroma scatters blue (Tyndall/Rayleigh) over a pigmented "
@@ -8891,6 +9009,7 @@ namespace ImWidgets{
 							"Y = stromal scattering; slider = posterior melanin." );
 						ColorPickerIris( "##IrisPicker", &irisColor );
 						ImGui::ColorEdit4( "Color##Iris", &irisColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
 					}
 					DW_SsRecord( "Iris_Color_Picker", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -8898,13 +9017,14 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
-					if ( ImGui::CollapsingHeader( "Flame / Emission Spectrum" ) )
+					if ( ImGui::TreeNode( "Flame / Emission Spectrum" ) )
 					{
 						static ImVec4 flameColor( 0.2f, 0.8f, 0.3f, 1.0f );
 						ImGui::TextWrapped( "Additive emission: a blackbody flame continuum plus atomic emission lines for the chosen element "
 							"(NIST lines; flame tests). Plane X = flame temperature, Y = element line strength; slider = sodium contamination." );
 						ColorPickerFlame( "##FlamePicker", &flameColor );
 						ImGui::ColorEdit4( "Color##Flame", &flameColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
 					}
 					DW_SsRecord( "Flame_Color_Picker", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -8912,7 +9032,7 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
-					if ( ImGui::CollapsingHeader( "Bruise / Hematoma Healing" ) )
+					if ( ImGui::TreeNode( "Bruise / Hematoma Healing" ) )
 					{
 						static ImVec4 bruiseColor( 0.5f, 0.2f, 0.3f, 1.0f );
 						ImGui::TextWrapped( "Bruise color as it heals: extravasated hemoglobin deoxygenates (red->purple), then heme breaks "
@@ -8920,6 +9040,7 @@ namespace ImWidgets{
 							"Plane X = days since injury, Y = severity; slider = skin melanin." );
 						ColorPickerBruise( "##BruisePicker", &bruiseColor );
 						ImGui::ColorEdit4( "Color##Bruise", &bruiseColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
 					}
 					DW_SsRecord( "Bruise_Color_Picker", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -8927,7 +9048,7 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
-					if ( ImGui::CollapsingHeader( "Emission Nebula" ) )
+					if ( ImGui::TreeNode( "Emission Nebula" ) )
 					{
 						static ImVec4 nebulaColor( 0.6f, 0.2f, 0.3f, 1.0f );
 						ImGui::TextWrapped( "Color of an ionized gas cloud from its emission lines (Osterbrock & Ferland): hydrogen Balmer (Halpha), "
@@ -8935,6 +9056,7 @@ namespace ImWidgets{
 							"slider = hydrogen strength." );
 						ColorPickerNebula( "##NebulaPicker", &nebulaColor );
 						ImGui::ColorEdit4( "Color##Nebula", &nebulaColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
 					}
 					DW_SsRecord( "Nebula_Color_Picker", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -8942,7 +9064,7 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
-					if ( ImGui::CollapsingHeader( "Maillard / Caramelization Browning" ) )
+					if ( ImGui::TreeNode( "Maillard / Caramelization Browning" ) )
 					{
 						static ImVec4 maillardColor( 0.6f, 0.45f, 0.25f, 1.0f );
 						ImGui::TextWrapped( "Food browning: melanoidin/caramel pigments accumulate with Arrhenius time-temperature kinetics and absorb "
@@ -8950,6 +9072,7 @@ namespace ImWidgets{
 							"slider = sugar(caramel)<->protein(Maillard)." );
 						ColorPickerMaillard( "##MaillardPicker", &maillardColor );
 						ImGui::ColorEdit4( "Color##Maillard", &maillardColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
 					}
 					DW_SsRecord( "Maillard_Color_Picker", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -8957,7 +9080,7 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
-					if ( ImGui::CollapsingHeader( "Copper / Bronze Patina" ) )
+					if ( ImGui::TreeNode( "Copper / Bronze Patina" ) )
 					{
 						static ImVec4 patinaColor( 0.7f, 0.45f, 0.3f, 1.0f );
 						ImGui::TextWrapped( "Atmospheric weathering of copper: bright metal -> cuprite/tarnish (brown) -> basic sulfate/carbonate patina "
@@ -8965,6 +9088,7 @@ namespace ImWidgets{
 							"Y = environment; slider = humidity." );
 						ColorPickerPatina( "##PatinaPicker", &patinaColor );
 						ImGui::ColorEdit4( "Color##Patina", &patinaColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
 					}
 					DW_SsRecord( "Patina_Color_Picker", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -8972,7 +9096,7 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
-					if ( ImGui::CollapsingHeader( "Subsurface Translucency" ) )
+					if ( ImGui::TreeNode( "Subsurface Translucency" ) )
 					{
 						static ImVec4 sssColor( 0.5f, 0.7f, 0.55f, 1.0f );
 						ImGui::TextWrapped( "Diffuse color of a translucent multiply-scattering material via the dipole model (Jensen et al., SIGGRAPH 2001). "
@@ -8980,6 +9104,7 @@ namespace ImWidgets{
 							"Try jade, wax, marble, milk, skin, amber." );
 						ColorPickerSubsurface( "##SubsurfacePicker", &sssColor );
 						ImGui::ColorEdit4( "Color##SSS", &sssColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
 					}
 					DW_SsRecord( "Subsurface_Color_Picker", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -8987,7 +9112,7 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
-					if ( ImGui::CollapsingHeader( "Gas-Discharge / Neon Tubes" ) )
+					if ( ImGui::TreeNode( "Gas-Discharge / Neon Tubes" ) )
 					{
 						static ImVec4 dischargeColor( 1.0f, 0.4f, 0.2f, 1.0f );
 						ImGui::TextWrapped( "Neon-tube color from low-pressure gas emission lines (NIST ASD; Waymouth). Pick the gas; plane X = mercury "
@@ -8995,6 +9120,7 @@ namespace ImWidgets{
 							"Neon=red-orange, Ar+Hg=blue, helium=peach." );
 						ColorPickerDischarge( "##DischargePicker", &dischargeColor );
 						ImGui::ColorEdit4( "Color##Discharge", &dischargeColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
 					}
 					DW_SsRecord( "Discharge_Color_Picker", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -9002,7 +9128,7 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
-					if ( ImGui::CollapsingHeader( "Glacier / Sea Ice" ) )
+					if ( ImGui::TreeNode( "Glacier / Sea Ice" ) )
 					{
 						static ImVec4 iceColor( 0.4f, 0.6f, 0.75f, 1.0f );
 						ImGui::TextWrapped( "Why ice is blue: pure ice absorbs red far more than blue (Warren & Brandt 2008), so with enough path it "
@@ -9010,6 +9136,7 @@ namespace ImWidgets{
 							"(blue ice <-> snow), Y = path depth; slider = impurity/dirt." );
 						ColorPickerIce( "##IcePicker", &iceColor );
 						ImGui::ColorEdit4( "Color##Ice", &iceColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
 					}
 					DW_SsRecord( "Ice_Color_Picker", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -9017,13 +9144,14 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
-					if ( ImGui::CollapsingHeader( "Earth Pigments / Ochre (Kubelka-Munk)" ) )
+					if ( ImGui::TreeNode( "Earth Pigments / Ochre (Kubelka-Munk)" ) )
 					{
 						static ImVec4 ochreColor( 0.6f, 0.35f, 0.12f, 1.0f );
 						ImGui::TextWrapped( "Subtractive mixing of natural iron-oxide earth pigments via Kubelka-Munk (masstones after Elias et al. 2006). "
 							"Pick two pigments; plane X = A->B mix, Y = chalk-white tint; slider = charcoal. Ochres, siennas, umbers - the oldest palette." );
 						ColorPickerOchre( "##OchrePicker", &ochreColor );
 						ImGui::ColorEdit4( "Color##Ochre", &ochreColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
 					}
 					DW_SsRecord( "Ochre_Color_Picker", _sy0, ImGui::GetCursorPos().y );
 				}
@@ -9031,7 +9159,7 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
-					if ( ImGui::CollapsingHeader( "Sky (Bruneton multi-scatter)" ) )
+					if ( ImGui::TreeNode( "Sky (Bruneton multi-scatter)" ) )
 					{
 						static ImVec4 skyColor( 0.4f, 0.6f, 0.9f, 1.0f );
 						ImGui::TextWrapped( "Physically-based sky colour: Rayleigh + Mie + ozone (Chappuis bands) with "
@@ -9044,8 +9172,185 @@ namespace ImWidgets{
 							"ozone preferentially absorbing the green-yellow-red band (Chappuis) along the long horizon path." );
 						ColorPickerSky( "##SkyPicker", &skyColor );
 						ImGui::ColorEdit4( "Color##Sky", &skyColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
 					}
 					DW_SsRecord( "Sky_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::TreeNode( "Star (Planck + line blanketing + TiO)" ) )
+					{
+						static ImVec4 starColor( 1.0f, 0.97f, 0.85f, 1.0f );
+						ImGui::TextWrapped( "Stellar photosphere colour. Planck blackbody at effective temperature, "
+							"modulated by metallicity-driven UV/blue line blanketing and surface-gravity-dependent "
+							"TiO molecular absorption between 600-720 nm. Plane: X = log Teff (2500 K -> 40000 K), "
+							"Y = log surface gravity. Vertical slider = metallicity [Fe/H]. "
+							"Reference: Mamajek 2022 dwarf colour-temperature sequence + Pecaut & Mamajek 2013." );
+						ColorPickerStar( "##StarPicker", &starColor );
+						ImGui::ColorEdit4( "Color##Star", &starColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
+					}
+					DW_SsRecord( "Star_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::TreeNode( "Haemoglobin (vascular skin colour, Prahl)" ) )
+					{
+						static ImVec4 hemColor( 0.85f, 0.45f, 0.45f, 1.0f );
+						ImGui::TextWrapped( "Skin reflectance through a Beer-Lambert layer of oxy- and deoxy-haemoglobin "
+							"under a melanin attenuation layer, integrated against D65 + CIE 1931 CMFs. "
+							"Plane: X = SpO2 (50%% -> 100%%), Y = dermal blood-volume fraction (0.5%% -> 10%%). "
+							"Vertical slider = melanin density (fair -> very dark). "
+							"Reference: Prahl haemoglobin extinction tables (OMLC), Jacques 1996 melanin model." );
+						ColorPickerHemoglobin( "##HemPicker", &hemColor );
+						ImGui::ColorEdit4( "Color##Hem", &hemColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
+					}
+					DW_SsRecord( "Hemoglobin_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::TreeNode( "Cloud (Schneider Beer-Powder + dual HG)" ) )
+					{
+						static ImVec4 cloudColor( 0.9f, 0.92f, 0.95f, 1.0f );
+						ImGui::TextWrapped( "Volumetric cloud lighting from Schneider & Vos 2015 (Horizon Zero Dawn). "
+							"Beer-Powder term E(d) = 2*exp(-sigma*d)*(1-exp(-2*sigma*d)) handles absorption AND in-scattering "
+							"at cloud edges. Dual Henyey-Greenstein phase function mixes a forward Mie lobe (g1=+0.8) "
+							"with a small back-scatter lobe (g2=-0.3) - silver lining when looking toward the sun. "
+							"Reference: SIGGRAPH 2015 'Real-Time Volumetric Cloudscapes'." );
+						ColorPickerCloud( "##CloudPicker", &cloudColor );
+						ImGui::ColorEdit4( "Color##Cloud", &cloudColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
+					}
+					DW_SsRecord( "Cloud_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::TreeNode( "Streetlight (Hg / Na vapour + tri-phosphor)" ) )
+					{
+						static ImVec4 slColor( 1.0f, 0.7f, 0.3f, 1.0f );
+						ImGui::TextWrapped( "Gas-discharge streetlamp spectrum. Mercury vapour gives the green-tinged "
+							"city lamp (lines at 405, 436, 546, 577 nm); low-pressure sodium gives the unmistakable "
+							"orange (589 nm D-doublet); high-pressure sodium broadens into a warm cluster with a "
+							"self-reversal notch at the line centre. Plane: X = Hg <-> Na mix, Y = pressure. "
+							"Vertical slider = tri-phosphor coating fraction. "
+							"Reference: RIT 'Spectral Distribution of Gas Discharge Sources'." );
+						ColorPickerStreetlight( "##SLPicker", &slColor );
+						ImGui::ColorEdit4( "Color##SL", &slColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+						ImGui::TreePop();
+					}
+					DW_SsRecord( "Streetlight_Color_Picker", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				}
+				DW_SsRecord( "Physically_Based_Color_Pickers", _sy0_phys, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0_art = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Artist Color Pickers" ) )
+					{
+						ApplyOpenAll();
+						if ( ImGui::TreeNode( "Harmony Wheel" ) )
+						{
+							static ImVec4 hwColor( 0.6f, 0.3f, 0.8f, 1.0f );
+							static ImVec4 hwPalette[5];
+							static int    hwCount = 0;
+							ImGui::TextWrapped( "Circular disc with multiple draggable harmony handles - inspired by "
+								"Adobe's color wheel (color.adobe.com). Pick the colour-space cylinder (HSV / HSL / HSY / "
+								"HSP / OkLCH), then a harmony scheme; the secondary handles follow the active one "
+								"automatically. Click a swatch below to pick which handle is the active output. "
+								"Drag the disc to reposition the active handle; the other handles rotate with it." );
+							ColorPickerHarmonyWheel( "##HarmWheel", &hwColor, hwPalette, &hwCount );
+							ImGui::ColorEdit4( "Active##HW", &hwColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+							ImGui::TreePop();
+						}
+						ApplyOpenAll();
+						if ( ImGui::TreeNode( "Palette Harmony" ) )
+						{
+							static ImVec4 phColor( 0.5f, 0.7f, 0.9f, 1.0f );
+							static ImVec4 phPalette[5];
+							static int    phCount = 0;
+							ImGui::TextWrapped( "Anchor + harmony scheme -> 4..5-swatch palette. Plane = saturation x value at "
+								"the anchor hue, slider = anchor hue, combo = scheme. Click the swatches below to make one "
+								"of the harmony colours the active output. Guarantees a palette that 'reads'." );
+							ColorPickerPaletteHarmony( "##PalHarm", &phColor, phPalette, &phCount );
+							ImGui::ColorEdit4( "Active##PH", &phColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+							ImGui::TreePop();
+						}
+						ApplyOpenAll();
+						if ( ImGui::TreeNode( "Trichromatic Mixer (subtractive)" ) )
+						{
+							static ImVec4 trColor( 0.7f, 0.4f, 0.3f, 1.0f );
+							ImGui::TextWrapped( "Barycentric mix of three artist primaries (defaults to Y/M/C). Mixing is done in "
+								"absorbance space, so yellow + cyan -> green, not muddy grey-green. Click the triangle to set "
+								"the weights; outside the triangle the click is clamped to the nearest valid mix. Slider = "
+								"tinting toward white (top) or black (bottom). Edit the three ColorEdit3 fields below to swap "
+								"in your own primaries." );
+							ColorPickerTrichromaticMixer( "##TriMix", &trColor );
+							ImGui::ColorEdit4( "Mix##TR", &trColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+							ImGui::TreePop();
+						}
+						ApplyOpenAll();
+						if ( ImGui::TreeNode( "Weathered Metal (PBR albedo)" ) )
+						{
+							static ImVec4 wmColor( 0.6f, 0.55f, 0.5f, 1.0f );
+							ImGui::TextWrapped( "Pick a base metal (steel / iron / copper / brass / aluminum / gold), then dial "
+								"patina coverage, roughness wash and grime. Each metal has a known F0 from PBR tables "
+								"(Naty Hoffman GDC) and a metal-specific oxide colour (copper -> verdigris teal, iron -> rust, "
+								"brass -> green tarnish, steel -> rust brown). Plane: X = patina, Y = roughness. Slider = grime." );
+							ColorPickerWeatheredMetal( "##WMet", &wmColor );
+							ImGui::ColorEdit4( "Albedo##WM", &wmColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+							ImGui::TreePop();
+						}
+						ApplyOpenAll();
+						if ( ImGui::TreeNode( "Fabric Dye (substrate + dye)" ) )
+						{
+							static ImVec4 fdColor( 0.4f, 0.5f, 0.6f, 1.0f );
+							ImGui::TextWrapped( "Dye laid on a fabric substrate via Beer-Lambert. The same red dye looks completely "
+								"different on raw linen (warm beige base) vs natural wool (taupe) vs bleached cotton (cream). "
+								"Plane: X = dye hue, Y = dye saturation. Slider = dye intensity (washed -> saturated). Combo = "
+								"substrate fabric." );
+							ColorPickerFabricDye( "##Fab", &fdColor );
+							ImGui::ColorEdit4( "Color##FB", &fdColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+							ImGui::TreePop();
+						}
+						ApplyOpenAll();
+						if ( ImGui::TreeNode( "Mood Palette (curated)" ) )
+						{
+							static ImVec4 mdColor( 0.9f, 0.5f, 0.3f, 1.0f );
+							static ImVec4 mdPalette[5];
+							ImGui::TextWrapped( "Curated 5-swatch palettes by mood word (warm / cool / melancholy / fresh / vintage / "
+								"pastel / neon / earth / sunset / ocean). Plane: X = blend position across the 5 stops, "
+								"Y = lightness shift. Slider = saturation crush (desaturated -> raw)." );
+							ColorPickerMoodPalette( "##Mood", &mdColor, mdPalette );
+							ImGui::ColorEdit4( "Blended##MD", &mdColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+							ImGui::TreePop();
+						}
+						ApplyOpenAll();
+						if ( ImGui::TreeNode( "Toon Ramp (shadow / mid / highlight)" ) )
+						{
+							static ImVec4 trnColor( 0.85f, 0.55f, 0.35f, 1.0f );
+							static ImVec4 trnRamp[3];
+							ImGui::TextWrapped( "Pick a midtone and get back a shadow / midtone / highlight 3-stop ramp ready to "
+								"feed a toon shader. Plane: midtone hue x value. Slider: midtone saturation. Component sliders "
+								"control chroma drop into the shadow, warm-cool hue shift between shadow and highlight, and "
+								"terminator hardness (soft -> hard cel edge)." );
+							ColorPickerToonRamp( "##Toon", &trnColor, trnRamp );
+							ImGui::ColorEdit4( "Midtone##TN", &trnColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+							ImGui::TreePop();
+						}
+					}
+					DW_SsRecord( "Artist_Color_Pickers", _sy0_art, ImGui::GetCursorPos().y );
 				}
 
 				{
