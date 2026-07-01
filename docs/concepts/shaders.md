@@ -18,7 +18,6 @@ workingdir/
 |   |   +-- slug_debug.hlsl         # Slug debug visualization shader
 |   |   +-- markers.hlsl            # GPU shape markers
 |   |   +-- lines.hlsl              # GPU dashed polyline shader
-|   |   +-- lines_copy.hlsl         # Dashed polyline copy pass
 |   +-- glsl/                       # Generated GLSL outputs
 |   +-- msl/                        # Generated MSL outputs (Metal)
 |   +-- wgsl/                       # Generated WGSL outputs (WebGPU via Naga)

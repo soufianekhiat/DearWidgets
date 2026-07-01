@@ -2747,7 +2747,47 @@ struct ImImageViewerState
 	ImVec2                 PixelSize;   // Dimensions of the Pixels buffer (should match texture)
 	ImPlatform_PixelFormat PixelFormat;
 
-	ImImageViewerState() : Zoom( 1.0f ), Pan( 0.0f, 0.0f ), Pixels( NULL ), PixelSize( 0.0f, 0.0f ), PixelFormat( ImPlatform_PixelFormat_RGBA8 ) {}
+	// --- Last-frame transform cache (written by ImageViewer, read by overlay widgets) ---
+	// Overlays (DetectionOverlay, KeypointOverlay, TextLabelOverlay, AnnotationEditor)
+	// must be called AFTER ImageViewer in the same frame with the same state.
+	ImRect _LastCanvasRect;  // widget bounding box in screen coords
+	ImVec2 _LastImageSize;   // image extents used at last call
+	float  _LastFitScale;    // fit-to-widget scale (imageSize -> widget rect); totalScale = _LastFitScale * Zoom
+	bool   _LastValid;       // true if ImageViewer has run at least once this frame
+
+	ImImageViewerState()
+		: Zoom( 1.0f ), Pan( 0.0f, 0.0f ), Pixels( NULL ), PixelSize( 0.0f, 0.0f ), PixelFormat( ImPlatform_PixelFormat_RGBA8 ),
+		  _LastCanvasRect(), _LastImageSize( 0.0f, 0.0f ), _LastFitScale( 1.0f ), _LastValid( false ) {}
+
+	// UV [0,1]^2 (image-relative) -> screen pixels inside the canvas.
+	ImVec2 UVToCanvas( ImVec2 uv ) const
+	{
+		if ( !_LastValid ) return ImVec2( 0.0f, 0.0f );
+		ImVec2 rectCenter = ( _LastCanvasRect.Min + _LastCanvasRect.Max ) * 0.5f;
+		ImVec2 imgCenter  = ImVec2( _LastImageSize.x * 0.5f + Pan.x, _LastImageSize.y * 0.5f + Pan.y );
+		float  ts         = _LastFitScale * Zoom;
+		return ImVec2( rectCenter.x + ( uv.x * _LastImageSize.x - imgCenter.x ) * ts,
+					   rectCenter.y + ( uv.y * _LastImageSize.y - imgCenter.y ) * ts );
+	}
+
+	// Screen pixels -> UV [0,1]^2 (image-relative).
+	ImVec2 CanvasToUV( ImVec2 screen ) const
+	{
+		if ( !_LastValid || _LastImageSize.x <= 0.0f || _LastImageSize.y <= 0.0f )
+			return ImVec2( 0.0f, 0.0f );
+		ImVec2 rectCenter = ( _LastCanvasRect.Min + _LastCanvasRect.Max ) * 0.5f;
+		ImVec2 imgCenter  = ImVec2( _LastImageSize.x * 0.5f + Pan.x, _LastImageSize.y * 0.5f + Pan.y );
+		float  ts         = _LastFitScale * Zoom;
+		if ( ts <= 0.0f ) return ImVec2( 0.0f, 0.0f );
+		return ImVec2( ( imgCenter.x + ( screen.x - rectCenter.x ) / ts ) / _LastImageSize.x,
+					   ( imgCenter.y + ( screen.y - rectCenter.y ) / ts ) / _LastImageSize.y );
+	}
+
+	// Widget canvas bounding rect in screen coords (from the last ImageViewer call).
+	ImRect GetCanvasRect() const { return _LastCanvasRect; }
+
+	// Total scale factor from image pixels -> screen pixels (fit * zoom).
+	float  GetZoomScale()  const { return _LastFitScale * Zoom; }
 };
 
 // ============================================================================
@@ -3291,6 +3331,48 @@ namespace ImWidgets{
 	// origin is added back after tessellation (same pattern as GenShapeRect with r.Min).
 	void	GenShapeConcavePoly( ImWidgetsShape& shape, ImVec2 const* pts, int pts_count, ImVec2 origin = ImVec2( 0.0f, 0.0f ) );
 
+	// Tessellated bands and discs (UVs laid down for procedural-colour fills).
+	//   VerticalBand   : rectangle × N horizontal stripes        (uv.y = top→bottom, uv.x = 0→1 across)
+	//   HorizontalBand : rectangle × N vertical stripes          (uv.x = left→right, uv.y = 0→1 across)
+	//   RectGrid       : rectangle × Nx × Ny grid                (uv = [0,1]²)
+	//   DiscRings      : full disc, polar grid sectors × rings   (uv.x = angle/2π, uv.y = r/R)
+	//   Annulus        : ring (annulus), one radial division     (same polar UVs, v = (r-rIn)/(rOut-rIn))
+	//   AnnulusRings   : ring with multiple sub-rings
+	void	GenShapeVerticalBand  ( ImWidgetsShape& shape, ImRect const& r, int divisions );
+	void	GenShapeHorizontalBand( ImWidgetsShape& shape, ImRect const& r, int divisions );
+	void	GenShapeRectGrid      ( ImWidgetsShape& shape, ImRect const& r, int divisionsX, int divisionsY );
+	void	GenShapeDiscRings     ( ImWidgetsShape& shape, ImVec2 center, float radius, int numSectors, int numRings );
+	void	GenShapeAnnulus       ( ImWidgetsShape& shape, ImVec2 center, float innerRadius, float outerRadius, int numSectors );
+	void	GenShapeAnnulusRings  ( ImWidgetsShape& shape, ImVec2 center, float innerRadius, float outerRadius, int numSectors, int numRings );
+	// Partial annulus arc (no caching — startAngle/sweepAngle usually animate per frame).
+	void	GenShapeAnnulusArc    ( ImWidgetsShape& shape, ImVec2 center, float innerRadius, float outerRadius, float startAngle, float sweepAngle, int divisions );
+	// Barycentric-subdivided triangle (A, B, C). Vertex.uv = (w_A, w_B); w_C is implicit = 1 - w_A - w_B.
+	// Use ShapeFillProceduralColor2D with a callback that derives w_C and computes the triangle mix.
+	void	GenShapeTriangleSubdiv( ImWidgetsShape& shape, ImVec2 A, ImVec2 B, ImVec2 C, int subdivisions );
+
+	// Pour a procedural-colour callback into a shape's vertex colours.
+	// 1D variant samples uv.y (sample_v=true) or uv.x (sample_v=false).
+	// 2D variant samples both axes.
+	void	ShapeFillProceduralColor1D( ImWidgetsShape& shape, ImWidgetsColor1DCallback func, void* pUserData, bool sample_v );
+	void	ShapeFillProceduralColor2D( ImWidgetsShape& shape, ImWidgetsColor2DCallback func, void* pUserData );
+	void	ShapeFillSolidColor       ( ImWidgetsShape& shape, ImU32 col );
+
+	// One-shot draws: GenShape → fill colour → DrawShape (no caller boilerplate).
+	void	DrawShapeProceduralColorVerticalBand  ( ImDrawList* pDrawList, ImRect const& bb, int divisions,
+	                                                 ImWidgetsColor1DCallback func, void* pUserData );
+	void	DrawShapeProceduralColorHorizontalBand( ImDrawList* pDrawList, ImRect const& bb, int divisions,
+	                                                 ImWidgetsColor1DCallback func, void* pUserData );
+	void	DrawShapeProceduralColorRectGrid      ( ImDrawList* pDrawList, ImRect const& bb, int divisionsX, int divisionsY,
+	                                                 ImWidgetsColor2DCallback func, void* pUserData );
+	void	DrawShapeProceduralColorDiscRings     ( ImDrawList* pDrawList, ImVec2 center, float radius,
+	                                                 int numSectors, int numRings,
+	                                                 ImWidgetsColor2DCallback func, void* pUserData );
+	void	DrawShapeProceduralColorAnnulus       ( ImDrawList* pDrawList, ImVec2 center, float innerRadius, float outerRadius,
+	                                                 int numSectors, ImWidgetsColor1DCallback func, void* pUserData );
+	void	DrawShapeProceduralColorAnnulusRings  ( ImDrawList* pDrawList, ImVec2 center, float innerRadius, float outerRadius,
+	                                                 int numSectors, int numRings,
+	                                                 ImWidgetsColor2DCallback func, void* pUserData );
+
 	// TODO
 	//void	GenShapeFromBezierCubicCurve( ImShape& shape, ImVector<ImVec2>& path, float thickness, int num_segments = 0 );
 	//void	GenShapeFromBezierQuadraticCurve( ImShape& sshape, ImVector<ImVec2>& path, float thickness, int num_segments = 0 );
@@ -3487,7 +3569,13 @@ namespace ImWidgets{
 										   int gap = 3, int strokeWidth = 3 );
 
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
-	IMGUI_API void CreateInternalShader( ImDrawShader* shaders_out, char const* shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer, char const* extra_define = nullptr, char const* cache_suffix = nullptr );
+	// compile_flags: IMPLATFORM_SHADER_COMPILE_* bitmask. Default is the
+	// backend's moderate optimization. Lower it (OPTIMIZATION_LOW or
+	// SKIP_OPTIMIZATION) for large uber-shaders where the optimizer goes
+	// polynomial — e.g. image_inspector with its many [branch] switches over
+	// 11 sample types x 7 tonemaps x 8 false-colour palettes takes ~19 min
+	// at the default level but seconds with LOW.
+	IMGUI_API void CreateInternalShader( ImDrawShader* shaders_out, char const* shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer, char const* extra_define = nullptr, char const* cache_suffix = nullptr, unsigned int compile_flags = IMPLATFORM_SHADER_COMPILE_DEFAULT );
 
 	// Eagerly compile/load every internal shader used by Dear Widgets.
 	// Optional: shaders are lazily compiled on first use otherwise. Call this once
@@ -3581,6 +3669,68 @@ namespace ImWidgets{
 											  float mainLineThickness, ImU32 mainCol,
 											  int division0, float height0, float thickness0, float angle0, ImU32 col0,
 											  int division1 = -1, float height1 = -1.0f, float thickness1 = -1.0f, float angle1 = -1.0f, ImU32 col1 = 0u );
+
+	// Schematic ephemerides (draw-only, no state/interaction).
+	IMGUI_API void DrawMoonEphemeris( ImDrawList* pDrawList, ImVec2 center, float radius,
+	                                  int year, int month, int day, float lonDeg, float latDeg,
+	                                  ImU32 litCol = IM_COL32( 190, 185, 172, 255 ),  // dimmed lunar albedo
+	                                  ImU32 darkCol = IM_COL32( 28, 36, 56, 255 ),    // earthshine tint
+	                                  ImU32 outlineCol = IM_COL32( 170, 175, 200, 255 ) );
+	IMGUI_API void DrawEarthSunEphemeris( ImDrawList* pDrawList, ImVec2 areaMin, ImVec2 areaSize,
+	                                      int year, int month, int day, int hour, int minute,
+	                                      float obsLon = 0.0f, float obsLat = 0.0f,
+	                                      ImU32 sunCol = IM_COL32( 255, 220, 80, 255 ),
+	                                      ImU32 dayCol = IM_COL32( 110, 165, 220, 255 ),
+	                                      ImU32 nightCol = IM_COL32( 25, 35, 60, 255 ),
+	                                      ImU32 outlineCol = IM_COL32( 180, 190, 210, 255 ) );
+
+	// Sky cultures supported by DrawStarChart. Each defines its own
+	// constellation figure lines + native star names + solar-system body names.
+	enum ImWidgetsSkyCulture
+	{
+		ImWidgetsSkyCulture_Western = 0,    // IAU modern, 88 constellations
+		ImWidgetsSkyCulture_Chinese,        // Han-dynasty 28 lunar mansions
+		ImWidgetsSkyCulture_Arabic,         // Manazil al-Qamar (Arabic right-to-left text)
+		ImWidgetsSkyCulture_Polynesian,     // Maori navigation
+		ImWidgetsSkyCulture_COUNT
+	};
+
+	IMGUI_API char const* GetSkyCultureName( ImWidgetsSkyCulture culture );
+	IMGUI_API int         GetSkyCultureCount();
+
+	// Observer-centred sky chart. Stars projected via equatorial-to-horizon
+	// (alt/az). Culture-specific constellation figure lines + native star
+	// names + solar-system body names. Solar system overlay shows Moon
+	// (with phase), naked-eye planets, and Sun when above horizon.
+	IMGUI_API void DrawStarChart( ImDrawList* pDrawList, ImVec2 center, float radius,
+	                              int year, int month, int day, int hour, int minute,
+	                              float obsLon = 0.0f, float obsLat = 48.85f,
+	                              float magLimit = 5.5f, float starScale = 1.0f,
+	                              ImWidgetsSkyCulture culture = ImWidgetsSkyCulture_Western,
+	                              bool showSolarSystem = true,
+	                              ImU32 skyCol = IM_COL32( 8, 11, 22, 255 ),
+	                              ImU32 outlineCol = IM_COL32( 180, 195, 225, 230 ),
+	                              // Optional label font. When the culture uses non-Latin
+	                              // glyphs (Arabic, CJK), pass a font with the matching
+	                              // ranges; otherwise the active ImGui font is used.
+	                              ImFont* labelFont = nullptr );
+
+	// Sun-path diagram + analemma. Polar mode = zenith-centred dome (sun arcs
+	// are radial curves from sunrise to sunset); Cartesian = azimuth x altitude.
+	// Yellow analemma figure-8 loops are drawn at five fixed local clock hours
+	// (06h/09h/12h/15h/18h). Equation of time + longitude offset from time-zone
+	// meridian produce the east-west spread of the analemma.
+	enum ImWidgetsSunPathMode
+	{
+		ImWidgetsSunPathMode_Polar = 0,
+		ImWidgetsSunPathMode_Cartesian
+	};
+	IMGUI_API void DrawSunPath( ImDrawList* pDrawList, ImVec2 areaMin, ImVec2 areaSize,
+	                            float obsLat = 48.85f, float obsLon = 0.0f,
+	                            int tzOffset = 0, int year = 2026,
+	                            ImWidgetsSunPathMode mode = ImWidgetsSunPathMode_Polar,
+	                            ImU32 bgCol = IM_COL32( 12, 18, 30, 255 ),
+	                            ImU32 outlineCol = IM_COL32( 190, 205, 230, 240 ) );
 
 	typedef void ( *ImInlineOffset )( void* data, ImVec2 offset );
 	typedef void ( *ImDrawShape )( ImDrawList* drawlist, ImU32 col, float thickness, void* data );
@@ -3784,6 +3934,66 @@ namespace ImWidgets{
 	IMGUI_API bool ColorPickerDischarge( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
 	IMGUI_API bool ColorPickerIce( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
 	IMGUI_API bool ColorPickerOchre( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+	// Sky: Bruneton single-scatter atmosphere (Rayleigh + Mie + Ozone), baked
+	// transmittance LUT. Plane = elevation × time-of-day; sliders = view-az
+	// (sun-rel), day-of-year, observer latitude.
+	IMGUI_API bool ColorPickerSky( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// Stellar photosphere colour (Planck blackbody + line blanketing + TiO bands).
+	// Plane = log Teff × log g (dwarf→supergiant); slider = metallicity [Fe/H].
+	// Reference: Mamajek 2022 dwarf colour-temperature sequence.
+	IMGUI_API bool ColorPickerStar( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// Vascular tissue colour (Beer-Lambert oxy/deoxy haemoglobin + melanin layer).
+	// Plane = SpO2 × dermal blood-volume fraction; slider = melanin density.
+	// Reference: Prahl haemoglobin extinction coefficient tables (OMLC).
+	IMGUI_API bool ColorPickerHemoglobin( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// Volumetric cloud lighting (Schneider & Vos 2015 Beer-Powder, dual HG).
+	// Plane = optical depth × cos(view, sun); slider = extinction coefficient.
+	// Reference: "Real-Time Volumetric Cloudscapes of Horizon Zero Dawn" SIGGRAPH 2015.
+	IMGUI_API bool ColorPickerCloud( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// Streetlight gas-discharge spectrum — mercury vapour + sodium D-line (LPS/HPS)
+	// + tri-phosphor fluorescent overlay. Plane = Hg↔Na mix × pressure; slider = phosphor coating.
+	IMGUI_API bool ColorPickerStreetlight( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
+
+	// === Artist-oriented colour pickers (for asset creation) =================
+
+	// Harmony palette — pick anchor + scheme (complement/split/triad/tetrad/square/analogous).
+	// `color` = currently-active swatch. `out_palette` (up to 5 entries) and `out_count`
+	// expose the full palette to the caller.
+	IMGUI_API bool ColorPickerPaletteHarmony( char const* label, ImVec4* color,
+	                                          ImVec4* out_palette = nullptr, int* out_count = nullptr );
+
+	// Trichromatic mixer — barycentric mix of 3 artist primaries (defaults to Y/M/C).
+	// Subtractive (absorbance-space) mixing; slider = white↔black tint.
+	IMGUI_API bool ColorPickerTrichromaticMixer( char const* label, ImVec4* color );
+
+	// Weathered metal — base metal (Steel/Iron/Copper/Brass/Aluminum/Gold) + patina
+	// coverage + roughness + grime. Outputs sRGB albedo; F0 follows the metal preset.
+	IMGUI_API bool ColorPickerWeatheredMetal( char const* label, ImVec4* color );
+
+	// Fabric dye — substrate (linen / cotton / wool / silk) tinted by a dye colour
+	// via Beer-Lambert. Plane = dye hue × saturation; slider = dye intensity.
+	IMGUI_API bool ColorPickerFabricDye( char const* label, ImVec4* color );
+
+	// Mood-palette picker — curated 5-swatch palettes by mood word (warm/cool/melancholy/
+	// fresh/vintage/pastel/neon/earth/sunset/ocean). Plane = palette position × lightness shift;
+	// slider = saturation crush.
+	IMGUI_API bool ColorPickerMoodPalette( char const* label, ImVec4* color, ImVec4 out_palette[ 5 ] = nullptr );
+
+	// Toon ramp — pick a midtone, get back a 3-stop shadow/mid/highlight ramp with
+	// warm-cool hue shift. `color` = midtone; `out_ramp[3]` = full ramp.
+	IMGUI_API bool ColorPickerToonRamp( char const* label, ImVec4* color, ImVec4 out_ramp[ 3 ] = nullptr );
+
+	// Adobe-style harmony wheel: circular disc (hue around angle, saturation along radius)
+	// with multiple handles arranged by the chosen harmony scheme. Combos let the user
+	// pick the colour-space cylinder (HSV/HSL/HSY/HSP/OkLCH) and the scheme (mono/analogous/
+	// complement/split-complement/triad/tetrad/square/compound). `color` = currently
+	// active swatch; optional `out_palette` (up to 5 entries) + `out_count` expose all.
+	IMGUI_API bool ColorPickerHarmonyWheel( char const* label, ImVec4* color,
+	                                        ImVec4* out_palette = nullptr, int* out_count = nullptr );
 
 	// Transform Gizmo
 	IMGUI_API bool TransformGizmo( char const* label, ImTransformData* transforms, ImVec2* sizes, int count, int* selectedIndex, ImTransformGizmoCallbacks const* callbacks = nullptr, ImTransformGizmoFlags flags = ImTransformGizmoFlags_None, ImVec2 canvasSize = ImVec2( 0, 0 ) );
@@ -3923,6 +4133,167 @@ namespace ImWidgets{
 	// (default) for a plain textured draw. The image draw in the right-click loupe is
 	// left un-shaded (raw texels) so the pixel inspector reflects source data.
 	IMGUI_API bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize = ImVec2( 0, 0 ), ImPlatform_ShaderProgram shaderProgram = nullptr );
+
+	// ============================================================================
+	// [SECTION] Image overlays — composed on top of ImageViewer
+	// ============================================================================
+	// All coordinates are UV [0,1]^2 relative to the image, so overlays compose
+	// naturally with ImageViewer's pan/zoom. Call ImageViewer FIRST, then the
+	// overlay(s) with the same ImImageViewerState reference. Read-only display
+	// overlays (Detection / Keypoint / TextLabel) never mutate their inputs;
+	// AnnotationEditor is the only interactive one and returns edit intents via
+	// ImAnnotationResult.
+
+	// A single detected object -- all coordinates normalized UV [0,1].
+	struct ImDetectionBox
+	{
+		float x, y;      // top-left corner in UV
+		float w, h;      // width/height in UV
+		float score;     // confidence [0,1]; < 0 = no score to show
+		int   class_id;  // index into a class-name table; -1 = unlabeled
+		int   user_id;   // app-defined ID for selection tracking; -1 = none
+	};
+
+	// A single 2D landmark.
+	struct ImKeypoint
+	{
+		float x, y;         // UV position
+		float confidence;   // [0,1]; 0 = skip, <0.3 = drawn faded
+		int   part_id;      // index into a part-name table
+	};
+
+	// Skeleton edge connecting two keypoints by their part_id.
+	struct ImSkeletonEdge { int part_a; int part_b; };
+
+	// Options shared by display overlays. Sizes in logical pixels (HiDPI scaled internally).
+	struct ImOverlayStyle
+	{
+		float box_thickness;     // outline width for detection boxes
+		float label_font_scale;  // 1.0 = default UI font size
+		float label_bg_alpha;    // 0..1 for label chip background
+		bool  show_score;
+		bool  show_class_label;
+		ImU32 default_color;     // 0 = auto palette by class_id
+		float point_radius;      // keypoint dot radius
+		float edge_thickness;    // skeleton edge line width
+
+		ImOverlayStyle()
+			: box_thickness( 2.0f ), label_font_scale( 1.0f ), label_bg_alpha( 0.6f ),
+			  show_score( true ), show_class_label( true ), default_color( 0 ),
+			  point_radius( 5.0f ), edge_thickness( 2.0f ) {}
+	};
+
+	// Text label anchor modes.
+	enum ImTextLabelAnchor_
+	{
+		ImTextLabelAnchor_TopLeft    = 0,
+		ImTextLabelAnchor_TopCenter  = 1,
+		ImTextLabelAnchor_TopRight   = 2,
+		ImTextLabelAnchor_MidLeft    = 3,
+		ImTextLabelAnchor_Center     = 4,
+		ImTextLabelAnchor_MidRight   = 5,
+		ImTextLabelAnchor_BotLeft    = 6,
+		ImTextLabelAnchor_BotCenter  = 7,
+		ImTextLabelAnchor_BotRight   = 8,
+		ImTextLabelAnchor_COUNT
+	};
+
+	struct ImTextLabel
+	{
+		float       x, y;       // UV anchor
+		const char* text;
+		ImU32       color;      // 0 = white
+		float       font_scale; // 1.0 = default
+		int         anchor;     // ImTextLabelAnchor_*
+	};
+
+	// Read-only bounding-box overlay. Returns the user_id of the hovered box (-1 = none).
+	// Call after ImageViewer with the same state. class_names may be null.
+	IMGUI_API int DetectionOverlay(
+		const char*                str_id,
+		const ImImageViewerState&  viewer_state,
+		const ImDetectionBox*      boxes,
+		int                        box_count,
+		const char* const*         class_names,
+		int                        class_name_count,
+		const ImOverlayStyle*      style = NULL );
+
+	// Read-only landmark / pose overlay. Skeleton edges are optional.
+	IMGUI_API void KeypointOverlay(
+		const char*                str_id,
+		const ImImageViewerState&  viewer_state,
+		const ImKeypoint*          keypoints,
+		int                        keypoint_count,
+		const ImSkeletonEdge*      edges,
+		int                        edge_count,
+		const char* const*         part_names,
+		int                        part_name_count,
+		const ImOverlayStyle*      style = NULL );
+
+	// Floating text labels anchored at UV positions. Font size is zoom-independent.
+	IMGUI_API void TextLabelOverlay(
+		const char*                str_id,
+		const ImImageViewerState&  viewer_state,
+		const ImTextLabel*         labels,
+		int                        label_count );
+
+	// -------- AnnotationEditor: interactive bbox authoring --------
+	enum ImAnnotationAction_
+	{
+		ImAnnotationAction_None      = 0,
+		ImAnnotationAction_Move      = 1,
+		ImAnnotationAction_Resize    = 2,
+		ImAnnotationAction_Create    = 3,
+		ImAnnotationAction_Delete    = 4,
+		ImAnnotationAction_LabelEdit = 5,
+	};
+
+	struct ImAnnotationEditorState
+	{
+		int    SelectedId;         // user_id of selected box; -1 = none
+		int    HoveredId;          // user_id under cursor
+		bool   Creating;           // rubber-band new box in progress
+
+		// Internal drag state -- do not read/write directly.
+		int    _ActiveMode;        // 0=none, 1=move, 2=resize, 3=create
+		int    _ActiveIndex;       // index into boxes[] for move/resize; -1 otherwise
+		int    _ActiveHandle;      // 0..7 for resize handles; -1 otherwise
+		ImVec2 _DragStartUV;       // rubber-band start
+		ImVec2 _DragCurrUV;
+		ImDetectionBox _OrigBox;   // pre-drag snapshot for Escape revert
+		bool   _EditingLabel;      // inline label editor open
+		int    _EditingId;         // user_id being label-edited
+
+		ImAnnotationEditorState()
+			: SelectedId( -1 ), HoveredId( -1 ), Creating( false ),
+			  _ActiveMode( 0 ), _ActiveIndex( -1 ), _ActiveHandle( -1 ),
+			  _DragStartUV( 0, 0 ), _DragCurrUV( 0, 0 ),
+			  _EditingLabel( false ), _EditingId( -1 )
+		{
+			_OrigBox.x = _OrigBox.y = _OrigBox.w = _OrigBox.h = 0.0f;
+			_OrigBox.score = -1.0f; _OrigBox.class_id = -1; _OrigBox.user_id = -1;
+		}
+	};
+
+	struct ImAnnotationResult
+	{
+		int             action;             // ImAnnotationAction_*
+		int             user_id;            // which box was acted on (-1 for Create)
+		ImDetectionBox  new_value;          // resulting box for Move/Resize/Create
+		char            new_label[ 128 ];   // filled on LabelEdit
+	};
+
+	// Returns one action per call (Action_None if nothing happened).
+	// boxes[] is not mutated -- caller applies the returned action so undo stacks stay their concern.
+	IMGUI_API ImAnnotationResult AnnotationEditor(
+		const char*                str_id,
+		const ImImageViewerState&  viewer_state,
+		ImAnnotationEditorState&   editor_state,
+		const ImDetectionBox*      boxes,
+		int                        box_count,
+		const char* const*         class_names,
+		int                        class_name_count,
+		const ImOverlayStyle*      style = NULL );
 
 	// Image Inspector: color-managed raw-buffer viewer with shader-side decode of any of the 11
 	// sample types x 1..4 channels described by ImImageBuffer. View transforms (gamma, sRGB,
@@ -4563,4 +4934,677 @@ namespace ImWidgets{
 
     IMGUI_API bool VolumeViewer(char const* label, ImVolumeViewerState* state,
                                 ImVec2 size = ImVec2(0, 0));
+
+    //////////////////////////////////////////////////////////////////////////
+    // Range Slider (1D two-handle min/max slider, no gradient).
+    // Same pattern as SliderGradientRange but plain FrameBg + selection rect.
+    //////////////////////////////////////////////////////////////////////////
+    IMGUI_API bool RangeSliderScalar( char const* label, ImGuiDataType data_type,
+                                      void* p_lower, void* p_upper,
+                                      void const* p_min, void const* p_max,
+                                      char const* format = NULL,
+                                      ImVec2 size = ImVec2( 0, 0 ) );
+    IMGUI_API bool RangeSliderFloat ( char const* label, float* v_lower, float* v_upper,
+                                      float v_min, float v_max,
+                                      char const* format = "%.3f",
+                                      ImVec2 size = ImVec2( 0, 0 ) );
+    IMGUI_API bool RangeSliderInt   ( char const* label, int* v_lower, int* v_upper,
+                                      int v_min, int v_max,
+                                      char const* format = "%d",
+                                      ImVec2 size = ImVec2( 0, 0 ) );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Segmented Control (N exclusive options in one bar).
+    // p_value stores the selected index in any integer ImGuiDataType
+    // (S8/U8/S16/U16/S32/U32/S64/U64). Float/Double are not supported.
+    //////////////////////////////////////////////////////////////////////////
+    IMGUI_API bool SegmentedControlScalar( char const* label, ImGuiDataType data_type,
+                                           void* p_value,
+                                           char const* const* labels, int label_count,
+                                           ImVec2 size = ImVec2( 0, 0 ) );
+    IMGUI_API bool SegmentedControlInt   ( char const* label, int* p_value,
+                                           char const* const* labels, int label_count,
+                                           ImVec2 size = ImVec2( 0, 0 ) );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Arrow primitives.
+    //////////////////////////////////////////////////////////////////////////
+    enum ImWidgetsArrowHead_
+    {
+        ImWidgetsArrowHead_None     = 0,
+        ImWidgetsArrowHead_Triangle = 1,  // filled triangle
+        ImWidgetsArrowHead_Open     = 2,  // two stroked lines (V shape)
+        ImWidgetsArrowHead_Diamond  = 3,  // filled rhombus
+        ImWidgetsArrowHead_Stealth  = 4,  // concave back arrow
+        ImWidgetsArrowHead_Tick     = 5,  // short perpendicular line (CAD)
+        ImWidgetsArrowHead_Dot      = 6,  // filled circle
+        ImWidgetsArrowHead_Square   = 7,  // axis-aligned square block
+        ImWidgetsArrowHead_COUNT
+    };
+    typedef int ImWidgetsArrowHead;
+
+    IMGUI_API char const* GetArrowHeadName( ImWidgetsArrowHead head );
+
+    // Draw an arrow shaft from `from` to `to` with optional heads at either end.
+    // head_size is in pixels. The shaft is shortened so it doesn't poke through
+    // a filled head; pass ImWidgetsArrowHead_None to draw a plain segment.
+    IMGUI_API void DrawArrow( ImDrawList* draw, ImVec2 from, ImVec2 to,
+                              ImU32 col, float thickness = 1.0f,
+                              ImWidgetsArrowHead head_end   = ImWidgetsArrowHead_Triangle,
+                              ImWidgetsArrowHead head_start = ImWidgetsArrowHead_None,
+                              float head_size = 10.0f );
+
+    // Draw a head primitive alone at `tip`, pointing along `dir` (need not be normalized).
+    IMGUI_API void DrawArrowHead( ImDrawList* draw, ImVec2 tip, ImVec2 dir,
+                                  ImU32 col, ImWidgetsArrowHead style,
+                                  float size = 10.0f, float thickness = 1.0f );
+
+    // Convenience: draw X (right) and Y (down on positive len_y, up on negative)
+    // axis arrows from `origin` with short text labels at each tip.
+    IMGUI_API void DrawAxisArrows( ImDrawList* draw, ImVec2 origin,
+                                   float len_x, float len_y,
+                                   ImU32 col_x = IM_COL32( 230, 80, 80, 255 ),
+                                   ImU32 col_y = IM_COL32( 80, 200, 80, 255 ),
+                                   float thickness = 1.0f, float head_size = 10.0f,
+                                   char const* label_x = "x", char const* label_y = "y",
+                                   ImU32 label_col = IM_COL32( 230, 230, 230, 255 ) );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Dimension Line (CAD-style measurement with arrowheads, extension lines, label).
+    //////////////////////////////////////////////////////////////////////////
+    enum ImWidgetsDimensionTextOrient_
+    {
+        ImWidgetsDimensionTextOrient_FollowLine       = 0,  // rotate to the line direction
+        ImWidgetsDimensionTextOrient_AlwaysHorizontal = 1,  // text horizontal regardless of angle
+        ImWidgetsDimensionTextOrient_FollowReading    = 2,  // FollowLine but auto-flip so text reads L->R
+        ImWidgetsDimensionTextOrient_Perpendicular    = 3,  // rotate 90deg to the line (also auto-flipped)
+        ImWidgetsDimensionTextOrient_COUNT
+    };
+    typedef int ImWidgetsDimensionTextOrient;
+
+    IMGUI_API char const* GetDimensionTextOrientName( ImWidgetsDimensionTextOrient orient );
+
+    enum ImWidgetsDimensionFlags_
+    {
+        ImWidgetsDimensionFlags_None             = 0,
+        ImWidgetsDimensionFlags_ExtensionLines   = 1 << 0,  // draw perpendicular extension lines from measured endpoints
+        ImWidgetsDimensionFlags_HeadsInside      = 1 << 1,  // arrowheads point inward (default: outward)
+        ImWidgetsDimensionFlags_TextAbove        = 1 << 2,  // text sits above the dim line (offset side)
+        ImWidgetsDimensionFlags_TextBelow        = 1 << 3,  // text sits below the dim line
+        ImWidgetsDimensionFlags_NoBreak          = 1 << 4,  // when text is centered, do NOT break the line under the text
+        ImWidgetsDimensionFlags_Default          = ImWidgetsDimensionFlags_ExtensionLines | ImWidgetsDimensionFlags_TextAbove
+    };
+    typedef int ImWidgetsDimensionFlags;
+
+    // CAD-style dimension annotation: arrowed dim line measuring `from` -> `to`,
+    // perpendicular extension lines, and a centered label.
+    // `offset` (pixels) displaces the dim line perpendicular to the measured
+    // segment (positive = left of direction `to - from`).
+    // `text` is the caller-formatted value, e.g. "1.24 m" or "42 px".
+    // Pass font/font_size = NULL/0 to use the current ImGui font.
+    IMGUI_API void DrawDimensionLine( ImDrawList* draw, ImVec2 from, ImVec2 to,
+                                      float offset, char const* text,
+                                      ImU32 line_col, ImU32 text_col,
+                                      float line_thickness = 1.0f,
+                                      ImWidgetsArrowHead head = ImWidgetsArrowHead_Triangle,
+                                      float head_size = 8.0f,
+                                      float ext_overshoot = 4.0f,
+                                      float ext_gap = 2.0f,
+                                      ImWidgetsDimensionTextOrient text_orient = ImWidgetsDimensionTextOrient_FollowReading,
+                                      ImWidgetsDimensionFlags flags = ImWidgetsDimensionFlags_Default,
+                                      ImFont* font = NULL, float font_size = 0.0f );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Corner anchor used by widgets that place a sub-element inside a parent rect.
+    //////////////////////////////////////////////////////////////////////////
+    enum ImWidgetsCornerAnchor_
+    {
+        ImWidgetsCornerAnchor_TopLeft     = 0,
+        ImWidgetsCornerAnchor_TopRight    = 1,
+        ImWidgetsCornerAnchor_BottomLeft  = 2,
+        ImWidgetsCornerAnchor_BottomRight = 3,
+        ImWidgetsCornerAnchor_COUNT
+    };
+    typedef int ImWidgetsCornerAnchor;
+
+    //////////////////////////////////////////////////////////////////////////
+    // Eyedropper: sample a color from a user-supplied surface and (optionally)
+    // show a magnified neighbor grid + crosshair tooltip under the cursor.
+    //   - `screen_rect` is the area on screen the user can hover.
+    //   - `sample_fn(uv, user_data)` returns the color at uv in [0,1]^2.
+    //     A helper for raw 32-bit RGBA bitmaps is provided below.
+    //////////////////////////////////////////////////////////////////////////
+    struct ImWidgetsEyedropperBitmap
+    {
+        ImU32 const* Pixels;  // tightly-packed IM_COL32 array
+        int          Width;
+        int          Height;
+    };
+
+    typedef ImU32 ( *ImWidgetsEyedropperSampleFn )( ImVec2 uv, void* user_data );
+
+    IMGUI_API ImU32 EyedropperSampleBitmap( ImVec2 uv, void* user_data );  // user_data: ImWidgetsEyedropperBitmap*
+
+    struct ImWidgetsEyedropperResult
+    {
+        bool   Hovered;       // mouse is inside `screen_rect` this frame
+        bool   Picked;        // user just released LMB inside the area (color is now locked by caller)
+        ImVec2 PosScreen;     // cursor pos when sampled (screen coords)
+        ImVec2 UV;             // 0..1 within the source surface
+        ImU32  Color;         // center sample
+    };
+
+    IMGUI_API ImWidgetsEyedropperResult Eyedropper(
+        char const* id_str, ImRect screen_rect,
+        ImWidgetsEyedropperSampleFn sample_fn, void* user_data,
+        int   neighbor_cells   = 7,                              // odd; 0 to disable loupe
+        float neighbor_pixel   = 14.0f,                          // size of each loupe cell in screen pixels
+        ImU32 outline_col      = IM_COL32( 0, 0, 0, 220 ),
+        ImU32 highlight_col    = IM_COL32( 255, 255, 255, 220 ) );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Crop rect: 8-grip resizable rectangle inside a bounds rect, with
+    // optional rule-of-thirds / golden ratio / diagonal / center guides and
+    // a darkened mask outside the crop region.
+    //////////////////////////////////////////////////////////////////////////
+    enum ImWidgetsCropGuides_
+    {
+        ImWidgetsCropGuides_None         = 0,
+        ImWidgetsCropGuides_RuleOfThirds = 1 << 0,
+        ImWidgetsCropGuides_GoldenRatio  = 1 << 1,
+        ImWidgetsCropGuides_Diagonals    = 1 << 2,
+        ImWidgetsCropGuides_Center       = 1 << 3,
+        ImWidgetsCropGuides_Default      = ImWidgetsCropGuides_RuleOfThirds
+    };
+    typedef int ImWidgetsCropGuides;
+
+    struct ImWidgetsCropState
+    {
+        ImRect Rect;
+        int    Active;        // -1 idle; 0..7 grip (TL,T,TR,R,BR,B,BL,L); 8 inside
+        ImVec2 DragOriginMs;
+        ImRect DragOriginRect;
+        ImVec2 LastBoundsMin; // tracks bounds.Min from the previous frame so the
+                              // rect stays put when the host window scrolls;
+                              // set to (FLT_MAX, FLT_MAX) to mean "uninitialised"
+    };
+
+    IMGUI_API bool CropRect( char const* id_str, ImWidgetsCropState& s, ImRect bounds,
+                              float aspect_ratio = 0.0f,             // 0 = free; >0 = width/height locked
+                              ImWidgetsCropGuides guides = ImWidgetsCropGuides_Default,
+                              float grip_size = 6.0f,
+                              ImU32 mask_col  = IM_COL32(  0,  0,  0, 140 ),
+                              ImU32 line_col  = IM_COL32( 255, 255, 255, 220 ),
+                              ImU32 grip_col  = IM_COL32( 255, 255, 255, 255 ),
+                              ImU32 guide_col = IM_COL32( 255, 255, 255,  90 ) );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Snap lines / smart guides: given a moving rect and a list of static
+    // candidate rects, compute the snap delta on each axis and (optionally)
+    // draw extended alignment guide lines for matched edges.
+    //////////////////////////////////////////////////////////////////////////
+    enum ImWidgetsSnapFlags_
+    {
+        ImWidgetsSnapFlags_None       = 0,
+        ImWidgetsSnapFlags_LeftEdge   = 1 << 0,
+        ImWidgetsSnapFlags_RightEdge  = 1 << 1,
+        ImWidgetsSnapFlags_TopEdge    = 1 << 2,
+        ImWidgetsSnapFlags_BottomEdge = 1 << 3,
+        ImWidgetsSnapFlags_CenterH    = 1 << 4,
+        ImWidgetsSnapFlags_CenterV    = 1 << 5,
+        ImWidgetsSnapFlags_Edges      = 0xF,
+        ImWidgetsSnapFlags_Centers    = ImWidgetsSnapFlags_CenterH | ImWidgetsSnapFlags_CenterV,
+        ImWidgetsSnapFlags_All        = 0x3F
+    };
+    typedef int ImWidgetsSnapFlags;
+
+    // Returns the delta you should add to `moving` (Min and Max) to snap it.
+    // Returns (0,0) if nothing snapped.
+    IMGUI_API ImVec2 ComputeSnapAndDraw( ImDrawList* draw,
+                                          ImRect moving,
+                                          ImRect const* targets, int target_count,
+                                          float snap_radius_px = 6.0f,
+                                          ImWidgetsSnapFlags flags = ImWidgetsSnapFlags_All,
+                                          ImU32 guide_col = IM_COL32( 255,  80, 220, 220 ),
+                                          float guide_extend_px = 16.0f );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Onion-skin overlay: ghost back/forward frames over a current frame.
+    // Per-frame variant lets the caller author each ghost; Auto variant
+    // attenuates alpha by 0.5^distance from the current index.
+    //////////////////////////////////////////////////////////////////////////
+    struct ImWidgetsOnionFrame
+    {
+        ImTextureID Tex;
+        ImVec2      UV0, UV1;
+        ImU32       Tint;   // RGBA; A is multiplied with `Alpha` below
+        float       Alpha;  // 0..1
+    };
+
+    IMGUI_API void DrawOnionSkin( ImDrawList* draw, ImRect bounds,
+                                   ImWidgetsOnionFrame const* prev, int prev_count,
+                                   ImWidgetsOnionFrame const* next, int next_count,
+                                   ImTextureID current_tex,
+                                   ImVec2 cur_uv0 = ImVec2( 0, 0 ),
+                                   ImVec2 cur_uv1 = ImVec2( 1, 1 ) );
+
+    IMGUI_API void DrawOnionSkinAuto( ImDrawList* draw, ImRect bounds,
+                                       ImTextureID const* frames, int frame_count,
+                                       int current_idx,
+                                       int back = 1, int forward = 1,
+                                       ImU32 back_tint    = IM_COL32(  80, 160, 255, 255 ),
+                                       ImU32 forward_tint = IM_COL32( 255, 100,  80, 255 ),
+                                       float base_alpha = 0.4f );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Lasso & marquee selection.
+    //////////////////////////////////////////////////////////////////////////
+    enum ImWidgetsSelectionMode_
+    {
+        ImWidgetsSelectionMode_Marquee = 0,
+        ImWidgetsSelectionMode_Lasso   = 1
+    };
+    typedef int ImWidgetsSelectionMode;
+
+    struct ImWidgetsSelectionState
+    {
+        ImWidgetsSelectionMode Mode;
+        ImVector<ImVec2>       Path;     // Marquee: Path[0]=anchor, Path[1]=cursor. Lasso: drag polyline.
+        bool                   Active;   // currently dragging
+        bool                   Closed;   // user released this frame; selection is finalized
+    };
+
+    // Begin a selection over `bounds`. The InvisibleButton is placed under any
+    // visual content the caller draws after this call. Returns true if a
+    // selection is either active or finalized this frame.
+    IMGUI_API bool BeginSelection( char const* id_str, ImRect bounds,
+                                    ImWidgetsSelectionState& s,
+                                    ImU32 fill_col = IM_COL32(  80, 160, 255,  60 ),
+                                    ImU32 line_col = IM_COL32(  80, 160, 255, 220 ),
+                                    float thickness = 1.0f );
+
+    IMGUI_API void TestSelectionPoints( ImWidgetsSelectionState const& s,
+                                         ImVec2 const* pts, int count,
+                                         bool* inside_out );
+
+    IMGUI_API void TestSelectionRects( ImWidgetsSelectionState const& s,
+                                        ImRect const* rects, int count,
+                                        bool* inside_out,
+                                        bool fully_contained_only = false );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Pan-zoom canvas + minimap.
+    //   - BeginCanvas paints background + dotted grid + clips drawing to the
+    //     viewport. The caller draws content using CanvasWorldToScreen().
+    //   - Pan: middle drag, or Shift+left drag.
+    //   - Zoom: mouse wheel (anchored to cursor).
+    //   - DrawCanvasMinimap shows the viewport rect within a content extent
+    //     and lets the user drag it to re-center.
+    //////////////////////////////////////////////////////////////////////////
+    struct ImWidgetsCanvasState
+    {
+        ImVec2 Pan;             // screen-space offset for world origin
+        float  Zoom;            // screen pixels per world unit
+        bool   PanActive;
+        ImVec2 PanLastMouse;
+        ImRect Bounds;          // last-known screen-space viewport (filled by BeginCanvas)
+    };
+
+    IMGUI_API bool BeginCanvas( char const* id_str, ImVec2 size, ImWidgetsCanvasState& s,
+                                 ImU32 bg_col       = IM_COL32(  30,  30,  30, 255 ),
+                                 ImU32 grid_col     = IM_COL32(  80,  80,  80, 110 ),
+                                 float grid_step_world = 32.0f );
+    IMGUI_API void EndCanvas();
+
+    IMGUI_API ImVec2 CanvasWorldToScreen( ImWidgetsCanvasState const& s, ImVec2 w );
+    IMGUI_API ImVec2 CanvasScreenToWorld( ImWidgetsCanvasState const& s, ImVec2 p );
+    IMGUI_API ImRect CanvasViewportWorld( ImWidgetsCanvasState const& s );
+
+    IMGUI_API void DrawCanvasMinimap( ImWidgetsCanvasState& s,
+                                       ImRect world_content,
+                                       ImVec2 minimap_size = ImVec2( 160, 110 ),
+                                       ImWidgetsCornerAnchor anchor = ImWidgetsCornerAnchor_TopRight,
+                                       float margin_px = 8.0f,
+                                       ImU32 bg_col       = IM_COL32(  20,  20,  20, 200 ),
+                                       ImU32 content_col  = IM_COL32(  80,  80,  80, 200 ),
+                                       ImU32 viewport_col = IM_COL32( 255, 200,  60, 230 ) );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Bracket / curly brace primitive.
+    //  - `from` and `to` are the two endpoints of the bracket spine
+    //    (the open side faces +depth-normal).
+    //  - `depth` is the perpendicular distance the bracket reaches inward (px).
+    //////////////////////////////////////////////////////////////////////////
+    enum ImWidgetsBracketStyle_
+    {
+        ImWidgetsBracketStyle_Square = 0,  // [   ]   (two right angles)
+        ImWidgetsBracketStyle_Curly  = 1,  // {   }   (S-curve)
+        ImWidgetsBracketStyle_Round  = 2,  // (   )   (semicircle)
+        ImWidgetsBracketStyle_COUNT
+    };
+    typedef int ImWidgetsBracketStyle;
+
+    IMGUI_API void DrawBracket( ImDrawList* draw, ImVec2 from, ImVec2 to,
+                                 float depth, ImWidgetsBracketStyle style,
+                                 ImU32 col, float thickness = 1.0f );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Crosshair / reticle primitive. Sized by `radius` (outer extent in px).
+    //////////////////////////////////////////////////////////////////////////
+    enum ImWidgetsCrosshairStyle_
+    {
+        ImWidgetsCrosshairStyle_Plus        = 0,  // simple + going through center
+        ImWidgetsCrosshairStyle_GappedPlus  = 1,  // + with center gap
+        ImWidgetsCrosshairStyle_MilDot      = 2,  // GappedPlus with mil-dots along arms
+        ImWidgetsCrosshairStyle_T           = 3,  // top + horizontal (no bottom arm)
+        ImWidgetsCrosshairStyle_Dot         = 4,  // single dot only
+        ImWidgetsCrosshairStyle_CircleDot   = 5,  // outer circle + center dot + gapped plus
+        ImWidgetsCrosshairStyle_COUNT
+    };
+    typedef int ImWidgetsCrosshairStyle;
+
+    IMGUI_API char const* GetCrosshairStyleName( ImWidgetsCrosshairStyle style );
+
+    IMGUI_API void DrawCrosshair( ImDrawList* draw, ImVec2 center, float radius,
+                                   ImWidgetsCrosshairStyle style,
+                                   ImU32 col, float thickness = 1.0f,
+                                   float gap_radius = 0.0f );
+
+    // Full-rect crosshair: arms extend to the edges of `bounds` through `center`.
+    // Used by color pickers and similar widgets that previously inlined this.
+    IMGUI_API void DrawCrosshairInRect( ImDrawList* draw, ImVec2 center, ImRect bounds,
+                                         ImU32 col, float thickness = 1.0f );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Pin / map marker (teardrop). `tip` is where the point touches the map.
+    //////////////////////////////////////////////////////////////////////////
+    IMGUI_API void DrawMapPin( ImDrawList* draw, ImVec2 tip, float height,
+                                float head_radius,
+                                ImU32 fill_col,
+                                ImU32 stroke_col = 0u, float stroke_thickness = 0.0f,
+                                ImU32 hole_col   = 0u, float hole_radius      = 0.0f );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Wavy / zigzag / scallop / dashed-zigzag polylines along a-b.
+    //   amplitude: perpendicular extent (px)
+    //   period:    one full wave / zig length along the axis (px)
+    //////////////////////////////////////////////////////////////////////////
+    IMGUI_API void DrawWavyLine( ImDrawList* draw, ImVec2 a, ImVec2 b,
+                                  float amplitude, float period,
+                                  ImU32 col, float thickness = 1.0f, int samples_per_period = 12 );
+
+    IMGUI_API void DrawZigzagLine( ImDrawList* draw, ImVec2 a, ImVec2 b,
+                                    float amplitude, float period,
+                                    ImU32 col, float thickness = 1.0f );
+
+    IMGUI_API void DrawScallopLine( ImDrawList* draw, ImVec2 a, ImVec2 b,
+                                     float amplitude, float period,
+                                     ImU32 col, float thickness = 1.0f );
+
+    IMGUI_API void DrawDashedZigzagLine( ImDrawList* draw, ImVec2 a, ImVec2 b,
+                                          float amplitude, float period,
+                                          float dash_len, float gap_len,
+                                          ImU32 col, float thickness = 1.0f );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Soft drop-shadow / inner-glow on a rect (stacked-alpha approximation;
+    // no shader). `radius` is the spread of the falloff in px.
+    //////////////////////////////////////////////////////////////////////////
+    IMGUI_API void DrawDropShadowRect( ImDrawList* draw, ImRect r,
+                                        float radius, ImVec2 offset,
+                                        ImU32 col, float corner_round = 0.0f );
+
+    IMGUI_API void DrawInnerGlowRect( ImDrawList* draw, ImRect r,
+                                       float radius, ImU32 col, float corner_round = 0.0f );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Rulers (top / bottom / left / right). Delegates ticks to
+    // DrawLinearLineGraduation and draws numeric labels at major ticks.
+    // Optional `p_mouse_world` indicates where the cursor sits on the axis;
+    // when non-null the ruler draws a thin tracker line.
+    //////////////////////////////////////////////////////////////////////////
+    enum ImWidgetsRulerOrient_
+    {
+        ImWidgetsRulerOrient_Top    = 0,  // ticks point down  (ruler sits above content)
+        ImWidgetsRulerOrient_Bottom = 1,  // ticks point up
+        ImWidgetsRulerOrient_Left   = 2,  // ticks point right (ruler sits left of content)
+        ImWidgetsRulerOrient_Right  = 3,
+        ImWidgetsRulerOrient_COUNT
+    };
+    typedef int ImWidgetsRulerOrient;
+
+    IMGUI_API void DrawRuler( ImDrawList* draw, ImRect bounds, ImWidgetsRulerOrient orient,
+                               float world_min, float world_max,
+                               float major_step, int minor_subdivs,
+                               char const* label_format = "%g",
+                               ImU32 line_col  = IM_COL32( 200, 200, 200, 220 ),
+                               ImU32 label_col = IM_COL32( 230, 230, 230, 255 ),
+                               float major_tick_height = 10.0f,
+                               float minor_tick_height = 5.0f,
+                               float thickness = 1.0f,
+                               float const* p_mouse_world = NULL,
+                               ImU32 tracker_col = IM_COL32( 255, 200,  60, 230 ),
+                               ImFont* font = NULL, float font_size = 0.0f );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Grid overlay (lines or dots, optional minor subdivision + origin highlight).
+    //////////////////////////////////////////////////////////////////////////
+    enum ImWidgetsGridFlags_
+    {
+        ImWidgetsGridFlags_None       = 0,
+        ImWidgetsGridFlags_Major      = 1 << 0,
+        ImWidgetsGridFlags_Minor      = 1 << 1,
+        ImWidgetsGridFlags_Origin     = 1 << 2,  // emphasize the line(s) through `origin`
+        ImWidgetsGridFlags_Dots       = 1 << 3,  // draw dots instead of lines
+        ImWidgetsGridFlags_Default    = ImWidgetsGridFlags_Major | ImWidgetsGridFlags_Minor | ImWidgetsGridFlags_Origin
+    };
+    typedef int ImWidgetsGridFlags;
+
+    IMGUI_API void DrawGridOverlay( ImDrawList* draw, ImRect bounds, ImVec2 origin,
+                                     float major_step, int minor_subdivs,
+                                     ImU32 major_col  = IM_COL32( 100, 100, 100, 180 ),
+                                     ImU32 minor_col  = IM_COL32(  60,  60,  60, 120 ),
+                                     ImU32 origin_col = IM_COL32( 220, 220, 220, 220 ),
+                                     ImWidgetsGridFlags flags = ImWidgetsGridFlags_Default,
+                                     float thickness = 1.0f );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Gradient mesh editor (NxM control grid; bilinear color interpolation).
+    //////////////////////////////////////////////////////////////////////////
+    struct ImWidgetsGradientMeshNode { ImVec2 PosUV; ImU32 Color; };
+
+    struct ImWidgetsGradientMesh
+    {
+        int   CountX;
+        int   CountY;
+        ImVector<ImWidgetsGradientMeshNode> Nodes;   // size CountX*CountY, row-major
+        int   SelectedNode;                          // -1 idle
+        bool  ShowMesh;
+    };
+
+    IMGUI_API void GradientMeshInit( ImWidgetsGradientMesh& m, int nx, int ny,
+                                      ImU32 c00, ImU32 c10, ImU32 c01, ImU32 c11 );
+
+    IMGUI_API bool GradientMeshEditor( char const* id_str, ImWidgetsGradientMesh& m,
+                                        ImVec2 size, int sampleX = 32, int sampleY = 32 );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Toon / cel ramp editor.
+    //  - N bands ordered by Pos in [0,1].
+    //  - Softness is the [0..1] blend width to the next band (0 = hard step).
+    //////////////////////////////////////////////////////////////////////////
+    struct ImWidgetsToonBand { float Pos; ImU32 Color; float Softness; };
+
+    struct ImWidgetsToonRamp
+    {
+        ImVector<ImWidgetsToonBand> Bands;
+        int  SelectedBand;
+    };
+
+    IMGUI_API bool  ToonRampEditor( char const* id_str, ImWidgetsToonRamp& r, ImVec2 size );
+    IMGUI_API ImU32 ToonRampSample( ImWidgetsToonRamp const& r, float t01 );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Diff view (line-by-line).
+    //////////////////////////////////////////////////////////////////////////
+    enum ImWidgetsDiffLine_
+    {
+        ImWidgetsDiffLine_Context = 0,
+        ImWidgetsDiffLine_Added   = 1,
+        ImWidgetsDiffLine_Removed = 2,
+        ImWidgetsDiffLine_Hunk    = 3,  // "@@ ... @@"
+        ImWidgetsDiffLine_COUNT
+    };
+    typedef int ImWidgetsDiffLine;
+
+    struct ImWidgetsDiffEntry
+    {
+        ImWidgetsDiffLine Kind;
+        int               OldNo;   // -1 if absent
+        int               NewNo;   // -1 if absent
+        char const*       Text;
+    };
+
+    IMGUI_API void DiffView( char const* id_str, ImWidgetsDiffEntry const* entries, int count,
+                              ImVec2 size = ImVec2( 0, 0 ) );
+
+    //////////////////////////////////////////////////////////////////////////
+    // 3D vector input: drag on a 2D azimuth/elevation map + magnitude slider.
+    // Stores XYZ in `v` (right-handed: +X right, +Y up, +Z forward).
+    //////////////////////////////////////////////////////////////////////////
+    IMGUI_API bool VectorInput3D( char const* label, float v[ 3 ], float size = 0.0f );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Matrix editor (DragFloat NxM in a table).
+    //////////////////////////////////////////////////////////////////////////
+    IMGUI_API bool MatrixEditor( char const* label, float* data, int rows, int cols,
+                                  float speed = 0.1f, char const* format = "%.3f" );
+
+    IMGUI_API bool MatrixEditorDouble( char const* label, double* data, int rows, int cols,
+                                        float speed = 0.1f, char const* format = "%.3f" );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Vector field / stream lines.
+    //  func returns the field vector at world position p (passed as 0..1 within bounds).
+    //////////////////////////////////////////////////////////////////////////
+    typedef ImVec2 ( *ImWidgetsVectorField2DFn )( ImVec2 uv, void* user_data );
+
+    IMGUI_API void DrawVectorField( ImDrawList* draw, ImRect bounds,
+                                     ImWidgetsVectorField2DFn func, void* user_data,
+                                     int divX = 16, int divY = 12,
+                                     float arrow_max_len = 18.0f,
+                                     ImU32 col = IM_COL32( 220, 220, 220, 255 ),
+                                     float thickness = 1.0f,
+                                     bool color_by_magnitude = true );
+
+    IMGUI_API void DrawStreamLines( ImDrawList* draw, ImRect bounds,
+                                     ImWidgetsVectorField2DFn func, void* user_data,
+                                     ImVec2 const* seeds_uv, int seed_count,
+                                     int steps = 80, float step_size_px = 4.0f,
+                                     ImU32 col = IM_COL32( 220, 220, 220, 255 ),
+                                     float thickness = 1.0f );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Polynomial roots: visualize a precomputed root set on the complex plane.
+    //  Real roots use `real_col`, complex pairs use `complex_col`.
+    //////////////////////////////////////////////////////////////////////////
+    IMGUI_API void DrawPolynomialRoots( ImDrawList* draw, ImRect bounds,
+                                         ImVec2 const* roots, int n,
+                                         float view_radius = 2.0f,
+                                         ImU32 real_col    = IM_COL32( 220,  80,  80, 255 ),
+                                         ImU32 complex_col = IM_COL32(  80, 180, 255, 255 ),
+                                         ImU32 axis_col    = IM_COL32( 200, 200, 200, 160 ),
+                                         ImU32 grid_col    = IM_COL32(  80,  80,  80, 100 ),
+                                         float dot_radius  = 4.0f,
+                                         ImFont* font = NULL, float font_size = 0.0f );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Curve sketch panel: plot a scalar function on bounds.
+    //////////////////////////////////////////////////////////////////////////
+    typedef float ( *ImWidgetsScalarFn )( float x, void* user_data );
+
+    IMGUI_API void DrawCurveSketch( ImDrawList* draw, ImRect bounds,
+                                     ImWidgetsScalarFn func, void* user_data,
+                                     float xmin, float xmax, float ymin, float ymax,
+                                     int samples = 256,
+                                     ImU32 line_col = IM_COL32( 120, 200, 240, 255 ),
+                                     ImU32 axis_col = IM_COL32( 200, 200, 200, 200 ),
+                                     ImU32 grid_col = IM_COL32(  80,  80,  80, 140 ),
+                                     float thickness = 1.5f,
+                                     int grid_div_x = 8, int grid_div_y = 6 );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Typography: text on path, font waterfall, var-axis sliders, kerning
+    // pair editor, text inside rect / convex shape (basic word-wrap).
+    //////////////////////////////////////////////////////////////////////////
+    IMGUI_API void DrawTextOnPath( ImDrawList* draw, ImFont* font, float font_size,
+                                    char const* text,
+                                    ImVec2 const* path_pts, int path_count,
+                                    ImU32 col,
+                                    float offset_along = 0.0f,
+                                    bool  baseline_above = false );
+
+    IMGUI_API float DrawFontWaterfall( ImDrawList* draw, ImFont* font, ImVec2 pos,
+                                        char const* text,
+                                        float const* sizes, int size_count,
+                                        ImU32 col, float gap = 4.0f );
+
+    struct ImWidgetsVarFontAxis
+    {
+        char const* Tag;       // e.g., "wght"
+        char const* Name;      // human label
+        float Min, Max, Default;
+        float Value;
+    };
+
+    IMGUI_API bool VarFontAxisSliders( char const* id_str,
+                                        ImWidgetsVarFontAxis* axes, int axis_count,
+                                        ImFont* preview_font = NULL,
+                                        char const* preview_text = "Aa Bb Cc 0123" );
+
+    IMGUI_API bool KerningPairEditor( char const* id_str, ImFont* font, float font_size,
+                                       char left_glyph, char right_glyph,
+                                       float* p_kern_px,
+                                       ImVec2 size = ImVec2( 0, 0 ) );
+
+    IMGUI_API void DrawTextInsideRect( ImDrawList* draw, ImFont* font, float font_size,
+                                        ImRect bounds, char const* text, ImU32 col );
+
+    IMGUI_API void DrawTextInsideConvex( ImDrawList* draw, ImFont* font, float font_size,
+                                          ImVec2 const* convex_poly, int poly_count,
+                                          char const* text, ImU32 col );
+
+    //////////////////////////////////////////////////////////////////////////
+    // GradientDrop: click-drag-collect colors into a gradient.
+    //   - The user click-drags across `screen_rect`. Each ~`min_step_px` of
+    //     cursor travel adds a sample (cursor pos + color from `sample_fn`).
+    //   - While dragging the path is drawn live with the sampled colors so
+    //     you can preview the gradient as you go.
+    //   - On mouse release the raw samples are reduced via Douglas-Peucker
+    //     simplification in OkLab (perceptual ΔE), then trimmed to at most
+    //     `max_stops` by dropping the lowest-impact interior stops. Arc
+    //     length along the stroke becomes the gradient Position (0..1).
+    //   - Returns true exactly on the frame the gradient is finalized.
+    //
+    // State is caller-owned (so the path can persist between frames and
+    // multiple GradientDrop widgets can coexist).
+    //////////////////////////////////////////////////////////////////////////
+    struct ImWidgetsGradientDropState
+    {
+        ImVector<ImVec2> Path;     // sample positions stored as UV in [0..1] inside screen_rect;
+                                   //   the stroke stays attached to the source content even if the
+                                   //   host window scrolls or resizes
+        ImVector<ImU32>  Colors;   // sampled color per Path point (parallel arrays)
+        bool             Active;   // true while user is dragging
+    };
+
+    IMGUI_API bool GradientDrop( char const* id_str, ImRect screen_rect,
+                                  ImWidgetsEyedropperSampleFn sample_fn, void* user_data,
+                                  ImWidgetsGradientDropState& state,
+                                  ImGradientData* out_gradient,
+                                  int   max_stops              = 8,
+                                  float perceptual_threshold   = 0.04f,  // OkLab ΔE
+                                  float min_step_px            = 3.0f,
+                                  float path_thickness         = 3.0f,
+                                  bool  show_live_preview      = true );
 }

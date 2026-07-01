@@ -3,7 +3,7 @@
 #include <metal_texture>
 using namespace metal;
 
-#line 15 "C:/git/DearWidgets/workingdir/shaders/hlsl_src/blur.hlsl"
+#line 14 "C:/git/DearWidgets/workingdir/shaders/hlsl_src/blur.hlsl"
 struct SLANG_ParameterGroup_PS_CONSTANT_BUFFER_0
 {
     float2 texel_size_0;
@@ -21,7 +21,7 @@ struct SLANG_ParameterGroup_PS_CONSTANT_BUFFER_0
 };
 
 
-#line 72
+#line 76
 struct KernelContext_0
 {
     SLANG_ParameterGroup_PS_CONSTANT_BUFFER_0 constant* PS_CONSTANT_BUFFER_0;
@@ -30,14 +30,14 @@ struct KernelContext_0
 };
 
 
-#line 111
+#line 115
 float2 uvToPixel_0(float2 uv_0, KernelContext_0 thread* kernelContext_0)
 {
     return (uv_0 - kernelContext_0->PS_CONSTANT_BUFFER_0->win_center_0) / kernelContext_0->PS_CONSTANT_BUFFER_0->texel_size_0;
 }
 
 
-#line 105
+#line 109
 float sdRoundedBox_0(float2 p_0, float2 b_0, float r_0)
 {
     float2 q_0 = abs(p_0) - b_0 + float2(r_0) ;
@@ -45,11 +45,11 @@ float sdRoundedBox_0(float2 p_0, float2 b_0, float r_0)
 }
 
 
-#line 116
+#line 120
 float sdfWithNormal_0(float2 uv_1, float extraRadius_0, float2 thread* normal_0, KernelContext_0 thread* kernelContext_1)
 {
 
-#line 116
+#line 120
     float2 _S1 = uvToPixel_0(uv_1, kernelContext_1);
 
 
@@ -64,1588 +64,42 @@ float sdfWithNormal_0(float2 uv_1, float extraRadius_0, float2 thread* normal_0,
 }
 
 
-#line 70
+#line 74
 float4 sampleClamped_0(float2 uv_2, KernelContext_0 thread* kernelContext_2)
 {
 
-#line 70
+#line 74
     float2 _S4 = float2(0.5) ;
 
     return ((kernelContext_2->sceneTexture_0).sample((kernelContext_2->sceneSampler_0), (clamp(uv_2, kernelContext_2->PS_CONSTANT_BUFFER_0->texel_size_0 * _S4, float2(1.0)  - kernelContext_2->PS_CONSTANT_BUFFER_0->texel_size_0 * _S4))));
 }
 
 
-#line 183
-float4 effect_glass_refract_0(float2 uv_3, KernelContext_0 thread* kernelContext_3)
-{
-
-    float eta_0 = 1.0 / max(kernelContext_3->PS_CONSTANT_BUFFER_0->param1_0, 1.00999999046325684);
-    float bevelPx_0 = max(kernelContext_3->PS_CONSTANT_BUFFER_0->param0_0, 0.00999999977648258) * min(kernelContext_3->PS_CONSTANT_BUFFER_0->win_half_px_0.x, kernelContext_3->PS_CONSTANT_BUFFER_0->win_half_px_0.y);
-
-    thread float2 normal_1;
-
-#line 189
-    float _S5 = sdfWithNormal_0(uv_3, 0.0, &normal_1, kernelContext_3);
-
-    float curvature_0 = saturate(1.0 + _S5 / bevelPx_0);
-
-    float2 ruv_0 = uv_3 + normal_1 * float2(curvature_0)  * float2((1.0 - eta_0))  * float2(bevelPx_0)  * kernelContext_3->PS_CONSTANT_BUFFER_0->texel_size_0;
-
-#line 193
-    float4 _S6 = sampleClamped_0(ruv_0, kernelContext_3);
-
-    float4 _S7 = _S6 * float4(0.5) ;
-
-#line 195
-    thread float4 col_0 = _S7;
-    float2 _S8 = float2(1.0, 0.0);
-
-#line 196
-    float4 _S9 = sampleClamped_0(ruv_0 + kernelContext_3->PS_CONSTANT_BUFFER_0->texel_size_0 * _S8, kernelContext_3);
-
-#line 196
-    float4 _S10 = float4(0.125) ;
-
-#line 196
-    float4 _S11 = _S7 + _S9 * _S10;
-
-#line 196
-    col_0 = _S11;
-
-#line 196
-    float4 _S12 = sampleClamped_0(ruv_0 - kernelContext_3->PS_CONSTANT_BUFFER_0->texel_size_0 * _S8, kernelContext_3);
-    float4 _S13 = _S11 + _S12 * _S10;
-
-#line 197
-    col_0 = _S13;
-    float2 _S14 = float2(0.0, 1.0);
-
-#line 198
-    float4 _S15 = sampleClamped_0(ruv_0 + kernelContext_3->PS_CONSTANT_BUFFER_0->texel_size_0 * _S14, kernelContext_3);
-
-#line 198
-    float4 _S16 = _S13 + _S15 * _S10;
-
-#line 198
-    col_0 = _S16;
-
-#line 198
-    float4 _S17 = sampleClamped_0(ruv_0 - kernelContext_3->PS_CONSTANT_BUFFER_0->texel_size_0 * _S14, kernelContext_3);
-    float4 _S18 = _S16 + _S17 * _S10;
-
-#line 199
-    col_0 = _S18;
-    col_0.xyz = _S18.xyz + float3((pow(curvature_0, 2.0) * 0.30000001192092896)) ;
-    return col_0;
-}
-
-
-#line 96
-float2 applyParallax_0(float2 uv_4, float strength_0, KernelContext_0 thread* kernelContext_4)
-{
-
-#line 96
-    float2 _S19 = float2(2.0) ;
-
-
-
-    return uv_4 + (uv_4 - kernelContext_4->PS_CONSTANT_BUFFER_0->win_center_0) / max(kernelContext_4->PS_CONSTANT_BUFFER_0->win_half_px_0 * kernelContext_4->PS_CONSTANT_BUFFER_0->texel_size_0 * _S19, float2(0.00100000004749745, 0.00100000004749745)) * float2(strength_0)  * kernelContext_4->PS_CONSTANT_BUFFER_0->texel_size_0 * _S19;
-}
-
-
-#line 131
-float hash12_0(float2 p_1)
-{
-    float3 p3_0 = fract(p_1.xyx * float3(0.1031000018119812) );
-    float3 p3_1 = p3_0 + float3(dot(p3_0, p3_0.yzx + float3(33.3300018310546875) )) ;
-    return fract((p3_1.x + p3_1.y) * p3_1.z);
-}
-
-
-#line 206
-float4 effect_frosted_0(float2 uv_5, KernelContext_0 thread* kernelContext_5)
-{
-
-#line 206
-    float2 _S20 = applyParallax_0(uv_5, kernelContext_5->PS_CONSTANT_BUFFER_0->param0_0, kernelContext_5);
-
-
-    float2 noise_uv_0 = _S20 / kernelContext_5->PS_CONSTANT_BUFFER_0->texel_size_0;
-
-#line 214
-    float2 off_0 = kernelContext_5->PS_CONSTANT_BUFFER_0->texel_size_0 * float2(kernelContext_5->PS_CONSTANT_BUFFER_0->param0_0)  * float2(0.5) ;
-    float2 suv_0 = _S20 + float2(hash12_0(floor(noise_uv_0 * float2(kernelContext_5->PS_CONSTANT_BUFFER_0->param1_0) )) * 2.0 - 1.0, hash12_0(floor(noise_uv_0 * float2(kernelContext_5->PS_CONSTANT_BUFFER_0->param1_0) ) + float2(7.13000011444091797, 3.71000003814697266)) * 2.0 - 1.0) * float2(kernelContext_5->PS_CONSTANT_BUFFER_0->param0_0)  * kernelContext_5->PS_CONSTANT_BUFFER_0->texel_size_0;
-
-#line 215
-    float4 _S21 = sampleClamped_0(suv_0, kernelContext_5);
-
-    float _S22 = off_0.x;
-
-#line 217
-    float _S23 = - _S22;
-
-#line 217
-    float _S24 = off_0.y;
-
-#line 217
-    float4 _S25 = sampleClamped_0(suv_0 + float2(_S23, _S24), kernelContext_5);
-
-#line 217
-    float4 col_1 = _S21 + _S25;
-
-#line 217
-    float4 _S26 = sampleClamped_0(suv_0 + float2(_S22, _S24), kernelContext_5);
-    float4 col_2 = col_1 + _S26;
-    float _S27 = - _S24;
-
-#line 219
-    float4 _S28 = sampleClamped_0(suv_0 + float2(_S22, _S27), kernelContext_5);
-
-#line 219
-    float4 col_3 = col_2 + _S28;
-
-#line 219
-    float4 _S29 = sampleClamped_0(suv_0 + float2(_S23, _S27), kernelContext_5);
-
-    return (col_3 + _S29) * float4(0.20000000298023224) ;
-}
-
-
-
-float4 effect_pixelate_0(float2 uv_6, KernelContext_0 thread* kernelContext_6)
-{
-
-#line 226
-    float2 _S30 = applyParallax_0(uv_6, kernelContext_6->PS_CONSTANT_BUFFER_0->param0_0, kernelContext_6);
-
-
-    float2 block_0 = kernelContext_6->PS_CONSTANT_BUFFER_0->texel_size_0 * float2(max(kernelContext_6->PS_CONSTANT_BUFFER_0->param0_0, 1.0)) ;
-
-#line 229
-    float4 _S31 = sampleClamped_0(floor(_S30 / block_0) * block_0 + block_0 * float2(0.5) , kernelContext_6);
-
-    return _S31;
-}
-
-
-#line 238
-float3 wavelengthToRGB_0(float lambda_0)
-{
-
-    float _S32 = lambda_0 - 442.0;
-
-#line 241
-    float _S33;
-
-#line 241
-    if(lambda_0 < 442.0)
-    {
-
-#line 241
-        _S33 = 0.06239999830722809;
-
-#line 241
-    }
-    else
-    {
-
-#line 241
-        _S33 = 0.03739999979734421;
-
-#line 241
-    }
-
-#line 241
-    float t1_0 = _S32 * _S33;
-    float _S34 = lambda_0 - 599.79998779296875;
-
-#line 242
-    if(lambda_0 < 599.79998779296875)
-    {
-
-#line 242
-        _S33 = 0.02639999985694885;
-
-#line 242
-    }
-    else
-    {
-
-#line 242
-        _S33 = 0.03229999914765358;
-
-#line 242
-    }
-
-#line 242
-    float t2_0 = _S34 * _S33;
-    float _S35 = lambda_0 - 501.100006103515625;
-
-#line 243
-    if(lambda_0 < 501.100006103515625)
-    {
-
-#line 243
-        _S33 = 0.04899999871850014;
-
-#line 243
-    }
-    else
-    {
-
-#line 243
-        _S33 = 0.03819999843835831;
-
-#line 243
-    }
-
-#line 243
-    float t3_0 = _S35 * _S33;
-
-
-
-    float x_0 = 0.3619999885559082 * exp(-0.5 * t1_0 * t1_0) + 1.0559999942779541 * exp(-0.5 * t2_0 * t2_0) - 0.06499999761581421 * exp(-0.5 * t3_0 * t3_0);
-
-    float _S36 = lambda_0 - 568.79998779296875;
-
-#line 249
-    if(lambda_0 < 568.79998779296875)
-    {
-
-#line 249
-        _S33 = 0.02129999920725822;
-
-#line 249
-    }
-    else
-    {
-
-#line 249
-        _S33 = 0.02470000088214874;
-
-#line 249
-    }
-
-#line 249
-    float t4_0 = _S36 * _S33;
-    float _S37 = lambda_0 - 530.9000244140625;
-
-#line 250
-    if(lambda_0 < 530.9000244140625)
-    {
-
-#line 250
-        _S33 = 0.06129999831318855;
-
-#line 250
-    }
-    else
-    {
-
-#line 250
-        _S33 = 0.03220000118017197;
-
-#line 250
-    }
-
-#line 250
-    float t5_0 = _S37 * _S33;
-
-
-    float y_0 = 0.82099997997283936 * exp(-0.5 * t4_0 * t4_0) + 0.28600001335144043 * exp(-0.5 * t5_0 * t5_0);
-
-    float _S38 = lambda_0 - 437.0;
-
-#line 255
-    if(lambda_0 < 437.0)
-    {
-
-#line 255
-        _S33 = 0.08449999988079071;
-
-#line 255
-    }
-    else
-    {
-
-#line 255
-        _S33 = 0.02779999934136868;
-
-#line 255
-    }
-
-#line 255
-    float t6_0 = _S38 * _S33;
-    float _S39 = lambda_0 - 459.0;
-
-#line 256
-    if(lambda_0 < 459.0)
-    {
-
-#line 256
-        _S33 = 0.03849999979138374;
-
-#line 256
-    }
-    else
-    {
-
-#line 256
-        _S33 = 0.07249999791383743;
-
-#line 256
-    }
-
-#line 256
-    float t7_0 = _S39 * _S33;
-
-
-    float z_0 = 1.21700000762939453 * exp(-0.5 * t6_0 * t6_0) + 0.6809999942779541 * exp(-0.5 * t7_0 * t7_0);
-
-
-    thread float3 rgb_0;
-    rgb_0.x = 3.2406001091003418 * x_0 - 1.53719997406005859 * y_0 - 0.49860000610351562 * z_0;
-    rgb_0.y = -0.96890002489089966 * x_0 + 1.87580001354217529 * y_0 + 0.04149999842047691 * z_0;
-    rgb_0.z = 0.05570000037550926 * x_0 - 0.20399999618530273 * y_0 + 1.05700004100799561 * z_0;
-    return max(rgb_0, float3(0.0) );
-}
-
-
-#line 273
-float4 effect_chromatic_0(float2 uv_7, KernelContext_0 thread* kernelContext_7)
-{
-
-    float2 toUV_0 = uv_7 - kernelContext_7->PS_CONSTANT_BUFFER_0->win_center_0;
-
-
-    float2 _S40 = toUV_0 * float2(length(toUV_0 / max(kernelContext_7->PS_CONSTANT_BUFFER_0->win_half_px_0 * kernelContext_7->PS_CONSTANT_BUFFER_0->texel_size_0, float2(0.00100000004749745, 0.00100000004749745))))  * float2(kernelContext_7->PS_CONSTANT_BUFFER_0->param0_0)  * kernelContext_7->PS_CONSTANT_BUFFER_0->texel_size_0 / float2(max(length(toUV_0), 0.00009999999747379)) ;
-
-    int N_0 = clamp(int(kernelContext_7->PS_CONSTANT_BUFFER_0->param1_0), int(4), int(16));
-
-#line 281
-    int N_1;
-    if(N_0 < int(4))
-    {
-
-#line 282
-        N_1 = int(8);
-
-#line 282
-    }
-    else
-    {
-
-#line 282
-        N_1 = N_0;
-
-#line 282
-    }
-
-    float3 _S41 = float3(0.0, 0.0, 0.0);
-
-
-
-    float _S42 = float(N_1 - int(1));
-
-#line 306
-    float3 _S43 = float3(0.00100000004749745, 0.00100000004749745, 0.00100000004749745);
-
-#line 306
-    int i_0 = int(0);
-
-#line 306
-    float3 col_4 = _S41;
-
-#line 306
-    float3 totalWeight_0 = _S41;
-
-#line 286
-    for(;;)
-    {
-
-#line 286
-        if(i_0 < N_1)
-        {
-        }
-        else
-        {
-
-#line 286
-            break;
-        }
-
-
-
-        float lambda_1 = mix(380.0, 780.0, float(i_0) / _S42);
-
-#line 291
-        float4 _S44 = sampleClamped_0(uv_7 + _S40 * float2((3.025e+05 / (lambda_1 * lambda_1) - 1.0)) , kernelContext_7);
-
-#line 301
-        float3 w_0 = wavelengthToRGB_0(lambda_1);
-
-        float3 col_5 = col_4 + _S44.xyz * w_0;
-        float3 totalWeight_1 = totalWeight_0 + w_0;
-
-#line 286
-        i_0 = i_0 + int(1);
-
-#line 286
-        col_4 = col_5;
-
-#line 286
-        totalWeight_0 = totalWeight_1;
-
-#line 286
-    }
-
-#line 307
-    return float4(col_4 / max(totalWeight_0, _S43), 1.0);
-}
-
-
-
-float4 effect_liquid_glass_0(float2 uv_8, KernelContext_0 thread* kernelContext_8)
-{
-    float strength_1 = max(kernelContext_8->PS_CONSTANT_BUFFER_0->param0_0, 0.00999999977648258);
-
-    float bevelPx_1 = max(kernelContext_8->PS_CONSTANT_BUFFER_0->param1_0, 0.00999999977648258) * min(kernelContext_8->PS_CONSTANT_BUFFER_0->win_half_px_0.x, kernelContext_8->PS_CONSTANT_BUFFER_0->win_half_px_0.y);
-
-    thread float2 normal_2;
-
-#line 318
-    float _S45 = sdfWithNormal_0(uv_8, 0.0, &normal_2, kernelContext_8);
-
-    float inside_0 = saturate(- _S45 / bevelPx_1);
-    float curvature_1 = 1.0 - inside_0;
-
-
-    float2 ruv_1 = uv_8 + normal_2 * float2(curvature_1)  * float2(strength_1)  * float2(bevelPx_1)  * kernelContext_8->PS_CONSTANT_BUFFER_0->texel_size_0;
-
-#line 324
-    float4 _S46 = sampleClamped_0(ruv_1, kernelContext_8);
-
-    thread float4 col_6 = _S46;
-
-
-
-    float2 dOff_0 = normal_2 * float2((curvature_1 * strength_1 * bevelPx_1 * 0.30000001192092896 * kernelContext_8->PS_CONSTANT_BUFFER_0->texel_size_0.x)) ;
-
-#line 330
-    float4 _S47 = sampleClamped_0(ruv_1 + dOff_0, kernelContext_8);
-    col_6.x = _S47.x;
-
-#line 331
-    float4 _S48 = sampleClamped_0(ruv_1 - dOff_0, kernelContext_8);
-    col_6.z = _S48.z;
-
-#line 337
-    col_6.xyz = col_6.xyz + float3((pow(saturate(1.0 - abs(_S45 + bevelPx_1 * 0.30000001192092896) / (bevelPx_1 * 0.15000000596046448)), 4.0) * 0.40000000596046448)) ;
-
-
-    col_6.xyz = col_6.xyz + float3((pow(curvature_1, 3.0) * 0.25)) ;
-    col_6.xyz = col_6.xyz * float3(mix(0.85000002384185791, 1.0, inside_0)) ;
-    return col_6;
-}
-
-
-
-float4 effect_heat_haze_0(float2 uv_9, KernelContext_0 thread* kernelContext_9)
-{
-    float amplitude_0 = max(kernelContext_9->PS_CONSTANT_BUFFER_0->param0_0, 0.5);
-    float freq_0 = max(kernelContext_9->PS_CONSTANT_BUFFER_0->param1_0, 1.0);
-
-
-
-    float2 px_0 = uv_9 / kernelContext_9->PS_CONSTANT_BUFFER_0->texel_size_0;
-    float _S49 = px_0.y * freq_0;
-
-#line 355
-    float _S50 = px_0.x * freq_0;
-
-#line 355
-    float wave1_0 = sin(_S49 * 0.05000000074505806 + kernelContext_9->PS_CONSTANT_BUFFER_0->param2_0 * 2.29999995231628418) * cos(_S50 * 0.02999999932944775 + kernelContext_9->PS_CONSTANT_BUFFER_0->param2_0 * 1.70000004768371582);
-    float wave2_0 = sin(_S49 * 0.07999999821186066 - kernelContext_9->PS_CONSTANT_BUFFER_0->param2_0 * 1.89999997615814209 + 1.5) * cos(_S50 * 0.03999999910593033 - kernelContext_9->PS_CONSTANT_BUFFER_0->param2_0 * 2.09999990463256836);
-
-    thread float2 distort_0;
-    distort_0.x = (wave1_0 * 0.60000002384185791 + wave2_0 * 0.40000000596046448) * amplitude_0 * kernelContext_9->PS_CONSTANT_BUFFER_0->texel_size_0.x;
-    distort_0.y = (wave2_0 * 0.60000002384185791 + wave1_0 * 0.40000000596046448) * amplitude_0 * kernelContext_9->PS_CONSTANT_BUFFER_0->texel_size_0.y * 0.5;
-
-#line 360
-    float4 _S51 = sampleClamped_0(uv_9 + distort_0, kernelContext_9);
-
-    thread float4 col_7 = _S51;
-
-
-
-    col_7.xyz = _S51.xyz * float3((1.0 + wave1_0 * wave2_0 * 0.02999999932944775)) ;
-
-    return col_7;
-}
-
-
-
-float2 hash22_0(float2 p_2)
-{
-    float3 p3_2 = fract(p_2.xyx * float3(0.1031000018119812, 0.10300000011920929, 0.09730000048875809));
-    float3 p3_3 = p3_2 + float3(dot(p3_2, p3_2.yzx + float3(33.3300018310546875) )) ;
-    return fract((p3_3.xx + p3_3.yz) * p3_3.zy);
-}
-
-
-#line 384
-float4 effect_voronoi_0(float2 uv_10, KernelContext_0 thread* kernelContext_10)
-{
-
-    float edgeW_0 = max(kernelContext_10->PS_CONSTANT_BUFFER_0->param1_0, 0.5);
-
-
-
-    float2 px_1 = uv_10 / kernelContext_10->PS_CONSTANT_BUFFER_0->texel_size_0;
-    float cellSize_0 = min(kernelContext_10->PS_CONSTANT_BUFFER_0->win_half_px_0.x, kernelContext_10->PS_CONSTANT_BUFFER_0->win_half_px_0.y) * 2.0 / max(kernelContext_10->PS_CONSTANT_BUFFER_0->param0_0, 2.0);
-
-#line 392
-    float2 _S52 = float2(cellSize_0) ;
-    float2 cell_0 = floor(px_1 / _S52);
-
-#line 410
-    float2 _S53 = float2(3.17000007629394531, 1.9299999475479126);
-
-
-
-    float _S54 = 1.0 - 1.0 / max(max(kernelContext_10->PS_CONSTANT_BUFFER_0->param2_0, 1.0), 1.00999999046325684);
-    float _S55 = _S54 * cellSize_0;
-
-#line 415
-    float _S56 = _S55 * 0.20000000298023224;
-
-#line 421
-    float dispersion_0 = _S55 * 0.05999999865889549;
-
-#line 430
-    float3 _S57 = float3(1.0, 1.0, 1.0);
-
-
-    float _S58 = edgeW_0 * 3.0;
-
-#line 433
-    float minDist_0 = 1.0e+10;
-
-#line 433
-    float secondDist_0 = 1.0e+10;
-
-#line 433
-    float2 closestCell_0 = cell_0;
-
-#line 433
-    int y_1 = int(-1);
-
-#line 433
-    float2 _S59 = float2(7.30999994277954102) ;
-
-#line 433
-    float2 _S60 = float2(2.0) ;
-
-#line 433
-    float2 _S61 = float2(1.0) ;
-
-#line 433
-    float2 _S62 = float2(_S54) ;
-
-#line 433
-    float2 _S63 = float2(0.40000000596046448) ;
-
-#line 433
-    float2 _S64 = float2(dispersion_0) ;
-
-#line 399
-    for(;;)
-    {
-
-#line 399
-        if(y_1 <= int(1))
-        {
-        }
-        else
-        {
-
-#line 399
-            break;
-        }
-
-        float _S65 = float(y_1);
-
-#line 402
-        float minDist_1 = minDist_0;
-
-#line 402
-        float secondDist_1 = secondDist_0;
-
-#line 402
-        float2 closestCell_1 = closestCell_0;
-
-#line 402
-        int x_1 = int(-1);
-
-#line 400
-        for(;;)
-        {
-
-#line 400
-            if(x_1 <= int(1))
-            {
-            }
-            else
-            {
-
-#line 400
-                break;
-            }
-            float2 neighbor_0 = cell_0 + float2(float(x_1), _S65);
-
-            float d_1 = length(px_1 - (neighbor_0 + hash22_0(neighbor_0)) * _S52);
-            if(d_1 < minDist_1)
-            {
-
-#line 395
-                float _S66 = minDist_1;
-
-#line 395
-                minDist_1 = d_1;
-
-#line 395
-                secondDist_1 = _S66;
-
-#line 395
-                closestCell_1 = neighbor_0;
-
-#line 405
-            }
-            else
-            {
-
-#line 405
-                float secondDist_2;
-                if(d_1 < secondDist_1)
-                {
-
-#line 406
-                    secondDist_2 = d_1;
-
-#line 406
-                }
-                else
-                {
-
-#line 406
-                    secondDist_2 = secondDist_1;
-
-#line 406
-                }
-
-#line 406
-                secondDist_1 = secondDist_2;
-
-#line 405
-            }
-
-#line 400
-            x_1 = x_1 + int(1);
-
-#line 400
-        }
-
-#line 399
-        int y_2 = y_1 + int(1);
-
-#line 399
-        minDist_0 = minDist_1;
-
-#line 399
-        secondDist_0 = secondDist_1;
-
-#line 399
-        closestCell_0 = closestCell_1;
-
-#line 399
-        y_1 = y_2;
-
-#line 399
-    }
-
-#line 411
-    float2 cellTilt_0 = hash22_0(closestCell_0 * _S59 + _S53) * _S60 - _S61;
-
-#line 411
-    float2 _S67 = applyParallax_0(uv_10 + cellTilt_0 * _S62 * _S52 * _S63 * kernelContext_10->PS_CONSTANT_BUFFER_0->texel_size_0, _S56, kernelContext_10);
-
-#line 411
-    float4 _S68 = sampleClamped_0(_S67, kernelContext_10);
-
-#line 418
-    thread float4 col_8 = _S68;
-
-
-
-    float2 dOff_1 = cellTilt_0 * _S64 * kernelContext_10->PS_CONSTANT_BUFFER_0->texel_size_0;
-
-#line 422
-    float4 _S69 = sampleClamped_0(_S67 + dOff_1, kernelContext_10);
-    col_8.x = _S69.x;
-
-#line 423
-    float4 _S70 = sampleClamped_0(_S67 - dOff_1, kernelContext_10);
-    col_8.z = _S70.z;
-
-
-    float edgeDist_0 = secondDist_0 - minDist_0;
-
-
-    col_8.xyz = mix(col_8.xyz, _S57, float3((pow(1.0 - saturate(edgeDist_0 / edgeW_0), 2.0) * 0.5)) );
-
-
-
-    col_8.xyz = col_8.xyz * float3(mix(0.69999998807907104, 1.0, saturate(edgeDist_0 / _S58))) ;
-
-    return col_8;
-}
-
-
-
-float4 effect_edge_glow_0(float2 uv_11, KernelContext_0 thread* kernelContext_11)
-{
-    float intensity_0 = max(kernelContext_11->PS_CONSTANT_BUFFER_0->param0_0, 0.5);
-
-
-
-    float _S71 = kernelContext_11->PS_CONSTANT_BUFFER_0->texel_size_0.x;
-
-#line 447
-    float _S72 = - _S71;
-
-#line 447
-    float _S73 = kernelContext_11->PS_CONSTANT_BUFFER_0->texel_size_0.y;
-
-#line 447
-    float _S74 = - _S73;
-
-#line 447
-    float4 _S75 = sampleClamped_0(uv_11 + float2(_S72, _S74), kernelContext_11);
-
-#line 447
-    float3 _S76 = float3(0.29899999499320984, 0.58700001239776611, 0.11400000005960464);
-
-#line 447
-    float tl_0 = dot(_S75.xyz, _S76);
-
-#line 447
-    float4 _S77 = sampleClamped_0(uv_11 + float2(0.0, _S74), kernelContext_11);
-    float tc_0 = dot(_S77.xyz, _S76);
-
-#line 448
-    float4 _S78 = sampleClamped_0(uv_11 + float2(_S71, _S74), kernelContext_11);
-    float tr_0 = dot(_S78.xyz, _S76);
-
-#line 449
-    float4 _S79 = sampleClamped_0(uv_11 + float2(_S72, 0.0), kernelContext_11);
-    float ml_0 = dot(_S79.xyz, _S76);
-
-#line 450
-    float4 _S80 = sampleClamped_0(uv_11 + float2(_S71, 0.0), kernelContext_11);
-    float mr_0 = dot(_S80.xyz, _S76);
-
-#line 451
-    float4 _S81 = sampleClamped_0(uv_11 + float2(_S72, _S73), kernelContext_11);
-    float bl_0 = dot(_S81.xyz, _S76);
-
-#line 452
-    float4 _S82 = sampleClamped_0(uv_11 + float2(0.0, _S73), kernelContext_11);
-    float bc_0 = dot(_S82.xyz, _S76);
-
-#line 453
-    float4 _S83 = sampleClamped_0(uv_11 + float2(_S71, _S73), kernelContext_11);
-    float br_0 = dot(_S83.xyz, _S76);
-
-    float _S84 = - tl_0;
-
-#line 456
-    float gx_0 = _S84 - 2.0 * ml_0 - bl_0 + tr_0 + 2.0 * mr_0 + br_0;
-    float gy_0 = _S84 - 2.0 * tc_0 - tr_0 + bl_0 + 2.0 * bc_0 + br_0;
-
-#line 462
-    float hue_0 = atan2(gy_0, gx_0) / 6.28318548202514648 + 0.5;
-
-
-    float3 neon_0 = saturate(abs(fract(float3(hue_0, hue_0 - 0.3333333432674408, hue_0 + 0.3333333432674408)) * float3(6.0)  - float3(3.0) ) - float3(1.0) );
-
-    float glow_0 = saturate(sqrt(gx_0 * gx_0 + gy_0 * gy_0) * intensity_0);
-
-#line 467
-    float4 _S85 = sampleClamped_0(uv_11, kernelContext_11);
-
-    return float4(_S85.xyz * float3(0.15000000596046448)  + neon_0 * float3(glow_0) , 1.0);
-}
-
-
-#line 477
-float halftone_dot_ex_0(float2 px_2, float spacing_0, float angle_0, float intensity_1, float sharpness_0, float2 thread* cellCenterPx_0)
-{
-    float ca_0 = cos(angle_0);
-
-#line 479
-    float sa_0 = sin(angle_0);
-    float _S86 = px_2.x;
-
-#line 480
-    float _S87 = px_2.y;
-
-#line 480
-    float2 rotated_0 = float2(_S86 * ca_0 + _S87 * sa_0, - _S86 * sa_0 + _S87 * ca_0);
-
-#line 480
-    float2 _S88 = float2(spacing_0) ;
-    float _S89 = spacing_0 * 0.5;
-
-#line 481
-    float2 cell_1 = floor(rotated_0 / _S88) * _S88 + float2(_S89) ;
-
-    float _S90 = cell_1.x;
-
-#line 483
-    float _S91 = cell_1.y;
-
-#line 483
-    *cellCenterPx_0 = float2(_S90 * ca_0 - _S91 * sa_0, _S90 * sa_0 + _S91 * ca_0);
-
-#line 489
-    return saturate((intensity_1 * _S89 - length(rotated_0 - cell_1)) * (sharpness_0 / max(_S89 * 0.10000000149011612, 0.5)));
-}
-
-float4 effect_halftone_0(float2 uv_12, KernelContext_0 thread* kernelContext_12)
-{
-    float spacing_1 = max(kernelContext_12->PS_CONSTANT_BUFFER_0->param0_0, 4.0);
-    float sharpness_1 = max(kernelContext_12->PS_CONSTANT_BUFFER_0->param1_0, 0.5);
-
-    float2 px_3 = uv_12 / kernelContext_12->PS_CONSTANT_BUFFER_0->texel_size_0;
-
-
-
-    thread float2 cc_0;
-
-
-
-    float _S92 = halftone_dot_ex_0(px_3, spacing_1, 0.26179999113082886, 0.0, sharpness_1, &cc_0);
-
-#line 505
-    float4 _S93 = sampleClamped_0(cc_0 * kernelContext_12->PS_CONSTANT_BUFFER_0->texel_size_0, kernelContext_12);
-
-
-    float dc_0 = halftone_dot_ex_0(px_3, spacing_1, 0.26179999113082886, 1.0 - _S93.x, sharpness_1, &cc_0);
-
-
-    float _S94 = halftone_dot_ex_0(px_3, spacing_1, 1.30900001525878906, 0.0, sharpness_1, &cc_0);
-
-#line 511
-    float4 _S95 = sampleClamped_0(cc_0 * kernelContext_12->PS_CONSTANT_BUFFER_0->texel_size_0, kernelContext_12);
-
-
-    float dm_0 = halftone_dot_ex_0(px_3, spacing_1, 1.30900001525878906, 1.0 - _S95.y, sharpness_1, &cc_0);
-
-
-    float _S96 = halftone_dot_ex_0(px_3, spacing_1, 0.0, 0.0, sharpness_1, &cc_0);
-
-#line 517
-    float4 _S97 = sampleClamped_0(cc_0 * kernelContext_12->PS_CONSTANT_BUFFER_0->texel_size_0, kernelContext_12);
-
-
-    float dy_0 = halftone_dot_ex_0(px_3, spacing_1, 0.0, 1.0 - _S97.z, sharpness_1, &cc_0);
-
-
-    float _S98 = halftone_dot_ex_0(px_3, spacing_1, 0.78539997339248657, 0.0, sharpness_1, &cc_0);
-
-#line 523
-    float4 _S99 = sampleClamped_0(cc_0 * kernelContext_12->PS_CONSTANT_BUFFER_0->texel_size_0, kernelContext_12);
-
-
-    float dk_0 = halftone_dot_ex_0(px_3, spacing_1, 0.78539997339248657, min(1.0 - _S99.x, min(1.0 - _S99.y, 1.0 - _S99.z)) * 0.5, sharpness_1, &cc_0);
-
-#line 534
-    return float4(saturate(float3(1.0, 1.0, 1.0) - float3(dc_0, 0.0, 0.0) - float3(0.0, dm_0, 0.0) - float3(0.0, 0.0, dy_0) - float3(dk_0, dk_0, dk_0)), 1.0);
-}
-
-
-
-
-float4 effect_mouse_edge_0(float2 uv_13, KernelContext_0 thread* kernelContext_13)
-{
-    float radius_0 = max(kernelContext_13->PS_CONSTANT_BUFFER_0->param0_0, 20.0);
-    float intensity_2 = max(kernelContext_13->PS_CONSTANT_BUFFER_0->param1_0, 1.0);
-
-
-
-    float _S100 = kernelContext_13->PS_CONSTANT_BUFFER_0->texel_size_0.x;
-
-#line 547
-    float _S101 = - _S100;
-
-#line 547
-    float _S102 = kernelContext_13->PS_CONSTANT_BUFFER_0->texel_size_0.y;
-
-#line 547
-    float _S103 = - _S102;
-
-#line 547
-    float4 _S104 = sampleClamped_0(uv_13 + float2(_S101, _S103), kernelContext_13);
-
-#line 547
-    float3 _S105 = float3(0.29899999499320984, 0.58700001239776611, 0.11400000005960464);
-
-#line 547
-    float tl_1 = dot(_S104.xyz, _S105);
-
-#line 547
-    float4 _S106 = sampleClamped_0(uv_13 + float2(0.0, _S103), kernelContext_13);
-    float tc_1 = dot(_S106.xyz, _S105);
-
-#line 548
-    float4 _S107 = sampleClamped_0(uv_13 + float2(_S100, _S103), kernelContext_13);
-    float tr_1 = dot(_S107.xyz, _S105);
-
-#line 549
-    float4 _S108 = sampleClamped_0(uv_13 + float2(_S101, 0.0), kernelContext_13);
-    float ml_1 = dot(_S108.xyz, _S105);
-
-#line 550
-    float4 _S109 = sampleClamped_0(uv_13 + float2(_S100, 0.0), kernelContext_13);
-    float mr_1 = dot(_S109.xyz, _S105);
-
-#line 551
-    float4 _S110 = sampleClamped_0(uv_13 + float2(_S101, _S102), kernelContext_13);
-    float bl_1 = dot(_S110.xyz, _S105);
-
-#line 552
-    float4 _S111 = sampleClamped_0(uv_13 + float2(0.0, _S102), kernelContext_13);
-    float bc_1 = dot(_S111.xyz, _S105);
-
-#line 553
-    float4 _S112 = sampleClamped_0(uv_13 + float2(_S100, _S102), kernelContext_13);
-    float br_1 = dot(_S112.xyz, _S105);
-
-    float _S113 = - tl_1;
-
-#line 556
-    float gx_1 = _S113 - 2.0 * ml_1 - bl_1 + tr_1 + 2.0 * mr_1 + br_1;
-    float gy_1 = _S113 - 2.0 * tc_1 - tr_1 + bl_1 + 2.0 * bc_1 + br_1;
-
-#line 566
-    float falloff_0 = saturate(1.0 - length(uv_13 / kernelContext_13->PS_CONSTANT_BUFFER_0->texel_size_0 - kernelContext_13->PS_CONSTANT_BUFFER_0->mouse_uv_0 / kernelContext_13->PS_CONSTANT_BUFFER_0->texel_size_0) / radius_0);
-
-
-
-    float2 dir_0 = normalize(uv_13 - kernelContext_13->PS_CONSTANT_BUFFER_0->mouse_uv_0 + float2(0.00009999999747379, 0.0));
-    float hue_1 = atan2(dir_0.y, dir_0.x) / 6.28318548202514648 + 0.5;
-
-    float3 highlight_0 = saturate(abs(fract(float3(hue_1, hue_1 - 0.3333333432674408, hue_1 + 0.3333333432674408)) * float3(6.0)  - float3(3.0) ) - float3(1.0) );
-
-    float glow_1 = saturate(sqrt(gx_1 * gx_1 + gy_1 * gy_1) * intensity_2) * (falloff_0 * falloff_0);
-
-#line 575
-    float4 _S114 = sampleClamped_0(uv_13, kernelContext_13);
-
-    thread float4 col_9 = _S114;
-    col_9.xyz = _S114.xyz + highlight_0 * float3(glow_1) ;
-    return col_9;
-}
-
-
-
-float4 effect_crt_0(float2 uv_14, KernelContext_0 thread* kernelContext_14)
-{
-    float lineThick_0 = max(kernelContext_14->PS_CONSTANT_BUFFER_0->param0_0, 1.0);
-
-
-
-    float2 centered_0 = (uv_14 - kernelContext_14->PS_CONSTANT_BUFFER_0->win_center_0) / (kernelContext_14->PS_CONSTANT_BUFFER_0->win_half_px_0 * kernelContext_14->PS_CONSTANT_BUFFER_0->texel_size_0);
-    float r2_0 = dot(centered_0, centered_0);
-    float2 distorted_0 = uv_14 + centered_0 * float2(r2_0)  * float2(kernelContext_14->PS_CONSTANT_BUFFER_0->param1_0)  * kernelContext_14->PS_CONSTANT_BUFFER_0->win_half_px_0 * kernelContext_14->PS_CONSTANT_BUFFER_0->texel_size_0 * float2(0.10000000149011612) ;
-
-
-    float2 px_4 = distorted_0 / kernelContext_14->PS_CONSTANT_BUFFER_0->texel_size_0;
-    float subpixel_0 = fract(px_4.x / 3.0) * 3.0;
-    thread float3 phosphor_0;
-    phosphor_0.x = saturate(1.0 - abs(subpixel_0 - 0.5) * 1.5);
-    phosphor_0.y = saturate(1.0 - abs(subpixel_0 - 1.5) * 1.5);
-    phosphor_0.z = saturate(1.0 - abs(subpixel_0 - 2.5) * 1.5);
-    float3 _S115 = mix(float3(1.0, 1.0, 1.0), phosphor_0, float3(0.60000002384185791) );
-
-#line 601
-    phosphor_0 = _S115;
-
-#line 601
-    float4 _S116 = sampleClamped_0(distorted_0, kernelContext_14);
-
-    float3 src_0 = _S116.xyz;
-
-
-
-    float linePhase_0 = fract(px_4.y / (lineThick_0 * 2.0));
-
-#line 620
-    return float4(saturate(src_0 * _S115 * float3(mix(mix(0.15000000596046448, 1.0, smoothstep(0.0, 0.15000000596046448, linePhase_0) * (1.0 - smoothstep(0.34999999403953552, 0.5, linePhase_0))), 1.0, dot(src_0, float3(0.29899999499320984, 0.58700001239776611, 0.11400000005960464)) * 0.30000001192092896))  * float3((1.0 - r2_0 * 0.40000000596046448)) ), 1.0);
-}
-
-
-
-float4 effect_dot_matrix_0(float2 uv_15, KernelContext_0 thread* kernelContext_15)
-{
-    float cellPx_0 = max(kernelContext_15->PS_CONSTANT_BUFFER_0->param0_0, 3.0);
-    float roundness_0 = saturate(kernelContext_15->PS_CONSTANT_BUFFER_0->param1_0);
-
-    float2 px_5 = uv_15 / kernelContext_15->PS_CONSTANT_BUFFER_0->texel_size_0;
-
-#line 630
-    float2 _S117 = float2(cellPx_0) ;
-
-    float2 cellCenter_0 = (floor(px_5 / _S117) + float2(0.5) ) * _S117;
-    float2 inCell_0 = (px_5 - cellCenter_0) / float2((cellPx_0 * 0.5)) ;
-
-#line 633
-    float4 _S118 = sampleClamped_0(cellCenter_0 * kernelContext_15->PS_CONSTANT_BUFFER_0->texel_size_0, kernelContext_15);
-
-#line 641
-    float dist_0 = mix(max(abs(inCell_0.x), abs(inCell_0.y)), length(inCell_0), roundness_0);
-
-
-    float3 _S119 = _S118.xyz;
-
-#line 644
-    float lum_0 = dot(_S119, float3(0.29899999499320984, 0.58700001239776611, 0.11400000005960464));
-    float dotSize_0 = mix(0.5, 0.94999998807907104, lum_0);
-
-#line 655
-    return float4(_S119 * float3(saturate((dotSize_0 - dist_0) * cellPx_0 * 0.5))  + float3((saturate(1.0 - dist_0 / dotSize_0) * 0.15000000596046448 * lum_0)) , 1.0);
-}
-
-
-
-float4 effect_glitch_0(float2 uv_16, KernelContext_0 thread* kernelContext_16)
-{
-    float intensity_3 = max(kernelContext_16->PS_CONSTANT_BUFFER_0->param0_0, 0.10000000149011612);
-    float blockSize_0 = max(kernelContext_16->PS_CONSTANT_BUFFER_0->param1_0, 4.0);
-
-
-    float2 px_6 = uv_16 / kernelContext_16->PS_CONSTANT_BUFFER_0->texel_size_0;
-
-
-    float timeSeed_0 = floor(kernelContext_16->PS_CONSTANT_BUFFER_0->param2_0 * 8.0);
-
-
-    float lineBlock_0 = floor(px_6.y / blockSize_0);
-
-#line 672
-    float lineShift_0;
-
-
-    if((hash12_0(float2(lineBlock_0, timeSeed_0))) > (1.0 - intensity_3 * 0.30000001192092896))
-    {
-
-#line 675
-        lineShift_0 = (hash12_0(float2(lineBlock_0 + 0.5, timeSeed_0)) * 2.0 - 1.0) * intensity_3 * 40.0;
-
-#line 675
-    }
-    else
-    {
-
-#line 675
-        lineShift_0 = 0.0;
-
-#line 675
-    }
-
-#line 680
-    float2 _S120 = floor(px_6 / float2((blockSize_0 * 4.0)) ) + float2(timeSeed_0) ;
-
-#line 680
-    float blockHash_0 = hash12_0(_S120);
-    thread float2 blockShift_0 = float2(0.0, 0.0);
-    if(blockHash_0 > (1.0 - intensity_3 * 0.10000000149011612))
-    {
-        blockShift_0.x = (hash12_0(_S120 + float2(1.0) ) * 2.0 - 1.0) * intensity_3 * 60.0;
-        blockShift_0.y = (hash12_0(_S120 + float2(2.0) ) * 2.0 - 1.0) * intensity_3 * 20.0;
-
-#line 682
-    }
-
-#line 688
-    float2 shiftedUV_0 = (px_6 + float2(lineShift_0, 0.0) + blockShift_0) * kernelContext_16->PS_CONSTANT_BUFFER_0->texel_size_0;
-
-#line 693
-    thread float3 col_10;
-    float2 _S121 = float2(intensity_3 * 3.0 * kernelContext_16->PS_CONSTANT_BUFFER_0->texel_size_0.x * hash12_0(float2(timeSeed_0, 0.76999998092651367)), 0.0);
-
-#line 694
-    float4 _S122 = sampleClamped_0(shiftedUV_0 + _S121, kernelContext_16);
-
-#line 694
-    col_10.x = _S122.x;
-
-#line 694
-    float4 _S123 = sampleClamped_0(shiftedUV_0, kernelContext_16);
-    col_10.y = _S123.y;
-
-#line 695
-    float4 _S124 = sampleClamped_0(shiftedUV_0 - _S121, kernelContext_16);
-    col_10.z = _S124.z;
-
-
-
-    if((hash12_0(float2(lineBlock_0 + 3.0, timeSeed_0))) > (1.0 - intensity_3 * 0.05000000074505806))
-    {
-
-#line 701
-        col_10 = float3(1.0)  - col_10;
-
-#line 700
-    }
-
-
-    return float4(saturate(col_10), 1.0);
-}
-
-
-
-
-float4 effect_stained_glass_0(float2 uv_17, KernelContext_0 thread* kernelContext_17)
-{
-
-    float leadW_0 = max(kernelContext_17->PS_CONSTANT_BUFFER_0->param1_0, 1.0);
-
-    float2 px_7 = uv_17 / kernelContext_17->PS_CONSTANT_BUFFER_0->texel_size_0;
-    float cellSize_1 = min(kernelContext_17->PS_CONSTANT_BUFFER_0->win_half_px_0.x, kernelContext_17->PS_CONSTANT_BUFFER_0->win_half_px_0.y) * 2.0 / max(kernelContext_17->PS_CONSTANT_BUFFER_0->param0_0, 2.0);
-
-#line 715
-    float2 _S125 = float2(cellSize_1) ;
-    float2 _S126 = floor(px_7 / _S125);
-
-#line 733
-    float _S127 = cellSize_1 * 0.10000000149011612;
-
-#line 744
-    float3 _S128 = float3(0.29899999499320984, 0.58700001239776611, 0.11400000005960464);
-    float3 _S129 = float3(1.5) ;
-
-#line 754
-    float _S130 = cellSize_1 * 0.40000000596046448;
-
-
-
-    float3 _S131 = float3(0.05000000074505806, 0.05000000074505806, 0.05000000074505806);
-
-#line 758
-    float minDist_2 = 1.0e+10;
-
-#line 758
-    float secondDist_3 = 1.0e+10;
-
-#line 758
-    float2 closestPt_0 = px_7;
-
-#line 758
-    int y_3 = int(-1);
-
-#line 758
-    float2 _S132 = float2(2.0) ;
-
-#line 758
-    float3 _S133 = float3(0.20000000298023224) ;
-
-#line 758
-    float3 _S134 = float3(0.89999997615814209) ;
-
-#line 722
-    for(;;)
-    {
-
-#line 722
-        if(y_3 <= int(1))
-        {
-        }
-        else
-        {
-
-#line 722
-            break;
-        }
-
-        float _S135 = float(y_3);
-
-#line 725
-        float minDist_3 = minDist_2;
-
-#line 725
-        float secondDist_4 = secondDist_3;
-
-#line 725
-        float2 closestPt_1 = closestPt_0;
-
-#line 725
-        int x_2 = int(-1);
-
-#line 723
-        for(;;)
-        {
-
-#line 723
-            if(x_2 <= int(1))
-            {
-            }
-            else
-            {
-
-#line 723
-                break;
-            }
-            float2 neighbor_1 = _S126 + float2(float(x_2), _S135);
-            float2 pt_0 = (neighbor_1 + hash22_0(neighbor_1)) * _S125;
-            float d_2 = length(px_7 - pt_0);
-            if(d_2 < minDist_3)
-            {
-
-#line 718
-                float _S136 = minDist_3;
-
-#line 718
-                minDist_3 = d_2;
-
-#line 718
-                secondDist_4 = _S136;
-
-#line 718
-                closestPt_1 = pt_0;
-
-#line 728
-            }
-            else
-            {
-
-#line 728
-                float secondDist_5;
-                if(d_2 < secondDist_4)
-                {
-
-#line 729
-                    secondDist_5 = d_2;
-
-#line 729
-                }
-                else
-                {
-
-#line 729
-                    secondDist_5 = secondDist_4;
-
-#line 729
-                }
-
-#line 729
-                secondDist_4 = secondDist_5;
-
-#line 728
-            }
-
-#line 723
-            x_2 = x_2 + int(1);
-
-#line 723
-        }
-
-#line 722
-        int y_4 = y_3 + int(1);
-
-#line 722
-        minDist_2 = minDist_3;
-
-#line 722
-        secondDist_3 = secondDist_4;
-
-#line 722
-        closestPt_0 = closestPt_1;
-
-#line 722
-        y_3 = y_4;
-
-#line 722
-    }
-
-#line 722
-    float2 _S137 = applyParallax_0(closestPt_0 * kernelContext_17->PS_CONSTANT_BUFFER_0->texel_size_0, _S127, kernelContext_17);
-
-#line 735
-    float2 ts2_0 = kernelContext_17->PS_CONSTANT_BUFFER_0->texel_size_0 * _S132;
-
-#line 735
-    float4 _S138 = sampleClamped_0(_S137, kernelContext_17);
-    float3 _S139 = _S138.xyz;
-    float2 _S140 = float2(ts2_0.x, 0.0);
-
-#line 737
-    float4 _S141 = sampleClamped_0(_S137 + _S140, kernelContext_17);
-
-#line 737
-    float3 col_11 = _S139 + _S141.xyz;
-
-#line 737
-    float4 _S142 = sampleClamped_0(_S137 - _S140, kernelContext_17);
-    float3 col_12 = col_11 + _S142.xyz;
-    float2 _S143 = float2(0.0, ts2_0.y);
-
-#line 739
-    float4 _S144 = sampleClamped_0(_S137 + _S143, kernelContext_17);
-
-#line 739
-    float3 col_13 = col_12 + _S144.xyz;
-
-#line 739
-    float4 _S145 = sampleClamped_0(_S137 - _S143, kernelContext_17);
-
-    float3 col_14 = (col_13 + _S145.xyz) * _S133;
-
-
-    float lum_1 = dot(col_14, _S128);
-
-#line 750
-    float lead_0 = saturate((secondDist_3 - minDist_2) / leadW_0);
-
-#line 750
-    float3 _S146 = float3((lead_0 * lead_0)) ;
-
-#line 760
-    return float4(mix(_S131, saturate(mix(float3(lum_1, lum_1, lum_1), col_14, _S129)) * _S146 * _S134 + float3((pow(saturate(1.0 - minDist_2 / _S130), 8.0) * 0.20000000298023224)) , _S146), 1.0);
-}
-
-
-#line 779
-float3 N13_0(float p_3)
-{
-    float3 p3_4 = fract(float3(p_3, p_3, p_3) * float3(0.1031000018119812, 0.11368999630212784, 0.13786999881267548));
-    float3 p3_5 = p3_4 + float3(dot(p3_4, p3_4.yzx + float3(19.19000053405761719) )) ;
-    float _S147 = p3_5.x;
-
-#line 783
-    float _S148 = p3_5.y;
-
-#line 783
-    float _S149 = p3_5.z;
-
-#line 783
-    return fract(float3((_S147 + _S148) * _S149, (_S147 + _S149) * _S148, (_S148 + _S149) * _S147));
-}
-
-
-#line 779
-float3 N13_1(float p_4)
-{
-    float3 p3_6 = fract(float3(p_4, p_4, p_4) * float3(0.1031000018119812, 0.11368999630212784, 0.13786999881267548));
-    float3 p3_7 = p3_6 + float3(dot(p3_6, p3_6.yzx + float3(19.19000053405761719) )) ;
-    float _S150 = p3_7.x;
-
-#line 783
-    float _S151 = p3_7.y;
-
-#line 783
-    float _S152 = p3_7.z;
-
-#line 783
-    return fract(float3((_S150 + _S151) * _S152, (_S150 + _S152) * _S151, (_S151 + _S152) * _S150));
-}
-
-
-#line 774
-float S_0(float a_0, float b_1, float t_0)
-{
-
-#line 774
-    float _S153;
-
-    if(a_0 < b_1)
-    {
-
-#line 776
-        _S153 = smoothstep(a_0, b_1, t_0);
-
-#line 776
-    }
-    else
-    {
-
-#line 776
-        _S153 = 1.0 - smoothstep(b_1, a_0, t_0);
-
-#line 776
-    }
-
-#line 776
-    return _S153;
-}
-
-
-#line 774
-float S_1(float a_1, float b_2, float t_1)
-{
-
-#line 774
-    float _S154;
-
-    if(a_1 < b_2)
-    {
-
-#line 776
-        _S154 = smoothstep(a_1, b_2, t_1);
-
-#line 776
-    }
-    else
-    {
-
-#line 776
-        _S154 = 1.0 - smoothstep(b_2, a_1, t_1);
-
-#line 776
-    }
-
-#line 776
-    return _S154;
-}
-
-
-#line 786
-float Saw_0(float b_3, float t_2)
-{
-    return S_1(0.0, b_3, t_2) * S_1(1.0, b_3, t_2);
-}
-
-
-#line 786
-float Saw_1(float b_4, float t_3)
-{
-    return S_1(0.0, b_4, t_3) * S_1(1.0, b_4, t_3);
-}
-
-
-#line 846
-float StaticDrops_0(float2 uv_18, float time_0)
-{
-    float2 _S155 = uv_18 * float2(40.0) ;
-    float2 id_0 = floor(_S155);
-
-#line 849
-    float2 _S156 = float2(0.5) ;
-
-    float3 n_0 = N13_1(id_0.x * 107.4499969482421875 + id_0.y * 3543.654052734375);
-
-
-    float _S157 = n_0.z;
-    return S_1(0.30000001192092896, 0.0, length(fract(_S155) - _S156 - (n_0.xy - _S156) * float2(0.69999998807907104) )) * fract(_S157 * 10.0) * Saw_1(0.02500000037252903, fract(time_0 + _S157));
-}
-
-
-#line 794
-float2 DropLayer_0(float2 uv_19, float time_1)
-{
-
-#line 794
-    thread float2 _S158 = uv_19;
-
-
-
-    float _S159 = _S158.y + time_1 * 0.75;
-
-#line 798
-    _S158.y = _S159;
-
-    float2 grid_0 = float2(6.0, 1.0) * float2(2.0) ;
-
-#line 805
-    _S158.y = _S159 + fract(sin(floor(_S158 * grid_0).x * 12345.564453125) * 7658.759765625);
-
-    float2 id_1 = floor(_S158 * grid_0);
-    float3 n_1 = N13_0(id_1.x * 35.20000076293945312 + id_1.y * 2376.10009765625);
-    float2 st_0 = fract(_S158 * grid_0) - float2(0.5, 0.0);
-
-
-    float x_3 = n_1.x - 0.5;
-    float _S160 = uv_19.y;
-
-#line 813
-    float y_5 = _S160 * 20.0;
-
-    float _S161 = n_1.z;
-    float x_4 = (x_3 + sin(y_5 + sin(y_5)) * (0.5 - abs(x_3)) * (_S161 - 0.5)) * 0.69999998807907104;
-
-
-
-    float y_6 = (Saw_0(0.85000002384185791, fract(time_1 + _S161)) - 0.5) * 0.89999997615814209 + 0.5;
-
-#line 829
-    float _S162 = st_0.y;
-
-#line 829
-    float r_2 = sqrt(S_0(1.0, y_6, _S162));
-
-
-    float trailFront_0 = S_0(-0.01999999955296516, 0.01999999955296516, _S162 - y_6);
-
-#line 842
-    return float2(S_0(0.40000000596046448, 0.0, length((st_0 - float2(x_4, y_6)) * float2(1.0, 6.0))) + S_0(0.30000001192092896, 0.0, length(st_0 - float2(x_4, fract(_S160 * 10.0) + (_S162 - 0.5)))) * r_2 * trailFront_0, S_0(0.23000000417232513 * r_2, 0.15000000596046448 * r_2 * r_2, abs(st_0.x - x_4)) * (trailFront_0 * r_2 * r_2));
-}
-
-
-#line 859
-float2 RainDrops_0(float2 uv_20, float time_2, float rainAmount_0)
-{
-
-    float t_4 = - time_2;
-
-    float l0_0 = smoothstep(0.0, 0.5, rainAmount_0);
-    float l1_0 = smoothstep(0.25, 0.75, rainAmount_0);
-
-
-
-    float2 m1_0 = DropLayer_0(uv_20, t_4) * float2(l1_0) ;
-    float2 m2_0 = DropLayer_0(uv_20 * float2(1.85000002384185791) , t_4) * float2(l0_0) ;
-
-#line 875
-    return float2(smoothstep(0.30000001192092896, 1.0, StaticDrops_0(uv_20, t_4) * l0_0 + m1_0.x + m2_0.x), max(m1_0.y * l0_0, m2_0.y * l1_0));
-}
-
-
-#line 76
 float srgbToLinear_0(float c_0)
 {
 
-#line 76
-    float _S163;
+#line 80
+    float _S5;
 
     if(c_0 <= 0.04044999927282333)
     {
 
-#line 78
-        _S163 = c_0 / 12.92000007629394531;
+#line 82
+        _S5 = c_0 / 12.92000007629394531;
 
-#line 78
+#line 82
     }
     else
     {
 
-#line 78
-        _S163 = pow((c_0 + 0.05499999970197678) / 1.0549999475479126, 2.40000009536743164);
+#line 82
+        _S5 = pow((c_0 + 0.05499999970197678) / 1.0549999475479126, 2.40000009536743164);
 
-#line 78
+#line 82
     }
 
-#line 78
-    return _S163;
+#line 82
+    return _S5;
 }
 
 
@@ -1654,680 +108,196 @@ float srgbToLinear_0(float c_0)
 float3 srgbToLinear3_0(float3 c_1)
 {
 
-#line 84
+#line 88
     return float3(srgbToLinear_0(c_1.x), srgbToLinear_0(c_1.y), srgbToLinear_0(c_1.z));
 }
 
 
-#line 80
-float linearToSrgb_0(float c_2)
+float4 sampleLinear_0(float2 uv_3, KernelContext_0 thread* kernelContext_3)
 {
 
-#line 80
-    float _S164;
+#line 92
+    float4 _S6 = sampleClamped_0(uv_3, kernelContext_3);
 
-    if(c_2 <= 0.00313080009073019)
+    thread float4 c_2 = _S6;
+    c_2.xyz = srgbToLinear3_0(_S6.xyz);
+    return c_2;
+}
+
+
+#line 84
+float linearToSrgb_0(float c_3)
+{
+
+#line 84
+    float _S7;
+
+    if(c_3 <= 0.00313080009073019)
     {
 
-#line 82
-        _S164 = c_2 * 12.92000007629394531;
+#line 86
+        _S7 = c_3 * 12.92000007629394531;
 
-#line 82
+#line 86
     }
     else
     {
 
-#line 82
-        _S164 = 1.0549999475479126 * pow(c_2, 0.4166666567325592) - 0.05499999970197678;
+#line 86
+        _S7 = 1.0549999475479126 * pow(c_3, 0.4166666567325592) - 0.05499999970197678;
 
-#line 82
+#line 86
     }
 
-#line 82
-    return _S164;
+#line 86
+    return _S7;
 }
 
-float3 linearToSrgb3_0(float3 c_3)
+float3 linearToSrgb3_0(float3 c_4)
 {
 
-#line 85
-    return float3(linearToSrgb_0(c_3.x), linearToSrgb_0(c_3.y), linearToSrgb_0(c_3.z));
+#line 89
+    return float3(linearToSrgb_0(c_4.x), linearToSrgb_0(c_4.y), linearToSrgb_0(c_4.z));
 }
 
-
-#line 878
-float4 effect_rain_0(float2 uv_21, KernelContext_0 thread* kernelContext_18)
-{
-    float rainAmount_1 = saturate(kernelContext_18->PS_CONSTANT_BUFFER_0->param0_0);
-    float fogBlur_0 = max(kernelContext_18->PS_CONSTANT_BUFFER_0->param1_0, 0.0);
-    float time_3 = kernelContext_18->PS_CONSTANT_BUFFER_0->param2_0;
-
-#line 882
-    float2 _S165 = float2(0.5) ;
-
-
-
-    thread float2 winUV_0 = (uv_21 - kernelContext_18->PS_CONSTANT_BUFFER_0->win_center_0) / (kernelContext_18->PS_CONSTANT_BUFFER_0->win_half_px_0 * kernelContext_18->PS_CONSTANT_BUFFER_0->texel_size_0) * _S165 + _S165;
-
-    winUV_0.x = winUV_0.x * (kernelContext_18->PS_CONSTANT_BUFFER_0->win_half_px_0.x / max(kernelContext_18->PS_CONSTANT_BUFFER_0->win_half_px_0.y, 1.0));
-
-    float2 c_4 = RainDrops_0(winUV_0, time_3, rainAmount_1);
-
-#line 896
-    float _S166 = c_4.x;
-
-
-
-    float focus_0 = mix(mix(fogBlur_0, 0.0, smoothstep(0.10000000149011612, 0.20000000298023224, _S166)), fogBlur_0 * 0.5, c_4.y);
-
-
-    float2 refractUV_0 = uv_21 + float2(RainDrops_0(winUV_0 + float2(0.0020000000949949, 0.0), time_3, rainAmount_1).x - _S166, RainDrops_0(winUV_0 + float2(0.0, 0.0020000000949949), time_3, rainAmount_1).x - _S166) * kernelContext_18->PS_CONSTANT_BUFFER_0->win_half_px_0 * kernelContext_18->PS_CONSTANT_BUFFER_0->texel_size_0 * _S165;
-
-
-    int R_0 = clamp(int(focus_0 * 2.0 + 0.5), int(0), int(4));
-
-#line 906
-    float3 blurred_0;
-
-
-    if(R_0 > int(0))
-    {
-        float3 _S167 = float3(0.0, 0.0, 0.0);
-
-        float _S168 = max(focus_0 * 0.5, 1.0);
-        int _S169 = - R_0;
-
-#line 914
-        int ky_0 = _S169;
-
-#line 914
-        blurred_0 = _S167;
-
-#line 914
-        float count_0 = 0.0;
-
-#line 914
-        float2 _S170 = float2(_S168) ;
-
-#line 914
-        for(;;)
-        {
-
-#line 914
-            if(ky_0 <= R_0)
-            {
-            }
-            else
-            {
-
-#line 914
-                break;
-            }
-
-            float _S171 = float(ky_0);
-
-#line 917
-            int kx_0 = _S169;
-
-#line 915
-            for(;;)
-            {
-
-#line 915
-                if(kx_0 <= R_0)
-                {
-                }
-                else
-                {
-
-#line 915
-                    break;
-                }
-
-#line 915
-                float4 _S172 = sampleClamped_0(refractUV_0 + float2(float(kx_0), _S171) * _S170 * kernelContext_18->PS_CONSTANT_BUFFER_0->texel_size_0, kernelContext_18);
-
-
-                float3 acc_0 = blurred_0 + srgbToLinear3_0(_S172.xyz);
-                float count_1 = count_0 + 1.0;
-
-#line 915
-                kx_0 = kx_0 + int(1);
-
-#line 915
-                blurred_0 = acc_0;
-
-#line 915
-                count_0 = count_1;
-
-#line 915
-            }
-
-#line 914
-            ky_0 = ky_0 + int(1);
-
-#line 914
-        }
-
-#line 914
-        blurred_0 = linearToSrgb3_0(blurred_0 / float3(count_0) );
-
-#line 909
-    }
-    else
-    {
-
-#line 909
-        float4 _S173 = sampleClamped_0(refractUV_0, kernelContext_18);
-
-#line 909
-        blurred_0 = _S173.xyz;
-
-#line 909
-    }
-
-#line 909
-    float4 _S174 = sampleClamped_0(refractUV_0, kernelContext_18);
-
-#line 933
-    thread float4 col_15;
-    col_15.xyz = mix(blurred_0, _S174.xyz, float3(smoothstep(0.10000000149011612, 0.30000001192092896, _S166)) );
-    col_15.w = 1.0;
-
-    return col_15;
-}
-
-
-
-float4 effect_kaleidoscope_0(float2 uv_22, KernelContext_0 thread* kernelContext_19)
-{
-
-    float rotation_0 = kernelContext_19->PS_CONSTANT_BUFFER_0->param1_0 + kernelContext_19->PS_CONSTANT_BUFFER_0->param2_0 * 0.30000001192092896;
-
-
-    float2 centered_1 = (uv_22 - kernelContext_19->PS_CONSTANT_BUFFER_0->win_center_0) / (kernelContext_19->PS_CONSTANT_BUFFER_0->win_half_px_0 * kernelContext_19->PS_CONSTANT_BUFFER_0->texel_size_0);
-
-
-    float ca_1 = cos(rotation_0);
-
-#line 951
-    float sa_1 = sin(rotation_0);
-    float _S175 = centered_1.x;
-
-#line 952
-    float _S176 = centered_1.y;
-
-#line 952
-    float _S177 = _S175 * ca_1 + _S176 * sa_1;
-
-#line 952
-    float _S178 = - _S175 * sa_1 + _S176 * ca_1;
-
-
-    float angle_1 = atan2(_S178, _S177);
-
-
-
-    float segAngle_0 = 6.28318548202514648 / max(kernelContext_19->PS_CONSTANT_BUFFER_0->param0_0, 2.0);
-    float _S179 = segAngle_0 * 0.5;
-
-#line 960
-    float angle_2 = abs(((((angle_1) < 0.0) ? -fmod(-(angle_1),abs((segAngle_0))) : fmod((angle_1),abs((segAngle_0))))) - _S179);
-
-#line 960
-    float4 _S180 = sampleClamped_0(float2(cos(angle_2), sin(angle_2)) * float2(length(float2(_S177, _S178)))  * kernelContext_19->PS_CONSTANT_BUFFER_0->win_half_px_0 * kernelContext_19->PS_CONSTANT_BUFFER_0->texel_size_0 + kernelContext_19->PS_CONSTANT_BUFFER_0->win_center_0, kernelContext_19);
-
-#line 967
-    thread float4 col_16 = _S180;
-
-
-    float _S181 = angle_1 + 3.14159274101257324;
-
-    col_16.xyz = _S180.xyz + float3((pow(saturate(1.0 - abs(((((_S181) < 0.0) ? -fmod(-(_S181),abs((segAngle_0))) : fmod((_S181),abs((segAngle_0))))) - _S179) / (segAngle_0 * 0.05000000074505806)), 4.0) * 0.15000000596046448)) ;
-
-    return col_16;
-}
-
-
-#line 88
-float4 sampleLinear_0(float2 uv_23, KernelContext_0 thread* kernelContext_20)
-{
-
-#line 88
-    float4 _S182 = sampleClamped_0(uv_23, kernelContext_20);
-
-    thread float4 c_5 = _S182;
-    c_5.xyz = srgbToLinear3_0(_S182.xyz);
-    return c_5;
-}
-
-
-#line 149
-float4 effect_blur_0(float2 uv_24, KernelContext_0 thread* kernelContext_21)
-{
-    float radius_1 = kernelContext_21->PS_CONSTANT_BUFFER_0->param0_0;
-
-#line 151
-    float2 _S183;
-    if((kernelContext_21->PS_CONSTANT_BUFFER_0->param1_0) < 0.5)
-    {
-
-#line 152
-        _S183 = float2(kernelContext_21->PS_CONSTANT_BUFFER_0->texel_size_0.x, 0.0);
-
-#line 152
-    }
-    else
-    {
-
-#line 152
-        _S183 = float2(0.0, kernelContext_21->PS_CONSTANT_BUFFER_0->texel_size_0.y);
-
-#line 152
-    }
-
-    float bevelPx_2 = max(radius_1 * 2.0, 8.0);
-    thread float2 normal_3;
-
-#line 155
-    float _S184 = sdfWithNormal_0(uv_24, 0.0, &normal_3, kernelContext_21);
-
-
-
-    float2 _S185 = uv_24 + normal_3 * float2((saturate(1.0 - saturate(- _S184 / bevelPx_2)) * radius_1 * 0.5))  * kernelContext_21->PS_CONSTANT_BUFFER_0->texel_size_0;
-    float edgeHighlight_0 = pow(saturate(1.0 - abs(_S184) / (bevelPx_2 * 0.5)), 3.0) * 0.15000000596046448;
-
-    float _S186 = radius_1 / 6.0;
-    array<float, int(7)> w_1 = { 0.19648249447345734, 0.17489039897918701, 0.1225150004029274, 0.06753169745206833, 0.0292431004345417, 0.00995950028300285, 0.00266269990243018 };
 
 #line 163
-    float4 _S187 = sampleLinear_0(_S185, kernelContext_21);
+float4 effect_blur_0(float2 uv_4, KernelContext_0 thread* kernelContext_4)
+{
+    float radius_0 = kernelContext_4->PS_CONSTANT_BUFFER_0->param0_0;
 
-
-    float3 _S188 = _S187.xyz * float3(0.19648249447345734) ;
-
-#line 166
-    int i_1 = int(1);
-
-#line 166
-    float3 lin_0 = _S188;
+#line 165
+    float2 _S8;
+    if((kernelContext_4->PS_CONSTANT_BUFFER_0->param1_0) < 0.5)
+    {
 
 #line 166
-    float3 _S189 = float3(edgeHighlight_0) ;
+        _S8 = float2(kernelContext_4->PS_CONSTANT_BUFFER_0->texel_size_0.x, 0.0);
+
+#line 166
+    }
+    else
+    {
+
+#line 166
+        _S8 = float2(0.0, kernelContext_4->PS_CONSTANT_BUFFER_0->texel_size_0.y);
+
+#line 166
+    }
+
+    float bevelPx_0 = max(radius_0 * 2.0, 8.0);
+    thread float2 normal_1;
+
+#line 169
+    float _S9 = sdfWithNormal_0(uv_4, 0.0, &normal_1, kernelContext_4);
+
+
+
+    float2 _S10 = uv_4 + normal_1 * float2((saturate(1.0 - saturate(- _S9 / bevelPx_0)) * radius_0 * 0.5))  * kernelContext_4->PS_CONSTANT_BUFFER_0->texel_size_0;
+    float edgeHighlight_0 = pow(saturate(1.0 - abs(_S9) / (bevelPx_0 * 0.5)), 3.0) * 0.15000000596046448;
+
+    float _S11 = radius_0 / 6.0;
+    array<float, int(7)> w_0 = { 0.19648249447345734, 0.17489039897918701, 0.1225150004029274, 0.06753169745206833, 0.0292431004345417, 0.00995950028300285, 0.00266269990243018 };
+
+#line 177
+    float4 _S12 = sampleLinear_0(_S10, kernelContext_4);
+
+
+    float3 _S13 = _S12.xyz * float3(0.19648249447345734) ;
+
+#line 180
+    int i_0 = int(1);
+
+#line 180
+    float3 lin_0 = _S13;
+
+#line 180
+    float3 _S14 = float3(edgeHighlight_0) ;
     for(;;)
     {
 
-#line 167
-        if(i_1 < int(7))
+#line 181
+        if(i_0 < int(7))
         {
         }
         else
         {
 
-#line 167
+#line 181
             break;
         }
-        float2 off_1 = _S183 * float2((float(i_1) * _S186)) ;
+        float2 off_0 = _S8 * float2((float(i_0) * _S11)) ;
 
-#line 169
-        float4 _S190 = sampleLinear_0(_S185 + off_1, kernelContext_21);
+#line 183
+        float4 _S15 = sampleLinear_0(_S10 + off_0, kernelContext_4);
 
-#line 169
-        float3 _S191 = float3(w_1[i_1]) ;
-        float3 lin_1 = lin_0 + _S190.xyz * _S191;
+#line 183
+        float3 _S16 = float3(w_0[i_0]) ;
+        float3 lin_1 = lin_0 + _S15.xyz * _S16;
 
-#line 170
-        float4 _S192 = sampleLinear_0(_S185 - off_1, kernelContext_21);
-        float3 lin_2 = lin_1 + _S192.xyz * _S191;
+#line 184
+        float4 _S17 = sampleLinear_0(_S10 - off_0, kernelContext_4);
+        float3 lin_2 = lin_1 + _S17.xyz * _S16;
 
-#line 167
-        i_1 = i_1 + int(1);
+#line 181
+        i_0 = i_0 + int(1);
 
-#line 167
+#line 181
         lin_0 = lin_2;
 
-#line 167
+#line 181
     }
 
-#line 175
-    thread float4 col_17;
-    col_17.xyz = linearToSrgb3_0(lin_0 + _S189);
-    col_17.w = 1.0;
-    return col_17;
+#line 189
+    thread float4 col_0;
+    col_0.xyz = linearToSrgb3_0(lin_0 + _S14);
+    col_0.w = 1.0;
+    return col_0;
 }
 
 
-#line 178
+#line 192
 struct pixelOutput_0
 {
     float4 output_0 [[color(0)]];
 };
 
 
-#line 178
+#line 192
 struct pixelInput_0
 {
-    float4 col_18 [[user(COLOR)]];
-    float2 uv_25 [[user(TEXCOORD)]];
+    float4 col_1 [[user(COLOR)]];
+    float2 uv_5 [[user(TEXCOORD)]];
 };
 
 
-#line 977
-[[fragment]] pixelOutput_0 main_ps(pixelInput_0 _S193 [[stage_in]], float4 pos_0 [[position]], SLANG_ParameterGroup_PS_CONSTANT_BUFFER_0 constant* PS_CONSTANT_BUFFER_1 [[buffer(1)]], texture2d<float, access::sample> sceneTexture_1 [[texture(0)]], sampler sceneSampler_1 [[sampler(0)]])
+#line 927
+[[fragment]] pixelOutput_0 main_ps(pixelInput_0 _S18 [[stage_in]], float4 pos_0 [[position]], SLANG_ParameterGroup_PS_CONSTANT_BUFFER_0 constant* PS_CONSTANT_BUFFER_1 [[buffer(1)]], texture2d<float, access::sample> sceneTexture_1 [[texture(0)]], sampler sceneSampler_1 [[sampler(0)]])
 {
 
-#line 977
-    KernelContext_0 kernelContext_22;
+#line 927
+    KernelContext_0 kernelContext_5;
 
-#line 977
-    (&kernelContext_22)->PS_CONSTANT_BUFFER_0 = PS_CONSTANT_BUFFER_1;
+#line 927
+    (&kernelContext_5)->PS_CONSTANT_BUFFER_0 = PS_CONSTANT_BUFFER_1;
 
-#line 977
-    (&kernelContext_22)->sceneTexture_0 = sceneTexture_1;
+#line 927
+    (&kernelContext_5)->sceneTexture_0 = sceneTexture_1;
 
-#line 977
-    (&kernelContext_22)->sceneSampler_0 = sceneSampler_1;
+#line 927
+    (&kernelContext_5)->sceneSampler_0 = sceneSampler_1;
 
+#line 927
+    float4 _S19 = effect_blur_0(_S18.uv_5, &kernelContext_5);
 
-    thread float4 col_19;
 
-    int m_0 = int((&kernelContext_22)->PS_CONSTANT_BUFFER_0->mode_0);
-    if(m_0 == int(1))
-    {
+    thread float4 col_2 = _S19;
 
-#line 983
-        float4 _S194 = effect_glass_refract_0(_S193.uv_25, &kernelContext_22);
+#line 968
+    col_2.w = 1.0;
 
-#line 983
-        col_19 = _S194;
-
-#line 983
-    }
-    else
-    {
-
-#line 984
-        if(m_0 == int(2))
-        {
-
-#line 984
-            float4 _S195 = effect_frosted_0(_S193.uv_25, &kernelContext_22);
-
-#line 984
-            col_19 = _S195;
-
-#line 984
-        }
-        else
-        {
-
-#line 985
-            if(m_0 == int(3))
-            {
-
-#line 985
-                float4 _S196 = effect_pixelate_0(_S193.uv_25, &kernelContext_22);
-
-#line 985
-                col_19 = _S196;
-
-#line 985
-            }
-            else
-            {
-
-#line 986
-                if(m_0 == int(4))
-                {
-
-#line 986
-                    float4 _S197 = effect_chromatic_0(_S193.uv_25, &kernelContext_22);
-
-#line 986
-                    col_19 = _S197;
-
-#line 986
-                }
-                else
-                {
-
-#line 987
-                    if(m_0 == int(5))
-                    {
-
-#line 987
-                        float4 _S198 = effect_liquid_glass_0(_S193.uv_25, &kernelContext_22);
-
-#line 987
-                        col_19 = _S198;
-
-#line 987
-                    }
-                    else
-                    {
-
-#line 988
-                        if(m_0 == int(6))
-                        {
-
-#line 988
-                            float4 _S199 = effect_heat_haze_0(_S193.uv_25, &kernelContext_22);
-
-#line 988
-                            col_19 = _S199;
-
-#line 988
-                        }
-                        else
-                        {
-
-#line 989
-                            if(m_0 == int(7))
-                            {
-
-#line 989
-                                float4 _S200 = effect_voronoi_0(_S193.uv_25, &kernelContext_22);
-
-#line 989
-                                col_19 = _S200;
-
-#line 989
-                            }
-                            else
-                            {
-
-#line 990
-                                if(m_0 == int(8))
-                                {
-
-#line 990
-                                    float4 _S201 = effect_edge_glow_0(_S193.uv_25, &kernelContext_22);
-
-#line 990
-                                    col_19 = _S201;
-
-#line 990
-                                }
-                                else
-                                {
-
-#line 991
-                                    if(m_0 == int(9))
-                                    {
-
-#line 991
-                                        float4 _S202 = effect_halftone_0(_S193.uv_25, &kernelContext_22);
-
-#line 991
-                                        col_19 = _S202;
-
-#line 991
-                                    }
-                                    else
-                                    {
-
-#line 992
-                                        if(m_0 == int(10))
-                                        {
-
-#line 992
-                                            float4 _S203 = effect_mouse_edge_0(_S193.uv_25, &kernelContext_22);
-
-#line 992
-                                            col_19 = _S203;
-
-#line 992
-                                        }
-                                        else
-                                        {
-
-#line 993
-                                            if(m_0 == int(11))
-                                            {
-
-#line 993
-                                                float4 _S204 = effect_crt_0(_S193.uv_25, &kernelContext_22);
-
-#line 993
-                                                col_19 = _S204;
-
-#line 993
-                                            }
-                                            else
-                                            {
-
-#line 994
-                                                if(m_0 == int(12))
-                                                {
-
-#line 994
-                                                    float4 _S205 = effect_dot_matrix_0(_S193.uv_25, &kernelContext_22);
-
-#line 994
-                                                    col_19 = _S205;
-
-#line 994
-                                                }
-                                                else
-                                                {
-
-#line 995
-                                                    if(m_0 == int(13))
-                                                    {
-
-#line 995
-                                                        float4 _S206 = effect_glitch_0(_S193.uv_25, &kernelContext_22);
-
-#line 995
-                                                        col_19 = _S206;
-
-#line 995
-                                                    }
-                                                    else
-                                                    {
-
-#line 996
-                                                        if(m_0 == int(14))
-                                                        {
-
-#line 996
-                                                            float4 _S207 = effect_stained_glass_0(_S193.uv_25, &kernelContext_22);
-
-#line 996
-                                                            col_19 = _S207;
-
-#line 996
-                                                        }
-                                                        else
-                                                        {
-
-#line 997
-                                                            if(m_0 == int(15))
-                                                            {
-
-#line 997
-                                                                float4 _S208 = effect_rain_0(_S193.uv_25, &kernelContext_22);
-
-#line 997
-                                                                col_19 = _S208;
-
-#line 997
-                                                            }
-                                                            else
-                                                            {
-
-#line 998
-                                                                if(m_0 == int(16))
-                                                                {
-
-#line 998
-                                                                    float4 _S209 = effect_kaleidoscope_0(_S193.uv_25, &kernelContext_22);
-
-#line 998
-                                                                    col_19 = _S209;
-
-#line 998
-                                                                }
-                                                                else
-                                                                {
-
-#line 998
-                                                                    float4 _S210 = effect_blur_0(_S193.uv_25, &kernelContext_22);
-                                                                    col_19 = _S210;
-
-#line 998
-                                                                }
-
-#line 997
-                                                            }
-
-#line 996
-                                                        }
-
-#line 995
-                                                    }
-
-#line 994
-                                                }
-
-#line 993
-                                            }
-
-#line 992
-                                        }
-
-#line 991
-                                    }
-
-#line 990
-                                }
-
-#line 989
-                            }
-
-#line 988
-                        }
-
-#line 987
-                    }
-
-#line 986
-                }
-
-#line 985
-            }
-
-#line 984
-        }
-
-#line 983
-    }
-
-#line 1001
-    col_19.w = 1.0;
-
-#line 1001
-    pixelOutput_0 _S211 = { col_19 * _S193.col_18 };
-    return _S211;
+#line 968
+    pixelOutput_0 _S20 = { col_2 * _S18.col_1 };
+    return _S20;
 }
 

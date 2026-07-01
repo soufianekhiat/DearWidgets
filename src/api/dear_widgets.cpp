@@ -1,4 +1,4 @@
-﻿#include <dear_widgets.h>
+#include <dear_widgets.h>
 #include "dear_widgets_internal.h"
 #include <stdint.h>
 
@@ -53,6 +53,17 @@
 namespace ImWidgets{
     ImGlobalData GlobalData;
 	bool g_SlugDebugShader = false;
+
+	// Forward declarations: definitions live further down in this file. Earlier
+	// widgets (SliderRing / SliderSpline / their gradient variants) call the
+	// shared popup helper for Ctrl+Click + double-click precision input, so the
+	// declaration needs to precede them.
+	bool BeginPrecisionPopup(const char* str_id, ImVec2 anchor);
+	void EndPrecisionPopup();
+	bool DW_SliderScalarPopup(
+		ImRect const& labelRect, ImGuiID id,
+		ImGuiDataType data_type, void* p_value, void const* p_min, void const* p_max,
+		char const* axisLabel );
 
 	//////////////////////////////////////////////////////////////////////////
 	// Data
@@ -3066,6 +3077,544 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ShapeTranslate( shape, origin );
 	}
 
+	//////////////////////////////////////////////////////////////////////////
+	// New tessellated shapes for procedural-colour fills.
+	//
+	// These extend the ImWidgetsShape family with tessellation patterns
+	// tuned for colour bands and colour wheels:
+	//   • GenShapeVerticalBand   — rectangle × N horizontal stripes
+	//   • GenShapeHorizontalBand — rectangle × N vertical stripes
+	//   • GenShapeRectGrid       — rectangle × Nx × Ny grid
+	//   • GenShapeDiscRings      — full disc, polar grid sectors × rings
+	//   • GenShapeAnnulus        — ring (annulus), single radial division
+	//   • GenShapeAnnulusRings   — ring with multiple sub-rings
+	//
+	// UV conventions (used by the procedural-colour fills below):
+	//   • VerticalBand: u = horizontal across the band, v = top→bottom (0→1)
+	//   • HorizontalBand: u = left→right (0→1), v = vertical across the band
+	//   • RectGrid: u = left→right, v = top→bottom
+	//   • DiscRings: u = angle / 2π in [0,1) (with a seam at u=1),
+	//                v = radius / outerRadius in [0,1]
+	//   • Annulus*: u = angle / 2π, v = (r − rInner) / (rOuter − rInner)
+	//////////////////////////////////////////////////////////////////////////
+
+	void	GenShapeVerticalBand( ImWidgetsShape& shape, ImRect const& r, int divisions )
+	{
+		if ( divisions < 1 ) divisions = 1;
+		ImVec2 size = r.Max - r.Min;
+#ifdef DEAR_WIDGETS_SHAPE_CACHING
+		struct { int type; ImVec2 size; int divisions; } key_data = {};
+		key_data.type = 10;
+		key_data.size = size;
+		key_data.divisions = divisions;
+		ImU64 key = ImHashData( &key_data, sizeof( key_data ) );
+		ImWidgetsShapeCache& cache = GetShapeCache();
+		if ( ImWidgetsShape* cached = ShapeCacheGet( cache, key ) )
+		{
+			shape = *cached;
+			ShapeTranslate( shape, r.Min );
+			return;
+		}
+#endif
+		shape.vertices.clear();
+		shape.triangles.clear();
+		int vCount = 2 * ( divisions + 1 );
+		shape.vertices.resize( vCount );
+		shape.triangles.resize( divisions * 2 );
+		memset( shape.vertices.Data, 0, sizeof( ImWidgetsVertex ) * vCount );
+		for ( int i = 0; i <= divisions; ++i )
+		{
+			float t = ( float )i / ( float )divisions;
+			float y = t * size.y;
+			// Left vertex (uv.x = 0), right vertex (uv.x = 1).
+			shape.vertices[ 2 * i + 0 ].pos = ImVec2( 0.0f,   y );
+			shape.vertices[ 2 * i + 0 ].uv  = ImVec2( 0.0f,   t );
+			shape.vertices[ 2 * i + 1 ].pos = ImVec2( size.x, y );
+			shape.vertices[ 2 * i + 1 ].uv  = ImVec2( 1.0f,   t );
+		}
+		for ( int i = 0; i < divisions; ++i )
+		{
+			ImDrawIdx tl = ( ImDrawIdx )( 2 * i + 0 );
+			ImDrawIdx tr = ( ImDrawIdx )( 2 * i + 1 );
+			ImDrawIdx bl = ( ImDrawIdx )( 2 * ( i + 1 ) + 0 );
+			ImDrawIdx br = ( ImDrawIdx )( 2 * ( i + 1 ) + 1 );
+			shape.triangles[ 2 * i + 0 ] = ImWidgetsTriIdx( tl, bl, br );
+			shape.triangles[ 2 * i + 1 ] = ImWidgetsTriIdx( tl, br, tr );
+		}
+		shape.bb.Min = ImVec2( 0.0f, 0.0f );
+		shape.bb.Max = size;
+#ifdef DEAR_WIDGETS_SHAPE_CACHING
+		ShapeCacheInsert( cache, key, shape );
+#endif
+		ShapeTranslate( shape, r.Min );
+	}
+
+	void	GenShapeHorizontalBand( ImWidgetsShape& shape, ImRect const& r, int divisions )
+	{
+		if ( divisions < 1 ) divisions = 1;
+		ImVec2 size = r.Max - r.Min;
+#ifdef DEAR_WIDGETS_SHAPE_CACHING
+		struct { int type; ImVec2 size; int divisions; } key_data = {};
+		key_data.type = 11;
+		key_data.size = size;
+		key_data.divisions = divisions;
+		ImU64 key = ImHashData( &key_data, sizeof( key_data ) );
+		ImWidgetsShapeCache& cache = GetShapeCache();
+		if ( ImWidgetsShape* cached = ShapeCacheGet( cache, key ) )
+		{
+			shape = *cached;
+			ShapeTranslate( shape, r.Min );
+			return;
+		}
+#endif
+		shape.vertices.clear();
+		shape.triangles.clear();
+		int vCount = 2 * ( divisions + 1 );
+		shape.vertices.resize( vCount );
+		shape.triangles.resize( divisions * 2 );
+		memset( shape.vertices.Data, 0, sizeof( ImWidgetsVertex ) * vCount );
+		for ( int i = 0; i <= divisions; ++i )
+		{
+			float t = ( float )i / ( float )divisions;
+			float x = t * size.x;
+			// Top vertex (uv.y = 0), bottom vertex (uv.y = 1).
+			shape.vertices[ 2 * i + 0 ].pos = ImVec2( x, 0.0f );
+			shape.vertices[ 2 * i + 0 ].uv  = ImVec2( t, 0.0f );
+			shape.vertices[ 2 * i + 1 ].pos = ImVec2( x, size.y );
+			shape.vertices[ 2 * i + 1 ].uv  = ImVec2( t, 1.0f );
+		}
+		for ( int i = 0; i < divisions; ++i )
+		{
+			ImDrawIdx tl = ( ImDrawIdx )( 2 * i + 0 );
+			ImDrawIdx bl = ( ImDrawIdx )( 2 * i + 1 );
+			ImDrawIdx tr = ( ImDrawIdx )( 2 * ( i + 1 ) + 0 );
+			ImDrawIdx br = ( ImDrawIdx )( 2 * ( i + 1 ) + 1 );
+			shape.triangles[ 2 * i + 0 ] = ImWidgetsTriIdx( tl, bl, br );
+			shape.triangles[ 2 * i + 1 ] = ImWidgetsTriIdx( tl, br, tr );
+		}
+		shape.bb.Min = ImVec2( 0.0f, 0.0f );
+		shape.bb.Max = size;
+#ifdef DEAR_WIDGETS_SHAPE_CACHING
+		ShapeCacheInsert( cache, key, shape );
+#endif
+		ShapeTranslate( shape, r.Min );
+	}
+
+	void	GenShapeRectGrid( ImWidgetsShape& shape, ImRect const& r, int divisionsX, int divisionsY )
+	{
+		if ( divisionsX < 1 ) divisionsX = 1;
+		if ( divisionsY < 1 ) divisionsY = 1;
+		ImVec2 size = r.Max - r.Min;
+#ifdef DEAR_WIDGETS_SHAPE_CACHING
+		struct { int type; ImVec2 size; int dx; int dy; } key_data = {};
+		key_data.type = 12;
+		key_data.size = size;
+		key_data.dx = divisionsX;
+		key_data.dy = divisionsY;
+		ImU64 key = ImHashData( &key_data, sizeof( key_data ) );
+		ImWidgetsShapeCache& cache = GetShapeCache();
+		if ( ImWidgetsShape* cached = ShapeCacheGet( cache, key ) )
+		{
+			shape = *cached;
+			ShapeTranslate( shape, r.Min );
+			return;
+		}
+#endif
+		shape.vertices.clear();
+		shape.triangles.clear();
+		int gridW = divisionsX + 1;
+		int gridH = divisionsY + 1;
+		int vCount = gridW * gridH;
+		shape.vertices.resize( vCount );
+		shape.triangles.resize( divisionsX * divisionsY * 2 );
+		memset( shape.vertices.Data, 0, sizeof( ImWidgetsVertex ) * vCount );
+		for ( int j = 0; j < gridH; ++j )
+		{
+			float ty = ( float )j / ( float )divisionsY;
+			for ( int i = 0; i < gridW; ++i )
+			{
+				float tx = ( float )i / ( float )divisionsX;
+				ImWidgetsVertex& v = shape.vertices[ j * gridW + i ];
+				v.pos = ImVec2( tx * size.x, ty * size.y );
+				v.uv  = ImVec2( tx, ty );
+			}
+		}
+		int t = 0;
+		for ( int j = 0; j < divisionsY; ++j )
+		{
+			for ( int i = 0; i < divisionsX; ++i )
+			{
+				ImDrawIdx tl = ( ImDrawIdx )( ( j + 0 ) * gridW + ( i + 0 ) );
+				ImDrawIdx tr = ( ImDrawIdx )( ( j + 0 ) * gridW + ( i + 1 ) );
+				ImDrawIdx bl = ( ImDrawIdx )( ( j + 1 ) * gridW + ( i + 0 ) );
+				ImDrawIdx br = ( ImDrawIdx )( ( j + 1 ) * gridW + ( i + 1 ) );
+				shape.triangles[ t++ ] = ImWidgetsTriIdx( tl, bl, br );
+				shape.triangles[ t++ ] = ImWidgetsTriIdx( tl, br, tr );
+			}
+		}
+		shape.bb.Min = ImVec2( 0.0f, 0.0f );
+		shape.bb.Max = size;
+#ifdef DEAR_WIDGETS_SHAPE_CACHING
+		ShapeCacheInsert( cache, key, shape );
+#endif
+		ShapeTranslate( shape, r.Min );
+	}
+
+	void	GenShapeDiscRings( ImWidgetsShape& shape, ImVec2 center, float radius, int numSectors, int numRings )
+	{
+		if ( numSectors < 3 ) numSectors = 3;
+		if ( numRings < 1 ) numRings = 1;
+#ifdef DEAR_WIDGETS_SHAPE_CACHING
+		struct { int type; float radius; int sectors; int rings; } key_data = {};
+		key_data.type = 13;
+		key_data.radius = radius;
+		key_data.sectors = numSectors;
+		key_data.rings = numRings;
+		ImU64 key = ImHashData( &key_data, sizeof( key_data ) );
+		ImWidgetsShapeCache& cache = GetShapeCache();
+		if ( ImWidgetsShape* cached = ShapeCacheGet( cache, key ) )
+		{
+			shape = *cached;
+			ShapeTranslate( shape, center );
+			return;
+		}
+#endif
+		shape.vertices.clear();
+		shape.triangles.clear();
+		// Polar grid: (numSectors+1) angles × (numRings+1) radii. The seam at
+		// u=0 / u=1 is duplicated so colour callbacks can be discontinuous
+		// without smearing across the seam (think hue at 0° vs 360°).
+		int gridW = numSectors + 1;
+		int gridH = numRings + 1;
+		int vCount = gridW * gridH;
+		shape.vertices.resize( vCount );
+		shape.triangles.resize( numSectors * numRings * 2 );
+		memset( shape.vertices.Data, 0, sizeof( ImWidgetsVertex ) * vCount );
+		for ( int j = 0; j < gridH; ++j )
+		{
+			float tv = ( float )j / ( float )numRings;          // v = r / R
+			float r = tv * radius;
+			for ( int i = 0; i < gridW; ++i )
+			{
+				float tu = ( float )i / ( float )numSectors;    // u = angle / 2π
+				float angle = tu * 2.0f * IM_PI;
+				ImWidgetsVertex& v = shape.vertices[ j * gridW + i ];
+				v.pos = ImVec2( r * ImCos( angle ), r * ImSin( angle ) );
+				v.uv  = ImVec2( tu, tv );
+			}
+		}
+		int t = 0;
+		for ( int j = 0; j < numRings; ++j )
+		{
+			for ( int i = 0; i < numSectors; ++i )
+			{
+				ImDrawIdx p00 = ( ImDrawIdx )( ( j + 0 ) * gridW + ( i + 0 ) );
+				ImDrawIdx p10 = ( ImDrawIdx )( ( j + 0 ) * gridW + ( i + 1 ) );
+				ImDrawIdx p11 = ( ImDrawIdx )( ( j + 1 ) * gridW + ( i + 1 ) );
+				ImDrawIdx p01 = ( ImDrawIdx )( ( j + 1 ) * gridW + ( i + 0 ) );
+				shape.triangles[ t++ ] = ImWidgetsTriIdx( p00, p01, p11 );
+				shape.triangles[ t++ ] = ImWidgetsTriIdx( p00, p11, p10 );
+			}
+		}
+		shape.bb.Min = ImVec2( -radius, -radius );
+		shape.bb.Max = ImVec2(  radius,  radius );
+#ifdef DEAR_WIDGETS_SHAPE_CACHING
+		ShapeCacheInsert( cache, key, shape );
+#endif
+		ShapeTranslate( shape, center );
+	}
+
+	void	GenShapeAnnulus( ImWidgetsShape& shape, ImVec2 center, float innerRadius, float outerRadius, int numSectors )
+	{
+		// One ring annulus: equivalent to GenShapeAnnulusRings with numRings = 1.
+		GenShapeAnnulusRings( shape, center, innerRadius, outerRadius, numSectors, 1 );
+	}
+
+	void	GenShapeAnnulusRings( ImWidgetsShape& shape, ImVec2 center, float innerRadius, float outerRadius, int numSectors, int numRings )
+	{
+		if ( numSectors < 3 ) numSectors = 3;
+		if ( numRings < 1 ) numRings = 1;
+		if ( outerRadius < innerRadius ) { float tmp = innerRadius; innerRadius = outerRadius; outerRadius = tmp; }
+#ifdef DEAR_WIDGETS_SHAPE_CACHING
+		struct { int type; float inner; float outer; int sectors; int rings; } key_data = {};
+		key_data.type = 14;
+		key_data.inner = innerRadius;
+		key_data.outer = outerRadius;
+		key_data.sectors = numSectors;
+		key_data.rings = numRings;
+		ImU64 key = ImHashData( &key_data, sizeof( key_data ) );
+		ImWidgetsShapeCache& cache = GetShapeCache();
+		if ( ImWidgetsShape* cached = ShapeCacheGet( cache, key ) )
+		{
+			shape = *cached;
+			ShapeTranslate( shape, center );
+			return;
+		}
+#endif
+		shape.vertices.clear();
+		shape.triangles.clear();
+		int gridW = numSectors + 1;
+		int gridH = numRings + 1;
+		int vCount = gridW * gridH;
+		shape.vertices.resize( vCount );
+		shape.triangles.resize( numSectors * numRings * 2 );
+		memset( shape.vertices.Data, 0, sizeof( ImWidgetsVertex ) * vCount );
+		for ( int j = 0; j < gridH; ++j )
+		{
+			float tv = ( float )j / ( float )numRings;
+			float r = innerRadius + tv * ( outerRadius - innerRadius );
+			for ( int i = 0; i < gridW; ++i )
+			{
+				float tu = ( float )i / ( float )numSectors;
+				float angle = tu * 2.0f * IM_PI;
+				ImWidgetsVertex& v = shape.vertices[ j * gridW + i ];
+				v.pos = ImVec2( r * ImCos( angle ), r * ImSin( angle ) );
+				v.uv  = ImVec2( tu, tv );
+			}
+		}
+		int t = 0;
+		for ( int j = 0; j < numRings; ++j )
+		{
+			for ( int i = 0; i < numSectors; ++i )
+			{
+				ImDrawIdx p00 = ( ImDrawIdx )( ( j + 0 ) * gridW + ( i + 0 ) );
+				ImDrawIdx p10 = ( ImDrawIdx )( ( j + 0 ) * gridW + ( i + 1 ) );
+				ImDrawIdx p11 = ( ImDrawIdx )( ( j + 1 ) * gridW + ( i + 1 ) );
+				ImDrawIdx p01 = ( ImDrawIdx )( ( j + 1 ) * gridW + ( i + 0 ) );
+				shape.triangles[ t++ ] = ImWidgetsTriIdx( p00, p01, p11 );
+				shape.triangles[ t++ ] = ImWidgetsTriIdx( p00, p11, p10 );
+			}
+		}
+		shape.bb.Min = ImVec2( -outerRadius, -outerRadius );
+		shape.bb.Max = ImVec2(  outerRadius,  outerRadius );
+#ifdef DEAR_WIDGETS_SHAPE_CACHING
+		ShapeCacheInsert( cache, key, shape );
+#endif
+		ShapeTranslate( shape, center );
+	}
+
+	void	GenShapeAnnulusArc( ImWidgetsShape& shape, ImVec2 center, float innerRadius, float outerRadius, float startAngle, float sweepAngle, int divisions )
+	{
+		if ( divisions < 1 ) divisions = 1;
+		if ( outerRadius < innerRadius ) { float tmp = innerRadius; innerRadius = outerRadius; outerRadius = tmp; }
+		// Arc is parameterised by startAngle/sweepAngle which usually change every
+		// frame (animations, drag), so caching would never hit — skip it.
+		shape.vertices.clear();
+		shape.triangles.clear();
+		int gridW = divisions + 1;
+		int vCount = 2 * gridW;
+		shape.vertices.resize( vCount );
+		shape.triangles.resize( divisions * 2 );
+		memset( shape.vertices.Data, 0, sizeof( ImWidgetsVertex ) * vCount );
+		// UV: u = arc-progress in [0,1] (NOT the full 2π angle), v = radial 0=inner, 1=outer.
+		// This matches DrawProceduralColorArcBilinear's callback semantics where t goes
+		// from 0 to 1 across the sweep.
+		for ( int i = 0; i <= divisions; ++i )
+		{
+			float t = ( float )i / ( float )divisions;
+			float angle = startAngle + t * sweepAngle;
+			float cs = ImCos( angle );
+			float sn = ImSin( angle );
+			ImWidgetsVertex& vIn  = shape.vertices[ 2 * i + 0 ];
+			ImWidgetsVertex& vOut = shape.vertices[ 2 * i + 1 ];
+			vIn.pos  = ImVec2( innerRadius * cs, innerRadius * sn );
+			vIn.uv   = ImVec2( t, 0.0f );
+			vOut.pos = ImVec2( outerRadius * cs, outerRadius * sn );
+			vOut.uv  = ImVec2( t, 1.0f );
+		}
+		for ( int i = 0; i < divisions; ++i )
+		{
+			ImDrawIdx i0 = ( ImDrawIdx )( 2 * i + 0 );        // inner-this
+			ImDrawIdx o0 = ( ImDrawIdx )( 2 * i + 1 );        // outer-this
+			ImDrawIdx i1 = ( ImDrawIdx )( 2 * ( i + 1 ) + 0 ); // inner-next
+			ImDrawIdx o1 = ( ImDrawIdx )( 2 * ( i + 1 ) + 1 ); // outer-next
+			shape.triangles[ 2 * i + 0 ] = ImWidgetsTriIdx( o0, o1, i1 );
+			shape.triangles[ 2 * i + 1 ] = ImWidgetsTriIdx( o0, i1, i0 );
+		}
+		shape.bb.Min = ImVec2( -outerRadius, -outerRadius );
+		shape.bb.Max = ImVec2(  outerRadius,  outerRadius );
+		ShapeTranslate( shape, center );
+	}
+
+	void	GenShapeTriangleSubdiv( ImWidgetsShape& shape, ImVec2 A, ImVec2 B, ImVec2 C, int subdivisions )
+	{
+		if ( subdivisions < 1 ) subdivisions = 1;
+		// Regular barycentric subdivision. Subdivisions=N gives (N+1)(N+2)/2
+		// vertices and N² triangles. We don't cache (the three corners change every
+		// frame in the typical use — Trichromatic Mixer); generating ~325 vertices
+		// at N=24 is cheap enough.
+		int const N = subdivisions;
+		int const vCount   = ( N + 1 ) * ( N + 2 ) / 2;
+		int const triCount = N * N;
+		shape.vertices.clear();
+		shape.triangles.clear();
+		shape.vertices.resize( vCount );
+		shape.triangles.resize( triCount );
+		memset( shape.vertices.Data, 0, sizeof( ImWidgetsVertex ) * vCount );
+
+		// Vertices: row i (0..N) contains i+1 vertices, weights
+		//   wA = (N-i)/N, wB = j/N, wC = (i-j)/N
+		// uv stores (wA, wB) so the third weight is implicit (wC = 1 - wA - wB).
+		float const invN = 1.0f / ( float )N;
+		ImVec2 bbMin = A, bbMax = A;
+		int vi = 0;
+		for ( int i = 0; i <= N; ++i )
+		{
+			for ( int j = 0; j <= i; ++j )
+			{
+				float wA = ( float )( N - i ) * invN;
+				float wB = ( float )j * invN;
+				float wC = ( float )( i - j ) * invN;
+				ImWidgetsVertex& v = shape.vertices[ vi++ ];
+				v.pos = ImVec2( A.x * wA + B.x * wB + C.x * wC,
+				                A.y * wA + B.y * wB + C.y * wC );
+				v.uv  = ImVec2( wA, wB );
+				bbMin.x = ImMin( bbMin.x, v.pos.x );
+				bbMin.y = ImMin( bbMin.y, v.pos.y );
+				bbMax.x = ImMax( bbMax.x, v.pos.x );
+				bbMax.y = ImMax( bbMax.y, v.pos.y );
+			}
+		}
+
+		// Index lookup for (row, col).
+		auto idx = [ ]( int i, int j ) -> ImDrawIdx {
+			return ( ImDrawIdx )( ( i * ( i + 1 ) ) / 2 + j );
+		};
+		int ti = 0;
+		for ( int i = 0; i < N; ++i )
+		{
+			// Up-pointing triangles: i+1 of them per band.
+			for ( int j = 0; j <= i; ++j )
+				shape.triangles[ ti++ ] = ImWidgetsTriIdx( idx( i, j ), idx( i + 1, j ), idx( i + 1, j + 1 ) );
+			// Down-pointing triangles: i of them per band.
+			for ( int j = 0; j < i; ++j )
+				shape.triangles[ ti++ ] = ImWidgetsTriIdx( idx( i, j ), idx( i + 1, j + 1 ), idx( i, j + 1 ) );
+		}
+		shape.bb.Min = bbMin;
+		shape.bb.Max = bbMax;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Procedural-colour fills for ImWidgetsShape vertices.
+	//
+	// These iterate the shape's vertices and overwrite vertex.col by
+	// sampling a callback at vertex.uv. Pair them with the GenShape*
+	// functions above (which lay down meaningful UVs) and then DrawShape()
+	// the result.
+	//
+	// Sampling axis (1D variant):
+	//   sample_v == true  → uv.y is fed to the callback (matches a vertical
+	//                       band, a radial ramp, the "lightness" of a disc)
+	//   sample_v == false → uv.x is fed (horizontal band, hue sweep)
+	//////////////////////////////////////////////////////////////////////////
+
+	void ShapeFillProceduralColor1D( ImWidgetsShape& shape, ImWidgetsColor1DCallback func, void* pUserData, bool sample_v )
+	{
+		if ( !func ) return;
+		// CRITICAL: GenShape* lays down parametric uv (used here to drive the
+		// callback). Once we've used those uvs for colour, we MUST stamp the
+		// font-atlas white-pixel uv on every vertex, otherwise DrawShape will
+		// render them as glyph samples — every band ends up textured with
+		// random font pixels (the classic "ImTextureID 0" symptom).
+		ImVec2 const uvWhite = ImGui::GetFontTexUvWhitePixel();
+		int n = shape.vertices.size();
+		for ( int i = 0; i < n; ++i )
+		{
+			ImWidgetsVertex& v = shape.vertices[ i ];
+			float t = sample_v ? v.uv.y : v.uv.x;
+			v.col = func( t, pUserData );
+			v.uv = uvWhite;
+		}
+	}
+
+	void ShapeFillProceduralColor2D( ImWidgetsShape& shape, ImWidgetsColor2DCallback func, void* pUserData )
+	{
+		if ( !func ) return;
+		ImVec2 const uvWhite = ImGui::GetFontTexUvWhitePixel();
+		int n = shape.vertices.size();
+		for ( int i = 0; i < n; ++i )
+		{
+			ImWidgetsVertex& v = shape.vertices[ i ];
+			v.col = func( v.uv.x, v.uv.y, pUserData );
+			v.uv = uvWhite;
+		}
+	}
+
+	void ShapeFillSolidColor( ImWidgetsShape& shape, ImU32 col )
+	{
+		ImVec2 const uvWhite = ImGui::GetFontTexUvWhitePixel();
+		int n = shape.vertices.size();
+		for ( int i = 0; i < n; ++i )
+		{
+			shape.vertices[ i ].col = col;
+			shape.vertices[ i ].uv = uvWhite;
+		}
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// High-level "draw a procedurally coloured tessellated shape" shortcuts.
+	// Each routine: GenShape → Fill → DrawShape, no caller boilerplate.
+	//////////////////////////////////////////////////////////////////////////
+
+	void DrawShapeProceduralColorVerticalBand( ImDrawList* pDrawList, ImRect const& bb, int divisions,
+	                                            ImWidgetsColor1DCallback func, void* pUserData )
+	{
+		ImWidgetsShape shape;
+		GenShapeVerticalBand( shape, bb, divisions );
+		ShapeFillProceduralColor1D( shape, func, pUserData, true );
+		DrawShape( pDrawList, shape );
+	}
+
+	void DrawShapeProceduralColorHorizontalBand( ImDrawList* pDrawList, ImRect const& bb, int divisions,
+	                                              ImWidgetsColor1DCallback func, void* pUserData )
+	{
+		ImWidgetsShape shape;
+		GenShapeHorizontalBand( shape, bb, divisions );
+		ShapeFillProceduralColor1D( shape, func, pUserData, false );
+		DrawShape( pDrawList, shape );
+	}
+
+	void DrawShapeProceduralColorRectGrid( ImDrawList* pDrawList, ImRect const& bb, int divisionsX, int divisionsY,
+	                                        ImWidgetsColor2DCallback func, void* pUserData )
+	{
+		ImWidgetsShape shape;
+		GenShapeRectGrid( shape, bb, divisionsX, divisionsY );
+		ShapeFillProceduralColor2D( shape, func, pUserData );
+		DrawShape( pDrawList, shape );
+	}
+
+	void DrawShapeProceduralColorDiscRings( ImDrawList* pDrawList, ImVec2 center, float radius,
+	                                         int numSectors, int numRings,
+	                                         ImWidgetsColor2DCallback func, void* pUserData )
+	{
+		ImWidgetsShape shape;
+		GenShapeDiscRings( shape, center, radius, numSectors, numRings );
+		ShapeFillProceduralColor2D( shape, func, pUserData );
+		DrawShape( pDrawList, shape );
+	}
+
+	void DrawShapeProceduralColorAnnulus( ImDrawList* pDrawList, ImVec2 center, float innerRadius, float outerRadius,
+	                                       int numSectors, ImWidgetsColor1DCallback func, void* pUserData )
+	{
+		ImWidgetsShape shape;
+		GenShapeAnnulus( shape, center, innerRadius, outerRadius, numSectors );
+		// 1D fill samples by u (angle), so the colour sweeps around the ring
+		// at constant radius — the typical "colour wheel rim" use case.
+		ShapeFillProceduralColor1D( shape, func, pUserData, false );
+		DrawShape( pDrawList, shape );
+	}
+
+	void DrawShapeProceduralColorAnnulusRings( ImDrawList* pDrawList, ImVec2 center, float innerRadius, float outerRadius,
+	                                            int numSectors, int numRings,
+	                                            ImWidgetsColor2DCallback func, void* pUserData )
+	{
+		ImWidgetsShape shape;
+		GenShapeAnnulusRings( shape, center, innerRadius, outerRadius, numSectors, numRings );
+		ShapeFillProceduralColor2D( shape, func, pUserData );
+		DrawShape( pDrawList, shape );
+	}
+
+
 	// TODO
 	//void	GenShapeFromBezierCubicCurve( ImWidgetsShape& sshape, ImVector<ImVec2>& path, float thickness, int num_segments )
 	//{
@@ -3343,13 +3892,24 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( ctx->strokeShader.program == NULL )
 			CreateInternalShader( &ctx->strokeShader, "stroke", 0, NULL, 0, NULL );
 		if ( ctx->imageInspectorShader.program == NULL )
-			CreateInternalShader( &ctx->imageInspectorShader, "image_inspector", 0, NULL, 0, NULL );
+			// image_inspector is an uber-shader with many [branch] switches
+			// (11 sample types x 7 tonemaps x 8 false-colour palettes x ...).
+			// At default optimisation FXC unrolls / constant-folds through them
+			// and the compile blows out to ~19 minutes for 920 KB of bytecode.
+			// At OPTIMIZATION_LOW the [branch] hints survive and compile time
+			// drops to seconds; runtime cost is negligible for an inspector tool.
+			CreateInternalShader( &ctx->imageInspectorShader, "image_inspector", 0, NULL, 0, NULL,
+			                      nullptr, nullptr, IMPLATFORM_SHADER_COMPILE_OPTIMIZATION_LOW );
+		// Same compile-flag treatment for the other inspector uber-shaders.
 		if ( ctx->lookDevInspectorShader.program == NULL )
-			CreateInternalShader( &ctx->lookDevInspectorShader, "lookdev_inspector", 0, NULL, 0, NULL );
+			CreateInternalShader( &ctx->lookDevInspectorShader, "lookdev_inspector", 0, NULL, 0, NULL,
+			                      nullptr, nullptr, IMPLATFORM_SHADER_COMPILE_OPTIMIZATION_LOW );
 		if ( ctx->deltaECompareShader.program == NULL )
-			CreateInternalShader( &ctx->deltaECompareShader, "delta_e_compare", 0, NULL, 0, NULL );
+			CreateInternalShader( &ctx->deltaECompareShader, "delta_e_compare", 0, NULL, 0, NULL,
+			                      nullptr, nullptr, IMPLATFORM_SHADER_COMPILE_OPTIMIZATION_LOW );
 		if ( ctx->volumeViewerShader.program == NULL )
-			CreateInternalShader( &ctx->volumeViewerShader, "volume_viewer", 0, NULL, 0, NULL );
+			CreateInternalShader( &ctx->volumeViewerShader, "volume_viewer", 0, NULL, 0, NULL,
+			                      nullptr, nullptr, IMPLATFORM_SHADER_COMPILE_OPTIMIZATION_LOW );
 		// Background-effect shaders are compiled lazily per effect (see EnsureBgEffectShader),
 		// so the expensive-but-rarely-used variants never compile unless actually selected.
 
@@ -3826,49 +4386,43 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	void DrawProceduralColor1DBilinearHorizontal( ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData, float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX )
 	{
-		float const sx = size.x / ( ( float )resolutionX );
-
-		for ( int i = 0; i < resolutionX; ++i )
+		if ( resolutionX < 1 ) resolutionX = 1;
+		// Routed through GenShapeHorizontalBand → DrawShape. Caching by (size, divisions)
+		// means repeated calls with the same shape skip retessellation.
+		ImWidgetsShape shape;
+		GenShapeHorizontalBand( shape, ImRect( position, position + size ), resolutionX );
+		// Set per-vertex colours by remapping uv.x ∈ [0,1] back to [minX, maxX].
+		// Then stamp uv to the font-atlas white pixel — otherwise DrawShape samples
+		// the font glyphs and the band shows random text texels.
+		ImVec2 const uvWhite = ImGui::GetFontTexUvWhitePixel();
+		int const vcount = shape.vertices.size();
+		for ( int k = 0; k < vcount; ++k )
 		{
-			// Use (i/N) and ((i+1)/N) directly -- guarantees the endpoints are
-			// exactly 0 and 1 (which then map to exactly minX and maxX after
-			// ScaleFromNormalized). Computing `dx*i` with dx=1/N loses precision
-			// for most N (e.g. 100*(1.0f/100) != 1.0f) so the final vertex's
-			// sampled `func(t)` fell slightly short of t=1 -- visible as a thin
-			// off-by-one-stop band on Slider gradients.
-			float t0 = ( ( float )i ) / ( ( float )resolutionX );
-			float t1 = ( ( float )( i + 1 ) ) / ( ( float )resolutionX );
-			float x0 = ScaleFromNormalized( t0, minX, maxX );
-			float x1 = ScaleFromNormalized( t1, minX, maxX );
-
-			ImU32 const col_l = func( x0, pUserData );
-			ImU32 const col_r = func( x1, pUserData );
-			pDrawList->AddRectFilledMultiColor( position + ImVec2( sx * ( i + 0 ), 0.0f ),
-												position + ImVec2( sx * ( i + 1 ), size.y ),
-												col_l, col_r, col_r, col_l );
+			ImWidgetsVertex& v = shape.vertices[ k ];
+			float x = ScaleFromNormalized( v.uv.x, minX, maxX );
+			v.col = func( x, pUserData );
+			v.uv = uvWhite;
 		}
+		DrawShape( pDrawList, shape );
 	}
 
 	void DrawProceduralColor1DBilinearVertical( ImDrawList* pDrawList, ImWidgetsColor1DCallback func, void* pUserData, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionY )
 	{
-		float const sy = size.y / ( ( float )resolutionY );
-
-		for ( int i = 0; i < resolutionY; ++i )
+		if ( resolutionY < 1 ) resolutionY = 1;
+		ImWidgetsShape shape;
+		GenShapeVerticalBand( shape, ImRect( position, position + size ), resolutionY );
+		// Top-to-bottom in screen space maps maxY-to-minY in value space — same convention
+		// as the original implementation (callers like the 2D primitives rely on it).
+		ImVec2 const uvWhite = ImGui::GetFontTexUvWhitePixel();
+		int const vcount = shape.vertices.size();
+		for ( int k = 0; k < vcount; ++k )
 		{
-			// See comment in the Horizontal variant -- same fence-post fix so
-			// the first / last evaluated t values are exactly 0 and 1.
-			float t0 = ( ( float )i ) / ( ( float )resolutionY );
-			float t1 = ( ( float )( i + 1 ) ) / ( ( float )resolutionY );
-			// Top-to-bottom in screen space maps maxY-to-minY in value space (matches 2D primitive convention).
-			float y0 = ScaleFromNormalized( t0, maxY, minY );
-			float y1 = ScaleFromNormalized( t1, maxY, minY );
-
-			ImU32 const col_t = func( y0, pUserData );
-			ImU32 const col_b = func( y1, pUserData );
-			pDrawList->AddRectFilledMultiColor( position + ImVec2( 0.0f, sy * ( i + 0 ) ),
-												position + ImVec2( size.x, sy * ( i + 1 ) ),
-												col_t, col_t, col_b, col_b );
+			ImWidgetsVertex& v = shape.vertices[ k ];
+			float y = ScaleFromNormalized( v.uv.y, maxY, minY );
+			v.col = func( y, pUserData );
+			v.uv = uvWhite;
 		}
+		DrawShape( pDrawList, shape );
 	}
 
 	void DrawProceduralColor2DNearest( ImDrawList* pDrawList, ImWidgetsColor2DCallback func, void* pUserData, float minX, float maxX, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionX, int resolutionY )
@@ -3901,37 +4455,24 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	void DrawProceduralColor2DBilinear( ImDrawList* pDrawList, ImWidgetsColor2DCallback func, void* pUserData, float minX, float maxX, float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionX, int resolutionY )
 	{
-		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
-
-		float const sx = size.x / ( ( float )resolutionX );
-		float const sy = size.y / ( ( float )resolutionY );
-
-		float const dy = 1.0f / ( ( float )resolutionY );
-		float const dx = 1.0f / ( ( float )resolutionX );
-
-		for ( int i = 0; i < resolutionX; ++i )
+		if ( resolutionX < 1 ) resolutionX = 1;
+		if ( resolutionY < 1 ) resolutionY = 1;
+		// Routed through GenShapeRectGrid → DrawShape. The grid mesh shares vertices
+		// between adjacent cells so the callback fires (Nx+1)(Ny+1) times instead of
+		// 4·Nx·Ny — about a 4× cut on repeated evaluations for non-trivial callbacks.
+		ImWidgetsShape shape;
+		GenShapeRectGrid( shape, ImRect( position, position + size ), resolutionX, resolutionY );
+		ImVec2 const uvWhite = ImGui::GetFontTexUvWhitePixel();
+		int const vcount = shape.vertices.size();
+		for ( int k = 0; k < vcount; ++k )
 		{
-			float x0;
-			float x1; ( void )x1;
-			x0 = ScaleFromNormalized( ( ( float )i + 0 ) * dx, minX, maxX );
-			x1 = ScaleFromNormalized( ( ( float )i + 1 ) * dx, minX, maxX );
-
-			for ( int j = 0; j < resolutionY; ++j )
-			{
-				float y0;
-				float y1; ( void )y1;
-				y0 = ScaleFromNormalized( ( ( float )( j + 0 ) * dy ), maxY, minY );
-				y1 = ScaleFromNormalized( ( ( float )( j + 1 ) * dy ), maxY, minY );
-
-				ImU32 const col00 = func( x0, y0, pUserData );
-				ImU32 const col01 = func( x0, y1, pUserData );
-				ImU32 const col10 = func( x1, y0, pUserData );
-				ImU32 const col11 = func( x1, y1, pUserData );
-				pDrawList->AddRectFilledMultiColor( position + ImVec2( sx * ( i + 0 ), sy * ( j + 0 ) ),
-													position + ImVec2( sx * ( i + 1 ), sy * ( j + 1 ) ),
-													col00, col10, col11, col01 );
-			}
+			ImWidgetsVertex& v = shape.vertices[ k ];
+			float x = ScaleFromNormalized( v.uv.x, minX, maxX );
+			float y = ScaleFromNormalized( v.uv.y, maxY, minY );
+			v.col = func( x, y, pUserData );
+			v.uv = uvWhite;
 		}
+		DrawShape( pDrawList, shape );
 	}
 
 	void DrawProceduralColorSplineBilinear( ImDrawList* pDrawList, const ImVec2* points, int points_count, float thickness, ImWidgetsColor1DCallback func, void* pUserData, int resolution, bool closed )
@@ -4046,43 +4587,43 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	{
 		if ( division <= 0 || outerRadius <= 0.0f )
 			return;
-
-		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
-		float const dAngle = sweepAngle / ( ( float )division );
-		float angle = startAngle;
-
-		pDrawList->PrimReserve( division * 6, division * 4 );
-		for ( int i = 0; i < division; ++i )
+		// Routed through GenShapeAnnulusArc → DrawShape. The arc shares vertices
+		// between adjacent sectors (inner+outer pair per division boundary), so the
+		// callback fires (division+1) times instead of 2·division — about a 2× cut.
+		ImWidgetsShape shape;
+		GenShapeAnnulusArc( shape, center, innerRadius, outerRadius, startAngle, sweepAngle, division );
+		int const vcount = shape.vertices.size();
+		// Pair vertices share the same uv.x (one inner, one outer), so the
+		// callback fires once per arc-stop. We honour the existing `bilinear`
+		// flag: when false, snap each interior pair to its left-edge stop so
+		// adjacent quads end up with one solid colour per cell.
+		if ( bilinear )
 		{
-			float cs0 = ImCos( angle );
-			float sn0 = ImSin( angle );
-			float cs1 = ImCos( angle + dAngle );
-			float sn1 = ImSin( angle + dAngle );
-
-			ImVec2 const p_out0 = center + ImVec2( outerRadius * cs0, outerRadius * sn0 );
-			ImVec2 const p_out1 = center + ImVec2( outerRadius * cs1, outerRadius * sn1 );
-			ImVec2 const p_in1  = center + ImVec2( innerRadius * cs1, innerRadius * sn1 );
-			ImVec2 const p_in0  = center + ImVec2( innerRadius * cs0, innerRadius * sn0 );
-
-			pDrawList->PrimWriteIdx( ( ImDrawIdx )( pDrawList->_VtxCurrentIdx ) );
-			pDrawList->PrimWriteIdx( ( ImDrawIdx )( pDrawList->_VtxCurrentIdx + 1 ) );
-			pDrawList->PrimWriteIdx( ( ImDrawIdx )( pDrawList->_VtxCurrentIdx + 2 ) );
-			pDrawList->PrimWriteIdx( ( ImDrawIdx )( pDrawList->_VtxCurrentIdx ) );
-			pDrawList->PrimWriteIdx( ( ImDrawIdx )( pDrawList->_VtxCurrentIdx + 2 ) );
-			pDrawList->PrimWriteIdx( ( ImDrawIdx )( pDrawList->_VtxCurrentIdx + 3 ) );
-
-			float t0 = ( ( float )i ) / ( ( float )division );
-			float t1 = ( ( float )( i + 1 ) ) / ( ( float )division );
-			ImU32 col0 = func( t0, pUserData );
-			ImU32 col1 = bilinear ? func( t1, pUserData ) : col0;
-
-			pDrawList->PrimWriteVtx( p_out0, uv, col0 );
-			pDrawList->PrimWriteVtx( p_out1, uv, col1 );
-			pDrawList->PrimWriteVtx( p_in1,  uv, col1 );
-			pDrawList->PrimWriteVtx( p_in0,  uv, col0 );
-
-			angle += dAngle;
+			for ( int k = 0; k < vcount; ++k )
+			{
+				ImWidgetsVertex& v = shape.vertices[ k ];
+				v.col = func( v.uv.x, pUserData );
+			}
 		}
+		else
+		{
+			for ( int i = 0; i < division; ++i )
+			{
+				float t = ( float )i / ( float )division;
+				ImU32 c = func( t, pUserData );
+				// Vertices for cell i: pair (2i, 2i+1) is the start edge,
+				// pair (2(i+1), 2(i+1)+1) is the end edge — assign both `c`
+				// so the cell is a flat colour.
+				shape.vertices[ 2 * i + 0 ].col = c;
+				shape.vertices[ 2 * i + 1 ].col = c;
+				shape.vertices[ 2 * ( i + 1 ) + 0 ].col = c;
+				shape.vertices[ 2 * ( i + 1 ) + 1 ].col = c;
+			}
+		}
+		// Stamp white-pixel UV on every vertex — see note in the 1D bilinear refactor.
+		ImVec2 const uvWhite = ImGui::GetFontTexUvWhitePixel();
+		for ( int k = 0; k < vcount; ++k ) shape.vertices[ k ].uv = uvWhite;
+		DrawShape( pDrawList, shape );
 	}
 
 	ImU32 ImInternalHueFunc( float ttt, void* pUserData )
@@ -4677,7 +5218,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return src;
 	}
 
-	void CreateInternalShader( ImDrawShader *shaders_out, char const *shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer, char const* extra_define, char const* cache_suffix )
+	void CreateInternalShader( ImDrawShader *shaders_out, char const *shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer, char const* extra_define, char const* cache_suffix, unsigned int compile_flags )
 	{
 		// Note: sizeof_vs_const_buffer, vs_const_buffer, sizeof_ps_const_buffer, ps_const_buffer
 		// are no longer used with the new ImPlatform API. Uniforms are set per-draw via ImPlatform_SetShaderUniform.
@@ -4830,7 +5371,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		vs_desc.bytecode_size = 0;
 		vs_desc.entry_point = "main_vs"; // Standard entry point name in our shaders
 		vs_desc.cache_key = cache_key_buf;
-		vs_desc.compile_flags = IMPLATFORM_SHADER_COMPILE_DEFAULT;
+		vs_desc.compile_flags = compile_flags;
 
 		ImPlatform_Shader vertex_shader = ImPlatform_CreateShader( &vs_desc );
 		if (vertex_shader == NULL)
@@ -4859,7 +5400,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ps_desc.bytecode_size = 0;
 		ps_desc.entry_point = "main_ps"; // Standard entry point name in our shaders
 		ps_desc.cache_key = cache_key_buf;
-		ps_desc.compile_flags = IMPLATFORM_SHADER_COMPILE_DEFAULT;
+		ps_desc.compile_flags = compile_flags;
 
 		ImPlatform_Shader pixel_shader = ImPlatform_CreateShader( &ps_desc );
 		if (pixel_shader == NULL)
@@ -5283,6 +5824,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			current += colorStride;
 		}
 
+		// Defensive against the VtxOffset desync (see DW_EnsureFreshVtxOffset doc) —
+		// the chromaticity locus polyline disappears if some upstream widget has left
+		// _CmdHeader.VtxOffset = 0 while VtxBuffer.Size > 64K.
+		DW_EnsureFreshVtxOffset( pDrawList );
+
 		// Route through the unified DrawThickLine dispatcher. Mode + dashed come from the
 		// active ImWidgetsStyle; thickness/color come from the call's existing args so this
 		// call site stays backwards-compatible.
@@ -5698,6 +6244,1435 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		drawlist->PathArcTo( center, radius, -start_angle, -end_angle, num_segments );
 		drawlist->PathStroke( mainCol, ImDrawFlags_None, mainLineThickness );
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Ephemerides (schematic moon phase + sun/earth system)
+	//////////////////////////////////////////////////////////////////////////
+
+	// Julian Date for Gregorian calendar at given UT hour (Meeus, Astronomical Algorithms ch. 7).
+	static double DwJulianDate( int year, int month, int day, double hourUT )
+	{
+		int y = year, m = month;
+		if ( m <= 2 ) { y -= 1; m += 12; }
+		int A = y / 100;
+		int B = 2 - A + A / 4;
+		double JD = (double)( (int)( 365.25 * (double)( y + 4716 ) ) )
+		          + (double)( (int)( 30.6001 * (double)( m + 1 ) ) )
+		          + (double)day + (double)B - 1524.5 + hourUT / 24.0;
+		return JD;
+	}
+
+	static int DwDayOfYear( int year, int month, int day )
+	{
+		static const int doy_normal[ 12 ] = { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
+		bool leap = ( ( year % 4 == 0 && year % 100 != 0 ) || ( year % 400 == 0 ) );
+		int idx = ImClamp( month - 1, 0, 11 );
+		int doy = doy_normal[ idx ] + day;
+		if ( leap && month > 2 ) doy += 1;
+		return doy;
+	}
+
+	// Schematic moon phase view. Phase derived from synodic months elapsed since the
+	// reference new moon of 2000 Jan 6 18:14 UT (Meeus). Northern-hemisphere convention
+	// (waxing on the right, waning on the left); flips for southern observers.
+	// Observer longitude shifts the date by a fraction-of-day so the phase reflects
+	// local civil date better.
+	void DrawMoonEphemeris( ImDrawList* pDrawList, ImVec2 center, float radius,
+	                        int year, int month, int day, float lonDeg, float latDeg,
+	                        ImU32 litCol, ImU32 darkCol, ImU32 outlineCol )
+	{
+		if ( !pDrawList || radius <= 0.0f ) return;
+
+		double JD = DwJulianDate( year, month, day, 12.0 );
+		JD += (double)lonDeg / 360.0; // tiny local-time shift
+
+		const double JD_REF_NEW_MOON = 2451550.25972;   // 2000 Jan 6, 18:14 UT
+		const double SYNODIC = 29.530588853;
+		double phase = ( JD - JD_REF_NEW_MOON ) / SYNODIC;
+		phase = phase - floor( phase ); // [0, 1)
+
+		double pa = 2.0 * 3.14159265358979323846 * phase;
+		double c = cos( pa );
+
+		bool waxing = ( phase < 0.5 );
+		int dir = waxing ? +1 : -1;
+
+		const double PI_ = 3.14159265358979323846;
+
+		// Continuous Northern/Southern orientation. Outside ±LAT_BAND latitude the
+		// rotation is exactly 0 or π (matching the old binary flip). Inside the band,
+		// smoothstep interpolates so crossing the equator no longer "snaps" the moon.
+		// Band is tight (±2°) so far from the equator the orientation is essentially
+		// the historical Northern/Southern view, only the immediate transition is smoothed.
+		const float LAT_BAND_DEG = 2.0f;
+		float blendT = ImClamp( ( latDeg + LAT_BAND_DEG ) / ( 2.0f * LAT_BAND_DEG ), 0.0f, 1.0f );
+		blendT = blendT * blendT * ( 3.0f - 2.0f * blendT );
+		const float rotAngle = ( 1.0f - blendT ) * (float)PI_;
+		const float cosR = cosf( rotAngle );
+		const float sinR = sinf( rotAngle );
+
+		// Image-space relative (dx, dy) → absolute screen position with smooth rotation.
+		auto applyRot = [ cosR, sinR, &center ]( float dx, float dy ) -> ImVec2
+		{
+			return ImVec2( center.x + dx * cosR - dy * sinR, center.y + dx * sinR + dy * cosR );
+		};
+
+		// 1. Lit base disc.
+		pDrawList->AddCircleFilled( center, radius, litCol, 96 );
+
+		// 2. Real-shape maria projected from selenographic (lat, lon). Each mare
+		// is an N-vertex procedurally-irregular polygon rendered as a stack of
+		// shrunk copies with low per-layer alpha — accumulates to a soft, dark
+		// patch matching the actual nearside maria layout. Drawn BEFORE the
+		// unlit lune so the dark-side overlay naturally clips maria there.
+		struct DwMareDef { float lat; float lon; float sLat; float sLon; int alpha; };
+		static const DwMareDef kMaria[] = {
+			{  32.0f, -16.0f, 18.0f, 22.0f, 320 }, // Imbrium
+			{  28.0f,  18.0f, 11.0f, 10.0f, 290 }, // Serenitatis
+			{   8.0f,  31.0f, 10.0f, 14.0f, 290 }, // Tranquillitatis
+			{  17.0f,  58.0f,  9.0f,  9.0f, 270 }, // Crisium
+			{  -8.0f,  51.0f, 10.0f,  6.0f, 260 }, // Fecunditatis
+			{ -15.0f,  35.0f,  6.0f,  5.0f, 240 }, // Nectaris
+			{ -19.0f, -17.0f,  9.0f, 10.0f, 270 }, // Nubium
+			{ -24.0f, -38.0f,  6.0f,  5.0f, 240 }, // Humorum
+			{  20.0f, -55.0f, 24.0f, 18.0f, 290 }, // Oceanus Procellarum (large)
+			{  13.0f,   4.0f,  4.0f,  5.0f, 200 }, // Vaporum
+			{  55.0f, -20.0f,  5.0f, 16.0f, 230 }, // Frigoris (west arc)
+			{  57.0f,  15.0f,  4.0f, 18.0f, 230 }, // Frigoris (east arc)
+		};
+
+		// Hash-based jitter so each (mare, vertex) gets a stable pseudo-random
+		// offset in [-1, 1] without keeping a baked vertex table.
+		auto mareJitter = []( int mi, int vi ) -> float
+		{
+			ImU32 h = ( (ImU32)mi * 73856093u ) ^ ( (ImU32)vi * 19349663u );
+			h *= 2654435761u;
+			h ^= ( h >> 16 );
+			return ( (float)( h & 0xFFFFu ) / 65535.0f ) * 2.0f - 1.0f;
+		};
+
+		// Selenographic (lat, lon) → disc point, snapping back-hemisphere vertices
+		// to the limb so the polygon never inverts past the rim.
+		auto projLL = [ & ]( float lat_r, float lon_r ) -> ImVec2
+		{
+			float cosc = cosf( lat_r ) * cosf( lon_r );
+			float xd = radius * cosf( lat_r ) * sinf( lon_r );
+			float yd = radius * sinf( lat_r );
+			if ( cosc < 0.0f )
+			{
+				float mag = sqrtf( xd * xd + yd * yd );
+				if ( mag > 1e-6f )
+				{
+					xd = xd / mag * radius;
+					yd = yd / mag * radius;
+				}
+			}
+			// Selenographic +y (north) corresponds to image -y (up on screen).
+			return applyRot( xd, -yd );
+		};
+
+		const int MARE_VERTS = 18;
+		const float MARE_JITTER = 0.20f;
+		const int MARE_LAYERS = 10;
+		const ImU32 mareRGB = IM_COL32( 22, 20, 28, 0 ); // alpha set per-layer below
+		ImVec2 marePts[ MARE_VERTS ];
+		ImVec2 mareScaled[ MARE_VERTS ];
+		for ( int mi = 0; mi < IM_ARRAYSIZE( kMaria ); ++mi )
+		{
+			const DwMareDef& m = kMaria[ mi ];
+			ImVec2 centroid( 0.0f, 0.0f );
+			for ( int v = 0; v < MARE_VERTS; ++v )
+			{
+				float a = 2.0f * (float)PI_ * (float)v / (float)MARE_VERTS;
+				float jr = 1.0f + MARE_JITTER * mareJitter( mi, v );
+				float dlat = m.sLat * jr * sinf( a );
+				float dlon = m.sLon * jr * cosf( a );
+				float lat_r = ( m.lat + dlat ) * (float)PI_ / 180.0f;
+				float lon_r = ( m.lon + dlon ) * (float)PI_ / 180.0f;
+				marePts[ v ] = projLL( lat_r, lon_r );
+				centroid.x += marePts[ v ].x;
+				centroid.y += marePts[ v ].y;
+			}
+			centroid.x /= (float)MARE_VERTS;
+			centroid.y /= (float)MARE_VERTS;
+			int alphaPer = ImMax( 1, m.alpha / MARE_LAYERS );
+			ImU32 layerCol = ( mareRGB & 0x00FFFFFFu ) | ( (ImU32)alphaPer << 24 );
+			for ( int L = 0; L < MARE_LAYERS; ++L )
+			{
+				float t = (float)L / (float)( MARE_LAYERS - 1 );
+				float scale = 1.0f - 0.55f * t;
+				for ( int v = 0; v < MARE_VERTS; ++v )
+				{
+					mareScaled[ v ].x = centroid.x + ( marePts[ v ].x - centroid.x ) * scale;
+					mareScaled[ v ].y = centroid.y + ( marePts[ v ].y - centroid.y ) * scale;
+				}
+				pDrawList->AddConvexPolyFilled( mareScaled, MARE_VERTS, layerCol );
+			}
+		}
+
+		// 3. Smooth penumbra: 24 nested lunes with eased colour ramp from a
+		// dimmed-lit ridge at the outer edge to earthshine at the real terminator.
+		// Each lune is convex (outer dark-side semicircle + inner ellipse arc with
+		// signed semi-minor a = dir·R·c_layer). Increasing c expands the lune, so
+		// successively-smaller (c) lunes drawn on top form a smooth gradient ring.
+		const int N = 64;
+		double sweepDir = -(double)dir;
+		auto buildLune = [ & ]( double c_val, ImU32 col )
+		{
+			double a = (double)dir * (double)radius * c_val;
+			ImVector<ImVec2> p;
+			p.reserve( 2 * ( N + 1 ) );
+			for ( int i = 0; i <= N; i++ )
+			{
+				double t = (double)i / (double)N;
+				double theta = -PI_ * 0.5 + sweepDir * t * PI_;
+				p.push_back( applyRot( (float)( cos( theta ) * (double)radius ),
+				                       (float)( sin( theta ) * (double)radius ) ) );
+			}
+			for ( int i = 0; i <= N; i++ )
+			{
+				double t = (double)i / (double)N;
+				double phi = t * PI_;
+				p.push_back( applyRot( (float)( a * sin( phi ) ),
+				                       (float)( (double)radius * cos( phi ) ) ) );
+			}
+			pDrawList->AddConvexPolyFilled( p.Data, p.Size, col );
+		};
+
+		const int litR  = (int)( ( litCol  >> IM_COL32_R_SHIFT ) & 0xFFu );
+		const int litG  = (int)( ( litCol  >> IM_COL32_G_SHIFT ) & 0xFFu );
+		const int litB  = (int)( ( litCol  >> IM_COL32_B_SHIFT ) & 0xFFu );
+		const int eshR  = (int)( ( darkCol >> IM_COL32_R_SHIFT ) & 0xFFu );
+		const int eshG  = (int)( ( darkCol >> IM_COL32_G_SHIFT ) & 0xFFu );
+		const int eshB  = (int)( ( darkCol >> IM_COL32_B_SHIFT ) & 0xFFu );
+		// Outer "dim lit" target: 78% of lit (slight cool dim into the penumbra).
+		const int lDimR = ( litR * 78 ) / 100;
+		const int lDimG = ( litG * 78 ) / 100;
+		const int lDimB = ( litB * 78 ) / 100;
+		const int PEN_N = 24;
+		const double SPREAD = 0.06;
+		for ( int k = PEN_N; k >= 0; --k )
+		{
+			double c_val = c + ( (double)k / (double)PEN_N ) * SPREAD;
+			float t = (float)k / (float)PEN_N;
+			float et = powf( t, 0.55f );
+			int rr = eshR + (int)( ( lDimR - eshR ) * et );
+			int gg = eshG + (int)( ( lDimG - eshG ) * et );
+			int bb = eshB + (int)( ( lDimB - eshB ) * et );
+			ImU32 col = IM_COL32( rr, gg, bb, 255 );
+			buildLune( c_val, col );
+		}
+
+		// 4. Selenographic graticule (orthographic, observer at sub-Earth (0, 0)).
+		// Drawn after penumbra so the grid reads on both lit and dark sides.
+		const ImU32 gridCol = IM_COL32( 210, 220, 245, 65 );
+		const ImU32 eqCol   = IM_COL32( 255, 230, 180, 110 );
+		auto strokeStrip = [ & ]( ImVector<ImVec2>& s, ImU32 col, float w )
+		{
+			if ( s.Size >= 2 ) pDrawList->AddPolyline( s.Data, s.Size, col, ImDrawFlags_None, w );
+			s.clear();
+		};
+		static const int kParallels[] = { -60, -30, 0, 30, 60 };
+		for ( int pi_ = 0; pi_ < IM_ARRAYSIZE( kParallels ); ++pi_ )
+		{
+			float phi_p = (float)kParallels[ pi_ ] * (float)PI_ / 180.0f;
+			float sinP = sinf( phi_p ), cosP = cosf( phi_p );
+			ImU32 col = ( kParallels[ pi_ ] == 0 ) ? eqCol : gridCol;
+			float w = ( kParallels[ pi_ ] == 0 ) ? 1.4f : 1.0f;
+			ImVector<ImVec2> strip;
+			int steps = 128;
+			for ( int s = 0; s <= steps; ++s )
+			{
+				float lon_p = -(float)PI_ + 2.0f * (float)PI_ * (float)s / (float)steps;
+				float cosc = cosP * cosf( lon_p );
+				if ( cosc >= 0.0f )
+				{
+					float xd = radius * cosP * sinf( lon_p );
+					float yd = radius * sinP;
+					strip.push_back( applyRot( xd, -yd ) );
+				}
+				else
+				{
+					strokeStrip( strip, col, w );
+				}
+			}
+			strokeStrip( strip, col, w );
+		}
+		static const int kMeridians[] = { -180, -150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150 };
+		for ( int mi = 0; mi < IM_ARRAYSIZE( kMeridians ); ++mi )
+		{
+			float lon_m = (float)kMeridians[ mi ] * (float)PI_ / 180.0f;
+			float cosL = cosf( lon_m ), sinL = sinf( lon_m );
+			ImU32 col = ( kMeridians[ mi ] == 0 ) ? eqCol : gridCol;
+			float w = ( kMeridians[ mi ] == 0 ) ? 1.4f : 1.0f;
+			ImVector<ImVec2> strip;
+			int steps = 96;
+			for ( int s = 0; s <= steps; ++s )
+			{
+				float phi_p = -(float)PI_ * 0.5f + (float)PI_ * (float)s / (float)steps;
+				float sinP = sinf( phi_p ), cosP = cosf( phi_p );
+				float cosc = cosP * cosL;
+				if ( cosc >= 0.0f )
+				{
+					float xd = radius * cosP * sinL;
+					float yd = radius * sinP;
+					strip.push_back( applyRot( xd, -yd ) );
+				}
+				else
+				{
+					strokeStrip( strip, col, w );
+				}
+			}
+			strokeStrip( strip, col, w );
+		}
+
+		// 5. North-pole marker.
+		pDrawList->AddCircleFilled( applyRot( 0.0f, -radius ), 3.0f, IM_COL32( 220, 80, 80, 255 ), 12 );
+
+		// 6. Outline.
+		pDrawList->AddCircle( center, radius, outlineCol, 96, 1.8f );
+	}
+
+	// Schematic Sun/Earth system. Left half: heliocentric (Sun + Earth orbit + Earth's
+	// current orbital position with its day/night terminator and axis tilt). Right
+	// half: observer-centered orthographic Earth disc, day/night carved by the great
+	// circle 90 deg from the sub-solar point. If the sun is above the observer's
+	// horizon a small sun-glyph marks its position on the disc.
+	void DrawEarthSunEphemeris( ImDrawList* pDrawList, ImVec2 areaMin, ImVec2 areaSize,
+	                            int year, int month, int day, int hour, int minute,
+	                            float obsLon, float obsLat,
+	                            ImU32 sunCol, ImU32 dayCol, ImU32 nightCol, ImU32 outlineCol )
+	{
+		if ( !pDrawList || areaSize.x <= 0.0f || areaSize.y <= 0.0f ) return;
+		const double PI_ = 3.14159265358979323846;
+
+		int doy = DwDayOfYear( year, month, day );
+		double dayFrac = ( (double)hour + (double)minute / 60.0 ) / 24.0;
+		double dayOfYearFrac = (double)doy - 1.0 + dayFrac;
+
+		// Earth orbital angle, 0 at vernal equinox (~DOY 79).
+		double orbitAngle = 2.0 * PI_ * ( dayOfYearFrac - 79.0 ) / 365.25;
+
+		// Solar declination (deg) via simple axial-tilt projection.
+		double decl_rad = ( 23.44 * PI_ / 180.0 ) * sin( orbitAngle );
+
+		// Sub-solar longitude (deg), ignoring equation of time.
+		double UT_hour = (double)hour + (double)minute / 60.0;
+		double subsolar_lon_deg = -( UT_hour - 12.0 ) * 15.0;
+
+		float W = areaSize.x, H_ = areaSize.y;
+		float halfW = W * 0.5f;
+
+		// ---- Left half: heliocentric ----
+		ImVec2 heliosC( areaMin.x + halfW * 0.5f, areaMin.y + H_ * 0.5f );
+		float orbitR = ImMin( halfW, H_ ) * 0.36f;
+		float sunR = orbitR * 0.16f;
+		float earthMiniR = orbitR * 0.13f;
+
+		// Sun + simple rays.
+		pDrawList->AddCircleFilled( heliosC, sunR, sunCol, 48 );
+		for ( int i = 0; i < 12; i++ )
+		{
+			double a = 2.0 * PI_ * (double)i / 12.0;
+			pDrawList->AddLine(
+				ImVec2( heliosC.x + sunR * 1.2f * (float)cos( a ), heliosC.y + sunR * 1.2f * (float)sin( a ) ),
+				ImVec2( heliosC.x + sunR * 1.7f * (float)cos( a ), heliosC.y + sunR * 1.7f * (float)sin( a ) ),
+				IM_COL32( 255, 200, 100, 200 ), 1.5f );
+		}
+		// Orbit ring + equinox/solstice ticks.
+		pDrawList->AddCircle( heliosC, orbitR, IM_COL32( 120, 130, 150, 130 ), 64, 1.0f );
+		for ( int s = 0; s < 4; s++ )
+		{
+			double a = (double)s * PI_ * 0.5;
+			pDrawList->AddLine(
+				ImVec2( heliosC.x + ( orbitR - 5.0f ) * (float)cos( a ), heliosC.y + ( orbitR - 5.0f ) * (float)sin( a ) ),
+				ImVec2( heliosC.x + ( orbitR + 5.0f ) * (float)cos( a ), heliosC.y + ( orbitR + 5.0f ) * (float)sin( a ) ),
+				IM_COL32( 180, 180, 200, 200 ), 1.0f );
+		}
+		// Earth on orbit.
+		ImVec2 earthMini( heliosC.x + orbitR * (float)cos( orbitAngle ),
+		                  heliosC.y + orbitR * (float)sin( orbitAngle ) );
+		// Sun direction from earthMini (toward heliosC).
+		double sdx = (double)( heliosC.x - earthMini.x ), sdy = (double)( heliosC.y - earthMini.y );
+		double slen = sqrt( sdx * sdx + sdy * sdy );
+		if ( slen > 1e-6 ) { sdx /= slen; sdy /= slen; } else { sdx = -1.0; sdy = 0.0; }
+		// Night-fill disc.
+		pDrawList->AddCircleFilled( earthMini, earthMiniR, nightCol, 32 );
+		// Day semicircle on the sun-facing side.
+		{
+			ImVector<ImVec2> dpts;
+			int nseg = 32;
+			double px_ = -sdy, py_ = sdx; // perp to sun direction
+			for ( int i = 0; i <= nseg; i++ )
+			{
+				double a = (double)i * PI_ / (double)nseg;
+				double ca = cos( a ), sa = sin( a );
+				double dx = sdx * sa + px_ * ca;
+				double dy = sdy * sa + py_ * ca;
+				dpts.push_back( ImVec2( earthMini.x + earthMiniR * (float)dx, earthMini.y + earthMiniR * (float)dy ) );
+			}
+			pDrawList->AddConvexPolyFilled( dpts.Data, dpts.Size, dayCol );
+		}
+		// Earth's axis (schematic 23.44 deg tilt; projected component varies with orbit).
+		{
+			double tilt_screen = ( 23.44 * PI_ / 180.0 ) * sin( orbitAngle - PI_ * 0.5 );
+			ImVec2 axTop( earthMini.x + earthMiniR * (float)sin( tilt_screen ),
+			              earthMini.y - earthMiniR * (float)cos( tilt_screen ) );
+			ImVec2 axBot( earthMini.x - earthMiniR * (float)sin( tilt_screen ),
+			              earthMini.y + earthMiniR * (float)cos( tilt_screen ) );
+			pDrawList->AddLine( axBot, axTop, IM_COL32( 255, 255, 255, 200 ), 1.5f );
+			// North-pole dot.
+			pDrawList->AddCircleFilled( axTop, 2.5f, IM_COL32( 230, 90, 90, 255 ), 8 );
+		}
+		pDrawList->AddCircle( earthMini, earthMiniR, outlineCol, 32, 1.0f );
+
+		// ---- Right half: observer-centered Earth ----
+		ImVec2 obsC( areaMin.x + halfW + halfW * 0.5f, areaMin.y + H_ * 0.5f );
+		float obsR = ImMin( halfW, H_ ) * 0.40f;
+
+		// Solar altitude/azimuth at the observer (standard spherical astronomy).
+		double phi = (double)obsLat * PI_ / 180.0;
+		double H_hourangle = ( (double)obsLon - subsolar_lon_deg ) * PI_ / 180.0;
+		double sin_alt = sin( phi ) * sin( decl_rad ) + cos( phi ) * cos( decl_rad ) * cos( H_hourangle );
+		sin_alt = ImClamp( sin_alt, -1.0, 1.0 );
+		double alt = asin( sin_alt );
+		double cos_alt = cos( alt );
+		double sin_az = 0.0, cos_az = 1.0;
+		if ( cos_alt > 1e-6 )
+		{
+			cos_az = ( sin( decl_rad ) - sin_alt * sin( phi ) ) / ( cos_alt * cos( phi ) );
+			sin_az = -cos( decl_rad ) * sin( H_hourangle ) / cos_alt;
+			cos_az = ImClamp( cos_az, -1.0, 1.0 );
+			sin_az = ImClamp( sin_az, -1.0, 1.0 );
+		}
+
+		// Day-coloured base disc; we then carve the night region.
+		pDrawList->AddCircleFilled( obsC, obsR, dayCol, 64 );
+
+		// Sub-solar projected onto observer's local sky (orthographic):
+		//   r = R * cos(alt), in direction (sin(az) east, -cos(az) north→ -y is up).
+		double r_proj = (double)obsR * cos_alt;
+		double sx_ = r_proj * sin_az;
+		double sy_ = -r_proj * cos_az;
+		double slen2 = sqrt( sx_ * sx_ + sy_ * sy_ );
+		double sun_dir_x = ( slen2 > 1e-3 ) ? ( sx_ / slen2 ) : 1.0;
+		double sun_dir_y = ( slen2 > 1e-3 ) ? ( sy_ / slen2 ) : 0.0;
+		double perp_x = -sun_dir_y, perp_y = sun_dir_x;
+
+		// Build the night / twilight regions as nested lunes carved out of the day disc.
+		// The visible terminator (90 deg from sub-solar) projects to a half-ellipse on
+		// the disc that bulges AWAY from the sub-solar projection (depth sin(alt) * R
+		// in the anti-sun direction). So a_ell uses a NEGATIVE sign on sin_alt — using
+		// +sin_alt bulges the wrong way and inverts day/night near zenith.
+		// Civil twilight uses a slightly deeper threshold (alt = -6 deg) by substituting
+		// sin(alt + 6 deg) instead, giving a strictly smaller polygon than the alt=0
+		// terminator — so the twilight ring is what's left between them.
+		auto buildLune = [ & ]( double a_ell, ImU32 col )
+		{
+			ImVector<ImVec2> npts;
+			int nseg = 48;
+			double baseAngle = atan2( perp_y, perp_x );
+			for ( int i = 0; i <= nseg; i++ )
+			{
+				double t = (double)i / (double)nseg;
+				double theta = baseAngle + t * PI_;
+				npts.push_back( ImVec2( obsC.x + obsR * (float)cos( theta ),
+				                        obsC.y + obsR * (float)sin( theta ) ) );
+			}
+			for ( int i = 0; i <= nseg; i++ )
+			{
+				double t = (double)i / (double)nseg;
+				double phi2 = t * PI_;
+				double dx = perp_x * ( -cos( phi2 ) ) * (double)obsR + sun_dir_x * sin( phi2 ) * a_ell;
+				double dy = perp_y * ( -cos( phi2 ) ) * (double)obsR + sun_dir_y * sin( phi2 ) * a_ell;
+				npts.push_back( ImVec2( obsC.x + (float)dx, obsC.y + (float)dy ) );
+			}
+			if ( npts.Size >= 3 )
+				pDrawList->AddConvexPolyFilled( npts.Data, npts.Size, col );
+		};
+		double a_ell_twi = -(double)obsR * ImClamp( sin_alt, -1.0, 1.0 );
+		double sin_alt_n  = ImClamp( sin( alt + 6.0 * PI_ / 180.0 ), -1.0, 1.0 );
+		double a_ell_night = -(double)obsR * sin_alt_n;
+		buildLune( a_ell_twi,   IM_COL32( 200, 110,  60, 255 ) ); // civil twilight
+		buildLune( a_ell_night, nightCol );
+
+		// Lat/lon graticule (faint) overlaid AFTER day/night so it reads on both
+		// hemispheres. Parallels at +-60, +-30 and equator; meridians every 30 deg.
+		// Standard orthographic projection centred on the observer.
+		{
+			double obsLat_rad = (double)obsLat * PI_ / 180.0;
+			double obsLon_rad = (double)obsLon * PI_ / 180.0;
+			double sinL0 = sin( obsLat_rad ), cosL0 = cos( obsLat_rad );
+			const ImU32 gridCol = IM_COL32( 220, 230, 250,  60 );
+			const ImU32 eqCol   = IM_COL32( 255, 230, 180, 110 );
+
+			auto strokeStrip = [ & ]( ImVector<ImVec2>& s, ImU32 col, float w )
+			{
+				if ( s.Size >= 2 ) pDrawList->AddPolyline( s.Data, s.Size, col, ImDrawFlags_None, w );
+				s.clear();
+			};
+
+			static const int kParallels[] = { -60, -30, 0, 30, 60 };
+			for ( int pi_ = 0; pi_ < IM_ARRAYSIZE( kParallels ); pi_++ )
+			{
+				double phi_p = (double)kParallels[ pi_ ] * PI_ / 180.0;
+				double sinP = sin( phi_p ), cosP = cos( phi_p );
+				ImVector<ImVec2> strip;
+				int steps = 128;
+				ImU32 col = ( kParallels[ pi_ ] == 0 ) ? eqCol : gridCol;
+				float w   = ( kParallels[ pi_ ] == 0 ) ? 1.4f  : 1.0f;
+				for ( int s = 0; s <= steps; s++ )
+				{
+					double lon_p = -PI_ + 2.0 * PI_ * (double)s / (double)steps;
+					double dLam = lon_p - obsLon_rad;
+					double cosc = sinL0 * sinP + cosL0 * cosP * cos( dLam );
+					if ( cosc >= 0.0 )
+					{
+						double xd =  (double)obsR * cosP * sin( dLam );
+						double yd =  (double)obsR * ( cosL0 * sinP - sinL0 * cosP * cos( dLam ) );
+						strip.push_back( ImVec2( obsC.x + (float)xd, obsC.y - (float)yd ) );
+					}
+					else
+					{
+						strokeStrip( strip, col, w );
+					}
+				}
+				strokeStrip( strip, col, w );
+			}
+
+			static const int kMeridians[] = { -180, -150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150 };
+			for ( int mi = 0; mi < IM_ARRAYSIZE( kMeridians ); mi++ )
+			{
+				double lon_m = (double)kMeridians[ mi ] * PI_ / 180.0;
+				double dLam = lon_m - obsLon_rad;
+				double cosDL = cos( dLam ), sinDL = sin( dLam );
+				ImVector<ImVec2> strip;
+				int steps = 96;
+				ImU32 col = ( kMeridians[ mi ] == 0 ) ? eqCol : gridCol;
+				float w   = ( kMeridians[ mi ] == 0 ) ? 1.4f  : 1.0f;
+				for ( int s = 0; s <= steps; s++ )
+				{
+					double phi_p = -PI_ * 0.5 + PI_ * (double)s / (double)steps;
+					double sinP = sin( phi_p ), cosP = cos( phi_p );
+					double cosc = sinL0 * sinP + cosL0 * cosP * cosDL;
+					if ( cosc >= 0.0 )
+					{
+						double xd =  (double)obsR * cosP * sinDL;
+						double yd =  (double)obsR * ( cosL0 * sinP - sinL0 * cosP * cosDL );
+						strip.push_back( ImVec2( obsC.x + (float)xd, obsC.y - (float)yd ) );
+					}
+					else
+					{
+						strokeStrip( strip, col, w );
+					}
+				}
+				strokeStrip( strip, col, w );
+			}
+		}
+
+		// Outline + observer.
+		pDrawList->AddCircle( obsC, obsR, outlineCol, 64, 1.5f );
+		pDrawList->AddCircleFilled( obsC, 4.0f, IM_COL32( 235, 70, 70, 255 ), 12 );
+		pDrawList->AddCircle( obsC, 4.0f, IM_COL32( 255, 255, 255, 220 ), 12, 1.0f );
+
+		// Sun glyph if above horizon.
+		if ( alt > 0.0 )
+		{
+			ImVec2 sunPos( obsC.x + (float)sx_, obsC.y + (float)sy_ );
+			pDrawList->AddCircleFilled( sunPos, 5.0f, sunCol, 16 );
+			pDrawList->AddCircle( sunPos, 5.0f, outlineCol, 16, 1.0f );
+		}
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// DrawStarChart — observer-centred sky with stars + culture-specific
+	// constellation figure lines + solar-system overlay (Moon with phase,
+	// 5 naked-eye planets, Sun when above horizon).
+	//
+	// Sky culture data tables drive the rendering. Culture-specific labels
+	// (which may be CJK or right-to-left Arabic) are rendered via
+	// ImWidgets::DrawText which uses the Slug GPU font and supports BiDi.
+	//////////////////////////////////////////////////////////////////////////
+
+	// Star catalogue: name, RA hours, Dec degrees, V mag, spectral letter.
+	struct DwStarDef { char const* name; float ra_h; float dec_deg; float vmag; char spec; };
+	static const DwStarDef s_StarCatalog[] = {
+		{ "Sirius",     6.752f, -16.716f, -1.46f, 'A' },
+		{ "Canopus",    6.399f, -52.696f, -0.74f, 'F' },
+		{ "Arcturus",  14.261f,  19.182f, -0.05f, 'K' },
+		{ "Vega",      18.616f,  38.784f,  0.03f, 'A' },
+		{ "Capella",    5.278f,  45.998f,  0.08f, 'G' },
+		{ "Rigel",      5.242f,  -8.202f,  0.13f, 'B' },
+		{ "Procyon",    7.655f,   5.225f,  0.34f, 'F' },
+		{ "Achernar",   1.629f, -57.237f,  0.46f, 'B' },
+		{ "Betelgeuse", 5.919f,   7.407f,  0.50f, 'M' },
+		{ "Hadar",     14.064f, -60.373f,  0.61f, 'B' },
+		{ "Altair",    19.846f,   8.868f,  0.77f, 'A' },
+		{ "Aldebaran",  4.598f,  16.509f,  0.85f, 'K' },
+		{ "Spica",     13.420f, -11.161f,  1.04f, 'B' },
+		{ "Antares",   16.490f, -26.432f,  1.06f, 'M' },
+		{ "Pollux",     7.755f,  28.026f,  1.14f, 'K' },
+		{ "Fomalhaut", 22.961f, -29.622f,  1.16f, 'A' },
+		{ "Deneb",     20.690f,  45.280f,  1.25f, 'A' },
+		{ "Mimosa",    12.795f, -59.689f,  1.25f, 'B' },
+		{ "Regulus",   10.140f,  11.967f,  1.35f, 'B' },
+		{ "Adhara",     6.977f, -28.972f,  1.50f, 'B' },
+		{ "Castor",     7.577f,  31.889f,  1.58f, 'A' },
+		{ "Shaula",    17.560f, -37.104f,  1.62f, 'B' },
+		{ "Bellatrix",  5.418f,   6.350f,  1.64f, 'B' },
+		{ "Elnath",     5.438f,  28.608f,  1.65f, 'B' },
+		{ "Alnilam",    5.604f,  -1.202f,  1.69f, 'B' },
+		{ "Alnitak",    5.679f,  -1.943f,  1.74f, 'O' },
+		{ "Alioth",    12.900f,  55.960f,  1.76f, 'A' },
+		{ "Dubhe",     11.062f,  61.751f,  1.79f, 'K' },
+		{ "Mirfak",     3.405f,  49.861f,  1.79f, 'F' },
+		{ "Wezen",      7.140f, -26.393f,  1.83f, 'F' },
+		{ "Alkaid",    13.792f,  49.313f,  1.85f, 'B' },
+		{ "Saiph",      5.795f,  -9.670f,  2.06f, 'B' },
+		{ "Mizar",     13.399f,  54.925f,  2.04f, 'A' },
+		{ "Polaris",    2.530f,  89.264f,  1.97f, 'F' },
+		{ "Mintaka",    5.533f,  -0.299f,  2.23f, 'O' },
+		{ "Schedar",    0.675f,  56.537f,  2.24f, 'K' },
+		{ "Caph",       0.153f,  59.150f,  2.27f, 'F' },
+		{ "Merak",     11.031f,  56.382f,  2.34f, 'A' },
+		{ "Phecda",    11.897f,  53.695f,  2.41f, 'A' },
+		{ "Tsih",       0.945f,  60.717f,  2.47f, 'B' },
+		{ "Ruchbah",    1.430f,  60.235f,  2.66f, 'A' },
+		{ "Algieba",   10.333f,  19.842f,  2.28f, 'K' },
+		{ "Denebola",  11.818f,  14.572f,  2.14f, 'A' },
+		{ "Pleiades",   3.792f,  24.105f,  1.60f, 'B' },
+		{ "Megrez",    12.257f,  57.033f,  3.31f, 'A' },
+	};
+	static const int s_NStars = IM_ARRAYSIZE( s_StarCatalog );
+
+	// Planet J2000 mean-longitude orbital elements (degrees, deg/day).
+	struct DwPlanetDef { char const* name; float au; float L0; float n_deg; float incl; float node; ImU32 col; float size; };
+	static const DwPlanetDef s_PlanetData[] = {
+		{ "Mercury", 0.387f,  252.25f, 4.0923f,  7.00f,  48.33f, IM_COL32( 210, 175, 140, 255 ), 3.5f },
+		{ "Venus",   0.723f,  181.98f, 1.6022f,  3.39f,  76.68f, IM_COL32( 250, 230, 175, 255 ), 5.5f },
+		{ "Earth",   1.000f,  100.46f, 0.9856f,  0.00f,   0.00f, IM_COL32(   0,   0,   0,   0 ), 0.0f },
+		{ "Mars",    1.524f,  355.43f, 0.5240f,  1.85f,  49.56f, IM_COL32( 235, 120,  75, 255 ), 4.5f },
+		{ "Jupiter", 5.203f,   34.40f, 0.0831f,  1.30f, 100.46f, IM_COL32( 225, 195, 145, 255 ), 8.0f },
+		{ "Saturn",  9.582f,   49.94f, 0.0335f,  2.49f, 113.71f, IM_COL32( 235, 215, 160, 255 ), 7.0f },
+	};
+
+	// Sky-culture data. Each culture defines: constellation figure lines
+	// (pairs of star-name strings — looked up at draw time), star-label
+	// overrides, and per-body solar-system names ordered as
+	// { Sun, Moon, Mercury, Venus, Mars, Jupiter, Saturn }.
+	struct DwConstLine { char const* a; char const* b; };
+	struct DwStarLabel { char const* star; char const* label; };
+	struct DwSkyCultureData {
+		char const* id;
+		char const* display_name;
+		char const* subtitle;
+		ImU32       line_color;
+		ImU32       label_color;
+		int         n_lines;
+		DwConstLine const* lines;
+		int         n_labels;
+		DwStarLabel const* labels;
+		char const* ss_names[ 7 ];
+	};
+
+	// ---- Western (IAU modern) ----
+	static const DwConstLine s_Western_Lines[] = {
+		{ "Dubhe", "Merak" }, { "Merak", "Phecda" }, { "Phecda", "Megrez" },
+		{ "Megrez", "Dubhe" }, { "Megrez", "Alioth" }, { "Alioth", "Mizar" },
+		{ "Mizar", "Alkaid" },
+		{ "Betelgeuse", "Bellatrix" }, { "Betelgeuse", "Alnitak" },
+		{ "Bellatrix", "Mintaka" }, { "Mintaka", "Alnilam" },
+		{ "Alnilam", "Alnitak" }, { "Alnitak", "Saiph" },
+		{ "Saiph", "Rigel" }, { "Rigel", "Mintaka" },
+		{ "Caph", "Schedar" }, { "Schedar", "Tsih" }, { "Tsih", "Ruchbah" },
+		{ "Sirius", "Adhara" }, { "Adhara", "Wezen" },
+		{ "Aldebaran", "Elnath" },
+		{ "Castor", "Pollux" },
+		{ "Regulus", "Algieba" }, { "Algieba", "Denebola" },
+	};
+	static const DwStarLabel s_Western_Labels[] = {
+		{ "Sirius",     "Sirius"     },
+		{ "Vega",       "Vega"       },
+		{ "Polaris",    "Polaris"    },
+		{ "Betelgeuse", "Betelgeuse" },
+		{ "Rigel",      "Rigel"      },
+	};
+
+	// ---- Chinese (Han dynasty) ----
+	static const DwConstLine s_Chinese_Lines[] = {
+		{ "Dubhe", "Merak" }, { "Merak", "Phecda" }, { "Phecda", "Megrez" },
+		{ "Megrez", "Alioth" }, { "Alioth", "Mizar" }, { "Mizar", "Alkaid" },
+		{ "Mintaka", "Alnilam" }, { "Alnilam", "Alnitak" },
+		{ "Betelgeuse", "Bellatrix" }, { "Saiph", "Rigel" },
+		{ "Aldebaran", "Elnath" },
+		{ "Regulus", "Algieba" },
+		{ "Caph", "Schedar" }, { "Schedar", "Tsih" },
+	};
+	static const DwStarLabel s_Chinese_Labels[] = {
+		{ "Sirius",     "Tian Lang \xE5\xA4\xA9\xE7\x8B\xBC" },
+		{ "Aldebaran",  "Bi Su Wu \xE7\x95\xA2\xE5\xAE\xBF\xE4\xBA\x94" },
+		{ "Vega",       "Zhi Nu \xE7\xB9\x94\xE5\xA5\xB3" },
+		{ "Altair",     "Qian Niu \xE7\x89\xBD\xE7\x89\x9B" },
+		{ "Antares",    "Da Huo \xE5\xA4\xA7\xE7\x81\xAB" },
+		{ "Betelgeuse", "Shen Xiu Si \xE5\x8F\x83\xE5\xAE\xBF\xE5\x9B\x9B" },
+		{ "Rigel",      "Shen Xiu Qi \xE5\x8F\x83\xE5\xAE\xBF\xE4\xB8\x83" },
+		{ "Polaris",    "Bei Ji \xE5\x8C\x97\xE6\xA5\xB5" },
+		{ "Pleiades",   "Mao \xE6\x98\xB4" },
+		{ "Regulus",    "Xuan Yuan \xE8\xBB\x92\xE8\xBD\x95" },
+	};
+
+	// ---- Arabic (Manazil al-Qamar) ----
+	static const DwConstLine s_Arabic_Lines[] = {
+		// Al-Jawza' (Orion)
+		{ "Betelgeuse", "Bellatrix" }, { "Bellatrix", "Mintaka" },
+		{ "Mintaka", "Alnilam" }, { "Alnilam", "Alnitak" },
+		{ "Alnitak", "Saiph" }, { "Saiph", "Rigel" }, { "Rigel", "Mintaka" },
+		// Al-Asad al-Akbar (Greater Lion)
+		{ "Regulus", "Algieba" }, { "Algieba", "Denebola" },
+		// Banat Na'ash (Daughters of the Bier — Big Dipper)
+		{ "Dubhe", "Merak" }, { "Merak", "Phecda" }, { "Phecda", "Megrez" },
+		{ "Megrez", "Dubhe" }, { "Megrez", "Alioth" }, { "Alioth", "Mizar" },
+		{ "Mizar", "Alkaid" },
+	};
+	static const DwStarLabel s_Arabic_Labels[] = {
+		{ "Aldebaran",  "Al-Dabaran \xD9\xB1\xD9\x84\xD8\xAF\xD9\x8E\xD9\x91\xD8\xA8\xD8\xB1\xD8\xA7\xD9\x86" },
+		{ "Sirius",     "Al-Shi'ra \xD9\xB1\xD9\x84\xD8\xB4\xD9\x91\xD9\x90\xD8\xB9\xD8\xB1\xD9\x89" },
+		{ "Betelgeuse", "Yad al-Jawza' \xD9\x8A\xD9\x8E\xD8\xAF\xD9\x8F\x20\xD8\xA7\xD9\x84\xD8\xAC\xD9\x8E\xD9\x88\xD8\xB2\xD8\xA7\xD8\xA1" },
+		{ "Rigel",      "Rijl al-Jabbar \xD8\xB1\xD9\x90\xD8\xAC\xD9\x92\xD9\x84\x20\xD8\xA7\xD9\x84\xD8\xAC\xD9\x8E\xD8\xA8\xD9\x91\xD8\xA7\xD8\xB1" },
+		{ "Vega",       "Al-Nasr al-Waqi' \xD8\xA7\xD9\x84\xD9\x86\xD9\x8E\xD8\xB3\xD9\x92\xD8\xB1\x20\xD8\xA7\xD9\x84\xD9\x88\xD9\x8E\xD8\xA7\xD9\x82\xD9\x90\xD8\xB9" },
+		{ "Altair",     "Al-Nasr al-Ta'ir \xD8\xA7\xD9\x84\xD9\x86\xD9\x8E\xD8\xB3\xD9\x92\xD8\xB1\x20\xD8\xA7\xD9\x84\xD8\xB7\xD9\x91\xD8\xA7\xD8\xA6\xD9\x90\xD8\xB1" },
+		{ "Antares",    "Qalb al-'Aqrab \xD9\x82\xD9\x8E\xD9\x84\xD9\x92\xD8\xA8\x20\xD8\xA7\xD9\x84\xD8\xB9\xD9\x8E\xD9\x82\xD9\x92\xD8\xB1\xD9\x8E\xD8\xA8" },
+		{ "Fomalhaut",  "Fum al-Hut \xD9\x81\xD9\x8E\xD9\x85\xD9\x8F\x20\xD8\xA7\xD9\x84\xD8\xAD\xD9\x8F\xD9\x88\xD8\xAA" },
+		{ "Regulus",    "Qalb al-Asad \xD9\x82\xD9\x8E\xD9\x84\xD9\x92\xD8\xA8\x20\xD8\xA7\xD9\x84\xD8\xA3\xD9\x8E\xD8\xB3\xD9\x8E\xD8\xAF" },
+		{ "Polaris",    "Al-Jadi \xD9\xB1\xD9\x84\xD8\xAC\xD9\x8E\xD8\xAF\xD9\x92\xD9\x8A" },
+		{ "Capella",    "Al-'Ayyuq \xD9\xB1\xD9\x84\xD8\xB9\xD9\x8E\xD9\x8A\xD9\x91\xD9\x88\xD9\x82" },
+		{ "Pleiades",   "Al-Thurayya \xD9\xB1\xD9\x84\xD8\xAB\xD9\x91\xD9\x8F\xD8\xB1\xD9\x8E\xD9\x8A\xD9\x91\xD8\xA7" },
+	};
+
+	// ---- Polynesian (Maori navigation) ----
+	static const DwConstLine s_Polynesian_Lines[] = {
+		{ "Mintaka", "Alnilam" }, { "Alnilam", "Alnitak" },
+		{ "Rigel", "Saiph" }, { "Saiph", "Alnitak" },
+		{ "Betelgeuse", "Mintaka" },
+		{ "Pleiades", "Aldebaran" },
+	};
+	static const DwStarLabel s_Polynesian_Labels[] = {
+		{ "Sirius",     "Takurua"             },
+		{ "Canopus",    "Atutahi"             },
+		{ "Pleiades",   "Matariki"            },
+		{ "Vega",       "Whanui"              },
+		{ "Antares",    "Rehua"               },
+		{ "Achernar",   "Hine-i-Tapeka"       },
+		{ "Aldebaran",  "Parearau"            },
+		{ "Rigel",      "Puanga"              },
+		{ "Betelgeuse", "Putara"              },
+		{ "Altair",     "Poutu-te-rangi"      },
+	};
+
+	static const DwSkyCultureData s_SkyCultures[] = {
+		{ "western", "Western (IAU modern)",
+		  "Greek/Roman + Renaissance + Lacaille southern",
+		  IM_COL32( 110, 150, 215, 150 ), IM_COL32( 200, 215, 240, 200 ),
+		  IM_ARRAYSIZE( s_Western_Lines ), s_Western_Lines,
+		  IM_ARRAYSIZE( s_Western_Labels ), s_Western_Labels,
+		  { "Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn" } },
+		{ "chinese", "Chinese (Han dynasty)",
+		  "Three Enclosures + 28 Lunar Mansions",
+		  IM_COL32( 220,  95,  75, 165 ), IM_COL32( 255, 195, 165, 220 ),
+		  IM_ARRAYSIZE( s_Chinese_Lines ), s_Chinese_Lines,
+		  IM_ARRAYSIZE( s_Chinese_Labels ), s_Chinese_Labels,
+		  { "Ri \xE6\x97\xA5", "Yue \xE6\x9C\x88",
+		    "Chen Xing \xE8\xBE\xB0\xE6\x98\x9F", "Tai Bai \xE5\xA4\xAA\xE7\x99\xBD",
+		    "Ying Huo \xE7\x86\x92\xE6\x83\x91", "Sui Xing \xE6\xAD\xB2\xE6\x98\x9F",
+		    "Zhen Xing \xE9\x8E\xAE\xE6\x98\x9F" } },
+		{ "arabic", "Arabic (Manazil al-Qamar)",
+		  "Pre-Islamic Bedouin + Almagest tradition",
+		  IM_COL32( 215, 165,  75, 160 ), IM_COL32( 255, 220, 170, 220 ),
+		  IM_ARRAYSIZE( s_Arabic_Lines ), s_Arabic_Lines,
+		  IM_ARRAYSIZE( s_Arabic_Labels ), s_Arabic_Labels,
+		  { "Al-Shams \xD8\xA7\xD9\x84\xD8\xB4\xD9\x91\xD9\x8E\xD9\x85\xD8\xB3",
+		    "Al-Qamar \xD8\xA7\xD9\x84\xD9\x82\xD9\x85\xD8\xB1",
+		    "Utarid \xD8\xB9\xD9\x8F\xD8\xB7\xD8\xA7\xD8\xB1\xD8\xAF",
+		    "Al-Zuhara \xD8\xA7\xD9\x84\xD8\xB2\xD9\x91\xD9\x8F\xD9\x87\xD8\xB1\xD8\xA9",
+		    "Al-Mirrikh \xD8\xA7\xD9\x84\xD9\x85\xD9\x90\xD8\xB1\xD9\x91\xD9\x90\xD9\x8A\xD8\xAE",
+		    "Al-Mushtari \xD8\xA7\xD9\x84\xD9\x85\xD9\x8F\xD8\xB4\xD8\xAA\xD8\xB1\xD9\x8A",
+		    "Zuhal \xD8\xB2\xD9\x8F\xD8\xAD\xD9\x8E\xD9\x84" } },
+		{ "polynesian", "Polynesian (Maori navigation)",
+		  "Wayfinding asterisms for ocean voyaging",
+		  IM_COL32( 105, 215, 175, 160 ), IM_COL32( 180, 245, 215, 220 ),
+		  IM_ARRAYSIZE( s_Polynesian_Lines ), s_Polynesian_Lines,
+		  IM_ARRAYSIZE( s_Polynesian_Labels ), s_Polynesian_Labels,
+		  { "Ra", "Marama", "Aparangi", "Kopu",
+		    "Whetu-Ura", "Kopunui", "Rongo" } },
+	};
+	static const int s_NSkyCultures = IM_ARRAYSIZE( s_SkyCultures );
+
+	// Procedural filler stars (deterministic LCG, generated lazily once).
+	struct DwFillerStar { float ra_h; float dec_deg; float vmag; char spec; };
+	static DwFillerStar s_FillerStars[ 600 ];
+	static bool         s_FillerStarsBuilt = false;
+
+	static void DwBuildFillerStars()
+	{
+		const uint32_t SEED0 = 42u;
+		uint32_t seed = SEED0;
+		static const float weights[ 7 ] = { 0.001f, 0.011f, 0.061f, 0.161f, 0.561f, 0.861f, 1.0f };
+		static const char letters[ 7 ] = { 'O', 'B', 'A', 'F', 'G', 'K', 'M' };
+		for ( int i = 0; i < IM_ARRAYSIZE( s_FillerStars ); ++i )
+		{
+			seed = seed * 1103515245u + 12345u;
+			float r1 = (float)( seed >> 16 ) / 65535.0f;
+			seed = seed * 1103515245u + 12345u;
+			float r2 = (float)( seed >> 16 ) / 65535.0f;
+			seed = seed * 1103515245u + 12345u;
+			float r3 = (float)( seed >> 16 ) / 65535.0f;
+			seed = seed * 1103515245u + 12345u;
+			float r4 = (float)( seed >> 16 ) / 65535.0f;
+
+			s_FillerStars[ i ].ra_h = r1 * 24.0f;
+			s_FillerStars[ i ].dec_deg = asinf( 2.0f * r2 - 1.0f ) * 180.0f / IM_PI;
+			s_FillerStars[ i ].vmag = 3.5f + sqrtf( r3 ) * 3.0f;
+			char letter = 'G';
+			for ( int k = 0; k < 7; ++k )
+				if ( r4 <= weights[ k ] ) { letter = letters[ k ]; break; }
+			s_FillerStars[ i ].spec = letter;
+		}
+		s_FillerStarsBuilt = true;
+	}
+
+	static ImU32 DwStarSpecColor( char c )
+	{
+		switch ( c )
+		{
+			case 'O': return IM_COL32( 155, 175, 255, 255 );
+			case 'B': return IM_COL32( 175, 200, 255, 255 );
+			case 'A': return IM_COL32( 215, 225, 255, 255 );
+			case 'F': return IM_COL32( 245, 240, 220, 255 );
+			case 'G': return IM_COL32( 255, 230, 170, 255 );
+			case 'K': return IM_COL32( 255, 190, 130, 255 );
+			case 'M': return IM_COL32( 255, 140,  90, 255 );
+			default:  return IM_COL32( 255, 255, 255, 255 );
+		}
+	}
+
+	static float DwStarGMSTRad( double JD )
+	{
+		double h = fmod( 18.697374558 + 24.06570982441908 * ( JD - 2451545.0 ), 24.0 );
+		if ( h < 0.0 ) h += 24.0;
+		return (float)( h * 15.0 * 3.14159265358979323846 / 180.0 );
+	}
+
+	static void DwStarHelioXYZ( float L0_deg, float n_deg, float days_J, float au,
+	                            float incl_rad, float node_rad,
+	                            float& x, float& y, float& z )
+	{
+		float theta = ( L0_deg + n_deg * days_J ) * IM_PI / 180.0f;
+		float co = cosf( node_rad ), so = sinf( node_rad );
+		float ci = cosf( incl_rad ), si = sinf( incl_rad );
+		float ct = cosf( theta ),    st = sinf( theta );
+		x = au * ( co * ct - so * st * ci );
+		y = au * ( so * ct + co * st * ci );
+		z = au * st * si;
+	}
+
+	static void DwStarEclToEq( float lam, float beta, float& ra, float& dec )
+	{
+		const float OBLIQ = 23.44f * IM_PI / 180.0f;
+		float sin_dec = sinf( beta ) * cosf( OBLIQ ) + cosf( beta ) * sinf( OBLIQ ) * sinf( lam );
+		sin_dec = ImClamp( sin_dec, -1.0f, 1.0f );
+		dec = asinf( sin_dec );
+		ra  = atan2f( sinf( lam ) * cosf( OBLIQ ) - tanf( beta ) * sinf( OBLIQ ), cosf( lam ) );
+	}
+
+	static void DwStarEqToHorizon( float ra, float dec, float lst, float lat,
+	                               float& alt, float& az )
+	{
+		float ha = lst - ra;
+		float sin_alt = sinf( lat ) * sinf( dec ) + cosf( lat ) * cosf( dec ) * cosf( ha );
+		sin_alt = ImClamp( sin_alt, -1.0f, 1.0f );
+		alt = asinf( sin_alt );
+		float cos_alt = cosf( alt );
+		if ( cos_alt < 1e-6f ) { az = 0.0f; return; }
+		float sin_az = -cosf( dec ) * sinf( ha ) / cos_alt;
+		float cos_az = ( sinf( dec ) - sin_alt * sinf( lat ) ) / ( cos_alt * cosf( lat ) );
+		az = atan2f( sin_az, cos_az );
+	}
+
+	static int DwFindStarIdx( char const* name )
+	{
+		for ( int i = 0; i < s_NStars; ++i )
+			if ( strcmp( s_StarCatalog[ i ].name, name ) == 0 ) return i;
+		return -1;
+	}
+
+	char const* GetSkyCultureName( ImWidgetsSkyCulture culture )
+	{
+		int idx = (int)culture;
+		if ( idx < 0 || idx >= s_NSkyCultures ) return "?";
+		return s_SkyCultures[ idx ].display_name;
+	}
+
+	int GetSkyCultureCount() { return s_NSkyCultures; }
+
+	void DrawStarChart( ImDrawList* pDrawList, ImVec2 center, float radius,
+	                    int year, int month, int day, int hour, int minute,
+	                    float obsLon, float obsLat,
+	                    float magLimit, float starScale,
+	                    ImWidgetsSkyCulture culture,
+	                    bool showSolarSystem,
+	                    ImU32 skyCol, ImU32 outlineCol,
+	                    ImFont* labelFont )
+	{
+		if ( !pDrawList || radius <= 0.0f ) return;
+		if ( !s_FillerStarsBuilt ) DwBuildFillerStars();
+
+		int cidx = (int)culture;
+		if ( cidx < 0 || cidx >= s_NSkyCultures ) cidx = 0;
+		DwSkyCultureData const& cul = s_SkyCultures[ cidx ];
+
+		double JD  = DwJulianDate( year, month, day, (double)hour + (double)minute / 60.0 );
+		float  lst = DwStarGMSTRad( JD ) + obsLon * IM_PI / 180.0f;
+		lst = fmodf( lst, 2.0f * IM_PI );
+		if ( lst < 0.0f ) lst += 2.0f * IM_PI;
+		float lat_r = obsLat * IM_PI / 180.0f;
+
+		// Sky disc background
+		pDrawList->AddCircleFilled( center, radius, skyCol, 96 );
+
+		// Altitude rings (30 and 60 deg)
+		{
+			const int kAltRings[] = { 30, 60 };
+			for ( int i = 0; i < IM_ARRAYSIZE( kAltRings ); ++i )
+			{
+				float rr = radius * cosf( (float)kAltRings[ i ] * IM_PI / 180.0f );
+				pDrawList->AddCircle( center, rr, IM_COL32( 55, 65, 90, 180 ), 64, 1.0f );
+			}
+		}
+		// Azimuth spokes
+		for ( int az = 0; az < 360; az += 30 )
+		{
+			float a = (float)az * IM_PI / 180.0f;
+			pDrawList->AddLine( center,
+				ImVec2( center.x + radius * sinf( a ), center.y - radius * cosf( a ) ),
+				IM_COL32( 55, 65, 90, 150 ), 1.0f );
+		}
+
+		auto projAltAz = [ & ]( float alt, float az ) -> ImVec2
+		{
+			float rp = radius * cosf( alt );
+			return ImVec2( center.x + rp * sinf( az ), center.y - rp * cosf( az ) );
+		};
+
+		// Visible named stars
+		struct Vis { int idx; float alt; float az; };
+		ImVector<Vis> visible;
+		visible.reserve( s_NStars );
+		for ( int i = 0; i < s_NStars; ++i )
+		{
+			if ( s_StarCatalog[ i ].vmag > magLimit ) continue;
+			float ra  = s_StarCatalog[ i ].ra_h * 15.0f * IM_PI / 180.0f;
+			float dec = s_StarCatalog[ i ].dec_deg * IM_PI / 180.0f;
+			float alt, az;
+			DwStarEqToHorizon( ra, dec, lst, lat_r, alt, az );
+			if ( alt > 0.0f )
+			{
+				Vis v; v.idx = i; v.alt = alt; v.az = az;
+				visible.push_back( v );
+			}
+		}
+
+		auto findVis = [ & ]( char const* name ) -> Vis*
+		{
+			int idx = DwFindStarIdx( name );
+			if ( idx < 0 ) return nullptr;
+			for ( int i = 0; i < visible.Size; ++i )
+				if ( visible[ i ].idx == idx ) return &visible[ i ];
+			return nullptr;
+		};
+
+		// Filler stars
+		for ( int i = 0; i < IM_ARRAYSIZE( s_FillerStars ); ++i )
+		{
+			DwFillerStar const& fs = s_FillerStars[ i ];
+			if ( fs.vmag > magLimit ) continue;
+			float ra  = fs.ra_h * 15.0f * IM_PI / 180.0f;
+			float dec = fs.dec_deg * IM_PI / 180.0f;
+			float alt, az;
+			DwStarEqToHorizon( ra, dec, lst, lat_r, alt, az );
+			if ( alt <= 0.0f ) continue;
+			ImVec2 p = projAltAz( alt, az );
+			float sz = starScale * ImMax( 0.5f, ( magLimit - fs.vmag ) * 0.32f );
+			ImU32 col = ( DwStarSpecColor( fs.spec ) & 0x00FFFFFFu ) | ( 180u << 24 );
+			pDrawList->AddCircleFilled( p, sz, col, 8 );
+		}
+
+		// Constellation figure lines for current culture
+		for ( int li = 0; li < cul.n_lines; ++li )
+		{
+			Vis* a = findVis( cul.lines[ li ].a );
+			Vis* b = findVis( cul.lines[ li ].b );
+			if ( a && b )
+			{
+				pDrawList->AddLine( projAltAz( a->alt, a->az ),
+				                    projAltAz( b->alt, b->az ),
+				                    cul.line_color, 1.0f );
+			}
+		}
+
+		// Named stars (drawn on top of filler + lines)
+		for ( int vi = 0; vi < visible.Size; ++vi )
+		{
+			Vis const& v = visible[ vi ];
+			DwStarDef const& s = s_StarCatalog[ v.idx ];
+			ImVec2 p = projAltAz( v.alt, v.az );
+			float sz = starScale * ImMax( 1.0f, 4.5f - 0.7f * ( s.vmag + 1.0f ) );
+			ImU32 col = DwStarSpecColor( s.spec );
+			if ( s.vmag < 1.4f )
+				pDrawList->AddCircleFilled( p, sz + 1.5f, IM_COL32( 220, 230, 250, 55 ), 12 );
+			pDrawList->AddCircleFilled( p, sz, col, 12 );
+		}
+
+		// Slug-based label rendering — supports BiDi (Arabic) + CJK.
+		ImFont* defaultFont = ImGui::GetFont();
+		ImFont* starLabelFont = labelFont ? labelFont : defaultFont;
+		const float cardinalFs = 14.0f;
+		const float labelFs    = 11.0f;
+
+		// Cardinal labels (N/E/S/W) at the rim — always Latin, always use the default font.
+		{
+			struct Card { char const* lbl; int az; } cards[] = {
+				{ "N", 0 }, { "E", 90 }, { "S", 180 }, { "W", 270 }
+			};
+			for ( int i = 0; i < 4; ++i )
+			{
+				float a = (float)cards[ i ].az * IM_PI / 180.0f;
+				ImVec2 cp( center.x + radius * 1.09f * sinf( a ) - 5.0f,
+				           center.y - radius * 1.09f * cosf( a ) - 8.0f );
+				ImWidgets::DrawText( pDrawList, defaultFont, cardinalFs, cp,
+				                     IM_COL32( 230, 235, 250, 230 ), cards[ i ].lbl );
+			}
+		}
+
+		// Star labels (culture-specific) via Slug — Arabic / CJK need their own font.
+		for ( int lbi = 0; lbi < cul.n_labels; ++lbi )
+		{
+			Vis* v = findVis( cul.labels[ lbi ].star );
+			if ( v && s_StarCatalog[ v->idx ].vmag < 2.5f )
+			{
+				ImVec2 p = projAltAz( v->alt, v->az );
+				ImVec2 lp( p.x + 6.0f, p.y - 5.0f );
+				ImWidgets::DrawText( pDrawList, starLabelFont, labelFs, lp,
+				                     cul.label_color, cul.labels[ lbi ].label );
+			}
+		}
+
+		// Solar-system overlay (Moon with phase, 5 planets, Sun if above horizon)
+		if ( showSolarSystem )
+		{
+			double days_J = JD - 2451545.0;
+			float ex, ey, ez;
+			DwStarHelioXYZ( s_PlanetData[ 2 ].L0, s_PlanetData[ 2 ].n_deg, (float)days_J,
+			                s_PlanetData[ 2 ].au, 0.0f, 0.0f, ex, ey, ez );
+
+			// Planets: Mercury, Venus, Mars, Jupiter, Saturn
+			static const int planetIdx[ 5 ] = { 0, 1, 3, 4, 5 };
+			for ( int pi = 0; pi < 5; ++pi )
+			{
+				int idx = planetIdx[ pi ];
+				DwPlanetDef const& pd = s_PlanetData[ idx ];
+				float px, py, pz;
+				DwStarHelioXYZ( pd.L0, pd.n_deg, (float)days_J, pd.au,
+				                pd.incl * IM_PI / 180.0f, pd.node * IM_PI / 180.0f,
+				                px, py, pz );
+				float gx = px - ex, gy = py - ey, gz = pz - ez;
+				float d = sqrtf( gx * gx + gy * gy + gz * gz );
+				if ( d < 1e-6f ) continue;
+				float lam = atan2f( gy, gx );
+				float beta = asinf( gz / d );
+				float ra, dec;
+				DwStarEclToEq( lam, beta, ra, dec );
+				float alt, az;
+				DwStarEqToHorizon( ra, dec, lst, lat_r, alt, az );
+				if ( alt <= 0.0f ) continue;
+				ImVec2 p = projAltAz( alt, az );
+				ImU32 halo = ( pd.col & 0x00FFFFFFu ) | ( 60u << 24 );
+				pDrawList->AddCircleFilled( p, pd.size + 3.0f, halo, 16 );
+				pDrawList->AddCircleFilled( p, pd.size, pd.col, 16 );
+				pDrawList->AddCircle( p, pd.size, IM_COL32( 255, 255, 255, 230 ), 16, 1.0f );
+				if ( idx == 5 ) // Saturn ring
+				{
+					float rA = pd.size * 1.9f, rB = pd.size * 0.55f;
+					ImVec2 prev( p.x + rA, p.y );
+					const int nseg = 24;
+					for ( int s_i = 1; s_i <= nseg; ++s_i )
+					{
+						float ang = 2.0f * IM_PI * (float)s_i / (float)nseg;
+						ImVec2 cur( p.x + rA * cosf( ang ), p.y + rB * sinf( ang ) );
+						pDrawList->AddLine( prev, cur, IM_COL32( 235, 215, 160, 220 ), 1.2f );
+						prev = cur;
+					}
+				}
+				char const* lbl = cul.ss_names[ 2 + pi ];
+				ImVec2 lp( p.x + pd.size + 5.0f, p.y - 6.0f );
+				ImU32 lblCol = ( pd.col & 0x00FFFFFFu ) | ( 240u << 24 );
+				ImWidgets::DrawText( pDrawList, starLabelFont, labelFs, lp, lblCol, lbl );
+			}
+
+			// Sun + Moon: compute sun's RA/Dec from Earth's helio position
+			float sun_ra, sun_dec;
+			{
+				float lam = atan2f( -ey, -ex );
+				DwStarEclToEq( lam, 0.0f, sun_ra, sun_dec );
+			}
+			// Moon (synodic phase from 2000-01-06 18:14 UT reference)
+			{
+				const double JD_REF = 2451550.25972;
+				const double SYNODIC = 29.530588853;
+				double phase = ( JD - JD_REF ) / SYNODIC;
+				phase = phase - floor( phase );
+				const float OBLIQ = 23.44f * IM_PI / 180.0f;
+				float sun_lon = atan2f( sinf( sun_ra ) * cosf( OBLIQ )
+				                           + tanf( sun_dec ) * sinf( OBLIQ ),
+				                         cosf( sun_ra ) );
+				float moon_lon = sun_lon + 2.0f * IM_PI * (float)phase;
+				float m_ra, m_dec;
+				DwStarEclToEq( moon_lon, 0.0f, m_ra, m_dec );
+				float m_alt, m_az;
+				DwStarEqToHorizon( m_ra, m_dec, lst, lat_r, m_alt, m_az );
+				if ( m_alt > 0.0f )
+				{
+					ImVec2 p = projAltAz( m_alt, m_az );
+					float illum = ( 1.0f - cosf( 2.0f * IM_PI * (float)phase ) ) * 0.5f;
+					int gray = (int)( 180.0f + 65.0f * illum );
+					ImU32 mcol = IM_COL32( gray, gray, gray - 12, 255 );
+					pDrawList->AddCircleFilled( p, 10.0f, IM_COL32( 220, 230, 245, 50 ), 24 );
+					pDrawList->AddCircleFilled( p, 7.0f, mcol, 24 );
+					pDrawList->AddCircle( p, 7.0f, IM_COL32( 255, 255, 255, 230 ), 24, 1.0f );
+					ImVec2 lp( p.x + 11.0f, p.y - 6.0f );
+					ImWidgets::DrawText( pDrawList, starLabelFont, labelFs, lp,
+					                     IM_COL32( 220, 230, 245, 240 ), cul.ss_names[ 1 ] );
+				}
+			}
+			// Sun (only when above horizon)
+			{
+				float s_alt, s_az;
+				DwStarEqToHorizon( sun_ra, sun_dec, lst, lat_r, s_alt, s_az );
+				if ( s_alt > 0.0f )
+				{
+					ImVec2 p = projAltAz( s_alt, s_az );
+					pDrawList->AddCircleFilled( p, 9.0f, IM_COL32( 255, 220, 80, 255 ), 24 );
+					pDrawList->AddCircle( p, 9.0f, IM_COL32( 255, 255, 255, 230 ), 24, 1.0f );
+					for ( int i = 0; i < 8; ++i )
+					{
+						float a = 2.0f * IM_PI * (float)i / 8.0f;
+						pDrawList->AddLine(
+							ImVec2( p.x + 11.0f * cosf( a ), p.y + 11.0f * sinf( a ) ),
+							ImVec2( p.x + 16.0f * cosf( a ), p.y + 16.0f * sinf( a ) ),
+							IM_COL32( 255, 200, 100, 220 ), 2.0f );
+					}
+					ImVec2 lp( p.x + 18.0f, p.y - 6.0f );
+					ImWidgets::DrawText( pDrawList, starLabelFont, labelFs, lp,
+					                     IM_COL32( 255, 220, 90, 240 ), cul.ss_names[ 0 ] );
+				}
+			}
+		}
+
+		// Outer disc outline
+		pDrawList->AddCircle( center, radius, outlineCol, 96, 2.0f );
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// DrawSunPath — sun-path diagram + analemma overlay.
+	//
+	// Polar mode: zenith-centred dome, sun arcs for 12 monthly representative
+	// days drawn from sunrise to sunset, plus analemma figure-8 loops at five
+	// fixed local clock-time hours (06h/09h/12h/15h/18h).
+	// Cartesian mode: same data unrolled — X = azimuth (0=N), Y = altitude.
+	//
+	// Math: solar declination from DOY (axial tilt projection); equation of
+	// time + longitude offset from time-zone meridian → solar time → hour
+	// angle; standard horizontal-coords formulas for (alt, az).
+	//////////////////////////////////////////////////////////////////////////
+
+	struct DwSunPathMonth { char const* label; int month_idx; int day_of_month; ImU32 color; };
+	static const DwSunPathMonth s_SunPathMonths[ 12 ] = {
+		{ "Jan",  1, 21, IM_COL32(  85, 130, 235, 220 ) },
+		{ "Feb",  2, 21, IM_COL32( 110, 150, 220, 220 ) },
+		{ "Mar",  3, 21, IM_COL32( 140, 170, 205, 220 ) },
+		{ "Apr",  4, 21, IM_COL32( 180, 190, 175, 220 ) },
+		{ "May",  5, 21, IM_COL32( 220, 205, 145, 220 ) },
+		{ "Jun",  6, 21, IM_COL32( 250, 215,  95, 220 ) },
+		{ "Jul",  7, 21, IM_COL32( 245, 210, 110, 220 ) },
+		{ "Aug",  8, 21, IM_COL32( 225, 200, 145, 220 ) },
+		{ "Sep",  9, 21, IM_COL32( 170, 185, 185, 220 ) },
+		{ "Oct", 10, 21, IM_COL32( 135, 165, 210, 220 ) },
+		{ "Nov", 11, 21, IM_COL32( 110, 145, 225, 220 ) },
+		{ "Dec", 12, 21, IM_COL32(  80, 125, 240, 220 ) },
+	};
+	static const int s_SunPathAnalemmaHours[ 5 ] = { 6, 9, 12, 15, 18 };
+	static const ImU32 s_SunPathAnalemmaCol = IM_COL32( 255, 232, 115, 235 );
+
+	static void DwSunPathSolarPos( int doy, float hour_local,
+	                                float lat_deg, float lon_deg, int tz_offset,
+	                                float& alt_deg, float& az_deg )
+	{
+		// Equation of time (Spencer 1971), minutes.
+		float B = 2.0f * IM_PI * (float)( doy - 81 ) / 364.0f;
+		float EoT_min = 9.87f * sinf( 2.0f * B ) - 7.53f * cosf( B ) - 1.5f * sinf( B );
+		// Longitude correction from time-zone meridian (4 min per degree).
+		float tz_meridian = (float)tz_offset * 15.0f;
+		float time_corr_min = 4.0f * ( lon_deg - tz_meridian ) + EoT_min;
+		float solar_time = hour_local + time_corr_min / 60.0f;
+		float H = ( solar_time - 12.0f ) * 15.0f * IM_PI / 180.0f;
+		float decl = ( 23.44f * IM_PI / 180.0f )
+		           * sinf( 2.0f * IM_PI * (float)( doy - 81 ) / 365.25f );
+		float lat = lat_deg * IM_PI / 180.0f;
+
+		float sin_alt = sinf( lat ) * sinf( decl )
+		              + cosf( lat ) * cosf( decl ) * cosf( H );
+		sin_alt = ImClamp( sin_alt, -1.0f, 1.0f );
+		float alt = asinf( sin_alt );
+
+		float cos_alt = cosf( alt );
+		float az;
+		if ( cos_alt < 1e-6f )
+		{
+			az = 0.0f;
+		}
+		else
+		{
+			float sin_az = -cosf( decl ) * sinf( H ) / cos_alt;
+			float cos_az = ( sinf( decl ) - sin_alt * sinf( lat ) ) / ( cos_alt * cosf( lat ) );
+			az = atan2f( sin_az, cos_az );
+		}
+		alt_deg = alt * 180.0f / IM_PI;
+		az_deg  = az  * 180.0f / IM_PI;
+		if ( az_deg < 0.0f ) az_deg += 360.0f;
+	}
+
+	void DrawSunPath( ImDrawList* pDrawList, ImVec2 areaMin, ImVec2 areaSize,
+	                  float obsLat, float obsLon, int tzOffset, int year,
+	                  ImWidgetsSunPathMode mode,
+	                  ImU32 bgCol, ImU32 outlineCol )
+	{
+		if ( !pDrawList || areaSize.x <= 0.0f || areaSize.y <= 0.0f ) return;
+
+		ImFont* font = ImGui::GetFont();
+
+		if ( mode == ImWidgetsSunPathMode_Polar )
+		{
+			float minDim = ImMin( areaSize.x, areaSize.y );
+			float R = ( minDim - 32.0f ) * 0.5f;
+			if ( R <= 8.0f ) return;
+			ImVec2 center( areaMin.x + areaSize.x * 0.5f,
+			               areaMin.y + areaSize.y * 0.5f );
+
+			// Background disc + altitude rings + azimuth spokes.
+			pDrawList->AddCircleFilled( center, R, bgCol, 96 );
+			const int kAltRings[ 5 ] = { 15, 30, 45, 60, 75 };
+			for ( int i = 0; i < 5; ++i )
+			{
+				float rr = R * ( 1.0f - (float)kAltRings[ i ] / 90.0f );
+				pDrawList->AddCircle( center, rr, IM_COL32( 58, 73, 95, 200 ), 64, 1.0f );
+			}
+			for ( int az = 0; az < 360; az += 30 )
+			{
+				float a = (float)az * IM_PI / 180.0f;
+				pDrawList->AddLine( center,
+					ImVec2( center.x + R * sinf( a ), center.y - R * cosf( a ) ),
+					IM_COL32( 58, 73, 95, 165 ), 1.0f );
+			}
+
+			// Cardinal labels via Slug.
+			struct Card { char const* lbl; int az; };
+			Card cards[ 4 ] = { { "N", 0 }, { "E", 90 }, { "S", 180 }, { "W", 270 } };
+			for ( int i = 0; i < 4; ++i )
+			{
+				float a = (float)cards[ i ].az * IM_PI / 180.0f;
+				ImVec2 cp( center.x + R * 1.09f * sinf( a ) - 5.0f,
+				           center.y - R * 1.09f * cosf( a ) - 8.0f );
+				ImWidgets::DrawText( pDrawList, font, 14.0f, cp,
+				                     IM_COL32( 230, 240, 250, 240 ), cards[ i ].lbl );
+			}
+
+			// Monthly sun arcs.
+			for ( int mi = 0; mi < IM_ARRAYSIZE( s_SunPathMonths ); ++mi )
+			{
+				DwSunPathMonth const& m = s_SunPathMonths[ mi ];
+				int doy = DwDayOfYear( year, m.month_idx, m.day_of_month );
+				ImVec2 prev( 0.0f, 0.0f );
+				bool havePrev = false;
+				const int N = 24 * 8;
+				for ( int h = 0; h <= N; ++h )
+				{
+					float t = (float)h / 8.0f;
+					float alt, az;
+					DwSunPathSolarPos( doy, t, obsLat, obsLon, tzOffset, alt, az );
+					if ( alt > 0.5f )
+					{
+						float r = R * ( 1.0f - alt / 90.0f );
+						float a = az * IM_PI / 180.0f;
+						ImVec2 p( center.x + r * sinf( a ), center.y - r * cosf( a ) );
+						if ( havePrev )
+							pDrawList->AddLine( prev, p, m.color, 2.0f );
+						prev = p; havePrev = true;
+					}
+					else
+					{
+						havePrev = false;
+					}
+				}
+			}
+
+			// Analemma figure-8 loops at fixed clock hours.
+			ImVector<ImVec2> loop;
+			for ( int hi = 0; hi < 5; ++hi )
+			{
+				int hour = s_SunPathAnalemmaHours[ hi ];
+				loop.clear();
+				for ( int doy = 1; doy <= 365; doy += 3 )
+				{
+					float alt, az;
+					DwSunPathSolarPos( doy, (float)hour, obsLat, obsLon, tzOffset, alt, az );
+					if ( alt > 0.5f )
+					{
+						float r = R * ( 1.0f - alt / 90.0f );
+						float a = az * IM_PI / 180.0f;
+						loop.push_back( ImVec2( center.x + r * sinf( a ),
+						                        center.y - r * cosf( a ) ) );
+					}
+				}
+				for ( int i = 0; i + 1 < loop.Size; ++i )
+					pDrawList->AddLine( loop[ i ], loop[ i + 1 ], s_SunPathAnalemmaCol, 1.0f );
+				if ( loop.Size > 3 )
+				{
+					pDrawList->AddLine( loop[ loop.Size - 1 ], loop[ 0 ], s_SunPathAnalemmaCol, 1.0f );
+					int top_idx = 0;
+					for ( int i = 1; i < loop.Size; ++i )
+						if ( loop[ i ].y < loop[ top_idx ].y ) top_idx = i;
+					char buf[ 8 ]; snprintf( buf, sizeof( buf ), "%02dh", hour );
+					ImVec2 lp( loop[ top_idx ].x + 4.0f, loop[ top_idx ].y - 14.0f );
+					ImWidgets::DrawText( pDrawList, font, 9.0f, lp,
+					                     IM_COL32( 255, 235, 130, 240 ), buf );
+				}
+			}
+
+			pDrawList->AddCircle( center, R, outlineCol, 96, 2.0f );
+		}
+		else // Cartesian
+		{
+			ImVec2 ar0( areaMin.x + 32.0f, areaMin.y + 8.0f );
+			ImVec2 sz( areaSize.x - 40.0f, areaSize.y - 30.0f );
+			if ( sz.x < 100.0f || sz.y < 60.0f ) return;
+
+			pDrawList->AddRectFilled( ar0, ImVec2( ar0.x + sz.x, ar0.y + sz.y ), bgCol );
+
+			for ( int az_d = 0; az_d <= 360; az_d += 30 )
+			{
+				float x = ar0.x + (float)az_d / 360.0f * sz.x;
+				pDrawList->AddLine( ImVec2( x, ar0.y ),
+				                    ImVec2( x, ar0.y + sz.y ),
+				                    IM_COL32( 58, 73, 95, 150 ), 1.0f );
+			}
+			for ( int alt_d = 0; alt_d <= 90; alt_d += 15 )
+			{
+				float y = ar0.y + sz.y - (float)alt_d / 90.0f * sz.y;
+				pDrawList->AddLine( ImVec2( ar0.x, y ),
+				                    ImVec2( ar0.x + sz.x, y ),
+				                    IM_COL32( 58, 73, 95, 150 ), 1.0f );
+			}
+
+			// Axis labels
+			struct AxCard { char const* lbl; int az; };
+			AxCard axc[ 5 ] = { { "N", 0 }, { "E", 90 }, { "S", 180 }, { "W", 270 }, { "N", 360 } };
+			for ( int i = 0; i < 5; ++i )
+			{
+				float x = ar0.x + (float)axc[ i ].az / 360.0f * sz.x - 5.0f;
+				ImVec2 lp( x, ar0.y + sz.y + 4.0f );
+				ImWidgets::DrawText( pDrawList, font, 11.0f, lp,
+				                     IM_COL32( 220, 230, 250, 220 ), axc[ i ].lbl );
+			}
+			for ( int alt_d = 0; alt_d <= 90; alt_d += 30 )
+			{
+				float y = ar0.y + sz.y - (float)alt_d / 90.0f * sz.y;
+				char buf[ 8 ]; snprintf( buf, sizeof( buf ), "%d", alt_d );
+				ImVec2 lp( ar0.x - 28.0f, y - 6.0f );
+				ImWidgets::DrawText( pDrawList, font, 9.0f, lp,
+				                     IM_COL32( 180, 195, 220, 220 ), buf );
+			}
+
+			auto projC = [ & ]( float az, float alt ) -> ImVec2
+			{
+				float az_n = fmodf( az, 360.0f );
+				if ( az_n < 0.0f ) az_n += 360.0f;
+				return ImVec2( ar0.x + az_n / 360.0f * sz.x,
+				               ar0.y + sz.y - alt / 90.0f * sz.y );
+			};
+
+			// Monthly arcs (skip lines that wrap across the azimuth seam).
+			for ( int mi = 0; mi < IM_ARRAYSIZE( s_SunPathMonths ); ++mi )
+			{
+				DwSunPathMonth const& m = s_SunPathMonths[ mi ];
+				int doy = DwDayOfYear( year, m.month_idx, m.day_of_month );
+				ImVec2 prev( 0.0f, 0.0f ); float prev_az = 0.0f;
+				bool havePrev = false;
+				const int N = 24 * 8;
+				for ( int h = 0; h <= N; ++h )
+				{
+					float t = (float)h / 8.0f;
+					float alt, az;
+					DwSunPathSolarPos( doy, t, obsLat, obsLon, tzOffset, alt, az );
+					if ( alt > 0.5f )
+					{
+						ImVec2 p = projC( az, alt );
+						if ( havePrev && fabsf( az - prev_az ) < 180.0f )
+							pDrawList->AddLine( prev, p, m.color, 2.0f );
+						prev = p; prev_az = az; havePrev = true;
+					}
+					else
+					{
+						havePrev = false;
+					}
+				}
+			}
+
+			// Analemmas
+			for ( int hi = 0; hi < 5; ++hi )
+			{
+				int hour = s_SunPathAnalemmaHours[ hi ];
+				ImVec2 prev( 0.0f, 0.0f ); float prev_az = 0.0f;
+				bool havePrev = false;
+				float top_y = FLT_MAX; ImVec2 top_pt( 0.0f, 0.0f );
+				for ( int doy = 1; doy <= 365; doy += 3 )
+				{
+					float alt, az;
+					DwSunPathSolarPos( doy, (float)hour, obsLat, obsLon, tzOffset, alt, az );
+					if ( alt > 0.5f )
+					{
+						ImVec2 p = projC( az, alt );
+						if ( havePrev && fabsf( az - prev_az ) < 180.0f )
+							pDrawList->AddLine( prev, p, s_SunPathAnalemmaCol, 1.0f );
+						prev = p; prev_az = az; havePrev = true;
+						if ( p.y < top_y ) { top_y = p.y; top_pt = p; }
+					}
+					else
+					{
+						havePrev = false;
+					}
+				}
+				if ( top_y < FLT_MAX )
+				{
+					char buf[ 8 ]; snprintf( buf, sizeof( buf ), "%02dh", hour );
+					ImVec2 lp( top_pt.x + 3.0f, top_pt.y - 13.0f );
+					ImWidgets::DrawText( pDrawList, font, 9.0f, lp,
+					                     IM_COL32( 255, 235, 130, 240 ), buf );
+				}
+			}
+
+			pDrawList->AddRect( ar0, ImVec2( ar0.x + sz.x, ar0.y + sz.y ),
+			                    outlineCol, 0.0f, 0, 1.0f );
+		}
 	}
 
 	void Im_CircleFromRect( ImRect r, void* data )
@@ -8141,8 +10116,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImGuiContext& g = *GImGui;
 		const ImGuiStyle& style = g.Style;
 		const ImGuiID id = window->GetID( label );
-		ImGuiID idX = window->GetID( id );
-		ImGuiID idY = window->GetID( idX );
+		// Deterministic sub-ids derived from `id`. Using window->GetID(id) instead
+		// (re-hashing the parent hash) could in principle collide with another
+		// widget's main hash; the XOR mask guarantees these strip ids never collide
+		// with any widget's primary `id` since nobody else applies the same mask.
+		ImGuiID idX = id ^ 0x5A0D2D58u;
+		ImGuiID idY = id ^ 0xA5F0DA37u;
 		const float w = ImGui::CalcItemWidth();
 
 		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
@@ -8189,6 +10168,22 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		bool hovered = ImGui::ItemHoverable( frame_bb_drag, id, g.LastItemData.ItemFlags );
 
+		// Value-label regions: the gaps between the main drag and the X / Y strips
+		// where the formatted value text is rendered later. We hit-test these for the
+		// numeric-edit popup so a drag on the slider stays a drag, and a click on the
+		// readout opens the popup — no conflict between the two intents.
+		const ImRect xLabelRect(
+			ImVec2( frame_bb_drag.Min.x, frame_bb_drag.Max.y ),
+			ImVec2( frame_bb_drag.Max.x, frame_bb_dragX.Min.y ) );
+		const ImRect yLabelRect(
+			ImVec2( frame_bb_drag.Max.x, frame_bb_drag.Min.y ),
+			ImVec2( frame_bb_dragY.Min.x, frame_bb_drag.Max.y ) );
+		const ImVec2 mp = g.IO.MousePos;
+		const bool labelHovered = xLabelRect.Contains( mp ) || yLabelRect.Contains( mp );
+		const bool labelTriggered = labelHovered && (
+			( g.IO.KeyCtrl && ImGui::IsMouseClicked( 0 ) )
+			|| ImGui::IsMouseDoubleClicked( 0 ) );
+
 		bool clicked = hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id );
 		bool make_active = ( clicked || g.NavActivateId == id );
 		if ( make_active && clicked )
@@ -8200,6 +10195,34 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImGui::SetFocusID( id, window );
 			ImGui::FocusWindow( window );
 			g.ActiveIdUsingNavDirMask |= ( 1 << ImGuiDir_Left ) | ( 1 << ImGuiDir_Right );
+		}
+
+		// Precision popup — opened by Ctrl+Click / double-click on either value label.
+		char precisionPopupId[ 32 ];
+		ImFormatString( precisionPopupId, sizeof( precisionPopupId ), "##s2dprec_%08X", (unsigned)id );
+		if ( labelTriggered )
+		{
+			ImGui::ClearActiveID();
+			ImGui::OpenPopup( precisionPopupId );
+		}
+		bool value_changedPrec = false;
+		if ( BeginPrecisionPopup( precisionPopupId, mp ) )
+		{
+			ImGui::SetNextItemWidth( LpToPx( GetStyle().PrecisionPopup_InputWidth ) );
+			ImGui::InputScalar( "X", data_type, p_valueX, NULL, NULL, NULL, ImGuiInputTextFlags_AutoSelectAll );
+			if ( ImGui::IsItemDeactivatedAfterEdit() )
+			{
+				ClampScalar( data_type, p_valueX, p_minX, p_maxX );
+				value_changedPrec = true;
+			}
+			ImGui::SetNextItemWidth( LpToPx( GetStyle().PrecisionPopup_InputWidth ) );
+			ImGui::InputScalar( "Y", data_type, p_valueY, NULL, NULL, NULL, ImGuiInputTextFlags_AutoSelectAll );
+			if ( ImGui::IsItemDeactivatedAfterEdit() )
+			{
+				ClampScalar( data_type, p_valueY, p_minY, p_maxY );
+				value_changedPrec = true;
+			}
+			EndPrecisionPopup();
 		}
 
 		// Draw frame
@@ -8215,7 +10238,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( value_changedX || value_changedY )
 			ImGui::MarkItemEdited( id );
 
-		if ( !ImGui::ItemAdd( total_bb, idX, &frame_bb_dragX, 0 ) )
+		// X strip lives in its own bb and gets its own item id — using total_bb here
+		// (the entire widget rect) made the strip overlap the main drag for layout
+		// purposes and conflict with the main item's id.
+		if ( !ImGui::ItemAdd( frame_bb_dragX, idX, &frame_bb_dragX, 0 ) )
 			return false;
 
 		hovered = ImGui::ItemHoverable( frame_bb_dragX, idX, g.LastItemData.ItemFlags );
@@ -8240,7 +10266,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImGui::RenderNavCursor( frame_bb_dragX, idX );
 		ImGui::RenderFrame( frame_bb_dragX.Min, frame_bb_dragX.Max, frame_col, true, g.Style.FrameRounding );
 
-		if ( !ImGui::ItemAdd( total_bb, idY, &frame_bb_dragX, 0 ) )
+		// Y strip lives in its own bb. Previous code mistakenly passed total_bb and
+		// frame_bb_dragX here, registering idY against the X strip's geometry and
+		// double-counting the whole widget area for layout.
+		if ( !ImGui::ItemAdd( frame_bb_dragY, idY, &frame_bb_dragY, 0 ) )
 			return false;
 
 		hovered = ImGui::ItemHoverable( frame_bb_dragY, idY, g.LastItemData.ItemFlags );
@@ -8277,6 +10306,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float fDeltaY = ScalarToFloat( data_type, &s_delta_y );
 		float fScaleX = ( ScalarToFloat( data_type, ( ImU64* )p_valueX ) - ScalarToFloat( data_type, ( ImU64* )p_minX ) ) / fDeltaX;
 		float fScaleY = 1.0f - ( ScalarToFloat( data_type, ( ImU64* )p_valueY ) - ScalarToFloat( data_type, ( ImU64* )p_minY ) ) / fDeltaY;
+
+		// Visual clamp: an out-of-bounds value (e.g. typed in via the precision
+		// popup) is kept in the data but must not paint the cursor or guide
+		// lines outside frame_bb_drag — clamping fScale to [0, 1] pins the
+		// visuals to the edge while the actual stored value is untouched.
+		fScaleX = ImSaturate( fScaleX );
+		fScaleY = ImSaturate( fScaleY );
 
 		// For integer types, snap cursor to pixel boundaries for crisp rendering
 		// Min/max values touch the frame edges; intermediate values are pixel-rounded
@@ -8372,7 +10408,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			uTextCol,
 			pBufferY );
 
-		return value_changedX || value_changedY || value_changedXS || value_changedYS;
+		return value_changedX || value_changedY || value_changedXS || value_changedYS || value_changedPrec;
 	}
 
 	bool Slider2DFloat( char const* pLabel, float* pValueX, float* pValueY, float v_minX, float v_maxX, float v_minY, float v_maxY )
@@ -8460,7 +10496,46 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		auto MouseTX = [&]() -> float { return ImClamp( ( g.IO.MousePos.x - frame_bb_drag.Min.x ) / drag_w, 0.0f, 1.0f ); };
 		auto MouseTY = [&]() -> float { return ImClamp( ( g.IO.MousePos.y - frame_bb_drag.Min.y ) / drag_h, 0.0f, 1.0f ); };
 
-		if ( hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id ) )
+		// Value-label regions: gaps between the main drag and the X / Y strips where
+		// the formatted readouts are rendered. Hit-testing these for popup-trigger
+		// keeps slider drags and numeric edits cleanly separated.
+		const ImRect xLabelRect(
+			ImVec2( frame_bb_drag.Min.x, frame_bb_drag.Max.y ),
+			ImVec2( frame_bb_drag.Max.x, frame_bb_dragX.Min.y ) );
+		const ImRect yLabelRect(
+			ImVec2( frame_bb_drag.Max.x, frame_bb_drag.Min.y ),
+			ImVec2( frame_bb_dragY.Min.x, frame_bb_drag.Max.y ) );
+		const ImVec2 mp = g.IO.MousePos;
+		const bool labelHovered = xLabelRect.Contains( mp ) || yLabelRect.Contains( mp );
+		const bool labelTriggered = labelHovered && (
+			( g.IO.KeyCtrl && ImGui::IsMouseClicked( 0 ) )
+			|| ImGui::IsMouseDoubleClicked( 0 ) );
+		char rangePopId[ 32 ];
+		ImFormatString( rangePopId, sizeof( rangePopId ), "##s2drngprec_%08X", (unsigned)id );
+		if ( labelTriggered )
+		{
+			ImGui::ClearActiveID();
+			ImGui::OpenPopup( rangePopId );
+		}
+		if ( BeginPrecisionPopup( rangePopId, mp ) )
+		{
+			float const inW = LpToPx( GetStyle().PrecisionPopup_InputWidth );
+			ImGui::SetNextItemWidth( inW );
+			ImGui::InputScalar( "Min X", data_type, p_minX, NULL, NULL, NULL, ImGuiInputTextFlags_AutoSelectAll );
+			if ( ImGui::IsItemDeactivatedAfterEdit() ) { ClampScalar( data_type, p_minX, b_minX, b_maxX ); value_changed = true; }
+			ImGui::SetNextItemWidth( inW );
+			ImGui::InputScalar( "Max X", data_type, p_maxX, NULL, NULL, NULL, ImGuiInputTextFlags_AutoSelectAll );
+			if ( ImGui::IsItemDeactivatedAfterEdit() ) { ClampScalar( data_type, p_maxX, b_minX, b_maxX ); value_changed = true; }
+			ImGui::SetNextItemWidth( inW );
+			ImGui::InputScalar( "Min Y", data_type, p_minY, NULL, NULL, NULL, ImGuiInputTextFlags_AutoSelectAll );
+			if ( ImGui::IsItemDeactivatedAfterEdit() ) { ClampScalar( data_type, p_minY, b_minY, b_maxY ); value_changed = true; }
+			ImGui::SetNextItemWidth( inW );
+			ImGui::InputScalar( "Max Y", data_type, p_maxY, NULL, NULL, NULL, ImGuiInputTextFlags_AutoSelectAll );
+			if ( ImGui::IsItemDeactivatedAfterEdit() ) { ClampScalar( data_type, p_maxY, b_minY, b_maxY ); value_changed = true; }
+			EndPrecisionPopup();
+		}
+
+		if ( hovered && !labelHovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id ) )
 		{
 			float tx = MouseTX(), ty = MouseTY();
 			float tnMinX = NormX( p_minX ), tnMinY = NormY( p_minY );
@@ -9315,12 +11390,18 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float outlineThick = isSelected ? markerThickness * 2.0f : markerThickness;
 			window->DrawList->AddTriangle( p0, p1, p2, outlineCol, outlineThick );
 
-			// Alpha indicator on color markers (only when not split)
+			// Alpha indicator: small vertical tick on the right edge of the triangle
+			// base, rising from base toward tip as alpha decreases. Doesn't cross the
+			// triangle body, doesn't obscure the outline.
 			if ( alpha && !splitAlpha && gradient->Stops[ i ].Color.w < 1.0f )
 			{
-				float alphaY = ImLerp( marker_bb.Min.y + 2.0f, marker_bb.Max.y - 1.0f, 1.0f - gradient->Stops[ i ].Color.w );
-				float halfW = markerHeight * 0.3f;
-				window->DrawList->AddLine( ImVec2( x - halfW, alphaY ), ImVec2( x + halfW, alphaY ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gradient_AlphaIndicator ] ), markerThickness );
+				float tickX = p2.x + LpToPx( 2.0f );
+				float tickTopY = ImLerp( marker_bb.Max.y, marker_bb.Min.y + LpToPx( 2.0f ), 1.0f - gradient->Stops[ i ].Color.w );
+				window->DrawList->AddLine(
+					ImVec2( tickX, marker_bb.Max.y ),
+					ImVec2( tickX, tickTopY ),
+					ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gradient_AlphaIndicator ] ),
+					markerThickness );
 			}
 		}
 
@@ -10392,6 +12473,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// --- DRAWING ---
 
+		// Defensive against the VtxOffset desync (see DW_EnsureFreshVtxOffset doc) —
+		// the curve polyline emitted further below disappears if some upstream widget
+		// has left _CmdHeader.VtxOffset = 0 while VtxBuffer.Size > 64K.
+		DW_EnsureFreshVtxOffset( dl );
+
 		// Frame background
 		ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
 		ImGui::RenderFrame( frame_bb.Min, frame_bb.Max, frame_col, true, g.Style.FrameRounding );
@@ -10452,6 +12538,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 				if ( segType == ImCurveEditorSeg_StepStart )
 				{
+					// CurveEditorSample returns k0.y for the whole [k0.x, k1.x] segment.
+					// Hold at k0.y until k1.x, then jump vertically to k1.Pos so the
+					// polyline visibly passes through k1. Visual: horizontal at k0.y
+					// then vertical to k1 — a discrete step that ends ON the next key.
 					curveLine.push_back( CurveToScreen( ImVec2( k1.Pos.x, k0.Pos.y ), frame_bb, rangeMin, rangeMax ) );
 					curveLine.push_back( CurveToScreen( k1.Pos, frame_bb, rangeMin, rangeMax ) );
 				}
@@ -10484,10 +12574,27 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				}
 			}
 
+			// If every segment is step/linear, force AddPolyline so the sharp corners we
+			// pushed stay sharp — the configured mode (default StrokedBezierPath) runs
+			// Catmull-Rom across the whole polyline and rounds the step transitions.
+			bool any_smooth_seg = false;
+			for ( int s = 0; s < curve->Keys.Size - 1; ++s )
+			{
+				ImCurveEditorSeg t = curve->Keys[ s ].Segment;
+				if ( t != ImCurveEditorSeg_StepStart && t != ImCurveEditorSeg_StepEnd
+				     && t != ImCurveEditorSeg_StepCenter && t != ImCurveEditorSeg_Linear )
+				{
+					any_smooth_seg = true;
+					break;
+				}
+			}
+
 			ImWidgetsThickLineDesc curveDesc;
 			curveDesc.color     = curveCol;
 			curveDesc.thickness = curveThickness;
-			curveDesc.mode      = (ImWidgetsThickLineMode)dwStyle.CurveEditor_LineMode;
+			curveDesc.mode      = any_smooth_seg
+				? (ImWidgetsThickLineMode)dwStyle.CurveEditor_LineMode
+				: ImWidgetsThickLineMode_AddPolyline;
 			curveDesc.dashed    = dwStyle.CurveEditor_LineDashed;
 			DrawThickLine( dl, curveLine.Data, curveLine.Size, curveDesc );
 		}
@@ -10533,8 +12640,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			{
 				// Over empty area: show crosshair and "+" to indicate add
 				ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_Crosshair ] );
-				dl->AddLine( ImVec2( mp.x, frame_bb.Min.y ), ImVec2( mp.x, frame_bb.Max.y ), crossCol, 1.0f );
-				dl->AddLine( ImVec2( frame_bb.Min.x, mp.y ), ImVec2( frame_bb.Max.x, mp.y ), crossCol, 1.0f );
+				DrawCrosshairInRect( dl, mp, frame_bb, crossCol, 1.0f );
 
 				// "+" sign near cursor
 				float plusSize = keyRadius;
@@ -11086,48 +13192,23 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	void DrawColorDisc( ImDrawList* pDrawList, ImVec2 center, float radius, ImColorWheelMode mode, float thirdAxis, int numSectors, int numRings )
 	{
-		ImVec2 const uv = ImGui::GetFontTexUvWhitePixel();
-		int totalQuads = numSectors * numRings;
-		pDrawList->PrimReserve( totalQuads * 6, totalQuads * 4 );
-
-		float const sectorAngle = 2.0f * IM_PI / ( float )numSectors;
-
-		for ( int ring = 0; ring < numRings; ++ring )
+		if ( numSectors < 3 ) numSectors = 3;
+		if ( numRings < 1 ) numRings = 1;
+		// Routed through GenShapeDiscRings → DrawShape. Sectors share vertices
+		// around the wheel so the per-sample callback fires (S+1)(R+1) times
+		// instead of 4·S·R — a ~4× cut.
+		ImWidgetsShape shape;
+		GenShapeDiscRings( shape, center, radius, numSectors, numRings );
+		ImVec2 const uvWhite = ImGui::GetFontTexUvWhitePixel();
+		int const vcount = shape.vertices.size();
+		for ( int k = 0; k < vcount; ++k )
 		{
-			float innerR = ( float )ring / numRings * radius;
-			float outerR = ( float )( ring + 1 ) / numRings * radius;
-			float innerNorm = ( float )ring / numRings;
-			float outerNorm = ( float )( ring + 1 ) / numRings;
-
-			for ( int sector = 0; sector < numSectors; ++sector )
-			{
-				float a0 = sector * sectorAngle;
-				float a1 = ( sector + 1 ) * sectorAngle;
-
-				ImVec2 p00 = center + ImVec2( ImCos( a0 ) * innerR, ImSin( a0 ) * innerR );
-				ImVec2 p10 = center + ImVec2( ImCos( a0 ) * outerR, ImSin( a0 ) * outerR );
-				ImVec2 p11 = center + ImVec2( ImCos( a1 ) * outerR, ImSin( a1 ) * outerR );
-				ImVec2 p01 = center + ImVec2( ImCos( a1 ) * innerR, ImSin( a1 ) * innerR );
-
-				ImU32 c00 = ColorWheelSampleDisc( mode, innerNorm, a0, thirdAxis );
-				ImU32 c10 = ColorWheelSampleDisc( mode, outerNorm, a0, thirdAxis );
-				ImU32 c11 = ColorWheelSampleDisc( mode, outerNorm, a1, thirdAxis );
-				ImU32 c01 = ColorWheelSampleDisc( mode, innerNorm, a1, thirdAxis );
-
-				ImDrawIdx idx = ( ImDrawIdx )pDrawList->_VtxCurrentIdx;
-				pDrawList->PrimWriteIdx( idx + 0 );
-				pDrawList->PrimWriteIdx( idx + 1 );
-				pDrawList->PrimWriteIdx( idx + 2 );
-				pDrawList->PrimWriteIdx( idx + 0 );
-				pDrawList->PrimWriteIdx( idx + 2 );
-				pDrawList->PrimWriteIdx( idx + 3 );
-
-				pDrawList->PrimWriteVtx( p00, uv, c00 );
-				pDrawList->PrimWriteVtx( p10, uv, c10 );
-				pDrawList->PrimWriteVtx( p11, uv, c11 );
-				pDrawList->PrimWriteVtx( p01, uv, c01 );
-			}
+			ImWidgetsVertex& v = shape.vertices[ k ];
+			float angle = v.uv.x * 2.0f * IM_PI;
+			v.col = ColorWheelSampleDisc( mode, v.uv.y, angle, thirdAxis );
+			v.uv = uvWhite;
 		}
+		DrawShape( pDrawList, shape );
 	}
 
 	void DrawCircularGradientIndicator( ImDrawList* pDrawList, ImVec2 center, float outerRadius, float innerRadius, float t )
@@ -12052,8 +14133,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Crosshairs on plane
 		{
 			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
-			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
-			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 		}
 
 		// Vertical slider
@@ -12637,8 +14717,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			SampleSkinColorLUT( dr, dg, db, *pMel, *pBlend, *pBlood );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
 			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
-			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
-			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
 			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
@@ -12881,8 +14960,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			HairParamsToSRGB( dr, dg, db, *pEu, *pPheo, *pRed );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
 			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
-			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
-			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
 			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
@@ -13300,8 +15378,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			LeafParamsToSRGB( dr, dg, db, *pCab, *pCar, *pCanth, *pBrown, LEAF_CW, LEAF_CM, LEAF_N );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
 			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
-			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
-			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
 			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
@@ -13732,8 +15809,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float dr, dg, db; PigmentMixToSRGB( dr, dg, db, idx, conc, 4 );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
 			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
-			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
-			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
 			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
@@ -13906,8 +15982,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float dr, dg, db; GemToSRGB( dr, dg, db, *pGem, *pConc, *pPath, *pClarity );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
 			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
-			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
-			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
 			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
@@ -13979,12 +16054,28 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	static const float WATER_CHL_MIN = 0.0f,  WATER_CHL_MAX = 30.0f;   // mg/m3
 	static const float WATER_CDOM_MIN = 0.0f, WATER_CDOM_MAX = 2.0f;   // 1/m at 440nm
-	static const float WATER_TURB_MIN = 0.0f, WATER_TURB_MAX = 5.0f;
+	static const float WATER_TURB_MIN = 0.0f, WATER_TURB_MAX = 10.0f;
+
+	// Non-linear screen→parameter mapping. The interesting ocean blues live in
+	// the low-chl / low-cdom corner — at gamma=1 (linear) those few mg/m³ of chl
+	// and few hundredths of cdom only occupy a tiny strip of the plane and the
+	// picker looks mostly brown/black. With gamma>1 the screen space expands
+	// near zero so more of the plane shows distinguishable blues.
+	static const float WATER_CHL_GAMMA  = 3.0f;
+	static const float WATER_CDOM_GAMMA = 3.0f;
+	static inline float WaterUtoChl ( float u ) { return WATER_CHL_MAX  * powf( ImSaturate( u ), WATER_CHL_GAMMA ); }
+	static inline float WaterUtoCdom( float u ) { return WATER_CDOM_MAX * powf( ImSaturate( u ), WATER_CDOM_GAMMA ); }
+	static inline float WaterChlToU ( float chl  ) { return powf( ImSaturate( chl  / WATER_CHL_MAX  ), 1.0f / WATER_CHL_GAMMA  ); }
+	static inline float WaterCdomToU( float cdom ) { return powf( ImSaturate( cdom / WATER_CDOM_MAX ), 1.0f / WATER_CDOM_GAMMA ); }
 
 	struct ImWaterData { float turb; };
-	static ImU32 WaterPlaneCallback( float chl, float cdom, void* pUserData )
+	// Plane is now keyed in normalized [0,1] u,v space — the callback applies the
+	// gamma curve so the underlying physics input is still in mg/m³ and 1/m.
+	static ImU32 WaterPlaneCallback( float u, float v, void* pUserData )
 	{
 		ImWaterData* d = ( ImWaterData* )pUserData;
+		float chl  = WaterUtoChl ( u );
+		float cdom = WaterUtoCdom( v );
 		float r, g, b; WaterToSRGB( r, g, b, chl, cdom, d->turb );
 		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
 	}
@@ -14012,10 +16103,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Create keys first (inserts may shift/realloc storage), then grab stable pointers.
 		storage->GetFloatRef( ImGui::GetID( "chl" ), 0.3f );
 		storage->GetFloatRef( ImGui::GetID( "cdom" ), 0.05f );
-		storage->GetFloatRef( ImGui::GetID( "turb" ), 0.2f );
+		storage->GetFloatRef( ImGui::GetID( "turb" ), 5.0f );
 		float* pChl  = storage->GetFloatRef( ImGui::GetID( "chl" ), 0.3f );
 		float* pCdom = storage->GetFloatRef( ImGui::GetID( "cdom" ), 0.05f );
-		float* pTurb = storage->GetFloatRef( ImGui::GetID( "turb" ), 0.2f );
+		float* pTurb = storage->GetFloatRef( ImGui::GetID( "turb" ), 5.0f );
 
 		bool changed = false;
 
@@ -14040,8 +16131,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImVec2 mp = g.IO.MousePos;
 		if ( planeActive )
 		{
-			*pChl  = ImLerp( WATER_CHL_MIN, WATER_CHL_MAX, ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f ) );
-			*pCdom = ImLerp( WATER_CDOM_MIN, WATER_CDOM_MAX, ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f ) );
+			// Screen-space u,v → physical chl/cdom via the gamma remap (low values
+			// dominate near origin so a click in the warm-end of the plane still
+			// produces a comparatively small physical value).
+			float u = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(),  0.0f, 1.0f );
+			float v = ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f );
+			*pChl  = WaterUtoChl ( u );
+			*pCdom = WaterUtoCdom( v );
 			changed = true;
 		}
 		if ( turbActive )
@@ -14054,20 +16150,22 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImWaterData cbData; cbData.turb = *pTurb;
 			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
 			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pTurb );
+			// Pass normalized [0,1] axes; WaterPlaneCallback applies the gamma remap.
 			DrawCachedProceduralColor2DBilinear( dl, WaterPlaneCallback, &cbData,
-				WATER_CHL_MIN, WATER_CHL_MAX, WATER_CDOM_MAX, WATER_CDOM_MIN,
+				0.0f, 1.0f, 1.0f, 0.0f,
 				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
-			float du = ImSaturate( ImNormalize01( *pChl, WATER_CHL_MIN, WATER_CHL_MAX ) );
-			float dv = ImSaturate( ImNormalize01( *pCdom, WATER_CDOM_MIN, WATER_CDOM_MAX ) );
+			// Inverse of the gamma remap so the dot sits at the visually-correct
+			// position for the current physical chl/cdom values.
+			float du = WaterChlToU ( *pChl  );
+			float dv = WaterCdomToU( *pCdom );
 			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
 			float dr, dg, db; WaterToSRGB( dr, dg, db, *pChl, *pCdom, *pTurb );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
 			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
-			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
-			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
 			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
@@ -14215,8 +16313,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float dr, dg, db; IrisToSRGB( dr, dg, db, *pAnt, *pStroma, *pPos );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
 			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
-			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
-			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
 			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
@@ -14408,8 +16505,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float dr, dg, db; FlameToSRGB( dr, dg, db, *pElem, *pTemp, *pLine, *pSodium );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
 			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
-			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
-			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
 			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
@@ -14562,8 +16658,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float dr, dg, db; BruiseToSRGB( dr, dg, db, *pDays, *pSev, *pMel );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
 			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
-			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
-			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
 			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
@@ -14688,8 +16783,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float dr, dg, db; NebulaToSRGB( dr, dg, db, *pIon, *pLow, *pH );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
 			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
-			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
-			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
 			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
@@ -14816,8 +16910,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float dr, dg, db; MaillardToSRGB( dr, dg, db, *pTemp, *pTime, *pSugar );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
 			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
-			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
-			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
 			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
@@ -14947,8 +17040,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float dr, dg, db; PatinaToSRGB( dr, dg, db, *pYr, *pEnv, *pHum );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
 			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
-			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
-			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
 			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
@@ -15087,8 +17179,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float dr, dg, db; SubsurfaceToSRGB( dr, dg, db, *pMat, *pAbs, *pSS, *pIor );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
 			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
-			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
-			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
 			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
@@ -15237,8 +17328,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float dr, dg, db; DischargeToSRGB( dr, dg, db, *pGas, *pHg, *pPhos, *pWarm );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
 			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
-			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
-			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
 			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
@@ -15364,8 +17454,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float dr, dg, db; IceToSRGB( dr, dg, db, *pGrain, *pPath, *pImp );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
 			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
-			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
-			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
 			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
@@ -15526,8 +17615,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float dr, dg, db; KMMixPaletteToSRGB( dr, dg, db, s_Ochres, idx, conc, 4 );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
 			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
-			dl->AddLine( ImVec2( dotPos.x, plane_bb.Min.y ), ImVec2( dotPos.x, plane_bb.Max.y ), crossCol );
-			dl->AddLine( ImVec2( plane_bb.Min.x, dotPos.y ), ImVec2( plane_bb.Max.x, dotPos.y ), crossCol );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
 			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
@@ -15546,6 +17634,3195 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float oconc[ 4 ] = { kc * ( 1.0f - *pBFrac ), kc * ( *pBFrac ), *pWhite, *pBlack };
 		float r, gg, b; KMMixPaletteToSRGB( r, gg, b, s_Ochres, oidx, oconc, 4 );
 		color->x = r; color->y = gg; color->z = b;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// ColorPickerStar — stellar photosphere colour
+	//
+	// Planck blackbody at Teff with two corrections layered on top:
+	//   • Line blanketing (metallicity [Fe/H]): high-metal stars have dense
+	//     Fraunhofer lines in the UV/blue; the integrated effect is an extra
+	//     attenuation of the short-wavelength continuum, which shifts the colour
+	//     redward at fixed Teff. Modeled here as a wavelength-dependent
+	//     transmission factor concentrated below 500 nm.
+	//   • Surface gravity (log g, in cgs): dwarfs vs giants. Cool dwarfs
+	//     (log g ≈ 4.5–5.5) have strong TiO and VO molecular absorption in the
+	//     red, cool giants (log g ≈ 0–1) are smoother. We add a TiO trough
+	//     between 600–720 nm that strengthens with low Teff AND high log g.
+	//
+	// References:
+	//   • Mamajek 2022, "A Modern Mean Dwarf Stellar Color & Effective
+	//     Temperature Sequence" (EEM_dwarf_UBVIJHK_colors_Teff.txt)
+	//   • Pecaut & Mamajek 2013, ApJS 208, 9
+	//   • Harré & Heller 2021, "Digital color codes of stars",
+	//     Astron. Nachr. 342, e2113868
+	//   • Charity, "What color are the stars?" (vendian.org reference table)
+	//
+	// Forward only — no Bayesian inversion. Plane X = log Teff (so the
+	// astrophysically interesting low-mass range gets visible plane area),
+	// Y = log g. Slider = [Fe/H].
+	//////////////////////////////////////////////////////////////////////////
+
+	static const float STAR_T_MIN = 2500.0f, STAR_T_MAX = 40000.0f;   // K
+	static const float STAR_G_MIN = 0.0f,    STAR_G_MAX = 5.5f;        // cgs log g
+	static const float STAR_FE_MIN = -2.0f,  STAR_FE_MAX = 0.5f;        // [Fe/H]
+
+	// Plane is keyed in normalized (u, v) — log-Teff and linear-logg expand the
+	// interesting cool-dwarf corner so it isn't crammed into a single pixel.
+	static inline float StarUtoTeff( float u )
+	{
+		float lo = logf( STAR_T_MIN ), hi = logf( STAR_T_MAX );
+		return expf( ImLerp( lo, hi, ImSaturate( u ) ) );
+	}
+	static inline float StarTeffToU( float T )
+	{
+		float lo = logf( STAR_T_MIN ), hi = logf( STAR_T_MAX );
+		return ( logf( ImClamp( T, STAR_T_MIN, STAR_T_MAX ) ) - lo ) / ( hi - lo );
+	}
+
+	static void StarToSRGB( float& outR, float& outG, float& outB,
+	                        float tempK, float logg, float FeH )
+	{
+		EnsureSpecTables();
+		// Empirical scalars chosen so the (Teff, [Fe/H]) sweep produces a clearly
+		// visible colour shift across the plane while staying in the right
+		// direction (metal-rich → redder, dwarfs → more TiO bands).
+		float metalBlue = expf( -0.45f * FeH );      // <1 for metal-rich → redder
+		float tioStrength = ImClamp( ( 4500.0f - tempK ) / 1800.0f, 0.0f, 1.0f )
+		                  * ImClamp( ( logg - 3.0f ) / 2.5f, 0.0f, 1.0f );
+
+		// SPEC_MIN..SPEC_MAX is already in nanometres (380..730), no further conversion.
+		float X = 0.0f, Y = 0.0f, Z = 0.0f;
+		for ( int i = 0; i < SPEC_N; ++i )
+		{
+			float lam_nm = SPEC_MIN + ( SPEC_MAX - SPEC_MIN ) * (float)i / (float)( SPEC_N - 1 );
+			// Planck (same form as ColorPickerBlackbody — lam in nm, c2 in nm·K).
+			float lam = lam_nm;
+			float Me = 1.0f / ( lam * lam * lam * lam * lam
+			                  * ( expf( SPEC_C2 / ( lam * tempK ) ) - 1.0f ) );
+
+			// UV / blue line blanketing (most cumulative below 500 nm).
+			float blueAtten = 1.0f;
+			if ( lam_nm < 500.0f )
+			{
+				float t = ImSaturate( ( 500.0f - lam_nm ) / 150.0f );
+				blueAtten = ImLerp( 1.0f, metalBlue, t );
+			}
+			// TiO band system between 600–720 nm (strong for cool dwarfs).
+			float tioAtten = 1.0f;
+			if ( lam_nm > 600.0f && lam_nm < 740.0f )
+			{
+				float t = sinf( ( lam_nm - 600.0f ) / 140.0f * IM_PI );
+				tioAtten = 1.0f - 0.45f * tioStrength * t * t;
+			}
+			Me *= blueAtten * tioAtten;
+			X += Me * s_SpecXbar[ i ];
+			Y += Me * s_SpecYbar[ i ];
+			Z += Me * s_SpecZbar[ i ];
+		}
+		if ( Y > 0.0f ) { float iY = 1.0f / Y; X *= iY; Z *= iY; Y = 1.0f; }
+		float r, g, b;
+		ColorConvertXYZtosRGB( r, g, b, X, Y, Z );
+		float mx = ImMax( r, ImMax( g, b ) );
+		if ( mx > 1.0f ) { r /= mx; g /= mx; b /= mx; }
+		outR = ImSaturate( r ); outG = ImSaturate( g ); outB = ImSaturate( b );
+	}
+
+	struct ImStarData { float feh; };
+	static ImU32 StarPlaneCallback( float u, float v, void* pUserData )
+	{
+		ImStarData* d = ( ImStarData* )pUserData;
+		float T    = StarUtoTeff( u );
+		float logg = ImLerp( STAR_G_MAX, STAR_G_MIN, v );  // v=0 top → dwarf, v=1 → supergiant
+		float r, g, b; StarToSRGB( r, g, b, T, logg, d->feh );
+		return IM_COL32( (int)( r*255.0f+0.5f ), (int)( g*255.0f+0.5f ), (int)( b*255.0f+0.5f ), 255 );
+	}
+	struct ImStarSlider { float T; float logg; };
+	static ImU32 StarFeHCallback( float feh, void* pUserData )
+	{
+		ImStarSlider* d = ( ImStarSlider* )pUserData;
+		float r, g, b; StarToSRGB( r, g, b, d->T, d->logg, feh );
+		return IM_COL32( (int)( r*255.0f+0.5f ), (int)( g*255.0f+0.5f ), (int)( b*255.0f+0.5f ), 255 );
+	}
+
+	bool ColorPickerStar( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		storage->GetFloatRef( ImGui::GetID( "T" ),    5778.0f );
+		storage->GetFloatRef( ImGui::GetID( "logg" ), 4.44f );
+		storage->GetFloatRef( ImGui::GetID( "feh" ),  0.0f );
+		float* pT    = storage->GetFloatRef( ImGui::GetID( "T" ),    5778.0f );
+		float* pLogg = storage->GetFloatRef( ImGui::GetID( "logg" ), 4.44f );
+		float* pFeH  = storage->GetFloatRef( ImGui::GetID( "feh" ),  0.0f );
+		bool changed = false;
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "feh", ImVec2( sliderW, planeSide ) );
+		const ImRect feh_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool fehActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive )
+		{
+			float u = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(),  0.0f, 1.0f );
+			float v = ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f );
+			*pT    = StarUtoTeff( u );
+			*pLogg = ImLerp( STAR_G_MAX, STAR_G_MIN, v );
+			changed = true;
+		}
+		if ( fehActive )
+		{
+			*pFeH = ImLerp( STAR_FE_MAX, STAR_FE_MIN,
+			                ImClamp( ( mp.y - feh_bb.Min.y ) / feh_bb.GetHeight(), 0.0f, 1.0f ) );
+			changed = true;
+		}
+
+		{
+			ImStarData cbData; cbData.feh = *pFeH;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pFeH );
+			DrawCachedProceduralColor2DBilinear( dl, StarPlaneCallback, &cbData,
+				0.0f, 1.0f, 1.0f, 0.0f,
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			float du = StarTeffToU( *pT );
+			float dv = 1.0f - ImSaturate( ( *pLogg - STAR_G_MIN ) / ( STAR_G_MAX - STAR_G_MIN ) );
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ),
+			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
+			float dr, dg, db; StarToSRGB( dr, dg, db, *pT, *pLogg, *pFeH );
+			ImU32 dotFill = IM_COL32( (int)( dr*255.0f+0.5f ), (int)( dg*255.0f+0.5f ), (int)( db*255.0f+0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			ImStarSlider cbData; cbData.T = *pT; cbData.logg = *pLogg;
+			DrawProceduralColor1DBilinearVertical( dl, StarFeHCallback, &cbData,
+				STAR_FE_MAX, STAR_FE_MIN, feh_bb.Min, feh_bb.GetSize(), sliderRes );
+			dl->AddRect( feh_bb.Min, feh_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( ( STAR_FE_MAX - *pFeH ) / ( STAR_FE_MAX - STAR_FE_MIN ) );
+			float handleY = ImLerp( feh_bb.Min.y, feh_bb.Max.y, t );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; StarToSRGB( hr, hg, hb, *pT, *pLogg, *pFeH );
+			dl->AddRectFilled( ImVec2( feh_bb.Min.x - 1.0f, handleY - hh ),
+			                   ImVec2( feh_bb.Max.x + 1.0f, handleY + hh ),
+			                   IM_COL32( (int)( hr*255.0f+0.5f ), (int)( hg*255.0f+0.5f ), (int)( hb*255.0f+0.5f ), 255 ), 2.0f );
+			dl->AddRect( ImVec2( feh_bb.Min.x - 1.0f, handleY - hh ),
+			             ImVec2( feh_bb.Max.x + 1.0f, handleY + hh ),
+			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		changed |= ImGui::SliderFloat( "Teff (K)##Star", pT, STAR_T_MIN, STAR_T_MAX, "%.0f", ImGuiSliderFlags_Logarithmic );
+		changed |= ImGui::SliderFloat( "log g##Star",   pLogg, STAR_G_MIN, STAR_G_MAX, "%.2f" );
+		changed |= ImGui::SliderFloat( "[Fe/H]##Star",  pFeH,  STAR_FE_MIN, STAR_FE_MAX, "%.2f" );
+
+		float r, gg, b; StarToSRGB( r, gg, b, *pT, *pLogg, *pFeH );
+		color->x = r; color->y = gg; color->z = b;
+
+		if ( planeActive || fehActive ) changed = true;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// ColorPickerHemoglobin — vascular tissue / oximetry colour
+	//
+	// Skin reflectance ≈ T_melanin² · T_blood² · R_dermis. T_blood is a
+	// Beer-Lambert layer of mixed oxy- and deoxy-haemoglobin. Spectral
+	// integration over the visible band against a D65 illuminant + CIE 1931
+	// CMFs, like the other absorption pickers in this file.
+	//
+	// Reference data: Prahl's haemoglobin extinction coefficient compilation
+	// (Scott Prahl, OMLC at OHSU; widely used baseline for tissue optics).
+	// Sample wavelengths and ε values (cm⁻¹/M):
+	//      λ     HbO2        Hb
+	//    420   480,360   407,560
+	//    440   102,580   413,280
+	//    470    32,584   168,720
+	//    500    20,832    16,156
+	//    540    53,236    46,592
+	//    555    34,477    54,540   ← deoxy peak
+	//    577    55,540    40,092   ← oxy peak / near isosbestic
+	//    600     3,200    14,550
+	//    630       610     7,600
+	//    660       320     3,227   ← pulse-oximetry red wavelength
+	//    700       290     1,794
+	// Concentration: 150 g Hb/L of whole blood, MW 64,500 g/mol → 2.33 mM.
+	// Melanin path uses the Jacques 1996 single-scatter μ_a(λ) ∝ λ^-3.48.
+	//
+	// Forward only. Plane X = SpO2 (50%→100%), Y = blood volume fraction in
+	// the dermis (0.5%→10%). Slider = melanin index (0=very fair, 0.4=very dark).
+	//////////////////////////////////////////////////////////////////////////
+
+	static const int HEM_N = 11;
+	static const float HEM_WL[ HEM_N ] = { 420.f, 440.f, 470.f, 500.f, 540.f, 555.f, 577.f, 600.f, 630.f, 660.f, 700.f };
+	static const float HEM_OXY[ HEM_N ] = { 480360.f, 102580.f, 32584.f, 20832.f, 53236.f, 34476.8f, 55540.f, 3200.f, 610.f, 319.6f, 290.f };
+	static const float HEM_DEOXY[ HEM_N ] = { 407560.f, 413280.f, 168720.f, 16156.4f, 46592.f, 54540.f, 40092.f, 14550.f, 7600.f, 3226.56f, 1794.28f };
+
+	static float HemEpsLerp( float lam_nm, const float* tbl )
+	{
+		if ( lam_nm <= HEM_WL[ 0 ] ) return tbl[ 0 ];
+		if ( lam_nm >= HEM_WL[ HEM_N - 1 ] ) return tbl[ HEM_N - 1 ];
+		for ( int i = 0; i < HEM_N - 1; ++i )
+		{
+			if ( lam_nm <= HEM_WL[ i + 1 ] )
+			{
+				float t = ( lam_nm - HEM_WL[ i ] ) / ( HEM_WL[ i + 1 ] - HEM_WL[ i ] );
+				return tbl[ i ] + t * ( tbl[ i + 1 ] - tbl[ i ] );
+			}
+		}
+		return tbl[ HEM_N - 1 ];
+	}
+
+	static void HemoglobinToSRGB( float& outR, float& outG, float& outB,
+	                              float spO2, float bloodVol, float melanin )
+	{
+		EnsureSpecTables();
+		// Mol concentration of whole-blood haemoglobin.
+		const float C_Hb = 150.0f / 64500.0f;                      // mol/L (= 2.33 mM)
+		const float path_cm = 0.2f;                                // ~2 mm effective dermis path
+		// SPEC_MIN..SPEC_MAX is already in nanometres (380..730).
+		float X = 0.0f, Y = 0.0f, Z = 0.0f;
+		for ( int i = 0; i < SPEC_N; ++i )
+		{
+			float lam_nm = SPEC_MIN + ( SPEC_MAX - SPEC_MIN ) * (float)i / (float)( SPEC_N - 1 );
+			float eOxy = HemEpsLerp( lam_nm, HEM_OXY );
+			float eDx  = HemEpsLerp( lam_nm, HEM_DEOXY );
+			// Beer-Lambert: A = ε · C · ℓ · BV. ε is in cm⁻¹/M, C in M, ℓ in cm.
+			// Mixed haemoglobin extinction is the SpO2-weighted average.
+			float eMix = spO2 * eOxy + ( 1.0f - spO2 ) * eDx;
+			float A_hb = eMix * C_Hb * path_cm * bloodVol * 2.303f; // ε·C·ℓ → ln-based
+			float T_hb = expf( -A_hb );
+
+			// Jacques 1996 melanin: μ_a(λ) ≈ 6.6e10 · λ^(-3.33) cm⁻¹ for one
+			// mel-unit. Scaled so melanin ∈ [0, 0.4] spans fair → very dark.
+			float mu_mel = 6.6e10f * powf( lam_nm, -3.33f );
+			float T_mel  = expf( -melanin * mu_mel * path_cm );
+
+			// Double-pass (light enters, scatters, leaves) + 60 % diffuse dermal
+			// backscatter constant (deeper layers reflect like a Lambertian sheet).
+			float R = T_mel * T_mel * T_hb * T_hb * 0.6f;
+			X += R * s_SpecD65[ i ] * s_SpecXbar[ i ];
+			Y += R * s_SpecD65[ i ] * s_SpecYbar[ i ];
+			Z += R * s_SpecD65[ i ] * s_SpecZbar[ i ];
+		}
+		float iN = 1.0f / s_SpecD65Ynorm;
+		X *= iN; Y *= iN; Z *= iN;
+		float r, g, b;
+		ColorConvertXYZtosRGB( r, g, b, X, Y, Z );
+		float mx = ImMax( r, ImMax( g, b ) );
+		if ( mx > 1.0f ) { r /= mx; g /= mx; b /= mx; }
+		outR = ImSaturate( r ); outG = ImSaturate( g ); outB = ImSaturate( b );
+	}
+
+	struct ImHemData { float mel; };
+	static ImU32 HemPlaneCallback( float spO2, float bv, void* pUserData )
+	{
+		ImHemData* d = ( ImHemData* )pUserData;
+		float r, g, b; HemoglobinToSRGB( r, g, b, spO2, bv, d->mel );
+		return IM_COL32( (int)( r*255.0f+0.5f ), (int)( g*255.0f+0.5f ), (int)( b*255.0f+0.5f ), 255 );
+	}
+	struct ImHemSlider { float spO2; float bv; };
+	static ImU32 HemMelCallback( float mel, void* pUserData )
+	{
+		ImHemSlider* d = ( ImHemSlider* )pUserData;
+		float r, g, b; HemoglobinToSRGB( r, g, b, d->spO2, d->bv, mel );
+		return IM_COL32( (int)( r*255.0f+0.5f ), (int)( g*255.0f+0.5f ), (int)( b*255.0f+0.5f ), 255 );
+	}
+
+	static const float HEM_SPO2_MIN = 0.5f,   HEM_SPO2_MAX = 1.0f;     // fraction
+	static const float HEM_BV_MIN   = 0.005f, HEM_BV_MAX   = 0.10f;    // dermis volume fraction
+	static const float HEM_MEL_MIN  = 0.0f,   HEM_MEL_MAX  = 0.4f;
+
+	bool ColorPickerHemoglobin( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		storage->GetFloatRef( ImGui::GetID( "spo2" ), 0.97f );
+		storage->GetFloatRef( ImGui::GetID( "bv" ),   0.02f );
+		storage->GetFloatRef( ImGui::GetID( "mel" ),  0.05f );
+		float* pSpO2 = storage->GetFloatRef( ImGui::GetID( "spo2" ), 0.97f );
+		float* pBV   = storage->GetFloatRef( ImGui::GetID( "bv" ),   0.02f );
+		float* pMel  = storage->GetFloatRef( ImGui::GetID( "mel" ),  0.05f );
+		bool changed = false;
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "mel", ImVec2( sliderW, planeSide ) );
+		const ImRect mel_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool melActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive )
+		{
+			*pSpO2 = ImLerp( HEM_SPO2_MIN, HEM_SPO2_MAX,
+			                 ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f ) );
+			// Y inverted: low BV at top, high BV at bottom.
+			*pBV = ImLerp( HEM_BV_MAX, HEM_BV_MIN,
+			               ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f ) );
+			changed = true;
+		}
+		if ( melActive )
+		{
+			*pMel = ImLerp( HEM_MEL_MAX, HEM_MEL_MIN,
+			                ImClamp( ( mp.y - mel_bb.Min.y ) / mel_bb.GetHeight(), 0.0f, 1.0f ) );
+			changed = true;
+		}
+
+		{
+			ImHemData cbData; cbData.mel = *pMel;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pMel );
+			// Note maxY/minY are inverted to put low BV (lighter) at top.
+			DrawCachedProceduralColor2DBilinear( dl, HemPlaneCallback, &cbData,
+				HEM_SPO2_MIN, HEM_SPO2_MAX, HEM_BV_MAX, HEM_BV_MIN,
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			float du = ImSaturate( ( *pSpO2 - HEM_SPO2_MIN ) / ( HEM_SPO2_MAX - HEM_SPO2_MIN ) );
+			float dv = ImSaturate( ( HEM_BV_MAX - *pBV ) / ( HEM_BV_MAX - HEM_BV_MIN ) );
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ),
+			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
+			float dr, dg, db; HemoglobinToSRGB( dr, dg, db, *pSpO2, *pBV, *pMel );
+			ImU32 dotFill = IM_COL32( (int)( dr*255.0f+0.5f ), (int)( dg*255.0f+0.5f ), (int)( db*255.0f+0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			ImHemSlider cbData; cbData.spO2 = *pSpO2; cbData.bv = *pBV;
+			DrawProceduralColor1DBilinearVertical( dl, HemMelCallback, &cbData,
+				HEM_MEL_MAX, HEM_MEL_MIN, mel_bb.Min, mel_bb.GetSize(), sliderRes );
+			dl->AddRect( mel_bb.Min, mel_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( ( HEM_MEL_MAX - *pMel ) / ( HEM_MEL_MAX - HEM_MEL_MIN ) );
+			float handleY = ImLerp( mel_bb.Min.y, mel_bb.Max.y, t );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; HemoglobinToSRGB( hr, hg, hb, *pSpO2, *pBV, *pMel );
+			dl->AddRectFilled( ImVec2( mel_bb.Min.x - 1.0f, handleY - hh ),
+			                   ImVec2( mel_bb.Max.x + 1.0f, handleY + hh ),
+			                   IM_COL32( (int)( hr*255.0f+0.5f ), (int)( hg*255.0f+0.5f ), (int)( hb*255.0f+0.5f ), 255 ), 2.0f );
+			dl->AddRect( ImVec2( mel_bb.Min.x - 1.0f, handleY - hh ),
+			             ImVec2( mel_bb.Max.x + 1.0f, handleY + hh ),
+			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		float spo2Pct = *pSpO2 * 100.0f;
+		float bvPct   = *pBV   * 100.0f;
+		if ( ImGui::SliderFloat( "SpO2 (%)##Hem",        &spo2Pct, HEM_SPO2_MIN * 100.0f, HEM_SPO2_MAX * 100.0f, "%.1f" ) )
+		{ *pSpO2 = spo2Pct * 0.01f; changed = true; }
+		if ( ImGui::SliderFloat( "Blood volume (%)##Hem", &bvPct,  HEM_BV_MIN   * 100.0f, HEM_BV_MAX   * 100.0f, "%.2f" ) )
+		{ *pBV = bvPct * 0.01f; changed = true; }
+		changed |= ImGui::SliderFloat( "Melanin##Hem",   pMel, HEM_MEL_MIN, HEM_MEL_MAX, "%.3f" );
+
+		float r, gg, b; HemoglobinToSRGB( r, gg, b, *pSpO2, *pBV, *pMel );
+		color->x = r; color->y = gg; color->z = b;
+
+		if ( planeActive || melActive ) changed = true;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// ColorPickerCloud — volumetric cloud lighting (Schneider & Vos 2015)
+	//
+	// "Real-Time Volumetric Cloudscapes" / Horizon Zero Dawn approach:
+	//   • Beer's law for absorption:        T(d)         = exp(-σ_e · d)
+	//   • Powder term for in-scattering at
+	//     cloud edges (Schneider's hack):   P(d)         = 1 - exp(-2 σ_e · d)
+	//   • Combined "Beer-Powder" lighting:  E(d) = 2 · T(d) · P(d)
+	//     (peaks around moderate depth — bright translucent edges, dark cores)
+	//   • Angular distribution from a dual Henyey-Greenstein phase function
+	//     with a strong forward Mie lobe (g₁ ≈ +0.8, sun directly behind viewer
+	//     → very bright) and a weaker backscatter lobe (g₂ ≈ -0.3, silver-lining
+	//     looking toward the sun). Linear blend with mix ≈ 0.5.
+	//   • Result blends warm directly-lit cloud colour with cool ambient sky.
+	//
+	// Forward only. Plane: X = optical depth into the cloud (0 → 6),
+	// Y = cos(angle between view and light) ∈ [-1, +1] (-1 = looking at sun,
+	// +1 = sun behind camera). Slider = extinction coefficient σ_e (controls
+	// how quickly Beer kills light → fluffy white vs dark thunderhead).
+	//////////////////////////////////////////////////////////////////////////
+
+	static const float CLOUD_D_MIN  = 0.0f, CLOUD_D_MAX  = 6.0f;
+	static const float CLOUD_MU_MIN = -1.0f, CLOUD_MU_MAX = 1.0f;
+	static const float CLOUD_SIG_MIN = 0.1f, CLOUD_SIG_MAX = 3.0f;
+
+	static inline float CloudHG( float g, float mu )
+	{
+		float g2 = g * g;
+		float num = 1.0f - g2;
+		float den = powf( ImMax( 1.0f + g2 - 2.0f * g * mu, 1e-4f ), 1.5f );
+		return ( 0.25f / IM_PI ) * num / den;
+	}
+
+	static void CloudToSRGB( float& outR, float& outG, float& outB,
+	                         float depth, float mu, float sigma )
+	{
+		// Beer-Powder: 2 * exp(-σd) * (1 - exp(-2σd)).
+		float beer    = expf( -sigma * depth );
+		float powder  = 1.0f - expf( -2.0f * sigma * depth );
+		float energy  = 2.0f * beer * powder;
+
+		// Dual Henyey-Greenstein. The forward lobe gives the bright crescent
+		// when the sun is behind the viewer; the backward lobe gives the
+		// silver-lining halo when the sun is behind the cloud.
+		float hg_fwd  = CloudHG(  0.8f, mu );
+		float hg_bwd  = CloudHG( -0.3f, mu );
+		float phase   = ImLerp( hg_fwd, hg_bwd, 0.5f );
+
+		// Light colour (sun: slightly warm white) and ambient (sky blue,
+		// boosted because the cloud catches a lot of bounced skylight).
+		float sun_r = 1.00f, sun_g = 0.97f, sun_b = 0.90f;
+		float amb_r = 0.55f, amb_g = 0.65f, amb_b = 0.78f;
+
+		float scatter = ImClamp( energy * phase * 8.0f, 0.0f, 1.5f );
+		// Self-shadow drives the cloud darker as we go deeper. Light extinction
+		// from above gives that classic "underside is grey-blue" look.
+		float shadow  = 1.0f - ImSaturate( 1.0f - beer ); // = beer, kept explicit
+		float lit_r = sun_r * scatter * shadow + amb_r * ( 1.0f - shadow );
+		float lit_g = sun_g * scatter * shadow + amb_g * ( 1.0f - shadow );
+		float lit_b = sun_b * scatter * shadow + amb_b * ( 1.0f - shadow );
+
+		outR = ImSaturate( lit_r );
+		outG = ImSaturate( lit_g );
+		outB = ImSaturate( lit_b );
+	}
+
+	struct ImCloudData { float sigma; };
+	static ImU32 CloudPlaneCallback( float depth, float mu, void* pUserData )
+	{
+		ImCloudData* d = ( ImCloudData* )pUserData;
+		float r, g, b; CloudToSRGB( r, g, b, depth, mu, d->sigma );
+		return IM_COL32( (int)( r*255.0f+0.5f ), (int)( g*255.0f+0.5f ), (int)( b*255.0f+0.5f ), 255 );
+	}
+	struct ImCloudSlider { float depth; float mu; };
+	static ImU32 CloudSigmaCallback( float sigma, void* pUserData )
+	{
+		ImCloudSlider* d = ( ImCloudSlider* )pUserData;
+		float r, g, b; CloudToSRGB( r, g, b, d->depth, d->mu, sigma );
+		return IM_COL32( (int)( r*255.0f+0.5f ), (int)( g*255.0f+0.5f ), (int)( b*255.0f+0.5f ), 255 );
+	}
+
+	bool ColorPickerCloud( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		storage->GetFloatRef( ImGui::GetID( "depth" ), 1.5f );
+		storage->GetFloatRef( ImGui::GetID( "mu" ),    -0.6f );
+		storage->GetFloatRef( ImGui::GetID( "sig" ),   0.8f );
+		float* pDepth = storage->GetFloatRef( ImGui::GetID( "depth" ), 1.5f );
+		float* pMu    = storage->GetFloatRef( ImGui::GetID( "mu" ),    -0.6f );
+		float* pSigma = storage->GetFloatRef( ImGui::GetID( "sig" ),   0.8f );
+		bool changed = false;
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "sig", ImVec2( sliderW, planeSide ) );
+		const ImRect sig_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool sigActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive )
+		{
+			*pDepth = ImLerp( CLOUD_D_MIN, CLOUD_D_MAX,
+			                  ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f ) );
+			// Y top = backscatter (mu = -1, looking toward sun → silver lining),
+			// Y bottom = forward (mu = +1, sun behind viewer → bright cloud).
+			*pMu = ImLerp( CLOUD_MU_MIN, CLOUD_MU_MAX,
+			               ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f ) );
+			changed = true;
+		}
+		if ( sigActive )
+		{
+			*pSigma = ImLerp( CLOUD_SIG_MAX, CLOUD_SIG_MIN,
+			                  ImClamp( ( mp.y - sig_bb.Min.y ) / sig_bb.GetHeight(), 0.0f, 1.0f ) );
+			changed = true;
+		}
+
+		{
+			ImCloudData cbData; cbData.sigma = *pSigma;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pSigma );
+			DrawCachedProceduralColor2DBilinear( dl, CloudPlaneCallback, &cbData,
+				CLOUD_D_MIN, CLOUD_D_MAX, CLOUD_MU_MAX, CLOUD_MU_MIN,
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			float du = ImSaturate( ( *pDepth - CLOUD_D_MIN ) / ( CLOUD_D_MAX - CLOUD_D_MIN ) );
+			float dv = ImSaturate( ( *pMu - CLOUD_MU_MIN ) / ( CLOUD_MU_MAX - CLOUD_MU_MIN ) );
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ),
+			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
+			float dr, dg, db; CloudToSRGB( dr, dg, db, *pDepth, *pMu, *pSigma );
+			ImU32 dotFill = IM_COL32( (int)( dr*255.0f+0.5f ), (int)( dg*255.0f+0.5f ), (int)( db*255.0f+0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			ImCloudSlider cbData; cbData.depth = *pDepth; cbData.mu = *pMu;
+			DrawProceduralColor1DBilinearVertical( dl, CloudSigmaCallback, &cbData,
+				CLOUD_SIG_MAX, CLOUD_SIG_MIN, sig_bb.Min, sig_bb.GetSize(), sliderRes );
+			dl->AddRect( sig_bb.Min, sig_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( ( CLOUD_SIG_MAX - *pSigma ) / ( CLOUD_SIG_MAX - CLOUD_SIG_MIN ) );
+			float handleY = ImLerp( sig_bb.Min.y, sig_bb.Max.y, t );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; CloudToSRGB( hr, hg, hb, *pDepth, *pMu, *pSigma );
+			dl->AddRectFilled( ImVec2( sig_bb.Min.x - 1.0f, handleY - hh ),
+			                   ImVec2( sig_bb.Max.x + 1.0f, handleY + hh ),
+			                   IM_COL32( (int)( hr*255.0f+0.5f ), (int)( hg*255.0f+0.5f ), (int)( hb*255.0f+0.5f ), 255 ), 2.0f );
+			dl->AddRect( ImVec2( sig_bb.Min.x - 1.0f, handleY - hh ),
+			             ImVec2( sig_bb.Max.x + 1.0f, handleY + hh ),
+			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		changed |= ImGui::SliderFloat( "Optical depth##Cloud",     pDepth, CLOUD_D_MIN,  CLOUD_D_MAX,  "%.2f" );
+		changed |= ImGui::SliderFloat( "cos(view, sun)##Cloud",    pMu,    CLOUD_MU_MIN, CLOUD_MU_MAX, "%.2f" );
+		changed |= ImGui::SliderFloat( "Extinction##Cloud",        pSigma, CLOUD_SIG_MIN, CLOUD_SIG_MAX, "%.2f" );
+
+		float r, gg, b; CloudToSRGB( r, gg, b, *pDepth, *pMu, *pSigma );
+		color->x = r; color->y = gg; color->z = b;
+
+		if ( planeActive || sigActive ) changed = true;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// ColorPickerStreetlight — gas-discharge + phosphor street-lamp spectrum
+	//
+	// Reproduces the (in)famous orange of low-pressure sodium streetlamps,
+	// the green-tinged "mercury vapour" lamp, and the warm-white tri-phosphor
+	// fluorescent tube. Each emission source is modelled as a sum of
+	// narrow Gaussian lines:
+	//   • Low-pressure sodium: 589.0/589.6 nm doublet.
+	//   • Mercury vapour: 404.7, 435.8, 546.1, 577.0/579.0 nm.
+	//   • High-pressure sodium: broadened 589 nm + cluster 569–616 nm.
+	//   • Tri-phosphor fluorescent: blue ~440 nm, green ~545 nm, red ~611 nm
+	//     (Eu²⁺ / Tb³⁺ / Eu³⁺ rare-earth phosphors), excited by the Hg UV
+	//     line at 253.7 nm.
+	//
+	// Forward only. Plane: X = "Hg → Na" mix (0 = pure mercury vapour,
+	// 1 = pure low-pressure sodium), Y = pressure axis (low-pressure crisp
+	// lines → high-pressure broadened envelope, including the HPS cluster).
+	// Slider: tri-phosphor coating (none → warm-white fluorescent overlay).
+	//
+	// References: RIT "Spectral Distribution of Gas Discharge Sources",
+	// PMC "Spectral Identification of Lighting Type and Character", standard
+	// emission-line atlases for Hg I and Na I.
+	//////////////////////////////////////////////////////////////////////////
+
+	static const float SL_MIX_MIN  = 0.0f, SL_MIX_MAX  = 1.0f;
+	static const float SL_PRES_MIN = 0.0f, SL_PRES_MAX = 1.0f;
+	static const float SL_PHOS_MIN = 0.0f, SL_PHOS_MAX = 1.0f;
+
+	static inline float SLLine( float lam, float lam0, float w, float amp )
+	{
+		float x = ( lam - lam0 ) / w;
+		return amp * expf( -0.5f * x * x );
+	}
+
+	static void StreetlightToSRGB( float& outR, float& outG, float& outB,
+	                               float mix, float pressure, float phosphor )
+	{
+		EnsureSpecTables();
+		// Width grows with pressure (collisional + Doppler broadening).
+		float wHg = 1.2f + 5.0f * pressure;        // nm
+		float wNa = 0.5f + 6.0f * pressure;
+		float wPh = 28.0f;                         // tri-phosphor bands are wide
+
+		float X = 0.0f, Y = 0.0f, Z = 0.0f;
+		for ( int i = 0; i < SPEC_N; ++i )
+		{
+			float lam = SPEC_MIN + ( SPEC_MAX - SPEC_MIN ) * ( float )i / ( float )( SPEC_N - 1 );
+			float SHg = 0.0f, SNa = 0.0f, SPh = 0.0f;
+
+			// Mercury visible lines (relative intensities approximated from
+			// standard Hg I tables; UV 254/365 nm not in our spectrum range).
+			SHg += SLLine( lam, 404.7f, wHg, 0.65f );  // violet
+			SHg += SLLine( lam, 435.8f, wHg, 1.20f );  // blue
+			SHg += SLLine( lam, 491.6f, wHg, 0.10f );
+			SHg += SLLine( lam, 546.1f, wHg, 1.50f );  // bright green
+			SHg += SLLine( lam, 577.0f, wHg, 0.90f );  // yellow doublet
+			SHg += SLLine( lam, 579.1f, wHg, 0.95f );
+			// A faint continuum from high-pressure broadening fills in the gaps.
+			SHg += 0.05f * pressure;
+
+			// Sodium D-line and HPS cluster.
+			SNa += SLLine( lam, 589.0f, wNa, 3.50f );
+			SNa += SLLine( lam, 589.6f, wNa, 3.40f );
+			// HPS adds the broadened cluster only at high pressure.
+			SNa += pressure * ( SLLine( lam, 569.0f, wNa * 1.6f, 0.45f )
+			                  + SLLine( lam, 595.0f, wNa * 1.6f, 0.60f )
+			                  + SLLine( lam, 615.0f, wNa * 1.6f, 0.55f ) );
+			// HPS self-reversal: very dense vapour absorbs at line centre,
+			// pushing power to the wings. Subtract a narrow notch at 589.3 nm.
+			SNa -= pressure * SLLine( lam, 589.3f, 1.5f, 2.0f );
+			SNa = ImMax( SNa, 0.0f );
+
+			// Tri-phosphor: three rare-earth bands, weighted to give cool-white
+			// (~4000 K) when fully on. The "fluorescent tube" archetype.
+			SPh += SLLine( lam, 437.0f, wPh, 1.10f );  // Eu²⁺ blue
+			SPh += SLLine( lam, 545.0f, wPh, 1.40f );  // Tb³⁺ green
+			SPh += SLLine( lam, 611.0f, wPh, 1.45f );  // Eu³⁺ red
+			SPh += 0.04f;                              // weak Hg continuum leak-through
+
+			float S = ( 1.0f - mix ) * SHg + mix * SNa;
+			S = ( 1.0f - phosphor ) * S + phosphor * SPh;
+			// The gas-discharge components don't pass through D65 — they ARE
+			// the illuminant. Integrate raw SPD against the CMFs.
+			X += S * s_SpecXbar[ i ];
+			Y += S * s_SpecYbar[ i ];
+			Z += S * s_SpecZbar[ i ];
+		}
+		float yN = ImMax( Y, 1e-6f );
+		// Normalise so peak luminance hits ~1 (these lamps look bright).
+		float scale = 1.0f / yN;
+		X *= scale; Y *= scale; Z *= scale;
+		float r, g, b;
+		ColorConvertXYZtosRGB( r, g, b, X, Y, Z );
+		float mx = ImMax( r, ImMax( g, b ) );
+		if ( mx > 1.0f ) { r /= mx; g /= mx; b /= mx; }
+		outR = ImSaturate( r ); outG = ImSaturate( g ); outB = ImSaturate( b );
+	}
+
+	struct ImSLData { float phos; };
+	static ImU32 SLPlaneCallback( float mix, float pres, void* pUserData )
+	{
+		ImSLData* pd = ( ImSLData* )pUserData;
+		float r, g, b; StreetlightToSRGB( r, g, b, mix, pres, pd->phos );
+		return IM_COL32( (int)( r*255.0f+0.5f ), (int)( g*255.0f+0.5f ), (int)( b*255.0f+0.5f ), 255 );
+	}
+	struct ImSLSlider { float mix; float pres; };
+	static ImU32 SLPhosCallback( float phos, void* pUserData )
+	{
+		ImSLSlider* pd = ( ImSLSlider* )pUserData;
+		float r, g, b; StreetlightToSRGB( r, g, b, pd->mix, pd->pres, phos );
+		return IM_COL32( (int)( r*255.0f+0.5f ), (int)( g*255.0f+0.5f ), (int)( b*255.0f+0.5f ), 255 );
+	}
+
+	bool ColorPickerStreetlight( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		storage->GetFloatRef( ImGui::GetID( "mix" ),  0.5f );
+		storage->GetFloatRef( ImGui::GetID( "pres" ), 0.3f );
+		storage->GetFloatRef( ImGui::GetID( "phos" ), 0.0f );
+		float* pMix  = storage->GetFloatRef( ImGui::GetID( "mix" ),  0.5f );
+		float* pPres = storage->GetFloatRef( ImGui::GetID( "pres" ), 0.3f );
+		float* pPhos = storage->GetFloatRef( ImGui::GetID( "phos" ), 0.0f );
+		bool changed = false;
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "phos", ImVec2( sliderW, planeSide ) );
+		const ImRect phos_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool phosActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive )
+		{
+			*pMix = ImLerp( SL_MIX_MIN, SL_MIX_MAX,
+			                ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f ) );
+			// Top = low pressure (crisp lines), bottom = high pressure (HPS).
+			*pPres = ImLerp( SL_PRES_MAX, SL_PRES_MIN,
+			                 ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f ) );
+			changed = true;
+		}
+		if ( phosActive )
+		{
+			*pPhos = ImLerp( SL_PHOS_MAX, SL_PHOS_MIN,
+			                 ImClamp( ( mp.y - phos_bb.Min.y ) / phos_bb.GetHeight(), 0.0f, 1.0f ) );
+			changed = true;
+		}
+
+		{
+			ImSLData cbData; cbData.phos = *pPhos;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pPhos );
+			DrawCachedProceduralColor2DBilinear( dl, SLPlaneCallback, &cbData,
+				SL_MIX_MIN, SL_MIX_MAX, SL_PRES_MAX, SL_PRES_MIN,
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			float du = ImSaturate( ( *pMix - SL_MIX_MIN ) / ( SL_MIX_MAX - SL_MIX_MIN ) );
+			float dv = ImSaturate( ( SL_PRES_MAX - *pPres ) / ( SL_PRES_MAX - SL_PRES_MIN ) );
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ),
+			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
+			float dr, dg, db; StreetlightToSRGB( dr, dg, db, *pMix, *pPres, *pPhos );
+			ImU32 dotFill = IM_COL32( (int)( dr*255.0f+0.5f ), (int)( dg*255.0f+0.5f ), (int)( db*255.0f+0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			ImSLSlider cbData; cbData.mix = *pMix; cbData.pres = *pPres;
+			DrawProceduralColor1DBilinearVertical( dl, SLPhosCallback, &cbData,
+				SL_PHOS_MAX, SL_PHOS_MIN, phos_bb.Min, phos_bb.GetSize(), sliderRes );
+			dl->AddRect( phos_bb.Min, phos_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( ( SL_PHOS_MAX - *pPhos ) / ( SL_PHOS_MAX - SL_PHOS_MIN ) );
+			float handleY = ImLerp( phos_bb.Min.y, phos_bb.Max.y, t );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; StreetlightToSRGB( hr, hg, hb, *pMix, *pPres, *pPhos );
+			dl->AddRectFilled( ImVec2( phos_bb.Min.x - 1.0f, handleY - hh ),
+			                   ImVec2( phos_bb.Max.x + 1.0f, handleY + hh ),
+			                   IM_COL32( (int)( hr*255.0f+0.5f ), (int)( hg*255.0f+0.5f ), (int)( hb*255.0f+0.5f ), 255 ), 2.0f );
+			dl->AddRect( ImVec2( phos_bb.Min.x - 1.0f, handleY - hh ),
+			             ImVec2( phos_bb.Max.x + 1.0f, handleY + hh ),
+			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		changed |= ImGui::SliderFloat( "Hg <-> Na##SL",   pMix,  SL_MIX_MIN,  SL_MIX_MAX,  "%.2f" );
+		changed |= ImGui::SliderFloat( "Pressure##SL",    pPres, SL_PRES_MIN, SL_PRES_MAX, "%.2f" );
+		changed |= ImGui::SliderFloat( "Tri-phosphor##SL", pPhos, SL_PHOS_MIN, SL_PHOS_MAX, "%.2f" );
+
+		float r, gg, b; StreetlightToSRGB( r, gg, b, *pMix, *pPres, *pPhos );
+		color->x = r; color->y = gg; color->z = b;
+
+		if ( planeActive || phosActive ) changed = true;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Artist-oriented colour pickers (palette / harmony / mixer / etc.)
+	//
+	// These pickers don't try to be physically accurate — they're tuned for
+	// asset creation: harmony rules, perceptual uniformity, palette previews,
+	// gradient editing, ramp design.
+	//////////////////////////////////////////////////////////////////////////
+
+	// ---- Common helpers ----------------------------------------------------
+
+	static inline float ArtLinToSrgb( float c )
+	{
+		if ( c <= 0.0f ) return 0.0f;
+		if ( c >= 1.0f ) return 1.0f;
+		return ( c <= 0.0031308f ) ? 12.92f * c : 1.055f * powf( c, 1.0f / 2.4f ) - 0.055f;
+	}
+	static inline float ArtSrgbToLin( float c )
+	{
+		if ( c <= 0.0f ) return 0.0f;
+		if ( c >= 1.0f ) return 1.0f;
+		return ( c <= 0.04045f ) ? c * ( 1.0f / 12.92f ) : powf( ( c + 0.055f ) * ( 1.0f / 1.055f ), 2.4f );
+	}
+
+	// Björn Ottosson's Oklab — perceptually-uniform colour space.
+	static inline void ArtOklabToLinearRGB( float L, float a, float b,
+	                                        float& r, float& g, float& bl )
+	{
+		float l_ = L + 0.3963377774f * a + 0.2158037573f * b;
+		float m_ = L - 0.1055613458f * a - 0.0638541728f * b;
+		float s_ = L - 0.0894841775f * a - 1.2914855480f * b;
+		float l = l_ * l_ * l_;
+		float m = m_ * m_ * m_;
+		float s = s_ * s_ * s_;
+		r  = +4.0767416621f * l - 3.3077115913f * m + 0.2309699292f * s;
+		g  = -1.2684380046f * l + 2.6097574011f * m - 0.3413193965f * s;
+		bl = -0.0041960863f * l - 0.7034186147f * m + 1.7076147010f * s;
+	}
+
+	// LCh (cylindrical Oklab) → sRGB. Out-of-gamut channels get clipped to
+	// [0,1] (the cheap way) so the picker still produces a viewable colour.
+	static inline void ArtOklchToSrgb( float L, float C, float h_rad,
+	                                   float& r, float& g, float& b )
+	{
+		float a  = C * cosf( h_rad );
+		float bb = C * sinf( h_rad );
+		float lr, lg, lbb;
+		ArtOklabToLinearRGB( L, a, bb, lr, lg, lbb );
+		r = ArtLinToSrgb( lr );
+		g = ArtLinToSrgb( lg );
+		b = ArtLinToSrgb( lbb );
+	}
+	static inline bool ArtOklchInGamut( float L, float C, float h_rad )
+	{
+		float a  = C * cosf( h_rad );
+		float bb = C * sinf( h_rad );
+		float lr, lg, lbb;
+		ArtOklabToLinearRGB( L, a, bb, lr, lg, lbb );
+		return lr >= 0.0f && lr <= 1.0f && lg >= 0.0f && lg <= 1.0f && lbb >= 0.0f && lbb <= 1.0f;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// 1. ColorPickerPaletteHarmony — anchor + scheme → 4-5 swatch palette
+	//
+	// Pick one "anchor" colour (plane = saturation × value, slider = hue),
+	// then a harmony scheme rotates that hue around the wheel to generate
+	// the rest of the palette. The output `color` is whichever swatch the
+	// artist clicked last; the full palette is shown below as clickable
+	// swatches and (optionally) exposed via the out-buffer.
+	//
+	// Schemes:
+	//   Complement   2 swatches  — H, H+180°
+	//   Split-Comp   3 swatches  — H, H+180°±spread
+	//   Triad        3 swatches  — H, H+120°, H+240°
+	//   Tetrad       4 swatches  — H, H+60°, H+180°, H+240°  (rectangle)
+	//   Square       4 swatches  — H, H+90°, H+180°, H+270°
+	//   Analogous    5 swatches  — H + k·spread, k = -2..+2
+	//////////////////////////////////////////////////////////////////////////
+
+	enum ArtHarmonyScheme {
+		ArtHarmony_Complement = 0,
+		ArtHarmony_SplitComp,
+		ArtHarmony_Triad,
+		ArtHarmony_Tetrad,
+		ArtHarmony_Square,
+		ArtHarmony_Analogous,
+		ArtHarmony_COUNT
+	};
+	static const char* ArtHarmonyNames[ ArtHarmony_COUNT ] = {
+		"Complement", "Split-Complement", "Triad", "Tetrad", "Square", "Analogous"
+	};
+
+	static int ArtHarmonyBuildPalette( int scheme, float h, float s, float v,
+	                                   float spread_deg, ImVec4* out, int outCap )
+	{
+		float off[5] = { 0, 0, 0, 0, 0 };
+		int n = 1;
+		switch ( scheme )
+		{
+		case ArtHarmony_Complement: n = 2; off[ 1 ] = 180.0f; break;
+		case ArtHarmony_SplitComp:  n = 3; off[ 1 ] = 180.0f - spread_deg; off[ 2 ] = 180.0f + spread_deg; break;
+		case ArtHarmony_Triad:      n = 3; off[ 1 ] = 120.0f; off[ 2 ] = 240.0f; break;
+		case ArtHarmony_Tetrad:     n = 4; off[ 1 ] = 60.0f; off[ 2 ] = 180.0f; off[ 3 ] = 240.0f; break;
+		case ArtHarmony_Square:     n = 4; off[ 1 ] = 90.0f; off[ 2 ] = 180.0f; off[ 3 ] = 270.0f; break;
+		case ArtHarmony_Analogous:  n = 5; off[ 0 ] = -2.0f * spread_deg; off[ 1 ] = -spread_deg; off[ 2 ] = 0.0f; off[ 3 ] = spread_deg; off[ 4 ] = 2.0f * spread_deg; break;
+		}
+		if ( n > outCap ) n = outCap;
+		for ( int i = 0; i < n; ++i )
+		{
+			float hh = h + off[ i ] / 360.0f;
+			hh = hh - floorf( hh );
+			float r, g, b;
+			ImGui::ColorConvertHSVtoRGB( hh, s, v, r, g, b );
+			out[ i ] = ImVec4( r, g, b, 1.0f );
+		}
+		return n;
+	}
+
+	struct ImHarmoData { float hue; };
+	static ImU32 HarmoPlaneCallback( float sat, float val, void* p )
+	{
+		ImHarmoData* d = ( ImHarmoData* )p;
+		float r, g, b; ImGui::ColorConvertHSVtoRGB( d->hue, sat, val, r, g, b );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+	static ImU32 HarmoHueCallback( float hue, void* )
+	{
+		float r, g, b; ImGui::ColorConvertHSVtoRGB( hue, 1.0f, 1.0f, r, g, b );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerPaletteHarmony( char const* label, ImVec4* color, ImVec4* out_palette, int* out_count )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		// Two-pass: insert every entry first, THEN grab pointers — ImGuiStorage's
+		// sorted vector can reallocate on insert and invalidate earlier pointers.
+		storage->GetFloatRef( ImGui::GetID( "h" ),      0.6f );
+		storage->GetFloatRef( ImGui::GetID( "s" ),      0.7f );
+		storage->GetFloatRef( ImGui::GetID( "v" ),      0.9f );
+		storage->GetIntRef  ( ImGui::GetID( "scheme" ), ArtHarmony_Triad );
+		storage->GetFloatRef( ImGui::GetID( "spread" ), 30.0f );
+		storage->GetIntRef  ( ImGui::GetID( "active" ), 0 );
+		float* pH      = storage->GetFloatRef( ImGui::GetID( "h" ),      0.6f );
+		float* pS      = storage->GetFloatRef( ImGui::GetID( "s" ),      0.7f );
+		float* pV      = storage->GetFloatRef( ImGui::GetID( "v" ),      0.9f );
+		int*   pScheme = storage->GetIntRef  ( ImGui::GetID( "scheme" ), ArtHarmony_Triad );
+		float* pSpread = storage->GetFloatRef( ImGui::GetID( "spread" ), 30.0f );
+		int*   pActive = storage->GetIntRef  ( ImGui::GetID( "active" ), 0 );
+		bool changed = false;
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "hue", ImVec2( sliderW, planeSide ) );
+		const ImRect hue_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool hueActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive )
+		{
+			*pS = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f );
+			*pV = 1.0f - ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f );
+			changed = true;
+		}
+		if ( hueActive )
+		{
+			*pH = ImClamp( ( mp.y - hue_bb.Min.y ) / hue_bb.GetHeight(), 0.0f, 1.0f );
+			changed = true;
+		}
+
+		{
+			ImHarmoData cbData; cbData.hue = *pH;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pH );
+			DrawCachedProceduralColor2DBilinear( dl, HarmoPlaneCallback, &cbData,
+				0.0f, 1.0f, 1.0f, 0.0f,
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, *pS ),
+			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, 1.0f - *pV ) );
+			float dr, dg, db; ImGui::ColorConvertHSVtoRGB( *pH, *pS, *pV, dr, dg, db );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			DrawProceduralColor1DBilinearVertical( dl, HarmoHueCallback, nullptr,
+				0.0f, 1.0f, hue_bb.Min, hue_bb.GetSize(), sliderRes );
+			dl->AddRect( hue_bb.Min, hue_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float handleY = ImLerp( hue_bb.Min.y, hue_bb.Max.y, *pH );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; ImGui::ColorConvertHSVtoRGB( *pH, 1.0f, 1.0f, hr, hg, hb );
+			dl->AddRectFilled( ImVec2( hue_bb.Min.x - 1.0f, handleY - hh ),
+			                   ImVec2( hue_bb.Max.x + 1.0f, handleY + hh ),
+			                   IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 ), 2.0f );
+			dl->AddRect( ImVec2( hue_bb.Min.x - 1.0f, handleY - hh ),
+			             ImVec2( hue_bb.Max.x + 1.0f, handleY + hh ),
+			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		ImGui::SetNextItemWidth( w );
+		if ( ImGui::Combo( "Scheme##Harm", pScheme, ArtHarmonyNames, ArtHarmony_COUNT ) ) changed = true;
+		if ( *pScheme == ArtHarmony_SplitComp || *pScheme == ArtHarmony_Analogous )
+		{
+			ImGui::SetNextItemWidth( w );
+			if ( ImGui::SliderFloat( "Spread (deg)##Harm", pSpread, 10.0f, 60.0f, "%.1f" ) ) changed = true;
+		}
+
+		ImVec4 palette[ 5 ];
+		int paletteN = ArtHarmonyBuildPalette( *pScheme, *pH, *pS, *pV, *pSpread, palette, 5 );
+		if ( *pActive < 0 || *pActive >= paletteN ) *pActive = 0;
+
+		// Swatch row: each cell is a clickable square. Click → set active.
+		float swH = LpToPx( 28.0f );
+		float swSp = LpToPx( 4.0f );
+		float swW = ( w - swSp * ( paletteN - 1 ) ) / ( float )paletteN;
+		for ( int i = 0; i < paletteN; ++i )
+		{
+			ImGui::PushID( i );
+			ImGui::InvisibleButton( "sw", ImVec2( swW, swH ) );
+			ImRect sw_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+			if ( ImGui::IsItemClicked() ) { *pActive = i; changed = true; }
+			ImU32 col = IM_COL32( ( int )( palette[ i ].x * 255.0f + 0.5f ),
+			                      ( int )( palette[ i ].y * 255.0f + 0.5f ),
+			                      ( int )( palette[ i ].z * 255.0f + 0.5f ), 255 );
+			dl->AddRectFilled( sw_bb.Min, sw_bb.Max, col, 3.0f );
+			ImU32 ring = ( i == *pActive ) ? IM_COL32( 255, 255, 255, 255 ) : ImGui::GetColorU32( ImGuiCol_Border );
+			dl->AddRect( sw_bb.Min, sw_bb.Max, ring, 3.0f, 0, ( i == *pActive ) ? 2.5f : 1.0f );
+			ImGui::PopID();
+			if ( i + 1 < paletteN ) ImGui::SameLine( 0.0f, swSp );
+		}
+
+		*color = palette[ *pActive ];
+		if ( out_palette )
+		{
+			for ( int i = 0; i < paletteN; ++i ) out_palette[ i ] = palette[ i ];
+		}
+		if ( out_count ) *out_count = paletteN;
+
+		if ( planeActive || hueActive ) changed = true;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// 2. ColorPickerTrichromaticMixer — barycentric mix of 3 artist primaries
+	//
+	// Default primaries: process Yellow / Magenta / Cyan. The user can also
+	// edit them via the component pickers below the slider. Mixing is done
+	// in absorbance space (Beer-Lambert), which is what physical paints
+	// actually do — yellow+cyan→green, not yellow+cyan→grey-green-ish like
+	// RGB averaging would give.
+	//
+	// Plane: equilateral triangle drawn centred in the standard plane area.
+	// Click anywhere inside → barycentric weights. Outside the triangle the
+	// nearest edge is used (no out-of-triangle colours).
+	// Slider: tinting — +1 = add white, 0 = pure mix, −1 = add black.
+	//////////////////////////////////////////////////////////////////////////
+
+	static inline void ArtAbsorbanceMix( const ImVec4& c0, const ImVec4& c1, const ImVec4& c2,
+	                                     float w0, float w1, float w2, float& or_, float& og, float& ob )
+	{
+		// "Subtractive" mix in linear absorbance: A = -log(linear).
+		float lr0 = ArtSrgbToLin( c0.x ), lg0 = ArtSrgbToLin( c0.y ), lb0 = ArtSrgbToLin( c0.z );
+		float lr1 = ArtSrgbToLin( c1.x ), lg1 = ArtSrgbToLin( c1.y ), lb1 = ArtSrgbToLin( c1.z );
+		float lr2 = ArtSrgbToLin( c2.x ), lg2 = ArtSrgbToLin( c2.y ), lb2 = ArtSrgbToLin( c2.z );
+		const float eps = 1e-4f;
+		float ar = -logf( ImMax( lr0, eps ) ) * w0 + -logf( ImMax( lr1, eps ) ) * w1 + -logf( ImMax( lr2, eps ) ) * w2;
+		float ag = -logf( ImMax( lg0, eps ) ) * w0 + -logf( ImMax( lg1, eps ) ) * w1 + -logf( ImMax( lg2, eps ) ) * w2;
+		float ab = -logf( ImMax( lb0, eps ) ) * w0 + -logf( ImMax( lb1, eps ) ) * w1 + -logf( ImMax( lb2, eps ) ) * w2;
+		or_ = ArtLinToSrgb( expf( -ar ) );
+		og  = ArtLinToSrgb( expf( -ag ) );
+		ob  = ArtLinToSrgb( expf( -ab ) );
+	}
+
+	// Cartesian → barycentric for triangle (A, B, C). Returns weights w0..w2.
+	static inline void ArtBarycentric( ImVec2 p, ImVec2 A, ImVec2 B, ImVec2 C,
+	                                   float& w0, float& w1, float& w2 )
+	{
+		float denom = ( ( B.y - C.y ) * ( A.x - C.x ) + ( C.x - B.x ) * ( A.y - C.y ) );
+		if ( fabsf( denom ) < 1e-6f ) { w0 = 1.0f; w1 = w2 = 0.0f; return; }
+		w0 = ( ( B.y - C.y ) * ( p.x - C.x ) + ( C.x - B.x ) * ( p.y - C.y ) ) / denom;
+		w1 = ( ( C.y - A.y ) * ( p.x - C.x ) + ( A.x - C.x ) * ( p.y - C.y ) ) / denom;
+		w2 = 1.0f - w0 - w1;
+	}
+
+	static inline void ArtClampToTriangle( float& w0, float& w1, float& w2 )
+	{
+		w0 = ImMax( w0, 0.0f ); w1 = ImMax( w1, 0.0f ); w2 = ImMax( w2, 0.0f );
+		float s = w0 + w1 + w2;
+		if ( s < 1e-6f ) { w0 = w1 = w2 = 1.0f / 3.0f; return; }
+		w0 /= s; w1 /= s; w2 /= s;
+	}
+
+	struct ImTriMixState { ImVec4 p0, p1, p2; float tint; };
+
+	bool ColorPickerTrichromaticMixer( char const* label, ImVec4* color )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		// Two-pass: insert every entry first, THEN grab pointers.
+		storage->GetFloatRef( ImGui::GetID( "p0r" ), 1.0f );
+		storage->GetFloatRef( ImGui::GetID( "p0g" ), 0.95f );
+		storage->GetFloatRef( ImGui::GetID( "p0b" ), 0.05f );
+		storage->GetFloatRef( ImGui::GetID( "p1r" ), 0.92f );
+		storage->GetFloatRef( ImGui::GetID( "p1g" ), 0.10f );
+		storage->GetFloatRef( ImGui::GetID( "p1b" ), 0.55f );
+		storage->GetFloatRef( ImGui::GetID( "p2r" ), 0.10f );
+		storage->GetFloatRef( ImGui::GetID( "p2g" ), 0.65f );
+		storage->GetFloatRef( ImGui::GetID( "p2b" ), 0.85f );
+		storage->GetFloatRef( ImGui::GetID( "w0" ), 0.6f );
+		storage->GetFloatRef( ImGui::GetID( "w1" ), 0.2f );
+		storage->GetFloatRef( ImGui::GetID( "tint" ), 0.0f );
+		float* pP0r = storage->GetFloatRef( ImGui::GetID( "p0r" ), 1.0f );
+		float* pP0g = storage->GetFloatRef( ImGui::GetID( "p0g" ), 0.95f );
+		float* pP0b = storage->GetFloatRef( ImGui::GetID( "p0b" ), 0.05f );
+		float* pP1r = storage->GetFloatRef( ImGui::GetID( "p1r" ), 0.92f );
+		float* pP1g = storage->GetFloatRef( ImGui::GetID( "p1g" ), 0.10f );
+		float* pP1b = storage->GetFloatRef( ImGui::GetID( "p1b" ), 0.55f );
+		float* pP2r = storage->GetFloatRef( ImGui::GetID( "p2r" ), 0.10f );
+		float* pP2g = storage->GetFloatRef( ImGui::GetID( "p2g" ), 0.65f );
+		float* pP2b = storage->GetFloatRef( ImGui::GetID( "p2b" ), 0.85f );
+		float* pW0  = storage->GetFloatRef( ImGui::GetID( "w0" ), 0.6f );
+		float* pW1  = storage->GetFloatRef( ImGui::GetID( "w1" ), 0.2f );
+		float* pTint = storage->GetFloatRef( ImGui::GetID( "tint" ), 0.0f );
+		bool changed = false;
+
+		ImVec4 pri0( *pP0r, *pP0g, *pP0b, 1.0f );
+		ImVec4 pri1( *pP1r, *pP1g, *pP1b, 1.0f );
+		ImVec4 pri2( *pP2r, *pP2g, *pP2b, 1.0f );
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "tint", ImVec2( sliderW, planeSide ) );
+		const ImRect tint_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool tintActive = ImGui::IsItemActive();
+
+		// Triangle inscribed in the plane. Vertex 0 (pri0) at top,
+		// vertex 1 (pri1) bottom-right, vertex 2 (pri2) bottom-left.
+		float pad = planeSide * 0.06f;
+		ImVec2 A( plane_bb.Min.x + planeSide * 0.5f, plane_bb.Min.y + pad );
+		ImVec2 B( plane_bb.Max.x - pad, plane_bb.Max.y - pad );
+		ImVec2 C( plane_bb.Min.x + pad, plane_bb.Max.y - pad );
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive )
+		{
+			float nw0, nw1, nw2;
+			ArtBarycentric( mp, A, B, C, nw0, nw1, nw2 );
+			ArtClampToTriangle( nw0, nw1, nw2 );
+			*pW0 = nw0; *pW1 = nw1;
+			changed = true;
+		}
+		float w0 = *pW0, w1 = *pW1, w2 = 1.0f - w0 - w1;
+		if ( tintActive )
+		{
+			*pTint = ImLerp( 1.0f, -1.0f,
+			                 ImClamp( ( mp.y - tint_bb.Min.y ) / tint_bb.GetHeight(), 0.0f, 1.0f ) );
+			changed = true;
+		}
+
+		// Tessellated barycentric mesh: GPU-bilinear gives a continuous gradient
+		// across the triangle (no more 24×24 cell stair-step). GenShapeTriangleSubdiv
+		// stores each vertex's barycentric weights as (uv.x = w_A, uv.y = w_B); we
+		// derive w_C = 1 − w_A − w_B and feed it to the absorbance mixer.
+		ImU32 bg = ImGui::GetColorU32( ImGuiCol_FrameBg );
+		dl->AddRectFilled( plane_bb.Min, plane_bb.Max, bg );
+		{
+			int const triSubdiv = 32;
+			ImWidgetsShape triShape;
+			GenShapeTriangleSubdiv( triShape, A, B, C, triSubdiv );
+			ImVec2 const uvWhite = ImGui::GetFontTexUvWhitePixel();
+			int const vcount = triShape.vertices.size();
+			for ( int k = 0; k < vcount; ++k )
+			{
+				ImWidgetsVertex& v = triShape.vertices[ k ];
+				float wA = v.uv.x;
+				float wB = v.uv.y;
+				float wC = 1.0f - wA - wB;
+				if ( wC < 0.0f ) wC = 0.0f;
+				float r, gg, b;
+				ArtAbsorbanceMix( pri0, pri1, pri2, wA, wB, wC, r, gg, b );
+				v.col = IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( gg * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+				v.uv = uvWhite;
+			}
+			DrawShape( dl, triShape );
+		}
+		// Triangle outline + vertex dots tinted by the primaries.
+		ImU32 line = ImGui::GetColorU32( ImGuiCol_Border );
+		dl->AddTriangle( A, B, C, line, 1.5f );
+		{
+			ImU32 c0 = IM_COL32( ( int )( pri0.x * 255.0f + 0.5f ), ( int )( pri0.y * 255.0f + 0.5f ), ( int )( pri0.z * 255.0f + 0.5f ), 255 );
+			ImU32 c1 = IM_COL32( ( int )( pri1.x * 255.0f + 0.5f ), ( int )( pri1.y * 255.0f + 0.5f ), ( int )( pri1.z * 255.0f + 0.5f ), 255 );
+			ImU32 c2 = IM_COL32( ( int )( pri2.x * 255.0f + 0.5f ), ( int )( pri2.y * 255.0f + 0.5f ), ( int )( pri2.z * 255.0f + 0.5f ), 255 );
+			dl->AddCircleFilled( A, LpToPx( 6.0f ), c0 );
+			dl->AddCircleFilled( B, LpToPx( 6.0f ), c1 );
+			dl->AddCircleFilled( C, LpToPx( 6.0f ), c2 );
+			dl->AddCircle( A, LpToPx( 6.0f ), IM_COL32_WHITE, 0, 1.5f );
+			dl->AddCircle( B, LpToPx( 6.0f ), IM_COL32_WHITE, 0, 1.5f );
+			dl->AddCircle( C, LpToPx( 6.0f ), IM_COL32_WHITE, 0, 1.5f );
+		}
+		// Current mix dot.
+		ImVec2 dotPos( A.x * w0 + B.x * w1 + C.x * w2, A.y * w0 + B.y * w1 + C.y * w2 );
+		float mr, mg, mb; ArtAbsorbanceMix( pri0, pri1, pri2, w0, w1, w2, mr, mg, mb );
+		// Apply tint: positive → mix toward white, negative → toward black, in linear space.
+		float mrl = ArtSrgbToLin( mr ), mgl = ArtSrgbToLin( mg ), mbl = ArtSrgbToLin( mb );
+		if ( *pTint > 0.0f )
+		{
+			mrl = ImLerp( mrl, 1.0f, *pTint );
+			mgl = ImLerp( mgl, 1.0f, *pTint );
+			mbl = ImLerp( mbl, 1.0f, *pTint );
+		}
+		else
+		{
+			mrl = ImLerp( mrl, 0.0f, -( *pTint ) );
+			mgl = ImLerp( mgl, 0.0f, -( *pTint ) );
+			mbl = ImLerp( mbl, 0.0f, -( *pTint ) );
+		}
+		mr = ArtLinToSrgb( mrl ); mg = ArtLinToSrgb( mgl ); mb = ArtLinToSrgb( mbl );
+		ImU32 dotFill = IM_COL32( ( int )( mr * 255.0f + 0.5f ), ( int )( mg * 255.0f + 0.5f ), ( int )( mb * 255.0f + 0.5f ), 255 );
+		dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+		dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+		dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+
+		// Tint slider — white at top, mix-only in middle, black at bottom.
+		{
+			ImU32 white = IM_COL32_WHITE, black = IM_COL32_BLACK;
+			ImU32 mixCol = IM_COL32( ( int )( mr * 255.0f + 0.5f ), ( int )( mg * 255.0f + 0.5f ), ( int )( mb * 255.0f + 0.5f ), 255 );
+			ImVec2 mid( tint_bb.Min.x, ImLerp( tint_bb.Min.y, tint_bb.Max.y, 0.5f ) );
+			dl->AddRectFilledMultiColor( tint_bb.Min, ImVec2( tint_bb.Max.x, mid.y ), white, white, mixCol, mixCol );
+			dl->AddRectFilledMultiColor( mid, tint_bb.Max, mixCol, mixCol, black, black );
+			dl->AddRect( tint_bb.Min, tint_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImClamp( 0.5f - 0.5f * ( *pTint ), 0.0f, 1.0f );
+			float handleY = ImLerp( tint_bb.Min.y, tint_bb.Max.y, t );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			dl->AddRectFilled( ImVec2( tint_bb.Min.x - 1.0f, handleY - hh ),
+			                   ImVec2( tint_bb.Max.x + 1.0f, handleY + hh ), dotFill, 2.0f );
+			dl->AddRect( ImVec2( tint_bb.Min.x - 1.0f, handleY - hh ),
+			             ImVec2( tint_bb.Max.x + 1.0f, handleY + hh ),
+			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		float p0[ 3 ] = { *pP0r, *pP0g, *pP0b };
+		float p1[ 3 ] = { *pP1r, *pP1g, *pP1b };
+		float p2[ 3 ] = { *pP2r, *pP2g, *pP2b };
+		if ( ImGui::ColorEdit3( "Primary A (top)##Tri",         p0, ImGuiColorEditFlags_NoInputs ) ) { *pP0r = p0[ 0 ]; *pP0g = p0[ 1 ]; *pP0b = p0[ 2 ]; changed = true; }
+		if ( ImGui::ColorEdit3( "Primary B (bottom-right)##Tri", p1, ImGuiColorEditFlags_NoInputs ) ) { *pP1r = p1[ 0 ]; *pP1g = p1[ 1 ]; *pP1b = p1[ 2 ]; changed = true; }
+		if ( ImGui::ColorEdit3( "Primary C (bottom-left)##Tri",  p2, ImGuiColorEditFlags_NoInputs ) ) { *pP2r = p2[ 0 ]; *pP2g = p2[ 1 ]; *pP2b = p2[ 2 ]; changed = true; }
+		changed |= ImGui::SliderFloat( "Tint (white↔black)##Tri", pTint, -1.0f, 1.0f, "%+.2f" );
+
+		color->x = mr; color->y = mg; color->z = mb;
+
+		if ( planeActive || tintActive ) changed = true;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// 5. ColorPickerWeatheredMetal — base metal + patina + grime
+	//
+	// Material library based on standard PBR F0 values. The "albedo" of a
+	// metal is its F0 (diffuse is essentially zero for clean metals). Patina
+	// is a known oxide colour per metal; it covers part of the surface and
+	// tints the result. Roughness washes the perceived hue toward neutral
+	// grey (high roughness reads less specular = duller).
+	//
+	// Plane: X = patina coverage (0=clean → 1=fully patinated),
+	//        Y = roughness (smooth top → rough bottom).
+	// Slider: grime / dirt (0→1 darkens everything towards a brownish grey).
+	// Combo: base metal (Steel, Iron, Copper, Brass, Aluminum, Gold).
+	//
+	// The output `color` is the surface albedo (or "tinted F0"). The
+	// recommended F0 can be queried via out_f0 for PBR pipelines.
+	//////////////////////////////////////////////////////////////////////////
+
+	enum ArtMetal {
+		ArtMetal_Steel = 0, ArtMetal_Iron, ArtMetal_Copper,
+		ArtMetal_Brass, ArtMetal_Aluminum, ArtMetal_Gold,
+		ArtMetal_COUNT
+	};
+	static const char* ArtMetalNames[ ArtMetal_COUNT ] = {
+		"Steel", "Iron", "Copper", "Brass", "Aluminum", "Gold"
+	};
+	// F0 values (linear-sRGB). From Naty Hoffman's GDC tables.
+	static const ImVec4 ArtMetalF0[ ArtMetal_COUNT ] = {
+		ImVec4( 0.56f, 0.57f, 0.58f, 1.0f ),  // Steel
+		ImVec4( 0.56f, 0.54f, 0.52f, 1.0f ),  // Iron
+		ImVec4( 0.95f, 0.64f, 0.54f, 1.0f ),  // Copper
+		ImVec4( 0.91f, 0.78f, 0.44f, 1.0f ),  // Brass
+		ImVec4( 0.91f, 0.92f, 0.92f, 1.0f ),  // Aluminum
+		ImVec4( 1.00f, 0.71f, 0.29f, 1.0f )   // Gold
+	};
+	// Patina colours (linear-sRGB).
+	static const ImVec4 ArtMetalPatina[ ArtMetal_COUNT ] = {
+		ImVec4( 0.32f, 0.22f, 0.16f, 1.0f ),  // Steel → brown rust-stain
+		ImVec4( 0.42f, 0.18f, 0.08f, 1.0f ),  // Iron  → rust orange
+		ImVec4( 0.32f, 0.62f, 0.55f, 1.0f ),  // Copper→ verdigris teal
+		ImVec4( 0.35f, 0.45f, 0.22f, 1.0f ),  // Brass → green tarnish
+		ImVec4( 0.65f, 0.65f, 0.68f, 1.0f ),  // Aluminum → dull white
+		ImVec4( 0.95f, 0.70f, 0.30f, 1.0f )   // Gold → essentially no patina
+	};
+
+	static void ArtMetalCompose( int metal, float patina, float rough, float grime,
+	                             float& outR, float& outG, float& outB )
+	{
+		ImVec4 f0 = ArtMetalF0[ metal ];
+		ImVec4 pa = ArtMetalPatina[ metal ];
+		// Linear-space blend.
+		float r = ImLerp( f0.x, pa.x, patina );
+		float g = ImLerp( f0.y, pa.y, patina );
+		float b = ImLerp( f0.z, pa.z, patina );
+		// Roughness wash: pull toward Y (luminance) gently, so the colour
+		// stays recognisable but reads as a duller, more diffuse surface.
+		float Y = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+		float wash = rough * 0.35f;
+		r = ImLerp( r, Y, wash );
+		g = ImLerp( g, Y, wash );
+		b = ImLerp( b, Y, wash );
+		// Grime: multiplicative darken toward a warm brown.
+		const float grimeR = 0.22f, grimeG = 0.18f, grimeB = 0.14f;
+		r = ImLerp( r, r * grimeR, grime );
+		g = ImLerp( g, g * grimeG, grime );
+		b = ImLerp( b, b * grimeB, grime );
+		outR = ArtLinToSrgb( ImSaturate( r ) );
+		outG = ArtLinToSrgb( ImSaturate( g ) );
+		outB = ArtLinToSrgb( ImSaturate( b ) );
+	}
+
+	struct ImMetalData { int metal; float grime; };
+	static ImU32 MetalPlaneCallback( float patina, float rough, void* p )
+	{
+		ImMetalData* d = ( ImMetalData* )p;
+		float r, g, b; ArtMetalCompose( d->metal, patina, rough, d->grime, r, g, b );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+	struct ImMetalSlider { int metal; float patina; float rough; };
+	static ImU32 MetalGrimeCallback( float grime, void* p )
+	{
+		ImMetalSlider* d = ( ImMetalSlider* )p;
+		float r, g, b; ArtMetalCompose( d->metal, d->patina, d->rough, grime, r, g, b );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerWeatheredMetal( char const* label, ImVec4* color )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		// Two-pass: insert every entry first, THEN grab pointers.
+		storage->GetIntRef  ( ImGui::GetID( "metal" ),  ArtMetal_Iron );
+		storage->GetFloatRef( ImGui::GetID( "pat" ),    0.15f );
+		storage->GetFloatRef( ImGui::GetID( "rough" ),  0.30f );
+		storage->GetFloatRef( ImGui::GetID( "grime" ),  0.10f );
+		int*   pMetal = storage->GetIntRef  ( ImGui::GetID( "metal" ),  ArtMetal_Iron );
+		float* pPat   = storage->GetFloatRef( ImGui::GetID( "pat" ),    0.15f );
+		float* pRough = storage->GetFloatRef( ImGui::GetID( "rough" ),  0.30f );
+		float* pGrime = storage->GetFloatRef( ImGui::GetID( "grime" ),  0.10f );
+		bool changed = false;
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "grime", ImVec2( sliderW, planeSide ) );
+		const ImRect gr_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool grActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive )
+		{
+			*pPat   = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f );
+			*pRough = ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f );
+			changed = true;
+		}
+		if ( grActive )
+		{
+			*pGrime = ImClamp( ( mp.y - gr_bb.Min.y ) / gr_bb.GetHeight(), 0.0f, 1.0f );
+			changed = true;
+		}
+
+		{
+			ImMetalData cbData; cbData.metal = *pMetal; cbData.grime = *pGrime;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pMetal ), *pGrime );
+			DrawCachedProceduralColor2DBilinear( dl, MetalPlaneCallback, &cbData,
+				0.0f, 1.0f, 0.0f, 1.0f,
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, *pPat ),
+			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, *pRough ) );
+			float dr, dg, db; ArtMetalCompose( *pMetal, *pPat, *pRough, *pGrime, dr, dg, db );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			ImMetalSlider cbData; cbData.metal = *pMetal; cbData.patina = *pPat; cbData.rough = *pRough;
+			DrawProceduralColor1DBilinearVertical( dl, MetalGrimeCallback, &cbData,
+				0.0f, 1.0f, gr_bb.Min, gr_bb.GetSize(), sliderRes );
+			dl->AddRect( gr_bb.Min, gr_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( *pGrime );
+			float handleY = ImLerp( gr_bb.Min.y, gr_bb.Max.y, t );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; ArtMetalCompose( *pMetal, *pPat, *pRough, *pGrime, hr, hg, hb );
+			dl->AddRectFilled( ImVec2( gr_bb.Min.x - 1.0f, handleY - hh ),
+			                   ImVec2( gr_bb.Max.x + 1.0f, handleY + hh ),
+			                   IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 ), 2.0f );
+			dl->AddRect( ImVec2( gr_bb.Min.x - 1.0f, handleY - hh ),
+			             ImVec2( gr_bb.Max.x + 1.0f, handleY + hh ),
+			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		ImGui::SetNextItemWidth( w );
+		if ( ImGui::Combo( "Metal##Met", pMetal, ArtMetalNames, ArtMetal_COUNT ) ) changed = true;
+		changed |= ImGui::SliderFloat( "Patina##Met",    pPat,   0.0f, 1.0f, "%.2f" );
+		changed |= ImGui::SliderFloat( "Roughness##Met", pRough, 0.0f, 1.0f, "%.2f" );
+		changed |= ImGui::SliderFloat( "Grime##Met",     pGrime, 0.0f, 1.0f, "%.2f" );
+
+		float r, gg, b; ArtMetalCompose( *pMetal, *pPat, *pRough, *pGrime, r, gg, b );
+		color->x = r; color->y = gg; color->z = b;
+
+		if ( planeActive || grActive ) changed = true;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// 6. ColorPickerFabricDye — dye colour on a substrate fabric
+	//
+	// Dyes are nearly-transparent absorbers laid over an opaque substrate.
+	// Beer-Lambert: T_dye(λ) determines how much of the substrate's colour
+	// reaches the viewer. We approximate with a per-channel transmittance
+	// derived from (1 − dye_color) × intensity. The substrate's natural
+	// colour shows through any non-saturated dye region, which is why the
+	// same red dye looks different on linen vs black wool.
+	//
+	// Plane: X = dye hue, Y = dye saturation.
+	// Slider: dye intensity (washed → saturated).
+	// Combo: substrate fabric.
+	//////////////////////////////////////////////////////////////////////////
+
+	enum ArtFabric {
+		ArtFabric_Linen = 0, ArtFabric_Cotton, ArtFabric_BleachedCotton,
+		ArtFabric_Wool, ArtFabric_DyedBlack, ArtFabric_Silk,
+		ArtFabric_COUNT
+	};
+	static const char* ArtFabricNames[ ArtFabric_COUNT ] = {
+		"Raw Linen", "Unbleached Cotton", "Bleached Cotton",
+		"Natural Wool", "Dyed Black Wool", "Silk"
+	};
+	static const ImVec4 ArtFabricSubstrate[ ArtFabric_COUNT ] = {
+		ImVec4( 0.85f, 0.78f, 0.62f, 1.0f ),  // raw linen — warm beige
+		ImVec4( 0.88f, 0.85f, 0.78f, 1.0f ),  // unbleached cotton
+		ImVec4( 0.95f, 0.95f, 0.93f, 1.0f ),  // bleached cotton
+		ImVec4( 0.55f, 0.50f, 0.42f, 1.0f ),  // natural wool — taupe
+		ImVec4( 0.06f, 0.06f, 0.07f, 1.0f ),  // dyed black wool
+		ImVec4( 0.92f, 0.88f, 0.80f, 1.0f )   // silk — cool cream
+	};
+
+	static void ArtFabricCompose( int fabric, float hue, float sat, float intensity,
+	                              float& outR, float& outG, float& outB )
+	{
+		ImVec4 sub = ArtFabricSubstrate[ fabric ];
+		float dr, dg, db;
+		ImGui::ColorConvertHSVtoRGB( hue, sat, 1.0f, dr, dg, db );
+		// Convert to linear for physical mixing.
+		float lr_sub = ArtSrgbToLin( sub.x ), lg_sub = ArtSrgbToLin( sub.y ), lb_sub = ArtSrgbToLin( sub.z );
+		float lr_dye = ArtSrgbToLin( dr ),    lg_dye = ArtSrgbToLin( dg ),    lb_dye = ArtSrgbToLin( db );
+		// Dye absorbance: stronger where dye is dark per channel.
+		// A = -log(dye) · intensity. T = exp(-A).
+		const float eps = 1e-3f;
+		float Ar = -logf( ImMax( lr_dye, eps ) ) * intensity;
+		float Ag = -logf( ImMax( lg_dye, eps ) ) * intensity;
+		float Ab = -logf( ImMax( lb_dye, eps ) ) * intensity;
+		float Tr = expf( -Ar ), Tg = expf( -Ag ), Tb = expf( -Ab );
+		float r = lr_sub * Tr, g = lg_sub * Tg, b = lb_sub * Tb;
+		outR = ArtLinToSrgb( ImSaturate( r ) );
+		outG = ArtLinToSrgb( ImSaturate( g ) );
+		outB = ArtLinToSrgb( ImSaturate( b ) );
+	}
+
+	struct ImFabricData { int fabric; float intensity; };
+	static ImU32 FabricPlaneCallback( float hue, float sat, void* p )
+	{
+		ImFabricData* d = ( ImFabricData* )p;
+		float r, g, b; ArtFabricCompose( d->fabric, hue, sat, d->intensity, r, g, b );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+	struct ImFabricSlider { int fabric; float hue; float sat; };
+	static ImU32 FabricIntensityCallback( float intensity, void* p )
+	{
+		ImFabricSlider* d = ( ImFabricSlider* )p;
+		float r, g, b; ArtFabricCompose( d->fabric, d->hue, d->sat, intensity, r, g, b );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerFabricDye( char const* label, ImVec4* color )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		// Two-pass: insert every entry first, THEN grab pointers. (Otherwise the
+		// sorted-vector reallocation on later inserts dangles the earlier ones —
+		// caused a crash reading garbage fabric index.)
+		storage->GetIntRef  ( ImGui::GetID( "fab" ), ArtFabric_Linen );
+		storage->GetFloatRef( ImGui::GetID( "h" ),   0.62f );
+		storage->GetFloatRef( ImGui::GetID( "s" ),   0.75f );
+		storage->GetFloatRef( ImGui::GetID( "i" ),   1.5f );
+		int*   pFab = storage->GetIntRef  ( ImGui::GetID( "fab" ), ArtFabric_Linen );
+		float* pHue = storage->GetFloatRef( ImGui::GetID( "h" ),   0.62f );
+		float* pSat = storage->GetFloatRef( ImGui::GetID( "s" ),   0.75f );
+		float* pInt = storage->GetFloatRef( ImGui::GetID( "i" ),   1.5f );
+		bool changed = false;
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "int", ImVec2( sliderW, planeSide ) );
+		const ImRect int_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool intActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive )
+		{
+			*pHue = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f );
+			*pSat = 1.0f - ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f );
+			changed = true;
+		}
+		if ( intActive )
+		{
+			*pInt = ImLerp( 3.0f, 0.0f,
+			                ImClamp( ( mp.y - int_bb.Min.y ) / int_bb.GetHeight(), 0.0f, 1.0f ) );
+			changed = true;
+		}
+
+		{
+			ImFabricData cbData; cbData.fabric = *pFab; cbData.intensity = *pInt;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pFab ), *pInt );
+			DrawCachedProceduralColor2DBilinear( dl, FabricPlaneCallback, &cbData,
+				0.0f, 1.0f, 1.0f, 0.0f,
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, *pHue ),
+			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, 1.0f - *pSat ) );
+			float dr, dg, db; ArtFabricCompose( *pFab, *pHue, *pSat, *pInt, dr, dg, db );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			ImFabricSlider cbData; cbData.fabric = *pFab; cbData.hue = *pHue; cbData.sat = *pSat;
+			DrawProceduralColor1DBilinearVertical( dl, FabricIntensityCallback, &cbData,
+				3.0f, 0.0f, int_bb.Min, int_bb.GetSize(), sliderRes );
+			dl->AddRect( int_bb.Min, int_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( ( 3.0f - *pInt ) / 3.0f );
+			float handleY = ImLerp( int_bb.Min.y, int_bb.Max.y, t );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; ArtFabricCompose( *pFab, *pHue, *pSat, *pInt, hr, hg, hb );
+			dl->AddRectFilled( ImVec2( int_bb.Min.x - 1.0f, handleY - hh ),
+			                   ImVec2( int_bb.Max.x + 1.0f, handleY + hh ),
+			                   IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 ), 2.0f );
+			dl->AddRect( ImVec2( int_bb.Min.x - 1.0f, handleY - hh ),
+			             ImVec2( int_bb.Max.x + 1.0f, handleY + hh ),
+			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		ImGui::SetNextItemWidth( w );
+		if ( ImGui::Combo( "Substrate##Fab", pFab, ArtFabricNames, ArtFabric_COUNT ) ) changed = true;
+		changed |= ImGui::SliderFloat( "Hue##Fab",       pHue, 0.0f, 1.0f, "%.3f" );
+		changed |= ImGui::SliderFloat( "Saturation##Fab", pSat, 0.0f, 1.0f, "%.2f" );
+		changed |= ImGui::SliderFloat( "Dye intensity##Fab", pInt, 0.0f, 3.0f, "%.2f" );
+
+		float r, gg, b; ArtFabricCompose( *pFab, *pHue, *pSat, *pInt, r, gg, b );
+		color->x = r; color->y = gg; color->z = b;
+
+		if ( planeActive || intActive ) changed = true;
+		ImGui::PopID();
+		return changed;
+	}
+	//////////////////////////////////////////////////////////////////////////
+	// 9. ColorPickerMoodPalette — curated 5-swatch palettes by mood word
+	//
+	// Each mood is a hand-picked 5-colour palette. Plane: X = palette
+	// position (a smooth blend through the 5 stops in linear space),
+	// Y = lightness shift. Slider: saturation crush. Combo: mood.
+	//
+	// Output `color` is the blended/modulated sample. The 5-swatch
+	// palette is exposed verbatim via out_palette so the artist can drop
+	// the whole mood set into their asset.
+	//////////////////////////////////////////////////////////////////////////
+
+	enum ArtMood {
+		ArtMood_Warm = 0, ArtMood_Cool, ArtMood_Melancholy, ArtMood_Fresh,
+		ArtMood_Vintage, ArtMood_Pastel, ArtMood_Neon, ArtMood_Earth,
+		ArtMood_Sunset, ArtMood_Ocean,
+		ArtMood_COUNT
+	};
+	static const char* ArtMoodNames[ ArtMood_COUNT ] = {
+		"Warm", "Cool", "Melancholy", "Fresh", "Vintage",
+		"Pastel", "Neon", "Earth", "Sunset", "Ocean"
+	};
+	static const ImVec4 ArtMoodPalettes[ ArtMood_COUNT ][ 5 ] = {
+		// Warm
+		{ ImVec4( 0.98f, 0.85f, 0.40f, 1 ), ImVec4( 0.96f, 0.62f, 0.25f, 1 ),
+		  ImVec4( 0.90f, 0.34f, 0.22f, 1 ), ImVec4( 0.72f, 0.18f, 0.20f, 1 ),
+		  ImVec4( 0.45f, 0.10f, 0.18f, 1 ) },
+		// Cool
+		{ ImVec4( 0.85f, 0.95f, 0.95f, 1 ), ImVec4( 0.55f, 0.78f, 0.88f, 1 ),
+		  ImVec4( 0.30f, 0.55f, 0.78f, 1 ), ImVec4( 0.18f, 0.35f, 0.60f, 1 ),
+		  ImVec4( 0.10f, 0.18f, 0.42f, 1 ) },
+		// Melancholy
+		{ ImVec4( 0.78f, 0.78f, 0.82f, 1 ), ImVec4( 0.55f, 0.55f, 0.65f, 1 ),
+		  ImVec4( 0.40f, 0.38f, 0.55f, 1 ), ImVec4( 0.30f, 0.25f, 0.40f, 1 ),
+		  ImVec4( 0.18f, 0.15f, 0.25f, 1 ) },
+		// Fresh
+		{ ImVec4( 0.92f, 0.96f, 0.62f, 1 ), ImVec4( 0.62f, 0.92f, 0.55f, 1 ),
+		  ImVec4( 0.35f, 0.82f, 0.65f, 1 ), ImVec4( 0.20f, 0.65f, 0.78f, 1 ),
+		  ImVec4( 0.10f, 0.45f, 0.65f, 1 ) },
+		// Vintage
+		{ ImVec4( 0.94f, 0.88f, 0.72f, 1 ), ImVec4( 0.82f, 0.65f, 0.45f, 1 ),
+		  ImVec4( 0.65f, 0.45f, 0.28f, 1 ), ImVec4( 0.45f, 0.30f, 0.20f, 1 ),
+		  ImVec4( 0.25f, 0.18f, 0.15f, 1 ) },
+		// Pastel
+		{ ImVec4( 0.97f, 0.84f, 0.88f, 1 ), ImVec4( 0.96f, 0.93f, 0.78f, 1 ),
+		  ImVec4( 0.80f, 0.95f, 0.85f, 1 ), ImVec4( 0.80f, 0.88f, 0.97f, 1 ),
+		  ImVec4( 0.92f, 0.82f, 0.95f, 1 ) },
+		// Neon
+		{ ImVec4( 1.00f, 0.20f, 0.65f, 1 ), ImVec4( 1.00f, 0.85f, 0.10f, 1 ),
+		  ImVec4( 0.20f, 1.00f, 0.45f, 1 ), ImVec4( 0.20f, 0.95f, 1.00f, 1 ),
+		  ImVec4( 0.65f, 0.20f, 1.00f, 1 ) },
+		// Earth
+		{ ImVec4( 0.86f, 0.78f, 0.58f, 1 ), ImVec4( 0.68f, 0.55f, 0.35f, 1 ),
+		  ImVec4( 0.55f, 0.40f, 0.22f, 1 ), ImVec4( 0.42f, 0.28f, 0.15f, 1 ),
+		  ImVec4( 0.30f, 0.22f, 0.12f, 1 ) },
+		// Sunset
+		{ ImVec4( 1.00f, 0.92f, 0.55f, 1 ), ImVec4( 1.00f, 0.55f, 0.32f, 1 ),
+		  ImVec4( 0.90f, 0.30f, 0.42f, 1 ), ImVec4( 0.45f, 0.20f, 0.55f, 1 ),
+		  ImVec4( 0.12f, 0.10f, 0.30f, 1 ) },
+		// Ocean
+		{ ImVec4( 0.92f, 0.90f, 0.78f, 1 ), ImVec4( 0.50f, 0.78f, 0.72f, 1 ),
+		  ImVec4( 0.18f, 0.55f, 0.62f, 1 ), ImVec4( 0.10f, 0.30f, 0.45f, 1 ),
+		  ImVec4( 0.05f, 0.15f, 0.25f, 1 ) }
+	};
+
+	static void ArtMoodCompose( int mood, float t, float Lshift, float satCrush,
+	                            float& outR, float& outG, float& outB )
+	{
+		const ImVec4* P = ArtMoodPalettes[ mood ];
+		// 5 stops at t = 0, 0.25, 0.5, 0.75, 1. Pick bracket.
+		float ft = ImClamp( t, 0.0f, 1.0f ) * 4.0f;
+		int lo = ( int )floorf( ft );
+		if ( lo > 3 ) lo = 3;
+		int hi = lo + 1;
+		float u = ft - ( float )lo;
+		float lr0 = ArtSrgbToLin( P[ lo ].x ), lg0 = ArtSrgbToLin( P[ lo ].y ), lb0 = ArtSrgbToLin( P[ lo ].z );
+		float lr1 = ArtSrgbToLin( P[ hi ].x ), lg1 = ArtSrgbToLin( P[ hi ].y ), lb1 = ArtSrgbToLin( P[ hi ].z );
+		float r = ImLerp( lr0, lr1, u ), g = ImLerp( lg0, lg1, u ), b = ImLerp( lb0, lb1, u );
+		// Lightness shift: multiply linear (positive) or fade toward black (negative).
+		if ( Lshift > 0.0f )
+		{
+			r = ImLerp( r, 1.0f, Lshift * 0.6f );
+			g = ImLerp( g, 1.0f, Lshift * 0.6f );
+			b = ImLerp( b, 1.0f, Lshift * 0.6f );
+		}
+		else
+		{
+			r = ImLerp( r, 0.0f, -Lshift * 0.6f );
+			g = ImLerp( g, 0.0f, -Lshift * 0.6f );
+			b = ImLerp( b, 0.0f, -Lshift * 0.6f );
+		}
+		// Saturation crush: pull toward channel mean (linear-space grey).
+		float mean = ( r + g + b ) * ( 1.0f / 3.0f );
+		r = ImLerp( r, mean, satCrush );
+		g = ImLerp( g, mean, satCrush );
+		b = ImLerp( b, mean, satCrush );
+		outR = ArtLinToSrgb( ImSaturate( r ) );
+		outG = ArtLinToSrgb( ImSaturate( g ) );
+		outB = ArtLinToSrgb( ImSaturate( b ) );
+	}
+
+	struct ImMoodData { int mood; float satCrush; };
+	static ImU32 MoodPlaneCallback( float t, float Lshift, void* p )
+	{
+		ImMoodData* d = ( ImMoodData* )p;
+		float r, g, b; ArtMoodCompose( d->mood, t, Lshift, d->satCrush, r, g, b );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+	struct ImMoodSlider { int mood; float t; float L; };
+	static ImU32 MoodSatCallback( float sc, void* p )
+	{
+		ImMoodSlider* d = ( ImMoodSlider* )p;
+		float r, g, b; ArtMoodCompose( d->mood, d->t, d->L, sc, r, g, b );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerMoodPalette( char const* label, ImVec4* color, ImVec4 out_palette[ 5 ] )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		// Two-pass: insert every entry first, THEN grab pointers.
+		storage->GetIntRef  ( ImGui::GetID( "mood" ), ArtMood_Sunset );
+		storage->GetFloatRef( ImGui::GetID( "t" ),     0.5f );
+		storage->GetFloatRef( ImGui::GetID( "L" ),     0.0f );
+		storage->GetFloatRef( ImGui::GetID( "cr" ),    0.0f );
+		int*   pMood  = storage->GetIntRef  ( ImGui::GetID( "mood" ), ArtMood_Sunset );
+		float* pT     = storage->GetFloatRef( ImGui::GetID( "t" ),     0.5f );
+		float* pL     = storage->GetFloatRef( ImGui::GetID( "L" ),     0.0f );
+		float* pCrush = storage->GetFloatRef( ImGui::GetID( "cr" ),    0.0f );
+		bool changed = false;
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "cr", ImVec2( sliderW, planeSide ) );
+		const ImRect cr_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool crActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive )
+		{
+			*pT = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f );
+			*pL = ImLerp( 1.0f, -1.0f,
+			              ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f ) );
+			changed = true;
+		}
+		if ( crActive )
+		{
+			*pCrush = ImClamp( ( mp.y - cr_bb.Min.y ) / cr_bb.GetHeight(), 0.0f, 1.0f );
+			changed = true;
+		}
+
+		{
+			ImMoodData cbData; cbData.mood = *pMood; cbData.satCrush = *pCrush;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pMood ), *pCrush );
+			DrawCachedProceduralColor2DBilinear( dl, MoodPlaneCallback, &cbData,
+				0.0f, 1.0f, 1.0f, -1.0f,
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, *pT ),
+			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, 0.5f - 0.5f * ( *pL ) ) );
+			float dr, dg, db; ArtMoodCompose( *pMood, *pT, *pL, *pCrush, dr, dg, db );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			ImMoodSlider cbData; cbData.mood = *pMood; cbData.t = *pT; cbData.L = *pL;
+			DrawProceduralColor1DBilinearVertical( dl, MoodSatCallback, &cbData,
+				0.0f, 1.0f, cr_bb.Min, cr_bb.GetSize(), sliderRes );
+			dl->AddRect( cr_bb.Min, cr_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( *pCrush );
+			float handleY = ImLerp( cr_bb.Min.y, cr_bb.Max.y, t );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; ArtMoodCompose( *pMood, *pT, *pL, *pCrush, hr, hg, hb );
+			dl->AddRectFilled( ImVec2( cr_bb.Min.x - 1.0f, handleY - hh ),
+			                   ImVec2( cr_bb.Max.x + 1.0f, handleY + hh ),
+			                   IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 ), 2.0f );
+			dl->AddRect( ImVec2( cr_bb.Min.x - 1.0f, handleY - hh ),
+			             ImVec2( cr_bb.Max.x + 1.0f, handleY + hh ),
+			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		ImGui::SetNextItemWidth( w );
+		if ( ImGui::Combo( "Mood##Mood", pMood, ArtMoodNames, ArtMood_COUNT ) ) changed = true;
+		changed |= ImGui::SliderFloat( "Position##Mood",       pT, 0.0f, 1.0f, "%.2f" );
+		changed |= ImGui::SliderFloat( "Lightness shift##Mood", pL, -1.0f, 1.0f, "%+.2f" );
+		changed |= ImGui::SliderFloat( "Saturation crush##Mood", pCrush, 0.0f, 1.0f, "%.2f" );
+
+		// Preview swatch row of the raw curated palette.
+		float swH = LpToPx( 22.0f );
+		float swSp = LpToPx( 4.0f );
+		float swW = ( w - swSp * 4.0f ) / 5.0f;
+		for ( int i = 0; i < 5; ++i )
+		{
+			ImGui::PushID( i );
+			ImGui::InvisibleButton( "msw", ImVec2( swW, swH ) );
+			ImRect sw_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+			if ( ImGui::IsItemClicked() ) { *pT = ( float )i * 0.25f; *pL = 0.0f; *pCrush = 0.0f; changed = true; }
+			ImVec4 sc = ArtMoodPalettes[ *pMood ][ i ];
+			ImU32 col = IM_COL32( ( int )( sc.x * 255.0f + 0.5f ), ( int )( sc.y * 255.0f + 0.5f ), ( int )( sc.z * 255.0f + 0.5f ), 255 );
+			dl->AddRectFilled( sw_bb.Min, sw_bb.Max, col, 3.0f );
+			dl->AddRect( sw_bb.Min, sw_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ), 3.0f );
+			ImGui::PopID();
+			if ( i < 4 ) ImGui::SameLine( 0.0f, swSp );
+		}
+
+		float r, gg, b; ArtMoodCompose( *pMood, *pT, *pL, *pCrush, r, gg, b );
+		color->x = r; color->y = gg; color->z = b;
+		if ( out_palette )
+		{
+			for ( int i = 0; i < 5; ++i ) out_palette[ i ] = ArtMoodPalettes[ *pMood ][ i ];
+		}
+
+		if ( planeActive || crActive ) changed = true;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// 10. ColorPickerToonRamp — shadow / midtone / highlight 3-stop ramp
+	//
+	// Pick the midtone (plane = hue × value), then dial:
+	//   • Chroma drop into shadow (slider)
+	//   • Warm-cool hue shift between shadow & highlight (component slider).
+	//     Positive = classic warm-light/cool-shadow (warmer toward the
+	//     highlight, cooler toward the shadow).
+	//   • Terminator hardness (visual only — the preview ramp draws with a
+	//     soft / hard transition).
+	//
+	// Output `color` is the midtone. The full 3-stop ramp is exposed via
+	// out_ramp[3]: index 0 = shadow, 1 = midtone, 2 = highlight.
+	//////////////////////////////////////////////////////////////////////////
+
+	static void ArtToonRamp( float midH, float midS, float midV,
+	                         float chromaDrop, float hueShift, float& shR, float& shG, float& shB,
+	                         float& mR, float& mG, float& mB,
+	                         float& hiR, float& hiG, float& hiB )
+	{
+		// Midtone
+		ImGui::ColorConvertHSVtoRGB( midH, midS, midV, mR, mG, mB );
+		// Shadow: shift hue cooler (toward 0.62 ≈ deep blue) by hueShift fraction.
+		float shH = midH + hueShift * 0.06f; shH = shH - floorf( shH );
+		float shS = ImSaturate( midS * ( 1.0f - chromaDrop * 0.4f ) );
+		float shV = ImMax( midV * 0.40f, 0.04f );
+		ImGui::ColorConvertHSVtoRGB( shH, shS, shV, shR, shG, shB );
+		// Highlight: shift hue warmer (away from 0.62) and brighter.
+		float hiH = midH - hueShift * 0.06f; hiH = hiH - floorf( hiH );
+		float hiS = ImSaturate( midS * 0.70f );
+		float hiV = ImMin( 1.0f, midV * 0.6f + 0.55f );
+		ImGui::ColorConvertHSVtoRGB( hiH, hiS, hiV, hiR, hiG, hiB );
+	}
+
+	struct ImToonData { float chromaDrop; float hueShift; };
+	static ImU32 ToonPlaneCallback( float hue, float val, void* p )
+	{
+		IM_UNUSED( p );
+		float r, g, b;
+		ImGui::ColorConvertHSVtoRGB( hue, 0.65f, val, r, g, b );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+	static ImU32 ToonSatCallback( float sat, void* p )
+	{
+		float* pH = ( float* )p;
+		float r, g, b; ImGui::ColorConvertHSVtoRGB( *pH, sat, 1.0f, r, g, b );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerToonRamp( char const* label, ImVec4* color, ImVec4 out_ramp[ 3 ] )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		// Two-pass: insert every entry first, THEN grab pointers.
+		storage->GetFloatRef( ImGui::GetID( "h" ),    0.08f );
+		storage->GetFloatRef( ImGui::GetID( "s" ),    0.65f );
+		storage->GetFloatRef( ImGui::GetID( "v" ),    0.72f );
+		storage->GetFloatRef( ImGui::GetID( "drop" ), 0.45f );
+		storage->GetFloatRef( ImGui::GetID( "shift" ), 1.0f );
+		storage->GetFloatRef( ImGui::GetID( "term" ), 0.25f );
+		float* pH = storage->GetFloatRef( ImGui::GetID( "h" ),    0.08f );
+		float* pS = storage->GetFloatRef( ImGui::GetID( "s" ),    0.65f );
+		float* pV = storage->GetFloatRef( ImGui::GetID( "v" ),    0.72f );
+		float* pDrop = storage->GetFloatRef( ImGui::GetID( "drop" ), 0.45f );
+		float* pShift = storage->GetFloatRef( ImGui::GetID( "shift" ), 1.0f );
+		float* pTerm = storage->GetFloatRef( ImGui::GetID( "term" ), 0.25f );
+		bool changed = false;
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "sat", ImVec2( sliderW, planeSide ) );
+		const ImRect sat_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool satActive = ImGui::IsItemActive();
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive )
+		{
+			*pH = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f );
+			*pV = 1.0f - ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f );
+			changed = true;
+		}
+		if ( satActive )
+		{
+			*pS = ImLerp( 1.0f, 0.0f,
+			              ImClamp( ( mp.y - sat_bb.Min.y ) / sat_bb.GetHeight(), 0.0f, 1.0f ) );
+			changed = true;
+		}
+
+		{
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyI( 2166136261u, planeRes );
+			DrawCachedProceduralColor2DBilinear( dl, ToonPlaneCallback, nullptr,
+				0.0f, 1.0f, 1.0f, 0.0f,
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+		{
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, *pH ),
+			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, 1.0f - *pV ) );
+			float dr, dg, db; ImGui::ColorConvertHSVtoRGB( *pH, *pS, *pV, dr, dg, db );
+			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+		{
+			float satH = *pH;
+			DrawProceduralColor1DBilinearVertical( dl, ToonSatCallback, &satH,
+				1.0f, 0.0f, sat_bb.Min, sat_bb.GetSize(), sliderRes );
+			dl->AddRect( sat_bb.Min, sat_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( 1.0f - *pS );
+			float handleY = ImLerp( sat_bb.Min.y, sat_bb.Max.y, t );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; ImGui::ColorConvertHSVtoRGB( *pH, *pS, *pV, hr, hg, hb );
+			dl->AddRectFilled( ImVec2( sat_bb.Min.x - 1.0f, handleY - hh ),
+			                   ImVec2( sat_bb.Max.x + 1.0f, handleY + hh ),
+			                   IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 ), 2.0f );
+			dl->AddRect( ImVec2( sat_bb.Min.x - 1.0f, handleY - hh ),
+			             ImVec2( sat_bb.Max.x + 1.0f, handleY + hh ),
+			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		changed |= ImGui::SliderFloat( "Chroma drop into shadow##Toon", pDrop, 0.0f, 1.0f, "%.2f" );
+		changed |= ImGui::SliderFloat( "Warm-cool shift##Toon",         pShift, -2.0f, 2.0f, "%+.2f" );
+		changed |= ImGui::SliderFloat( "Terminator hardness##Toon",      pTerm,  0.0f, 1.0f, "%.2f" );
+
+		float shR, shG, shB, mR, mG, mB, hiR, hiG, hiB;
+		ArtToonRamp( *pH, *pS, *pV, *pDrop, *pShift, shR, shG, shB, mR, mG, mB, hiR, hiG, hiB );
+
+		// Render 3-swatch ramp preview with hard or soft terminators.
+		float swH = LpToPx( 36.0f );
+		ImGui::InvisibleButton( "ramp", ImVec2( w, swH ) );
+		ImRect rmp_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		ImU32 shCol = IM_COL32( ( int )( shR * 255.0f + 0.5f ), ( int )( shG * 255.0f + 0.5f ), ( int )( shB * 255.0f + 0.5f ), 255 );
+		ImU32 mCol  = IM_COL32( ( int )( mR  * 255.0f + 0.5f ), ( int )( mG  * 255.0f + 0.5f ), ( int )( mB  * 255.0f + 0.5f ), 255 );
+		ImU32 hiCol = IM_COL32( ( int )( hiR * 255.0f + 0.5f ), ( int )( hiG * 255.0f + 0.5f ), ( int )( hiB * 255.0f + 0.5f ), 255 );
+		if ( *pTerm > 0.5f )
+		{
+			// Hard: 3 separate bands with crisp edges.
+			float x0 = rmp_bb.Min.x, x1 = rmp_bb.Min.x + w / 3.0f;
+			float x2 = rmp_bb.Min.x + 2.0f * w / 3.0f, x3 = rmp_bb.Max.x;
+			dl->AddRectFilled( ImVec2( x0, rmp_bb.Min.y ), ImVec2( x1, rmp_bb.Max.y ), shCol );
+			dl->AddRectFilled( ImVec2( x1, rmp_bb.Min.y ), ImVec2( x2, rmp_bb.Max.y ), mCol );
+			dl->AddRectFilled( ImVec2( x2, rmp_bb.Min.y ), ImVec2( x3, rmp_bb.Max.y ), hiCol );
+		}
+		else
+		{
+			// Soft: shadow→mid→highlight gradient with adjustable terminator width.
+			float midPad = 0.10f + ( 1.0f - *pTerm * 2.0f ) * 0.20f;
+			float a = 0.5f - midPad, b = 0.5f + midPad;
+			float x0 = rmp_bb.Min.x, x1 = ImLerp( rmp_bb.Min.x, rmp_bb.Max.x, a );
+			float x2 = ImLerp( rmp_bb.Min.x, rmp_bb.Max.x, b ), x3 = rmp_bb.Max.x;
+			dl->AddRectFilledMultiColor( ImVec2( x0, rmp_bb.Min.y ), ImVec2( x1, rmp_bb.Max.y ), shCol, shCol, shCol, shCol );
+			dl->AddRectFilledMultiColor( ImVec2( x1, rmp_bb.Min.y ), ImVec2( x2, rmp_bb.Max.y ), shCol, mCol, mCol, shCol );
+			dl->AddRectFilledMultiColor( ImVec2( x2, rmp_bb.Min.y ), ImVec2( x3, rmp_bb.Max.y ), mCol, hiCol, hiCol, mCol );
+		}
+		dl->AddRect( rmp_bb.Min, rmp_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+
+		color->x = mR; color->y = mG; color->z = mB;
+		if ( out_ramp )
+		{
+			out_ramp[ 0 ] = ImVec4( shR, shG, shB, 1.0f );
+			out_ramp[ 1 ] = ImVec4( mR,  mG,  mB,  1.0f );
+			out_ramp[ 2 ] = ImVec4( hiR, hiG, hiB, 1.0f );
+		}
+
+		if ( planeActive || satActive ) changed = true;
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// ColorPickerHarmonyWheel — Adobe-style harmony picker
+	//
+	// Circular disc with hue around the angle and saturation along the radius.
+	// Pick a colour-space cylinder to render the disc in (HSV / HSL / HSY /
+	// HSP / OkLCH), a harmony scheme (monochromatic / analogous / complementary
+	// / triad / tetrad / square / split-complement / compound), and the base
+	// handle drives all the secondary handles automatically. Vertical slider
+	// controls the third axis (V / L / Y / P / L*). Swatches below show the
+	// resulting palette; click one to set it as the active output.
+	//
+	// Inspired by https://color.adobe.com/create/color-wheel
+	//////////////////////////////////////////////////////////////////////////
+
+	enum ImHarmonyWheelColorSpace_ {
+		ImHarmonyWheelColorSpace_HSV = 0,
+		ImHarmonyWheelColorSpace_HSL,
+		ImHarmonyWheelColorSpace_HSY,
+		ImHarmonyWheelColorSpace_HSP,
+		ImHarmonyWheelColorSpace_OkLCH,
+		ImHarmonyWheelColorSpace_COUNT
+	};
+	static const char* ArtHwSpaceNames[ ImHarmonyWheelColorSpace_COUNT ] = {
+		"HSV", "HSL", "HSY", "HSP", "OkLCH"
+	};
+
+	enum ImHarmonyWheelScheme_ {
+		ImHarmonyWheelScheme_Monochromatic = 0,
+		ImHarmonyWheelScheme_Analogous,
+		ImHarmonyWheelScheme_Complementary,
+		ImHarmonyWheelScheme_SplitComplement,
+		ImHarmonyWheelScheme_Triad,
+		ImHarmonyWheelScheme_Tetrad,
+		ImHarmonyWheelScheme_Square,
+		ImHarmonyWheelScheme_Compound,
+		ImHarmonyWheelScheme_COUNT
+	};
+	static const char* ArtHwSchemeNames[ ImHarmonyWheelScheme_COUNT ] = {
+		"Monochromatic", "Analogous", "Complementary", "Split-Complement",
+		"Triad", "Tetrad", "Square", "Compound"
+	};
+
+	static void ArtHwCsToSrgb( int cs, float h, float s, float v,
+	                           float& r, float& g, float& b )
+	{
+		switch ( cs )
+		{
+		case ImHarmonyWheelColorSpace_HSV:
+			ImGui::ColorConvertHSVtoRGB( h, s, v, r, g, b );
+			break;
+		case ImHarmonyWheelColorSpace_HSL:
+			ColorConvertHSLtoRGB( h, s, v, r, g, b );
+			break;
+		case ImHarmonyWheelColorSpace_HSY:
+			ColorConvertHSYtoRGB( h, s, v, r, g, b );
+			break;
+		case ImHarmonyWheelColorSpace_HSP:
+			ColorConvertHSPtoRGB( h, s, v, r, g, b );
+			break;
+		case ImHarmonyWheelColorSpace_OkLCH:
+		{
+			// This codebase's ColorConvertOKLCHtoOKLAB takes hue NORMALIZED in [0,1]
+			// (it multiplies by 2π internally); chroma in absolute units (0..~0.37 in sRGB).
+			const float Cmax = 0.37f;
+			ColorConvertOKLCHtosRGB( r, g, b, v, s * Cmax, h );
+		}
+			break;
+		default:
+			r = g = b = 0.0f; break;
+		}
+		r = ImSaturate( r );
+		g = ImSaturate( g );
+		b = ImSaturate( b );
+	}
+
+	// Build handle positions (hue, sat) from a base. Returns count.
+	static int ArtHwBuildPalette( int scheme, float baseH, float baseS, float spread_deg,
+	                              ImVec2* out, int cap )
+	{
+		float spread = spread_deg / 360.0f;
+		int n = 0;
+		switch ( scheme )
+		{
+		case ImHarmonyWheelScheme_Monochromatic:
+			n = 5;
+			// Same hue, sat fanning out from baseS.
+			for ( int i = 0; i < 5; ++i )
+				out[ i ] = ImVec2( baseH, baseS * ( 1.0f - 0.18f * ( float )i ) );
+			break;
+		case ImHarmonyWheelScheme_Analogous:
+			n = 5;
+			out[ 0 ] = ImVec2( baseH - 2.0f * spread, baseS );
+			out[ 1 ] = ImVec2( baseH - spread,         baseS );
+			out[ 2 ] = ImVec2( baseH,                   baseS );
+			out[ 3 ] = ImVec2( baseH + spread,         baseS );
+			out[ 4 ] = ImVec2( baseH + 2.0f * spread, baseS );
+			break;
+		case ImHarmonyWheelScheme_Complementary:
+			n = 2;
+			out[ 0 ] = ImVec2( baseH,         baseS );
+			out[ 1 ] = ImVec2( baseH + 0.5f, baseS );
+			break;
+		case ImHarmonyWheelScheme_SplitComplement:
+			n = 3;
+			out[ 0 ] = ImVec2( baseH,                  baseS );
+			out[ 1 ] = ImVec2( baseH + 0.5f - spread, baseS );
+			out[ 2 ] = ImVec2( baseH + 0.5f + spread, baseS );
+			break;
+		case ImHarmonyWheelScheme_Triad:
+			n = 3;
+			out[ 0 ] = ImVec2( baseH,                   baseS );
+			out[ 1 ] = ImVec2( baseH + 1.0f / 3.0f,    baseS );
+			out[ 2 ] = ImVec2( baseH + 2.0f / 3.0f,    baseS );
+			break;
+		case ImHarmonyWheelScheme_Tetrad:
+			n = 4;
+			out[ 0 ] = ImVec2( baseH,                  baseS );
+			out[ 1 ] = ImVec2( baseH + spread,         baseS );
+			out[ 2 ] = ImVec2( baseH + 0.5f,           baseS );
+			out[ 3 ] = ImVec2( baseH + 0.5f + spread, baseS );
+			break;
+		case ImHarmonyWheelScheme_Square:
+			n = 4;
+			out[ 0 ] = ImVec2( baseH,             baseS );
+			out[ 1 ] = ImVec2( baseH + 0.25f,    baseS );
+			out[ 2 ] = ImVec2( baseH + 0.5f,     baseS );
+			out[ 3 ] = ImVec2( baseH + 0.75f,    baseS );
+			break;
+		case ImHarmonyWheelScheme_Compound:
+			n = 5;
+			out[ 0 ] = ImVec2( baseH,                            baseS );
+			out[ 1 ] = ImVec2( baseH + spread,                   baseS );
+			out[ 2 ] = ImVec2( baseH + 0.5f - 0.5f * spread,    baseS * 0.7f );
+			out[ 3 ] = ImVec2( baseH + 0.5f,                    baseS );
+			out[ 4 ] = ImVec2( baseH + 0.5f + 0.5f * spread,    baseS * 0.7f );
+			break;
+		}
+		// Wrap hues into [0,1).
+		for ( int i = 0; i < n; ++i )
+		{
+			float h = out[ i ].x;
+			h = h - floorf( h );
+			if ( h < 0.0f ) h += 1.0f;
+			out[ i ].x = h;
+		}
+		if ( n > cap ) n = cap;
+		return n;
+	}
+
+	// Userdata for the disc-fill callback.
+	struct ImHwDiscData { int cs; float v; };
+	static ImU32 HwDiscCallback( float u, float v, void* ud )
+	{
+		ImHwDiscData* d = ( ImHwDiscData* )ud;
+		float r, g, b; ArtHwCsToSrgb( d->cs, u, v, d->v, r, g, b );
+		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerHarmonyWheel( char const* label, ImVec4* color,
+	                              ImVec4* out_palette, int* out_count )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		// Two-pass alloc to avoid pointer invalidation when ImGuiStorage's
+		// sorted vector reallocates on later inserts.
+		storage->GetIntRef  ( ImGui::GetID( "cs" ),  ImHarmonyWheelColorSpace_HSV );
+		storage->GetIntRef  ( ImGui::GetID( "sch" ), ImHarmonyWheelScheme_Analogous );
+		storage->GetIntRef  ( ImGui::GetID( "act" ), 2 );
+		storage->GetFloatRef( ImGui::GetID( "h" ),   0.07f );
+		storage->GetFloatRef( ImGui::GetID( "s" ),   0.75f );
+		storage->GetFloatRef( ImGui::GetID( "v" ),   0.85f );
+		storage->GetFloatRef( ImGui::GetID( "sp" ),  30.0f );
+		int*   pCs     = storage->GetIntRef  ( ImGui::GetID( "cs" ),  ImHarmonyWheelColorSpace_HSV );
+		int*   pScheme = storage->GetIntRef  ( ImGui::GetID( "sch" ), ImHarmonyWheelScheme_Analogous );
+		int*   pActive = storage->GetIntRef  ( ImGui::GetID( "act" ), 2 );
+		float* pH      = storage->GetFloatRef( ImGui::GetID( "h" ),   0.07f );
+		float* pS      = storage->GetFloatRef( ImGui::GetID( "s" ),   0.75f );
+		float* pV      = storage->GetFloatRef( ImGui::GetID( "v" ),   0.85f );
+		float* pSpread = storage->GetFloatRef( ImGui::GetID( "sp" ),  30.0f );
+		bool changed = false;
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 64.0f ) planeSide = 64.0f;
+		const int planeRes = ImMax( dwStyle.ColorPicker_PlaneResolution, 32 );
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "v", ImVec2( sliderW, planeSide ) );
+		const ImRect v_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool vActive = ImGui::IsItemActive();
+
+		ImVec2 center( plane_bb.Min.x + planeSide * 0.5f, plane_bb.Min.y + planeSide * 0.5f );
+		float radius = planeSide * 0.46f;
+
+		// Build current palette (so we know which handle is active).
+		ImVec2 handles[ 8 ];
+		int handleCount = ArtHwBuildPalette( *pScheme, *pH, *pS, *pSpread, handles, 8 );
+		if ( *pActive < 0 || *pActive >= handleCount ) *pActive = 0;
+
+		// Drag: when the user clicks anywhere on the disc, the *active* handle
+		// follows the mouse. We compute the new base position such that, after
+		// the palette is rebuilt, handles[active] sits where the mouse is.
+		if ( planeActive )
+		{
+			float dx = g.IO.MousePos.x - center.x;
+			float dy = g.IO.MousePos.y - center.y;
+			float d = sqrtf( dx * dx + dy * dy );
+			float angle = atan2f( -dy, dx );
+			if ( angle < 0.0f ) angle += 2.0f * IM_PI;
+			float newH = angle / ( 2.0f * IM_PI );
+			float newS = ImClamp( d / radius, 0.0f, 1.0f );
+			// Find how the active handle is offset from a hypothetical base at (0, 1).
+			// Then compute base = active_pos - offset.
+			ImVec2 tmp[ 8 ];
+			ArtHwBuildPalette( *pScheme, 0.0f, 1.0f, *pSpread, tmp, 8 );
+			float hOffset = tmp[ *pActive ].x;
+			float sScale  = tmp[ *pActive ].y;
+			if ( sScale < 1e-3f ) sScale = 1.0f;
+			float newBaseH = newH - hOffset;
+			newBaseH = newBaseH - floorf( newBaseH );
+			if ( newBaseH < 0.0f ) newBaseH += 1.0f;
+			*pH = newBaseH;
+			*pS = ImClamp( newS / sScale, 0.0f, 1.0f );
+			changed = true;
+		}
+		if ( vActive )
+		{
+			*pV = ImLerp( 1.0f, 0.0f,
+			              ImClamp( ( g.IO.MousePos.y - v_bb.Min.y ) / v_bb.GetHeight(), 0.0f, 1.0f ) );
+			changed = true;
+		}
+
+		// Rebuild after possible mutation.
+		handleCount = ArtHwBuildPalette( *pScheme, *pH, *pS, *pSpread, handles, 8 );
+		if ( *pActive >= handleCount ) *pActive = 0;
+
+		// === Render disc ===
+		// Tessellated polar mesh + per-vertex colour fill — GPU-bilinear smooths
+		// the hue/sat gradients across cells (no more cell-rasterization stair-step).
+		// Note: the disc's screen Y is flipped versus shape uv.x (mathematical angle
+		// runs CCW; screen Y goes DOWN). Our handle positions use atan2f(-dy, dx)
+		// for that flip. To make the disc agree with handle positions, we mirror
+		// the rendered mesh vertically about the centre after generation.
+		{
+			dl->AddRectFilled( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_FrameBg ) );
+			int const discSectors = ImMax( planeRes * 4, 128 );
+			int const discRings   = ImMax( planeRes,      24 );
+			ImWidgetsShape discShape;
+			GenShapeDiscRings( discShape, center, radius, discSectors, discRings );
+			// Flip y about centre: GenShapeDiscRings uses (cos θ, sin θ) which puts
+			// θ=π/2 at +y (screen-down); handles use −sin so θ=π/2 sits at the TOP.
+			// Mirror so they match.
+			int const vc = discShape.vertices.size();
+			for ( int k = 0; k < vc; ++k )
+			{
+				ImVec2& p = discShape.vertices[ k ].pos;
+				p.y = 2.0f * center.y - p.y;
+			}
+			ImHwDiscData hwData = { *pCs, *pV };
+			ShapeFillProceduralColor2D( discShape, HwDiscCallback, &hwData );
+			DrawShape( dl, discShape );
+			dl->AddCircle( center, radius, ImGui::GetColorU32( ImGuiCol_Border ), 0, 1.5f );
+		}
+
+		// === Render handles ===
+		ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+		for ( int i = 0; i < handleCount; ++i )
+		{
+			float angle = handles[ i ].x * ( 2.0f * IM_PI );
+			float d = handles[ i ].y * radius;
+			ImVec2 p( center.x + cosf( angle ) * d, center.y - sinf( angle ) * d );
+			float rr, gg, bb; ArtHwCsToSrgb( *pCs, handles[ i ].x, handles[ i ].y, *pV, rr, gg, bb );
+			ImU32 fill = IM_COL32( ( int )( rr * 255.0f + 0.5f ), ( int )( gg * 255.0f + 0.5f ), ( int )( bb * 255.0f + 0.5f ), 255 );
+			// Connecting line from centre — helps read the harmony geometry.
+			dl->AddLine( center, p, crossCol, 1.0f );
+			float sz = dotRadius * ( i == *pActive ? 1.4f : 1.0f );
+			dl->AddCircleFilled( p, sz + LpToPx( 1.5f ), IM_COL32( 0, 0, 0, 180 ) );
+			dl->AddCircleFilled( p, sz, fill );
+			dl->AddCircle( p, sz, IM_COL32_WHITE, 0, dotOutlineThick );
+			if ( i == *pActive )
+				dl->AddCircle( p, sz + LpToPx( 2.5f ), IM_COL32_WHITE, 0, LpToPx( 1.0f ) );
+		}
+
+		// === Third-axis slider — show the active handle's hue/sat across V ===
+		{
+			ImVec2 activeHS = handles[ *pActive ];
+			for ( int i = 0; i < sliderRes; ++i )
+			{
+				float v0 = 1.0f - ( float )i / ( float )sliderRes;
+				float v1 = 1.0f - ( float )( i + 1 ) / ( float )sliderRes;
+				float r0, g0, b0, r1, g1, b1;
+				ArtHwCsToSrgb( *pCs, activeHS.x, activeHS.y, v0, r0, g0, b0 );
+				ArtHwCsToSrgb( *pCs, activeHS.x, activeHS.y, v1, r1, g1, b1 );
+				ImU32 c0 = IM_COL32( ( int )( r0 * 255.0f + 0.5f ), ( int )( g0 * 255.0f + 0.5f ), ( int )( b0 * 255.0f + 0.5f ), 255 );
+				ImU32 c1 = IM_COL32( ( int )( r1 * 255.0f + 0.5f ), ( int )( g1 * 255.0f + 0.5f ), ( int )( b1 * 255.0f + 0.5f ), 255 );
+				ImVec2 a( v_bb.Min.x, ImLerp( v_bb.Min.y, v_bb.Max.y, ( float )i / sliderRes ) );
+				ImVec2 b2( v_bb.Max.x, ImLerp( v_bb.Min.y, v_bb.Max.y, ( float )( i + 1 ) / sliderRes ) );
+				dl->AddRectFilledMultiColor( a, b2, c0, c0, c1, c1 );
+			}
+			dl->AddRect( v_bb.Min, v_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( 1.0f - *pV );
+			float handleY = ImLerp( v_bb.Min.y, v_bb.Max.y, t );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			float hr, hg, hb; ArtHwCsToSrgb( *pCs, activeHS.x, activeHS.y, *pV, hr, hg, hb );
+			dl->AddRectFilled( ImVec2( v_bb.Min.x - 1.0f, handleY - hh ),
+			                   ImVec2( v_bb.Max.x + 1.0f, handleY + hh ),
+			                   IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 ), 2.0f );
+			dl->AddRect( ImVec2( v_bb.Min.x - 1.0f, handleY - hh ),
+			             ImVec2( v_bb.Max.x + 1.0f, handleY + hh ),
+			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		// === Component controls ===
+		ImGui::SetNextItemWidth( w );
+		if ( ImGui::Combo( "Colour space##Hw", pCs, ArtHwSpaceNames, ImHarmonyWheelColorSpace_COUNT ) ) changed = true;
+		ImGui::SetNextItemWidth( w );
+		if ( ImGui::Combo( "Scheme##Hw", pScheme, ArtHwSchemeNames, ImHarmonyWheelScheme_COUNT ) ) changed = true;
+		bool wantsSpread = ( *pScheme == ImHarmonyWheelScheme_Analogous
+		                  || *pScheme == ImHarmonyWheelScheme_SplitComplement
+		                  || *pScheme == ImHarmonyWheelScheme_Tetrad
+		                  || *pScheme == ImHarmonyWheelScheme_Compound );
+		if ( wantsSpread )
+			changed |= ImGui::SliderFloat( "Spread (deg)##Hw", pSpread, 5.0f, 60.0f, "%.1f" );
+		changed |= ImGui::SliderFloat( "Third axis##Hw", pV, 0.0f, 1.0f, "%.3f" );
+
+		// === Swatch row — click to set active output ===
+		{
+			float swH = LpToPx( 28.0f );
+			float swSp = LpToPx( 4.0f );
+			float swW = ( w - swSp * ( float )( handleCount - 1 ) ) / ( float )handleCount;
+			for ( int i = 0; i < handleCount; ++i )
+			{
+				ImGui::PushID( i );
+				ImGui::InvisibleButton( "sw", ImVec2( swW, swH ) );
+				ImRect sw_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+				if ( ImGui::IsItemClicked() ) { *pActive = i; changed = true; }
+				float rr, gg, bb; ArtHwCsToSrgb( *pCs, handles[ i ].x, handles[ i ].y, *pV, rr, gg, bb );
+				ImU32 col = IM_COL32( ( int )( rr * 255.0f + 0.5f ), ( int )( gg * 255.0f + 0.5f ), ( int )( bb * 255.0f + 0.5f ), 255 );
+				dl->AddRectFilled( sw_bb.Min, sw_bb.Max, col, 3.0f );
+				ImU32 ring = ( i == *pActive ) ? IM_COL32_WHITE : ImGui::GetColorU32( ImGuiCol_Border );
+				dl->AddRect( sw_bb.Min, sw_bb.Max, ring, 3.0f, 0, ( i == *pActive ) ? 2.5f : 1.0f );
+				ImGui::PopID();
+				if ( i + 1 < handleCount ) ImGui::SameLine( 0.0f, swSp );
+			}
+		}
+
+		// Output active colour and (optional) palette.
+		{
+			float rr, gg, bb;
+			ArtHwCsToSrgb( *pCs, handles[ *pActive ].x, handles[ *pActive ].y, *pV, rr, gg, bb );
+			color->x = rr; color->y = gg; color->z = bb;
+		}
+		if ( out_palette )
+		{
+			for ( int i = 0; i < handleCount; ++i )
+			{
+				float rr, gg, bb; ArtHwCsToSrgb( *pCs, handles[ i ].x, handles[ i ].y, *pV, rr, gg, bb );
+				out_palette[ i ] = ImVec4( rr, gg, bb, 1.0f );
+			}
+		}
+		if ( out_count ) *out_count = handleCount;
+
+		if ( planeActive || vActive ) changed = true;
+		ImGui::PopID();
+		return changed;
+	}
+
+
+
+	//////////////////////////////////////////////////////////////////////////
+	// ColorPickerSky — Bruneton single-scatter atmosphere (Rayleigh + Mie + Ozone)
+	//
+	// Forward model only. Inputs: view elevation (plane U), time of day
+	// (plane V), view azimuth relative to sun (vertical slider), day of year
+	// + observer latitude (component sliders). The transmittance LUT is built
+	// lazily on first use. Per-plane-pixel cost is one single-scatter integral
+	// (14 steps) with three texture lookups each — fast enough for live drag.
+	//////////////////////////////////////////////////////////////////////////
+
+	namespace DwSky
+	{
+		constexpr float R_E = 6360000.0f;
+		constexpr float R_A = 6420000.0f;
+		constexpr float H_R = 8000.0f;
+		constexpr float H_M = 1200.0f;
+		constexpr float G_MIE = 0.76f;
+		constexpr float OZONE_PEAK = 25000.0f;
+		constexpr float OZONE_HW = 15000.0f;
+		// LUT resolutions — doubled vs the original Hillaire/Bruneton minimums.
+		// The ozone band has a 30 km full-width; at shallow grazing geometry the
+		// integration step needs to resolve it or the band's chromatic signature
+		// collapses to a uniform attenuation and the green/cyan twilight band
+		// becomes invisible. TLUT_MU especially matters near mu=0 (horizon).
+		constexpr int TLUT_H  = 64;
+		constexpr int TLUT_MU = 128;
+		constexpr int MSLUT_H = 16;
+		constexpr int MSLUT_MU = 32;
+		constexpr int MSLUT_DIRS = 12;
+	}
+
+	// Scattering / absorption coefficients in m^-1, RGB centres 680/550/440 nm.
+	static const float s_SkyBetaR[ 3 ]  = { 5.802e-6f, 13.558e-6f, 33.1e-6f };
+	static const float s_SkyBetaM[ 3 ]  = { 3.996e-6f,  3.996e-6f,  3.996e-6f };
+	// Hillaire 2020 baseline values. Per-channel ratio (G ≈ 2.9·R, B ≈ 0.13·R)
+	// matches the integrated Chappuis band cross-section sampled at 680/550/440 nm.
+	// We scale by 1.6× — the un-scaled coefficients produce a band so thin
+	// chromatically that it disappears against the dominant Rayleigh blue at the
+	// demo's plane resolution. The scaled values keep the same chromaticity but
+	// raise contrast so the teal twilight stripe between horizon glow and zenith
+	// blue is actually visible.
+	static const float s_SkyBetaO3[ 3 ] = { 0.650e-6f * 1.6f, 1.881e-6f * 1.6f, 0.085e-6f * 1.6f };
+
+	static float s_SkyTransLUT[ DwSky::TLUT_H ][ DwSky::TLUT_MU ][ 3 ];
+	static bool  s_SkyTransLUTBuilt = false;
+
+	// Hillaire 2020 isotropic multi-scatter ambient LUT: keyed by (altitude, sun
+	// zenith). Built lazily after the T LUT. Captures orders 2..∞ via a single
+	// 2nd-order computation + geometric-series correction.
+	static float s_SkyMSLUT[ DwSky::MSLUT_H ][ DwSky::MSLUT_MU ][ 3 ];
+	static bool  s_SkyMSLUTBuilt = false;
+
+	static float DwSkyAtmTopDist( float r, float mu )
+	{
+		float disc = r * r * ( mu * mu - 1.0f ) + DwSky::R_A * DwSky::R_A;
+		if ( disc < 0 ) return 0.0f;
+		return -r * mu + sqrtf( disc );
+	}
+
+	static float DwSkyEarthDist( float r, float mu )
+	{
+		if ( mu >= 0 ) return 0.0f;
+		float disc = r * r * ( mu * mu - 1.0f ) + DwSky::R_E * DwSky::R_E;
+		if ( disc < 0 ) return 0.0f;
+		return -r * mu - sqrtf( disc );
+	}
+
+	static float DwSkyHAt( float r, float mu, float d )
+	{
+		float r2 = sqrtf( r * r + d * d + 2.0f * r * d * mu );
+		return ImMax( 0.0f, r2 - DwSky::R_E );
+	}
+
+	static float DwSkyMuAt( float r, float mu, float d )
+	{
+		float r2 = sqrtf( r * r + d * d + 2.0f * r * d * mu );
+		if ( r2 < 1.0f ) return mu;
+		return ( r * mu + d ) / r2;
+	}
+
+	static void BuildSkyTransmittanceLUT()
+	{
+		using namespace DwSky;
+		// At shallow grazing geometry (mu ≈ 0) d_top reaches ~1100 km, so each
+		// integration step at N=32 is ~35 km — coarser than the ozone layer's
+		// 30 km full width. Use N=96 so the band is sampled densely enough to
+		// preserve its chromatic signature in the LUT.
+		const int N = 96;
+		for ( int i = 0; i < TLUT_H; ++i )
+		{
+			float h = (float)i / (float)( TLUT_H - 1 ) * ( R_A - R_E );
+			float r = R_E + h;
+			for ( int j = 0; j < TLUT_MU; ++j )
+			{
+				float mu = -1.0f + 2.0f * (float)j / (float)( TLUT_MU - 1 );
+				float d_earth = DwSkyEarthDist( r, mu );
+				float d_top   = DwSkyAtmTopDist( r, mu );
+				if ( d_earth > 0.0f )
+				{
+					s_SkyTransLUT[ i ][ j ][ 0 ] = 0.0f;
+					s_SkyTransLUT[ i ][ j ][ 1 ] = 0.0f;
+					s_SkyTransLUT[ i ][ j ][ 2 ] = 0.0f;
+					continue;
+				}
+				if ( d_top <= 0.0f )
+				{
+					s_SkyTransLUT[ i ][ j ][ 0 ] = 1.0f;
+					s_SkyTransLUT[ i ][ j ][ 1 ] = 1.0f;
+					s_SkyTransLUT[ i ][ j ][ 2 ] = 1.0f;
+					continue;
+				}
+				float step = d_top / (float)N;
+				float od[ 3 ] = { 0.0f, 0.0f, 0.0f };
+				for ( int k = 0; k < N; ++k )
+				{
+					float d = ( (float)k + 0.5f ) * step;
+					float hh = DwSkyHAt( r, mu, d );
+					float rho_r = expf( -hh / H_R );
+					float rho_m = expf( -hh / H_M );
+					float rho_o = ImMax( 0.0f, 1.0f - fabsf( hh - OZONE_PEAK ) / OZONE_HW );
+					od[ 0 ] += ( s_SkyBetaR[ 0 ] * rho_r + s_SkyBetaM[ 0 ] * rho_m + s_SkyBetaO3[ 0 ] * rho_o ) * step;
+					od[ 1 ] += ( s_SkyBetaR[ 1 ] * rho_r + s_SkyBetaM[ 1 ] * rho_m + s_SkyBetaO3[ 1 ] * rho_o ) * step;
+					od[ 2 ] += ( s_SkyBetaR[ 2 ] * rho_r + s_SkyBetaM[ 2 ] * rho_m + s_SkyBetaO3[ 2 ] * rho_o ) * step;
+				}
+				s_SkyTransLUT[ i ][ j ][ 0 ] = expf( -od[ 0 ] );
+				s_SkyTransLUT[ i ][ j ][ 1 ] = expf( -od[ 1 ] );
+				s_SkyTransLUT[ i ][ j ][ 2 ] = expf( -od[ 2 ] );
+			}
+		}
+		s_SkyTransLUTBuilt = true;
+	}
+
+	static void DwSkyTLookup( float h, float mu, float out[ 3 ] )
+	{
+		using namespace DwSky;
+		float h_n  = ImClamp( h / ( R_A - R_E ), 0.0f, 1.0f );
+		float mu_n = ImClamp( ( mu + 1.0f ) * 0.5f, 0.0f, 1.0f );
+		float fi = h_n  * (float)( TLUT_H  - 1 );
+		float fj = mu_n * (float)( TLUT_MU - 1 );
+		int i0 = (int)fi; int j0 = (int)fj;
+		int i1 = ImMin( i0 + 1, TLUT_H  - 1 );
+		int j1 = ImMin( j0 + 1, TLUT_MU - 1 );
+		float si = fi - (float)i0; float sj = fj - (float)j0;
+		for ( int c = 0; c < 3; ++c )
+		{
+			float v00 = s_SkyTransLUT[ i0 ][ j0 ][ c ];
+			float v10 = s_SkyTransLUT[ i1 ][ j0 ][ c ];
+			float v01 = s_SkyTransLUT[ i0 ][ j1 ][ c ];
+			float v11 = s_SkyTransLUT[ i1 ][ j1 ][ c ];
+			out[ c ] = v00 * ( 1.0f - si ) * ( 1.0f - sj )
+			         + v10 *           si  * ( 1.0f - sj )
+			         + v01 * ( 1.0f - si ) *           sj
+			         + v11 *           si  *           sj;
+		}
+	}
+
+	// Raw single-scatter accumulator from arbitrary altitude r0. No tonemap.
+	// Used by both DwSkyColorBruneton and BuildSkyMultiScatterLUT (where it
+	// supplies the per-direction 2nd-order radiance samples).
+	static void DwSkySingleScatterRaw( float accum[ 3 ], float r0,
+	                                   float view_zen_rad, float sun_zen_rad,
+	                                   float view_sun_az_rad, int n_view )
+	{
+		using namespace DwSky;
+		accum[ 0 ] = accum[ 1 ] = accum[ 2 ] = 0.0f;
+
+		float mu_v = cosf( view_zen_rad );
+		float mu_s = cosf( sun_zen_rad );
+		float nu = mu_v * mu_s + sinf( view_zen_rad ) * sinf( sun_zen_rad ) * cosf( view_sun_az_rad );
+		nu = ImClamp( nu, -1.0f, 1.0f );
+
+		float d_atm = DwSkyAtmTopDist( r0, mu_v );
+		if ( d_atm <= 0.0f ) return;
+		float step = d_atm / (float)n_view;
+
+		float phr = ( 3.0f / ( 16.0f * IM_PI ) ) * ( 1.0f + nu * nu );
+		float g2 = G_MIE * G_MIE;
+		float denom = ( 2.0f + g2 ) * powf( 1.0f + g2 - 2.0f * G_MIE * nu, 1.5f );
+		float phm = ( 3.0f / ( 8.0f * IM_PI ) ) * ( ( 1.0f - g2 ) * ( 1.0f + nu * nu ) ) / denom;
+
+		float T_view_full[ 3 ];
+		DwSkyTLookup( r0 - R_E, mu_v, T_view_full );
+
+		for ( int i = 0; i < n_view; ++i )
+		{
+			float d_v = ( (float)i + 0.5f ) * step;
+			float h     = DwSkyHAt(  r0, mu_v, d_v );
+			float mu_vp = DwSkyMuAt( r0, mu_v, d_v );
+
+			float rho_r = expf( -h / H_R );
+			float rho_m = expf( -h / H_M );
+
+			float T_p_view[ 3 ], T_sun[ 3 ];
+			DwSkyTLookup( h, mu_vp, T_p_view );
+			DwSkyTLookup( h, mu_s,  T_sun  );
+
+			for ( int c = 0; c < 3; ++c )
+			{
+				float T_obs_to_p = T_view_full[ c ] / ImMax( T_p_view[ c ], 1e-12f );
+				T_obs_to_p = ImMin( T_obs_to_p, 1.0f );
+				float in_scat = ( s_SkyBetaR[ c ] * rho_r * phr + s_SkyBetaM[ c ] * rho_m * phm ) * T_sun[ c ];
+				accum[ c ] += T_obs_to_p * in_scat * step;
+			}
+		}
+	}
+
+	// Hillaire-style multi-scatter LUT: for each (h, mu_s) sample N view
+	// directions on a Fibonacci sphere, compute single-scatter from each,
+	// average to get L₂ (isotropic 2nd-order radiance), then geometric-series
+	// correction approximates orders 3..∞: L_ms = L₂ / (1 - f_ms).
+	static void BuildSkyMultiScatterLUT()
+	{
+		using namespace DwSky;
+		if ( !s_SkyTransLUTBuilt ) BuildSkyTransmittanceLUT();
+
+		const float GOLDEN = 1.6180339887498949f;
+		// Pre-compute Fibonacci-sphere directions (local frame, z=up).
+		float dirs[ MSLUT_DIRS ][ 3 ];
+		for ( int d = 0; d < MSLUT_DIRS; ++d )
+		{
+			float cos_t = 1.0f - 2.0f * ( (float)d + 0.5f ) / (float)MSLUT_DIRS;
+			float sin_t = sqrtf( ImMax( 0.0f, 1.0f - cos_t * cos_t ) );
+			float phi = 2.0f * IM_PI * (float)d / GOLDEN;
+			dirs[ d ][ 0 ] = sin_t * cosf( phi );
+			dirs[ d ][ 1 ] = sin_t * sinf( phi );
+			dirs[ d ][ 2 ] = cos_t;
+		}
+
+		for ( int i = 0; i < MSLUT_H; ++i )
+		{
+			float h = (float)i / (float)( MSLUT_H - 1 ) * ( R_A - R_E );
+			float r = R_E + h;
+			float rho_r = expf( -h / H_R );
+			float rho_m = expf( -h / H_M );
+			float f_local[ 3 ] = {
+				s_SkyBetaR[ 0 ] * rho_r + s_SkyBetaM[ 0 ] * rho_m,
+				s_SkyBetaR[ 1 ] * rho_r + s_SkyBetaM[ 1 ] * rho_m,
+				s_SkyBetaR[ 2 ] * rho_r + s_SkyBetaM[ 2 ] * rho_m
+			};
+			for ( int j = 0; j < MSLUT_MU; ++j )
+			{
+				float mu_s = -1.0f + 2.0f * (float)j / (float)( MSLUT_MU - 1 );
+				float sin_s = sqrtf( ImMax( 0.0f, 1.0f - mu_s * mu_s ) );
+				float sun_dir[ 3 ] = { sin_s, 0.0f, mu_s };
+				float sun_zen = acosf( ImClamp( mu_s, -1.0f, 1.0f ) );
+
+				float L2[ 3 ] = { 0.0f, 0.0f, 0.0f };
+				for ( int d = 0; d < MSLUT_DIRS; ++d )
+				{
+					float mu_v = dirs[ d ][ 2 ];
+					float nu = dirs[ d ][ 0 ] * sun_dir[ 0 ]
+					         + dirs[ d ][ 1 ] * sun_dir[ 1 ]
+					         + dirs[ d ][ 2 ] * sun_dir[ 2 ];
+					nu = ImClamp( nu, -1.0f, 1.0f );
+					float view_zen = acosf( ImClamp( mu_v, -1.0f, 1.0f ) );
+					float sv = sinf( view_zen ) * sinf( sun_zen );
+					float view_sun_az;
+					if ( fabsf( sv ) > 1e-6f )
+					{
+						float ca = ( nu - mu_v * mu_s ) / sv;
+						view_sun_az = acosf( ImClamp( ca, -1.0f, 1.0f ) );
+					}
+					else
+					{
+						view_sun_az = 0.0f;
+					}
+					float ss[ 3 ];
+					DwSkySingleScatterRaw( ss, r, view_zen, sun_zen, view_sun_az, 10 );
+					L2[ 0 ] += ss[ 0 ];
+					L2[ 1 ] += ss[ 1 ];
+					L2[ 2 ] += ss[ 2 ];
+				}
+				float inv_n = 1.0f / (float)MSLUT_DIRS;
+				for ( int c = 0; c < 3; ++c )
+				{
+					float L2_avg = L2[ c ] * inv_n;
+					float denom2 = ImMax( 1.0f - f_local[ c ], 1e-6f );
+					s_SkyMSLUT[ i ][ j ][ c ] = L2_avg / denom2;
+				}
+			}
+		}
+		s_SkyMSLUTBuilt = true;
+	}
+
+	static void DwSkyMSLookup( float h, float mu_s, float out[ 3 ] )
+	{
+		using namespace DwSky;
+		float h_n  = ImClamp( h / ( R_A - R_E ), 0.0f, 1.0f );
+		float mu_n = ImClamp( ( mu_s + 1.0f ) * 0.5f, 0.0f, 1.0f );
+		float fi = h_n  * (float)( MSLUT_H  - 1 );
+		float fj = mu_n * (float)( MSLUT_MU - 1 );
+		int i0 = (int)fi; int j0 = (int)fj;
+		int i1 = ImMin( i0 + 1, MSLUT_H  - 1 );
+		int j1 = ImMin( j0 + 1, MSLUT_MU - 1 );
+		float si = fi - (float)i0; float sj = fj - (float)j0;
+		for ( int c = 0; c < 3; ++c )
+		{
+			float v00 = s_SkyMSLUT[ i0 ][ j0 ][ c ];
+			float v10 = s_SkyMSLUT[ i1 ][ j0 ][ c ];
+			float v01 = s_SkyMSLUT[ i0 ][ j1 ][ c ];
+			float v11 = s_SkyMSLUT[ i1 ][ j1 ][ c ];
+			out[ c ] = v00 * ( 1.0f - si ) * ( 1.0f - sj )
+			         + v10 *           si  * ( 1.0f - sj )
+			         + v01 * ( 1.0f - si ) *           sj
+			         + v11 *           si  *           sj;
+		}
+	}
+
+	static void DwSkyColorBruneton( float& outR, float& outG, float& outB,
+	                                float view_zen_rad, float sun_zen_rad,
+	                                float view_sun_az_rad, float obs_alt_m = 0.0f,
+	                                int n_view = 14 )
+	{
+		using namespace DwSky;
+		if ( !s_SkyTransLUTBuilt ) BuildSkyTransmittanceLUT();
+		if ( !s_SkyMSLUTBuilt )    BuildSkyMultiScatterLUT();
+
+		float mu_v = cosf( view_zen_rad );
+		float mu_s = cosf( sun_zen_rad );
+		float nu = mu_v * mu_s + sinf( view_zen_rad ) * sinf( sun_zen_rad ) * cosf( view_sun_az_rad );
+		nu = ImClamp( nu, -1.0f, 1.0f );
+
+		// Observer altitude above sea level (clamped to the LUT-supported range).
+		float h_obs = ImClamp( obs_alt_m, 0.0f, R_A - R_E );
+		float r0 = R_E + h_obs;
+		float d_atm = DwSkyAtmTopDist( r0, mu_v );
+		if ( d_atm <= 0.0f ) { outR = outG = outB = 0.0f; return; }
+		float step = d_atm / (float)n_view;
+
+		float phr = ( 3.0f / ( 16.0f * IM_PI ) ) * ( 1.0f + nu * nu );
+		float g2 = G_MIE * G_MIE;
+		float denom = ( 2.0f + g2 ) * powf( 1.0f + g2 - 2.0f * G_MIE * nu, 1.5f );
+		float phm = ( 3.0f / ( 8.0f * IM_PI ) ) * ( ( 1.0f - g2 ) * ( 1.0f + nu * nu ) ) / denom;
+
+		float T_view_full[ 3 ];
+		DwSkyTLookup( h_obs, mu_v, T_view_full );
+
+		float accum[ 3 ] = { 0.0f, 0.0f, 0.0f };
+		const float INV_4PI = 1.0f / ( 4.0f * IM_PI );
+		for ( int i = 0; i < n_view; ++i )
+		{
+			float d_v = ( (float)i + 0.5f ) * step;
+			float h     = DwSkyHAt(  r0, mu_v, d_v );
+			float mu_vp = DwSkyMuAt( r0, mu_v, d_v );
+
+			float rho_r = expf( -h / H_R );
+			float rho_m = expf( -h / H_M );
+
+			float T_p_view[ 3 ], T_sun[ 3 ], L_ms[ 3 ];
+			DwSkyTLookup( h, mu_vp, T_p_view );
+			DwSkyTLookup( h, mu_s,  T_sun  );
+			DwSkyMSLookup( h, mu_s, L_ms );
+
+			for ( int c = 0; c < 3; ++c )
+			{
+				float T_obs_to_p = T_view_full[ c ] / ImMax( T_p_view[ c ], 1e-12f );
+				T_obs_to_p = ImMin( T_obs_to_p, 1.0f );
+				// Single-scatter (directional, phase-weighted) + multi-scatter
+				// (isotropic ambient from MS LUT).
+				float in_scat_ss = ( s_SkyBetaR[ c ] * rho_r * phr + s_SkyBetaM[ c ] * rho_m * phm ) * T_sun[ c ];
+				float in_scat_ms = ( s_SkyBetaR[ c ] * rho_r       + s_SkyBetaM[ c ] * rho_m       ) * L_ms[ c ] * INV_4PI;
+				accum[ c ] += T_obs_to_p * ( in_scat_ss + in_scat_ms ) * step;
+			}
+		}
+
+		static const float sun_irr[ 3 ] = { 22.0f, 23.0f, 26.0f };
+		float col[ 3 ] = {
+			accum[ 0 ] * sun_irr[ 0 ],
+			accum[ 1 ] * sun_irr[ 1 ],
+			accum[ 2 ] * sun_irr[ 2 ]
+		};
+
+		// Night-sky baseline. The actual perceived night sky isn't pure black —
+		// integrated starlight + airglow (OH bands, O₂ Atmospheric band) provide
+		// a small residual luminance that the dark-adapted eye reads as a dim
+		// blue-violet. Inject a tiny scotopic-tinted baseline when raw radiance
+		// is below twilight so chromaticity normalization has something to
+		// extract; the sigmoid brightness ramp keeps it dim.
+		float L_pre = 0.2126f * col[ 0 ] + 0.7152f * col[ 1 ] + 0.0722f * col[ 2 ];
+		const float L_PHOTOPIC = 0.01f;
+		const float L_SCOTOPIC = 1e-5f;
+		if ( L_pre < L_PHOTOPIC )
+		{
+			const float NIGHT_FLOOR = 1.2e-4f;
+			col[ 0 ] += 0.18f * NIGHT_FLOOR;
+			col[ 1 ] += 0.42f * NIGHT_FLOOR;
+			col[ 2 ] += 1.00f * NIGHT_FLOOR;
+			L_pre = 0.2126f * col[ 0 ] + 0.7152f * col[ 1 ] + 0.0722f * col[ 2 ];
+		}
+
+		// Purkinje shift (rod-dominant scotopic vision) at very low luminance.
+		// Twilight stays photopic (L > 0.01) so the ozone cyan/green band is
+		// preserved at full chroma; only deep night blends toward bluish.
+		if ( L_pre > 1e-12f && L_pre < L_PHOTOPIC )
+		{
+			// CIE V'(λ) sampled at 680/550/440 nm → these RGB weights.
+			float scotopic_L = 0.04f * col[ 0 ] + 0.52f * col[ 1 ] + 0.78f * col[ 2 ];
+			float scotopic_tint[ 3 ] = { 0.34f, 0.48f, 1.00f };
+			float scot[ 3 ] = {
+				scotopic_tint[ 0 ] * scotopic_L,
+				scotopic_tint[ 1 ] * scotopic_L,
+				scotopic_tint[ 2 ] * scotopic_L
+			};
+			float log_L  = log10f( L_pre );
+			float log_lo = log10f( L_SCOTOPIC );
+			float log_hi = log10f( L_PHOTOPIC );
+			float t = ImClamp( ( log_L - log_lo ) / ( log_hi - log_lo ), 0.0f, 1.0f );
+			for ( int c = 0; c < 3; ++c )
+				col[ c ] = col[ c ] * t + scot[ c ] * ( 1.0f - t );
+		}
+
+		// Chromaticity-preserving HDR tonemap with sigmoid brightness ramp
+		// centred at twilight luminance. Night reads as semantically dark.
+		float max_c = ImMax( col[ 0 ], ImMax( col[ 1 ], col[ 2 ] ) );
+		if ( max_c < 1e-9f ) { outR = outG = outB = 0.0f; return; }
+		float L_out = 0.2126f * col[ 0 ] + 0.7152f * col[ 1 ] + 0.0722f * col[ 2 ];
+		float log_L_out = log10f( ImMax( L_out, 1e-12f ) );
+		// σ((log L + 2)·1.4): L=1→0.94, L=0.01→0.50, L=1e-4→0.10, L=1e-6→~0
+		float brightness = 1.0f / ( 1.0f + expf( -( log_L_out + 2.0f ) * 1.4f ) );
+		float inv_max = 1.0f / max_c;
+		for ( int c = 0; c < 3; ++c )
+		{
+			float v = ImClamp( col[ c ] * inv_max * brightness, 0.0f, 1.0f );
+			col[ c ] = powf( v, 1.0f / 2.2f ); // sRGB gamma
+		}
+		outR = col[ 0 ]; outG = col[ 1 ]; outB = col[ 2 ];
+	}
+
+	// Solar zenith / azimuth at observer (lat, lon=0) from year/DOY/UT-hour.
+	// Mirrors the math in DrawEarthSunEphemeris but with full equatorial-frame
+	// conversion so the picker plane reflects realistic daily variation.
+	static void DwSkySunZenithAz( float& sun_zen, float& sun_az,
+	                              int year, int doy, float hour_UT, float lat_deg )
+	{
+		static const int doy_normal[ 12 ] = { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
+		bool leap = ( ( year % 4 == 0 && year % 100 != 0 ) || ( year % 400 == 0 ) );
+		int days_in_year = leap ? 366 : 365;
+		if ( doy < 1 ) doy = 1; if ( doy > days_in_year ) doy = days_in_year;
+
+		int month = 1, day = 1;
+		for ( int m = 0; m < 12; ++m )
+		{
+			int off = doy_normal[ m ] + ( ( leap && m >= 2 ) ? 1 : 0 );
+			int dim = ( m == 1 && leap ) ? 29 : ( m == 1 ? 28 : ( ( m == 3 || m == 5 || m == 8 || m == 10 ) ? 30 : 31 ) );
+			if ( doy <= off + dim )
+			{
+				month = m + 1;
+				day = doy - off;
+				break;
+			}
+		}
+
+		double JD = DwJulianDate( year, month, day, (double)hour_UT );
+		double days_J = JD - 2451545.0;
+
+		double L_E = ( 100.46 + 0.9856 * days_J ) * ( 3.14159265358979323846 / 180.0 );
+		double sun_lon = L_E + 3.14159265358979323846;
+		double obliq = 23.44 * 3.14159265358979323846 / 180.0;
+		double sin_dec = sin( obliq ) * sin( sun_lon );
+		sin_dec = ImClamp( sin_dec, -1.0, 1.0 );
+		double dec = asin( sin_dec );
+		double ra  = atan2( sin( sun_lon ) * cos( obliq ), cos( sun_lon ) );
+
+		double gmst_h = fmod( 18.697374558 + 24.06570982441908 * days_J, 24.0 );
+		if ( gmst_h < 0 ) gmst_h += 24.0;
+		double lst = gmst_h * 15.0 * 3.14159265358979323846 / 180.0;
+
+		double ha = lst - ra;
+		double lat_r = (double)lat_deg * 3.14159265358979323846 / 180.0;
+		double sin_alt = sin( lat_r ) * sin( dec ) + cos( lat_r ) * cos( dec ) * cos( ha );
+		sin_alt = ImClamp( sin_alt, -1.0, 1.0 );
+		double alt = asin( sin_alt );
+		double cos_alt = cos( alt );
+
+		sun_zen = (float)( 3.14159265358979323846 * 0.5 - alt );
+
+		if ( cos_alt < 1e-6 )
+		{
+			sun_az = 0.0f;
+			return;
+		}
+		double sin_az = -cos( dec ) * sin( ha ) / cos_alt;
+		double cos_az = ( sin( dec ) - sin_alt * sin( lat_r ) ) / ( cos_alt * cos( lat_r ) );
+		sun_az = (float)atan2( sin_az, cos_az );
+	}
+
+	struct ImSkyPlaneData { float view_az_rel; int doy; float lat; float obs_alt_m; int year; };
+	// Plane axes: U = time of day (0..24 h), V = view elevation (0..90 deg,
+	// flipped via DrawCachedProceduralColor2DBilinear so zenith sits at the
+	// top of the plane and horizon at the bottom — matches the user's
+	// sky-dome intuition).
+	static ImU32 SkyPlaneCallback( float time_h, float elev_deg, void* pUserData )
+	{
+		ImSkyPlaneData* d = ( ImSkyPlaneData* )pUserData;
+		float sun_zen, sun_az;
+		DwSkySunZenithAz( sun_zen, sun_az, d->year, d->doy, time_h, d->lat );
+		float view_zen = ( IM_PI * 0.5f ) - elev_deg * IM_PI / 180.0f;
+		float r, g, b;
+		DwSkyColorBruneton( r, g, b, view_zen, sun_zen, d->view_az_rel, d->obs_alt_m );
+		return IM_COL32( (int)( r * 255.0f + 0.5f ), (int)( g * 255.0f + 0.5f ), (int)( b * 255.0f + 0.5f ), 255 );
+	}
+
+	// Vertical slider sweeps OBSERVER ALTITUDE (ground -> space). All other
+	// state is the current plane selection + the component-slider values.
+	struct ImSkyAltSliderData { float elev_deg; float time_h; float view_az_rel; int doy; float lat; int year; };
+	static ImU32 SkyAltSliderCallback( float obs_alt_m, void* pUserData )
+	{
+		ImSkyAltSliderData* d = ( ImSkyAltSliderData* )pUserData;
+		float sun_zen, sun_az;
+		DwSkySunZenithAz( sun_zen, sun_az, d->year, d->doy, d->time_h, d->lat );
+		float view_zen = ( IM_PI * 0.5f ) - d->elev_deg * IM_PI / 180.0f;
+		float r, g, b;
+		DwSkyColorBruneton( r, g, b, view_zen, sun_zen, d->view_az_rel, obs_alt_m );
+		return IM_COL32( (int)( r * 255.0f + 0.5f ), (int)( g * 255.0f + 0.5f ), (int)( b * 255.0f + 0.5f ), 255 );
+	}
+
+	bool ColorPickerSky( char const* label, ImVec4* color, ImVec2 size )
+	{
+		IM_UNUSED( size );
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems ) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		ImGui::PushID( label );
+		ImGuiStorage* storage = ImGui::GetStateStorage();
+		// Two-pass key materialization to avoid storage-realloc pointer invalidation.
+		// State: time × elevation on the plane; observer altitude on the vertical
+		// slider; day-of-year + latitude + view-azimuth as component sliders.
+		// Default view azimuth = 0 (looking toward the sun). The ozone Chappuis
+		// twilight band — the cyan/teal stripe between the warm horizon glow and
+		// the deep blue zenith — is brightest in this direction at sunset/sunrise.
+		// Looking away (az = π) shows the Belt of Venus (pink anti-solar band) instead.
+		storage->GetFloatRef( ImGui::GetID( "vaz" ),  0.0f        );
+		storage->GetIntRef  ( ImGui::GetID( "doy" ),  172         );
+		storage->GetFloatRef( ImGui::GetID( "lat" ),  48.85f      );
+		storage->GetFloatRef( ImGui::GetID( "elev" ), 30.0f       );
+		storage->GetFloatRef( ImGui::GetID( "time" ), 19.0f       );
+		storage->GetFloatRef( ImGui::GetID( "oalt" ), 0.0f        );
+		float* pViewAz = storage->GetFloatRef( ImGui::GetID( "vaz" ),  0.0f        );
+		int*   pDoy    = storage->GetIntRef  ( ImGui::GetID( "doy" ),  172         );
+		float* pLat    = storage->GetFloatRef( ImGui::GetID( "lat" ),  48.85f      );
+		float* pElev   = storage->GetFloatRef( ImGui::GetID( "elev" ), 30.0f       );
+		float* pTime   = storage->GetFloatRef( ImGui::GetID( "time" ), 18.0f       );
+		float* pObsAlt = storage->GetFloatRef( ImGui::GetID( "oalt" ), 0.0f        );
+
+		if ( !s_SkyTransLUTBuilt ) BuildSkyTransmittanceLUT();
+
+		bool changed = false;
+
+		const float w = ImGui::CalcItemWidth();
+		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
+		const float spacing = style.ItemInnerSpacing.x;
+		float planeSide = w - sliderW - spacing;
+		if ( planeSide < 32.0f ) planeSide = 32.0f;
+		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
+		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
+		const float dotRadius = LpToPx( dwStyle.ColorPicker_DotRadius );
+		const float dotOutlineThick = LpToPx( dwStyle.ColorPicker_DotOutlineThickness );
+
+		ImGui::InvisibleButton( "plane", ImVec2( planeSide, planeSide ) );
+		const ImRect plane_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool planeActive = ImGui::IsItemActive();
+		ImGui::SameLine( 0.0f, spacing );
+		ImGui::InvisibleButton( "obsalt", ImVec2( sliderW, planeSide ) );
+		const ImRect alt_bb( ImGui::GetItemRectMin(), ImGui::GetItemRectMax() );
+		bool altActive = ImGui::IsItemActive();
+
+		const float OBS_ALT_MAX_M = 60000.0f; // top of atmosphere (Karman ≈ 100 km)
+
+		ImVec2 mp = g.IO.MousePos;
+		if ( planeActive )
+		{
+			float u = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(),  0.0f, 1.0f );
+			float v = ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f );
+			*pTime = u * 24.0f;            // X = time of day (left=midnight, right=24h)
+			*pElev = ( 1.0f - v ) * 90.0f; // Y = elevation (top=zenith, bottom=horizon)
+			changed = true;
+		}
+		if ( altActive )
+		{
+			float t = ImClamp( ( mp.y - alt_bb.Min.y ) / alt_bb.GetHeight(), 0.0f, 1.0f );
+			*pObsAlt = ( 1.0f - t ) * OBS_ALT_MAX_M; // top = space, bottom = ground
+			changed = true;
+		}
+
+		// Plane fill (cached on view-az / doy / lat / obs altitude).
+		// DrawCachedProceduralColor2DBilinear maps maxY → screen top, minY → screen bottom
+		// (see line `ScaleFromNormalized(j*dy, maxY, minY)`). So for zenith-at-top we pass
+		// minY=0 (horizon), maxY=90 (zenith) — matching the click handler below which
+		// converts screen v to elevation via `(1 - v) * 90` (top click → elev 90 → zenith).
+		{
+			ImSkyPlaneData cb;
+			cb.view_az_rel = *pViewAz; cb.doy = *pDoy; cb.lat = *pLat;
+			cb.obs_alt_m   = *pObsAlt; cb.year = 2026;
+			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32 key = PlaneKeyF( PlaneKeyF( PlaneKeyF( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pDoy ), *pLat ), *pViewAz ), *pObsAlt );
+			DrawCachedProceduralColor2DBilinear( dl, SkyPlaneCallback, &cb,
+				0.0f, 24.0f, 0.0f, 90.0f,
+				plane_bb.Min, plane_bb.GetSize(), planeRes,
+				s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+		}
+
+		// Crosshair + dot. X position from time, Y position from elev (flipped).
+		{
+			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, ImSaturate( *pTime / 24.0f ) ),
+			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, ImSaturate( 1.0f - *pElev / 90.0f ) ) );
+			float sun_zen, sun_az;
+			DwSkySunZenithAz( sun_zen, sun_az, 2026, *pDoy, *pTime, *pLat );
+			float view_zen = ( IM_PI * 0.5f ) - ( *pElev * IM_PI / 180.0f );
+			float r, gg, b;
+			DwSkyColorBruneton( r, gg, b, view_zen, sun_zen, *pViewAz, *pObsAlt );
+			ImU32 dotFill = IM_COL32( (int)( r * 255.0f + 0.5f ), (int)( gg * 255.0f + 0.5f ), (int)( b * 255.0f + 0.5f ), 255 );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
+			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
+			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
+			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
+		}
+
+		// Vertical slider: observer altitude — bottom = ground (0 m),
+		// top = top-of-atmosphere (~60 km). The gradient previews the sky
+		// colour at the current plane selection as altitude is swept.
+		{
+			ImSkyAltSliderData cb;
+			cb.elev_deg = *pElev; cb.time_h = *pTime;
+			cb.view_az_rel = *pViewAz; cb.doy = *pDoy; cb.lat = *pLat; cb.year = 2026;
+			DrawProceduralColor1DBilinearVertical( dl, SkyAltSliderCallback, &cb,
+				OBS_ALT_MAX_M, 0.0f, alt_bb.Min, alt_bb.GetSize(), sliderRes );
+			dl->AddRect( alt_bb.Min, alt_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			float t = ImSaturate( 1.0f - *pObsAlt / OBS_ALT_MAX_M );
+			float handleY = ImLerp( alt_bb.Min.y, alt_bb.Max.y, t );
+			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
+			dl->AddRectFilled( ImVec2( alt_bb.Min.x - 1.0f, handleY - hh ),
+			                   ImVec2( alt_bb.Max.x + 1.0f, handleY + hh ),
+			                   IM_COL32( 30, 28, 26, 255 ), 2.0f );
+			dl->AddRect( ImVec2( alt_bb.Min.x - 1.0f, handleY - hh ),
+			             ImVec2( alt_bb.Max.x + 1.0f, handleY + hh ),
+			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+		}
+
+		// Component sliders below.
+		changed |= ImGui::SliderFloat( "Observer altitude##Sky",   pObsAlt, 0.0f, OBS_ALT_MAX_M, "%.0f m" );
+		changed |= ImGui::SliderInt  ( "Day of year##Sky",         pDoy,    1, 365 );
+		changed |= ImGui::SliderFloat( "Observer lat##Sky",        pLat,    -89.9f, 89.9f, "%.2f deg" );
+		changed |= ImGui::SliderAngle( "View az (from sun)##Sky",  pViewAz, 0.0f, 180.0f );
+
+		// Compose output color from current selection.
+		{
+			float sun_zen, sun_az;
+			DwSkySunZenithAz( sun_zen, sun_az, 2026, *pDoy, *pTime, *pLat );
+			float view_zen = ( IM_PI * 0.5f ) - ( *pElev * IM_PI / 180.0f );
+			float r, gg, b;
+			DwSkyColorBruneton( r, gg, b, view_zen, sun_zen, *pViewAz, *pObsAlt );
+			color->x = r; color->y = gg; color->z = b;
+		}
+
+		if ( planeActive || altActive ) changed = true;
 		ImGui::PopID();
 		return changed;
 	}
@@ -18069,6 +23346,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// --- DRAWING ---
 
+		// Defensive against the VtxOffset desync (see DW_EnsureFreshVtxOffset doc) —
+		// our channel polylines disappear if some upstream widget has left
+		// _CmdHeader.VtxOffset = 0 while VtxBuffer.Size > 64K.
+		DW_EnsureFreshVtxOffset( dl );
+
 		// Frame background
 		ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
 		ImGui::RenderFrame( frame_bb.Min, frame_bb.Max, frame_col, true, g.Style.FrameRounding );
@@ -18220,8 +23502,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				// Crosshair for "add" hint
 				ImVec2 mp = g.IO.MousePos;
 				ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorCurve_Crosshair ] );
-				dl->AddLine( ImVec2( mp.x, frame_bb.Min.y ), ImVec2( mp.x, frame_bb.Max.y ), crossCol );
-				dl->AddLine( ImVec2( frame_bb.Min.x, mp.y ), ImVec2( frame_bb.Max.x, mp.y ), crossCol );
+				DrawCrosshairInRect( dl, mp, frame_bb, crossCol );
 			}
 		}
 
@@ -20375,6 +25656,11 @@ namespace ImWidgets {
 
 		// --- DRAWING ---
 
+		// Defensive against the VtxOffset desync (see DW_EnsureFreshVtxOffset doc) —
+		// our per-channel polylines disappear if some upstream widget has left
+		// _CmdHeader.VtxOffset = 0 while VtxBuffer.Size > 64K.
+		DW_EnsureFreshVtxOffset( dl );
+
 		// Background
 		ImU32 bgCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ToneCurve_Background ] );
 		dl->AddRectFilled( scope_bb.Min, scope_bb.Max, bgCol );
@@ -20514,8 +25800,7 @@ namespace ImWidgets {
 			{
 				ImVec2 mp = g.IO.MousePos;
 				ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ToneCurve_Crosshair ] );
-				dl->AddLine( ImVec2( mp.x, scope_bb.Min.y ), ImVec2( mp.x, scope_bb.Max.y ), crossCol );
-				dl->AddLine( ImVec2( scope_bb.Min.x, mp.y ), ImVec2( scope_bb.Max.x, mp.y ), crossCol );
+				DrawCrosshairInRect( dl, mp, scope_bb, crossCol );
 			}
 		}
 
@@ -21811,6 +27096,11 @@ namespace ImWidgets {
 		if ( label_size.x > 0.0f )
 			ImGui::RenderText( ImVec2( frame_bb.Max.x + imStyle.ItemInnerSpacing.x, frame_bb.Min.y + imStyle.FramePadding.y ), label );
 
+		// Ctrl+Click / double-click on the centered value readout opens a precision popup.
+		ImRect labelRect( text_pos, text_pos + text_size );
+		if ( DW_SliderScalarPopup( labelRect, id, data_type, p_value, p_min, p_max, "value" ) )
+			value_changed = true;
+
 		return value_changed;
 	}
 
@@ -22138,6 +27428,11 @@ namespace ImWidgets {
 		// Draw label
 		if ( label_size.x > 0.0f )
 			ImGui::RenderText( ImVec2( frame_bb.Max.x + imStyle.ItemInnerSpacing.x, frame_bb.Min.y + imStyle.FramePadding.y ), label );
+
+		// Ctrl+Click / double-click on the spline's bottom value readout opens a precision popup.
+		ImRect labelRect( text_pos, text_pos + text_size );
+		if ( DW_SliderScalarPopup( labelRect, id, data_type, p_value, p_min, p_max, "value" ) )
+			value_changed = true;
 
 		return value_changed;
 	}
@@ -22575,13 +27870,28 @@ namespace ImWidgets {
 	// Up Vector
 	//////////////////////////////////////////////////////////////////////////
 
-	static void UpVectorBuildView( float yaw, float pitch, float right[ 3 ], float up[ 3 ], float fwd[ 3 ] )
+	// Permute an internal "Y-is-up" 3-vector into the caller's "upAxis-is-up" convention,
+	// in place. upAxis: 0=X, 1=Y (no-op), 2=Z. After permutation, internal Y maps to
+	// upAxis, internal Z maps to the next axis (or X for upAxis=0). Applied to all 3D
+	// points (hemisphere, grid, axis tips) AND to the camera basis so the projection
+	// stays consistent — only the user-facing axis assignment changes.
+	static inline void UpVectorPermuteYup( int upAxis, float v[ 3 ] )
+	{
+		if ( upAxis == 2 )      { float t = v[ 1 ]; v[ 1 ] = v[ 2 ]; v[ 2 ] = t; }   // Y↔Z
+		else if ( upAxis == 0 ) { float t = v[ 0 ]; v[ 0 ] = v[ 1 ]; v[ 1 ] = t; }   // X↔Y
+		// upAxis == 1: identity
+	}
+
+	static void UpVectorBuildView( float yaw, float pitch, int upAxis, float right[ 3 ], float up[ 3 ], float fwd[ 3 ] )
 	{
 		float cy = ImCos( yaw ), sy = ImSin( yaw );
 		float cp = ImCos( pitch ), sp = ImSin( pitch );
 		right[ 0 ] = cy;   right[ 1 ] = 0.0f; right[ 2 ] = sy;
 		up[ 0 ] = -sy * sp; up[ 1 ] = cp;      up[ 2 ] = cy * sp;
 		fwd[ 0 ] = -sy * cp; fwd[ 1 ] = -sp;    fwd[ 2 ] = cy * cp;
+		UpVectorPermuteYup( upAxis, right );
+		UpVectorPermuteYup( upAxis, up );
+		UpVectorPermuteYup( upAxis, fwd );
 	}
 
 	static ImVec2 UpVectorProject( const float p[ 3 ], const float right[ 3 ], const float up[ 3 ], ImVec2 center, float radius )
@@ -22649,17 +27959,21 @@ namespace ImWidgets {
 		ImGuiID pitchKey = id ^ 0xBEEF0003;
 		int* pDragMode = window->StateStorage.GetIntRef( dragKey, 0 );
 
-		// Default view: top-down looking at hemisphere from above the default axis
-		float defaultYaw = 0.0f, defaultPitch = IM_PI * 0.5f - 0.01f;
-		if ( defaultUpAxis == 0 ) { defaultYaw = IM_PI * 0.5f; defaultPitch = IM_PI * 0.5f - 0.01f; }
-		if ( defaultUpAxis == 2 ) { defaultYaw = 0.0f; defaultPitch = 0.0f; }
+		// Default view: tilted top-down so the dome is visible (45° from straight-down
+		// instead of 90°/0° per axis like before — the old "look perfectly down" view
+		// only showed the equator silhouette, hiding the fact that the hemisphere is
+		// actually on the up-axis. A small tilt keeps the dome visible regardless of
+		// convention so the user can see "this side is the +up half-sphere".
+		float defaultYaw = 0.0f;
+		float defaultPitch = IM_PI * 0.25f;
 
 		float* pYaw = window->StateStorage.GetFloatRef( yawKey, defaultYaw );
 		float* pPitch = window->StateStorage.GetFloatRef( pitchKey, defaultPitch );
 
-		// Build view
+		// Build view (permuted into upAxis convention so the convention's up axis
+		// is the screen-up direction).
 		float vRight[ 3 ], vUp[ 3 ], vFwd[ 3 ];
-		UpVectorBuildView( *pYaw, *pPitch, vRight, vUp, vFwd );
+		UpVectorBuildView( *pYaw, *pPitch, defaultUpAxis, vRight, vUp, vFwd );
 
 		ImDrawList* dl = window->DrawList;
 		bool hovered = ImGui::ItemHoverable( disc_bb, id, g.LastItemData.ItemFlags );
@@ -22715,7 +28029,7 @@ namespace ImWidgets {
 					*pYaw -= g.IO.MouseDelta.x * sensitivity;
 					*pPitch += g.IO.MouseDelta.y * sensitivity;
 					*pPitch = ImClamp( *pPitch, -IM_PI * 0.5f + 0.01f, IM_PI * 0.5f - 0.01f );
-					UpVectorBuildView( *pYaw, *pPitch, vRight, vUp, vFwd );
+					UpVectorBuildView( *pYaw, *pPitch, defaultUpAxis, vRight, vUp, vFwd );
 				}
 				else
 				{
@@ -22736,6 +28050,14 @@ namespace ImWidgets {
 		ImVec2 lightDir2( 0.4f, -0.7f ); // screen-space light for simple shading
 		(void)lightDir2;
 
+		// Shading light, defined in the same Y-up internal space as the unpermuted
+		// hemisphere points. Permuting it once outside the loop keeps every variant
+		// (Y-up / Z-up / etc.) producing the SAME shading pattern relative to its
+		// up-axis instead of getting weird normal directions when the geometry is
+		// permuted but the light isn't.
+		float lightDir[ 3 ] = { 0.3f, 0.6f, -0.7f };
+		UpVectorPermuteYup( defaultUpAxis, lightDir );
+
 		for ( int r = 0; r < rings; r++ )
 		{
 			float lat0 = ( float )r / rings * ( IM_PI * 0.5f );
@@ -22752,14 +28074,17 @@ namespace ImWidgets {
 				float p10[ 3 ] = { cLat0 * ImCos( lon1 ), sLat0, cLat0 * ImSin( lon1 ) };
 				float p01[ 3 ] = { cLat1 * ImCos( lon0 ), sLat1, cLat1 * ImSin( lon0 ) };
 				float p11[ 3 ] = { cLat1 * ImCos( lon1 ), sLat1, cLat1 * ImSin( lon1 ) };
+				UpVectorPermuteYup( defaultUpAxis, p00 );
+				UpVectorPermuteYup( defaultUpAxis, p10 );
+				UpVectorPermuteYup( defaultUpAxis, p01 );
+				UpVectorPermuteYup( defaultUpAxis, p11 );
 
 				// Backface cull: check if facing viewer
 				float mid[ 3 ] = { ( p00[ 0 ] + p11[ 0 ] ) * 0.5f, ( p00[ 1 ] + p11[ 1 ] ) * 0.5f, ( p00[ 2 ] + p11[ 2 ] ) * 0.5f };
 				float viewDot = mid[ 0 ] * vFwd[ 0 ] + mid[ 1 ] * vFwd[ 1 ] + mid[ 2 ] * vFwd[ 2 ];
 				if ( viewDot > 0.05f ) continue;
 
-				// Simple shading: Lambertian with a fixed light
-				float lightDir[ 3 ] = { 0.3f, 0.6f, -0.7f };
+				// Simple shading: Lambertian with the (permuted) fixed light.
 				float lightDot = mid[ 0 ] * lightDir[ 0 ] + mid[ 1 ] * lightDir[ 1 ] + mid[ 2 ] * lightDir[ 2 ];
 				float brightness = ImClamp( lightDot * 0.5f + 0.5f, 0.15f, 0.85f );
 				ImU8 bv = ( ImU8 )( brightness * 255.0f );
@@ -22786,6 +28111,7 @@ namespace ImWidgets {
 			{
 				float lon = ( float )s / slices * IM_PI * 2.0f;
 				float p[ 3 ] = { cLat * ImCos( lon ), sLat, cLat * ImSin( lon ) };
+				UpVectorPermuteYup( defaultUpAxis, p );
 				float vd = p[ 0 ] * vFwd[ 0 ] + p[ 1 ] * vFwd[ 1 ] + p[ 2 ] * vFwd[ 2 ];
 				ImVec2 sp = UpVectorProject( p, vRight, vUp, discCenter, discRadius );
 				if ( s > 0 && vd < 0.0f )
@@ -22803,6 +28129,7 @@ namespace ImWidgets {
 				float lat = ( float )r2 / ( rings * 2 ) * IM_PI - IM_PI * 0.5f;
 				float cLat = ImCos( lat ), sLat = ImSin( lat );
 				float p[ 3 ] = { cLat * ImCos( lon ), sLat, cLat * ImSin( lon ) };
+				UpVectorPermuteYup( defaultUpAxis, p );
 				float vd = p[ 0 ] * vFwd[ 0 ] + p[ 1 ] * vFwd[ 1 ] + p[ 2 ] * vFwd[ 2 ];
 				ImVec2 sp = UpVectorProject( p, vRight, vUp, discCenter, discRadius );
 				if ( r2 > 0 && vd < 0.0f )
@@ -23343,7 +28670,10 @@ namespace ImWidgets {
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
+		{
+			state._LastValid = false;
 			return false;
+		}
 
 		ImGuiContext&      g     = *GImGui;
 		const ImGuiID      id    = window->GetID( label );
@@ -23363,7 +28693,10 @@ namespace ImWidgets {
 		ImRect bb( window->DC.CursorPos, window->DC.CursorPos + sz );
 		ImGui::ItemSize( bb );
 		if ( !ImGui::ItemAdd( bb, id ) )
+		{
+			state._LastValid = false;
 			return false;
+		}
 
 		const bool hovered = ImGui::IsItemHovered();
 		const ImVec2 mp = g.IO.MousePos;
@@ -23748,7 +29081,787 @@ namespace ImWidgets {
 			EndExpandedWindow();
 		}
 
+		// --- Cache last-frame transform for overlay widgets ---
+		state._LastCanvasRect = bb;
+		state._LastImageSize  = imageSize;
+		state._LastFitScale   = fitScale;
+		state._LastValid      = ( imageSize.x > 0.0f && imageSize.y > 0.0f );
+
 		return changed;
+	}
+
+	// ============================================================================
+	// Image overlays: DetectionOverlay / KeypointOverlay / TextLabelOverlay / AnnotationEditor
+	// ============================================================================
+
+	// Stable distinct color per integer id via golden-angle hue rotation.
+	static ImU32 DW_OverlayPaletteColor( int id )
+	{
+		if ( id < 0 ) id = 0;
+		float h = fmodf( (float)id * 0.6180339887f + 0.13f, 1.0f );
+		float r, g, b;
+		ImGui::ColorConvertHSVtoRGB( h, 0.72f, 0.95f, r, g, b );
+		return IM_COL32( (int)( r * 255.0f ), (int)( g * 255.0f ), (int)( b * 255.0f ), 255 );
+	}
+
+	// Blend two premultiplied-alpha-safe RGBA colors 50/50 with a chosen output alpha.
+	static ImU32 DW_BlendRGB50( ImU32 a, ImU32 b, float out_alpha )
+	{
+		int ra = ( a >> IM_COL32_R_SHIFT ) & 0xFF;
+		int ga = ( a >> IM_COL32_G_SHIFT ) & 0xFF;
+		int ba = ( a >> IM_COL32_B_SHIFT ) & 0xFF;
+		int rb = ( b >> IM_COL32_R_SHIFT ) & 0xFF;
+		int gb = ( b >> IM_COL32_G_SHIFT ) & 0xFF;
+		int bb = ( b >> IM_COL32_B_SHIFT ) & 0xFF;
+		int rr = ( ra + rb ) / 2;
+		int gg = ( ga + gb ) / 2;
+		int bl = ( ba + bb ) / 2;
+		int aa = (int)( ImClamp( out_alpha, 0.0f, 1.0f ) * 255.0f );
+		return IM_COL32( rr, gg, bl, aa );
+	}
+
+	// Apply alpha channel to a color.
+	static ImU32 DW_WithAlpha( ImU32 c, float a )
+	{
+		int aa = (int)( ImClamp( a, 0.0f, 1.0f ) * 255.0f );
+		return ( c & 0x00FFFFFFu ) | ( (ImU32)aa << IM_COL32_A_SHIFT );
+	}
+
+	//------------------------------------------------------------------
+	// DetectionOverlay
+	//------------------------------------------------------------------
+	int DetectionOverlay(
+		const char*                str_id,
+		const ImImageViewerState&  vs,
+		const ImDetectionBox*      boxes,
+		int                        box_count,
+		const char* const*         class_names,
+		int                        class_name_count,
+		const ImOverlayStyle*      style )
+	{
+		IM_UNUSED( str_id );
+		if ( !vs._LastValid || box_count <= 0 || boxes == NULL ) return -1;
+		ImOverlayStyle default_style;
+		const ImOverlayStyle& s = style ? *style : default_style;
+
+		ImDrawList* dl     = ImGui::GetWindowDrawList();
+		ImRect      canvas = vs.GetCanvasRect();
+		if ( canvas.GetWidth() <= 0.0f || canvas.GetHeight() <= 0.0f ) return -1;
+
+		dl->PushClipRect( canvas.Min, canvas.Max, true );
+
+		const float thickness = ImPlatform_LpToPx( s.box_thickness );
+		const float base_font = ImGui::GetFontSize() * s.label_font_scale;
+		ImFont* font          = ImGui::GetFont();
+
+		const ImVec2 mp        = ImGui::GetIO().MousePos;
+		const bool   canvas_hovered = ImGui::IsMouseHoveringRect( canvas.Min, canvas.Max );
+
+		int hovered_index = -1;
+		int hovered_id    = -1;
+
+		// Pass 1: hit-test (later boxes drawn on top, so pick the last-hit)
+		if ( canvas_hovered )
+		{
+			for ( int i = 0; i < box_count; i++ )
+			{
+				const ImDetectionBox& b = boxes[ i ];
+				ImVec2 tl = vs.UVToCanvas( ImVec2( b.x,       b.y       ) );
+				ImVec2 br = vs.UVToCanvas( ImVec2( b.x + b.w, b.y + b.h ) );
+				ImVec2 rmin( ImMin( tl.x, br.x ), ImMin( tl.y, br.y ) );
+				ImVec2 rmax( ImMax( tl.x, br.x ), ImMax( tl.y, br.y ) );
+				if ( mp.x >= rmin.x && mp.x <= rmax.x && mp.y >= rmin.y && mp.y <= rmax.y )
+				{
+					hovered_index = i;
+					hovered_id    = b.user_id;
+				}
+			}
+		}
+
+		// Pass 2: draw
+		for ( int i = 0; i < box_count; i++ )
+		{
+			const ImDetectionBox& b = boxes[ i ];
+			ImVec2 tl_s = vs.UVToCanvas( ImVec2( b.x,       b.y       ) );
+			ImVec2 br_s = vs.UVToCanvas( ImVec2( b.x + b.w, b.y + b.h ) );
+			ImVec2 tl( ImMin( tl_s.x, br_s.x ), ImMin( tl_s.y, br_s.y ) );
+			ImVec2 br( ImMax( tl_s.x, br_s.x ), ImMax( tl_s.y, br_s.y ) );
+
+			ImU32 col = s.default_color ? s.default_color : DW_OverlayPaletteColor( b.class_id );
+			ImU32 fill = DW_WithAlpha( col, 0.10f );
+			dl->AddRectFilled( tl, br, fill );
+
+			float this_t = ( i == hovered_index ) ? thickness * 2.0f : thickness;
+			dl->AddRect( tl, br, col, 0.0f, 0, this_t );
+
+			// Label chip
+			if ( br.x - tl.x < 20.0f ) continue;
+
+			char label[ 128 ] = "";
+			int  cursor       = 0;
+			if ( s.show_class_label )
+			{
+				const char* cname = NULL;
+				if ( b.class_id >= 0 && b.class_id < class_name_count && class_names )
+					cname = class_names[ b.class_id ];
+				if ( cname )
+					cursor += ImFormatString( label + cursor, sizeof( label ) - cursor, "%s", cname );
+				else if ( b.class_id >= 0 )
+					cursor += ImFormatString( label + cursor, sizeof( label ) - cursor, "class %d", b.class_id );
+			}
+			if ( s.show_score && b.score >= 0.0f )
+			{
+				const char* fmt = ( cursor > 0 ) ? " %.0f%%" : "%.0f%%";
+				cursor += ImFormatString( label + cursor, sizeof( label ) - cursor, fmt, b.score * 100.0f );
+			}
+			if ( cursor == 0 ) continue;
+
+			ImVec2 ts = font->CalcTextSizeA( base_font, FLT_MAX, 0.0f, label );
+			if ( ts.x > br.x - tl.x - 4.0f ) continue; // too narrow
+
+			ImVec2 pad( 4.0f, 2.0f );
+			ImVec2 chip_min( tl.x, tl.y - ts.y - pad.y * 2.0f );
+			ImVec2 chip_max( tl.x + ts.x + pad.x * 2.0f, tl.y );
+			if ( chip_min.y < canvas.Min.y )
+			{
+				chip_min = tl;
+				chip_max = ImVec2( tl.x + ts.x + pad.x * 2.0f, tl.y + ts.y + pad.y * 2.0f );
+			}
+			float bg_alpha = ( i == hovered_index ) ? 1.0f : s.label_bg_alpha;
+			dl->AddRectFilled( chip_min, chip_max, DW_WithAlpha( col, bg_alpha ) );
+			dl->AddText( font, base_font, ImVec2( chip_min.x + pad.x, chip_min.y + pad.y ),
+						 IM_COL32_WHITE, label );
+		}
+
+		if ( canvas_hovered && hovered_index >= 0 )
+			ImGui::SetMouseCursor( ImGuiMouseCursor_Arrow );
+
+		dl->PopClipRect();
+		return hovered_id;
+	}
+
+	//------------------------------------------------------------------
+	// KeypointOverlay
+	//------------------------------------------------------------------
+	void KeypointOverlay(
+		const char*                str_id,
+		const ImImageViewerState&  vs,
+		const ImKeypoint*          keypoints,
+		int                        keypoint_count,
+		const ImSkeletonEdge*      edges,
+		int                        edge_count,
+		const char* const*         part_names,
+		int                        part_name_count,
+		const ImOverlayStyle*      style )
+	{
+		IM_UNUSED( str_id );
+		if ( !vs._LastValid || keypoint_count <= 0 || keypoints == NULL ) return;
+		ImOverlayStyle default_style;
+		const ImOverlayStyle& s = style ? *style : default_style;
+
+		ImDrawList* dl     = ImGui::GetWindowDrawList();
+		ImRect      canvas = vs.GetCanvasRect();
+		if ( canvas.GetWidth() <= 0.0f || canvas.GetHeight() <= 0.0f ) return;
+
+		dl->PushClipRect( canvas.Min, canvas.Max, true );
+
+		const float base_radius = ImPlatform_LpToPx( s.point_radius );
+		const float edge_thick  = ImPlatform_LpToPx( s.edge_thickness );
+
+		// Precompute screen positions + colors (small allocation avoided by using ImDrawList vtx? just use a stack buffer.)
+		ImVector<ImVec2> pos;
+		ImVector<ImU32>  col;
+		pos.resize( keypoint_count );
+		col.resize( keypoint_count );
+		for ( int i = 0; i < keypoint_count; i++ )
+		{
+			pos[ i ] = vs.UVToCanvas( ImVec2( keypoints[ i ].x, keypoints[ i ].y ) );
+			col[ i ] = s.default_color ? s.default_color : DW_OverlayPaletteColor( keypoints[ i ].part_id );
+		}
+
+		// Edges (drawn under points)
+		for ( int e = 0; e < edge_count; e++ )
+		{
+			int a = edges[ e ].part_a;
+			int bb = edges[ e ].part_b;
+			if ( a < 0 || a >= keypoint_count || bb < 0 || bb >= keypoint_count ) continue;
+			float ca = keypoints[ a  ].confidence;
+			float cb = keypoints[ bb ].confidence;
+			if ( ca <= 0.0f || cb <= 0.0f ) continue;
+			ImU32 line_col = DW_BlendRGB50( col[ a ], col[ bb ], ImMin( ca, cb ) );
+			dl->AddLine( pos[ a ], pos[ bb ], line_col, edge_thick );
+		}
+
+		// Points
+		const ImVec2 mp = ImGui::GetIO().MousePos;
+		int hovered_idx = -1;
+		float best_ds   = base_radius * base_radius;
+
+		for ( int i = 0; i < keypoint_count; i++ )
+		{
+			float c = keypoints[ i ].confidence;
+			if ( c <= 0.0f ) continue;
+			float r     = base_radius;
+			float alpha = 1.0f;
+			if ( c < 0.3f ) { r *= 0.5f; alpha = 0.3f; }
+			dl->AddCircleFilled( pos[ i ], r, DW_WithAlpha( col[ i ], alpha ) );
+			dl->AddCircle( pos[ i ], r, IM_COL32( 0, 0, 0, 200 ), 0, 1.0f );
+
+			ImVec2 d = ImVec2( pos[ i ].x - mp.x, pos[ i ].y - mp.y );
+			float ds = d.x * d.x + d.y * d.y;
+			if ( ds <= best_ds )
+			{
+				best_ds     = ds;
+				hovered_idx = i;
+			}
+		}
+
+		if ( hovered_idx >= 0 && ImGui::IsMouseHoveringRect( canvas.Min, canvas.Max ) )
+		{
+			const ImKeypoint& k = keypoints[ hovered_idx ];
+			const char* pn = ( part_names && k.part_id >= 0 && k.part_id < part_name_count )
+							 ? part_names[ k.part_id ] : NULL;
+			ImGui::BeginTooltip();
+			if ( pn ) ImGui::Text( "%s (%.0f%%)", pn, k.confidence * 100.0f );
+			else      ImGui::Text( "part %d (%.0f%%)", k.part_id, k.confidence * 100.0f );
+			ImGui::EndTooltip();
+		}
+
+		dl->PopClipRect();
+	}
+
+	//------------------------------------------------------------------
+	// TextLabelOverlay
+	//------------------------------------------------------------------
+	void TextLabelOverlay(
+		const char*                str_id,
+		const ImImageViewerState&  vs,
+		const ImTextLabel*         labels,
+		int                        label_count )
+	{
+		IM_UNUSED( str_id );
+		if ( !vs._LastValid || label_count <= 0 || labels == NULL ) return;
+
+		ImDrawList* dl     = ImGui::GetWindowDrawList();
+		ImRect      canvas = vs.GetCanvasRect();
+		if ( canvas.GetWidth() <= 0.0f || canvas.GetHeight() <= 0.0f ) return;
+
+		dl->PushClipRect( canvas.Min, canvas.Max, true );
+		ImFont* font       = ImGui::GetFont();
+		float   base_font  = ImGui::GetFontSize();
+
+		for ( int i = 0; i < label_count; i++ )
+		{
+			const ImTextLabel& lb = labels[ i ];
+			if ( lb.text == NULL || lb.text[ 0 ] == '\0' ) continue;
+
+			ImVec2 anchor = vs.UVToCanvas( ImVec2( lb.x, lb.y ) );
+			if ( anchor.x < canvas.Min.x || anchor.x > canvas.Max.x
+			  || anchor.y < canvas.Min.y || anchor.y > canvas.Max.y )
+				continue;
+
+			float scale = ( lb.font_scale > 0.0f ) ? lb.font_scale : 1.0f;
+			float fs    = base_font * scale;
+			ImVec2 ts   = font->CalcTextSizeA( fs, FLT_MAX, 0.0f, lb.text );
+
+			int a = lb.anchor;
+			if ( a < 0 || a >= ImTextLabelAnchor_COUNT ) a = ImTextLabelAnchor_TopLeft;
+			int cx = a % 3;
+			int ry = a / 3;
+			ImVec2 pos = anchor;
+			if ( cx == 1 ) pos.x -= ts.x * 0.5f;
+			else if ( cx == 2 ) pos.x -= ts.x;
+			if ( ry == 1 ) pos.y -= ts.y * 0.5f;
+			else if ( ry == 2 ) pos.y -= ts.y;
+
+			ImU32 text_col = lb.color ? lb.color : IM_COL32_WHITE;
+
+			// Background chip: only for multi-char labels
+			if ( lb.text[ 0 ] && lb.text[ 1 ] )
+			{
+				ImVec2 pad( 3.0f, 1.0f );
+				dl->AddRectFilled( ImVec2( pos.x - pad.x, pos.y - pad.y ),
+								   ImVec2( pos.x + ts.x + pad.x, pos.y + ts.y + pad.y ),
+								   IM_COL32( 0, 0, 0, 128 ) );
+			}
+
+			// 1px drop shadow + text
+			dl->AddText( font, fs, ImVec2( pos.x + 1.0f, pos.y + 1.0f ),
+						 IM_COL32( 0, 0, 0, 220 ), lb.text );
+			dl->AddText( font, fs, pos, text_col, lb.text );
+		}
+
+		dl->PopClipRect();
+	}
+
+	//------------------------------------------------------------------
+	// AnnotationEditor
+	//------------------------------------------------------------------
+	// 8 resize handles: 0=TL 1=TC 2=TR 3=ML 4=MR 5=BL 6=BC 7=BR
+	static ImVec2 DW_AE_HandlePos( const ImVec2& tl, const ImVec2& br, int h )
+	{
+		ImVec2 mid( ( tl.x + br.x ) * 0.5f, ( tl.y + br.y ) * 0.5f );
+		switch ( h )
+		{
+			case 0: return ImVec2( tl.x, tl.y );
+			case 1: return ImVec2( mid.x, tl.y );
+			case 2: return ImVec2( br.x, tl.y );
+			case 3: return ImVec2( tl.x, mid.y );
+			case 4: return ImVec2( br.x, mid.y );
+			case 5: return ImVec2( tl.x, br.y );
+			case 6: return ImVec2( mid.x, br.y );
+			case 7: return ImVec2( br.x, br.y );
+		}
+		return mid;
+	}
+
+	static ImGuiMouseCursor_ DW_AE_HandleCursor( int h )
+	{
+		switch ( h )
+		{
+			case 0: case 7: return ImGuiMouseCursor_ResizeNWSE;
+			case 2: case 5: return ImGuiMouseCursor_ResizeNESW;
+			case 1: case 6: return ImGuiMouseCursor_ResizeNS;
+			case 3: case 4: return ImGuiMouseCursor_ResizeEW;
+		}
+		return ImGuiMouseCursor_Arrow;
+	}
+
+	static bool DW_AE_PointInCircle( const ImVec2& p, const ImVec2& c, float r )
+	{
+		float dx = p.x - c.x, dy = p.y - c.y;
+		return ( dx * dx + dy * dy ) <= r * r;
+	}
+
+	ImAnnotationResult AnnotationEditor(
+		const char*                str_id,
+		const ImImageViewerState&  vs,
+		ImAnnotationEditorState&   es,
+		const ImDetectionBox*      boxes,
+		int                        box_count,
+		const char* const*         class_names,
+		int                        class_name_count,
+		const ImOverlayStyle*      style )
+	{
+		ImAnnotationResult result;
+		result.action  = ImAnnotationAction_None;
+		result.user_id = -1;
+		result.new_value.x = result.new_value.y = result.new_value.w = result.new_value.h = 0.0f;
+		result.new_value.score = -1.0f;
+		result.new_value.class_id = -1;
+		result.new_value.user_id  = -1;
+		result.new_label[ 0 ] = '\0';
+
+		if ( !vs._LastValid ) return result;
+
+		ImOverlayStyle default_style;
+		const ImOverlayStyle& s = style ? *style : default_style;
+
+		ImGuiContext& g       = *GImGui;
+		ImDrawList*   dl      = ImGui::GetWindowDrawList();
+		ImRect        canvas  = vs.GetCanvasRect();
+		if ( canvas.GetWidth() <= 0.0f || canvas.GetHeight() <= 0.0f ) return result;
+
+		ImGuiID id = ImGui::GetCurrentWindow()->GetID( str_id );
+		ImGui::PushID( str_id );
+
+		const float thickness    = ImPlatform_LpToPx( s.box_thickness );
+		const float handle_r     = ImPlatform_LpToPx( 5.0f );  // 10px diameter -> radius 5
+		const float handle_hit_r = ImPlatform_LpToPx( 8.0f );  // slightly larger hit target
+		const ImVec2 mp = g.IO.MousePos;
+		const bool canvas_hovered = ImGui::IsMouseHoveringRect( canvas.Min, canvas.Max )
+									&& g.HoveredWindow == ImGui::GetCurrentWindow();
+
+		dl->PushClipRect( canvas.Min, canvas.Max, true );
+
+		// --- Hit-test: hovered handle (if a box is selected) then hovered box ---
+		int hovered_index  = -1;
+		int hovered_handle = -1;
+		int selected_index = -1;
+
+		for ( int i = 0; i < box_count; i++ )
+			if ( boxes[ i ].user_id == es.SelectedId ) { selected_index = i; break; }
+
+		if ( canvas_hovered && es._ActiveMode == 0 )
+		{
+			// Handles first (only if a box is selected)
+			if ( selected_index >= 0 )
+			{
+				const ImDetectionBox& b = boxes[ selected_index ];
+				ImVec2 tl = vs.UVToCanvas( ImVec2( b.x,       b.y       ) );
+				ImVec2 br = vs.UVToCanvas( ImVec2( b.x + b.w, b.y + b.h ) );
+				ImVec2 tt( ImMin( tl.x, br.x ), ImMin( tl.y, br.y ) );
+				ImVec2 mm( ImMax( tl.x, br.x ), ImMax( tl.y, br.y ) );
+				for ( int h = 0; h < 8; h++ )
+				{
+					ImVec2 hp = DW_AE_HandlePos( tt, mm, h );
+					if ( DW_AE_PointInCircle( mp, hp, handle_hit_r ) )
+					{
+						hovered_handle = h;
+						break;
+					}
+				}
+			}
+			if ( hovered_handle < 0 )
+			{
+				// Boxes: pick last (topmost) that contains mouse
+				for ( int i = 0; i < box_count; i++ )
+				{
+					const ImDetectionBox& b = boxes[ i ];
+					ImVec2 tl = vs.UVToCanvas( ImVec2( b.x,       b.y       ) );
+					ImVec2 br = vs.UVToCanvas( ImVec2( b.x + b.w, b.y + b.h ) );
+					ImVec2 tt( ImMin( tl.x, br.x ), ImMin( tl.y, br.y ) );
+					ImVec2 mm( ImMax( tl.x, br.x ), ImMax( tl.y, br.y ) );
+					if ( mp.x >= tt.x && mp.x <= mm.x && mp.y >= tt.y && mp.y <= mm.y )
+						hovered_index = i;
+				}
+			}
+		}
+		es.HoveredId = ( hovered_index >= 0 ) ? boxes[ hovered_index ].user_id : -1;
+
+		// --- Escape: cancel in-progress ---
+		if ( es._ActiveMode != 0 && ImGui::IsKeyPressed( ImGuiKey_Escape, false ) )
+		{
+			if ( es._ActiveMode == 1 || es._ActiveMode == 2 )
+			{
+				// Move/resize: revert done by NOT emitting anything (caller was never given the edit)
+			}
+			es._ActiveMode   = 0;
+			es._ActiveIndex  = -1;
+			es._ActiveHandle = -1;
+			es.Creating      = false;
+		}
+
+		// --- Start of interaction on click ---
+		if ( canvas_hovered && g.IO.MouseClicked[ 0 ] && !g.IO.MouseDoubleClicked[ 0 ] && es._ActiveMode == 0 )
+		{
+			if ( hovered_handle >= 0 && selected_index >= 0 )
+			{
+				es._ActiveMode   = 2;
+				es._ActiveIndex  = selected_index;
+				es._ActiveHandle = hovered_handle;
+				es._OrigBox      = boxes[ selected_index ];
+				es._DragStartUV  = vs.CanvasToUV( mp );
+				es._DragCurrUV   = es._DragStartUV;
+				ImGui::ClearActiveID();       // release ImageViewer's pan grab from this frame
+				ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+			}
+			else if ( hovered_index >= 0 )
+			{
+				es.SelectedId    = boxes[ hovered_index ].user_id;
+				es._ActiveMode   = 1;
+				es._ActiveIndex  = hovered_index;
+				es._ActiveHandle = -1;
+				es._OrigBox      = boxes[ hovered_index ];
+				es._DragStartUV  = vs.CanvasToUV( mp );
+				es._DragCurrUV   = es._DragStartUV;
+				ImGui::ClearActiveID();
+				ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+			}
+			else
+			{
+				// Empty canvas -> begin rubber-band create
+				es.SelectedId    = -1;
+				es._ActiveMode   = 3;
+				es._ActiveIndex  = -1;
+				es._ActiveHandle = -1;
+				es.Creating      = true;
+				es._DragStartUV  = vs.CanvasToUV( mp );
+				es._DragCurrUV   = es._DragStartUV;
+				ImGui::ClearActiveID();
+				ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+			}
+		}
+		else if ( canvas_hovered && g.IO.MouseClicked[ 0 ] && hovered_index < 0 && hovered_handle < 0
+				  && es._ActiveMode == 0 && !g.IO.MouseDoubleClicked[ 0 ] )
+		{
+			// noop -- covered above
+		}
+		else if ( g.IO.MouseClicked[ 0 ] && !canvas_hovered && es._ActiveMode == 0 )
+		{
+			// click outside canvas -> deselect
+			es.SelectedId = -1;
+		}
+
+		// --- Delete key: delete selected ---
+		if ( selected_index >= 0 && es._ActiveMode == 0
+			 && ImGui::IsKeyPressed( ImGuiKey_Delete, false ) )
+		{
+			result.action  = ImAnnotationAction_Delete;
+			result.user_id = boxes[ selected_index ].user_id;
+			es.SelectedId  = -1;
+		}
+
+		// --- Double-click: label edit ---
+		if ( canvas_hovered && g.IO.MouseDoubleClicked[ 0 ] && hovered_index >= 0 && es._ActiveMode == 0 )
+		{
+			es._EditingLabel = true;
+			es._EditingId    = boxes[ hovered_index ].user_id;
+			es.SelectedId    = boxes[ hovered_index ].user_id;
+			ImGui::OpenPopup( "##ae_label_edit" );
+		}
+
+		// --- Active drag: update current UV, emit on release ---
+		if ( es._ActiveMode != 0 )
+		{
+			es._DragCurrUV = vs.CanvasToUV( mp );
+
+			// Ctrl constraint on move: axis-lock
+			bool ctrl  = g.IO.KeyCtrl;
+			bool shift = g.IO.KeyShift;
+
+			if ( es._ActiveMode == 1 )       // Move
+			{
+				float dx = es._DragCurrUV.x - es._DragStartUV.x;
+				float dy = es._DragCurrUV.y - es._DragStartUV.y;
+				if ( ctrl )
+				{
+					if ( fabsf( dx ) > fabsf( dy ) ) dy = 0.0f; else dx = 0.0f;
+				}
+				result.new_value = es._OrigBox;
+				result.new_value.x = ImClamp( es._OrigBox.x + dx, 0.0f, 1.0f - es._OrigBox.w );
+				result.new_value.y = ImClamp( es._OrigBox.y + dy, 0.0f, 1.0f - es._OrigBox.h );
+				ImGui::SetMouseCursor( ImGuiMouseCursor_ResizeAll );
+			}
+			else if ( es._ActiveMode == 2 )   // Resize
+			{
+				result.new_value = es._OrigBox;
+				float x0 = es._OrigBox.x;
+				float y0 = es._OrigBox.y;
+				float x1 = x0 + es._OrigBox.w;
+				float y1 = y0 + es._OrigBox.h;
+				float u  = ImClamp( es._DragCurrUV.x, 0.0f, 1.0f );
+				float v  = ImClamp( es._DragCurrUV.y, 0.0f, 1.0f );
+				int   h  = es._ActiveHandle;
+				if ( h == 0 || h == 3 || h == 5 ) x0 = u;
+				if ( h == 2 || h == 4 || h == 7 ) x1 = u;
+				if ( h == 0 || h == 1 || h == 2 ) y0 = v;
+				if ( h == 5 || h == 6 || h == 7 ) y1 = v;
+				if ( x1 < x0 ) { float t = x0; x0 = x1; x1 = t; }
+				if ( y1 < y0 ) { float t = y0; y0 = y1; y1 = t; }
+				// Enforce minimum 5x5px screen size
+				float min_uv_x = 5.0f / ( vs.GetZoomScale() * ImMax( vs._LastImageSize.x, 1.0f ) );
+				float min_uv_y = 5.0f / ( vs.GetZoomScale() * ImMax( vs._LastImageSize.y, 1.0f ) );
+				if ( x1 - x0 < min_uv_x ) x1 = x0 + min_uv_x;
+				if ( y1 - y0 < min_uv_y ) y1 = y0 + min_uv_y;
+				result.new_value.x = x0;
+				result.new_value.y = y0;
+				result.new_value.w = x1 - x0;
+				result.new_value.h = y1 - y0;
+				ImGui::SetMouseCursor( DW_AE_HandleCursor( h ) );
+			}
+			else if ( es._ActiveMode == 3 )   // Create
+			{
+				float x0 = ImMin( es._DragStartUV.x, es._DragCurrUV.x );
+				float y0 = ImMin( es._DragStartUV.y, es._DragCurrUV.y );
+				float x1 = ImMax( es._DragStartUV.x, es._DragCurrUV.x );
+				float y1 = ImMax( es._DragStartUV.y, es._DragCurrUV.y );
+				x0 = ImClamp( x0, 0.0f, 1.0f );
+				y0 = ImClamp( y0, 0.0f, 1.0f );
+				x1 = ImClamp( x1, 0.0f, 1.0f );
+				y1 = ImClamp( y1, 0.0f, 1.0f );
+				float wr = x1 - x0;
+				float hr = y1 - y0;
+				if ( shift )
+				{
+					// Square constraint
+					float m = ImMin( wr, hr );
+					if ( es._DragCurrUV.x >= es._DragStartUV.x ) x1 = x0 + m; else x0 = x1 - m;
+					if ( es._DragCurrUV.y >= es._DragStartUV.y ) y1 = y0 + m; else y0 = y1 - m;
+				}
+				result.new_value.x = x0;
+				result.new_value.y = y0;
+				result.new_value.w = x1 - x0;
+				result.new_value.h = y1 - y0;
+				result.new_value.score    = -1.0f;
+				result.new_value.class_id = -1;
+				result.new_value.user_id  = -1;
+				ImGui::SetMouseCursor( ImGuiMouseCursor_Hand );
+			}
+
+			// Release: emit
+			if ( ImGui::IsMouseReleased( 0 ) )
+			{
+				if ( es._ActiveMode == 1 )
+				{
+					result.action  = ImAnnotationAction_Move;
+					result.user_id = es._OrigBox.user_id;
+				}
+				else if ( es._ActiveMode == 2 )
+				{
+					result.action  = ImAnnotationAction_Resize;
+					result.user_id = es._OrigBox.user_id;
+				}
+				else if ( es._ActiveMode == 3 )
+				{
+					if ( result.new_value.w >= 0.005f && result.new_value.h >= 0.005f )
+					{
+						result.action  = ImAnnotationAction_Create;
+						result.user_id = -1;
+					}
+				}
+				es._ActiveMode   = 0;
+				es._ActiveIndex  = -1;
+				es._ActiveHandle = -1;
+				es.Creating      = false;
+			}
+		}
+
+		// --- Cursor when hovering handles / boxes / empty ---
+		if ( canvas_hovered && es._ActiveMode == 0 )
+		{
+			if ( hovered_handle >= 0 )       ImGui::SetMouseCursor( DW_AE_HandleCursor( hovered_handle ) );
+			else if ( hovered_index >= 0 )   ImGui::SetMouseCursor( ImGuiMouseCursor_ResizeAll );
+			else                             ImGui::SetMouseCursor( ImGuiMouseCursor_Hand );
+		}
+
+		// --- Draw all boxes ---
+		for ( int i = 0; i < box_count; i++ )
+		{
+			const ImDetectionBox& b = boxes[ i ];
+			ImVec2 tl_s = vs.UVToCanvas( ImVec2( b.x,       b.y       ) );
+			ImVec2 br_s = vs.UVToCanvas( ImVec2( b.x + b.w, b.y + b.h ) );
+			ImVec2 tl( ImMin( tl_s.x, br_s.x ), ImMin( tl_s.y, br_s.y ) );
+			ImVec2 br( ImMax( tl_s.x, br_s.x ), ImMax( tl_s.y, br_s.y ) );
+
+			ImU32 col = s.default_color ? s.default_color : DW_OverlayPaletteColor( b.class_id );
+			bool  is_selected = ( b.user_id == es.SelectedId );
+
+			dl->AddRectFilled( tl, br, DW_WithAlpha( col, is_selected ? 0.18f : 0.10f ) );
+
+			if ( is_selected )
+			{
+				// Dashed border via two-color repeated segments (simple: draw two rects with gaps)
+				// Simpler: solid thicker border with distinctive color
+				dl->AddRect( tl, br, col, 0.0f, 0, thickness * 1.5f );
+				dl->AddRect( ImVec2( tl.x - 1.0f, tl.y - 1.0f ),
+							 ImVec2( br.x + 1.0f, br.y + 1.0f ),
+							 IM_COL32( 255, 255, 255, 200 ), 0.0f, 0, 1.0f );
+			}
+			else
+			{
+				float t = ( b.user_id == es.HoveredId ) ? thickness * 2.0f : thickness;
+				dl->AddRect( tl, br, col, 0.0f, 0, t );
+			}
+
+			// Class label chip (small, top-left)
+			if ( br.x - tl.x >= 20.0f )
+			{
+				char label[ 128 ] = "";
+				const char* cname = ( b.class_id >= 0 && b.class_id < class_name_count && class_names )
+									? class_names[ b.class_id ] : NULL;
+				if ( cname )                     ImFormatString( label, sizeof( label ), "%s", cname );
+				else if ( b.class_id >= 0 )      ImFormatString( label, sizeof( label ), "class %d", b.class_id );
+				else                             ImFormatString( label, sizeof( label ), "id %d", b.user_id );
+
+				ImFont* font = ImGui::GetFont();
+				float   fs   = ImGui::GetFontSize() * s.label_font_scale;
+				ImVec2  ts   = font->CalcTextSizeA( fs, FLT_MAX, 0.0f, label );
+				ImVec2  pad( 4.0f, 2.0f );
+				ImVec2  chip_min( tl.x, tl.y - ts.y - pad.y * 2.0f );
+				ImVec2  chip_max( tl.x + ts.x + pad.x * 2.0f, tl.y );
+				if ( chip_min.y < canvas.Min.y )
+				{
+					chip_min = tl;
+					chip_max = ImVec2( tl.x + ts.x + pad.x * 2.0f, tl.y + ts.y + pad.y * 2.0f );
+				}
+				dl->AddRectFilled( chip_min, chip_max, DW_WithAlpha( col, s.label_bg_alpha ) );
+				dl->AddText( font, fs, ImVec2( chip_min.x + pad.x, chip_min.y + pad.y ),
+							 IM_COL32_WHITE, label );
+			}
+		}
+
+		// --- Draw resize handles for selected ---
+		if ( selected_index >= 0 && es._ActiveMode != 3 )
+		{
+			const ImDetectionBox& b = boxes[ selected_index ];
+			ImVec2 tl_s = vs.UVToCanvas( ImVec2( b.x,       b.y       ) );
+			ImVec2 br_s = vs.UVToCanvas( ImVec2( b.x + b.w, b.y + b.h ) );
+			ImVec2 tt( ImMin( tl_s.x, br_s.x ), ImMin( tl_s.y, br_s.y ) );
+			ImVec2 mm( ImMax( tl_s.x, br_s.x ), ImMax( tl_s.y, br_s.y ) );
+			for ( int h = 0; h < 8; h++ )
+			{
+				ImVec2 hp = DW_AE_HandlePos( tt, mm, h );
+				float  r  = ( h == hovered_handle ) ? handle_r * 1.25f : handle_r;
+				dl->AddCircleFilled( hp, r, IM_COL32_WHITE );
+				dl->AddCircle( hp, r, IM_COL32( 0, 0, 0, 220 ), 0, 1.0f );
+			}
+		}
+
+		// --- Rubber-band create preview ---
+		if ( es._ActiveMode == 3 )
+		{
+			ImVec2 a = vs.UVToCanvas( es._DragStartUV );
+			ImVec2 b = vs.UVToCanvas( es._DragCurrUV );
+			ImVec2 tl( ImMin( a.x, b.x ), ImMin( a.y, b.y ) );
+			ImVec2 br( ImMax( a.x, b.x ), ImMax( a.y, b.y ) );
+			ImU32 col = IM_COL32( 90, 210, 255, 255 );
+			dl->AddRectFilled( tl, br, DW_WithAlpha( col, 0.25f ) );
+			dl->AddRect( tl, br, col, 0.0f, 0, thickness );
+		}
+
+		dl->PopClipRect();
+
+		// --- Right-click context menu ---
+		if ( canvas_hovered && ImGui::IsMouseClicked( 1 ) && hovered_index >= 0 && es._ActiveMode == 0 )
+		{
+			es.SelectedId = boxes[ hovered_index ].user_id;
+			ImGui::OpenPopup( "##ae_ctx" );
+		}
+		if ( ImGui::BeginPopup( "##ae_ctx" ) )
+		{
+			int sel = -1;
+			for ( int i = 0; i < box_count; i++ )
+				if ( boxes[ i ].user_id == es.SelectedId ) { sel = i; break; }
+			if ( sel >= 0 )
+			{
+				if ( ImGui::MenuItem( "Edit label" ) )
+				{
+					es._EditingLabel = true;
+					es._EditingId    = boxes[ sel ].user_id;
+					ImGui::CloseCurrentPopup();
+					ImGui::OpenPopup( "##ae_label_edit" );
+				}
+				if ( ImGui::MenuItem( "Delete" ) )
+				{
+					result.action  = ImAnnotationAction_Delete;
+					result.user_id = boxes[ sel ].user_id;
+					es.SelectedId  = -1;
+				}
+				char id_buf[ 32 ];
+				ImFormatString( id_buf, sizeof( id_buf ), "id: %d", boxes[ sel ].user_id );
+				ImGui::Separator();
+				ImGui::TextDisabled( "%s", id_buf );
+			}
+			ImGui::EndPopup();
+		}
+
+		// --- Inline label editor popup ---
+		if ( ImGui::BeginPopup( "##ae_label_edit" ) )
+		{
+			static char buf[ 128 ] = "";
+			ImGui::TextUnformatted( "New label" );
+			ImGui::SetKeyboardFocusHere();
+			if ( ImGui::InputText( "##lbl", buf, sizeof( buf ),
+								   ImGuiInputTextFlags_EnterReturnsTrue ) )
+			{
+				result.action  = ImAnnotationAction_LabelEdit;
+				result.user_id = es._EditingId;
+				ImStrncpy( result.new_label, buf, sizeof( result.new_label ) );
+				buf[ 0 ] = '\0';
+				es._EditingLabel = false;
+				es._EditingId    = -1;
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndPopup();
+		}
+		else
+		{
+			es._EditingLabel = false;
+		}
+
+		ImGui::PopID();
+		return result;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -25928,6 +32041,47 @@ namespace ImWidgets
                                         | ImGuiWindowFlags_AlwaysAutoResize);
     }
     void EndPrecisionPopup() { ImGui::EndPopup(); }
+
+    // Shared helper used by SliderRing / SliderSpline / their gradient variants:
+    // detects Ctrl+Click or double-click on a hovered widget area and opens a
+    // tiny popup with a single InputScalar bound to the slider's value. Returns
+    // true if the popup committed an edit (caller should fold this into its
+    // value-changed flag).
+    // Opens a precision popup when the user Ctrl+clicks or double-clicks inside
+    // `labelRect` (the rect of the rendered value text). Caller passes the rect
+    // they used to draw the readout, so the popup trigger lines up with the
+    // visible numeric label and doesn't conflict with slider-drag clicks.
+    bool DW_SliderScalarPopup(
+        ImRect const& labelRect, ImGuiID id,
+        ImGuiDataType data_type, void* p_value, void const* p_min, void const* p_max,
+        char const* axisLabel )
+    {
+        ImGuiContext& g = *GImGui;
+        bool labelHovered = labelRect.Contains( g.IO.MousePos );
+        bool trigger = labelHovered && (
+            ( g.IO.KeyCtrl && ImGui::IsMouseClicked( 0 ) )
+            || ImGui::IsMouseDoubleClicked( 0 ) );
+        char popId[ 32 ];
+        ImFormatString( popId, sizeof( popId ), "##slprec_%08X", (unsigned)id );
+        if ( trigger )
+        {
+            ImGui::ClearActiveID();
+            ImGui::OpenPopup( popId );
+        }
+        bool changed = false;
+        if ( BeginPrecisionPopup( popId, g.IO.MousePos ) )
+        {
+            ImGui::SetNextItemWidth( LpToPx( GetStyle().PrecisionPopup_InputWidth ) );
+            ImGui::InputScalar( axisLabel, data_type, p_value, NULL, NULL, NULL, ImGuiInputTextFlags_AutoSelectAll );
+            if ( ImGui::IsItemDeactivatedAfterEdit() )
+            {
+                ClampScalar( data_type, p_value, (void*)p_min, (void*)p_max );
+                changed = true;
+            }
+            EndPrecisionPopup();
+        }
+        return changed;
+    }
 
     bool PrecisionFloat(const char* label, float* v, float step,
                         float v_min, float v_max, const char* fmt)
@@ -28625,7 +34779,8 @@ namespace ImWidgets
 
         // Lazy-init the shader the first time the widget is used (mirrors ImageInspector).
         if (gs_pContext && gs_pContext->lookDevInspectorShader.program == NULL)
-            CreateInternalShader(&gs_pContext->lookDevInspectorShader, "lookdev_inspector", 0, NULL, 0, NULL);
+            CreateInternalShader(&gs_pContext->lookDevInspectorShader, "lookdev_inspector", 0, NULL, 0, NULL,
+                                 nullptr, nullptr, IMPLATFORM_SHADER_COMPILE_OPTIMIZATION_LOW);
         bool have_shader = gs_pContext
             && (uintptr_t)gs_pContext->lookDevInspectorShader.program >= 0x10000;
         if (have_shader && tex_a != ImTextureID_Invalid && tex_b != ImTextureID_Invalid)
@@ -28862,7 +35017,8 @@ namespace ImWidgets
         dl->PushClipRect(bb.Min, bb.Max, true);
 
         if (gs_pContext && gs_pContext->deltaECompareShader.program == NULL)
-            CreateInternalShader(&gs_pContext->deltaECompareShader, "delta_e_compare", 0, NULL, 0, NULL);
+            CreateInternalShader(&gs_pContext->deltaECompareShader, "delta_e_compare", 0, NULL, 0, NULL,
+                                 nullptr, nullptr, IMPLATFORM_SHADER_COMPILE_OPTIMIZATION_LOW);
         bool have_shader = gs_pContext
             && (uintptr_t)gs_pContext->deltaECompareShader.program >= 0x10000;
         if (have_shader && tex_a != ImTextureID_Invalid && tex_b != ImTextureID_Invalid)
@@ -29202,7 +35358,8 @@ namespace ImWidgets
             // Ensure Texture3D cached and up-to-date.
             bool have_t3d_support = ImPlatform_SupportsTexture3D();
             if (gs_pContext && gs_pContext->volumeViewerShader.program == NULL)
-                CreateInternalShader(&gs_pContext->volumeViewerShader, "volume_viewer", 0, NULL, 0, NULL);
+                CreateInternalShader(&gs_pContext->volumeViewerShader, "volume_viewer", 0, NULL, 0, NULL,
+                                     nullptr, nullptr, IMPLATFORM_SHADER_COMPILE_OPTIMIZATION_LOW);
             bool shader_ok = gs_pContext
                 && (uintptr_t)gs_pContext->volumeViewerShader.program >= 0x10000;
             if (have_t3d_support && shader_ok)
@@ -29435,6 +35592,3300 @@ namespace ImWidgets
         IM_UNUSED(label);
         ImGui::PopID();
         return changed;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Range Slider (1D two-handle min/max, no gradient)
+    //////////////////////////////////////////////////////////////////////////
+    static ImGuiID RangeSlider_ActiveHandleKey( ImGuiID id ) { return id ^ 0x0BBCCDDEu; }
+    static ImGuiID RangeSlider_InitMtKey      ( ImGuiID id ) { return id ^ 0x0BBCCDDFu; }
+    static ImGuiID RangeSlider_InitLoKey      ( ImGuiID id ) { return id ^ 0x0BBCCDE0u; }
+    static ImGuiID RangeSlider_InitUpKey      ( ImGuiID id ) { return id ^ 0x0BBCCDE1u; }
+
+    static bool RangeSliderScalarImpl( char const* label, ImGuiDataType data_type,
+                                       void* p_lower, void* p_upper,
+                                       void const* p_min, void const* p_max,
+                                       char const* format, ImVec2 size )
+    {
+        IM_ASSERT( p_lower != NULL && p_upper != NULL );
+
+        ImGuiWindow* window = ImGui::GetCurrentWindow();
+        if ( window->SkipItems )
+            return false;
+
+        ImGuiContext& g = *GImGui;
+        const ImGuiStyle& style = g.Style;
+        const ImGuiID id = window->GetID( label );
+
+        if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+        if ( size.y > 0.0f ) size.y = LpToPx( size.y );
+
+        float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
+        float h = ( size.y > 0.0f ) ? size.y : ImGui::GetFrameHeight();
+
+        ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
+        ImRect const frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, h ) );
+        ImRect const total_bb( frame_bb.Min, ImVec2( frame_bb.Max.x + ( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f ), frame_bb.Max.y ) );
+
+        ImGui::ItemSize( total_bb, style.FramePadding.y );
+        if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, 0 ) )
+            return false;
+
+        if ( !format )
+            format = ImGui::DataTypeGetInfo( data_type )->PrintFmt;
+
+        float const vMinF = ScalarToFloat( data_type, ( ImU64* )p_min );
+        float const vMaxF = ScalarToFloat( data_type, ( ImU64* )p_max );
+        float const den   = vMaxF - vMinF;
+
+        bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.ItemFlags );
+        ImGuiStorage* storage = window->DC.StateStorage;
+        ImGuiID activeKey = RangeSlider_ActiveHandleKey( id );
+        ImGuiID initMtKey = RangeSlider_InitMtKey      ( id );
+        ImGuiID initLoKey = RangeSlider_InitLoKey      ( id );
+        ImGuiID initUpKey = RangeSlider_InitUpKey      ( id );
+
+        // active codes:
+        //   0 = drag lower handle, 1 = drag upper handle,
+        //   2 = drag the whole [lo, hi] range together (Slider2DRange parity)
+
+        auto MouseT = [ & ]() -> float {
+            if ( frame_bb.GetWidth() <= 0.0f ) return 0.0f;
+            return ImClamp( ( g.IO.MousePos.x - frame_bb.Min.x ) / frame_bb.GetWidth(), 0.0f, 1.0f );
+        };
+
+        float grabW = ImMax( LpToPx( 4.0f ), ImMin( LpToPx( 8.0f ), frame_bb.GetHeight() * 0.5f ) );
+        float grabHalf = grabW * 0.5f;
+        float grabHalfT = ( frame_bb.GetWidth() > 0.0f ) ? ( grabHalf / frame_bb.GetWidth() ) : 0.0f;
+
+        if ( hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id ) )
+        {
+            float tLo = ( den > 0.0f ) ? ImClamp( ( ScalarToFloat( data_type, ( ImU64* )p_lower ) - vMinF ) / den, 0.0f, 1.0f ) : 0.0f;
+            float tUp = ( den > 0.0f ) ? ImClamp( ( ScalarToFloat( data_type, ( ImU64* )p_upper ) - vMinF ) / den, 0.0f, 1.0f ) : 0.0f;
+            if ( tLo > tUp ) { float tt = tLo; tLo = tUp; tUp = tt; }
+            float mt = MouseT();
+
+            // Resolve handle bands first so the edges always win over a centre
+            // drag — otherwise a thin selection rect would never let the user
+            // pluck a handle out of it.
+            bool overLo = ImAbs( mt - tLo ) <= grabHalfT;
+            bool overUp = ImAbs( mt - tUp ) <= grabHalfT;
+            int active;
+            if ( overLo && overUp )
+            {
+                // Overlapping handles: pick by direction so subsequent drags can separate them.
+                active = ( mt >= 0.5f * ( tLo + tUp ) ) ? 1 : 0;
+            }
+            else if ( overLo )
+            {
+                active = 0;
+            }
+            else if ( overUp )
+            {
+                active = 1;
+            }
+            else if ( mt > tLo && mt < tUp )
+            {
+                // Inside the selection rect → drag the whole range.
+                active = 2;
+                storage->SetFloat( initMtKey, mt );
+                storage->SetFloat( initLoKey, tLo );
+                storage->SetFloat( initUpKey, tUp );
+            }
+            else
+            {
+                // Outside both handle bands: nearest handle jumps to mouse.
+                if ( tLo == tUp )
+                    active = ( mt >= tLo ) ? 1 : 0;
+                else
+                    active = ( ImAbs( mt - tUp ) < ImAbs( mt - tLo ) ) ? 1 : 0;
+            }
+            storage->SetInt( activeKey, active );
+            ImGui::SetActiveID( id, window );
+            ImGui::SetFocusID( id, window );
+            ImGui::FocusWindow( window );
+            ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+        }
+
+        bool value_changed = false;
+        if ( g.ActiveId == id )
+        {
+            if ( g.IO.MouseDown[ 0 ] )
+            {
+                int activeHandle = storage->GetInt( activeKey, 0 );
+                float mt = MouseT();
+
+                float vLowerF = ScalarToFloat( data_type, ( ImU64* )p_lower );
+                float vUpperF = ScalarToFloat( data_type, ( ImU64* )p_upper );
+                float tLo = ( den > 0.0f ) ? ImClamp( ( vLowerF - vMinF ) / den, 0.0f, 1.0f ) : 0.0f;
+                float tUp = ( den > 0.0f ) ? ImClamp( ( vUpperF - vMinF ) / den, 0.0f, 1.0f ) : 0.0f;
+
+                if ( activeHandle == 2 )
+                {
+                    // Translate the whole range by (mt - initMt), clamping to
+                    // [0, 1] so the recorded width is preserved end-to-end.
+                    float initMt = storage->GetFloat( initMtKey, mt );
+                    float initLo = storage->GetFloat( initLoKey, tLo );
+                    float initUp = storage->GetFloat( initUpKey, tUp );
+                    float width  = initUp - initLo;
+                    float dt     = mt - initMt;
+                    float newLo  = ImClamp( initLo + dt, 0.0f, 1.0f - width );
+                    float newUp  = newLo + width;
+                    float newVLo = vMinF + newLo * den;
+                    float newVUp = vMinF + newUp * den;
+                    if ( newVLo != vLowerF )
+                    {
+                        WriteFloatToScalar( data_type, p_lower, newVLo );
+                        value_changed = true;
+                    }
+                    if ( newVUp != vUpperF )
+                    {
+                        WriteFloatToScalar( data_type, p_upper, newVUp );
+                        value_changed = true;
+                    }
+                }
+                else if ( activeHandle == 1 )
+                {
+                    mt = ImMax( mt, tLo );
+                    float newV = vMinF + mt * den;
+                    if ( newV != vUpperF )
+                    {
+                        WriteFloatToScalar( data_type, p_upper, newV );
+                        value_changed = true;
+                    }
+                }
+                else
+                {
+                    mt = ImMin( mt, tUp );
+                    float newV = vMinF + mt * den;
+                    if ( newV != vLowerF )
+                    {
+                        WriteFloatToScalar( data_type, p_lower, newV );
+                        value_changed = true;
+                    }
+                }
+                if ( value_changed )
+                    ImGui::MarkItemEdited( id );
+            }
+            else
+            {
+                ImGui::ClearActiveID();
+            }
+        }
+
+        ImU32 const frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
+        ImGui::RenderNavCursor( frame_bb, id );
+        ImGui::RenderFrame( frame_bb.Min, frame_bb.Max, frame_col, true, style.FrameRounding );
+
+        float vLowerF = ScalarToFloat( data_type, ( ImU64* )p_lower );
+        float vUpperF = ScalarToFloat( data_type, ( ImU64* )p_upper );
+        float tLo = ( den > 0.0f ) ? ImClamp( ( vLowerF - vMinF ) / den, 0.0f, 1.0f ) : 0.0f;
+        float tUp = ( den > 0.0f ) ? ImClamp( ( vUpperF - vMinF ) / den, 0.0f, 1.0f ) : 0.0f;
+        if ( tLo > tUp ) { float t = tLo; tLo = tUp; tUp = t; }
+
+        float xLo = frame_bb.Min.x + tLo * frame_bb.GetWidth();
+        float xUp = frame_bb.Min.x + tUp * frame_bb.GetWidth();
+
+        bool isActive = ( g.ActiveId == id );
+        int activeHandle = isActive ? storage->GetInt( activeKey, 0 ) : -1;
+
+        // Selection rect: brighter when the centre drag is active so the
+        // "you grabbed the whole range" affordance is unmistakable.
+        float selAlpha = ( activeHandle == 2 ) ? 0.75f : 0.40f;
+        ImU32 selCol = ImGui::GetColorU32( ImGuiCol_SliderGrab, selAlpha );
+        window->DrawList->AddRectFilled( ImVec2( xLo, frame_bb.Min.y + 1.0f ), ImVec2( xUp, frame_bb.Max.y - 1.0f ), selCol, style.FrameRounding );
+
+        auto DrawGrab = [ & ]( float x, bool isAct ) {
+            ImU32 grabCol = ImGui::GetColorU32( isAct ? ImGuiCol_SliderGrabActive : ImGuiCol_SliderGrab );
+            window->DrawList->AddRectFilled( ImVec2( x - grabHalf, frame_bb.Min.y + 1.0f ),
+                                             ImVec2( x + grabHalf, frame_bb.Max.y - 1.0f ),
+                                             grabCol, style.GrabRounding );
+        };
+        DrawGrab( xLo, activeHandle == 0 );
+        DrawGrab( xUp, activeHandle == 1 );
+
+        char bufLo[ 64 ], bufUp[ 64 ];
+        ImGui::DataTypeFormatString( bufLo, IM_ARRAYSIZE( bufLo ), data_type, p_lower, format );
+        ImGui::DataTypeFormatString( bufUp, IM_ARRAYSIZE( bufUp ), data_type, p_upper, format );
+        char buf[ 160 ];
+        ImFormatString( buf, IM_ARRAYSIZE( buf ), "%s -- %s", bufLo, bufUp );
+        ImVec2 tsz = ImGui::CalcTextSize( buf );
+        ImVec2 txtPos( frame_bb.GetCenter().x - tsz.x * 0.5f, frame_bb.Min.y + ( frame_bb.GetHeight() - tsz.y ) * 0.5f );
+        window->DrawList->AddText( txtPos, ImGui::GetColorU32( ImGuiCol_Text ), buf );
+
+        if ( label_size.x > 0.0f )
+            ImGui::RenderText( ImVec2( frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + style.FramePadding.y ), label );
+
+        return value_changed;
+    }
+
+    bool RangeSliderScalar( char const* label, ImGuiDataType data_type, void* p_lower, void* p_upper, void const* p_min, void const* p_max, char const* format, ImVec2 size )
+    {
+        return RangeSliderScalarImpl( label, data_type, p_lower, p_upper, p_min, p_max, format, size );
+    }
+    bool RangeSliderFloat( char const* label, float* v_lower, float* v_upper, float v_min, float v_max, char const* format, ImVec2 size )
+    {
+        return RangeSliderScalarImpl( label, ImGuiDataType_Float, v_lower, v_upper, &v_min, &v_max, format, size );
+    }
+    bool RangeSliderInt( char const* label, int* v_lower, int* v_upper, int v_min, int v_max, char const* format, ImVec2 size )
+    {
+        return RangeSliderScalarImpl( label, ImGuiDataType_S32, v_lower, v_upper, &v_min, &v_max, format, size );
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Segmented Control
+    //////////////////////////////////////////////////////////////////////////
+    static bool SegmentedControlScalarImpl( char const* label, ImGuiDataType data_type,
+                                            void* p_value,
+                                            char const* const* labels, int label_count,
+                                            ImVec2 size )
+    {
+        IM_ASSERT( label_count > 0 );
+        IM_ASSERT( labels != NULL );
+        IM_ASSERT( data_type != ImGuiDataType_Float && data_type != ImGuiDataType_Double && "Segmented index requires an integer data_type" );
+
+        ImGuiWindow* window = ImGui::GetCurrentWindow();
+        if ( window->SkipItems )
+            return false;
+
+        ImGuiContext& g = *GImGui;
+        const ImGuiStyle& style = g.Style;
+        const ImGuiID id = window->GetID( label );
+
+        if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+        if ( size.y > 0.0f ) size.y = LpToPx( size.y );
+
+        float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
+        float h = ( size.y > 0.0f ) ? size.y : ImGui::GetFrameHeight();
+
+        ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
+        ImRect const frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, h ) );
+        ImRect const total_bb( frame_bb.Min, ImVec2( frame_bb.Max.x + ( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f ), frame_bb.Max.y ) );
+
+        ImGui::ItemSize( total_bb, style.FramePadding.y );
+        if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, 0 ) )
+            return false;
+
+        float curF = ScalarToFloat( data_type, ( ImU64* )p_value );
+        int currentIdx = ( int )curF;
+        if ( currentIdx < 0 ) currentIdx = 0;
+        if ( currentIdx >= label_count ) currentIdx = label_count - 1;
+
+        float seg_w = frame_bb.GetWidth() / ( float )label_count;
+        int hovered_idx = -1;
+        if ( ImGui::ItemHoverable( frame_bb, id, g.LastItemData.ItemFlags ) )
+        {
+            float local = g.IO.MousePos.x - frame_bb.Min.x;
+            hovered_idx = ImClamp( ( int )( local / ImMax( seg_w, 1.0f ) ), 0, label_count - 1 );
+        }
+
+        bool value_changed = false;
+        if ( hovered_idx >= 0 && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id ) )
+        {
+            if ( hovered_idx != currentIdx )
+            {
+                WriteFloatToScalar( data_type, p_value, ( float )hovered_idx );
+                value_changed = true;
+                currentIdx = hovered_idx;
+                ImGui::MarkItemEdited( id );
+            }
+            ImGui::SetFocusID( id, window );
+        }
+
+        ImU32 const frame_col = ImGui::GetColorU32( ImGuiCol_FrameBg );
+        window->DrawList->AddRectFilled( frame_bb.Min, frame_bb.Max, frame_col, style.FrameRounding );
+
+        {
+            ImVec2 a( frame_bb.Min.x + currentIdx * seg_w + 1.0f, frame_bb.Min.y + 1.0f );
+            ImVec2 b( frame_bb.Min.x + ( currentIdx + 1 ) * seg_w - 1.0f, frame_bb.Max.y - 1.0f );
+            ImU32 selCol = ImGui::GetColorU32( ImGuiCol_ButtonActive );
+            window->DrawList->AddRectFilled( a, b, selCol, style.FrameRounding );
+        }
+        if ( hovered_idx >= 0 && hovered_idx != currentIdx )
+        {
+            ImVec2 a( frame_bb.Min.x + hovered_idx * seg_w + 1.0f, frame_bb.Min.y + 1.0f );
+            ImVec2 b( frame_bb.Min.x + ( hovered_idx + 1 ) * seg_w - 1.0f, frame_bb.Max.y - 1.0f );
+            ImU32 hCol = ImGui::GetColorU32( ImGuiCol_ButtonHovered, 0.5f );
+            window->DrawList->AddRectFilled( a, b, hCol, style.FrameRounding );
+        }
+
+        ImU32 textCol = ImGui::GetColorU32( ImGuiCol_Text );
+        ImU32 sepCol  = ImGui::GetColorU32( ImGuiCol_Border );
+        for ( int i = 0; i < label_count; ++i )
+        {
+            float cx = frame_bb.Min.x + ( i + 0.5f ) * seg_w;
+            ImVec2 tsz = ImGui::CalcTextSize( labels[ i ] );
+            ImVec2 tp( cx - tsz.x * 0.5f, frame_bb.GetCenter().y - tsz.y * 0.5f );
+            ImVec2 clip_min( frame_bb.Min.x + i * seg_w + 2.0f, frame_bb.Min.y );
+            ImVec2 clip_max( frame_bb.Min.x + ( i + 1 ) * seg_w - 2.0f, frame_bb.Max.y );
+            window->DrawList->PushClipRect( clip_min, clip_max, true );
+            window->DrawList->AddText( tp, textCol, labels[ i ] );
+            window->DrawList->PopClipRect();
+
+            if ( i > 0 )
+            {
+                float x = frame_bb.Min.x + i * seg_w;
+                window->DrawList->AddLine( ImVec2( x, frame_bb.Min.y + 2.0f ), ImVec2( x, frame_bb.Max.y - 2.0f ), sepCol );
+            }
+        }
+
+        window->DrawList->AddRect( frame_bb.Min, frame_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ), style.FrameRounding );
+
+        if ( label_size.x > 0.0f )
+            ImGui::RenderText( ImVec2( frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + style.FramePadding.y ), label );
+
+        return value_changed;
+    }
+
+    bool SegmentedControlScalar( char const* label, ImGuiDataType data_type, void* p_value, char const* const* labels, int label_count, ImVec2 size )
+    {
+        return SegmentedControlScalarImpl( label, data_type, p_value, labels, label_count, size );
+    }
+    bool SegmentedControlInt( char const* label, int* p_value, char const* const* labels, int label_count, ImVec2 size )
+    {
+        return SegmentedControlScalarImpl( label, ImGuiDataType_S32, p_value, labels, label_count, size );
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Arrow primitives
+    //////////////////////////////////////////////////////////////////////////
+    char const* GetArrowHeadName( ImWidgetsArrowHead head )
+    {
+        switch ( head )
+        {
+        case ImWidgetsArrowHead_None:     return "None";
+        case ImWidgetsArrowHead_Triangle: return "Triangle";
+        case ImWidgetsArrowHead_Open:     return "Open";
+        case ImWidgetsArrowHead_Diamond:  return "Diamond";
+        case ImWidgetsArrowHead_Stealth:  return "Stealth";
+        case ImWidgetsArrowHead_Tick:     return "Tick";
+        case ImWidgetsArrowHead_Dot:      return "Dot";
+        case ImWidgetsArrowHead_Square:   return "Square";
+        default:                          return "Unknown";
+        }
+    }
+
+    // How far back the shaft must stop so it doesn't poke through a filled
+    // head — heads that draw past the tip return 0.
+    static float DW_ArrowHeadShaftInset( ImWidgetsArrowHead style, float size )
+    {
+        switch ( style )
+        {
+        case ImWidgetsArrowHead_Triangle: return size * 0.85f;
+        case ImWidgetsArrowHead_Diamond:  return size * 0.85f;
+        case ImWidgetsArrowHead_Stealth:  return size * 0.55f;
+        case ImWidgetsArrowHead_Square:   return size * 0.5f;
+        case ImWidgetsArrowHead_Dot:      return size * 0.5f;
+        case ImWidgetsArrowHead_Open:     return 0.0f;
+        case ImWidgetsArrowHead_Tick:     return 0.0f;
+        case ImWidgetsArrowHead_None:     return 0.0f;
+        default:                          return 0.0f;
+        }
+    }
+
+    void DrawArrowHead( ImDrawList* dl, ImVec2 tip, ImVec2 dir, ImU32 col,
+                        ImWidgetsArrowHead style, float size, float thickness )
+    {
+        if ( !dl || style == ImWidgetsArrowHead_None ) return;
+
+        float dl2 = dir.x * dir.x + dir.y * dir.y;
+        if ( dl2 <= 1e-8f ) return;
+        float inv = 1.0f / ImSqrt( dl2 );
+        ImVec2 d  ( dir.x * inv,  dir.y * inv );
+        ImVec2 n  ( -d.y,         d.x  );
+
+        float halfW = size * 0.5f;
+
+        switch ( style )
+        {
+        case ImWidgetsArrowHead_Triangle:
+        {
+            ImVec2 base = tip - d * size;
+            ImVec2 p1   = base + n * halfW;
+            ImVec2 p2   = base - n * halfW;
+            dl->AddTriangleFilled( tip, p1, p2, col );
+            break;
+        }
+        case ImWidgetsArrowHead_Open:
+        {
+            ImVec2 back = tip - d * size;
+            dl->AddLine( tip, back + n * halfW, col, thickness );
+            dl->AddLine( tip, back - n * halfW, col, thickness );
+            break;
+        }
+        case ImWidgetsArrowHead_Diamond:
+        {
+            ImVec2 mid  = tip - d * ( size * 0.5f );
+            ImVec2 back = tip - d * size;
+            ImVec2 p1   = mid + n * halfW;
+            ImVec2 p2   = mid - n * halfW;
+            dl->AddQuadFilled( tip, p1, back, p2, col );
+            break;
+        }
+        case ImWidgetsArrowHead_Stealth:
+        {
+            ImVec2 back_mid = tip - d * ( size * 0.55f );
+            ImVec2 back     = tip - d * size;
+            ImVec2 p1       = back + n * halfW;
+            ImVec2 p2       = back - n * halfW;
+            dl->AddTriangleFilled( tip, p1, back_mid, col );
+            dl->AddTriangleFilled( tip, back_mid, p2, col );
+            break;
+        }
+        case ImWidgetsArrowHead_Tick:
+        {
+            dl->AddLine( tip + n * halfW, tip - n * halfW, col, thickness );
+            break;
+        }
+        case ImWidgetsArrowHead_Dot:
+        {
+            dl->AddCircleFilled( tip, size * 0.4f, col );
+            break;
+        }
+        case ImWidgetsArrowHead_Square:
+        {
+            ImVec2 back = tip - d * size;
+            ImVec2 p1 = tip  + n * halfW;
+            ImVec2 p2 = tip  - n * halfW;
+            ImVec2 p3 = back - n * halfW;
+            ImVec2 p4 = back + n * halfW;
+            dl->AddQuadFilled( p1, p2, p3, p4, col );
+            break;
+        }
+        default: break;
+        }
+    }
+
+    void DrawArrow( ImDrawList* dl, ImVec2 from, ImVec2 to, ImU32 col, float thickness,
+                    ImWidgetsArrowHead head_end, ImWidgetsArrowHead head_start, float head_size )
+    {
+        if ( !dl ) return;
+        ImVec2 d = to - from;
+        float len2 = d.x * d.x + d.y * d.y;
+        if ( len2 <= 1e-8f ) return;
+        float len = ImSqrt( len2 );
+        ImVec2 dir( d.x / len, d.y / len );
+
+        float inset_end   = DW_ArrowHeadShaftInset( head_end,   head_size );
+        float inset_start = DW_ArrowHeadShaftInset( head_start, head_size );
+        float max_inset = ImMax( 0.0f, len - 1.0f );
+        if ( inset_end + inset_start > max_inset )
+        {
+            float k = max_inset / ( inset_end + inset_start );
+            inset_end   *= k;
+            inset_start *= k;
+        }
+
+        ImVec2 shaft_from = from + dir * inset_start;
+        ImVec2 shaft_to   = to   - dir * inset_end;
+        if ( ( shaft_to.x - shaft_from.x ) * dir.x + ( shaft_to.y - shaft_from.y ) * dir.y > 0.0f )
+            dl->AddLine( shaft_from, shaft_to, col, thickness );
+
+        DrawArrowHead( dl, to,   dir,                       col, head_end,   head_size, thickness );
+        DrawArrowHead( dl, from, ImVec2( -dir.x, -dir.y ),  col, head_start, head_size, thickness );
+    }
+
+    void DrawAxisArrows( ImDrawList* dl, ImVec2 origin, float len_x, float len_y,
+                         ImU32 col_x, ImU32 col_y, float thickness, float head_size,
+                         char const* label_x, char const* label_y, ImU32 label_col )
+    {
+        if ( !dl ) return;
+        ImVec2 x_tip = origin + ImVec2( len_x, 0.0f );
+        ImVec2 y_tip = origin + ImVec2( 0.0f, len_y );
+        DrawArrow( dl, origin, x_tip, col_x, thickness, ImWidgetsArrowHead_Triangle, ImWidgetsArrowHead_None, head_size );
+        DrawArrow( dl, origin, y_tip, col_y, thickness, ImWidgetsArrowHead_Triangle, ImWidgetsArrowHead_None, head_size );
+
+        float gap = 4.0f;
+        if ( label_x && label_x[ 0 ] )
+        {
+            ImVec2 tsz = ImGui::CalcTextSize( label_x );
+            ImVec2 pos( ( len_x >= 0.0f ) ? ( x_tip.x + gap ) : ( x_tip.x - gap - tsz.x ),
+                        x_tip.y - tsz.y * 0.5f );
+            dl->AddText( pos, label_col, label_x );
+        }
+        if ( label_y && label_y[ 0 ] )
+        {
+            ImVec2 tsz = ImGui::CalcTextSize( label_y );
+            ImVec2 pos( y_tip.x - tsz.x * 0.5f,
+                        ( len_y >= 0.0f ) ? ( y_tip.y + gap ) : ( y_tip.y - gap - tsz.y ) );
+            dl->AddText( pos, label_col, label_y );
+        }
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Rotated text helper (used by DrawDimensionLine).
+    // Walks glyphs from the active baked font and emits transformed quads.
+    //////////////////////////////////////////////////////////////////////////
+    static void DW_AddTextRotated( ImDrawList* dl, ImFont* font, float font_size,
+                                   ImVec2 anchor, ImU32 col,
+                                   char const* text, char const* text_end,
+                                   float angle_rad, ImVec2 align )
+    {
+        if ( !dl || !text ) return;
+        if ( !font )            font = ImGui::GetFont();
+        if ( font_size <= 0.0f ) font_size = ImGui::GetFontSize();
+        if ( !text_end )        { text_end = text; while ( *text_end ) ++text_end; }
+        if ( text_end <= text ) return;
+
+        ImFontBaked* baked = font->GetFontBaked( font_size );
+        if ( !baked || baked->Size <= 0.0f ) return;
+        float scale = font_size / baked->Size;
+
+        ImVec2 tsize = font->CalcTextSizeA( font_size, FLT_MAX, 0.0f, text, text_end );
+        if ( tsize.x <= 0.0f || tsize.y <= 0.0f ) return;
+
+        float cs = ImCos( angle_rad );
+        float sn = ImSin( angle_rad );
+
+        float line_h = baked->Size * scale;
+        float pen_x0  = -align.x * tsize.x;
+        float pen_x   = pen_x0;
+        float pen_y   = -align.y * tsize.y;
+
+        ImTextureRef atlas_tex = font->ContainerAtlas->TexRef;
+        dl->PushTexture( atlas_tex );
+
+        char const* s = text;
+        while ( s < text_end )
+        {
+            unsigned int c = ( unsigned int )*s;
+            if ( c < 0x80 )
+                ++s;
+            else
+            {
+                int bytes = ImTextCharFromUtf8( &c, s, text_end );
+                if ( bytes <= 0 ) break;
+                s += bytes;
+            }
+            if ( c == '\r' ) continue;
+            if ( c == '\n' )
+            {
+                pen_x  = pen_x0;
+                pen_y += line_h;
+                continue;
+            }
+            ImFontGlyph const* g = baked->FindGlyph( ( ImWchar )c );
+            if ( !g ) continue;
+            if ( g->Visible )
+            {
+                float x0 = pen_x + g->X0 * scale;
+                float y0 = pen_y + g->Y0 * scale;
+                float x1 = pen_x + g->X1 * scale;
+                float y1 = pen_y + g->Y1 * scale;
+
+                ImVec2 p0( anchor.x + x0 * cs - y0 * sn, anchor.y + x0 * sn + y0 * cs );
+                ImVec2 p1( anchor.x + x1 * cs - y0 * sn, anchor.y + x1 * sn + y0 * cs );
+                ImVec2 p2( anchor.x + x1 * cs - y1 * sn, anchor.y + x1 * sn + y1 * cs );
+                ImVec2 p3( anchor.x + x0 * cs - y1 * sn, anchor.y + x0 * sn + y1 * cs );
+
+                ImU32 glyph_col = g->Colored ? ( col | ~IM_COL32_A_MASK ) : col;
+
+                dl->PrimReserve( 6, 4 );
+                dl->PrimQuadUV( p0, p1, p2, p3,
+                                ImVec2( g->U0, g->V0 ), ImVec2( g->U1, g->V0 ),
+                                ImVec2( g->U1, g->V1 ), ImVec2( g->U0, g->V1 ),
+                                glyph_col );
+            }
+            pen_x += g->AdvanceX * scale;
+        }
+
+        dl->PopTexture();
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Dimension Line
+    //////////////////////////////////////////////////////////////////////////
+    char const* GetDimensionTextOrientName( ImWidgetsDimensionTextOrient o )
+    {
+        switch ( o )
+        {
+        case ImWidgetsDimensionTextOrient_FollowLine:       return "FollowLine";
+        case ImWidgetsDimensionTextOrient_AlwaysHorizontal: return "AlwaysHorizontal";
+        case ImWidgetsDimensionTextOrient_FollowReading:    return "FollowReading";
+        case ImWidgetsDimensionTextOrient_Perpendicular:    return "Perpendicular";
+        default:                                            return "Unknown";
+        }
+    }
+
+    void DrawDimensionLine( ImDrawList* dl, ImVec2 from, ImVec2 to,
+                            float offset, char const* text,
+                            ImU32 line_col, ImU32 text_col,
+                            float line_thickness,
+                            ImWidgetsArrowHead head, float head_size,
+                            float ext_overshoot, float ext_gap,
+                            ImWidgetsDimensionTextOrient text_orient,
+                            ImWidgetsDimensionFlags flags,
+                            ImFont* font, float font_size )
+    {
+        if ( !dl ) return;
+        ImVec2 d = to - from;
+        float len2 = d.x * d.x + d.y * d.y;
+        if ( len2 <= 1e-8f ) return;
+        float len = ImSqrt( len2 );
+        ImVec2 dir( d.x / len, d.y / len );
+        ImVec2 nrm( -dir.y, dir.x ); // perpendicular, left of dir
+
+        ImVec2 dim_from = from + nrm * offset;
+        ImVec2 dim_to   = to   + nrm * offset;
+
+        if ( flags & ImWidgetsDimensionFlags_ExtensionLines )
+        {
+            float side = ( offset >= 0.0f ) ? 1.0f : -1.0f;
+            ImVec2 axis = nrm * side; // unit vector from measured point toward dim line
+            float ext_len = ImAbs( offset ) + ext_overshoot;
+            float gap = ImMin( ext_gap, ImAbs( offset ) );
+            ImVec2 ext1_a = from + axis * gap;
+            ImVec2 ext1_b = from + axis * ext_len;
+            ImVec2 ext2_a = to   + axis * gap;
+            ImVec2 ext2_b = to   + axis * ext_len;
+            dl->AddLine( ext1_a, ext1_b, line_col, line_thickness );
+            dl->AddLine( ext2_a, ext2_b, line_col, line_thickness );
+        }
+
+        ImFont* f = font ? font : ImGui::GetFont();
+        float fs = ( font_size > 0.0f ) ? font_size : ImGui::GetFontSize();
+        ImVec2 tsize( 0.0f, 0.0f );
+        bool has_text = ( text && text[ 0 ] != '\0' );
+        if ( has_text )
+            tsize = f->CalcTextSizeA( fs, FLT_MAX, 0.0f, text, NULL );
+
+        float line_angle = ImAtan2( dir.y, dir.x );
+        float text_angle = 0.0f;
+        switch ( text_orient )
+        {
+        case ImWidgetsDimensionTextOrient_FollowLine:
+            text_angle = line_angle;
+            break;
+        case ImWidgetsDimensionTextOrient_AlwaysHorizontal:
+            text_angle = 0.0f;
+            break;
+        case ImWidgetsDimensionTextOrient_FollowReading:
+            text_angle = line_angle;
+            if ( dir.x < 0.0f )
+                text_angle += IM_PI;
+            break;
+        case ImWidgetsDimensionTextOrient_Perpendicular:
+            text_angle = line_angle + IM_PI * 0.5f;
+            if ( dir.x < 0.0f )
+                text_angle += IM_PI;
+            break;
+        default: break;
+        }
+
+        ImVec2 dim_mid = ( dim_from + dim_to ) * 0.5f;
+        ImVec2 text_anchor = dim_mid;
+        ImVec2 text_align( 0.5f, 0.5f );
+
+        float text_gap = 2.0f;
+        bool text_above = ( flags & ImWidgetsDimensionFlags_TextAbove ) != 0;
+        bool text_below = ( flags & ImWidgetsDimensionFlags_TextBelow ) != 0;
+        if ( text_above )
+        {
+            float side = ( offset >= 0.0f ) ? 1.0f : -1.0f;
+            text_anchor = dim_mid + nrm * ( side * text_gap );
+            text_align = ImVec2( 0.5f, 1.0f );
+        }
+        else if ( text_below )
+        {
+            float side = ( offset >= 0.0f ) ? -1.0f : 1.0f;
+            text_anchor = dim_mid + nrm * ( side * text_gap );
+            text_align = ImVec2( 0.5f, 0.0f );
+        }
+
+        bool text_breaks_line = has_text
+            && !text_above
+            && !text_below
+            && !( flags & ImWidgetsDimensionFlags_NoBreak );
+
+        bool heads_inside = ( flags & ImWidgetsDimensionFlags_HeadsInside ) != 0;
+        float head_inset = DW_ArrowHeadShaftInset( head, head_size );
+        head_inset = ImMin( head_inset, len * 0.5f - 1.0f );
+        if ( head_inset < 0.0f ) head_inset = 0.0f;
+        ImVec2 shaft_a = dim_from + dir * head_inset;
+        ImVec2 shaft_b = dim_to   - dir * head_inset;
+
+        // Route through DrawArrow for the outward-heads cases so the shaft +
+        // head + inset math stays in one place. HeadsInside breaks DrawArrow's
+        // "head points along travel direction" contract, so that variant draws
+        // the shaft with AddLine and places heads with DrawArrowHead directly.
+        if ( text_breaks_line )
+        {
+            float halfw = tsize.x * 0.5f + 4.0f;
+            ImVec2 gap_a = dim_mid - dir * halfw;
+            ImVec2 gap_b = dim_mid + dir * halfw;
+            float seg1 = ( gap_a.x - shaft_a.x ) * dir.x + ( gap_a.y - shaft_a.y ) * dir.y;
+            float seg2 = ( shaft_b.x - gap_b.x ) * dir.x + ( shaft_b.y - gap_b.y ) * dir.y;
+            if ( seg1 > 0.0f && seg2 > 0.0f )
+            {
+                if ( !heads_inside )
+                {
+                    // Two half-arrows: head sits at the outer end of each half.
+                    DrawArrow( dl, dim_from, gap_a, line_col, line_thickness,
+                               ImWidgetsArrowHead_None, head, head_size );
+                    DrawArrow( dl, gap_b,    dim_to, line_col, line_thickness,
+                               head, ImWidgetsArrowHead_None, head_size );
+                }
+                else
+                {
+                    dl->AddLine( shaft_a, gap_a,  line_col, line_thickness );
+                    dl->AddLine( gap_b,   shaft_b, line_col, line_thickness );
+                    DrawArrowHead( dl, dim_to,   dir,                      line_col, head, head_size, line_thickness );
+                    DrawArrowHead( dl, dim_from, ImVec2( -dir.x, -dir.y ), line_col, head, head_size, line_thickness );
+                }
+            }
+            else
+            {
+                // Gap would consume the shaft — fall back to unbroken line.
+                if ( !heads_inside )
+                {
+                    DrawArrow( dl, dim_from, dim_to, line_col, line_thickness,
+                               head, head, head_size );
+                }
+                else
+                {
+                    dl->AddLine( shaft_a, shaft_b, line_col, line_thickness );
+                    DrawArrowHead( dl, dim_to,   dir,                      line_col, head, head_size, line_thickness );
+                    DrawArrowHead( dl, dim_from, ImVec2( -dir.x, -dir.y ), line_col, head, head_size, line_thickness );
+                }
+            }
+        }
+        else
+        {
+            if ( !heads_inside )
+            {
+                DrawArrow( dl, dim_from, dim_to, line_col, line_thickness,
+                           head, head, head_size );
+            }
+            else
+            {
+                dl->AddLine( shaft_a, shaft_b, line_col, line_thickness );
+                DrawArrowHead( dl, dim_to,   dir,                      line_col, head, head_size, line_thickness );
+                DrawArrowHead( dl, dim_from, ImVec2( -dir.x, -dir.y ), line_col, head, head_size, line_thickness );
+            }
+        }
+
+        if ( has_text )
+        {
+            // Axis-aligned + Horizontal mode goes through the standard AddText
+            // path so glyphs land on pixel grid like every other widget.
+            if ( text_orient == ImWidgetsDimensionTextOrient_AlwaysHorizontal )
+            {
+                ImVec2 pos( text_anchor.x - text_align.x * tsize.x,
+                            text_anchor.y - text_align.y * tsize.y );
+                dl->AddText( f, fs, pos, text_col, text );
+            }
+            else
+            {
+                DW_AddTextRotated( dl, f, fs, text_anchor, text_col, text, NULL, text_angle, text_align );
+            }
+        }
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Eyedropper
+    //////////////////////////////////////////////////////////////////////////
+    ImU32 EyedropperSampleBitmap( ImVec2 uv, void* user_data )
+    {
+        ImWidgetsEyedropperBitmap const* bm = (ImWidgetsEyedropperBitmap const*)user_data;
+        if ( !bm || !bm->Pixels || bm->Width <= 0 || bm->Height <= 0 )
+            return IM_COL32_BLACK;
+        int x = (int)( ImClamp( uv.x, 0.0f, 0.9999f ) * (float)bm->Width );
+        int y = (int)( ImClamp( uv.y, 0.0f, 0.9999f ) * (float)bm->Height );
+        return bm->Pixels[ y * bm->Width + x ];
+    }
+
+    ImWidgetsEyedropperResult Eyedropper( char const* id_str, ImRect screen_rect,
+                                          ImWidgetsEyedropperSampleFn sample_fn, void* user_data,
+                                          int neighbor_cells, float neighbor_pixel,
+                                          ImU32 outline_col, ImU32 highlight_col )
+    {
+        ImWidgetsEyedropperResult r = { false, false, ImVec2( 0, 0 ), ImVec2( 0, 0 ), 0u };
+        if ( screen_rect.GetWidth() <= 0.0f || screen_rect.GetHeight() <= 0.0f || sample_fn == NULL )
+            return r;
+
+        ImGuiWindow* win = ImGui::GetCurrentWindow();
+        ImGuiID id = win->GetID( id_str );
+        ImGui::ItemSize( screen_rect );
+        if ( !ImGui::ItemAdd( screen_rect, id ) )
+            return r;
+
+        ImVec2 mouse = ImGui::GetIO().MousePos;
+        bool hovered = ImGui::ItemHoverable( screen_rect, id, ImGuiItemFlags_None );
+        r.Hovered = hovered;
+        r.PosScreen = mouse;
+
+        if ( !hovered )
+            return r;
+
+        ImVec2 uv;
+        uv.x = ( mouse.x - screen_rect.Min.x ) / screen_rect.GetWidth();
+        uv.y = ( mouse.y - screen_rect.Min.y ) / screen_rect.GetHeight();
+        r.UV = uv;
+        r.Color = sample_fn( uv, user_data );
+
+        if ( ImGui::IsMouseReleased( ImGuiMouseButton_Left ) )
+            r.Picked = true;
+
+        ImDrawList* dl = ImGui::GetForegroundDrawList();
+
+        if ( neighbor_cells > 0 )
+        {
+            if ( ( neighbor_cells & 1 ) == 0 ) ++neighbor_cells;  // force odd
+            float cell = neighbor_pixel;
+            float loupe_w = cell * (float)neighbor_cells;
+            float pad = 8.0f;
+            float radius = loupe_w * 0.5f + pad;
+            ImVec2 anchor = ImVec2( mouse.x + radius + 12.0f, mouse.y - radius - 12.0f );
+            ImGuiViewport* vp = ImGui::GetMainViewport();
+            ImVec2 vmin = vp->Pos;
+            ImVec2 vmax = vp->Pos + vp->Size;
+            if ( anchor.x + loupe_w * 0.5f + 4.0f > vmax.x ) anchor.x = mouse.x - radius - 12.0f;
+            if ( anchor.y - loupe_w * 0.5f - 4.0f < vmin.y ) anchor.y = mouse.y + radius + 12.0f;
+
+            ImVec2 lmin = ImVec2( anchor.x - loupe_w * 0.5f, anchor.y - loupe_w * 0.5f );
+            ImVec2 lmax = ImVec2( lmin.x + loupe_w, lmin.y + loupe_w );
+            dl->AddRectFilled( lmin - ImVec2( 2, 2 ), lmax + ImVec2( 2, 2 ), IM_COL32( 20, 20, 20, 240 ) );
+
+            int half = neighbor_cells / 2;
+            float src_w = screen_rect.GetWidth();
+            float src_h = screen_rect.GetHeight();
+            float src_cell_u = 1.0f / src_w;
+            float src_cell_v = 1.0f / src_h;
+            for ( int dy = -half; dy <= half; ++dy )
+            {
+                for ( int dx = -half; dx <= half; ++dx )
+                {
+                    ImVec2 sample_uv = ImVec2( uv.x + dx * src_cell_u, uv.y + dy * src_cell_v );
+                    ImU32 c = sample_fn( ImVec2( ImClamp( sample_uv.x, 0.0f, 1.0f ),
+                                                  ImClamp( sample_uv.y, 0.0f, 1.0f ) ), user_data );
+                    ImVec2 a = ImVec2( lmin.x + ( dx + half ) * cell, lmin.y + ( dy + half ) * cell );
+                    dl->AddRectFilled( a, ImVec2( a.x + cell, a.y + cell ), c );
+                }
+            }
+            dl->AddRect( lmin, lmax, outline_col, 0.0f, 0, 1.5f );
+            ImVec2 cmin = ImVec2( lmin.x + half * cell, lmin.y + half * cell );
+            dl->AddRect( cmin, ImVec2( cmin.x + cell, cmin.y + cell ), highlight_col, 0.0f, 0, 1.5f );
+
+            char buf[ 64 ];
+            ImU32 c = r.Color;
+            int R = ( c >> IM_COL32_R_SHIFT ) & 0xFF;
+            int G = ( c >> IM_COL32_G_SHIFT ) & 0xFF;
+            int B = ( c >> IM_COL32_B_SHIFT ) & 0xFF;
+            int A = ( c >> IM_COL32_A_SHIFT ) & 0xFF;
+            ImFormatString( buf, IM_ARRAYSIZE( buf ), "#%02X%02X%02X  %3d,%3d,%3d,%3d", R, G, B, R, G, B, A );
+            ImVec2 tsize = ImGui::CalcTextSize( buf );
+            ImVec2 tpos = ImVec2( lmin.x, lmax.y + 4.0f );
+            dl->AddRectFilled( tpos - ImVec2( 2, 2 ), tpos + tsize + ImVec2( 4, 2 ), IM_COL32( 20, 20, 20, 220 ) );
+            dl->AddText( tpos, IM_COL32( 230, 230, 230, 255 ), buf );
+        }
+
+        return r;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Crop rect
+    //////////////////////////////////////////////////////////////////////////
+    static void DW_CropApplyAspect( ImRect& r, int active, float aspect, ImRect bounds )
+    {
+        if ( aspect <= 0.0f ) return;
+        float w = r.GetWidth();
+        float h = r.GetHeight();
+        bool drives_w = ( active == 0 || active == 2 || active == 4 || active == 6 || active == 3 || active == 7 );
+        if ( drives_w )
+            h = w / aspect;
+        else
+            w = h * aspect;
+        switch ( active )
+        {
+        case 0: r.Min.x = r.Max.x - w; r.Min.y = r.Max.y - h; break;  // TL
+        case 1: { float cx = ( r.Min.x + r.Max.x ) * 0.5f;
+                  r.Min.x = cx - w * 0.5f; r.Max.x = cx + w * 0.5f; r.Min.y = r.Max.y - h; } break;  // T
+        case 2: r.Max.x = r.Min.x + w; r.Min.y = r.Max.y - h; break;  // TR
+        case 3: { float cy = ( r.Min.y + r.Max.y ) * 0.5f;
+                  r.Min.y = cy - h * 0.5f; r.Max.y = cy + h * 0.5f; r.Max.x = r.Min.x + w; } break;  // R
+        case 4: r.Max.x = r.Min.x + w; r.Max.y = r.Min.y + h; break;  // BR
+        case 5: { float cx = ( r.Min.x + r.Max.x ) * 0.5f;
+                  r.Min.x = cx - w * 0.5f; r.Max.x = cx + w * 0.5f; r.Max.y = r.Min.y + h; } break;  // B
+        case 6: r.Min.x = r.Max.x - w; r.Max.y = r.Min.y + h; break;  // BL
+        case 7: { float cy = ( r.Min.y + r.Max.y ) * 0.5f;
+                  r.Min.y = cy - h * 0.5f; r.Max.y = cy + h * 0.5f; r.Min.x = r.Max.x - w; } break;  // L
+        }
+        if ( r.Min.x < bounds.Min.x ) { float d = bounds.Min.x - r.Min.x; r.Min.x += d; r.Max.x += d; }
+        if ( r.Min.y < bounds.Min.y ) { float d = bounds.Min.y - r.Min.y; r.Min.y += d; r.Max.y += d; }
+        if ( r.Max.x > bounds.Max.x ) { float d = r.Max.x - bounds.Max.x; r.Min.x -= d; r.Max.x -= d; }
+        if ( r.Max.y > bounds.Max.y ) { float d = r.Max.y - bounds.Max.y; r.Min.y -= d; r.Max.y -= d; }
+    }
+
+    static ImVec2 DW_CropGripCenter( ImRect const& r, int i )
+    {
+        switch ( i )
+        {
+        case 0: return ImVec2( r.Min.x, r.Min.y );
+        case 1: return ImVec2( ( r.Min.x + r.Max.x ) * 0.5f, r.Min.y );
+        case 2: return ImVec2( r.Max.x, r.Min.y );
+        case 3: return ImVec2( r.Max.x, ( r.Min.y + r.Max.y ) * 0.5f );
+        case 4: return ImVec2( r.Max.x, r.Max.y );
+        case 5: return ImVec2( ( r.Min.x + r.Max.x ) * 0.5f, r.Max.y );
+        case 6: return ImVec2( r.Min.x, r.Max.y );
+        case 7: return ImVec2( r.Min.x, ( r.Min.y + r.Max.y ) * 0.5f );
+        }
+        return ImVec2( 0, 0 );
+    }
+
+    bool CropRect( char const* id_str, ImWidgetsCropState& s, ImRect bounds,
+                   float aspect_ratio, ImWidgetsCropGuides guides,
+                   float grip_size, ImU32 mask_col, ImU32 line_col, ImU32 grip_col, ImU32 guide_col )
+    {
+        ImGuiWindow* win = ImGui::GetCurrentWindow();
+        if ( win->SkipItems ) return false;
+        ImGuiID id = win->GetID( id_str );
+
+        if ( s.Rect.GetWidth() <= 0.0f || s.Rect.GetHeight() <= 0.0f )
+        {
+            ImVec2 sz = bounds.GetSize();
+            ImVec2 c = ImVec2( ( bounds.Min.x + bounds.Max.x ) * 0.5f, ( bounds.Min.y + bounds.Max.y ) * 0.5f );
+            s.Rect = ImRect( c.x - sz.x * 0.3f, c.y - sz.y * 0.3f, c.x + sz.x * 0.3f, c.y + sz.y * 0.3f );
+            s.Active = -1;
+            s.LastBoundsMin = ImVec2( FLT_MAX, FLT_MAX );
+        }
+        // If the host window scrolled/moved, `bounds` shifts even though the
+        // crop is meant to track the swatch. Translate the rect by the same
+        // delta so its size stays exactly what the user set.
+        if ( s.LastBoundsMin.x != FLT_MAX )
+        {
+            ImVec2 d = bounds.Min - s.LastBoundsMin;
+            if ( d.x != 0.0f || d.y != 0.0f )
+            {
+                s.Rect.Min += d;
+                s.Rect.Max += d;
+                s.DragOriginRect.Min += d;
+                s.DragOriginRect.Max += d;
+                s.DragOriginMs += d;
+            }
+        }
+        s.LastBoundsMin = bounds.Min;
+        s.Rect.ClipWith( bounds );
+
+        ImGui::ItemSize( bounds );
+        ImGui::ItemAdd( bounds, id );
+        ImGui::ButtonBehavior( bounds, id, NULL, NULL,
+                                (ImGuiButtonFlags)( (int)ImGuiButtonFlags_MouseButtonLeft | (int)ImGuiButtonFlags_NoNavFocus ) );
+
+        ImVec2 mouse = ImGui::GetIO().MousePos;
+        ImRect prev_rect = s.Rect;
+        bool clicked = ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && ImGui::IsItemHovered();
+
+        if ( clicked )
+        {
+            int hit = -1;
+            float pick = ImMax( grip_size, 4.0f ) + 3.0f;
+            for ( int i = 0; i < 8; ++i )
+            {
+                ImVec2 g = DW_CropGripCenter( s.Rect, i );
+                if ( ImFabs( mouse.x - g.x ) <= pick && ImFabs( mouse.y - g.y ) <= pick ) { hit = i; break; }
+            }
+            if ( hit < 0 && s.Rect.Contains( mouse ) )
+                hit = 8;
+            s.Active = hit;
+            s.DragOriginMs = mouse;
+            s.DragOriginRect = s.Rect;
+            if ( hit >= 0 && hit < 9 )
+                ImGui::SetActiveID( id, win );
+        }
+
+        if ( s.Active >= 0 && ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+        {
+            ImVec2 d = mouse - s.DragOriginMs;
+            ImRect r = s.DragOriginRect;
+            if ( s.Active == 8 )
+            {
+                float dx = d.x, dy = d.y;
+                float w = r.GetWidth(), h = r.GetHeight();
+                r.Min.x = ImClamp( r.Min.x + dx, bounds.Min.x, bounds.Max.x - w );
+                r.Min.y = ImClamp( r.Min.y + dy, bounds.Min.y, bounds.Max.y - h );
+                r.Max.x = r.Min.x + w;
+                r.Max.y = r.Min.y + h;
+            }
+            else
+            {
+                switch ( s.Active )
+                {
+                case 0: r.Min.x += d.x; r.Min.y += d.y; break;
+                case 1: r.Min.y += d.y; break;
+                case 2: r.Max.x += d.x; r.Min.y += d.y; break;
+                case 3: r.Max.x += d.x; break;
+                case 4: r.Max.x += d.x; r.Max.y += d.y; break;
+                case 5: r.Max.y += d.y; break;
+                case 6: r.Min.x += d.x; r.Max.y += d.y; break;
+                case 7: r.Min.x += d.x; break;
+                }
+                float minsz = 4.0f;
+                if ( r.Max.x - r.Min.x < minsz ) { if ( s.Active == 0 || s.Active == 6 || s.Active == 7 ) r.Min.x = r.Max.x - minsz; else r.Max.x = r.Min.x + minsz; }
+                if ( r.Max.y - r.Min.y < minsz ) { if ( s.Active == 0 || s.Active == 1 || s.Active == 2 ) r.Min.y = r.Max.y - minsz; else r.Max.y = r.Min.y + minsz; }
+                r.ClipWith( bounds );
+                DW_CropApplyAspect( r, s.Active, aspect_ratio, bounds );
+                r.ClipWith( bounds );
+            }
+            s.Rect = r;
+        }
+        else if ( s.Active >= 0 && !ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+        {
+            s.Active = -1;
+            if ( ImGui::GetActiveID() == id ) ImGui::ClearActiveID();
+        }
+
+        ImDrawList* dl = win->DrawList;
+        dl->AddRectFilled( bounds.Min, ImVec2( bounds.Max.x, s.Rect.Min.y ), mask_col );
+        dl->AddRectFilled( ImVec2( bounds.Min.x, s.Rect.Max.y ), bounds.Max, mask_col );
+        dl->AddRectFilled( ImVec2( bounds.Min.x, s.Rect.Min.y ), ImVec2( s.Rect.Min.x, s.Rect.Max.y ), mask_col );
+        dl->AddRectFilled( ImVec2( s.Rect.Max.x, s.Rect.Min.y ), ImVec2( bounds.Max.x, s.Rect.Max.y ), mask_col );
+
+        if ( guides & ImWidgetsCropGuides_RuleOfThirds )
+        {
+            float w = s.Rect.GetWidth(), h = s.Rect.GetHeight();
+            for ( int k = 1; k <= 2; ++k )
+            {
+                dl->AddLine( ImVec2( s.Rect.Min.x + w * k / 3.0f, s.Rect.Min.y ),
+                              ImVec2( s.Rect.Min.x + w * k / 3.0f, s.Rect.Max.y ), guide_col );
+                dl->AddLine( ImVec2( s.Rect.Min.x, s.Rect.Min.y + h * k / 3.0f ),
+                              ImVec2( s.Rect.Max.x, s.Rect.Min.y + h * k / 3.0f ), guide_col );
+            }
+        }
+        if ( guides & ImWidgetsCropGuides_GoldenRatio )
+        {
+            float phi = 1.0f / 1.6180339887f;  // ~0.618
+            float w = s.Rect.GetWidth(), h = s.Rect.GetHeight();
+            float xs[ 2 ] = { s.Rect.Min.x + w * ( 1.0f - phi ), s.Rect.Min.x + w * phi };
+            float ys[ 2 ] = { s.Rect.Min.y + h * ( 1.0f - phi ), s.Rect.Min.y + h * phi };
+            for ( int k = 0; k < 2; ++k )
+            {
+                dl->AddLine( ImVec2( xs[ k ], s.Rect.Min.y ), ImVec2( xs[ k ], s.Rect.Max.y ), guide_col );
+                dl->AddLine( ImVec2( s.Rect.Min.x, ys[ k ] ), ImVec2( s.Rect.Max.x, ys[ k ] ), guide_col );
+            }
+        }
+        if ( guides & ImWidgetsCropGuides_Diagonals )
+        {
+            dl->AddLine( s.Rect.Min, s.Rect.Max, guide_col );
+            dl->AddLine( ImVec2( s.Rect.Min.x, s.Rect.Max.y ), ImVec2( s.Rect.Max.x, s.Rect.Min.y ), guide_col );
+        }
+        if ( guides & ImWidgetsCropGuides_Center )
+        {
+            ImVec2 c( ( s.Rect.Min.x + s.Rect.Max.x ) * 0.5f, ( s.Rect.Min.y + s.Rect.Max.y ) * 0.5f );
+            dl->AddLine( ImVec2( c.x, s.Rect.Min.y ), ImVec2( c.x, s.Rect.Max.y ), guide_col );
+            dl->AddLine( ImVec2( s.Rect.Min.x, c.y ), ImVec2( s.Rect.Max.x, c.y ), guide_col );
+        }
+
+        dl->AddRect( s.Rect.Min, s.Rect.Max, line_col, 0.0f, 0, 1.0f );
+
+        float gh = grip_size;
+        for ( int i = 0; i < 8; ++i )
+        {
+            ImVec2 g = DW_CropGripCenter( s.Rect, i );
+            dl->AddRectFilled( ImVec2( g.x - gh, g.y - gh ), ImVec2( g.x + gh, g.y + gh ), grip_col );
+            dl->AddRect    ( ImVec2( g.x - gh, g.y - gh ), ImVec2( g.x + gh, g.y + gh ), IM_COL32( 0, 0, 0, 200 ) );
+        }
+
+        return prev_rect.Min.x != s.Rect.Min.x || prev_rect.Min.y != s.Rect.Min.y
+            || prev_rect.Max.x != s.Rect.Max.x || prev_rect.Max.y != s.Rect.Max.y;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Snap lines / smart guides
+    //////////////////////////////////////////////////////////////////////////
+    ImVec2 ComputeSnapAndDraw( ImDrawList* dl, ImRect moving, ImRect const* targets, int target_count,
+                                float snap_radius_px, ImWidgetsSnapFlags flags,
+                                ImU32 guide_col, float guide_extend_px )
+    {
+        ImVec2 delta( 0, 0 );
+        if ( target_count <= 0 ) return delta;
+
+        float m_l = moving.Min.x, m_r = moving.Max.x, m_t = moving.Min.y, m_b = moving.Max.y;
+        float m_cx = ( m_l + m_r ) * 0.5f, m_cy = ( m_t + m_b ) * 0.5f;
+
+        struct Cand { float src, dst, score; int target_idx; int kind; };  // kind: 0=L,1=R,2=CenterH on x; 3=T,4=B,5=CenterV on y
+        Cand best_x = { 0, 0, FLT_MAX, -1, -1 };
+        Cand best_y = { 0, 0, FLT_MAX, -1, -1 };
+
+        for ( int i = 0; i < target_count; ++i )
+        {
+            ImRect t = targets[ i ];
+            float t_l = t.Min.x, t_r = t.Max.x, t_t = t.Min.y, t_b = t.Max.y;
+            float t_cx = ( t_l + t_r ) * 0.5f, t_cy = ( t_t + t_b ) * 0.5f;
+
+            float src_x[ 3 ] = { m_l, m_r, m_cx };
+            float tgt_x[ 3 ] = { t_l, t_r, t_cx };
+            int   x_msk[ 3 ] = { ImWidgetsSnapFlags_LeftEdge, ImWidgetsSnapFlags_RightEdge, ImWidgetsSnapFlags_CenterH };
+            for ( int a = 0; a < 3; ++a )
+            {
+                if ( !( flags & x_msk[ a ] ) ) continue;
+                for ( int b = 0; b < 3; ++b )
+                {
+                    if ( !( flags & x_msk[ b ] ) ) continue;
+                    float d = ImFabs( tgt_x[ b ] - src_x[ a ] );
+                    if ( d <= snap_radius_px && d < best_x.score )
+                        best_x = { src_x[ a ], tgt_x[ b ], d, i, a };
+                }
+            }
+
+            float src_y[ 3 ] = { m_t, m_b, m_cy };
+            float tgt_y[ 3 ] = { t_t, t_b, t_cy };
+            int   y_msk[ 3 ] = { ImWidgetsSnapFlags_TopEdge, ImWidgetsSnapFlags_BottomEdge, ImWidgetsSnapFlags_CenterV };
+            for ( int a = 0; a < 3; ++a )
+            {
+                if ( !( flags & y_msk[ a ] ) ) continue;
+                for ( int b = 0; b < 3; ++b )
+                {
+                    if ( !( flags & y_msk[ b ] ) ) continue;
+                    float d = ImFabs( tgt_y[ b ] - src_y[ a ] );
+                    if ( d <= snap_radius_px && d < best_y.score )
+                        best_y = { src_y[ a ], tgt_y[ b ], d, i, a };
+                }
+            }
+        }
+
+        if ( best_x.target_idx >= 0 )
+        {
+            delta.x = best_x.dst - best_x.src;
+            if ( dl )
+            {
+                ImRect t = targets[ best_x.target_idx ];
+                float y0 = ImMin( t.Min.y, moving.Min.y + delta.y ) - guide_extend_px;
+                float y1 = ImMax( t.Max.y, moving.Max.y + delta.y ) + guide_extend_px;
+                dl->AddLine( ImVec2( best_x.dst, y0 ), ImVec2( best_x.dst, y1 ), guide_col );
+            }
+        }
+        if ( best_y.target_idx >= 0 )
+        {
+            delta.y = best_y.dst - best_y.src;
+            if ( dl )
+            {
+                ImRect t = targets[ best_y.target_idx ];
+                float x0 = ImMin( t.Min.x, moving.Min.x + delta.x ) - guide_extend_px;
+                float x1 = ImMax( t.Max.x, moving.Max.x + delta.x ) + guide_extend_px;
+                dl->AddLine( ImVec2( x0, best_y.dst ), ImVec2( x1, best_y.dst ), guide_col );
+            }
+        }
+        return delta;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Onion skin overlay
+    //////////////////////////////////////////////////////////////////////////
+    static ImU32 DW_OnionCombine( ImU32 tint, float alpha )
+    {
+        if ( alpha < 0.0f ) alpha = 0.0f;
+        if ( alpha > 1.0f ) alpha = 1.0f;
+        int R = ( tint >> IM_COL32_R_SHIFT ) & 0xFF;
+        int G = ( tint >> IM_COL32_G_SHIFT ) & 0xFF;
+        int B = ( tint >> IM_COL32_B_SHIFT ) & 0xFF;
+        int A = ( tint >> IM_COL32_A_SHIFT ) & 0xFF;
+        int Af = (int)( (float)A * alpha + 0.5f );
+        return IM_COL32( R, G, B, Af );
+    }
+
+    void DrawOnionSkin( ImDrawList* dl, ImRect bounds,
+                        ImWidgetsOnionFrame const* prev, int prev_count,
+                        ImWidgetsOnionFrame const* next, int next_count,
+                        ImTextureID current_tex, ImVec2 cur_uv0, ImVec2 cur_uv1 )
+    {
+        for ( int i = prev_count - 1; i >= 0; --i )
+        {
+            ImWidgetsOnionFrame const& f = prev[ i ];
+            if ( f.Tex == ImTextureID_Invalid || f.Alpha <= 0.0f ) continue;
+            dl->AddImage( f.Tex, bounds.Min, bounds.Max, f.UV0, f.UV1, DW_OnionCombine( f.Tint, f.Alpha ) );
+        }
+        for ( int i = next_count - 1; i >= 0; --i )
+        {
+            ImWidgetsOnionFrame const& f = next[ i ];
+            if ( f.Tex == ImTextureID_Invalid || f.Alpha <= 0.0f ) continue;
+            dl->AddImage( f.Tex, bounds.Min, bounds.Max, f.UV0, f.UV1, DW_OnionCombine( f.Tint, f.Alpha ) );
+        }
+        if ( current_tex != ImTextureID_Invalid )
+            dl->AddImage( current_tex, bounds.Min, bounds.Max, cur_uv0, cur_uv1, IM_COL32_WHITE );
+    }
+
+    void DrawOnionSkinAuto( ImDrawList* dl, ImRect bounds,
+                             ImTextureID const* frames, int frame_count,
+                             int current_idx, int back, int forward,
+                             ImU32 back_tint, ImU32 forward_tint, float base_alpha )
+    {
+        if ( frame_count <= 0 || current_idx < 0 || current_idx >= frame_count ) return;
+        ImWidgetsOnionFrame prev[ 8 ];
+        ImWidgetsOnionFrame next[ 8 ];
+        if ( back    > 8 ) back    = 8;
+        if ( forward > 8 ) forward = 8;
+        int pc = 0, nc = 0;
+        for ( int k = 1; k <= back; ++k )
+        {
+            int idx = current_idx - k;
+            if ( idx < 0 ) break;
+            prev[ pc ] = { frames[ idx ], ImVec2( 0, 0 ), ImVec2( 1, 1 ),
+                            back_tint, base_alpha * ImPow( 0.5f, (float)( k - 1 ) ) };
+            ++pc;
+        }
+        for ( int k = 1; k <= forward; ++k )
+        {
+            int idx = current_idx + k;
+            if ( idx >= frame_count ) break;
+            next[ nc ] = { frames[ idx ], ImVec2( 0, 0 ), ImVec2( 1, 1 ),
+                            forward_tint, base_alpha * ImPow( 0.5f, (float)( k - 1 ) ) };
+            ++nc;
+        }
+        DrawOnionSkin( dl, bounds, prev, pc, next, nc, frames[ current_idx ], ImVec2( 0, 0 ), ImVec2( 1, 1 ) );
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Lasso & marquee selection
+    //////////////////////////////////////////////////////////////////////////
+    bool BeginSelection( char const* id_str, ImRect bounds, ImWidgetsSelectionState& s,
+                          ImU32 fill_col, ImU32 line_col, float thickness )
+    {
+        ImGuiWindow* win = ImGui::GetCurrentWindow();
+        if ( win->SkipItems ) { s.Closed = false; return false; }
+        ImGuiID id = win->GetID( id_str );
+
+        ImGui::ItemSize( bounds );
+        ImGui::ItemAdd( bounds, id );
+        ImGui::ButtonBehavior( bounds, id, NULL, NULL,
+                                (ImGuiButtonFlags)( (int)ImGuiButtonFlags_MouseButtonLeft | (int)ImGuiButtonFlags_NoNavFocus ) );
+
+        ImVec2 mouse = ImGui::GetIO().MousePos;
+        s.Closed = false;
+
+        if ( ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && ImGui::IsItemHovered() )
+        {
+            s.Active = true;
+            s.Path.clear();
+            s.Path.push_back( mouse );
+            if ( s.Mode == ImWidgetsSelectionMode_Marquee )
+                s.Path.push_back( mouse );
+            ImGui::SetActiveID( id, win );
+        }
+
+        if ( s.Active && ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+        {
+            ImVec2 p( ImClamp( mouse.x, bounds.Min.x, bounds.Max.x ),
+                       ImClamp( mouse.y, bounds.Min.y, bounds.Max.y ) );
+            if ( s.Mode == ImWidgetsSelectionMode_Marquee )
+            {
+                if ( s.Path.Size < 2 ) s.Path.push_back( p );
+                else s.Path[ 1 ] = p;
+            }
+            else
+            {
+                ImVec2 last = s.Path.Size ? s.Path.back() : p;
+                float dx = p.x - last.x, dy = p.y - last.y;
+                if ( dx * dx + dy * dy >= 4.0f )  // ~2 px squared min stride
+                    s.Path.push_back( p );
+            }
+        }
+        else if ( s.Active && !ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+        {
+            s.Active = false;
+            s.Closed = true;
+            if ( ImGui::GetActiveID() == id ) ImGui::ClearActiveID();
+        }
+
+        ImDrawList* dl = win->DrawList;
+        if ( s.Active && s.Path.Size >= 2 )
+        {
+            if ( s.Mode == ImWidgetsSelectionMode_Marquee )
+            {
+                ImVec2 a = s.Path[ 0 ], b = s.Path[ 1 ];
+                ImVec2 mn( ImMin( a.x, b.x ), ImMin( a.y, b.y ) );
+                ImVec2 mx( ImMax( a.x, b.x ), ImMax( a.y, b.y ) );
+                dl->AddRectFilled( mn, mx, fill_col );
+                dl->AddRect      ( mn, mx, line_col, 0.0f, 0, thickness );
+            }
+            else
+            {
+                dl->AddConcavePolyFilled( s.Path.Data, s.Path.Size, fill_col );
+                dl->AddPolyline( s.Path.Data, s.Path.Size, line_col, ImDrawFlags_Closed, thickness );
+            }
+        }
+        else if ( s.Closed && s.Path.Size >= 2 )
+        {
+            if ( s.Mode == ImWidgetsSelectionMode_Marquee )
+            {
+                ImVec2 a = s.Path[ 0 ], b = s.Path[ 1 ];
+                ImVec2 mn( ImMin( a.x, b.x ), ImMin( a.y, b.y ) );
+                ImVec2 mx( ImMax( a.x, b.x ), ImMax( a.y, b.y ) );
+                dl->AddRect( mn, mx, line_col, 0.0f, 0, thickness );
+            }
+            else
+            {
+                dl->AddPolyline( s.Path.Data, s.Path.Size, line_col, ImDrawFlags_Closed, thickness );
+            }
+        }
+        return s.Active || s.Closed;
+    }
+
+    void TestSelectionPoints( ImWidgetsSelectionState const& s, ImVec2 const* pts, int count, bool* inside_out )
+    {
+        if ( count <= 0 || !inside_out ) return;
+        if ( s.Mode == ImWidgetsSelectionMode_Marquee )
+        {
+            if ( s.Path.Size < 2 ) { for ( int i = 0; i < count; ++i ) inside_out[ i ] = false; return; }
+            ImVec2 a = s.Path[ 0 ], b = s.Path[ 1 ];
+            float xmn = ImMin( a.x, b.x ), xmx = ImMax( a.x, b.x );
+            float ymn = ImMin( a.y, b.y ), ymx = ImMax( a.y, b.y );
+            for ( int i = 0; i < count; ++i )
+                inside_out[ i ] = ( pts[ i ].x >= xmn && pts[ i ].x <= xmx && pts[ i ].y >= ymn && pts[ i ].y <= ymx );
+        }
+        else
+        {
+            if ( s.Path.Size < 3 ) { for ( int i = 0; i < count; ++i ) inside_out[ i ] = false; return; }
+            ImPolyShapeData pd = { (ImVec2*)s.Path.Data, s.Path.Size };
+            for ( int i = 0; i < count; ++i )
+                inside_out[ i ] = Im_IsPolyConcaveContains( pts[ i ], &pd );
+        }
+    }
+
+    void TestSelectionRects( ImWidgetsSelectionState const& s, ImRect const* rects, int count,
+                              bool* inside_out, bool fully_contained_only )
+    {
+        if ( count <= 0 || !inside_out ) return;
+        if ( s.Mode == ImWidgetsSelectionMode_Marquee )
+        {
+            if ( s.Path.Size < 2 ) { for ( int i = 0; i < count; ++i ) inside_out[ i ] = false; return; }
+            ImVec2 a = s.Path[ 0 ], b = s.Path[ 1 ];
+            ImRect sel( ImMin( a.x, b.x ), ImMin( a.y, b.y ), ImMax( a.x, b.x ), ImMax( a.y, b.y ) );
+            for ( int i = 0; i < count; ++i )
+            {
+                if ( fully_contained_only )
+                    inside_out[ i ] = sel.Contains( rects[ i ] );
+                else
+                    inside_out[ i ] = sel.Overlaps( rects[ i ] );
+            }
+        }
+        else
+        {
+            if ( s.Path.Size < 3 ) { for ( int i = 0; i < count; ++i ) inside_out[ i ] = false; return; }
+            ImPolyShapeData pd = { (ImVec2*)s.Path.Data, s.Path.Size };
+            for ( int i = 0; i < count; ++i )
+            {
+                ImVec2 c( ( rects[ i ].Min.x + rects[ i ].Max.x ) * 0.5f,
+                          ( rects[ i ].Min.y + rects[ i ].Max.y ) * 0.5f );
+                if ( fully_contained_only )
+                {
+                    ImVec2 corners[ 4 ] = { rects[ i ].Min,
+                                              ImVec2( rects[ i ].Max.x, rects[ i ].Min.y ),
+                                              rects[ i ].Max,
+                                              ImVec2( rects[ i ].Min.x, rects[ i ].Max.y ) };
+                    bool ok = true;
+                    for ( int k = 0; k < 4; ++k )
+                        if ( !Im_IsPolyConcaveContains( corners[ k ], &pd ) ) { ok = false; break; }
+                    inside_out[ i ] = ok;
+                }
+                else
+                {
+                    inside_out[ i ] = Im_IsPolyConcaveContains( c, &pd );
+                }
+            }
+        }
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Pan-zoom canvas + minimap
+    //////////////////////////////////////////////////////////////////////////
+    static ImGuiID g_CanvasActiveID = 0;
+    static ImWidgetsCanvasState* g_CanvasActiveState = NULL;
+
+    ImVec2 CanvasWorldToScreen( ImWidgetsCanvasState const& s, ImVec2 w )
+    {
+        return ImVec2( s.Bounds.Min.x + s.Pan.x + w.x * s.Zoom,
+                        s.Bounds.Min.y + s.Pan.y + w.y * s.Zoom );
+    }
+
+    ImVec2 CanvasScreenToWorld( ImWidgetsCanvasState const& s, ImVec2 p )
+    {
+        float iz = ( s.Zoom != 0.0f ) ? 1.0f / s.Zoom : 0.0f;
+        return ImVec2( ( p.x - s.Bounds.Min.x - s.Pan.x ) * iz,
+                        ( p.y - s.Bounds.Min.y - s.Pan.y ) * iz );
+    }
+
+    ImRect CanvasViewportWorld( ImWidgetsCanvasState const& s )
+    {
+        ImVec2 a = CanvasScreenToWorld( s, s.Bounds.Min );
+        ImVec2 b = CanvasScreenToWorld( s, s.Bounds.Max );
+        return ImRect( a, b );
+    }
+
+    bool BeginCanvas( char const* id_str, ImVec2 size, ImWidgetsCanvasState& s,
+                       ImU32 bg_col, ImU32 grid_col, float grid_step_world )
+    {
+        ImGuiWindow* win = ImGui::GetCurrentWindow();
+        if ( win->SkipItems ) return false;
+        ImGuiID id = win->GetID( id_str );
+
+        if ( s.Zoom <= 0.0f ) s.Zoom = 1.0f;
+
+        ImVec2 cur = ImGui::GetCursorScreenPos();
+        ImRect bb( cur, cur + size );
+        s.Bounds = bb;
+        ImGui::InvisibleButton( id_str, size );
+        bool hovered = ImGui::IsItemHovered();
+        ImVec2 mouse = ImGui::GetIO().MousePos;
+
+        if ( hovered && ImGui::GetIO().MouseWheel != 0.0f )
+        {
+            ImVec2 wpre = CanvasScreenToWorld( s, mouse );
+            float factor = ImPow( 1.1f, ImGui::GetIO().MouseWheel );
+            s.Zoom = ImClamp( s.Zoom * factor, 0.05f, 64.0f );
+            ImVec2 wpost = CanvasScreenToWorld( s, mouse );
+            s.Pan.x += ( wpost.x - wpre.x ) * s.Zoom;
+            s.Pan.y += ( wpost.y - wpre.y ) * s.Zoom;
+        }
+
+        bool middle = ImGui::IsMouseDown( ImGuiMouseButton_Middle );
+        bool shift_left = ImGui::IsMouseDown( ImGuiMouseButton_Left ) && ImGui::GetIO().KeyShift;
+        if ( ( hovered || s.PanActive ) && ( middle || shift_left ) )
+        {
+            if ( !s.PanActive ) { s.PanLastMouse = mouse; s.PanActive = true; }
+            s.Pan += mouse - s.PanLastMouse;
+            s.PanLastMouse = mouse;
+        }
+        else
+        {
+            s.PanActive = false;
+        }
+
+        ImDrawList* dl = win->DrawList;
+        dl->AddRectFilled( bb.Min, bb.Max, bg_col );
+
+        if ( grid_step_world > 0.0f && s.Zoom > 0.0f )
+        {
+            float step_sc = grid_step_world * s.Zoom;
+            while ( step_sc > 0.0f && step_sc < 4.0f ) step_sc *= 4.0f;  // densify when zoomed too far out
+            float ox = ImFmod( s.Pan.x, step_sc );
+            float oy = ImFmod( s.Pan.y, step_sc );
+            if ( ox < 0 ) ox += step_sc;
+            if ( oy < 0 ) oy += step_sc;
+            for ( float x = bb.Min.x + ox; x < bb.Max.x; x += step_sc )
+                dl->AddLine( ImVec2( x, bb.Min.y ), ImVec2( x, bb.Max.y ), grid_col );
+            for ( float y = bb.Min.y + oy; y < bb.Max.y; y += step_sc )
+                dl->AddLine( ImVec2( bb.Min.x, y ), ImVec2( bb.Max.x, y ), grid_col );
+        }
+
+        dl->PushClipRect( bb.Min, bb.Max, true );
+        g_CanvasActiveID = id;
+        g_CanvasActiveState = &s;
+        return true;
+    }
+
+    void EndCanvas()
+    {
+        ImGuiWindow* win = ImGui::GetCurrentWindow();
+        if ( win && win->DrawList && g_CanvasActiveID != 0 )
+            win->DrawList->PopClipRect();
+        g_CanvasActiveID = 0;
+        g_CanvasActiveState = NULL;
+    }
+
+    void DrawCanvasMinimap( ImWidgetsCanvasState& s, ImRect world_content,
+                             ImVec2 minimap_size, ImWidgetsCornerAnchor anchor,
+                             float margin_px, ImU32 bg_col, ImU32 content_col, ImU32 viewport_col )
+    {
+        ImRect bb = s.Bounds;
+        if ( bb.GetWidth() <= 0.0f ) return;
+        ImVec2 mmin, mmax;
+        switch ( anchor )
+        {
+        default:
+        case ImWidgetsCornerAnchor_TopLeft:
+            mmin = ImVec2( bb.Min.x + margin_px, bb.Min.y + margin_px ); break;
+        case ImWidgetsCornerAnchor_TopRight:
+            mmin = ImVec2( bb.Max.x - margin_px - minimap_size.x, bb.Min.y + margin_px ); break;
+        case ImWidgetsCornerAnchor_BottomLeft:
+            mmin = ImVec2( bb.Min.x + margin_px, bb.Max.y - margin_px - minimap_size.y ); break;
+        case ImWidgetsCornerAnchor_BottomRight:
+            mmin = ImVec2( bb.Max.x - margin_px - minimap_size.x, bb.Max.y - margin_px - minimap_size.y ); break;
+        }
+        mmax = mmin + minimap_size;
+
+        ImDrawList* dl = ImGui::GetCurrentWindow()->DrawList;
+        dl->PushClipRect( bb.Min, bb.Max, true );
+        dl->AddRectFilled( mmin, mmax, bg_col );
+        dl->AddRect      ( mmin, mmax, IM_COL32( 0, 0, 0, 220 ) );
+
+        float wcw = world_content.GetWidth();
+        float wch = world_content.GetHeight();
+        if ( wcw <= 0.0f || wch <= 0.0f ) { dl->PopClipRect(); return; }
+        float sx = minimap_size.x / wcw;
+        float sy = minimap_size.y / wch;
+        float sc = ImMin( sx, sy );
+        float fit_w = wcw * sc, fit_h = wch * sc;
+        ImVec2 origin = ImVec2( mmin.x + ( minimap_size.x - fit_w ) * 0.5f,
+                                  mmin.y + ( minimap_size.y - fit_h ) * 0.5f );
+        ImRect fit_rect( origin, origin + ImVec2( fit_w, fit_h ) );
+        dl->AddRectFilled( fit_rect.Min, fit_rect.Max, content_col );
+
+        ImRect view_w = CanvasViewportWorld( s );
+        ImVec2 vp_mn( origin.x + ( view_w.Min.x - world_content.Min.x ) * sc,
+                       origin.y + ( view_w.Min.y - world_content.Min.y ) * sc );
+        ImVec2 vp_mx( origin.x + ( view_w.Max.x - world_content.Min.x ) * sc,
+                       origin.y + ( view_w.Max.y - world_content.Min.y ) * sc );
+        ImVec2 vp_clip_mn( ImMax( vp_mn.x, mmin.x ), ImMax( vp_mn.y, mmin.y ) );
+        ImVec2 vp_clip_mx( ImMin( vp_mx.x, mmax.x ), ImMin( vp_mx.y, mmax.y ) );
+        if ( vp_clip_mx.x > vp_clip_mn.x && vp_clip_mx.y > vp_clip_mn.y )
+            dl->AddRect( vp_clip_mn, vp_clip_mx, viewport_col, 0.0f, 0, 2.0f );
+
+        ImGuiIO& io = ImGui::GetIO();
+        ImRect mm_rect( mmin, mmax );
+        if ( mm_rect.Contains( io.MousePos ) && ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+        {
+            ImVec2 click_w(
+                world_content.Min.x + ( io.MousePos.x - origin.x ) / sc,
+                world_content.Min.y + ( io.MousePos.y - origin.y ) / sc );
+            ImVec2 vw = view_w.GetSize();
+            ImVec2 target_screen_for_world = ImVec2( s.Bounds.Min.x + s.Bounds.GetWidth() * 0.5f,
+                                                       s.Bounds.Min.y + s.Bounds.GetHeight() * 0.5f );
+            ( void )vw; ( void )target_screen_for_world;
+            s.Pan.x = ( s.Bounds.GetWidth() * 0.5f ) - click_w.x * s.Zoom;
+            s.Pan.y = ( s.Bounds.GetHeight() * 0.5f ) - click_w.y * s.Zoom;
+        }
+        dl->PopClipRect();
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Bracket / curly brace
+    //////////////////////////////////////////////////////////////////////////
+    static void DW_AppendCubic( ImVector<ImVec2>& out, ImVec2 P0, ImVec2 P1, ImVec2 P2, ImVec2 P3, int seg )
+    {
+        for ( int k = 1; k <= seg; ++k )
+        {
+            float u  = (float)k / (float)seg;
+            float mu = 1.0f - u;
+            ImVec2 p = P0 * ( mu * mu * mu ) + P1 * ( 3.0f * mu * mu * u )
+                     + P2 * ( 3.0f * mu * u  * u ) + P3 * ( u  * u  * u  );
+            out.push_back( p );
+        }
+    }
+
+    // LaTeX-style brackets, routed through DrawPolylineAA so caps/joins match the
+    // rest of the line family.
+    //   Square: straight spine + perpendicular arms (mitered 90deg).
+    //   Round : two cubic-Bezier quarter-arc approximations of a (semi-)circle,
+    //           with proper kappa = 4/3*(sqrt(2)-1) factor for smoothness.
+    //   Curly : two S-curve arms meeting at a sharp central beak (the "tip"),
+    //           with a small pinch around the beak so it actually looks pointed
+    //           like a Computer Modern \big{} brace.
+    void DrawBracket( ImDrawList* dl, ImVec2 from, ImVec2 to,
+                      float depth, ImWidgetsBracketStyle style,
+                      ImU32 col, float thickness )
+    {
+        ImVec2 d( to.x - from.x, to.y - from.y );
+        float len = ImSqrt( d.x * d.x + d.y * d.y );
+        if ( len < 1e-3f ) return;
+        ImVec2 t( d.x / len, d.y / len );
+        ImVec2 n( -t.y, t.x );
+        ImVec2 pa = from + n * depth;
+        ImVec2 pb = to   + n * depth;
+
+        ImVector<ImVec2> pts;
+
+        if ( style == ImWidgetsBracketStyle_Square )
+        {
+            pts.push_back( pa );
+            pts.push_back( from );
+            pts.push_back( to );
+            pts.push_back( pb );
+            DrawPolylineAA( dl, pts.Data, pts.Size, col, thickness, false,
+                ImWidgetsCap_Square, ImWidgetsJoin_Mitter, 8.0f );
+        }
+        else if ( style == ImWidgetsBracketStyle_Round )
+        {
+            const float kappa  = 4.0f / 3.0f * ( ImSqrt( 2.0f ) - 1.0f );
+            ImVec2 chord_mid = ( from + to ) * 0.5f;
+            ImVec2 apex      = chord_mid + n * depth;
+            float kh = kappa * ( len * 0.5f );
+            float kw = kappa * depth;
+            int seg = 24;
+
+            pts.push_back( from );
+            DW_AppendCubic( pts,
+                from,
+                from + n * kw,
+                apex - t * kh,
+                apex,
+                seg );
+            DW_AppendCubic( pts,
+                apex,
+                apex + t * kh,
+                to   + n * kw,
+                to,
+                seg );
+            DrawPolylineAA( dl, pts.Data, pts.Size, col, thickness, false,
+                ImWidgetsCap_Round, ImWidgetsJoin_Round, 4.0f );
+        }
+        else  // Curly -- Computer Modern \big\{ proportions
+        {
+            // The shape is two smooth cubic Beziers meeting at a sharp
+            // outward-pointing cusp at the middle (the "beak").
+            //
+            // The cusp is created by placing each Bezier's near-beak control
+            // point INWARD of the beak: the path then arrives at the beak
+            // moving outward, and the next segment leaves moving inward --
+            // tangent flips sign on the n-axis -> sharp V pointing in +n.
+            //
+            // Arms swing out to ~0.9 D thanks to the strong outward pull of
+            // the first control point, the beak protrudes to ~1.3 D, and the
+            // path stays a smooth S everywhere except at the beak.
+            float D = depth;
+            ImVec2 mid  = ( from + to ) * 0.5f;
+            ImVec2 beak = mid + n * ( D * 1.30f );
+            int seg = 28;
+
+            pts.push_back( from );
+
+            // Top half: from -> beak
+            //   c1 pulls strongly outward + a little along +t  -> arm curl
+            //   c2 sits "up and inward" of the beak           -> outward-down tangent at beak
+            DW_AppendCubic( pts,
+                from,
+                from + n * ( D * 0.90f ) + t * ( len * 0.10f ),
+                beak - n * ( D * 0.22f ) - t * ( len * 0.08f ),
+                beak,
+                seg );
+            // Bottom half: beak -> to (mirror)
+            //   d1 sits "down and inward" of the beak         -> inward-down tangent leaving beak
+            //   d2 pulls outward + a little against +t        -> arm curl
+            DW_AppendCubic( pts,
+                beak,
+                beak - n * ( D * 0.22f ) + t * ( len * 0.08f ),
+                to   + n * ( D * 0.90f ) - t * ( len * 0.10f ),
+                to,
+                seg );
+
+            // Mitered join so the cusp at `beak` stays sharp instead of being
+            // rounded by the AA stroker.
+            DrawPolylineAA( dl, pts.Data, pts.Size, col, thickness, false,
+                ImWidgetsCap_Round, ImWidgetsJoin_Mitter, 16.0f );
+        }
+        ( void )pa; ( void )pb;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Crosshair / reticle
+    //////////////////////////////////////////////////////////////////////////
+    char const* GetCrosshairStyleName( ImWidgetsCrosshairStyle style )
+    {
+        switch ( style )
+        {
+        case ImWidgetsCrosshairStyle_Plus:       return "Plus";
+        case ImWidgetsCrosshairStyle_GappedPlus: return "Gapped Plus";
+        case ImWidgetsCrosshairStyle_MilDot:     return "Mil-Dot";
+        case ImWidgetsCrosshairStyle_T:          return "T";
+        case ImWidgetsCrosshairStyle_Dot:        return "Dot";
+        case ImWidgetsCrosshairStyle_CircleDot:  return "Circle + Dot";
+        }
+        return "?";
+    }
+
+    void DrawCrosshairInRect( ImDrawList* dl, ImVec2 c, ImRect bounds, ImU32 col, float thickness )
+    {
+        if ( bounds.GetWidth() <= 0.0f || bounds.GetHeight() <= 0.0f ) return;
+        dl->AddLine( ImVec2( c.x, bounds.Min.y ), ImVec2( c.x, bounds.Max.y ), col, thickness );
+        dl->AddLine( ImVec2( bounds.Min.x, c.y ), ImVec2( bounds.Max.x, c.y ), col, thickness );
+    }
+
+    void DrawCrosshair( ImDrawList* dl, ImVec2 c, float radius, ImWidgetsCrosshairStyle style,
+                         ImU32 col, float thickness, float gap_radius )
+    {
+        if ( radius <= 0.0f ) return;
+        float g = ImClamp( gap_radius, 0.0f, radius * 0.95f );
+        switch ( style )
+        {
+        case ImWidgetsCrosshairStyle_Plus:
+            dl->AddLine( ImVec2( c.x - radius, c.y ), ImVec2( c.x + radius, c.y ), col, thickness );
+            dl->AddLine( ImVec2( c.x, c.y - radius ), ImVec2( c.x, c.y + radius ), col, thickness );
+            break;
+        case ImWidgetsCrosshairStyle_GappedPlus:
+        {
+            float gg = ( g > 0.0f ) ? g : radius * 0.25f;
+            dl->AddLine( ImVec2( c.x - radius, c.y ), ImVec2( c.x - gg, c.y ), col, thickness );
+            dl->AddLine( ImVec2( c.x + gg,    c.y ), ImVec2( c.x + radius, c.y ), col, thickness );
+            dl->AddLine( ImVec2( c.x, c.y - radius ), ImVec2( c.x, c.y - gg ), col, thickness );
+            dl->AddLine( ImVec2( c.x, c.y + gg    ), ImVec2( c.x, c.y + radius ), col, thickness );
+            break;
+        }
+        case ImWidgetsCrosshairStyle_MilDot:
+        {
+            float gg = ( g > 0.0f ) ? g : radius * 0.25f;
+            dl->AddLine( ImVec2( c.x - radius, c.y ), ImVec2( c.x - gg, c.y ), col, thickness );
+            dl->AddLine( ImVec2( c.x + gg,    c.y ), ImVec2( c.x + radius, c.y ), col, thickness );
+            dl->AddLine( ImVec2( c.x, c.y - radius ), ImVec2( c.x, c.y - gg ), col, thickness );
+            dl->AddLine( ImVec2( c.x, c.y + gg    ), ImVec2( c.x, c.y + radius ), col, thickness );
+            const int dots = 4;
+            float dr = ImMax( 1.0f, thickness * 1.4f );
+            for ( int k = 1; k <= dots; ++k )
+            {
+                float u = (float)k / (float)( dots + 1 );
+                float off = gg + ( radius - gg ) * u;
+                dl->AddCircleFilled( ImVec2( c.x - off, c.y ), dr, col );
+                dl->AddCircleFilled( ImVec2( c.x + off, c.y ), dr, col );
+                dl->AddCircleFilled( ImVec2( c.x, c.y - off ), dr, col );
+                dl->AddCircleFilled( ImVec2( c.x, c.y + off ), dr, col );
+            }
+            break;
+        }
+        case ImWidgetsCrosshairStyle_T:
+            dl->AddLine( ImVec2( c.x - radius, c.y ), ImVec2( c.x + radius, c.y ), col, thickness );
+            dl->AddLine( ImVec2( c.x, c.y - radius ), ImVec2( c.x, c.y ), col, thickness );
+            break;
+        case ImWidgetsCrosshairStyle_Dot:
+            dl->AddCircleFilled( c, ImMax( 2.0f, thickness * 1.5f ), col );
+            break;
+        case ImWidgetsCrosshairStyle_CircleDot:
+        {
+            float gg = ( g > 0.0f ) ? g : radius * 0.3f;
+            dl->AddCircle( c, radius, col, 0, thickness );
+            dl->AddLine( ImVec2( c.x - radius, c.y ), ImVec2( c.x - gg, c.y ), col, thickness );
+            dl->AddLine( ImVec2( c.x + gg,    c.y ), ImVec2( c.x + radius, c.y ), col, thickness );
+            dl->AddLine( ImVec2( c.x, c.y - radius ), ImVec2( c.x, c.y - gg ), col, thickness );
+            dl->AddLine( ImVec2( c.x, c.y + gg    ), ImVec2( c.x, c.y + radius ), col, thickness );
+            dl->AddCircleFilled( c, ImMax( 1.5f, thickness ), col );
+            break;
+        }
+        }
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Pin / map marker
+    //////////////////////////////////////////////////////////////////////////
+    void DrawMapPin( ImDrawList* dl, ImVec2 tip, float height, float head_radius,
+                     ImU32 fill_col, ImU32 stroke_col, float stroke_thickness,
+                     ImU32 hole_col, float hole_radius )
+    {
+        if ( height <= 0.0f || head_radius <= 0.0f ) return;
+        ImVec2 head_center( tip.x, tip.y - height );
+        float r = head_radius;
+        float dy = height - r;
+        if ( dy < r * 0.05f ) dy = r * 0.05f;
+        float ang = ImAcos( ImClamp( r / dy, -1.0f, 1.0f ) );  // tangent angle from vertical
+        float ang_left  = IM_PI * 0.5f + ang;   // left tangent on the circle
+        float ang_right = IM_PI * 0.5f - ang;
+
+        const int arc_seg = 32;
+        dl->PathClear();
+        dl->PathLineTo( tip );
+        // Tangent line from tip to right tangent point
+        ImVec2 right_tan( head_center.x + ImCos( ang_right ) * r, head_center.y + ImSin( ang_right ) * r );
+        dl->PathLineTo( right_tan );
+        // Arc around head, from right tangent, going counter-clockwise around the top, to left tangent
+        // ImGui circle has y growing downward; arc must be traversed correctly.
+        for ( int k = 1; k <= arc_seg; ++k )
+        {
+            float u = (float)k / (float)arc_seg;
+            // walk from ang_right "up around top of head" to ang_left, going through -pi/2 (top)
+            // angle goes ang_right -> -pi/2 -> -(pi - ang_right) which equals ang_left - 2*pi
+            float a0 = ang_right;
+            float a1 = ang_left - IM_PI * 2.0f;  // negative direction
+            float a  = a0 + ( a1 - a0 ) * u;
+            dl->PathLineTo( ImVec2( head_center.x + ImCos( a ) * r, head_center.y + ImSin( a ) * r ) );
+        }
+        ImVec2 left_tan( head_center.x + ImCos( ang_left ) * r, head_center.y + ImSin( ang_left ) * r );
+        dl->PathLineTo( left_tan );
+        dl->PathLineTo( tip );
+        dl->PathFillConvex( fill_col );
+
+        if ( stroke_col != 0u && stroke_thickness > 0.0f )
+        {
+            dl->PathClear();
+            dl->PathLineTo( tip );
+            dl->PathLineTo( right_tan );
+            for ( int k = 1; k <= arc_seg; ++k )
+            {
+                float u = (float)k / (float)arc_seg;
+                float a0 = ang_right;
+                float a1 = ang_left - IM_PI * 2.0f;
+                float a  = a0 + ( a1 - a0 ) * u;
+                dl->PathLineTo( ImVec2( head_center.x + ImCos( a ) * r, head_center.y + ImSin( a ) * r ) );
+            }
+            dl->PathLineTo( left_tan );
+            dl->PathStroke( stroke_col, ImDrawFlags_Closed, stroke_thickness );
+        }
+        if ( hole_col != 0u && hole_radius > 0.0f )
+            dl->AddCircleFilled( head_center, hole_radius, hole_col );
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Wavy / zigzag / scallop / dashed-zigzag
+    //////////////////////////////////////////////////////////////////////////
+    static void DW_LineFrame( ImVec2 a, ImVec2 b, ImVec2* t, ImVec2* n, float* len_out )
+    {
+        ImVec2 d( b.x - a.x, b.y - a.y );
+        float L = ImSqrt( d.x * d.x + d.y * d.y );
+        if ( L < 1e-5f ) { *t = ImVec2( 1, 0 ); *n = ImVec2( 0, 1 ); *len_out = 0.0f; return; }
+        *t = ImVec2( d.x / L, d.y / L );
+        *n = ImVec2( -t->y, t->x );
+        *len_out = L;
+    }
+
+    // Build a sinusoidal polyline along a -> b and route it through the
+    // standard DrawPolylineAA pipeline so we inherit AA + caps + joins.
+    void DrawWavyLine( ImDrawList* dl, ImVec2 a, ImVec2 b, float amplitude, float period,
+                        ImU32 col, float thickness, int samples_per_period )
+    {
+        ImVec2 t, n; float L;
+        DW_LineFrame( a, b, &t, &n, &L );
+        if ( L <= 0.0f || period <= 0.0f ) return;
+        int n_steps = ImMax( 8, (int)( L / period * (float)samples_per_period ) );
+        ImVector<ImVec2> pts;
+        pts.reserve( n_steps + 1 );
+        for ( int k = 0; k <= n_steps; ++k )
+        {
+            float u = (float)k / (float)n_steps;
+            float s = u * L;
+            float phase = ( s / period ) * IM_PI * 2.0f;
+            pts.push_back( ImVec2( a.x + t.x * s + n.x * ImSin( phase ) * amplitude,
+                                     a.y + t.y * s + n.y * ImSin( phase ) * amplitude ) );
+        }
+        DrawPolylineAA( dl, pts.Data, pts.Size, col, thickness, false,
+            ImWidgetsCap_Round, ImWidgetsJoin_Round, 4.0f );
+    }
+
+    void DrawZigzagLine( ImDrawList* dl, ImVec2 a, ImVec2 b, float amplitude, float period,
+                          ImU32 col, float thickness )
+    {
+        ImVec2 t, n; float L;
+        DW_LineFrame( a, b, &t, &n, &L );
+        if ( L <= 0.0f || period <= 0.0f ) return;
+        float half = period * 0.5f;
+        ImVector<ImVec2> pts;
+        pts.push_back( a );
+        float s = 0.0f;
+        int side = 1;
+        while ( s + half <= L + 1e-3f )
+        {
+            float ns = s + half;
+            pts.push_back( ImVec2( a.x + t.x * ns + n.x * amplitude * (float)side,
+                                     a.y + t.y * ns + n.y * amplitude * (float)side ) );
+            s = ns; side = -side;
+        }
+        pts.push_back( b );
+        DrawPolylineAA( dl, pts.Data, pts.Size, col, thickness, false,
+            ImWidgetsCap_Butt, ImWidgetsJoin_Mitter, 8.0f );
+    }
+
+    void DrawScallopLine( ImDrawList* dl, ImVec2 a, ImVec2 b, float amplitude, float period,
+                           ImU32 col, float thickness )
+    {
+        ImVec2 t, n; float L;
+        DW_LineFrame( a, b, &t, &n, &L );
+        if ( L <= 0.0f || period <= 0.0f ) return;
+        int cycles = ImMax( 1, (int)( L / period + 0.5f ) );
+        period = L / (float)cycles;
+        const int arc_seg = 24;
+        ImVector<ImVec2> pts;
+        pts.reserve( cycles * arc_seg + 1 );
+        pts.push_back( a );
+        for ( int c = 0; c < cycles; ++c )
+        {
+            ImVec2 p0( a.x + t.x * ( c * period ), a.y + t.y * ( c * period ) );
+            ImVec2 p1( a.x + t.x * ( ( c + 1 ) * period ), a.y + t.y * ( ( c + 1 ) * period ) );
+            ImVec2 c1( p0.x + n.x * amplitude * 1.33f, p0.y + n.y * amplitude * 1.33f );
+            ImVec2 c2( p1.x + n.x * amplitude * 1.33f, p1.y + n.y * amplitude * 1.33f );
+            for ( int k = 1; k <= arc_seg; ++k )
+            {
+                float u = (float)k / (float)arc_seg;
+                float mu = 1.0f - u;
+                ImVec2 p = p0 * ( mu * mu * mu ) + c1 * ( 3.0f * mu * mu * u )
+                         + c2 * ( 3.0f * mu * u  * u ) + p1 * ( u  * u  * u  );
+                pts.push_back( p );
+            }
+        }
+        DrawPolylineAA( dl, pts.Data, pts.Size, col, thickness, false,
+            ImWidgetsCap_Round, ImWidgetsJoin_Round, 4.0f );
+    }
+
+    void DrawDashedZigzagLine( ImDrawList* dl, ImVec2 a, ImVec2 b, float amplitude, float period,
+                                float dash_len, float gap_len, ImU32 col, float thickness )
+    {
+        ImVec2 t, n; float L;
+        DW_LineFrame( a, b, &t, &n, &L );
+        if ( L <= 0.0f || period <= 0.0f ) return;
+        float half = period * 0.5f;
+        ImVector<ImVec2> pts;
+        pts.push_back( a );
+        float s = 0.0f;
+        int side = 1;
+        while ( s + half <= L + 1e-3f )
+        {
+            float ns = s + half;
+            pts.push_back( ImVec2( a.x + t.x * ns + n.x * amplitude * (float)side,
+                                     a.y + t.y * ns + n.y * amplitude * (float)side ) );
+            s = ns; side = -side;
+        }
+        pts.push_back( b );
+        DrawDashedPolylineAA( dl, pts.Data, pts.Size, col, thickness,
+            dash_len, gap_len, 0.0f, false,
+            ImWidgetsCap_Butt, ImWidgetsJoin_Mitter, 8.0f );
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Drop-shadow / inner-glow
+    //////////////////////////////////////////////////////////////////////////
+    static ImU32 DW_ScaleAlpha( ImU32 c, float k )
+    {
+        int A = ( c >> IM_COL32_A_SHIFT ) & 0xFF;
+        int Af = (int)( (float)A * ImClamp( k, 0.0f, 1.0f ) + 0.5f );
+        return ( c & ~( 0xFFu << IM_COL32_A_SHIFT ) ) | ( ( (ImU32)Af & 0xFF ) << IM_COL32_A_SHIFT );
+    }
+
+    void DrawDropShadowRect( ImDrawList* dl, ImRect r, float radius, ImVec2 offset,
+                              ImU32 col, float corner_round )
+    {
+        if ( radius <= 0.0f ) { dl->AddRectFilled( r.Min + offset, r.Max + offset, col, corner_round ); return; }
+        int steps = ImMax( 3, (int)( radius / 1.5f ) );
+        for ( int k = steps; k >= 1; --k )
+        {
+            float u = (float)k / (float)steps;
+            float pad = radius * u;
+            float alpha = ( 1.0f - u );
+            alpha = alpha * alpha;  // quadratic falloff
+            alpha *= 0.6f;
+            ImU32 c = DW_ScaleAlpha( col, alpha );
+            dl->AddRectFilled( r.Min + offset - ImVec2( pad, pad ),
+                                r.Max + offset + ImVec2( pad, pad ),
+                                c, corner_round + pad );
+        }
+    }
+
+    void DrawInnerGlowRect( ImDrawList* dl, ImRect r, float radius, ImU32 col, float corner_round )
+    {
+        if ( radius <= 0.0f ) return;
+        int steps = ImMax( 3, (int)( radius / 1.5f ) );
+        for ( int k = 1; k <= steps; ++k )
+        {
+            float u = (float)k / (float)steps;
+            float pad = radius * u;
+            float alpha = ( 1.0f - u );
+            alpha = alpha * alpha * 0.55f;
+            ImU32 c = DW_ScaleAlpha( col, alpha );
+            ImRect rr( r.Min.x + pad, r.Min.y + pad, r.Max.x - pad, r.Max.y - pad );
+            if ( rr.Max.x <= rr.Min.x || rr.Max.y <= rr.Min.y ) break;
+            float cr = ImMax( 0.0f, corner_round - pad );
+            dl->AddRect( rr.Min, rr.Max, c, cr, 0, 1.0f );
+        }
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Rulers
+    //////////////////////////////////////////////////////////////////////////
+    void DrawRuler( ImDrawList* dl, ImRect bounds, ImWidgetsRulerOrient orient,
+                     float world_min, float world_max, float major_step, int minor_subdivs,
+                     char const* label_format, ImU32 line_col, ImU32 label_col,
+                     float major_tick_height, float minor_tick_height, float thickness,
+                     float const* p_mouse_world, ImU32 tracker_col,
+                     ImFont* font, float font_size )
+    {
+        if ( bounds.GetWidth() <= 0.0f || bounds.GetHeight() <= 0.0f ) return;
+        if ( world_max == world_min ) return;
+        bool horiz = ( orient == ImWidgetsRulerOrient_Top || orient == ImWidgetsRulerOrient_Bottom );
+
+        ImVec2 start, end;
+        float ang0;  // tick angle relative to baseline (90deg = perpendicular)
+        if ( orient == ImWidgetsRulerOrient_Top )    { start = ImVec2( bounds.Min.x, bounds.Max.y ); end = ImVec2( bounds.Max.x, bounds.Max.y ); ang0 = -IM_PI * 0.5f; }
+        else if ( orient == ImWidgetsRulerOrient_Bottom ) { start = ImVec2( bounds.Min.x, bounds.Min.y ); end = ImVec2( bounds.Max.x, bounds.Min.y ); ang0 = IM_PI * 0.5f; }
+        else if ( orient == ImWidgetsRulerOrient_Left )   { start = ImVec2( bounds.Max.x, bounds.Min.y ); end = ImVec2( bounds.Max.x, bounds.Max.y ); ang0 = -IM_PI * 0.5f; }
+        else /* Right */                                 { start = ImVec2( bounds.Min.x, bounds.Min.y ); end = ImVec2( bounds.Min.x, bounds.Max.y ); ang0 = IM_PI * 0.5f; }
+
+        float length = horiz ? bounds.GetWidth() : bounds.GetHeight();
+        float world_span = world_max - world_min;
+        int   majors = ImMax( 1, (int)( world_span / major_step + 0.0001f ) );
+        int   subs   = ImMax( 0, minor_subdivs );
+
+        DrawLinearLineGraduation( dl, start, end,
+            thickness, line_col,
+            majors, major_tick_height, thickness, ang0, line_col,
+            subs > 0 ? majors * subs : -1,
+            subs > 0 ? minor_tick_height : -1.0f,
+            subs > 0 ? thickness * 0.7f : -1.0f,
+            subs > 0 ? ang0 : -1.0f,
+            subs > 0 ? line_col : 0u );
+
+        ImFont* f = font ? font : ImGui::GetFont();
+        float fs = ( font_size > 0.0f ) ? font_size : ImGui::GetFontSize();
+        char buf[ 32 ];
+        for ( int k = 0; k <= majors; ++k )
+        {
+            float u = (float)k / (float)majors;
+            float wv = world_min + world_span * u;
+            ImFormatString( buf, IM_ARRAYSIZE( buf ), label_format ? label_format : "%g", wv );
+            ImVec2 tsize = ImGui::CalcTextSize( buf );
+            ImVec2 pos;
+            if ( horiz )
+            {
+                float x = start.x + length * u;
+                if ( orient == ImWidgetsRulerOrient_Top )
+                    pos = ImVec2( x - tsize.x * 0.5f, bounds.Max.y - major_tick_height - tsize.y - 2.0f );
+                else
+                    pos = ImVec2( x - tsize.x * 0.5f, bounds.Min.y + major_tick_height + 2.0f );
+            }
+            else
+            {
+                float y = start.y + length * u;
+                if ( orient == ImWidgetsRulerOrient_Left )
+                    pos = ImVec2( bounds.Max.x - major_tick_height - tsize.x - 2.0f, y - tsize.y * 0.5f );
+                else
+                    pos = ImVec2( bounds.Min.x + major_tick_height + 2.0f, y - tsize.y * 0.5f );
+            }
+            dl->AddText( f, fs, pos, label_col, buf );
+        }
+
+        if ( p_mouse_world )
+        {
+            float u = ( *p_mouse_world - world_min ) / world_span;
+            if ( u >= 0.0f && u <= 1.0f )
+            {
+                if ( horiz )
+                {
+                    float x = start.x + length * u;
+                    dl->AddLine( ImVec2( x, bounds.Min.y ), ImVec2( x, bounds.Max.y ), tracker_col, thickness );
+                }
+                else
+                {
+                    float y = start.y + length * u;
+                    dl->AddLine( ImVec2( bounds.Min.x, y ), ImVec2( bounds.Max.x, y ), tracker_col, thickness );
+                }
+            }
+        }
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Grid overlay
+    //////////////////////////////////////////////////////////////////////////
+    void DrawGridOverlay( ImDrawList* dl, ImRect bounds, ImVec2 origin,
+                          float major_step, int minor_subdivs,
+                          ImU32 major_col, ImU32 minor_col, ImU32 origin_col,
+                          ImWidgetsGridFlags flags, float thickness )
+    {
+        if ( major_step <= 0.0f || bounds.GetWidth() <= 0.0f || bounds.GetHeight() <= 0.0f ) return;
+        bool draw_minor = ( ( flags & ImWidgetsGridFlags_Minor ) != 0 && minor_subdivs > 0 );
+        bool draw_major = ( flags & ImWidgetsGridFlags_Major ) != 0;
+        bool draw_dots  = ( flags & ImWidgetsGridFlags_Dots  ) != 0;
+        float minor_step = draw_minor ? major_step / (float)minor_subdivs : major_step;
+
+        if ( draw_dots )
+        {
+            float radius = ImMax( 1.0f, thickness );
+            float step = draw_major ? major_step : minor_step;
+            float x0 = origin.x - ImFloor( ( origin.x - bounds.Min.x ) / step ) * step;
+            float y0 = origin.y - ImFloor( ( origin.y - bounds.Min.y ) / step ) * step;
+            for ( float x = x0; x < bounds.Max.x; x += step )
+                for ( float y = y0; y < bounds.Max.y; y += step )
+                    dl->AddCircleFilled( ImVec2( x, y ), radius, major_col );
+            if ( flags & ImWidgetsGridFlags_Origin )
+                dl->AddCircleFilled( origin, radius * 2.5f, origin_col );
+            return;
+        }
+
+        if ( draw_minor )
+        {
+            float x0 = origin.x - ImFloor( ( origin.x - bounds.Min.x ) / minor_step ) * minor_step;
+            float y0 = origin.y - ImFloor( ( origin.y - bounds.Min.y ) / minor_step ) * minor_step;
+            for ( float x = x0; x < bounds.Max.x; x += minor_step )
+                dl->AddLine( ImVec2( x, bounds.Min.y ), ImVec2( x, bounds.Max.y ), minor_col, thickness * 0.5f );
+            for ( float y = y0; y < bounds.Max.y; y += minor_step )
+                dl->AddLine( ImVec2( bounds.Min.x, y ), ImVec2( bounds.Max.x, y ), minor_col, thickness * 0.5f );
+        }
+        if ( draw_major )
+        {
+            float x0 = origin.x - ImFloor( ( origin.x - bounds.Min.x ) / major_step ) * major_step;
+            float y0 = origin.y - ImFloor( ( origin.y - bounds.Min.y ) / major_step ) * major_step;
+            for ( float x = x0; x < bounds.Max.x; x += major_step )
+                dl->AddLine( ImVec2( x, bounds.Min.y ), ImVec2( x, bounds.Max.y ), major_col, thickness );
+            for ( float y = y0; y < bounds.Max.y; y += major_step )
+                dl->AddLine( ImVec2( bounds.Min.x, y ), ImVec2( bounds.Max.x, y ), major_col, thickness );
+        }
+        if ( flags & ImWidgetsGridFlags_Origin )
+        {
+            if ( origin.x >= bounds.Min.x && origin.x <= bounds.Max.x )
+                dl->AddLine( ImVec2( origin.x, bounds.Min.y ), ImVec2( origin.x, bounds.Max.y ), origin_col, thickness * 1.5f );
+            if ( origin.y >= bounds.Min.y && origin.y <= bounds.Max.y )
+                dl->AddLine( ImVec2( bounds.Min.x, origin.y ), ImVec2( bounds.Max.x, origin.y ), origin_col, thickness * 1.5f );
+        }
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Gradient mesh editor
+    //////////////////////////////////////////////////////////////////////////
+    static ImU32 DW_LerpU32( ImU32 a, ImU32 b, float t )
+    {
+        int Ar = ( a >> IM_COL32_R_SHIFT ) & 0xFF, Ag = ( a >> IM_COL32_G_SHIFT ) & 0xFF;
+        int Ab = ( a >> IM_COL32_B_SHIFT ) & 0xFF, Aa = ( a >> IM_COL32_A_SHIFT ) & 0xFF;
+        int Br = ( b >> IM_COL32_R_SHIFT ) & 0xFF, Bg = ( b >> IM_COL32_G_SHIFT ) & 0xFF;
+        int Bb = ( b >> IM_COL32_B_SHIFT ) & 0xFF, Ba = ( b >> IM_COL32_A_SHIFT ) & 0xFF;
+        int R = (int)( Ar + ( Br - Ar ) * t );
+        int G = (int)( Ag + ( Bg - Ag ) * t );
+        int B = (int)( Ab + ( Bb - Ab ) * t );
+        int A = (int)( Aa + ( Ba - Aa ) * t );
+        return IM_COL32( R, G, B, A );
+    }
+
+    void GradientMeshInit( ImWidgetsGradientMesh& m, int nx, int ny,
+                            ImU32 c00, ImU32 c10, ImU32 c01, ImU32 c11 )
+    {
+        if ( nx < 2 ) nx = 2;
+        if ( ny < 2 ) ny = 2;
+        m.CountX = nx;
+        m.CountY = ny;
+        m.SelectedNode = -1;
+        m.ShowMesh = true;
+        m.Nodes.resize( nx * ny );
+        for ( int j = 0; j < ny; ++j )
+        {
+            float v = (float)j / (float)( ny - 1 );
+            for ( int i = 0; i < nx; ++i )
+            {
+                float u = (float)i / (float)( nx - 1 );
+                ImWidgetsGradientMeshNode& n = m.Nodes[ j * nx + i ];
+                n.PosUV = ImVec2( u, v );
+                ImU32 top = DW_LerpU32( c00, c10, u );
+                ImU32 bot = DW_LerpU32( c01, c11, u );
+                n.Color = DW_LerpU32( top, bot, v );
+            }
+        }
+    }
+
+    static ImU32 DW_MeshSample( ImWidgetsGradientMesh const& m, float u, float v )
+    {
+        if ( m.CountX < 2 || m.CountY < 2 ) return IM_COL32_WHITE;
+        float fx = u * (float)( m.CountX - 1 );
+        float fy = v * (float)( m.CountY - 1 );
+        int ix = ImClamp( (int)fx, 0, m.CountX - 2 );
+        int iy = ImClamp( (int)fy, 0, m.CountY - 2 );
+        float tx = ImClamp( fx - (float)ix, 0.0f, 1.0f );
+        float ty = ImClamp( fy - (float)iy, 0.0f, 1.0f );
+        ImU32 c00 = m.Nodes[ iy * m.CountX + ix ].Color;
+        ImU32 c10 = m.Nodes[ iy * m.CountX + ix + 1 ].Color;
+        ImU32 c01 = m.Nodes[ ( iy + 1 ) * m.CountX + ix ].Color;
+        ImU32 c11 = m.Nodes[ ( iy + 1 ) * m.CountX + ix + 1 ].Color;
+        return DW_LerpU32( DW_LerpU32( c00, c10, tx ), DW_LerpU32( c01, c11, tx ), ty );
+    }
+
+    bool GradientMeshEditor( char const* id_str, ImWidgetsGradientMesh& m, ImVec2 size,
+                              int sampleX, int sampleY )
+    {
+        ImGuiWindow* win = ImGui::GetCurrentWindow();
+        if ( win->SkipItems ) return false;
+        if ( size.x <= 0.0f ) size.x = ImGui::GetContentRegionAvail().x;
+        if ( size.y <= 0.0f ) size.y = 200.0f;
+        ImGui::PushID( id_str );
+        ImVec2 cur = ImGui::GetCursorScreenPos();
+        ImRect bb( cur, cur + size );
+        ImGui::InvisibleButton( "##gm", size );
+        ImDrawList* dl = win->DrawList;
+
+        if ( m.CountX < 2 || m.CountY < 2 )
+            GradientMeshInit( m, 3, 3,
+                IM_COL32( 220, 90, 90, 255 ), IM_COL32( 90, 220, 90, 255 ),
+                IM_COL32(  90, 90, 220, 255 ), IM_COL32(  240, 240, 240, 255 ) );
+
+        for ( int j = 0; j < sampleY; ++j )
+        {
+            float v0 = (float)j / (float)sampleY;
+            float v1 = (float)( j + 1 ) / (float)sampleY;
+            for ( int i = 0; i < sampleX; ++i )
+            {
+                float u0 = (float)i / (float)sampleX;
+                float u1 = (float)( i + 1 ) / (float)sampleX;
+                ImU32 c00 = DW_MeshSample( m, u0, v0 );
+                ImU32 c10 = DW_MeshSample( m, u1, v0 );
+                ImU32 c01 = DW_MeshSample( m, u0, v1 );
+                ImU32 c11 = DW_MeshSample( m, u1, v1 );
+                ImVec2 a( bb.Min.x + size.x * u0, bb.Min.y + size.y * v0 );
+                ImVec2 b( bb.Min.x + size.x * u1, bb.Min.y + size.y * v1 );
+                dl->AddRectFilledMultiColor( a, b, c00, c10, c11, c01 );
+            }
+        }
+
+        ImVec2 mouse = ImGui::GetIO().MousePos;
+        bool hov = ImGui::IsItemHovered();
+        bool changed = false;
+        float pick_r = 10.0f;
+        if ( m.ShowMesh )
+        {
+            for ( int j = 0; j < m.CountY; ++j )
+            {
+                for ( int i = 0; i < m.CountX; ++i )
+                {
+                    ImWidgetsGradientMeshNode const& n = m.Nodes[ j * m.CountX + i ];
+                    ImVec2 pos( bb.Min.x + size.x * n.PosUV.x, bb.Min.y + size.y * n.PosUV.y );
+                    if ( i + 1 < m.CountX )
+                    {
+                        ImWidgetsGradientMeshNode const& nr = m.Nodes[ j * m.CountX + i + 1 ];
+                        dl->AddLine( pos, ImVec2( bb.Min.x + size.x * nr.PosUV.x, bb.Min.y + size.y * nr.PosUV.y ),
+                                      IM_COL32( 30, 30, 30, 180 ) );
+                    }
+                    if ( j + 1 < m.CountY )
+                    {
+                        ImWidgetsGradientMeshNode const& nd = m.Nodes[ ( j + 1 ) * m.CountX + i ];
+                        dl->AddLine( pos, ImVec2( bb.Min.x + size.x * nd.PosUV.x, bb.Min.y + size.y * nd.PosUV.y ),
+                                      IM_COL32( 30, 30, 30, 180 ) );
+                    }
+                    float r = ( m.SelectedNode == j * m.CountX + i ) ? 6.0f : 4.0f;
+                    dl->AddCircleFilled( pos, r + 2.0f, IM_COL32( 30, 30, 30, 255 ) );
+                    dl->AddCircleFilled( pos, r,        n.Color );
+                }
+            }
+            if ( hov && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) )
+            {
+                int picked = -1;
+                float pick_r2 = pick_r * pick_r;
+                for ( int idx = 0; idx < m.Nodes.Size; ++idx )
+                {
+                    ImWidgetsGradientMeshNode const& n = m.Nodes[ idx ];
+                    ImVec2 pos( bb.Min.x + size.x * n.PosUV.x, bb.Min.y + size.y * n.PosUV.y );
+                    float dx = mouse.x - pos.x, dy = mouse.y - pos.y;
+                    if ( dx * dx + dy * dy <= pick_r2 ) { picked = idx; break; }
+                }
+                m.SelectedNode = picked;
+                if ( picked >= 0 ) ImGui::OpenPopup( "##gm_edit" );
+            }
+        }
+
+        if ( ImGui::BeginPopup( "##gm_edit" ) && m.SelectedNode >= 0 && m.SelectedNode < m.Nodes.Size )
+        {
+            ImWidgetsGradientMeshNode& n = m.Nodes[ m.SelectedNode ];
+            ImVec4 c = ImGui::ColorConvertU32ToFloat4( n.Color );
+            if ( ImGui::ColorPicker4( "##gm_col", &c.x ) )
+            {
+                n.Color = ImGui::ColorConvertFloat4ToU32( c );
+                changed = true;
+            }
+            ImGui::EndPopup();
+        }
+
+        dl->AddRect( bb.Min, bb.Max, IM_COL32( 0, 0, 0, 200 ) );
+        ImGui::PopID();
+        return changed;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Toon ramp editor
+    //////////////////////////////////////////////////////////////////////////
+    ImU32 ToonRampSample( ImWidgetsToonRamp const& r, float t01 )
+    {
+        if ( r.Bands.Size <= 0 ) return IM_COL32_WHITE;
+        if ( r.Bands.Size == 1 ) return r.Bands[ 0 ].Color;
+        if ( t01 <= r.Bands[ 0 ].Pos ) return r.Bands[ 0 ].Color;
+        if ( t01 >= r.Bands.back().Pos ) return r.Bands.back().Color;
+        for ( int i = 0; i + 1 < r.Bands.Size; ++i )
+        {
+            float p0 = r.Bands[ i ].Pos, p1 = r.Bands[ i + 1 ].Pos;
+            if ( t01 < p0 || t01 > p1 ) continue;
+            float span = p1 - p0;
+            if ( span <= 0.0f ) return r.Bands[ i + 1 ].Color;
+            float soft = ImClamp( r.Bands[ i ].Softness, 0.0f, 1.0f );
+            float boundary = p0 + span * ( 1.0f - soft );  // hard step happens at p0 + (1-soft)*span
+            if ( t01 < boundary || soft <= 0.0f ) return r.Bands[ i ].Color;
+            float u = ( t01 - boundary ) / ( p1 - boundary );
+            return DW_LerpU32( r.Bands[ i ].Color, r.Bands[ i + 1 ].Color, ImClamp( u, 0.0f, 1.0f ) );
+        }
+        return r.Bands.back().Color;
+    }
+
+    bool ToonRampEditor( char const* id_str, ImWidgetsToonRamp& r, ImVec2 size )
+    {
+        ImGui::PushID( id_str );
+        if ( r.Bands.Size == 0 )
+        {
+            ImWidgetsToonBand b;
+            b.Pos = 0.0f; b.Color = IM_COL32(  60,  60,  80, 255 ); b.Softness = 0.0f; r.Bands.push_back( b );
+            b.Pos = 0.4f; b.Color = IM_COL32( 160, 130, 100, 255 ); b.Softness = 0.0f; r.Bands.push_back( b );
+            b.Pos = 0.7f; b.Color = IM_COL32( 230, 210, 170, 255 ); b.Softness = 0.0f; r.Bands.push_back( b );
+            b.Pos = 1.0f; b.Color = IM_COL32( 255, 255, 235, 255 ); b.Softness = 0.0f; r.Bands.push_back( b );
+            r.SelectedBand = -1;
+        }
+        if ( size.x <= 0.0f ) size.x = ImGui::GetContentRegionAvail().x;
+        if ( size.y <= 0.0f ) size.y = 60.0f;
+
+        ImVec2 cur = ImGui::GetCursorScreenPos();
+        ImRect bb( cur, cur + size );
+        ImGui::InvisibleButton( "##tr_strip", size );
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+
+        const int N = 256;
+        for ( int i = 0; i < N; ++i )
+        {
+            float t0 = (float)i / (float)N;
+            float t1 = (float)( i + 1 ) / (float)N;
+            ImU32 c = ToonRampSample( r, ( t0 + t1 ) * 0.5f );
+            dl->AddRectFilled(
+                ImVec2( bb.Min.x + size.x * t0, bb.Min.y ),
+                ImVec2( bb.Min.x + size.x * t1, bb.Max.y ), c );
+        }
+        dl->AddRect( bb.Min, bb.Max, IM_COL32( 0, 0, 0, 200 ) );
+
+        bool changed = false;
+        ImVec2 mouse = ImGui::GetIO().MousePos;
+        float marker_h = 10.0f;
+        for ( int i = 0; i < r.Bands.Size; ++i )
+        {
+            float x = bb.Min.x + size.x * r.Bands[ i ].Pos;
+            ImVec2 tri[ 3 ] = {
+                ImVec2( x, bb.Max.y ),
+                ImVec2( x - 6.0f, bb.Max.y + marker_h ),
+                ImVec2( x + 6.0f, bb.Max.y + marker_h ),
+            };
+            dl->AddTriangleFilled( tri[ 0 ], tri[ 1 ], tri[ 2 ], r.Bands[ i ].Color );
+            dl->AddTriangle      ( tri[ 0 ], tri[ 1 ], tri[ 2 ], i == r.SelectedBand ? IM_COL32( 240, 240, 90, 255 ) : IM_COL32( 0, 0, 0, 200 ) );
+        }
+        ImGui::Dummy( ImVec2( size.x, marker_h ) );
+
+        if ( ImGui::IsItemHovered() && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) )
+        {
+            int picked = -1;
+            for ( int i = 0; i < r.Bands.Size; ++i )
+            {
+                float x = bb.Min.x + size.x * r.Bands[ i ].Pos;
+                if ( ImFabs( mouse.x - x ) <= 8.0f ) { picked = i; break; }
+            }
+            r.SelectedBand = picked;
+        }
+        if ( r.SelectedBand >= 0 && r.SelectedBand < r.Bands.Size && ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+        {
+            float new_pos = ImClamp( ( mouse.x - bb.Min.x ) / size.x, 0.0f, 1.0f );
+            if ( ImFabs( new_pos - r.Bands[ r.SelectedBand ].Pos ) > 1e-4f )
+            {
+                r.Bands[ r.SelectedBand ].Pos = new_pos;
+                changed = true;
+            }
+        }
+
+        if ( r.SelectedBand >= 0 && r.SelectedBand < r.Bands.Size )
+        {
+            ImWidgetsToonBand& b = r.Bands[ r.SelectedBand ];
+            ImVec4 c = ImGui::ColorConvertU32ToFloat4( b.Color );
+            if ( ImGui::ColorEdit3( "##tr_col", &c.x, ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_NoInputs ) )
+            {
+                b.Color = ImGui::ColorConvertFloat4ToU32( c );
+                changed = true;
+            }
+            ImGui::SameLine();
+            if ( ImGui::SliderFloat( "Softness", &b.Softness, 0.0f, 1.0f ) ) changed = true;
+            ImGui::SameLine();
+            if ( ImGui::Button( "+" ) )
+            {
+                ImWidgetsToonBand nb = b;
+                nb.Pos = ImClamp( b.Pos + 0.05f, 0.0f, 1.0f );
+                r.Bands.push_back( nb );
+                changed = true;
+            }
+            ImGui::SameLine();
+            if ( r.Bands.Size > 1 && ImGui::Button( "-" ) )
+            {
+                r.Bands.erase( r.Bands.begin() + r.SelectedBand );
+                r.SelectedBand = -1;
+                changed = true;
+            }
+        }
+        ImGui::PopID();
+        return changed;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Diff view
+    //////////////////////////////////////////////////////////////////////////
+    void DiffView( char const* id_str, ImWidgetsDiffEntry const* entries, int count, ImVec2 size )
+    {
+        ImGui::PushID( id_str );
+        if ( size.x <= 0.0f ) size.x = ImGui::GetContentRegionAvail().x;
+        if ( size.y <= 0.0f ) size.y = ImGui::GetContentRegionAvail().y;
+        ImGui::BeginChild( "##diff", size, true );
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        for ( int i = 0; i < count; ++i )
+        {
+            ImWidgetsDiffEntry const& e = entries[ i ];
+            ImU32 bg = 0u, fg = IM_COL32( 220, 220, 220, 255 );
+            char marker = ' ';
+            switch ( e.Kind )
+            {
+            case ImWidgetsDiffLine_Added:   bg = IM_COL32(  20, 80,  20, 120 ); fg = IM_COL32( 200, 240, 200, 255 ); marker = '+'; break;
+            case ImWidgetsDiffLine_Removed: bg = IM_COL32(  90, 20,  20, 120 ); fg = IM_COL32( 240, 200, 200, 255 ); marker = '-'; break;
+            case ImWidgetsDiffLine_Hunk:    bg = IM_COL32(  30, 60,  90, 160 ); fg = IM_COL32( 180, 220, 250, 255 ); marker = '@'; break;
+            default: break;
+            }
+            ImVec2 pos = ImGui::GetCursorScreenPos();
+            ImVec2 ts = ImGui::CalcTextSize( e.Text ? e.Text : "" );
+            float row_h = ts.y;
+            float gutter = 70.0f;
+            if ( bg != 0u )
+                dl->AddRectFilled( pos, ImVec2( pos.x + ImGui::GetContentRegionAvail().x, pos.y + row_h ), bg );
+            char buf[ 32 ];
+            ImFormatString( buf, IM_ARRAYSIZE( buf ), "%4d %4d %c",
+                e.OldNo >= 0 ? e.OldNo : 0,
+                e.NewNo >= 0 ? e.NewNo : 0,
+                marker );
+            dl->AddText( pos, IM_COL32( 140, 140, 145, 255 ), buf );
+            dl->AddText( ImVec2( pos.x + gutter, pos.y ), fg, e.Text ? e.Text : "" );
+            ImGui::Dummy( ImVec2( 0.0f, row_h ) );
+        }
+        ImGui::EndChild();
+        ImGui::PopID();
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // 3D vector input (azimuth + elevation + magnitude)
+    //////////////////////////////////////////////////////////////////////////
+    bool VectorInput3D( char const* label, float v[ 3 ], float size )
+    {
+        bool changed = false;
+        ImGui::PushID( label );
+        // `size` is in logical pixels; convert to physical for the map width.
+        // Default chosen so the widget is comfortably draggable at any DPI.
+        if ( size <= 0.0f ) size = 200.0f;
+        float size_px = LpToPx( size );
+        float mag = ImSqrt( v[ 0 ] * v[ 0 ] + v[ 1 ] * v[ 1 ] + v[ 2 ] * v[ 2 ] );
+        float az = 0.0f, el = 0.0f;
+        if ( mag > 1e-5f )
+        {
+            az = ImAtan2( v[ 0 ], v[ 2 ] );
+            el = asinf( ImClamp( v[ 1 ] / mag, -1.0f, 1.0f ) );
+        }
+
+        ImGui::BeginGroup();
+        ImGui::Text( "%s", label );
+        ImVec2 cur = ImGui::GetCursorScreenPos();
+        ImVec2 sz( size_px, size_px * 0.5f );
+        ImGui::InvisibleButton( "##v3map", sz );
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled( cur, cur + sz, IM_COL32( 35, 35, 45, 255 ) );
+        ImWidgets::DrawGridOverlay( dl, ImRect( cur, cur + sz ),
+                                     ImVec2( cur.x + sz.x * 0.5f, cur.y + sz.y * 0.5f ),
+                                     sz.x / 8.0f, 0,
+                                     IM_COL32( 90, 90, 100, 180 ),
+                                     IM_COL32(  60,  60,  70, 110 ),
+                                     IM_COL32( 220, 220, 220, 220 ),
+                                     ImWidgetsGridFlags_Major | ImWidgetsGridFlags_Origin );
+        if ( ImGui::IsItemActive() )
+        {
+            ImVec2 m = ImGui::GetIO().MousePos;
+            az = ( ( m.x - cur.x ) / sz.x - 0.5f ) * IM_PI * 2.0f;
+            el = ( 0.5f - ( m.y - cur.y ) / sz.y ) * IM_PI;
+            changed = true;
+        }
+        float dotx = cur.x + ( az / ( IM_PI * 2.0f ) + 0.5f ) * sz.x;
+        float doty = cur.y + ( 0.5f - el / IM_PI ) * sz.y;
+        float dot_r = ImMax( 4.0f, LpToPx( 5.0f ) );
+        dl->AddCircleFilled( ImVec2( dotx, doty ), dot_r,        IM_COL32( 240, 220, 90, 255 ) );
+        dl->AddCircle      ( ImVec2( dotx, doty ), dot_r,        IM_COL32( 0, 0, 0, 200 ) );
+        dl->AddText( cur + ImVec2( LpToPx( 4.0f ), LpToPx( 4.0f ) ),
+            IM_COL32( 200, 200, 200, 200 ), "azimuth -> | elevation ^" );
+
+        ImGui::SetNextItemWidth( size_px );
+        if ( ImGui::SliderFloat( "magnitude", &mag, 0.0f, 10.0f, "%.3f" ) ) changed = true;
+        ImGui::SetNextItemWidth( size_px );
+        if ( ImGui::DragFloat3( "xyz", v, 0.01f ) ) { changed = true; }
+
+        if ( changed )
+        {
+            float ce = ImCos( el );
+            v[ 0 ] = mag * ce * ImSin( az );
+            v[ 1 ] = mag * ImSin( el );
+            v[ 2 ] = mag * ce * ImCos( az );
+        }
+        ImGui::EndGroup();
+        ImGui::PopID();
+        return changed;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Matrix editor
+    //////////////////////////////////////////////////////////////////////////
+    bool MatrixEditor( char const* label, float* data, int rows, int cols, float speed, char const* format )
+    {
+        bool changed = false;
+        ImGui::PushID( label );
+        ImGui::Text( "%s", label );
+        if ( ImGui::BeginTable( "##mat", cols, ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_Borders ) )
+        {
+            for ( int r = 0; r < rows; ++r )
+            {
+                ImGui::TableNextRow();
+                for ( int c = 0; c < cols; ++c )
+                {
+                    ImGui::TableSetColumnIndex( c );
+                    ImGui::SetNextItemWidth( -FLT_MIN );
+                    ImGui::PushID( r * cols + c );
+                    if ( ImGui::DragFloat( "##cell", &data[ r * cols + c ], speed, 0.0f, 0.0f, format ) )
+                        changed = true;
+                    ImGui::PopID();
+                }
+            }
+            ImGui::EndTable();
+        }
+        ImGui::PopID();
+        return changed;
+    }
+
+    bool MatrixEditorDouble( char const* label, double* data, int rows, int cols, float speed, char const* format )
+    {
+        bool changed = false;
+        ImGui::PushID( label );
+        ImGui::Text( "%s", label );
+        if ( ImGui::BeginTable( "##matd", cols, ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_Borders ) )
+        {
+            for ( int r = 0; r < rows; ++r )
+            {
+                ImGui::TableNextRow();
+                for ( int c = 0; c < cols; ++c )
+                {
+                    ImGui::TableSetColumnIndex( c );
+                    ImGui::SetNextItemWidth( -FLT_MIN );
+                    ImGui::PushID( r * cols + c );
+                    if ( ImGui::DragScalar( "##cell", ImGuiDataType_Double, &data[ r * cols + c ], speed, NULL, NULL, format ) )
+                        changed = true;
+                    ImGui::PopID();
+                }
+            }
+            ImGui::EndTable();
+        }
+        ImGui::PopID();
+        return changed;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Vector field + stream lines + polynomial roots + curve sketch
+    //////////////////////////////////////////////////////////////////////////
+    static ImU32 DW_HSVtoU32( float h, float s, float v, float a = 1.0f )
+    {
+        float R, G, B;
+        ImGui::ColorConvertHSVtoRGB( h, s, v, R, G, B );
+        return IM_COL32( (int)( R * 255.0f ), (int)( G * 255.0f ), (int)( B * 255.0f ), (int)( a * 255.0f ) );
+    }
+
+    void DrawVectorField( ImDrawList* dl, ImRect bounds,
+                           ImWidgetsVectorField2DFn func, void* user_data,
+                           int divX, int divY, float arrow_max_len,
+                           ImU32 col, float thickness, bool color_by_magnitude )
+    {
+        if ( !func || divX <= 0 || divY <= 0 ) return;
+        // Caller passes logical pixels; convert to physical for HiDPI.
+        float arrow_max_len_px = LpToPx( arrow_max_len );
+        float head_size_px     = ImMax( LpToPx( 6.0f ), arrow_max_len_px * 0.4f );
+        float thickness_px     = LpToPx( thickness );
+        float cell_w = bounds.GetWidth() / (float)divX;
+        float cell_h = bounds.GetHeight() / (float)divY;
+        // Bound the arrow length to fit inside its cell (so tightly packed grids
+        // don't drown the arrows in their neighbours).
+        float cell_min = ImMin( cell_w, cell_h );
+        if ( arrow_max_len_px > cell_min * 0.5f ) arrow_max_len_px = cell_min * 0.5f;
+        float max_mag = 0.0f;
+        ImVector<ImVec2> samples;
+        samples.resize( divX * divY );
+        for ( int j = 0; j < divY; ++j )
+            for ( int i = 0; i < divX; ++i )
+            {
+                ImVec2 uv( ( i + 0.5f ) / (float)divX, ( j + 0.5f ) / (float)divY );
+                ImVec2 v = func( uv, user_data );
+                samples[ j * divX + i ] = v;
+                float m = ImSqrt( v.x * v.x + v.y * v.y );
+                if ( m > max_mag ) max_mag = m;
+            }
+        if ( max_mag <= 1e-5f ) max_mag = 1.0f;
+        for ( int j = 0; j < divY; ++j )
+            for ( int i = 0; i < divX; ++i )
+            {
+                ImVec2 v = samples[ j * divX + i ];
+                float m = ImSqrt( v.x * v.x + v.y * v.y );
+                if ( m < 1e-5f ) continue;
+                ImVec2 c( bounds.Min.x + ( i + 0.5f ) * cell_w, bounds.Min.y + ( j + 0.5f ) * cell_h );
+                float scale = ( arrow_max_len_px * m / max_mag ) / m;
+                ImVec2 tip( c.x + v.x * scale, c.y + v.y * scale );
+                ImU32 cc = color_by_magnitude
+                    ? DW_HSVtoU32( 0.65f - 0.65f * ( m / max_mag ), 0.85f, 1.0f )
+                    : col;
+                DrawArrow( dl, c, tip, cc, thickness_px,
+                    ImWidgetsArrowHead_Triangle, ImWidgetsArrowHead_None, head_size_px );
+            }
+    }
+
+    void DrawStreamLines( ImDrawList* dl, ImRect bounds,
+                           ImWidgetsVectorField2DFn func, void* user_data,
+                           ImVec2 const* seeds_uv, int seed_count,
+                           int steps, float step_size_px, ImU32 col, float thickness )
+    {
+        if ( !func || seed_count <= 0 ) return;
+        float W = bounds.GetWidth(), H = bounds.GetHeight();
+        for ( int s = 0; s < seed_count; ++s )
+        {
+            ImVec2 uv = seeds_uv[ s ];
+            dl->PathClear();
+            dl->PathLineTo( ImVec2( bounds.Min.x + uv.x * W, bounds.Min.y + uv.y * H ) );
+            for ( int k = 0; k < steps; ++k )
+            {
+                ImVec2 v = func( uv, user_data );
+                float m = ImSqrt( v.x * v.x + v.y * v.y );
+                if ( m < 1e-6f ) break;
+                ImVec2 v_n( v.x / m, v.y / m );
+                ImVec2 uv_mid( uv.x + v_n.x * 0.5f * step_size_px / W,
+                                uv.y + v_n.y * 0.5f * step_size_px / H );
+                ImVec2 vm = func( uv_mid, user_data );
+                float mm = ImSqrt( vm.x * vm.x + vm.y * vm.y );
+                if ( mm < 1e-6f ) break;
+                ImVec2 vm_n( vm.x / mm, vm.y / mm );
+                uv.x += vm_n.x * step_size_px / W;
+                uv.y += vm_n.y * step_size_px / H;
+                if ( uv.x < 0.0f || uv.x > 1.0f || uv.y < 0.0f || uv.y > 1.0f ) break;
+                dl->PathLineTo( ImVec2( bounds.Min.x + uv.x * W, bounds.Min.y + uv.y * H ) );
+            }
+            dl->PathStroke( col, ImDrawFlags_None, thickness );
+        }
+    }
+
+    void DrawPolynomialRoots( ImDrawList* dl, ImRect bounds, ImVec2 const* roots, int n,
+                               float view_radius, ImU32 real_col, ImU32 complex_col,
+                               ImU32 axis_col, ImU32 grid_col, float dot_radius,
+                               ImFont* font, float font_size )
+    {
+        if ( bounds.GetWidth() <= 0.0f || bounds.GetHeight() <= 0.0f || view_radius <= 0.0f ) return;
+        ImVec2 c( ( bounds.Min.x + bounds.Max.x ) * 0.5f, ( bounds.Min.y + bounds.Max.y ) * 0.5f );
+        float side = ImMin( bounds.GetWidth(), bounds.GetHeight() );
+        float sc = ( side * 0.5f ) / view_radius;
+
+        // grid
+        int g = 4;
+        for ( int k = -g; k <= g; ++k )
+        {
+            float v = (float)k / (float)g * view_radius;
+            dl->AddLine( ImVec2( c.x + v * sc, bounds.Min.y ), ImVec2( c.x + v * sc, bounds.Max.y ), grid_col );
+            dl->AddLine( ImVec2( bounds.Min.x, c.y + v * sc ), ImVec2( bounds.Max.x, c.y + v * sc ), grid_col );
+        }
+        // axes
+        dl->AddLine( ImVec2( c.x, bounds.Min.y ), ImVec2( c.x, bounds.Max.y ), axis_col, 1.5f );
+        dl->AddLine( ImVec2( bounds.Min.x, c.y ), ImVec2( bounds.Max.x, c.y ), axis_col, 1.5f );
+        // unit circle
+        dl->AddCircle( c, sc, axis_col, 64, 1.0f );
+
+        ImFont* f = font ? font : ImGui::GetFont();
+        float fs = ( font_size > 0.0f ) ? font_size : ImGui::GetFontSize();
+        dl->AddText( f, fs, ImVec2( bounds.Max.x - 28.0f, c.y + 4.0f ), axis_col, "Re" );
+        dl->AddText( f, fs, ImVec2( c.x + 4.0f, bounds.Min.y + 2.0f ), axis_col, "Im" );
+
+        for ( int i = 0; i < n; ++i )
+        {
+            ImVec2 z = roots[ i ];
+            ImVec2 pt( c.x + z.x * sc, c.y - z.y * sc );
+            bool is_real = ImFabs( z.y ) < 1e-6f;
+            ImU32 cc = is_real ? real_col : complex_col;
+            dl->AddCircleFilled( pt, dot_radius, cc );
+            dl->AddCircle      ( pt, dot_radius, IM_COL32( 0, 0, 0, 200 ) );
+        }
+        char buf[ 16 ];
+        ImFormatString( buf, IM_ARRAYSIZE( buf ), "n = %d", n );
+        dl->AddText( f, fs, ImVec2( bounds.Min.x + 4.0f, bounds.Min.y + 4.0f ), axis_col, buf );
+    }
+
+    void DrawCurveSketch( ImDrawList* dl, ImRect bounds, ImWidgetsScalarFn func, void* ud,
+                           float xmin, float xmax, float ymin, float ymax, int samples,
+                           ImU32 line_col, ImU32 axis_col, ImU32 grid_col,
+                           float thickness, int grid_div_x, int grid_div_y )
+    {
+        if ( bounds.GetWidth() <= 0.0f || bounds.GetHeight() <= 0.0f || !func ) return;
+        if ( xmax <= xmin || ymax <= ymin || samples < 2 ) return;
+        float W = bounds.GetWidth(), H = bounds.GetHeight();
+
+        for ( int k = 1; k < grid_div_x; ++k )
+        {
+            float u = (float)k / (float)grid_div_x;
+            float x = bounds.Min.x + W * u;
+            dl->AddLine( ImVec2( x, bounds.Min.y ), ImVec2( x, bounds.Max.y ), grid_col );
+        }
+        for ( int k = 1; k < grid_div_y; ++k )
+        {
+            float u = (float)k / (float)grid_div_y;
+            float y = bounds.Min.y + H * u;
+            dl->AddLine( ImVec2( bounds.Min.x, y ), ImVec2( bounds.Max.x, y ), grid_col );
+        }
+        // axes (if 0 falls inside the view)
+        if ( xmin < 0.0f && xmax > 0.0f )
+        {
+            float xz = bounds.Min.x + W * ( -xmin / ( xmax - xmin ) );
+            dl->AddLine( ImVec2( xz, bounds.Min.y ), ImVec2( xz, bounds.Max.y ), axis_col, 1.5f );
+        }
+        if ( ymin < 0.0f && ymax > 0.0f )
+        {
+            float yz = bounds.Min.y + H * ( 1.0f - ( -ymin / ( ymax - ymin ) ) );
+            dl->AddLine( ImVec2( bounds.Min.x, yz ), ImVec2( bounds.Max.x, yz ), axis_col, 1.5f );
+        }
+
+        dl->PathClear();
+        for ( int i = 0; i < samples; ++i )
+        {
+            float t = (float)i / (float)( samples - 1 );
+            float x = xmin + ( xmax - xmin ) * t;
+            float y = func( x, ud );
+            if ( y != y ) continue;  // NaN guard
+            if ( y < ymin || y > ymax ) { if ( dl->_Path.Size > 1 ) dl->PathStroke( line_col, ImDrawFlags_None, thickness ); dl->PathClear(); continue; }
+            float sx = bounds.Min.x + W * t;
+            float sy = bounds.Min.y + H * ( 1.0f - ( y - ymin ) / ( ymax - ymin ) );
+            dl->PathLineTo( ImVec2( sx, sy ) );
+        }
+        if ( dl->_Path.Size > 1 ) dl->PathStroke( line_col, ImDrawFlags_None, thickness );
+        else dl->PathClear();
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Typography helpers
+    //////////////////////////////////////////////////////////////////////////
+    void DrawTextOnPath( ImDrawList* dl, ImFont* font, float font_size, char const* text,
+                          ImVec2 const* path_pts, int path_count, ImU32 col,
+                          float offset_along, bool baseline_above )
+    {
+        if ( !text || !*text || path_count < 2 ) return;
+        if ( !font ) font = ImGui::GetFont();
+        if ( font_size <= 0.0f ) font_size = ImGui::GetFontSize();
+
+        ImVector<float> seg_len; seg_len.resize( path_count - 1 );
+        float total = 0.0f;
+        for ( int i = 0; i + 1 < path_count; ++i )
+        {
+            ImVec2 d = path_pts[ i + 1 ] - path_pts[ i ];
+            float L = ImSqrt( d.x * d.x + d.y * d.y );
+            seg_len[ i ] = L;
+            total += L;
+        }
+        if ( total < 1e-3f ) return;
+
+        ImFontBaked* baked = font->GetFontBaked( font_size );
+        if ( !baked ) return;
+        dl->PushTexture( font->ContainerAtlas->TexRef );
+
+        float pen = offset_along;
+        char const* p = text;
+        while ( *p )
+        {
+            unsigned int c = (unsigned char)*p++;
+            if ( c == ' ' ) { pen += font_size * 0.27f; continue; }
+            ImFontGlyph const* gl = baked->FindGlyph( (ImWchar)c );
+            if ( !gl ) continue;
+            float adv = gl->AdvanceX;
+            // find position+tangent at pen + glyph half-width
+            float target = pen + adv * 0.5f;
+            if ( target < 0.0f || target > total ) { pen += adv; continue; }
+            float acc = 0.0f;
+            ImVec2 pos, tan( 1, 0 );
+            for ( int i = 0; i + 1 < path_count; ++i )
+            {
+                if ( acc + seg_len[ i ] >= target )
+                {
+                    float u = ( target - acc ) / seg_len[ i ];
+                    ImVec2 a = path_pts[ i ], b = path_pts[ i + 1 ];
+                    pos = ImVec2( a.x + ( b.x - a.x ) * u, a.y + ( b.y - a.y ) * u );
+                    ImVec2 d = b - a;
+                    float L = seg_len[ i ];
+                    if ( L > 0.0f ) tan = ImVec2( d.x / L, d.y / L );
+                    break;
+                }
+                acc += seg_len[ i ];
+            }
+            ImVec2 n( -tan.y, tan.x );
+            // glyph quad: anchor at baseline
+            float baseline_y = baked->Ascent;
+            float gx0 = gl->X0, gy0 = gl->Y0 - baseline_y;
+            float gx1 = gl->X1, gy1 = gl->Y1 - baseline_y;
+            if ( baseline_above ) { gy0 = -gy0; gy1 = -gy1; }
+            ImVec2 origin = pos - tan * ( adv * 0.5f );
+            auto apply = [&]( float lx, float ly ) -> ImVec2
+            {
+                return ImVec2( origin.x + tan.x * lx + n.x * ly,
+                                origin.y + tan.y * lx + n.y * ly );
+            };
+            ImVec2 q0 = apply( gx0, gy0 );
+            ImVec2 q1 = apply( gx1, gy0 );
+            ImVec2 q2 = apply( gx1, gy1 );
+            ImVec2 q3 = apply( gx0, gy1 );
+            dl->PrimReserve( 6, 4 );
+            dl->PrimQuadUV( q0, q1, q2, q3,
+                ImVec2( gl->U0, gl->V0 ),
+                ImVec2( gl->U1, gl->V0 ),
+                ImVec2( gl->U1, gl->V1 ),
+                ImVec2( gl->U0, gl->V1 ),
+                col );
+            pen += adv;
+        }
+        dl->PopTexture();
+    }
+
+    float DrawFontWaterfall( ImDrawList* dl, ImFont* font, ImVec2 pos, char const* text,
+                              float const* sizes, int size_count, ImU32 col, float gap )
+    {
+        if ( !text || !sizes || size_count <= 0 ) return pos.y;
+        if ( !font ) font = ImGui::GetFont();
+        float y = pos.y;
+        char buf[ 32 ];
+        for ( int i = 0; i < size_count; ++i )
+        {
+            float fs = sizes[ i ];
+            ImFormatString( buf, IM_ARRAYSIZE( buf ), "%4.0fpx ", fs );
+            ImVec2 label_sz = ImGui::CalcTextSize( buf );
+            dl->AddText( ImGui::GetFont(), ImGui::GetFontSize(), ImVec2( pos.x, y + ( fs - label_sz.y ) * 0.5f ),
+                IM_COL32( 150, 150, 150, 220 ), buf );
+            dl->AddText( font, fs, ImVec2( pos.x + label_sz.x + 4.0f, y ), col, text );
+            y += fs + gap;
+        }
+        return y;
+    }
+
+    bool VarFontAxisSliders( char const* id_str, ImWidgetsVarFontAxis* axes, int count,
+                              ImFont* preview_font, char const* preview_text )
+    {
+        bool changed = false;
+        ImGui::PushID( id_str );
+        for ( int i = 0; i < count; ++i )
+        {
+            ImWidgetsVarFontAxis& a = axes[ i ];
+            ImGui::PushID( i );
+            if ( ImGui::SliderFloat( a.Name ? a.Name : ( a.Tag ? a.Tag : "axis" ), &a.Value, a.Min, a.Max ) )
+                changed = true;
+            ImGui::SameLine();
+            if ( ImGui::SmallButton( "reset" ) ) { a.Value = a.Default; changed = true; }
+            ImGui::PopID();
+        }
+        // Preview block: shows the text twice -- once at base font, once at a synthetic boldened/condensed
+        // style derived from the first axis (so the demo feels alive without a var-font runtime).
+        if ( preview_text && *preview_text )
+        {
+            ImFont* pf = preview_font ? preview_font : ImGui::GetFont();
+            float base = ImGui::GetFontSize();
+            float wght_factor = 1.0f;
+            float wdth_factor = 1.0f;
+            for ( int i = 0; i < count; ++i )
+            {
+                char const* t = axes[ i ].Tag ? axes[ i ].Tag : "";
+                float range = axes[ i ].Max - axes[ i ].Min;
+                float u = range > 0.0f ? ( axes[ i ].Value - axes[ i ].Min ) / range : 0.5f;
+                if ( t[ 0 ] == 'w' && t[ 1 ] == 'g' && t[ 2 ] == 'h' && t[ 3 ] == 't' ) wght_factor = 0.6f + 0.9f * u;
+                else if ( t[ 0 ] == 'w' && t[ 1 ] == 'd' && t[ 2 ] == 't' && t[ 3 ] == 'h' ) wdth_factor = 0.6f + 0.8f * u;
+            }
+            ImVec2 p = ImGui::GetCursorScreenPos();
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            dl->AddRectFilled( p, p + ImVec2( ImGui::GetContentRegionAvail().x, base * 2.5f ),
+                IM_COL32( 30, 30, 40, 255 ) );
+            ImGui::Dummy( ImVec2( ImGui::GetContentRegionAvail().x, base * 2.5f ) );
+            float fs1 = base * 1.0f;
+            float fs2 = base * 1.6f * wght_factor;
+            dl->AddText( pf, fs1, ImVec2( p.x + 8.0f, p.y + 4.0f ),
+                IM_COL32( 230, 230, 230, 255 ), preview_text );
+            float dx = 8.0f, dy = 4.0f + fs1 + 4.0f;
+            ImVec2 tp( p.x + dx, p.y + dy );
+            // emulate horizontal width: render the same text twice with a 1px x-offset modulated by wdth_factor
+            if ( wdth_factor != 1.0f )
+                dl->AddText( pf, fs2, ImVec2( tp.x + 1.0f * ( wdth_factor - 1.0f ) * 6.0f, tp.y ),
+                    IM_COL32( 230, 230, 230, 100 ), preview_text );
+            dl->AddText( pf, fs2, tp, IM_COL32( 230, 230, 230, 255 ), preview_text );
+        }
+        ImGui::PopID();
+        return changed;
+    }
+
+    bool KerningPairEditor( char const* id_str, ImFont* font, float font_size,
+                              char left_glyph, char right_glyph, float* p_kern_px, ImVec2 size )
+    {
+        if ( !p_kern_px ) return false;
+        if ( !font ) font = ImGui::GetFont();
+        if ( font_size <= 0.0f ) font_size = ImGui::GetFontSize() * 4.0f;
+        bool changed = false;
+        ImGui::PushID( id_str );
+        if ( size.x <= 0.0f ) size.x = font_size * 4.5f;
+        if ( size.y <= 0.0f ) size.y = font_size * 2.0f;
+
+        ImVec2 cur = ImGui::GetCursorScreenPos();
+        ImGui::InvisibleButton( "##kp_area", size );
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled( cur, cur + size, IM_COL32( 30, 30, 40, 255 ) );
+
+        ImFontBaked* baked = font->GetFontBaked( font_size );
+        ImFontGlyph const* gL = baked ? baked->FindGlyph( (ImWchar)left_glyph ) : NULL;
+
+        char ls[ 2 ] = { left_glyph, 0 };
+        char rs[ 2 ] = { right_glyph, 0 };
+        float left_adv  = gL ? gL->AdvanceX : font_size * 0.5f;
+        float baseline_y = cur.y + size.y * 0.75f;
+        float baseline_x = cur.x + size.x * 0.3f;
+        dl->AddLine( ImVec2( cur.x, baseline_y ), ImVec2( cur.x + size.x, baseline_y ),
+            IM_COL32( 80, 100, 130, 200 ) );
+        dl->AddLine( ImVec2( baseline_x + left_adv + *p_kern_px, cur.y ),
+                      ImVec2( baseline_x + left_adv + *p_kern_px, cur.y + size.y ),
+                      IM_COL32( 220, 160, 60, 200 ) );
+        dl->AddText( font, font_size, ImVec2( baseline_x, baseline_y - baked->Ascent ),
+            IM_COL32( 230, 230, 230, 255 ), ls );
+        dl->AddText( font, font_size, ImVec2( baseline_x + left_adv + *p_kern_px, baseline_y - baked->Ascent ),
+            IM_COL32( 230, 230, 230, 255 ), rs );
+
+        ImGui::SetNextItemWidth( size.x );
+        if ( ImGui::SliderFloat( "kern (px)", p_kern_px, -font_size * 0.5f, font_size * 0.5f, "%.2f" ) )
+            changed = true;
+        ImGui::PopID();
+        return changed;
+    }
+
+    static void DW_RasterTextWrapped( ImDrawList* dl, ImFont* font, float font_size,
+                                        char const* text, ImVec2 origin, float wrap_width,
+                                        float line_height, ImU32 col, float max_height = FLT_MAX )
+    {
+        char const* p = text;
+        float y = 0.0f;
+        while ( *p )
+        {
+            char const* line_start = p;
+            char const* break_at = NULL;
+            float run_w = 0.0f;
+            while ( *p && *p != '\n' )
+            {
+                char const* word = p;
+                while ( *p && *p != ' ' && *p != '\n' ) ++p;
+                ImVec2 sz = font->CalcTextSizeA( font_size, FLT_MAX, 0.0f, word, p );
+                if ( run_w + sz.x > wrap_width && break_at )
+                {
+                    p = break_at;
+                    break;
+                }
+                run_w += sz.x;
+                if ( *p == ' ' )
+                {
+                    break_at = p + 1;
+                    run_w += font_size * 0.27f;
+                    ++p;
+                }
+                else
+                {
+                    break_at = p;
+                }
+            }
+            if ( y + font_size > max_height ) return;
+            dl->AddText( font, font_size, ImVec2( origin.x, origin.y + y ), col, line_start, p );
+            if ( *p == '\n' ) ++p;
+            else
+            {
+                while ( *p == ' ' ) ++p;
+            }
+            y += line_height;
+        }
+    }
+
+    void DrawTextInsideRect( ImDrawList* dl, ImFont* font, float font_size, ImRect bounds,
+                              char const* text, ImU32 col )
+    {
+        if ( !text || !*text || bounds.GetWidth() <= 0.0f ) return;
+        if ( !font ) font = ImGui::GetFont();
+        if ( font_size <= 0.0f ) font_size = ImGui::GetFontSize();
+        dl->PushClipRect( bounds.Min, bounds.Max, true );
+        DW_RasterTextWrapped( dl, font, font_size, text, bounds.Min, bounds.GetWidth(),
+            font_size * 1.2f, col, bounds.GetHeight() );
+        dl->PopClipRect();
+    }
+
+    static bool DW_ConvexContainsAt( ImVec2 const* poly, int n, float y, float* x_lo, float* x_hi )
+    {
+        float lo = FLT_MAX, hi = -FLT_MAX;
+        for ( int i = 0; i < n; ++i )
+        {
+            ImVec2 a = poly[ i ], b = poly[ ( i + 1 ) % n ];
+            if ( ( a.y <= y && b.y >= y ) || ( b.y <= y && a.y >= y ) )
+            {
+                if ( ImFabs( b.y - a.y ) < 1e-3f ) continue;
+                float t = ( y - a.y ) / ( b.y - a.y );
+                float x = a.x + ( b.x - a.x ) * t;
+                if ( x < lo ) lo = x;
+                if ( x > hi ) hi = x;
+            }
+        }
+        if ( lo == FLT_MAX ) return false;
+        *x_lo = lo; *x_hi = hi;
+        return hi > lo;
+    }
+
+    void DrawTextInsideConvex( ImDrawList* dl, ImFont* font, float font_size,
+                                ImVec2 const* convex_poly, int poly_count,
+                                char const* text, ImU32 col )
+    {
+        if ( !text || !*text || poly_count < 3 ) return;
+        if ( !font ) font = ImGui::GetFont();
+        if ( font_size <= 0.0f ) font_size = ImGui::GetFontSize();
+        float ymin = FLT_MAX, ymax = -FLT_MAX;
+        for ( int i = 0; i < poly_count; ++i ) { ymin = ImMin( ymin, convex_poly[ i ].y ); ymax = ImMax( ymax, convex_poly[ i ].y ); }
+        float line_h = font_size * 1.2f;
+        char const* p = text;
+        for ( float y = ymin; y + line_h <= ymax && *p; y += line_h )
+        {
+            float x_lo, x_hi;
+            if ( !DW_ConvexContainsAt( convex_poly, poly_count, y + font_size * 0.5f, &x_lo, &x_hi ) ) continue;
+            float wrap_w = x_hi - x_lo - 4.0f;
+            if ( wrap_w < font_size * 0.5f ) continue;
+            char const* line_start = p;
+            float run_w = 0.0f;
+            char const* break_at = NULL;
+            while ( *p && *p != '\n' )
+            {
+                char const* word = p;
+                while ( *p && *p != ' ' && *p != '\n' ) ++p;
+                ImVec2 sz = font->CalcTextSizeA( font_size, FLT_MAX, 0.0f, word, p );
+                if ( run_w + sz.x > wrap_w && break_at ) { p = break_at; break; }
+                run_w += sz.x;
+                if ( *p == ' ' ) { break_at = p + 1; run_w += font_size * 0.27f; ++p; }
+                else { break_at = p; }
+            }
+            dl->AddText( font, font_size, ImVec2( x_lo + 2.0f, y ), col, line_start, p );
+            if ( *p == '\n' ) ++p;
+            else while ( *p == ' ' ) ++p;
+        }
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // GradientDrop
+    //////////////////////////////////////////////////////////////////////////
+    static void DW_U32ToOkLab( ImU32 c, float& L, float& a, float& b )
+    {
+        float r  = (float)( ( c >> IM_COL32_R_SHIFT ) & 0xFF ) / 255.0f;
+        float g  = (float)( ( c >> IM_COL32_G_SHIFT ) & 0xFF ) / 255.0f;
+        float bb = (float)( ( c >> IM_COL32_B_SHIFT ) & 0xFF ) / 255.0f;
+        ColorConvertRGBtoOKLAB( L, a, b, r, g, bb );
+    }
+
+    static int DW_GradDropMaxDev( ImU32 const* col, float const* s, int a, int b, float* p_dev )
+    {
+        float L0, A0, B0; DW_U32ToOkLab( col[ a ], L0, A0, B0 );
+        float L1, A1, B1; DW_U32ToOkLab( col[ b ], L1, A1, B1 );
+        float ds = s[ b ] - s[ a ];
+        if ( ds <= 1e-6f ) { *p_dev = 0.0f; return -1; }
+        int best = -1; float best_d = 0.0f;
+        for ( int i = a + 1; i < b; ++i )
+        {
+            float t = ( s[ i ] - s[ a ] ) / ds;
+            float Li = L0 + ( L1 - L0 ) * t;
+            float Ai = A0 + ( A1 - A0 ) * t;
+            float Bi = B0 + ( B1 - B0 ) * t;
+            float Lc, Ac, Bc; DW_U32ToOkLab( col[ i ], Lc, Ac, Bc );
+            float dL = Lc - Li, dA = Ac - Ai, dB = Bc - Bi;
+            float d = ImSqrt( dL * dL + dA * dA + dB * dB );
+            if ( d > best_d ) { best_d = d; best = i; }
+        }
+        *p_dev = best_d;
+        return best;
+    }
+
+    static void DW_GradDropDP( ImU32 const* col, float const* s, int a, int b,
+                                 float threshold, ImVector<int>& kept )
+    {
+        if ( b - a <= 1 ) return;
+        float dev = 0.0f;
+        int idx = DW_GradDropMaxDev( col, s, a, b, &dev );
+        if ( idx < 0 || dev <= threshold ) return;
+        DW_GradDropDP( col, s, a, idx, threshold, kept );
+        kept.push_back( idx );
+        DW_GradDropDP( col, s, idx, b, threshold, kept );
+    }
+
+    static void DW_GradDropBuild( ImU32 const* colors, float const* arc, int n,
+                                    int max_stops, float threshold, ImGradientData* out )
+    {
+        if ( n < 2 || !out ) return;
+        ImVector<int> kept;
+        kept.push_back( 0 );
+        DW_GradDropDP( colors, arc, 0, n - 1, threshold, kept );
+        kept.push_back( n - 1 );
+
+        // Trim to max_stops by greedily dropping the interior stop whose absence
+        // would introduce the smallest perceptual error.
+        while ( kept.Size > max_stops && kept.Size > 2 )
+        {
+            int drop = -1; float drop_d = FLT_MAX;
+            for ( int k = 1; k + 1 < kept.Size; ++k )
+            {
+                int a = kept[ k - 1 ], b = kept[ k + 1 ], i = kept[ k ];
+                float L0, A0, B0; DW_U32ToOkLab( colors[ a ], L0, A0, B0 );
+                float L1, A1, B1; DW_U32ToOkLab( colors[ b ], L1, A1, B1 );
+                float ds = arc[ b ] - arc[ a ];
+                if ( ds <= 1e-6f ) continue;
+                float t = ( arc[ i ] - arc[ a ] ) / ds;
+                float Lc, Ac, Bc; DW_U32ToOkLab( colors[ i ], Lc, Ac, Bc );
+                float Li = L0 + ( L1 - L0 ) * t;
+                float Ai = A0 + ( A1 - A0 ) * t;
+                float Bi = B0 + ( B1 - B0 ) * t;
+                float dL = Lc - Li, dA = Ac - Ai, dB = Bc - Bi;
+                float d = ImSqrt( dL * dL + dA * dA + dB * dB );
+                if ( d < drop_d ) { drop_d = d; drop = k; }
+            }
+            if ( drop < 0 ) break;
+            kept.erase( kept.begin() + drop );
+        }
+
+        out->Stops.clear();
+        out->AlphaStops.clear();
+        for ( int k = 0; k < kept.Size; ++k )
+        {
+            int i = kept[ k ];
+            ImU32 c = colors[ i ];
+            ImVec4 v = ImGui::ColorConvertU32ToFloat4( c );
+            out->Stops.push_back( ImGradientStop( arc[ i ], v ) );
+            out->AlphaStops.push_back( ImGradientAlphaStop( arc[ i ], v.w ) );
+        }
+        out->SortStops();
+        out->SortAlphaStops();
+        out->SelectedIdx = -1;
+        out->SelectedAlphaIdx = -1;
+    }
+
+    bool GradientDrop( char const* id_str, ImRect screen_rect,
+                        ImWidgetsEyedropperSampleFn sample_fn, void* user_data,
+                        ImWidgetsGradientDropState& state,
+                        ImGradientData* out_gradient,
+                        int max_stops, float perceptual_threshold,
+                        float min_step_px, float path_thickness,
+                        bool show_live_preview )
+    {
+        if ( sample_fn == NULL || out_gradient == NULL ) return false;
+        ImGuiWindow* win = ImGui::GetCurrentWindow();
+        if ( win->SkipItems ) return false;
+
+        ImGui::PushID( id_str );
+        ImGuiID id = win->GetID( "##gd" );
+        ImGui::ItemSize( screen_rect );
+        ImGui::ItemAdd( screen_rect, id );
+        ImGui::ButtonBehavior( screen_rect, id, NULL, NULL,
+                                (ImGuiButtonFlags)( (int)ImGuiButtonFlags_MouseButtonLeft | (int)ImGuiButtonFlags_NoNavFocus ) );
+
+        bool   hovered   = ImGui::IsItemHovered();
+        ImVec2 mouse     = ImGui::GetIO().MousePos;
+        bool   finalized = false;
+
+        // state.Path stores UV in [0..1] inside screen_rect so the stroke
+        // remains attached to the source content if the host window scrolls.
+        // We convert UV -> screen on the fly for rendering and arc-length math.
+        ImVec2 rect_sz = screen_rect.GetSize();
+        if ( rect_sz.x < 1e-3f ) rect_sz.x = 1e-3f;
+        if ( rect_sz.y < 1e-3f ) rect_sz.y = 1e-3f;
+
+        auto screen_to_uv = [ & ]( ImVec2 sp ) -> ImVec2
+        {
+            return ImVec2(
+                ImClamp( ( sp.x - screen_rect.Min.x ) / rect_sz.x, 0.0f, 1.0f ),
+                ImClamp( ( sp.y - screen_rect.Min.y ) / rect_sz.y, 0.0f, 1.0f ) );
+        };
+        auto uv_to_screen = [ & ]( ImVec2 uv ) -> ImVec2
+        {
+            return ImVec2( screen_rect.Min.x + uv.x * rect_sz.x,
+                            screen_rect.Min.y + uv.y * rect_sz.y );
+        };
+
+        if ( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) )
+        {
+            ImVec2 uv = screen_to_uv( mouse );
+            state.Path.clear();
+            state.Colors.clear();
+            state.Path.push_back( uv );
+            state.Colors.push_back( sample_fn( uv, user_data ) );
+            state.Active = true;
+            ImGui::SetActiveID( id, win );
+        }
+        if ( state.Active && ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+        {
+            ImVec2 uv = screen_to_uv( mouse );
+            ImVec2 last_screen = uv_to_screen( state.Path.back() );
+            ImVec2 cur_screen  = uv_to_screen( uv );
+            float dx = cur_screen.x - last_screen.x, dy = cur_screen.y - last_screen.y;
+            if ( dx * dx + dy * dy >= min_step_px * min_step_px )
+            {
+                state.Path.push_back( uv );
+                state.Colors.push_back( sample_fn( uv, user_data ) );
+            }
+        }
+
+        // Build an arc-length array (normalized to [0..1] along the stroke).
+        // Distances are computed in PHYSICAL screen pixels under the current
+        // rect dimensions so the OkLab threshold stays meaningful regardless
+        // of how the host window is scrolled or resized.
+        auto compute_arc = [ & ]( ImVector<float>& arc_out )
+        {
+            int n = state.Path.Size;
+            arc_out.resize( n );
+            if ( n <= 0 ) return;
+            arc_out[ 0 ] = 0.0f;
+            for ( int i = 1; i < n; ++i )
+            {
+                ImVec2 a = uv_to_screen( state.Path[ i - 1 ] );
+                ImVec2 b = uv_to_screen( state.Path[ i ] );
+                arc_out[ i ] = arc_out[ i - 1 ] + ImSqrt( ( b.x - a.x ) * ( b.x - a.x )
+                                                            + ( b.y - a.y ) * ( b.y - a.y ) );
+            }
+            float total = arc_out.back();
+            if ( total > 1e-6f )
+                for ( int i = 0; i < n; ++i ) arc_out[ i ] /= total;
+        };
+
+        if ( state.Active && !ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+        {
+            state.Active = false;
+            if ( ImGui::GetActiveID() == id ) ImGui::ClearActiveID();
+            if ( state.Path.Size >= 2 )
+            {
+                ImVector<float> arc;
+                compute_arc( arc );
+                DW_GradDropBuild( state.Colors.Data, arc.Data, state.Path.Size,
+                                    ImMax( 2, max_stops ), perceptual_threshold, out_gradient );
+                finalized = true;
+            }
+        }
+
+        // Persistent overlay on the foreground draw list. Stays visible above
+        // every window / scrollable panel because we draw last; stays attached
+        // to the source swatch because positions live in UV space.
+        ImDrawList* fg_path = ImGui::GetForegroundDrawList();
+        if ( state.Path.Size >= 2 )
+        {
+            for ( int i = 0; i + 1 < state.Path.Size; ++i )
+            {
+                ImU32 c0 = state.Colors[ i ];
+                ImU32 c1 = state.Colors[ i + 1 ];
+                ImVec2 a = uv_to_screen( state.Path[ i ] );
+                ImVec2 b = uv_to_screen( state.Path[ i + 1 ] );
+                fg_path->AddLine( a, b, IM_COL32( 0, 0, 0, 220 ), path_thickness + 2.0f );
+                int R = ( ( ( c0 >> IM_COL32_R_SHIFT ) & 0xFF ) + ( ( c1 >> IM_COL32_R_SHIFT ) & 0xFF ) ) / 2;
+                int G = ( ( ( c0 >> IM_COL32_G_SHIFT ) & 0xFF ) + ( ( c1 >> IM_COL32_G_SHIFT ) & 0xFF ) ) / 2;
+                int B = ( ( ( c0 >> IM_COL32_B_SHIFT ) & 0xFF ) + ( ( c1 >> IM_COL32_B_SHIFT ) & 0xFF ) ) / 2;
+                fg_path->AddLine( a, b, IM_COL32( R, G, B, 255 ), path_thickness );
+            }
+            ImVec2 head = uv_to_screen( state.Path.front() );
+            ImVec2 tail = uv_to_screen( state.Path.back() );
+            fg_path->AddCircleFilled( head, 5.0f, IM_COL32( 0, 0, 0, 220 ) );
+            fg_path->AddCircleFilled( head, 3.0f, state.Colors.front() );
+            fg_path->AddCircleFilled( tail, 5.0f, IM_COL32( 0, 0, 0, 220 ) );
+            fg_path->AddCircleFilled( tail, 3.0f, state.Colors.back() );
+        }
+
+        if ( state.Active && show_live_preview && state.Path.Size >= 2 )
+        {
+            ImVector<float> arc;
+            compute_arc( arc );
+            ImGradientData tmp;
+            DW_GradDropBuild( state.Colors.Data, arc.Data, state.Path.Size,
+                                ImMax( 2, max_stops ), perceptual_threshold, &tmp );
+
+            float bar_w = 220.0f, bar_h = 24.0f, pad = 10.0f;
+            ImVec2 anchor = mouse + ImVec2( 16.0f, 16.0f );
+            ImGuiViewport* vp = ImGui::GetMainViewport();
+            ImVec2 vmax = vp->Pos + vp->Size;
+            if ( anchor.x + bar_w + pad > vmax.x ) anchor.x = mouse.x - bar_w - 16.0f;
+            if ( anchor.y + bar_h + pad > vmax.y ) anchor.y = mouse.y - bar_h - 16.0f;
+
+            ImDrawList* fg = ImGui::GetForegroundDrawList();
+            fg->AddRectFilled( anchor - ImVec2( 4, 4 ),
+                                anchor + ImVec2( bar_w + 4, bar_h + 20 ),
+                                IM_COL32( 20, 20, 20, 235 ), 3.0f );
+            DrawGradientBar( fg, tmp, anchor, ImVec2( bar_w, bar_h ), 128 );
+            char buf[ 48 ];
+            ImFormatString( buf, sizeof( buf ), "%d samples -> %d stops",
+                state.Path.Size, tmp.Stops.Size );
+            fg->AddText( ImVec2( anchor.x, anchor.y + bar_h + 2.0f ),
+                IM_COL32( 230, 230, 230, 255 ), buf );
+        }
+
+        ImGui::PopID();
+        return finalized;
     }
 }
 

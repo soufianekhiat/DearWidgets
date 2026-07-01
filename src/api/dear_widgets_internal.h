@@ -501,4 +501,30 @@ inline void CatmullRomToCubicBezierPath(ImVec2 const* pts, int n, ImVector<ImVec
     }
 }
 
+// Force a fresh ImDrawCmd whose VtxOffset matches the current VtxBuffer tail.
+//
+// Some widgets (or some upstream sequence of widgets) end up with
+// _CmdHeader.VtxOffset stuck at 0 while VtxBuffer.Size has grown well past 64K.
+// When that happens the 16-bit indices we emit afterwards wrap inside the
+// [0, 65535] window and resolve to old, unrelated vertices — visually the new
+// geometry disappears or smears into garbage. Calling this at the top of a
+// widget's draw block guarantees the cmd we're about to write into has a
+// correct VtxOffset, so our indices are interpreted correctly regardless of
+// upstream state.
+//
+// We deliberately avoid _OnChangedVtxOffset (asserts when the current cmd has
+// a UserCallback). Manually bumping _CmdHeader.VtxOffset + resetting
+// _VtxCurrentIdx + AddDrawCmd gives a fresh cmd that inherits the bumped
+// offset, which is the same effect minus the assert hazard.
+inline void DW_EnsureFreshVtxOffset(ImDrawList* dl)
+{
+    if (!dl) return;
+    if (!(dl->Flags & ImDrawListFlags_AllowVtxOffset)) return;
+    if (dl->VtxBuffer.Size <= 0) return;
+    if ((int)dl->_CmdHeader.VtxOffset >= dl->VtxBuffer.Size) return;
+    dl->_CmdHeader.VtxOffset = (unsigned)dl->VtxBuffer.Size;
+    dl->_VtxCurrentIdx = 0;
+    dl->AddDrawCmd();
+}
+
 } // namespace ImWidgets

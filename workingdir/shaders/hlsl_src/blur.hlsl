@@ -1,11 +1,10 @@
-// Background effects uber-shader
-// Mode 0: Blur (two-pass Gaussian with SDF border refraction)
-// Mode 1: Glass Refraction (SDF rounded-rect Snell's law)
-// Mode 2: Frosted Glass (blur + noise displacement + parallax)
-// Mode 3: Pixelate (mosaic + parallax)
-// Mode 4: Chromatic Aberration (continuous spectral dispersion)
-// Mode 5: Liquid Glass (SDF lens with caustic highlights)
-// Mode 6: Heat Haze (animated sinusoidal distortion)
+// Background effects shader.
+// Historically an uber-shader branching on `mode`, which made D3DCompile spend
+// ~9.5 s optimizing every effect together. It is now compiled once PER EFFECT:
+// the host injects `#define BG_EFFECT <n>` and only that effect's code is
+// compiled (everything else is #if'd out), so each variant compiles in ms and
+// only the effects actually used are ever compiled. Runtime still selects via
+// the `mode` constant (which equals BG_EFFECT for the compiled variant).
 
 cbuffer vertexBuffer : register(b0)
 {
@@ -62,10 +61,15 @@ struct PS_INPUT
 #define MODE_RAIN         15
 #define MODE_KALEIDOSCOPE 16
 
+// Default to plain blur if the host did not inject a specific effect.
+#ifndef BG_EFFECT
+#define BG_EFFECT MODE_BLUR
+#endif
+
 Texture2D    sceneTexture : register(t0);
 SamplerState sceneSampler : register(s0);
 
-// ---- Helpers ----
+// ---- Helpers (shared) ----
 
 float4 sampleClamped(float2 uv)
 {
@@ -135,6 +139,15 @@ float hash12(float2 p)
 	return frac((p3.x + p3.y) * p3.z);
 }
 
+#if BG_EFFECT == MODE_VORONOI || BG_EFFECT == MODE_STAINED_GLASS
+float2 hash22(float2 p)
+{
+	float3 p3 = frac(float3(p.xyx) * float3(0.1031f, 0.1030f, 0.0973f));
+	p3 += dot(p3, p3.yzx + 33.33f);
+	return frac((p3.xx + p3.yz) * p3.zy);
+}
+#endif
+
 PS_INPUT main_vs(VS_INPUT input)
 {
 	PS_INPUT output;
@@ -144,6 +157,7 @@ PS_INPUT main_vs(VS_INPUT input)
 	return output;
 }
 
+#if BG_EFFECT == MODE_BLUR
 // ---- Mode 0: Two-pass Gaussian blur with SDF border refraction ----
 // param0 = blur radius, param1 = direction (0=H, 1=V)
 float4 effect_blur(float2 uv)
@@ -177,7 +191,9 @@ float4 effect_blur(float2 uv)
 	col.a = 1.0f;
 	return col;
 }
+#endif
 
+#if BG_EFFECT == MODE_GLASS_REFRACT
 // ---- Mode 1: Glass Refraction (Snell's law on rounded-rect SDF) ----
 // param0 = bevel fraction, param1 = index of refraction
 float4 effect_glass_refract(float2 uv)
@@ -200,7 +216,9 @@ float4 effect_glass_refract(float2 uv)
 	col.rgb += pow(curvature, 2.0f) * 0.3f;
 	return col;
 }
+#endif
 
+#if BG_EFFECT == MODE_FROSTED_GLASS
 // ---- Mode 2: Frosted Glass + parallax ----
 // param0 = blur radius, param1 = noise scale
 float4 effect_frosted(float2 uv)
@@ -220,7 +238,9 @@ float4 effect_frosted(float2 uv)
 	col += sampleClamped(suv + float2(-off.x, -off.y));
 	return col * 0.2f;
 }
+#endif
 
+#if BG_EFFECT == MODE_PIXELATE
 // ---- Mode 3: Pixelate + parallax ----
 // param0 = pixel block size in texels
 float4 effect_pixelate(float2 uv)
@@ -230,7 +250,9 @@ float4 effect_pixelate(float2 uv)
 	float2 snapped = floor(uv / block) * block + block * 0.5f;
 	return sampleClamped(snapped);
 }
+#endif
 
+#if BG_EFFECT == MODE_CHROMATIC
 // ---- Analytic visible spectrum → linear sRGB ----
 // Attempt at a compact description by Wyman, Sloan, Shirley
 // Attempt at CIE 1931 color matching functions fit with Gaussians
@@ -268,8 +290,6 @@ float3 wavelengthToRGB(float lambda)
 
 // ---- Mode 4: Chromatic Aberration (physical spectral dispersion) ----
 // param0 = strength, param1 = sample count (4..16)
-// Each sample maps to a wavelength (380-780nm), converted to RGB via
-// CIE 1931 color matching functions. Dispersion offset scales with wavelength.
 float4 effect_chromatic(float2 uv)
 {
 	float2 center = win_center;
@@ -291,13 +311,11 @@ float4 effect_chromatic(float2 uv)
 		float lambda = lerp(380.0f, 780.0f, t);
 
 		// Dispersion: short wavelengths refract more, long wavelengths less
-		// Cauchy-like: offset ~ 1/lambda^2, normalized so green (550nm) = 0
 		float dispFactor = (550.0f * 550.0f) / (lambda * lambda) - 1.0f;
 		float2 off = dir * dispFactor;
 
 		float4 s = sampleClamped(uv + off);
 
-		// Weight by the spectral sensitivity of each RGB channel at this wavelength
 		float3 w = wavelengthToRGB(lambda);
 
 		col += s.rgb * w;
@@ -306,7 +324,9 @@ float4 effect_chromatic(float2 uv)
 	col /= max(totalWeight, float3(0.001f, 0.001f, 0.001f));
 	return float4(col, 1.0f);
 }
+#endif
 
+#if BG_EFFECT == MODE_LIQUID_GLASS
 // ---- Mode 5: Liquid Glass ----
 // param0 = refraction strength, param1 = bevel fraction
 float4 effect_liquid_glass(float2 uv)
@@ -341,7 +361,9 @@ float4 effect_liquid_glass(float2 uv)
 	col.rgb *= lerp(0.85f, 1.0f, inside);
 	return col;
 }
+#endif
 
+#if BG_EFFECT == MODE_HEAT_HAZE
 // ---- Mode 6: Heat Haze (animated sinusoidal distortion) ----
 // param0 = distortion amplitude (texels), param1 = wave frequency, param2 = time
 float4 effect_heat_haze(float2 uv)
@@ -350,7 +372,6 @@ float4 effect_heat_haze(float2 uv)
 	float freq = max(param1, 1.0f);
 	float time = param2;
 
-	// Two overlapping sine waves at different frequencies/phases for organic look
 	float2 px = uv / texel_size;
 	float wave1 = sin(px.y * freq * 0.05f + time * 2.3f) * cos(px.x * freq * 0.03f + time * 1.7f);
 	float wave2 = sin(px.y * freq * 0.08f - time * 1.9f + 1.5f) * cos(px.x * freq * 0.04f - time * 2.1f);
@@ -361,26 +382,16 @@ float4 effect_heat_haze(float2 uv)
 
 	float4 col = sampleClamped(uv + distort);
 
-	// Slight shimmer: modulate brightness
 	float shimmer = 1.0f + (wave1 * wave2) * 0.03f;
 	col.rgb *= shimmer;
 
 	return col;
 }
+#endif
 
-// ---- Mode 7: Voronoi Shatter ----
-// param0 = cell count across width, param1 = edge thickness
-float2 hash22(float2 p)
-{
-	float3 p3 = frac(float3(p.xyx) * float3(0.1031f, 0.1030f, 0.0973f));
-	p3 += dot(p3, p3.yzx + 33.33f);
-	return frac((p3.xx + p3.yz) * p3.zy);
-}
-
+#if BG_EFFECT == MODE_VORONOI
 // ---- Mode 7: Voronoi Shatter with per-cell refraction ----
 // param0 = cell count, param1 = edge width, param2 = IOR
-// Each cell is a tilted glass shard: uniform refraction direction per cell,
-// sampling the background at a single offset (no distance gradient within the cell).
 float4 effect_voronoi(float2 uv)
 {
 	float cells = max(param0, 2.0f);
@@ -406,36 +417,32 @@ float4 effect_voronoi(float2 uv)
 		else if (d < secondDist) { secondDist = d; }
 	}
 
-	// Per-cell random tilt direction (uniform across the entire cell)
 	float2 cellHash = hash22(closestCell * 7.31f + float2(3.17f, 1.93f));
-	float2 cellTilt = cellHash * 2.0f - 1.0f; // -1..+1, NOT normalized (random magnitude = random tilt)
+	float2 cellTilt = cellHash * 2.0f - 1.0f;
 
-	// Uniform refraction offset for the entire cell (like a flat tilted glass shard)
 	float2 refractOffset = cellTilt * (1.0f - eta) * cellSize * 0.4f * texel_size;
 	float2 sampleUV = applyParallax(uv + refractOffset, (1.0f - eta) * cellSize * 0.2f);
 
-	// Single color sample (uniform per cell — no concentric artifacts)
 	float4 col = sampleClamped(sampleUV);
 
-	// Chromatic split along tilt direction
 	float dispersion = (1.0f - eta) * cellSize * 0.06f;
 	float2 dOff = cellTilt * dispersion * texel_size;
 	col.r = sampleClamped(sampleUV + dOff).r;
 	col.b = sampleClamped(sampleUV - dOff).b;
 
-	// Edge highlight (bright seam between cells)
 	float edgeDist = secondDist - minDist;
 	float edgeLine = 1.0f - saturate(edgeDist / edgeW);
 	float edgeGlow = pow(edgeLine, 2.0f);
 	col.rgb = lerp(col.rgb, float3(1, 1, 1), edgeGlow * 0.5f);
 
-	// Edge darkening beyond the seam
 	float edgeDarken = saturate(edgeDist / (edgeW * 3.0f));
 	col.rgb *= lerp(0.7f, 1.0f, edgeDarken);
 
 	return col;
 }
+#endif
 
+#if BG_EFFECT == MODE_EDGE_GLOW
 // ---- Mode 8: Edge Glow / X-Ray ----
 // param0 = glow intensity, param1 = edge threshold
 float4 effect_edge_glow(float2 uv)
@@ -443,7 +450,6 @@ float4 effect_edge_glow(float2 uv)
 	float intensity = max(param0, 0.5f);
 	float2 ts = texel_size;
 
-	// Sobel in luminance
 	float tl = dot(sampleClamped(uv + float2(-ts.x, -ts.y)).rgb, float3(0.299f, 0.587f, 0.114f));
 	float tc = dot(sampleClamped(uv + float2( 0,    -ts.y)).rgb, float3(0.299f, 0.587f, 0.114f));
 	float tr = dot(sampleClamped(uv + float2( ts.x, -ts.y)).rgb, float3(0.299f, 0.587f, 0.114f));
@@ -457,34 +463,29 @@ float4 effect_edge_glow(float2 uv)
 	float gy = -tl - 2.0f*tc - tr + bl + 2.0f*bc + br;
 	float edge = sqrt(gx*gx + gy*gy);
 
-	// Neon glow: edge mapped to color via angle
 	float angle = atan2(gy, gx);
 	float hue = angle / (2.0f * PI) + 0.5f;
-	// Simple HSV→RGB (S=1, V=1)
 	float3 k = frac(float3(hue, hue - 1.0f/3.0f, hue + 1.0f/3.0f));
 	float3 neon = saturate(abs(k * 6.0f - 3.0f) - 1.0f);
 
 	float glow = saturate(edge * intensity);
-	float3 bg = sampleClamped(uv).rgb * 0.15f; // dim background
+	float3 bg = sampleClamped(uv).rgb * 0.15f;
 	return float4(bg + neon * glow, 1.0f);
 }
+#endif
 
+#if BG_EFFECT == MODE_HALFTONE
 // ---- Mode 9: Halftone / Ben-Day Dots (CMYK-style) ----
 // param0 = dot spacing in pixels, param1 = dot sharpness
-// Four rotated dot grids for C, M, Y, K — each channel's dot radius is
-// proportional to that channel's intensity. Overlapping dots mix additively.
-// Halftone dot for a single rotated grid. Returns coverage and the cell center UV.
 float halftone_dot_ex(float2 px, float spacing, float angle, float intensity, float sharpness, out float2 cellCenterPx)
 {
 	float ca = cos(angle), sa = sin(angle);
 	float2 rotated = float2(px.x * ca + px.y * sa, -px.x * sa + px.y * ca);
 	float2 cell = floor(rotated / spacing) * spacing + spacing * 0.5f;
-	// Unrotate cell center back to pixel space
 	cellCenterPx = float2(cell.x * ca - cell.y * sa, cell.x * sa + cell.y * ca);
 	float dist = length(rotated - cell);
 	float maxR = spacing * 0.5f;
 	float dotR = intensity * maxR;
-	// Scale sharpness relative to dot size so the parameter is meaningful at all spacings
 	float edge = sharpness / max(maxR * 0.1f, 0.5f);
 	return saturate((dotR - dist) * edge);
 }
@@ -495,13 +496,10 @@ float4 effect_halftone(float2 uv)
 	float sharpness = max(param1, 0.5f);
 
 	float2 px = uv / texel_size;
-
-	// For each CMYK channel: get coverage from its rotated grid,
-	// and sample color from that grid's cell center (so each grid is independent)
 	float2 cc;
 
 	// Cyan grid (15 deg)
-	float4 srcC = sampleClamped(px * texel_size); // fallback
+	float4 srcC = sampleClamped(px * texel_size);
 	float dc = halftone_dot_ex(px, spacing, 0.2618f, 0.0f, sharpness, cc);
 	srcC = sampleClamped(cc * texel_size);
 	float c = 1.0f - srcC.r;
@@ -525,7 +523,6 @@ float4 effect_halftone(float2 uv)
 	float k = min(1.0f - srcK.r, min(1.0f - srcK.g, 1.0f - srcK.b)) * 0.5f;
 	dk = halftone_dot_ex(px, spacing, 0.7854f, k, sharpness, cc);
 
-	// CMYK→RGB: start white, subtract
 	float3 col = float3(1, 1, 1);
 	col -= float3(dc, 0, 0);
 	col -= float3(0, dm, 0);
@@ -533,17 +530,17 @@ float4 effect_halftone(float2 uv)
 	col -= float3(dk, dk, dk);
 	return float4(saturate(col), 1.0f);
 }
+#endif
 
+#if BG_EFFECT == MODE_MOUSE_EDGE
 // ---- Mode 10: Mouse-reactive Edge Highlight ----
 // param0 = highlight radius (pixels), param1 = edge intensity
-// Edges near the mouse glow with a colored highlight
 float4 effect_mouse_edge(float2 uv)
 {
 	float radius = max(param0, 20.0f);
 	float intensity = max(param1, 1.0f);
 	float2 ts = texel_size;
 
-	// Sobel edge detection
 	float tl = dot(sampleClamped(uv + float2(-ts.x, -ts.y)).rgb, float3(0.299f, 0.587f, 0.114f));
 	float tc = dot(sampleClamped(uv + float2( 0,    -ts.y)).rgb, float3(0.299f, 0.587f, 0.114f));
 	float tr = dot(sampleClamped(uv + float2( ts.x, -ts.y)).rgb, float3(0.299f, 0.587f, 0.114f));
@@ -557,16 +554,13 @@ float4 effect_mouse_edge(float2 uv)
 	float gy = -tl - 2.0f*tc - tr + bl + 2.0f*bc + br;
 	float edge = sqrt(gx*gx + gy*gy);
 
-	// Distance from mouse in pixels
 	float2 px = uv / texel_size;
 	float2 mousePx = mouse_uv / texel_size;
 	float mouseDist = length(px - mousePx);
 
-	// Falloff: bright near mouse, fades away
 	float falloff = saturate(1.0f - mouseDist / radius);
-	falloff = falloff * falloff; // quadratic falloff
+	falloff = falloff * falloff;
 
-	// Edge glow colored by direction from mouse
 	float2 dir = normalize(uv - mouse_uv + float2(0.0001f, 0.0f));
 	float hue = atan2(dir.y, dir.x) / (2.0f * PI) + 0.5f;
 	float3 k = frac(float3(hue, hue - 1.0f/3.0f, hue + 1.0f/3.0f));
@@ -578,7 +572,9 @@ float4 effect_mouse_edge(float2 uv)
 	col.rgb += highlight * glow;
 	return col;
 }
+#endif
 
+#if BG_EFFECT == MODE_CRT
 // ---- Mode 11: CRT Scanlines ----
 // param0 = scanline thickness (pixels, 1..6), param1 = barrel distortion strength
 float4 effect_crt(float2 uv)
@@ -586,40 +582,36 @@ float4 effect_crt(float2 uv)
 	float lineThick = max(param0, 1.0f);
 	float barrel = param1;
 
-	// Barrel distortion from window center
 	float2 centered = (uv - win_center) / (win_half_px * texel_size);
 	float r2 = dot(centered, centered);
 	float2 distorted = uv + centered * r2 * barrel * win_half_px * texel_size * 0.1f;
 
-	// RGB phosphor subpixel: each pixel is 3 vertical R/G/B stripes
 	float2 px = distorted / texel_size;
 	float subpixel = frac(px.x / 3.0f) * 3.0f;
 	float3 phosphor;
 	phosphor.r = saturate(1.0f - abs(subpixel - 0.5f) * 1.5f);
 	phosphor.g = saturate(1.0f - abs(subpixel - 1.5f) * 1.5f);
 	phosphor.b = saturate(1.0f - abs(subpixel - 2.5f) * 1.5f);
-	phosphor = lerp(float3(1, 1, 1), phosphor, 0.6f); // blend so it's not too dark
+	phosphor = lerp(float3(1, 1, 1), phosphor, 0.6f);
 
 	float3 src = sampleClamped(distorted).rgb;
 
-	// Scanlines: thick dark bands with smooth edges
 	float lineSpacing = lineThick * 2.0f;
 	float linePhase = frac(px.y / lineSpacing);
-	// Dark band occupies the first half of each period
 	float scanMask = smoothstep(0.0f, 0.15f, linePhase) * (1.0f - smoothstep(0.35f, 0.5f, linePhase));
-	scanMask = lerp(0.15f, 1.0f, scanMask); // don't go fully black
+	scanMask = lerp(0.15f, 1.0f, scanMask);
 
-	// Bloom: bright pixels bleed into scanline gaps
 	float lum = dot(src, float3(0.299f, 0.587f, 0.114f));
 	scanMask = lerp(scanMask, 1.0f, lum * 0.3f);
 
-	// Vignette: darken corners
 	float vignette = 1.0f - r2 * 0.4f;
 
 	float3 col = src * phosphor * scanMask * vignette;
 	return float4(saturate(col), 1.0f);
 }
+#endif
 
+#if BG_EFFECT == MODE_DOT_MATRIX
 // ---- Mode 12: Dot Matrix / LED ----
 // param0 = cell size (pixels), param1 = dot roundness (0=square, 1=circle)
 float4 effect_dot_matrix(float2 uv)
@@ -630,31 +622,28 @@ float4 effect_dot_matrix(float2 uv)
 	float2 px = uv / texel_size;
 	float2 cell = floor(px / cellPx);
 	float2 cellCenter = (cell + 0.5f) * cellPx;
-	float2 inCell = (px - cellCenter) / (cellPx * 0.5f); // -1..1 within cell
+	float2 inCell = (px - cellCenter) / (cellPx * 0.5f);
 
-	// Sample color from cell center
 	float4 src = sampleClamped(cellCenter * texel_size);
 
-	// Dot mask: interpolate between square (max(abs)) and circle (length)
 	float distSq = length(inCell);
 	float distBox = max(abs(inCell.x), abs(inCell.y));
 	float dist = lerp(distBox, distSq, roundness);
 
-	// Brighter pixels get slightly larger dots
 	float lum = dot(src.rgb, float3(0.299f, 0.587f, 0.114f));
 	float dotSize = lerp(0.5f, 0.95f, lum);
 	float mask = saturate((dotSize - dist) * cellPx * 0.5f);
 
-	// Dark gap between LEDs
 	float3 col = src.rgb * mask;
 
-	// Subtle phosphor glow: brighten the dot center
 	float glow = saturate(1.0f - dist / dotSize) * 0.15f * lum;
 	col += glow;
 
 	return float4(col, 1.0f);
 }
+#endif
 
+#if BG_EFFECT == MODE_GLITCH
 // ---- Mode 13: Glitch / Datamosh ----
 // param0 = intensity, param1 = block size, param2 = time
 float4 effect_glitch(float2 uv)
@@ -665,17 +654,14 @@ float4 effect_glitch(float2 uv)
 
 	float2 px = uv / texel_size;
 
-	// Time-varying seed for animated glitch
 	float timeSeed = floor(time * 8.0f);
 
-	// Horizontal line shift: random offset per scanline block
 	float lineBlock = floor(px.y / blockSize);
 	float lineHash = hash12(float2(lineBlock, timeSeed));
 	float lineShift = 0.0f;
 	if (lineHash > (1.0f - intensity * 0.3f))
 		lineShift = (hash12(float2(lineBlock + 0.5f, timeSeed)) * 2.0f - 1.0f) * intensity * 40.0f;
 
-	// Block displacement: random rectangular blocks jump
 	float2 blockCoord = floor(px / (blockSize * 4.0f));
 	float blockHash = hash12(blockCoord + timeSeed);
 	float2 blockShift = float2(0, 0);
@@ -687,7 +673,6 @@ float4 effect_glitch(float2 uv)
 
 	float2 shiftedUV = (px + float2(lineShift, 0) + blockShift) * texel_size;
 
-	// Color channel separation (RGB shift)
 	float channelShift = intensity * 3.0f * texel_size.x;
 	float chHash = hash12(float2(timeSeed, 0.77f));
 	float3 col;
@@ -695,17 +680,17 @@ float4 effect_glitch(float2 uv)
 	col.g = sampleClamped(shiftedUV).g;
 	col.b = sampleClamped(shiftedUV - float2(channelShift * chHash, 0)).b;
 
-	// Occasional color inversion on some lines
 	float invertHash = hash12(float2(lineBlock + 3.0f, timeSeed));
 	if (invertHash > (1.0f - intensity * 0.05f))
 		col = 1.0f - col;
 
 	return float4(saturate(col), 1.0f);
 }
+#endif
 
+#if BG_EFFECT == MODE_STAINED_GLASS
 // ---- Mode 14: Stained Glass ----
 // param0 = cell count, param1 = lead width (edge thickness)
-// Voronoi cells flat-colored with dark lead borders and specular highlight
 float4 effect_stained_glass(float2 uv)
 {
 	float cells = max(param0, 2.0f);
@@ -729,7 +714,6 @@ float4 effect_stained_glass(float2 uv)
 		else if (d < secondDist) { secondDist = d; }
 	}
 
-	// Flat color: average a small area around the cell centroid, with parallax
 	float2 centroidUV = applyParallax(closestPt * texel_size, cellSize * 0.1f);
 	float3 col = float3(0, 0, 0);
 	float2 ts2 = texel_size * 2.0f;
@@ -740,37 +724,27 @@ float4 effect_stained_glass(float2 uv)
 	col += sampleClamped(centroidUV - float2(0, ts2.y)).rgb;
 	col *= 0.2f;
 
-	// Saturate the color for stained glass vibrancy
 	float lum = dot(col, float3(0.299f, 0.587f, 0.114f));
 	col = lerp(float3(lum, lum, lum), col, 1.5f);
 	col = saturate(col);
 
-	// Lead borders (dark lines between cells)
 	float edgeDist = secondDist - minDist;
 	float lead = saturate(edgeDist / leadW);
-	lead = lead * lead; // sharpen
+	lead = lead * lead;
 
-	// Specular highlight on glass (subtle, based on position within cell)
 	float specular = pow(saturate(1.0f - minDist / (cellSize * 0.4f)), 8.0f) * 0.2f;
 
 	col = col * lead * 0.9f + specular;
-	// Dark lead color where lead < 1
 	col = lerp(float3(0.05f, 0.05f, 0.05f), col, lead);
 
 	return float4(col, 1.0f);
 }
+#endif
 
+#if BG_EFFECT == MODE_RAIN
 // ---- Mode 15: Rain on Glass (BigWings / Heartfelt technique) ----
 // param0 = rain amount (0..1), param1 = fog blur, param2 = time
-// Faithful port of Martijn Steinrucken's raindrop technique:
-// - Sawtooth animation: slow crawl (85%) then fast drop (15%)
-// - Trails appear BEHIND the drop (where it already passed)
-// - Trail width varies with distance from drop
-// - Small trailing bead droplets along the trail
-// - Static condensation droplets
-// - Normal-based refraction via finite difference gradient
 
-// HLSL-safe smoothstep: handles edge0 > edge1 (which GLSL inverts but HLSL doesn't)
 float S(float a, float b, float t)
 {
 	return (a < b) ? smoothstep(a, b, t) : (1.0f - smoothstep(b, a, t));
@@ -788,9 +762,6 @@ float Saw(float b, float t)
 	return S(0.0f, b, t) * S(1.0f, b, t);
 }
 
-// One layer of falling drops + trails. Returns (dropHeight, trailCoverage)
-// Exact BigWings technique: grid scrolls upward, drops animate upward within cells
-// but grid scrolling is faster → net visual effect is drops falling downward.
 float2 DropLayer(float2 uv, float time)
 {
 	float2 UV = uv;
@@ -800,7 +771,6 @@ float2 DropLayer(float2 uv, float time)
 	float2 grid = a * 2.0f;
 	float2 id = floor(uv * grid);
 
-	// Per-column random shift to break grid alignment
 	float colShift = frac(sin(id.x * 12345.564f) * 7658.76f);
 	uv.y += colShift;
 
@@ -808,31 +778,26 @@ float2 DropLayer(float2 uv, float time)
 	float3 n = N13(id.x * 35.2f + id.y * 2376.1f);
 	float2 st = frac(uv * grid) - float2(0.5f, 0.0f);
 
-	// Horizontal position with wiggle
 	float x = n.x - 0.5f;
 	float y = UV.y * 20.0f;
 	float wiggle = sin(y + sin(y));
 	x += wiggle * (0.5f - abs(x)) * (n.z - 0.5f);
 	x *= 0.7f;
 
-	// Vertical animation: sawtooth — slow crawl (85%), fast drop (15%)
 	float ti = frac(time + n.z);
 	y = (Saw(0.85f, ti) - 0.5f) * 0.9f + 0.5f;
 
 	float2 p = float2(x, y);
 	float d = length((st - p) * a.yx);
 
-	// Main drop
 	float mainDrop = S(0.4f, 0.0f, d);
 
-	// Trail: appears ABOVE the drop (where it already passed)
 	float r = sqrt(S(1.0f, y, st.y));
 	float cd = abs(st.x - x);
 	float trail = S(0.23f * r, 0.15f * r * r, cd);
 	float trailFront = S(-0.02f, 0.02f, st.y - y);
 	trail *= trailFront * r * r;
 
-	// Small trailing droplets (beads along the trail)
 	float trail2 = S(0.2f * r, 0.0f, cd);
 	float yy = frac(UV.y * 10.0f) + (st.y - 0.5f);
 	float dd = length(st - float2(x, yy));
@@ -842,7 +807,6 @@ float2 DropLayer(float2 uv, float time)
 	return float2(m, trail);
 }
 
-// Small static condensation droplets that fade in/out
 float StaticDrops(float2 uv, float time)
 {
 	uv *= 40.0f;
@@ -855,15 +819,13 @@ float StaticDrops(float2 uv, float time)
 	return S(0.3f, 0.0f, d) * frac(n.z * 10.0f) * fade;
 }
 
-// Combined drop layers: returns (height, trailCoverage)
 float2 RainDrops(float2 uv, float time, float rainAmount)
 {
-	// Negate time to reverse drop direction (original falls down, we want up)
 	float t = -time;
 
-	float l0 = smoothstep(0.0f, 0.5f, rainAmount);  // static drops
-	float l1 = smoothstep(0.25f, 0.75f, rainAmount); // layer 1
-	float l2 = smoothstep(0.0f, 0.5f, rainAmount);   // layer 2
+	float l0 = smoothstep(0.0f, 0.5f, rainAmount);
+	float l1 = smoothstep(0.25f, 0.75f, rainAmount);
+	float l2 = smoothstep(0.0f, 0.5f, rainAmount);
 
 	float s = StaticDrops(uv, t) * l0;
 	float2 m1 = DropLayer(uv, t) * l1;
@@ -881,29 +843,23 @@ float4 effect_rain(float2 uv)
 	float fogBlur = max(param1, 0.0f);
 	float time = param2;
 
-	// Compute the drop heightfield at this UV
-	// Use normalized coordinates within the window for consistent drop size
 	float2 winUV = (uv - win_center) / (win_half_px * texel_size) * 0.5f + 0.5f;
 	float aspect = win_half_px.x / max(win_half_px.y, 1.0f);
 	winUV.x *= aspect;
 
 	float2 c = RainDrops(winUV, time, rainAmount);
 
-	// Normal via finite difference gradient of the heightfield
 	float2 e = float2(0.002f, 0.0f);
 	float cx = RainDrops(winUV + e, time, rainAmount).x;
 	float cy = RainDrops(winUV + e.yx, time, rainAmount).x;
 	float2 n = float2(cx - c.x, cy - c.x);
 
-	// Blur: foggy glass is blurred, drops clear the fog, trails are in between
 	float focus = lerp(fogBlur, 0.0f, smoothstep(0.1f, 0.2f, c.x));
-	focus = lerp(focus, fogBlur * 0.5f, c.y); // trails partially clear fog
+	focus = lerp(focus, fogBlur * 0.5f, c.y);
 
-	// Sample with normal-based refraction offset
 	float2 refractUV = uv + n * win_half_px * texel_size * 0.5f;
 
-	// NxN box blur in linear space for fog. Radius adapts to focus amount.
-	int R = clamp((int)(focus * 2.0f + 0.5f), 0, 4); // 0..4 → up to 9x9 box
+	int R = clamp((int)(focus * 2.0f + 0.5f), 0, 4);
 	float3 blurred;
 
 	if (R > 0)
@@ -925,10 +881,8 @@ float4 effect_rain(float2 uv)
 		blurred = sampleClamped(refractUV).rgb;
 	}
 
-	// Sharp sample for drop-cleared areas
 	float3 sharp = sampleClamped(refractUV).rgb;
 
-	// Lerp: drops are sharp, fog is blurred, trails partially clear
 	float sharpness = smoothstep(0.1f, 0.3f, c.x);
 	float4 col;
 	col.rgb = lerp(blurred, sharp, sharpness);
@@ -936,7 +890,9 @@ float4 effect_rain(float2 uv)
 
 	return col;
 }
+#endif
 
+#if BG_EFFECT == MODE_KALEIDOSCOPE
 // ---- Mode 16: Kaleidoscope ----
 // param0 = number of mirror segments, param1 = rotation (radians), param2 = time (auto-rotate)
 float4 effect_kaleidoscope(float2 uv)
@@ -944,59 +900,70 @@ float4 effect_kaleidoscope(float2 uv)
 	float segments = max(param0, 2.0f);
 	float rotation = param1 + param2 * 0.3f;
 
-	// Center on window
 	float2 centered = (uv - win_center) / (win_half_px * texel_size);
 
-	// Rotate
 	float ca = cos(rotation), sa = sin(rotation);
 	float2 rotated = float2(centered.x * ca + centered.y * sa, -centered.x * sa + centered.y * ca);
 
-	// Convert to polar
 	float angle = atan2(rotated.y, rotated.x);
 	float radius = length(rotated);
 
-	// Mirror within each segment
 	float segAngle = 2.0f * PI / segments;
 	angle = abs(fmod(angle, segAngle) - segAngle * 0.5f);
 
-	// Back to cartesian, then to UV
 	float2 mirrored = float2(cos(angle), sin(angle)) * radius;
-	// Undo centering: map back to UV space
 	float2 sampleUV = mirrored * win_half_px * texel_size + win_center;
 
 	float4 col = sampleClamped(sampleUV);
 
-	// Subtle edge shimmer between segments
 	float segEdge = abs(fmod(atan2(rotated.y, rotated.x) + PI, segAngle) - segAngle * 0.5f);
 	float edgeGlow = pow(saturate(1.0f - segEdge / (segAngle * 0.05f)), 4.0f) * 0.15f;
 	col.rgb += edgeGlow;
 
 	return col;
 }
+#endif
 
 float4 main_ps(PS_INPUT input) : SV_Target
 {
 	float2 uv = input.uv;
 	float4 col;
 
-	int m = (int)mode;
-	if      (m == MODE_GLASS_REFRACT) col = effect_glass_refract(uv);
-	else if (m == MODE_FROSTED_GLASS) col = effect_frosted(uv);
-	else if (m == MODE_PIXELATE)      col = effect_pixelate(uv);
-	else if (m == MODE_CHROMATIC)     col = effect_chromatic(uv);
-	else if (m == MODE_LIQUID_GLASS)  col = effect_liquid_glass(uv);
-	else if (m == MODE_HEAT_HAZE)     col = effect_heat_haze(uv);
-	else if (m == MODE_VORONOI)       col = effect_voronoi(uv);
-	else if (m == MODE_EDGE_GLOW)     col = effect_edge_glow(uv);
-	else if (m == MODE_HALFTONE)      col = effect_halftone(uv);
-	else if (m == MODE_MOUSE_EDGE)    col = effect_mouse_edge(uv);
-	else if (m == MODE_CRT)           col = effect_crt(uv);
-	else if (m == MODE_DOT_MATRIX)    col = effect_dot_matrix(uv);
-	else if (m == MODE_GLITCH)        col = effect_glitch(uv);
-	else if (m == MODE_STAINED_GLASS) col = effect_stained_glass(uv);
-	else if (m == MODE_RAIN)          col = effect_rain(uv);
-	else if (m == MODE_KALEIDOSCOPE) col = effect_kaleidoscope(uv);
-	else                              col = effect_blur(uv);
+#if   BG_EFFECT == MODE_GLASS_REFRACT
+	col = effect_glass_refract(uv);
+#elif BG_EFFECT == MODE_FROSTED_GLASS
+	col = effect_frosted(uv);
+#elif BG_EFFECT == MODE_PIXELATE
+	col = effect_pixelate(uv);
+#elif BG_EFFECT == MODE_CHROMATIC
+	col = effect_chromatic(uv);
+#elif BG_EFFECT == MODE_LIQUID_GLASS
+	col = effect_liquid_glass(uv);
+#elif BG_EFFECT == MODE_HEAT_HAZE
+	col = effect_heat_haze(uv);
+#elif BG_EFFECT == MODE_VORONOI
+	col = effect_voronoi(uv);
+#elif BG_EFFECT == MODE_EDGE_GLOW
+	col = effect_edge_glow(uv);
+#elif BG_EFFECT == MODE_HALFTONE
+	col = effect_halftone(uv);
+#elif BG_EFFECT == MODE_MOUSE_EDGE
+	col = effect_mouse_edge(uv);
+#elif BG_EFFECT == MODE_CRT
+	col = effect_crt(uv);
+#elif BG_EFFECT == MODE_DOT_MATRIX
+	col = effect_dot_matrix(uv);
+#elif BG_EFFECT == MODE_GLITCH
+	col = effect_glitch(uv);
+#elif BG_EFFECT == MODE_STAINED_GLASS
+	col = effect_stained_glass(uv);
+#elif BG_EFFECT == MODE_RAIN
+	col = effect_rain(uv);
+#elif BG_EFFECT == MODE_KALEIDOSCOPE
+	col = effect_kaleidoscope(uv);
+#else
+	col = effect_blur(uv);
+#endif
 
 	col.a = 1.0f;
 	return col * input.col;
