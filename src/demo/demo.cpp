@@ -5028,6 +5028,107 @@ namespace ImWidgets{
 					DW_SsRecord( "Dashed_Polylines", _sy0, ImGui::GetCursorPos().y ); }
 
 					ShowDrawSquircleDemo();
+					{
+						float _sy0 = ImGui::GetCursorPos().y;
+						ApplyOpenAll();
+						if ( ImGui::CollapsingHeader( "Wavy / Zigzag / Scallop / Dashed-Zigzag" ) )
+						{
+							static float amp = 8.0f, per = 24.0f, dash = 6.0f, gap = 4.0f, thk = 1.5f;
+							ImGui::SliderFloat( "Amplitude##WZ", &amp, 1.0f, 30.0f );
+							ImGui::SliderFloat( "Period##WZ",    &per, 4.0f, 80.0f );
+							ImGui::SliderFloat( "Dash##WZ",      &dash, 1.0f, 24.0f );
+							ImGui::SliderFloat( "Gap##WZ",       &gap,  1.0f, 24.0f );
+							ImGui::SliderFloat( "Thickness##WZ", &thk,  0.5f, 4.0f );
+							ImDrawList* dl = ImGui::GetWindowDrawList();
+							ImVec2 p = ImGui::GetCursorScreenPos();
+							float W = ImGui::GetContentRegionAvail().x;
+							float row_h = ImPlatform_LpToPx( 160.0f );
+							ImGui::Dummy( ImVec2( W, row_h ) );
+							float yA = p.y + row_h * 0.18f;
+							float yB = p.y + row_h * 0.40f;
+							float yC = p.y + row_h * 0.62f;
+							float yD = p.y + row_h * 0.84f;
+							ImU32 c = IM_COL32( 230, 230, 230, 255 );
+							ImWidgets::DrawWavyLine        ( dl, ImVec2( p.x + 30, yA ), ImVec2( p.x + W - 30, yA ), amp, per, c, thk );
+							ImWidgets::DrawZigzagLine      ( dl, ImVec2( p.x + 30, yB ), ImVec2( p.x + W - 30, yB ), amp, per, c, thk );
+							ImWidgets::DrawScallopLine     ( dl, ImVec2( p.x + 30, yC ), ImVec2( p.x + W - 30, yC ), amp, per, c, thk );
+							ImWidgets::DrawDashedZigzagLine( dl, ImVec2( p.x + 30, yD ), ImVec2( p.x + W - 30, yD ), amp, per, dash, gap, c, thk );
+							dl->AddText( ImVec2( p.x + 4, yA - amp - 8 ), IM_COL32( 180, 180, 180, 255 ), "wavy" );
+							dl->AddText( ImVec2( p.x + 4, yB - amp - 8 ), IM_COL32( 180, 180, 180, 255 ), "zigzag" );
+							dl->AddText( ImVec2( p.x + 4, yC - amp - 8 ), IM_COL32( 180, 180, 180, 255 ), "scallop" );
+							dl->AddText( ImVec2( p.x + 4, yD - amp - 8 ), IM_COL32( 180, 180, 180, 255 ), "dashed zig" );
+						}
+						DW_SsRecord( "Wavy_Zigzag_Scallop", _sy0, ImGui::GetCursorPos().y );
+					}
+					{
+						float _sy0 = ImGui::GetCursorPos().y;
+						ApplyOpenAll();
+						if ( ImGui::CollapsingHeader( "Drop-Shadow / Inner-Glow" ) )
+						{
+							static float ds_radius = 16.0f, ds_round = 6.0f;
+							static ImVec2 ds_off( 4.0f, 6.0f );
+							static ImVec4 ds_col( 0.0f, 0.0f, 0.0f, 0.7f );
+							static ImVec4 ig_col( 1.0f, 0.85f, 0.30f, 0.8f );
+							ImGui::SliderFloat( "Radius##DS",  &ds_radius, 0.0f, 60.0f );
+							ImGui::SliderFloat( "Corner##DS",  &ds_round,  0.0f, 30.0f );
+							ImGui::SliderFloat2( "Offset##DS", &ds_off.x, -30.0f, 30.0f );
+							ImGui::ColorEdit4( "Shadow##DS",   &ds_col.x );
+							ImGui::ColorEdit4( "Glow##DS",     &ig_col.x );
+							ImDrawList* dl = ImGui::GetWindowDrawList();
+							ImVec2 p = ImGui::GetCursorScreenPos();
+							float W = ImGui::GetContentRegionAvail().x;
+							float row_h = ImPlatform_LpToPx( 180.0f );
+							ImGui::Dummy( ImVec2( W, row_h ) );
+							dl->AddRectFilled( p, ImVec2( p.x + W, p.y + row_h ),
+								IM_COL32( 220, 220, 225, 255 ) );
+							ImRect r1( p.x + 60, p.y + 30, p.x + 220, p.y + row_h - 30 );
+							ImWidgets::DrawDropShadowRect( dl, r1, ds_radius, ds_off,
+								ImGui::ColorConvertFloat4ToU32( ds_col ), ds_round );
+							dl->AddRectFilled( r1.Min, r1.Max, IM_COL32( 80, 130, 200, 255 ), ds_round );
+							ImRect r2( p.x + 280, p.y + 30, p.x + 440, p.y + row_h - 30 );
+							dl->AddRectFilled( r2.Min, r2.Max, IM_COL32( 35, 35, 45, 255 ), ds_round );
+							ImWidgets::DrawInnerGlowRect( dl, r2, ds_radius,
+								ImGui::ColorConvertFloat4ToU32( ig_col ), ds_round );
+						}
+						DW_SsRecord( "Drop_Shadow_Inner_Glow", _sy0, ImGui::GetCursorPos().y );
+					}
+					{
+						float _sy0 = ImGui::GetCursorPos().y;
+						ApplyOpenAll();
+						if ( ImGui::CollapsingHeader( "Grid Overlay" ) )
+						{
+							static float g_major = 40.0f;
+							static int   g_minor = 4;
+							static int   g_flags = (int)ImWidgets::ImWidgetsGridFlags_Default;
+							static bool  g_dots  = false;
+							ImGui::SliderFloat( "Major step##Grid", &g_major, 8.0f, 200.0f );
+							ImGui::SliderInt  ( "Minor subdivs##Grid", &g_minor, 0, 10 );
+							ImGui::CheckboxFlags( "Major", &g_flags, ImWidgets::ImWidgetsGridFlags_Major  ); ImGui::SameLine();
+							ImGui::CheckboxFlags( "Minor", &g_flags, ImWidgets::ImWidgetsGridFlags_Minor  ); ImGui::SameLine();
+							ImGui::CheckboxFlags( "Origin",&g_flags, ImWidgets::ImWidgetsGridFlags_Origin ); ImGui::SameLine();
+							if ( ImGui::Checkbox( "Dots", &g_dots ) )
+							{
+								if ( g_dots ) g_flags |= ImWidgets::ImWidgetsGridFlags_Dots;
+								else          g_flags &= ~ImWidgets::ImWidgetsGridFlags_Dots;
+							}
+							ImDrawList* dl = ImGui::GetWindowDrawList();
+							ImVec2 p = ImGui::GetCursorScreenPos();
+							float W = ImGui::GetContentRegionAvail().x;
+							float row_h = ImPlatform_LpToPx( 220.0f );
+							ImGui::Dummy( ImVec2( W, row_h ) );
+							dl->AddRectFilled( p, ImVec2( p.x + W, p.y + row_h ),
+								IM_COL32( 30, 30, 38, 255 ) );
+							ImWidgets::DrawGridOverlay( dl,
+								ImRect( p, ImVec2( p.x + W, p.y + row_h ) ),
+								ImVec2( p.x + W * 0.5f, p.y + row_h * 0.5f ),
+								g_major, g_minor,
+								IM_COL32( 130, 130, 130, 220 ),
+								IM_COL32(  70,  70,  70, 160 ),
+								IM_COL32( 230, 220, 120, 230 ),
+								(ImWidgets::ImWidgetsGridFlags)g_flags );
+						}
+						DW_SsRecord( "Grid_Overlay", _sy0, ImGui::GetCursorPos().y );
+					}
 					EndCullSection( s_cull_cshader_h, s_cull_cshader_y );
 				}
 				ImGui::TreePop();
@@ -5457,6 +5558,282 @@ namespace ImWidgets{
 							pDrawList->AddCircleFilled( ImVec2( curPos.x + 11.0f * dx, curPos.y + fPointerLine ), 4.0f * S, IM_COL32( 255, 128, 0, 255 ), 16 );
 						}
 						DW_SsRecord( "Signet_Pointer", _sy0, ImGui::GetCursorPos().y );
+					}
+					{
+						float _sy0 = ImGui::GetCursorPos().y;
+						ApplyOpenAll();
+						if ( ImGui::CollapsingHeader( "Arrows" ) )
+						{
+							const float S = ImPlatform_GetDpiScale();
+							float const width = ImGui::GetContentRegionAvail().x;
+
+							static float angle     = 0.4f;
+							static float length    = 140.0f;
+							static float thickness = 1.5f;
+							static float head_size = 14.0f;
+							static int   head_end   = ImWidgets::ImWidgetsArrowHead_Triangle;
+							static int   head_start = ImWidgets::ImWidgetsArrowHead_None;
+							ImGui::SliderAngle( "Angle##Arrow", &angle, -180.0f, 180.0f );
+							ImGui::SliderFloat( "Length##Arrow",    &length,    20.0f, 320.0f );
+							ImGui::SliderFloat( "Thickness##Arrow", &thickness, 0.5f, 6.0f );
+							ImGui::SliderFloat( "Head Size##Arrow", &head_size, 2.0f, 32.0f );
+							char const* heads[] = {
+								ImWidgets::GetArrowHeadName( ImWidgets::ImWidgetsArrowHead_None ),
+								ImWidgets::GetArrowHeadName( ImWidgets::ImWidgetsArrowHead_Triangle ),
+								ImWidgets::GetArrowHeadName( ImWidgets::ImWidgetsArrowHead_Open ),
+								ImWidgets::GetArrowHeadName( ImWidgets::ImWidgetsArrowHead_Diamond ),
+								ImWidgets::GetArrowHeadName( ImWidgets::ImWidgetsArrowHead_Stealth ),
+								ImWidgets::GetArrowHeadName( ImWidgets::ImWidgetsArrowHead_Tick ),
+								ImWidgets::GetArrowHeadName( ImWidgets::ImWidgetsArrowHead_Dot ),
+								ImWidgets::GetArrowHeadName( ImWidgets::ImWidgetsArrowHead_Square ),
+							};
+							ImGui::Combo( "Head End##Arrow",   &head_end,   heads, IM_ARRAYSIZE( heads ) );
+							ImGui::Combo( "Head Start##Arrow", &head_start, heads, IM_ARRAYSIZE( heads ) );
+
+							ImVec2 curPos = ImGui::GetCursorScreenPos();
+							ImDrawList* dl = ImGui::GetWindowDrawList();
+							float rowH = 96.0f * S;
+							ImGui::InvisibleButton( "##ArrowZone0", ImVec2( width, rowH ), 0 );
+							ImGui::InvisibleButton( "##ArrowZone1", ImVec2( width, rowH ), 0 );
+
+							// Row 1: each head style as the end head, identical shaft for comparison.
+							{
+								float y = curPos.y + rowH * 0.5f;
+								float colW = width / 8.0f;
+								for ( int i = 0; i < 8; ++i )
+								{
+									ImVec2 from( curPos.x + i * colW + 12.0f, y );
+									ImVec2 to  ( curPos.x + ( i + 1 ) * colW - 12.0f, y );
+									ImWidgets::DrawArrow( dl, from, to,
+										IM_COL32( 200, 220, 240, 255 ), thickness,
+										( ImWidgets::ImWidgetsArrowHead )i,
+										ImWidgets::ImWidgetsArrowHead_None,
+										head_size );
+									ImVec2 tsz = ImGui::CalcTextSize( heads[ i ] );
+									dl->AddText( ImVec2( ( from.x + to.x ) * 0.5f - tsz.x * 0.5f, y + 10.0f ),
+										IM_COL32( 160, 180, 200, 255 ), heads[ i ] );
+								}
+							}
+
+							// Row 2: axis arrows + configurable arrow + double-ended.
+							{
+								float yc = curPos.y + rowH + rowH * 0.5f;
+								ImVec2 origin( curPos.x + 64.0f, yc );
+								ImWidgets::DrawAxisArrows( dl, origin, 96.0f, -56.0f,
+									IM_COL32( 230, 80, 80, 255 ), IM_COL32( 80, 200, 80, 255 ),
+									thickness, head_size );
+
+								ImVec2 from( curPos.x + 240.0f, yc );
+								ImVec2 to(   from.x + length * ImCos( angle ),
+								             from.y + length * ImSin( angle ) );
+								ImWidgets::DrawArrow( dl, from, to,
+									IM_COL32( 255, 220, 120, 255 ), thickness,
+									( ImWidgets::ImWidgetsArrowHead )head_end,
+									( ImWidgets::ImWidgetsArrowHead )head_start,
+									head_size );
+								dl->AddCircleFilled( from, 3.0f * S, IM_COL32( 255, 128, 0, 255 ) );
+								dl->AddCircleFilled( to,   3.0f * S, IM_COL32( 255, 128, 0, 255 ) );
+
+								ImVec2 c2( curPos.x + width - 200.0f, yc );
+								ImWidgets::DrawArrow( dl, c2, c2 + ImVec2( 160.0f, 0.0f ),
+									IM_COL32( 120, 200, 255, 255 ), thickness,
+									ImWidgets::ImWidgetsArrowHead_Triangle,
+									ImWidgets::ImWidgetsArrowHead_Triangle,
+									head_size );
+								dl->AddText( ImVec2( c2.x, c2.y - 22.0f ),
+									IM_COL32( 160, 200, 230, 255 ), "Double-ended" );
+							}
+						}
+						DW_SsRecord( "Arrows", _sy0, ImGui::GetCursorPos().y );
+					}
+					{
+						float _sy0 = ImGui::GetCursorPos().y;
+						ApplyOpenAll();
+						if ( ImGui::CollapsingHeader( "Dimension Line" ) )
+						{
+							const float S = ImPlatform_GetDpiScale();
+							float const width = ImGui::GetContentRegionAvail().x;
+
+							static float angle      = 0.35f;
+							static float dist       = 220.0f;
+							static float offset     = 30.0f;
+							static float head_size  = 9.0f;
+							static float ext_over   = 4.0f;
+							static float ext_gap    = 2.0f;
+							static int   orient     = ImWidgets::ImWidgetsDimensionTextOrient_FollowReading;
+							static bool  ext_lines  = true;
+							static bool  heads_in   = false;
+							static bool  text_above = true;
+							static bool  text_below = false;
+							static bool  no_break   = false;
+							static int   head_style = ImWidgets::ImWidgetsArrowHead_Triangle;
+							ImGui::SliderAngle( "Angle##Dim", &angle, -180.0f, 180.0f );
+							ImGui::SliderFloat( "Length##Dim",         &dist,      40.0f, 400.0f );
+							ImGui::SliderFloat( "Offset##Dim",         &offset,   -80.0f, 80.0f );
+							ImGui::SliderFloat( "Head Size##Dim",      &head_size, 2.0f, 24.0f );
+							ImGui::SliderFloat( "Ext Overshoot##Dim",  &ext_over,  0.0f, 16.0f );
+							ImGui::SliderFloat( "Ext Gap##Dim",        &ext_gap,   0.0f, 16.0f );
+							char const* orients[] = {
+								ImWidgets::GetDimensionTextOrientName( ImWidgets::ImWidgetsDimensionTextOrient_FollowLine ),
+								ImWidgets::GetDimensionTextOrientName( ImWidgets::ImWidgetsDimensionTextOrient_AlwaysHorizontal ),
+								ImWidgets::GetDimensionTextOrientName( ImWidgets::ImWidgetsDimensionTextOrient_FollowReading ),
+								ImWidgets::GetDimensionTextOrientName( ImWidgets::ImWidgetsDimensionTextOrient_Perpendicular ),
+							};
+							ImGui::Combo( "Text Orient##Dim", &orient, orients, IM_ARRAYSIZE( orients ) );
+							char const* dim_heads[] = {
+								ImWidgets::GetArrowHeadName( ImWidgets::ImWidgetsArrowHead_None ),
+								ImWidgets::GetArrowHeadName( ImWidgets::ImWidgetsArrowHead_Triangle ),
+								ImWidgets::GetArrowHeadName( ImWidgets::ImWidgetsArrowHead_Open ),
+								ImWidgets::GetArrowHeadName( ImWidgets::ImWidgetsArrowHead_Diamond ),
+								ImWidgets::GetArrowHeadName( ImWidgets::ImWidgetsArrowHead_Stealth ),
+								ImWidgets::GetArrowHeadName( ImWidgets::ImWidgetsArrowHead_Tick ),
+								ImWidgets::GetArrowHeadName( ImWidgets::ImWidgetsArrowHead_Dot ),
+								ImWidgets::GetArrowHeadName( ImWidgets::ImWidgetsArrowHead_Square ),
+							};
+							ImGui::Combo( "Head##Dim", &head_style, dim_heads, IM_ARRAYSIZE( dim_heads ) );
+							ImGui::Checkbox( "Extension Lines##Dim", &ext_lines );  ImGui::SameLine();
+							ImGui::Checkbox( "Heads Inside##Dim",    &heads_in );   ImGui::SameLine();
+							ImGui::Checkbox( "Text Above##Dim",      &text_above ); ImGui::SameLine();
+							ImGui::Checkbox( "Text Below##Dim",      &text_below ); ImGui::SameLine();
+							ImGui::Checkbox( "No Break##Dim",        &no_break );
+
+							int flags = ImWidgets::ImWidgetsDimensionFlags_None;
+							if ( ext_lines  ) flags |= ImWidgets::ImWidgetsDimensionFlags_ExtensionLines;
+							if ( heads_in   ) flags |= ImWidgets::ImWidgetsDimensionFlags_HeadsInside;
+							if ( text_above ) flags |= ImWidgets::ImWidgetsDimensionFlags_TextAbove;
+							if ( text_below ) flags |= ImWidgets::ImWidgetsDimensionFlags_TextBelow;
+							if ( no_break   ) flags |= ImWidgets::ImWidgetsDimensionFlags_NoBreak;
+
+							ImVec2 curPos = ImGui::GetCursorScreenPos();
+							ImDrawList* dl = ImGui::GetWindowDrawList();
+							float zoneH = 220.0f * S;
+							ImGui::InvisibleButton( "##DimZone", ImVec2( width, zoneH ), 0 );
+
+							ImVec2 mid( curPos.x + width * 0.5f, curPos.y + zoneH * 0.5f );
+							ImVec2 from( mid.x - 0.5f * dist * ImCos( angle ),
+							             mid.y - 0.5f * dist * ImSin( angle ) );
+							ImVec2 to  ( mid.x + 0.5f * dist * ImCos( angle ),
+							             mid.y + 0.5f * dist * ImSin( angle ) );
+
+							// Show the measured segment in a faint guide color.
+							dl->AddLine( from, to, IM_COL32( 120, 140, 170, 180 ), 1.0f );
+							dl->AddCircleFilled( from, 3.0f, IM_COL32( 255, 128, 0, 255 ) );
+							dl->AddCircleFilled( to,   3.0f, IM_COL32( 255, 128, 0, 255 ) );
+
+							char label[ 32 ];
+							ImFormatString( label, sizeof( label ), "%.1f px", dist );
+							ImWidgets::DrawDimensionLine( dl, from, to, offset, label,
+								IM_COL32( 220, 230, 240, 255 ),
+								IM_COL32( 240, 240, 240, 255 ),
+								1.0f,
+								( ImWidgets::ImWidgetsArrowHead )head_style,
+								head_size, ext_over, ext_gap,
+								( ImWidgets::ImWidgetsDimensionTextOrient )orient,
+								( ImWidgets::ImWidgetsDimensionFlags )flags );
+						}
+						DW_SsRecord( "Dimension_Line", _sy0, ImGui::GetCursorPos().y );
+					}
+					{
+						float _sy0 = ImGui::GetCursorPos().y;
+						ApplyOpenAll();
+						if ( ImGui::CollapsingHeader( "Bracket / Curly Brace" ) )
+						{
+							static int   br_style = (int)ImWidgets::ImWidgetsBracketStyle_Curly;
+							static float br_depth = 16.0f;
+							static float br_thick = 1.5f;
+							char const* names[] = { "Square", "Curly", "Round" };
+							ImGui::Combo( "Style##Bracket", &br_style, names, IM_ARRAYSIZE( names ) );
+							ImGui::SliderFloat( "Depth##Bracket",     &br_depth, 4.0f, 60.0f );
+							ImGui::SliderFloat( "Thickness##Bracket", &br_thick, 0.5f, 4.0f );
+							ImDrawList* dl = ImGui::GetWindowDrawList();
+							ImVec2 p = ImGui::GetCursorScreenPos();
+							float W = ImGui::GetContentRegionAvail().x;
+							float row_h = ImPlatform_LpToPx( 90.0f );
+							ImGui::Dummy( ImVec2( W, row_h ) );
+							ImWidgets::DrawBracket( dl, ImVec2( p.x + 60, p.y + 12 ),
+								ImVec2( p.x + 60, p.y + row_h - 12 ),
+								br_depth, (ImWidgets::ImWidgetsBracketStyle)br_style,
+								IM_COL32( 230, 230, 230, 255 ), br_thick );
+							ImWidgets::DrawBracket( dl, ImVec2( p.x + 220, p.y + 12 ),
+								ImVec2( p.x + 220, p.y + row_h - 12 ),
+								-br_depth, (ImWidgets::ImWidgetsBracketStyle)br_style,
+								IM_COL32( 230, 230, 230, 255 ), br_thick );
+							ImWidgets::DrawBracket( dl,
+								ImVec2( p.x + 280, p.y + row_h * 0.5f ),
+								ImVec2( p.x + 460, p.y + row_h * 0.5f ),
+								-br_depth, (ImWidgets::ImWidgetsBracketStyle)br_style,
+								IM_COL32( 160, 200, 230, 255 ), br_thick );
+							dl->AddText( ImVec2( p.x + 80, p.y + row_h * 0.5f - 8 ),
+								IM_COL32( 200, 200, 200, 255 ), "label" );
+							dl->AddText( ImVec2( p.x + 240, p.y + row_h * 0.5f - 8 ),
+								IM_COL32( 200, 200, 200, 255 ), "rhs" );
+							dl->AddText( ImVec2( p.x + 340, p.y + row_h * 0.5f - 24 ),
+								IM_COL32( 200, 200, 200, 255 ), "group of items" );
+						}
+						DW_SsRecord( "Bracket", _sy0, ImGui::GetCursorPos().y );
+					}
+					{
+						float _sy0 = ImGui::GetCursorPos().y;
+						ApplyOpenAll();
+						if ( ImGui::CollapsingHeader( "Crosshair / Reticle" ) )
+						{
+							static float cs_radius = 24.0f;
+							static float cs_gap    = 6.0f;
+							static float cs_thick  = 1.5f;
+							ImGui::SliderFloat( "Radius##CS",    &cs_radius, 6.0f, 80.0f );
+							ImGui::SliderFloat( "Gap##CS",       &cs_gap,    0.0f, cs_radius * 0.9f );
+							ImGui::SliderFloat( "Thickness##CS", &cs_thick,  0.5f, 4.0f );
+							ImDrawList* dl = ImGui::GetWindowDrawList();
+							ImVec2 p = ImGui::GetCursorScreenPos();
+							float row_h = ImPlatform_LpToPx( 110.0f );
+							ImGui::Dummy( ImVec2( ImGui::GetContentRegionAvail().x, row_h ) );
+							float step = ImPlatform_LpToPx( 110.0f );
+							for ( int i = 0; i < ImWidgets::ImWidgetsCrosshairStyle_COUNT; ++i )
+							{
+								ImVec2 c( p.x + 55 + i * step, p.y + row_h * 0.5f );
+								ImWidgets::DrawCrosshair( dl, c, cs_radius,
+									(ImWidgets::ImWidgetsCrosshairStyle)i,
+									IM_COL32( 230, 230, 230, 255 ), cs_thick, cs_gap );
+								dl->AddText( ImVec2( c.x - 32, c.y + cs_radius + 6 ),
+									IM_COL32( 200, 200, 200, 255 ),
+									ImWidgets::GetCrosshairStyleName( (ImWidgets::ImWidgetsCrosshairStyle)i ) );
+							}
+						}
+						DW_SsRecord( "Crosshair", _sy0, ImGui::GetCursorPos().y );
+					}
+					{
+						float _sy0 = ImGui::GetCursorPos().y;
+						ApplyOpenAll();
+						if ( ImGui::CollapsingHeader( "Pin / Map Marker" ) )
+						{
+							static float  pin_h    = 50.0f, pin_r = 16.0f;
+							static float  pin_hole = 5.0f;
+							static ImVec4 pin_fill( 0.95f, 0.30f, 0.30f, 1.0f );
+							ImGui::SliderFloat( "Height##Pin", &pin_h, 20.0f, 100.0f );
+							ImGui::SliderFloat( "Head r##Pin", &pin_r,  8.0f,  40.0f );
+							ImGui::SliderFloat( "Hole r##Pin", &pin_hole, 0.0f, pin_r * 0.7f );
+							ImGui::ColorEdit3 ( "Fill##Pin",   &pin_fill.x );
+							ImDrawList* dl = ImGui::GetWindowDrawList();
+							ImVec2 p = ImGui::GetCursorScreenPos();
+							float W = ImGui::GetContentRegionAvail().x;
+							float row_h = ImPlatform_LpToPx( 130.0f );
+							ImGui::Dummy( ImVec2( W, row_h ) );
+							dl->AddRectFilled( p, ImVec2( p.x + W, p.y + row_h ),
+								IM_COL32( 40, 50, 65, 255 ) );
+							ImU32 fill = ImGui::ColorConvertFloat4ToU32( pin_fill );
+							ImU32 stroke = IM_COL32( 20, 20, 20, 220 );
+							ImU32 hole = IM_COL32( 240, 240, 240, 255 );
+							ImWidgets::DrawMapPin( dl, ImVec2( p.x + 100, p.y + row_h - 8 ),
+								pin_h, pin_r, fill, stroke, 1.5f, hole, pin_hole );
+							ImWidgets::DrawMapPin( dl, ImVec2( p.x + 220, p.y + row_h - 8 ),
+								pin_h * 0.7f, pin_r * 0.7f,
+								IM_COL32( 80, 150, 220, 255 ), stroke, 1.0f, 0u, 0.0f );
+							ImWidgets::DrawMapPin( dl, ImVec2( p.x + 340, p.y + row_h - 8 ),
+								pin_h * 1.2f, pin_r * 1.2f,
+								IM_COL32( 250, 200, 80, 255 ), 0u, 0.0f,
+								IM_COL32( 30, 30, 30, 255 ), pin_hole * 1.5f );
+						}
+						DW_SsRecord( "Pin_Map_Marker", _sy0, ImGui::GetCursorPos().y );
 					}
 					EndCullSection( s_cull_pointers_h, s_cull_pointers_y );
 				}
@@ -6377,6 +6754,59 @@ namespace ImWidgets{
 						}
 						DW_SsRecord( "Log_Circular_Graduation", _sy0, ImGui::GetCursorPos().y );
 					}
+					{
+						float _sy0 = ImGui::GetCursorPos().y;
+						ApplyOpenAll();
+						if ( ImGui::CollapsingHeader( "Rulers (Top / Bottom / Left / Right)" ) )
+						{
+							static float ruler_min  = 0.0f;
+							static float ruler_max  = 1000.0f;
+							static float ruler_step = 100.0f;
+							static int   ruler_subs = 5;
+							static bool  show_tracker = true;
+							ImGui::SliderFloat( "Min##Ruler",   &ruler_min, -500.0f, 1500.0f );
+							ImGui::SliderFloat( "Max##Ruler",   &ruler_max, -500.0f, 2500.0f );
+							ImGui::SliderFloat( "Major##Ruler", &ruler_step, 10.0f, 500.0f );
+							ImGui::SliderInt  ( "Minor subdivs##Ruler", &ruler_subs, 0, 10 );
+							ImGui::Checkbox   ( "Mouse tracker##Ruler", &show_tracker );
+							ImDrawList* dl = ImGui::GetWindowDrawList();
+							ImVec2 p = ImGui::GetCursorScreenPos();
+							float W = ImGui::GetContentRegionAvail().x;
+							float content_h = ImPlatform_LpToPx( 240.0f );
+							float ruler_w   = ImPlatform_LpToPx( 24.0f );
+							float total_w = W;
+							float total_h = content_h + ruler_w;
+							ImGui::Dummy( ImVec2( total_w, total_h ) );
+							ImRect content( p.x + ruler_w, p.y + ruler_w, p.x + total_w, p.y + total_h );
+							dl->AddRectFilled( content.Min, content.Max, IM_COL32( 35, 40, 50, 255 ) );
+							ImWidgets::DrawGridOverlay( dl, content,
+								ImVec2( content.Min.x, content.Min.y ),
+								ruler_step, ruler_subs,
+								IM_COL32( 110, 115, 130, 200 ),
+								IM_COL32(  60,  65,  80, 140 ),
+								IM_COL32( 200, 220, 255, 220 ) );
+							ImVec2 mouse = ImGui::GetIO().MousePos;
+							bool inside = mouse.x >= content.Min.x && mouse.x <= content.Max.x
+								       && mouse.y >= content.Min.y && mouse.y <= content.Max.y;
+							float mwx = ruler_min + ( ruler_max - ruler_min ) * ( ( mouse.x - content.Min.x ) / content.GetWidth() );
+							float mwy = ruler_min + ( ruler_max - ruler_min ) * ( ( mouse.y - content.Min.y ) / content.GetHeight() );
+							float const* pmx = ( show_tracker && inside ) ? &mwx : NULL;
+							float const* pmy = ( show_tracker && inside ) ? &mwy : NULL;
+							ImWidgets::DrawRuler( dl,
+								ImRect( content.Min.x, p.y, content.Max.x, content.Min.y ),
+								ImWidgets::ImWidgetsRulerOrient_Top,
+								ruler_min, ruler_max, ruler_step, ruler_subs, "%.0f",
+								IM_COL32( 220, 225, 230, 255 ), IM_COL32( 240, 240, 240, 255 ),
+								12.0f, 6.0f, 1.0f, pmx );
+							ImWidgets::DrawRuler( dl,
+								ImRect( p.x, content.Min.y, content.Min.x, content.Max.y ),
+								ImWidgets::ImWidgetsRulerOrient_Left,
+								ruler_min, ruler_max, ruler_step, ruler_subs, "%.0f",
+								IM_COL32( 220, 225, 230, 255 ), IM_COL32( 240, 240, 240, 255 ),
+								12.0f, 6.0f, 1.0f, pmy );
+						}
+						DW_SsRecord( "Rulers", _sy0, ImGui::GetCursorPos().y );
+					}
 					EndCullSection( s_cull_grad_h, s_cull_grad_y );
 				}
 				ImGui::TreePop();
@@ -7108,6 +7538,370 @@ namespace ImWidgets{
 				}
 				ImGui::TreePop();
 			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Eyedropper##Interactions" ) )
+			{
+				static ImTextureID s_ed_tex = ImTextureID_Invalid;
+				static ImVector<ImU32> s_ed_pixels;
+				static const int s_ed_w = 256, s_ed_h = 128;
+				if ( s_ed_tex == ImTextureID_Invalid )
+				{
+					s_ed_pixels.resize( s_ed_w * s_ed_h );
+					for ( int y = 0; y < s_ed_h; ++y )
+					{
+						float v = 1.0f - (float)y / (float)( s_ed_h - 1 );  // top = bright
+						for ( int x = 0; x < s_ed_w; ++x )
+						{
+							float h = (float)x / (float)( s_ed_w - 1 );
+							float R, G, B;
+							ImGui::ColorConvertHSVtoRGB( h, 1.0f, v, R, G, B );
+							s_ed_pixels[ y * s_ed_w + x ] = IM_COL32( (int)( R * 255.0f ), (int)( G * 255.0f ), (int)( B * 255.0f ), 255 );
+						}
+					}
+					ImPlatform_TextureDesc td = ImPlatform_TextureDesc_Default( s_ed_w, s_ed_h );
+					s_ed_tex = ImPlatform_CreateTexture( s_ed_pixels.Data, &td );
+				}
+				static ImU32 s_ed_picked = IM_COL32_WHITE;
+				ImGui::TextWrapped( "Hover the swatch to see a magnified neighbor grid; click to lock the sampled color." );
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				ImVec2 p = ImGui::GetCursorScreenPos();
+				ImVec2 sz( ImPlatform_LpToPx( 380.0f ), ImPlatform_LpToPx( 190.0f ) );
+				if ( s_ed_tex != ImTextureID_Invalid )
+					dl->AddImage( s_ed_tex, p, p + sz );
+				else
+					dl->AddRectFilledMultiColor( p, p + sz, IM_COL32( 255, 0, 0, 255 ), IM_COL32( 255, 255, 0, 255 ), IM_COL32( 0, 255, 255, 255 ), IM_COL32( 0, 0, 255, 255 ) );
+				ImWidgets::ImWidgetsEyedropperBitmap bm = { s_ed_pixels.Data, s_ed_w, s_ed_h };
+				ImWidgets::ImWidgetsEyedropperResult r = ImWidgets::Eyedropper( "##ed_demo", ImRect( p, p + sz ),
+					ImWidgets::EyedropperSampleBitmap, &bm );
+				if ( r.Picked ) s_ed_picked = r.Color;
+				ImGui::SetCursorScreenPos( ImVec2( p.x, p.y + sz.y + 8.0f ) );
+				ImGui::AlignTextToFramePadding();
+				ImGui::Text( "Sampled:" );
+				ImGui::SameLine();
+				ImVec4 cv = ImGui::ColorConvertU32ToFloat4( r.Hovered ? r.Color : s_ed_picked );
+				ImGui::ColorButton( "##ed_sample", cv, ImGuiColorEditFlags_NoTooltip, ImVec2( 32, 16 ) );
+				ImGui::SameLine();
+				ImGui::Text( r.Hovered ? "(hovering)" : "(locked)" );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Gradient Drop##Interactions" ) )
+			{
+				// Source #0: synthetic HSV swatch (always available).
+				static ImTextureID s_gd_hsv_tex = ImTextureID_Invalid;
+				static ImVector<ImU32> s_gd_hsv_pixels;
+				static const int s_gd_hsv_w = 256, s_gd_hsv_h = 128;
+				if ( s_gd_hsv_tex == ImTextureID_Invalid )
+				{
+					s_gd_hsv_pixels.resize( s_gd_hsv_w * s_gd_hsv_h );
+					for ( int y = 0; y < s_gd_hsv_h; ++y )
+					{
+						float v = 1.0f - (float)y / (float)( s_gd_hsv_h - 1 );
+						for ( int x = 0; x < s_gd_hsv_w; ++x )
+						{
+							float h = (float)x / (float)( s_gd_hsv_w - 1 );
+							float R, G, B;
+							ImGui::ColorConvertHSVtoRGB( h, 1.0f, v, R, G, B );
+							s_gd_hsv_pixels[ y * s_gd_hsv_w + x ] = IM_COL32(
+								(int)( R * 255.0f ), (int)( G * 255.0f ), (int)( B * 255.0f ), 255 );
+						}
+					}
+					ImPlatform_TextureDesc td = ImPlatform_TextureDesc_Default( s_gd_hsv_w, s_gd_hsv_h );
+					s_gd_hsv_tex = ImPlatform_CreateTexture( s_gd_hsv_pixels.Data, &td );
+				}
+				// Source #1: a real loaded image. CPU buffer (for sampling) and
+				// GPU texture (for display) are both held here.
+				static ImTextureID s_gd_img_tex = ImTextureID_Invalid;
+				static ImVector<ImU32> s_gd_img_pixels;
+				static int s_gd_img_w = 0, s_gd_img_h = 0;
+				if ( s_gd_img_tex == ImTextureID_Invalid )
+				{
+					int w = 0, h = 0;
+					stbi_uc* data = stbi_load( "astro.png", &w, &h, NULL, 4 );
+					if ( data )
+					{
+						s_gd_img_w = w; s_gd_img_h = h;
+						s_gd_img_pixels.resize( w * h );
+						memcpy( s_gd_img_pixels.Data, data, (size_t)w * (size_t)h * 4 );
+						ImPlatform_TextureDesc td = ImPlatform_TextureDesc_Default( w, h );
+						s_gd_img_tex = ImPlatform_CreateTexture( s_gd_img_pixels.Data, &td );
+						STBI_FREE( data );
+					}
+				}
+
+				static ImWidgets::ImWidgetsGradientDropState s_gd_state;
+				static ImGradientData s_gd_grad;
+				static int   s_gd_source    = 0;   // 0 = HSV, 1 = astro.png
+				static int   s_gd_last_src  = 0;
+				static int   s_gd_max_stops = 8;
+				static float s_gd_thresh    = 0.04f;
+				static float s_gd_step      = 3.0f;
+				static bool  s_gd_live      = true;
+
+				ImGui::TextWrapped( "Click + drag across the swatch to collect colors. "
+					"On release the stroke is Douglas-Peucker simplified in OkLab into "
+					"the gradient below. A live preview follows the cursor while dragging. "
+					"Try the image source to pull a palette out of a real photograph." );
+
+				ImGui::Combo      ( "Source",               &s_gd_source, "HSV synthetic\0astro.png\0" );
+				ImGui::SliderInt  ( "Max stops",            &s_gd_max_stops, 2, 16 );
+				ImGui::SliderFloat( "OkLab dE threshold",   &s_gd_thresh,    0.005f, 0.2f, "%.3f" );
+				ImGui::SliderFloat( "Min step (px)",        &s_gd_step,      1.0f, 20.0f, "%.1f" );
+				ImGui::Checkbox   ( "Live preview tooltip", &s_gd_live );
+
+				// Changing source: drop the in-flight stroke + last gradient
+				// so they don't survive across unrelated swatches.
+				if ( s_gd_source != s_gd_last_src )
+				{
+					s_gd_state.Path.clear();
+					s_gd_state.Colors.clear();
+					s_gd_grad = ImGradientData();
+					s_gd_last_src = s_gd_source;
+				}
+
+				bool image_mode = ( s_gd_source == 1 && s_gd_img_tex != ImTextureID_Invalid );
+
+				ImTextureID tex = image_mode ? s_gd_img_tex : s_gd_hsv_tex;
+				ImU32 const* src_pixels = image_mode ? s_gd_img_pixels.Data : s_gd_hsv_pixels.Data;
+				int src_w = image_mode ? s_gd_img_w : s_gd_hsv_w;
+				int src_h = image_mode ? s_gd_img_h : s_gd_hsv_h;
+
+				// Display size: 380 lp wide, height respects source aspect (capped).
+				float disp_w = ImPlatform_LpToPx( 380.0f );
+				float disp_h = ( src_w > 0 ) ? disp_w * (float)src_h / (float)src_w : disp_w * 0.5f;
+				float max_h  = ImPlatform_LpToPx( 280.0f );
+				if ( disp_h > max_h ) { disp_h = max_h; disp_w = disp_h * (float)src_w / ImMax( 1, src_h ); }
+				ImVec2 sz( disp_w, disp_h );
+
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				ImVec2 p = ImGui::GetCursorScreenPos();
+				if ( tex != ImTextureID_Invalid )
+					dl->AddImage( tex, p, p + sz );
+				else
+					dl->AddRectFilledMultiColor( p, p + sz,
+						IM_COL32( 255, 0, 0, 255 ), IM_COL32( 255, 255, 0, 255 ),
+						IM_COL32( 0, 255, 255, 255 ), IM_COL32( 0, 0, 255, 255 ) );
+
+				ImWidgets::ImWidgetsEyedropperBitmap bm = { src_pixels, src_w, src_h };
+				bool fresh = ImWidgets::GradientDrop( "##gd_demo",
+					ImRect( p, p + sz ),
+					ImWidgets::EyedropperSampleBitmap, (void*)&bm,
+					s_gd_state, &s_gd_grad,
+					s_gd_max_stops, s_gd_thresh, s_gd_step, 3.0f, s_gd_live );
+
+				ImGui::SetCursorScreenPos( ImVec2( p.x, p.y + sz.y + 8.0f ) );
+				ImGui::Text( "Resulting gradient (%d stops%s):",
+					s_gd_grad.Stops.Size, fresh ? " - just finalized" : "" );
+				ImVec2 bar_pos = ImGui::GetCursorScreenPos();
+				ImVec2 bar_sz ( sz.x, 28.0f );
+				ImWidgets::DrawGradientBar( dl, s_gd_grad, bar_pos, bar_sz, 256 );
+				ImGui::Dummy( bar_sz );
+
+				if ( ImGui::Button( "Reset gradient" ) )
+				{
+					s_gd_grad = ImGradientData();
+					s_gd_state.Path.clear();
+					s_gd_state.Colors.clear();
+				}
+				if ( s_gd_source == 1 && s_gd_img_tex == ImTextureID_Invalid )
+					ImGui::TextDisabled( "(astro.png not found in workingdir/ -- image source unavailable)" );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Crop Rect##Interactions" ) )
+			{
+				static ImWidgets::ImWidgetsCropState s_crop = { ImRect(), -1, ImVec2( 0, 0 ), ImRect(), ImVec2( FLT_MAX, FLT_MAX ) };
+				static int   s_crop_guides = (int)ImWidgets::ImWidgetsCropGuides_RuleOfThirds;
+				static float s_crop_aspect = 0.0f;
+				static int   s_crop_aspect_idx = 0;
+				const char* aspect_names[] = { "Free", "1:1", "3:2", "4:3", "16:9", "21:9" };
+				const float aspect_vals [] = { 0.0f, 1.0f, 1.5f, 4.0f / 3.0f, 16.0f / 9.0f, 21.0f / 9.0f };
+				if ( ImGui::Combo( "Aspect", &s_crop_aspect_idx, aspect_names, IM_ARRAYSIZE( aspect_names ) ) )
+					s_crop_aspect = aspect_vals[ s_crop_aspect_idx ];
+				ImGui::CheckboxFlags( "Rule of thirds", &s_crop_guides, ImWidgets::ImWidgetsCropGuides_RuleOfThirds ); ImGui::SameLine();
+				ImGui::CheckboxFlags( "Golden ratio",   &s_crop_guides, ImWidgets::ImWidgetsCropGuides_GoldenRatio  ); ImGui::SameLine();
+				ImGui::CheckboxFlags( "Diagonals",      &s_crop_guides, ImWidgets::ImWidgetsCropGuides_Diagonals    ); ImGui::SameLine();
+				ImGui::CheckboxFlags( "Center",         &s_crop_guides, ImWidgets::ImWidgetsCropGuides_Center       );
+				ImVec2 p = ImGui::GetCursorScreenPos();
+				ImVec2 sz( ImPlatform_LpToPx( 420.0f ), ImPlatform_LpToPx( 240.0f ) );
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				dl->AddRectFilledMultiColor( p, p + sz, IM_COL32( 60, 80, 160, 255 ), IM_COL32( 220, 80, 80, 255 ),
+					                          IM_COL32( 240, 200, 80, 255 ), IM_COL32( 60, 180, 120, 255 ) );
+				ImWidgets::CropRect( "##crop_demo", s_crop, ImRect( p, p + sz ), s_crop_aspect,
+					                  (ImWidgets::ImWidgetsCropGuides)s_crop_guides );
+				ImGui::SetCursorScreenPos( ImVec2( p.x, p.y + sz.y + 6.0f ) );
+				ImGui::Text( "Crop: (%.0f, %.0f) -> (%.0f, %.0f)  %.0f x %.0f",
+					           s_crop.Rect.Min.x - p.x, s_crop.Rect.Min.y - p.y,
+					           s_crop.Rect.Max.x - p.x, s_crop.Rect.Max.y - p.y,
+					           s_crop.Rect.GetWidth(), s_crop.Rect.GetHeight() );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Snap Lines / Smart Guides##Interactions" ) )
+			{
+				static ImVec2 s_snap_moving_pos( 60.0f, 60.0f );
+				static ImVec2 s_snap_moving_sz ( 110.0f, 70.0f );
+				static int    s_snap_flags = (int)ImWidgets::ImWidgetsSnapFlags_All;
+				static float  s_snap_radius = 6.0f;
+				ImGui::SliderFloat( "Snap radius (px)", &s_snap_radius, 1.0f, 20.0f );
+				ImGui::CheckboxFlags( "Left",    &s_snap_flags, ImWidgets::ImWidgetsSnapFlags_LeftEdge   ); ImGui::SameLine();
+				ImGui::CheckboxFlags( "Right",   &s_snap_flags, ImWidgets::ImWidgetsSnapFlags_RightEdge  ); ImGui::SameLine();
+				ImGui::CheckboxFlags( "Top",     &s_snap_flags, ImWidgets::ImWidgetsSnapFlags_TopEdge    ); ImGui::SameLine();
+				ImGui::CheckboxFlags( "Bottom",  &s_snap_flags, ImWidgets::ImWidgetsSnapFlags_BottomEdge ); ImGui::SameLine();
+				ImGui::CheckboxFlags( "CenterH", &s_snap_flags, ImWidgets::ImWidgetsSnapFlags_CenterH    ); ImGui::SameLine();
+				ImGui::CheckboxFlags( "CenterV", &s_snap_flags, ImWidgets::ImWidgetsSnapFlags_CenterV    );
+				ImVec2 p = ImGui::GetCursorScreenPos();
+				ImVec2 sz( ImPlatform_LpToPx( 480.0f ), ImPlatform_LpToPx( 280.0f ) );
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				dl->AddRectFilled( p, p + sz, IM_COL32( 40, 40, 50, 255 ) );
+				ImRect targets[] =
+				{
+					ImRect( p.x +  40, p.y +  40, p.x + 140, p.y +  90 ),
+					ImRect( p.x + 220, p.y +  60, p.x + 320, p.y + 130 ),
+					ImRect( p.x + 120, p.y + 160, p.x + 250, p.y + 230 ),
+					ImRect( p.x + 340, p.y + 170, p.x + 440, p.y + 240 ),
+				};
+				for ( int i = 0; i < IM_ARRAYSIZE( targets ); ++i )
+				{
+					dl->AddRectFilled( targets[ i ].Min, targets[ i ].Max, IM_COL32( 110, 130, 160, 200 ) );
+					dl->AddRect      ( targets[ i ].Min, targets[ i ].Max, IM_COL32( 220, 230, 240, 255 ) );
+				}
+				ImGui::InvisibleButton( "##snap_area", sz );
+				ImRect moving( p + s_snap_moving_pos, p + s_snap_moving_pos + s_snap_moving_sz );
+				if ( ImGui::IsItemActive() )
+				{
+					ImVec2 d = ImGui::GetIO().MouseDelta;
+					s_snap_moving_pos += d;
+					moving = ImRect( p + s_snap_moving_pos, p + s_snap_moving_pos + s_snap_moving_sz );
+					ImVec2 snap = ImWidgets::ComputeSnapAndDraw( dl, moving, targets, IM_ARRAYSIZE( targets ),
+						                                          s_snap_radius, (ImWidgets::ImWidgetsSnapFlags)s_snap_flags );
+					s_snap_moving_pos += snap;
+					moving = ImRect( p + s_snap_moving_pos, p + s_snap_moving_pos + s_snap_moving_sz );
+				}
+				dl->AddRectFilled( moving.Min, moving.Max, IM_COL32( 220, 160, 60, 200 ) );
+				dl->AddRect      ( moving.Min, moving.Max, IM_COL32( 255, 255, 255, 255 ), 0.0f, 0, 1.5f );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Onion-Skin Overlay##Interactions" ) )
+			{
+				static ImTextureID s_onion_tex[ 9 ] = { ImTextureID_Invalid, ImTextureID_Invalid, ImTextureID_Invalid, ImTextureID_Invalid, ImTextureID_Invalid, ImTextureID_Invalid, ImTextureID_Invalid, ImTextureID_Invalid, ImTextureID_Invalid };
+				static const int s_onion_w = 128, s_onion_h = 96;
+				if ( s_onion_tex[ 0 ] == ImTextureID_Invalid )
+				{
+					ImVector<ImU32> px;
+					px.resize( s_onion_w * s_onion_h );
+					for ( int fi = 0; fi < 9; ++fi )
+					{
+						for ( int i = 0; i < s_onion_w * s_onion_h; ++i ) px[ i ] = IM_COL32( 0, 0, 0, 0 );
+						float t = (float)fi / 8.0f;
+						float cx = 16.0f + t * ( s_onion_w - 32.0f );
+						float cy = s_onion_h * 0.5f + ImSin( t * IM_PI * 1.5f ) * 18.0f;
+						for ( int y = 0; y < s_onion_h; ++y )
+						{
+							for ( int x = 0; x < s_onion_w; ++x )
+							{
+								float dx = (float)x - cx, dy = (float)y - cy;
+								float r2 = dx * dx + dy * dy;
+								if ( r2 < 100.0f )
+								{
+									float a = ImClamp( 1.0f - ImSqrt( r2 ) / 10.0f, 0.0f, 1.0f );
+									int A = (int)( a * 255.0f );
+									px[ y * s_onion_w + x ] = IM_COL32( 240, 240, 240, A );
+								}
+							}
+						}
+						ImPlatform_TextureDesc td = ImPlatform_TextureDesc_Default( s_onion_w, s_onion_h );
+						s_onion_tex[ fi ] = ImPlatform_CreateTexture( px.Data, &td );
+					}
+				}
+				static int s_onion_cur = 4;
+				static int s_onion_back = 2, s_onion_forward = 2;
+				static float s_onion_base_alpha = 0.45f;
+				ImGui::SliderInt  ( "Current frame", &s_onion_cur, 0, 8 );
+				ImGui::SliderInt  ( "Back ghosts",   &s_onion_back,    0, 4 );
+				ImGui::SliderInt  ( "Forward ghosts",&s_onion_forward, 0, 4 );
+				ImGui::SliderFloat( "Base alpha",    &s_onion_base_alpha, 0.0f, 1.0f );
+				ImVec2 p = ImGui::GetCursorScreenPos();
+				ImVec2 sz( ImPlatform_LpToPx( 380.0f ), ImPlatform_LpToPx( 280.0f ) );
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				dl->AddRectFilled( p, p + sz, IM_COL32( 30, 30, 35, 255 ) );
+				ImWidgets::DrawOnionSkinAuto( dl, ImRect( p, p + sz ), s_onion_tex, 9, s_onion_cur,
+					                            s_onion_back, s_onion_forward,
+					                            IM_COL32( 80, 160, 255, 255 ), IM_COL32( 255, 110, 80, 255 ),
+					                            s_onion_base_alpha );
+				dl->AddRect( p, p + sz, IM_COL32( 200, 200, 200, 200 ) );
+				ImGui::Dummy( sz );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Lasso / Marquee Selection##Interactions" ) )
+			{
+				static ImWidgets::ImWidgetsSelectionState s_sel = { ImWidgets::ImWidgetsSelectionMode_Marquee, ImVector<ImVec2>(), false, false };
+				static int s_sel_mode = 0;
+				const char* mode_names[] = { "Marquee", "Lasso" };
+				if ( ImGui::Combo( "Mode", &s_sel_mode, mode_names, IM_ARRAYSIZE( mode_names ) ) )
+					s_sel.Mode = (ImWidgets::ImWidgetsSelectionMode)s_sel_mode;
+				ImVec2 p = ImGui::GetCursorScreenPos();
+				ImVec2 sz( ImPlatform_LpToPx( 480.0f ), ImPlatform_LpToPx( 280.0f ) );
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				dl->AddRectFilled( p, p + sz, IM_COL32( 25, 25, 30, 255 ) );
+				const int N = 60;
+				static ImVec2 s_sel_pts[ N ];
+				static bool s_sel_init = false;
+				if ( !s_sel_init )
+				{
+					srand( 1357 );
+					for ( int i = 0; i < N; ++i )
+						s_sel_pts[ i ] = ImVec2( ( (float)( rand() % 1000 ) / 1000.0f ) * ( sz.x - 20.0f ) + 10.0f,
+							                       ( (float)( rand() % 1000 ) / 1000.0f ) * ( sz.y - 20.0f ) + 10.0f );
+					s_sel_init = true;
+				}
+				ImVec2 abs_pts[ N ];
+				for ( int i = 0; i < N; ++i ) abs_pts[ i ] = p + s_sel_pts[ i ];
+				ImWidgets::BeginSelection( "##sel_demo", ImRect( p, p + sz ), s_sel );
+				bool inside[ N ];
+				ImWidgets::TestSelectionPoints( s_sel, abs_pts, N, inside );
+				int hit = 0;
+				for ( int i = 0; i < N; ++i )
+				{
+					ImU32 c = inside[ i ] ? IM_COL32( 255, 220, 80, 255 ) : IM_COL32( 120, 160, 220, 255 );
+					dl->AddCircleFilled( abs_pts[ i ], 4.0f, c );
+					if ( inside[ i ] ) ++hit;
+				}
+				ImGui::SetCursorScreenPos( ImVec2( p.x, p.y + sz.y + 4.0f ) );
+				ImGui::Text( "%d / %d points inside selection", hit, N );
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Pan-Zoom Canvas + Minimap##Interactions" ) )
+			{
+				static ImWidgets::ImWidgetsCanvasState s_pz = { ImVec2( 200, 120 ), 1.0f, false, ImVec2( 0, 0 ), ImRect() };
+				ImGui::TextWrapped( "Wheel: zoom around cursor. MMB or Shift+LMB: pan. The minimap shows the viewport (yellow) within the world content (gray); click it to recenter." );
+				ImVec2 size( ImPlatform_LpToPx( 520.0f ), ImPlatform_LpToPx( 320.0f ) );
+				if ( ImWidgets::BeginCanvas( "##pz_demo", size, s_pz ) )
+				{
+					ImDrawList* dl = ImGui::GetWindowDrawList();
+					const ImRect world_content( -200, -150, 400, 250 );
+					ImVec2 a = ImWidgets::CanvasWorldToScreen( s_pz, world_content.Min );
+					ImVec2 b = ImWidgets::CanvasWorldToScreen( s_pz, world_content.Max );
+					dl->AddRect( a, b, IM_COL32( 180, 180, 220, 220 ), 0.0f, 0, 2.0f );
+					for ( int k = 0; k < 6; ++k )
+					{
+						float angle = (float)k * IM_PI / 3.0f;
+						ImVec2 wpos( ImCos( angle ) * 120.0f + 100.0f, ImSin( angle ) * 80.0f + 50.0f );
+						ImVec2 sp = ImWidgets::CanvasWorldToScreen( s_pz, wpos );
+						dl->AddCircleFilled( sp, 14.0f * s_pz.Zoom, IM_COL32( 80 + k * 30, 200 - k * 20, 120, 220 ) );
+						dl->AddCircle      ( sp, 14.0f * s_pz.Zoom, IM_COL32( 255, 255, 255, 255 ) );
+					}
+					ImVec2 og = ImWidgets::CanvasWorldToScreen( s_pz, ImVec2( 0, 0 ) );
+					ImWidgets::DrawAxisArrows( dl, og, 60.0f * s_pz.Zoom, 60.0f * s_pz.Zoom );
+					ImWidgets::DrawCanvasMinimap( s_pz, world_content );
+					ImWidgets::EndCanvas();
+				}
+				ImGui::Text( "Pan: (%.0f, %.0f)  Zoom: %.2fx", s_pz.Pan.x, s_pz.Pan.y, s_pz.Zoom );
+				ImGui::TreePop();
+			}
 		}
 		ApplyOpenAll();
 		if ( ImGui::CollapsingHeader( "Widgets" ) )
@@ -7278,6 +8072,56 @@ namespace ImWidgets{
 						ImGui::DragFloat( "Far Planes##VN", &vvalue[2], 1.0f, vvalue[1], vmax );
 					}
 					DW_SsRecord( "SliderN Vertical", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Range Slider" ) )
+					{
+						static float fLo = 0.25f, fHi = 0.75f;
+						ImWidgets::RangeSliderFloat( "Float [0..1]##RS", &fLo, &fHi, 0.0f, 1.0f );
+
+						static int iLo = 10, iHi = 80;
+						ImWidgets::RangeSliderInt( "Int [0..100]##RS", &iLo, &iHi, 0, 100 );
+
+						static double dLo = 1.5, dHi = 8.25;
+						static double dMin = 0.0, dMax = 10.0;
+						ImWidgets::RangeSliderScalar( "Double [0..10]##RS", ImGuiDataType_Double, &dLo, &dHi,
+							&dMin, &dMax, "%.2f" );
+
+						static ImU16 uLo = 200, uHi = 1800;
+						static ImU16 uMin = 0, uMax = 4095;
+						ImWidgets::RangeSliderScalar( "U16 [0..4095]##RS", ImGuiDataType_U16, &uLo, &uHi,
+							&uMin, &uMax, "%u" );
+
+						ImGui::TextWrapped( "Two-handle min/max slider. Drag either handle; the other is clamped." );
+					}
+					DW_SsRecord( "Range_Slider", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Segmented Control" ) )
+					{
+						static char const* const blendModes[] = { "Normal", "Multiply", "Screen", "Overlay" };
+						static int sel = 0;
+						ImWidgets::SegmentedControlInt( "Blend Mode##SC", &sel, blendModes, IM_ARRAYSIZE( blendModes ) );
+
+						static char const* const axisLabels[] = { "X", "Y", "Z" };
+						static ImU8 axisSel = 1;
+						ImWidgets::SegmentedControlScalar( "Axis##SC", ImGuiDataType_U8, &axisSel,
+							axisLabels, IM_ARRAYSIZE( axisLabels ) );
+
+						static char const* const presets[] = { "Low", "Medium", "High", "Ultra", "Custom" };
+						static int preset = 2;
+						ImWidgets::SegmentedControlInt( "Preset##SC", &preset, presets, IM_ARRAYSIZE( presets ),
+							ImVec2( 360, 0 ) );
+
+						ImGui::TextWrapped( "Click a segment to select. p_value stores the index in any integer ImGuiDataType." );
+					}
+					DW_SsRecord( "Segmented_Control", _sy0, ImGui::GetCursorPos().y );
 				}
 
 				{
@@ -7905,6 +8749,123 @@ namespace ImWidgets{
 #else
 				ImGui::TextDisabled( "Requires custom shader support." );
 #endif
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Text on Path" ) )
+					{
+						static float top_amp = 30.0f, top_phase = 0.0f;
+						static char  top_text[ 128 ] = "DearWidgets text on a sinusoidal path!";
+						ImGui::SliderFloat( "Amplitude##TOP", &top_amp, 0.0f, 80.0f );
+						ImGui::SliderFloat( "Phase##TOP",     &top_phase, 0.0f, IM_PI * 2.0f );
+						ImGui::InputText  ( "Text##TOP", top_text, sizeof( top_text ) );
+						ImDrawList* dl = ImGui::GetWindowDrawList();
+						ImVec2 p = ImGui::GetCursorScreenPos();
+						float W = ImGui::GetContentRegionAvail().x;
+						float row_h = ImPlatform_LpToPx( 120.0f );
+						ImGui::Dummy( ImVec2( W, row_h ) );
+						const int N = 64;
+						ImVec2 path[ N ];
+						for ( int i = 0; i < N; ++i )
+						{
+							float u = (float)i / (float)( N - 1 );
+							path[ i ].x = p.x + 16.0f + u * ( W - 32.0f );
+							path[ i ].y = p.y + row_h * 0.55f + ImSin( u * IM_PI * 2.0f + top_phase ) * top_amp;
+						}
+						dl->AddPolyline( path, N, IM_COL32( 80, 80, 100, 220 ), ImDrawFlags_None, 1.0f );
+						ImWidgets::DrawTextOnPath( dl, ImGui::GetFont(), 24.0f, top_text,
+							path, N, IM_COL32( 230, 230, 230, 255 ) );
+					}
+					DW_SsRecord( "Text_On_Path", _sy0, ImGui::GetCursorPos().y );
+				}
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Font Waterfall" ) )
+					{
+						static char  fw_text[ 128 ] = "The quick brown fox jumps over the lazy dog.";
+						ImGui::InputText( "Text##FW", fw_text, sizeof( fw_text ) );
+						float sizes[] = { 10, 12, 14, 16, 20, 24, 32, 48, 64 };
+						ImDrawList* dl = ImGui::GetWindowDrawList();
+						ImVec2 p = ImGui::GetCursorScreenPos();
+						float final_y = ImWidgets::DrawFontWaterfall( dl, ImGui::GetFont(), p, fw_text,
+							sizes, IM_ARRAYSIZE( sizes ),
+							IM_COL32( 230, 230, 230, 255 ), 6.0f );
+						ImGui::Dummy( ImVec2( ImGui::GetContentRegionAvail().x, final_y - p.y ) );
+					}
+					DW_SsRecord( "Font_Waterfall", _sy0, ImGui::GetCursorPos().y );
+				}
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Variable Font Axis Sliders" ) )
+					{
+						static ImWidgets::ImWidgetsVarFontAxis vfa_axes[] = {
+							{ "wght", "Weight",   100.0f,  900.0f, 400.0f, 400.0f },
+							{ "wdth", "Width",     75.0f,  125.0f, 100.0f, 100.0f },
+							{ "ital", "Italic",     0.0f,    1.0f,   0.0f,   0.0f },
+							{ "opsz", "Optical sz", 8.0f,   48.0f,  16.0f,  16.0f },
+						};
+						ImWidgets::VarFontAxisSliders( "##VFA", vfa_axes, IM_ARRAYSIZE( vfa_axes ),
+							ImGui::GetFont(), "DearWidgets Aa Bb 123" );
+					}
+					DW_SsRecord( "Variable_Font_Axis", _sy0, ImGui::GetCursorPos().y );
+				}
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Kerning Pair Editor" ) )
+					{
+						static char  k_left  = 'A';
+						static char  k_right = 'V';
+						static float k_kern  = -4.0f;
+						ImGui::PushItemWidth( 80 );
+						ImGui::InputScalar( "Left",  ImGuiDataType_S8, &k_left );
+						ImGui::SameLine();
+						ImGui::InputScalar( "Right", ImGuiDataType_S8, &k_right );
+						ImGui::PopItemWidth();
+						ImWidgets::KerningPairEditor( "##KP", ImGui::GetFont(), 96.0f, k_left, k_right, &k_kern );
+					}
+					DW_SsRecord( "Kerning_Pair_Editor", _sy0, ImGui::GetCursorPos().y );
+				}
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Text inside Shape" ) )
+					{
+						static char tis_text[ 512 ] = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. "
+							"Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. "
+							"Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi.";
+						static float tis_font_size = 14.0f;
+						ImGui::InputTextMultiline( "##tis", tis_text, sizeof( tis_text ),
+							ImVec2( ImGui::GetContentRegionAvail().x, 60.0f ) );
+						ImGui::SliderFloat( "Font size (px)##TIS", &tis_font_size, 6.0f, 48.0f, "%.0f" );
+						ImDrawList* dl = ImGui::GetWindowDrawList();
+						ImVec2 p = ImGui::GetCursorScreenPos();
+						float W = ImGui::GetContentRegionAvail().x;
+						float row_h = ImPlatform_LpToPx( 220.0f );
+						ImGui::Dummy( ImVec2( W, row_h ) );
+						ImRect rect( p.x + 8.0f, p.y + 8.0f, p.x + W * 0.48f, p.y + row_h - 8.0f );
+						dl->AddRectFilled( rect.Min, rect.Max, IM_COL32( 30, 50, 70, 255 ) );
+						dl->AddRect      ( rect.Min, rect.Max, IM_COL32( 120, 160, 200, 255 ) );
+						ImWidgets::DrawTextInsideRect( dl, ImGui::GetFont(), tis_font_size, rect, tis_text,
+							IM_COL32( 220, 230, 240, 255 ) );
+						// convex (hexagon)
+						ImVec2 c( p.x + W * 0.75f, p.y + row_h * 0.5f );
+						float r = ImMin( W * 0.22f, row_h * 0.45f );
+						ImVec2 hex[ 6 ];
+						for ( int k = 0; k < 6; ++k )
+						{
+							float a = ( (float)k / 6.0f ) * IM_PI * 2.0f + IM_PI * 0.5f;
+							hex[ k ] = ImVec2( c.x + ImCos( a ) * r, c.y + ImSin( a ) * r );
+						}
+						dl->AddConvexPolyFilled( hex, 6, IM_COL32( 70, 30, 50, 255 ) );
+						dl->AddPolyline( hex, 6, IM_COL32( 220, 120, 180, 255 ), ImDrawFlags_Closed, 1.0f );
+						ImWidgets::DrawTextInsideConvex( dl, ImGui::GetFont(), tis_font_size, hex, 6, tis_text,
+							IM_COL32( 240, 220, 240, 255 ) );
+					}
+					DW_SsRecord( "Text_Inside_Shape", _sy0, ImGui::GetCursorPos().y );
+				}
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
@@ -8014,6 +8975,219 @@ namespace ImWidgets{
 
 					}
 					DW_SsRecord( "Image_Viewer", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Image Overlays" ) )
+					{
+						ImGui::TextWrapped(
+							"Read-only overlays composed on top of ImageViewer. All coordinates are UV [0,1] "
+							"relative to the image, so overlays follow the viewer's pan/zoom automatically. "
+							"Toggle each overlay independently. Call the overlays AFTER ImageViewer with the same state." );
+
+						// --- Shared viewer for all overlays ---
+						static ImImageViewerState ovState;
+						static const char* ovClassNames[] = { "person", "cat", "dog", "car", "book" };
+						static const char* ovPartNames[]  = {
+							"head", "l.shoulder", "r.shoulder", "l.elbow", "r.elbow",
+							"l.hand", "r.hand", "l.hip", "r.hip", "l.knee",
+							"r.knee", "l.foot", "r.foot"
+						};
+
+						// Synthetic detection boxes (UV coords)
+						static ImWidgets::ImDetectionBox ovBoxes[] = {
+							{ 0.10f, 0.15f, 0.30f, 0.45f, 0.94f, 0, 100 },
+							{ 0.55f, 0.10f, 0.28f, 0.30f, 0.87f, 3, 101 },
+							{ 0.50f, 0.55f, 0.25f, 0.30f, 0.72f, 1, 102 },
+							{ 0.05f, 0.65f, 0.35f, 0.30f, 0.61f, 2, 103 },
+						};
+						const int ovBoxCount = (int)IM_ARRAYSIZE( ovBoxes );
+
+						// Synthetic keypoints (13-part skeleton)
+						static ImWidgets::ImKeypoint ovKps[] = {
+							{ 0.50f, 0.22f, 0.95f, 0 },  // head
+							{ 0.42f, 0.32f, 0.90f, 1 },  // l.shoulder
+							{ 0.58f, 0.32f, 0.90f, 2 },  // r.shoulder
+							{ 0.38f, 0.44f, 0.80f, 3 },  // l.elbow
+							{ 0.62f, 0.44f, 0.80f, 4 },  // r.elbow
+							{ 0.35f, 0.56f, 0.70f, 5 },  // l.hand
+							{ 0.65f, 0.56f, 0.70f, 6 },  // r.hand
+							{ 0.44f, 0.55f, 0.85f, 7 },  // l.hip
+							{ 0.56f, 0.55f, 0.85f, 8 },  // r.hip
+							{ 0.42f, 0.70f, 0.75f, 9 },  // l.knee
+							{ 0.58f, 0.70f, 0.75f, 10 }, // r.knee
+							{ 0.40f, 0.85f, 0.25f, 11 }, // l.foot (low confidence)
+							{ 0.60f, 0.85f, 0.65f, 12 }, // r.foot
+						};
+						const int ovKpCount = (int)IM_ARRAYSIZE( ovKps );
+
+						static ImWidgets::ImSkeletonEdge ovEdges[] = {
+							{ 0, 1 }, { 0, 2 },
+							{ 1, 3 }, { 3, 5 },
+							{ 2, 4 }, { 4, 6 },
+							{ 1, 7 }, { 2, 8 },
+							{ 7, 8 },
+							{ 7, 9 }, { 9, 11 },
+							{ 8, 10 }, { 10, 12 },
+						};
+						const int ovEdgeCount = (int)IM_ARRAYSIZE( ovEdges );
+
+						// Synthetic text labels
+						static ImWidgets::ImTextLabel ovLabels[] = {
+							{ 0.25f, 0.60f, "top-left anchor",  IM_COL32( 255, 220, 100, 255 ), 1.0f, ImWidgets::ImTextLabelAnchor_TopLeft },
+							{ 0.70f, 0.25f, "top-right",        IM_COL32( 100, 220, 255, 255 ), 1.0f, ImWidgets::ImTextLabelAnchor_TopRight },
+							{ 0.50f, 0.05f, "center header",    IM_COL32( 255, 255, 255, 255 ), 1.2f, ImWidgets::ImTextLabelAnchor_TopCenter },
+							{ 0.50f, 0.95f, "bottom center",    IM_COL32( 200, 255, 200, 255 ), 1.0f, ImWidgets::ImTextLabelAnchor_BotCenter },
+						};
+						const int ovLabelCount = (int)IM_ARRAYSIZE( ovLabels );
+
+						// Annotation editor: caller owns the mutable boxes array
+						static ImVector<ImWidgets::ImDetectionBox> ovEditBoxes;
+						static ImWidgets::ImAnnotationEditorState  ovEditor;
+						static int ovNextUserId = 200;
+						if ( ovEditBoxes.empty() )
+						{
+							ImWidgets::ImDetectionBox init = { 0.20f, 0.20f, 0.20f, 0.20f, -1.0f, 0, ovNextUserId++ };
+							ovEditBoxes.push_back( init );
+						}
+
+						// --- Toggle bar ---
+						static bool ovShowDet   = true;
+						static bool ovShowKp    = false;
+						static bool ovShowText  = false;
+						static bool ovShowEdit  = false;
+						ImGui::Checkbox( "DetectionOverlay",   &ovShowDet );  ImGui::SameLine();
+						ImGui::Checkbox( "KeypointOverlay",    &ovShowKp );   ImGui::SameLine();
+						ImGui::Checkbox( "TextLabelOverlay",   &ovShowText ); ImGui::SameLine();
+						ImGui::Checkbox( "AnnotationEditor",   &ovShowEdit );
+
+						static ImWidgets::ImOverlayStyle ovStyle;
+						if ( ImGui::TreeNode( "Style" ) )
+						{
+							ImGui::SliderFloat( "Box thickness (lp)",   &ovStyle.box_thickness,    0.5f, 6.0f );
+							ImGui::SliderFloat( "Label font scale",     &ovStyle.label_font_scale, 0.5f, 2.5f );
+							ImGui::SliderFloat( "Label bg alpha",       &ovStyle.label_bg_alpha,   0.0f, 1.0f );
+							ImGui::SliderFloat( "Point radius (lp)",    &ovStyle.point_radius,     1.0f, 12.0f );
+							ImGui::SliderFloat( "Edge thickness (lp)",  &ovStyle.edge_thickness,   0.5f, 6.0f );
+							ImGui::Checkbox   ( "Show score",           &ovStyle.show_score );
+							ImGui::SameLine();
+							ImGui::Checkbox   ( "Show class label",     &ovStyle.show_class_label );
+							ImGui::TreePop();
+						}
+
+						// Reuse the same image bank as the viewer demo
+						static const char* ovFiles[] = {
+							"astro.png", "clock.png", "man.png",
+							"pexels-robert-bogdan-156165-1152351.jpg", "camera-542784_1280.png"
+						};
+						static const char* ovNames[] = { "Astronaut", "Clock", "Man", "Illustration", "Bike" };
+						static int ovImgIdx = 0;
+						IM_UNUSED( ovFiles );
+						ImGui::Combo( "Image##Overlay", &ovImgIdx, ovNames, 5 );
+						ImTextureID ovTexes[] = { astro_img, clock_img, man_img, illlustration_img, bike_img };
+						ImVec2      ovSizes[] = { astro_size, clock_size, man_size, illlustration_size, bike_size };
+
+						ImWidgets::ImageViewer( "##OverlayViewer", ovTexes[ovImgIdx], ovSizes[ovImgIdx], ovState,
+												ImVec2( ImGui::GetContentRegionAvail().x * 0.75f, 480.0f ) );
+
+						// Overlays are called AFTER ImageViewer with the same state.
+						if ( ovShowDet )
+						{
+							int hoveredId = ImWidgets::DetectionOverlay( "##ovDet", ovState,
+													ovBoxes, ovBoxCount,
+													ovClassNames, IM_ARRAYSIZE( ovClassNames ),
+													&ovStyle );
+							if ( hoveredId >= 0 )
+								ImGui::TextDisabled( "hovered detection user_id: %d", hoveredId );
+							else
+								ImGui::TextDisabled( "hovered detection user_id: (none)" );
+						}
+
+						if ( ovShowKp )
+						{
+							ImWidgets::KeypointOverlay( "##ovKp", ovState,
+													ovKps, ovKpCount,
+													ovEdges, ovEdgeCount,
+													ovPartNames, IM_ARRAYSIZE( ovPartNames ),
+													&ovStyle );
+						}
+
+						if ( ovShowText )
+						{
+							ImWidgets::TextLabelOverlay( "##ovText", ovState, ovLabels, ovLabelCount );
+						}
+
+						if ( ovShowEdit )
+						{
+							ImWidgets::ImAnnotationResult r = ImWidgets::AnnotationEditor(
+									"##ovEdit", ovState, ovEditor,
+									ovEditBoxes.Data, ovEditBoxes.Size,
+									ovClassNames, IM_ARRAYSIZE( ovClassNames ),
+									&ovStyle );
+
+							// Apply the returned edit
+							switch ( r.action )
+							{
+								case ImWidgets::ImAnnotationAction_Move:
+								case ImWidgets::ImAnnotationAction_Resize:
+								{
+									for ( int i = 0; i < ovEditBoxes.Size; i++ )
+										if ( ovEditBoxes[ i ].user_id == r.user_id )
+										{
+											ovEditBoxes[ i ].x = r.new_value.x;
+											ovEditBoxes[ i ].y = r.new_value.y;
+											ovEditBoxes[ i ].w = r.new_value.w;
+											ovEditBoxes[ i ].h = r.new_value.h;
+											break;
+										}
+									break;
+								}
+								case ImWidgets::ImAnnotationAction_Create:
+								{
+									ImWidgets::ImDetectionBox nb = r.new_value;
+									nb.class_id = 0;
+									nb.user_id  = ovNextUserId++;
+									nb.score    = -1.0f;
+									ovEditBoxes.push_back( nb );
+									ovEditor.SelectedId = nb.user_id;
+									break;
+								}
+								case ImWidgets::ImAnnotationAction_Delete:
+								{
+									for ( int i = 0; i < ovEditBoxes.Size; i++ )
+										if ( ovEditBoxes[ i ].user_id == r.user_id )
+										{
+											ovEditBoxes.erase( ovEditBoxes.Data + i );
+											break;
+										}
+									break;
+								}
+								case ImWidgets::ImAnnotationAction_LabelEdit:
+								{
+									for ( int i = 0; i < ovEditBoxes.Size; i++ )
+										if ( ovEditBoxes[ i ].user_id == r.user_id )
+										{
+											int cid = -1;
+											for ( int c = 0; c < IM_ARRAYSIZE( ovClassNames ); c++ )
+												if ( strcmp( ovClassNames[ c ], r.new_label ) == 0 ) { cid = c; break; }
+											if ( cid >= 0 ) ovEditBoxes[ i ].class_id = cid;
+											break;
+										}
+									break;
+								}
+								default: break;
+							}
+							ImGui::TextDisabled( "Editor: %d boxes | selected=%d | hovered=%d",
+								ovEditBoxes.Size, ovEditor.SelectedId, ovEditor.HoveredId );
+							ImGui::TextDisabled(
+								"Click empty=create | Click box=select | Drag=move | Drag handle=resize | "
+								"Del=delete | Esc=cancel | Dbl-click=edit label | Right-click=menu | "
+								"Ctrl=axis-lock | Shift=square" );
+						}
+					}
+					DW_SsRecord( "Image_Overlays", _sy0, ImGui::GetCursorPos().y );
 				}
 
 				{
@@ -9509,6 +10683,46 @@ namespace ImWidgets{
 					}
 					DW_SsRecord( "HDR_Wheels", _sy0, ImGui::GetCursorPos().y );
 				}
+				ApplyOpenAll();
+				if ( ImGui::CollapsingHeader( "Gradient Mesh Editor" ) )
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					static ImWidgets::ImWidgetsGradientMesh gm;
+					if ( ImGui::Button( "Reset 3x3 RGB" ) )
+						ImWidgets::GradientMeshInit( gm, 3, 3,
+							IM_COL32( 220,  80,  80, 255 ), IM_COL32(  80, 220,  80, 255 ),
+							IM_COL32(  80,  80, 220, 255 ), IM_COL32( 240, 240, 240, 255 ) );
+					ImGui::SameLine();
+					if ( ImGui::Button( "Reset 4x4 Cyan/Magenta" ) )
+						ImWidgets::GradientMeshInit( gm, 4, 4,
+							IM_COL32(  10, 200, 220, 255 ), IM_COL32( 240, 200,  10, 255 ),
+							IM_COL32( 220,  10, 200, 255 ), IM_COL32(  10,  60, 110, 255 ) );
+					ImGui::Checkbox( "Show mesh", &gm.ShowMesh );
+					ImWidgets::GradientMeshEditor( "##gm_demo", gm,
+						ImVec2( ImGui::GetContentRegionAvail().x, ImPlatform_LpToPx( 220.0f ) ) );
+					DW_SsRecord( "Gradient_Mesh", _sy0, ImGui::GetCursorPos().y );
+				}
+				ApplyOpenAll();
+				if ( ImGui::CollapsingHeader( "Toon Ramp Editor" ) )
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					static ImWidgets::ImWidgetsToonRamp tr;
+					ImWidgets::ToonRampEditor( "##tr_demo", tr,
+						ImVec2( ImGui::GetContentRegionAvail().x, 48.0f ) );
+					ImGui::Text( "Sample at t = 0.0 / 0.25 / 0.5 / 0.75 / 1.0:" );
+					ImDrawList* dl = ImGui::GetWindowDrawList();
+					ImVec2 p = ImGui::GetCursorScreenPos();
+					float bx = p.x;
+					for ( int k = 0; k <= 4; ++k )
+					{
+						float t = (float)k / 4.0f;
+						ImU32 c = ImWidgets::ToonRampSample( tr, t );
+						dl->AddRectFilled( ImVec2( bx, p.y ), ImVec2( bx + 60, p.y + 24 ), c );
+						bx += 70;
+					}
+					ImGui::Dummy( ImVec2( 0, 28 ) );
+					DW_SsRecord( "Toon_Ramp", _sy0, ImGui::GetCursorPos().y );
+				}
 
 				ImGui::TreePop();
 			}
@@ -10932,6 +12146,142 @@ namespace ImWidgets{
 					ImGui::TreePop();
 				}
 				DW_SsRecord( "Misc", _sy0, ImGui::GetCursorPos().y ); }  // end Misc block
+
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Status##Widgets" ) )
+			{
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Diff View" ) )
+					{
+						static ImWidgets::ImWidgetsDiffEntry s_diff[] = {
+							{ ImWidgets::ImWidgetsDiffLine_Hunk,    -1, -1, "@@ -10,7 +10,8 @@" },
+							{ ImWidgets::ImWidgetsDiffLine_Context, 10, 10, "int main(int argc, char** argv)" },
+							{ ImWidgets::ImWidgetsDiffLine_Context, 11, 11, "{" },
+							{ ImWidgets::ImWidgetsDiffLine_Removed, 12, -1, "    printf(\"hello\\n\");" },
+							{ ImWidgets::ImWidgetsDiffLine_Added,   -1, 12, "    printf(\"hello %s\\n\", argv[0]);" },
+							{ ImWidgets::ImWidgetsDiffLine_Added,   -1, 13, "    printf(\"argc = %d\\n\", argc);" },
+							{ ImWidgets::ImWidgetsDiffLine_Context, 13, 14, "    return 0;" },
+							{ ImWidgets::ImWidgetsDiffLine_Context, 14, 15, "}" },
+						};
+						ImWidgets::DiffView( "##diff", s_diff, IM_ARRAYSIZE( s_diff ), ImVec2( 0.0f, 200.0f ) );
+					}
+					DW_SsRecord( "Diff_View", _sy0, ImGui::GetCursorPos().y );
+				}
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Math##Widgets" ) )
+			{
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Matrix Editor" ) )
+					{
+						static float M[ 16 ] = { 1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1 };
+						ImWidgets::MatrixEditor( "4x4 (float)", M, 4, 4, 0.05f, "%.3f" );
+						static double D[ 6 ] = { 0.1, 0.2, 0.3, 0.4, 0.5, 0.6 };
+						ImWidgets::MatrixEditorDouble( "2x3 (double)", D, 2, 3, 0.01f, "%.4f" );
+					}
+					DW_SsRecord( "Matrix_Editor", _sy0, ImGui::GetCursorPos().y );
+				}
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Vector Field" ) )
+					{
+						struct VF { static ImVec2 swirl( ImVec2 uv, void* )
+						{
+							float x = uv.x - 0.5f, y = uv.y - 0.5f;
+							return ImVec2( -y, x );
+						} };
+						ImDrawList* dl = ImGui::GetWindowDrawList();
+						ImVec2 p = ImGui::GetCursorScreenPos();
+						ImVec2 sz( ImGui::GetContentRegionAvail().x, ImPlatform_LpToPx( 260.0f ) );
+						dl->AddRectFilled( p, p + sz, IM_COL32( 25, 30, 40, 255 ) );
+						ImWidgets::DrawVectorField( dl, ImRect( p, p + sz ),
+							VF::swirl, NULL, 24, 16, 16.0f, IM_COL32_WHITE, 1.0f, true );
+						ImGui::Dummy( sz );
+					}
+					DW_SsRecord( "Vector_Field", _sy0, ImGui::GetCursorPos().y );
+				}
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Stream Lines" ) )
+					{
+						struct VF { static ImVec2 saddle( ImVec2 uv, void* )
+						{
+							float x = uv.x - 0.5f, y = uv.y - 0.5f;
+							return ImVec2( y, x );
+						} };
+						ImDrawList* dl = ImGui::GetWindowDrawList();
+						ImVec2 p = ImGui::GetCursorScreenPos();
+						ImVec2 sz( ImGui::GetContentRegionAvail().x, ImPlatform_LpToPx( 240.0f ) );
+						dl->AddRectFilled( p, p + sz, IM_COL32( 25, 30, 40, 255 ) );
+						ImVec2 seeds[ 20 ];
+						for ( int k = 0; k < 20; ++k )
+							seeds[ k ] = ImVec2( 0.05f + ( k % 5 ) * 0.225f, 0.05f + ( k / 5 ) * 0.30f );
+						ImWidgets::DrawStreamLines( dl, ImRect( p, p + sz ),
+							VF::saddle, NULL, seeds, 20, 100, 3.0f,
+							IM_COL32( 130, 220, 255, 220 ), 1.5f );
+						ImGui::Dummy( sz );
+					}
+					DW_SsRecord( "Stream_Lines", _sy0, ImGui::GetCursorPos().y );
+				}
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Polynomial Roots" ) )
+					{
+						ImDrawList* dl = ImGui::GetWindowDrawList();
+						ImVec2 p = ImGui::GetCursorScreenPos();
+						float side = ImMin( ImGui::GetContentRegionAvail().x, ImPlatform_LpToPx( 260.0f ) );
+						ImVec2 sz( side, side );
+						dl->AddRectFilled( p, p + sz, IM_COL32( 25, 30, 40, 255 ) );
+						ImVec2 roots[ 4 ] = { ImVec2( 1, 0 ), ImVec2( -1, 0 ), ImVec2( 0, 1 ), ImVec2( 0, -1 ) };
+						ImWidgets::DrawPolynomialRoots( dl, ImRect( p, p + sz ), roots, 4, 1.5f );
+						ImGui::Dummy( sz );
+					}
+					DW_SsRecord( "Polynomial_Roots", _sy0, ImGui::GetCursorPos().y );
+				}
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Curve Sketch" ) )
+					{
+						struct CS { static float f( float x, void* )
+						{
+							return ImSin( x ) + 0.3f * ImSin( 4.0f * x );
+						} };
+						ImDrawList* dl = ImGui::GetWindowDrawList();
+						ImVec2 p = ImGui::GetCursorScreenPos();
+						ImVec2 sz( ImGui::GetContentRegionAvail().x, ImPlatform_LpToPx( 220.0f ) );
+						dl->AddRectFilled( p, p + sz, IM_COL32( 25, 30, 40, 255 ) );
+						ImWidgets::DrawCurveSketch( dl, ImRect( p, p + sz ),
+							CS::f, NULL, -IM_PI * 2.0f, IM_PI * 2.0f, -1.4f, 1.4f, 256 );
+						ImGui::Dummy( sz );
+					}
+					DW_SsRecord( "Curve_Sketch", _sy0, ImGui::GetCursorPos().y );
+				}
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "3D Inputs##Widgets" ) )
+			{
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Vector Input 3D (azimuth + elevation)" ) )
+					{
+						static float v[ 3 ] = { 0.5f, 0.3f, 1.0f };
+						ImWidgets::VectorInput3D( "Direction", v, 200.0f );
+					}
+					DW_SsRecord( "Vector_Input_3D", _sy0, ImGui::GetCursorPos().y );
+				}
+				ImGui::TreePop();
+			}
 
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Font Inspector" ) )
