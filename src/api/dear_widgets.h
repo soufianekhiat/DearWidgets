@@ -2790,6 +2790,14 @@ struct ImImageViewerState
 	float  GetZoomScale()  const { return _LastFitScale * Zoom; }
 };
 
+// Invoked by ImageViewer right after it draws the image -- once for the normal
+// (compact) widget, and again inside its built-in "expand to window" modal when
+// that's open, each time with `state` reflecting that instance's own transform.
+// Pass overlay-drawing calls (DetectionOverlay, KeypointOverlay, TextLabelOverlay,
+// AnnotationEditor, ...) through this callback instead of calling them manually
+// after ImageViewer so they also render inside the modal, not just the compact view.
+typedef void ( *ImImageViewerOverlayCallback )( ImImageViewerState& state, void* user_data );
+
 // ============================================================================
 // ImageInspector: color-managed raw-buffer viewer
 // ============================================================================
@@ -4142,7 +4150,10 @@ namespace ImWidgets{
 	// overlay(s) with the same ImImageViewerState reference. Read-only display
 	// overlays (Detection / Keypoint / TextLabel) never mutate their inputs;
 	// AnnotationEditor is the only interactive one and returns edit intents via
-	// ImAnnotationResult.
+	// ImAnnotationResult. To also support ImageViewer's built-in expand-to-window
+	// modal, drive the overlay calls from an ImImageViewerOverlayCallback passed to
+	// ImageViewer instead of calling them manually right after -- see the callback's
+	// doc comment above ImImageViewerState.
 
 	// A single detected object -- all coordinates normalized UV [0,1].
 	struct ImDetectionBox
