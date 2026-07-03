@@ -36231,7 +36231,7 @@ namespace ImWidgets
         float pen_x   = pen_x0;
         float pen_y   = -align.y * tsize.y;
 
-        ImTextureRef atlas_tex = font->OwnerAtlas->TexRef;
+        ImTextureRef atlas_tex = font->ContainerAtlas->TexRef;
         dl->PushTexture( atlas_tex );
 
         char const* s = text;
@@ -38441,7 +38441,7 @@ namespace ImWidgets
 
         ImFontBaked* baked = font->GetFontBaked( font_size );
         if ( !baked ) return;
-        dl->PushTexture( font->OwnerAtlas->TexRef );
+        dl->PushTexture( font->ContainerAtlas->TexRef );
 
         float pen = offset_along;
         char const* p = text;
