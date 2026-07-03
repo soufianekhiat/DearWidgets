@@ -4140,7 +4140,7 @@ namespace ImWidgets{
 	// and the expand/modal draw (which re-enters ImageViewer recursively). Pass NULL
 	// (default) for a plain textured draw. The image draw in the right-click loupe is
 	// left un-shaded (raw texels) so the pixel inspector reflects source data.
-	IMGUI_API bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize = ImVec2( 0, 0 ), ImPlatform_ShaderProgram shaderProgram = nullptr );
+	IMGUI_API bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize = ImVec2( 0, 0 ), ImPlatform_ShaderProgram shaderProgram = nullptr, ImImageViewerOverlayCallback overlay_callback = nullptr, void* overlay_user_data = nullptr );
 
 	// ============================================================================
 	// [SECTION] Image overlays — composed on top of ImageViewer

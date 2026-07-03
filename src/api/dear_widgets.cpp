@@ -28683,7 +28683,7 @@ namespace ImWidgets {
 			ImPlatform_BeginCustomShader_Render( prog );
 	}
 
-	bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize, ImPlatform_ShaderProgram shaderProgram )
+	bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize, ImPlatform_ShaderProgram shaderProgram, ImImageViewerOverlayCallback overlay_callback, void* overlay_user_data )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
@@ -29094,7 +29094,7 @@ namespace ImWidgets {
 				float  widgetW = avail.x * 0.75f;
 				// Left: image viewer (same shader as the inline draw, so the modal
 				// shows the shaded result instead of the raw texture).
-				if ( ImageViewer( "##exp", image, imageSize, state, ImVec2( widgetW, avail.y ), shaderProgram ) )
+				if ( ImageViewer( "##exp", image, imageSize, state, ImVec2( widgetW, avail.y ), shaderProgram, overlay_callback, overlay_user_data ) )
 					changed = true;
 				ImGui::SameLine();
 				// Right: info panel
