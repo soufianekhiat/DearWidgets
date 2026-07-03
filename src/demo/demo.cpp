@@ -407,6 +407,20 @@ static inline void DW_SsRecord( const char*, float, float )
 {}
 #endif // DW_SCREENSHOT_SUPPORT
 
+// Read-only, full-width InputText showing a reference URL -- click in and
+// Ctrl+A/Ctrl+C to copy, without needing a real hyperlink/browser-launch widget.
+static void DW_ReferenceLink( char const* url )
+{
+	ImGui::TextDisabled( "Reference:" );
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth( -FLT_MIN );
+	ImGui::PushID( url );
+	char buf[ 256 ];
+	ImFormatString( buf, sizeof( buf ), "%s", url );
+	ImGui::InputText( "##ref_link", buf, sizeof( buf ), ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_AutoSelectAll );
+	ImGui::PopID();
+}
+
 ImTextureID TextureFromFile( char const* filename, ImVec2* img_size )
 {
 	int width;
@@ -8985,7 +8999,9 @@ namespace ImWidgets{
 						ImGui::TextWrapped(
 							"Read-only overlays composed on top of ImageViewer. All coordinates are UV [0,1] "
 							"relative to the image, so overlays follow the viewer's pan/zoom automatically. "
-							"Toggle each overlay independently. Call the overlays AFTER ImageViewer with the same state." );
+							"Toggle each overlay independently. Overlays are driven from an overlay_callback passed "
+							"to ImageViewer, so they also render inside its built-in expand-to-window modal (try the "
+							"expand button in the viewer's corner) -- not just the compact view." );
 
 						// --- Shared viewer for all overlays ---
 						static ImImageViewerState ovState;
@@ -9003,7 +9019,7 @@ namespace ImWidgets{
 							{ 0.50f, 0.55f, 0.25f, 0.30f, 0.72f, 1, 102 },
 							{ 0.05f, 0.65f, 0.35f, 0.30f, 0.61f, 2, 103 },
 						};
-						const int ovBoxCount = (int)IM_ARRAYSIZE( ovBoxes );
+						static const int ovBoxCount = (int)IM_ARRAYSIZE( ovBoxes );
 
 						// Synthetic keypoints (13-part skeleton)
 						static ImWidgets::ImKeypoint ovKps[] = {
@@ -9021,7 +9037,7 @@ namespace ImWidgets{
 							{ 0.40f, 0.85f, 0.25f, 11 }, // l.foot (low confidence)
 							{ 0.60f, 0.85f, 0.65f, 12 }, // r.foot
 						};
-						const int ovKpCount = (int)IM_ARRAYSIZE( ovKps );
+						static const int ovKpCount = (int)IM_ARRAYSIZE( ovKps );
 
 						static ImWidgets::ImSkeletonEdge ovEdges[] = {
 							{ 0, 1 }, { 0, 2 },
@@ -9032,7 +9048,7 @@ namespace ImWidgets{
 							{ 7, 9 }, { 9, 11 },
 							{ 8, 10 }, { 10, 12 },
 						};
-						const int ovEdgeCount = (int)IM_ARRAYSIZE( ovEdges );
+						static const int ovEdgeCount = (int)IM_ARRAYSIZE( ovEdges );
 
 						// Synthetic text labels
 						static ImWidgets::ImTextLabel ovLabels[] = {
@@ -9041,7 +9057,7 @@ namespace ImWidgets{
 							{ 0.50f, 0.05f, "center header",    IM_COL32( 255, 255, 255, 255 ), 1.2f, ImWidgets::ImTextLabelAnchor_TopCenter },
 							{ 0.50f, 0.95f, "bottom center",    IM_COL32( 200, 255, 200, 255 ), 1.0f, ImWidgets::ImTextLabelAnchor_BotCenter },
 						};
-						const int ovLabelCount = (int)IM_ARRAYSIZE( ovLabels );
+						static const int ovLabelCount = (int)IM_ARRAYSIZE( ovLabels );
 
 						// Annotation editor: caller owns the mutable boxes array
 						static ImVector<ImWidgets::ImDetectionBox> ovEditBoxes;
@@ -9089,96 +9105,116 @@ namespace ImWidgets{
 						ImTextureID ovTexes[] = { astro_img, clock_img, man_img, illlustration_img, bike_img };
 						ImVec2      ovSizes[] = { astro_size, clock_size, man_size, illlustration_size, bike_size };
 
-						ImWidgets::ImageViewer( "##OverlayViewer", ovTexes[ovImgIdx], ovSizes[ovImgIdx], ovState,
-												ImVec2( ImGui::GetContentRegionAvail().x * 0.75f, 480.0f ) );
+						// Overlays are drawn from this callback rather than called manually
+						// after ImageViewer, so ImageViewer can also invoke it inside its
+						// built-in expand-to-window modal (using that instance's own
+						// transform/draw-list) -- not just the compact widget below.
+						// Captureless, so it converts to the plain function pointer
+						// ImageViewer expects; it only touches `state` (its own reference
+						// parameter -- ImageViewer passes the same ovState through
+						// unmodified) and static locals of this demo function.
+						static int ovLastHoveredId = -1;
+						auto ovDrawOverlays = []( ImImageViewerState& state, void* )
+						{
+							if ( ovShowDet )
+							{
+								ovLastHoveredId = ImWidgets::DetectionOverlay( "##ovDet", state,
+														ovBoxes, ovBoxCount,
+														ovClassNames, IM_ARRAYSIZE( ovClassNames ),
+														&ovStyle );
+							}
 
-						// Overlays are called AFTER ImageViewer with the same state.
+							if ( ovShowKp )
+							{
+								ImWidgets::KeypointOverlay( "##ovKp", state,
+														ovKps, ovKpCount,
+														ovEdges, ovEdgeCount,
+														ovPartNames, IM_ARRAYSIZE( ovPartNames ),
+														&ovStyle );
+							}
+
+							if ( ovShowText )
+							{
+								ImWidgets::TextLabelOverlay( "##ovText", state, ovLabels, ovLabelCount );
+							}
+
+							if ( ovShowEdit )
+							{
+								ImWidgets::ImAnnotationResult r = ImWidgets::AnnotationEditor(
+										"##ovEdit", state, ovEditor,
+										ovEditBoxes.Data, ovEditBoxes.Size,
+										ovClassNames, IM_ARRAYSIZE( ovClassNames ),
+										&ovStyle );
+
+								// Apply the returned edit
+								switch ( r.action )
+								{
+									case ImWidgets::ImAnnotationAction_Move:
+									case ImWidgets::ImAnnotationAction_Resize:
+									{
+										for ( int i = 0; i < ovEditBoxes.Size; i++ )
+											if ( ovEditBoxes[ i ].user_id == r.user_id )
+											{
+												ovEditBoxes[ i ].x = r.new_value.x;
+												ovEditBoxes[ i ].y = r.new_value.y;
+												ovEditBoxes[ i ].w = r.new_value.w;
+												ovEditBoxes[ i ].h = r.new_value.h;
+												break;
+											}
+										break;
+									}
+									case ImWidgets::ImAnnotationAction_Create:
+									{
+										ImWidgets::ImDetectionBox nb = r.new_value;
+										nb.class_id = 0;
+										nb.user_id  = ovNextUserId++;
+										nb.score    = -1.0f;
+										ovEditBoxes.push_back( nb );
+										ovEditor.SelectedId = nb.user_id;
+										break;
+									}
+									case ImWidgets::ImAnnotationAction_Delete:
+									{
+										for ( int i = 0; i < ovEditBoxes.Size; i++ )
+											if ( ovEditBoxes[ i ].user_id == r.user_id )
+											{
+												ovEditBoxes.erase( ovEditBoxes.Data + i );
+												break;
+											}
+										break;
+									}
+									case ImWidgets::ImAnnotationAction_LabelEdit:
+									{
+										for ( int i = 0; i < ovEditBoxes.Size; i++ )
+											if ( ovEditBoxes[ i ].user_id == r.user_id )
+											{
+												int cid = -1;
+												for ( int c = 0; c < IM_ARRAYSIZE( ovClassNames ); c++ )
+													if ( strcmp( ovClassNames[ c ], r.new_label ) == 0 ) { cid = c; break; }
+												if ( cid >= 0 ) ovEditBoxes[ i ].class_id = cid;
+												break;
+											}
+										break;
+									}
+									default: break;
+								}
+							}
+						};
+
+						ImWidgets::ImageViewer( "##OverlayViewer", ovTexes[ovImgIdx], ovSizes[ovImgIdx], ovState,
+												ImVec2( ImGui::GetContentRegionAvail().x * 0.75f, 480.0f ),
+												ovDrawOverlays, nullptr );
+
 						if ( ovShowDet )
 						{
-							int hoveredId = ImWidgets::DetectionOverlay( "##ovDet", ovState,
-													ovBoxes, ovBoxCount,
-													ovClassNames, IM_ARRAYSIZE( ovClassNames ),
-													&ovStyle );
-							if ( hoveredId >= 0 )
-								ImGui::TextDisabled( "hovered detection user_id: %d", hoveredId );
+							if ( ovLastHoveredId >= 0 )
+								ImGui::TextDisabled( "hovered detection user_id: %d", ovLastHoveredId );
 							else
 								ImGui::TextDisabled( "hovered detection user_id: (none)" );
 						}
 
-						if ( ovShowKp )
-						{
-							ImWidgets::KeypointOverlay( "##ovKp", ovState,
-													ovKps, ovKpCount,
-													ovEdges, ovEdgeCount,
-													ovPartNames, IM_ARRAYSIZE( ovPartNames ),
-													&ovStyle );
-						}
-
-						if ( ovShowText )
-						{
-							ImWidgets::TextLabelOverlay( "##ovText", ovState, ovLabels, ovLabelCount );
-						}
-
 						if ( ovShowEdit )
 						{
-							ImWidgets::ImAnnotationResult r = ImWidgets::AnnotationEditor(
-									"##ovEdit", ovState, ovEditor,
-									ovEditBoxes.Data, ovEditBoxes.Size,
-									ovClassNames, IM_ARRAYSIZE( ovClassNames ),
-									&ovStyle );
-
-							// Apply the returned edit
-							switch ( r.action )
-							{
-								case ImWidgets::ImAnnotationAction_Move:
-								case ImWidgets::ImAnnotationAction_Resize:
-								{
-									for ( int i = 0; i < ovEditBoxes.Size; i++ )
-										if ( ovEditBoxes[ i ].user_id == r.user_id )
-										{
-											ovEditBoxes[ i ].x = r.new_value.x;
-											ovEditBoxes[ i ].y = r.new_value.y;
-											ovEditBoxes[ i ].w = r.new_value.w;
-											ovEditBoxes[ i ].h = r.new_value.h;
-											break;
-										}
-									break;
-								}
-								case ImWidgets::ImAnnotationAction_Create:
-								{
-									ImWidgets::ImDetectionBox nb = r.new_value;
-									nb.class_id = 0;
-									nb.user_id  = ovNextUserId++;
-									nb.score    = -1.0f;
-									ovEditBoxes.push_back( nb );
-									ovEditor.SelectedId = nb.user_id;
-									break;
-								}
-								case ImWidgets::ImAnnotationAction_Delete:
-								{
-									for ( int i = 0; i < ovEditBoxes.Size; i++ )
-										if ( ovEditBoxes[ i ].user_id == r.user_id )
-										{
-											ovEditBoxes.erase( ovEditBoxes.Data + i );
-											break;
-										}
-									break;
-								}
-								case ImWidgets::ImAnnotationAction_LabelEdit:
-								{
-									for ( int i = 0; i < ovEditBoxes.Size; i++ )
-										if ( ovEditBoxes[ i ].user_id == r.user_id )
-										{
-											int cid = -1;
-											for ( int c = 0; c < IM_ARRAYSIZE( ovClassNames ); c++ )
-												if ( strcmp( ovClassNames[ c ], r.new_label ) == 0 ) { cid = c; break; }
-											if ( cid >= 0 ) ovEditBoxes[ i ].class_id = cid;
-											break;
-										}
-									break;
-								}
-								default: break;
-							}
 							ImGui::TextDisabled( "Editor: %d boxes | selected=%d | hovered=%d",
 								ovEditBoxes.Size, ovEditor.SelectedId, ovEditor.HoveredId );
 							ImGui::TextDisabled(
@@ -10065,6 +10101,7 @@ namespace ImWidgets{
 							"eumelanin/pheomelanin blend (plane Y), and dermal hemoglobin (vertical slider). "
 							"Switch Mode to drive these from high-level age / gender / skin-care / skin-type controls." );
 
+						DW_ReferenceLink( "http://graphics.ucsd.edu/~henrik/papers/skin_bssrdf/skin_bssrdf.pdf" );
 						ColorPickerSkin( "##SkinPicker", &skinColor );
 
 						ImGui::ColorEdit4( "Color##Skin", &skinColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
@@ -10085,6 +10122,7 @@ namespace ImWidgets{
 							"transmittance of the colored TRT lobe (integrated across the fiber cross-section), so pheomelanin "
 							"reads as a vivid ginger. Switch Mode to drive these from high-level shade / warmth / graying controls." );
 
+						DW_ReferenceLink( "https://media.disneyanimation.com/uploads/production/publication_asset/152/asset/eurographics2016Fur_Smaller.pdf" );
 						ColorPickerHair( "##HairPicker", &hairColor );
 
 						ImGui::ColorEdit4( "Color##Hair", &hairColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
@@ -10104,6 +10142,7 @@ namespace ImWidgets{
 							"(vertical slider, red/purple). Covers the full lifecycle green->yellow->orange->red->brown. "
 							"Switch Mode to drive these from high-level season / health / autumn-redness controls." );
 
+						DW_ReferenceLink( "https://hal.science/hal-01584365/file/mt2017-pub00054524.pdf" );
 						ColorPickerLeaf( "##LeafPicker", &leafColor );
 
 						ImGui::ColorEdit4( "Color##Leaf", &leafColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
@@ -10120,6 +10159,7 @@ namespace ImWidgets{
 						static ImVec4 bbColor( 1.0f, 0.95f, 0.9f, 1.0f );
 						ImGui::TextWrapped( "Planck's law along the Planckian locus (CIE 15). Single gradient slider keyed with blackbody colors: "
 							"warm/orange at low Kelvin, white ~6500K, cool/blue at high Kelvin." );
+						DW_ReferenceLink( "http://www.cvrl.org/cmfs.htm" );
 						ColorPickerBlackbody( "##BBPicker", &bbColor );
 						ImGui::ColorEdit4( "Color##BB", &bbColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 						ImGui::TreePop();
@@ -10135,6 +10175,7 @@ namespace ImWidgets{
 						static ImVec4 pigColor( 0.3f, 0.5f, 0.2f, 1.0f );
 						ImGui::TextWrapped( "Subtractive paint mixing via Kubelka-Munk theory (Kubelka & Munk 1931; Haase & Meyer 1992). "
 							"Pick two paints; plane X = A->B mix, Y = white tint; slider = black. Yellow + blue makes green, like real paint." );
+						DW_ReferenceLink( "https://doi.org/10.1145/146443.146452" );
 						ColorPickerPigment( "##PigPicker", &pigColor );
 						ImGui::ColorEdit4( "Color##Pig", &pigColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 						ImGui::TreePop();
@@ -10150,6 +10191,7 @@ namespace ImWidgets{
 						static ImVec4 gemColor( 0.7f, 0.05f, 0.1f, 1.0f );
 						ImGui::TextWrapped( "Gemstone body color from Beer-Lambert absorption by trace transition-metal ions (Nassau 1983; "
 							"Fritsch & Rossman 1987-88). Pick a gem; plane X = concentration, Y = path length; slider = clarity." );
+						DW_ReferenceLink( "https://www.gia.edu/dam/migrated-assets/docs/doc1/An-Update-on-Color-in-Gems-Part-1-Introduction-and-Colors-Caused-by-Dispersed-Metal-Ions.pdf" );
 						ColorPickerGem( "##GemPicker", &gemColor );
 						ImGui::ColorEdit4( "Color##Gem", &gemColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 						ImGui::TreePop();
@@ -10165,6 +10207,7 @@ namespace ImWidgets{
 						static ImVec4 waterColor( 0.0f, 0.2f, 0.35f, 1.0f );
 						ImGui::TextWrapped( "Water color from a bio-optical model R ~ bb/(a+bb) (Morel & Prieur 1977; Gordon 1988) with pure-water "
 							"absorption (Pope & Fry 1997), chlorophyll and CDOM. Plane X = chlorophyll, Y = CDOM; slider = turbidity." );
+						DW_ReferenceLink( "https://omlc.org/spectra/water/abs/index.html" );
 						ColorPickerWater( "##WaterPicker", &waterColor );
 						ImGui::ColorEdit4( "Color##Water", &waterColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 						ImGui::TreePop();
@@ -10181,6 +10224,7 @@ namespace ImWidgets{
 						ImGui::TextWrapped( "Eye color: anterior melanin absorbs while the stroma scatters blue (Tyndall/Rayleigh) over a pigmented "
 							"epithelium - so blue eyes are structural, not a blue pigment. Plane X = anterior melanin (blue->brown), "
 							"Y = stromal scattering; slider = posterior melanin." );
+						DW_ReferenceLink( "https://pubmed.ncbi.nlm.nih.gov/19619260/" );
 						ColorPickerIris( "##IrisPicker", &irisColor );
 						ImGui::ColorEdit4( "Color##Iris", &irisColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 						ImGui::TreePop();
@@ -10196,6 +10240,7 @@ namespace ImWidgets{
 						static ImVec4 flameColor( 0.2f, 0.8f, 0.3f, 1.0f );
 						ImGui::TextWrapped( "Additive emission: a blackbody flame continuum plus atomic emission lines for the chosen element "
 							"(NIST lines; flame tests). Plane X = flame temperature, Y = element line strength; slider = sodium contamination." );
+						DW_ReferenceLink( "https://www.nist.gov/pml/atomic-spectra-database" );
 						ColorPickerFlame( "##FlamePicker", &flameColor );
 						ImGui::ColorEdit4( "Color##Flame", &flameColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 						ImGui::TreePop();
@@ -10210,8 +10255,9 @@ namespace ImWidgets{
 					{
 						static ImVec4 bruiseColor( 0.5f, 0.2f, 0.3f, 1.0f );
 						ImGui::TextWrapped( "Bruise color as it heals: extravasated hemoglobin deoxygenates (red->purple), then heme breaks "
-							"down to biliverdin (green) and bilirubin (yellow). Chromophore dynamics after Randeberg et al. (J. Biomed. Opt.). "
-							"Plane X = days since injury, Y = severity; slider = skin melanin." );
+							"down to biliverdin (green) and bilirubin (yellow). Chromophore dynamics after Randeberg et al. 2006, "
+							"Lasers Surg. Med. Plane X = days since injury, Y = severity; slider = skin melanin." );
+						DW_ReferenceLink( "https://pubmed.ncbi.nlm.nih.gov/16538661/" );
 						ColorPickerBruise( "##BruisePicker", &bruiseColor );
 						ImGui::ColorEdit4( "Color##Bruise", &bruiseColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 						ImGui::TreePop();
@@ -10228,6 +10274,7 @@ namespace ImWidgets{
 						ImGui::TextWrapped( "Color of an ionized gas cloud from its emission lines (Osterbrock & Ferland): hydrogen Balmer (Halpha), "
 							"high-ionization [O III] (green) + He, and low-ionization [N II]/[S II] (red). Plane X = ionization, Y = low-ionization; "
 							"slider = hydrogen strength." );
+						DW_ReferenceLink( "https://www.nist.gov/pml/atomic-spectra-database" );
 						ColorPickerNebula( "##NebulaPicker", &nebulaColor );
 						ImGui::ColorEdit4( "Color##Nebula", &nebulaColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 						ImGui::TreePop();
@@ -10244,6 +10291,7 @@ namespace ImWidgets{
 						ImGui::TextWrapped( "Food browning: melanoidin/caramel pigments accumulate with Arrhenius time-temperature kinetics and absorb "
 							"toward short wavelengths (after Maillard-kinetics & CIELab browning studies). Plane X = temperature, Y = time; "
 							"slider = sugar(caramel)<->protein(Maillard)." );
+						DW_ReferenceLink( "https://doi.org/10.1016/S0924-2244(01)00022-X" );
 						ColorPickerMaillard( "##MaillardPicker", &maillardColor );
 						ImGui::ColorEdit4( "Color##Maillard", &maillardColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 						ImGui::TreePop();
@@ -10260,6 +10308,7 @@ namespace ImWidgets{
 						ImGui::TextWrapped( "Atmospheric weathering of copper: bright metal -> cuprite/tarnish (brown) -> basic sulfate/carbonate patina "
 							"(green) over years, faster in marine/industrial air (Graedel et al., Corrosion Science 1987). Plane X = age (years), "
 							"Y = environment; slider = humidity." );
+						DW_ReferenceLink( "https://doi.org/10.1016/0010-938X(87)90047-3" );
 						ColorPickerPatina( "##PatinaPicker", &patinaColor );
 						ImGui::ColorEdit4( "Color##Patina", &patinaColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 						ImGui::TreePop();
@@ -10276,6 +10325,7 @@ namespace ImWidgets{
 						ImGui::TextWrapped( "Diffuse color of a translucent multiply-scattering material via the dipole model (Jensen et al., SIGGRAPH 2001). "
 							"Material sets the absorption hue; plane X = absorption, Y = scattering (opaque<->translucent); slider = IOR. "
 							"Try jade, wax, marble, milk, skin, amber." );
+						DW_ReferenceLink( "https://graphics.stanford.edu/papers/bssrdf/bssrdf.pdf" );
 						ColorPickerSubsurface( "##SubsurfacePicker", &sssColor );
 						ImGui::ColorEdit4( "Color##SSS", &sssColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 						ImGui::TreePop();
@@ -10292,6 +10342,7 @@ namespace ImWidgets{
 						ImGui::TextWrapped( "Neon-tube color from low-pressure gas emission lines (NIST ASD; Waymouth). Pick the gas; plane X = mercury "
 							"additive (toward blue), Y = white phosphor coating (toward pastel/white); slider = phosphor white point. "
 							"Neon=red-orange, Ar+Hg=blue, helium=peach." );
+						DW_ReferenceLink( "https://www.nist.gov/pml/atomic-spectra-database" );
 						ColorPickerDischarge( "##DischargePicker", &dischargeColor );
 						ImGui::ColorEdit4( "Color##Discharge", &dischargeColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 						ImGui::TreePop();
@@ -10308,6 +10359,7 @@ namespace ImWidgets{
 						ImGui::TextWrapped( "Why ice is blue: pure ice absorbs red far more than blue (Warren & Brandt 2008), so with enough path it "
 							"turns deep blue, while fine grains/bubbles scatter and look white (Bohren 1983). Kubelka-Munk. Plane X = grain/scatter "
 							"(blue ice <-> snow), Y = path depth; slider = impurity/dirt." );
+						DW_ReferenceLink( "https://atmos.uw.edu/ice_optical_constants/" );
 						ColorPickerIce( "##IcePicker", &iceColor );
 						ImGui::ColorEdit4( "Color##Ice", &iceColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 						ImGui::TreePop();
@@ -10323,6 +10375,7 @@ namespace ImWidgets{
 						static ImVec4 ochreColor( 0.6f, 0.35f, 0.12f, 1.0f );
 						ImGui::TextWrapped( "Subtractive mixing of natural iron-oxide earth pigments via Kubelka-Munk (masstones after Elias et al. 2006). "
 							"Pick two pigments; plane X = A->B mix, Y = chalk-white tint; slider = charcoal. Ochres, siennas, umbers - the oldest palette." );
+						DW_ReferenceLink( "https://doi.org/10.1016/j.mseb.2005.09.061" );
 						ColorPickerOchre( "##OchrePicker", &ochreColor );
 						ImGui::ColorEdit4( "Color##Ochre", &ochreColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 						ImGui::TreePop();
@@ -10344,6 +10397,8 @@ namespace ImWidgets{
 							"Default view-az = 0 (toward sun) — at twilight columns (~18-20h for mid-latitudes) look for "
 							"the warm orange glow at the very bottom and a thin cyan/teal stripe just above it from "
 							"ozone preferentially absorbing the green-yellow-red band (Chappuis) along the long horizon path." );
+						DW_ReferenceLink( "https://ebruneton.github.io/precomputed_atmospheric_scattering/" );
+						DW_ReferenceLink( "https://sebh.github.io/publications/egsr2020.pdf" );
 						ColorPickerSky( "##SkyPicker", &skyColor );
 						ImGui::ColorEdit4( "Color##Sky", &skyColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 						ImGui::TreePop();
@@ -10362,6 +10417,8 @@ namespace ImWidgets{
 							"TiO molecular absorption between 600-720 nm. Plane: X = log Teff (2500 K -> 40000 K), "
 							"Y = log surface gravity. Vertical slider = metallicity [Fe/H]. "
 							"Reference: Mamajek 2022 dwarf colour-temperature sequence + Pecaut & Mamajek 2013." );
+						DW_ReferenceLink( "https://www.pas.rochester.edu/~emamajek/EEM_dwarf_UBVIJHK_colors_Teff.txt" );
+						DW_ReferenceLink( "https://arxiv.org/abs/1307.2657" );
 						ColorPickerStar( "##StarPicker", &starColor );
 						ImGui::ColorEdit4( "Color##Star", &starColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 						ImGui::TreePop();
@@ -10380,6 +10437,7 @@ namespace ImWidgets{
 							"Plane: X = SpO2 (50%% -> 100%%), Y = dermal blood-volume fraction (0.5%% -> 10%%). "
 							"Vertical slider = melanin density (fair -> very dark). "
 							"Reference: Prahl haemoglobin extinction tables (OMLC), Jacques 1996 melanin model." );
+						DW_ReferenceLink( "https://omlc.org/spectra/hemoglobin/" );
 						ColorPickerHemoglobin( "##HemPicker", &hemColor );
 						ImGui::ColorEdit4( "Color##Hem", &hemColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 						ImGui::TreePop();
@@ -10398,6 +10456,7 @@ namespace ImWidgets{
 							"at cloud edges. Dual Henyey-Greenstein phase function mixes a forward Mie lobe (g1=+0.8) "
 							"with a small back-scatter lobe (g2=-0.3) - silver lining when looking toward the sun. "
 							"Reference: SIGGRAPH 2015 'Real-Time Volumetric Cloudscapes'." );
+						DW_ReferenceLink( "https://advances.realtimerendering.com/s2015/The%20Real-time%20Volumetric%20Cloudscapes%20of%20Horizon%20-%20Zero%20Dawn%20-%20ARTR.pdf" );
 						ColorPickerCloud( "##CloudPicker", &cloudColor );
 						ImGui::ColorEdit4( "Color##Cloud", &cloudColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 						ImGui::TreePop();
@@ -10417,6 +10476,7 @@ namespace ImWidgets{
 							"self-reversal notch at the line centre. Plane: X = Hg <-> Na mix, Y = pressure. "
 							"Vertical slider = tri-phosphor coating fraction. "
 							"Reference: RIT 'Spectral Distribution of Gas Discharge Sources'." );
+						DW_ReferenceLink( "https://www.nist.gov/pml/atomic-spectra-database" );
 						ColorPickerStreetlight( "##SLPicker", &slColor );
 						ImGui::ColorEdit4( "Color##SL", &slColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 						ImGui::TreePop();

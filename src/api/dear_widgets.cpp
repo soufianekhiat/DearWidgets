@@ -16076,7 +16076,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// blue eyes are structural (no blue pigment), brown eyes are melanin. Melanin
 	// absorption after Jacques (OMLC skin optics, eumelanin ~ lambda^-3.33);
 	// structural blue per the Tyndall scattering mechanism (e.g. Mason 1924;
-	// review Sturm & Larsson, Pigment Cell Melanoma Res. 2009).
+	// review Sturm & Larsson, "Genetics of human iris colour and patterns",
+	// Pigment Cell Melanoma Res. 22(5):544-562, 2009).
+	// Refs: https://omlc.org/news/jan98/skinoptics.html
+	//       https://pubmed.ncbi.nlm.nih.gov/19619260/
 	static void IrisToSRGB( float& outR, float& outG, float& outB, float antMel, float stroma, float posMel )
 	{
 		EnsureSpecTables();
@@ -16415,11 +16418,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// Forward skin model whose chromophores evolve as a bruise heals: extravasated
 	// hemoglobin deoxygenates (red -> blue/purple), then heme breaks down to
 	// biliverdin (green) and bilirubin (yellow). Chromophore dynamics after
-	// Randeberg et al., "Performance of diffusion theory vs. Monte Carlo / the
-	// optical properties of bruised skin" and "Spectral characteristics of
-	// bruising" (J. Biomed. Opt. / Lasers Surg. Med.). Hemoglobin extinction from
+	// Randeberg, Haugen, Haaverstad & Svaasand, "A novel approach to age
+	// determination of traumatic injuries by reflectance spectroscopy",
+	// Lasers Surg. Med. 38(4):277-289, 2006. Hemoglobin extinction from
 	// the OMLC tables (reused from the skin picker); biliverdin (~377 & 670nm) and
 	// bilirubin (~460nm) absorption as Gaussian bands at their documented peaks.
+	// Ref: https://pubmed.ncbi.nlm.nih.gov/16538661/
 	static void BruiseToSRGB( float& outR, float& outG, float& outB, float days, float severity, float melanin )
 	{
 		EnsureSpecTables();
@@ -18156,7 +18160,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	//
 	// References: RIT "Spectral Distribution of Gas Discharge Sources",
 	// PMC "Spectral Identification of Lighting Type and Character", standard
-	// emission-line atlases for Hg I and Na I.
+	// emission-line atlases for Hg I and Na I from the NIST Atomic Spectra
+	// Database: https://www.nist.gov/pml/atomic-spectra-database
 	//////////////////////////////////////////////////////////////////////////
 
 	static const float SL_MIX_MIN  = 0.0f, SL_MIX_MAX  = 1.0f;
@@ -18359,7 +18364,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	//
 	// These pickers don't try to be physically accurate — they're tuned for
 	// asset creation: harmony rules, perceptual uniformity, palette previews,
-	// gradient editing, ramp design.
+	// gradient editing, ramp design. The harmony schemes (complement, triad,
+	// tetrad, analogous, ...) follow classical hue-wheel colour theory, e.g.
+	// Johannes Itten, "The Art of Color" (1961) / "The Elements of Color" (1970).
 	//////////////////////////////////////////////////////////////////////////
 
 	// ---- Common helpers ----------------------------------------------------
@@ -18378,6 +18385,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 	// Björn Ottosson's Oklab — perceptually-uniform colour space.
+	// Ref: https://bottosson.github.io/posts/oklab/
 	static inline void ArtOklabToLinearRGB( float L, float a, float b,
 	                                        float& r, float& g, float& bl )
 	{
@@ -18626,9 +18634,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	//
 	// Default primaries: process Yellow / Magenta / Cyan. The user can also
 	// edit them via the component pickers below the slider. Mixing is done
-	// in absorbance space (Beer-Lambert), which is what physical paints
-	// actually do — yellow+cyan→green, not yellow+cyan→grey-green-ish like
-	// RGB averaging would give.
+	// in absorbance space (Beer-Lambert law: Bouguer 1729, Lambert 1760,
+	// Beer 1852), which is what physical paints actually do — yellow+cyan→
+	// green, not yellow+cyan→grey-green-ish like RGB averaging would give.
 	//
 	// Plane: equilateral triangle drawn centred in the standard plane area.
 	// Click anywhere inside → barycentric weights. Outside the triangle the
@@ -18854,11 +18862,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	//////////////////////////////////////////////////////////////////////////
 	// 5. ColorPickerWeatheredMetal — base metal + patina + grime
 	//
-	// Material library based on standard PBR F0 values. The "albedo" of a
-	// metal is its F0 (diffuse is essentially zero for clean metals). Patina
-	// is a known oxide colour per metal; it covers part of the surface and
-	// tints the result. Roughness washes the perceived hue toward neutral
-	// grey (high roughness reads less specular = duller).
+	// Material library based on standard PBR F0 values (Karis, "Real Shading
+	// in Unreal Engine 4", SIGGRAPH 2013 course notes — common metal F0 table:
+	// https://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf).
+	// The "albedo" of a metal is its F0 (diffuse is essentially zero for clean
+	// metals). Patina is a known oxide colour per metal; it covers part of the
+	// surface and tints the result. Roughness washes the perceived hue toward
+	// neutral grey (high roughness reads less specular = duller).
 	//
 	// Plane: X = patina coverage (0=clean → 1=fully patinated),
 	//        Y = roughness (smooth top → rough bottom).
@@ -20044,6 +20054,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// + observer latitude (component sliders). The transmittance LUT is built
 	// lazily on first use. Per-plane-pixel cost is one single-scatter integral
 	// (14 steps) with three texture lookups each — fast enough for live drag.
+	//
+	// References:
+	//   • Bruneton & Neyret, "Precomputed Atmospheric Scattering", EGSR 2008
+	//     https://ebruneton.github.io/precomputed_atmospheric_scattering/
+	//   • Hillaire, "A Scalable and Production Ready Sky and Atmosphere
+	//     Rendering Technique", EGSR 2020 (multi-scatter LUT approximation)
+	//     https://sebh.github.io/publications/egsr2020.pdf
 	//////////////////////////////////////////////////////////////////////////
 
 	namespace DwSky
@@ -28528,7 +28545,7 @@ namespace ImWidgets {
 	// Image Viewer
 	//////////////////////////////////////////////////////////////////////////
 
-	bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize )
+	bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize, ImImageViewerOverlayCallback overlay_callback, void* overlay_user_data )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
@@ -28599,7 +28616,17 @@ namespace ImWidgets {
 		}
 
 		// --- Left-click drag: pan (ignore if it's a double-click) ---
-		if ( hovered && g.IO.MouseClicked[ 0 ] && !g.IO.MouseDoubleClicked[ 0 ] )
+		// When there's no overlay_callback, claim (and apply) the drag immediately
+		// for zero-latency panning, as before. When an overlay_callback IS set,
+		// defer the *claim* until after it runs (right after the image is drawn,
+		// below) so an overlay's own hit-test -- e.g. AnnotationEditor grabbing a
+		// resize handle -- gets first refusal on the click. Without this, ImageViewer
+		// would claim the drag here and apply this frame's mouse delta as pan BEFORE
+		// the overlay ever sees the click, which reads as "dragging a handle pans
+		// the image" (the delta on a click+drag's first observed frame is rarely
+		// exactly zero).
+		const bool wantsPanClaim = ( hovered && g.IO.MouseClicked[ 0 ] && !g.IO.MouseDoubleClicked[ 0 ] );
+		if ( wantsPanClaim && !overlay_callback )
 		{
 			ImGui::SetActiveID( id, window );
 			ImGui::SetFocusID( id, window );
@@ -28678,6 +28705,31 @@ namespace ImWidgets {
 		}
 
 		dl->PopClipRect();
+
+		// --- Cache this instance's transform, then let the caller draw overlays on
+		// top of it. Invoked here (rather than only after ImageViewer returns) so it
+		// also fires from within the "##exp" recursive call below when the built-in
+		// expand-to-window modal is open -- overlays then correctly composite onto
+		// whichever presentation (compact widget or modal) is currently rendering,
+		// using that instance's own window/draw-list and transform.
+		state._LastCanvasRect = bb;
+		state._LastImageSize  = imageSize;
+		state._LastFitScale   = fitScale;
+		state._LastValid      = ( imageSize.x > 0.0f && imageSize.y > 0.0f );
+		if ( overlay_callback )
+			overlay_callback( state, overlay_user_data );
+
+		// Deferred pan-drag claim (see the "Left-click drag" comment above) -- only
+		// relevant when overlay_callback is set. Claim now that the overlay has had
+		// first refusal on this click: if it wanted the click (e.g. AnnotationEditor
+		// starting a handle/box drag), it already claimed ImGuiKey_MouseLeft
+		// ownership, so this is skipped and panning never engages for this click.
+		if ( wantsPanClaim && overlay_callback && ImGui::GetKeyOwner( ImGuiKey_MouseLeft ) == 0 )
+		{
+			ImGui::SetActiveID( id, window );
+			ImGui::SetFocusID( id, window );
+			ImGui::FocusWindow( window );
+		}
 
 		// Border
 		dl->AddRect( bb.Min, bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
@@ -28895,8 +28947,9 @@ namespace ImWidgets {
 			{
 				ImVec2 avail = ImGui::GetContentRegionAvail();
 				float  widgetW = avail.x * 0.75f;
-				// Left: image viewer
-				if ( ImageViewer( "##exp", image, imageSize, state, ImVec2( widgetW, avail.y ) ) )
+				// Left: image viewer -- forward the overlay callback so overlays render
+				// inside the modal too, using this instance's own (larger) transform.
+				if ( ImageViewer( "##exp", image, imageSize, state, ImVec2( widgetW, avail.y ), overlay_callback, overlay_user_data ) )
 					changed = true;
 				ImGui::SameLine();
 				// Right: info panel
@@ -28935,7 +28988,13 @@ namespace ImWidgets {
 			EndExpandedWindow();
 		}
 
-		// --- Cache last-frame transform for overlay widgets ---
+		// --- Re-assert this (outer) instance's transform for overlay widgets ---
+		// The "##exp" recursive call above (when the modal is open) already wrote its
+		// own transform into `state` via the same cache block earlier in this
+		// function. Re-writing it here after the modal closes guarantees callers who
+		// still call overlay functions manually right after ImageViewer returns (the
+		// legacy pattern, without overlay_callback) always land on the compact
+		// widget's transform, not a stale modal one.
 		state._LastCanvasRect = bb;
 		state._LastImageSize  = imageSize;
 		state._LastFitScale   = fitScale;

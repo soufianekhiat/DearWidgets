@@ -2751,6 +2751,14 @@ struct ImImageViewerState
 	float  GetZoomScale()  const { return _LastFitScale * Zoom; }
 };
 
+// Invoked by ImageViewer right after it draws the image -- once for the normal
+// (compact) widget, and again inside its built-in "expand to window" modal when
+// that's open, each time with `state` reflecting that instance's own transform.
+// Pass overlay-drawing calls (DetectionOverlay, KeypointOverlay, TextLabelOverlay,
+// AnnotationEditor, ...) through this callback instead of calling them manually
+// after ImageViewer so they also render inside the modal, not just the compact view.
+typedef void ( *ImImageViewerOverlayCallback )( ImImageViewerState& state, void* user_data );
+
 // ============================================================================
 // ImageInspector: color-managed raw-buffer viewer
 // ============================================================================
@@ -4078,7 +4086,13 @@ namespace ImWidgets{
 
 	// Image Viewer: pan (left-drag), zoom (scroll wheel), double-click to reset.
 	// Right-click shows a pixel-inspector loupe with RGBA values (requires state.Pixels).
-	IMGUI_API bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize = ImVec2( 0, 0 ) );
+	// ImageViewer has a built-in "expand to window" button that re-renders the same
+	// viewer inside a modal at a larger size. If overlay_callback is non-null, it is
+	// invoked once per presentation (compact widget, and again inside the modal when
+	// open) right after the image is drawn -- pass overlay-drawing calls through it
+	// (rather than calling them manually after ImageViewer returns) so overlays show
+	// up in the modal too, not just the compact view.
+	IMGUI_API bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize = ImVec2( 0, 0 ), ImImageViewerOverlayCallback overlay_callback = NULL, void* overlay_user_data = NULL );
 
 	// ============================================================================
 	// [SECTION] Image overlays — composed on top of ImageViewer
@@ -4088,7 +4102,10 @@ namespace ImWidgets{
 	// overlay(s) with the same ImImageViewerState reference. Read-only display
 	// overlays (Detection / Keypoint / TextLabel) never mutate their inputs;
 	// AnnotationEditor is the only interactive one and returns edit intents via
-	// ImAnnotationResult.
+	// ImAnnotationResult. To also support ImageViewer's built-in expand-to-window
+	// modal, drive the overlay calls from an ImImageViewerOverlayCallback passed to
+	// ImageViewer instead of calling them manually right after -- see the callback's
+	// doc comment above ImImageViewerState.
 
 	// A single detected object -- all coordinates normalized UV [0,1].
 	struct ImDetectionBox
