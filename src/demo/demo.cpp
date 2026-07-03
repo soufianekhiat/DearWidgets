@@ -9203,7 +9203,7 @@ namespace ImWidgets{
 
 						ImWidgets::ImageViewer( "##OverlayViewer", ovTexes[ovImgIdx], ovSizes[ovImgIdx], ovState,
 												ImVec2( ImGui::GetContentRegionAvail().x * 0.75f, 480.0f ),
-												ovDrawOverlays, nullptr );
+												nullptr, ovDrawOverlays, nullptr );
 
 						if ( ovShowDet )
 						{
@@ -10522,7 +10522,7 @@ namespace ImWidgets{
 							ImGui::TreePop();
 						}
 						ApplyOpenAll();
-						if ( ImGui::TreeNode( "Trichromatic Mixer (subtractive)" ) )
+						if ( ImGui::TreeNode( "Trichromatic Mixer — CMY (subtractive)" ) )
 						{
 							static ImVec4 trColor( 0.7f, 0.4f, 0.3f, 1.0f );
 							ImGui::TextWrapped( "Barycentric mix of three artist primaries (defaults to Y/M/C). Mixing is done in "
@@ -10532,6 +10532,18 @@ namespace ImWidgets{
 								"in your own primaries." );
 							ColorPickerTrichromaticMixer( "##TriMix", &trColor );
 							ImGui::ColorEdit4( "Mix##TR", &trColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
+							ImGui::TreePop();
+						}
+						ApplyOpenAll();
+						if ( ImGui::TreeNode( "Trichromatic Mixer — CMYK (subtractive + K)" ) )
+						{
+							static ImVec4 tkColor( 0.7f, 0.4f, 0.3f, 1.0f );
+							ImGui::TextWrapped( "Same widget as the CMY mixer above, called with enable_k = true. The vertical "
+								"slider is now a unipolar 0..1 K (black ink) channel instead of a white<->black tint: it applies "
+								"the standard CMYK composition channel *= (1-K), a real 4th key ink rather than an added white "
+								"tint -- top = K=0 (no black ink), bottom = K=1 (full black)." );
+							ColorPickerTrichromaticMixer( "##TriMixK", &tkColor, true );
+							ImGui::ColorEdit4( "Mix##TRK", &tkColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoPicker );
 							ImGui::TreePop();
 						}
 						ApplyOpenAll();

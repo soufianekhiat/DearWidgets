@@ -3975,8 +3975,12 @@ namespace ImWidgets{
 	                                          ImVec4* out_palette = nullptr, int* out_count = nullptr );
 
 	// Trichromatic mixer — barycentric mix of 3 artist primaries (defaults to Y/M/C).
-	// Subtractive (absorbance-space) mixing; slider = white↔black tint.
-	IMGUI_API bool ColorPickerTrichromaticMixer( char const* label, ImVec4* color );
+	// Subtractive (absorbance-space) mixing. The vertical slider is either a bipolar
+	// white<->black tint (enable_k = false, i.e. plain "CMY") or, when enable_k =
+	// true, a unipolar 0..1 "K" (black ink) channel applying the standard CMYK
+	// composition channel *= (1-K) -- a real 4th key/black ink, not a white/black
+	// tint. Same function either way; only the slider's range/behaviour changes.
+	IMGUI_API bool ColorPickerTrichromaticMixer( char const* label, ImVec4* color, bool enable_k = false );
 
 	// Weathered metal — base metal (Steel/Iron/Copper/Brass/Aluminum/Gold) + patina
 	// coverage + roughness + grime. Outputs sRGB albedo; F0 follows the metal preset.
@@ -4140,7 +4144,14 @@ namespace ImWidgets{
 	// and the expand/modal draw (which re-enters ImageViewer recursively). Pass NULL
 	// (default) for a plain textured draw. The image draw in the right-click loupe is
 	// left un-shaded (raw texels) so the pixel inspector reflects source data.
-	IMGUI_API bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize = ImVec2( 0, 0 ), ImPlatform_ShaderProgram shaderProgram = nullptr );
+	//
+	// ImageViewer also has a built-in "expand to window" button that re-renders the
+	// same viewer inside a modal at a larger size. If overlay_callback is non-null, it
+	// is invoked once per presentation (compact widget, and again inside the modal
+	// when open) right after the image is drawn -- pass overlay-drawing calls through
+	// it (rather than calling them manually after ImageViewer returns) so overlays
+	// show up in the modal too, not just the compact view.
+	IMGUI_API bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize = ImVec2( 0, 0 ), ImPlatform_ShaderProgram shaderProgram = nullptr, ImImageViewerOverlayCallback overlay_callback = NULL, void* overlay_user_data = NULL );
 
 	// ============================================================================
 	// [SECTION] Image overlays — composed on top of ImageViewer

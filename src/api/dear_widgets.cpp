@@ -18767,7 +18767,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// Plane: equilateral triangle drawn centred in the standard plane area.
 	// Click anywhere inside → barycentric weights. Outside the triangle the
 	// nearest edge is used (no out-of-triangle colours).
-	// Slider: tinting — +1 = add white, 0 = pure mix, −1 = add black.
+	//
+	// Slider: with the default Y/M/C primaries this is a plain "CMY" mixer --
+	// the vertical slider is a bipolar white<->black tint (+1 = add white,
+	// 0 = pure mix, -1 = add black). Passing enable_k = true turns it into
+	// "CMYK": the same slider becomes a unipolar 0..1 K (black ink) channel,
+	// applying channel *= (1-K) in linear space -- the standard CMYK
+	// composition formula, i.e. a real 4th key ink rather than a white/black
+	// tint (K never adds white).
 	//////////////////////////////////////////////////////////////////////////
 
 	static inline void ArtAbsorbanceMix( const ImVec4& c0, const ImVec4& c1, const ImVec4& c2,
@@ -18807,7 +18814,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	struct ImTriMixState { ImVec4 p0, p1, p2; float tint; };
 
-	bool ColorPickerTrichromaticMixer( char const* label, ImVec4* color )
+	bool ColorPickerTrichromaticMixer( char const* label, ImVec4* color, bool enable_k )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems ) return false;
@@ -18884,8 +18891,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float w0 = *pW0, w1 = *pW1, w2 = 1.0f - w0 - w1;
 		if ( tintActive )
 		{
-			*pTint = ImLerp( 1.0f, -1.0f,
-			                 ImClamp( ( mp.y - tint_bb.Min.y ) / tint_bb.GetHeight(), 0.0f, 1.0f ) );
+			float t = ImClamp( ( mp.y - tint_bb.Min.y ) / tint_bb.GetHeight(), 0.0f, 1.0f );
+			*pTint = enable_k ? ImLerp( 0.0f, 1.0f, t )   // K: 0 at top (no black ink) -> 1 at bottom
+			                  : ImLerp( 1.0f, -1.0f, t ); // tint: white at top -> black at bottom
 			changed = true;
 		}
 
@@ -18934,7 +18942,15 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float mr, mg, mb; ArtAbsorbanceMix( pri0, pri1, pri2, w0, w1, w2, mr, mg, mb );
 		// Apply tint: positive → mix toward white, negative → toward black, in linear space.
 		float mrl = ArtSrgbToLin( mr ), mgl = ArtSrgbToLin( mg ), mbl = ArtSrgbToLin( mb );
-		if ( *pTint > 0.0f )
+		if ( enable_k )
+		{
+			// Standard CMYK composition: channel *= (1-K). Pure black ink, no white tint.
+			float k = ImClamp( *pTint, 0.0f, 1.0f );
+			mrl *= ( 1.0f - k );
+			mgl *= ( 1.0f - k );
+			mbl *= ( 1.0f - k );
+		}
+		else if ( *pTint > 0.0f )
 		{
 			mrl = ImLerp( mrl, 1.0f, *pTint );
 			mgl = ImLerp( mgl, 1.0f, *pTint );
@@ -18952,15 +18968,25 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		dl->AddCircleFilled( dotPos, dotRadius, dotFill );
 		dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
 
-		// Tint slider — white at top, mix-only in middle, black at bottom.
+		// Tint/K slider. CMY: white at top, mix-only in middle, black at bottom.
+		// CMYK: mix at top (K=0), black at bottom (K=1) -- no white half.
 		{
-			ImU32 white = IM_COL32_WHITE, black = IM_COL32_BLACK;
+			ImU32 black = IM_COL32_BLACK;
 			ImU32 mixCol = IM_COL32( ( int )( mr * 255.0f + 0.5f ), ( int )( mg * 255.0f + 0.5f ), ( int )( mb * 255.0f + 0.5f ), 255 );
-			ImVec2 mid( tint_bb.Min.x, ImLerp( tint_bb.Min.y, tint_bb.Max.y, 0.5f ) );
-			dl->AddRectFilledMultiColor( tint_bb.Min, ImVec2( tint_bb.Max.x, mid.y ), white, white, mixCol, mixCol );
-			dl->AddRectFilledMultiColor( mid, tint_bb.Max, mixCol, mixCol, black, black );
+			if ( enable_k )
+			{
+				dl->AddRectFilledMultiColor( tint_bb.Min, tint_bb.Max, mixCol, mixCol, black, black );
+			}
+			else
+			{
+				ImU32 white = IM_COL32_WHITE;
+				ImVec2 mid( tint_bb.Min.x, ImLerp( tint_bb.Min.y, tint_bb.Max.y, 0.5f ) );
+				dl->AddRectFilledMultiColor( tint_bb.Min, ImVec2( tint_bb.Max.x, mid.y ), white, white, mixCol, mixCol );
+				dl->AddRectFilledMultiColor( mid, tint_bb.Max, mixCol, mixCol, black, black );
+			}
 			dl->AddRect( tint_bb.Min, tint_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
-			float t = ImClamp( 0.5f - 0.5f * ( *pTint ), 0.0f, 1.0f );
+			float t = enable_k ? ImClamp( *pTint, 0.0f, 1.0f )
+			                   : ImClamp( 0.5f - 0.5f * ( *pTint ), 0.0f, 1.0f );
 			float handleY = ImLerp( tint_bb.Min.y, tint_bb.Max.y, t );
 			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
 			dl->AddRectFilled( ImVec2( tint_bb.Min.x - 1.0f, handleY - hh ),
@@ -18976,7 +19002,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( ImGui::ColorEdit3( "Primary A (top)##Tri",         p0, ImGuiColorEditFlags_NoInputs ) ) { *pP0r = p0[ 0 ]; *pP0g = p0[ 1 ]; *pP0b = p0[ 2 ]; changed = true; }
 		if ( ImGui::ColorEdit3( "Primary B (bottom-right)##Tri", p1, ImGuiColorEditFlags_NoInputs ) ) { *pP1r = p1[ 0 ]; *pP1g = p1[ 1 ]; *pP1b = p1[ 2 ]; changed = true; }
 		if ( ImGui::ColorEdit3( "Primary C (bottom-left)##Tri",  p2, ImGuiColorEditFlags_NoInputs ) ) { *pP2r = p2[ 0 ]; *pP2g = p2[ 1 ]; *pP2b = p2[ 2 ]; changed = true; }
-		changed |= ImGui::SliderFloat( "Tint (white↔black)##Tri", pTint, -1.0f, 1.0f, "%+.2f" );
+		if ( enable_k )
+			changed |= ImGui::SliderFloat( "K (black ink)##Tri", pTint, 0.0f, 1.0f, "%.2f" );
+		else
+			changed |= ImGui::SliderFloat( "Tint (white↔black)##Tri", pTint, -1.0f, 1.0f, "%+.2f" );
 
 		color->x = mr; color->y = mg; color->z = mb;
 
@@ -28683,7 +28712,7 @@ namespace ImWidgets {
 			ImPlatform_BeginCustomShader_Render( prog );
 	}
 
-	bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize, ImPlatform_ShaderProgram shaderProgram )
+	bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize, ImPlatform_ShaderProgram shaderProgram, ImImageViewerOverlayCallback overlay_callback, void* overlay_user_data )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
@@ -29093,8 +29122,10 @@ namespace ImWidgets {
 				ImVec2 avail = ImGui::GetContentRegionAvail();
 				float  widgetW = avail.x * 0.75f;
 				// Left: image viewer (same shader as the inline draw, so the modal
-				// shows the shaded result instead of the raw texture).
-				if ( ImageViewer( "##exp", image, imageSize, state, ImVec2( widgetW, avail.y ), shaderProgram ) )
+				// shows the shaded result instead of the raw texture) -- also forward
+				// the overlay callback so overlays render inside the modal too, using
+				// this instance's own (larger) transform.
+				if ( ImageViewer( "##exp", image, imageSize, state, ImVec2( widgetW, avail.y ), shaderProgram, overlay_callback, overlay_user_data ) )
 					changed = true;
 				ImGui::SameLine();
 				// Right: info panel
