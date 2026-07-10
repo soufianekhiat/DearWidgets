@@ -3143,6 +3143,10 @@ struct ImGregoryPatch
 // that includes dear_widgets.h keeps working with no changes.
 #include "dear_widgets_vector_drawing.h"
 
+// Network Graph widget (read-only hierarchically grouped DAG illustration) --
+// own translation unit, same pattern as the Vector Drawing Tool.
+#include "dear_widgets_network.h"
+
 // Font inspector mode
 enum ImFontInspectorMode_
 {
