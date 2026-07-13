@@ -3,7 +3,7 @@
 #include <metal_texture>
 using namespace metal;
 
-#line 32 "C:/git/DearWidgets/workingdir/shaders/hlsl_src/slug.hlsl"
+#line 32 "shaders/hlsl_src/slug.hlsl"
 struct SLANG_ParameterGroup_fillParams_0
 {
     float4 fillColor0_0;
@@ -15,7 +15,7 @@ struct SLANG_ParameterGroup_fillParams_0
 };
 
 
-#line 480
+#line 485
 struct KernelContext_0
 {
     texture2d<float, access::sample> bandTexture_0;
@@ -1085,7 +1085,7 @@ struct pixelInput_0
 };
 
 
-#line 422 "C:/git/DearWidgets/workingdir/shaders/hlsl_src/slug.hlsl"
+#line 422 "shaders/hlsl_src/slug.hlsl"
 [[fragment]] pixelOutput_0 main_ps(pixelInput_0 _S71 [[stage_in]], float4 position_0 [[position]], texture2d<float, access::sample> bandTexture_1 [[texture(1)]], texture2d<float, access::sample> curveTexture_1 [[texture(0)]], SLANG_ParameterGroup_fillParams_0 constant* fillParams_1 [[buffer(1)]], texture2d<float, access::sample> fillTexture_1 [[texture(2)]], sampler fillSampler_1 [[sampler(0)]])
 {
 
@@ -1182,13 +1182,15 @@ struct pixelInput_0
     else
     {
 
-        float4 texColor_0 = (((&kernelContext_3)->fillTexture_0).sample(((&kernelContext_3)->fillSampler_0), (uv_0 * (&kernelContext_3)->fillParams_0->fillUVEnd_0.xy + (&kernelContext_3)->fillParams_0->fillUVStart_0.xy))) * (&kernelContext_3)->fillParams_0->fillColor0_0;
+#line 485
+        float4 texColor_0 = (((&kernelContext_3)->fillTexture_0).sample(((&kernelContext_3)->fillSampler_0), (uv_0 * (&kernelContext_3)->fillParams_0->fillUVEnd_0.xy + (&kernelContext_3)->fillParams_0->fillUVStart_0.xy)));
 
-#line 481
-        pixelOutput_0 _S75 = { float4(texColor_0.xyz, texColor_0.w * _S72) };
+#line 485
+        pixelOutput_0 _S75 = { float4(mix((&kernelContext_3)->fillParams_0->fillColor0_0.xyz, texColor_0.xyz * (&kernelContext_3)->fillParams_0->fillColor0_0.xyz, float3(texColor_0.w) ), (&kernelContext_3)->fillParams_0->fillColor0_0.w * _S72) };
+
         return _S75;
     }
 
-#line 482
+#line 487
 }
 

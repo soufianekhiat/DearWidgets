@@ -1877,6 +1877,21 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return IM_COL32( r, g, b, 255 );
 	}
 
+	// Float-precision variant: returns LINEAR RGB in [0,1] without the 8-bit
+	// quantization of the ImU32 version. Rounding each channel to 255 levels made
+	// chromaticities recovered from those colors zigzag -- most visibly as a wavy
+	// blackbody locus in the chromaticity plots. Use this for anything that maps
+	// the color back into a color space (stride-3 AoS for DrawChromaticityLines).
+	void	KelvinTemperatureToLinearRGBColorsF( float temperature, float* out_rgb_linear )
+	{
+		float _r = ImFunctionFromData( temperature, s_min_kelvin_temp, s_max_kelvin_temp, s_kelvin_sRGB_Colors_Red,   s_kelvin_temp_count );
+		float _g = ImFunctionFromData( temperature, s_min_kelvin_temp, s_max_kelvin_temp, s_kelvin_sRGB_Colors_Green, s_kelvin_temp_count );
+		float _b = ImFunctionFromData( temperature, s_min_kelvin_temp, s_max_kelvin_temp, s_kelvin_sRGB_Colors_Blue,  s_kelvin_temp_count );
+		out_rgb_linear[ 0 ] = ImsRGBToLinear( _r / 255.0f );
+		out_rgb_linear[ 1 ] = ImsRGBToLinear( _g / 255.0f );
+		out_rgb_linear[ 2 ] = ImsRGBToLinear( _b / 255.0f );
+	}
+
 	ImU32	ImColorFrom_xyz( float x, float y, float z, float* xyzToRGB, float gamma )
 	{
 		float r, g, b;
@@ -4730,9 +4745,15 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		adapter.innerUserData = pUserData;
 		adapter.colorOffset = colorOffset;
 
-		DrawProceduralColorArcBilinear( pDrawList, center, radius - thickness, radius,
-			2.0f * IM_PI / 3.0f, 2.0f * IM_PI,
-			&ImColorRingOffsetShim, &adapter, division, bIsBilinear );
+		// Rendered on the closed Annulus tessellation (GenShapeAnnulus): the hue
+		// sweeps around the rim by vertex u = angle-progress, with the seam at
+		// angle 0 (3 o'clock). Interior sector columns are shared between adjacent
+		// cells, so this shape has no flat-per-cell "Nearest" mode -- the fill is
+		// always the smooth per-vertex gradient. `bIsBilinear` is kept only for
+		// API/back-compat and no longer changes the result.
+		( void )bIsBilinear;
+		DrawShapeProceduralColorAnnulus( pDrawList, center, radius - thickness, radius,
+			division, &ImColorRingOffsetShim, &adapter );
 	}
 
 	ImU32 ImColor2DCallbackOkLab( float a, float b, void* pUserData )
@@ -5824,6 +5845,24 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			current += colorStride;
 		}
 
+		// Collapse near-coincident consecutive samples. Callers typically step
+		// uniformly in some parameter (e.g. blackbody temperature), which clusters
+		// points where the locus barely moves in xy -- and the Catmull-Rom pass in
+		// the stroked line modes overshoots through such clusters, rendering a
+		// smooth locus as a wobbly line. Keeping only points >= ~1.5 lp apart
+		// (plus the final point) restores clean tangents at every mode.
+		int lineCount = 1;
+		{
+			float minSeg = LpToPx( 1.5f );
+			float minSegSq = minSeg * minSeg;
+			for ( int k = 1; k < color_count; ++k )
+			{
+				ImVec2 d( lines[ k ].x - lines[ lineCount - 1 ].x, lines[ k ].y - lines[ lineCount - 1 ].y );
+				if ( ( d.x * d.x + d.y * d.y ) >= minSegSq || k == color_count - 1 )
+					lines[ lineCount++ ] = lines[ k ];
+			}
+		}
+
 		// Defensive against the VtxOffset desync (see DW_EnsureFreshVtxOffset doc) —
 		// the chromaticity locus polyline disappears if some upstream widget has left
 		// _CmdHeader.VtxOffset = 0 while VtxBuffer.Size > 64K.
@@ -5833,13 +5872,31 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// active ImWidgetsStyle; thickness/color come from the call's existing args so this
 		// call site stays backwards-compatible.
 		ImWidgetsStyle const& cls = GetStyle();
+
+		// Gentle binomial smoothing (0.25/0.5/0.25, endpoints pinned). Caller colors
+		// often come from tabulated data (e.g. the Kelvin->sRGB table stores integer
+		// channel values per 100 K step), and chromaticities recovered from such data
+		// wave visibly even at float precision. A couple of passes brings the wave
+		// under a pixel without visibly distorting the genuinely smooth locus.
+		for ( int it = 0; it < cls.ChromaticityLine_SmoothIterations; ++it )
+		{
+			ImVec2 prev = lines[ 0 ];
+			for ( int k = 1; k < lineCount - 1; ++k )
+			{
+				ImVec2 cur = lines[ k ];
+				lines[ k ].x = prev.x * 0.25f + cur.x * 0.5f + lines[ k + 1 ].x * 0.25f;
+				lines[ k ].y = prev.y * 0.25f + cur.y * 0.5f + lines[ k + 1 ].y * 0.25f;
+				prev = cur;
+			}
+		}
+
 		ImWidgetsThickLineDesc desc;
 		desc.color     = plotColor;
 		desc.thickness = thickness;
 		desc.mode      = (ImWidgetsThickLineMode)cls.ChromaticityLine_Mode;
 		desc.dashed    = cls.ChromaticityLine_Dashed;
 		IM_UNUSED(flags); // path is not closed for chromaticity locus
-		DrawThickLine( pDrawList, &lines[ 0 ], color_count, desc );
+		DrawThickLine( pDrawList, &lines[ 0 ], lineCount, desc );
 		pDrawList->PopClipRect();
 	}
 
@@ -7778,22 +7835,21 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( !bb.ContainsWithPad( p, ImVec2( 1.0f, 1.0f ) ) )
 			return false;
 
-		ImDrawListSharedData* _Data = ImGui::GetCurrentWindow()->DrawList->_Data;
-
-		ImTriangulator0 triangulator;
-		unsigned int triangle[ 3 ];
+		// Even-odd ray cast: robust for arbitrary concave (and self-touching)
+		// polygons and needs no triangulation scratch buffer. Counts how many
+		// polygon edges a rightward ray from p crosses; odd count => inside.
+		// (The previous ear-clip test used an unreserved shared TempBuffer, which
+		// corrupted its node links on long lasso paths and gave wrong hits.)
+		bool inside = false;
+		for ( int i = 0, j = pts_count - 1; i < pts_count; j = i++ )
 		{
-			// Non Anti-aliased Fill
-			triangulator.Init( pts, pts_count, _Data->TempBuffer.Data );
-			while ( triangulator._TrianglesLeft > 0 )
-			{
-				triangulator.GetNextTriangle( triangle );
-				if ( ImTriangleContainsPoint( pts[ triangle[ 0 ] ], pts[ triangle[ 1 ] ], pts[ triangle[ 2 ] ], p ) )
-					return true;
-			}
+			ImVec2 a = pts[ i ];
+			ImVec2 b = pts[ j ];
+			if ( ( ( a.y > p.y ) != ( b.y > p.y ) ) &&
+				 ( p.x < ( b.x - a.x ) * ( p.y - a.y ) / ( b.y - a.y ) + a.x ) )
+				inside = !inside;
 		}
-
-		return false;
+		return inside;
 	}
 
 	bool Im_IsPolyWithHoleContains( ImVec2 p, void* data )
@@ -10241,8 +10297,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// X strip lives in its own bb and gets its own item id — using total_bb here
 		// (the entire widget rect) made the strip overlap the main drag for layout
 		// purposes and conflict with the main item's id.
-		if ( !ImGui::ItemAdd( frame_bb_dragX, idX, &frame_bb_dragX, 0 ) )
-			return false;
+		// Register the strip as an interaction item but do NOT bail out when it is
+		// clipped: when the Slider2D sits near the window bottom this strip falls
+		// below the window clip rect, and an early return here skipped drawing the
+		// cursor + guide lines entirely. Let rendering proceed regardless.
+		ImGui::ItemAdd( frame_bb_dragX, idX, &frame_bb_dragX, 0 );
 
 		hovered = ImGui::ItemHoverable( frame_bb_dragX, idX, g.LastItemData.ItemFlags );
 
@@ -10269,8 +10328,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Y strip lives in its own bb. Previous code mistakenly passed total_bb and
 		// frame_bb_dragX here, registering idY against the X strip's geometry and
 		// double-counting the whole widget area for layout.
-		if ( !ImGui::ItemAdd( frame_bb_dragY, idY, &frame_bb_dragY, 0 ) )
-			return false;
+		// Same as the X strip: never abort rendering when the Y strip is clipped.
+		ImGui::ItemAdd( frame_bb_dragY, idY, &frame_bb_dragY, 0 );
 
 		hovered = ImGui::ItemHoverable( frame_bb_dragY, idY, g.LastItemData.ItemFlags );
 
@@ -10494,7 +10553,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		bool value_changed = false;
 
 		auto MouseTX = [&]() -> float { return ImClamp( ( g.IO.MousePos.x - frame_bb_drag.Min.x ) / drag_w, 0.0f, 1.0f ); };
-		auto MouseTY = [&]() -> float { return ImClamp( ( g.IO.MousePos.y - frame_bb_drag.Min.y ) / drag_h, 0.0f, 1.0f ); };
+		// Value-normalized: 0 = min (bottom of the drag box), 1 = max (top).
+		auto MouseTY = [&]() -> float { return ImClamp( 1.0f - ( g.IO.MousePos.y - frame_bb_drag.Min.y ) / drag_h, 0.0f, 1.0f ); };
 
 		// Value-label regions: gaps between the main drag and the X / Y strips where
 		// the formatted readouts are rendered. Hit-testing these for popup-trigger
@@ -10540,7 +10600,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float tx = MouseTX(), ty = MouseTY();
 			float tnMinX = NormX( p_minX ), tnMinY = NormY( p_minY );
 			float tnMaxX = NormX( p_maxX ), tnMaxY = NormY( p_maxY );
-			// Y not inverted: min value = top-left, max value = bottom-right
+			// Y inverted: min value = bottom, max value = top. Both the mouse t and
+			// the value t live in the same normalized space, so the hit-test and
+			// drag logic below are orientation-agnostic.
 			float sMinY_n = tnMinY;
 			float sMaxY_n = tnMaxY;
 			float rectY0  = ImMin( sMinY_n, sMaxY_n );
@@ -10556,8 +10618,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				storage->SetFloat( initMyKey,  ty );
 				storage->SetFloat( initMnXKey, tnMinX );
 				storage->SetFloat( initMnYKey, tnMinY );
-				storage->SetFloat( initMxXKey, tnMaxX );
-				storage->SetFloat( initMxYKey, tnMaxY );
+				// Store the EXACT value-space span (difference of the original integer
+				// values), not a normalized coord: deriving the span from rW*denX later
+				// accumulated float error that truncated integer widths of 1-2 down by one.
+				storage->SetFloat( initMxXKey, ScalarToFloat( data_type, (ImU64*)p_maxX ) - ScalarToFloat( data_type, (ImU64*)p_minX ) );
+				storage->SetFloat( initMxYKey, ScalarToFloat( data_type, (ImU64*)p_maxY ) - ScalarToFloat( data_type, (ImU64*)p_minY ) );
 			}
 			else
 			{
@@ -10604,18 +10669,26 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					float initMy  = storage->GetFloat( initMyKey,  0.5f );
 					float initMnX = storage->GetFloat( initMnXKey, 0.0f );
 					float initMnY = storage->GetFloat( initMnYKey, 0.0f );
-					float initMxX = storage->GetFloat( initMxXKey, 1.0f );
-					float initMxY = storage->GetFloat( initMxYKey, 1.0f );
+					// initMxXKey/initMxYKey now hold the EXACT value-space span captured at
+					// click (see the click handler above).
+					float spanXv  = storage->GetFloat( initMxXKey, 0.0f );
+					float spanYv  = storage->GetFloat( initMxYKey, 0.0f );
+					float rW      = ( denX != 0.0f ) ? spanXv / denX : 0.0f;
+					float rH      = ( denY != 0.0f ) ? spanYv / denY : 0.0f;
 					float dtx     = ( tx - initMx );
 					float dty     = ( ty - initMy );
-					float rW      = initMxX - initMnX;
-					float rH      = initMxY - initMnY;
 					float newMnX  = ImClamp( initMnX + dtx, 0.0f, 1.0f - rW );
 					float newMnY  = ImClamp( initMnY + dty, 0.0f, 1.0f - rH );
+					// Write the new min (quantizes for int), read it back, then set max =
+					// quantized-min + EXACT span. The span is the exact integer difference
+					// (no float error), so the truncating int write keeps the box size
+					// constant -- a 1- or 2-unit region stays that size while dragging.
 					WriteFloatToScalar( data_type, p_minX, bMinXF + newMnX * denX );
 					WriteFloatToScalar( data_type, p_minY, bMinYF + newMnY * denY );
-					WriteFloatToScalar( data_type, p_maxX, bMinXF + ( newMnX + rW ) * denX );
-					WriteFloatToScalar( data_type, p_maxY, bMinYF + ( newMnY + rH ) * denY );
+					float qMinX   = ScalarToFloat( data_type, (ImU64*)p_minX );
+					float qMinY   = ScalarToFloat( data_type, (ImU64*)p_minY );
+					WriteFloatToScalar( data_type, p_maxX, qMinX + spanXv );
+					WriteFloatToScalar( data_type, p_maxY, qMinY + spanYv );
 					value_changed = true;
 				}
 
@@ -10633,8 +10706,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImGui::RenderNavCursor( frame_bb_drag, id );
 		ImGui::RenderFrame( frame_bb_drag.Min, frame_bb_drag.Max, frameCol, true, style.FrameRounding );
 
-		// X strip — SliderN (horizontal): two handles for minX and maxX
-		// Y strip — SliderNVertical: two handles for minY and maxY
+		// X strip — RangeSlider (horizontal), Y strip — RangeSliderVertical:
+		// two-handle min/max strips matching the drag box orientation.
 		// PushID(id) scopes sub-widget IDs under the parent so two Slider2DRange widgets
 		// on the same window don't collide. Cursor-pos save/restore keeps layout intact.
 		ImGui::PushID( (int)id );
@@ -10642,50 +10715,20 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImVec2 savedCursorPos    = window->DC.CursorPos;
 			ImVec2 savedCursorMaxPos = window->DC.CursorMaxPos;
 
-			int   elem_sz       = (int)ImGui::DataTypeGetInfo( data_type )->Size;
-			char  xBuf[16], yBuf[16], tmpBuf[8];
-			float cursor_w      = dragX_thickness * 0.5f;  // already px
-			float cursor_h      = dragY_thickness * 0.5f;  // already px
-			float cursor_wLp    = PxToLp( cursor_w );
-
-			// SliderNScalar reserves cursor_w on each side inside its item width.
-			// SliderNVerticalScalar reserves cursor_h at top and bottom inside its height.
-			// Expand the position/size by those margins so the inner track aligns exactly
-			// with frame_bb_drag.
-			memcpy( xBuf,           p_minX, elem_sz );
-			memcpy( xBuf + elem_sz, p_maxX, elem_sz );
-			window->DC.CursorPos = ImVec2( frame_bb_dragX.Min.x - cursor_w, frame_bb_dragX.Min.y );
-			ImGui::SetNextItemWidth( frame_bb_dragX.GetWidth() + 2.0f * cursor_w );
-			if ( SliderNScalar( "##x", data_type, xBuf, 2, b_minX, b_maxX, cursor_wLp, false ) )
-			{
-				if ( ScalarToFloat( data_type, (ImU64*)xBuf ) > ScalarToFloat( data_type, (ImU64*)( xBuf + elem_sz ) ) )
-				{
-					memcpy( tmpBuf, xBuf, elem_sz );
-					memcpy( xBuf, xBuf + elem_sz, elem_sz );
-					memcpy( xBuf + elem_sz, tmpBuf, elem_sz );
-				}
-				memcpy( p_minX, xBuf,           elem_sz );
-				memcpy( p_maxX, xBuf + elem_sz, elem_sz );
+			// X strip: the standalone horizontal two-handle range slider -- same
+			// widget family as the Y strip below (its inline readout auto-hides
+			// on strips this thin; the 2D widget renders its own value labels).
+			window->DC.CursorPos = frame_bb_dragX.Min;
+			ImVec2 stripXSizeLp  = PxToLp( ImVec2( frame_bb_dragX.GetWidth(), frame_bb_dragX.GetHeight() ) );
+			if ( RangeSliderScalar( "##x", data_type, p_minX, p_maxX, b_minX, b_maxX, NULL, stripXSizeLp ) )
 				value_changed = true;
-			}
 
-			memcpy( yBuf,           p_minY, elem_sz );
-			memcpy( yBuf + elem_sz, p_maxY, elem_sz );
-			window->DC.CursorPos = ImVec2( frame_bb_dragY.Min.x, frame_bb_dragY.Min.y - cursor_h );
-			ImVec2 stripYSizeLp  = PxToLp( ImVec2( frame_bb_dragY.GetWidth(), frame_bb_dragY.GetHeight() + 2.0f * cursor_h ) );
-			float  cursorHLp     = PxToLp( cursor_h );
-			if ( SliderNVerticalScalar( "##y", data_type, yBuf, 2, b_minY, b_maxY, cursorHLp, false, stripYSizeLp ) )
-			{
-				if ( ScalarToFloat( data_type, (ImU64*)yBuf ) > ScalarToFloat( data_type, (ImU64*)( yBuf + elem_sz ) ) )
-				{
-					memcpy( tmpBuf, yBuf, elem_sz );
-					memcpy( yBuf, yBuf + elem_sz, elem_sz );
-					memcpy( yBuf + elem_sz, tmpBuf, elem_sz );
-				}
-				memcpy( p_minY, yBuf,           elem_sz );
-				memcpy( p_maxY, yBuf + elem_sz, elem_sz );
+			// Y strip: the standalone vertical two-handle range slider (min at the
+			// bottom, max at the top) -- same orientation as the drag box above.
+			window->DC.CursorPos = frame_bb_dragY.Min;
+			ImVec2 stripYSizeLp  = PxToLp( ImVec2( frame_bb_dragY.GetWidth(), frame_bb_dragY.GetHeight() ) );
+			if ( RangeSliderVerticalScalar( "##y", data_type, p_minY, p_maxY, b_minY, b_maxY, NULL, stripYSizeLp ) )
 				value_changed = true;
-			}
 
 			window->DC.CursorPos    = savedCursorPos;
 			window->DC.CursorMaxPos = savedCursorMaxPos;
@@ -10701,13 +10744,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImU32 uOrange = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Slider2DRange_MaxHandle ] );
 		ImU32 uFrame  = ImGui::GetColorU32( ImGuiCol_FrameBg );
 
-		// Normalized handle positions → screen coords inside frame_bb_drag (Y not inverted: min at top)
+		// Normalized handle positions -> screen coords inside frame_bb_drag (Y inverted: min at bottom)
 		float tMinX = NormX( p_minX ), tMinY = NormY( p_minY );
 		float tMaxX = NormX( p_maxX ), tMaxY = NormY( p_maxY );
 		float sMinX = frame_bb_drag.Min.x + tMinX * drag_w;
-		float sMinY = frame_bb_drag.Min.y + tMinY * drag_h;
+		float sMinY = frame_bb_drag.Max.y - tMinY * drag_h;
 		float sMaxX = frame_bb_drag.Min.x + tMaxX * drag_w;
-		float sMaxY = frame_bb_drag.Min.y + tMaxY * drag_h;
+		float sMaxY = frame_bb_drag.Max.y - tMaxY * drag_h;
 
 		// Selection rect (sorted)
 		float selLeft   = ImMin( sMinX, sMaxX );
@@ -10766,12 +10809,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Orange L-shapes pointing inward at corner handles (when selection is large enough)
 		if ( selW > gap * 2.0f && selH > gap * 2.0f )
 		{
-			// sMinX/sMinY = top-left corner
+			// sMinX/sMinY = bottom-left corner (min at bottom)
 			dl->AddLine( ImVec2( sMinX, sMinY ), ImVec2( sMinX + gap, sMinY ), uOrange, lineThk );
-			dl->AddLine( ImVec2( sMinX, sMinY ), ImVec2( sMinX, sMinY + gap ), uOrange, lineThk );
-			// sMaxX/sMaxY = bottom-right corner
+			dl->AddLine( ImVec2( sMinX, sMinY ), ImVec2( sMinX, sMinY - gap ), uOrange, lineThk );
+			// sMaxX/sMaxY = top-right corner
 			dl->AddLine( ImVec2( sMaxX, sMaxY ), ImVec2( sMaxX - gap, sMaxY ), uOrange, lineThk );
-			dl->AddLine( ImVec2( sMaxX, sMaxY ), ImVec2( sMaxX, sMaxY - gap ), uOrange, lineThk );
+			dl->AddLine( ImVec2( sMaxX, sMaxY ), ImVec2( sMaxX, sMaxY + gap ), uOrange, lineThk );
 		}
 
 		// Body drag cross at selection center
@@ -10801,8 +10844,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float  textX   = ImLerp( bbRight, frame_bb_dragY.Min.x - mnYSz.x, 0.5f );
 		dl->AddText( ImVec2( ImClamp( selLeft  - mnXSz.x * 0.5f, bbLeft, bbRight - mnXSz.x ), textY ), textCol, bufMnX );
 		dl->AddText( ImVec2( ImClamp( selRight - mxXSz.x * 0.5f, bbLeft, bbRight - mxXSz.x ), textY ), textCol, bufMxX );
-		dl->AddText( ImVec2( textX, ImClamp( selTop    - mnYSz.y * 0.5f, bbTop, bbBottom - mnYSz.y ) ), textCol, bufMnY );
-		dl->AddText( ImVec2( textX, ImClamp( selBottom - mxYSz.y * 0.5f, bbTop, bbBottom - mxYSz.y ) ), textCol, bufMxY );
+		dl->AddText( ImVec2( textX, ImClamp( selBottom - mnYSz.y * 0.5f, bbTop, bbBottom - mnYSz.y ) ), textCol, bufMnY );
+		dl->AddText( ImVec2( textX, ImClamp( selTop    - mxYSz.y * 0.5f, bbTop, bbBottom - mxYSz.y ) ), textCol, bufMxY );
 
 		return value_changed;
 	}
@@ -32006,6 +32049,25 @@ namespace ImWidgets
         }
     } // anonymous namespace
 
+    // The StrokedPolyline / StrokedBezierPath thick-line modes are rendered by the
+    // "stroke" custom shader (winding-number outline). Returns false when that
+    // shader can't be used -- a build without custom-shader support, or a failed/
+    // absent runtime compile -- so callers fall back to a CPU polyline instead of
+    // silently drawing nothing (which made e.g. Color Analysis / Curve editor
+    // lines disappear while their handles still showed).
+    static bool DW_StrokeShaderAvailable()
+    {
+#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+        ImWidgetsContext* ctx = GetCurrentContext();
+        if ( !ctx ) return false;
+        if ( ctx->strokeShader.program == NULL )
+            CreateInternalShader( &ctx->strokeShader, "stroke", 0, NULL, 0, NULL );
+        return ctx->strokeShader.program != NULL;
+#else
+        return false;
+#endif
+    }
+
     void DrawThickLine(ImDrawList* dl,
                        ImVec2 const* points, int n,
                        ImWidgetsThickLineDesc const& d)
@@ -32049,7 +32111,17 @@ namespace ImWidgets
             return;
 
         case ImWidgetsThickLineMode_StrokedPolyline:
-            // Euler-spiral primitives are CPU-only and unguarded — always available.
+            // Euler-spiral stroke via the "stroke" custom shader. CPU-polyline
+            // fallback when that shader is unavailable so the line never vanishes.
+            if ( !DW_StrokeShaderAvailable() )
+            {
+                if (d.dashed)
+                    DW_SoftwareDashedPolyline(dl, points, n, d.color, d.thickness,
+                                              d.dash_len, d.gap_len, d.dash_offset);
+                else
+                    dl->AddPolyline(points, n, d.color, ImDrawFlags_None, d.thickness);
+                return;
+            }
             if (d.dashed)
             {
                 float const pat[2] = { d.dash_len, d.gap_len };
@@ -32066,7 +32138,17 @@ namespace ImWidgets
 
         case ImWidgetsThickLineMode_StrokedBezierPath:
         {
-            // Catmull-Rom -> cubic Bezier path -> Euler-spiral stroke. CPU, always available.
+            // Catmull-Rom -> cubic Bezier path -> Euler-spiral stroke via the
+            // "stroke" custom shader. CPU-polyline fallback when it's unavailable.
+            if ( !DW_StrokeShaderAvailable() )
+            {
+                if (d.dashed)
+                    DW_SoftwareDashedPolyline(dl, points, n, d.color, d.thickness,
+                                              d.dash_len, d.gap_len, d.dash_offset);
+                else
+                    dl->AddPolyline(points, n, d.color, ImDrawFlags_None, d.thickness);
+                return;
+            }
             ImVector<ImVec2> bez;
             CatmullRomToCubicBezierPath(points, n, bez);
             if (bez.Size < 4) return;
@@ -33595,6 +33677,12 @@ namespace ImWidgets
         float cell = style.FontInspector_GlyphCell;
         if (display_size <= 0.0f) display_size = cell * 0.65f;
         ImFontBaked* baked = font->GetFontBaked(display_size);
+        // ImGui 1.92 dynamic-atlas fonts bake glyphs lazily: a size that hasn't been
+        // drawn yet reports 0 glyphs, so the grid opened empty by default. Force-bake
+        // the common printable + Latin range so there's always something to show.
+        if (baked && baked->Glyphs.Size == 0)
+            for (ImWchar cp = 0x20; cp < 0x250; ++cp)
+                baked->FindGlyph(cp);
         ImGui::BeginChild("##glyph_grid", size, true, ImGuiWindowFlags_HorizontalScrollbar);
         ImVec2 avail = ImGui::GetContentRegionAvail();
         int cols = ImMax(1, (int)(avail.x / cell));
@@ -35779,7 +35867,10 @@ namespace ImWidgets
                 active = 2;
                 storage->SetFloat( initMtKey, mt );
                 storage->SetFloat( initLoKey, tLo );
-                storage->SetFloat( initUpKey, tUp );
+                // Store the EXACT value-space span (integer-exact for int types):
+                // re-deriving it from normalized floats truncates small integer
+                // widths (1-2) while translating.
+                storage->SetFloat( initUpKey, ScalarToFloat( data_type, ( ImU64* )p_upper ) - ScalarToFloat( data_type, ( ImU64* )p_lower ) );
             }
             else
             {
@@ -35813,25 +35904,20 @@ namespace ImWidgets
                 {
                     // Translate the whole range by (mt - initMt), clamping to
                     // [0, 1] so the recorded width is preserved end-to-end.
+                    // initUpKey holds the EXACT value-space span captured at click;
+                    // write lower (quantizes for ints), then upper = quantized
+                    // lower + exact span so the width never drifts.
                     float initMt = storage->GetFloat( initMtKey, mt );
                     float initLo = storage->GetFloat( initLoKey, tLo );
-                    float initUp = storage->GetFloat( initUpKey, tUp );
-                    float width  = initUp - initLo;
+                    float spanV  = storage->GetFloat( initUpKey, 0.0f );
+                    float width  = ( den != 0.0f ) ? spanV / den : 0.0f;
                     float dt     = mt - initMt;
                     float newLo  = ImClamp( initLo + dt, 0.0f, 1.0f - width );
-                    float newUp  = newLo + width;
-                    float newVLo = vMinF + newLo * den;
-                    float newVUp = vMinF + newUp * den;
-                    if ( newVLo != vLowerF )
-                    {
-                        WriteFloatToScalar( data_type, p_lower, newVLo );
-                        value_changed = true;
-                    }
-                    if ( newVUp != vUpperF )
-                    {
-                        WriteFloatToScalar( data_type, p_upper, newVUp );
-                        value_changed = true;
-                    }
+                    WriteFloatToScalar( data_type, p_lower, vMinF + newLo * den );
+                    float qLo    = ScalarToFloat( data_type, ( ImU64* )p_lower );
+                    WriteFloatToScalar( data_type, p_upper, qLo + spanV );
+                    value_changed = ( ScalarToFloat( data_type, ( ImU64* )p_lower ) != vLowerF )
+                                 || ( ScalarToFloat( data_type, ( ImU64* )p_upper ) != vUpperF );
                 }
                 else if ( activeHandle == 1 )
                 {
@@ -35899,8 +35985,14 @@ namespace ImWidgets
         char buf[ 160 ];
         ImFormatString( buf, IM_ARRAYSIZE( buf ), "%s -- %s", bufLo, bufUp );
         ImVec2 tsz = ImGui::CalcTextSize( buf );
-        ImVec2 txtPos( frame_bb.GetCenter().x - tsz.x * 0.5f, frame_bb.Min.y + ( frame_bb.GetHeight() - tsz.y ) * 0.5f );
-        window->DrawList->AddText( txtPos, ImGui::GetColorU32( ImGuiCol_Text ), buf );
+        // Skip the readout when the frame is too thin to hold it (e.g. when the
+        // widget is embedded as the X strip of a Slider2DRange, which renders its
+        // own value labels).
+        if ( tsz.y <= frame_bb.GetHeight() - 2.0f )
+        {
+            ImVec2 txtPos( frame_bb.GetCenter().x - tsz.x * 0.5f, frame_bb.Min.y + ( frame_bb.GetHeight() - tsz.y ) * 0.5f );
+            window->DrawList->AddText( txtPos, ImGui::GetColorU32( ImGuiCol_Text ), buf );
+        }
 
         if ( label_size.x > 0.0f )
             ImGui::RenderText( ImVec2( frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + style.FramePadding.y ), label );
@@ -35919,6 +36011,210 @@ namespace ImWidgets
     bool RangeSliderInt( char const* label, int* v_lower, int* v_upper, int v_min, int v_max, char const* format, ImVec2 size )
     {
         return RangeSliderScalarImpl( label, ImGuiDataType_S32, v_lower, v_upper, &v_min, &v_max, format, size );
+    }
+
+    // Vertical two-handle range slider. Convention: min at the BOTTOM, max at the
+    // TOP (standard slider orientation). Mirrors RangeSliderScalarImpl with X/Y and
+    // the Y axis inverted so screen-down = smaller value.
+    static bool RangeSliderVerticalScalarImpl( char const* label, ImGuiDataType data_type,
+                                               void* p_lower, void* p_upper,
+                                               void const* p_min, void const* p_max,
+                                               char const* format, ImVec2 size )
+    {
+        IM_ASSERT( p_lower != NULL && p_upper != NULL );
+
+        ImGuiWindow* window = ImGui::GetCurrentWindow();
+        if ( window->SkipItems )
+            return false;
+
+        ImGuiContext& g = *GImGui;
+        const ImGuiStyle& style = g.Style;
+        const ImGuiID id = window->GetID( label );
+
+        if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+        if ( size.y > 0.0f ) size.y = LpToPx( size.y );
+
+        float w = ( size.x > 0.0f ) ? size.x : LpToPx( 20.0f );
+        float h = ( size.y > 0.0f ) ? size.y : LpToPx( 160.0f );
+
+        ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
+        ImRect const frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, h ) );
+        ImRect const total_bb( frame_bb.Min, ImVec2( frame_bb.Max.x + ( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f ), frame_bb.Max.y ) );
+
+        ImGui::ItemSize( total_bb, style.FramePadding.y );
+        if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, 0 ) )
+            return false;
+
+        if ( !format )
+            format = ImGui::DataTypeGetInfo( data_type )->PrintFmt;
+
+        float const vMinF = ScalarToFloat( data_type, ( ImU64* )p_min );
+        float const vMaxF = ScalarToFloat( data_type, ( ImU64* )p_max );
+        float const den   = vMaxF - vMinF;
+
+        bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.ItemFlags );
+        ImGuiStorage* storage = window->DC.StateStorage;
+        ImGuiID activeKey = RangeSlider_ActiveHandleKey( id );
+        ImGuiID initMtKey = RangeSlider_InitMtKey      ( id );
+        ImGuiID initLoKey = RangeSlider_InitLoKey      ( id );
+        ImGuiID initUpKey = RangeSlider_InitUpKey      ( id );
+
+        // Value-normalized mouse position: 0 = min (bottom), 1 = max (top).
+        auto MouseT = [ & ]() -> float {
+            if ( frame_bb.GetHeight() <= 0.0f ) return 0.0f;
+            return ImClamp( 1.0f - ( g.IO.MousePos.y - frame_bb.Min.y ) / frame_bb.GetHeight(), 0.0f, 1.0f );
+        };
+
+        float grabH     = ImMax( LpToPx( 4.0f ), ImMin( LpToPx( 8.0f ), frame_bb.GetWidth() * 0.5f ) );
+        float grabHalf  = grabH * 0.5f;
+        float grabHalfT = ( frame_bb.GetHeight() > 0.0f ) ? ( grabHalf / frame_bb.GetHeight() ) : 0.0f;
+
+        if ( hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id ) )
+        {
+            float tLo = ( den > 0.0f ) ? ImClamp( ( ScalarToFloat( data_type, ( ImU64* )p_lower ) - vMinF ) / den, 0.0f, 1.0f ) : 0.0f;
+            float tUp = ( den > 0.0f ) ? ImClamp( ( ScalarToFloat( data_type, ( ImU64* )p_upper ) - vMinF ) / den, 0.0f, 1.0f ) : 0.0f;
+            if ( tLo > tUp ) { float tt = tLo; tLo = tUp; tUp = tt; }
+            float mt = MouseT();
+
+            bool overLo = ImAbs( mt - tLo ) <= grabHalfT;
+            bool overUp = ImAbs( mt - tUp ) <= grabHalfT;
+            int active;
+            if ( overLo && overUp )
+                active = ( mt >= 0.5f * ( tLo + tUp ) ) ? 1 : 0;
+            else if ( overLo )
+                active = 0;
+            else if ( overUp )
+                active = 1;
+            else if ( mt > tLo && mt < tUp )
+            {
+                active = 2;
+                storage->SetFloat( initMtKey, mt );
+                storage->SetFloat( initLoKey, tLo );
+                // EXACT value-space span (integer-exact for int types) -- see the
+                // horizontal RangeSlider: normalized-float spans truncate widths.
+                storage->SetFloat( initUpKey, ScalarToFloat( data_type, ( ImU64* )p_upper ) - ScalarToFloat( data_type, ( ImU64* )p_lower ) );
+            }
+            else
+            {
+                if ( tLo == tUp )
+                    active = ( mt >= tLo ) ? 1 : 0;
+                else
+                    active = ( ImAbs( mt - tUp ) < ImAbs( mt - tLo ) ) ? 1 : 0;
+            }
+            storage->SetInt( activeKey, active );
+            ImGui::SetActiveID( id, window );
+            ImGui::SetFocusID( id, window );
+            ImGui::FocusWindow( window );
+            ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+        }
+
+        bool value_changed = false;
+        if ( g.ActiveId == id )
+        {
+            if ( g.IO.MouseDown[ 0 ] )
+            {
+                int activeHandle = storage->GetInt( activeKey, 0 );
+                float mt = MouseT();
+
+                float vLowerF = ScalarToFloat( data_type, ( ImU64* )p_lower );
+                float vUpperF = ScalarToFloat( data_type, ( ImU64* )p_upper );
+                float tLo = ( den > 0.0f ) ? ImClamp( ( vLowerF - vMinF ) / den, 0.0f, 1.0f ) : 0.0f;
+                float tUp = ( den > 0.0f ) ? ImClamp( ( vUpperF - vMinF ) / den, 0.0f, 1.0f ) : 0.0f;
+
+                if ( activeHandle == 2 )
+                {
+                    // initUpKey holds the EXACT value-space span captured at click.
+                    // Write lower (quantizes for ints), then upper = quantized
+                    // lower + exact span so the height never drifts (deriving the
+                    // span from normalized floats truncated 1-2 unit ranges).
+                    float initMt = storage->GetFloat( initMtKey, mt );
+                    float initLo = storage->GetFloat( initLoKey, tLo );
+                    float spanV  = storage->GetFloat( initUpKey, 0.0f );
+                    float width  = ( den != 0.0f ) ? spanV / den : 0.0f;
+                    float dt     = mt - initMt;
+                    float newLo  = ImClamp( initLo + dt, 0.0f, 1.0f - width );
+                    WriteFloatToScalar( data_type, p_lower, vMinF + newLo * den );
+                    float qLo    = ScalarToFloat( data_type, ( ImU64* )p_lower );
+                    WriteFloatToScalar( data_type, p_upper, qLo + spanV );
+                    value_changed = true;
+                }
+                else if ( activeHandle == 1 )
+                {
+                    mt = ImMax( mt, tLo );
+                    float newV = vMinF + mt * den;
+                    if ( newV != vUpperF )
+                    {
+                        WriteFloatToScalar( data_type, p_upper, newV );
+                        value_changed = true;
+                    }
+                }
+                else
+                {
+                    mt = ImMin( mt, tUp );
+                    float newV = vMinF + mt * den;
+                    if ( newV != vLowerF )
+                    {
+                        WriteFloatToScalar( data_type, p_lower, newV );
+                        value_changed = true;
+                    }
+                }
+                if ( value_changed )
+                    ImGui::MarkItemEdited( id );
+            }
+            else
+            {
+                ImGui::ClearActiveID();
+            }
+        }
+
+        ImU32 const frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
+        ImGui::RenderNavCursor( frame_bb, id );
+        ImGui::RenderFrame( frame_bb.Min, frame_bb.Max, frame_col, true, style.FrameRounding );
+
+        float vLowerF = ScalarToFloat( data_type, ( ImU64* )p_lower );
+        float vUpperF = ScalarToFloat( data_type, ( ImU64* )p_upper );
+        float tLo = ( den > 0.0f ) ? ImClamp( ( vLowerF - vMinF ) / den, 0.0f, 1.0f ) : 0.0f;
+        float tUp = ( den > 0.0f ) ? ImClamp( ( vUpperF - vMinF ) / den, 0.0f, 1.0f ) : 0.0f;
+        if ( tLo > tUp ) { float t = tLo; tLo = tUp; tUp = t; }
+
+        // t=0 (min) at the bottom (Max.y), t=1 (max) at the top (Min.y).
+        float yLo = frame_bb.Max.y - tLo * frame_bb.GetHeight();
+        float yUp = frame_bb.Max.y - tUp * frame_bb.GetHeight();
+
+        bool isActive = ( g.ActiveId == id );
+        int activeHandle = isActive ? storage->GetInt( activeKey, 0 ) : -1;
+
+        float selAlpha = ( activeHandle == 2 ) ? 0.75f : 0.40f;
+        ImU32 selCol = ImGui::GetColorU32( ImGuiCol_SliderGrab, selAlpha );
+        // yUp (max) is higher on screen (smaller Y) than yLo (min).
+        window->DrawList->AddRectFilled( ImVec2( frame_bb.Min.x + 1.0f, yUp ), ImVec2( frame_bb.Max.x - 1.0f, yLo ), selCol, style.FrameRounding );
+
+        auto DrawGrab = [ & ]( float y, bool isAct ) {
+            ImU32 grabCol = ImGui::GetColorU32( isAct ? ImGuiCol_SliderGrabActive : ImGuiCol_SliderGrab );
+            window->DrawList->AddRectFilled( ImVec2( frame_bb.Min.x + 1.0f, y - grabHalf ),
+                                             ImVec2( frame_bb.Max.x - 1.0f, y + grabHalf ),
+                                             grabCol, style.GrabRounding );
+        };
+        DrawGrab( yLo, activeHandle == 0 );
+        DrawGrab( yUp, activeHandle == 1 );
+
+        if ( label_size.x > 0.0f )
+            ImGui::RenderText( ImVec2( frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + style.FramePadding.y ), label );
+
+        return value_changed;
+    }
+
+    bool RangeSliderVerticalScalar( char const* label, ImGuiDataType data_type, void* p_lower, void* p_upper, void const* p_min, void const* p_max, char const* format, ImVec2 size )
+    {
+        return RangeSliderVerticalScalarImpl( label, data_type, p_lower, p_upper, p_min, p_max, format, size );
+    }
+    bool RangeSliderVerticalFloat( char const* label, float* v_lower, float* v_upper, float v_min, float v_max, char const* format, ImVec2 size )
+    {
+        return RangeSliderVerticalScalarImpl( label, ImGuiDataType_Float, v_lower, v_upper, &v_min, &v_max, format, size );
+    }
+    bool RangeSliderVerticalInt( char const* label, int* v_lower, int* v_upper, int v_min, int v_max, char const* format, ImVec2 size )
+    {
+        return RangeSliderVerticalScalarImpl( label, ImGuiDataType_S32, v_lower, v_upper, &v_min, &v_max, format, size );
     }
 
     //////////////////////////////////////////////////////////////////////////
@@ -36655,6 +36951,21 @@ namespace ImWidgets
         s.LastBoundsMin = bounds.Min;
         s.Rect.ClipWith( bounds );
 
+        // Re-materialise the rect the moment the caller picks a new aspect ratio,
+        // instead of waiting for the next handle drag. Anchor the top-left corner
+        // (grip 4 = BR drives the resize). Skipped while a drag is in progress.
+        if ( aspect_ratio > 0.0f && aspect_ratio != s.LastAspect && s.Active < 0 )
+        {
+            DW_CropApplyAspect( s.Rect, 4, aspect_ratio, bounds );
+            s.Rect.ClipWith( bounds );
+        }
+        s.LastAspect = aspect_ratio;
+
+        // Handle grips are sized in logical pixels and converted to physical here,
+        // so they match every other interactive handle in the app at any DPI
+        // (previously grip_size was used as a raw pixel count).
+        const float grip_px = LpToPx( grip_size );
+
         ImGui::ItemSize( bounds );
         ImGui::ItemAdd( bounds, id );
         ImGui::ButtonBehavior( bounds, id, NULL, NULL,
@@ -36667,7 +36978,7 @@ namespace ImWidgets
         if ( clicked )
         {
             int hit = -1;
-            float pick = ImMax( grip_size, 4.0f ) + 3.0f;
+            float pick = ImMax( grip_px, LpToPx( 4.0f ) ) + LpToPx( 3.0f );
             for ( int i = 0; i < 8; ++i )
             {
                 ImVec2 g = DW_CropGripCenter( s.Rect, i );
@@ -36766,7 +37077,7 @@ namespace ImWidgets
 
         dl->AddRect( s.Rect.Min, s.Rect.Max, line_col, 0.0f, 0, 1.0f );
 
-        float gh = grip_size;
+        float gh = grip_px;
         for ( int i = 0; i < 8; ++i )
         {
             ImVec2 g = DW_CropGripCenter( s.Rect, i );
@@ -36988,12 +37299,18 @@ namespace ImWidgets
             }
             else
             {
+                // In-progress lasso: fill the concave area, but draw the outline
+                // OPEN (no closing chord back to the start) while dragging. The
+                // closing edge only appears once the loop is released (s.Closed).
                 dl->AddConcavePolyFilled( s.Path.Data, s.Path.Size, fill_col );
-                dl->AddPolyline( s.Path.Data, s.Path.Size, line_col, ImDrawFlags_Closed, thickness );
+                dl->AddPolyline( s.Path.Data, s.Path.Size, line_col, ImDrawFlags_None, thickness );
             }
         }
-        else if ( s.Closed && s.Path.Size >= 2 )
+        else if ( s.Path.Size >= 2 )
         {
+            // Finished selection: keep the closed outline visible until the next
+            // drag begins (it used to draw only on the single s.Closed frame and
+            // then vanish, so a concave lasso never showed its closed shape).
             if ( s.Mode == ImWidgetsSelectionMode_Marquee )
             {
                 ImVec2 a = s.Path[ 0 ], b = s.Path[ 1 ];
@@ -37237,124 +37554,6 @@ namespace ImWidgets
     }
 
     //////////////////////////////////////////////////////////////////////////
-    // Bracket / curly brace
-    //////////////////////////////////////////////////////////////////////////
-    static void DW_AppendCubic( ImVector<ImVec2>& out, ImVec2 P0, ImVec2 P1, ImVec2 P2, ImVec2 P3, int seg )
-    {
-        for ( int k = 1; k <= seg; ++k )
-        {
-            float u  = (float)k / (float)seg;
-            float mu = 1.0f - u;
-            ImVec2 p = P0 * ( mu * mu * mu ) + P1 * ( 3.0f * mu * mu * u )
-                     + P2 * ( 3.0f * mu * u  * u ) + P3 * ( u  * u  * u  );
-            out.push_back( p );
-        }
-    }
-
-    // LaTeX-style brackets, routed through DrawPolylineAA so caps/joins match the
-    // rest of the line family.
-    //   Square: straight spine + perpendicular arms (mitered 90deg).
-    //   Round : two cubic-Bezier quarter-arc approximations of a (semi-)circle,
-    //           with proper kappa = 4/3*(sqrt(2)-1) factor for smoothness.
-    //   Curly : two S-curve arms meeting at a sharp central beak (the "tip"),
-    //           with a small pinch around the beak so it actually looks pointed
-    //           like a Computer Modern \big{} brace.
-    void DrawBracket( ImDrawList* dl, ImVec2 from, ImVec2 to,
-                      float depth, ImWidgetsBracketStyle style,
-                      ImU32 col, float thickness )
-    {
-        ImVec2 d( to.x - from.x, to.y - from.y );
-        float len = ImSqrt( d.x * d.x + d.y * d.y );
-        if ( len < 1e-3f ) return;
-        ImVec2 t( d.x / len, d.y / len );
-        ImVec2 n( -t.y, t.x );
-        ImVec2 pa = from + n * depth;
-        ImVec2 pb = to   + n * depth;
-
-        ImVector<ImVec2> pts;
-
-        if ( style == ImWidgetsBracketStyle_Square )
-        {
-            pts.push_back( pa );
-            pts.push_back( from );
-            pts.push_back( to );
-            pts.push_back( pb );
-            DrawPolylineAA( dl, pts.Data, pts.Size, col, thickness, false,
-                ImWidgetsCap_Square, ImWidgetsJoin_Mitter, 8.0f );
-        }
-        else if ( style == ImWidgetsBracketStyle_Round )
-        {
-            const float kappa  = 4.0f / 3.0f * ( ImSqrt( 2.0f ) - 1.0f );
-            ImVec2 chord_mid = ( from + to ) * 0.5f;
-            ImVec2 apex      = chord_mid + n * depth;
-            float kh = kappa * ( len * 0.5f );
-            float kw = kappa * depth;
-            int seg = 24;
-
-            pts.push_back( from );
-            DW_AppendCubic( pts,
-                from,
-                from + n * kw,
-                apex - t * kh,
-                apex,
-                seg );
-            DW_AppendCubic( pts,
-                apex,
-                apex + t * kh,
-                to   + n * kw,
-                to,
-                seg );
-            DrawPolylineAA( dl, pts.Data, pts.Size, col, thickness, false,
-                ImWidgetsCap_Round, ImWidgetsJoin_Round, 4.0f );
-        }
-        else  // Curly -- Computer Modern \big\{ proportions
-        {
-            // The shape is two smooth cubic Beziers meeting at a sharp
-            // outward-pointing cusp at the middle (the "beak").
-            //
-            // The cusp is created by placing each Bezier's near-beak control
-            // point INWARD of the beak: the path then arrives at the beak
-            // moving outward, and the next segment leaves moving inward --
-            // tangent flips sign on the n-axis -> sharp V pointing in +n.
-            //
-            // Arms swing out to ~0.9 D thanks to the strong outward pull of
-            // the first control point, the beak protrudes to ~1.3 D, and the
-            // path stays a smooth S everywhere except at the beak.
-            float D = depth;
-            ImVec2 mid  = ( from + to ) * 0.5f;
-            ImVec2 beak = mid + n * ( D * 1.30f );
-            int seg = 28;
-
-            pts.push_back( from );
-
-            // Top half: from -> beak
-            //   c1 pulls strongly outward + a little along +t  -> arm curl
-            //   c2 sits "up and inward" of the beak           -> outward-down tangent at beak
-            DW_AppendCubic( pts,
-                from,
-                from + n * ( D * 0.90f ) + t * ( len * 0.10f ),
-                beak - n * ( D * 0.22f ) - t * ( len * 0.08f ),
-                beak,
-                seg );
-            // Bottom half: beak -> to (mirror)
-            //   d1 sits "down and inward" of the beak         -> inward-down tangent leaving beak
-            //   d2 pulls outward + a little against +t        -> arm curl
-            DW_AppendCubic( pts,
-                beak,
-                beak - n * ( D * 0.22f ) + t * ( len * 0.08f ),
-                to   + n * ( D * 0.90f ) - t * ( len * 0.10f ),
-                to,
-                seg );
-
-            // Mitered join so the cusp at `beak` stays sharp instead of being
-            // rounded by the AA stroker.
-            DrawPolylineAA( dl, pts.Data, pts.Size, col, thickness, false,
-                ImWidgetsCap_Round, ImWidgetsJoin_Mitter, 16.0f );
-        }
-        ( void )pa; ( void )pb;
-    }
-
-    //////////////////////////////////////////////////////////////////////////
     // Crosshair / reticle
     //////////////////////////////////////////////////////////////////////////
     char const* GetCrosshairStyleName( ImWidgetsCrosshairStyle style )
@@ -37437,179 +37636,6 @@ namespace ImWidgets
             break;
         }
         }
-    }
-
-    //////////////////////////////////////////////////////////////////////////
-    // Pin / map marker
-    //////////////////////////////////////////////////////////////////////////
-    void DrawMapPin( ImDrawList* dl, ImVec2 tip, float height, float head_radius,
-                     ImU32 fill_col, ImU32 stroke_col, float stroke_thickness,
-                     ImU32 hole_col, float hole_radius )
-    {
-        if ( height <= 0.0f || head_radius <= 0.0f ) return;
-        ImVec2 head_center( tip.x, tip.y - height );
-        float r = head_radius;
-        float dy = height - r;
-        if ( dy < r * 0.05f ) dy = r * 0.05f;
-        float ang = ImAcos( ImClamp( r / dy, -1.0f, 1.0f ) );  // tangent angle from vertical
-        float ang_left  = IM_PI * 0.5f + ang;   // left tangent on the circle
-        float ang_right = IM_PI * 0.5f - ang;
-
-        const int arc_seg = 32;
-        dl->PathClear();
-        dl->PathLineTo( tip );
-        // Tangent line from tip to right tangent point
-        ImVec2 right_tan( head_center.x + ImCos( ang_right ) * r, head_center.y + ImSin( ang_right ) * r );
-        dl->PathLineTo( right_tan );
-        // Arc around head, from right tangent, going counter-clockwise around the top, to left tangent
-        // ImGui circle has y growing downward; arc must be traversed correctly.
-        for ( int k = 1; k <= arc_seg; ++k )
-        {
-            float u = (float)k / (float)arc_seg;
-            // walk from ang_right "up around top of head" to ang_left, going through -pi/2 (top)
-            // angle goes ang_right -> -pi/2 -> -(pi - ang_right) which equals ang_left - 2*pi
-            float a0 = ang_right;
-            float a1 = ang_left - IM_PI * 2.0f;  // negative direction
-            float a  = a0 + ( a1 - a0 ) * u;
-            dl->PathLineTo( ImVec2( head_center.x + ImCos( a ) * r, head_center.y + ImSin( a ) * r ) );
-        }
-        ImVec2 left_tan( head_center.x + ImCos( ang_left ) * r, head_center.y + ImSin( ang_left ) * r );
-        dl->PathLineTo( left_tan );
-        dl->PathLineTo( tip );
-        dl->PathFillConvex( fill_col );
-
-        if ( stroke_col != 0u && stroke_thickness > 0.0f )
-        {
-            dl->PathClear();
-            dl->PathLineTo( tip );
-            dl->PathLineTo( right_tan );
-            for ( int k = 1; k <= arc_seg; ++k )
-            {
-                float u = (float)k / (float)arc_seg;
-                float a0 = ang_right;
-                float a1 = ang_left - IM_PI * 2.0f;
-                float a  = a0 + ( a1 - a0 ) * u;
-                dl->PathLineTo( ImVec2( head_center.x + ImCos( a ) * r, head_center.y + ImSin( a ) * r ) );
-            }
-            dl->PathLineTo( left_tan );
-            dl->PathStroke( stroke_col, ImDrawFlags_Closed, stroke_thickness );
-        }
-        if ( hole_col != 0u && hole_radius > 0.0f )
-            dl->AddCircleFilled( head_center, hole_radius, hole_col );
-    }
-
-    //////////////////////////////////////////////////////////////////////////
-    // Wavy / zigzag / scallop / dashed-zigzag
-    //////////////////////////////////////////////////////////////////////////
-    static void DW_LineFrame( ImVec2 a, ImVec2 b, ImVec2* t, ImVec2* n, float* len_out )
-    {
-        ImVec2 d( b.x - a.x, b.y - a.y );
-        float L = ImSqrt( d.x * d.x + d.y * d.y );
-        if ( L < 1e-5f ) { *t = ImVec2( 1, 0 ); *n = ImVec2( 0, 1 ); *len_out = 0.0f; return; }
-        *t = ImVec2( d.x / L, d.y / L );
-        *n = ImVec2( -t->y, t->x );
-        *len_out = L;
-    }
-
-    // Build a sinusoidal polyline along a -> b and route it through the
-    // standard DrawPolylineAA pipeline so we inherit AA + caps + joins.
-    void DrawWavyLine( ImDrawList* dl, ImVec2 a, ImVec2 b, float amplitude, float period,
-                        ImU32 col, float thickness, int samples_per_period )
-    {
-        ImVec2 t, n; float L;
-        DW_LineFrame( a, b, &t, &n, &L );
-        if ( L <= 0.0f || period <= 0.0f ) return;
-        int n_steps = ImMax( 8, (int)( L / period * (float)samples_per_period ) );
-        ImVector<ImVec2> pts;
-        pts.reserve( n_steps + 1 );
-        for ( int k = 0; k <= n_steps; ++k )
-        {
-            float u = (float)k / (float)n_steps;
-            float s = u * L;
-            float phase = ( s / period ) * IM_PI * 2.0f;
-            pts.push_back( ImVec2( a.x + t.x * s + n.x * ImSin( phase ) * amplitude,
-                                     a.y + t.y * s + n.y * ImSin( phase ) * amplitude ) );
-        }
-        DrawPolylineAA( dl, pts.Data, pts.Size, col, thickness, false,
-            ImWidgetsCap_Round, ImWidgetsJoin_Round, 4.0f );
-    }
-
-    void DrawZigzagLine( ImDrawList* dl, ImVec2 a, ImVec2 b, float amplitude, float period,
-                          ImU32 col, float thickness )
-    {
-        ImVec2 t, n; float L;
-        DW_LineFrame( a, b, &t, &n, &L );
-        if ( L <= 0.0f || period <= 0.0f ) return;
-        float half = period * 0.5f;
-        ImVector<ImVec2> pts;
-        pts.push_back( a );
-        float s = 0.0f;
-        int side = 1;
-        while ( s + half <= L + 1e-3f )
-        {
-            float ns = s + half;
-            pts.push_back( ImVec2( a.x + t.x * ns + n.x * amplitude * (float)side,
-                                     a.y + t.y * ns + n.y * amplitude * (float)side ) );
-            s = ns; side = -side;
-        }
-        pts.push_back( b );
-        DrawPolylineAA( dl, pts.Data, pts.Size, col, thickness, false,
-            ImWidgetsCap_Butt, ImWidgetsJoin_Mitter, 8.0f );
-    }
-
-    void DrawScallopLine( ImDrawList* dl, ImVec2 a, ImVec2 b, float amplitude, float period,
-                           ImU32 col, float thickness )
-    {
-        ImVec2 t, n; float L;
-        DW_LineFrame( a, b, &t, &n, &L );
-        if ( L <= 0.0f || period <= 0.0f ) return;
-        int cycles = ImMax( 1, (int)( L / period + 0.5f ) );
-        period = L / (float)cycles;
-        const int arc_seg = 24;
-        ImVector<ImVec2> pts;
-        pts.reserve( cycles * arc_seg + 1 );
-        pts.push_back( a );
-        for ( int c = 0; c < cycles; ++c )
-        {
-            ImVec2 p0( a.x + t.x * ( c * period ), a.y + t.y * ( c * period ) );
-            ImVec2 p1( a.x + t.x * ( ( c + 1 ) * period ), a.y + t.y * ( ( c + 1 ) * period ) );
-            ImVec2 c1( p0.x + n.x * amplitude * 1.33f, p0.y + n.y * amplitude * 1.33f );
-            ImVec2 c2( p1.x + n.x * amplitude * 1.33f, p1.y + n.y * amplitude * 1.33f );
-            for ( int k = 1; k <= arc_seg; ++k )
-            {
-                float u = (float)k / (float)arc_seg;
-                float mu = 1.0f - u;
-                ImVec2 p = p0 * ( mu * mu * mu ) + c1 * ( 3.0f * mu * mu * u )
-                         + c2 * ( 3.0f * mu * u  * u ) + p1 * ( u  * u  * u  );
-                pts.push_back( p );
-            }
-        }
-        DrawPolylineAA( dl, pts.Data, pts.Size, col, thickness, false,
-            ImWidgetsCap_Round, ImWidgetsJoin_Round, 4.0f );
-    }
-
-    void DrawDashedZigzagLine( ImDrawList* dl, ImVec2 a, ImVec2 b, float amplitude, float period,
-                                float dash_len, float gap_len, ImU32 col, float thickness )
-    {
-        ImVec2 t, n; float L;
-        DW_LineFrame( a, b, &t, &n, &L );
-        if ( L <= 0.0f || period <= 0.0f ) return;
-        float half = period * 0.5f;
-        ImVector<ImVec2> pts;
-        pts.push_back( a );
-        float s = 0.0f;
-        int side = 1;
-        while ( s + half <= L + 1e-3f )
-        {
-            float ns = s + half;
-            pts.push_back( ImVec2( a.x + t.x * ns + n.x * amplitude * (float)side,
-                                     a.y + t.y * ns + n.y * amplitude * (float)side ) );
-            s = ns; side = -side;
-        }
-        pts.push_back( b );
-        DrawDashedPolylineAA( dl, pts.Data, pts.Size, col, thickness,
-            dash_len, gap_len, 0.0f, false,
-            ImWidgetsCap_Butt, ImWidgetsJoin_Mitter, 8.0f );
     }
 
     //////////////////////////////////////////////////////////////////////////
@@ -38076,112 +38102,6 @@ namespace ImWidgets
     }
 
     //////////////////////////////////////////////////////////////////////////
-    // Diff view
-    //////////////////////////////////////////////////////////////////////////
-    void DiffView( char const* id_str, ImWidgetsDiffEntry const* entries, int count, ImVec2 size )
-    {
-        ImGui::PushID( id_str );
-        if ( size.x <= 0.0f ) size.x = ImGui::GetContentRegionAvail().x;
-        if ( size.y <= 0.0f ) size.y = ImGui::GetContentRegionAvail().y;
-        ImGui::BeginChild( "##diff", size, true );
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        for ( int i = 0; i < count; ++i )
-        {
-            ImWidgetsDiffEntry const& e = entries[ i ];
-            ImU32 bg = 0u, fg = IM_COL32( 220, 220, 220, 255 );
-            char marker = ' ';
-            switch ( e.Kind )
-            {
-            case ImWidgetsDiffLine_Added:   bg = IM_COL32(  20, 80,  20, 120 ); fg = IM_COL32( 200, 240, 200, 255 ); marker = '+'; break;
-            case ImWidgetsDiffLine_Removed: bg = IM_COL32(  90, 20,  20, 120 ); fg = IM_COL32( 240, 200, 200, 255 ); marker = '-'; break;
-            case ImWidgetsDiffLine_Hunk:    bg = IM_COL32(  30, 60,  90, 160 ); fg = IM_COL32( 180, 220, 250, 255 ); marker = '@'; break;
-            default: break;
-            }
-            ImVec2 pos = ImGui::GetCursorScreenPos();
-            ImVec2 ts = ImGui::CalcTextSize( e.Text ? e.Text : "" );
-            float row_h = ts.y;
-            float gutter = 70.0f;
-            if ( bg != 0u )
-                dl->AddRectFilled( pos, ImVec2( pos.x + ImGui::GetContentRegionAvail().x, pos.y + row_h ), bg );
-            char buf[ 32 ];
-            ImFormatString( buf, IM_ARRAYSIZE( buf ), "%4d %4d %c",
-                e.OldNo >= 0 ? e.OldNo : 0,
-                e.NewNo >= 0 ? e.NewNo : 0,
-                marker );
-            dl->AddText( pos, IM_COL32( 140, 140, 145, 255 ), buf );
-            dl->AddText( ImVec2( pos.x + gutter, pos.y ), fg, e.Text ? e.Text : "" );
-            ImGui::Dummy( ImVec2( 0.0f, row_h ) );
-        }
-        ImGui::EndChild();
-        ImGui::PopID();
-    }
-
-    //////////////////////////////////////////////////////////////////////////
-    // 3D vector input (azimuth + elevation + magnitude)
-    //////////////////////////////////////////////////////////////////////////
-    bool VectorInput3D( char const* label, float v[ 3 ], float size )
-    {
-        bool changed = false;
-        ImGui::PushID( label );
-        // `size` is in logical pixels; convert to physical for the map width.
-        // Default chosen so the widget is comfortably draggable at any DPI.
-        if ( size <= 0.0f ) size = 200.0f;
-        float size_px = LpToPx( size );
-        float mag = ImSqrt( v[ 0 ] * v[ 0 ] + v[ 1 ] * v[ 1 ] + v[ 2 ] * v[ 2 ] );
-        float az = 0.0f, el = 0.0f;
-        if ( mag > 1e-5f )
-        {
-            az = ImAtan2( v[ 0 ], v[ 2 ] );
-            el = asinf( ImClamp( v[ 1 ] / mag, -1.0f, 1.0f ) );
-        }
-
-        ImGui::BeginGroup();
-        ImGui::Text( "%s", label );
-        ImVec2 cur = ImGui::GetCursorScreenPos();
-        ImVec2 sz( size_px, size_px * 0.5f );
-        ImGui::InvisibleButton( "##v3map", sz );
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        dl->AddRectFilled( cur, cur + sz, IM_COL32( 35, 35, 45, 255 ) );
-        ImWidgets::DrawGridOverlay( dl, ImRect( cur, cur + sz ),
-                                     ImVec2( cur.x + sz.x * 0.5f, cur.y + sz.y * 0.5f ),
-                                     sz.x / 8.0f, 0,
-                                     IM_COL32( 90, 90, 100, 180 ),
-                                     IM_COL32(  60,  60,  70, 110 ),
-                                     IM_COL32( 220, 220, 220, 220 ),
-                                     ImWidgetsGridFlags_Major | ImWidgetsGridFlags_Origin );
-        if ( ImGui::IsItemActive() )
-        {
-            ImVec2 m = ImGui::GetIO().MousePos;
-            az = ( ( m.x - cur.x ) / sz.x - 0.5f ) * IM_PI * 2.0f;
-            el = ( 0.5f - ( m.y - cur.y ) / sz.y ) * IM_PI;
-            changed = true;
-        }
-        float dotx = cur.x + ( az / ( IM_PI * 2.0f ) + 0.5f ) * sz.x;
-        float doty = cur.y + ( 0.5f - el / IM_PI ) * sz.y;
-        float dot_r = ImMax( 4.0f, LpToPx( 5.0f ) );
-        dl->AddCircleFilled( ImVec2( dotx, doty ), dot_r,        IM_COL32( 240, 220, 90, 255 ) );
-        dl->AddCircle      ( ImVec2( dotx, doty ), dot_r,        IM_COL32( 0, 0, 0, 200 ) );
-        dl->AddText( cur + ImVec2( LpToPx( 4.0f ), LpToPx( 4.0f ) ),
-            IM_COL32( 200, 200, 200, 200 ), "azimuth -> | elevation ^" );
-
-        ImGui::SetNextItemWidth( size_px );
-        if ( ImGui::SliderFloat( "magnitude", &mag, 0.0f, 10.0f, "%.3f" ) ) changed = true;
-        ImGui::SetNextItemWidth( size_px );
-        if ( ImGui::DragFloat3( "xyz", v, 0.01f ) ) { changed = true; }
-
-        if ( changed )
-        {
-            float ce = ImCos( el );
-            v[ 0 ] = mag * ce * ImSin( az );
-            v[ 1 ] = mag * ImSin( el );
-            v[ 2 ] = mag * ce * ImCos( az );
-        }
-        ImGui::EndGroup();
-        ImGui::PopID();
-        return changed;
-    }
-
-    //////////////////////////////////////////////////////////////////////////
     // Matrix editor
     //////////////////////////////////////////////////////////////////////////
     bool MatrixEditor( char const* label, float* data, int rows, int cols, float speed, char const* format )
@@ -38234,187 +38154,6 @@ namespace ImWidgets
         }
         ImGui::PopID();
         return changed;
-    }
-
-    //////////////////////////////////////////////////////////////////////////
-    // Vector field + stream lines + polynomial roots + curve sketch
-    //////////////////////////////////////////////////////////////////////////
-    static ImU32 DW_HSVtoU32( float h, float s, float v, float a = 1.0f )
-    {
-        float R, G, B;
-        ImGui::ColorConvertHSVtoRGB( h, s, v, R, G, B );
-        return IM_COL32( (int)( R * 255.0f ), (int)( G * 255.0f ), (int)( B * 255.0f ), (int)( a * 255.0f ) );
-    }
-
-    void DrawVectorField( ImDrawList* dl, ImRect bounds,
-                           ImWidgetsVectorField2DFn func, void* user_data,
-                           int divX, int divY, float arrow_max_len,
-                           ImU32 col, float thickness, bool color_by_magnitude )
-    {
-        if ( !func || divX <= 0 || divY <= 0 ) return;
-        // Caller passes logical pixels; convert to physical for HiDPI.
-        float arrow_max_len_px = LpToPx( arrow_max_len );
-        float head_size_px     = ImMax( LpToPx( 6.0f ), arrow_max_len_px * 0.4f );
-        float thickness_px     = LpToPx( thickness );
-        float cell_w = bounds.GetWidth() / (float)divX;
-        float cell_h = bounds.GetHeight() / (float)divY;
-        // Bound the arrow length to fit inside its cell (so tightly packed grids
-        // don't drown the arrows in their neighbours).
-        float cell_min = ImMin( cell_w, cell_h );
-        if ( arrow_max_len_px > cell_min * 0.5f ) arrow_max_len_px = cell_min * 0.5f;
-        float max_mag = 0.0f;
-        ImVector<ImVec2> samples;
-        samples.resize( divX * divY );
-        for ( int j = 0; j < divY; ++j )
-            for ( int i = 0; i < divX; ++i )
-            {
-                ImVec2 uv( ( i + 0.5f ) / (float)divX, ( j + 0.5f ) / (float)divY );
-                ImVec2 v = func( uv, user_data );
-                samples[ j * divX + i ] = v;
-                float m = ImSqrt( v.x * v.x + v.y * v.y );
-                if ( m > max_mag ) max_mag = m;
-            }
-        if ( max_mag <= 1e-5f ) max_mag = 1.0f;
-        for ( int j = 0; j < divY; ++j )
-            for ( int i = 0; i < divX; ++i )
-            {
-                ImVec2 v = samples[ j * divX + i ];
-                float m = ImSqrt( v.x * v.x + v.y * v.y );
-                if ( m < 1e-5f ) continue;
-                ImVec2 c( bounds.Min.x + ( i + 0.5f ) * cell_w, bounds.Min.y + ( j + 0.5f ) * cell_h );
-                float scale = ( arrow_max_len_px * m / max_mag ) / m;
-                ImVec2 tip( c.x + v.x * scale, c.y + v.y * scale );
-                ImU32 cc = color_by_magnitude
-                    ? DW_HSVtoU32( 0.65f - 0.65f * ( m / max_mag ), 0.85f, 1.0f )
-                    : col;
-                DrawArrow( dl, c, tip, cc, thickness_px,
-                    ImWidgetsArrowHead_Triangle, ImWidgetsArrowHead_None, head_size_px );
-            }
-    }
-
-    void DrawStreamLines( ImDrawList* dl, ImRect bounds,
-                           ImWidgetsVectorField2DFn func, void* user_data,
-                           ImVec2 const* seeds_uv, int seed_count,
-                           int steps, float step_size_px, ImU32 col, float thickness )
-    {
-        if ( !func || seed_count <= 0 ) return;
-        float W = bounds.GetWidth(), H = bounds.GetHeight();
-        for ( int s = 0; s < seed_count; ++s )
-        {
-            ImVec2 uv = seeds_uv[ s ];
-            dl->PathClear();
-            dl->PathLineTo( ImVec2( bounds.Min.x + uv.x * W, bounds.Min.y + uv.y * H ) );
-            for ( int k = 0; k < steps; ++k )
-            {
-                ImVec2 v = func( uv, user_data );
-                float m = ImSqrt( v.x * v.x + v.y * v.y );
-                if ( m < 1e-6f ) break;
-                ImVec2 v_n( v.x / m, v.y / m );
-                ImVec2 uv_mid( uv.x + v_n.x * 0.5f * step_size_px / W,
-                                uv.y + v_n.y * 0.5f * step_size_px / H );
-                ImVec2 vm = func( uv_mid, user_data );
-                float mm = ImSqrt( vm.x * vm.x + vm.y * vm.y );
-                if ( mm < 1e-6f ) break;
-                ImVec2 vm_n( vm.x / mm, vm.y / mm );
-                uv.x += vm_n.x * step_size_px / W;
-                uv.y += vm_n.y * step_size_px / H;
-                if ( uv.x < 0.0f || uv.x > 1.0f || uv.y < 0.0f || uv.y > 1.0f ) break;
-                dl->PathLineTo( ImVec2( bounds.Min.x + uv.x * W, bounds.Min.y + uv.y * H ) );
-            }
-            dl->PathStroke( col, ImDrawFlags_None, thickness );
-        }
-    }
-
-    void DrawPolynomialRoots( ImDrawList* dl, ImRect bounds, ImVec2 const* roots, int n,
-                               float view_radius, ImU32 real_col, ImU32 complex_col,
-                               ImU32 axis_col, ImU32 grid_col, float dot_radius,
-                               ImFont* font, float font_size )
-    {
-        if ( bounds.GetWidth() <= 0.0f || bounds.GetHeight() <= 0.0f || view_radius <= 0.0f ) return;
-        ImVec2 c( ( bounds.Min.x + bounds.Max.x ) * 0.5f, ( bounds.Min.y + bounds.Max.y ) * 0.5f );
-        float side = ImMin( bounds.GetWidth(), bounds.GetHeight() );
-        float sc = ( side * 0.5f ) / view_radius;
-
-        // grid
-        int g = 4;
-        for ( int k = -g; k <= g; ++k )
-        {
-            float v = (float)k / (float)g * view_radius;
-            dl->AddLine( ImVec2( c.x + v * sc, bounds.Min.y ), ImVec2( c.x + v * sc, bounds.Max.y ), grid_col );
-            dl->AddLine( ImVec2( bounds.Min.x, c.y + v * sc ), ImVec2( bounds.Max.x, c.y + v * sc ), grid_col );
-        }
-        // axes
-        dl->AddLine( ImVec2( c.x, bounds.Min.y ), ImVec2( c.x, bounds.Max.y ), axis_col, 1.5f );
-        dl->AddLine( ImVec2( bounds.Min.x, c.y ), ImVec2( bounds.Max.x, c.y ), axis_col, 1.5f );
-        // unit circle
-        dl->AddCircle( c, sc, axis_col, 64, 1.0f );
-
-        ImFont* f = font ? font : ImGui::GetFont();
-        float fs = ( font_size > 0.0f ) ? font_size : ImGui::GetFontSize();
-        dl->AddText( f, fs, ImVec2( bounds.Max.x - 28.0f, c.y + 4.0f ), axis_col, "Re" );
-        dl->AddText( f, fs, ImVec2( c.x + 4.0f, bounds.Min.y + 2.0f ), axis_col, "Im" );
-
-        for ( int i = 0; i < n; ++i )
-        {
-            ImVec2 z = roots[ i ];
-            ImVec2 pt( c.x + z.x * sc, c.y - z.y * sc );
-            bool is_real = ImFabs( z.y ) < 1e-6f;
-            ImU32 cc = is_real ? real_col : complex_col;
-            dl->AddCircleFilled( pt, dot_radius, cc );
-            dl->AddCircle      ( pt, dot_radius, IM_COL32( 0, 0, 0, 200 ) );
-        }
-        char buf[ 16 ];
-        ImFormatString( buf, IM_ARRAYSIZE( buf ), "n = %d", n );
-        dl->AddText( f, fs, ImVec2( bounds.Min.x + 4.0f, bounds.Min.y + 4.0f ), axis_col, buf );
-    }
-
-    void DrawCurveSketch( ImDrawList* dl, ImRect bounds, ImWidgetsScalarFn func, void* ud,
-                           float xmin, float xmax, float ymin, float ymax, int samples,
-                           ImU32 line_col, ImU32 axis_col, ImU32 grid_col,
-                           float thickness, int grid_div_x, int grid_div_y )
-    {
-        if ( bounds.GetWidth() <= 0.0f || bounds.GetHeight() <= 0.0f || !func ) return;
-        if ( xmax <= xmin || ymax <= ymin || samples < 2 ) return;
-        float W = bounds.GetWidth(), H = bounds.GetHeight();
-
-        for ( int k = 1; k < grid_div_x; ++k )
-        {
-            float u = (float)k / (float)grid_div_x;
-            float x = bounds.Min.x + W * u;
-            dl->AddLine( ImVec2( x, bounds.Min.y ), ImVec2( x, bounds.Max.y ), grid_col );
-        }
-        for ( int k = 1; k < grid_div_y; ++k )
-        {
-            float u = (float)k / (float)grid_div_y;
-            float y = bounds.Min.y + H * u;
-            dl->AddLine( ImVec2( bounds.Min.x, y ), ImVec2( bounds.Max.x, y ), grid_col );
-        }
-        // axes (if 0 falls inside the view)
-        if ( xmin < 0.0f && xmax > 0.0f )
-        {
-            float xz = bounds.Min.x + W * ( -xmin / ( xmax - xmin ) );
-            dl->AddLine( ImVec2( xz, bounds.Min.y ), ImVec2( xz, bounds.Max.y ), axis_col, 1.5f );
-        }
-        if ( ymin < 0.0f && ymax > 0.0f )
-        {
-            float yz = bounds.Min.y + H * ( 1.0f - ( -ymin / ( ymax - ymin ) ) );
-            dl->AddLine( ImVec2( bounds.Min.x, yz ), ImVec2( bounds.Max.x, yz ), axis_col, 1.5f );
-        }
-
-        dl->PathClear();
-        for ( int i = 0; i < samples; ++i )
-        {
-            float t = (float)i / (float)( samples - 1 );
-            float x = xmin + ( xmax - xmin ) * t;
-            float y = func( x, ud );
-            if ( y != y ) continue;  // NaN guard
-            if ( y < ymin || y > ymax ) { if ( dl->_Path.Size > 1 ) dl->PathStroke( line_col, ImDrawFlags_None, thickness ); dl->PathClear(); continue; }
-            float sx = bounds.Min.x + W * t;
-            float sy = bounds.Min.y + H * ( 1.0f - ( y - ymin ) / ( ymax - ymin ) );
-            dl->PathLineTo( ImVec2( sx, sy ) );
-        }
-        if ( dl->_Path.Size > 1 ) dl->PathStroke( line_col, ImDrawFlags_None, thickness );
-        else dl->PathClear();
     }
 
     //////////////////////////////////////////////////////////////////////////
@@ -38519,6 +38258,44 @@ namespace ImWidgets
         return y;
     }
 
+    // Renders `text` glyph-by-glyph so a synthetic variable-font preview can apply
+    // per-glyph transforms that ImGui::AddText cannot: horizontal scale (wdth),
+    // slant/shear (ital/slnt), size (opsz) and faux-bold passes (wght). There is
+    // no real var-font instancing runtime in this codebase, so this is a visual
+    // approximation whose only purpose is to make every axis slider do something.
+    static void DW_DrawSyntheticVarText( ImDrawList* dl, ImFont* font, float size,
+                                         ImVec2 pos, ImU32 col, char const* text,
+                                         float xScale, float shear, int boldPasses )
+    {
+        ImFontBaked* baked = font->GetFontBaked( size );
+        if ( !baked ) { dl->AddText( font, size, pos, col, text ); return; }
+        float baseline = pos.y + baked->Ascent;
+        float x = pos.x;
+        for ( char const* p = text; *p; ++p )
+        {
+            ImFontGlyph const* g = baked->FindGlyph( (ImWchar)(unsigned char)*p );
+            if ( !g ) continue;
+            if ( g->Visible )
+            {
+                float x0 = x + g->X0 * xScale, x1 = x + g->X1 * xScale;
+                float y0 = pos.y + g->Y0,      y1 = pos.y + g->Y1;
+                float sh0 = ( baseline - y0 ) * shear;  // slant: top shifts right
+                float sh1 = ( baseline - y1 ) * shear;
+                ImU32 gcol = g->Colored ? IM_COL32_WHITE : col;
+                for ( int b = 0; b <= boldPasses; ++b )
+                {
+                    float ox = (float)b * 0.7f;         // faux-bold smear
+                    dl->AddImageQuad( font->ContainerAtlas->TexRef,
+                        ImVec2( x0 + sh0 + ox, y0 ), ImVec2( x1 + sh0 + ox, y0 ),
+                        ImVec2( x1 + sh1 + ox, y1 ), ImVec2( x0 + sh1 + ox, y1 ),
+                        ImVec2( g->U0, g->V0 ), ImVec2( g->U1, g->V0 ),
+                        ImVec2( g->U1, g->V1 ), ImVec2( g->U0, g->V1 ), gcol );
+                }
+            }
+            x += g->AdvanceX * xScale;
+        }
+    }
+
     bool VarFontAxisSliders( char const* id_str, ImWidgetsVarFontAxis* axes, int count,
                               ImFont* preview_font, char const* preview_text )
     {
@@ -38534,38 +38311,46 @@ namespace ImWidgets
             if ( ImGui::SmallButton( "reset" ) ) { a.Value = a.Default; changed = true; }
             ImGui::PopID();
         }
-        // Preview block: shows the text twice -- once at base font, once at a synthetic boldened/condensed
-        // style derived from the first axis (so the demo feels alive without a var-font runtime).
+        // Preview block: the text once at the base style, then once with a synthetic
+        // style derived from ALL axes, so every slider visibly does something even
+        // though there is no real variable-font instancing runtime. Mapping:
+        //   wght -> faux-bold   wdth -> horizontal scale   ital/slnt -> slant   opsz -> size
         if ( preview_text && *preview_text )
         {
             ImFont* pf = preview_font ? preview_font : ImGui::GetFont();
             float base = ImGui::GetFontSize();
-            float wght_factor = 1.0f;
-            float wdth_factor = 1.0f;
+            int   boldPasses = 0;     // wght
+            float xScale     = 1.0f;  // wdth
+            float shear      = 0.0f;  // ital / slnt
+            float sizeScale  = 1.0f;  // opsz
             for ( int i = 0; i < count; ++i )
             {
                 char const* t = axes[ i ].Tag ? axes[ i ].Tag : "";
                 float range = axes[ i ].Max - axes[ i ].Min;
                 float u = range > 0.0f ? ( axes[ i ].Value - axes[ i ].Min ) / range : 0.5f;
-                if ( t[ 0 ] == 'w' && t[ 1 ] == 'g' && t[ 2 ] == 'h' && t[ 3 ] == 't' ) wght_factor = 0.6f + 0.9f * u;
-                else if ( t[ 0 ] == 'w' && t[ 1 ] == 'd' && t[ 2 ] == 't' && t[ 3 ] == 'h' ) wdth_factor = 0.6f + 0.8f * u;
+                bool wght = t[ 0 ] == 'w' && t[ 1 ] == 'g' && t[ 2 ] == 'h' && t[ 3 ] == 't';
+                bool wdth = t[ 0 ] == 'w' && t[ 1 ] == 'd' && t[ 2 ] == 't' && t[ 3 ] == 'h';
+                bool ital = t[ 0 ] == 'i' && t[ 1 ] == 't' && t[ 2 ] == 'a' && t[ 3 ] == 'l';
+                bool slnt = t[ 0 ] == 's' && t[ 1 ] == 'l' && t[ 2 ] == 'n' && t[ 3 ] == 't';
+                bool opsz = t[ 0 ] == 'o' && t[ 1 ] == 'p' && t[ 2 ] == 's' && t[ 3 ] == 'z';
+                if      ( wght ) boldPasses = (int)( u * 3.0f + 0.5f );
+                else if ( wdth ) xScale     = 0.7f + 0.6f * u;
+                else if ( ital || slnt ) shear = 0.30f * u;
+                else if ( opsz ) sizeScale  = 0.8f + 0.6f * u;
             }
             ImVec2 p = ImGui::GetCursorScreenPos();
             ImDrawList* dl = ImGui::GetWindowDrawList();
-            dl->AddRectFilled( p, p + ImVec2( ImGui::GetContentRegionAvail().x, base * 2.5f ),
+            dl->AddRectFilled( p, p + ImVec2( ImGui::GetContentRegionAvail().x, base * 2.6f ),
                 IM_COL32( 30, 30, 40, 255 ) );
-            ImGui::Dummy( ImVec2( ImGui::GetContentRegionAvail().x, base * 2.5f ) );
-            float fs1 = base * 1.0f;
-            float fs2 = base * 1.6f * wght_factor;
+            ImGui::Dummy( ImVec2( ImGui::GetContentRegionAvail().x, base * 2.6f ) );
+            float fs1 = base;
+            float fs2 = base * 1.6f * sizeScale;
             dl->AddText( pf, fs1, ImVec2( p.x + 8.0f, p.y + 4.0f ),
-                IM_COL32( 230, 230, 230, 255 ), preview_text );
-            float dx = 8.0f, dy = 4.0f + fs1 + 4.0f;
-            ImVec2 tp( p.x + dx, p.y + dy );
-            // emulate horizontal width: render the same text twice with a 1px x-offset modulated by wdth_factor
-            if ( wdth_factor != 1.0f )
-                dl->AddText( pf, fs2, ImVec2( tp.x + 1.0f * ( wdth_factor - 1.0f ) * 6.0f, tp.y ),
-                    IM_COL32( 230, 230, 230, 100 ), preview_text );
-            dl->AddText( pf, fs2, tp, IM_COL32( 230, 230, 230, 255 ), preview_text );
+                IM_COL32( 200, 200, 210, 255 ), preview_text );
+            DW_DrawSyntheticVarText( dl, pf, fs2,
+                ImVec2( p.x + 8.0f, p.y + 4.0f + fs1 + 4.0f ),
+                IM_COL32( 240, 240, 245, 255 ), preview_text,
+                xScale, shear, boldPasses );
         }
         ImGui::PopID();
         return changed;

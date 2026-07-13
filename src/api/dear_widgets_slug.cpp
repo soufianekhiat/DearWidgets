@@ -4949,9 +4949,14 @@ namespace ImWidgets {
 
 		if (cdtVerts.size() < 3) return;
 
-		// Remove near-duplicate vertices (merge within 0.1px) and remap edges
+		// Remove near-duplicate vertices and remap edges. The threshold must only
+		// fuse genuinely-coincident flattened points: 0.1px was large enough to
+		// merge the two *distinct* contour points that converge near a sharp apex
+		// (v, V, w, A), which pinched the boundary and left a hole at the tip after
+		// eraseOuterTrianglesAndHoles(). 0.02px still removes true float-flattening
+		// duplicates without collapsing acute features.
 		{
-			const float mergeDist = 0.1f;
+			const float mergeDist = 0.02f;
 			std::vector<CDT::VertInd> remap(cdtVerts.size());
 			std::vector<CDT::V2d<float>> uniqueVerts;
 			for (size_t i = 0; i < cdtVerts.size(); i++) {
@@ -5782,6 +5787,11 @@ namespace ImWidgets {
 				int outerCI = validQI[oi];
 				if (parentQ[outerCI] != -1) continue;
 				if (!qbb[outerCI].Contains(testP)) continue; // cheap bbox reject before the costly point-in-contour test
+					// A real counter (hole) is wound OPPOSITE to its container per the TrueType
+					// nonzero-winding rule. A contained SAME-winding contour is an overlapping
+					// fill island, not a hole -- marking it as a hole subtracts that region and
+					// leaves a gap (the per-glyph holes seen on some fonts, e.g. FiraCode).
+					if ((qcontours[ci].area * qcontours[outerCI].area) >= 0.0f) continue;
 				if (PointInQContour(qcontours[outerCI], testP))
 					{ parentQ[ci] = outerCI; break; }
 			}

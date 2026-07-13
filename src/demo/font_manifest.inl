@@ -60,19 +60,9 @@ namespace ImDwDownload
         { "Rye-Regular.ttf", "Steelworks Vintage -> Rye", kCSerif, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/rye/Rye-Regular.ttf",
           nullptr },
-        // Trench Slab (Fontshare zip — slab serif).
-        { "TrenchSlab-Regular.otf", "Trench Slab", kCSerif, "Fontshare",
-          "https://api.fontshare.com/v2/fonts/download/trench-slab",
-          "TrenchSlab_Complete/Fonts/OTF/TrenchSlab-Regular.otf" },
         // Additional Serif -- Google Fonts
         { "Alegreya[wght].ttf", "Alegreya", kCSerif, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/alegreya/Alegreya%5Bwght%5D.ttf",
-          nullptr },
-        { "Cormorant[wght].ttf", "Cormorant", kCSerif, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/cormorant/Cormorant%5Bwght%5D.ttf",
-          nullptr },
-        { "CormorantUnicase-Regular.ttf", "Cormorant Unicase", kCSerif, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/cormorantunicase/CormorantUnicase-Regular.ttf",
           nullptr },
         { "Fraunces[SOFT,WONK,opsz,wght].ttf", "Fraunces", kCSerif, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/fraunces/Fraunces%5BSOFT,WONK,opsz,wght%5D.ttf",
@@ -109,20 +99,6 @@ namespace ImDwDownload
         { "HomemadeApple-Regular.ttf", "Regina -> Homemade Apple", kCScript, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/apache/homemadeapple/HomemadeApple-Regular.ttf",
           nullptr },  // personal cursive (photographed real hand)
-        // Sharpie (Fontshare zip — marker handwriting).
-        { "Sharpie-Regular.otf", "Sharpie", kCScript, "Fontshare",
-          "https://api.fontshare.com/v2/fonts/download/sharpie",
-          "Sharpie_Complete/Fonts/OTF/Sharpie-Regular.otf" },
-        // Additional Script -- Google Fonts
-        { "Hurricane-Regular.ttf", "Hurricane", kCScript, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/hurricane/Hurricane-Regular.ttf",
-          nullptr },
-        { "ImperialScript-Regular.ttf", "Imperial Script", kCScript, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/imperialscript/ImperialScript-Regular.ttf",
-          nullptr },
-        { "Ephesis-Regular.ttf", "Ephesis", kCScript, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/ephesis/Ephesis-Regular.ttf",
-          nullptr },
 
         // ---- Display / Decorative — curated Velvetyne picks ----
         // Bollgo -> Flor de Ruina (baroque organic).
@@ -142,9 +118,6 @@ namespace ImDwDownload
           "https://gitlab.com/StudioTriple/pilowlava/-/archive/master/pilowlava-master.zip",
           "pilowlava-master/Fonts/Pilowlava-Regular.otf" },
         // Ginga -> Interlope (interlocking geometric).
-        { "Interlope-Regular.otf", "Ginga -> Interlope", kCDisp, "Velvetyne",
-          "https://gitlab.com/velvetyne/interlope/-/archive/main/interlope-main.zip",
-          "interlope-main/font/otf/Interlope-Regular.otf" },
         // Magnolia -> Letters (abstract letterforms — concept fit for line monogram).
         { "Letters-Torn.otf", "Magnolia -> Letters", kCDisp, "Velvetyne",
           "https://gitlab.com/velvetyne/letters/-/archive/main/letters-main.zip",
@@ -169,21 +142,12 @@ namespace ImDwDownload
         { "Comico-Regular.otf", "Comico", kCDisp, "Fontshare",
           "https://api.fontshare.com/v2/fonts/download/comico",
           "Comico_Complete/Fonts/OTF/Comico-Regular.otf" },
-        { "BespokeStencil-Regular.otf", "Bespoke Stencil", kCDisp, "Fontshare",
-          "https://api.fontshare.com/v2/fonts/download/bespoke-stencil",
-          "BespokeStencil_Complete/Fonts/OTF/BespokeStencil-Regular.otf" },
         { "Aktura-Regular.otf", "Aktura", kCSerif, "Fontshare",
           "https://api.fontshare.com/v2/fonts/download/aktura",
           "Aktura_Complete/Fonts/OTF/Aktura-Regular.otf" },
         { "Britney-Regular.otf", "Britney", kCSerif, "Fontshare",
           "https://api.fontshare.com/v2/fonts/download/britney",
           "Britney_Complete/Fonts/OTF/Britney-Regular.otf" },
-        { "Styro-Regular.otf", "Styro", kCDisp, "Fontshare",
-          "https://api.fontshare.com/v2/fonts/download/styro",
-          "Styro_Complete/Fonts/OTF/Styro-Regular.otf" },
-        { "Boxing-Regular.otf", "Boxing", kCDisp, "Fontshare",
-          "https://api.fontshare.com/v2/fonts/download/boxing",
-          "Boxing_Complete/Fonts/OTF/Boxing-Regular.otf" },
         { "Kola-Regular.otf", "Kola", kCDisp, "Fontshare",
           "https://api.fontshare.com/v2/fonts/download/kola",
           "Kola_Complete/Fonts/OTF/Kola-Regular.otf" },
@@ -196,9 +160,10 @@ namespace ImDwDownload
         { "Striper-Regular.otf", "Striper", kCDisp, "Fontshare",
           "https://api.fontshare.com/v2/fonts/download/striper",
           "Striper_Complete/Fonts/OTF/Striper-Regular.otf" },
+        // Ships two display styles (Zero / One), no "Regular" -- use Zero as the base.
         { "KohinoorZerone-Regular.otf", "Kohinoor Zerone", kCDisp, "Fontshare",
           "https://api.fontshare.com/v2/fonts/download/kohinoor-zerone",
-          "KohinoorZerone_Complete/Fonts/OTF/KohinoorZerone-Regular.otf" },
+          "KohinoorZerone_Complete/Fonts/OTF/KohinoorZerone-Zero.otf" },
         { "Monoton-Regular.ttf", "Monoton", kCDisp, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/monoton/Monoton-Regular.ttf",
           nullptr },
@@ -208,10 +173,6 @@ namespace ImDwDownload
         { "Array-Regular.otf", "Manbow Clear -> Array", kCCFF, "Fontshare",
           "https://api.fontshare.com/v2/fonts/download/array",
           "Array_Complete/Fonts/OTF/Array-Regular.otf" },
-        // Manbow Lines -> Tanker (Fontshare zip — OTF/CFF).
-        { "Tanker-Regular.otf", "Manbow Lines -> Tanker", kCCFF, "Fontshare",
-          "https://api.fontshare.com/v2/fonts/download/tanker",
-          "Tanker_Complete/Fonts/OTF/Tanker-Regular.otf" },
         // Manbow Spots — CC0, Typodermic Fonts (Ray Larabie), DaFont.
         { "ManBow-Spots.otf", "Manbow Spots", kCCFF, "Typodermic (DaFont, CC0)",
           "https://dl.dafont.com/dl/?f=manbow",
@@ -238,24 +199,26 @@ namespace ImDwDownload
         { "Aquaphonic-Downpour.otf", "Aquaphonic Downpour", kCSVG, "1001fonts",
           "https://www.1001fonts.com/download/aquaphonic.zip",
           "Aquaphonic-Downpour.otf" },
-        { "Aquaphonic-Drizzle.otf", "Aquaphonic Drizzle", kCSVG, "1001fonts",
-          "https://www.1001fonts.com/download/aquaphonic.zip",
-          "Aquaphonic-Drizzle.otf" },
-        // Cimero Pro (OT-SVG) — freeware, 1001fonts.
+        // Cimero Pro (OT-SVG) — freeware, 1001fonts. Use the www.1001fonts.com
+        // host: the st.1001fonts.net CDN blocks bots and returns a JPEG.
         { "CimeroPro.otf", "Cimero Pro", kCSVG, "1001fonts",
-          "https://st.1001fonts.net/download/font/cimero-pro.zip",
+          "https://www.1001fonts.com/download/cimero-pro.zip",
           "CimeroPro.otf" },
-        // Color Tube — no known free download URL; slot kept for reference.
-        { "ColorTube_placeholder.otf", "Color Tube (unmatched)", kCSVG, nullptr,
-          nullptr, nullptr },
-        // Gilbert Color Bold (OT-SVG) — CC-BY-SA 4.0, direct OTF.
+        // Color Tube (OT-SVG) — Fontfabric / Ivan Filipov, free for commercial
+        // use, 1001fonts.
+        { "ColorTube.otf", "Color Tube", kCSVG, "1001fonts",
+          "https://www.1001fonts.com/download/colortube.zip",
+          "ColorTube.otf" },
+        // Gilbert Color Bold (OT-SVG) — CC-BY-SA 4.0, direct OTF from the
+        // TypeWithPride repo (file was renamed; the old preview5 path 404s).
         { "GilbertColorBold.otf", "Gilbert Color Bold", kCSVG, "CC-BY-SA 4.0",
-          "https://github.com/Fontself/TypeWithPride/raw/master/fonts/gilbert-color-bold-preview5.otf",
+          "https://raw.githubusercontent.com/Fontself/TypeWithPride/master/fonts/Gilbert-Color%20Bold%20Preview_1005.otf",
           nullptr },
         // Multicolore Pro (OT-SVG) — free for personal & commercial use, 1001fonts.
+        // The OTF is nested one folder deep inside the archive.
         { "Multicolore-Pro.otf", "Multicolore Pro", kCSVG, "1001fonts",
           "https://www.1001fonts.com/download/multicolore-pro.zip",
-          "Multicolore Pro.otf" },
+          "Multicolore Pro by neogrey creative/Multicolore Pro.otf" },
         // Primecolor (OT-SVG) — SIL OFL, 1001fonts.
         { "Primecolor-G.ttf", "Primecolor G", kCSVG, "SIL OFL (1001fonts)",
           "https://www.1001fonts.com/download/primecolor.zip",
@@ -276,11 +239,6 @@ namespace ImDwDownload
         // ---- Color: COLR v1 / Gradient ----
         { "Nabla[EDPT,EHLT].ttf", "Nabla", kCColr1, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/nabla/Nabla%5BEDPT,EHLT%5D.ttf",
-          nullptr },
-        // Primecolor CV1 -> Bungee Spice. Same file as the standard Bungee Spice entry;
-        // keeping separate slot so the demo shows two COLRv1 renders side-by-side.
-        { "BungeeSpice-Regular.ttf", "Primecolor CV1 -> Bungee Spice", kCColr1, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/bungeespice/BungeeSpice-Regular.ttf",
           nullptr },
         { "BungeeSpice-Regular.ttf", "Bungee Spice", kCColr1, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/bungeespice/BungeeSpice-Regular.ttf",
@@ -321,9 +279,6 @@ namespace ImDwDownload
         { "CairoPlay[slnt,wght].ttf", "Cairo Play Bold", kCArabic, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/cairoplay/CairoPlay%5Bslnt,wght%5D.ttf",
           nullptr },
-        { "CairoPlay[slnt,wght].ttf", "Cairo Play ExtraLight", kCArabic, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/cairoplay/CairoPlay%5Bslnt,wght%5D.ttf",
-          nullptr },
         // Vazirmatn (rastikerdar, OFL) — modern Persian/Arabic sans. Non-Google upstream.
         { "Vazirmatn-Regular.ttf", "Vazirmatn", kCArabic, "rastikerdar (GitHub)",
           "https://github.com/rastikerdar/vazirmatn/releases/download/v33.003/vazirmatn-v33.003.zip",
@@ -341,22 +296,8 @@ namespace ImDwDownload
         { "JetBrainsMono[wght].ttf", "JetBrains Mono (programming)", kCLig, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/jetbrainsmono/JetBrainsMono%5Bwght%5D.ttf",
           nullptr },
-        { "VictorMono[wght].ttf", "Victor Mono (programming + cursive italics)", kCLig, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/victormono/VictorMono%5Bwght%5D.ttf",
-          nullptr },
-        // Monaspace Neon (GitHub Next, OFL) — monospace with texture-healing
-        // auto-adjusting glyph widths; the release zip ships 5 style variants.
-        { "MonaspaceNeon-Regular.ttf", "Monaspace Neon (texture healing)", kCLig, "GitHub Next",
-          "https://github.com/githubnext/monaspace/releases/download/v1.400/monaspace-frozen-v1.400.zip",
-          "Frozen Fonts/Monaspace Neon/MonaspaceNeonFrozen-Regular.ttf" },
         { "EBGaramond[wght].ttf", "EB Garamond (classical oldstyle)", kCLig, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/ebgaramond/EBGaramond%5Bwght%5D.ttf",
-          nullptr },
-        { "Lobster-Regular.ttf", "Lobster (retro script)", kCLig, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/lobster/Lobster-Regular.ttf",
-          nullptr },
-        { "AbrilFatface-Regular.ttf", "Abril Fatface (Didone display)", kCLig, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/abrilfatface/AbrilFatface-Regular.ttf",
           nullptr },
         { "MeaCulpa-Regular.ttf", "Mea Culpa (extreme calligraphy)", kCLig, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/meaculpa/MeaCulpa-Regular.ttf",
@@ -366,24 +307,9 @@ namespace ImDwDownload
         { "Junicode-Regular.ttf", "Junicode (medieval historical)", kCLig, "psb1558 (GitHub)",
           "https://github.com/psb1558/Junicode-font/releases/download/v2.222/Junicode_2.222.zip",
           "Junicode/TTF/Junicode-Regular.ttf" },
-        { "Tapestry-Regular.ttf", "Tapestry (ornate script)", kCLig, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/tapestry/Tapestry-Regular.ttf",
-          nullptr },
 
-        { "BirthstoneBounce-Regular.ttf", "Birthstone Bounce (bouncy flourished)", kCLig, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/birthstonebounce/BirthstoneBounce-Regular.ttf",
-          nullptr },
         { "MonteCarlo-Regular.ttf", "MonteCarlo (Spencerian with flourishes)", kCLig, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/montecarlo/MonteCarlo-Regular.ttf",
-          nullptr },
-        { "MrsSaintDelafield-Regular.ttf", "Mrs Saint Delafield (Spencerian)", kCLig, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/mrssaintdelafield/MrsSaintDelafield-Regular.ttf",
-          nullptr },
-        { "SansitaSwashed[wght].ttf", "Sansita Swashed (sans + swashes)", kCLig, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/sansitaswashed/SansitaSwashed%5Bwght%5D.ttf",
-          nullptr },
-        { "BodoniModa[opsz,wght].ttf", "Bodoni Moda (variable Didone w/ ligs)", kCLig, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/bodonimoda/BodoniModa%5Bopsz,wght%5D.ttf",
           nullptr },
         // Unusual 3+ char ligatures: Unifraktur Maguntia (OFL) — historical
         // German blackletter with ſch / ſſi / ch / ck / ll / tz discretionary
@@ -397,38 +323,11 @@ namespace ImDwDownload
         { "Allura-Regular.ttf", "Allura (script word ligs: The/tion/ing)", kCLig, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/allura/Allura-Regular.ttf",
           nullptr },
-        // Non-classical extensions: variable modern blackletter, tattoo gothic,
-        // Celtic uncial, extra-ornate script, Haskell programming, Velvetyne
-        // indie monospace. All pick up 3+ char ligature sets absent elsewhere.
-        { "GrenzeGotisch[wght].ttf", "Grenze Gotisch (variable modern blackletter)", kCLig, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/grenzegotisch/GrenzeGotisch%5Bwght%5D.ttf",
-          nullptr },
-        { "PirataOne-Regular.ttf", "Pirata One (tattoo gothic)", kCLig, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/pirataone/PirataOne-Regular.ttf",
-          nullptr },
-        { "Ruthie-Regular.ttf", "Ruthie (extra-ornate formal script)", kCLig, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/ruthie/Ruthie-Regular.ttf",
-          nullptr },
-        // Unconventional additions: Velvetyne tall art-nouveau, Tarot-inspired
-        // display, medievalist scholarly, sharper blackletter companion,
-        // NYT-masthead gothic, monospace caps display.
-        { "le-murmure.ttf", "Le Murmure (Velvetyne tall art-nouveau)", kCLig, "Velvetyne (GitLab)",
-          "https://gitlab.com/velvetyne/murmure/-/archive/main/murmure-main.zip",
-          "murmure-main/fonts/le-murmure.ttf" },
         { "Caudex-Regular.ttf", "Caudex (medievalist scholarly)", kCLig, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/caudex/Caudex-Regular.ttf",
           nullptr },
-        { "UnifrakturCook-Bold.ttf", "UnifrakturCook (sharper blackletter)", kCLig, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/unifrakturcook/UnifrakturCook-Bold.ttf",
-          nullptr },
         // Chomsky (Fredrick R. Brennan, OFL) — NYT-masthead gothic-blackletter
         // hybrid; ships OTF only from GitHub releases.
-        { "Chomsky.otf", "Chomsky (NYT masthead gothic)", kCLig, "ctrlcctrlv (GitHub)",
-          "https://github.com/ctrlcctrlv/chomsky/releases/download/v2.3/Chomsky.otf",
-          nullptr },
-        { "MajorMonoDisplay-Regular.ttf", "Major Mono Display (caps mono)", kCLig, "Google Fonts",
-          "https://raw.githubusercontent.com/google/fonts/main/ofl/majormonodisplay/MajorMonoDisplay-Regular.ttf",
-          nullptr },
     };
 
     const int kFontMetaCount = (int)( sizeof( kFontMeta ) / sizeof( kFontMeta[0] ) );

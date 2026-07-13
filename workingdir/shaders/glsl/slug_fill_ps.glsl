@@ -1185,16 +1185,16 @@ void main()
     else
     {
 
+#line 485
+        vec4 texColor_0 = (texture(sampler2D(fillTexture_0,fillSampler_0), (uv_0 * fillParams_0.fillUVEnd_0.xy + fillParams_0.fillUVStart_0.xy)));
 
-        vec4 texColor_0 = (texture(sampler2D(fillTexture_0,fillSampler_0), (uv_0 * fillParams_0.fillUVEnd_0.xy + fillParams_0.fillUVStart_0.xy))) * fillParams_0.fillColor0_0;
+#line 485
+        entryPointParam_main_ps_0 = vec4(mix(fillParams_0.fillColor0_0.xyz, texColor_0.xyz * fillParams_0.fillColor0_0.xyz, vec3(texColor_0.w)), fillParams_0.fillColor0_0.w * coverage_0);
 
-#line 481
-        entryPointParam_main_ps_0 = vec4(texColor_0.xyz, texColor_0.w * coverage_0);
-
-#line 481
+#line 485
         return;
     }
 
-#line 481
+#line 485
 }
 
