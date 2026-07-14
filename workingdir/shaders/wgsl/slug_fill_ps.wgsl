@@ -562,8 +562,8 @@ fn main_ps( _S65 : pixelInput_0, @builtin(position) position_0 : vec4<f32>) -> p
     }
     else
     {
-        var texColor_0 : vec4<f32> = (textureSample((fillTexture_0), (fillSampler_0), (uv_0 * fillParams_0.fillUVEnd_0.xy + fillParams_0.fillUVStart_0.xy))) * fillParams_0.fillColor0_0;
-        var _S68 : pixelOutput_0 = pixelOutput_0( vec4<f32>(texColor_0.xyz, texColor_0.w * coverage_0) );
+        var texColor_0 : vec4<f32> = (textureSample((fillTexture_0), (fillSampler_0), (uv_0 * fillParams_0.fillUVEnd_0.xy + fillParams_0.fillUVStart_0.xy)));
+        var _S68 : pixelOutput_0 = pixelOutput_0( vec4<f32>(mix(fillParams_0.fillColor0_0.xyz, texColor_0.xyz * fillParams_0.fillColor0_0.xyz, vec3<f32>(texColor_0.w)), fillParams_0.fillColor0_0.w * coverage_0) );
         return _S68;
     }
 }

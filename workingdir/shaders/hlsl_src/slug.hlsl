@@ -475,11 +475,16 @@ float4 main_ps(PS_INPUT input) : SV_Target
         float4 fillCol = lerpInColorSpace(fillColor0, fillColor1, ft, fillGrad.y);
         return float4(fillCol.rgb, fillCol.a * coverage);
     } else {
-        // Image fill (fillGrad.x >= 3): sample user texture
+        // Image fill (fillGrad.x >= 3): sample user texture.
+        // Composite the image OVER the tint color instead of multiplying the
+        // glyph alpha by the image alpha: images with transparency (cut-out
+        // PNGs) were erasing the glyph wherever the image was transparent,
+        // leaving letters with holes / near-invisible. The glyph silhouette
+        // must always stay solid -- only its RGB content comes from the image.
         float2 imgUV = uv * fillUVEnd.xy + fillUVStart.xy;
         float4 texColor = fillTexture.Sample(fillSampler, imgUV);
-        texColor *= fillColor0; // tint
-        return float4(texColor.rgb, texColor.a * coverage);
+        float3 rgb = lerp(fillColor0.rgb, texColor.rgb * fillColor0.rgb, texColor.a);
+        return float4(rgb, fillColor0.a * coverage);
     }
 #elif defined(SLUG_COLOR)
     return float4(input.color.rgb, input.color.a * coverage);

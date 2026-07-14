@@ -516,8 +516,8 @@ enum ImWidgetsThickLineMode_
 {
 	ImWidgetsThickLineMode_AddPolyline,         // ImGui default polyline
 	ImWidgetsThickLineMode_PolylineAA,          // Rougier SDF; silent runtime fallback to AddPolyline if shader unavailable
-	ImWidgetsThickLineMode_StrokedPolyline,     // Euler spirals on raw polyline (CPU, always available)
-	ImWidgetsThickLineMode_StrokedBezierPath,   // Euler spirals on Catmull-Rom -> cubic path (CPU, always available)
+	ImWidgetsThickLineMode_StrokedPolyline,     // Euler spirals on raw polyline (via "stroke" shader; CPU polyline fallback if unavailable)
+	ImWidgetsThickLineMode_StrokedBezierPath,   // Euler spirals on Catmull-Rom -> cubic path (via "stroke" shader; CPU polyline fallback if unavailable)
 	ImWidgetsThickLineMode_ImGuiBezier,         // ImGui AddBezierCubic per Catmull-Rom segment (always available)
 
 	ImWidgetsThickLineMode_COUNT
@@ -636,6 +636,7 @@ struct ImWidgetsStyle
 	float	ChromaticityPoint_Radius;           // Point radius (lp)
 	int		ChromaticityPoint_Segments;         // Point circle segment count
 	ImWidgetsThickLineMode	ChromaticityLine_Mode;
+	int		ChromaticityLine_SmoothIterations;  // binomial smoothing passes on the locus polyline (0 = raw data)
 
 	// Tone Curve
 	float	ToneCurve_DefaultHeight;			// Default widget height (lp)
@@ -800,7 +801,7 @@ struct ImWidgetsStyle
 		ColorCurve_DefaultHeight = 375.0f;
 		ColorCurve_KeyRadius     = 8.0f;
 		ColorCurve_LineThickness = 4.0f;
-		ColorCurve_LineMode      = ImWidgetsThickLineMode_StrokedBezierPath;
+		ColorCurve_LineMode      = ImWidgetsThickLineMode_AddPolyline; // CPU: stroked (shader) mode silently no-draws if the stroke shader fails/rebuilds
 		ColorCurve_LineDashed    = false;
 
 		// Parade Scope
@@ -844,6 +845,7 @@ struct ImWidgetsStyle
 		ChromaticityPoint_Segments         = 24;
 		ChromaticityLine_Mode              = ImWidgetsThickLineMode_StrokedBezierPath;
 		ChromaticityLine_Dashed            = false;
+		ChromaticityLine_SmoothIterations  = 2;
 
 		// Tone Curve
 		ToneCurve_DefaultHeight     = 500.0f;
@@ -855,7 +857,7 @@ struct ImWidgetsStyle
 		ToneCurve_BandGap           = 4.0f;
 		ToneCurve_GradMarginRight   = 0.0f;
 		ToneCurve_GradMarginTop     = 4.0f;
-		ToneCurve_LineMode          = ImWidgetsThickLineMode_StrokedBezierPath;
+		ToneCurve_LineMode          = ImWidgetsThickLineMode_AddPolyline; // CPU: stroked (shader) mode silently no-draws if the stroke shader fails/rebuilds
 		ToneCurve_LineDashed        = false;
 
 		// HDR Wheel / Primaries Wheel
@@ -3300,6 +3302,9 @@ namespace ImWidgets{
 	IMGUI_API void	ColorConvertxyYtoXYZ( float& out_X, float& out_Y, float& out_Z, float x, float y, float Yval );
 
 	ImU32	KelvinTemperatureTosRGBColors( float temperature ); // [ 1000 K; 12000 K ]
+	// Float-precision variant: linear RGB in [0,1], no 8-bit quantization (use for
+	// chromaticity mapping -- quantized colors make the recovered locus zigzag).
+	IMGUI_API void	KelvinTemperatureToLinearRGBColorsF( float temperature, float* out_rgb_linear ); // [ 1000 K; 12000 K ]
 
 	//////////////////////////////////////////////////////////////////////////
 	// Color Functions
@@ -3979,9 +3984,13 @@ namespace ImWidgets{
 	IMGUI_API bool ColorPickerPaletteHarmony( char const* label, ImVec4* color,
 	                                          ImVec4* out_palette = nullptr, int* out_count = nullptr );
 
-	// Trichromatic mixer â€” barycentric mix of 3 artist primaries (defaults to Y/M/C).
-	// Subtractive (absorbance-space) mixing; slider = whiteâ†”black tint.
-	IMGUI_API bool ColorPickerTrichromaticMixer( char const* label, ImVec4* color );
+	// Trichromatic mixer — barycentric mix of 3 artist primaries (defaults to Y/M/C).
+	// Subtractive (absorbance-space) mixing. The vertical slider is either a bipolar
+	// white<->black tint (enable_k = false, i.e. plain "CMY") or, when enable_k =
+	// true, a unipolar 0..1 "K" (black ink) channel applying the standard CMYK
+	// composition channel *= (1-K) -- a real 4th key/black ink, not a white/black
+	// tint. Same function either way; only the slider's range/behaviour changes.
+	IMGUI_API bool ColorPickerTrichromaticMixer( char const* label, ImVec4* color, bool enable_k = false );
 
 	// Weathered metal â€” base metal (Steel/Iron/Copper/Brass/Aluminum/Gold) + patina
 	// coverage + roughness + grime. Outputs sRGB albedo; F0 follows the metal preset.
@@ -4145,7 +4154,14 @@ namespace ImWidgets{
 	// and the expand/modal draw (which re-enters ImageViewer recursively). Pass NULL
 	// (default) for a plain textured draw. The image draw in the right-click loupe is
 	// left un-shaded (raw texels) so the pixel inspector reflects source data.
-	IMGUI_API bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize = ImVec2( 0, 0 ), ImPlatform_ShaderProgram shaderProgram = nullptr, ImImageViewerOverlayCallback overlay_callback = nullptr, void* overlay_user_data = nullptr );
+	//
+	// ImageViewer also has a built-in "expand to window" button that re-renders the
+	// same viewer inside a modal at a larger size. If overlay_callback is non-null, it
+	// is invoked once per presentation (compact widget, and again inside the modal
+	// when open) right after the image is drawn -- pass overlay-drawing calls through
+	// it (rather than calling them manually after ImageViewer returns) so overlays
+	// show up in the modal too, not just the compact view.
+	IMGUI_API bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize = ImVec2( 0, 0 ), ImPlatform_ShaderProgram shaderProgram = nullptr, ImImageViewerOverlayCallback overlay_callback = NULL, void* overlay_user_data = NULL );
 
 	// ============================================================================
 	// [SECTION] Image overlays â€” composed on top of ImageViewer
@@ -4969,6 +4985,22 @@ namespace ImWidgets{
                                       char const* format = "%d",
                                       ImVec2 size = ImVec2( 0, 0 ) );
 
+    // Vertical two-handle range slider. Min at the bottom, max at the top.
+    // `size` is (width, height) in lp; defaults to a tall 20x160 lp strip.
+    IMGUI_API bool RangeSliderVerticalScalar( char const* label, ImGuiDataType data_type,
+                                      void* p_lower, void* p_upper,
+                                      void const* p_min, void const* p_max,
+                                      char const* format = NULL,
+                                      ImVec2 size = ImVec2( 0, 0 ) );
+    IMGUI_API bool RangeSliderVerticalFloat ( char const* label, float* v_lower, float* v_upper,
+                                      float v_min, float v_max,
+                                      char const* format = "%.3f",
+                                      ImVec2 size = ImVec2( 0, 0 ) );
+    IMGUI_API bool RangeSliderVerticalInt   ( char const* label, int* v_lower, int* v_upper,
+                                      int v_min, int v_max,
+                                      char const* format = "%d",
+                                      ImVec2 size = ImVec2( 0, 0 ) );
+
     //////////////////////////////////////////////////////////////////////////
     // Segmented Control (N exclusive options in one bar).
     // p_value stores the selected index in any integer ImGuiDataType
@@ -5143,6 +5175,9 @@ namespace ImWidgets{
         ImVec2 LastBoundsMin; // tracks bounds.Min from the previous frame so the
                               // rect stays put when the host window scrolls;
                               // set to (FLT_MAX, FLT_MAX) to mean "uninitialised"
+        float  LastAspect;    // last aspect_ratio the rect was snapped to; when the
+                              // caller changes the constraint the rect is
+                              // re-materialised to it (0 = none applied yet)
     };
 
     IMGUI_API bool CropRect( char const* id_str, ImWidgetsCropState& s, ImRect bounds,
@@ -5285,24 +5320,6 @@ namespace ImWidgets{
                                        ImU32 content_col  = IM_COL32(  80,  80,  80, 200 ),
                                        ImU32 viewport_col = IM_COL32( 255, 200,  60, 230 ) );
 
-    //////////////////////////////////////////////////////////////////////////
-    // Bracket / curly brace primitive.
-    //  - `from` and `to` are the two endpoints of the bracket spine
-    //    (the open side faces +depth-normal).
-    //  - `depth` is the perpendicular distance the bracket reaches inward (px).
-    //////////////////////////////////////////////////////////////////////////
-    enum ImWidgetsBracketStyle_
-    {
-        ImWidgetsBracketStyle_Square = 0,  // [   ]   (two right angles)
-        ImWidgetsBracketStyle_Curly  = 1,  // {   }   (S-curve)
-        ImWidgetsBracketStyle_Round  = 2,  // (   )   (semicircle)
-        ImWidgetsBracketStyle_COUNT
-    };
-    typedef int ImWidgetsBracketStyle;
-
-    IMGUI_API void DrawBracket( ImDrawList* draw, ImVec2 from, ImVec2 to,
-                                 float depth, ImWidgetsBracketStyle style,
-                                 ImU32 col, float thickness = 1.0f );
 
     //////////////////////////////////////////////////////////////////////////
     // Crosshair / reticle primitive. Sized by `radius` (outer extent in px).
@@ -5330,37 +5347,6 @@ namespace ImWidgets{
     // Used by color pickers and similar widgets that previously inlined this.
     IMGUI_API void DrawCrosshairInRect( ImDrawList* draw, ImVec2 center, ImRect bounds,
                                          ImU32 col, float thickness = 1.0f );
-
-    //////////////////////////////////////////////////////////////////////////
-    // Pin / map marker (teardrop). `tip` is where the point touches the map.
-    //////////////////////////////////////////////////////////////////////////
-    IMGUI_API void DrawMapPin( ImDrawList* draw, ImVec2 tip, float height,
-                                float head_radius,
-                                ImU32 fill_col,
-                                ImU32 stroke_col = 0u, float stroke_thickness = 0.0f,
-                                ImU32 hole_col   = 0u, float hole_radius      = 0.0f );
-
-    //////////////////////////////////////////////////////////////////////////
-    // Wavy / zigzag / scallop / dashed-zigzag polylines along a-b.
-    //   amplitude: perpendicular extent (px)
-    //   period:    one full wave / zig length along the axis (px)
-    //////////////////////////////////////////////////////////////////////////
-    IMGUI_API void DrawWavyLine( ImDrawList* draw, ImVec2 a, ImVec2 b,
-                                  float amplitude, float period,
-                                  ImU32 col, float thickness = 1.0f, int samples_per_period = 12 );
-
-    IMGUI_API void DrawZigzagLine( ImDrawList* draw, ImVec2 a, ImVec2 b,
-                                    float amplitude, float period,
-                                    ImU32 col, float thickness = 1.0f );
-
-    IMGUI_API void DrawScallopLine( ImDrawList* draw, ImVec2 a, ImVec2 b,
-                                     float amplitude, float period,
-                                     ImU32 col, float thickness = 1.0f );
-
-    IMGUI_API void DrawDashedZigzagLine( ImDrawList* draw, ImVec2 a, ImVec2 b,
-                                          float amplitude, float period,
-                                          float dash_len, float gap_len,
-                                          ImU32 col, float thickness = 1.0f );
 
     //////////////////////////////////////////////////////////////////////////
     // Soft drop-shadow / inner-glow on a rect (stacked-alpha approximation;
@@ -5461,36 +5447,6 @@ namespace ImWidgets{
     IMGUI_API ImU32 ToonRampSample( ImWidgetsToonRamp const& r, float t01 );
 
     //////////////////////////////////////////////////////////////////////////
-    // Diff view (line-by-line).
-    //////////////////////////////////////////////////////////////////////////
-    enum ImWidgetsDiffLine_
-    {
-        ImWidgetsDiffLine_Context = 0,
-        ImWidgetsDiffLine_Added   = 1,
-        ImWidgetsDiffLine_Removed = 2,
-        ImWidgetsDiffLine_Hunk    = 3,  // "@@ ... @@"
-        ImWidgetsDiffLine_COUNT
-    };
-    typedef int ImWidgetsDiffLine;
-
-    struct ImWidgetsDiffEntry
-    {
-        ImWidgetsDiffLine Kind;
-        int               OldNo;   // -1 if absent
-        int               NewNo;   // -1 if absent
-        char const*       Text;
-    };
-
-    IMGUI_API void DiffView( char const* id_str, ImWidgetsDiffEntry const* entries, int count,
-                              ImVec2 size = ImVec2( 0, 0 ) );
-
-    //////////////////////////////////////////////////////////////////////////
-    // 3D vector input: drag on a 2D azimuth/elevation map + magnitude slider.
-    // Stores XYZ in `v` (right-handed: +X right, +Y up, +Z forward).
-    //////////////////////////////////////////////////////////////////////////
-    IMGUI_API bool VectorInput3D( char const* label, float v[ 3 ], float size = 0.0f );
-
-    //////////////////////////////////////////////////////////////////////////
     // Matrix editor (DragFloat NxM in a table).
     //////////////////////////////////////////////////////////////////////////
     IMGUI_API bool MatrixEditor( char const* label, float* data, int rows, int cols,
@@ -5498,56 +5454,6 @@ namespace ImWidgets{
 
     IMGUI_API bool MatrixEditorDouble( char const* label, double* data, int rows, int cols,
                                         float speed = 0.1f, char const* format = "%.3f" );
-
-    //////////////////////////////////////////////////////////////////////////
-    // Vector field / stream lines.
-    //  func returns the field vector at world position p (passed as 0..1 within bounds).
-    //////////////////////////////////////////////////////////////////////////
-    typedef ImVec2 ( *ImWidgetsVectorField2DFn )( ImVec2 uv, void* user_data );
-
-    IMGUI_API void DrawVectorField( ImDrawList* draw, ImRect bounds,
-                                     ImWidgetsVectorField2DFn func, void* user_data,
-                                     int divX = 16, int divY = 12,
-                                     float arrow_max_len = 18.0f,
-                                     ImU32 col = IM_COL32( 220, 220, 220, 255 ),
-                                     float thickness = 1.0f,
-                                     bool color_by_magnitude = true );
-
-    IMGUI_API void DrawStreamLines( ImDrawList* draw, ImRect bounds,
-                                     ImWidgetsVectorField2DFn func, void* user_data,
-                                     ImVec2 const* seeds_uv, int seed_count,
-                                     int steps = 80, float step_size_px = 4.0f,
-                                     ImU32 col = IM_COL32( 220, 220, 220, 255 ),
-                                     float thickness = 1.0f );
-
-    //////////////////////////////////////////////////////////////////////////
-    // Polynomial roots: visualize a precomputed root set on the complex plane.
-    //  Real roots use `real_col`, complex pairs use `complex_col`.
-    //////////////////////////////////////////////////////////////////////////
-    IMGUI_API void DrawPolynomialRoots( ImDrawList* draw, ImRect bounds,
-                                         ImVec2 const* roots, int n,
-                                         float view_radius = 2.0f,
-                                         ImU32 real_col    = IM_COL32( 220,  80,  80, 255 ),
-                                         ImU32 complex_col = IM_COL32(  80, 180, 255, 255 ),
-                                         ImU32 axis_col    = IM_COL32( 200, 200, 200, 160 ),
-                                         ImU32 grid_col    = IM_COL32(  80,  80,  80, 100 ),
-                                         float dot_radius  = 4.0f,
-                                         ImFont* font = NULL, float font_size = 0.0f );
-
-    //////////////////////////////////////////////////////////////////////////
-    // Curve sketch panel: plot a scalar function on bounds.
-    //////////////////////////////////////////////////////////////////////////
-    typedef float ( *ImWidgetsScalarFn )( float x, void* user_data );
-
-    IMGUI_API void DrawCurveSketch( ImDrawList* draw, ImRect bounds,
-                                     ImWidgetsScalarFn func, void* user_data,
-                                     float xmin, float xmax, float ymin, float ymax,
-                                     int samples = 256,
-                                     ImU32 line_col = IM_COL32( 120, 200, 240, 255 ),
-                                     ImU32 axis_col = IM_COL32( 200, 200, 200, 200 ),
-                                     ImU32 grid_col = IM_COL32(  80,  80,  80, 140 ),
-                                     float thickness = 1.5f,
-                                     int grid_div_x = 8, int grid_div_y = 6 );
 
     //////////////////////////////////////////////////////////////////////////
     // Typography: text on path, font waterfall, var-axis sliders, kerning
