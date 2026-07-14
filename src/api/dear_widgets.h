@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
 #endif
@@ -7,7 +7,7 @@
 // of by-value internal types: ImRect (function params), ImGuiButtonFlags,
 // ImGuiNavRenderCursorFlags, ImGuiItemFlags. ImWidgetsAABB is now used in public
 // struct members and inline ImTrunc was replaced with truncf, so the surface is
-// shrinking — but these particular signatures still pull it in. Removing it
+// shrinking â€” but these particular signatures still pull it in. Removing it
 // fully requires either replacing the param types or a typedef-only shim header.
 #include <imgui_internal.h>
 #include <math.h>
@@ -339,7 +339,7 @@ enum ImWidgetsStyleVar
 	StyleVar_Slider2DDisc_CursorRadius,
 	StyleVar_Slider2DDisc_CursorOutlineThickness,
 	StyleVar_Slider2DDisc_RingThickness,
-	// (Slider2DDisc_GridRings is an int count — accessed directly, not via PushStyleVar)
+	// (Slider2DDisc_GridRings is an int count â€” accessed directly, not via PushStyleVar)
 
 	// SliderRing
 	StyleVar_SliderRing_TrackThickness,
@@ -372,14 +372,14 @@ enum ImWidgetsStyleVar
 	// Color Wheel
 	StyleVar_ColorWheel_DotRadius,
 	StyleVar_ColorWheel_RingThickness,
-	// (ColorWheel_DiscSectors / DiscRings are int counts — accessed directly, not via PushStyleVar)
+	// (ColorWheel_DiscSectors / DiscRings are int counts â€” accessed directly, not via PushStyleVar)
 	StyleVar_ColorWheel_SliderHeight,
 
 	// Color Warper
 	StyleVar_ColorWarper_PointRadius,
 	StyleVar_ColorWarper_HitRadius,
 	StyleVar_ColorWarper_GridThickness,
-	// (ColorWarper_DiscSectors / DiscRings are int counts — accessed directly, not via PushStyleVar)
+	// (ColorWarper_DiscSectors / DiscRings are int counts â€” accessed directly, not via PushStyleVar)
 	StyleVar_ColorWarper_DiscScale,
 
 	// Color Curve (Hue vs, Lum vs, Sat vs)
@@ -419,12 +419,12 @@ enum ImWidgetsStyleVar
 	StyleVar_CIEChromaticity_GradMarginTop,
 
 	// Chromaticity Plot / Line / Point
-	// (ChromaticityPlot_Resolution / LineSamples are int counts — accessed directly, not via PushStyleVar)
+	// (ChromaticityPlot_Resolution / LineSamples are int counts â€” accessed directly, not via PushStyleVar)
 	StyleVar_ChromaticityPlot_BorderThickness,  // Horseshoe outline thickness (lp)
 	StyleVar_ChromaticityPlot_TriangleThickness,// Color space triangle thickness (lp)
 	StyleVar_ChromaticityLine_Thickness,        // Polyline thickness (lp)
 	StyleVar_ChromaticityPoint_Radius,          // Point radius (lp)
-	// (ChromaticityPoint_Segments is an int count — accessed directly, not via PushStyleVar)
+	// (ChromaticityPoint_Segments is an int count â€” accessed directly, not via PushStyleVar)
 
 	// Tone Curve
 	StyleVar_ToneCurve_DefaultHeight,
@@ -452,9 +452,9 @@ enum ImWidgetsStyleVar
 
 	// Color Picker
 	StyleVar_ColorPicker_DotRadius,
-	// (ColorPicker_PlaneResolution is an int count — accessed directly, not via PushStyleVar)
+	// (ColorPicker_PlaneResolution is an int count â€” accessed directly, not via PushStyleVar)
 	StyleVar_ColorPicker_SliderWidth,
-	// (ColorPicker_SliderResolution is an int count — accessed directly, not via PushStyleVar)
+	// (ColorPicker_SliderResolution is an int count â€” accessed directly, not via PushStyleVar)
 	StyleVar_ColorPicker_ComponentSliderHeight,
 	StyleVar_ColorPicker_DotOutlineThickness,
 	StyleVar_ColorPicker_SliderHandleHeight,
@@ -507,11 +507,11 @@ enum ImWidgetsStyleVar
 	StyleVar_Count
 };
 
-// Unified line-rendering mode for DrawThickLine() — declared early so ImWidgetsStyle's
+// Unified line-rendering mode for DrawThickLine() â€” declared early so ImWidgetsStyle's
 // constructor can reference enum values. Every mode exists in every build; the only
 // mode that depends on the GPU custom-shader path is PolylineAA. When that path is
 // not compiled in (IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER undefined) PolylineAA silently
-// renders as AddPolyline at runtime — the caller-visible enum is unchanged.
+// renders as AddPolyline at runtime â€” the caller-visible enum is unchanged.
 enum ImWidgetsThickLineMode_
 {
 	ImWidgetsThickLineMode_AddPolyline,         // ImGui default polyline
@@ -884,7 +884,7 @@ struct ImWidgetsStyle
 		Colors[ StyleColor_Slider2DRange_MinHandle ]    = ImVec4(  91.0f/255.0f, 194.0f/255.0f, 231.0f/255.0f, 1.00f );
 		Colors[ StyleColor_Slider2DRange_MaxHandle ]    = ImVec4( 255.0f/255.0f, 128.0f/255.0f,  64.0f/255.0f, 1.00f );
 		Colors[ StyleColor_Slider2DRange_Fill      ]    = ImVec4(  91.0f/255.0f, 194.0f/255.0f, 231.0f/255.0f, 0.20f );
-		Colors[ StyleColor_Slider2DDisc_Background ]    = ImVec4( 0.0f, 0.0f, 0.0f, 0.0f );     // transparent → falls back to FrameBg
+		Colors[ StyleColor_Slider2DDisc_Background ]    = ImVec4( 0.0f, 0.0f, 0.0f, 0.0f );     // transparent â†’ falls back to FrameBg
 		Colors[ StyleColor_Slider2DDisc_Cursor     ]    = ImVec4(  91.0f/255.0f, 194.0f/255.0f, 231.0f/255.0f, 1.00f );
 		Colors[ StyleColor_Slider2DDisc_CursorOutline ] = ImVec4(  20.0f/255.0f,  20.0f/255.0f,  20.0f/255.0f, 1.00f );
 		Colors[ StyleColor_Slider2DDisc_Ring       ]    = ImVec4( 255.0f/255.0f, 128.0f/255.0f,  64.0f/255.0f, 1.00f );
@@ -1156,7 +1156,7 @@ struct ImWidgetsStyle
 
 		VectorScope_DefaultSize        = truncf( VectorScope_DefaultSize * scale_factor );
 		VectorScope_GraticuleThickness = truncf( VectorScope_GraticuleThickness * scale_factor );
-		// VectorScope_DiscScale is a ratio — not scaled
+		// VectorScope_DiscScale is a ratio â€” not scaled
 
 		Histogram_DefaultHeight      = truncf( Histogram_DefaultHeight * scale_factor );
 		Histogram_GradTickLength     = truncf( Histogram_GradTickLength * scale_factor );
@@ -1171,7 +1171,7 @@ struct ImWidgetsStyle
 		CIEChromaticity_GradMargin         = truncf( CIEChromaticity_GradMargin * scale_factor );
 		CIEChromaticity_GradMarginRight    = truncf( CIEChromaticity_GradMarginRight * scale_factor );
 		CIEChromaticity_GradMarginTop      = truncf( CIEChromaticity_GradMarginTop * scale_factor );
-		// Chromaticity Plot / Line / Point — only lp fields are scaled; counts/segments are not.
+		// Chromaticity Plot / Line / Point â€” only lp fields are scaled; counts/segments are not.
 		ChromaticityPlot_BorderThickness   = truncf( ChromaticityPlot_BorderThickness * scale_factor );
 		ChromaticityPlot_TriangleThickness = truncf( ChromaticityPlot_TriangleThickness * scale_factor );
 		ChromaticityLine_Thickness         = truncf( ChromaticityLine_Thickness * scale_factor );
@@ -1198,7 +1198,7 @@ struct ImWidgetsStyle
 		Gizmo_OutlineThickness       = truncf( Gizmo_OutlineThickness * scale_factor );
 		Gizmo_RotationLineThickness  = truncf( Gizmo_RotationLineThickness * scale_factor );
 		Gizmo_CenterDotRadius        = truncf( Gizmo_CenterDotRadius * scale_factor );
-		// Gizmo_EdgeHandleScale is a ratio — not scaled
+		// Gizmo_EdgeHandleScale is a ratio â€” not scaled
 		Gizmo_DefaultCanvasHeight    = truncf( Gizmo_DefaultCanvasHeight * scale_factor );
 
 		ColorPicker_DotRadius              = truncf( ColorPicker_DotRadius * scale_factor );
@@ -3146,6 +3146,7 @@ struct ImGregoryPatch
 // Network Graph widget (read-only hierarchically grouped DAG illustration) --
 // own translation unit, same pattern as the Vector Drawing Tool.
 #include "dear_widgets_network.h"
+#include "dear_widgets_timeline.h"
 
 // Font inspector mode
 enum ImFontInspectorMode_
@@ -3344,10 +3345,10 @@ namespace ImWidgets{
 	void	GenShapeConcavePoly( ImWidgetsShape& shape, ImVec2 const* pts, int pts_count, ImVec2 origin = ImVec2( 0.0f, 0.0f ) );
 
 	// Tessellated bands and discs (UVs laid down for procedural-colour fills).
-	//   VerticalBand   : rectangle × N horizontal stripes        (uv.y = top→bottom, uv.x = 0→1 across)
-	//   HorizontalBand : rectangle × N vertical stripes          (uv.x = left→right, uv.y = 0→1 across)
-	//   RectGrid       : rectangle × Nx × Ny grid                (uv = [0,1]²)
-	//   DiscRings      : full disc, polar grid sectors × rings   (uv.x = angle/2π, uv.y = r/R)
+	//   VerticalBand   : rectangle Ã— N horizontal stripes        (uv.y = topâ†’bottom, uv.x = 0â†’1 across)
+	//   HorizontalBand : rectangle Ã— N vertical stripes          (uv.x = leftâ†’right, uv.y = 0â†’1 across)
+	//   RectGrid       : rectangle Ã— Nx Ã— Ny grid                (uv = [0,1]Â²)
+	//   DiscRings      : full disc, polar grid sectors Ã— rings   (uv.x = angle/2Ï€, uv.y = r/R)
 	//   Annulus        : ring (annulus), one radial division     (same polar UVs, v = (r-rIn)/(rOut-rIn))
 	//   AnnulusRings   : ring with multiple sub-rings
 	void	GenShapeVerticalBand  ( ImWidgetsShape& shape, ImRect const& r, int divisions );
@@ -3356,7 +3357,7 @@ namespace ImWidgets{
 	void	GenShapeDiscRings     ( ImWidgetsShape& shape, ImVec2 center, float radius, int numSectors, int numRings );
 	void	GenShapeAnnulus       ( ImWidgetsShape& shape, ImVec2 center, float innerRadius, float outerRadius, int numSectors );
 	void	GenShapeAnnulusRings  ( ImWidgetsShape& shape, ImVec2 center, float innerRadius, float outerRadius, int numSectors, int numRings );
-	// Partial annulus arc (no caching — startAngle/sweepAngle usually animate per frame).
+	// Partial annulus arc (no caching â€” startAngle/sweepAngle usually animate per frame).
 	void	GenShapeAnnulusArc    ( ImWidgetsShape& shape, ImVec2 center, float innerRadius, float outerRadius, float startAngle, float sweepAngle, int divisions );
 	// Barycentric-subdivided triangle (A, B, C). Vertex.uv = (w_A, w_B); w_C is implicit = 1 - w_A - w_B.
 	// Use ShapeFillProceduralColor2D with a callback that derives w_C and computes the triangle mix.
@@ -3369,7 +3370,7 @@ namespace ImWidgets{
 	void	ShapeFillProceduralColor2D( ImWidgetsShape& shape, ImWidgetsColor2DCallback func, void* pUserData );
 	void	ShapeFillSolidColor       ( ImWidgetsShape& shape, ImU32 col );
 
-	// One-shot draws: GenShape → fill colour → DrawShape (no caller boilerplate).
+	// One-shot draws: GenShape â†’ fill colour â†’ DrawShape (no caller boilerplate).
 	void	DrawShapeProceduralColorVerticalBand  ( ImDrawList* pDrawList, ImRect const& bb, int divisions,
 	                                                 ImWidgetsColor1DCallback func, void* pUserData );
 	void	DrawShapeProceduralColorHorizontalBand( ImDrawList* pDrawList, ImRect const& bb, int divisions,
@@ -3584,7 +3585,7 @@ namespace ImWidgets{
 	// compile_flags: IMPLATFORM_SHADER_COMPILE_* bitmask. Default is the
 	// backend's moderate optimization. Lower it (OPTIMIZATION_LOW or
 	// SKIP_OPTIMIZATION) for large uber-shaders where the optimizer goes
-	// polynomial — e.g. image_inspector with its many [branch] switches over
+	// polynomial â€” e.g. image_inspector with its many [branch] switches over
 	// 11 sample types x 7 tonemaps x 8 false-colour palettes takes ~19 min
 	// at the default level but seconds with LOW.
 	IMGUI_API void CreateInternalShader( ImDrawShader* shaders_out, char const* shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer, char const* extra_define = nullptr, char const* cache_suffix = nullptr, unsigned int compile_flags = IMPLATFORM_SHADER_COMPILE_DEFAULT );
@@ -3882,7 +3883,7 @@ namespace ImWidgets{
 	// HDRWheel: unified ColorWheel + gradient indicator ring + optional right/left arc sliders.
 	// Pass rightValue = leftValue = NULL to disable arc sliders (compact layout: indicator
 	// ring + ColorWheel only). With either pointer non-null, the corresponding side arc
-	// slider is drawn — the widget grows by 2*(ArcGrabRadius + ArcThickness + ArcGap) lp.
+	// slider is drawn â€” the widget grows by 2*(ArcGrabRadius + ArcThickness + ArcGap) lp.
 	IMGUI_API bool HDRWheel( char const* label, ImVec4* color, float* yValue, float yMin, float yMax, float* rightValue = NULL, float rightMin = 0.0f, float rightMax = 0.0f, float* leftValue = NULL, float leftMin = 0.0f, float leftMax = 0.0f, ImColorWheelMode mode = ImColorWheelMode_HSV, ImVec2 size = ImVec2( 0, 0 ) );
 
 	// Color Picker
@@ -3947,55 +3948,55 @@ namespace ImWidgets{
 	IMGUI_API bool ColorPickerIce( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
 	IMGUI_API bool ColorPickerOchre( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
 	// Sky: Bruneton single-scatter atmosphere (Rayleigh + Mie + Ozone), baked
-	// transmittance LUT. Plane = elevation × time-of-day; sliders = view-az
+	// transmittance LUT. Plane = elevation Ã— time-of-day; sliders = view-az
 	// (sun-rel), day-of-year, observer latitude.
 	IMGUI_API bool ColorPickerSky( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
 
 	// Stellar photosphere colour (Planck blackbody + line blanketing + TiO bands).
-	// Plane = log Teff × log g (dwarf→supergiant); slider = metallicity [Fe/H].
+	// Plane = log Teff Ã— log g (dwarfâ†’supergiant); slider = metallicity [Fe/H].
 	// Reference: Mamajek 2022 dwarf colour-temperature sequence.
 	IMGUI_API bool ColorPickerStar( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
 
 	// Vascular tissue colour (Beer-Lambert oxy/deoxy haemoglobin + melanin layer).
-	// Plane = SpO2 × dermal blood-volume fraction; slider = melanin density.
+	// Plane = SpO2 Ã— dermal blood-volume fraction; slider = melanin density.
 	// Reference: Prahl haemoglobin extinction coefficient tables (OMLC).
 	IMGUI_API bool ColorPickerHemoglobin( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
 
 	// Volumetric cloud lighting (Schneider & Vos 2015 Beer-Powder, dual HG).
-	// Plane = optical depth × cos(view, sun); slider = extinction coefficient.
+	// Plane = optical depth Ã— cos(view, sun); slider = extinction coefficient.
 	// Reference: "Real-Time Volumetric Cloudscapes of Horizon Zero Dawn" SIGGRAPH 2015.
 	IMGUI_API bool ColorPickerCloud( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
 
-	// Streetlight gas-discharge spectrum — mercury vapour + sodium D-line (LPS/HPS)
-	// + tri-phosphor fluorescent overlay. Plane = Hg↔Na mix × pressure; slider = phosphor coating.
+	// Streetlight gas-discharge spectrum â€” mercury vapour + sodium D-line (LPS/HPS)
+	// + tri-phosphor fluorescent overlay. Plane = Hgâ†”Na mix Ã— pressure; slider = phosphor coating.
 	IMGUI_API bool ColorPickerStreetlight( char const* label, ImVec4* color, ImVec2 size = ImVec2( 0, 0 ) );
 
 	// === Artist-oriented colour pickers (for asset creation) =================
 
-	// Harmony palette — pick anchor + scheme (complement/split/triad/tetrad/square/analogous).
+	// Harmony palette â€” pick anchor + scheme (complement/split/triad/tetrad/square/analogous).
 	// `color` = currently-active swatch. `out_palette` (up to 5 entries) and `out_count`
 	// expose the full palette to the caller.
 	IMGUI_API bool ColorPickerPaletteHarmony( char const* label, ImVec4* color,
 	                                          ImVec4* out_palette = nullptr, int* out_count = nullptr );
 
-	// Trichromatic mixer — barycentric mix of 3 artist primaries (defaults to Y/M/C).
-	// Subtractive (absorbance-space) mixing; slider = white↔black tint.
+	// Trichromatic mixer â€” barycentric mix of 3 artist primaries (defaults to Y/M/C).
+	// Subtractive (absorbance-space) mixing; slider = whiteâ†”black tint.
 	IMGUI_API bool ColorPickerTrichromaticMixer( char const* label, ImVec4* color );
 
-	// Weathered metal — base metal (Steel/Iron/Copper/Brass/Aluminum/Gold) + patina
+	// Weathered metal â€” base metal (Steel/Iron/Copper/Brass/Aluminum/Gold) + patina
 	// coverage + roughness + grime. Outputs sRGB albedo; F0 follows the metal preset.
 	IMGUI_API bool ColorPickerWeatheredMetal( char const* label, ImVec4* color );
 
-	// Fabric dye — substrate (linen / cotton / wool / silk) tinted by a dye colour
-	// via Beer-Lambert. Plane = dye hue × saturation; slider = dye intensity.
+	// Fabric dye â€” substrate (linen / cotton / wool / silk) tinted by a dye colour
+	// via Beer-Lambert. Plane = dye hue Ã— saturation; slider = dye intensity.
 	IMGUI_API bool ColorPickerFabricDye( char const* label, ImVec4* color );
 
-	// Mood-palette picker — curated 5-swatch palettes by mood word (warm/cool/melancholy/
-	// fresh/vintage/pastel/neon/earth/sunset/ocean). Plane = palette position × lightness shift;
+	// Mood-palette picker â€” curated 5-swatch palettes by mood word (warm/cool/melancholy/
+	// fresh/vintage/pastel/neon/earth/sunset/ocean). Plane = palette position Ã— lightness shift;
 	// slider = saturation crush.
 	IMGUI_API bool ColorPickerMoodPalette( char const* label, ImVec4* color, ImVec4 out_palette[ 5 ] = nullptr );
 
-	// Toon ramp — pick a midtone, get back a 3-stop shadow/mid/highlight ramp with
+	// Toon ramp â€” pick a midtone, get back a 3-stop shadow/mid/highlight ramp with
 	// warm-cool hue shift. `color` = midtone; `out_ramp[3]` = full ramp.
 	IMGUI_API bool ColorPickerToonRamp( char const* label, ImVec4* color, ImVec4 out_ramp[ 3 ] = nullptr );
 
@@ -4139,7 +4140,7 @@ namespace ImWidgets{
 	// shaderProgram (optional): an ImPlatform custom shader program bound around the
 	// image draw. When non-NULL, the viewer wraps its AddImage with the shader so the
 	// PS colors/decodes `image` (sampled as texture0; ImGui's b0 ProjMtx and the
-	// default ImGui VS interface still apply — author the VS as a standard ImGui VS).
+	// default ImGui VS interface still apply â€” author the VS as a standard ImGui VS).
 	// Because the shader binds INSIDE the widget, it applies in BOTH the inline draw
 	// and the expand/modal draw (which re-enters ImageViewer recursively). Pass NULL
 	// (default) for a plain textured draw. The image draw in the right-click loupe is
@@ -4147,7 +4148,7 @@ namespace ImWidgets{
 	IMGUI_API bool ImageViewer( char const* label, ImTextureID image, ImVec2 imageSize, ImImageViewerState& state, ImVec2 widgetSize = ImVec2( 0, 0 ), ImPlatform_ShaderProgram shaderProgram = nullptr, ImImageViewerOverlayCallback overlay_callback = nullptr, void* overlay_user_data = nullptr );
 
 	// ============================================================================
-	// [SECTION] Image overlays — composed on top of ImageViewer
+	// [SECTION] Image overlays â€” composed on top of ImageViewer
 	// ============================================================================
 	// All coordinates are UV [0,1]^2 relative to the image, so overlays compose
 	// naturally with ImageViewer's pan/zoom. Call ImageViewer FIRST, then the
@@ -5596,7 +5597,7 @@ namespace ImWidgets{
     //   - While dragging the path is drawn live with the sampled colors so
     //     you can preview the gradient as you go.
     //   - On mouse release the raw samples are reduced via Douglas-Peucker
-    //     simplification in OkLab (perceptual ΔE), then trimmed to at most
+    //     simplification in OkLab (perceptual Î”E), then trimmed to at most
     //     `max_stops` by dropping the lowest-impact interior stops. Arc
     //     length along the stroke becomes the gradient Position (0..1).
     //   - Returns true exactly on the frame the gradient is finalized.
@@ -5618,8 +5619,9 @@ namespace ImWidgets{
                                   ImWidgetsGradientDropState& state,
                                   ImGradientData* out_gradient,
                                   int   max_stops              = 8,
-                                  float perceptual_threshold   = 0.04f,  // OkLab ΔE
+                                  float perceptual_threshold   = 0.04f,  // OkLab Î”E
                                   float min_step_px            = 3.0f,
                                   float path_thickness         = 3.0f,
                                   bool  show_live_preview      = true );
 }
+
