@@ -81,6 +81,9 @@ bool ImTimeline( char const* label,
 		case ImTimelineBand_CacheCoverage:
 			dl->AddRectFilled( ImVec2( xb, ry1 ), ImVec2( xe, p0.y + sz.y ), IM_COL32( 64, 160, 96, 40 ) );
 			break;
+		case ImTimelineBand_CommittedHistory:
+			dl->AddRectFilled( ImVec2( xb, ry1 ), ImVec2( xe, p0.y + sz.y ), IM_COL32( 96, 128, 192, 36 ) );
+			break;
 		case ImTimelineBand_Invalid:
 			dl->AddRectFilled( ImVec2( xb, ry1 ), ImVec2( xe, p0.y + sz.y ), IM_COL32( 200, 80, 48, 46 ) );
 			for ( float hx = xb; hx < xe; hx += 8.0f ) // hatching

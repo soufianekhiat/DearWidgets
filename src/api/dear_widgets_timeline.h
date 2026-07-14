@@ -44,6 +44,9 @@ enum ImTimelineBandKind
 	ImTimelineBand_Invalid,
 	ImTimelineBand_StaleBranch,
 	ImTimelineBand_Checkpoint,
+	// Committed temporal history (versions retained on the tracks) — NOT
+	// cache residency; hosts must not present history as cache coverage.
+	ImTimelineBand_CommittedHistory,
 };
 
 struct ImTimelineBand
