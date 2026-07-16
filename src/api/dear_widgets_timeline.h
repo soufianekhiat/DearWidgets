@@ -81,17 +81,24 @@ enum ImTimelineActionKind
 	ImTimelineAction_None = 0,
 	ImTimelineAction_Scrub,        // TargetTick = requested playhead
 	ImTimelineAction_InsertKey,    // TargetTick + TrackIndex (past OK)
-	ImTimelineAction_SelectKey,    // KeyId
-	ImTimelineAction_DeleteKey,    // KeyId (Del on selection)
-	ImTimelineAction_MoveKey,      // KeyId dragged to TargetTick (on release)
+	ImTimelineAction_SelectKey,    // KeyId (host reads Ctrl for toggle)
+	ImTimelineAction_DeleteKey,    // KeyId
+	ImTimelineAction_MoveKey,      // KeyId dragged to TargetTick (on release);
+	                               // host moves the whole selection by delta
 	ImTimelineAction_KeyContext,   // KeyId right-clicked: host opens its menu
+	ImTimelineAction_BoxSelect,    // marquee: ticks [TargetTick, TargetTickEnd]
+	                               // x tracks [TrackIndex, TrackIndexEnd];
+	                               // an EMPTY box (click) clears the selection
+	ImTimelineAction_DeleteSelection, // Del with a selection (no KeyId)
 };
 
 struct ImTimelineAction
 {
 	ImTimelineActionKind Kind;
 	long long			 TargetTick;
+	long long			 TargetTickEnd;
 	int					 TrackIndex;
+	int					 TrackIndexEnd;
 	unsigned			 KeyId;
 };
 

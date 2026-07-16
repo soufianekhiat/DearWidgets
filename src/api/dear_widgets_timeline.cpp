@@ -43,7 +43,9 @@ bool ImTimeline( char const* label,
 	if ( out_action )
 	{
 		out_action->Kind = ImTimelineAction_None;
-		out_action->TargetTick = 0; out_action->TrackIndex = -1; out_action->KeyId = 0u;
+		out_action->TargetTick = 0; out_action->TargetTickEnd = 0;
+		out_action->TrackIndex = -1; out_action->TrackIndexEnd = -1;
+		out_action->KeyId = 0u;
 	}
 	ImGuiWindow* window = ImGui::GetCurrentWindow();
 	if ( window->SkipItems || data.EndTick <= data.BeginTick )
@@ -164,8 +166,9 @@ bool ImTimeline( char const* label,
 		}
 	}
 
-	// Drag-move in flight: ghost the key at the candidate tick; emit MoveKey on
-	// release. While armed, empty-space scrubbing is suppressed.
+	// Drag-move in flight: ghost the dragged key AND every other selected key
+	// at the same tick delta (the host moves the whole selection); emit MoveKey
+	// on release. While armed, empty-space interactions are suppressed.
 	if ( drag_key_id != 0u )
 	{
 		ImTimelineKey const* dk = 0;
@@ -192,27 +195,90 @@ bool ImTimeline( char const* label,
 			{ dragging = true; storage->SetInt( id_dragging, 1 ); }
 			if ( dragging && dk )
 			{
+				long long const ddelta = tick - dk->Tick;
+				for ( int i = 0; i < data.Keys.Size; ++i )
+				{
+					ImTimelineKey const& sk = data.Keys[ i ];
+					if ( !sk.Selected && sk.Id != drag_key_id ) continue;
+					float sx = TickToX( sk.Tick + ddelta, data.BeginTick, data.EndTick, tx, tw );
+					float sy = ry1 + kTrackH * (float)sk.TrackIndex + kTrackH * 0.5f;
+					dl->AddNgonFilled( ImVec2( sx, sy ), kKeyR,
+									   IM_COL32( 255, 210, 90, sk.Id == drag_key_id ? 160 : 110 ), 4 );
+				}
 				float gx = TickToX( tick, data.BeginTick, data.EndTick, tx, tw );
-				float gy = ry1 + kTrackH * (float)dk->TrackIndex + kTrackH * 0.5f;
-				dl->AddNgonFilled( ImVec2( gx, gy ), kKeyR, IM_COL32( 255, 210, 90, 160 ), 4 );
 				dl->AddLine( ImVec2( gx, ry1 ), ImVec2( gx, p0.y + sz.y ), IM_COL32( 255, 210, 90, 90 ) );
 				char buf[ 32 ]; snprintf( buf, sizeof( buf ), "%lld", tick );
-				dl->AddText( ImVec2( gx + 6.0f, gy - 8.0f ), IM_COL32( 255, 210, 90, 255 ), buf );
+				dl->AddText( ImVec2( gx + 6.0f, ry1 + 2.0f ), IM_COL32( 255, 210, 90, 255 ), buf );
 			}
 		}
 	}
 
-	// Del removes the selected key while the timeline is hovered.
+	// Del removes the whole selection while the timeline is hovered.
 	if ( hovered && out_action && !acted && drag_key_id == 0u &&
 		 ImGui::IsKeyPressed( ImGuiKey_Delete ) )
 	{
 		for ( int i = 0; i < data.Keys.Size; ++i )
 		{
 			if ( !data.Keys[ i ].Selected ) continue;
-			out_action->Kind = ImTimelineAction_DeleteKey;
-			out_action->KeyId = data.Keys[ i ].Id;
+			out_action->Kind = ImTimelineAction_DeleteSelection;
 			acted = true;
 			break;
+		}
+	}
+
+	// Marquee box-select over the TRACK area (armed on empty-space press; the
+	// ruler keeps scrubbing). Release emits the covered tick x track ranges —
+	// an empty box (plain click) clears the selection.
+	ImGuiID const id_box_on = ImGui::GetID( "##tl_box_on" );
+	ImGuiID const id_box_x  = ImGui::GetID( "##tl_box_x" );
+	ImGuiID const id_box_y  = ImGui::GetID( "##tl_box_y" );
+	bool box_on = storage->GetInt( id_box_on, 0 ) != 0;
+	if ( box_on )
+	{
+		float const bx = storage->GetFloat( id_box_x, mouse.x );
+		float const by = storage->GetFloat( id_box_y, mouse.y );
+		if ( !ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+		{
+			if ( out_action && !acted )
+			{
+				float const x0 = bx < mouse.x ? bx : mouse.x;
+				float const x1 = bx < mouse.x ? mouse.x : bx;
+				float const y0 = by < mouse.y ? by : mouse.y;
+				float const y1 = by < mouse.y ? mouse.y : by;
+				bool const is_box = ( x1 - x0 ) > 3.0f || ( y1 - y0 ) > 3.0f;
+				out_action->Kind = ImTimelineAction_BoxSelect;
+				if ( is_box )
+				{
+					out_action->TargetTick    = XToTick( x0, data.BeginTick, data.EndTick, tx, tw );
+					out_action->TargetTickEnd = XToTick( x1, data.BeginTick, data.EndTick, tx, tw );
+					int r0 = (int)( ( y0 - ry1 ) / kTrackH ); if ( r0 < 0 ) r0 = 0;
+					int r1 = (int)( ( y1 - ry1 ) / kTrackH ); if ( r1 < 0 ) r1 = 0;
+					if ( r0 >= data.Tracks.Size ) r0 = data.Tracks.Size - 1;
+					if ( r1 >= data.Tracks.Size ) r1 = data.Tracks.Size - 1;
+					out_action->TrackIndex	  = r0;
+					out_action->TrackIndexEnd = r1;
+				}
+				else
+				{
+					// empty box = deselect
+					out_action->TargetTick	  = 0;
+					out_action->TargetTickEnd = -1;
+					out_action->TrackIndex	  = 0;
+					out_action->TrackIndexEnd = -1;
+				}
+				acted = true;
+			}
+			storage->SetInt( id_box_on, 0 );
+			box_on = false;
+		}
+		else
+		{
+			dl->AddRectFilled( ImVec2( bx < mouse.x ? bx : mouse.x, by < mouse.y ? by : mouse.y ),
+							   ImVec2( bx < mouse.x ? mouse.x : bx, by < mouse.y ? mouse.y : by ),
+							   IM_COL32( 120, 190, 255, 30 ) );
+			dl->AddRect( ImVec2( bx < mouse.x ? bx : mouse.x, by < mouse.y ? by : mouse.y ),
+						 ImVec2( bx < mouse.x ? mouse.x : bx, by < mouse.y ? mouse.y : by ),
+						 IM_COL32( 120, 190, 255, 140 ) );
 		}
 	}
 
@@ -229,10 +295,11 @@ bool ImTimeline( char const* label,
 		dl->AddText( ImVec2( p0.x + sz.x - ts.x - 6.0f, p0.y + 2.0f ), ImGui::GetColorU32( ImGuiCol_TextDisabled ), data.DeterminismLabel );
 	}
 
-	// interactions on empty space: left drag/click on ruler or rows = scrub;
-	// double-click on a row = insert key at that tick (PAST times included).
-	// Suppressed while a key drag is armed — dragging a key must never scrub.
-	if ( hovered && out_action && !acted && drag_key_id == 0u && mouse.x >= tx )
+	// interactions on empty space: the RULER scrubs (click/drag); a press in
+	// the TRACK area arms the marquee above; double-click on a row inserts a
+	// key at that tick (PAST times included). Suppressed while a key drag or a
+	// marquee is in flight.
+	if ( hovered && out_action && !acted && drag_key_id == 0u && !box_on && mouse.x >= tx )
 	{
 		long long tick = XToTick( mouse.x, data.BeginTick, data.EndTick, tx, tw );
 		if ( ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) && mouse.y >= ry1 )
@@ -241,7 +308,14 @@ bool ImTimeline( char const* label,
 			if ( row >= 0 && row < data.Tracks.Size )
 			{ out_action->Kind = ImTimelineAction_InsertKey; out_action->TargetTick = tick; out_action->TrackIndex = row; acted = true; }
 		}
-		else if ( ImGui::IsMouseDown( ImGuiMouseButton_Left ) && ImGui::IsItemActive() )
+		else if ( ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && mouse.y >= ry1 )
+		{
+			// arm the marquee (resolves to select-or-deselect on release)
+			storage->SetInt( id_box_on, 1 );
+			storage->SetFloat( id_box_x, mouse.x );
+			storage->SetFloat( id_box_y, mouse.y );
+		}
+		else if ( ImGui::IsMouseDown( ImGuiMouseButton_Left ) && ImGui::IsItemActive() && mouse.y < ry1 )
 		{ out_action->Kind = ImTimelineAction_Scrub; out_action->TargetTick = tick; acted = true; }
 	}
 	return acted;
