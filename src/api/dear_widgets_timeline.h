@@ -82,7 +82,8 @@ enum ImTimelineActionKind
 	ImTimelineAction_Scrub,        // TargetTick = requested playhead
 	ImTimelineAction_InsertKey,    // TargetTick + TrackIndex (past OK)
 	ImTimelineAction_SelectKey,    // KeyId
-	ImTimelineAction_DeleteKey,    // KeyId
+	ImTimelineAction_DeleteKey,    // KeyId (right-click, or Del on selection)
+	ImTimelineAction_MoveKey,      // KeyId dragged to TargetTick (on release)
 };
 
 struct ImTimelineAction

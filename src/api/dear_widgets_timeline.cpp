@@ -130,6 +130,17 @@ bool ImTimeline( char const* label,
 		if ( data.Tracks[ r ].Label )
 			dl->AddText( ImVec2( lx + 6.0f, y0 + 3.0f ), ImGui::GetColorU32( ImGuiCol_Text ), data.Tracks[ r ].Label );
 	}
+
+	// Key-drag state persists across frames in the window's state storage. Key
+	// ids are host-positional and regenerate every frame, but the host applies
+	// no edit while a drag is in flight (MoveKey fires on RELEASE only), so the
+	// armed id stays meaningful for the drag's duration.
+	ImGuiStorage* storage      = ImGui::GetStateStorage();
+	ImGuiID const id_drag_key  = ImGui::GetID( "##tl_drag_key" );
+	ImGuiID const id_dragging  = ImGui::GetID( "##tl_dragging" );
+	unsigned      drag_key_id  = (unsigned)storage->GetInt( id_drag_key, 0 );
+	bool          dragging     = storage->GetInt( id_dragging, 0 ) != 0;
+
 	for ( int i = 0; i < data.Keys.Size; ++i )
 	{
 		ImTimelineKey const& k = data.Keys[ i ];
@@ -138,13 +149,70 @@ bool ImTimeline( char const* label,
 		float y = ry1 + kTrackH * (float)k.TrackIndex + kTrackH * 0.5f;
 		ImU32 c = k.Selected ? IM_COL32( 255, 210, 90, 255 ) : IM_COL32( 210, 210, 210, 255 );
 		dl->AddNgonFilled( ImVec2( x, y ), kKeyR, c, 4 ); // diamond
-		if ( hovered && out_action && !acted &&
+		if ( hovered && out_action && !acted && drag_key_id == 0u &&
 			 ImFabs( mouse.x - x ) <= kKeyR + 2.0f && ImFabs( mouse.y - y ) <= kKeyR + 2.0f )
 		{
 			if ( ImGui::IsMouseClicked( ImGuiMouseButton_Left ) )
-			{ out_action->Kind = ImTimelineAction_SelectKey; out_action->KeyId = k.Id; acted = true; }
+			{
+				// Select immediately AND arm a potential drag-move.
+				out_action->Kind = ImTimelineAction_SelectKey; out_action->KeyId = k.Id; acted = true;
+				storage->SetInt( id_drag_key, (int)k.Id );
+				drag_key_id = k.Id;
+			}
 			else if ( ImGui::IsMouseClicked( ImGuiMouseButton_Right ) )
 			{ out_action->Kind = ImTimelineAction_DeleteKey; out_action->KeyId = k.Id; acted = true; }
+		}
+	}
+
+	// Drag-move in flight: ghost the key at the candidate tick; emit MoveKey on
+	// release. While armed, empty-space scrubbing is suppressed.
+	if ( drag_key_id != 0u )
+	{
+		ImTimelineKey const* dk = 0;
+		for ( int i = 0; i < data.Keys.Size; ++i )
+			if ( data.Keys[ i ].Id == drag_key_id ) { dk = &data.Keys[ i ]; break; }
+		long long const tick = XToTick( mouse.x, data.BeginTick, data.EndTick, tx, tw );
+		if ( !ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+		{
+			if ( dragging && dk && out_action && !acted && tick != dk->Tick )
+			{
+				out_action->Kind = ImTimelineAction_MoveKey;
+				out_action->KeyId = drag_key_id;
+				out_action->TargetTick = tick;
+				out_action->TrackIndex = dk->TrackIndex;
+				acted = true;
+			}
+			storage->SetInt( id_drag_key, 0 );
+			storage->SetInt( id_dragging, 0 );
+			drag_key_id = 0u; dragging = false;
+		}
+		else
+		{
+			if ( !dragging && ImGui::IsMouseDragging( ImGuiMouseButton_Left, 3.0f ) )
+			{ dragging = true; storage->SetInt( id_dragging, 1 ); }
+			if ( dragging && dk )
+			{
+				float gx = TickToX( tick, data.BeginTick, data.EndTick, tx, tw );
+				float gy = ry1 + kTrackH * (float)dk->TrackIndex + kTrackH * 0.5f;
+				dl->AddNgonFilled( ImVec2( gx, gy ), kKeyR, IM_COL32( 255, 210, 90, 160 ), 4 );
+				dl->AddLine( ImVec2( gx, ry1 ), ImVec2( gx, p0.y + sz.y ), IM_COL32( 255, 210, 90, 90 ) );
+				char buf[ 32 ]; snprintf( buf, sizeof( buf ), "%lld", tick );
+				dl->AddText( ImVec2( gx + 6.0f, gy - 8.0f ), IM_COL32( 255, 210, 90, 255 ), buf );
+			}
+		}
+	}
+
+	// Del removes the selected key while the timeline is hovered.
+	if ( hovered && out_action && !acted && drag_key_id == 0u &&
+		 ImGui::IsKeyPressed( ImGuiKey_Delete ) )
+	{
+		for ( int i = 0; i < data.Keys.Size; ++i )
+		{
+			if ( !data.Keys[ i ].Selected ) continue;
+			out_action->Kind = ImTimelineAction_DeleteKey;
+			out_action->KeyId = data.Keys[ i ].Id;
+			acted = true;
+			break;
 		}
 	}
 
@@ -163,7 +231,8 @@ bool ImTimeline( char const* label,
 
 	// interactions on empty space: left drag/click on ruler or rows = scrub;
 	// double-click on a row = insert key at that tick (PAST times included).
-	if ( hovered && out_action && !acted && mouse.x >= tx )
+	// Suppressed while a key drag is armed — dragging a key must never scrub.
+	if ( hovered && out_action && !acted && drag_key_id == 0u && mouse.x >= tx )
 	{
 		long long tick = XToTick( mouse.x, data.BeginTick, data.EndTick, tx, tw );
 		if ( ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) && mouse.y >= ry1 )
