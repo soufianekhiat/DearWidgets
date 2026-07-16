@@ -160,7 +160,7 @@ bool ImTimeline( char const* label,
 				drag_key_id = k.Id;
 			}
 			else if ( ImGui::IsMouseClicked( ImGuiMouseButton_Right ) )
-			{ out_action->Kind = ImTimelineAction_DeleteKey; out_action->KeyId = k.Id; acted = true; }
+			{ out_action->Kind = ImTimelineAction_KeyContext; out_action->KeyId = k.Id; acted = true; }
 		}
 	}
 
