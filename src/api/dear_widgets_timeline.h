@@ -106,7 +106,9 @@ struct ImTimelineCurveKey
 {
 	long long	Tick;
 	double		Value;
-	int			Interp;     // 0 = hold (step to next), 1 = linear (ramp)
+	int			Interp;     // 0 = hold (step), 1 = linear (ramp), 2 = cubic
+	double		TanIn;      // hermite tangent slopes (value per tick) —
+	double		TanOut;     // handles drawn/editable on the selected cubic key
 	unsigned	Id;         // host identity (hit-testing / edits)
 	bool		Selected;
 };
@@ -120,6 +122,10 @@ struct ImTimelineCurveData
 	double		MaxValue;
 	char const*	Label;        // parameter name (nullable)
 	ImVector<ImTimelineCurveKey> Keys; // sorted by Tick
+	// Host-sampled curve polyline (x = tick, y = value). When non-empty it is
+	// drawn INSTEAD of the widget's internal step/ramp segments — the host
+	// owns the evaluator, so cubic zones render exactly what executes.
+	ImVector<ImVec2> Samples;
 };
 
 enum ImTimelineCurveActionKind
@@ -131,6 +137,8 @@ enum ImTimelineCurveActionKind
 	ImTimelineCurveAction_MoveKey,    // KeyId dragged to TargetTick/TargetValue
 	ImTimelineCurveAction_InsertKey,  // TargetTick (double-click empty space)
 	ImTimelineCurveAction_KeyContext, // KeyId right-clicked: host opens its menu
+	ImTimelineCurveAction_TangentIn,  // KeyId + TargetValue = new IN slope
+	ImTimelineCurveAction_TangentOut, // KeyId + TargetValue = new OUT slope
 };
 
 struct ImTimelineCurveAction
