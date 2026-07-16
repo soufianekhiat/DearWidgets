@@ -247,4 +247,188 @@ bool ImTimeline( char const* label,
 	return acted;
 }
 
+bool ImTimelineCurve( char const* label,
+					  ImTimelineCurveData const& data,
+					  ImVec2 const& size,
+					  ImTimelineCurveAction* out_action )
+{
+	if ( out_action )
+	{
+		out_action->Kind = ImTimelineCurveAction_None;
+		out_action->TargetTick = 0; out_action->TargetValue = 0.0; out_action->KeyId = 0u;
+	}
+	ImGuiWindow* window = ImGui::GetCurrentWindow();
+	if ( window->SkipItems || data.EndTick <= data.BeginTick || !( data.MaxValue > data.MinValue ) )
+		return false;
+
+	ImVec2 avail = ImGui::GetContentRegionAvail();
+	ImVec2 sz( size.x > 0.0f ? size.x : avail.x,
+			   size.y > 0.0f ? size.y : 110.0f );
+	if ( sz.x < kLabelW + 32.0f ) sz.x = kLabelW + 32.0f;
+	if ( sz.y < 48.0f ) sz.y = 48.0f;
+	ImVec2 p0 = window->DC.CursorPos;
+	ImGui::InvisibleButton( label, sz, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight );
+	bool const hovered = ImGui::IsItemHovered();
+	ImDrawList* dl = window->DrawList;
+
+	float const tx = p0.x + kLabelW + 4.0f;           // curve area origin
+	float const tw = sz.x - kLabelW - 4.0f;
+	float const ty = p0.y + 4.0f;                     // top padding
+	float const th = sz.y - 8.0f;                     // curve area height
+
+	auto ValueToY = [&]( double v ) -> float
+	{
+		double t = ( v - data.MinValue ) / ( data.MaxValue - data.MinValue );
+		if ( t < 0.0 ) t = 0.0; if ( t > 1.0 ) t = 1.0;
+		return ty + th * (float)( 1.0 - t );
+	};
+	auto YToValue = [&]( float y ) -> double
+	{
+		double t = 1.0 - (double)( y - ty ) / (double)th;
+		if ( t < 0.0 ) t = 0.0; if ( t > 1.0 ) t = 1.0;
+		return data.MinValue + t * ( data.MaxValue - data.MinValue );
+	};
+
+	// background + gutter + value grid (min / mid / max)
+	dl->AddRectFilled( p0, ImVec2( p0.x + sz.x, p0.y + sz.y ), ImGui::GetColorU32( ImGuiCol_FrameBg ) );
+	dl->AddRectFilled( p0, ImVec2( p0.x + kLabelW, p0.y + sz.y ), ImGui::GetColorU32( ImGuiCol_TableHeaderBg ) );
+	if ( data.Label )
+		dl->AddText( ImVec2( p0.x + 6.0f, p0.y + 4.0f ), ImGui::GetColorU32( ImGuiCol_Text ), data.Label );
+	double const grid[ 3 ] = { data.MaxValue, ( data.MinValue + data.MaxValue ) * 0.5, data.MinValue };
+	for ( int g = 0; g < 3; ++g )
+	{
+		float y = ValueToY( grid[ g ] );
+		dl->AddLine( ImVec2( tx, y ), ImVec2( tx + tw, y ), IM_COL32( 255, 255, 255, 22 ) );
+		char buf[ 32 ]; snprintf( buf, sizeof( buf ), "%.4g", grid[ g ] );
+		ImVec2 ts = ImGui::CalcTextSize( buf );
+		dl->AddText( ImVec2( tx - ts.x - 4.0f > p0.x + 4.0f ? tx - ts.x - 4.0f : p0.x + 4.0f, y - ts.y * 0.5f ),
+					 ImGui::GetColorU32( ImGuiCol_TextDisabled ), buf );
+	}
+
+	// the curve: hold extrapolation before/after, step (hold) or ramp (linear)
+	// between keys
+	ImU32 const curve_col = IM_COL32( 120, 190, 255, 220 );
+	if ( data.Keys.Size > 0 )
+	{
+		float x_prev = TickToX( data.BeginTick, data.BeginTick, data.EndTick, tx, tw );
+		float y_prev = ValueToY( data.Keys[ 0 ].Value );
+		for ( int i = 0; i < data.Keys.Size; ++i )
+		{
+			float x = TickToX( data.Keys[ i ].Tick, data.BeginTick, data.EndTick, tx, tw );
+			float y = ValueToY( data.Keys[ i ].Value );
+			if ( i == 0 )
+				dl->AddLine( ImVec2( x_prev, y ), ImVec2( x, y ), curve_col, 1.5f );          // pre-hold
+			else if ( data.Keys[ i - 1 ].Interp == 1 )
+				dl->AddLine( ImVec2( x_prev, y_prev ), ImVec2( x, y ), curve_col, 1.5f );     // ramp
+			else
+			{
+				dl->AddLine( ImVec2( x_prev, y_prev ), ImVec2( x, y_prev ), curve_col, 1.5f ); // step across
+				dl->AddLine( ImVec2( x, y_prev ), ImVec2( x, y ), IM_COL32( 120, 190, 255, 110 ) ); // rise
+			}
+			x_prev = x; y_prev = y;
+		}
+		dl->AddLine( ImVec2( x_prev, y_prev ),
+					 ImVec2( TickToX( data.EndTick - 1, data.BeginTick, data.EndTick, tx, tw ), y_prev ),
+					 curve_col, 1.5f ); // post-hold
+	}
+
+	// keys + interactions (same drag machinery as ImTimeline, plus the value axis)
+	bool acted = false;
+	ImVec2 const mouse = ImGui::GetIO().MousePos;
+	ImGuiStorage* storage     = ImGui::GetStateStorage();
+	ImGuiID const id_drag_key = ImGui::GetID( "##tlc_drag_key" );
+	ImGuiID const id_dragging = ImGui::GetID( "##tlc_dragging" );
+	unsigned      drag_key_id = (unsigned)storage->GetInt( id_drag_key, 0 );
+	bool          dragging    = storage->GetInt( id_dragging, 0 ) != 0;
+
+	for ( int i = 0; i < data.Keys.Size; ++i )
+	{
+		ImTimelineCurveKey const& k = data.Keys[ i ];
+		float x = TickToX( k.Tick, data.BeginTick, data.EndTick, tx, tw );
+		float y = ValueToY( k.Value );
+		ImU32 c = k.Selected ? IM_COL32( 255, 210, 90, 255 ) : IM_COL32( 225, 225, 225, 255 );
+		dl->AddNgonFilled( ImVec2( x, y ), kKeyR, c, 4 );
+		if ( hovered && out_action && !acted && drag_key_id == 0u &&
+			 ImFabs( mouse.x - x ) <= kKeyR + 3.0f && ImFabs( mouse.y - y ) <= kKeyR + 3.0f )
+		{
+			if ( ImGui::IsMouseClicked( ImGuiMouseButton_Left ) )
+			{
+				out_action->Kind = ImTimelineCurveAction_SelectKey; out_action->KeyId = k.Id; acted = true;
+				storage->SetInt( id_drag_key, (int)k.Id );
+				drag_key_id = k.Id;
+			}
+			else if ( ImGui::IsMouseClicked( ImGuiMouseButton_Right ) )
+			{ out_action->Kind = ImTimelineCurveAction_KeyContext; out_action->KeyId = k.Id; acted = true; }
+		}
+	}
+
+	if ( drag_key_id != 0u )
+	{
+		ImTimelineCurveKey const* dk = 0;
+		for ( int i = 0; i < data.Keys.Size; ++i )
+			if ( data.Keys[ i ].Id == drag_key_id ) { dk = &data.Keys[ i ]; break; }
+		long long const tick  = XToTick( mouse.x, data.BeginTick, data.EndTick, tx, tw );
+		double const    value = YToValue( mouse.y );
+		if ( !ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+		{
+			if ( dragging && dk && out_action && !acted &&
+				 ( tick != dk->Tick || value != dk->Value ) )
+			{
+				out_action->Kind = ImTimelineCurveAction_MoveKey;
+				out_action->KeyId = drag_key_id;
+				out_action->TargetTick = tick;
+				out_action->TargetValue = value;
+				acted = true;
+			}
+			storage->SetInt( id_drag_key, 0 );
+			storage->SetInt( id_dragging, 0 );
+			drag_key_id = 0u; dragging = false;
+		}
+		else
+		{
+			if ( !dragging && ImGui::IsMouseDragging( ImGuiMouseButton_Left, 3.0f ) )
+			{ dragging = true; storage->SetInt( id_dragging, 1 ); }
+			if ( dragging && dk )
+			{
+				float gx = TickToX( tick, data.BeginTick, data.EndTick, tx, tw );
+				float gy = ValueToY( value );
+				dl->AddNgonFilled( ImVec2( gx, gy ), kKeyR, IM_COL32( 255, 210, 90, 160 ), 4 );
+				dl->AddLine( ImVec2( gx, ty ), ImVec2( gx, ty + th ), IM_COL32( 255, 210, 90, 70 ) );
+				char buf[ 48 ]; snprintf( buf, sizeof( buf ), "%lld : %.4g", tick, value );
+				dl->AddText( ImVec2( gx + 6.0f, gy - 16.0f ), IM_COL32( 255, 210, 90, 255 ), buf );
+			}
+		}
+	}
+
+	if ( hovered && out_action && !acted && drag_key_id == 0u &&
+		 ImGui::IsKeyPressed( ImGuiKey_Delete ) )
+	{
+		for ( int i = 0; i < data.Keys.Size; ++i )
+		{
+			if ( !data.Keys[ i ].Selected ) continue;
+			out_action->Kind = ImTimelineCurveAction_DeleteKey;
+			out_action->KeyId = data.Keys[ i ].Id;
+			acted = true;
+			break;
+		}
+	}
+
+	// playhead
+	{
+		float x = TickToX( data.PlayheadTick, data.BeginTick, data.EndTick, tx, tw );
+		dl->AddLine( ImVec2( x, p0.y ), ImVec2( x, p0.y + sz.y ), IM_COL32( 90, 170, 255, 200 ), 2.0f );
+	}
+
+	// empty space: double-click inserts; drag scrubs (suppressed mid key-drag)
+	if ( hovered && out_action && !acted && drag_key_id == 0u && mouse.x >= tx )
+	{
+		long long tick = XToTick( mouse.x, data.BeginTick, data.EndTick, tx, tw );
+		if ( ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
+		{ out_action->Kind = ImTimelineCurveAction_InsertKey; out_action->TargetTick = tick; acted = true; }
+		else if ( ImGui::IsMouseDown( ImGuiMouseButton_Left ) && ImGui::IsItemActive() )
+		{ out_action->Kind = ImTimelineCurveAction_Scrub; out_action->TargetTick = tick; acted = true; }
+	}
+	return acted;
+}
+
 } // namespace ImWidgets
