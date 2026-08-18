@@ -97,7 +97,7 @@ namespace ImWidgets
 {
 	// Draws the timeline in the current window filling `size` (0,0 = avail).
 	// Returns true when `out_action` carries a user action for the host.
-	bool ImTimeline( char const* label,
+	IMGUI_API bool ImTimeline( char const* label,
 					 ImTimelineData const& data,
 					 ImVec2 const& size,
 					 ImTimelineAction* out_action );

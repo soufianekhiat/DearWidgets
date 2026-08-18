@@ -1,4 +1,4 @@
-#include <demo.h>
+﻿#include <demo.h>
 
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
@@ -1574,6 +1574,36 @@ int main( int argc, char** argv )
 					break;
 				}
 
+				// When filtering to one section, SEEK to it instead of walking every
+				// section on the way. The walk costs ~6 frames each -- 130 sections
+				// is ~800 frames, which is seconds normally but minutes whenever the
+				// frame loop is throttled (occluded/background window), and that is
+				// the "hang". It is also what let correct_scroll accumulate drift and
+				// put the crop on the wrong content. Seeking re-bootstraps the scroll
+				// from the target section's own recorded start_y, so it is both fast
+				// and more accurate.
+				// Must run BEFORE `sec` is bound below -- it moves section_index.
+				if ( g_ss.section_filter[0] != '\0' && g_ss.section_pass == 0 )
+				{
+					int seek = g_ss.section_index;
+					while ( seek < g_ss_nsections &&
+							strstr( g_ss_sections[seek].name, g_ss.section_filter ) == nullptr )
+						seek++;
+					if ( seek != g_ss.section_index )
+					{
+						g_ss.section_index  = seek;
+						g_ss.correct_scroll = -1.0f;	// re-bootstrap from sec.start_y
+					}
+					if ( g_ss.section_index >= g_ss_nsections )
+					{
+						fprintf( stderr, "[screenshot] no section matching \"%s\"\n", g_ss.section_filter );
+						fflush( stderr );
+						g_ss.done  = true;
+						g_ss.phase = DW_SsPhase_Done;
+						break;
+					}
+				}
+
 				const DW_SsSection& sec = g_ss_sections[g_ss.section_index];
 
 				if ( g_ss.section_pass == 0 )
@@ -1621,6 +1651,7 @@ int main( int argc, char** argv )
 					HWND         hwnd = FindWindowA( NULL, "Dear Widgets Demo" );
 					ImGuiWindow* dw = ImGui::FindWindowByName( "Dear Widgets" );
 					bool         want = ( g_ss.section_filter[0] == '\0' ) || ( strstr( sec.name, g_ss.section_filter ) != nullptr );
+
 					if ( want && hwnd && dw && !dw->Hidden && !dw->Collapsed )
 					{
 						float hdr_skip = g_ss.with_headers ? 0.0f : ImGui::GetFrameHeightWithSpacing();
@@ -5746,11 +5777,8 @@ namespace ImWidgets{
 							{
 								ImVec2 p = ImGui::GetCursorScreenPos();
 								ImRect bb( p, p + ImVec2( tsWidth, tsBandH ) );
-								DrawShapeProceduralColorHorizontalBand( dl, bb, tsDivisions,
-									[]( float t, void* )->ImU32 {
-										float r, g, b; ImGui::ColorConvertHSVtoRGB( t, 1.0f, 1.0f, r, g, b );
-										return IM_COL32( (int)(r*255), (int)(g*255), (int)(b*255), 255 );
-									}, dummy );
+								// Plain hue sweep = a default-constructed ImWidgetsColorScalar.
+								DrawShapeProceduralColorHorizontalBand( dl, bb, tsDivisions, ImWidgetsColorScalar() );
 								ImGui::InvisibleButton( "ShapeHueBand##TS", ImVec2( tsWidth, tsBandH ) );
 							}
 
@@ -5758,11 +5786,12 @@ namespace ImWidgets{
 							{
 								ImVec2 p = ImGui::GetCursorScreenPos();
 								ImRect bb( p, p + ImVec2( tsBandH * 2.0f, tsBandH * 4.0f ) );
-								DrawShapeProceduralColorVerticalBand( dl, bb, tsDivisions,
-									[]( float t, void* )->ImU32 {
-										int g = (int)((1.0f - t) * 255.0f);
-										return IM_COL32( g, g, g, 255 );
-									}, dummy );
+								// Neutral ramp, reversed so white lands at the top.
+								ImWidgetsColorScalar greyCs;
+								ColorScalarPreset( &greyCs, ImWidgetsColorRamp_Grey );
+								greyCs.RangeMin = 1.0f;
+								greyCs.RangeMax = 0.0f;
+								DrawShapeProceduralColorVerticalBand( dl, bb, tsDivisions, greyCs );
 								ImGui::InvisibleButton( "ShapeVBand##TS", bb.GetSize() );
 							}
 
@@ -5800,11 +5829,7 @@ namespace ImWidgets{
 								ImVec2 c = p + ImVec2( side * 0.5f, side * 0.5f );
 								float rOut = side * 0.5f - 4.0f;
 								float rIn = rOut * 0.65f;
-								DrawShapeProceduralColorAnnulus( dl, c, rIn, rOut, tsSectors,
-									[]( float t, void* )->ImU32 {
-										float r, g, b; ImGui::ColorConvertHSVtoRGB( t, 1.0f, 1.0f, r, g, b );
-										return IM_COL32( (int)(r*255), (int)(g*255), (int)(b*255), 255 );
-									}, dummy );
+								DrawShapeProceduralColorAnnulus( dl, c, rIn, rOut, tsSectors, ImWidgetsColorScalar() );
 								ImGui::InvisibleButton( "ShapeAnnulus##TS", ImVec2( side, side ) );
 							}
 
@@ -5836,16 +5861,15 @@ namespace ImWidgets{
 							ImGui::SliderFloat( "Gamma##PCP", &gamma, 0.1f, 4.0f );
 							ImGui::SliderFloat( "Offset##PCP", &offset, 0.0f, 1.0f );
 							ImGui::SliderFloat( "Alpha##PCP", &alpha, 0.0f, 1.0f );
-							float hueData[] = { alpha, offset, gamma };
-							auto hueFunc = []( float tt, void* pUserData ) -> ImU32{
-								float a = ((float*)pUserData)[0];
-								float off = ((float*)pUserData)[1];
-								float gm = ((float*)pUserData)[2];
-								float t = ImFmod( 1.0f + ImPow( tt, gm ) - off, 1.0f );
-								float r, g, b;
-								ImGui::ColorConvertHSVtoRGB( t, 1.0f, 1.0f, r, g, b );
-								return IM_COL32( (int)(r * 255.0f), (int)(g * 255.0f), (int)(b * 255.0f), (int)(a * 255.0f) );
-								};
+							// A gamma / offset / alpha hue sweep is the BUILT-IN mapping --
+							// no callback to write. Hue is periodic, so the offset just
+							// rides on the range and the evaluator wraps it.
+							ImWidgetsColorScalar hueCs;
+							hueCs.RangeMin  = -offset;
+							hueCs.RangeMax  = 1.0f - offset;
+							hueCs.Ease      = ImWidgetsColorEase_Gamma;
+							hueCs.EaseParam = gamma;
+							hueCs.Alpha     = alpha;
 
 							ImDrawList* dl = ImGui::GetWindowDrawList();
 							ImVec2 p = ImGui::GetCursorScreenPos();
@@ -5854,11 +5878,11 @@ namespace ImWidgets{
 							// high DPI). Still routed through Lp so it scales with font size.
 							const float SX = ImPlatform_LpPxScale() * 0.8f;
 							// Horizontal
-							ImWidgets::DrawProceduralColor1DBilinearHorizontal( dl, hueFunc, &hueData[0], 0.0f, 1.0f, p, ImVec2( 260.0f * SX, 32.0f * SX ), 64 );
+							ImWidgets::DrawProceduralColor1DBilinearHorizontal( dl, hueCs, 0.0f, 1.0f, p, ImVec2( 260.0f * SX, 32.0f * SX ), 64 );
 							// Vertical
-							ImWidgets::DrawProceduralColor1DBilinearVertical( dl, hueFunc, &hueData[0], 0.0f, 1.0f, ImVec2( p.x + 280.0f * SX, p.y ), ImVec2( 32.0f * SX, 160.0f * SX ), 48 );
+							ImWidgets::DrawProceduralColor1DBilinearVertical( dl, hueCs, 0.0f, 1.0f, ImVec2( p.x + 280.0f * SX, p.y ), ImVec2( 32.0f * SX, 160.0f * SX ), 48 );
 							// Arc (half ring)
-							ImWidgets::DrawProceduralColorArcBilinear( dl, ImVec2( p.x + 80.0f * SX, p.y + 200.0f * SX ), 40.0f * SX, 80.0f * SX, IM_PI, IM_PI, hueFunc, &hueData[0], 64, true );
+							ImWidgets::DrawProceduralColorArcBilinear( dl, ImVec2( p.x + 80.0f * SX, p.y + 200.0f * SX ), 40.0f * SX, 80.0f * SX, IM_PI, IM_PI, hueCs, 64, true );
 							// Spline (zig-zag)
 							ImVec2 pts[6] = {
 								ImVec2( p.x + 200.0f * SX, p.y + 200.0f * SX ),
@@ -5868,7 +5892,7 @@ namespace ImWidgets{
 								ImVec2( p.x + 400.0f * SX, p.y + 200.0f * SX ),
 								ImVec2( p.x + 450.0f * SX, p.y + 250.0f * SX )
 							};
-							ImWidgets::DrawProceduralColorSplineBilinear( dl, pts, 6, 14.0f * SX, hueFunc, &hueData[0], /*96*/256, false );
+							ImWidgets::DrawProceduralColorSplineBilinear( dl, pts, 6, 14.0f * SX, hueCs, /*96*/256, false );
 
 							ImGui::Dummy( ImVec2( 480.0f * SX, 320.0f * SX ) );
 						}
@@ -5894,13 +5918,10 @@ namespace ImWidgets{
 								ImVec2 curPos = ImGui::GetCursorScreenPos();
 								ImGui::InvisibleButton( "##ZoneColorRing0", ImVec2( width, width ), 0 );
 
+								// Built-in hue sweep. The two rings below keep hand-written
+								// callbacks on purpose -- see the comments there.
 								DrawColorRing( pDrawList, curPos, ImVec2( width, width ), thickness,
-											   []( float t, void* ){
-												   float r, g, b;
-												   ImGui::ColorConvertHSVtoRGB( t, 1.0f, 1.0f, r, g, b );
-
-												   return IM_COL32( r * 255, g * 255, b * 255, 255 );
-											   }, NULL, division, colorOffset, true );
+											   ImWidgetsColorScalar(), division, colorOffset, true );
 							}
 							static float center = 0.5f;
 							ImGui::DragFloat( "Center", &center, 0.01f, 0.0f, 1.0f );
@@ -5909,6 +5930,9 @@ namespace ImWidgets{
 							static int frequency = 6;
 							ImGui::SliderInt( "Frequency", &frequency, 1, 32 );
 							{
+								// Kept as a callback ON PURPOSE: the alpha comes from a dot
+								// product against a direction, which is geometry, not a
+								// colour-space ramp -- exactly when you still write your own.
 								ImGui::Text( "Nearest" );
 								//float const width = ImGui::GetContentRegionAvail().x;
 								ImVec2 curPos = ImGui::GetCursorScreenPos();
@@ -5932,6 +5956,8 @@ namespace ImWidgets{
 											   }, &data[0], division, colorOffset, false );
 							}
 							{
+								// Also deliberately a callback: a square wave is not a
+								// colour-space mapping.
 								ImGui::Text( "Custom" );
 								ImVec2 curPos = ImGui::GetCursorScreenPos();
 								ImGui::InvisibleButton( "##ZoneColorRing2", ImVec2( width, width ) * 0.5f, 0 );
@@ -7559,6 +7585,42 @@ namespace ImWidgets{
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Size / Resize (aspect lock)##Interactions" ) )
+			{
+				ImGui::TextWrapped( "Drag a handle on the proxy or a numeric field. With the padlock "
+					                 "closed, changing one dimension scales the others to keep every ratio." );
+
+				// Preview enum is None=0, Top=1, Bottom=2, so the combo index is the value.
+				static int s_sz_prev = (int)ImWidgets::ImWidgetsSizePreview_Top;
+				const char* prev_names[] = { "None", "Top", "Bottom" };
+				ImGui::SetNextItemWidth( ImPlatform_LpToPx( 160.0f ) );
+				ImGui::Combo( "Preview position", &s_sz_prev, prev_names, IM_ARRAYSIZE( prev_names ) );
+				ImWidgets::ImWidgetsSizePreview prev = (ImWidgets::ImWidgetsSizePreview)s_sz_prev;
+				ImGui::Spacing();
+
+				ImGui::BeginGroup();
+				ImGui::TextUnformatted( "2D  --  width x height" );
+				static float s_sz2_w = 160.0f, s_sz2_h = 90.0f;
+				static bool  s_sz2_lock = true;
+				ImWidgets::SizeControl2D( "##size2d", &s_sz2_w, &s_sz2_h, &s_sz2_lock,
+					                       1.0f, 512.0f, "%.0f", ImVec2( ImPlatform_LpToPx( 240.0f ), ImPlatform_LpToPx( 150.0f ) ), prev );
+				ImGui::Text( "%.0f x %.0f  (%.3f : 1)", s_sz2_w, s_sz2_h, s_sz2_h > 0.0f ? s_sz2_w / s_sz2_h : 0.0f );
+				ImGui::EndGroup();
+
+				ImGui::SameLine( 0.0f, ImPlatform_LpToPx( 24.0f ) );
+
+				ImGui::BeginGroup();
+				ImGui::TextUnformatted( "3D  --  width x height x depth" );
+				static float s_sz3_w = 100.0f, s_sz3_h = 60.0f, s_sz3_d = 40.0f;
+				static bool  s_sz3_lock = false;
+				ImWidgets::SizeControl3D( "##size3d", &s_sz3_w, &s_sz3_h, &s_sz3_d, &s_sz3_lock,
+					                       1.0f, 256.0f, "%.0f", ImVec2( ImPlatform_LpToPx( 280.0f ), ImPlatform_LpToPx( 170.0f ) ), prev );
+				ImGui::Text( "%.0f x %.0f x %.0f", s_sz3_w, s_sz3_h, s_sz3_d );
+				ImGui::EndGroup();
+
+				ImGui::TreePop();
+			}
+			ApplyOpenAll();
 			if ( ImGui::TreeNode( "Snap Lines / Smart Guides##Interactions" ) )
 			{
 				static ImVec2 s_snap_moving_pos( 60.0f, 60.0f );
@@ -8131,6 +8193,31 @@ namespace ImWidgets{
 						ImWidgets::SliderGradientFloat( "Float Fill RTL##SG", &gradFillF_RTL, 0.0f, 1.0f, &gradRainbow, ImVec2( 0, 0 ), sg_fill, /*right_to_left=*/true );
 						static int gradFillI_RTL = 60;
 						ImWidgets::SliderGradientInt( "Int Fill RTL##SG", &gradFillI_RTL, 0, 100, &gradOkLch, ImVec2( 0, 0 ), sg_fill, /*right_to_left=*/true );
+
+						// Vertical variant: v_min at the BOTTOM (inverted = at the top).
+						// This is the building block the Primaries Bars panel is made of.
+						// The three fill styles are the panel's two Resolve usages:
+						// FromMin grows out of the bottom (Gain / RGB Mixer), FromCenter
+						// grows out of the neutral midpoint (Lift / Gamma / Offset).
+						ImGui::Separator();
+						ImGui::TextUnformatted( "Vertical -- fill styles (None / FromMin / FromCenter / FromMin+inverted):" );
+						static float gradV1 = 0.6f, gradV2 = 0.4f, gradV3 = 0.7f, gradV5 = 0.35f;
+						static int   gradVi = 65;
+						ImWidgets::SliderGradientVerticalFloat( "##SGV1", &gradV1, 0.0f, 1.0f, &gradRainbow, ImVec2( 26.0f, 130.0f ),
+															   ImWidgets::ImWidgetsSliderFill_None );
+						ImGui::SameLine();
+						ImWidgets::SliderGradientVerticalFloat( "##SGV2", &gradV2, 0.0f, 1.0f, &gradOkLch, ImVec2( 26.0f, 130.0f ),
+															   ImWidgets::ImWidgetsSliderFill_FromMin );
+						ImGui::SameLine();
+						ImWidgets::SliderGradientVerticalFloat( "##SGV3", &gradV3, 0.0f, 1.0f, &gradOkLch, ImVec2( 26.0f, 130.0f ),
+															   ImWidgets::ImWidgetsSliderFill_FromCenter );
+						ImGui::SameLine();
+						ImWidgets::SliderGradientVerticalFloat( "##SGV5", &gradV5, 0.0f, 1.0f, &gradRainbow, ImVec2( 26.0f, 130.0f ),
+															   ImWidgets::ImWidgetsSliderFill_FromMin, /*inverted=*/true );
+						ImGui::SameLine();
+						ImWidgets::SliderGradientVerticalInt( "Int##SGV4", &gradVi, 0, 100, &gradRainbow, ImVec2( 26.0f, 130.0f ),
+															 ImWidgets::ImWidgetsSliderFill_FromCenter );
+						ImGui::Text( "none=%.2f  fromMin=%.2f  fromCenter=%.2f  inverted=%.2f  int=%d", gradV1, gradV2, gradV3, gradV5, gradVi );
 
 						// Range variant (two handles, cutoff on [lower, upper]).
 						// Both min and max are user-controlled -- outside the range the
@@ -10518,6 +10605,646 @@ namespace ImWidgets{
 				{
 					float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Primaries Bars (Color Bars)" ) )
+					{
+						// Bar counterpart of the Primaries Wheels above: one ColorBars
+						// call per grading block, each = Y/R/G/B vertical gradient sliders.
+						// The fill style is per-block, matching Resolve: Lift, Gamma and
+						// Offset grow out of the neutral centre; Gain grows from the bottom.
+						static float barsYRGB[4][4] = {
+							{ 0.0f, 0.0f, 0.0f, 0.0f },  // Lift
+							{ 0.0f, 0.0f, 0.0f, 0.0f },  // Gamma
+							{ 0.0f, 0.0f, 0.0f, 0.0f },  // Gain
+							{ 0.0f, 0.0f, 0.0f, 0.0f },  // Offset
+						};
+						static bool barsLinkMaster = true;
+						static bool barsShowValues = true;
+
+						const char* barNames[] = { "Lift", "Gamma", "Gain", "Offset" };
+						const ImWidgets::ImWidgetsSliderFill barFills[] = {
+							ImWidgets::ImWidgetsSliderFill_FromCenter,  // Lift
+							ImWidgets::ImWidgetsSliderFill_FromCenter,  // Gamma
+							ImWidgets::ImWidgetsSliderFill_FromMin,     // Gain
+							ImWidgets::ImWidgetsSliderFill_FromCenter,  // Offset
+						};
+						const char* barFillNames[] = { "center", "center", "bottom", "center" };
+
+						ImGui::Checkbox( "Y drives R/G/B", &barsLinkMaster );
+						ImGui::SameLine();
+						ImGui::Checkbox( "Show values", &barsShowValues );
+						ImGui::SameLine();
+						if ( ImGui::Button( "Reset all##Bars" ) )
+							for ( int b = 0; b < 4; ++b )
+								for ( int c = 0; c < 4; ++c )
+									barsYRGB[b][c] = 0.0f;
+						ImGui::TextDisabled( "Drag a bar or its value. Double-click a channel resets it, Y resets the block." );
+
+						if ( ImGui::BeginTable( "##PrimBars", 4, ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_BordersInnerV ) )
+						{
+							for ( int b = 0; b < 4; ++b )
+								ImGui::TableSetupColumn( barNames[b], ImGuiTableColumnFlags_WidthStretch );
+
+							for ( int b = 0; b < 4; ++b )
+							{
+								ImGui::TableNextColumn();
+								ImGui::Text( "%s", barNames[b] );
+								ImGui::SameLine();
+								ImGui::TextDisabled( "(%s)", barFillNames[b] );
+								ImGui::PushID( b );
+								ImWidgets::ColorBars( "##bars", barsYRGB[b],
+													  -1.0f, 1.0f, 0.0f,
+													  barsLinkMaster, barsShowValues,
+													  ImVec2( 30.0f, 150.0f ),
+													  barFills[b] );
+								ImGui::PopID();
+							}
+							ImGui::EndTable();
+						}
+
+						// Second usage: the RGB Mixer style, where every bar grows from
+						// the bottom regardless of channel.
+						ImGui::Separator();
+						ImGui::TextUnformatted( "RGB Mixer style -- every bar fills from the bottom:" );
+						static float mixerYRGB[4] = { 0.5f, 0.5f, 0.5f, 0.5f };
+						ImWidgets::ColorBars( "##mixerbars", mixerYRGB,
+											  0.0f, 1.0f, 0.5f,
+											  /*link_master=*/false, /*show_values=*/true,
+											  ImVec2( 30.0f, 130.0f ),
+											  ImWidgets::ImWidgetsSliderFill_FromMin );
+
+						// The grading control rows Resolve puts under the wheels/bars,
+						// each a DragFloat with a colour or gradient underline.
+						ImGui::Separator();
+						ImGui::TextUnformatted( "Underlined grading controls (double-click a value to reset):" );
+						static float ubTemp = 0.0f, ubTint = 0.0f, ubContrast = 1.0f, ubPivot = 0.435f, ubMidDetail = 0.0f;
+						static float ubSat = 50.0f, ubHue = 50.0f, ubLumMix = 100.0f;
+						float ubW = 92.0f;
+
+						ImWidgets::DragFloatGradientUnderline( "Temp", &ubTemp, 0.5f, -4000.0f, 4000.0f, 0.0f,
+															  ImWidgets::GradingGradient( ImWidgets::ImWidgetsGradingGradient_Temperature ), "%.1f", ubW );
+						ImGui::SameLine();
+						ImWidgets::DragFloatGradientUnderline( "Tint", &ubTint, 0.05f, -50.0f, 50.0f, 0.0f,
+															  ImWidgets::GradingGradient( ImWidgets::ImWidgetsGradingGradient_Tint ), "%.2f", ubW );
+						ImGui::SameLine();
+						ImWidgets::DragFloatGradientUnderline( "Contrast", &ubContrast, 0.005f, 0.0f, 2.0f, 1.0f,
+															  ImWidgets::GradingGradient( ImWidgets::ImWidgetsGradingGradient_Contrast ), "%.3f", ubW );
+						ImGui::SameLine();
+						ImWidgets::DragFloatGradientUnderline( "Pivot", &ubPivot, 0.005f, 0.0f, 1.0f, 0.435f,
+															  ImWidgets::GradingGradient( ImWidgets::ImWidgetsGradingGradient_Pivot ), "%.3f", ubW );
+						ImGui::SameLine();
+						ImWidgets::DragFloatGradientUnderline( "Mid/Detail", &ubMidDetail, 0.25f, -100.0f, 100.0f, 0.0f,
+															  ImWidgets::GradingGradient( ImWidgets::ImWidgetsGradingGradient_MidDetail ), "%.1f", ubW );
+
+						ImWidgets::DragFloatGradientUnderline( "Saturation", &ubSat, 0.25f, 0.0f, 100.0f, 50.0f,
+															  ImWidgets::GradingGradient( ImWidgets::ImWidgetsGradingGradient_Saturation ), "%.1f", ubW );
+						ImGui::SameLine();
+						ImWidgets::DragFloatGradientUnderline( "Hue", &ubHue, 0.25f, 0.0f, 100.0f, 50.0f,
+															  ImWidgets::GradingGradient( ImWidgets::ImWidgetsGradingGradient_Hue ), "%.1f", ubW );
+						ImGui::SameLine();
+						ImWidgets::DragFloatGradientUnderline( "Lum Mix", &ubLumMix, 0.25f, 0.0f, 100.0f, 100.0f,
+															  ImWidgets::GradingGradient( ImWidgets::ImWidgetsGradingGradient_LumMix ), "%.1f", ubW );
+
+						// Solid-colour underlines: the Y/R/G/B row under a wheel.
+						ImGui::Spacing();
+						ImGui::TextUnformatted( "Solid underlines (the Y/R/G/B row under a wheel):" );
+						static float ubYRGB[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+						const ImU32 ubCols[4] = { IM_COL32( 230, 230, 230, 255 ), IM_COL32( 235, 70, 70, 255 ),
+												  IM_COL32( 70, 220, 95, 255 ),   IM_COL32( 85, 135, 250, 255 ) };
+						const char* ubNames[4] = { "Y", "R", "G", "B" };
+						for ( int c = 0; c < 4; ++c )
+						{
+							if ( c > 0 ) ImGui::SameLine();
+							ImWidgets::DragFloatColorUnderline( ubNames[c], &ubYRGB[c], 0.005f, -1.0f, 1.0f, 0.0f,
+																ubCols[c], "%.2f", 70.0f );
+						}
+					}
+					DW_SsRecord( "Primaries_Bars", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "ColorSlice (vectorspace slices)" ) )
+					{
+						static ImWidgets::ImColorSliceData s_slice;
+						static bool s_sliceInit = false;
+						if ( !s_sliceInit )
+						{
+							s_slice.ResolveVectors();
+							s_sliceInit = true;
+						}
+
+						ImGui::TextWrapped( "Seven vectorspace slices, each qualifying one wedge of the hue circle. "
+											 "The wedge WIDTH is fixed -- Center is the only qualifying control and just "
+											 "slides the weighting centre inside it. Slices overlap on purpose so their "
+											 "qualifiers blend. Note there is no per-slice luminance: brightness is "
+											 "handled subtractively inside Saturation." );
+						if ( ImGui::Button( "Reset all##Slice" ) )
+							s_slice.ResetAll();
+						ImGui::SameLine();
+						ImGui::TextDisabled( "Drag inside a wheel to move its centre line; hold [o] to highlight." );
+
+						ImGui::BeginChild( "##sliceScroll", ImVec2( 0.0f, ImPlatform_LpToPx( 330.0f ) ),
+										   ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar );
+						ImWidgets::ColorSlice( "##colorslice", s_slice );
+						ImGui::EndChild();
+
+						if ( s_slice.HighlightSlice >= 0 )
+							ImGui::Text( "Highlighting slice: %s", s_slice.Slices[s_slice.HighlightSlice].Label );
+						else
+							ImGui::TextDisabled( "Highlighting slice: none" );
+					}
+					DW_SsRecord( "ColorSlice", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Chroma Warp (chromaticity strokes)" ) )
+					{
+						static ImWidgets::ImChromaWarpData s_cw;
+						ImGui::TextWrapped( "Resolve 20's Chroma Warp -- a DIFFERENT tool from the Color Warper mesh above "
+											 "(in Resolve the two are mutually exclusive per node). Pick a tool, then drag "
+											 "inside the diagram from a source colour to a destination. A Normal stroke "
+											 "affects every colour along the vector (capsule-shaped influence); Point to "
+											 "Point maps source straight to destination. Pins EXCLUDE a range -- drop one "
+											 "on the white point to stop neutrals tinting." );
+						ImWidgets::ChromaWarp( "##chromawarp", s_cw, ImVec2( 0.0f, 300.0f ) );
+					}
+					DW_SsRecord( "ChromaWarp", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Spectrum -> RGB" ) )
+					{
+						static ImWidgets::ImSpectrumData s_spd;
+						static bool  s_spdInit = false;
+						static int   s_spdObs  = ImWidgetsObserver_CIE1931_2deg;
+						static float s_spdGain = 1.0f;
+						if ( !s_spdInit )
+						{
+							s_spd.SetGaussian( 540.0f, 30.0f, 1.0f );
+							s_spdInit = true;
+						}
+
+						ImGui::TextWrapped( "Drag inside the canvas to draw a spectral power distribution. "
+											 "It is integrated against the CIE observer to XYZ, then converted to sRGB." );
+
+						ImGui::SetNextItemWidth( ImPlatform_LpToPx( 180.0f ) );
+						ImGui::Combo( "Observer##SPD", &s_spdObs, "CIE 1931 2deg\0CIE 1964 10deg\0" );
+						ImGui::SameLine();
+						if ( ImGui::Button( "Clear##SPD" ) )    s_spd.Fill( 0.0f );
+						ImGui::SameLine();
+						if ( ImGui::Button( "Flat##SPD" ) )     s_spd.Fill( 1.0f );
+						ImGui::SameLine();
+						if ( ImGui::Button( "Green line##SPD" ) ) s_spd.SetGaussian( 540.0f, 12.0f, 1.0f );
+						ImGui::SameLine();
+						if ( ImGui::Button( "Broad warm##SPD" ) ) s_spd.SetGaussian( 610.0f, 70.0f, 1.0f );
+
+						ImGui::BeginGroup();
+						ImWidgets::SpectrumEditor( "##spd", s_spd, ImVec2( 460.0f, 170.0f ), 1.0f,
+												   (ImWidgetsObserver)s_spdObs );
+						ImGui::EndGroup();
+
+						ImGui::SameLine( 0.0f, ImPlatform_LpToPx( 12.0f ) );
+
+						ImGui::BeginGroup();
+						float X, Y, Z;
+						ImWidgets::SpectrumToXYZ( s_spd, (ImWidgetsObserver)s_spdObs, X, Y, Z );
+						X *= s_spdGain; Y *= s_spdGain; Z *= s_spdGain;
+						float lr, lg, lb;
+						ImWidgets::ColorConvertXYZtosRGB( lr, lg, lb, X, Y, Z );
+						bool oog = ( lr < 0.0f || lg < 0.0f || lb < 0.0f || lr > 1.0f || lg > 1.0f || lb > 1.0f );
+						float cr = ImClamp( lr, 0.0f, 1.0f );
+						float cg = ImClamp( lg, 0.0f, 1.0f );
+						float cb = ImClamp( lb, 0.0f, 1.0f );
+						float x_, y_, Yy;
+						ImWidgets::ColorConvertXYZtoxyY( x_, y_, Yy, X, Y, Z );
+
+						ImGui::SetNextItemWidth( ImPlatform_LpToPx( 150.0f ) );
+						ImGui::DragFloat( "Gain##SPD", &s_spdGain, 0.01f, 0.01f, 20.0f, "%.2f" );
+						ImGui::ColorButton( "##spdswatch", ImVec4( cr, cg, cb, 1.0f ),
+											ImGuiColorEditFlags_NoTooltip,
+											ImVec2( ImPlatform_LpToPx( 150.0f ), ImPlatform_LpToPx( 60.0f ) ) );
+						ImGui::Text( "XYZ  %.4f  %.4f  %.4f", X, Y, Z );
+						ImGui::Text( "xy   %.4f  %.4f", x_, y_ );
+						ImGui::Text( "sRGB %.3f  %.3f  %.3f", lr, lg, lb );
+						ImGui::Text( "hex  #%02X%02X%02X",
+									 (int)( cr * 255.0f + 0.5f ), (int)( cg * 255.0f + 0.5f ), (int)( cb * 255.0f + 0.5f ) );
+						if ( oog )
+							ImGui::TextColored( ImVec4( 1.0f, 0.65f, 0.2f, 1.0f ), "out of sRGB gamut (clipped)" );
+						else
+							ImGui::TextDisabled( "inside sRGB gamut" );
+						ImGui::EndGroup();
+
+						// Same spectrum expressed in several working spaces. A
+						// narrow spectral line lands outside most of them, which is
+						// correct -- monochromatic stimuli sit on the spectral locus.
+						static const ImWidgetsColorSpace kSpaces[] = {
+							ImWidgetsColorSpace_sRGB,
+							ImWidgetsColorSpace_AdobeRGB,
+							ImWidgetsColorSpace_Rec2020,
+							ImWidgetsColorSpace_ProPhoto,
+							ImWidgetsColorSpace_WideGamutRGB,
+						};
+						const int kSpaceCount = IM_ARRAYSIZE( kSpaces );
+
+						ImGui::Spacing();
+						if ( ImGui::BeginTable( "##spdspaces", 5,
+												ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit ) )
+						{
+							ImGui::TableSetupColumn( "Space" );
+							ImGui::TableSetupColumn( "R" );
+							ImGui::TableSetupColumn( "G" );
+							ImGui::TableSetupColumn( "B" );
+							ImGui::TableSetupColumn( "Fits?" );
+							ImGui::TableHeadersRow();
+							for ( int i = 0; i < kSpaceCount; ++i )
+							{
+								float sr, sg, sb;
+								ImWidgets::ColorConvertXYZtoRGBSpace( kSpaces[i], sr, sg, sb, X, Y, Z );
+								bool inGamut = ImWidgets::ChromaticityInsideGamut( kSpaces[i], x_, y_ );
+								bool clipped = ( sr > 1.0f || sg > 1.0f || sb > 1.0f );
+
+								ImGui::TableNextColumn();
+								ImGui::TextUnformatted( ImWidgets::ColorSpaceName( kSpaces[i] ) );
+								ImGui::TableNextColumn(); ImGui::Text( "%.3f", sr );
+								ImGui::TableNextColumn(); ImGui::Text( "%.3f", sg );
+								ImGui::TableNextColumn(); ImGui::Text( "%.3f", sb );
+								ImGui::TableNextColumn();
+								if ( !inGamut )
+									ImGui::TextColored( ImVec4( 0.94f, 0.31f, 0.27f, 1.0f ), "no" );
+								else if ( clipped )
+									ImGui::TextColored( ImVec4( 1.00f, 0.72f, 0.20f, 1.0f ), "hue ok, >1" );
+								else
+									ImGui::TextColored( ImVec4( 0.31f, 0.92f, 0.43f, 1.0f ), "yes" );
+							}
+							ImGui::EndTable();
+						}
+
+						// Drop the integrated colour onto the chromaticity diagram.
+						ImGui::Spacing();
+						ImVec2 cieP = ImGui::GetCursorScreenPos();
+						ImVec2 cieS( ImPlatform_LpToPx( 260.0f ), ImPlatform_LpToPx( 280.0f ) );
+						// showColorSpaceTriangle = false: the overlay below draws one
+						// triangle per space and colours each by whether we fit it.
+						ImWidgets::DrawChromaticityPlot( ImGui::GetWindowDrawList(),
+														 ImWidgetsIlluminant_D65,
+														 (ImWidgetsObserver)s_spdObs,
+														 ImWidgetsColorSpace_sRGB,
+														 256, cieP, cieS, 96, 96,
+														 IM_COL32( 30, 30, 30, 255 ),
+														 400.0f, 700.0f,
+														 0.0f, 0.8f, 0.0f, 0.9f,
+														 /*showColorSpaceTriangle=*/false,
+														 /*showWhitePoint=*/true );
+						ImWidgets::DrawChromaticityGamuts( ImGui::GetWindowDrawList(), cieP, cieS,
+														   kSpaces, kSpaceCount, x_, y_,
+														   0.0f, 0.8f, 0.0f, 0.9f );
+						// Marked by hand rather than via DrawChromaticityPoints: that
+						// helper takes an RGB colour and derives xy from it, so an
+						// out-of-gamut spectrum would plot at its CLIPPED position.
+						// We already have the true xy, so place it directly.
+						// Ranges below must match DrawChromaticityPlot's defaults.
+						const float cieMinX = 0.0f, cieMaxX = 0.8f, cieMinY = 0.0f, cieMaxY = 0.9f;
+						if ( Yy > 0.0f )
+						{
+							ImVec2 mk( cieP.x + ( x_ - cieMinX ) / ( cieMaxX - cieMinX ) * cieS.x,
+									   cieP.y + ( 1.0f - ( y_ - cieMinY ) / ( cieMaxY - cieMinY ) ) * cieS.y );
+							ImGui::GetWindowDrawList()->AddCircleFilled( mk, ImPlatform_LpToPx( 4.0f ), IM_COL32( 255, 255, 255, 255 ) );
+							ImGui::GetWindowDrawList()->AddCircle( mk, ImPlatform_LpToPx( 6.0f ), IM_COL32( 0, 0, 0, 220 ), 0, ImPlatform_LpToPx( 1.5f ) );
+						}
+						ImGui::Dummy( cieS );
+					}
+					DW_SsRecord( "Spectrum_RGB", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Scalar -> Color (every colour space)" ) )
+					{
+						typedef ImWidgets::ImWidgetsColorScalar DwColorScalar;
+
+						static DwColorScalar   s_cs;
+						static ImGradientData  s_csGradient;
+						static bool            s_csInit = false;
+						static int             s_csPreset = ImWidgets::ImWidgetsColorRamp_Hue;
+						if ( !s_csInit )
+						{
+							s_csGradient.Stops.resize( 4 );
+							s_csGradient.Stops[ 0 ] = ImGradientStop( 0.00f, ImVec4( 0.05f, 0.02f, 0.20f, 1.0f ) );
+							s_csGradient.Stops[ 1 ] = ImGradientStop( 0.35f, ImVec4( 0.85f, 0.15f, 0.35f, 1.0f ) );
+							s_csGradient.Stops[ 2 ] = ImGradientStop( 0.70f, ImVec4( 0.98f, 0.75f, 0.20f, 1.0f ) );
+							s_csGradient.Stops[ 3 ] = ImGradientStop( 1.00f, ImVec4( 1.00f, 1.00f, 0.92f, 1.0f ) );
+							s_cs.Gradient = &s_csGradient;
+							s_csInit = true;
+						}
+
+						ImGui::TextWrapped(
+							"One scalar -> colour mapping, published once per colour space Dear Widgets knows about. "
+							"All 17 entry points share the SAME definition -- ImWidgetsColor1DCallback, i.e. "
+							"ImU32(float t, void*) -- so any of them plugs straight into DrawProceduralColor1D*, "
+							"DrawColorRing, the annulus/disc fills, the gradient sliders, ... with no adapter. "
+							"The void* carries the options below: what the scalar MEANS (a hue, a lightness, a "
+							"chroma, a colour temperature, a wavelength), what the other components are pinned to, "
+							"how t is shaped, and which colour harmony is applied on top." );
+						ImGui::Spacing();
+
+						// Small enum combo driven by the library naming helpers, so the
+						// demo never carries its own copy of the enum labels.
+						auto EnumCombo = []( char const* label, int* v, int first, int count,
+											 char const* ( *name )( int ) ) -> bool
+						{
+							bool changed = false;
+							ImGui::SetNextItemWidth( ImPlatform_LpToPx( 190.0f ) );
+							if ( ImGui::BeginCombo( label, name( *v ) ) )
+							{
+								for ( int i = first; i < first + count; ++i )
+								{
+									bool sel = ( *v == i );
+									if ( ImGui::Selectable( name( i ), sel ) ) { *v = i; changed = true; }
+									if ( sel ) ImGui::SetItemDefaultFocus();
+								}
+								ImGui::EndCombo();
+							}
+							return changed;
+						};
+
+						auto DrawRamp = []( ImWidgetsColor1DCallback fn, void* ud, float w, float h )
+						{
+							ImDrawList* dl = ImGui::GetWindowDrawList();
+							ImVec2 p = ImGui::GetCursorScreenPos();
+							ImWidgets::DrawProceduralColor1DBilinearHorizontal( dl, fn, ud, 0.0f, 1.0f, p, ImVec2( w, h ), 128 );
+							dl->AddRect( p, ImVec2( p.x + w, p.y + h ), ImGui::GetColorU32( ImGuiCol_Border ) );
+							ImGui::Dummy( ImVec2( w, h ) );
+						};
+
+						// Same bar, but through the colour-space-aware overload: no
+						// callback, no void*, and the space enum is remapped to the
+						// matching entry point inside -- once for the whole bar.
+						auto DrawRampOpt = []( DwColorScalar const& opt, ImWidgetsColorSpace space, float w, float h )
+						{
+							ImDrawList* dl = ImGui::GetWindowDrawList();
+							ImVec2 p = ImGui::GetCursorScreenPos();
+							ImWidgets::DrawProceduralColor1DBilinearHorizontal( dl, opt, 0.0f, 1.0f, p, ImVec2( w, h ), 128, space );
+							dl->AddRect( p, ImVec2( p.x + w, p.y + h ), ImGui::GetColorU32( ImGuiCol_Border ) );
+							ImGui::Dummy( ImVec2( w, h ) );
+						};
+
+						// ---- presets ------------------------------------------------
+						ImGui::SetNextItemWidth( ImPlatform_LpToPx( 190.0f ) );
+						if ( ImGui::BeginCombo( "Preset##CS", ImWidgets::ColorRampName( s_csPreset ) ) )
+						{
+							for ( int i = 0; i < ImWidgets::ImWidgetsColorRamp_COUNT; ++i )
+							{
+								bool sel = ( s_csPreset == i );
+								if ( ImGui::Selectable( ImWidgets::ColorRampName( i ), sel ) )
+								{
+									s_csPreset = i;
+									ImWidgets::ColorScalarPreset( &s_cs, i );
+									s_cs.Gradient = &s_csGradient;
+								}
+								if ( sel ) ImGui::SetItemDefaultFocus();
+							}
+							ImGui::EndCombo();
+						}
+						ImGui::SameLine();
+						if ( ImGui::Button( "Re-apply##CS" ) )
+						{
+							ImWidgets::ColorScalarPreset( &s_cs, s_csPreset );
+							s_cs.Gradient = &s_csGradient;
+						}
+
+						ImGui::Separator();
+
+						// ---- options ------------------------------------------------
+						ImGui::BeginGroup();
+						EnumCombo( "Source##CS", &s_cs.Source, 0, ImWidgets::ImWidgetsColorSource_COUNT, &ImWidgets::ColorSourceName );
+
+						bool modelDriven = ( s_cs.Source == ImWidgets::ImWidgetsColorSource_Model );
+						ImGui::BeginDisabled( !modelDriven );
+						EnumCombo( "Model##CS", &s_cs.Model, 0, ImWidgets::ImWidgetsColorModel_COUNT, &ImWidgets::ColorModelName );
+						ImGui::EndDisabled();
+
+						EnumCombo( "Working space##CS", &s_cs.Space, 0, ImWidgetsColorSpace_COUNT, &ImWidgets::ColorSpaceName );
+
+						if ( modelDriven )
+						{
+							// -1 is ImWidgetsColorAxis_None, hence the first = -1 / count + 1.
+							EnumCombo( "Axis##CS", &s_cs.Axis, -1, ImWidgets::ImWidgetsColorAxis_COUNT + 1, &ImWidgets::ColorAxisName );
+							ImGui::SetNextItemWidth( ImPlatform_LpToPx( 190.0f ) );
+							ImGui::DragFloat2( "Range##CS", &s_cs.RangeMin, 0.01f );
+
+							EnumCombo( "Axis 2##CS", &s_cs.Axis2, -1, ImWidgets::ImWidgetsColorAxis_COUNT + 1, &ImWidgets::ColorAxisName );
+							ImGui::BeginDisabled( s_cs.Axis2 == ImWidgets::ImWidgetsColorAxis_None );
+							ImGui::SetNextItemWidth( ImPlatform_LpToPx( 190.0f ) );
+							ImGui::DragFloat2( "Range 2##CS", &s_cs.Range2Min, 0.01f );
+							ImGui::EndDisabled();
+
+							// Fixed components, labelled with the model own component names.
+							for ( int c = 0; c < 3; ++c )
+							{
+								char lbl[ 64 ];
+								snprintf( lbl, sizeof( lbl ), "Fixed %s##CS%d", ImWidgets::ColorModelCompName( s_cs.Model, c ), c );
+								float cmin, cmax;
+								ImWidgets::ColorModelCompRange( s_cs.Model, c, &cmin, &cmax );
+								bool driven = ( ImWidgets::ColorModelAxisIndex( s_cs.Model, s_cs.Axis ) == c )
+										   || ( ImWidgets::ColorModelAxisIndex( s_cs.Model, s_cs.Axis2 ) == c );
+								ImGui::BeginDisabled( driven );
+								ImGui::SetNextItemWidth( ImPlatform_LpToPx( 190.0f ) );
+								ImGui::SliderFloat( lbl, &s_cs.Fixed[ c ], cmin, cmax );
+								ImGui::EndDisabled();
+							}
+						}
+						else if ( s_cs.Source == ImWidgets::ImWidgetsColorSource_Kelvin )
+						{
+							ImGui::SetNextItemWidth( ImPlatform_LpToPx( 190.0f ) );
+							ImGui::DragFloat2( "Kelvin range##CS", &s_cs.KelvinMin, 10.0f, 1000.0f, 12000.0f, "%.0f K" );
+						}
+						else if ( s_cs.Source == ImWidgets::ImWidgetsColorSource_Wavelength )
+						{
+							ImGui::SetNextItemWidth( ImPlatform_LpToPx( 190.0f ) );
+							ImGui::DragFloat2( "Lambda range##CS", &s_cs.LambdaMin, 1.0f, 360.0f, 830.0f, "%.0f nm" );
+							ImGui::SetNextItemWidth( ImPlatform_LpToPx( 190.0f ) );
+							ImGui::Combo( "Observer##CS", &s_cs.Observer, "CIE 1931 2deg\0CIE 1964 10deg\0" );
+						}
+						else
+						{
+							ImGui::TextDisabled( "Sampling the gradient bound in s_cs.Gradient." );
+						}
+						ImGui::EndGroup();
+
+						// Stacked, not side by side: a 190lp item plus its label is
+						// already most of the demo window, so two columns ran off the
+						// right edge and the crop lost them.
+						ImGui::Spacing();
+						ImGui::Separator();
+						ImGui::Spacing();
+
+						ImGui::BeginGroup();
+						ImGui::SetNextItemWidth( ImPlatform_LpToPx( 190.0f ) );
+						ImGui::DragFloat2( "Domain##CS", &s_cs.DomainMin, 0.01f );
+						ImGui::SetNextItemWidth( ImPlatform_LpToPx( 190.0f ) );
+						ImGui::DragFloat( "Repeats##CS", &s_cs.Repeats, 0.01f, 0.0f, 16.0f );
+						EnumCombo( "Wrap##CS", &s_cs.Wrap, 0, ImWidgets::ImWidgetsColorWrap_COUNT, &ImWidgets::ColorWrapName );
+						EnumCombo( "Ease##CS", &s_cs.Ease, 0, ImWidgets::ImWidgetsColorEase_COUNT, &ImWidgets::ColorEaseName );
+						ImGui::BeginDisabled( s_cs.Ease == ImWidgets::ImWidgetsColorEase_Linear
+										   || s_cs.Ease == ImWidgets::ImWidgetsColorEase_Smoothstep
+										   || s_cs.Ease == ImWidgets::ImWidgetsColorEase_Sine );
+						ImGui::SetNextItemWidth( ImPlatform_LpToPx( 190.0f ) );
+						ImGui::DragFloat( "Ease param##CS", &s_cs.EaseParam, 0.02f, 0.05f, 20.0f );
+						ImGui::EndDisabled();
+
+						ImGui::Spacing();
+						EnumCombo( "Harmony##CS", &s_cs.Harmony, 0, ImWidgets::ImWidgetsColorHarmony_COUNT, &ImWidgets::ColorHarmonyName );
+						int harmonyN = ImWidgets::ColorHarmonyOffsets( s_cs.Harmony, s_cs.HarmonySpread, NULL, 0 );
+						ImGui::BeginDisabled( harmonyN <= 1 );
+						ImGui::SetNextItemWidth( ImPlatform_LpToPx( 190.0f ) );
+						ImGui::SliderInt( "Harmony index##CS", &s_cs.HarmonyIndex, 0, ImMax( harmonyN - 1, 0 ) );
+						ImGui::SetNextItemWidth( ImPlatform_LpToPx( 190.0f ) );
+						ImGui::DragFloat( "Spread (deg)##CS", &s_cs.HarmonySpread, 0.5f, 1.0f, 90.0f, "%.0f" );
+						EnumCombo( "Harmony model##CS", &s_cs.HarmonyModel, 0, ImWidgets::ImWidgetsColorModel_COUNT, &ImWidgets::ColorModelName );
+						ImGui::EndDisabled();
+
+						ImGui::Spacing();
+						EnumCombo( "Gamut##CS", &s_cs.Gamut, 0, ImWidgets::ImWidgetsColorGamut_COUNT, &ImWidgets::ColorGamutName );
+						ImGui::SetNextItemWidth( ImPlatform_LpToPx( 190.0f ) );
+						ImGui::SliderFloat( "Alpha##CS", &s_cs.Alpha, 0.0f, 1.0f );
+						ImGui::Checkbox( "Adapt white point to D65##CS", &s_cs.AdaptWhitePoint );
+						ImGui::EndGroup();
+
+						ImGui::Spacing();
+
+						// ---- the mapping itself -------------------------------------
+						float const barW = ImPlatform_LpToPx( 460.0f );
+						ImGui::TextDisabled( "DrawProceduralColor1DBilinearHorizontal( dl, options, ..., space )" );
+						DrawRampOpt( s_cs, ImWidgets::ImWidgetsColorSpace_FromOptions, barW, ImPlatform_LpToPx( 44.0f ) );
+
+						// The same callback feeding a completely different primitive --
+						// this is the whole point of the shared definition.
+						ImGui::Spacing();
+						{
+							ImDrawList* dl   = ImGui::GetWindowDrawList();
+							ImVec2      p    = ImGui::GetCursorScreenPos();
+							float       side = ImPlatform_LpToPx( 130.0f );
+							ImWidgets::DrawColorRing( dl, p, ImVec2( side, side ), ImPlatform_LpToPx( 22.0f ),
+													  s_cs, 128, 0.0f, true );
+							ImGui::Dummy( ImVec2( side, side ) );
+
+							ImGui::SameLine( 0.0f, ImPlatform_LpToPx( 18.0f ) );
+							ImGui::BeginGroup();
+							ImGui::TextDisabled( "Harmony members (same ramp, HarmonyIndex 0..n-1)" );
+							if ( harmonyN <= 1 )
+							{
+								ImGui::TextDisabled( "  (pick a harmony scheme above)" );
+							}
+							else
+							{
+								for ( int i = 0; i < harmonyN; ++i )
+								{
+									DwColorScalar member = s_cs;
+									member.HarmonyIndex = i;
+									DrawRampOpt( member, ImWidgets::ImWidgetsColorSpace_FromOptions,
+												 ImPlatform_LpToPx( 300.0f ), ImPlatform_LpToPx( 16.0f ) );
+								}
+							}
+							ImGui::EndGroup();
+						}
+
+						ImGui::Spacing();
+						ImGui::Separator();
+
+						// ---- the same mapping through every working space -----------
+						if ( ImGui::TreeNodeEx( "The same mapping, one function per colour space",
+												ImGuiTreeNodeFlags_DefaultOpen ) )
+						{
+							ImGui::TextDisabled( "ColorScalarAdobeRGB / ...AppleRGB / ...sRGB / ... -- 17 identical signatures." );
+							ImGui::TextDisabled( "Wide-gamut and D50 spaces differ most; sRGB is the reference row." );
+							for ( int s = 0; s < ImWidgetsColorSpace_COUNT; ++s )
+							{
+								ImGui::PushID( s );
+								ImGui::TextUnformatted( ImWidgets::ColorSpaceName( s ) );
+								ImGui::SameLine( ImPlatform_LpToPx( 120.0f ) );
+								DrawRamp( ImWidgets::ColorScalarCallback( s ), &s_cs,
+										  ImPlatform_LpToPx( 380.0f ), ImPlatform_LpToPx( 15.0f ) );
+								ImGui::PopID();
+							}
+							ImGui::TreePop();
+						}
+
+						// ---- the same mapping in every colour model -----------------
+						if ( ImGui::TreeNodeEx( "The same mapping, in every colour model", 0 ) )
+						{
+							ImGui::TextDisabled( "Axis is semantic: a model with no hue component still honours "
+												 "Hue -- it is applied in the HSV cylinder afterwards." );
+							for ( int m = 0; m < ImWidgets::ImWidgetsColorModel_COUNT; ++m )
+							{
+								DwColorScalar tmp = s_cs;
+								tmp.Model = m;
+								ImWidgets::ColorModelDefaultTriple( m, tmp.Fixed );
+								ImGui::PushID( 1000 + m );
+								ImGui::TextUnformatted( ImWidgets::ColorModelName( m ) );
+								ImGui::SameLine( ImPlatform_LpToPx( 120.0f ) );
+								DrawRampOpt( tmp, ImWidgets::ImWidgetsColorSpace_FromOptions,
+											 ImPlatform_LpToPx( 380.0f ), ImPlatform_LpToPx( 15.0f ) );
+								ImGui::PopID();
+							}
+							ImGui::TreePop();
+						}
+
+						// ---- every preset, side by side -----------------------------
+						if ( ImGui::TreeNodeEx( "Presets", 0 ) )
+						{
+							for ( int r = 0; r < ImWidgets::ImWidgetsColorRamp_COUNT; ++r )
+							{
+								DwColorScalar tmp;
+								tmp.Space    = s_cs.Space;
+								tmp.Model    = s_cs.Model;
+								ImWidgets::ColorScalarPreset( &tmp, r );
+								tmp.Gradient = &s_csGradient;
+								ImGui::PushID( 2000 + r );
+								ImGui::TextUnformatted( ImWidgets::ColorRampName( r ) );
+								ImGui::SameLine( ImPlatform_LpToPx( 160.0f ) );
+								DrawRampOpt( tmp, ImWidgets::ImWidgetsColorSpace_FromOptions,
+											 ImPlatform_LpToPx( 340.0f ), ImPlatform_LpToPx( 15.0f ) );
+								ImGui::PopID();
+							}
+							ImGui::TreePop();
+						}
+						// ---- the library existing ramps, through the same callback --
+						if ( ImGui::TreeNodeEx( "Existing library ramps, through the same callback", 0 ) )
+						{
+							ImGui::TextDisabled( "Source = Gradient + Gradient = GradingGradient(...): the DaVinci-style "
+												 "grading bars become ImWidgetsColorScalar mappings, so they inherit "
+												 "domain / repeats / wrap / easing / harmony / gamut like everything else." );
+							static char const* kGradingNames[ ImWidgetsGradingGradient_COUNT ] = {
+								"Temperature", "Tint", "Contrast", "Pivot",
+								"Mid / Detail", "Saturation", "Hue", "Lum Mix"
+							};
+							for ( int i = 0; i < ImWidgetsGradingGradient_COUNT; ++i )
+							{
+								DwColorScalar tmp = s_cs;
+								tmp.Source   = ImWidgets::ImWidgetsColorSource_Gradient;
+								tmp.Gradient = ImWidgets::GradingGradient( i );
+								ImGui::PushID( 3000 + i );
+								ImGui::TextUnformatted( kGradingNames[ i ] );
+								ImGui::SameLine( ImPlatform_LpToPx( 160.0f ) );
+								DrawRampOpt( tmp, ImWidgets::ImWidgetsColorSpace_FromOptions,
+											 ImPlatform_LpToPx( 340.0f ), ImPlatform_LpToPx( 15.0f ) );
+								ImGui::PopID();
+							}
+							ImGui::TreePop();
+						}
+					}
+					DW_SsRecord( "ScalarToColor", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
 					if ( ImGui::CollapsingHeader( "HDR Wheels (Dark/Shadow/Light/Global)" ) )
 					{
 						static ImVec4 hdrColors[4] = {
@@ -12076,6 +12803,202 @@ namespace ImWidgets{
 				ImGui::TreePop();
 			}
 
+			ApplyOpenAll();
+			if ( ImGui::TreeNode( "Graphs & Timeline##Widgets" ) )
+			{
+				// ---- Network Graph: hierarchical DAG (a small CNN) --------------
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Network Graph (Neural Net)" ) )
+					{
+						static ImNetworkGraphData s_ngraph;
+						static bool s_net_built = false;
+						if ( !s_net_built )
+						{
+							s_net_built = true;
+							ImU32 const cIn   = IM_COL32(  70, 110, 160, 235 );
+							ImU32 const cConv = IM_COL32(  60, 120,  95, 235 );
+							ImU32 const cNorm = IM_COL32( 110,  95, 150, 235 );
+							ImU32 const cAct  = IM_COL32( 150, 120,  60, 235 );
+							ImU32 const cPool = IM_COL32(  60, 105, 130, 235 );
+							ImU32 const cFC   = IM_COL32( 140,  80,  80, 235 );
+							ImU32 const cOut  = IM_COL32(  90, 130,  70, 235 );
+
+							// Groups form a tree; a group renders as one box at its
+							// parent's level and is opened by double-clicking it.
+							int gBack   = s_ngraph.AddGroup( "Backbone",        -1 );
+							int gStage1 = s_ngraph.AddGroup( "Stage 1",         gBack );
+							int gStage2 = s_ngraph.AddGroup( "Stage 2",         gBack );
+							int gHead   = s_ngraph.AddGroup( "Classifier Head", -1 );
+
+							int nIn = s_ngraph.AddNode( "Input", "224x224x3", cIn, -1 );
+
+							int c1 = s_ngraph.AddNode( "Conv 3x3", "conv1_1", cConv, gStage1 );
+							int b1 = s_ngraph.AddNode( "BatchNorm", "bn1_1",  cNorm, gStage1 );
+							int r1 = s_ngraph.AddNode( "ReLU",      "relu1_1", cAct, gStage1 );
+							int p1 = s_ngraph.AddNode( "MaxPool 2x2", "pool1", cPool, gStage1 );
+
+							int c2 = s_ngraph.AddNode( "Conv 3x3", "conv2_1", cConv, gStage2 );
+							int b2 = s_ngraph.AddNode( "BatchNorm", "bn2_1",  cNorm, gStage2 );
+							int r2 = s_ngraph.AddNode( "ReLU",      "relu2_1", cAct, gStage2 );
+							int p2 = s_ngraph.AddNode( "MaxPool 2x2", "pool2", cPool, gStage2 );
+
+							int fl = s_ngraph.AddNode( "Flatten",  "flatten", cPool, gHead );
+							int f1 = s_ngraph.AddNode( "Linear",   "fc1",     cFC,   gHead );
+							int dr = s_ngraph.AddNode( "Dropout",  "p=0.5",   cAct,  gHead );
+							int f2 = s_ngraph.AddNode( "Linear",   "fc2",     cFC,   gHead );
+
+							int nOut = s_ngraph.AddNode( "Softmax", "1000 classes", cOut, -1 );
+
+							s_ngraph.AddEdge( nIn, c1 );
+							s_ngraph.AddEdge( c1, b1 ); s_ngraph.AddEdge( b1, r1 ); s_ngraph.AddEdge( r1, p1 );
+							s_ngraph.AddEdge( p1, c2 );
+							s_ngraph.AddEdge( c2, b2 ); s_ngraph.AddEdge( b2, r2 ); s_ngraph.AddEdge( r2, p2 );
+							s_ngraph.AddEdge( p2, fl );
+							s_ngraph.AddEdge( fl, f1 ); s_ngraph.AddEdge( f1, dr ); s_ngraph.AddEdge( dr, f2 );
+							s_ngraph.AddEdge( f2, nOut );
+
+							// Populates the "N ops" badges (AddGroup can't know its
+							// future contents, so this must run after the build).
+							s_ngraph.RecomputeOpCounts();
+						}
+
+						// Breadcrumb: the widget only REPORTS a double-clicked group;
+						// pushing/popping levels is the host's job.
+						ImGui::TextDisabled( "Double-click a group to open it. Wheel = zoom, drag = pan." );
+						{
+							int chain[ 16 ]; int depth = 0;
+							for ( int g = s_ngraph.CurrentGroup; g >= 0 && depth < 16; g = s_ngraph.Groups[ g ].Parent )
+								chain[ depth++ ] = g;
+							if ( ImGui::SmallButton( "Root##net" ) ) s_ngraph.CurrentGroup = -1;
+							for ( int i = depth - 1; i >= 0; --i )
+							{
+								ImGui::SameLine(); ImGui::TextDisabled( "/" ); ImGui::SameLine();
+								ImGui::PushID( chain[ i ] );
+								if ( ImGui::SmallButton( s_ngraph.Groups[ chain[ i ] ].Label ) )
+									s_ngraph.CurrentGroup = chain[ i ];
+								ImGui::PopID();
+							}
+							if ( s_ngraph.CurrentGroup >= 0 )
+							{
+								ImGui::SameLine();
+								if ( ImGui::SmallButton( "Up##net" ) )
+									s_ngraph.CurrentGroup = s_ngraph.Groups[ s_ngraph.CurrentGroup ].Parent;
+							}
+							ImGui::SameLine();
+							if ( ImGui::SmallButton( "Fit##net" ) ) s_ngraph.FitRequest = true;
+						}
+
+						ImWidgets::NetworkGraph( "##net_graph", s_ngraph,
+							ImVec2( 0.0f, ImPlatform_LpToPx( 420.0f ) ) );
+
+						// Drill into a double-clicked group.
+						if ( s_ngraph.ActivatedGroup >= 0 )
+							s_ngraph.CurrentGroup = s_ngraph.ActivatedGroup;
+					}
+					DW_SsRecord( "Network_Graph", _sy0, ImGui::GetCursorPos().y );
+				}
+
+				// ---- Timeline ---------------------------------------------------
+				{
+					float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Timeline" ) )
+					{
+						static ImTimelineData s_tl;
+						static bool s_tl_built = false;
+						static unsigned s_tl_next_id = 1;
+						if ( !s_tl_built )
+						{
+							s_tl_built = true;
+							s_tl.BeginTick        = 0;
+							s_tl.EndTick          = 240;
+							s_tl.PlayheadTick     = 96;
+							s_tl.DeterminismLabel = "profile: strict";
+
+							static ImTimelineTrack const kTracks[] = {
+								{ "Camera" }, { "Key Light" }, { "Mesh A" }, { "Sim" },
+							};
+							for ( int i = 0; i < IM_ARRAYSIZE( kTracks ); ++i )
+								s_tl.Tracks.push_back( kTracks[ i ] );
+
+							long long const kKeys[][ 2 ] = {
+								{  0, 0 }, {  48, 0 }, { 120, 0 }, { 210, 0 },
+								{ 12, 1 }, {  96, 1 }, { 168, 1 },
+								{  0, 2 }, {  60, 2 }, {  61, 2 }, { 144, 2 }, { 200, 2 },
+								{ 36, 3 }, { 132, 3 },
+							};
+							for ( int i = 0; i < IM_ARRAYSIZE( kKeys ); ++i )
+							{
+								ImTimelineKey k;
+								k.Tick = kKeys[ i ][ 0 ];
+								k.TrackIndex = (int)kKeys[ i ][ 1 ];
+								k.Id = s_tl_next_id++;
+								k.Selected = false;
+								s_tl.Keys.push_back( k );
+							}
+
+							ImTimelineEvent ev;
+							ev.Tick = 60;  ev.Id = 1001; ev.Color = 0;                          s_tl.Events.push_back( ev );
+							ev.Tick = 144; ev.Id = 1002; ev.Color = IM_COL32( 240,140,90,255 ); s_tl.Events.push_back( ev );
+
+							ImTimelineBand bd;
+							bd.BeginTick = 0;   bd.EndTick = 132; bd.Kind = ImTimelineBand_CacheCoverage;    s_tl.Bands.push_back( bd );
+							bd.BeginTick = 132; bd.EndTick = 180; bd.Kind = ImTimelineBand_Invalid;          s_tl.Bands.push_back( bd );
+							bd.BeginTick = 180; bd.EndTick = 240; bd.Kind = ImTimelineBand_StaleBranch;      s_tl.Bands.push_back( bd );
+							bd.BeginTick = 0;   bd.EndTick = 96;  bd.Kind = ImTimelineBand_CommittedHistory; s_tl.Bands.push_back( bd );
+							bd.BeginTick = 96;  bd.EndTick = 0;   bd.Kind = ImTimelineBand_Checkpoint;       s_tl.Bands.push_back( bd );
+						}
+
+						ImGui::TextDisabled( "Drag = scrub. Double-click a row = insert key (past OK). "
+											 "L-click a key = select, R-click = delete." );
+						ImGui::Text( "Playhead: %lld", s_tl.PlayheadTick );
+
+						// The widget never mutates its data -- it reports an action and
+						// the host applies it, then re-feeds the (authoritative) state.
+						ImTimelineAction act;
+						if ( ImWidgets::ImTimeline( "##timeline", s_tl,
+								ImVec2( 0.0f, ImPlatform_LpToPx( 120.0f ) ), &act ) )
+						{
+							switch ( act.Kind )
+							{
+							case ImTimelineAction_Scrub:
+								s_tl.PlayheadTick = act.TargetTick;
+								break;
+							case ImTimelineAction_InsertKey:
+							{
+								ImTimelineKey k;
+								k.Tick = act.TargetTick;
+								k.TrackIndex = act.TrackIndex;
+								k.Id = s_tl_next_id++;
+								k.Selected = false;
+								s_tl.Keys.push_back( k );
+								break;
+							}
+							case ImTimelineAction_SelectKey:
+								for ( int i = 0; i < s_tl.Keys.Size; ++i )
+									s_tl.Keys[ i ].Selected = ( s_tl.Keys[ i ].Id == act.KeyId );
+								break;
+							case ImTimelineAction_DeleteKey:
+								for ( int i = 0; i < s_tl.Keys.Size; ++i )
+									if ( s_tl.Keys[ i ].Id == act.KeyId )
+									{
+										s_tl.Keys.erase( s_tl.Keys.Data + i );
+										break;
+									}
+								break;
+							default:
+								break;
+							}
+						}
+						ImGui::TextDisabled( "green = cache coverage   blue = committed history   "
+											 "hatched red = INVALID   grey = stale branch   yellow pin = checkpoint" );
+					}
+					DW_SsRecord( "Timeline", _sy0, ImGui::GetCursorPos().y );
+				}
+				ImGui::TreePop();
+			}
 			ApplyOpenAll();
 			if ( ImGui::CollapsingHeader( "Font Inspector" ) )
 			{

@@ -87,6 +87,18 @@ namespace ImWidgets {
         }
     }
 
+    // Erase a path, freeing the node buffer it owns first.
+    //
+    // ImVector::erase is a raw memmove and ~ImVector destructs nothing, so a
+    // bare Paths.erase() drops the erased path's Nodes allocation on the floor.
+    // Same manual deep-clear pattern as ImNetworkGraphData::Clear().
+    static void DWE_VDTErasePath(ImVectorDrawingData& data, int idx)
+    {
+        if (idx < 0 || idx >= data.Paths.Size) return;
+        data.Paths[idx].Nodes.clear();      // ImVector::clear() frees Data
+        data.Paths.erase(data.Paths.Data + idx);
+    }
+
     bool VectorDrawingTool(const char* label, ImVectorDrawingData& data, ImVec2 size)
     {
         ImGuiWindow* win = ImGui::GetCurrentWindow();
@@ -343,6 +355,11 @@ namespace ImWidgets {
             if (data.SelectedPath >= 0 && data.SelectedPath < data.Paths.Size)
             {
                 ImVectorDrawingPath& p = data.Paths[data.SelectedPath];
+                // Set the moment `p` stops being valid. Everything below reads
+                // through `p`, and deleting the last node erases the whole path
+                // out from under it -- previously the menu carried on reading
+                // memmoved memory.
+                bool path_gone = false;
                 if (data.SelectedNode >= 0 && data.SelectedNode < p.Nodes.Size)
                 {
                     ImVectorDrawingNode& n = p.Nodes[data.SelectedNode];
@@ -365,12 +382,18 @@ namespace ImWidgets {
                     {
                         p.Nodes.erase(p.Nodes.Data + data.SelectedNode);
                         if (p.Nodes.empty())
-                            data.Paths.erase(data.Paths.Data + data.SelectedPath), data.SelectedPath = -1;
+                        {
+                            DWE_VDTErasePath(data, data.SelectedPath);
+                            data.SelectedPath = -1;
+                            path_gone = true;
+                        }
                         data.SelectedNode = -1;
                         changed = true;
                     }
                     ImGui::Separator();
                 }
+                if (!path_gone)
+                {
                 if (ImGui::MenuItem("Path: Reverse direction"))
                 {
                     for (int a = 0, b = p.Nodes.Size - 1; a < b; ++a, --b)
@@ -393,20 +416,28 @@ namespace ImWidgets {
                 }
                 if (ImGui::MenuItem("Path: Duplicate"))
                 {
-                    ImVectorDrawingPath clone = p;
-                    for (int i = 0; i < clone.Nodes.Size; ++i)
+                    // push_back memcpy's the header, so a local clone would free
+                    // the very buffer the stored copy points at when it goes out
+                    // of scope. Push an EMPTY path (nothing to free), then deep
+                    // copy into it -- ImVector::operator= does copy properly.
+                    int src = data.SelectedPath;
+                    data.Paths.push_back(ImVectorDrawingPath());
+                    ImVectorDrawingPath& dst = data.Paths.back();
+                    dst = data.Paths[src];
+                    for (int i = 0; i < dst.Nodes.Size; ++i)
                     {
-                        clone.Nodes[i].Anchor.x += 20.0f;
-                        clone.Nodes[i].Anchor.y += 20.0f;
+                        dst.Nodes[i].Anchor.x += 20.0f;
+                        dst.Nodes[i].Anchor.y += 20.0f;
                     }
-                    data.Paths.push_back(clone);
                     changed = true;
                 }
                 if (ImGui::MenuItem("Path: Delete"))
                 {
-                    data.Paths.erase(data.Paths.Data + data.SelectedPath);
+                    DWE_VDTErasePath(data, data.SelectedPath);
                     data.SelectedPath = -1; data.SelectedNode = -1;
                     changed = true;
+                    path_gone = true;
+                }
                 }
                 ImGui::Separator();
             }
@@ -439,8 +470,8 @@ namespace ImWidgets {
             }
             if (p.Nodes.empty())
             {
-                data.Paths.erase(data.Paths.Data + data.SelectedPath);
                 if (data.ActivePath == data.SelectedPath) data.ActivePath = -1;
+                DWE_VDTErasePath(data, data.SelectedPath);
                 data.SelectedPath = -1;
             }
             data.SelectedNode = -1;
@@ -675,8 +706,8 @@ namespace ImWidgets {
                 if (ImGui::Button("Delete path")
                     && data.SelectedPath >= 0 && data.SelectedPath < data.Paths.Size)
                 {
-                    data.Paths.erase(data.Paths.Data + data.SelectedPath);
                     if (data.ActivePath == data.SelectedPath) data.ActivePath = -1;
+                    DWE_VDTErasePath(data, data.SelectedPath);
                     data.SelectedPath = -1;
                     data.SelectedNode = -1;
                     data.SelectedNodes.clear();
