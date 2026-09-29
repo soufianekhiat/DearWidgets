@@ -1,4 +1,4 @@
-#include <dear_widgets.h>
+﻿#include <dear_widgets.h>
 #include "dear_widgets_internal.h"
 #include <stdint.h>
 
@@ -539,15 +539,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	static float s_ColorSpace_RGB2XYZ_ColorMatch[]   = { 0.5093439f, 0.3209071f, 0.1339691f, 0.2748840f, 0.6581315f, 0.0669845f, 0.0242545f, 0.1087821f, 0.6921735f };
 	static float s_ColorSpace_RGB2XYZ_DonRGB4[]      = { 0.6457711f, 0.1933511f, 0.1250978f, 0.2783496f, 0.6879702f, 0.0336802f, 0.0037113f, 0.0179861f, 0.8035125f };
 	static float s_ColorSpace_RGB2XYZ_ECI[]          = { 0.6502043f, 0.1780774f, 0.1359384f, 0.3202499f, 0.6020711f, 0.0776791f, 0.0000000f, 0.0678390f, 0.7573710f };
-	static float s_ColorSpace_RGB2XYZ_EktaSpacePS5[] = { 0.6502043f, 0.1780774f, 0.1359384f, 0.3202499f, 0.6020711f, 0.0776791f, 0.0000000f, 0.0678390f, 0.7573710f };
+	static float s_ColorSpace_RGB2XYZ_EktaSpacePS5[] = { 0.5938914f, 0.2729801f, 0.0973485f, 0.2606286f, 0.7349465f, 0.0044249f, 0.0000000f, 0.0419969f, 0.7832131f };
 	static float s_ColorSpace_RGB2XYZ_NTSC[]         = { 0.6068909f, 0.1735011f, 0.2003480f, 0.2989164f, 0.5865990f, 0.1144845f, 0.0000000f, 0.0660957f, 1.1162243f };
 	static float s_ColorSpace_RGB2XYZ_PAL_SECAM[]    = { 0.4306190f, 0.3415419f, 0.1783091f, 0.2220379f, 0.7066384f, 0.0713236f, 0.0201853f, 0.1295504f, 0.9390944f };
 	static float s_ColorSpace_RGB2XYZ_ProPhoto[]     = { 0.7976749f, 0.1351917f, 0.0313534f, 0.2880402f, 0.7118741f, 0.0000857f, 0.0000000f, 0.0000000f, 0.8252100f };
 	static float s_ColorSpace_RGB2XYZ_SMPTE_C[]      = { 0.3935891f, 0.3652497f, 0.1916313f, 0.2124132f, 0.7010437f, 0.0865432f, 0.0187423f, 0.1119313f, 0.9581563f };
 	static float s_ColorSpace_RGB2XYZ_sRGB[]         = { 0.4124564f, 0.3575761f, 0.1804375f, 0.2126729f, 0.7151522f, 0.0721750f, 0.0193339f, 0.1191920f, 0.9503041f };
 	static float s_ColorSpace_RGB2XYZ_WideGamutRGB[] = { 0.7161046f, 0.1009296f, 0.1471858f, 0.2581874f, 0.7249378f, 0.0168748f, 0.0000000f, 0.0517813f, 0.7734287f };
-	// TOTO find proper one
-	static float s_ColorSpace_RGB2XYZ_Rec2020[]      = { 0.7161046f, 0.1009296f, 0.1471858f, 0.2581874f, 0.7249378f, 0.0168748f, 0.0000000f, 0.0517813f, 0.7734287f };
+	static float s_ColorSpace_RGB2XYZ_Rec2020[]      = { 0.6369580f, 0.1446169f, 0.1688810f, 0.2627002f, 0.6779981f, 0.0593017f, 0.0000000f, 0.0280727f, 1.0609851f };
 	static float* s_ColorSpace_RGB2XYZ[] = { s_ColorSpace_RGB2XYZ_AdobeRGB, s_ColorSpace_RGB2XYZ_AppleRGB, s_ColorSpace_RGB2XYZ_Best, s_ColorSpace_RGB2XYZ_Beta,
 		s_ColorSpace_RGB2XYZ_Bruce, s_ColorSpace_RGB2XYZ_CIERGB, s_ColorSpace_RGB2XYZ_ColorMatch, s_ColorSpace_RGB2XYZ_DonRGB4,
 		s_ColorSpace_RGB2XYZ_ECI, s_ColorSpace_RGB2XYZ_EktaSpacePS5, s_ColorSpace_RGB2XYZ_NTSC, s_ColorSpace_RGB2XYZ_PAL_SECAM,
@@ -4641,31 +4640,29 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		DrawShape( pDrawList, shape );
 	}
 
-	ImU32 ImInternalHueFunc( float ttt, void* pUserData )
-	{
-		float alpha = ( ( float* )pUserData )[ 0 ];
-		float offset = ( ( float* )pUserData )[ 1 ];
-		float gamma = ( ( float* )pUserData )[ 2 ];
-		float tt = ImPow( ttt, gamma );
-		float t;
-		if ( tt - offset < 0.0f )
-			t = ImFmod( 1.0f + ( tt - offset ), 1.0f );
-		else
-			t = ImFmod( tt - offset, 1.0f );
+	// The three band primitives below are expressed as ImWidgetsColorScalar
+	// mappings rather than carrying private callbacks: they ARE scalar -> colour
+	// ramps, so routing them through the one evaluator keeps a single source of
+	// truth. Every widget that draws a hue / luminance / saturation bar inherits
+	// that without being touched.
+	//
+	// Behaviour is preserved exactly, with one deliberate improvement: the old
+	// callbacks packed with (int)(255*c), which truncates; the evaluator rounds,
+	// so a channel can land one 8-bit step higher than before.
 
-		float r, g, b;
-		ImGui::ColorConvertHSVtoRGB( t, 1.0f, 1.0f, r, g, b );
-		int const ur = static_cast< int >( 255.0f * r );
-		int const ug = static_cast< int >( 255.0f * g );
-		int const ub = static_cast< int >( 255.0f * b );
-		int const ua = static_cast< int >( 255.0f * alpha );
-		return IM_COL32( ur, ug, ub, ua );
-	};
 	void DrawHueBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, float alpha, float gamma, float offset )
 	{
-		float data[] = { alpha, offset, gamma };
+		// Defaults are already a full-saturation HSV hue sweep; the offset rides
+		// on the range (hue is periodic, and the evaluator wraps a Hue axis) and
+		// the gamma is the ease.
+		ImWidgetsColorScalar cs;
+		cs.RangeMin  = -offset;
+		cs.RangeMax  = 1.0f - offset;
+		cs.Ease      = ImWidgetsColorEase_Gamma;
+		cs.EaseParam = gamma;
+		cs.Alpha     = alpha;
 
-		DrawProceduralColor1DBilinearHorizontal( pDrawList, &ImInternalHueFunc, &data[ 0 ], 0.0f, 1.0f, vpos, size, division );
+		DrawProceduralColor1DBilinearHorizontal( pDrawList, cs, 0.0f, 1.0f, vpos, size, division );
 	}
 
 	void DrawHueBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, float colorStartRGB[ 3 ], float alpha, float gamma )
@@ -4675,49 +4672,41 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		DrawHueBand( pDrawList, vpos, size, division, alpha, gamma, h );
 	}
 
-	ImU32 ImInternalLumianceFunc( float tt, void* pUserData )
-	{
-		float h = ( ( float* )pUserData )[ 0 ];
-		float s = ( ( float* )pUserData )[ 1 ];
-		float v = ( ( float* )pUserData )[ 2 ];
-		float gamma = ( ( float* )pUserData )[ 3 ];
-		float t = ImPow( tt, gamma );
-		float r, g, b;
-		ImGui::ColorConvertHSVtoRGB( h, s, ImLerp( 0.0f, v, t ), r, g, b );
-		int const ur = static_cast< int >( 255.0f * r );
-		int const ug = static_cast< int >( 255.0f * g );
-		int const ub = static_cast< int >( 255.0f * b );
-		return IM_COL32( ur, ug, ub, 255 );
-	}
 	void DrawLumianceBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma )
 	{
 		float h, s, v;
 		ImGui::ColorConvertRGBtoHSV( color.x, color.y, color.z, h, s, v );
-		float data[] = { h, s, v, gamma };
-		DrawProceduralColor1DBilinearHorizontal( pDrawList, &ImInternalLumianceFunc, &data[ 0 ], 0.0f, 1.0f, vpos, size, division );
+
+		ImWidgetsColorScalar cs;
+		cs.Axis      = ImWidgetsColorAxis_Lightness;	// black -> the colour own value
+		cs.Fixed[ 0 ] = h; cs.Fixed[ 1 ] = s; cs.Fixed[ 2 ] = v;
+		cs.RangeMin  = 0.0f;
+		cs.RangeMax  = v;
+		cs.Ease      = ImWidgetsColorEase_Gamma;
+		cs.EaseParam = gamma;
+
+		DrawProceduralColor1DBilinearHorizontal( pDrawList, cs, 0.0f, 1.0f, vpos, size, division );
 	}
 
-	ImU32 ImInternalSaturationFunc( float tt, void* pUserData )
-	{
-		float h = ( ( float* )pUserData )[ 0 ];
-		float s = ( ( float* )pUserData )[ 1 ];
-		float v = ( ( float* )pUserData )[ 2 ];
-		float gamma = ( ( float* )pUserData )[ 3 ];
-		float t = ImPow( tt, gamma );
-		float r, g, b;
-		ImGui::ColorConvertHSVtoRGB( h, ImLerp( 0.0f, 1.0f, t ) * s, ImLerp( 0.5f, 1.0f, t ) * v, r, g, b );
-		int const ur = static_cast< int >( 255.0f * r );
-		int const ug = static_cast< int >( 255.0f * g );
-		int const ub = static_cast< int >( 255.0f * b );
-		return IM_COL32( ur, ug, ub, 255 );
-	}
 	void DrawSaturationBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma )
 	{
 		float h, s, v;
 		ImGui::ColorConvertRGBtoHSV( color.x, color.y, color.z, h, s, v );
-		float data[] = { h, s, v, gamma };
 
-		DrawProceduralColor1DBilinearHorizontal( pDrawList, &ImInternalSaturationFunc, &data[ 0 ], 0.0f, 1.0f, vpos, size, division );
+		// This band moves TWO components at once -- saturation 0..s while value
+		// climbs v/2..v -- which is exactly what the second axis exists for.
+		ImWidgetsColorScalar cs;
+		cs.Axis      = ImWidgetsColorAxis_Chroma;
+		cs.Fixed[ 0 ] = h; cs.Fixed[ 1 ] = s; cs.Fixed[ 2 ] = v;
+		cs.RangeMin  = 0.0f;
+		cs.RangeMax  = s;
+		cs.Axis2     = ImWidgetsColorAxis_Lightness;
+		cs.Range2Min = 0.5f * v;
+		cs.Range2Max = v;
+		cs.Ease      = ImWidgetsColorEase_Gamma;
+		cs.EaseParam = gamma;
+
+		DrawProceduralColor1DBilinearHorizontal( pDrawList, cs, 0.0f, 1.0f, vpos, size, division );
 	}
 
 	struct ImColorRingOffsetAdapter
@@ -5000,6 +4989,20 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			if ( push_texture_id )
 				draw->PopTexture();
 		}
+	}
+
+	void DrawConvexShape( ImDrawList* draw, ImVec2* poly, int points_count, ImU32 color )
+	{
+		if ( draw == NULL || poly == NULL || points_count < 3 || ( color & IM_COL32_A_MASK ) == 0 )
+			return;
+		draw->AddConvexPolyFilled( poly, points_count, color );
+	}
+
+	void DrawConcaveShape( ImDrawList* draw, ImVec2* poly, int points_count, ImU32 color )
+	{
+		if ( draw == NULL || poly == NULL || points_count < 3 || ( color & IM_COL32_A_MASK ) == 0 )
+			return;
+		draw->AddConcavePolyFilled( poly, points_count, color );
 	}
 
 	void DrawImageConcaveShape( ImDrawList* draw, ImTextureID img, ImVec2* poly, int points_count, ImU32 tint,
@@ -9212,18 +9215,3183 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return SliderGradientScalar( label, ImGuiDataType_S32, v, &v_min, &v_max, gradient, size, fill_up_to_cursor, right_to_left );
 	}
 
+	//////////////////////////////////////////////////////////////////////////
+	// SliderGradientVertical -- vertical twin of SliderGradient above. Kept as a
+	// separate function rather than a flag on the horizontal one so neither path
+	// grows axis branches in its hot code; the two share the gradient callbacks,
+	// the style vars and the grab-rendering convention.
+	//////////////////////////////////////////////////////////////////////////
+	bool SliderGradientVerticalScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, ImVec2 size, ImWidgetsSliderFill fill, bool inverted )
+	{
+		IM_ASSERT( gradient != NULL );
+
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		ImWidgetsStyle& dwStyle = GetStyle();
+		const ImGuiID id = window->GetID( label );
+
+		if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+		if ( size.y > 0.0f ) size.y = LpToPx( size.y );
+
+		float trackW = LpToPx( dwStyle.SliderSpline_TrackThickness );
+		float grabR  = LpToPx( dwStyle.SliderSpline_GrabRadius );
+		float w = ( size.x > 0.0f ) ? size.x : ImMax( trackW, grabR * 2.0f + 2.0f );
+		float h = ( size.y > 0.0f ) ? size.y : LpToPx( 160.0f );
+
+		ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
+
+		const ImRect frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, h ) );
+		const ImRect total_bb( frame_bb.Min, ImVec2( frame_bb.Max.x + ( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f ), frame_bb.Max.y ) );
+
+		ImGui::ItemSize( total_bb, style.FramePadding.y );
+		if ( !ImGui::ItemAdd( total_bb, id, &frame_bb, 0 ) )
+			return false;
+
+		const bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.ItemFlags );
+		const bool clicked = hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id );
+		if ( clicked || g.NavActivateId == id )
+		{
+			ImGui::SetActiveID( id, window );
+			ImGui::SetFocusID( id, window );
+			ImGui::FocusWindow( window );
+			if ( clicked )
+				ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+			g.ActiveIdUsingNavDirMask |= ( 1 << ImGuiDir_Up ) | ( 1 << ImGuiDir_Down );
+		}
+
+		// Frame background
+		const ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
+		ImGui::RenderNavCursor( frame_bb, id );
+		ImGui::RenderFrame( frame_bb.Min, frame_bb.Max, frame_col, true, g.Style.FrameRounding );
+
+		// Gradient track (centered horizontally in frame)
+		float trackX = frame_bb.Min.x + ( w - trackW ) * 0.5f;
+		ImVec2 trackPos( trackX, frame_bb.Min.y );
+		ImVec2 trackSize( trackW, h );
+
+		float const v_min_f = ScalarToFloat( data_type, ( ImU64* )p_min );
+		float const v_max_f = ScalarToFloat( data_type, ( ImU64* )p_max );
+		float const v_cur_f = ScalarToFloat( data_type, ( ImU64* )p_value );
+		float const t = ( v_max_f > v_min_f )
+			? ImClamp( ( v_cur_f - v_min_f ) / ( v_max_f - v_min_f ), 0.0f, 1.0f )
+			: 0.0f;
+
+		// DrawProceduralColor1DBilinearVertical maps screen top->bottom to
+		// maxY->minY, so feeding (0,1) already puts gradient t=1 at the top --
+		// matching "v_max at the top", the default orientation here. The cut
+		// callback's min/max are therefore in SCREEN-position space measured from
+		// the bottom (0 = bottom edge, 1 = top edge), same space as `grabP`.
+		int resolution = ImMax( 8, ( int )( h / 4.0f ) );
+		float const grabP = inverted ? ( 1.0f - t ) : t;   // grab position from the bottom
+		if ( fill != ImWidgetsSliderFill_None )
+		{
+			ImWidgetsGradientCutCallbackData gd;
+			gd.gradient = gradient;
+			if ( fill == ImWidgetsSliderFill_FromCenter )
+			{
+				// Signed departure from the neutral midpoint: the band grows up
+				// or down out of the track centre depending on which side the
+				// grab is on.
+				gd.min = ImMin( 0.5f, grabP );
+				gd.max = ImMax( 0.5f, grabP );
+			}
+			else
+			{
+				// From the v_min edge -- the bottom, or the top when inverted.
+				gd.min = inverted ? grabP : 0.0f;
+				gd.max = inverted ? 1.0f  : grabP;
+			}
+			DrawProceduralColor1DBilinearVertical( window->DrawList, &ImWidgetsGradientCutCallback, &gd,
+				0.0f, 1.0f, trackPos, trackSize, resolution );
+		}
+		else
+		{
+			ImWidgetsGradientCallbackData gd;
+			gd.gradient = gradient;
+			DrawProceduralColor1DBilinearVertical( window->DrawList, &ImWidgetsGradientCallback, &gd,
+				0.0f, 1.0f, trackPos, trackSize, resolution );
+		}
+
+		// ImGuiSliderFlags_Vertical puts v_min at the bottom; swapping the bounds
+		// inverts the drag axis natively (same trick as right_to_left above).
+		ImRect grab_bb;
+		const void* sb_min = inverted ? p_max : p_min;
+		const void* sb_max = inverted ? p_min : p_max;
+		const bool value_changed = ImGui::SliderBehavior( frame_bb, id, data_type, p_value, sb_min, sb_max, NULL,
+			ImGuiSliderFlags_NoInput | ImGuiSliderFlags_NoRoundToFormat | ImGuiSliderFlags_Vertical, &grab_bb );
+		if ( value_changed )
+			ImGui::MarkItemEdited( id );
+
+		// Label
+		if ( label_size.x > 0.0f )
+			ImGui::RenderText( ImVec2( frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + style.FramePadding.y ), label );
+
+		// Grab handle -- center placed on the track extremes (see the horizontal
+		// variant for why grab_bb's center is not used). grabP=0 is the BOTTOM.
+		float grabCx = frame_bb.Min.x + w * 0.5f;
+		float grabCy = frame_bb.Max.y - grabP * ( frame_bb.Max.y - frame_bb.Min.y );
+		bool isActive = ( g.ActiveId == id );
+		ImU32 grabCol = ImGui::GetColorU32( dwStyle.Colors[ isActive ? StyleColor_SliderSpline_GrabActive : StyleColor_SliderSpline_Grab ] );
+		window->DrawList->AddCircleFilled( ImVec2( grabCx, grabCy ), grabR, grabCol );
+		window->DrawList->AddCircle( ImVec2( grabCx, grabCy ), grabR, IM_COL32( 0, 0, 0, 200 ), 0, LpToPx( 1.5f ) );
+		(void)grab_bb;
+
+		return value_changed;
+	}
+
+	bool SliderGradientVerticalFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, ImVec2 size, ImWidgetsSliderFill fill, bool inverted )
+	{
+		return SliderGradientVerticalScalar( label, ImGuiDataType_Float, v, &v_min, &v_max, gradient, size, fill, inverted );
+	}
+
+	bool SliderGradientVerticalInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, ImVec2 size, ImWidgetsSliderFill fill, bool inverted )
+	{
+		return SliderGradientVerticalScalar( label, ImGuiDataType_S32, v, &v_min, &v_max, gradient, size, fill, inverted );
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// DragFloat with a colour / gradient underline
+	//////////////////////////////////////////////////////////////////////////
+
+	// Push `count` hue-sweep stops covering [t0, t1] of the gradient parameter.
+	static void DW_PushHueSweep( ImGradientData& g, float t0, float t1, int count, float sat, float val )
+	{
+		if ( count < 2 ) count = 2;
+		for ( int i = 0; i < count; ++i )
+		{
+			float u = ( float )i / ( float )( count - 1 );
+			float r, gg, b;
+			ImGui::ColorConvertHSVtoRGB( u * ( 1.0f - 1.0f / ( float )count ), sat, val, r, gg, b );
+			g.Stops.push_back( ImGradientStop( t0 + ( t1 - t0 ) * u, ImVec4( r, gg, b, 1.0f ) ) );
+		}
+	}
+
+	ImGradientData const* GradingGradient( ImWidgetsGradingGradient which )
+	{
+		static ImGradientData s_g[ ImWidgetsGradingGradient_COUNT ];
+		static bool s_init = false;
+		if ( !s_init )
+		{
+			for ( int i = 0; i < ImWidgetsGradingGradient_COUNT; ++i )
+			{
+				s_g[ i ].Interpolation = ImWidgetsGradientInterp_sRGB;
+				s_g[ i ].Stops.clear();
+			}
+			ImVec4 const black( 0.02f, 0.02f, 0.02f, 1.0f );
+			ImVec4 const white( 1.00f, 1.00f, 1.00f, 1.0f );
+			ImVec4 const grey ( 0.45f, 0.45f, 0.45f, 1.0f );
+
+			// Temperature: cool -> warm
+			s_g[ ImWidgetsGradingGradient_Temperature ].Stops.push_back( ImGradientStop( 0.0f, ImVec4( 0.25f, 0.55f, 1.00f, 1.0f ) ) );
+			s_g[ ImWidgetsGradingGradient_Temperature ].Stops.push_back( ImGradientStop( 1.0f, ImVec4( 1.00f, 0.60f, 0.15f, 1.0f ) ) );
+			// Tint: green -> magenta
+			s_g[ ImWidgetsGradingGradient_Tint ].Stops.push_back( ImGradientStop( 0.0f, ImVec4( 0.25f, 0.90f, 0.35f, 1.0f ) ) );
+			s_g[ ImWidgetsGradingGradient_Tint ].Stops.push_back( ImGradientStop( 1.0f, ImVec4( 0.95f, 0.30f, 0.90f, 1.0f ) ) );
+			// Contrast: black -> white
+			s_g[ ImWidgetsGradingGradient_Contrast ].Stops.push_back( ImGradientStop( 0.0f, black ) );
+			s_g[ ImWidgetsGradingGradient_Contrast ].Stops.push_back( ImGradientStop( 1.0f, white ) );
+			// Pivot: black -> white -> black
+			s_g[ ImWidgetsGradingGradient_Pivot ].Stops.push_back( ImGradientStop( 0.0f, black ) );
+			s_g[ ImWidgetsGradingGradient_Pivot ].Stops.push_back( ImGradientStop( 0.5f, white ) );
+			s_g[ ImWidgetsGradingGradient_Pivot ].Stops.push_back( ImGradientStop( 1.0f, black ) );
+			// Mid/Detail: white -> black
+			s_g[ ImWidgetsGradingGradient_MidDetail ].Stops.push_back( ImGradientStop( 0.0f, white ) );
+			s_g[ ImWidgetsGradingGradient_MidDetail ].Stops.push_back( ImGradientStop( 1.0f, black ) );
+			// Saturation: desaturated held through the first half, then colour
+			// blooms out -- reads as "less sat on the left, more on the right".
+			s_g[ ImWidgetsGradingGradient_Saturation ].Stops.push_back( ImGradientStop( 0.0f, grey ) );
+			s_g[ ImWidgetsGradingGradient_Saturation ].Stops.push_back( ImGradientStop( 0.42f, grey ) );
+			DW_PushHueSweep( s_g[ ImWidgetsGradingGradient_Saturation ], 0.5f, 1.0f, 7, 0.85f, 0.95f );
+			// Hue: full sweep
+			DW_PushHueSweep( s_g[ ImWidgetsGradingGradient_Hue ], 0.0f, 1.0f, 9, 0.85f, 0.95f );
+			// Lum Mix: hue sweep resolving into white
+			DW_PushHueSweep( s_g[ ImWidgetsGradingGradient_LumMix ], 0.0f, 0.5f, 6, 0.85f, 0.95f );
+			s_g[ ImWidgetsGradingGradient_LumMix ].Stops.push_back( ImGradientStop( 0.62f, white ) );
+			s_g[ ImWidgetsGradingGradient_LumMix ].Stops.push_back( ImGradientStop( 1.0f, white ) );
+
+			s_init = true;
+		}
+		return &s_g[ ImClamp( ( int )which, 0, ( int )ImWidgetsGradingGradient_COUNT - 1 ) ];
+	}
+
+	// Shared body: a DragFloat with a coloured strip underneath. Pass either a
+	// solid colour or a gradient (gradient wins when non-null).
+	static bool DW_DragFloatUnderlineImpl( char const* label, float* v, float v_speed,
+										   float v_min, float v_max, float v_default,
+										   ImU32 col, ImGradientData const* grad,
+										   char const* format, float width, float thickness )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems || v == NULL )
+			return false;
+
+		ImGuiStyle const& style = ImGui::GetStyle();
+		ImGui::PushID( label );
+
+		float w   = ( width > 0.0f ) ? LpToPx( width ) : ImGui::CalcItemWidth();
+		float th  = LpToPx( thickness > 0.0f ? thickness : 2.0f );
+		float gap = LpToPx( 2.0f );
+
+		ImGui::BeginGroup();
+
+		// NoInput: ImGui would otherwise claim the double-click to open text
+		// entry, and the Resolve convention we follow is double-click = reset.
+		ImGui::SetNextItemWidth( w );
+		bool changed = ImGui::DragFloat( "##v", v, v_speed, v_min, v_max, format, ImGuiSliderFlags_NoInput );
+
+		ImVec2 rmin = ImGui::GetItemRectMin();
+		ImVec2 rmax = ImGui::GetItemRectMax();
+		bool hovered = ImGui::IsItemHovered();
+		// IsItemActive() too: the first click of the double-click starts a drag,
+		// which can move hover bookkeeping off the item.
+		if ( ( hovered || ImGui::IsItemActive() ) && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
+		{
+			*v = v_default;
+			changed = true;
+		}
+
+		// Typing an exact value. NoInput above disables ImGui's own ctrl+click
+		// text entry (it is the only way to stop it eating the double-click we
+		// need for reset), so manual editing moves to right-click -- which also
+		// avoids fighting the left-button drag.
+		if ( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) )
+			ImGui::OpenPopup( "##dfu_type" );
+		if ( ImGui::BeginPopup( "##dfu_type" ) )
+		{
+			if ( ImGui::IsWindowAppearing() )
+				ImGui::SetKeyboardFocusHere();
+			ImGui::SetNextItemWidth( LpToPx( 100.0f ) );
+			if ( ImGui::InputFloat( "##in", v, 0.0f, 0.0f, format, ImGuiInputTextFlags_EnterReturnsTrue ) )
+			{
+				*v = ImClamp( *v, v_min, v_max );
+				changed = true;
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndPopup();
+		}
+
+		// Underline strip, placed exactly under the field so the pair reads as
+		// one control (a plain Dummy would inherit ItemSpacing and drift).
+		ImGui::SetCursorScreenPos( ImVec2( rmin.x, rmax.y + gap ) );
+		ImVec2 up = ImGui::GetCursorScreenPos();
+		ImGui::Dummy( ImVec2( w, th ) );
+		if ( grad != NULL )
+			DrawGradientBar( window->DrawList, *grad, up, ImVec2( w, th ), ImMax( 8, ( int )( w / 3.0f ) ) );
+		else
+			window->DrawList->AddRectFilled( up, ImVec2( up.x + w, up.y + th ), col );
+
+		ImGui::EndGroup();
+
+		char const* label_end = ImGui::FindRenderedTextEnd( label );
+		if ( label != label_end )
+		{
+			ImGui::SameLine( 0.0f, style.ItemInnerSpacing.x );
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextUnformatted( label, label_end );
+		}
+
+		ImGui::PopID();
+		return changed;
+	}
+
+	bool DragFloatColorUnderline( char const* label, float* v, float v_speed,
+								  float v_min, float v_max, float v_default,
+								  ImU32 underline_col, char const* format,
+								  float width, float underline_thickness )
+	{
+		return DW_DragFloatUnderlineImpl( label, v, v_speed, v_min, v_max, v_default,
+										  underline_col, NULL, format, width, underline_thickness );
+	}
+
+	bool DragFloatGradientUnderline( char const* label, float* v, float v_speed,
+									 float v_min, float v_max, float v_default,
+									 ImGradientData const* gradient, char const* format,
+									 float width, float underline_thickness )
+	{
+		return DW_DragFloatUnderlineImpl( label, v, v_speed, v_min, v_max, v_default,
+										  0, gradient, format, width, underline_thickness );
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Colour Bars ("Primaries Bars")
+	//////////////////////////////////////////////////////////////////////////
+
+	// Two-stop black -> channel-tint gradients backing the Y/R/G/B bar tracks.
+	// Built once on first use; index 0=Y (neutral), 1=R, 2=G, 3=B.
+	static ImGradientData const& DW_ChannelGradient( int ch )
+	{
+		static ImGradientData s_grad[ 4 ];
+		static bool s_init = false;
+		if ( !s_init )
+		{
+			static const ImVec4 tint[ 4 ] = {
+				ImVec4( 0.95f, 0.95f, 0.95f, 1.0f ),
+				ImVec4( 0.95f, 0.26f, 0.26f, 1.0f ),
+				ImVec4( 0.30f, 0.92f, 0.38f, 1.0f ),
+				ImVec4( 0.36f, 0.55f, 0.98f, 1.0f ) };
+			for ( int i = 0; i < 4; ++i )
+			{
+				s_grad[ i ].Interpolation = ImWidgetsGradientInterp_sRGB;
+				s_grad[ i ].Stops.resize( 2 );
+				s_grad[ i ].Stops[ 0 ] = ImGradientStop( 0.0f, ImVec4( 0.05f, 0.05f, 0.06f, 1.0f ) );
+				s_grad[ i ].Stops[ 1 ] = ImGradientStop( 1.0f, tint[ i ] );
+			}
+			s_init = true;
+		}
+		return s_grad[ ImClamp( ch, 0, 3 ) ];
+	}
+
+	// Solid underline colour for a channel's numeric field: white for Y, then
+	// the R/G/B tints (matching the bar tracks above them).
+	static ImU32 DW_ChannelUnderlineColor( int ch )
+	{
+		switch ( ImClamp( ch, 0, 3 ) )
+		{
+		case 1:  return IM_COL32( 235,  70,  70, 255 );
+		case 2:  return IM_COL32(  70, 220,  95, 255 );
+		case 3:  return IM_COL32(  85, 135, 250, 255 );
+		default: return IM_COL32( 230, 230, 230, 255 );
+		}
+	}
+
+	bool ColorBars( char const* label, float* yrgb, float v_min, float v_max, float v_default,
+					bool link_master, bool show_values, ImVec2 size, ImWidgetsSliderFill fill )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems || yrgb == NULL )
+			return false;
+		if ( v_max <= v_min )
+			return false;
+
+		ImGui::PushID( label );
+		ImGuiStyle const& style = ImGui::GetStyle();
+		ImDrawList* dl = window->DrawList;
+
+		// Bar size stays in LOGICAL px -- SliderGradientVertical scales it.
+		float barW = ( size.x > 0.0f ) ? size.x : 26.0f;
+		float barH = ( size.y > 0.0f ) ? size.y : 150.0f;
+		float barWpx = LpToPx( barW );
+		float spacing = style.ItemInnerSpacing.x;
+
+		static char const* names[ 4 ] = { "Y", "R", "G", "B" };
+		bool  changed  = false;
+		bool  masterDragged = false;
+		int   resetIdx = -1;
+		float oldY = yrgb[ 0 ];
+
+		ImGui::BeginGroup();
+		for ( int i = 0; i < 4; ++i )
+		{
+			if ( i > 0 ) ImGui::SameLine( 0.0f, spacing );
+			// Per-channel ID scope: every bar reuses the same child widget names
+			// ("##bar", "##val"), so without this all four channels -- and every
+			// numeric field -- would collapse onto one ImGuiID and fight for it.
+			ImGui::PushID( i );
+			ImGui::BeginGroup();
+
+			// Channel letter, centered over the bar.
+			ImVec2 ts = ImGui::CalcTextSize( names[ i ] );
+			ImVec2 tp = ImGui::GetCursorScreenPos();
+			dl->AddText( ImVec2( tp.x + ( barWpx - ts.x ) * 0.5f, tp.y ),
+						 ImGui::GetColorU32( ImGuiCol_Text ), names[ i ] );
+			ImGui::Dummy( ImVec2( barWpx, ts.y ) );
+
+			if ( SliderGradientVerticalFloat( "##bar", &yrgb[ i ], v_min, v_max,
+											  &DW_ChannelGradient( i ), ImVec2( barW, barH ), fill ) )
+			{
+				changed = true;
+				if ( i == 0 ) masterDragged = true;
+			}
+			// Double-click resets: the Y bar resets the whole block, a channel
+			// bar only itself. Resolved after the loop so it always wins over a
+			// value the same click may have pushed through SliderBehavior.
+			if ( ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
+				resetIdx = i;
+
+			if ( show_values )
+			{
+				// Numeric field underlined in the channel colour -- the same
+				// pairing Resolve puts under its wheels and bars.
+				float span = v_max - v_min;
+				if ( DragFloatColorUnderline( "##val", &yrgb[ i ], span * 0.005f, v_min, v_max, v_default,
+											  DW_ChannelUnderlineColor( i ), "%.2f", barW ) )
+				{
+					changed = true;
+					if ( i == 0 ) masterDragged = true;
+				}
+			}
+			ImGui::EndGroup();
+			ImGui::PopID();
+		}
+		ImGui::EndGroup();
+
+		if ( resetIdx == 0 )
+		{
+			for ( int c = 0; c < 4; ++c ) yrgb[ c ] = v_default;
+			changed = true;
+		}
+		else if ( resetIdx > 0 )
+		{
+			yrgb[ resetIdx ] = v_default;
+			changed = true;
+		}
+		else if ( link_master && masterDragged )
+		{
+			// Y is the master luminance move: shift every channel by its delta.
+			//
+			// Clamp the DELTA, not each channel afterwards. Per-channel clamping
+			// lets one channel saturate at a rail while the others keep moving;
+			// pulling Y back then drags the saturated one away from where it was
+			// and the relative offsets between channels are lost permanently.
+			// Instead the whole block stops together when any channel would hit
+			// a rail -- including Y, so the readout matches what actually moved.
+			float dY = yrgb[ 0 ] - oldY;
+			if ( dY != 0.0f )
+			{
+				float allowed = dY;
+				for ( int c = 1; c < 4; ++c )
+				{
+					if ( dY > 0.0f ) allowed = ImMin( allowed, ImMax( 0.0f, v_max - yrgb[ c ] ) );
+					else             allowed = ImMax( allowed, ImMin( 0.0f, v_min - yrgb[ c ] ) );
+				}
+				if ( allowed != dY )
+					yrgb[ 0 ] = oldY + allowed;
+				for ( int c = 1; c < 4; ++c )
+					yrgb[ c ] = ImClamp( yrgb[ c ] + allowed, v_min, v_max );
+			}
+		}
+
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// ColorSlice
+	//////////////////////////////////////////////////////////////////////////
+
+	// Signed shortest angular distance a-b, wrapped to (-180, 180].
+	static inline float DW_HueDelta( float a, float b )
+	{
+		float d = ImFmod( a - b, 360.0f );
+		if ( d >  180.0f ) d -= 360.0f;
+		if ( d < -180.0f ) d += 360.0f;
+		return d;
+	}
+
+	void ImColorSliceData::ResolveVectors()
+	{
+		// The 7 Resolve vectors. Skin sits between Red and Yellow (it tracks the
+		// vectorscope's Inphase line); its wedge is narrower because it is
+		// squeezed between two neighbours. Wedges deliberately OVERLAP.
+		struct Def { char const* name; float center; float half; };
+		static const Def defs[ 7 ] = {
+			{ "Red",     0.0f,   35.0f },
+			{ "Skin",    28.0f,  20.0f },
+			{ "Yellow",  60.0f,  32.0f },
+			{ "Green",   120.0f, 40.0f },
+			{ "Cyan",    180.0f, 40.0f },
+			{ "Blue",    240.0f, 40.0f },
+			{ "Magenta", 300.0f, 40.0f },
+		};
+		Slices.clear();
+		Slices.resize( 7 );
+		for ( int i = 0; i < 7; ++i )
+		{
+			Slices[ i ] = ImColorSliceVector();
+			Slices[ i ].Label           = defs[ i ].name;
+			Slices[ i ].HueCenterDeg    = defs[ i ].center;
+			Slices[ i ].HueHalfWidthDeg = defs[ i ].half;
+		}
+	}
+
+	void ImColorSliceData::ResetSlices()
+	{
+		for ( int i = 0; i < Slices.Size; ++i )
+		{
+			Slices[ i ].Center     = 0.0f;
+			Slices[ i ].Hue        = 0.0f;
+			Slices[ i ].Density    = 0.0f;
+			Slices[ i ].Saturation = 0.0f;
+		}
+	}
+
+	void ImColorSliceData::ResetGlobals()
+	{
+		Density = DensityDepth = Saturation = SatBalance = SatDepth = Hue = 0.0f;
+	}
+
+	void ImColorSliceData::ResetAll()
+	{
+		ResetSlices();
+		ResetGlobals();
+	}
+
+	// One slice's hue wheel: the full circle drawn dim, this slice's wedge
+	// brightened, its two FIXED boundary lines, and the movable centre line.
+	// Dragging inside the wheel slides the centre, clamped to the wedge.
+	static bool DW_ColorSliceWheel( char const* str_id, ImColorSliceVector& sl, float diameter_lp )
+	{
+		float d = LpToPx( diameter_lp );
+		ImVec2 p = ImGui::GetCursorScreenPos();
+		ImGui::InvisibleButton( str_id, ImVec2( d, d ) );
+		bool active  = ImGui::IsItemActive();
+		bool hovered = ImGui::IsItemHovered();
+
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+		ImVec2 c( p.x + d * 0.5f, p.y + d * 0.5f );
+		float rOut = d * 0.5f;
+		float rIn  = rOut * 0.52f;
+
+		// Hue ring: one flat-shaded quad per segment, dimmed outside the wedge.
+		// Cheaper and clearer than masking a full disc with a concave sector.
+		const int N = 72;
+		for ( int i = 0; i < N; ++i )
+		{
+			float t0 = ( float )i / ( float )N;
+			float t1 = ( float )( i + 1 ) / ( float )N;
+			float hue = t0 * 360.0f;
+			bool  in  = ImFabs( DW_HueDelta( hue, sl.HueCenterDeg ) ) <= sl.HueHalfWidthDeg;
+			float r, g, b;
+			ImGui::ColorConvertHSVtoRGB( t0, 0.85f, in ? 1.0f : 0.30f, r, g, b );
+			ImU32 col = ImGui::GetColorU32( ImVec4( r, g, b, 1.0f ) );
+
+			float a0 = t0 * 2.0f * IM_PI;
+			float a1 = t1 * 2.0f * IM_PI;
+			ImVec2 o0( c.x + ImCos( a0 ) * rOut, c.y + ImSin( a0 ) * rOut );
+			ImVec2 o1( c.x + ImCos( a1 ) * rOut, c.y + ImSin( a1 ) * rOut );
+			ImVec2 i0( c.x + ImCos( a0 ) * rIn,  c.y + ImSin( a0 ) * rIn );
+			ImVec2 i1( c.x + ImCos( a1 ) * rIn,  c.y + ImSin( a1 ) * rIn );
+			dl->AddQuadFilled( i0, o0, o1, i1, col );
+		}
+
+		// Fixed wedge boundaries.
+		ImU32 bcol = IM_COL32( 255, 255, 255, 170 );
+		for ( int s = -1; s <= 1; s += 2 )
+		{
+			float a = ( sl.HueCenterDeg + s * sl.HueHalfWidthDeg ) * IM_PI / 180.0f;
+			dl->AddLine( ImVec2( c.x + ImCos( a ) * rIn,  c.y + ImSin( a ) * rIn ),
+						 ImVec2( c.x + ImCos( a ) * rOut, c.y + ImSin( a ) * rOut ),
+						 bcol, LpToPx( 1.0f ) );
+		}
+
+		// Movable centre line.
+		float centDeg = sl.HueCenterDeg + sl.Center * sl.HueHalfWidthDeg;
+		float ca = centDeg * IM_PI / 180.0f;
+		ImU32 ccol = ( active || hovered ) ? IM_COL32( 255, 255, 255, 255 ) : IM_COL32( 245, 245, 245, 225 );
+		dl->AddLine( ImVec2( c.x + ImCos( ca ) * ( rIn - LpToPx( 2.0f ) ), c.y + ImSin( ca ) * ( rIn - LpToPx( 2.0f ) ) ),
+					 ImVec2( c.x + ImCos( ca ) * ( rOut + LpToPx( 2.0f ) ), c.y + ImSin( ca ) * ( rOut + LpToPx( 2.0f ) ) ),
+					 ccol, LpToPx( 2.0f ) );
+
+		dl->AddCircle( c, rOut, IM_COL32( 0, 0, 0, 140 ), 0, LpToPx( 1.0f ) );
+		dl->AddCircle( c, rIn,  IM_COL32( 0, 0, 0, 140 ), 0, LpToPx( 1.0f ) );
+
+		// Drag: project the mouse onto the hue circle, then clamp into the wedge.
+		bool changed = false;
+		if ( active )
+		{
+			ImVec2 m = ImGui::GetIO().MousePos;
+			ImVec2 v( m.x - c.x, m.y - c.y );
+			if ( v.x != 0.0f || v.y != 0.0f )
+			{
+				float deg = ImAtan2( v.y, v.x ) * 180.0f / IM_PI;
+				float off = DW_HueDelta( deg, sl.HueCenterDeg );
+				float nc  = ImClamp( off / ImMax( 1.0f, sl.HueHalfWidthDeg ), -1.0f, 1.0f );
+				if ( nc != sl.Center ) { sl.Center = nc; changed = true; }
+			}
+		}
+		if ( hovered )
+			ImGui::SetTooltip( "%s\nwedge %.0f deg +/- %.0f\ndrag to slide the weighting centre",
+							   sl.Label ? sl.Label : "", sl.HueCenterDeg, sl.HueHalfWidthDeg );
+		return changed;
+	}
+
+	// Representative solid colour for a slice (its wedge centre hue).
+	static inline float DW_SliceHue01( ImColorSliceVector const& sl )
+	{
+		return ImFmod( ImFmod( sl.HueCenterDeg, 360.0f ) + 360.0f, 360.0f ) / 360.0f;
+	}
+
+	static ImU32 DW_SliceTint( ImColorSliceVector const& sl )
+	{
+		float r, g, b;
+		ImGui::ColorConvertHSVtoRGB( DW_SliceHue01( sl ), 0.80f, 1.0f, r, g, b );
+		return ImGui::GetColorU32( ImVec4( r, g, b, 1.0f ) );
+	}
+
+	// Track gradients for a slice's Density / Saturation bars. Both are built
+	// from the slice's OWN hue, so e.g. Red's density bar reads white -> red ->
+	// black. They depend on runtime data, so they are rebuilt into one shared
+	// scratch gradient per use -- safe because the slider samples it
+	// synchronously inside the call, before the next rebuild.
+	static ImGradientData const& DW_SliceBarGradient( ImColorSliceVector const& sl, bool density )
+	{
+		static ImGradientData g;
+		g.Interpolation = ImWidgetsGradientInterp_sRGB;
+		g.Stops.clear();
+
+		float hue = DW_SliceHue01( sl );
+		float r, gg, b;
+		if ( density )
+		{
+			// Bottom (-1) washed out -> centre (0) the pure hue -> top (+1)
+			// deep and dark: more density = more dye load = darker.
+			ImGui::ColorConvertHSVtoRGB( hue, 0.85f, 1.0f, r, gg, b );
+			g.Stops.push_back( ImGradientStop( 0.0f, ImVec4( 1.0f, 1.0f, 1.0f, 1.0f ) ) );
+			g.Stops.push_back( ImGradientStop( 0.5f, ImVec4( r, gg, b, 1.0f ) ) );
+			g.Stops.push_back( ImGradientStop( 1.0f, ImVec4( 0.02f, 0.02f, 0.02f, 1.0f ) ) );
+		}
+		else
+		{
+			// Bottom (-1) desaturated -> centre (0) normal -> top (+1) vivid.
+			float lr, lg, lb, vr, vg, vb;
+			ImGui::ColorConvertHSVtoRGB( hue, 0.08f, 0.58f, lr, lg, lb );
+			ImGui::ColorConvertHSVtoRGB( hue, 0.72f, 0.95f, r,  gg, b  );
+			ImGui::ColorConvertHSVtoRGB( hue, 1.00f, 1.00f, vr, vg, vb );
+			g.Stops.push_back( ImGradientStop( 0.0f, ImVec4( lr, lg, lb, 1.0f ) ) );
+			g.Stops.push_back( ImGradientStop( 0.5f, ImVec4( r,  gg, b,  1.0f ) ) );
+			g.Stops.push_back( ImGradientStop( 1.0f, ImVec4( vr, vg, vb, 1.0f ) ) );
+		}
+		return g;
+	}
+
+	// Small caption centred over a column of `widthPx`.
+	static void DW_CenteredCaption( char const* txt, float widthPx )
+	{
+		ImVec2 ts = ImGui::CalcTextSize( txt );
+		ImVec2 p  = ImGui::GetCursorScreenPos();
+		ImGui::GetWindowDrawList()->AddText( ImVec2( p.x + ( widthPx - ts.x ) * 0.5f, p.y ),
+											 ImGui::GetColorU32( ImGuiCol_Text ), txt );
+		ImGui::Dummy( ImVec2( widthPx, ts.y ) );
+	}
+
+	bool ColorSlice( char const* label, ImColorSliceData& data, ImVec2 size )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGui::PushID( label );
+		bool changed = false;
+
+		// `size.x` (logical px) is the width of the WHOLE panel, so derive the
+		// per-slice column from it. This parameter used to be discarded, which
+		// made the documented sizing a no-op.
+		float colW = 124.0f;                    // logical px, one slice module
+		if ( size.x > 0.0f && data.Slices.Size > 0 )
+		{
+			float per = size.x / ( float )data.Slices.Size;
+			colW = ImClamp( per, 92.0f, 220.0f );
+		}
+		float fieldW  = colW - 10.0f;
+		float wheelD  = colW - 46.0f;
+		float colWpx  = LpToPx( colW );
+
+		data.HighlightSlice = -1;
+
+		// ---- global row ----
+		ImGui::BeginGroup();
+		{
+			float gw = 96.0f;
+			struct GDef { char const* name; float* v; ImWidgetsGradingGradient grad; };
+			GDef gdefs[ 6 ] = {
+				{ "Density",     &data.Density,      ImWidgetsGradingGradient_Contrast   },
+				{ "Den.Depth",   &data.DensityDepth, ImWidgetsGradingGradient_MidDetail  },
+				{ "Saturation",  &data.Saturation,   ImWidgetsGradingGradient_Saturation },
+				{ "Sat.Balance", &data.SatBalance,   ImWidgetsGradingGradient_Pivot      },
+				{ "Sat.Depth",   &data.SatDepth,     ImWidgetsGradingGradient_MidDetail  },
+				{ "Hue",         &data.Hue,          ImWidgetsGradingGradient_Hue        },
+			};
+			for ( int i = 0; i < 6; ++i )
+			{
+				if ( i > 0 ) ImGui::SameLine();
+				if ( DragFloatGradientUnderline( gdefs[ i ].name, gdefs[ i ].v, 0.005f, -1.0f, 1.0f, 0.0f,
+												 GradingGradient( gdefs[ i ].grad ), "%.2f", gw ) )
+					changed = true;
+			}
+			ImGui::SameLine();
+			ImGui::AlignTextToFramePadding();
+			if ( ImGui::Button( "Reset##globals" ) ) { data.ResetGlobals(); changed = true; }
+		}
+		ImGui::EndGroup();
+
+		ImGui::Separator();
+
+		// ---- slice modules ----
+		for ( int s = 0; s < data.Slices.Size; ++s )
+		{
+			ImColorSliceVector& sl = data.Slices[ s ];
+			if ( s > 0 ) ImGui::SameLine();
+
+			ImGui::PushID( s );
+			ImGui::BeginGroup();
+
+			ImU32 tint = DW_SliceTint( sl );
+
+			// Header: highlight-hold button + label.
+			ImGui::PushStyleColor( ImGuiCol_Button, IM_COL32( 0, 0, 0, 0 ) );
+			bool hi = ImGui::Button( "[o]" );
+			ImGui::PopStyleColor();
+			( void )hi;
+			// Press-and-HOLD shows the qualified pixels, matching Resolve.
+			if ( ImGui::IsItemActive() )
+				data.HighlightSlice = s;
+			if ( ImGui::IsItemHovered() )
+				ImGui::SetTooltip( "Hold to highlight the pixels this slice qualifies" );
+			ImGui::SameLine( 0.0f, 2.0f );
+			ImGui::TextColored( ImGui::ColorConvertU32ToFloat4( tint ), "%s", sl.Label ? sl.Label : "" );
+
+			// Wheel, centred in the column.
+			float indent = ( colWpx - LpToPx( wheelD ) ) * 0.5f;
+			if ( indent > 0.0f ) ImGui::Indent( indent );
+			if ( DW_ColorSliceWheel( "##wheel", sl, wheelD ) )
+				changed = true;
+			if ( indent > 0.0f ) ImGui::Unindent( indent );
+
+			// Center is the qualifier, so it carries the slice tint; Hue gets a
+			// full sweep. Both stay as drag fields -- they are offsets, not levels.
+			if ( DragFloatColorUnderline( "##center", &sl.Center, 0.005f, -1.0f, 1.0f, 0.0f, tint, "C %.2f", fieldW ) )
+				changed = true;
+			if ( DragFloatGradientUnderline( "##hue", &sl.Hue, 0.005f, -1.0f, 1.0f, 0.0f,
+											 GradingGradient( ImWidgetsGradingGradient_Hue ), "H %.2f", fieldW ) )
+				changed = true;
+
+			// Density and Saturation are levels, so they get vertical bars on
+			// gradients built from this slice's own hue. They reveal from the
+			// bottom, matching the RGB Mixer bars.
+			float halfW  = ( fieldW - 4.0f ) * 0.5f;
+			float halfPx = LpToPx( halfW );
+			float barH   = 96.0f;
+
+			ImGui::BeginGroup();
+			DW_CenteredCaption( data.DensityLabel ? data.DensityLabel : "D", halfPx );
+			if ( SliderGradientVerticalFloat( "##denbar", &sl.Density, -1.0f, 1.0f,
+											  &DW_SliceBarGradient( sl, true ), ImVec2( halfW, barH ),
+											  ImWidgetsSliderFill_FromMin ) )
+				changed = true;
+			if ( DragFloatColorUnderline( "##denv", &sl.Density, 0.005f, -1.0f, 1.0f, 0.0f, tint, "%.2f", halfW ) )
+				changed = true;
+			ImGui::EndGroup();
+
+			ImGui::SameLine( 0.0f, LpToPx( 4.0f ) );
+
+			ImGui::BeginGroup();
+			DW_CenteredCaption( data.SaturationLabel ? data.SaturationLabel : "S", halfPx );
+			if ( SliderGradientVerticalFloat( "##satbar", &sl.Saturation, -1.0f, 1.0f,
+											  &DW_SliceBarGradient( sl, false ), ImVec2( halfW, barH ),
+											  ImWidgetsSliderFill_FromMin ) )
+				changed = true;
+			if ( DragFloatColorUnderline( "##satv", &sl.Saturation, 0.005f, -1.0f, 1.0f, 0.0f, tint, "%.2f", halfW ) )
+				changed = true;
+			ImGui::EndGroup();
+
+			if ( ImGui::Button( "Reset##slice", ImVec2( LpToPx( fieldW ), 0.0f ) ) )
+			{
+				sl.Center = sl.Hue = sl.Density = sl.Saturation = 0.0f;
+				changed = true;
+			}
+
+			ImGui::EndGroup();
+			ImGui::PopID();
+		}
+
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Spectrum editor (SPD -> XYZ -> RGB)
+	//////////////////////////////////////////////////////////////////////////
+
+	void ImSpectrumData::SetGaussian( float center_nm, float sigma_nm, float amplitude )
+	{
+		if ( sigma_nm < 0.5f ) sigma_nm = 0.5f;
+		for ( int i = 0; i < Samples.Size; ++i )
+		{
+			float d = ( LambdaAt( i ) - center_nm ) / sigma_nm;
+			Samples[ i ] = amplitude * expf( -0.5f * d * d );
+		}
+	}
+
+	void SpectrumToXYZ( ImSpectrumData const& spectrum, ImWidgetsObserver observer,
+						float& out_X, float& out_Y, float& out_Z, bool normalize )
+	{
+		out_X = out_Y = out_Z = 0.0f;
+		int obs = ImClamp( ( int )observer, 0, ( int )ImWidgetsObserver_COUNT - 1 );
+		float const* cx = s_CIE_Observers_X[ obs ];
+		float const* cy = s_CIE_Observers_Y[ obs ];
+		float const* cz = s_CIE_Observers_Z[ obs ];
+		int   n    = s_CIE_Observers_SamplesCount[ obs ];
+		float lmin = s_CIE_Observers_min[ obs ];
+		float lmax = s_CIE_Observers_max[ obs ];
+		if ( n < 2 ) return;
+		// The tables are uniformly sampled across [min, max].
+		float dl = ( lmax - lmin ) / ( float )( n - 1 );
+
+		float ysum = 0.0f;
+		for ( int i = 0; i < n; ++i )
+		{
+			float lambda = lmin + dl * ( float )i;
+			float s = spectrum.SampleAt( lambda );
+			out_X += s * cx[ i ];
+			out_Y += s * cy[ i ];
+			out_Z += s * cz[ i ];
+			ysum  += cy[ i ];
+		}
+		if ( normalize && ysum > 0.0f )
+		{
+			float k = 1.0f / ysum;
+			out_X *= k;
+			out_Y *= k;
+			out_Z *= k;
+		}
+		else
+		{
+			out_X *= dl;
+			out_Y *= dl;
+			out_Z *= dl;
+		}
+	}
+
+	void WavelengthToRGB( float lambda, ImWidgetsObserver observer,
+						  float& out_r, float& out_g, float& out_b )
+	{
+		out_r = out_g = out_b = 0.0f;
+		int obs = ImClamp( ( int )observer, 0, ( int )ImWidgetsObserver_COUNT - 1 );
+		float lmin = s_CIE_Observers_min[ obs ];
+		float lmax = s_CIE_Observers_max[ obs ];
+		int   n    = s_CIE_Observers_SamplesCount[ obs ];
+		if ( n < 2 || lambda < lmin || lambda > lmax ) return;
+
+		float t  = ( lambda - lmin ) / ( lmax - lmin ) * ( float )( n - 1 );
+		int   i0 = ImClamp( ( int )t, 0, n - 2 );
+		float f  = t - ( float )i0;
+		float X  = s_CIE_Observers_X[ obs ][ i0 ] + ( s_CIE_Observers_X[ obs ][ i0 + 1 ] - s_CIE_Observers_X[ obs ][ i0 ] ) * f;
+		float Y  = s_CIE_Observers_Y[ obs ][ i0 ] + ( s_CIE_Observers_Y[ obs ][ i0 + 1 ] - s_CIE_Observers_Y[ obs ][ i0 ] ) * f;
+		float Z  = s_CIE_Observers_Z[ obs ][ i0 ] + ( s_CIE_Observers_Z[ obs ][ i0 + 1 ] - s_CIE_Observers_Z[ obs ][ i0 ] ) * f;
+
+		float r, g, b;
+		ColorConvertXYZtosRGB( r, g, b, X, Y, Z );
+		// Clip negatives (spectral primaries are outside sRGB) then normalise to
+		// full brightness so the ruler reads as a bright rainbow.
+		r = ImMax( r, 0.0f ); g = ImMax( g, 0.0f ); b = ImMax( b, 0.0f );
+		float m = ImMax( r, ImMax( g, b ) );
+		if ( m > 1e-6f ) { r /= m; g /= m; b /= m; }
+		// Fade at the ends of the visible range, where response collapses.
+		float fade = 1.0f;
+		if ( lambda < 420.0f )      fade = ImMax( 0.0f, ( lambda - 380.0f ) / 40.0f );
+		else if ( lambda > 680.0f ) fade = ImMax( 0.0f, ( 720.0f - lambda ) / 40.0f );
+		out_r = r * fade; out_g = g * fade; out_b = b * fade;
+	}
+
+	struct DW_SpectrumRulerData
+	{
+		float				LMin, LMax;
+		float				Dim;
+		ImWidgetsObserver	Observer;
+	};
+
+	static ImU32 DW_SpectrumRulerCallback( float t, void* ud )
+	{
+		DW_SpectrumRulerData const* d = ( DW_SpectrumRulerData const* )ud;
+		float lambda = d->LMin + ( d->LMax - d->LMin ) * t;
+		float r, g, b;
+		WavelengthToRGB( lambda, d->Observer, r, g, b );
+		return ImGui::GetColorU32( ImVec4( r * d->Dim, g * d->Dim, b * d->Dim, 1.0f ) );
+	}
+
+	bool SpectrumEditor( char const* label, ImSpectrumData& spectrum, ImVec2 size, float y_max,
+						 ImWidgetsObserver observer )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems || spectrum.Samples.Size < 2 )
+			return false;
+
+		ImGui::PushID( label );
+		ImGuiIO&      io  = ImGui::GetIO();
+		ImDrawList*   dl  = window->DrawList;
+		ImGuiStorage* stg = ImGui::GetStateStorage();
+		bool changed = false;
+		if ( y_max <= 0.0f ) y_max = 1.0f;
+
+		float w = ( size.x > 0.0f ) ? LpToPx( size.x ) : ImMin( ImGui::GetContentRegionAvail().x, LpToPx( 460.0f ) );
+		float h = ( size.y > 0.0f ) ? LpToPx( size.y ) : LpToPx( 170.0f );
+		if ( w < LpToPx( 80.0f ) ) w = LpToPx( 80.0f );
+		float rulerH = LpToPx( 12.0f );
+
+		ImVec2 cmin = ImGui::GetCursorScreenPos();
+		ImVec2 cmax( cmin.x + w, cmin.y + h );
+		ImGui::InvisibleButton( "##canvas", ImVec2( w, h ) );
+		bool active  = ImGui::IsItemActive();
+		bool pressed = ImGui::IsItemActivated();
+		bool hovered = ImGui::IsItemHovered();
+
+		// Dim spectral wash behind the curve, and a bright ruler beneath it.
+		DW_SpectrumRulerData rd;
+		rd.LMin = spectrum.LambdaMin;
+		rd.LMax = spectrum.LambdaMax;
+		rd.Observer = observer;
+		rd.Dim = 0.28f;
+		int rres = ImMax( 16, ( int )( w / 3.0f ) );
+		DrawProceduralColor1DBilinearHorizontal( dl, &DW_SpectrumRulerCallback, &rd,
+												 0.0f, 1.0f, cmin, ImVec2( w, h ), rres );
+
+		// Grid.
+		ImU32 grid = IM_COL32( 255, 255, 255, 28 );
+		for ( int k = 1; k < 4; ++k )
+		{
+			float gy = cmin.y + h * ( float )k / 4.0f;
+			dl->AddLine( ImVec2( cmin.x, gy ), ImVec2( cmax.x, gy ), grid );
+		}
+		for ( float lam = 400.0f; lam <= spectrum.LambdaMax; lam += 50.0f )
+		{
+			if ( lam < spectrum.LambdaMin ) continue;
+			float gx = cmin.x + w * ( lam - spectrum.LambdaMin ) / ( spectrum.LambdaMax - spectrum.LambdaMin );
+			dl->AddLine( ImVec2( gx, cmin.y ), ImVec2( gx, cmax.y ), grid );
+		}
+
+		// ---- painting ----
+		ImGuiID kLastX = ImGui::GetID( "##lastx" );
+		ImGuiID kLastY = ImGui::GetID( "##lasty" );
+
+		int   ns = spectrum.Samples.Size;
+		float sx = ( io.MousePos.x - cmin.x ) / w;
+		float sy = 1.0f - ( io.MousePos.y - cmin.y ) / h;
+		float curIdxF = ImClamp( sx, 0.0f, 1.0f ) * ( float )( ns - 1 );
+		float curVal  = ImClamp( sy, 0.0f, 1.0f ) * y_max;
+
+		if ( pressed )
+		{
+			int i = ImClamp( ( int )( curIdxF + 0.5f ), 0, ns - 1 );
+			if ( spectrum.Samples[ i ] != curVal )
+			{
+				spectrum.Samples[ i ] = curVal;
+				changed = true;
+			}
+			stg->SetFloat( kLastX, curIdxF );
+			stg->SetFloat( kLastY, curVal );
+		}
+		else if ( active )
+		{
+			// Interpolate across every sample between the previous and current
+			// mouse position -- otherwise a fast sweep leaves gaps.
+			//
+			// Both endpoints and the interpolation parameter use the ROUNDED
+			// sample indices. Mixing rounded bounds with fractional positions
+			// (as this did) wrote one sample PAST the cursor and one behind it,
+			// so the stroke led the mouse by up to half a sample and clobbered a
+			// sample the user never crossed.
+			float pIdx = stg->GetFloat( kLastX, curIdxF );
+			float pVal = stg->GetFloat( kLastY, curVal );
+			int   iPrev = ImClamp( ( int )( pIdx    + 0.5f ), 0, ns - 1 );
+			int   iCur  = ImClamp( ( int )( curIdxF + 0.5f ), 0, ns - 1 );
+			int   i0 = ImMin( iPrev, iCur );
+			int   i1 = ImMax( iPrev, iCur );
+			for ( int i = i0; i <= i1; ++i )
+			{
+				float f = ( iCur != iPrev )
+						? ( ( float )( i - iPrev ) / ( float )( iCur - iPrev ) )
+						: 1.0f;
+				float nv = pVal + ( curVal - pVal ) * f;
+				if ( spectrum.Samples[ i ] != nv )
+				{
+					spectrum.Samples[ i ] = nv;
+					changed = true;
+				}
+			}
+			stg->SetFloat( kLastX, curIdxF );
+			stg->SetFloat( kLastY, curVal );
+		}
+
+		// ---- curve ----
+		dl->PushClipRect( cmin, cmax, true );
+
+		// Area under the curve. An SPD is almost never a convex outline (any dip
+		// between two peaks breaks it), so PathFillConvex smears across the
+		// notches -- this needs the real concave triangulator.
+		{
+			static ImVector<ImVec2> poly;
+			poly.resize( ns + 2 );
+			poly[ 0 ] = ImVec2( cmin.x, cmax.y );
+			for ( int i = 0; i < ns; ++i )
+			{
+				float px = cmin.x + w * ( float )i / ( float )( ns - 1 );
+				float py = cmax.y - h * ImClamp( spectrum.Samples[ i ] / y_max, 0.0f, 1.0f );
+				poly[ i + 1 ] = ImVec2( px, py );
+			}
+			poly[ ns + 1 ] = ImVec2( cmax.x, cmax.y );
+
+			DrawConcaveShape( dl, poly.Data, poly.Size, IM_COL32( 255, 255, 255, 38 ) );
+		}
+
+		dl->PathClear();
+		for ( int i = 0; i < ns; ++i )
+		{
+			float px = cmin.x + w * ( float )i / ( float )( ns - 1 );
+			float py = cmax.y - h * ImClamp( spectrum.Samples[ i ] / y_max, 0.0f, 1.0f );
+			dl->PathLineTo( ImVec2( px, py ) );
+		}
+		dl->PathStroke( IM_COL32( 255, 255, 255, 235 ), 0, LpToPx( 1.8f ) );
+		dl->PopClipRect();
+
+		dl->AddRect( cmin, cmax, ImGui::GetColorU32( ImGuiCol_Border ) );
+
+		// ---- wavelength ruler ----
+		ImVec2 rmin( cmin.x, cmax.y + LpToPx( 2.0f ) );
+		rd.Dim = 1.0f;
+		DrawProceduralColor1DBilinearHorizontal( dl, &DW_SpectrumRulerCallback, &rd,
+												 0.0f, 1.0f, rmin, ImVec2( w, rulerH ), rres );
+		dl->AddRect( rmin, ImVec2( rmin.x + w, rmin.y + rulerH ), IM_COL32( 0, 0, 0, 120 ) );
+		ImGui::SetCursorScreenPos( rmin );
+		ImGui::Dummy( ImVec2( w, rulerH ) );
+
+		if ( hovered )
+		{
+			float lam = spectrum.LambdaMin + ( spectrum.LambdaMax - spectrum.LambdaMin ) * ImClamp( sx, 0.0f, 1.0f );
+			ImGui::SetTooltip( "%.0f nm   %.3f", lam, spectrum.SampleAt( lam ) );
+		}
+
+		ImGui::PopID();
+		return changed;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Colour space introspection
+	//////////////////////////////////////////////////////////////////////////
+
+	char const* ColorSpaceName( ImWidgetsColorSpace space )
+	{
+		switch ( space )
+		{
+		case ImWidgetsColorSpace_AdobeRGB:			return "Adobe RGB";
+		case ImWidgetsColorSpace_AppleRGB:			return "Apple RGB";
+		case ImWidgetsColorSpace_Best:				return "Best RGB";
+		case ImWidgetsColorSpace_Beta:				return "Beta RGB";
+		case ImWidgetsColorSpace_Bruce:				return "Bruce RGB";
+		case ImWidgetsColorSpace_CIERGB:			return "CIE RGB";
+		case ImWidgetsColorSpace_ColorMatch:		return "ColorMatch";
+		case ImWidgetsColorSpace_Don_RGB_4:			return "Don RGB 4";
+		case ImWidgetsColorSpace_ECI:				return "ECI RGB";
+		case ImWidgetsColorSpace_Ekta_Space_PS5:	return "Ekta Space PS5";
+		case ImWidgetsColorSpace_NTSC:				return "NTSC";
+		case ImWidgetsColorSpace_PAL_SECAM:			return "PAL/SECAM";
+		case ImWidgetsColorSpace_ProPhoto:			return "ProPhoto";
+		case ImWidgetsColorSpace_SMPTE_C:			return "SMPTE-C";
+		case ImWidgetsColorSpace_sRGB:				return "sRGB";
+		case ImWidgetsColorSpace_WideGamutRGB:		return "Wide Gamut RGB";
+		case ImWidgetsColorSpace_Rec2020:			return "Rec.2020";
+		default:									return "?";
+		}
+	}
+
+	void ColorSpaceGetPrimaries( ImWidgetsColorSpace space, ImVec2& out_r, ImVec2& out_g, ImVec2& out_b )
+	{
+		int s = ImClamp( ( int )space, 0, ( int )ImWidgetsColorSpace_COUNT - 1 );
+		out_r = s_ColorSpace_Primaries[ s ][ 0 ];
+		out_g = s_ColorSpace_Primaries[ s ][ 1 ];
+		out_b = s_ColorSpace_Primaries[ s ][ 2 ];
+	}
+
+	void ColorConvertXYZtoRGBSpace( ImWidgetsColorSpace space, float& out_r, float& out_g, float& out_b,
+									float X, float Y, float Z )
+	{
+		int s = ImClamp( ( int )space, 0, ( int )ImWidgetsColorSpace_COUNT - 1 );
+		float const* m = s_ColorSpace_XYZ2RGB[ s ];
+		out_r = m[ 0 ] * X + m[ 1 ] * Y + m[ 2 ] * Z;
+		out_g = m[ 3 ] * X + m[ 4 ] * Y + m[ 5 ] * Z;
+		out_b = m[ 6 ] * X + m[ 7 ] * Y + m[ 8 ] * Z;
+	}
+
+	bool ChromaticityInsideGamut( ImWidgetsColorSpace space, float x, float y )
+	{
+		ImVec2 r, g, b;
+		ColorSpaceGetPrimaries( space, r, g, b );
+		// Barycentric sign test; tolerate the boundary.
+		float d1 = ( x - g.x ) * ( r.y - g.y ) - ( r.x - g.x ) * ( y - g.y );
+		float d2 = ( x - b.x ) * ( g.y - b.y ) - ( g.x - b.x ) * ( y - b.y );
+		float d3 = ( x - r.x ) * ( b.y - r.y ) - ( b.x - r.x ) * ( y - r.y );
+		bool neg = ( d1 < -1e-6f ) || ( d2 < -1e-6f ) || ( d3 < -1e-6f );
+		bool pos = ( d1 >  1e-6f ) || ( d2 >  1e-6f ) || ( d3 >  1e-6f );
+		return !( neg && pos );
+	}
+
+	void DrawChromaticityGamuts( ImDrawList* pDrawList, ImVec2 pos, ImVec2 size,
+								 ImWidgetsColorSpace const* spaces, int space_count,
+								 float test_x, float test_y,
+								 float minX, float maxX, float minY, float maxY,
+								 bool show_labels, float thickness )
+	{
+		if ( pDrawList == NULL || spaces == NULL || space_count <= 0 ) return;
+		float spanX = ( maxX - minX ), spanY = ( maxY - minY );
+		if ( spanX <= 0.0f || spanY <= 0.0f ) return;
+
+		for ( int i = 0; i < space_count; ++i )
+		{
+			ImVec2 r, g, b;
+			ColorSpaceGetPrimaries( spaces[ i ], r, g, b );
+			bool inside = ChromaticityInsideGamut( spaces[ i ], test_x, test_y );
+			ImU32 col = inside ? IM_COL32( 80, 235, 110, 255 ) : IM_COL32( 240, 80, 70, 255 );
+
+			ImVec2 pr( pos.x + ( r.x - minX ) / spanX * size.x, pos.y + ( 1.0f - ( r.y - minY ) / spanY ) * size.y );
+			ImVec2 pg( pos.x + ( g.x - minX ) / spanX * size.x, pos.y + ( 1.0f - ( g.y - minY ) / spanY ) * size.y );
+			ImVec2 pb( pos.x + ( b.x - minX ) / spanX * size.x, pos.y + ( 1.0f - ( b.y - minY ) / spanY ) * size.y );
+
+			pDrawList->AddTriangle( pr, pg, pb, col, LpToPx( thickness ) );
+			if ( show_labels )
+			{
+				char const* nm = ColorSpaceName( spaces[ i ] );
+				ImVec2 ts = ImGui::CalcTextSize( nm );
+				// Label just outside the green primary, which is the least
+				// crowded corner on a standard xy plot.
+				ImVec2 lp( pg.x - ts.x * 0.5f, pg.y - ts.y - LpToPx( 2.0f ) );
+				pDrawList->AddText( ImVec2( lp.x + 1.0f, lp.y + 1.0f ), IM_COL32( 0, 0, 0, 200 ), nm );
+				pDrawList->AddText( lp, col, nm );
+			}
+		}
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Scalar -> Colour
+	//
+	// A single "float -> colour" mapping, published once per working space so
+	// every one of the 17 entry points has the SAME definition
+	// (ImWidgetsColor1DCallback) and they are therefore interchangeable in every
+	// procedural-colour helper in this file. What the scalar MEANS, and what
+	// happens to the colour afterwards, lives in the ImWidgetsColorScalar block
+	// handed through the callback void*.
+	//
+	// Pipeline, in order:
+	//   t --(domain remap, Repeats, Wrap, Ease)--> u in [0,1]
+	//     --(Source: model component / Kelvin / wavelength / gradient)--> colour
+	//     --(Harmony rotation)--> colour
+	//     --(Gamut policy)--> display sRGB
+	//
+	// Every enum is turned into a function pointer or a component index ONCE by
+	// ColorScalarResolve; the per-sample path below only ever calls through
+	// pointers. The colour-space-aware overloads at the bottom of this block do
+	// that resolve for the caller, so a whole bar / ring / spline costs one
+	// dispatch rather than one per vertex.
+	//////////////////////////////////////////////////////////////////////////
+
+	// Bradford cone-response basis -- the standard chromatic adaptation transform
+	// (Lindbloom, "Chromatic Adaptation"). Needed because half of the working
+	// spaces in this library are D50: without adapting, ProPhoto white renders as
+	// a warm cast, which is a conversion bug rather than an honest preview.
+	static const float kDW_Bradford[ 9 ] = {
+		 0.8951000f,  0.2664000f, -0.1614000f,
+		-0.7502000f,  1.7135000f,  0.0367000f,
+		 0.0389000f, -0.0685000f,  1.0296000f };
+	static const float kDW_BradfordInv[ 9 ] = {
+		 0.9869929f, -0.1470543f,  0.1599627f,
+		 0.4323053f,  0.5183603f,  0.0492912f,
+		-0.0085287f,  0.0400428f,  0.9684867f };
+
+	static void DW_Mat33MulVec3( float* out3, float const* m9, float const* v3 )
+	{
+		out3[ 0 ] = m9[ 0 ] * v3[ 0 ] + m9[ 1 ] * v3[ 1 ] + m9[ 2 ] * v3[ 2 ];
+		out3[ 1 ] = m9[ 3 ] * v3[ 0 ] + m9[ 4 ] * v3[ 1 ] + m9[ 5 ] * v3[ 2 ];
+		out3[ 2 ] = m9[ 6 ] * v3[ 0 ] + m9[ 7 ] * v3[ 1 ] + m9[ 8 ] * v3[ 2 ];
+	}
+
+	static void DW_Mat33MulMat33( float* out9, float const* a9, float const* b9 )
+	{
+		for ( int r = 0; r < 3; ++r )
+			for ( int c = 0; c < 3; ++c )
+				out9[ r * 3 + c ] = a9[ r * 3 + 0 ] * b9[ 0 * 3 + c ]
+								  + a9[ r * 3 + 1 ] * b9[ 1 * 3 + c ]
+								  + a9[ r * 3 + 2 ] * b9[ 2 * 3 + c ];
+	}
+
+	// Chromaticity -> XYZ at unit luminance.
+	static void DW_XYZFromxy( float x, float y, float* out3 )
+	{
+		if ( ImAbs( y ) < 1e-6f ) { out3[ 0 ] = out3[ 1 ] = out3[ 2 ] = 0.0f; return; }
+		out3[ 0 ] = x / y;
+		out3[ 1 ] = 1.0f;
+		out3[ 2 ] = ( 1.0f - x - y ) / y;
+	}
+
+	static void DW_BuildBradford( ImVec2 src_xy, ImVec2 dst_xy, float* out9 )
+	{
+		float ws[ 3 ], wd[ 3 ], cs[ 3 ], cd[ 3 ];
+		DW_XYZFromxy( src_xy.x, src_xy.y, ws );
+		DW_XYZFromxy( dst_xy.x, dst_xy.y, wd );
+		DW_Mat33MulVec3( cs, kDW_Bradford, ws );
+		DW_Mat33MulVec3( cd, kDW_Bradford, wd );
+
+		float diag[ 9 ] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+		diag[ 0 ] = ( ImAbs( cs[ 0 ] ) > 1e-9f ) ? cd[ 0 ] / cs[ 0 ] : 1.0f;
+		diag[ 4 ] = ( ImAbs( cs[ 1 ] ) > 1e-9f ) ? cd[ 1 ] / cs[ 1 ] : 1.0f;
+		diag[ 8 ] = ( ImAbs( cs[ 2 ] ) > 1e-9f ) ? cd[ 2 ] / cs[ 2 ] : 1.0f;
+
+		float tmp[ 9 ];
+		DW_Mat33MulMat33( tmp, diag, kDW_Bradford );
+		DW_Mat33MulMat33( out9, kDW_BradfordInv, tmp );
+	}
+
+	struct DW_ColorAdaptTable
+	{
+		float ToD65  [ ImWidgetsColorSpace_COUNT ][ 9 ];
+		float FromD65[ ImWidgetsColorSpace_COUNT ][ 9 ];
+	};
+
+	// Built once. Spaces already on D65 get an identity out of the Bradford
+	// construction, so there is no special case to maintain.
+	static DW_ColorAdaptTable const& DW_GetColorAdaptTable()
+	{
+		static DW_ColorAdaptTable tbl;
+		static bool init = false;
+		if ( init )
+			return tbl;
+
+		// The matrices in this file were derived against the 2-degree observer,
+		// so the adaptation has to use the same column.
+		ImVec2 const d65 = s_WhitePoints_Values[ ImWidgetsIlluminant_D65 ][ 0 ];
+		for ( int s = 0; s < ImWidgetsColorSpace_COUNT; ++s )
+		{
+			ImVec2 const wp = s_WhitePoints_Values[ s_ColorSpace_WhitePointIndex[ s ] ][ 0 ];
+			DW_BuildBradford( wp,  d65, tbl.ToD65  [ s ] );
+			DW_BuildBradford( d65, wp,  tbl.FromD65[ s ] );
+		}
+		init = true;
+		return tbl;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Transfer functions -- enum resolved to a pointer
+	//////////////////////////////////////////////////////////////////////////
+
+	// All four are odd-symmetric: an out-of-gamut negative round-trips instead of
+	// turning into a NaN inside ImPow.
+	static float DW_TransferEncodeSRGB( float v, float /*gamma*/ )
+	{
+		float e = ImLinearTosRGB( ImAbs( v ) );
+		return ( v < 0.0f ) ? -e : e;
+	}
+	static float DW_TransferDecodeSRGB( float v, float /*gamma*/ )
+	{
+		float l = ImsRGBToLinear( ImAbs( v ) );
+		return ( v < 0.0f ) ? -l : l;
+	}
+	static float DW_TransferEncodeGamma( float v, float gamma )
+	{
+		float e = ImPow( ImAbs( v ), 1.0f / gamma );
+		return ( v < 0.0f ) ? -e : e;
+	}
+	static float DW_TransferDecodeGamma( float v, float gamma )
+	{
+		float d = ImPow( ImAbs( v ), gamma );
+		return ( v < 0.0f ) ? -d : d;
+	}
+	static float DW_TransferIdentity( float v, float /*gamma*/ )
+	{
+		return v;
+	}
+
+	void ColorSpaceGetTransfer( ImWidgetsColorSpace space,
+								pfColorTransfer* out_encode, pfColorTransfer* out_decode,
+								float* out_gamma )
+	{
+		int s = ImClamp( ( int )space, 0, ( int )ImWidgetsColorSpace_COUNT - 1 );
+		float g = s_ColorSpace_Gamma[ s ];
+		if ( g <= 0.0f ) g = 1.0f;
+
+		pfColorTransfer enc, dec;
+		if ( s == ImWidgetsColorSpace_sRGB )
+		{
+			enc = &DW_TransferEncodeSRGB;
+			dec = &DW_TransferDecodeSRGB;
+		}
+		else if ( ImAbs( g - 1.0f ) < 1e-6f )
+		{
+			// ECI RGB. Resolving up front is what lets a linear-gamma space skip
+			// two ImPow per channel entirely rather than compute pow(x, 1).
+			enc = &DW_TransferIdentity;
+			dec = &DW_TransferIdentity;
+		}
+		else
+		{
+			enc = &DW_TransferEncodeGamma;
+			dec = &DW_TransferDecodeGamma;
+		}
+
+		if ( out_encode ) *out_encode = enc;
+		if ( out_decode ) *out_decode = dec;
+		if ( out_gamma  ) *out_gamma  = g;
+	}
+
+	float ColorSpaceEncode( ImWidgetsColorSpace space, float linear )
+	{
+		pfColorTransfer enc = NULL;
+		float g = 1.0f;
+		ColorSpaceGetTransfer( space, &enc, NULL, &g );
+		return enc( linear, g );
+	}
+
+	float ColorSpaceDecode( ImWidgetsColorSpace space, float encoded )
+	{
+		pfColorTransfer dec = NULL;
+		float g = 1.0f;
+		ColorSpaceGetTransfer( space, NULL, &dec, &g );
+		return dec( encoded, g );
+	}
+
+	void ColorConvertRGBSpacetoXYZ( ImWidgetsColorSpace space,
+									float& out_X, float& out_Y, float& out_Z,
+									float r, float g, float b )
+	{
+		int s = ImClamp( ( int )space, 0, ( int )ImWidgetsColorSpace_COUNT - 1 );
+		float const* m = s_ColorSpace_RGB2XYZ[ s ];
+		out_X = m[ 0 ] * r + m[ 1 ] * g + m[ 2 ] * b;
+		out_Y = m[ 3 ] * r + m[ 4 ] * g + m[ 5 ] * b;
+		out_Z = m[ 6 ] * r + m[ 7 ] * g + m[ 8 ] * b;
+	}
+
+	void ColorAdaptSpaceToD65( ImWidgetsColorSpace space, float& X, float& Y, float& Z )
+	{
+		int s = ImClamp( ( int )space, 0, ( int )ImWidgetsColorSpace_COUNT - 1 );
+		float in[ 3 ] = { X, Y, Z }, out[ 3 ];
+		DW_Mat33MulVec3( out, DW_GetColorAdaptTable().ToD65[ s ], in );
+		X = out[ 0 ]; Y = out[ 1 ]; Z = out[ 2 ];
+	}
+
+	void ColorAdaptD65ToSpace( ImWidgetsColorSpace space, float& X, float& Y, float& Z )
+	{
+		int s = ImClamp( ( int )space, 0, ( int )ImWidgetsColorSpace_COUNT - 1 );
+		float in[ 3 ] = { X, Y, Z }, out[ 3 ];
+		DW_Mat33MulVec3( out, DW_GetColorAdaptTable().FromD65[ s ], in );
+		X = out[ 0 ]; Y = out[ 1 ]; Z = out[ 2 ];
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Model conversions -- enum resolved to a pointer
+	//////////////////////////////////////////////////////////////////////////
+
+	// HSL / HSY / HSP take their outputs LAST, unlike the ColorConvert*to* family,
+	// so they need a shim to fit the uniform pointer signature. Everything else
+	// already has the right shape and is pointed at directly.
+	static void DW_HSLtoRGB( float& r, float& g, float& b, float h, float s, float l ) { ColorConvertHSLtoRGB( h, s, l, r, g, b ); }
+	static void DW_RGBtoHSL( float& h, float& s, float& l, float r, float g, float b ) { ColorConvertRGBtoHSL( r, g, b, h, s, l ); }
+	static void DW_HSYtoRGB( float& r, float& g, float& b, float h, float s, float y ) { ColorConvertHSYtoRGB( h, s, y, r, g, b ); }
+	static void DW_RGBtoHSY( float& h, float& s, float& y, float r, float g, float b ) { ColorConvertRGBtoHSY( r, g, b, h, s, y ); }
+	static void DW_HSPtoRGB( float& r, float& g, float& b, float h, float s, float p ) { ColorConvertHSPtoRGB( h, s, p, r, g, b ); }
+	static void DW_RGBtoHSP( float& h, float& s, float& p, float r, float g, float b ) { ColorConvertRGBtoHSP( r, g, b, h, s, p ); }
+
+	// CIE LCh: polar form of Lab, with h NORMALISED to [0,1] to match this file
+	// OkLCH convention rather than carrying degrees around.
+	static void DW_CIELChtoRGB( float& r, float& g, float& b, float L, float C, float h )
+	{
+		float ang = h * 2.0f * IM_PI;
+		ColorConvertCIELabtosRGB( r, g, b, L, C * ImCos( ang ), C * ImSin( ang ) );
+	}
+	static void DW_RGBtoCIELCh( float& L, float& C, float& h, float r, float g, float b )
+	{
+		float a, bb;
+		ColorConvertsRGBtoCIELab( L, a, bb, r, g, b );
+		C = ImSqrt( a * a + bb * bb );
+		float ang = ImAtan2( bb, a );
+		if ( ang < 0.0f ) ang += 2.0f * IM_PI;
+		h = ang / ( 2.0f * IM_PI );
+	}
+
+	static void DW_xyYtoRGB( float& r, float& g, float& b, float x, float y, float Yin )
+	{
+		float X, Y, Z;
+		ColorConvertxyYtoXYZ( X, Y, Z, x, y, Yin );
+		ColorConvertXYZtosRGB( r, g, b, X, Y, Z );
+	}
+	static void DW_RGBtoxyY( float& x, float& y, float& Yout, float r, float g, float b )
+	{
+		float X, Y, Z;
+		ColorConvertsRGBtoXYZ( X, Y, Z, r, g, b );
+		ColorConvertXYZtoxyY( x, y, Yout, X, Y, Z );
+	}
+
+	bool ColorModelIsWorkingSpace( ImWidgetsColorModel model )
+	{
+		return model >= ImWidgetsColorModel_RGB && model <= ImWidgetsColorModel_HSP;
+	}
+
+	void ColorModelGetFunctions( ImWidgetsColorModel model,
+								 pfColorModelToRGB* out_to_rgb, pfColorModelFromRGB* out_from_rgb )
+	{
+		pfColorModelToRGB   to   = NULL;
+		pfColorModelFromRGB from = NULL;
+		switch ( model )
+		{
+		case ImWidgetsColorModel_RGB:
+			// Identity: the model triple already IS the encoded working-space RGB.
+			to = &ColorConvertsRGBtosRGB;	from = &ColorConvertsRGBtosRGB;	break;
+		case ImWidgetsColorModel_LinearRGB:
+			// Deliberately NULL -- see the header. The conversion is the working
+			// space transfer, which is not knowable from the model alone.
+			break;
+		case ImWidgetsColorModel_HSV:
+			to = &ColorConvertHSVtoRGB;		from = &ColorConvertRGBtoHSV;	break;
+		case ImWidgetsColorModel_HSL:
+			to = &DW_HSLtoRGB;				from = &DW_RGBtoHSL;			break;
+		case ImWidgetsColorModel_HSY:
+			to = &DW_HSYtoRGB;				from = &DW_RGBtoHSY;			break;
+		case ImWidgetsColorModel_HSP:
+			to = &DW_HSPtoRGB;				from = &DW_RGBtoHSP;			break;
+		case ImWidgetsColorModel_OkLab:
+			to = &ColorConvertOKLABtoRGB;	from = &ColorConvertRGBtoOKLAB;	break;
+		case ImWidgetsColorModel_OkLCH:
+			to = &ColorConvertOKLCHtosRGB;	from = &ColorConvertsRGBtoOKLCH;break;
+		case ImWidgetsColorModel_CIELab:
+			to = &ColorConvertCIELabtosRGB;	from = &ColorConvertsRGBtoCIELab;break;
+		case ImWidgetsColorModel_CIELCh:
+			to = &DW_CIELChtoRGB;			from = &DW_RGBtoCIELCh;			break;
+		case ImWidgetsColorModel_xyY:
+			to = &DW_xyYtoRGB;				from = &DW_RGBtoxyY;			break;
+		default: // ImWidgetsColorModel_XYZ
+			to = &ColorConvertXYZtosRGB;	from = &ColorConvertsRGBtoXYZ;	break;
+		}
+		if ( out_to_rgb )   *out_to_rgb   = to;
+		if ( out_from_rgb ) *out_from_rgb = from;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Model introspection
+	//////////////////////////////////////////////////////////////////////////
+
+	char const* ColorModelName( ImWidgetsColorModel model )
+	{
+		switch ( model )
+		{
+		case ImWidgetsColorModel_RGB:		return "RGB";
+		case ImWidgetsColorModel_LinearRGB:	return "Linear RGB";
+		case ImWidgetsColorModel_HSV:		return "HSV";
+		case ImWidgetsColorModel_HSL:		return "HSL";
+		case ImWidgetsColorModel_HSY:		return "HSY";
+		case ImWidgetsColorModel_HSP:		return "HSP";
+		case ImWidgetsColorModel_OkLab:		return "OkLab";
+		case ImWidgetsColorModel_OkLCH:		return "OkLCH";
+		case ImWidgetsColorModel_CIELab:	return "CIE Lab";
+		case ImWidgetsColorModel_CIELCh:	return "CIE LCh";
+		case ImWidgetsColorModel_XYZ:		return "CIE XYZ";
+		case ImWidgetsColorModel_xyY:		return "CIE xyY";
+		default:							return "?";
+		}
+	}
+
+	char const* ColorModelCompName( ImWidgetsColorModel model, int comp )
+	{
+		comp = ImClamp( comp, 0, 2 );
+		static char const* kRGB   [ 3 ] = { "R",  "G",  "B"  };
+		static char const* kHSV   [ 3 ] = { "H",  "S",  "V"  };
+		static char const* kHSL   [ 3 ] = { "H",  "S",  "L"  };
+		static char const* kHSY   [ 3 ] = { "H",  "S",  "Y"  };
+		static char const* kHSP   [ 3 ] = { "H",  "S",  "P"  };
+		static char const* kOkLab [ 3 ] = { "L",  "a",  "b"  };
+		static char const* kOkLCH [ 3 ] = { "L",  "C",  "H"  };
+		static char const* kCIELab[ 3 ] = { "L*", "a*", "b*" };
+		static char const* kCIELCh[ 3 ] = { "L*", "C*", "h"  };
+		static char const* kXYZ   [ 3 ] = { "X",  "Y",  "Z"  };
+		static char const* kxyY   [ 3 ] = { "x",  "y",  "Y"  };
+		switch ( model )
+		{
+		case ImWidgetsColorModel_RGB:
+		case ImWidgetsColorModel_LinearRGB:	return kRGB   [ comp ];
+		case ImWidgetsColorModel_HSV:		return kHSV   [ comp ];
+		case ImWidgetsColorModel_HSL:		return kHSL   [ comp ];
+		case ImWidgetsColorModel_HSY:		return kHSY   [ comp ];
+		case ImWidgetsColorModel_HSP:		return kHSP   [ comp ];
+		case ImWidgetsColorModel_OkLab:		return kOkLab [ comp ];
+		case ImWidgetsColorModel_OkLCH:		return kOkLCH [ comp ];
+		case ImWidgetsColorModel_CIELab:	return kCIELab[ comp ];
+		case ImWidgetsColorModel_CIELCh:	return kCIELCh[ comp ];
+		case ImWidgetsColorModel_XYZ:		return kXYZ   [ comp ];
+		case ImWidgetsColorModel_xyY:		return kxyY   [ comp ];
+		default:							return "?";
+		}
+	}
+
+	char const* ColorAxisName( ImWidgetsColorAxis axis )
+	{
+		switch ( axis )
+		{
+		case ImWidgetsColorAxis_Hue:		return "Hue";
+		case ImWidgetsColorAxis_Chroma:		return "Chroma";
+		case ImWidgetsColorAxis_Lightness:	return "Lightness";
+		case ImWidgetsColorAxis_Comp0:		return "Component 0";
+		case ImWidgetsColorAxis_Comp1:		return "Component 1";
+		case ImWidgetsColorAxis_Comp2:		return "Component 2";
+		default:							return "None";
+		}
+	}
+
+	char const* ColorSourceName( ImWidgetsColorSource source )
+	{
+		switch ( source )
+		{
+		case ImWidgetsColorSource_Model:		return "Model component";
+		case ImWidgetsColorSource_Kelvin:		return "Colour temperature";
+		case ImWidgetsColorSource_Wavelength:	return "Wavelength";
+		case ImWidgetsColorSource_Gradient:		return "Gradient";
+		default:								return "?";
+		}
+	}
+
+	char const* ColorHarmonyName( ImWidgetsColorHarmony harmony )
+	{
+		switch ( harmony )
+		{
+		case ImWidgetsColorHarmony_None:			return "None";
+		case ImWidgetsColorHarmony_Complement:		return "Complement";
+		case ImWidgetsColorHarmony_SplitComplement:	return "Split-Complement";
+		case ImWidgetsColorHarmony_Triad:			return "Triad";
+		case ImWidgetsColorHarmony_Tetrad:			return "Tetrad";
+		case ImWidgetsColorHarmony_Square:			return "Square";
+		case ImWidgetsColorHarmony_Analogous:		return "Analogous";
+		case ImWidgetsColorHarmony_Monochromatic:	return "Monochromatic";
+		default:									return "?";
+		}
+	}
+
+	char const* ColorWrapName( ImWidgetsColorWrap wrap )
+	{
+		switch ( wrap )
+		{
+		case ImWidgetsColorWrap_Clamp:	return "Clamp";
+		case ImWidgetsColorWrap_Repeat:	return "Repeat";
+		case ImWidgetsColorWrap_Mirror:	return "Mirror";
+		default:						return "?";
+		}
+	}
+
+	char const* ColorEaseName( ImWidgetsColorEase ease )
+	{
+		switch ( ease )
+		{
+		case ImWidgetsColorEase_Linear:			return "Linear";
+		case ImWidgetsColorEase_Smoothstep:		return "Smoothstep";
+		case ImWidgetsColorEase_Gamma:			return "Gamma";
+		case ImWidgetsColorEase_Exponential:	return "Exponential";
+		case ImWidgetsColorEase_Logarithmic:	return "Logarithmic";
+		case ImWidgetsColorEase_Sine:			return "Sine";
+		default:								return "?";
+		}
+	}
+
+	char const* ColorGamutName( ImWidgetsColorGamut gamut )
+	{
+		switch ( gamut )
+		{
+		case ImWidgetsColorGamut_Clip:			return "Clip";
+		case ImWidgetsColorGamut_Desaturate:	return "Desaturate to fit";
+		case ImWidgetsColorGamut_Mark:			return "Mark out of gamut";
+		case ImWidgetsColorGamut_Keep:			return "Keep";
+		default:								return "?";
+		}
+	}
+
+	char const* ColorRampName( ImWidgetsColorRamp ramp )
+	{
+		switch ( ramp )
+		{
+		case ImWidgetsColorRamp_Hue:			return "Hue to colour";
+		case ImWidgetsColorRamp_Lightness:		return "Lightness";
+		case ImWidgetsColorRamp_Chroma:			return "Chroma";
+		case ImWidgetsColorRamp_LightnessToHue:	return "Luminance to hue";
+		case ImWidgetsColorRamp_Grey:			return "Grey";
+		case ImWidgetsColorRamp_Red:			return "Red channel";
+		case ImWidgetsColorRamp_Green:			return "Green channel";
+		case ImWidgetsColorRamp_Blue:			return "Blue channel";
+		case ImWidgetsColorRamp_Kelvin:			return "Colour temperature";
+		case ImWidgetsColorRamp_Wavelength:		return "Wavelength";
+		default:								return "?";
+		}
+	}
+
+	int ColorModelAxisIndex( ImWidgetsColorModel model, ImWidgetsColorAxis axis )
+	{
+		switch ( axis )
+		{
+		case ImWidgetsColorAxis_Comp0:	return 0;
+		case ImWidgetsColorAxis_Comp1:	return 1;
+		case ImWidgetsColorAxis_Comp2:	return 2;
+		case ImWidgetsColorAxis_Hue:
+			switch ( model )
+			{
+			case ImWidgetsColorModel_HSV:
+			case ImWidgetsColorModel_HSL:
+			case ImWidgetsColorModel_HSY:
+			case ImWidgetsColorModel_HSP:		return 0;
+			case ImWidgetsColorModel_OkLCH:
+			case ImWidgetsColorModel_CIELCh:	return 2;
+			default:							return -1;
+			}
+		case ImWidgetsColorAxis_Chroma:
+			switch ( model )
+			{
+			case ImWidgetsColorModel_HSV:
+			case ImWidgetsColorModel_HSL:
+			case ImWidgetsColorModel_HSY:
+			case ImWidgetsColorModel_HSP:
+			case ImWidgetsColorModel_OkLCH:
+			case ImWidgetsColorModel_CIELCh:	return 1;
+			default:							return -1;
+			}
+		case ImWidgetsColorAxis_Lightness:
+			switch ( model )
+			{
+			case ImWidgetsColorModel_HSV:
+			case ImWidgetsColorModel_HSL:
+			case ImWidgetsColorModel_HSY:
+			case ImWidgetsColorModel_HSP:		return 2;
+			case ImWidgetsColorModel_OkLab:
+			case ImWidgetsColorModel_OkLCH:
+			case ImWidgetsColorModel_CIELab:
+			case ImWidgetsColorModel_CIELCh:	return 0;
+			case ImWidgetsColorModel_XYZ:		return 1;
+			case ImWidgetsColorModel_xyY:		return 2;
+			default:							return -1;
+			}
+		default:
+			return -1;
+		}
+	}
+
+	void ColorModelCompRange( ImWidgetsColorModel model, int comp, float* out_min, float* out_max )
+	{
+		comp = ImClamp( comp, 0, 2 );
+		float lo = 0.0f, hi = 1.0f;
+		switch ( model )
+		{
+		case ImWidgetsColorModel_OkLab:
+			if ( comp != 0 ) { lo = -0.4f; hi = 0.4f; }
+			break;
+		case ImWidgetsColorModel_OkLCH:
+			if ( comp == 1 ) { lo = 0.0f; hi = 0.37f; }
+			break;
+		case ImWidgetsColorModel_CIELab:
+			if ( comp == 0 ) { lo = 0.0f; hi = 100.0f; }
+			else             { lo = -128.0f; hi = 127.0f; }
+			break;
+		case ImWidgetsColorModel_CIELCh:
+			if ( comp == 0 )      { lo = 0.0f; hi = 100.0f; }
+			else if ( comp == 1 ) { lo = 0.0f; hi = 150.0f; }
+			break;
+		case ImWidgetsColorModel_XYZ:
+			if ( comp != 1 ) { lo = 0.0f; hi = 1.1f; }
+			break;
+		case ImWidgetsColorModel_xyY:
+			if ( comp == 0 )      { lo = 0.0f; hi = 0.8f; }
+			else if ( comp == 1 ) { lo = 0.0f; hi = 0.9f; }
+			break;
+		default:
+			break;
+		}
+		if ( out_min ) *out_min = lo;
+		if ( out_max ) *out_max = hi;
+	}
+
+	void ColorModelDefaultTriple( ImWidgetsColorModel model, float out_c[ 3 ] )
+	{
+		if ( out_c == NULL ) return;
+		// A vivid, in-gamut red in each model -- the components the scalar is not
+		// driving want to start somewhere the ramp is actually visible.
+		switch ( model )
+		{
+		case ImWidgetsColorModel_RGB:
+		case ImWidgetsColorModel_LinearRGB:	out_c[ 0 ] = 1.0f;    out_c[ 1 ] = 0.0f;    out_c[ 2 ] = 0.0f;    break;
+		case ImWidgetsColorModel_HSV:		out_c[ 0 ] = 0.0f;    out_c[ 1 ] = 1.0f;    out_c[ 2 ] = 1.0f;    break;
+		case ImWidgetsColorModel_HSL:
+		case ImWidgetsColorModel_HSY:
+		case ImWidgetsColorModel_HSP:		out_c[ 0 ] = 0.0f;    out_c[ 1 ] = 1.0f;    out_c[ 2 ] = 0.5f;    break;
+		case ImWidgetsColorModel_OkLab:		out_c[ 0 ] = 0.628f;  out_c[ 1 ] = 0.225f;  out_c[ 2 ] = 0.126f;  break;
+		case ImWidgetsColorModel_OkLCH:		out_c[ 0 ] = 0.628f;  out_c[ 1 ] = 0.258f;  out_c[ 2 ] = 0.081f;  break;
+		case ImWidgetsColorModel_CIELab:	out_c[ 0 ] = 53.24f;  out_c[ 1 ] = 80.09f;  out_c[ 2 ] = 67.20f;  break;
+		case ImWidgetsColorModel_CIELCh:	out_c[ 0 ] = 53.24f;  out_c[ 1 ] = 104.55f; out_c[ 2 ] = 0.1111f; break;
+		case ImWidgetsColorModel_XYZ:		out_c[ 0 ] = 0.4125f; out_c[ 1 ] = 0.2127f; out_c[ 2 ] = 0.0193f; break;
+		case ImWidgetsColorModel_xyY:		out_c[ 0 ] = 0.64f;   out_c[ 1 ] = 0.33f;   out_c[ 2 ] = 0.2127f; break;
+		default:							out_c[ 0 ] = 0.0f;    out_c[ 1 ] = 1.0f;    out_c[ 2 ] = 1.0f;    break;
+		}
+	}
+
+	int ColorHarmonyOffsets( ImWidgetsColorHarmony harmony, float spread_deg, float* out_deg, int cap )
+	{
+		float local[ 5 ] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+		int n = 1;
+		switch ( harmony )
+		{
+		case ImWidgetsColorHarmony_Complement:
+			n = 2; local[ 1 ] = 180.0f;
+			break;
+		case ImWidgetsColorHarmony_SplitComplement:
+			n = 3; local[ 1 ] = 180.0f - spread_deg; local[ 2 ] = 180.0f + spread_deg;
+			break;
+		case ImWidgetsColorHarmony_Triad:
+			n = 3; local[ 1 ] = 120.0f; local[ 2 ] = 240.0f;
+			break;
+		case ImWidgetsColorHarmony_Tetrad:
+			n = 4; local[ 1 ] = 60.0f; local[ 2 ] = 180.0f; local[ 3 ] = 240.0f;
+			break;
+		case ImWidgetsColorHarmony_Square:
+			n = 4; local[ 1 ] = 90.0f; local[ 2 ] = 180.0f; local[ 3 ] = 270.0f;
+			break;
+		case ImWidgetsColorHarmony_Analogous:
+			n = 5;
+			local[ 0 ] = -2.0f * spread_deg; local[ 1 ] = -spread_deg;
+			local[ 2 ] = 0.0f;
+			local[ 3 ] = spread_deg;         local[ 4 ] = 2.0f * spread_deg;
+			break;
+		case ImWidgetsColorHarmony_Monochromatic:
+			// Same hue throughout; the evaluator fans the chroma out instead.
+			n = 5;
+			break;
+		default:
+			n = 1;
+			break;
+		}
+		if ( out_deg != NULL )
+		{
+			int c = ImMin( n, ImMax( cap, 0 ) );
+			for ( int i = 0; i < c; ++i )
+				out_deg[ i ] = local[ i ];
+		}
+		return n;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Model <-> display sRGB
+	//////////////////////////////////////////////////////////////////////////
+
+	// The pointer-driven core. Everything public below is a thin wrapper that
+	// resolves first; the per-sample path calls this directly with the pointers
+	// already in hand.
+	static void DW_ModelToDisplayR( ImWidgetsColorSpace space, bool adapt,
+									pfColorModelToRGB to_rgb, bool working_space,
+									pfColorTransfer encode, pfColorTransfer decode, float gamma,
+									float c0, float c1, float c2,
+									float& out_r, float& out_g, float& out_b )
+	{
+		if ( !working_space )
+		{
+			to_rgb( out_r, out_g, out_b, c0, c1, c2 );
+			return;
+		}
+
+		float e[ 3 ];
+		if ( to_rgb != NULL )
+		{
+			to_rgb( e[ 0 ], e[ 1 ], e[ 2 ], c0, c1, c2 );
+		}
+		else
+		{
+			// LinearRGB: the "conversion" IS the working space transfer.
+			e[ 0 ] = encode( c0, gamma );
+			e[ 1 ] = encode( c1, gamma );
+			e[ 2 ] = encode( c2, gamma );
+		}
+
+		// sRGB IS the display space: the round trip below is the identity, so
+		// skip it rather than pay for it and accumulate float drift.
+		if ( space == ImWidgetsColorSpace_sRGB )
+		{
+			out_r = e[ 0 ]; out_g = e[ 1 ]; out_b = e[ 2 ];
+			return;
+		}
+
+		float lin[ 3 ] = { decode( e[ 0 ], gamma ), decode( e[ 1 ], gamma ), decode( e[ 2 ], gamma ) };
+		float X, Y, Z;
+		ColorConvertRGBSpacetoXYZ( space, X, Y, Z, lin[ 0 ], lin[ 1 ], lin[ 2 ] );
+		if ( adapt )
+			ColorAdaptSpaceToD65( space, X, Y, Z );
+		ColorConvertXYZtosRGB( out_r, out_g, out_b, X, Y, Z );
+	}
+
+	static void DW_DisplayToModelR( ImWidgetsColorSpace space, bool adapt,
+									pfColorModelFromRGB from_rgb, bool working_space,
+									pfColorTransfer encode, pfColorTransfer decode, float gamma,
+									float r, float g, float b,
+									float& out_c0, float& out_c1, float& out_c2 )
+	{
+		if ( !working_space )
+		{
+			from_rgb( out_c0, out_c1, out_c2, r, g, b );
+			return;
+		}
+
+		float e[ 3 ];
+		if ( space == ImWidgetsColorSpace_sRGB )
+		{
+			e[ 0 ] = r; e[ 1 ] = g; e[ 2 ] = b;
+		}
+		else
+		{
+			float X, Y, Z;
+			ColorConvertsRGBtoXYZ( X, Y, Z, r, g, b );
+			if ( adapt )
+				ColorAdaptD65ToSpace( space, X, Y, Z );
+			float lin[ 3 ];
+			ColorConvertXYZtoRGBSpace( space, lin[ 0 ], lin[ 1 ], lin[ 2 ], X, Y, Z );
+			e[ 0 ] = encode( lin[ 0 ], gamma );
+			e[ 1 ] = encode( lin[ 1 ], gamma );
+			e[ 2 ] = encode( lin[ 2 ], gamma );
+		}
+
+		if ( from_rgb != NULL )
+		{
+			from_rgb( out_c0, out_c1, out_c2, e[ 0 ], e[ 1 ], e[ 2 ] );
+		}
+		else
+		{
+			// LinearRGB, mirror of the encode branch above.
+			out_c0 = decode( e[ 0 ], gamma );
+			out_c1 = decode( e[ 1 ], gamma );
+			out_c2 = decode( e[ 2 ], gamma );
+		}
+	}
+
+	void ColorModelToDisplay( ImWidgetsColorModel model, ImWidgetsColorSpace space,
+							  float c0, float c1, float c2,
+							  float& out_r, float& out_g, float& out_b,
+							  bool adapt_white_point )
+	{
+		pfColorModelToRGB to = NULL;
+		pfColorTransfer enc = NULL, dec = NULL;
+		float gamma = 1.0f;
+		ColorModelGetFunctions( model, &to, NULL );
+		ColorSpaceGetTransfer( space, &enc, &dec, &gamma );
+		DW_ModelToDisplayR( space, adapt_white_point, to, ColorModelIsWorkingSpace( model ),
+							enc, dec, gamma, c0, c1, c2, out_r, out_g, out_b );
+	}
+
+	void ColorDisplayToModel( ImWidgetsColorModel model, ImWidgetsColorSpace space,
+							  float r, float g, float b,
+							  float& out_c0, float& out_c1, float& out_c2,
+							  bool adapt_white_point )
+	{
+		pfColorModelFromRGB from = NULL;
+		pfColorTransfer enc = NULL, dec = NULL;
+		float gamma = 1.0f;
+		ColorModelGetFunctions( model, NULL, &from );
+		ColorSpaceGetTransfer( space, &enc, &dec, &gamma );
+		DW_DisplayToModelR( space, adapt_white_point, from, ColorModelIsWorkingSpace( model ),
+							enc, dec, gamma, r, g, b, out_c0, out_c1, out_c2 );
+	}
+
+	bool ColorInsideSpaceGamut( ImWidgetsColorSpace space, float r, float g, float b,
+								bool adapt_white_point )
+	{
+		float X, Y, Z;
+		ColorConvertsRGBtoXYZ( X, Y, Z, r, g, b );
+		if ( adapt_white_point )
+			ColorAdaptD65ToSpace( space, X, Y, Z );
+		float lr, lg, lb;
+		ColorConvertXYZtoRGBSpace( space, lr, lg, lb, X, Y, Z );
+		const float eps = 1e-4f;
+		return lr >= -eps && lg >= -eps && lb >= -eps
+			&& lr <= 1.0f + eps && lg <= 1.0f + eps && lb <= 1.0f + eps;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Pipeline stages
+	//
+	// One function per enumerator, so ColorScalarResolve can point straight at
+	// the right one and the per-sample path never tests an enum.
+	//////////////////////////////////////////////////////////////////////////
+
+	// ---- Wrap ----------------------------------------------------------------
+	static float DW_WrapClamp( float u )
+	{
+		return ImSaturate( u );
+	}
+	static float DW_WrapRepeat( float u )
+	{
+		return u - ImFloor( u );
+	}
+	static float DW_WrapMirror( float u )
+	{
+		float m = ImFmod( ImAbs( u ), 2.0f );
+		return ( m > 1.0f ) ? ( 2.0f - m ) : m;
+	}
+
+	// ---- Ease ----------------------------------------------------------------
+	static float DW_EaseLinear( float u, float /*p*/ )
+	{
+		return u;
+	}
+	static float DW_EaseSmoothstep( float u, float /*p*/ )
+	{
+		return u * u * ( 3.0f - 2.0f * u );
+	}
+	static float DW_EaseGamma( float u, float p )
+	{
+		return ImPow( ImSaturate( u ), ( p > 1e-4f ) ? p : 1.0f );
+	}
+	static float DW_EaseExponential( float u, float p )
+	{
+		// Base-k curve rather than exp(): imgui has no ImExp, and this form
+		// degrades to linear as k -> 1 instead of blowing up.
+		float k = ImMax( p, 1.0001f );
+		return ( ImPow( k, ImSaturate( u ) ) - 1.0f ) / ( k - 1.0f );
+	}
+	static float DW_EaseLogarithmic( float u, float p )
+	{
+		float k = ImMax( p, 1.0001f );
+		return ImLog( 1.0f + ImSaturate( u ) * ( k - 1.0f ) ) / ImLog( k );
+	}
+	static float DW_EaseSine( float u, float /*p*/ )
+	{
+		return 0.5f - 0.5f * ImCos( ImSaturate( u ) * IM_PI );
+	}
+
+	// t -> u in [0,1]: domain remap and Repeats (plain arithmetic), then the two
+	// resolved shaping stages.
+	static float DW_ColorScalarShapeT( float t, ImWidgetsColorScalarResolved const& R )
+	{
+		ImWidgetsColorScalar const& opt = R.Options;
+		float span = opt.DomainMax - opt.DomainMin;
+		float u = ( ImAbs( span ) > 1e-12f ) ? ( ( t - opt.DomainMin ) / span ) : 0.0f;
+		u *= ( opt.Repeats != 0.0f ) ? opt.Repeats : 1.0f;
+		u = R.Wrap( u );
+		return R.Ease( u, opt.EaseParam );
+	}
+
+	// ---- Source --------------------------------------------------------------
+
+	// A semantic axis the chosen model cannot express (hue in plain RGB, say) is
+	// applied in the HSV cylinder afterwards rather than silently dropped -- "hue"
+	// should mean hue whichever model the caller picked. One function per axis so
+	// even this fallback resolves to a pointer instead of a per-sample switch.
+	static void DW_AxisApplyHue( float value, float& r, float& g, float& b )
+	{
+		float h, s, v;
+		ImGui::ColorConvertRGBtoHSV( ImSaturate( r ), ImSaturate( g ), ImSaturate( b ), h, s, v );
+		h = value - ImFloor( value );
+		ImGui::ColorConvertHSVtoRGB( h, s, v, r, g, b );
+	}
+	static void DW_AxisApplyChroma( float value, float& r, float& g, float& b )
+	{
+		float h, s, v;
+		ImGui::ColorConvertRGBtoHSV( ImSaturate( r ), ImSaturate( g ), ImSaturate( b ), h, s, v );
+		s = ImSaturate( value );
+		ImGui::ColorConvertHSVtoRGB( h, s, v, r, g, b );
+	}
+	static void DW_AxisApplyLightness( float value, float& r, float& g, float& b )
+	{
+		float h, s, v;
+		ImGui::ColorConvertRGBtoHSV( ImSaturate( r ), ImSaturate( g ), ImSaturate( b ), h, s, v );
+		v = ImSaturate( value );
+		ImGui::ColorConvertHSVtoRGB( h, s, v, r, g, b );
+	}
+
+	// The axis -> fallback pointer map. NULL when the model has the component
+	// natively (nothing to do) or when the axis is a raw Comp0/1/2, which every
+	// model has by definition.
+	static pfColorScalarAxisApply DW_ColorAxisApplyFor( ImWidgetsColorModel model, ImWidgetsColorAxis axis )
+	{
+		if ( axis == ImWidgetsColorAxis_None )
+			return NULL;
+		if ( ColorModelAxisIndex( model, axis ) >= 0 )
+			return NULL;
+		switch ( axis )
+		{
+		case ImWidgetsColorAxis_Hue:		return &DW_AxisApplyHue;
+		case ImWidgetsColorAxis_Chroma:		return &DW_AxisApplyChroma;
+		case ImWidgetsColorAxis_Lightness:	return &DW_AxisApplyLightness;
+		default:							return NULL;
+		}
+	}
+
+	static void DW_SourceModel( float u, ImWidgetsColorScalarResolved const& R,
+								float& r, float& g, float& b, float& a )
+	{
+		ImWidgetsColorScalar const& opt = R.Options;
+		a = 1.0f;
+		float c[ 3 ] = { opt.Fixed[ 0 ], opt.Fixed[ 1 ], opt.Fixed[ 2 ] };
+
+		float v0 = ImLerp( opt.RangeMin, opt.RangeMax, u );
+		if ( R.AxisWraps ) v0 -= ImFloor( v0 );
+		if ( R.AxisIndex >= 0 )
+			c[ R.AxisIndex ] = v0;
+
+		float v1 = ImLerp( opt.Range2Min, opt.Range2Max, u );
+		if ( R.Axis2Wraps ) v1 -= ImFloor( v1 );
+		if ( R.Axis2Index >= 0 )
+			c[ R.Axis2Index ] = v1;
+
+		DW_ModelToDisplayR( opt.Space, opt.AdaptWhitePoint,
+							R.ModelToRGB, R.ModelIsWorkingSpace,
+							R.Encode, R.Decode, R.Gamma, c[ 0 ], c[ 1 ], c[ 2 ], r, g, b );
+
+		if ( R.AxisApply  != NULL ) R.AxisApply ( v0, r, g, b );
+		if ( R.Axis2Apply != NULL ) R.Axis2Apply( v1, r, g, b );
+	}
+
+	static void DW_SourceKelvin( float u, ImWidgetsColorScalarResolved const& R,
+								 float& r, float& g, float& b, float& a )
+	{
+		a = 1.0f;
+		float K = ImLerp( R.Options.KelvinMin, R.Options.KelvinMax, u );
+		float lin[ 3 ];
+		KelvinTemperatureToLinearRGBColorsF( K, lin );
+		r = ImLinearTosRGB( lin[ 0 ] );
+		g = ImLinearTosRGB( lin[ 1 ] );
+		b = ImLinearTosRGB( lin[ 2 ] );
+	}
+
+	static void DW_SourceWavelength( float u, ImWidgetsColorScalarResolved const& R,
+									 float& r, float& g, float& b, float& a )
+	{
+		a = 1.0f;
+		float lambda = ImLerp( R.Options.LambdaMin, R.Options.LambdaMax, u );
+		WavelengthToRGB( lambda, R.Options.Observer, r, g, b );
+	}
+
+	static void DW_SourceGradient( float u, ImWidgetsColorScalarResolved const& R,
+								   float& r, float& g, float& b, float& a )
+	{
+		if ( R.Options.Gradient != NULL )
+		{
+			// A gradient carries its own alpha; keep it rather than flattening
+			// every stop to opaque.
+			ImVec4 c = GradientSample( *R.Options.Gradient, u );
+			r = c.x; g = c.y; b = c.z; a = c.w;
+		}
+		else
+		{
+			r = g = b = u;	// no gradient bound: a neutral ramp beats a black bar
+			a = 1.0f;
+		}
+	}
+
+	// ---- Harmony -------------------------------------------------------------
+	static void DW_HarmonyNone( ImWidgetsColorScalarResolved const& /*R*/,
+								float& /*r*/, float& /*g*/, float& /*b*/ )
+	{
+	}
+
+	// Rotate onto member HarmonyIndex of the scheme, inside the cylinder resolved
+	// at ColorScalarResolve time.
+	static void DW_HarmonyRotate( ImWidgetsColorScalarResolved const& R, float& r, float& g, float& b )
+	{
+		int idx = ImClamp( R.Options.HarmonyIndex, 0, R.HarmonyCount - 1 );
+
+		float c[ 3 ];
+		DW_DisplayToModelR( R.Options.Space, R.Options.AdaptWhitePoint,
+							R.HarmonyFromRGB, R.HarmonyIsWorkingSpace,
+							R.Encode, R.Decode, R.Gamma, r, g, b, c[ 0 ], c[ 1 ], c[ 2 ] );
+
+		float h = c[ R.HarmonyHueIndex ] + R.HarmonyOffsets[ idx ] / 360.0f;
+		c[ R.HarmonyHueIndex ] = h - ImFloor( h );
+
+		DW_ModelToDisplayR( R.Options.Space, R.Options.AdaptWhitePoint,
+							R.HarmonyToRGB, R.HarmonyIsWorkingSpace,
+							R.Encode, R.Decode, R.Gamma, c[ 0 ], c[ 1 ], c[ 2 ], r, g, b );
+	}
+
+	// Same hue, chroma fanning inward -- matches ColorPickerHarmonyWheel.
+	static void DW_HarmonyMonochromatic( ImWidgetsColorScalarResolved const& R, float& r, float& g, float& b )
+	{
+		int idx = ImClamp( R.Options.HarmonyIndex, 0, R.HarmonyCount - 1 );
+
+		float c[ 3 ];
+		DW_DisplayToModelR( R.Options.Space, R.Options.AdaptWhitePoint,
+							R.HarmonyFromRGB, R.HarmonyIsWorkingSpace,
+							R.Encode, R.Decode, R.Gamma, r, g, b, c[ 0 ], c[ 1 ], c[ 2 ] );
+
+		c[ R.HarmonyChromaIndex ] *= ( 1.0f - 0.18f * ( float )idx );
+
+		DW_ModelToDisplayR( R.Options.Space, R.Options.AdaptWhitePoint,
+							R.HarmonyToRGB, R.HarmonyIsWorkingSpace,
+							R.Encode, R.Decode, R.Gamma, c[ 0 ], c[ 1 ], c[ 2 ], r, g, b );
+	}
+
+	// ---- Gamut ---------------------------------------------------------------
+	static void DW_GamutKeep( ImWidgetsColorScalarResolved const& /*R*/,
+							  float& /*r*/, float& /*g*/, float& /*b*/ )
+	{
+	}
+
+	static void DW_GamutClip( ImWidgetsColorScalarResolved const& /*R*/, float& r, float& g, float& b )
+	{
+		r = ImSaturate( r ); g = ImSaturate( g ); b = ImSaturate( b );
+	}
+
+	static void DW_GamutMark( ImWidgetsColorScalarResolved const& R, float& r, float& g, float& b )
+	{
+		if ( !ColorInsideSpaceGamut( R.Options.Space, r, g, b, R.Options.AdaptWhitePoint ) )
+		{
+			ImVec4 c = ImGui::ColorConvertU32ToFloat4( R.Options.OutOfGamutColor );
+			r = c.x; g = c.y; b = c.z;
+		}
+		else
+		{
+			r = ImSaturate( r ); g = ImSaturate( g ); b = ImSaturate( b );
+		}
+	}
+
+	static void DW_GamutDesaturate( ImWidgetsColorScalarResolved const& /*R*/, float& r, float& g, float& b )
+	{
+		// Pull toward the colour own luminance -- the smallest scale that brings
+		// every channel back inside [0,1] preserves hue, where a plain per-channel
+		// clamp shifts it.
+		float y = ImClamp( 0.2126f * r + 0.7152f * g + 0.0722f * b, 0.0f, 1.0f );
+		float ch[ 3 ] = { r, g, b };
+		float scale = 1.0f;
+		for ( int i = 0; i < 3; ++i )
+		{
+			float d = ch[ i ] - y;
+			if ( d > 1e-6f && y + d > 1.0f )
+				scale = ImMin( scale, ( 1.0f - y ) / d );
+			else if ( d < -1e-6f && y + d < 0.0f )
+				scale = ImMin( scale, ( 0.0f - y ) / d );
+		}
+		scale = ImClamp( scale, 0.0f, 1.0f );
+		r = ImSaturate( y + ( r - y ) * scale );
+		g = ImSaturate( y + ( g - y ) * scale );
+		b = ImSaturate( y + ( b - y ) * scale );
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Resolve
+	//////////////////////////////////////////////////////////////////////////
+
+	void ColorScalarResolve( ImWidgetsColorScalarResolved* out_resolved,
+							 ImWidgetsColorScalar const& opt, ImWidgetsColorSpace space )
+	{
+		if ( out_resolved == NULL )
+			return;
+
+		ImWidgetsColorScalarResolved& R = *out_resolved;
+		R.Options = opt;
+		if ( space != ImWidgetsColorSpace_FromOptions )
+			R.Options.Space = space;
+
+		ColorModelGetFunctions( R.Options.Model, &R.ModelToRGB, &R.ModelFromRGB );
+		R.ModelIsWorkingSpace = ColorModelIsWorkingSpace( R.Options.Model );
+		ColorSpaceGetTransfer( R.Options.Space, &R.Encode, &R.Decode, &R.Gamma );
+
+		R.AxisIndex  = ( R.Options.Axis  != ImWidgetsColorAxis_None )
+					 ? ColorModelAxisIndex( R.Options.Model, R.Options.Axis )  : -1;
+		R.Axis2Index = ( R.Options.Axis2 != ImWidgetsColorAxis_None )
+					 ? ColorModelAxisIndex( R.Options.Model, R.Options.Axis2 ) : -1;
+		R.AxisApply  = DW_ColorAxisApplyFor( R.Options.Model, R.Options.Axis );
+		R.Axis2Apply = DW_ColorAxisApplyFor( R.Options.Model, R.Options.Axis2 );
+		R.AxisWraps  = ( R.Options.Axis  == ImWidgetsColorAxis_Hue );
+		R.Axis2Wraps = ( R.Options.Axis2 == ImWidgetsColorAxis_Hue );
+
+		// Harmony needs a cylinder with both a hue and a chroma component; fall
+		// back to HSV when the requested model has neither (RGB, Lab, XYZ, ...).
+		ImWidgetsColorModel hm = R.Options.HarmonyModel;
+		int hueIdx = ColorModelAxisIndex( hm, ImWidgetsColorAxis_Hue );
+		int chrIdx = ColorModelAxisIndex( hm, ImWidgetsColorAxis_Chroma );
+		if ( hueIdx < 0 || chrIdx < 0 )
+		{
+			hm = ImWidgetsColorModel_HSV;
+			hueIdx = 0;
+			chrIdx = 1;
+		}
+		R.HarmonyHueIndex       = hueIdx;
+		R.HarmonyChromaIndex    = chrIdx;
+		R.HarmonyIsWorkingSpace = ColorModelIsWorkingSpace( hm );
+		ColorModelGetFunctions( hm, &R.HarmonyToRGB, &R.HarmonyFromRGB );
+		R.HarmonyCount = ColorHarmonyOffsets( R.Options.Harmony, R.Options.HarmonySpread,
+											  R.HarmonyOffsets, 5 );
+
+		// ---- the remaining enums, straight to a stage pointer ----------------
+		switch ( R.Options.Wrap )
+		{
+		case ImWidgetsColorWrap_Repeat:	R.Wrap = &DW_WrapRepeat; break;
+		case ImWidgetsColorWrap_Mirror:	R.Wrap = &DW_WrapMirror; break;
+		default:						R.Wrap = &DW_WrapClamp;  break;
+		}
+
+		switch ( R.Options.Ease )
+		{
+		case ImWidgetsColorEase_Smoothstep:		R.Ease = &DW_EaseSmoothstep;  break;
+		case ImWidgetsColorEase_Gamma:			R.Ease = &DW_EaseGamma;       break;
+		case ImWidgetsColorEase_Exponential:	R.Ease = &DW_EaseExponential; break;
+		case ImWidgetsColorEase_Logarithmic:	R.Ease = &DW_EaseLogarithmic; break;
+		case ImWidgetsColorEase_Sine:			R.Ease = &DW_EaseSine;        break;
+		default:								R.Ease = &DW_EaseLinear;      break;
+		}
+
+		switch ( R.Options.Source )
+		{
+		case ImWidgetsColorSource_Kelvin:		R.Source = &DW_SourceKelvin;     break;
+		case ImWidgetsColorSource_Wavelength:	R.Source = &DW_SourceWavelength; break;
+		case ImWidgetsColorSource_Gradient:		R.Source = &DW_SourceGradient;   break;
+		default:								R.Source = &DW_SourceModel;      break;
+		}
+
+		// Monochromatic gets its own stage rather than a per-sample test, and a
+		// scheme that produced a single member is indistinguishable from None.
+		if ( R.Options.Harmony == ImWidgetsColorHarmony_None || R.HarmonyCount <= 1 )
+			R.Harmony = &DW_HarmonyNone;
+		else if ( R.Options.Harmony == ImWidgetsColorHarmony_Monochromatic )
+			R.Harmony = &DW_HarmonyMonochromatic;
+		else
+			R.Harmony = &DW_HarmonyRotate;
+
+		switch ( R.Options.Gamut )
+		{
+		case ImWidgetsColorGamut_Keep:			R.Gamut = &DW_GamutKeep;       break;
+		case ImWidgetsColorGamut_Mark:			R.Gamut = &DW_GamutMark;       break;
+		case ImWidgetsColorGamut_Desaturate:	R.Gamut = &DW_GamutDesaturate; break;
+		default:								R.Gamut = &DW_GamutClip;       break;
+		}
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Evaluation
+	//////////////////////////////////////////////////////////////////////////
+
+	// The whole per-sample path: shape t, produce a colour, rotate it, fit it.
+	// Five indirect calls and not one enum test.
+	ImVec4 ColorFromScalarResolved( float t, ImWidgetsColorScalarResolved const& R )
+	{
+		IM_ASSERT( R.Source != NULL && "evaluate an ImWidgetsColorScalarResolved built by ColorScalarResolve" );
+
+		float u = DW_ColorScalarShapeT( t, R );
+		float r = 0.0f, g = 0.0f, b = 0.0f, a = 1.0f;
+		R.Source( u, R, r, g, b, a );
+		R.Harmony( R, r, g, b );
+		R.Gamut( R, r, g, b );
+		return ImVec4( r, g, b, a * R.Options.Alpha );
+	}
+
+	ImU32 ColorFromScalarResolvedCallback( float t, void* pUserData )
+	{
+		IM_ASSERT( pUserData != NULL && "ColorFromScalarResolvedCallback needs an ImWidgetsColorScalarResolved*" );
+		return ImGui::ColorConvertFloat4ToU32(
+			ColorFromScalarResolved( t, *( ImWidgetsColorScalarResolved const* )pUserData ) );
+	}
+
+	ImVec4 ColorFromScalar( float t, ImWidgetsColorScalar const& opt )
+	{
+		ImWidgetsColorScalarResolved R;
+		ColorScalarResolve( &R, opt );
+		return ColorFromScalarResolved( t, R );
+	}
+
+	ImU32 ColorFromScalarU32( float t, ImWidgetsColorScalar const& opt )
+	{
+		return ImGui::ColorConvertFloat4ToU32( ColorFromScalar( t, opt ) );
+	}
+
+	ImU32 ColorFromScalarCallback( float t, void* pUserData )
+	{
+		if ( pUserData == NULL )
+		{
+			static const ImWidgetsColorScalar kDefault;
+			return ColorFromScalarU32( t, kDefault );
+		}
+		return ColorFromScalarU32( t, *( ImWidgetsColorScalar const* )pUserData );
+	}
+
+	ImU32 ColorScalarInSpace( ImWidgetsColorSpace space, float t, ImWidgetsColorScalar const* opt )
+	{
+		ImWidgetsColorScalarResolved R;
+		if ( opt != NULL )
+			ColorScalarResolve( &R, *opt, space );
+		else
+			ColorScalarResolve( &R, ImWidgetsColorScalar(), space );
+		return ImGui::ColorConvertFloat4ToU32( ColorFromScalarResolved( t, R ) );
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Presets
+	//////////////////////////////////////////////////////////////////////////
+
+	// Nearest model that actually HAS `axis`, so a preset never silently lands on
+	// the HSV fallback when a faithful sibling exists.
+	static ImWidgetsColorModel DW_ColorModelWithAxis( ImWidgetsColorModel model, ImWidgetsColorAxis axis )
+	{
+		if ( ColorModelAxisIndex( model, axis ) >= 0 )
+			return model;
+		switch ( model )
+		{
+		case ImWidgetsColorModel_OkLab:		return ImWidgetsColorModel_OkLCH;
+		case ImWidgetsColorModel_CIELab:	return ImWidgetsColorModel_CIELCh;
+		default:							return ImWidgetsColorModel_HSV;
+		}
+	}
+
+	void ColorScalarPreset( ImWidgetsColorScalar* opt, ImWidgetsColorRamp ramp )
+	{
+		if ( opt == NULL )
+			return;
+
+		ImWidgetsColorSpace space = opt->Space;
+		ImWidgetsColorModel model = opt->Model;
+		*opt = ImWidgetsColorScalar();
+		opt->Space = space;
+		opt->Model = model;
+
+		float lo = 0.0f, hi = 1.0f;
+
+		switch ( ramp )
+		{
+		case ImWidgetsColorRamp_Hue:
+			opt->Model = DW_ColorModelWithAxis( model, ImWidgetsColorAxis_Hue );
+			ColorModelDefaultTriple( opt->Model, opt->Fixed );
+			opt->Axis     = ImWidgetsColorAxis_Hue;
+			opt->RangeMin = 0.0f;
+			opt->RangeMax = 1.0f;
+			break;
+
+		case ImWidgetsColorRamp_Lightness:
+			opt->Model = DW_ColorModelWithAxis( model, ImWidgetsColorAxis_Lightness );
+			ColorModelDefaultTriple( opt->Model, opt->Fixed );
+			ColorModelCompRange( opt->Model, ColorModelAxisIndex( opt->Model, ImWidgetsColorAxis_Lightness ), &lo, &hi );
+			opt->Axis     = ImWidgetsColorAxis_Lightness;
+			opt->RangeMin = lo;
+			opt->RangeMax = hi;
+			break;
+
+		case ImWidgetsColorRamp_Chroma:
+			opt->Model = DW_ColorModelWithAxis( model, ImWidgetsColorAxis_Chroma );
+			ColorModelDefaultTriple( opt->Model, opt->Fixed );
+			ColorModelCompRange( opt->Model, ColorModelAxisIndex( opt->Model, ImWidgetsColorAxis_Chroma ), &lo, &hi );
+			opt->Axis     = ImWidgetsColorAxis_Chroma;
+			opt->RangeMin = lo;
+			opt->RangeMax = hi;
+			break;
+
+		case ImWidgetsColorRamp_LightnessToHue:
+		{
+			// The classic heat ramp: dark blue -> bright red, both axes on the one
+			// scalar. This is what "luminance to hue" means as a single mapping.
+			opt->Model = DW_ColorModelWithAxis( model, ImWidgetsColorAxis_Hue );
+			opt->Model = DW_ColorModelWithAxis( opt->Model, ImWidgetsColorAxis_Lightness );
+			ColorModelDefaultTriple( opt->Model, opt->Fixed );
+			ColorModelCompRange( opt->Model, ColorModelAxisIndex( opt->Model, ImWidgetsColorAxis_Lightness ), &lo, &hi );
+			opt->Axis      = ImWidgetsColorAxis_Lightness;
+			opt->RangeMin  = lo + ( hi - lo ) * 0.15f;
+			opt->RangeMax  = hi;
+			opt->Axis2     = ImWidgetsColorAxis_Hue;
+			opt->Range2Min = 0.667f;	// blue
+			opt->Range2Max = 0.0f;		// red
+		}
+			break;
+
+		case ImWidgetsColorRamp_Grey:
+			opt->Model = DW_ColorModelWithAxis( model, ImWidgetsColorAxis_Lightness );
+			ColorModelDefaultTriple( opt->Model, opt->Fixed );
+			{
+				int ci = ColorModelAxisIndex( opt->Model, ImWidgetsColorAxis_Chroma );
+				if ( ci >= 0 )
+					opt->Fixed[ ci ] = 0.0f;
+			}
+			ColorModelCompRange( opt->Model, ColorModelAxisIndex( opt->Model, ImWidgetsColorAxis_Lightness ), &lo, &hi );
+			opt->Axis     = ImWidgetsColorAxis_Lightness;
+			opt->RangeMin = lo;
+			opt->RangeMax = hi;
+			break;
+
+		case ImWidgetsColorRamp_Red:
+		case ImWidgetsColorRamp_Green:
+		case ImWidgetsColorRamp_Blue:
+			opt->Model    = ImWidgetsColorModel_RGB;
+			opt->Fixed[ 0 ] = opt->Fixed[ 1 ] = opt->Fixed[ 2 ] = 0.0f;
+			opt->Axis     = ( ramp == ImWidgetsColorRamp_Red )   ? ImWidgetsColorAxis_Comp0
+						  : ( ramp == ImWidgetsColorRamp_Green ) ? ImWidgetsColorAxis_Comp1
+																 : ImWidgetsColorAxis_Comp2;
+			opt->RangeMin = 0.0f;
+			opt->RangeMax = 1.0f;
+			break;
+
+		case ImWidgetsColorRamp_Kelvin:
+			opt->Source = ImWidgetsColorSource_Kelvin;
+			break;
+
+		case ImWidgetsColorRamp_Wavelength:
+			opt->Source = ImWidgetsColorSource_Wavelength;
+			break;
+
+		default:
+			break;
+		}
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// One entry point per working space -- all sharing ImWidgetsColor1DCallback
+	//////////////////////////////////////////////////////////////////////////
+
+#define DW_DEFINE_COLOR_SCALAR_SPACE( fn_name, space_enum )                     \
+	ImU32 fn_name( float t, void* pUserData )                                   \
+	{                                                                           \
+		return ColorScalarInSpace( space_enum, t,                               \
+								   ( ImWidgetsColorScalar const* )pUserData );  \
+	}
+
+	DW_DEFINE_COLOR_SCALAR_SPACE( ColorScalarAdobeRGB,     ImWidgetsColorSpace_AdobeRGB )
+	DW_DEFINE_COLOR_SCALAR_SPACE( ColorScalarAppleRGB,     ImWidgetsColorSpace_AppleRGB )
+	DW_DEFINE_COLOR_SCALAR_SPACE( ColorScalarBest,         ImWidgetsColorSpace_Best )
+	DW_DEFINE_COLOR_SCALAR_SPACE( ColorScalarBeta,         ImWidgetsColorSpace_Beta )
+	DW_DEFINE_COLOR_SCALAR_SPACE( ColorScalarBruce,        ImWidgetsColorSpace_Bruce )
+	DW_DEFINE_COLOR_SCALAR_SPACE( ColorScalarCIERGB,       ImWidgetsColorSpace_CIERGB )
+	DW_DEFINE_COLOR_SCALAR_SPACE( ColorScalarColorMatch,   ImWidgetsColorSpace_ColorMatch )
+	DW_DEFINE_COLOR_SCALAR_SPACE( ColorScalarDonRGB4,      ImWidgetsColorSpace_Don_RGB_4 )
+	DW_DEFINE_COLOR_SCALAR_SPACE( ColorScalarECI,          ImWidgetsColorSpace_ECI )
+	DW_DEFINE_COLOR_SCALAR_SPACE( ColorScalarEktaSpacePS5, ImWidgetsColorSpace_Ekta_Space_PS5 )
+	DW_DEFINE_COLOR_SCALAR_SPACE( ColorScalarNTSC,         ImWidgetsColorSpace_NTSC )
+	DW_DEFINE_COLOR_SCALAR_SPACE( ColorScalarPALSECAM,     ImWidgetsColorSpace_PAL_SECAM )
+	DW_DEFINE_COLOR_SCALAR_SPACE( ColorScalarProPhoto,     ImWidgetsColorSpace_ProPhoto )
+	DW_DEFINE_COLOR_SCALAR_SPACE( ColorScalarSMPTEC,       ImWidgetsColorSpace_SMPTE_C )
+	DW_DEFINE_COLOR_SCALAR_SPACE( ColorScalarsRGB,         ImWidgetsColorSpace_sRGB )
+	DW_DEFINE_COLOR_SCALAR_SPACE( ColorScalarWideGamutRGB, ImWidgetsColorSpace_WideGamutRGB )
+	DW_DEFINE_COLOR_SCALAR_SPACE( ColorScalarRec2020,      ImWidgetsColorSpace_Rec2020 )
+
+#undef DW_DEFINE_COLOR_SCALAR_SPACE
+
+	ImWidgetsColor1DCallback ColorScalarCallback( ImWidgetsColorSpace space )
+	{
+		switch ( space )
+		{
+		case ImWidgetsColorSpace_AdobeRGB:			return &ColorScalarAdobeRGB;
+		case ImWidgetsColorSpace_AppleRGB:			return &ColorScalarAppleRGB;
+		case ImWidgetsColorSpace_Best:				return &ColorScalarBest;
+		case ImWidgetsColorSpace_Beta:				return &ColorScalarBeta;
+		case ImWidgetsColorSpace_Bruce:				return &ColorScalarBruce;
+		case ImWidgetsColorSpace_CIERGB:			return &ColorScalarCIERGB;
+		case ImWidgetsColorSpace_ColorMatch:		return &ColorScalarColorMatch;
+		case ImWidgetsColorSpace_Don_RGB_4:			return &ColorScalarDonRGB4;
+		case ImWidgetsColorSpace_ECI:				return &ColorScalarECI;
+		case ImWidgetsColorSpace_Ekta_Space_PS5:	return &ColorScalarEktaSpacePS5;
+		case ImWidgetsColorSpace_NTSC:				return &ColorScalarNTSC;
+		case ImWidgetsColorSpace_PAL_SECAM:			return &ColorScalarPALSECAM;
+		case ImWidgetsColorSpace_ProPhoto:			return &ColorScalarProPhoto;
+		case ImWidgetsColorSpace_SMPTE_C:			return &ColorScalarSMPTEC;
+		case ImWidgetsColorSpace_WideGamutRGB:		return &ColorScalarWideGamutRGB;
+		case ImWidgetsColorSpace_Rec2020:			return &ColorScalarRec2020;
+		default:									return &ColorScalarsRGB;
+		}
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Colour-space-aware overloads of the 1D procedural helpers
+	//
+	// Each one resolves the space enum to pointers ONCE and then forwards to the
+	// raw-callback form, so a whole bar / ring / spline pays a single dispatch
+	// instead of one per vertex.
+	//////////////////////////////////////////////////////////////////////////
+
+	void ShapeFillProceduralColor1D( ImWidgetsShape& shape, ImWidgetsColorScalar const& opt, bool sample_v,
+									 ImWidgetsColorSpace space )
+	{
+		ImWidgetsColorScalarResolved R;
+		ColorScalarResolve( &R, opt, space );
+		ShapeFillProceduralColor1D( shape, &ColorFromScalarResolvedCallback, &R, sample_v );
+	}
+
+	void DrawShapeProceduralColorVerticalBand( ImDrawList* pDrawList, ImRect const& bb, int divisions,
+											   ImWidgetsColorScalar const& opt, ImWidgetsColorSpace space )
+	{
+		ImWidgetsColorScalarResolved R;
+		ColorScalarResolve( &R, opt, space );
+		DrawShapeProceduralColorVerticalBand( pDrawList, bb, divisions, &ColorFromScalarResolvedCallback, &R );
+	}
+
+	void DrawShapeProceduralColorHorizontalBand( ImDrawList* pDrawList, ImRect const& bb, int divisions,
+												 ImWidgetsColorScalar const& opt, ImWidgetsColorSpace space )
+	{
+		ImWidgetsColorScalarResolved R;
+		ColorScalarResolve( &R, opt, space );
+		DrawShapeProceduralColorHorizontalBand( pDrawList, bb, divisions, &ColorFromScalarResolvedCallback, &R );
+	}
+
+	void DrawShapeProceduralColorAnnulus( ImDrawList* pDrawList, ImVec2 center, float innerRadius, float outerRadius,
+										  int numSectors, ImWidgetsColorScalar const& opt, ImWidgetsColorSpace space )
+	{
+		ImWidgetsColorScalarResolved R;
+		ColorScalarResolve( &R, opt, space );
+		DrawShapeProceduralColorAnnulus( pDrawList, center, innerRadius, outerRadius, numSectors,
+										 &ColorFromScalarResolvedCallback, &R );
+	}
+
+	void DrawProceduralColor1DNearestHorizontal( ImDrawList* pDrawList, ImWidgetsColorScalar const& opt,
+												 float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX,
+												 ImWidgetsColorSpace space )
+	{
+		ImWidgetsColorScalarResolved R;
+		ColorScalarResolve( &R, opt, space );
+		DrawProceduralColor1DNearestHorizontal( pDrawList, &ColorFromScalarResolvedCallback, &R,
+											    minX, maxX, position, size, resolutionX );
+	}
+
+	void DrawProceduralColor1DNearestVertical( ImDrawList* pDrawList, ImWidgetsColorScalar const& opt,
+											   float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionY,
+											   ImWidgetsColorSpace space )
+	{
+		ImWidgetsColorScalarResolved R;
+		ColorScalarResolve( &R, opt, space );
+		DrawProceduralColor1DNearestVertical( pDrawList, &ColorFromScalarResolvedCallback, &R,
+											  minY, maxY, position, size, resolutionY );
+	}
+
+	void DrawProceduralColor1DBilinearHorizontal( ImDrawList* pDrawList, ImWidgetsColorScalar const& opt,
+												  float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX,
+												  ImWidgetsColorSpace space )
+	{
+		ImWidgetsColorScalarResolved R;
+		ColorScalarResolve( &R, opt, space );
+		DrawProceduralColor1DBilinearHorizontal( pDrawList, &ColorFromScalarResolvedCallback, &R,
+												 minX, maxX, position, size, resolutionX );
+	}
+
+	void DrawProceduralColor1DBilinearVertical( ImDrawList* pDrawList, ImWidgetsColorScalar const& opt,
+												float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionY,
+												ImWidgetsColorSpace space )
+	{
+		ImWidgetsColorScalarResolved R;
+		ColorScalarResolve( &R, opt, space );
+		DrawProceduralColor1DBilinearVertical( pDrawList, &ColorFromScalarResolvedCallback, &R,
+											   minY, maxY, position, size, resolutionY );
+	}
+
+	void DrawProceduralColorArcBilinear( ImDrawList* pDrawList, ImVec2 center, float innerRadius, float outerRadius,
+										 float startAngle, float sweepAngle, ImWidgetsColorScalar const& opt,
+										 int division, bool bilinear, ImWidgetsColorSpace space )
+	{
+		ImWidgetsColorScalarResolved R;
+		ColorScalarResolve( &R, opt, space );
+		DrawProceduralColorArcBilinear( pDrawList, center, innerRadius, outerRadius, startAngle, sweepAngle,
+										&ColorFromScalarResolvedCallback, &R, division, bilinear );
+	}
+
+	void DrawProceduralColorSplineBilinear( ImDrawList* pDrawList, ImVec2 const* points, int points_count,
+											float thickness, ImWidgetsColorScalar const& opt,
+											int resolution, bool closed, ImWidgetsColorSpace space )
+	{
+		ImWidgetsColorScalarResolved R;
+		ColorScalarResolve( &R, opt, space );
+		DrawProceduralColorSplineBilinear( pDrawList, points, points_count, thickness,
+										   &ColorFromScalarResolvedCallback, &R, resolution, closed );
+	}
+
+	void DrawColorRing( ImDrawList* pDrawList, ImVec2 const curPos, ImVec2 const size, float thickness_,
+						ImWidgetsColorScalar const& opt, int division, float colorOffset, bool bIsBilinear,
+						ImWidgetsColorSpace space )
+	{
+		ImWidgetsColorScalarResolved R;
+		ColorScalarResolve( &R, opt, space );
+		DrawColorRing( pDrawList, curPos, size, thickness_, &ColorFromScalarResolvedCallback, &R,
+					   division, colorOffset, bIsBilinear );
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// ChromaWarp
+	//////////////////////////////////////////////////////////////////////////
+
+	// Gamut boundary radius by integer degree. Resolve's diagram is a triangle
+	// with three OUTWARD-BULGING curved edges (R/G/B at the corners, the edges
+	// passing through yellow, cyan and magenta) -- the curvature is why it can't
+	// be plain CIE xy or u'v', both of which render an RGB gamut with straight
+	// edges. Approximated here with one quadratic Bezier per edge.
+	static float const* DW_ChromaGamutTable()
+	{
+		static float t[ 360 ];
+		static bool  init = false;
+		if ( init )
+			return t;
+
+		for ( int i = 0; i < 360; ++i )
+			t[ i ] = 0.0f;
+
+		// y is UP in diagram space: R upper-left, G lower-left, B right.
+		const float av[ 3 ] = { 120.0f, 240.0f, 0.0f };
+		ImVec2 V[ 3 ];
+		for ( int i = 0; i < 3; ++i )
+		{
+			float a = av[ i ] * IM_PI / 180.0f;
+			V[ i ] = ImVec2( ImCos( a ), ImSin( a ) );
+		}
+		for ( int e = 0; e < 3; ++e )
+		{
+			ImVec2 A = V[ e ];
+			ImVec2 B = V[ ( e + 1 ) % 3 ];
+			ImVec2 m( ( A.x + B.x ) * 0.5f, ( A.y + B.y ) * 0.5f );
+			float ml = ImSqrt( m.x * m.x + m.y * m.y );
+			// Straight-edge midpoint sits at r=0.5; pushing the control point to
+			// 0.92 bows the edge out to about r=0.71.
+			ImVec2 C = ( ml > 1e-5f ) ? ImVec2( m.x / ml * 0.92f, m.y / ml * 0.92f ) : m;
+			const int S = 256;
+			for ( int s = 0; s <= S; ++s )
+			{
+				float u  = ( float )s / ( float )S;
+				float w0 = ( 1.0f - u ) * ( 1.0f - u );
+				float w1 = 2.0f * ( 1.0f - u ) * u;
+				float w2 = u * u;
+				ImVec2 p( w0 * A.x + w1 * C.x + w2 * B.x,
+						  w0 * A.y + w1 * C.y + w2 * B.y );
+				float ang = ImAtan2( p.y, p.x ) * 180.0f / IM_PI;
+				if ( ang < 0.0f ) ang += 360.0f;
+				int idx = ( ( int )ang ) % 360;
+				if ( idx < 0 ) idx = 0;
+				float rr = ImSqrt( p.x * p.x + p.y * p.y );
+				if ( rr > t[ idx ] ) t[ idx ] = rr;
+			}
+		}
+		// Close any bin the sampling missed.
+		for ( int i = 0; i < 360; ++i )
+		{
+			if ( t[ i ] > 0.0f ) continue;
+			for ( int k = 1; k < 180; ++k )
+			{
+				float a = t[ ( i - k + 360 ) % 360 ];
+				float b = t[ ( i + k ) % 360 ];
+				if ( a > 0.0f ) { t[ i ] = a; break; }
+				if ( b > 0.0f ) { t[ i ] = b; break; }
+			}
+		}
+		init = true;
+		return t;
+	}
+
+	struct DW_ChromaFieldData
+	{
+		float const*	Table;
+		float			MaxR;
+		float			Wx, Wy;
+	};
+
+	static inline float DW_ChromaBoundaryR( DW_ChromaFieldData const& d, float angDeg )
+	{
+		int idx = ( int )angDeg;
+		idx = ( idx % 360 + 360 ) % 360;
+		float r = d.Table[ idx ] * d.MaxR;
+		return ( r > 0.0f ) ? r : d.MaxR;
+	}
+
+	// Hue runs R(120 deg) -> G(240) -> B(360), matching the vertex layout.
+	static inline float DW_ChromaHue01( float angDeg )
+	{
+		return ImFmod( ( angDeg - 120.0f ) / 360.0f + 1.0f, 1.0f );
+	}
+
+	// Background pass: the hue field OUTSIDE the gamut. It deliberately never
+	// tests the boundary -- the whole square is drawn dark and the lit gamut is
+	// laid over it as an exact mesh. Doing the in/out test per grid vertex is
+	// what made the boundary staircase.
+	static ImU32 DW_ChromaFieldCallback( float x, float y, void* ud )
+	{
+		DW_ChromaFieldData const* d = ( DW_ChromaFieldData const* )ud;
+		float dx = x - d->Wx;
+		float dy = y - d->Wy;
+		float r  = ImSqrt( dx * dx + dy * dy );
+		float ang = ImAtan2( dy, dx ) * 180.0f / IM_PI;
+		if ( ang < 0.0f ) ang += 360.0f;
+
+		float rmax = DW_ChromaBoundaryR( *d, ang );
+		float sat  = ImClamp( r / rmax, 0.0f, 1.0f );
+		float rr, gg, bb;
+		ImGui::ColorConvertHSVtoRGB( DW_ChromaHue01( ang ), sat, 0.20f, rr, gg, bb );
+		return ImGui::GetColorU32( ImVec4( rr, gg, bb, 1.0f ) );
+	}
+
+	// The lit gamut as a real radial mesh: one hub at the white point, RINGS
+	// concentric bands, and an outer ring whose vertices sit EXACTLY on the
+	// curved boundary -- so the silhouette is geometry, not a thresholded grid.
+	static void DW_BuildChromaGamutShape( ImWidgetsShape& shape, DW_ChromaFieldData const& fd,
+										  ImVec2 dmin, float dsize, ImVec2 whitePoint )
+	{
+		const int SEG   = 180;
+		const int RINGS = 5;
+
+		shape.vertices.clear();
+		shape.triangles.clear();
+		shape.vertices.reserve( 1 + RINGS * SEG );
+		shape.triangles.reserve( SEG * ( 2 * RINGS - 1 ) );
+
+		ImVec2 uvWhite = ImGui::GetFontTexUvWhitePixel();
+		float  wr, wg, wb;
+		ImGui::ColorConvertHSVtoRGB( 0.0f, 0.0f, 1.0f, wr, wg, wb );
+
+		ImWidgetsVertex hub;
+		hub.pos = ImVec2( dmin.x + whitePoint.x * dsize, dmin.y + ( 1.0f - whitePoint.y ) * dsize );
+		hub.uv  = uvWhite;
+		hub.col = ImGui::GetColorU32( ImVec4( wr, wg, wb, 1.0f ) );
+		shape.vertices.push_back( hub );
+
+		for ( int ring = 1; ring <= RINGS; ++ring )
+		{
+			float sat = ( float )ring / ( float )RINGS;
+			for ( int s = 0; s < SEG; ++s )
+			{
+				float ang = ( float )s * 360.0f / ( float )SEG;
+				float rb  = DW_ChromaBoundaryR( fd, ang ) * sat;
+				float ar  = ang * IM_PI / 180.0f;
+				float px  = whitePoint.x + ImCos( ar ) * rb;
+				float py  = whitePoint.y + ImSin( ar ) * rb;
+
+				float rr, gg, bb;
+				ImGui::ColorConvertHSVtoRGB( DW_ChromaHue01( ang ), sat, 1.0f, rr, gg, bb );
+
+				ImWidgetsVertex v;
+				v.pos = ImVec2( dmin.x + px * dsize, dmin.y + ( 1.0f - py ) * dsize );
+				v.uv  = uvWhite;
+				v.col = ImGui::GetColorU32( ImVec4( rr, gg, bb, 1.0f ) );
+				shape.vertices.push_back( v );
+			}
+		}
+
+		// Hub fan.
+		for ( int s = 0; s < SEG; ++s )
+		{
+			ImDrawIdx a = ( ImDrawIdx )( 1 + s );
+			ImDrawIdx b = ( ImDrawIdx )( 1 + ( s + 1 ) % SEG );
+			shape.triangles.push_back( ImWidgetsTriIdx( 0, a, b ) );
+		}
+		// Band quads between consecutive rings.
+		for ( int ring = 1; ring < RINGS; ++ring )
+		{
+			int base0 = 1 + ( ring - 1 ) * SEG;
+			int base1 = 1 + ring * SEG;
+			for ( int s = 0; s < SEG; ++s )
+			{
+				int sn = ( s + 1 ) % SEG;
+				ImDrawIdx i00 = ( ImDrawIdx )( base0 + s );
+				ImDrawIdx i01 = ( ImDrawIdx )( base0 + sn );
+				ImDrawIdx i10 = ( ImDrawIdx )( base1 + s );
+				ImDrawIdx i11 = ( ImDrawIdx )( base1 + sn );
+				shape.triangles.push_back( ImWidgetsTriIdx( i00, i10, i11 ) );
+				shape.triangles.push_back( ImWidgetsTriIdx( i00, i11, i01 ) );
+			}
+		}
+		shape.bb = ImRect( dmin, ImVec2( dmin.x + dsize, dmin.y + dsize ) );
+	}
+
+	// Distance from p to segment [a,b], all in diagram space.
+	static float DW_DistPointSegment( ImVec2 p, ImVec2 a, ImVec2 b )
+	{
+		float vx = b.x - a.x, vy = b.y - a.y;
+		float wx = p.x - a.x, wy = p.y - a.y;
+		float len2 = vx * vx + vy * vy;
+		float t = ( len2 > 1e-12f ) ? ImClamp( ( wx * vx + wy * vy ) / len2, 0.0f, 1.0f ) : 0.0f;
+		float cx = a.x + vx * t, cy = a.y + vy * t;
+		float dx = p.x - cx, dy = p.y - cy;
+		return ImSqrt( dx * dx + dy * dy );
+	}
+
+	// Influence radius in pixels. Measured off BMD's own screenshots, the outline
+	// radius tracks sqrt(ChromaRange) -- r/w = 0.51*sqrt(CR) fits two independent
+	// samples to 0.5%, whereas a linear law is off by 2x. That strongly suggests
+	// ChromaRange is a variance-like quantity internally.
+	static inline float DW_ChromaRangeRadiusPx( float chroma_range, float diagram_px )
+	{
+		return 0.51f * ImSqrt( ImMax( 0.0f, chroma_range ) ) * diagram_px;
+	}
+
+	bool ChromaWarp( char const* label, ImChromaWarpData& data, ImVec2 size )
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if ( window->SkipItems )
+			return false;
+
+		ImGui::PushID( label );
+		ImGuiIO& io = ImGui::GetIO();
+		ImDrawList* dl = window->DrawList;
+		ImGuiStorage* stg = ImGui::GetStateStorage();
+		// What the current Select drag is moving: 0 none, 1 source, 2 dest, 3 whole.
+		ImGuiID kDrag = ImGui::GetID( "##cwdrag" );
+		bool changed = false;
+
+		// The host owns Strokes and may resize it between frames -- never carry a
+		// stale index into the rest of the widget.
+		if ( data.Selected >= data.Strokes.Size )
+			data.Selected = -1;
+
+		float panelW = LpToPx( 216.0f );
+		float dsize  = ( size.y > 0.0f ) ? LpToPx( size.y ) : LpToPx( 300.0f );
+		if ( size.x > 0.0f )
+			dsize = ImMin( dsize, LpToPx( size.x ) - panelW - LpToPx( 8.0f ) );
+		if ( dsize < LpToPx( 120.0f ) )
+			dsize = LpToPx( 120.0f );
+
+		// ---- chromaticity diagram ----
+		ImVec2 dmin = ImGui::GetCursorScreenPos();
+		ImGui::InvisibleButton( "##diagram", ImVec2( dsize, dsize ) );
+		bool dActive  = ImGui::IsItemActive();
+		bool dHovered = ImGui::IsItemHovered();
+		bool dPressed = ImGui::IsItemActivated();
+
+		DW_ChromaFieldData fd;
+		fd.Table = DW_ChromaGamutTable();
+		fd.MaxR  = 0.46f;
+		fd.Wx    = data.WhitePoint.x;
+		fd.Wy    = data.WhitePoint.y;
+
+		// Out-of-gamut field first (uniformly darkened), then the lit gamut as an
+		// exact mesh on top -- the boundary is then real geometry and no longer
+		// staircases along the sampling grid.
+		int res = ImClamp( ( int )( dsize / 6.0f ), 20, 56 );
+		DrawProceduralColor2DBilinear( dl, &DW_ChromaFieldCallback, &fd,
+									   0.0f, 1.0f, 0.0f, 1.0f, dmin, ImVec2( dsize, dsize ), res, res );
+
+		ImWidgetsShape gamut;
+		DW_BuildChromaGamutShape( gamut, fd, dmin, dsize, data.WhitePoint );
+		DrawShape( dl, gamut );
+
+		// Diagram space -> screen. y is UP in diagram space.
+		#define DW_CW_TO_SCREEN( P ) ImVec2( dmin.x + ( P ).x * dsize, dmin.y + ( 1.0f - ( P ).y ) * dsize )
+
+		// Gamut boundary outline (anti-aliased polyline over the mesh edge).
+		dl->PathClear();
+		for ( int i = 0; i < 180; ++i )
+		{
+			float a  = ( float )i * 2.0f;
+			float rr = DW_ChromaBoundaryR( fd, a );
+			float ar = a * IM_PI / 180.0f;
+			ImVec2 p( data.WhitePoint.x + ImCos( ar ) * rr,
+					  data.WhitePoint.y + ImSin( ar ) * rr );
+			dl->PathLineTo( DW_CW_TO_SCREEN( p ) );
+		}
+		dl->PathStroke( IM_COL32( 255, 255, 255, 90 ), ImDrawFlags_Closed, LpToPx( 1.0f ) );
+
+		// White point.
+		ImVec2 wpS = DW_CW_TO_SCREEN( data.WhitePoint );
+		dl->AddCircle( wpS, LpToPx( 6.0f ), IM_COL32( 255, 255, 255, 230 ), 0, LpToPx( 1.5f ) );
+
+		dl->AddRect( dmin, ImVec2( dmin.x + dsize, dmin.y + dsize ), ImGui::GetColorU32( ImGuiCol_Border ) );
+
+		// ---- interaction ----
+		ImVec2 mouseD( ( io.MousePos.x - dmin.x ) / dsize,
+					   1.0f - ( io.MousePos.y - dmin.y ) / dsize );
+		mouseD.x = ImClamp( mouseD.x, 0.0f, 1.0f );
+		mouseD.y = ImClamp( mouseD.y, 0.0f, 1.0f );
+
+		if ( dPressed )
+		{
+			if ( data.Tool == ImChromaWarpTool_AddNormal || data.Tool == ImChromaWarpTool_AddPointToPoint )
+			{
+				ImChromaWarpStroke s;
+				s.Kind   = ( data.Tool == ImChromaWarpTool_AddNormal ) ? ImChromaWarpKind_Normal
+																	   : ImChromaWarpKind_PointToPoint;
+				s.Source = mouseD;
+				s.Dest   = mouseD;
+				data.Strokes.push_back( s );
+				data.Selected = data.Strokes.Size - 1;
+				changed = true;
+			}
+			else if ( data.Tool == ImChromaWarpTool_AddPin )
+			{
+				ImChromaWarpStroke s;
+				s.Kind   = ImChromaWarpKind_Pin;
+				s.Source = mouseD;
+				s.Dest   = mouseD;
+				data.Strokes.push_back( s );
+				data.Selected = data.Strokes.Size - 1;
+				changed = true;
+			}
+			else // Select
+			{
+				// Endpoints first (so they can be moved individually), then the
+				// shaft. Hit-testing only the dots was why strokes felt
+				// unselectable -- clicking the obvious target, the line, did
+				// nothing.
+				float grab = LpToPx( 14.0f ) / dsize;
+				float best = grab;
+				int   pick = -1, mode = 0;
+				for ( int i = 0; i < data.Strokes.Size; ++i )
+				{
+					ImChromaWarpStroke const& s = data.Strokes[ i ];
+					int ends = ( s.Kind == ImChromaWarpKind_Pin ) ? 1 : 2;
+					for ( int e = 0; e < ends; ++e )
+					{
+						ImVec2 p = ( e == 0 ) ? s.Source : s.Dest;
+						float dx = p.x - mouseD.x, dy = p.y - mouseD.y;
+						float d  = ImSqrt( dx * dx + dy * dy );
+						if ( d < best ) { best = d; pick = i; mode = ( e == 0 ) ? 1 : 2; }
+					}
+				}
+				if ( pick < 0 )
+				{
+					float bestSeg = grab;
+					for ( int i = 0; i < data.Strokes.Size; ++i )
+					{
+						ImChromaWarpStroke const& s = data.Strokes[ i ];
+						if ( s.Kind == ImChromaWarpKind_Pin ) continue;
+						float d = DW_DistPointSegment( mouseD, s.Source, s.Dest );
+						if ( d < bestSeg ) { bestSeg = d; pick = i; mode = 3; }
+					}
+				}
+				data.Selected = pick;   // click on empty space deselects
+				stg->SetInt( kDrag, mode );
+			}
+		}
+		if ( dActive && !dPressed && data.Selected >= 0 && data.Selected < data.Strokes.Size )
+		{
+			ImChromaWarpStroke& s = data.Strokes[ data.Selected ];
+			if ( data.Tool == ImChromaWarpTool_AddNormal || data.Tool == ImChromaWarpTool_AddPointToPoint )
+			{
+				// Strokes are created by click-and-DRAG: the press set the source,
+				// the drag trails the destination behind the cursor.
+				// Only report a change when the endpoint actually moved -- a
+				// held-still press used to re-emit every frame, forcing the host
+				// into a full re-grade per frame.
+				if ( s.Dest.x != mouseD.x || s.Dest.y != mouseD.y )
+				{
+					s.Dest = mouseD;
+					changed = true;
+				}
+			}
+			else if ( data.Tool == ImChromaWarpTool_Select )
+			{
+				int mode = stg->GetInt( kDrag, 0 );
+				if ( mode == 1 && ( s.Source.x != mouseD.x || s.Source.y != mouseD.y ) )
+				{ s.Source = mouseD; changed = true; }
+				else if ( mode == 2 && ( s.Dest.x != mouseD.x || s.Dest.y != mouseD.y ) )
+				{ s.Dest = mouseD; changed = true; }
+				else if ( mode == 3 )
+				{
+					// Drag the range as a whole, both endpoints together.
+					ImVec2 d( io.MouseDelta.x / dsize, -io.MouseDelta.y / dsize );
+					if ( d.x != 0.0f || d.y != 0.0f )
+					{
+						s.Source.x = ImClamp( s.Source.x + d.x, 0.0f, 1.0f );
+						s.Source.y = ImClamp( s.Source.y + d.y, 0.0f, 1.0f );
+						s.Dest.x   = ImClamp( s.Dest.x + d.x, 0.0f, 1.0f );
+						s.Dest.y   = ImClamp( s.Dest.y + d.y, 0.0f, 1.0f );
+						changed = true;
+					}
+				}
+			}
+		}
+
+		// ---- strokes ----
+		const ImU32 colSrc     = IM_COL32(  70, 140, 255, 255 );   // blue source dot
+		const ImU32 colDst     = IM_COL32( 252,  78,  69, 255 );   // red/salmon destination
+		const ImU32 colOutline = IM_COL32( 252, 140, 120, 150 );
+		const ImU32 colPin     = IM_COL32( 250,  90,  60, 255 );
+
+		for ( int i = 0; i < data.Strokes.Size; ++i )
+		{
+			ImChromaWarpStroke const& s = data.Strokes[ i ];
+			bool sel = ( i == data.Selected );
+			ImVec2 a = DW_CW_TO_SCREEN( s.Source );
+			ImVec2 b = DW_CW_TO_SCREEN( s.Dest );
+			float  r = DW_ChromaRangeRadiusPx( s.ChromaRange, dsize );
+
+			if ( s.Kind == ImChromaWarpKind_Pin )
+			{
+				dl->AddCircle( a, r, colPin, 0, LpToPx( 2.0f ) );
+				dl->AddCircleFilled( a, LpToPx( 4.0f ), colPin );
+				dl->AddCircle( a, LpToPx( 5.5f ), IM_COL32( 255, 255, 255, 235 ), 0, LpToPx( 1.0f ) );
+				if ( sel )
+					dl->AddCircle( a, r + LpToPx( 2.0f ), IM_COL32( 255, 255, 255, 190 ), 0, LpToPx( 1.0f ) );
+				continue;
+			}
+
+			// The range outline is only drawn for the SELECTED stroke -- that is
+			// how Resolve's figures distinguish selection.
+			if ( sel )
+			{
+				if ( s.Kind == ImChromaWarpKind_Normal )
+				{
+					// Capsule: constant radius swept along the whole vector.
+					float dx = b.x - a.x, dy = b.y - a.y;
+					float len = ImSqrt( dx * dx + dy * dy );
+					if ( len > 0.5f )
+					{
+						float ang = ImAtan2( dy, dx );
+						dl->PathClear();
+						dl->PathArcTo( a, r, ang + IM_PI * 0.5f, ang + IM_PI * 1.5f, 24 );
+						dl->PathArcTo( b, r, ang - IM_PI * 0.5f, ang + IM_PI * 0.5f, 24 );
+						dl->PathStroke( colOutline, ImDrawFlags_Closed, LpToPx( 1.5f ) );
+					}
+					else
+					{
+						dl->AddCircle( a, r, colOutline, 0, LpToPx( 1.5f ) );
+					}
+				}
+				else
+				{
+					// Point to Point: BMD's screenshot shows the range circle on
+					// the SOURCE only, with just a small ring at the destination
+					// (their prose says "around both dots" -- the two disagree).
+					dl->AddCircle( a, r, colOutline, 0, LpToPx( 1.5f ) );
+					dl->AddCircle( b, LpToPx( 5.0f ), colOutline, 0, LpToPx( 1.5f ) );
+				}
+			}
+
+			dl->AddLine( a, b, IM_COL32( 255, 255, 255, 200 ), LpToPx( 1.5f ) );
+			// Arrowhead at the destination.
+			float dx = b.x - a.x, dy = b.y - a.y;
+			float len = ImSqrt( dx * dx + dy * dy );
+			if ( len > 1.0f )
+			{
+				float ux = dx / len, uy = dy / len;
+				float ah = LpToPx( 7.0f );
+				ImVec2 t1( b.x - ux * ah - uy * ah * 0.5f, b.y - uy * ah + ux * ah * 0.5f );
+				ImVec2 t2( b.x - ux * ah + uy * ah * 0.5f, b.y - uy * ah - ux * ah * 0.5f );
+				dl->AddTriangleFilled( b, t1, t2, colDst );
+			}
+			dl->AddCircleFilled( a, LpToPx( 4.5f ), colSrc );
+			dl->AddCircleFilled( b, LpToPx( 4.5f ), colDst );
+			if ( sel )
+			{
+				dl->AddCircle( a, LpToPx( 6.5f ), IM_COL32( 255, 255, 255, 220 ), 0, LpToPx( 1.0f ) );
+				dl->AddCircle( b, LpToPx( 6.5f ), IM_COL32( 255, 255, 255, 220 ), 0, LpToPx( 1.0f ) );
+			}
+		}
+
+		if ( dHovered )
+			ImGui::SetTooltip( "x %.3f  y %.3f", mouseD.x, mouseD.y );
+
+		#undef DW_CW_TO_SCREEN
+
+		// ---- toolset ----
+		ImGui::SameLine( 0.0f, LpToPx( 8.0f ) );
+		ImGui::BeginGroup();
+		{
+			ImGui::TextUnformatted( "Tools" );
+
+			struct TDef { char const* lbl; ImChromaWarpTool tool; char const* tip; };
+			const TDef tools[ 4 ] = {
+				{ "Nrm",  ImChromaWarpTool_AddNormal,        "Add Stroke (Normal): drag source -> destination; affects every colour along the way" },
+				{ "P2P",  ImChromaWarpTool_AddPointToPoint,  "Add Stroke (Point to Point): map source straight onto destination" },
+				{ "Pin",  ImChromaWarpTool_AddPin,           "Add Pin Point: exclude a colour range (try one on the white point)" },
+				{ "Sel",  ImChromaWarpTool_Select,           "Select: click a stroke's dot, drag to move the whole range" },
+			};
+			for ( int i = 0; i < 4; ++i )
+			{
+				if ( i > 0 ) ImGui::SameLine( 0.0f, LpToPx( 3.0f ) );
+				bool on = ( data.Tool == tools[ i ].tool );
+				if ( on ) ImGui::PushStyleColor( ImGuiCol_Button, ImGui::GetColorU32( ImGuiCol_ButtonActive ) );
+				if ( ImGui::Button( tools[ i ].lbl, ImVec2( LpToPx( 40.0f ), 0.0f ) ) )
+				{
+					data.Tool = tools[ i ].tool;
+					stg->SetInt( kDrag, 0 );   // don't carry a drag mode across tools
+				}
+				if ( on ) ImGui::PopStyleColor();
+				if ( ImGui::IsItemHovered() ) ImGui::SetTooltip( "%s", tools[ i ].tip );
+			}
+
+			bool hasSel = ( data.Selected >= 0 && data.Selected < data.Strokes.Size );
+			ImGui::BeginDisabled( !hasSel );
+			if ( ImGui::Button( "Delete", ImVec2( LpToPx( 60.0f ), 0.0f ) ) )
+			{
+				data.Strokes.erase( data.Strokes.Data + data.Selected );
+				data.Selected = -1;
+				stg->SetInt( kDrag, 0 );   // the mode referred to the erased stroke
+				changed = true;
+			}
+			ImGui::EndDisabled();
+			// AllowWhenDisabled: the button above is inside BeginDisabled, and
+			// IsItemHovered() returns false for disabled items without this flag
+			// -- so this hint could never appear, which is exactly when it is
+			// needed.
+			if ( !hasSel && ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenDisabled ) )
+				ImGui::SetTooltip( "Select a stroke or pin first" );
+
+			// Re-derive AFTER the erase. Everything below indexes
+			// Strokes[Selected]; a stale hasSel would index Strokes[-1] for the
+			// rest of the frame and hand that pointer to DragFloat to write into.
+			hasSel = ( data.Selected >= 0 && data.Selected < data.Strokes.Size );
+
+			ImGui::Separator();
+
+			// Contextual section: reads "Pin" when a pin is selected, and a pin
+			// only exposes Chroma Range (Resolve greys the rest out).
+			bool isPin = hasSel && data.Strokes[ data.Selected ].Kind == ImChromaWarpKind_Pin;
+			ImGui::TextUnformatted( hasSel ? ( isPin ? "Pin" : "Stroke" ) : "Stroke (none selected)" );
+
+			float fw = LpToPx( 96.0f );
+			ImGui::BeginDisabled( !hasSel );
+			{
+				static float dummyCR = 0.04f, dummyEx = 0.0f;
+				float* pCR = hasSel ? &data.Strokes[ data.Selected ].ChromaRange : &dummyCR;
+				float* pEx = hasSel ? &data.Strokes[ data.Selected ].Exposure    : &dummyEx;
+
+				ImGui::SetNextItemWidth( fw );
+				if ( ImGui::DragFloat( "Chroma Range", pCR, 0.001f, 0.0f, 0.2f, "%.3f" ) ) changed = true;
+
+				ImGui::BeginDisabled( isPin );
+				ImGui::SetNextItemWidth( fw );
+				if ( ImGui::DragFloat( "Exposure", pEx, 0.01f, -4.0f, 4.0f, "%.3f" ) ) changed = true;
+				ImGui::EndDisabled();
+
+				if ( hasSel && !isPin )
+				{
+					ImChromaWarpStroke& s = data.Strokes[ data.Selected ];
+					bool nrm = ( s.Kind == ImChromaWarpKind_Normal );
+					if ( nrm ) ImGui::PushStyleColor( ImGuiCol_Button, ImGui::GetColorU32( ImGuiCol_ButtonActive ) );
+					if ( ImGui::Button( "Normal", ImVec2( LpToPx( 62.0f ), 0.0f ) ) ) { s.Kind = ImChromaWarpKind_Normal; changed = true; }
+					if ( nrm ) ImGui::PopStyleColor();
+					ImGui::SameLine( 0.0f, LpToPx( 3.0f ) );
+					if ( !nrm ) ImGui::PushStyleColor( ImGuiCol_Button, ImGui::GetColorU32( ImGuiCol_ButtonActive ) );
+					if ( ImGui::Button( "Pt to Pt", ImVec2( LpToPx( 62.0f ), 0.0f ) ) ) { s.Kind = ImChromaWarpKind_PointToPoint; changed = true; }
+					if ( !nrm ) ImGui::PopStyleColor();
+				}
+			}
+			ImGui::EndDisabled();
+
+			ImGui::Separator();
+			ImGui::TextUnformatted( "Tonal Range (global)" );
+			ImGui::SetNextItemWidth( fw );
+			if ( ImGui::DragFloat( "Low",   &data.TonalRangeLow,   0.005f, 0.0f, 1.0f, "%.3f" ) ) changed = true;
+			ImGui::SetNextItemWidth( fw );
+			if ( ImGui::DragFloat( "High",  &data.TonalRangeHigh,  0.005f, 0.0f, 1.0f, "%.3f" ) ) changed = true;
+			ImGui::SetNextItemWidth( fw );
+			if ( ImGui::DragFloat( "Pivot", &data.TonalRangePivot, 0.005f, 0.0f, 1.0f, "%.3f" ) ) changed = true;
+
+			ImGui::Separator();
+			// Explicit list: hit-testing the diagram can always be fiddly, so
+			// there is a guaranteed way to select any stroke (and see what it is).
+			ImGui::Text( "Strokes (%d)", data.Strokes.Size );
+			ImGui::BeginChild( "##cwlist", ImVec2( LpToPx( 200.0f ), LpToPx( 76.0f ) ),
+							   ImGuiChildFlags_Borders );
+			for ( int i = 0; i < data.Strokes.Size; ++i )
+			{
+				char const* kn = ( data.Strokes[ i ].Kind == ImChromaWarpKind_Normal ) ? "Normal"
+								: ( data.Strokes[ i ].Kind == ImChromaWarpKind_PointToPoint ) ? "Pt to Pt" : "Pin";
+				char row[ 48 ];
+				ImFormatString( row, IM_ARRAYSIZE( row ), "%d  %s", i, kn );
+				ImGui::PushID( i );
+				if ( ImGui::Selectable( row, data.Selected == i ) )
+					data.Selected = i;
+				ImGui::PopID();
+			}
+			ImGui::EndChild();
+
+			if ( ImGui::Button( "Reset All##cw", ImVec2( LpToPx( 90.0f ), 0.0f ) ) )
+			{
+				data.ResetAll();
+				changed = true;
+			}
+		}
+		ImGui::EndGroup();
+
+		ImGui::PopID();
+		return changed;
+	}
+
+	// Round-half-away-from-zero, so integer quantization is symmetric about 0.
+	//
+	// This used to be a plain C cast, i.e. truncate TOWARD zero, which gives
+	// signed integer sliders a dead band twice as wide at zero as at every other
+	// step: the whole open interval (-1, +1) collapsed to 0. Every hand-rolled
+	// slider that bypasses ImGui::SliderBehavior fed through here (Slider2DRange,
+	// both RangeSliders, Slider2DDisc, SegmentedControl), so they all inherited
+	// it -- the SliderBehavior-backed widgets never did, which is why the two
+	// families felt different.
+	static inline float DW_RoundForIntCast( float v )
+	{
+		return ( v >= 0.0f ) ? ImFloor( v + 0.5f ) : ImCeil( v - 0.5f );
+	}
+
 	static void WriteFloatToScalar( ImGuiDataType dtype, void* p, float v )
 	{
+		float r = DW_RoundForIntCast( v );
 		switch ( dtype )
 		{
-		case ImGuiDataType_S8:     *( ImS8* )p   = ( ImS8 )v; break;
-		case ImGuiDataType_U8:     *( ImU8* )p   = ( ImU8 )v; break;
-		case ImGuiDataType_S16:    *( ImS16* )p  = ( ImS16 )v; break;
-		case ImGuiDataType_U16:    *( ImU16* )p  = ( ImU16 )v; break;
-		case ImGuiDataType_S32:    *( ImS32* )p  = ( ImS32 )v; break;
-		case ImGuiDataType_U32:    *( ImU32* )p  = ( ImU32 )v; break;
-		case ImGuiDataType_S64:    *( ImS64* )p  = ( ImS64 )v; break;
-		case ImGuiDataType_U64:    *( ImU64* )p  = ( ImU64 )v; break;
+		case ImGuiDataType_S8:     *( ImS8* )p   = ( ImS8 )r; break;
+		case ImGuiDataType_U8:     *( ImU8* )p   = ( ImU8 )r; break;
+		case ImGuiDataType_S16:    *( ImS16* )p  = ( ImS16 )r; break;
+		case ImGuiDataType_U16:    *( ImU16* )p  = ( ImU16 )r; break;
+		case ImGuiDataType_S32:    *( ImS32* )p  = ( ImS32 )r; break;
+		case ImGuiDataType_U32:    *( ImU32* )p  = ( ImU32 )r; break;
+		case ImGuiDataType_S64:    *( ImS64* )p  = ( ImS64 )r; break;
+		case ImGuiDataType_U64:    *( ImU64* )p  = ( ImU64 )r; break;
 		case ImGuiDataType_Float:  *( float* )p  = v; break;
 		case ImGuiDataType_Double: *( double* )p = ( double )v; break;
 		default: break;
@@ -9916,8 +13084,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			ImRect& bb = drag_bbs[ k ];
 
+			// `continue`, not `return false`: bailing out of the loop discarded
+			// any value_changed already accumulated from bands 0..k-1 and left
+			// bands k..n-1 unregistered, desyncing ImGui's id/active tracking
+			// against the next fully-visible frame.
 			if ( !ImGui::ItemAdd( total_bb, ids[ k ], &bb, 0) )
-				return false;
+				continue;
 
 			const bool hovered = ImGui::ItemHoverable( bb, ids[ k ], g.LastItemData.ItemFlags );
 			full_hovered |= hovered;
@@ -10410,7 +13582,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Horizontal Line
 		if ( fScaleX > 2.0f * fXLimit )
 			pDrawList->AddLine( ImVec2( frame_bb_drag.Min.x + fCursorOff, vCursorPos.y ), ImVec2( vCursorPos.x - fCursorOff, vCursorPos.y ), uOrange, line_thickness );
-		if ( fScaleX < 1.0f - 2.0f * fYLimit )
+		// fXLimit, not fYLimit: this gates the HORIZONTAL guide's right segment,
+		// and the matching left segment two lines up already uses fXLimit. On a
+		// non-square frame the two thresholds differ and it toggled at the wrong
+		// point.
+		if ( fScaleX < 1.0f - 2.0f * fXLimit )
 			pDrawList->AddLine( ImVec2( frame_bb_drag.Max.x - fCursorOff, vCursorPos.y ), ImVec2( vCursorPos.x + fCursorOff, vCursorPos.y ), uOrange, line_thickness );
 
 		// Borders::Right
@@ -10687,8 +13863,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					WriteFloatToScalar( data_type, p_minY, bMinYF + newMnY * denY );
 					float qMinX   = ScalarToFloat( data_type, (ImU64*)p_minX );
 					float qMinY   = ScalarToFloat( data_type, (ImU64*)p_minY );
-					WriteFloatToScalar( data_type, p_maxX, qMinX + spanXv );
-					WriteFloatToScalar( data_type, p_maxY, qMinY + spanYv );
+					// Clamp the derived max: quantizing the min can nudge it, so
+					// min + span could otherwise land past the upper bound.
+					WriteFloatToScalar( data_type, p_maxX, ImMin( qMinX + spanXv, bMaxXF ) );
+					WriteFloatToScalar( data_type, p_maxY, ImMin( qMinY + spanYv, bMaxYF ) );
 					value_changed = true;
 				}
 
@@ -11018,31 +14196,32 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// Gradient Editor
 	//////////////////////////////////////////////////////////////////////////
 
+	// Delegates to the shared model resolver so the library holds ONE enum ->
+	// conversion-pointer map. pfSpace2sRGB / pfColorModelToRGB are aliases of the
+	// same function type, so the out params pass straight through.
+	//
+	// LinearSRGB is the single entry that cannot come from it: the model
+	// ImWidgetsColorModel_LinearRGB is parameterised BY the working space (and so
+	// resolves to NULL on purpose), whereas gradient interpolation always means
+	// sRGB-linear specifically.
 	static void ImGradientInterpGetFunctions( ImWidgetsGradientInterp interp, pfSpace2sRGB* out_toRGB, pfsRGB2Space* out_fromRGB )
 	{
+		if ( interp == ImWidgetsGradientInterp_LinearSRGB )
+		{
+			*out_toRGB   = &ColorConvertLineartoRGB;
+			*out_fromRGB = &ColorConvertRGBtoLinear;
+			return;
+		}
+
+		ImWidgetsColorModel model;
 		switch ( interp )
 		{
-		case ImWidgetsGradientInterp_LinearSRGB:
-			*out_toRGB  = &ColorConvertLineartoRGB;
-			*out_fromRGB = &ColorConvertRGBtoLinear;
-			break;
-		case ImWidgetsGradientInterp_OkLab:
-			*out_toRGB  = &ColorConvertOKLABtoRGB;
-			*out_fromRGB = &ColorConvertRGBtoOKLAB;
-			break;
-		case ImWidgetsGradientInterp_OkLCH:
-			*out_toRGB  = &ColorConvertOKLCHtosRGB;
-			*out_fromRGB = &ColorConvertsRGBtoOKLCH;
-			break;
-		case ImWidgetsGradientInterp_HSV:
-			*out_toRGB  = &ColorConvertHSVtoRGB;
-			*out_fromRGB = &ColorConvertRGBtoHSV;
-			break;
-		default: // sRGB
-			*out_toRGB  = &ColorConvertsRGBtosRGB;
-			*out_fromRGB = &ColorConvertsRGBtosRGB;
-			break;
+		case ImWidgetsGradientInterp_OkLab:	model = ImWidgetsColorModel_OkLab;	break;
+		case ImWidgetsGradientInterp_OkLCH:	model = ImWidgetsColorModel_OkLCH;	break;
+		case ImWidgetsGradientInterp_HSV:	model = ImWidgetsColorModel_HSV;	break;
+		default:							model = ImWidgetsColorModel_RGB;	break;	// sRGB: identity pair
 		}
+		ColorModelGetFunctions( model, out_toRGB, out_fromRGB );
 	}
 
 	static bool ImGradientInterpHasHue( ImWidgetsGradientInterp interp )
@@ -11239,6 +14418,21 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	static bool s_InsideExpandedWidget = false;
 
+	// Geometry of the expand button, in ONE place.
+	//
+	// The draw and the hit-test used to carry their own copies of these
+	// constants, so fixing one without the other would silently desync the
+	// button from its clickable area. They were also raw pixels, which meant
+	// every widget with an expand button imported a control frozen at 96 DPI --
+	// the single most-shared unscaled element in the library (21 call sites).
+	static ImRect DW_ExpandButtonRect( ImRect const& bb )
+	{
+		float btnSize = LpToPx( 14.0f );
+		float margin  = LpToPx( 3.0f );
+		return ImRect( ImVec2( bb.Max.x - btnSize - margin, bb.Min.y + margin ),
+					   ImVec2( bb.Max.x - margin,           bb.Min.y + btnSize + margin ) );
+	}
+
 	// Draw a small expand button at the top-right corner of a widget.
 	// Returns pointer to the expanded-state bool, or NULL if inside an expanded window.
 	bool* WidgetExpandButton( ImGuiID widget_id, ImRect const& bb )
@@ -11252,10 +14446,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImGuiID expandKey = widget_id ^ 0x1F2E3D4C;
 		bool* pOpen = window->StateStorage.GetBoolRef( expandKey, false );
 
-		float btnSize = 32.0f;
-		float margin = 3.0f;
-		ImVec2 btnMin( bb.Max.x - btnSize - margin, bb.Min.y + margin );
-		ImVec2 btnMax( bb.Max.x - margin, bb.Min.y + btnSize + margin );
+		ImRect btn = DW_ExpandButtonRect( bb );
+		ImVec2 btnMin = btn.Min;
+		ImVec2 btnMax = btn.Max;
 
 		bool hov = ImGui::IsMouseHoveringRect( btnMin, btnMax ) && ImGui::IsWindowHovered( ImGuiHoveredFlags_AllowWhenBlockedByActiveItem );
 		if ( hov && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) )
@@ -11263,14 +14456,15 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		ImU32 bg = hov ? IM_COL32( 80, 80, 80, 200 ) : IM_COL32( 40, 40, 40, 128 );
 		ImU32 fg = hov ? IM_COL32_WHITE : IM_COL32( 180, 180, 180, 180 );
-		dl->AddRectFilled( btnMin, btnMax, bg, 2.0f );
+		dl->AddRectFilled( btnMin, btnMax, bg, LpToPx( 2.0f ) );
 
 		// Icon: small window with title bar
-		float p = 4.0f;
+		float p = LpToPx( 3.0f );
 		ImVec2 a( btnMin.x + p, btnMin.y + p );
 		ImVec2 b( btnMax.x - p, btnMax.y - p );
-		dl->AddRect( a, b, fg, 0.0f, 0, 1.0f );
-		dl->AddLine( ImVec2( a.x, a.y + 2.5f ), ImVec2( b.x, a.y + 2.5f ), fg, 1.0f );
+		dl->AddRect( a, b, fg, 0.0f, 0, LpToPx( 1.0f ) );
+		float titleY = a.y + LpToPx( 2.0f );
+		dl->AddLine( ImVec2( a.x, titleY ), ImVec2( b.x, titleY ), fg, LpToPx( 1.0f ) );
 
 		return pOpen;
 	}
@@ -11282,11 +14476,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( s_InsideExpandedWidget )
 			return false;
 
-		float btnSize = 32.0f;
-		float margin = 3.0f;
-		ImVec2 btnMin( bb.Max.x - btnSize - margin, bb.Min.y + margin );
-		ImVec2 btnMax( bb.Max.x - margin, bb.Min.y + btnSize + margin );
-		return ImGui::IsMouseHoveringRect( btnMin, btnMax );
+		ImRect btn = DW_ExpandButtonRect( bb );
+		return ImGui::IsMouseHoveringRect( btn.Min, btn.Max );
 	}
 
 	bool BeginExpandedWindow( char const* label, ImGuiID widget_id, bool* pOpen, ImVec2 defaultSize )
@@ -12925,13 +16116,20 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImGui::EndPopup();
 		}
 
-		// Double-click on key: reset Y to default (midpoint of range)
-		if ( hovered_key >= 0 && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
+		// Double-click on key: reset Y to default (midpoint of range).
+		// hovered_key is computed earlier in the frame and the context menu's
+		// "Remove Key" can run before this, so the index must be re-checked --
+		// this was an unguarded write while the tooltip below did bounds-check.
+		if ( hovered_key >= 0 && hovered_key < curve->Keys.Size
+			 && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) && hovered && frame_contains_mouse )
 		{
 			float defaultY = ( rangeMin.y + rangeMax.y ) * 0.5f;
-			curve->Keys[ hovered_key ].Pos.y = defaultY;
+			if ( curve->Keys[ hovered_key ].Pos.y != defaultY )
+			{
+				curve->Keys[ hovered_key ].Pos.y = defaultY;
+				value_changed = true;
+			}
 			selected = hovered_key;
-			value_changed = true;
 		}
 
 		// Delete key
@@ -13309,18 +16507,19 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		pDrawList->AddCircle( center, innerRadius, ImGui::GetColorU32( ImGuiCol_Border ) );
 	}
 
-	struct ImColorWheelRingCbData { int mode; };
-
-	static ImU32 ImColorWheelRingCallback( float t, void* pUserData )
+	// The wheel's outer ring is a hue sweep in one of two cylinders, which is
+	// precisely an ImWidgetsColorScalar with a different Model -- no callback of
+	// its own needed.
+	static ImWidgetsColorScalar ImColorWheelRingOptions( int mode )
 	{
-		ImColorWheelRingCbData const* d = ( ImColorWheelRingCbData const* )pUserData;
-		float r, g, b;
-		if ( d->mode == ImColorWheelMode_OkLCH )
-			ColorConvertOKLCHtosRGB( r, g, b, 0.75f, kOkLCHMaxChroma, t );
-		else
-			ImGui::ColorConvertHSVtoRGB( t, 1.0f, 1.0f, r, g, b );
-		r = ImClamp( r, 0.0f, 1.0f ); g = ImClamp( g, 0.0f, 1.0f ); b = ImClamp( b, 0.0f, 1.0f );
-		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
+		ImWidgetsColorScalar cs;	// defaults are already the HSV hue sweep
+		if ( mode == ImColorWheelMode_OkLCH )
+		{
+			cs.Model      = ImWidgetsColorModel_OkLCH;
+			cs.Fixed[ 0 ] = 0.75f;				// L
+			cs.Fixed[ 1 ] = kOkLCHMaxChroma;	// C
+		}
+		return cs;
 	}
 
 	struct ImColorWheelSliderCbData { int mode; float hue; float sat; };
@@ -13433,9 +16632,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Outer hue ring
 		if ( ringThick > 0.0f )
 		{
-			ImColorWheelRingCbData ringData = { ( int )mode };
 			DrawProceduralColorArcBilinear( dl, discCenter, innerDiscRadius + 1.0f, discRadius,
-				0.0f, 2.0f * IM_PI, &ImColorWheelRingCallback, &ringData, 128, true );
+				0.0f, 2.0f * IM_PI, ImColorWheelRingOptions( ( int )mode ), 128, true );
 		}
 
 		// Color disc
@@ -13675,17 +16873,21 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				ImGui::TextUnformatted( "Mode" );
 				ImGui::TextUnformatted( modeNames[ ImClamp( ( int )mode, 0, 1 ) ] );
 				ImGui::Separator();
-				float rc, gc, bc;
-				ImGui::ColorConvertHSVtoRGB( color->x, color->y, color->z, rc, gc, bc );
+				// `color` is sRGB RGBA -- edit the channels directly.
+				//
+				// This block used to run ColorConvertHSVtoRGB on it for display
+				// and write ColorConvertRGBtoHSV back on edit, i.e. it both
+				// showed garbage AND stored HSV into the caller's RGB. Touching
+				// any channel here silently corrupted the caller's colour.
 				ImGui::TextUnformatted( "R" );
 				ImGui::SetNextItemWidth( -FLT_MIN );
-				if ( ImGui::DragFloat( "##r", &rc, 0.001f, 0.0f, hdr_max, "%.3f" ) ) { float h, s, v; ImGui::ColorConvertRGBtoHSV( rc, gc, bc, h, s, v ); color->x = h; color->y = s; color->z = v; value_changed = true; }
+				if ( ImGui::DragFloat( "##r", &color->x, 0.001f, 0.0f, hdr_max, "%.3f" ) ) value_changed = true;
 				ImGui::TextUnformatted( "G" );
 				ImGui::SetNextItemWidth( -FLT_MIN );
-				if ( ImGui::DragFloat( "##g", &gc, 0.001f, 0.0f, hdr_max, "%.3f" ) ) { float h, s, v; ImGui::ColorConvertRGBtoHSV( rc, gc, bc, h, s, v ); color->x = h; color->y = s; color->z = v; value_changed = true; }
+				if ( ImGui::DragFloat( "##g", &color->y, 0.001f, 0.0f, hdr_max, "%.3f" ) ) value_changed = true;
 				ImGui::TextUnformatted( "B" );
 				ImGui::SetNextItemWidth( -FLT_MIN );
-				if ( ImGui::DragFloat( "##b", &bc, 0.001f, 0.0f, hdr_max, "%.3f" ) ) { float h, s, v; ImGui::ColorConvertRGBtoHSV( rc, gc, bc, h, s, v ); color->x = h; color->y = s; color->z = v; value_changed = true; }
+				if ( ImGui::DragFloat( "##b", &color->z, 0.001f, 0.0f, hdr_max, "%.3f" ) ) value_changed = true;
 				ImGui::TextUnformatted( "A" );
 				ImGui::SetNextItemWidth( -FLT_MIN );
 				if ( ImGui::DragFloat( "##a", &color->w, 0.001f, 0.0f, 1.0f, "%.3f" ) ) value_changed = true;
@@ -13697,7 +16899,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				}
 				ImGui::Separator();
 				ImGui::TextUnformatted( "Preview" );
-				ImVec4 preview( rc, gc, bc, color->w );
+				ImVec4 preview( color->x, color->y, color->z, color->w );
 				ImGui::ColorButton( "##preview", preview, 0, ImVec2( ImGui::GetContentRegionAvail().x, 30 ) );
 				ImGui::EndChild();
 			}
@@ -13903,8 +17105,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// 2) Arc sliders (optional)
 		if ( hasArcs )
 		{
-			ImGuiID rightId = id + 1;
-			ImGuiID leftId  = id + 2;
+			// Hashed sub-ids, not id+1 / id+2: raw ID arithmetic can collide
+			// with any other widget's id in the same window.
+			ImGuiID rightId = id + ImHashStr( "##rightArc" );
+			ImGuiID leftId  = id + ImHashStr( "##leftArc" );
 
 			ImU32 colRight    = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_HDRWheel_RightArc ] );
 			ImU32 colLeftMin  = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_HDRWheel_LeftArcMin ] );
@@ -13929,8 +17133,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// innerSize is in px; ColorWheel's size arg is lp so convert back.
 		window->DC.CursorPos = ImVec2( startPos.x + margin, startPos.y + margin );
 		float innerSizeLp = PxToLp( innerSize );
+		// Scope the inner wheel to THIS HDRWheel. Without a PushID, "##cw"
+		// resolves in the caller's id stack, so two HDRWheels in one window
+		// shared the inner wheel's id and fought over its drag state -- the
+		// widget was relying on every caller to wrap it in a PushID.
+		ImGui::PushID( label );
 		if ( ColorWheel( "##cw", color, mode, 1.0f, true, ImVec2( innerSizeLp, innerSizeLp ) ) )
 			value_changed = true;
+		ImGui::PopID();
 
 		s_InsideExpandedWidget = prevExpanded;
 
@@ -18655,11 +21865,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float r, g, b; ImGui::ColorConvertHSVtoRGB( d->hue, sat, val, r, g, b );
 		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
 	}
-	static ImU32 HarmoHueCallback( float hue, void* )
-	{
-		float r, g, b; ImGui::ColorConvertHSVtoRGB( hue, 1.0f, 1.0f, r, g, b );
-		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
-	}
 
 	bool ColorPickerPaletteHarmony( char const* label, ImVec4* color, ImVec4* out_palette, int* out_count )
 	{
@@ -18740,7 +21945,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			dl->AddCircle( dotPos, dotRadius, IM_COL32_WHITE, 0, dotOutlineThick );
 		}
 		{
-			DrawProceduralColor1DBilinearVertical( dl, HarmoHueCallback, nullptr,
+			// Plain hue sweep = the default ImWidgetsColorScalar.
+			// NOTE: kept at (0, 1) to preserve the existing look, but that puts
+			// hue 1 at the TOP while the handle below places hue 0 there -- the
+			// bar reads reversed against its own handle. Every other picker in
+			// this file passes (1, 0). Pre-existing; not changed here.
+			DrawProceduralColor1DBilinearVertical( dl, ImWidgetsColorScalar(),
 				0.0f, 1.0f, hue_bb.Min, hue_bb.GetSize(), sliderRes );
 			dl->AddRect( hue_bb.Min, hue_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
 			float handleY = ImLerp( hue_bb.Min.y, hue_bb.Max.y, *pH );
@@ -21967,7 +25177,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				int s = ( selectedIndex && *selectedIndex >= 0 && *selectedIndex < count ) ? *selectedIndex : -1;
 				if ( s >= 0 )
 				{
-					ImTransformData& tr = transforms[ s ];
 					ImGui::Separator();
 					ImGui::Text( "Selected: %d", s );
 
@@ -22013,6 +25222,15 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 						value_changed = true;
 					}
 					if ( !canFront ) ImGui::EndDisabled();
+
+					// Re-derive the selection HERE, after the ordering buttons.
+					// They swap array contents and move *selectedIndex, so a
+					// reference taken before them now addresses a DIFFERENT
+					// object -- the controls below were editing the wrong
+					// transform for a frame after any reorder.
+					int selNow = ( selectedIndex && *selectedIndex >= 0 && *selectedIndex < count ) ? *selectedIndex : s;
+					selNow = ImClamp( selNow, 0, count - 1 );
+					ImTransformData& tr = transforms[ selNow ];
 
 					// Transform controls
 					ImGui::Spacing();
@@ -22817,6 +26035,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			for ( int hi = 0; hi < hueDivs; ++hi )
 			{
+				// The hue axis only wraps in Circular mode. In Square /
+				// ChromaLuma the wrap segment resolves hue 1.0 back to 0.0
+				// (PointIndex applies % HueDivisions), which drew a line
+				// straight back across the full width of every ring.
+				if ( mode != ImColorWarperMode_Circular && hi + 1 >= hueDivs )
+					continue;
 				ImVec2 p0 = getScreenPos( hi, si );
 				ImVec2 p1 = getScreenPos( hi + 1, si ); // wraps via %HueDivisions
 				dl->AddLine( p0, p1, gridCol, gridThick );
@@ -22844,8 +26068,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				for ( int hi = 0; hi < hueDivs; ++hi )
 				{
 					int idx = data->PointIndex( hi, si );
-					if ( data->Pinned[ idx ] )
-						continue;
+					// Pinned points ARE hoverable: skipping them here meant they
+					// could never be selected, so they could never be right-clicked
+					// to unpin -- pinning was a one-way operation. Pinning blocks
+					// dragging instead (see the drag-start guard below).
 					ImVec2 sp = getScreenPos( hi, si );
 					float dsq = ( sp.x - mp.x ) * ( sp.x - mp.x ) + ( sp.y - mp.y ) * ( sp.y - mp.y );
 					if ( dsq < bestDistSq )
@@ -22888,7 +26114,38 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			if ( hovered_point >= 0 )
 			{
-				*pDragIdx = hovered_point;
+				// Select always, but only begin a DRAG when the point is not
+				// pinned -- that is what pinning means.
+				if ( !data->Pinned[ hovered_point ] )
+				{
+					*pDragIdx = hovered_point;
+
+					// Snapshot the spoke's influence bounds ONCE, here.
+					//
+					// Dragging a point drags its whole radial line, tapering to
+					// nothing at the nearest point that is pinned or has already
+					// been moved (and at the permanently-fixed centre and rim).
+					// These bounds must be captured at drag START: computing them
+					// per frame would see the neighbours we just moved as
+					// "already moved" and collapse the influence to nothing after
+					// one frame.
+					int dsi = hovered_point / hueDivs;
+					int dhi = hovered_point % hueDivs;
+					int bLo = 0;
+					for ( int s = dsi - 1; s > 0; --s )
+					{
+						int idx = data->PointIndex( dhi, s );
+						if ( data->Pinned[ idx ] || ImLengthSqr( data->Offsets[ idx ] ) > 1e-8f ) { bLo = s; break; }
+					}
+					int bHi = satDivs;
+					for ( int s = dsi + 1; s < satDivs; ++s )
+					{
+						int idx = data->PointIndex( dhi, s );
+						if ( data->Pinned[ idx ] || ImLengthSqr( data->Offsets[ idx ] ) > 1e-8f ) { bHi = s; break; }
+					}
+					ImGui::GetStateStorage()->SetInt( id + ImHashStr( "##spokeLo" ), bLo );
+					ImGui::GetStateStorage()->SetInt( id + ImHashStr( "##spokeHi" ), bHi );
+				}
 				data->SelectedIdx = hovered_point;
 				ImGui::SetActiveID( id, window );
 				ImGui::SetFocusID( id, window );
@@ -22907,11 +26164,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			}
 		}
 
-		// Right-click context menu
+		// Right-click context menu.
+		//
+		// Must be OpenPopup, not OpenPopupOnItemClick: the latter internally
+		// requires IsMouseReleased, but this branch is gated on IsMouseClicked
+		// (pressed). Those are mutually exclusive within a frame, so the popup
+		// could never open and Reset Point / Pin / Reset All were unreachable.
 		if ( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) && hovered_point >= 0 )
 		{
 			data->SelectedIdx = hovered_point;
-			ImGui::OpenPopupOnItemClick( "##warper_ctx", ImGuiPopupFlags_MouseButtonRight );
+			ImGui::OpenPopup( "##warper_ctx" );
 		}
 
 		if ( ImGui::BeginPopup( "##warper_ctx" ) )
@@ -22944,12 +26206,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			if ( dragIdx >= 0 && dragIdx < data->Offsets.Size && !data->Pinned[ dragIdx ] )
 			{
 				ImVec2 delta = g.IO.MouseDelta;
+				int si = dragIdx / hueDivs;
+				int hi = dragIdx % hueDivs;
+				float dH = 0.0f, dS = 0.0f;
 				if ( mode == ImColorWarperMode_Circular )
 				{
 					// Convert screen delta to (hue, sat) delta in polar space
 					// Get current screen position of the dragged point
-					int si = dragIdx / hueDivs;
-					int hi = dragIdx % hueDivs;
 					ImVec2 curScreen = getScreenPos( hi, si );
 					ImVec2 newScreen = curScreen + delta;
 
@@ -22962,30 +26225,54 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					float curDist = ImSqrt( relCur.x * relCur.x + relCur.y * relCur.y ) / radius;
 					float newDist = ImSqrt( relNew.x * relNew.x + relNew.y * relNew.y ) / radius;
 
-					float dH = newAngle - curAngle;
+					dH = newAngle - curAngle;
 					if ( dH > 0.5f ) dH -= 1.0f;
 					if ( dH < -0.5f ) dH += 1.0f;
-					float dS = newDist - curDist;
-
-					data->Offsets[ dragIdx ].x += dH;
-					data->Offsets[ dragIdx ].y += dS;
-
-					// Sync center points (all points at satIdx=0 share same offset)
-					if ( si == 0 )
-					{
-						for ( int h = 0; h < hueDivs; ++h )
-						{
-							int cIdx = data->PointIndex( h, 0 );
-							data->Offsets[ cIdx ] = data->Offsets[ dragIdx ];
-						}
-					}
+					dS = newDist - curDist;
 				}
 				else // Square
 				{
-					float dH = delta.x / content_bb.GetWidth();
-					float dS = -delta.y / content_bb.GetHeight();
-					data->Offsets[ dragIdx ].x += dH;
-					data->Offsets[ dragIdx ].y += dS;
+					dH = delta.x / content_bb.GetWidth();
+					dS = -delta.y / content_bb.GetHeight();
+				}
+
+				data->Offsets[ dragIdx ].x += dH;
+				data->Offsets[ dragIdx ].y += dS;
+
+				// Drag the rest of the spoke with it, proportionally.
+				//
+				// The displacement tapers linearly to zero at the bounds captured
+				// when the drag began -- the nearest already-moved or pinned point
+				// on either side, else the centre and the rim (both permanently
+				// fixed). Spokes are independent: nothing outside column `hi` is
+				// touched, so one hue's line can be pulled clean past its
+				// neighbours. Previously only the grabbed point moved, which made
+				// the mesh feel like isolated dots rather than a warp.
+				{
+					ImGuiStorage* wstg = ImGui::GetStateStorage();
+					int bLo = wstg->GetInt( id + ImHashStr( "##spokeLo" ), 0 );
+					int bHi = wstg->GetInt( id + ImHashStr( "##spokeHi" ), satDivs );
+					for ( int s = bLo + 1; s < bHi; ++s )
+					{
+						if ( s == si ) continue;
+						int idx = data->PointIndex( hi, s );
+						if ( data->Pinned[ idx ] ) continue;
+						float wgt;
+						if ( s < si ) wgt = ( si > bLo ) ? ( float )( s - bLo ) / ( float )( si - bLo ) : 0.0f;
+						else          wgt = ( bHi > si ) ? ( float )( bHi - s ) / ( float )( bHi - si ) : 0.0f;
+						data->Offsets[ idx ].x += dH * wgt;
+						data->Offsets[ idx ].y += dS * wgt;
+					}
+				}
+
+				// Sync center points (all points at satIdx=0 share same offset)
+				if ( si == 0 )
+				{
+					for ( int h = 0; h < hueDivs; ++h )
+					{
+						int cIdx = data->PointIndex( h, 0 );
+						data->Offsets[ cIdx ] = data->Offsets[ dragIdx ];
+					}
 				}
 				value_changed = true;
 			}
@@ -24484,7 +27771,10 @@ namespace ImWidgets {
 
 		// Graticule
 		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_VectorScope_Grid ] );
-		ImU32 gratCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_VectorScope_Graticule ] ); IM_UNUSED( gratCol );
+		// StyleColor_VectorScope_Graticule was fetched and immediately discarded,
+		// leaving the style entry dead and everything drawn in the grid colour.
+		// The concentric rings are the graticule proper, so they use it.
+		ImU32 gratCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_VectorScope_Graticule ] );
 		float gratThk = LpToPx( dwStyle.VectorScope_GraticuleThickness );
 
 		// Center crosshair
@@ -24495,7 +27785,7 @@ namespace ImWidgets {
 		for ( int i = 1; i <= 4; ++i )
 		{
 			float r = radius * ( float )i / 4.0f;
-			dl->AddCircle( center, r, gridCol, 64, gratThk );
+			dl->AddCircle( center, r, gratCol, 64, gratThk );
 		}
 
 		// BT.709 luma coefficients
@@ -24523,8 +27813,11 @@ namespace ImWidgets {
 				float y = kr * t.r + ( 1.0f - kr - kb ) * t.g + kb * t.b;
 				float cb = ( t.b - y ) / cbScale;
 				float cr = ( t.r - y ) / crScale;
-				// Map Cb/Cr [-0.5,0.5] to screen (right=+Cb, up=+Cr)
-				ImVec2 pos( center.x + cb * scopeW, center.y - cr * scopeH );
+				// Map Cb/Cr [-0.5,0.5] to screen (right=+Cb, up=+Cr).
+				// Through `radius`, so the targets track VectorScope_DiscScale
+				// like the rings do -- using scopeW/scopeH here meant the targets
+				// drifted off the graticule for any DiscScale != 1.0.
+				ImVec2 pos( center.x + cb * 2.0f * radius, center.y - cr * 2.0f * radius );
 				ImU32 tCol = ImGui::GetColorU32( dwStyle.Colors[ t.styleIdx ] );
 
 				dl->AddRect( ImVec2( pos.x - targetSize, pos.y - targetSize ),
@@ -24567,7 +27860,9 @@ namespace ImWidgets {
 		ImU8 sigG = ( ImU8 )( signalColorF.y * 255.0f );
 		ImU8 sigB = ( ImU8 )( signalColorF.z * 255.0f );
 
-		float binSize = scopeW / data.Resolution;
+		// Also mapped through `radius`, so the plotted signal stays registered
+		// with the graticule and the targets at any DiscScale.
+		float binSize = ( 2.0f * radius ) / data.Resolution;
 
 		// Count non-zero bins for PrimReserve
 		int nonZero = 0;
@@ -24589,7 +27884,7 @@ namespace ImWidgets {
 
 			for ( int xb = 0; xb < data.Resolution; ++xb )
 			{
-				float sx0 = total_bb.Min.x + xb * binSize;
+				float sx0 = center.x - radius + xb * binSize;
 				float sx1 = sx0 + binSize;
 
 				for ( int yb = 0; yb < data.Resolution; ++yb )
@@ -24599,7 +27894,7 @@ namespace ImWidgets {
 						continue;
 
 					// Y axis: higher Cr (higher yb) at top of screen
-					float sy1 = total_bb.Max.y - yb * binSize;
+					float sy1 = center.y + radius - yb * binSize;
 					float sy0 = sy1 - binSize;
 
 					float alpha = ImLog( ( float )count + 1.0f ) / logPeak;
@@ -25901,19 +29196,18 @@ namespace ImWidgets {
 			float bandGap   = LpToPx( dwStyle.ToneCurve_BandGap );
 			int bandDiv = 32;
 
-			auto grayscaleFunc = []( float t, void* ) -> ImU32
-			{
-				ImU8 v = ( ImU8 )( ImClamp( t, 0.0f, 1.0f ) * 255.0f );
-				return IM_COL32( v, v, v, 255 );
-			};
+			// Neutral ramp straight off the shared scalar -> colour mapping
+			// instead of a local lambda re-deriving it.
+			ImWidgetsColorScalar greyCs;
+			ColorScalarPreset( &greyCs, ImWidgetsColorRamp_Grey );
 
 			// X axis: horizontal black-to-white band (input)
-			DrawProceduralColor1DBilinearHorizontal( dl, grayscaleFunc, nullptr, 0.0f, 1.0f,
+			DrawProceduralColor1DBilinearHorizontal( dl, greyCs, 0.0f, 1.0f,
 				ImVec2( scope_bb.Min.x, scope_bb.Max.y + bandGap ), ImVec2( scopeW, bandThick ), bandDiv );
 
 			// Y axis: vertical black-to-white band (output, black at bottom, white at top)
 			float bandRight = scope_bb.Min.x - bandGap;
-			DrawProceduralColor1DBilinearVertical( dl, grayscaleFunc, nullptr, 0.0f, 1.0f,
+			DrawProceduralColor1DBilinearVertical( dl, greyCs, 0.0f, 1.0f,
 				ImVec2( bandRight - bandThick, scope_bb.Min.y ), ImVec2( bandThick, scopeH ), bandDiv );
 		}
 
@@ -26010,8 +29304,12 @@ namespace ImWidgets {
 
 				value_changed = true;
 
-				// Drag far outside: delete
-				if ( ( g.IO.MousePos.y > scope_bb.Max.y + 30.0f || g.IO.MousePos.y < scope_bb.Min.y - 30.0f ) && activeCurve.Keys.Size > 0 )
+				// Drag far outside: delete.
+				// Floor at 2 keys. RemoveKey has no lower bound and ToneCurve --
+				// unlike ColorCurve, which re-seeds itself -- never re-inits, so
+				// draining a channel left it rendering nothing at all.
+				if ( ( g.IO.MousePos.y > scope_bb.Max.y + LpToPx( 30.0f ) || g.IO.MousePos.y < scope_bb.Min.y - LpToPx( 30.0f ) )
+					 && activeCurve.Keys.Size > 2 )
 				{
 					activeCurve.RemoveKey( activeCurve.SelectedIdx );
 					activeCurve.SelectedIdx = -1;
@@ -26136,7 +29434,22 @@ namespace ImWidgets {
 				ImGui::TextUnformatted( HistogramModeName( mode ) );
 				ImGui::Spacing();
 				ImGui::TextUnformatted( "Channel" );
-				ImGui::Text( "%s (%d/%d)", ToneCurveChannelName( mode, act ), act + 1, chCount );
+				// Selectable, not just displayed. ActiveChannel was read here and
+				// written NOWHERE in the widget, so in RGB/YRGB mode the G and B
+				// curves were unreachable -- you could see the channel name but
+				// never switch to it.
+				for ( int c = 0; c < chCount; ++c )
+				{
+					if ( c > 0 ) ImGui::SameLine( 0.0f, ImGui::GetStyle().ItemInnerSpacing.x );
+					bool on = ( c == act );
+					if ( on ) ImGui::PushStyleColor( ImGuiCol_Button, ImGui::GetColorU32( ImGuiCol_ButtonActive ) );
+					if ( ImGui::Button( ToneCurveChannelName( mode, c ), ImVec2( LpToPx( 34.0f ), 0.0f ) ) )
+					{
+						curve->ActiveChannel = c;
+						act = c;
+					}
+					if ( on ) ImGui::PopStyleColor();
+				}
 				ImGui::Spacing();
 				ImColorCurveData& ac = curve->Channels[ act ];
 				ImGui::TextUnformatted( "Keys" );
@@ -33920,8 +37233,11 @@ namespace ImWidgets
             }
         }
         // Scroll wheel over the dial steps through stops.
+        // Claim the wheel, otherwise the same event also scrolls the parent
+        // window while the dial is being adjusted.
         if (hovered && ImGui::GetIO().MouseWheel != 0.0f)
         {
+            ImGui::SetKeyOwner(ImGuiKey_MouseWheelY, ImGui::GetID(label));
             int nxt = cur - (int)ImGui::GetIO().MouseWheel;
             nxt = ImClamp(nxt, 0, stop_count - 1);
             if (nxt != cur) { *v = stops[nxt]; changed = true; }
@@ -34032,6 +37348,8 @@ namespace ImWidgets
         }
         if (hovered && ImGui::GetIO().MouseWheel != 0.0f)
         {
+            // Claim the wheel so the parent window does not scroll too.
+            ImGui::SetKeyOwner(ImGuiKey_MouseWheelY, ImGui::GetID(label));
             float step = ImGui::GetIO().KeyShift ? 10.0f : 1.0f;
             apply(*v_deg + ImGui::GetIO().MouseWheel * step);
         }
@@ -35915,7 +39233,8 @@ namespace ImWidgets
                     float newLo  = ImClamp( initLo + dt, 0.0f, 1.0f - width );
                     WriteFloatToScalar( data_type, p_lower, vMinF + newLo * den );
                     float qLo    = ScalarToFloat( data_type, ( ImU64* )p_lower );
-                    WriteFloatToScalar( data_type, p_upper, qLo + spanV );
+                    // Clamp: quantizing the lower bound can push lower+span past v_max.
+                    WriteFloatToScalar( data_type, p_upper, ImMin( qLo + spanV, vMaxF ) );
                     value_changed = ( ScalarToFloat( data_type, ( ImU64* )p_lower ) != vLowerF )
                                  || ( ScalarToFloat( data_type, ( ImU64* )p_upper ) != vUpperF );
                 }
@@ -36135,8 +39454,14 @@ namespace ImWidgets
                     float newLo  = ImClamp( initLo + dt, 0.0f, 1.0f - width );
                     WriteFloatToScalar( data_type, p_lower, vMinF + newLo * den );
                     float qLo    = ScalarToFloat( data_type, ( ImU64* )p_lower );
-                    WriteFloatToScalar( data_type, p_upper, qLo + spanV );
-                    value_changed = true;
+                    // Clamp: quantizing the lower bound can push lower+span past v_max.
+                    WriteFloatToScalar( data_type, p_upper, ImMin( qLo + spanV, vMaxF ) );
+                    // Compare before reporting, matching the horizontal twin.
+                    // These two functions are mirror images, but only the
+                    // horizontal one checked -- so holding a grabbed vertical
+                    // range still emitted an edit every frame.
+                    value_changed = ( ScalarToFloat( data_type, ( ImU64* )p_lower ) != vLowerF )
+                                 || ( ScalarToFloat( data_type, ( ImU64* )p_upper ) != vUpperF );
                 }
                 else if ( activeHandle == 1 )
                 {
@@ -36253,8 +39578,16 @@ namespace ImWidgets
 
         float curF = ScalarToFloat( data_type, ( ImU64* )p_value );
         int currentIdx = ( int )curF;
-        if ( currentIdx < 0 ) currentIdx = 0;
-        if ( currentIdx >= label_count ) currentIdx = label_count - 1;
+        int clampedIdx = ImClamp( currentIdx, 0, label_count - 1 );
+        // Write the clamp back. Clamping only the local copy left the caller
+        // holding an out-of-range value while the widget drew a different one.
+        bool value_changed = false;
+        if ( clampedIdx != currentIdx )
+        {
+            WriteFloatToScalar( data_type, p_value, ( float )clampedIdx );
+            value_changed = true;
+        }
+        currentIdx = clampedIdx;
 
         float seg_w = frame_bb.GetWidth() / ( float )label_count;
         int hovered_idx = -1;
@@ -36264,7 +39597,6 @@ namespace ImWidgets
             hovered_idx = ImClamp( ( int )( local / ImMax( seg_w, 1.0f ) ), 0, label_count - 1 );
         }
 
-        bool value_changed = false;
         if ( hovered_idx >= 0 && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id ) )
         {
             if ( hovered_idx != currentIdx )
@@ -36274,10 +39606,33 @@ namespace ImWidgets
                 currentIdx = hovered_idx;
                 ImGui::MarkItemEdited( id );
             }
+            // Actually capture the mouse. Without SetActiveID the control held
+            // no capture at all, so press-and-drag across segments did nothing
+            // and the click was unprotected against a competing owner.
+            ImGui::SetActiveID( id, window );
             ImGui::SetFocusID( id, window );
+            ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
+        }
+        // Drag across segments while held.
+        if ( g.ActiveId == id )
+        {
+            if ( ImGui::IsMouseDown( 0 ) )
+            {
+                if ( hovered_idx >= 0 && hovered_idx != currentIdx )
+                {
+                    WriteFloatToScalar( data_type, p_value, ( float )hovered_idx );
+                    value_changed = true;
+                    currentIdx = hovered_idx;
+                    ImGui::MarkItemEdited( id );
+                }
+            }
+            else
+            {
+                ImGui::ClearActiveID();
+            }
         }
 
-        ImU32 const frame_col = ImGui::GetColorU32( ImGuiCol_FrameBg );
+        ImU32 const frame_col = ImGui::GetColorU32( hovered_idx >= 0 ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
         window->DrawList->AddRectFilled( frame_bb.Min, frame_bb.Max, frame_col, style.FrameRounding );
 
         {
@@ -36951,6 +40306,12 @@ namespace ImWidgets
         s.LastBoundsMin = bounds.Min;
         s.Rect.ClipWith( bounds );
 
+        // Snapshot BEFORE the aspect re-materialisation below, so that flipping
+        // the caller's aspect_ratio -- which visibly moves the rect -- is
+        // reported as a change. Capturing it after meant the widget returned
+        // false on the one frame the rect jumped.
+        ImRect pre_aspect_rect = s.Rect;
+
         // Re-materialise the rect the moment the caller picks a new aspect ratio,
         // instead of waiting for the next handle drag. Anchor the top-left corner
         // (grip 4 = BR drives the resize). Skipped while a drag is in progress.
@@ -36972,7 +40333,7 @@ namespace ImWidgets
                                 (ImGuiButtonFlags)( (int)ImGuiButtonFlags_MouseButtonLeft | (int)ImGuiButtonFlags_NoNavFocus ) );
 
         ImVec2 mouse = ImGui::GetIO().MousePos;
-        ImRect prev_rect = s.Rect;
+        ImRect prev_rect = pre_aspect_rect;
         bool clicked = ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && ImGui::IsItemHovered();
 
         if ( clicked )
@@ -37087,6 +40448,476 @@ namespace ImWidgets
 
         return prev_rect.Min.x != s.Rect.Min.x || prev_rect.Min.y != s.Rect.Min.y
             || prev_rect.Max.x != s.Rect.Max.x || prev_rect.Max.y != s.Rect.Max.y;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Size / Resize control with aspect-ratio lock (2D and 3D)
+    //////////////////////////////////////////////////////////////////////////
+
+    // Keep every dimension strictly positive so the ratio math never divides by
+    // zero; honour the caller's [v_min, v_max] bounds (v_max <= 0 = unbounded).
+    static inline float DW_SizeClamp( float v, float v_min, float v_max )
+    {
+        float lo = ( v_min > 0.0f ) ? v_min : 0.0001f;
+        if ( v < lo ) v = lo;
+        if ( v_max > 0.0f && v > v_max ) v = v_max;
+        return v;
+    }
+
+    // Clamp a UNIFORM scale factor so applying it to every axis keeps them all
+    // inside [v_min, v_max]. This preserves the aspect ratio at the bounds --
+    // dragging to the minimum must STOP, not let a per-axis clamp pin one axis
+    // and collapse the ratio (16:9 with min 1 stops at 1.78x1, never 1x1).
+    static float DW_ClampAspectFactor( float const* olds, int n, float f, float v_min, float v_max )
+    {
+        float mn = FLT_MAX, mx = 0.0f;
+        for ( int i = 0; i < n; ++i )
+        {
+            if ( olds[ i ] < mn ) mn = olds[ i ];
+            if ( olds[ i ] > mx ) mx = olds[ i ];
+        }
+        if ( mn <= 0.0f || mx <= 0.0f ) return f;
+        float lo = 0.0f, hi = FLT_MAX;
+        if ( v_min > 0.0f ) lo = v_min / mn;   // keep the smallest axis >= v_min
+        if ( v_max > 0.0f ) hi = v_max / mx;   // keep the largest  axis <= v_max
+        if ( hi < lo ) hi = lo;                // over-constrained: favour the lower bound
+        if ( f < lo ) f = lo;
+        if ( f > hi ) f = hi;
+        return f;
+    }
+
+    // Multiply the RGB of a packed colour by `m` (alpha preserved) -- used to
+    // shade the three visible faces of the isometric box.
+    static ImU32 DW_Shade( ImU32 c, float m )
+    {
+        int r = (int)( (float)( ( c >> IM_COL32_R_SHIFT ) & 0xFF ) * m );
+        int g = (int)( (float)( ( c >> IM_COL32_G_SHIFT ) & 0xFF ) * m );
+        int b = (int)( (float)( ( c >> IM_COL32_B_SHIFT ) & 0xFF ) * m );
+        int a = ( c >> IM_COL32_A_SHIFT ) & 0xFF;
+        if ( r > 255 ) r = 255;
+        if ( g > 255 ) g = 255;
+        if ( b > 255 ) b = 255;
+        return IM_COL32( r, g, b, a );
+    }
+
+    // A little padlock: closed body + shackle. When unlocked the right shackle
+    // leg stops short of the body, leaving the familiar "open" gap.
+    static void DW_DrawLockIcon( ImDrawList* dl, ImVec2 c, float sz, bool locked, ImU32 col )
+    {
+        float th  = ImMax( 1.0f, sz * 0.11f );
+        float bw  = sz * 0.66f;                 // body width
+        float bh  = sz * 0.48f;                 // body height
+        ImVec2 bmin( c.x - bw * 0.5f, c.y + sz * 0.5f - bh );
+        ImVec2 bmax( c.x + bw * 0.5f, c.y + sz * 0.5f );
+        float shr = bw * 0.33f;                 // shackle radius
+        float ay  = bmin.y - sz * 0.10f;        // arc centre / leg top
+        dl->AddLine( ImVec2( c.x - shr, ay ), ImVec2( c.x - shr, bmin.y ), col, th );
+        dl->PathClear();
+        dl->PathArcTo( ImVec2( c.x, ay ), shr, IM_PI, IM_PI * 2.0f, 16 );
+        dl->PathStroke( col, 0, th );
+        float rleg = locked ? bmin.y : ( bmin.y - sz * 0.18f );
+        dl->AddLine( ImVec2( c.x + shr, ay ), ImVec2( c.x + shr, rleg ), col, th );
+        dl->AddRectFilled( bmin, bmax, col, sz * 0.08f );
+        ImVec2 kc( c.x, ( bmin.y + bmax.y ) * 0.5f - sz * 0.02f );
+        dl->AddCircleFilled( kc, ImMax( 1.0f, sz * 0.07f ), IM_COL32( 0, 0, 0, 160 ), 10 );
+        dl->AddLine( kc, ImVec2( kc.x, kc.y + sz * 0.14f ), IM_COL32( 0, 0, 0, 160 ), th * 0.8f );
+    }
+
+    // Square toggle button drawing the padlock; flips *locked on click.
+    static void DW_AspectLockButton( char const* str_id, bool* locked, float side )
+    {
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        ImGui::InvisibleButton( str_id, ImVec2( side, side ) );
+        bool hovered = ImGui::IsItemHovered();
+        if ( ImGui::IsItemClicked() ) *locked = !*locked;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImU32 bg = ImGui::GetColorU32( *locked ? ImGuiCol_ButtonActive
+                                               : ( hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button ) );
+        dl->AddRectFilled( p, ImVec2( p.x + side, p.y + side ), bg, LpToPx( 3.0f ) );
+        ImU32 ic = ImGui::GetColorU32( *locked ? ImGuiCol_Text : ImGuiCol_TextDisabled );
+        DW_DrawLockIcon( dl, ImVec2( p.x + side * 0.5f, p.y + side * 0.5f ), side * 0.72f, *locked, ic );
+        if ( hovered )
+            ImGui::SetTooltip( *locked ? "Aspect ratio locked -- editing one axis scales the rest"
+                                       : "Aspect ratio unlocked -- axes move independently" );
+    }
+
+    // Padlock button + one drag field per axis (depth optional). When the lock
+    // is engaged an edit scales the untouched axes by the same factor (computed
+    // from the pre-edit `old*` values). Returns true if any field changed.
+    static bool DW_SizeNumericRow( bool* lock, float* w, float* h, float* d,
+                                   float oldW, float oldH, float oldD,
+                                   float v_min, float v_max, char const* format )
+    {
+        bool changed = false;
+        DW_AspectLockButton( "##lockbtn", lock, ImGui::GetFrameHeight() );
+        ImGui::SameLine();
+
+        float lo = ( v_min > 0.0f ) ? v_min : 0.0f;
+        float fw = LpToPx( 62.0f );
+        char const* names[ 3 ] = { "W", "H", "D" };
+        char const* ids  [ 3 ] = { "##w", "##h", "##d" };
+        float* vals [ 3 ] = { w, h, d };
+        float  olds [ 3 ] = { oldW, oldH, oldD };
+        int    n = d ? 3 : 2;
+
+        for ( int i = 0; i < n; ++i )
+        {
+            if ( i > 0 ) ImGui::SameLine();
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted( names[ i ] );
+            ImGui::SameLine( 0.0f, LpToPx( 3.0f ) );
+            ImGui::SetNextItemWidth( fw );
+            float spd = ( v_max > v_min && v_max > 0.0f ) ? ( v_max - lo ) * 0.005f
+                                                          : ImMax( 0.5f, *vals[ i ] * 0.005f );
+            if ( ImGui::DragFloat( ids[ i ], vals[ i ], spd, lo, v_max, format ) )
+            {
+                *vals[ i ] = DW_SizeClamp( *vals[ i ], v_min, v_max );
+                if ( *lock && olds[ i ] > 0.0f )
+                {
+                    // Clamp the factor (not each axis) so the ratio holds at the
+                    // bounds; the edited axis snaps to the ratio-consistent value.
+                    float f = DW_ClampAspectFactor( olds, n, *vals[ i ] / olds[ i ], v_min, v_max );
+                    for ( int j = 0; j < n; ++j )
+                        *vals[ j ] = DW_SizeClamp( olds[ j ] * f, v_min, v_max );
+                }
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    // Interactive 2D proxy (rectangle + BR/R/B resize handles), drawn at the
+    // current cursor and reserving a cw x ch box; mutates w/h on drag. Leaves the
+    // layout cursor at the canvas' bottom-left. Must be called inside PushID.
+    static bool DW_SizeProxy2D( float& w, float& h, bool lock, float v_min, float v_max, float cw, float ch )
+    {
+        ImGuiIO&      io  = ImGui::GetIO();
+        ImDrawList*   dl  = ImGui::GetWindowDrawList();
+        ImGuiStorage* stg = ImGui::GetStateStorage();
+        bool changed = false;
+
+        ImVec2 cmin = ImGui::GetCursorScreenPos();
+        ImVec2 cmax( cmin.x + cw, cmin.y + ch );
+        ImGui::Dummy( ImVec2( cw, ch ) );
+
+        ImU32 col_bg   = ImGui::GetColorU32( ImGuiCol_FrameBg );
+        ImU32 col_bd   = ImGui::GetColorU32( ImGuiCol_Border );
+        ImU32 col_fill = ImGui::GetColorU32( ImGuiCol_Button );
+        ImU32 col_edge = ImGui::GetColorU32( ImGuiCol_SliderGrab );
+        ImU32 col_grip = ImGui::GetColorU32( ImGuiCol_SliderGrabActive );
+
+        dl->AddRectFilled( cmin, cmax, col_bg, LpToPx( 4.0f ) );
+        dl->AddRect( cmin, cmax, col_bd, LpToPx( 4.0f ) );
+
+        float pad    = LpToPx( 20.0f );
+        float availW = ImMax( 1.0f, cw - 2.0f * pad );
+        float availH = ImMax( 1.0f, ch - 2.0f * pad );
+
+        // Freeze the fit scale while a handle is dragged so it tracks the mouse.
+        ImGuiID kScale  = ImGui::GetID( "##sc" );
+        ImGuiID kActive = ImGui::GetID( "##act" );
+        float fit = ImMin( availW / w, availH / h );
+        if ( fit <= 0.0f || fit != fit ) fit = 1.0f;
+        bool  wasActive = stg->GetInt( kActive, 0 ) != 0;
+        float sc = wasActive ? stg->GetFloat( kScale, fit ) : fit;
+        if ( !wasActive ) stg->SetFloat( kScale, fit );
+
+        ImVec2 cc( ( cmin.x + cmax.x ) * 0.5f, ( cmin.y + cmax.y ) * 0.5f );
+        ImVec2 bmin( cc.x - w * sc * 0.5f, cc.y - h * sc * 0.5f );
+        ImVec2 bmax( cc.x + w * sc * 0.5f, cc.y + h * sc * 0.5f );
+
+        dl->PushClipRect( cmin, cmax, true );
+        dl->AddRectFilled( bmin, bmax, col_fill, 0.0f );
+        dl->AddRect( bmin, bmax, col_edge, 0.0f, 0, LpToPx( 1.5f ) );
+        dl->PopClipRect();
+
+        // ---- resize handles: BR (both), R (width), B (height) ----
+        float  hr = LpToPx( 5.0f );
+        ImVec2 hcs[ 3 ] = { bmax,
+                            ImVec2( bmax.x, ( bmin.y + bmax.y ) * 0.5f ),
+                            ImVec2( ( bmin.x + bmax.x ) * 0.5f, bmax.y ) };
+        int              hax [ 3 ] = { 0, 1, 2 };  // 0 = both, 1 = width, 2 = height
+        char const*      hid [ 3 ] = { "##br", "##rr", "##bb" };
+        ImGuiMouseCursor hcur[ 3 ] = { ImGuiMouseCursor_ResizeNWSE, ImGuiMouseCursor_ResizeEW, ImGuiMouseCursor_ResizeNS };
+        bool anyActive = false;
+        for ( int i = 0; i < 3; ++i )
+        {
+            ImGui::SetCursorScreenPos( ImVec2( hcs[ i ].x - hr * 2.0f, hcs[ i ].y - hr * 2.0f ) );
+            ImGui::InvisibleButton( hid[ i ], ImVec2( hr * 4.0f, hr * 4.0f ) );
+            bool act = ImGui::IsItemActive();
+            bool hov = ImGui::IsItemHovered();
+            if ( hov || act ) ImGui::SetMouseCursor( hcur[ i ] );
+            if ( act && ( io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f ) )
+            {
+                anyActive = true;
+                float dw = io.MouseDelta.x / sc;
+                float dh = io.MouseDelta.y / sc;
+                // Compare AFTER the clamp. Setting `changed` before it meant a
+                // drag against a v_min/v_max rail reported an edit every frame
+                // while nothing actually moved.
+                float preW = w, preH = h;
+                if ( lock )
+                {
+                    // Project the desired corner onto the constant-aspect ray so
+                    // the box follows the mouse while W:H stays fixed.
+                    float tw = w + ( hax[ i ] == 2 ? 0.0f : dw );
+                    float th = h + ( hax[ i ] == 1 ? 0.0f : dh );
+                    float a2 = w * w + h * h;
+                    if ( a2 > 0.0f )
+                    {
+                        float olds2[ 2 ] = { w, h };
+                        float s = DW_ClampAspectFactor( olds2, 2, ( w * tw + h * th ) / a2, v_min, v_max );
+                        if ( s > 0.0f ) { w = olds2[ 0 ] * s; h = olds2[ 1 ] * s; }
+                    }
+                }
+                else
+                {
+                    if ( hax[ i ] != 2 ) w += dw;
+                    if ( hax[ i ] != 1 ) h += dh;
+                }
+                w = DW_SizeClamp( w, v_min, v_max );
+                h = DW_SizeClamp( h, v_min, v_max );
+                if ( w != preW || h != preH )
+                    changed = true;
+            }
+            else if ( act )
+            {
+                anyActive = true;
+            }
+            ImU32 hc = ( act || hov ) ? col_grip : col_edge;
+            dl->AddCircleFilled( hcs[ i ], hr, hc );
+            dl->AddCircle( hcs[ i ], hr, IM_COL32( 0, 0, 0, 180 ) );
+        }
+        stg->SetInt( kActive, anyActive ? 1 : 0 );
+
+        ImGui::SetCursorScreenPos( ImVec2( cmin.x, cmax.y ) );
+        return changed;
+    }
+
+    bool SizeControl2D( char const* label, float* width, float* height, bool* lock,
+                        float v_min, float v_max, char const* format, ImVec2 size,
+                        ImWidgetsSizePreview preview )
+    {
+        ImGuiWindow* win = ImGui::GetCurrentWindow();
+        if ( win->SkipItems || width == NULL || height == NULL || lock == NULL ) return false;
+
+        ImGui::PushID( label );
+        bool  changed = false;
+        float oldW = *width, oldH = *height;
+        float w = DW_SizeClamp( oldW, v_min, v_max );
+        float h = DW_SizeClamp( oldH, v_min, v_max );
+
+        float cw = 0.0f, ch = 0.0f;
+        if ( preview != ImWidgetsSizePreview_None )
+        {
+            float aw = ImGui::GetContentRegionAvail().x;
+            // `size` is documented as LOGICAL px -- scale it, like the default
+            // branch beside it already does. These two disagreed at any DPI
+            // other than 100%.
+            cw = ( size.x > 0.0f ) ? LpToPx( size.x ) : ImMin( aw, LpToPx( 280.0f ) );
+            if ( cw < LpToPx( 80.0f ) ) cw = LpToPx( 80.0f );
+            ch = ( size.y > 0.0f ) ? LpToPx( size.y ) : LpToPx( 150.0f );
+        }
+
+        if ( preview == ImWidgetsSizePreview_Top )
+        {
+            changed |= DW_SizeProxy2D( w, h, *lock, v_min, v_max, cw, ch );
+            ImGui::Dummy( ImVec2( 0.0f, LpToPx( 6.0f ) ) );
+        }
+
+        changed |= DW_SizeNumericRow( lock, &w, &h, NULL, oldW, oldH, 0.0f, v_min, v_max, format );
+
+        if ( preview == ImWidgetsSizePreview_Bottom )
+        {
+            ImGui::Dummy( ImVec2( 0.0f, LpToPx( 6.0f ) ) );
+            changed |= DW_SizeProxy2D( w, h, *lock, v_min, v_max, cw, ch );
+        }
+
+        // Report the entry clamp too. DW_SizeClamp above may have rewritten an
+        // out-of-range caller value (0 becomes 0.0001f); writing that back while
+        // returning false left the host unaware its data had been modified.
+        if ( w != oldW || h != oldH )
+            changed = true;
+        *width  = w;
+        *height = h;
+        ImGui::PopID();
+        return changed;
+    }
+
+    // Interactive 3D proxy (isometric box + 3 axis handles), drawn at the current
+    // cursor and reserving a cw x ch box; mutates w/h/d on drag. Leaves the layout
+    // cursor at the canvas' bottom-left. Must be called inside PushID.
+    static bool DW_SizeProxy3D( float& w, float& h, float& d, bool lock, float v_min, float v_max, float cw, float ch )
+    {
+        ImGuiIO&      io  = ImGui::GetIO();
+        ImDrawList*   dl  = ImGui::GetWindowDrawList();
+        ImGuiStorage* stg = ImGui::GetStateStorage();
+        bool changed = false;
+
+        ImVec2 cmin = ImGui::GetCursorScreenPos();
+        ImVec2 cmax( cmin.x + cw, cmin.y + ch );
+        ImGui::Dummy( ImVec2( cw, ch ) );
+
+        ImU32 col_bg   = ImGui::GetColorU32( ImGuiCol_FrameBg );
+        ImU32 col_bd   = ImGui::GetColorU32( ImGuiCol_Border );
+        ImU32 col_fill = ImGui::GetColorU32( ImGuiCol_Button );
+        ImU32 col_edge = ImGui::GetColorU32( ImGuiCol_SliderGrab );
+
+        dl->AddRectFilled( cmin, cmax, col_bg, LpToPx( 4.0f ) );
+        dl->AddRect( cmin, cmax, col_bd, LpToPx( 4.0f ) );
+
+        // Isometric basis (unit screen vectors, y-down): width -> lower-right,
+        // depth -> lower-left, height -> up. Corner index = i*4 + j*2 + k
+        // (i = width bit, j = depth bit, k = height bit).
+        const float eWx =  0.866f, eWy =  0.5f;
+        const float eDx = -0.866f, eDy =  0.5f;
+        const float eHx =  0.0f,   eHy = -1.0f;
+
+        float off[ 8 ][ 2 ];
+        float minx = FLT_MAX, miny = FLT_MAX, maxx = -FLT_MAX, maxy = -FLT_MAX;
+        for ( int i = 0; i < 2; ++i )
+            for ( int j = 0; j < 2; ++j )
+                for ( int k = 0; k < 2; ++k )
+                {
+                    float ox = eWx * ( i * w ) + eDx * ( j * d ) + eHx * ( k * h );
+                    float oy = eWy * ( i * w ) + eDy * ( j * d ) + eHy * ( k * h );
+                    int idx = i * 4 + j * 2 + k;
+                    off[ idx ][ 0 ] = ox; off[ idx ][ 1 ] = oy;
+                    if ( ox < minx ) minx = ox;
+                    if ( ox > maxx ) maxx = ox;
+                    if ( oy < miny ) miny = oy;
+                    if ( oy > maxy ) maxy = oy;
+                }
+        float pad = LpToPx( 24.0f );
+        float ubw = ImMax( 1.0f, maxx - minx );
+        float ubh = ImMax( 1.0f, maxy - miny );
+        float fit = ImMin( ( cw - 2.0f * pad ) / ubw, ( ch - 2.0f * pad ) / ubh );
+        if ( fit <= 0.0f || fit != fit ) fit = 1.0f;
+
+        ImGuiID kScale  = ImGui::GetID( "##sc" );
+        ImGuiID kActive = ImGui::GetID( "##act" );
+        bool  wasActive = stg->GetInt( kActive, 0 ) != 0;
+        float sc = wasActive ? stg->GetFloat( kScale, fit ) : fit;
+        if ( !wasActive ) stg->SetFloat( kScale, fit );
+
+        ImVec2 cc( ( cmin.x + cmax.x ) * 0.5f, ( cmin.y + cmax.y ) * 0.5f );
+        float ubcx = ( minx + maxx ) * 0.5f, ubcy = ( miny + maxy ) * 0.5f;
+        ImVec2 O( cc.x - ubcx * sc, cc.y - ubcy * sc );
+        ImVec2 c8[ 8 ];
+        for ( int idx = 0; idx < 8; ++idx )
+            c8[ idx ] = ImVec2( O.x + off[ idx ][ 0 ] * sc, O.y + off[ idx ][ 1 ] * sc );
+
+        // Three faces meet at the near corner (index 0): top (k=1), the right
+        // wall (j=0, along width) and the left wall (i=0, along depth).
+        dl->PushClipRect( cmin, cmax, true );
+        dl->AddQuadFilled( c8[ 1 ], c8[ 5 ], c8[ 7 ], c8[ 3 ], DW_Shade( col_fill, 1.28f ) ); // top
+        dl->AddQuadFilled( c8[ 0 ], c8[ 4 ], c8[ 5 ], c8[ 1 ], DW_Shade( col_fill, 1.00f ) ); // right wall
+        dl->AddQuadFilled( c8[ 0 ], c8[ 2 ], c8[ 3 ], c8[ 1 ], DW_Shade( col_fill, 0.72f ) ); // left wall
+        static const int E[ 12 ][ 2 ] = { {0,4},{2,6},{1,5},{3,7}, {0,2},{4,6},{1,3},{5,7}, {0,1},{4,5},{2,3},{6,7} };
+        for ( int e = 0; e < 12; ++e )
+            dl->AddLine( c8[ E[ e ][ 0 ] ], c8[ E[ e ][ 1 ] ], col_edge, LpToPx( 1.5f ) );
+        dl->PopClipRect();
+
+        // Axis handles on the three edges leaving the near corner. Dragging a
+        // handle moves along its axis; locked drags scale all three uniformly.
+        float  hr = LpToPx( 5.0f );
+        ImVec2 hcs[ 3 ] = { ImVec2( ( c8[ 0 ].x + c8[ 4 ].x ) * 0.5f, ( c8[ 0 ].y + c8[ 4 ].y ) * 0.5f ),  // W
+                            ImVec2( ( c8[ 0 ].x + c8[ 1 ].x ) * 0.5f, ( c8[ 0 ].y + c8[ 1 ].y ) * 0.5f ),  // H
+                            ImVec2( ( c8[ 0 ].x + c8[ 2 ].x ) * 0.5f, ( c8[ 0 ].y + c8[ 2 ].y ) * 0.5f ) }; // D
+        float axx[ 3 ] = { eWx, eHx, eDx };
+        float axy[ 3 ] = { eWy, eHy, eDy };
+        float* dims[ 3 ] = { &w, &h, &d };
+        ImU32 axcol[ 3 ] = { IM_COL32( 230, 120, 120, 255 ), IM_COL32( 120, 210, 130, 255 ), IM_COL32( 120, 160, 235, 255 ) };
+        char const* hid[ 3 ] = { "##hw", "##hh", "##hd" };
+        bool anyActive = false;
+        for ( int m = 0; m < 3; ++m )
+        {
+            ImGui::SetCursorScreenPos( ImVec2( hcs[ m ].x - hr * 2.0f, hcs[ m ].y - hr * 2.0f ) );
+            ImGui::InvisibleButton( hid[ m ], ImVec2( hr * 4.0f, hr * 4.0f ) );
+            bool act = ImGui::IsItemActive();
+            bool hov = ImGui::IsItemHovered();
+            if ( act )
+            {
+                anyActive = true;
+                if ( io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f )
+                {
+                    float dchg = ( io.MouseDelta.x * axx[ m ] + io.MouseDelta.y * axy[ m ] ) / sc;
+                    float ov = *dims[ m ];
+                    // Compare AFTER the clamp -- see DW_SizeProxy2D.
+                    float preW = w, preH = h, preD = d;
+                    if ( lock )
+                    {
+                        if ( ov > 0.0f )
+                        {
+                            float olds3[ 3 ] = { w, h, d };
+                            float f = DW_ClampAspectFactor( olds3, 3, ( ov + dchg ) / ov, v_min, v_max );
+                            if ( f > 0.0f ) { w = olds3[ 0 ] * f; h = olds3[ 1 ] * f; d = olds3[ 2 ] * f; }
+                        }
+                    }
+                    else { *dims[ m ] = ov + dchg; }
+                    w = DW_SizeClamp( w, v_min, v_max );
+                    h = DW_SizeClamp( h, v_min, v_max );
+                    d = DW_SizeClamp( d, v_min, v_max );
+                    if ( w != preW || h != preH || d != preD )
+                        changed = true;
+                }
+            }
+            float rr = ( act || hov ) ? hr * 1.3f : hr;
+            dl->AddCircleFilled( hcs[ m ], rr, axcol[ m ] );
+            dl->AddCircle( hcs[ m ], rr, IM_COL32( 0, 0, 0, 180 ) );
+        }
+        stg->SetInt( kActive, anyActive ? 1 : 0 );
+
+        ImGui::SetCursorScreenPos( ImVec2( cmin.x, cmax.y ) );
+        return changed;
+    }
+
+    bool SizeControl3D( char const* label, float* width, float* height, float* depth, bool* lock,
+                        float v_min, float v_max, char const* format, ImVec2 size,
+                        ImWidgetsSizePreview preview )
+    {
+        ImGuiWindow* win = ImGui::GetCurrentWindow();
+        if ( win->SkipItems || width == NULL || height == NULL || depth == NULL || lock == NULL ) return false;
+
+        ImGui::PushID( label );
+        bool  changed = false;
+        float oldW = *width, oldH = *height, oldD = *depth;
+        float w = DW_SizeClamp( oldW, v_min, v_max );
+        float h = DW_SizeClamp( oldH, v_min, v_max );
+        float d = DW_SizeClamp( oldD, v_min, v_max );
+
+        float cw = 0.0f, ch = 0.0f;
+        if ( preview != ImWidgetsSizePreview_None )
+        {
+            float aw = ImGui::GetContentRegionAvail().x;
+            // `size` is documented as LOGICAL px -- see SizeControl2D.
+            cw = ( size.x > 0.0f ) ? LpToPx( size.x ) : ImMin( aw, LpToPx( 300.0f ) );
+            if ( cw < LpToPx( 100.0f ) ) cw = LpToPx( 100.0f );
+            ch = ( size.y > 0.0f ) ? LpToPx( size.y ) : LpToPx( 170.0f );
+        }
+
+        if ( preview == ImWidgetsSizePreview_Top )
+        {
+            changed |= DW_SizeProxy3D( w, h, d, *lock, v_min, v_max, cw, ch );
+            ImGui::Dummy( ImVec2( 0.0f, LpToPx( 6.0f ) ) );
+        }
+
+        changed |= DW_SizeNumericRow( lock, &w, &h, &d, oldW, oldH, oldD, v_min, v_max, format );
+
+        if ( preview == ImWidgetsSizePreview_Bottom )
+        {
+            ImGui::Dummy( ImVec2( 0.0f, LpToPx( 6.0f ) ) );
+            changed |= DW_SizeProxy3D( w, h, d, *lock, v_min, v_max, cw, ch );
+        }
+
+        // Report the entry clamp too -- see SizeControl2D.
+        if ( w != oldW || h != oldH || d != oldD )
+            changed = true;
+        *width  = w;
+        *height = h;
+        *depth  = d;
+        ImGui::PopID();
+        return changed;
     }
 
     //////////////////////////////////////////////////////////////////////////
@@ -37538,7 +41369,29 @@ namespace ImWidgets
 
         ImGuiIO& io = ImGui::GetIO();
         ImRect mm_rect( mmin, mmax );
-        if ( mm_rect.Contains( io.MousePos ) && ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+
+        // Only re-centre for a drag that STARTED on the minimap.
+        //
+        // The test used to be "mouse is over the minimap AND left is down", so
+        // any drag begun elsewhere -- panning the canvas, dragging a widget --
+        // teleported the view the moment the cursor crossed the minimap, and a
+        // popup drawn over it did not block that either.
+        ImGuiStorage* mstg = ImGui::GetStateStorage();
+        ImGuiID kGrab = ImGui::GetID( "##dw_minimap_grab" );
+        bool grabbing = mstg->GetInt( kGrab, 0 ) != 0;
+        if ( !ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+        {
+            if ( grabbing ) { grabbing = false; mstg->SetInt( kGrab, 0 ); }
+        }
+        else if ( ImGui::IsMouseClicked( ImGuiMouseButton_Left )
+                  && mm_rect.Contains( io.MousePos )
+                  && ImGui::IsWindowHovered( ImGuiHoveredFlags_ChildWindows ) )
+        {
+            grabbing = true;
+            mstg->SetInt( kGrab, 1 );
+        }
+
+        if ( grabbing )
         {
             ImVec2 click_w(
                 world_content.Min.x + ( io.MousePos.x - origin.x ) / sc,
@@ -37961,14 +41814,22 @@ namespace ImWidgets
             }
         }
 
-        if ( ImGui::BeginPopup( "##gm_edit" ) && m.SelectedNode >= 0 && m.SelectedNode < m.Nodes.Size )
+        // The index test MUST be inside the block, not folded into the condition:
+        // if BeginPopup succeeded but the guard failed (a caller re-running
+        // GradientMeshInit with a smaller grid while the popup is open shrinks
+        // Nodes), the && short-circuited past EndPopup and unbalanced ImGui's
+        // stack.
+        if ( ImGui::BeginPopup( "##gm_edit" ) )
         {
-            ImWidgetsGradientMeshNode& n = m.Nodes[ m.SelectedNode ];
-            ImVec4 c = ImGui::ColorConvertU32ToFloat4( n.Color );
-            if ( ImGui::ColorPicker4( "##gm_col", &c.x ) )
+            if ( m.SelectedNode >= 0 && m.SelectedNode < m.Nodes.Size )
             {
-                n.Color = ImGui::ColorConvertFloat4ToU32( c );
-                changed = true;
+                ImWidgetsGradientMeshNode& n = m.Nodes[ m.SelectedNode ];
+                ImVec4 c = ImGui::ColorConvertU32ToFloat4( n.Color );
+                if ( ImGui::ColorPicker4( "##gm_col", &c.x ) )
+                {
+                    n.Color = ImGui::ColorConvertFloat4ToU32( c );
+                    changed = true;
+                }
             }
             ImGui::EndPopup();
         }
@@ -38000,6 +41861,29 @@ namespace ImWidgets
             return DW_LerpU32( r.Bands[ i ].Color, r.Bands[ i + 1 ].Color, ImClamp( u, 0.0f, 1.0f ) );
         }
         return r.Bands.back().Color;
+    }
+
+    // Keep bands ordered by Pos, carrying SelectedBand with the band it names.
+    //
+    // ToonRampSample walks Bands assuming ascending Pos (and short-circuits on
+    // Bands[0] / Bands.back()), but nothing enforced it: dragging a band past
+    // its neighbour, or "+" appending at Pos+0.05, silently corrupted the ramp.
+    static void DW_ToonRampSort( ImWidgetsToonRamp& r )
+    {
+        for ( int i = 1; i < r.Bands.Size; ++i )
+        {
+            ImWidgetsToonBand key = r.Bands[ i ];
+            bool key_sel = ( r.SelectedBand == i );
+            int  j = i - 1;
+            while ( j >= 0 && r.Bands[ j ].Pos > key.Pos )
+            {
+                r.Bands[ j + 1 ] = r.Bands[ j ];
+                if ( r.SelectedBand == j ) r.SelectedBand = j + 1;
+                --j;
+            }
+            r.Bands[ j + 1 ] = key;
+            if ( key_sel ) r.SelectedBand = j + 1;
+        }
     }
 
     bool ToonRampEditor( char const* id_str, ImWidgetsToonRamp& r, ImVec2 size )
@@ -38048,45 +41932,55 @@ namespace ImWidgets
             dl->AddTriangleFilled( tri[ 0 ], tri[ 1 ], tri[ 2 ], r.Bands[ i ].Color );
             dl->AddTriangle      ( tri[ 0 ], tri[ 1 ], tri[ 2 ], i == r.SelectedBand ? IM_COL32( 240, 240, 90, 255 ) : IM_COL32( 0, 0, 0, 200 ) );
         }
-        ImGui::Dummy( ImVec2( size.x, marker_h ) );
+        // An InvisibleButton, not a Dummy: the drag below must be gated on THIS
+        // item being active. Previously it tested a bare IsMouseDown, so once a
+        // band was selected any left-press anywhere in the application yanked it
+        // to the cursor -- including dragging the Softness slider right below.
+        ImGui::InvisibleButton( "##tr_markers", ImVec2( size.x, marker_h ) );
+        bool markers_active = ImGui::IsItemActive();
 
-        if ( ImGui::IsItemHovered() && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) )
+        if ( ImGui::IsItemActivated() )
         {
             int picked = -1;
             for ( int i = 0; i < r.Bands.Size; ++i )
             {
                 float x = bb.Min.x + size.x * r.Bands[ i ].Pos;
-                if ( ImFabs( mouse.x - x ) <= 8.0f ) { picked = i; break; }
+                if ( ImFabs( mouse.x - x ) <= LpToPx( 8.0f ) ) { picked = i; break; }
             }
             r.SelectedBand = picked;
         }
-        if ( r.SelectedBand >= 0 && r.SelectedBand < r.Bands.Size && ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+        if ( markers_active && r.SelectedBand >= 0 && r.SelectedBand < r.Bands.Size )
         {
             float new_pos = ImClamp( ( mouse.x - bb.Min.x ) / size.x, 0.0f, 1.0f );
             if ( ImFabs( new_pos - r.Bands[ r.SelectedBand ].Pos ) > 1e-4f )
             {
                 r.Bands[ r.SelectedBand ].Pos = new_pos;
+                DW_ToonRampSort( r );   // a drag can cross a neighbour
                 changed = true;
             }
         }
 
         if ( r.SelectedBand >= 0 && r.SelectedBand < r.Bands.Size )
         {
-            ImWidgetsToonBand& b = r.Bands[ r.SelectedBand ];
-            ImVec4 c = ImGui::ColorConvertU32ToFloat4( b.Color );
+            // Index, not a reference: the "+" below push_backs into this very
+            // vector, which can reallocate and leave a held reference dangling.
+            int sel = r.SelectedBand;
+            ImVec4 c = ImGui::ColorConvertU32ToFloat4( r.Bands[ sel ].Color );
             if ( ImGui::ColorEdit3( "##tr_col", &c.x, ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_NoInputs ) )
             {
-                b.Color = ImGui::ColorConvertFloat4ToU32( c );
+                r.Bands[ sel ].Color = ImGui::ColorConvertFloat4ToU32( c );
                 changed = true;
             }
             ImGui::SameLine();
-            if ( ImGui::SliderFloat( "Softness", &b.Softness, 0.0f, 1.0f ) ) changed = true;
+            if ( ImGui::SliderFloat( "Softness", &r.Bands[ sel ].Softness, 0.0f, 1.0f ) ) changed = true;
             ImGui::SameLine();
             if ( ImGui::Button( "+" ) )
             {
-                ImWidgetsToonBand nb = b;
-                nb.Pos = ImClamp( b.Pos + 0.05f, 0.0f, 1.0f );
+                ImWidgetsToonBand nb = r.Bands[ sel ];   // copy BEFORE the push
+                nb.Pos = ImClamp( nb.Pos + 0.05f, 0.0f, 1.0f );
                 r.Bands.push_back( nb );
+                r.SelectedBand = r.Bands.Size - 1;
+                DW_ToonRampSort( r );                    // "+" appends out of order
                 changed = true;
             }
             ImGui::SameLine();

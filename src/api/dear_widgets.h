@@ -755,7 +755,7 @@ struct ImWidgetsStyle
 
 		NavCursor_Thickness      = 5.0f;
 		NavCursor_Distance       = 7.0f;
-		WhitePoint_Radius        = 12.0f;
+		WhitePoint_Radius        = 5.0f;
 		PrecisionDrag_BlockSize  = 70.0f;
 
 		// Gradient Editor
@@ -3577,6 +3577,13 @@ namespace ImWidgets{
 	// poly: Clockwise: Positive shape & Counter-clockwise for hole
 	IMGUI_API void DrawShapeWithHole( ImDrawList* draw, ImVec2* poly, int points_count, ImU32 color, ImRect* p_bb = NULL, int gap = 1, int strokeWidth = 1 );
 
+	// Solid-colour counterparts of the DrawImage*Shape pair below: same poly
+	// format, no texture. DrawConcaveShape ear-clips, so it accepts any simple
+	// polygon (self-intersection is still undefined) and -- unlike
+	// DrawImageConcaveShape -- honours ImDrawListFlags_AntiAliasedFill.
+	IMGUI_API void DrawConvexShape( ImDrawList* draw, ImVec2* poly, int points_count, ImU32 color );
+	IMGUI_API void DrawConcaveShape( ImDrawList* draw, ImVec2* poly, int points_count, ImU32 color );
+
 	IMGUI_API void DrawImageConvexShape( ImDrawList* draw, ImTextureID img, ImVec2* poly, int points_count, ImU32 tint,
 										 ImVec2 uv_offset = ImVec2( 0.0f, 0.0f ), ImVec2 uv_scale = ImVec2( 1.0f, 1.0f ) );
 	IMGUI_API void DrawImageConcaveShape( ImDrawList* draw, ImTextureID img, ImVec2* poly, int points_count, ImU32 tint,
@@ -3843,6 +3850,63 @@ namespace ImWidgets{
 	IMGUI_API bool SliderGradientFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), bool fill_up_to_cursor = false, bool right_to_left = false );
 	IMGUI_API bool SliderGradientInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), bool fill_up_to_cursor = false, bool right_to_left = false );
 
+	// How much of the gradient track is revealed, relative to the grab.
+	//  - None:       the whole track is always visible.
+	//  - FromMin:    revealed from the v_min edge up to the grab (Resolve's RGB
+	//                Mixer bars, and Gain, grow this way from the bottom).
+	//  - FromCenter: revealed from the track centre out to the grab, in either
+	//                direction (Resolve's Lift / Gamma / Offset bars, where the
+	//                centre is the neutral value and the fill shows the signed
+	//                departure from it).
+	enum ImWidgetsSliderFill_
+	{
+		ImWidgetsSliderFill_None = 0,
+		ImWidgetsSliderFill_FromMin,
+		ImWidgetsSliderFill_FromCenter
+	};
+	typedef int ImWidgetsSliderFill;
+
+	// SliderGradientVertical: vertical twin of SliderGradient. v_min sits at the
+	// BOTTOM (set `inverted` to put it at the top). `fill` selects how much of the
+	// gradient is revealed. Building block of the colour-grading bar panels.
+	IMGUI_API bool SliderGradientVerticalScalar( char const* label, ImGuiDataType data_type, void* p_value, void const* p_min, void const* p_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), ImWidgetsSliderFill fill = ImWidgetsSliderFill_None, bool inverted = false );
+	IMGUI_API bool SliderGradientVerticalFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), ImWidgetsSliderFill fill = ImWidgetsSliderFill_None, bool inverted = false );
+	IMGUI_API bool SliderGradientVerticalInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), ImWidgetsSliderFill fill = ImWidgetsSliderFill_None, bool inverted = false );
+
+	//////////////////////////////////////////////////////////////////////////
+	// DragFloat with a colour / gradient underline (the Resolve grading-panel
+	// numeric field): a borderless drag value with a thin coloured bar beneath
+	// it hinting at what the parameter does. Double-click the value resets it to
+	// `v_default` -- so ImGuiSliderFlags_NoInput is forced internally, since
+	// ImGui would otherwise consume the double-click for text entry.
+	// `width` / `underline_thickness` are logical px (0 = default).
+	//////////////////////////////////////////////////////////////////////////
+	IMGUI_API bool DragFloatColorUnderline( char const* label, float* v, float v_speed,
+											float v_min, float v_max, float v_default,
+											ImU32 underline_col, char const* format = "%.2f",
+											float width = 0.0f, float underline_thickness = 0.0f );
+	IMGUI_API bool DragFloatGradientUnderline( char const* label, float* v, float v_speed,
+											   float v_min, float v_max, float v_default,
+											   ImGradientData const* gradient, char const* format = "%.2f",
+											   float width = 0.0f, float underline_thickness = 0.0f );
+
+	// Ready-made underline gradients matching the Resolve grading controls.
+	// Returned pointers are owned by the library and stay valid.
+	enum ImWidgetsGradingGradient_
+	{
+		ImWidgetsGradingGradient_Temperature = 0,	// blue -> orange
+		ImWidgetsGradingGradient_Tint,				// green -> magenta
+		ImWidgetsGradingGradient_Contrast,			// black -> white
+		ImWidgetsGradingGradient_Pivot,				// black -> white -> black
+		ImWidgetsGradingGradient_MidDetail,			// white -> black
+		ImWidgetsGradingGradient_Saturation,		// grey -> grey -> hue sweep
+		ImWidgetsGradingGradient_Hue,				// full hue sweep
+		ImWidgetsGradingGradient_LumMix,			// hue sweep -> white -> white
+		ImWidgetsGradingGradient_COUNT
+	};
+	typedef int ImWidgetsGradingGradient;
+	IMGUI_API ImGradientData const* GradingGradient( ImWidgetsGradingGradient which );
+
 	// SliderGradientRange: two-handle horizontal range slider with gradient cut between handles.
 	// Picks nearest handle on click. Lower is clamped to <= upper; upper to >= lower.
 	IMGUI_API bool SliderGradientRangeScalar( char const* label, ImGuiDataType data_type, void* p_lower, void* p_upper, void const* p_min, void const* p_max, ImGradientData const* gradient, ImVec2 size = ImVec2( 0, 0 ), bool right_to_left = false );
@@ -3890,6 +3954,782 @@ namespace ImWidgets{
 	// ring + ColorWheel only). With either pointer non-null, the corresponding side arc
 	// slider is drawn â€” the widget grows by 2*(ArcGrabRadius + ArcThickness + ArcGap) lp.
 	IMGUI_API bool HDRWheel( char const* label, ImVec4* color, float* yValue, float yMin, float yMax, float* rightValue = NULL, float rightMin = 0.0f, float rightMax = 0.0f, float* leftValue = NULL, float leftMin = 0.0f, float leftMax = 0.0f, ImColorWheelMode mode = ImColorWheelMode_HSV, ImVec2 size = ImVec2( 0, 0 ) );
+
+	//////////////////////////////////////////////////////////////////////////
+	// Colour Bars (a.k.a. "Primaries Bars"): the bar counterpart of a primaries
+	// wheel -- four vertical gradient sliders, Y (master) + R + G + B, each on a
+	// black->channel-tint track. One call is ONE grading block (Lift, Gamma,
+	// Gain or Offset); stack four side by side to get the full Resolve panel.
+	//
+	// `yrgb` is a 4-float array [Y, R, G, B] shared in/out. When `link_master`
+	// is set, dragging Y applies the same delta to R/G/B (master luminance
+	// move); the channel bars always stay independent. Double-click a channel
+	// bar to reset it to `v_default`, or the Y bar to reset all four.
+	// `size` is one bar's width x height in logical px (0 = default).
+	//
+	// `fill` picks the track style, and it is the parameter that distinguishes
+	// the two Resolve usages:
+	//   - FromCenter -> Lift / Gamma / Offset (signed move away from neutral)
+	//   - FromMin    -> Gain, and every RGB Mixer bar (grows from the bottom)
+	// When `show_values` is set each bar gets a DragFloat underneath, underlined
+	// in the channel colour (white for Y); double-click a value to reset it.
+	// Returns true the frame any value changed.
+	//////////////////////////////////////////////////////////////////////////
+	IMGUI_API bool ColorBars( char const* label, float* yrgb,
+							  float v_min = -1.0f, float v_max = 1.0f, float v_default = 0.0f,
+							  bool link_master = true, bool show_values = true,
+							  ImVec2 size = ImVec2( 0, 0 ),
+							  ImWidgetsSliderFill fill = ImWidgetsSliderFill_FromCenter );
+
+	//////////////////////////////////////////////////////////////////////////
+	// ColorSlice: a row of "vectorspace slice" modules, each qualifying one
+	// wedge of the hue circle and offering Hue / Density / Saturation on it,
+	// plus a global row. Modelled on DaVinci Resolve's ColorSlice palette.
+	//
+	// Design notes (from the BMD reference manual, Ch.135):
+	//  - The wedge WIDTH is fixed per slice; `Center` is the only qualifying
+	//    control -- it slides the weighting centre inside the wedge and cannot
+	//    leave it. There is no width or falloff control.
+	//  - Slices deliberately OVERLAP so their qualifiers blend into each other;
+	//    a clean matte is explicitly not the goal.
+	//  - There is intentionally NO per-slice luminance control: brightness is
+	//    handled subtractively inside Saturation so saturated colours don't
+	//    become unnaturally bright.
+	//  - Density is not Saturation: it adjusts luminance in proportion to how
+	//    saturated a pixel already is (dye/ink density), leaving chroma
+	//    magnitude alone. Both effects scale with saturation, so near-neutral
+	//    pixels are barely touched.
+	//
+	// This widget is a CONTROL SURFACE: it owns no pixels and applies nothing.
+	// The host reads the values and does the grading.
+	//////////////////////////////////////////////////////////////////////////
+	struct ImColorSliceVector
+	{
+		char const*	Label;
+		float		HueCenterDeg;		// wedge centre on the hue circle (0 = red)
+		float		HueHalfWidthDeg;	// FIXED half-width of the qualifying wedge
+		float		Center;				// -1..1, weighting centre inside the wedge
+		float		Hue;				// -1..1
+		float		Density;			// -1..1
+		float		Saturation;			// -1..1
+
+		ImColorSliceVector()
+			: Label( "" ), HueCenterDeg( 0.0f ), HueHalfWidthDeg( 30.0f ),
+			  Center( 0.0f ), Hue( 0.0f ), Density( 0.0f ), Saturation( 0.0f ) {}
+	};
+
+	struct ImColorSliceData
+	{
+		ImVector<ImColorSliceVector>	Slices;
+
+		// Global row (Resolve's labels are abbreviated exactly like this).
+		float	Density;		// luminance of saturated colours (subtractive)
+		float	DensityDepth;	// "Den.Depth" -- how much Density reaches highlights
+		float	Saturation;
+		float	SatBalance;		// luminance balance at medium saturation
+		float	SatDepth;		// how much Saturation reaches highlights
+		float	Hue;
+
+		int		HighlightSlice;	// slice whose highlight button is held, -1 = none
+
+		// Captions above the Density / Saturation bars. Default to "D" / "S";
+		// point them at icon-font glyphs (or any UTF-8 string) to override.
+		char const*	DensityLabel;
+		char const*	SaturationLabel;
+
+		ImColorSliceData()
+			: Density( 0.0f ), DensityDepth( 0.0f ), Saturation( 0.0f ),
+			  SatBalance( 0.0f ), SatDepth( 0.0f ), Hue( 0.0f ), HighlightSlice( -1 ),
+			  DensityLabel( "D" ), SaturationLabel( "S" ) {}
+
+		// Populate the 7 Resolve vectors. NOTE: BMD documents the slice set but
+		// NOT its hue angles, so these are hue-wheel angles chosen to match the
+		// labels (and to overlap, as Resolve's do). Tune freely.
+		void ResolveVectors();
+		void ResetSlices();		// per-slice controls -> 0, wedges untouched
+		void ResetGlobals();
+		void ResetAll();
+	};
+
+	// Returns true the frame any value changed. `size` is the whole panel in
+	// logical px (0 = fit the content).
+	IMGUI_API bool ColorSlice( char const* label, ImColorSliceData& data, ImVec2 size = ImVec2( 0, 0 ) );
+
+	//////////////////////////////////////////////////////////////////////////
+	// ChromaWarp: strokes on a chromaticity diagram that warp one colour into
+	// another. This is DaVinci Resolve 20's "Chroma Warp" mode of the Color
+	// Warper -- a DIFFERENT tool from the Hue-Saturation / Chroma-Luma mesh
+	// warper (ColorWarper above); in Resolve the two are mutually exclusive per
+	// node.
+	//
+	// A Normal stroke drags a source colour to a destination and affects every
+	// colour along the way -- its influence region is a CAPSULE of constant
+	// radius around the whole vector. A Point-to-Point stroke maps the source
+	// straight onto the destination without travelling through the hues in
+	// between. A Pin marks a colour range to be EXCLUDED (drop one on the white
+	// point to keep neutrals from tinting).
+	//
+	// Like ColorSlice this is a control surface only: it owns no pixels.
+	//////////////////////////////////////////////////////////////////////////
+	enum ImChromaWarpKind_
+	{
+		ImChromaWarpKind_Normal = 0,
+		ImChromaWarpKind_PointToPoint,
+		ImChromaWarpKind_Pin
+	};
+	typedef int ImChromaWarpKind;
+
+	enum ImChromaWarpTool_
+	{
+		ImChromaWarpTool_AddNormal = 0,
+		ImChromaWarpTool_AddPointToPoint,
+		ImChromaWarpTool_AddPin,
+		ImChromaWarpTool_Select
+	};
+	typedef int ImChromaWarpTool;
+
+	struct ImChromaWarpStroke
+	{
+		ImChromaWarpKind	Kind;
+		ImVec2				Source;			// diagram space [0,1]^2, y UP
+		ImVec2				Dest;			// unused for pins
+		float				ChromaRange;	// 0..0.2 (Resolve's slider range)
+		float				Exposure;		// bipolar; destination end only
+
+		ImChromaWarpStroke()
+			: Kind( ImChromaWarpKind_Normal ), Source( 0.5f, 0.5f ), Dest( 0.5f, 0.5f ),
+			  ChromaRange( 0.04f ), Exposure( 0.0f ) {}
+	};
+
+	struct ImChromaWarpData
+	{
+		ImVector<ImChromaWarpStroke>	Strokes;
+		int								Selected;	// -1 = none
+		ImChromaWarpTool				Tool;
+
+		// Global -- these apply to every stroke, not just the selected one.
+		float	TonalRangeLow;
+		float	TonalRangeHigh;
+		float	TonalRangePivot;
+
+		ImVec2	WhitePoint;		// diagram space; neutrals live here
+
+		ImChromaWarpData()
+			: Selected( -1 ), Tool( ImChromaWarpTool_AddNormal ),
+			  TonalRangeLow( 1.0f ), TonalRangeHigh( 1.0f ), TonalRangePivot( 0.5f ),
+			  WhitePoint( 0.5f, 0.5f ) {}
+
+		void ResetGlobals() { TonalRangeLow = TonalRangeHigh = 1.0f; TonalRangePivot = 0.5f; }
+		void ResetAll()     { Strokes.clear(); Selected = -1; ResetGlobals(); }
+	};
+
+	IMGUI_API bool ChromaWarp( char const* label, ImChromaWarpData& data, ImVec2 size = ImVec2( 0, 0 ) );
+
+	//////////////////////////////////////////////////////////////////////////
+	// Spectrum editor: draw a spectral power distribution by hand and integrate
+	// it against the CIE observer to get a colour.
+	//
+	// The canvas is wavelength (x) against relative power (y). Drag to paint the
+	// curve; the samples between the previous and current mouse position are
+	// interpolated, so a fast sweep still lays down a continuous line instead of
+	// isolated spikes. The result is XYZ = k * sum( S(lambda) * cmf(lambda) ),
+	// normalised so a flat unit SPD lands at Y = 1.
+	//
+	// This is the hand-drawn counterpart to the physical pickers: those compute
+	// a spectrum from a model, this one lets you invent it.
+	//////////////////////////////////////////////////////////////////////////
+	struct ImSpectrumData
+	{
+		ImVector<float>	Samples;	// relative power per sample; 0 = no emission
+		float			LambdaMin;	// nm at Samples[0]
+		float			LambdaMax;	// nm at Samples[Size-1]
+
+		ImSpectrumData() : LambdaMin( 380.0f ), LambdaMax( 730.0f ) { Resize( 64 ); }
+
+		void Resize( int n )
+		{
+			if ( n < 2 ) n = 2;
+			int old = Samples.Size;
+			Samples.resize( n );
+			for ( int i = old; i < n; ++i ) Samples[ i ] = 0.0f;
+		}
+		void Fill( float v )
+		{
+			for ( int i = 0; i < Samples.Size; ++i ) Samples[ i ] = v;
+		}
+		float LambdaAt( int i ) const
+		{
+			if ( Samples.Size < 2 ) return LambdaMin;
+			return LambdaMin + ( LambdaMax - LambdaMin ) * ( float )i / ( float )( Samples.Size - 1 );
+		}
+		// Linearly interpolated power at `lambda` nm; 0 outside the stored range.
+		float SampleAt( float lambda ) const
+		{
+			if ( Samples.Size < 2 || lambda < LambdaMin || lambda > LambdaMax ) return 0.0f;
+			float t  = ( lambda - LambdaMin ) / ( LambdaMax - LambdaMin ) * ( float )( Samples.Size - 1 );
+			int   i0 = ( int )t;
+			if ( i0 < 0 ) i0 = 0;
+			if ( i0 > Samples.Size - 2 ) i0 = Samples.Size - 2;
+			float f = t - ( float )i0;
+			return Samples[ i0 ] + ( Samples[ i0 + 1 ] - Samples[ i0 ] ) * f;
+		}
+		// Gaussian emission line, handy as a starting point. Defined in the .cpp
+		// so this header stays free of <math.h> (every TU includes it).
+		void SetGaussian( float center_nm, float sigma_nm, float amplitude = 1.0f );
+	};
+
+	// Integrate an SPD against a CIE observer. `normalize` scales by
+	// 1 / sum(ybar) so a flat unit spectrum yields Y = 1.
+	IMGUI_API void SpectrumToXYZ( ImSpectrumData const& spectrum, ImWidgetsObserver observer,
+								  float& out_X, float& out_Y, float& out_Z, bool normalize = true );
+
+	// Colour of a monochromatic stimulus at `lambda`, normalised to full
+	// brightness and faded where the observer response dies out. Used for the
+	// spectrum ruler; also useful on its own.
+	IMGUI_API void WavelengthToRGB( float lambda, ImWidgetsObserver observer,
+									float& out_r, float& out_g, float& out_b );
+
+	// Editable SPD canvas. Returns true the frame the curve was edited.
+	IMGUI_API bool SpectrumEditor( char const* label, ImSpectrumData& spectrum,
+								   ImVec2 size = ImVec2( 0, 0 ), float y_max = 1.0f,
+								   ImWidgetsObserver observer = ImWidgetsObserver_CIE1931_2deg );
+
+	//////////////////////////////////////////////////////////////////////////
+	// Colour space introspection: primaries, per-space conversion and gamut
+	// testing, so a caller can answer "does this colour fit in X?" for any of
+	// the ImWidgetsColorSpace entries rather than assuming sRGB.
+	//////////////////////////////////////////////////////////////////////////
+	IMGUI_API char const* ColorSpaceName( ImWidgetsColorSpace space );
+
+	// xy chromaticities of the space's R, G and B primaries.
+	IMGUI_API void ColorSpaceGetPrimaries( ImWidgetsColorSpace space,
+										   ImVec2& out_r, ImVec2& out_g, ImVec2& out_b );
+
+	// XYZ -> LINEAR RGB in the given space (no transfer function applied).
+	IMGUI_API void ColorConvertXYZtoRGBSpace( ImWidgetsColorSpace space,
+											  float& out_r, float& out_g, float& out_b,
+											  float X, float Y, float Z );
+
+	// Is the chromaticity (x, y) inside the space's primary triangle? This is a
+	// pure CHROMATICITY test -- a colour can pass it and still clip on
+	// luminance, so check the converted RGB against [0,1] as well.
+	IMGUI_API bool ChromaticityInsideGamut( ImWidgetsColorSpace space, float x, float y );
+
+	// Overlay gamut triangles on a chromaticity plot, one per entry in `spaces`,
+	// drawn GREEN when (test_x, test_y) falls inside that space and RED when it
+	// does not. The min/max args must match the plot the overlay sits on.
+	IMGUI_API void DrawChromaticityGamuts( ImDrawList* pDrawList, ImVec2 pos, ImVec2 size,
+										   ImWidgetsColorSpace const* spaces, int space_count,
+										   float test_x, float test_y,
+										   float minX = 0.0f, float maxX = 0.8f,
+										   float minY = 0.0f, float maxY = 0.9f,
+										   bool show_labels = true,
+										   float thickness = 1.5f );
+
+	//////////////////////////////////////////////////////////////////////////
+	// Scalar -> Colour
+	//
+	// One uniform "float -> colour" mapping, exposed once per colour space Dear
+	// Widgets knows about. Every one of them has the SAME definition, namely
+	// ImWidgetsColor1DCallback:
+	//
+	//     ImU32 ( * )( float t, void* pUserData )
+	//
+	// so any of them drops straight into DrawProceduralColor1D*, DrawColorRing,
+	// DrawProceduralColorArcBilinear, DrawShapeProceduralColor*,
+	// ShapeFillProceduralColor1D, ... with no adapter. Those helpers also have
+	// colour-space-aware overloads at the bottom of this block, which take the
+	// options directly and remap the space enum to the matching entry point
+	// themselves.
+	//
+	// `pUserData` is an optional `ImWidgetsColorScalar const*` saying WHAT the
+	// scalar means -- a hue, a lightness, a chroma, a colour temperature, a
+	// wavelength -- what the other two components are pinned to, how t is
+	// shaped, and which colour harmony (complement / triad / tetrad / ...) is
+	// applied on top. NULL uses the defaults, which is a plain hue sweep at
+	// full saturation, i.e. the classic hue bar.
+	//
+	// Every enum in the options is resolved to a FUNCTION POINTER once, up
+	// front, by ColorScalarResolve -- never re-dispatched per sample. See
+	// ImWidgetsColorScalarResolved below.
+	//////////////////////////////////////////////////////////////////////////
+
+	// Pass to any of the colour-space-aware overloads to keep whatever
+	// ImWidgetsColorScalar::Space already holds instead of overriding it.
+	enum { ImWidgetsColorSpace_FromOptions = -1 };
+
+	// Where the scalar comes from.
+	enum ImWidgetsColorSource_
+	{
+		ImWidgetsColorSource_Model = 0,		// drives a component of Model (default)
+		ImWidgetsColorSource_Kelvin,		// colour temperature along the Planckian locus
+		ImWidgetsColorSource_Wavelength,	// monochromatic stimulus, LambdaMin..LambdaMax
+		ImWidgetsColorSource_Gradient,		// samples the ImGradientData in Gradient
+		ImWidgetsColorSource_COUNT
+	};
+	typedef int ImWidgetsColorSource;
+
+	// How a triple is parameterised. ORTHOGONAL to ImWidgetsColorSpace_, which
+	// supplies the primaries and the transfer function ("what RGB means").
+	//   RGB / LinearRGB / HSV / HSL / HSY / HSP are built ON the working space.
+	//   OkLab / OkLCH / CIELab / CIELCh / XYZ / xyY are CIE-referred and absolute;
+	//   for those the working space only decides the gamut test.
+	enum ImWidgetsColorModel_
+	{
+		ImWidgetsColorModel_RGB = 0,	// (R, G, B)		encoded, [0,1]
+		ImWidgetsColorModel_LinearRGB,	// (R, G, B)		linear,  [0,1]
+		ImWidgetsColorModel_HSV,		// (H, S, V)		all [0,1]
+		ImWidgetsColorModel_HSL,		// (H, S, L)		all [0,1]
+		ImWidgetsColorModel_HSY,		// (H, S, Y)		BT.709 luma
+		ImWidgetsColorModel_HSP,		// (H, S, P)		perceived brightness
+		ImWidgetsColorModel_OkLab,		// (L, a, b)		L [0,1], a/b ~ [-0.4,0.4]
+		ImWidgetsColorModel_OkLCH,		// (L, C, H)		C ~ [0,0.37], H [0,1]
+		ImWidgetsColorModel_CIELab,		// (L*, a*, b*)		L* [0,100], a*/b* ~ [-128,127]
+		ImWidgetsColorModel_CIELCh,		// (L*, C*, h)		C* [0,150], h [0,1]
+		ImWidgetsColorModel_XYZ,		// (X, Y, Z)
+		ImWidgetsColorModel_xyY,		// (x, y, Y)
+		ImWidgetsColorModel_COUNT
+	};
+	typedef int ImWidgetsColorModel;
+
+	// Semantic component, resolved per model by ColorModelAxisIndex(). A model
+	// with no such component (Hue in plain RGB, say) still honours the axis --
+	// it is then applied as a post-step in the HSV cylinder instead of being
+	// silently dropped. Comp0/1/2 always mean the raw 1st/2nd/3rd component.
+	enum ImWidgetsColorAxis_
+	{
+		ImWidgetsColorAxis_None = -1,
+		ImWidgetsColorAxis_Hue = 0,		// H in HS*, H in OkLCH / CIELCh
+		ImWidgetsColorAxis_Chroma,		// S in HS*, C in OkLCH / CIELCh
+		ImWidgetsColorAxis_Lightness,	// V/L/Y/P, L in Ok*, L* in CIE*, Y in XYZ/xyY
+		ImWidgetsColorAxis_Comp0,
+		ImWidgetsColorAxis_Comp1,
+		ImWidgetsColorAxis_Comp2,
+		ImWidgetsColorAxis_COUNT
+	};
+	typedef int ImWidgetsColorAxis;
+
+	// Classical hue-wheel schemes. The scalar produces ONE colour; the harmony
+	// rotates it, and HarmonyIndex picks which member of the scheme comes out --
+	// so a single ramp can drive a whole palette by being evaluated N times.
+	enum ImWidgetsColorHarmony_
+	{
+		ImWidgetsColorHarmony_None = 0,			// 1 : the colour itself
+		ImWidgetsColorHarmony_Complement,		// 2 : H, H+180
+		ImWidgetsColorHarmony_SplitComplement,	// 3 : H, H+180-s, H+180+s
+		ImWidgetsColorHarmony_Triad,			// 3 : H, H+120, H+240
+		ImWidgetsColorHarmony_Tetrad,			// 4 : H, H+60, H+180, H+240
+		ImWidgetsColorHarmony_Square,			// 4 : H, H+90, H+180, H+270
+		ImWidgetsColorHarmony_Analogous,		// 5 : H + k*spread, k = -2..+2
+		ImWidgetsColorHarmony_Monochromatic,	// 5 : same H, chroma fanning out
+		ImWidgetsColorHarmony_COUNT
+	};
+	typedef int ImWidgetsColorHarmony;
+
+	// What happens to t outside [0,1] once the domain remap and Repeats are in.
+	enum ImWidgetsColorWrap_
+	{
+		ImWidgetsColorWrap_Clamp = 0,
+		ImWidgetsColorWrap_Repeat,
+		ImWidgetsColorWrap_Mirror,
+		ImWidgetsColorWrap_COUNT
+	};
+	typedef int ImWidgetsColorWrap;
+
+	// Shaping applied to t after the domain remap. EaseParam is the gamma /
+	// exponent / steepness; Linear and Smoothstep ignore it.
+	enum ImWidgetsColorEase_
+	{
+		ImWidgetsColorEase_Linear = 0,
+		ImWidgetsColorEase_Smoothstep,
+		ImWidgetsColorEase_Gamma,
+		ImWidgetsColorEase_Exponential,
+		ImWidgetsColorEase_Logarithmic,
+		ImWidgetsColorEase_Sine,
+		ImWidgetsColorEase_COUNT
+	};
+	typedef int ImWidgetsColorEase;
+
+	// What to do when the colour falls outside the working space gamut.
+	enum ImWidgetsColorGamut_
+	{
+		ImWidgetsColorGamut_Clip = 0,	// saturate each channel (the usual)
+		ImWidgetsColorGamut_Desaturate,	// blend toward its own luminance until it fits
+		ImWidgetsColorGamut_Mark,		// replace with OutOfGamutColor (debug / QC)
+		ImWidgetsColorGamut_Keep,		// leave it; ColorFromScalar returns it unclamped
+		ImWidgetsColorGamut_COUNT
+	};
+	typedef int ImWidgetsColorGamut;
+
+	// Ready-made mappings for ColorScalarPreset(). These are the named things
+	// people actually reach for; anything else is reachable by hand.
+	enum ImWidgetsColorRamp_
+	{
+		ImWidgetsColorRamp_Hue = 0,			// t -> hue at full chroma      ("hue to colour")
+		ImWidgetsColorRamp_Lightness,		// t -> lightness, hue/chroma held
+		ImWidgetsColorRamp_Chroma,			// t -> chroma, hue/lightness held
+		ImWidgetsColorRamp_LightnessToHue,	// t -> lightness AND hue       ("luminance to hue")
+		ImWidgetsColorRamp_Grey,			// t -> neutral ramp
+		ImWidgetsColorRamp_Red,				// t -> the working space R channel
+		ImWidgetsColorRamp_Green,
+		ImWidgetsColorRamp_Blue,
+		ImWidgetsColorRamp_Kelvin,			// t -> 1000 K .. 12000 K
+		ImWidgetsColorRamp_Wavelength,		// t -> 380 nm .. 730 nm
+		ImWidgetsColorRamp_COUNT
+	};
+	typedef int ImWidgetsColorRamp;
+
+	//////////////////////////////////////////////////////////////////////////
+	// Enum -> function pointer
+	//
+	// Colour conversion sits on the hot path: a 128-division bar fires the
+	// callback 258 times, and each evaluation would otherwise re-enter a switch
+	// for the model, again for the harmony model, and once per channel for the
+	// transfer function. All of it is resolved to pointers up front instead --
+	// same shape as the existing ImGradientInterpGetFunctions.
+	//
+	// The RGB triple these map to and from is:
+	//   working-space models (RGB..HSP)  -> ENCODED RGB in the working space
+	//   CIE-referred models (OkLab..xyY) -> display sRGB
+	// ColorModelIsWorkingSpace() tells you which.
+	//////////////////////////////////////////////////////////////////////////
+	typedef void  ( *pfColorModelToRGB   )( float& out_r,  float& out_g,  float& out_b,  float c0, float c1, float c2 );
+	typedef void  ( *pfColorModelFromRGB )( float& out_c0, float& out_c1, float& out_c2, float r,  float g,  float b  );
+	// Transfer function of a working space. `gamma` is the value ColorSpaceGetTransfer
+	// hands back alongside; the sRGB piecewise curve and the identity ignore it.
+	typedef float ( *pfColorTransfer     )( float value, float gamma );
+
+	// The remaining pipeline stages, one pointer per enum, so that NOTHING in the
+	// per-sample path is a switch. Wrap and Ease shape t; Source produces the
+	// colour; Harmony and Gamut post-process it.
+	struct ImWidgetsColorScalarResolved;	// defined below -- the stages take it
+	typedef float ( *pfColorScalarWrap   )( float u );
+	typedef float ( *pfColorScalarEase   )( float u, float param );
+	// Sources report their own alpha (a gradient carries one); the evaluator
+	// multiplies it by ImWidgetsColorScalar::Alpha.
+	typedef void  ( *pfColorScalarSource )( float u, ImWidgetsColorScalarResolved const& resolved,
+											float& out_r, float& out_g, float& out_b, float& out_a );
+	typedef void  ( *pfColorScalarStage  )( ImWidgetsColorScalarResolved const& resolved,
+											float& r, float& g, float& b );
+	// Applies a semantic axis the model could not express, in the HSV cylinder.
+	// NULL when the axis IS native to the model (the usual case).
+	typedef void  ( *pfColorScalarAxisApply )( float value, float& r, float& g, float& b );
+
+	IMGUI_API bool	ColorModelIsWorkingSpace( ImWidgetsColorModel model );
+
+	// Resolve a model to its conversion pair; either out param may be NULL.
+	// BOTH come back NULL for ImWidgetsColorModel_LinearRGB, which has no fixed
+	// conversion -- its transfer depends on the working space, so go through
+	// ColorSpaceGetTransfer for that one.
+	IMGUI_API void	ColorModelGetFunctions( ImWidgetsColorModel model,
+											pfColorModelToRGB* out_to_rgb,
+											pfColorModelFromRGB* out_from_rgb );
+
+	// Resolve a working space to its transfer pair plus the gamma to feed them.
+	// Any out param may be NULL. A space with gamma 1.0 (ECI) resolves to the
+	// identity, so no ImPow runs at all.
+	IMGUI_API void	ColorSpaceGetTransfer( ImWidgetsColorSpace space,
+										   pfColorTransfer* out_encode,
+										   pfColorTransfer* out_decode,
+										   float* out_gamma );
+
+	// The options block behind every scalar -> colour function. Default-
+	// constructed it is a full hue sweep at full saturation in sRGB.
+	struct ImWidgetsColorScalar
+	{
+		// --- what the scalar means -----------------------------------------
+		ImWidgetsColorSource	Source;
+		ImWidgetsColorModel		Model;
+		ImWidgetsColorSpace		Space;
+		ImWidgetsColorAxis		Axis;		// component the scalar drives
+		float					Fixed[ 3 ];	// the other components, index-aligned to Model
+		float					RangeMin;	// Axis value at t = 0
+		float					RangeMax;	// Axis value at t = 1  (swap them to reverse)
+
+		// A SECOND component driven by the same scalar. This is what makes
+		// "luminance to hue" a single mapping rather than two: Axis = Lightness,
+		// Axis2 = Hue. ImWidgetsColorAxis_None disables it.
+		ImWidgetsColorAxis		Axis2;
+		float					Range2Min;
+		float					Range2Max;
+
+		// --- shaping of t ---------------------------------------------------
+		float					DomainMin;	// t is normalised from [DomainMin, DomainMax]
+		float					DomainMax;	// before anything else happens
+		float					Repeats;	// cycles across the domain (1 = a single pass)
+		ImWidgetsColorWrap		Wrap;
+		ImWidgetsColorEase		Ease;
+		float					EaseParam;
+
+		// --- harmony, applied to the colour produced above -------------------
+		ImWidgetsColorHarmony	Harmony;
+		int						HarmonyIndex;	// which member comes out (0 = the base)
+		float					HarmonySpread;	// degrees; split-complement / analogous
+		ImWidgetsColorModel		HarmonyModel;	// cylinder the rotation happens in
+
+		// --- source-specific --------------------------------------------------
+		float					KelvinMin, KelvinMax;
+		float					LambdaMin, LambdaMax;
+		ImWidgetsObserver		Observer;
+		ImGradientData const*	Gradient;
+
+		// --- output -----------------------------------------------------------
+		ImWidgetsColorGamut		Gamut;
+		ImU32					OutOfGamutColor;
+		float					Alpha;
+		// Bradford-adapt the working space white point to D65 before display.
+		// Without it a D50 space (ProPhoto, ECI, Best, ...) renders its own white
+		// as a warm cast, which is a conversion error rather than a preview.
+		bool					AdaptWhitePoint;
+
+		ImWidgetsColorScalar()
+			: Source( ImWidgetsColorSource_Model )
+			, Model( ImWidgetsColorModel_HSV )
+			, Space( ImWidgetsColorSpace_sRGB )
+			, Axis( ImWidgetsColorAxis_Hue )
+			, RangeMin( 0.0f ), RangeMax( 1.0f )
+			, Axis2( ImWidgetsColorAxis_None )
+			, Range2Min( 0.0f ), Range2Max( 1.0f )
+			, DomainMin( 0.0f ), DomainMax( 1.0f )
+			, Repeats( 1.0f )
+			, Wrap( ImWidgetsColorWrap_Clamp )
+			, Ease( ImWidgetsColorEase_Linear )
+			, EaseParam( 1.0f )
+			, Harmony( ImWidgetsColorHarmony_None )
+			, HarmonyIndex( 0 )
+			, HarmonySpread( 30.0f )
+			, HarmonyModel( ImWidgetsColorModel_HSV )
+			, KelvinMin( 1000.0f ), KelvinMax( 12000.0f )
+			, LambdaMin( 380.0f ), LambdaMax( 730.0f )
+			, Observer( ImWidgetsObserver_CIE1931_2deg )
+			, Gradient( NULL )
+			, Gamut( ImWidgetsColorGamut_Clip )
+			, OutOfGamutColor( IM_COL32( 255, 0, 255, 255 ) )
+			, Alpha( 1.0f )
+			, AdaptWhitePoint( true )
+		{
+			Fixed[ 0 ] = 0.0f; Fixed[ 1 ] = 1.0f; Fixed[ 2 ] = 1.0f;	// HSV: full sat, full value
+		}
+	};
+
+	// An ImWidgetsColorScalar with every enum already turned into a pointer or an
+	// index. Build one per draw with ColorScalarResolve, then evaluate with
+	// ColorFromScalarResolved / ColorFromScalarResolvedCallback. The plain
+	// ColorFromScalar is exactly "resolve, then evaluate once".
+	//
+	// It holds Options BY VALUE, so the copy handed through the callback void*
+	// stays alive for the whole draw -- but ImGradientData is still referenced by
+	// pointer, so a Gradient source must outlive the draw.
+	struct ImWidgetsColorScalarResolved
+	{
+		ImWidgetsColorScalar	Options;
+
+		// model / working space
+		pfColorModelToRGB		ModelToRGB;			// NULL == LinearRGB, use Encode
+		pfColorModelFromRGB		ModelFromRGB;		// NULL == LinearRGB, use Decode
+		bool					ModelIsWorkingSpace;
+		pfColorTransfer			Encode;
+		pfColorTransfer			Decode;
+		float					Gamma;
+
+		// axes, already mapped to component indices (-1 = not native to the model,
+		// in which case the matching *Apply pointer below is non-NULL and does it
+		// in the HSV cylinder instead)
+		int						AxisIndex;
+		int						Axis2Index;
+		pfColorScalarAxisApply	AxisApply;
+		pfColorScalarAxisApply	Axis2Apply;
+		// Hue is periodic: the driven value is wrapped into [0,1) before it
+		// reaches the conversion, so a range like [-0.2, 0.8] (a hue sweep with
+		// an offset) is legal rather than feeding a negative hue to HSVtoRGB.
+		bool					AxisWraps;
+		bool					Axis2Wraps;
+
+		// harmony
+		pfColorModelToRGB		HarmonyToRGB;
+		pfColorModelFromRGB		HarmonyFromRGB;
+		bool					HarmonyIsWorkingSpace;
+		int						HarmonyHueIndex;
+		int						HarmonyChromaIndex;
+		int						HarmonyCount;
+		float					HarmonyOffsets[ 5 ];
+
+		// pipeline stages -- evaluating a sample is exactly these five calls,
+		// with no enum left to test
+		pfColorScalarWrap		Wrap;
+		pfColorScalarEase		Ease;
+		pfColorScalarSource		Source;
+		pfColorScalarStage		Harmony;	// a no-op when Harmony_None
+		pfColorScalarStage		Gamut;
+
+		ImWidgetsColorScalarResolved()
+			: ModelToRGB( NULL ), ModelFromRGB( NULL ), ModelIsWorkingSpace( true )
+			, Encode( NULL ), Decode( NULL ), Gamma( 2.2f )
+			, AxisIndex( -1 ), Axis2Index( -1 )
+			, AxisApply( NULL ), Axis2Apply( NULL )
+			, AxisWraps( false ), Axis2Wraps( false )
+			, HarmonyToRGB( NULL ), HarmonyFromRGB( NULL ), HarmonyIsWorkingSpace( true )
+			, HarmonyHueIndex( 0 ), HarmonyChromaIndex( 1 ), HarmonyCount( 1 )
+			, Wrap( NULL ), Ease( NULL ), Source( NULL ), Harmony( NULL ), Gamut( NULL )
+		{
+			HarmonyOffsets[ 0 ] = HarmonyOffsets[ 1 ] = HarmonyOffsets[ 2 ] =
+			HarmonyOffsets[ 3 ] = HarmonyOffsets[ 4 ] = 0.0f;
+		}
+	};
+
+	// ---- Introspection -------------------------------------------------------
+	IMGUI_API char const*	ColorModelName    ( ImWidgetsColorModel model );
+	IMGUI_API char const*	ColorModelCompName( ImWidgetsColorModel model, int comp );
+	IMGUI_API char const*	ColorAxisName     ( ImWidgetsColorAxis axis );
+	IMGUI_API char const*	ColorSourceName   ( ImWidgetsColorSource source );
+	IMGUI_API char const*	ColorHarmonyName  ( ImWidgetsColorHarmony harmony );
+	IMGUI_API char const*	ColorWrapName     ( ImWidgetsColorWrap wrap );
+	IMGUI_API char const*	ColorEaseName     ( ImWidgetsColorEase ease );
+	IMGUI_API char const*	ColorGamutName    ( ImWidgetsColorGamut gamut );
+	IMGUI_API char const*	ColorRampName     ( ImWidgetsColorRamp ramp );
+
+	// Component index (0..2) the semantic axis maps to in `model`, or -1 when the
+	// model has no such component.
+	IMGUI_API int	ColorModelAxisIndex( ImWidgetsColorModel model, ImWidgetsColorAxis axis );
+	// Natural range of component `comp` of `model` (H in [0,1], L* in [0,100], ...).
+	IMGUI_API void	ColorModelCompRange( ImWidgetsColorModel model, int comp, float* out_min, float* out_max );
+	// A vivid, in-gamut starting triple in `model` -- what the presets pin the
+	// components the scalar is NOT driving to.
+	IMGUI_API void	ColorModelDefaultTriple( ImWidgetsColorModel model, float out_c[ 3 ] );
+	// Hue offsets, in DEGREES, of every member of a harmony scheme. Returns the
+	// member count (<= cap). Monochromatic reports its count with all offsets 0 --
+	// it fans chroma out instead, which ColorFromScalar applies.
+	IMGUI_API int	ColorHarmonyOffsets( ImWidgetsColorHarmony harmony, float spread_deg, float* out_deg, int cap );
+
+	// ---- Conversion ----------------------------------------------------------
+	// Transfer function of a working space. sRGB uses its piecewise curve; every
+	// other space uses the pure gamma from its table entry. Both are odd-symmetric
+	// so out-of-gamut negatives survive a round trip instead of turning into NaN.
+	// These are the one-shot forms; resolve the pointer with ColorSpaceGetTransfer
+	// when converting more than a couple of values.
+	IMGUI_API float	ColorSpaceEncode( ImWidgetsColorSpace space, float linear );
+	IMGUI_API float	ColorSpaceDecode( ImWidgetsColorSpace space, float encoded );
+	// LINEAR RGB in `space` -> XYZ, at the space own white point. The missing
+	// counterpart of ColorConvertXYZtoRGBSpace.
+	IMGUI_API void	ColorConvertRGBSpacetoXYZ( ImWidgetsColorSpace space,
+											   float& out_X, float& out_Y, float& out_Z,
+											   float r, float g, float b );
+	// Bradford chromatic adaptation between the space white point and D65.
+	IMGUI_API void	ColorAdaptSpaceToD65( ImWidgetsColorSpace space, float& X, float& Y, float& Z );
+	IMGUI_API void	ColorAdaptD65ToSpace( ImWidgetsColorSpace space, float& X, float& Y, float& Z );
+	// A triple in `model` -> DISPLAY sRGB, i.e. what ImGui wants to be handed.
+	IMGUI_API void	ColorModelToDisplay( ImWidgetsColorModel model, ImWidgetsColorSpace space,
+										 float c0, float c1, float c2,
+										 float& out_r, float& out_g, float& out_b,
+										 bool adapt_white_point = true );
+	// Display sRGB -> a triple in `model`. Round-trips ColorModelToDisplay.
+	IMGUI_API void	ColorDisplayToModel( ImWidgetsColorModel model, ImWidgetsColorSpace space,
+										 float r, float g, float b,
+										 float& out_c0, float& out_c1, float& out_c2,
+										 bool adapt_white_point = true );
+	// Does this display-sRGB colour fit inside `space`? Unlike
+	// ChromaticityInsideGamut this is the FULL test -- chromaticity AND level.
+	IMGUI_API bool	ColorInsideSpaceGamut( ImWidgetsColorSpace space, float r, float g, float b,
+										   bool adapt_white_point = true );
+
+	// ---- Evaluation ----------------------------------------------------------
+	// Turn every enum in `opt` into a pointer / index, once. `space` overrides
+	// opt.Space unless it is ImWidgetsColorSpace_FromOptions.
+	IMGUI_API void		ColorScalarResolve( ImWidgetsColorScalarResolved* out_resolved,
+											ImWidgetsColorScalar const& opt,
+											ImWidgetsColorSpace space = ImWidgetsColorSpace_FromOptions );
+	IMGUI_API ImVec4	ColorFromScalarResolved( float t, ImWidgetsColorScalarResolved const& resolved );
+	// ImWidgetsColor1DCallback. pUserData = ImWidgetsColorScalarResolved const*.
+	IMGUI_API ImU32		ColorFromScalarResolvedCallback( float t, void* pUserData );
+
+	// Convenience one-shots: these resolve internally, so prefer the resolved
+	// form when you are about to evaluate the same mapping many times.
+	IMGUI_API ImVec4	ColorFromScalar   ( float t, ImWidgetsColorScalar const& opt );
+	IMGUI_API ImU32		ColorFromScalarU32( float t, ImWidgetsColorScalar const& opt );
+	// ImWidgetsColor1DCallback. pUserData = ImWidgetsColorScalar const*, NULL = defaults.
+	IMGUI_API ImU32		ColorFromScalarCallback( float t, void* pUserData );
+	// Same mapping, but the working space is given rather than read from `opt`.
+	IMGUI_API ImU32		ColorScalarInSpace( ImWidgetsColorSpace space, float t, ImWidgetsColorScalar const* opt );
+
+	// Fill `opt` with a ready-made mapping, keeping its Space (and its Model when
+	// the ramp can express itself in it -- Grey and the R/G/B ramps need a model
+	// that has the component they drive, so those may switch Model).
+	IMGUI_API void		ColorScalarPreset( ImWidgetsColorScalar* opt, ImWidgetsColorRamp ramp );
+
+	// ---- One function per colour space, all with the SAME definition ---------
+	// Identical apart from the working space they pin. pUserData is an optional
+	// ImWidgetsColorScalar const*: its Space field is overridden by whichever
+	// function you picked, every other field is honoured. Pass NULL for a plain
+	// hue sweep rendered through that space.
+	IMGUI_API ImU32	ColorScalarAdobeRGB    ( float t, void* pUserData );
+	IMGUI_API ImU32	ColorScalarAppleRGB    ( float t, void* pUserData );
+	IMGUI_API ImU32	ColorScalarBest        ( float t, void* pUserData );
+	IMGUI_API ImU32	ColorScalarBeta        ( float t, void* pUserData );
+	IMGUI_API ImU32	ColorScalarBruce       ( float t, void* pUserData );
+	IMGUI_API ImU32	ColorScalarCIERGB      ( float t, void* pUserData );
+	IMGUI_API ImU32	ColorScalarColorMatch  ( float t, void* pUserData );
+	IMGUI_API ImU32	ColorScalarDonRGB4     ( float t, void* pUserData );
+	IMGUI_API ImU32	ColorScalarECI         ( float t, void* pUserData );
+	IMGUI_API ImU32	ColorScalarEktaSpacePS5( float t, void* pUserData );
+	IMGUI_API ImU32	ColorScalarNTSC        ( float t, void* pUserData );
+	IMGUI_API ImU32	ColorScalarPALSECAM    ( float t, void* pUserData );
+	IMGUI_API ImU32	ColorScalarProPhoto    ( float t, void* pUserData );
+	IMGUI_API ImU32	ColorScalarSMPTEC      ( float t, void* pUserData );
+	IMGUI_API ImU32	ColorScalarsRGB        ( float t, void* pUserData );
+	IMGUI_API ImU32	ColorScalarWideGamutRGB( float t, void* pUserData );
+	IMGUI_API ImU32	ColorScalarRec2020     ( float t, void* pUserData );
+	// The same 17, chosen at runtime.
+	IMGUI_API ImWidgetsColor1DCallback	ColorScalarCallback( ImWidgetsColorSpace space );
+
+	//////////////////////////////////////////////////////////////////////////
+	// Colour-space-aware overloads of the 1D procedural helpers
+	//
+	// The same helpers declared earlier in this header, but taking the options
+	// block instead of a raw callback + void*, and choosing the working space
+	// HERE rather than at the call site: the space enum is remapped to the
+	// matching entry point internally (ColorScalarResolve / ColorScalarCallback),
+	// resolved once for the whole draw rather than per sample.
+	//
+	// `space` defaults to ImWidgetsColorSpace_FromOptions, which keeps opt.Space.
+	//////////////////////////////////////////////////////////////////////////
+	void	ShapeFillProceduralColor1D( ImWidgetsShape& shape, ImWidgetsColorScalar const& opt, bool sample_v,
+										ImWidgetsColorSpace space = ImWidgetsColorSpace_FromOptions );
+
+	void	DrawShapeProceduralColorVerticalBand  ( ImDrawList* pDrawList, ImRect const& bb, int divisions,
+	                                                ImWidgetsColorScalar const& opt,
+	                                                ImWidgetsColorSpace space = ImWidgetsColorSpace_FromOptions );
+	void	DrawShapeProceduralColorHorizontalBand( ImDrawList* pDrawList, ImRect const& bb, int divisions,
+	                                                ImWidgetsColorScalar const& opt,
+	                                                ImWidgetsColorSpace space = ImWidgetsColorSpace_FromOptions );
+	void	DrawShapeProceduralColorAnnulus       ( ImDrawList* pDrawList, ImVec2 center, float innerRadius, float outerRadius,
+	                                                int numSectors, ImWidgetsColorScalar const& opt,
+	                                                ImWidgetsColorSpace space = ImWidgetsColorSpace_FromOptions );
+
+	IMGUI_API void	DrawProceduralColor1DNearestHorizontal( ImDrawList* pDrawList, ImWidgetsColorScalar const& opt,
+															float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX,
+															ImWidgetsColorSpace space = ImWidgetsColorSpace_FromOptions );
+	IMGUI_API void	DrawProceduralColor1DNearestVertical  ( ImDrawList* pDrawList, ImWidgetsColorScalar const& opt,
+															float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionY,
+															ImWidgetsColorSpace space = ImWidgetsColorSpace_FromOptions );
+	IMGUI_API void	DrawProceduralColor1DBilinearHorizontal( ImDrawList* pDrawList, ImWidgetsColorScalar const& opt,
+															 float minX, float maxX, ImVec2 position, ImVec2 size, int resolutionX,
+															 ImWidgetsColorSpace space = ImWidgetsColorSpace_FromOptions );
+	IMGUI_API void	DrawProceduralColor1DBilinearVertical  ( ImDrawList* pDrawList, ImWidgetsColorScalar const& opt,
+															 float minY, float maxY, ImVec2 position, ImVec2 size, int resolutionY,
+															 ImWidgetsColorSpace space = ImWidgetsColorSpace_FromOptions );
+
+	IMGUI_API void	DrawProceduralColorArcBilinear( ImDrawList* pDrawList, ImVec2 center, float innerRadius, float outerRadius,
+													float startAngle, float sweepAngle, ImWidgetsColorScalar const& opt,
+													int division, bool bilinear,
+													ImWidgetsColorSpace space = ImWidgetsColorSpace_FromOptions );
+	IMGUI_API void	DrawProceduralColorSplineBilinear( ImDrawList* pDrawList, ImVec2 const* points, int points_count,
+													   float thickness, ImWidgetsColorScalar const& opt,
+													   int resolution, bool closed,
+													   ImWidgetsColorSpace space = ImWidgetsColorSpace_FromOptions );
+
+	IMGUI_API void	DrawColorRing( ImDrawList* pDrawList, ImVec2 const curPos, ImVec2 const size, float thickness_,
+								   ImWidgetsColorScalar const& opt, int division, float colorOffset, bool bIsBilinear,
+								   ImWidgetsColorSpace space = ImWidgetsColorSpace_FromOptions );
 
 	// Color Picker
 	IMGUI_API bool ColorPickerSRGB( char const* label, ImVec4* color, int fixedAxis = 2, ImVec2 size = ImVec2( 0, 0 ) );
@@ -5188,6 +6028,43 @@ namespace ImWidgets{
                               ImU32 line_col  = IM_COL32( 255, 255, 255, 220 ),
                               ImU32 grip_col  = IM_COL32( 255, 255, 255, 255 ),
                               ImU32 guide_col = IM_COL32( 255, 255, 255,  90 ) );
+
+    //////////////////////////////////////////////////////////////////////////
+    // Size / Resize control with an aspect-ratio lock.
+    //
+    // A compact dimension editor: an interactive proxy (a rectangle in 2D, an
+    // isometric box in 3D) with drag handles, one numeric drag field per axis,
+    // and a padlock button. While the lock is engaged, editing any one
+    // dimension -- by dragging a handle or a field -- scales the others by the
+    // same factor so every ratio is preserved (works identically for W:H and
+    // W:H:D).
+    //
+    // width/height[/depth] are in/out. `lock` is caller-owned so it can be read,
+    // set and persisted. v_min/v_max bound every axis (v_max <= 0 = unbounded;
+    // values are always kept > 0 to protect the ratio math). `size` is the proxy
+    // canvas size in logical px (0 = a sensible default). `preview` chooses
+    // whether the proxy is drawn and where (above / below the fields, or omitted
+    // for a fields-only editor). Returns true the frame any value changed.
+    //////////////////////////////////////////////////////////////////////////
+
+    // Where the interactive proxy (rectangle / isometric box) sits relative to
+    // the numeric fields, or whether it is drawn at all.
+    enum ImWidgetsSizePreview_
+    {
+        ImWidgetsSizePreview_None   = 0,   // numeric fields only, no proxy
+        ImWidgetsSizePreview_Top    = 1,   // proxy above the fields (default)
+        ImWidgetsSizePreview_Bottom = 2    // proxy below the fields
+    };
+    typedef int ImWidgetsSizePreview;
+
+    IMGUI_API bool SizeControl2D( char const* label, float* width, float* height, bool* lock,
+                                  float v_min = 0.0f, float v_max = 0.0f,
+                                  char const* format = "%.1f", ImVec2 size = ImVec2( 0, 0 ),
+                                  ImWidgetsSizePreview preview = ImWidgetsSizePreview_Top );
+    IMGUI_API bool SizeControl3D( char const* label, float* width, float* height, float* depth, bool* lock,
+                                  float v_min = 0.0f, float v_max = 0.0f,
+                                  char const* format = "%.1f", ImVec2 size = ImVec2( 0, 0 ),
+                                  ImWidgetsSizePreview preview = ImWidgetsSizePreview_Top );
 
     //////////////////////////////////////////////////////////////////////////
     // Snap lines / smart guides: given a moving rect and a list of static

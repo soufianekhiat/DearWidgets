@@ -974,15 +974,21 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 			ImGui::Text( "Zoom: %.1f%%", state.Zoom * 100.0f );
 			ImGui::Text( "Pan: (%.1f, %.1f)", state.Pan.x, state.Pan.y );
 			ImGui::Separator();
-			ImGui::SliderFloat( "Exposure",   &state.Exposure, -10.0f, 10.0f, "%.2f stops" );
-			ImGui::SliderFloat( "Black",      &state.Black,    -1.0f,  1.0f, "%.3f" );
-			ImGui::SliderFloat( "White",      &state.White,     0.0f,  4.0f, "%.3f" );
-			ImGui::SliderFloat( "Gamma",      &state.Gamma,     0.1f,  4.0f, "%.2f" );
-			ImGui::SliderFloat( "Temperature",&state.Temperature, -1.0f, 1.0f );
-			ImGui::SliderFloat( "Tint",       &state.Tint,        -1.0f, 1.0f );
+			// These mutate real grading state, so they must report a change --
+			// otherwise the host (and any undo journal driven by the return
+			// value) never learns the image was regraded.
+			if ( ImGui::SliderFloat( "Exposure",   &state.Exposure, -10.0f, 10.0f, "%.2f stops" ) ) changed = true;
+			if ( ImGui::SliderFloat( "Black",      &state.Black,    -1.0f,  1.0f, "%.3f" ) )        changed = true;
+			if ( ImGui::SliderFloat( "White",      &state.White,     0.0f,  4.0f, "%.3f" ) )        changed = true;
+			if ( ImGui::SliderFloat( "Gamma",      &state.Gamma,     0.1f,  4.0f, "%.2f" ) )        changed = true;
+			if ( ImGui::SliderFloat( "Temperature",&state.Temperature, -1.0f, 1.0f ) )              changed = true;
+			if ( ImGui::SliderFloat( "Tint",       &state.Tint,        -1.0f, 1.0f ) )              changed = true;
 			ImGui::EndChild();
-			EndExpandedWindow();
 		}
+		// MUST sit outside the if: BeginExpandedWindow forwards ImGui::Begin's
+		// return, and Begin still has to be paired with End when it returns
+		// false (collapsed / fully clipped). Every other call site does this.
+		EndExpandedWindow();
 	}
 #else
 	// Custom shader unsupported at compile time -- render placeholder

@@ -136,13 +136,30 @@ struct ImNetworkGraphData
 	}
 
 	// Builder helpers (truncating copies). Return the new element's index.
+	// All three invalidate the layout cache -- see InvalidateLayout.
 	int  AddNode ( char const* label, char const* sublabel, ImU32 color, int group_id );
 	int  AddGroup( char const* label, int parent_group );
 	void AddEdge ( int from, int to );
 
+	// Mark every cached level stale. MUST be called after ANY mutation of
+	// Nodes/Groups/Edges made outside the builders above: a cached layout stores
+	// raw indices into those vectors and the draw path dereferences them
+	// unguarded, so a shrunk vector turns a stale cache into an out-of-bounds
+	// read, not merely a stale picture.
+	void InvalidateLayout()
+	{
+		for ( int i = 0; i < LayoutCache.Size; ++i )
+			LayoutCache[ i ].Valid = false;
+	}
+
 	// Cached layout for a level; nullptr when not yet computed.
 	ImNetworkGraphLevelLayout*			FindLayout( int group_id );
 	ImNetworkGraphLevelLayout const*	FindLayout( int group_id ) const;
+
+	// Recompute every group's transitive OpCount (the "N ops" badge) from the
+	// current Nodes/Groups. Call once after building the graph -- AddGroup has
+	// no way to know its future contents, so without this the badges read 0.
+	void RecomputeOpCounts();
 };
 
 namespace ImWidgets {

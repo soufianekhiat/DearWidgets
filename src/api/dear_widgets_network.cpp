@@ -34,6 +34,7 @@ int ImNetworkGraphData::AddNode( char const* label, char const* sublabel, ImU32 
 	n.Color   = color;
 	n.GroupId = group_id;
 	Nodes.push_back( n );
+	InvalidateLayout();
 	return Nodes.Size - 1;
 }
 
@@ -44,12 +45,32 @@ int ImNetworkGraphData::AddGroup( char const* label, int parent_group )
 	g.Parent  = parent_group;
 	g.OpCount = 0;
 	Groups.push_back( g );
+	InvalidateLayout();
 	return Groups.Size - 1;
 }
 
 void ImNetworkGraphData::AddEdge( int from, int to )
 {
 	Edges.push_back( ImNetworkGraphEdge( from, to ) );
+	InvalidateLayout();
+}
+
+void ImNetworkGraphData::RecomputeOpCounts()
+{
+	for ( int g = 0; g < Groups.Size; ++g )
+		Groups[ g ].OpCount = 0;
+	// Each op node contributes to its own group AND every ancestor group, so a
+	// parent's badge reports its whole subtree. Guarded against malformed cycles.
+	for ( int n = 0; n < Nodes.Size; ++n )
+	{
+		int g = Nodes[ n ].GroupId;
+		int guard = 0;
+		while ( g >= 0 && g < Groups.Size && guard++ < 256 )
+		{
+			Groups[ g ].OpCount++;
+			g = Groups[ g ].Parent;
+		}
+	}
 }
 
 ImNetworkGraphLevelLayout* ImNetworkGraphData::FindLayout( int group_id )
@@ -100,8 +121,12 @@ namespace ImWidgets {
 		if ( g == group_id )
 			return node_to_item[ node_idx ];
 		// Walk up the group chain looking for a DIRECT child of group_id.
+		// The index MUST be range-checked as well as the loop count -- the guard
+		// bounds iterations, not the subscript, and a node carrying a stale or
+		// out-of-range GroupId would otherwise read past Groups. (The sibling
+		// walker in RecomputeOpCounts already checks this.)
 		int guard = 0;
-		while ( g != -1 && guard++ < 256 )
+		while ( g >= 0 && g < data.Groups.Size && guard++ < 256 )
 		{
 			if ( data.Groups[ g ].Parent == group_id )
 				return group_to_item[ g ];
@@ -421,6 +446,23 @@ namespace ImWidgets {
 
 		// Layout (compute-on-demand for the displayed level).
 		ImNetworkGraphLevelLayout* lvl = data.FindLayout( data.CurrentGroup );
+		// Belt-and-braces against a stale cache: the builders call
+		// InvalidateLayout, but a host may mutate Nodes/Groups directly. Cached
+		// Items[].Id are raw indices that the draw loop dereferences unguarded,
+		// so validate them here rather than letting a shrunk vector read OOB.
+		if ( lvl && lvl->Valid )
+		{
+			for ( int i = 0; i < lvl->Items.Size; ++i )
+			{
+				ImNetworkGraphLayoutItem const& it = lvl->Items[ i ];
+				int limit = it.IsGroup ? data.Groups.Size : data.Nodes.Size;
+				if ( it.Id < 0 || it.Id >= limit )
+				{
+					lvl->Valid = false;
+					break;
+				}
+			}
+		}
 		if ( !lvl || !lvl->Valid )
 		{
 			NetworkGraphLayout( data, data.CurrentGroup );
