@@ -388,16 +388,15 @@ blocks for editing shaped, mixed-direction text. `InputTextShaped` is a single-l
 input field built on them: shaped, bidi-ordered, grapheme-aware editing with
 selection, clipboard, scrolling and IME positioning. `InputTextMultilineShaped` adds wrapped,
 multi-paragraph editing with per-paragraph direction and vertical caret
-movement.
+movement. Escape in either field restores the text it had when activated.
 
 #### Text on any backend
 
 `SetTextRenderer` selects how `DrawText` renders: the Slug GPU shader, a new CPU
 vector renderer (the same shaped, bidi-ordered glyph outlines filled with plain
 `ImDrawList` triangles, cached per string), or the ImGui atlas. `Auto` uses the
-GPU path when its shader is available and the CPU vector renderer otherwise --
-including on OpenGL3, whose custom-shader texture path still renders
-incorrectly. `DrawTextOnPath`, `DrawTextInsideRect` and `DrawTextInsideConvex`
+GPU path when its shader is available and the CPU vector renderer otherwise.
+`DrawTextOnPath`, `DrawTextInsideRect` and `DrawTextInsideConvex`
 now shape their text too (they used unshaped ImGui glyphs; `DrawTextOnPath`
 did not even decode UTF-8).
 
@@ -558,7 +557,13 @@ directly.
 - `ImTimeline` (`dear_widgets_timeline.h/.cpp`) -- temporal timeline with
   playhead, authored keys, events and `[begin, end)` bands. Band kinds:
   `CacheCoverage`, `Invalid`, `StaleBranch`, `Checkpoint` and (added later in the
-  cycle) `CommittedHistory`.
+  cycle) `CommittedHistory`. Editing is reported as actions the host applies
+  (`ImTimelineAction`): key selection, marquee box-select, group drag with
+  selection ghosts, Del deletes the selection, ruler-only scrubbing.
+- `ImTimelineCurve` -- a curve lane: one parameter's f(t) with editable keys
+  (step / ramp / cubic, two-axis key drag, insert on double-click, delete,
+  context menu, cubic tangent handles with drag-to-slope) drawn from a
+  host-sampled polyline; edits come back as `ImTimelineCurveAction`.
 
 #### Canvas / authoring toolkit
 
@@ -684,6 +689,19 @@ per effect through a `BG_EFFECT` define so only the requested variant compiles.
   is the baseline, but the `AddText` fallback treated it as the top.
 - **`PushDragGroup`** delivers each delta exactly once (the release frame used
   to re-apply the last delta to slots after the initiator).
+- **Strokes longer than 1024 segments vanished**; they are now drawn in
+  horizontal bands (also faster on long strokes). Odd-length dash arrays repeat
+  as in SVG.
+- **Custom shaders rendered wrongly on OpenGL3** (Slug text as scattered specks,
+  the image inspector black). Three causes: the GL backend had no uniform-buffer
+  support although every generated shader takes its projection and parameters
+  through std140 blocks; `ImPlatform_SetShaderTexture` left its slot as the active
+  texture unit, so ImGui bound the draw command's texture over it; and the
+  generated GLSL numbered texture units after samplers and uniform blocks
+  (`texture1` on unit 5 instead of 1). The ImPlatform GL backend now binds the
+  projection at block 0 and the parameters at block 1 (as D3D11's b0 / b1),
+  `glsl_combine_samplers.py` gives every texture its D3D slot, and the `Auto`
+  text renderer uses the GPU path on OpenGL3 again.
 - **Marquee / lasso outline stayed put when the window scrolled**;
   `BeginSelection` now moves the path with its area.
 - **`GradientDrop` stroke drew over other windows** (foreground draw list); it

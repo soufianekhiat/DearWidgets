@@ -3,20 +3,16 @@ layout(row_major) uniform;
 layout(row_major) buffer;
 
 #line 22 0
-layout(binding = 3)
+layout(binding = 0)
 uniform sampler2D texture0_0;
 
 
 #line 21
-layout(binding = 5)
+layout(binding = 1)
 uniform sampler2D texture1_0;
 
 
 #line 23
-layout(binding = 4)
-uniform sampler sampler1_0;
-
-
 #line 18
 struct SLANG_ParameterGroup_DeltaECompareParams_std140_0
 {
@@ -138,91 +134,92 @@ vec3 saturate_1(vec3 x_1)
 }
 
 
-// Ramp fits mirrored from hlsl_src/delta_e_compare.hlsl (hand-kept: this file
-// carries the OpenGL sampler fix, so it is not regenerated wholesale).
+#line 86 0
 vec3 viridis_0(float t_1)
 {
-    float t = saturate_0(t_1);
-    const vec3 c0 = vec3( 0.2777273272234177,  0.005407344544966578,  0.3340998053353061);
-    const vec3 c1 = vec3( 0.1050930431085774,  1.404613529898575,     1.384590162594685);
-    const vec3 c2 = vec3(-0.3308618287255563,  0.214847559468213,     0.09509516302823659);
-    const vec3 c3 = vec3(-4.634230498983486,  -5.799100973351585,   -19.33244095627987);
-    const vec3 c4 = vec3( 6.228269936347081,  14.17993336680509,     56.69055260068105);
-    const vec3 c5 = vec3( 4.776384997670288, -13.74514537774601,    -65.35303263337234);
-    const vec3 c6 = vec3(-5.435455855934631,   4.645852612178535,    26.3124352495832);
-    return saturate_1(c0 + t * (c1 + t * (c2 + t * (c3 + t * (c4 + t * (c5 + t * c6))))));
+
+#line 87
+    float _S8 = saturate_0(t_1);
+
+#line 95
+    return saturate_1(vec3(0.27772733569145203, 0.00540734454989433, 0.33409979939460754) + _S8 * (vec3(0.10509303957223892, 1.40461349487304688, 1.38459014892578125) + _S8 * (vec3(-0.33086183667182922, 0.21484756469726562, 0.09509516507387161) + _S8 * (vec3(-4.63423061370849609, -5.79910087585449219, -19.33244132995605469) + _S8 * (vec3(6.22827005386352539, 14.17993354797363281, 56.6905517578125) + _S8 * (vec3(4.77638483047485352, -13.74514579772949219, -65.35303497314453125) + _S8 * vec3(-5.4354557991027832, 4.64585256576538086, 26.31243515014648438)))))));
 }
 
+
+#line 97
 vec3 turbo_0(float t_2)
 {
-    float t = saturate_0(t_2);
-    const vec4 kRed4   = vec4(0.13572138, 4.61539260, -42.66032258, 132.13108234);
-    const vec4 kGreen4 = vec4(0.09140261, 2.19418839, 4.84296658, -14.18503333);
-    const vec4 kBlue4  = vec4(0.10667330, 12.64194608, -60.58204836, 110.36276771);
-    const vec2 kRed2   = vec2(-152.94239396, 59.28637943);
-    const vec2 kGreen2 = vec2(4.27729857, 2.82956604);
-    const vec2 kBlue2  = vec2(-89.90310912, 27.34824973);
-    vec4 v4 = vec4(1.0, t, t * t, t * t * t);
-    vec2 v2 = v4.zw * v4.z;
-    return saturate_1(vec3(dot(v4, kRed4) + dot(v2, kRed2), dot(v4, kGreen4) + dot(v2, kGreen2), dot(v4, kBlue4) + dot(v2, kBlue2)));
+
+#line 98
+    float _S9 = saturate_0(t_2);
+
+#line 105
+    float _S10 = _S9 * _S9;
+
+#line 105
+    float _S11 = _S10 * _S9;
+
+#line 105
+    vec4 v4_0 = vec4(1.0, _S9, _S10, _S11);
+    vec2 v2_0 = vec2(_S10, _S11) * _S10;
+    return saturate_1(vec3(dot(v4_0, vec4(0.13572138547897339, 4.61539268493652344, -42.6603240966796875, 132.1310882568359375)) + dot(v2_0, vec2(-152.9423980712890625, 59.28638076782226562)), dot(v4_0, vec4(0.09140261262655258, 2.19418835639953613, 4.84296655654907227, -14.18503379821777344)) + dot(v2_0, vec2(4.2772984504699707, 2.82956600189208984)), dot(v4_0, vec4(0.10667330026626587, 12.64194583892822266, -60.5820465087890625, 110.36277008056640625)) + dot(v2_0, vec2(-89.903106689453125, 27.34824943542480469))));
 }
 
+
+#line 109
 vec3 magma_0(float t_3)
 {
-    float t = saturate_0(t_3);
-    const vec3 c0 = vec3(-0.002136485053939582, -0.000749655052795221, -0.005386127855323933);
-    const vec3 c1 = vec3( 0.2516605407371642,    0.6775232436837668,    2.494026599312351);
-    const vec3 c2 = vec3( 8.353717279216625,    -3.577719514958484,     0.3144679030132573);
-    const vec3 c3 = vec3(-27.66873308576866,    14.26473078096533,    -13.64921318813922);
-    const vec3 c4 = vec3( 52.17613981234068,   -27.94360607168351,     12.94416944238394);
-    const vec3 c5 = vec3(-50.76852536473588,    29.04658282127291,      4.23415299384598);
-    const vec3 c6 = vec3( 18.65570506591883,   -11.48977351997711,     -5.601961508734096);
-    return saturate_1(c0 + t * (c1 + t * (c2 + t * (c3 + t * (c4 + t * (c5 + t * c6))))));
+
+#line 110
+    float _S12 = saturate_0(t_3);
+
+#line 118
+    return saturate_1(vec3(-0.00213648495264351, -0.00074965506792068, -0.00538612762466073) + _S12 * (vec3(0.25166055560112, 0.67752325534820557, 2.49402666091918945) + _S12 * (vec3(8.35371685028076172, -3.57771944999694824, 0.3144679069519043) + _S12 * (vec3(-27.66873359680175781, 14.26473045349121094, -13.64921283721923828) + _S12 * (vec3(52.17613983154296875, -27.94360542297363281, 12.94416904449462891) + _S12 * (vec3(-50.768524169921875, 29.04658317565917969, 4.23415279388427734) + _S12 * vec3(18.65570449829101562, -11.48977375030517578, -5.60196161270141602)))))));
 }
 
 vec3 ramp_0(float t_4, uint mode_0)
 {
 
-#line 109
+#line 122
     if(mode_0 == 1U)
     {
 
-#line 109
+#line 122
         return viridis_0(t_4);
     }
 
-#line 110
+#line 123
     if(mode_0 == 2U)
     {
 
-#line 110
+#line 123
         return turbo_0(t_4);
     }
 
-#line 111
+#line 124
     if(mode_0 == 3U)
     {
 
-#line 111
+#line 124
         return magma_0(t_4);
     }
 
-#line 112
+#line 125
     return vec3(t_4, t_4, t_4);
 }
 
 
-#line 112
+#line 125
 layout(location = 0)
 out vec4 entryPointParam_main_ps_0;
 
 
-#line 112
+#line 125
 layout(location = 0)
 in vec4 input_col_0;
 
 
-#line 112
+#line 125
 layout(location = 1)
 in vec2 input_uv_0;
 
@@ -235,21 +232,21 @@ void main()
 
     uint formula_0 = DeltaECompareParams_0.modePack_0.x;
 
-#line 122
+#line 135
     float dE_0;
 
     if(formula_0 == 1U)
     {
 
-#line 124
+#line 137
         dE_0 = length(linear_to_oklab_0(a_lin_0) - linear_to_oklab_0(b_lin_0)) * 100.0;
 
-#line 124
+#line 137
     }
     else
     {
 
-#line 134
+#line 147
         vec3 lab_a_0 = xyz_to_lab_0(linear_to_xyz_0(a_lin_0));
         vec3 lab_b_0 = xyz_to_lab_0(linear_to_xyz_0(b_lin_0));
         float dE_1 = length(lab_a_0 - lab_b_0);
@@ -257,102 +254,102 @@ void main()
         {
 
             float dL_0 = lab_a_0.x - lab_b_0.x;
-            vec2 _S11 = lab_a_0.yz;
+            vec2 _S13 = lab_a_0.yz;
 
-#line 141
-            float _S12 = length(_S11);
+#line 154
+            float _S14 = length(_S13);
 
-#line 141
-            vec2 _S13 = lab_b_0.yz;
+#line 154
+            vec2 _S15 = lab_b_0.yz;
 
-#line 141
-            float dC_0 = _S12 - length(_S13);
-            vec2 _S14 = _S11 - _S13;
+#line 154
+            float dC_0 = _S14 - length(_S15);
+            vec2 _S16 = _S13 - _S15;
 
-            float SC_0 = 1.0 + 0.04500000178813934 * _S12;
-            float SH_0 = 1.0 + 0.01499999966472387 * _S12;
+            float SC_0 = 1.0 + 0.04500000178813934 * _S14;
+            float SH_0 = 1.0 + 0.01499999966472387 * _S14;
 
-#line 145
-            dE_0 = sqrt(dL_0 * dL_0 + dC_0 / SC_0 * (dC_0 / SC_0) + max(dot(_S14, _S14) - dC_0 * dC_0, 0.0) / (SH_0 * SH_0));
+#line 158
+            dE_0 = sqrt(dL_0 * dL_0 + dC_0 / SC_0 * (dC_0 / SC_0) + max(dot(_S16, _S16) - dC_0 * dC_0, 0.0) / (SH_0 * SH_0));
 
-#line 137
+#line 150
         }
         else
         {
 
-#line 148
+#line 161
             if(formula_0 == 3U)
             {
 
-#line 148
+#line 161
                 dE_0 = dE_1 * 0.85000002384185791;
 
-#line 148
+#line 161
             }
             else
             {
 
-#line 148
+#line 161
                 dE_0 = dE_1;
 
-#line 148
+#line 161
             }
 
-#line 137
+#line 150
         }
 
-#line 124
+#line 137
     }
 
-#line 162
+#line 175
     vec3 final_0 = ramp_0(saturate_0((dE_0 + DeltaECompareParams_0.rangePack_0.w) * DeltaECompareParams_0.rangePack_0.z / max(DeltaECompareParams_0.rangePack_0.x, 0.00100000004749745)), DeltaECompareParams_0.modePack_0.y) * DeltaECompareParams_0.mixPack_0.z + a_srgb_0 * DeltaECompareParams_0.mixPack_0.x + b_srgb_0 * DeltaECompareParams_0.mixPack_0.y;
 
-#line 162
-    bool _S15;
+#line 175
+    bool _S17;
 
 
     if((DeltaECompareParams_0.modePack_0.z) > 0U)
     {
 
-#line 165
-        _S15 = dE_0 > (DeltaECompareParams_0.rangePack_0.y);
+#line 178
+        _S17 = dE_0 > (DeltaECompareParams_0.rangePack_0.y);
 
-#line 165
+#line 178
     }
     else
     {
 
-#line 165
-        _S15 = false;
+#line 178
+        _S17 = false;
 
-#line 165
+#line 178
     }
 
-#line 165
+#line 178
     vec3 final_1;
 
-#line 165
-    if(_S15)
+#line 178
+    if(_S17)
     {
 
-#line 165
+#line 178
         final_1 = mix(final_0, vec3(1.0, 0.0, 0.0), vec3(0.34999999403953552));
 
-#line 165
+#line 178
     }
     else
     {
 
-#line 165
+#line 178
         final_1 = final_0;
 
-#line 165
+#line 178
     }
 
-#line 165
+#line 178
     entryPointParam_main_ps_0 = vec4(saturate_1(final_1), 1.0) * input_col_0;
 
-#line 165
+#line 178
     return;
 }
 

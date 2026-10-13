@@ -52,7 +52,7 @@ layout(std140) uniform block_SLANG_ParameterGroup_ImageInspectorParams_std140_0
 }ImageInspectorParams_0;
 
 #line 73
-layout(binding = 3)
+layout(binding = 0)
 uniform sampler2D texture0_0;
 
 

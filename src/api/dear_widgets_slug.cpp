@@ -3088,13 +3088,7 @@ namespace ImWidgets {
 	static ImWidgetsTextRenderer SlugResolveRenderer()
 	{
 		if (s_textRenderer != ImWidgetsTextRenderer_Auto) return s_textRenderer;
-#if defined(IM_CURRENT_GFX) && (IM_CURRENT_GFX == IM_GFX_OPENGL3)
-		// The OpenGL3 custom-shader path compiles but samples its textures wrongly
-		// (see notes/RELEASE_BLOCKERS.md D.3), so Auto draws vector text there.
-		return ImWidgetsTextRenderer_CPUVector;
-#else
 		return (gs_pContext && gs_pContext->slugShader.program) ? ImWidgetsTextRenderer_GPU : ImWidgetsTextRenderer_CPUVector;
-#endif
 	}
 
 	static void SlugExtractGlyphCurves(SlugFontCache* atlas, int gi, ImVector<SlugCurve>& curves); // below

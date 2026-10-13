@@ -111,8 +111,6 @@ Each one, with its replacement, is listed under **Breaking changes** and
 
 ## Known limitations
 
-- **OpenGL3:** Slug GPU text renders incorrectly; the `Auto` text renderer uses
-  the CPU vector renderer there instead.
 - **Font fallback** is global (not per context), at most 8 fonts, and is not
   invalidated when a font is destroyed.
 - **Path clips** apply to CPU fills only; plain `ImDrawList` calls and GPU-shader

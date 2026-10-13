@@ -23,21 +23,17 @@ layout(std140) uniform block_SLANG_ParameterGroup_LookDevInspectorParams_std140_
 }LookDevInspectorParams_0;
 
 #line 27
-layout(binding = 5)
+layout(binding = 1)
 uniform sampler2D texture1_0;
 
 
 #line 26
 #line 25
-layout(binding = 3)
+layout(binding = 0)
 uniform sampler2D texture0_0;
 
 
 #line 24
-layout(binding = 2)
-uniform sampler sampler0_0;
-
-
 #line 52
 vec3 apply_tone_0(vec3 rgb_0, vec4 params_0)
 {

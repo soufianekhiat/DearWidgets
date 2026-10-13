@@ -103,7 +103,7 @@ struct ImTimelineAction
 };
 
 //////////////////////////////////////////////////////////////////////////
-// Curve lane (The Flow review27): ONE parameter's f(t) with editable keys.
+// Curve lane: ONE parameter's f(t) with editable keys.
 // Hold keys draw as steps, linear keys as ramps; keys drag in BOTH axes
 // (tick + value), emitted on release. The host owns the data and re-feeds
 // it after applying an edit, exactly like ImTimeline.
@@ -167,7 +167,7 @@ namespace ImWidgets
 
 	// Draws ONE parameter's editable f(t) lane. Returns true when
 	// `out_action` carries a user action for the host.
-	bool ImTimelineCurve( char const* label,
+	IMGUI_API bool ImTimelineCurve( char const* label,
 						  ImTimelineCurveData const& data,
 						  ImVec2 const& size,
 						  ImTimelineCurveAction* out_action );

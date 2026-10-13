@@ -18,8 +18,11 @@ slangc (2025.4) has no flag to emit combined samplers, so we fold them here:
     ...
     texture(fillTexture_0, uv)
 
-The texture keeps its own `layout(binding = N)`, and N already matches the slot
-the C++ passes to ImPlatform_SetShaderTexture, so no binding changes are needed.
+Texture bindings are then renumbered to the D3D slot of the matching
+hlsl_src texture (explicit register(tN), else declaration order) -- the slot the
+C++ passes to ImPlatform_SetShaderTexture or, for slot 0, the texture ImGui binds
+for the draw command. Slang numbers textures, samplers and uniform blocks in one
+sequence, so without this `texture1` landed on unit 5.
 `texelFetch` works on a combined sampler in core GLSL, which is why the
 samplerless extension can simply be dropped.
 
@@ -72,19 +75,77 @@ def convert(text):
 
     # 4. drop the now-unreferenced standalone sampler declarations
     #    (only when nothing else still names them)
-    for m in list(SMP_DECL.finditer(text)):
-        name = m.group(1)
-        body = text[:m.start()] + text[m.end():]
-        if not re.search(r'\b' + re.escape(name) + r'\b', body):
-            text = body
-            changed = True
+    #    Rescan after each removal: match offsets go stale once text shrinks.
+    removed = True
+    while removed:
+        removed = False
+        for m in SMP_DECL.finditer(text):
+            body = text[:m.start()] + text[m.end():]
+            if not re.search(r'\b' + re.escape(m.group(1)) + r'\b', body):
+                text, changed, removed = body, True, True
+                break
 
     return text, changed
+
+
+HLSL_TEX = re.compile(
+    r'^\s*Texture(?:1D|2D|3D|Cube|2DArray)(?:<[^>]*>)?\s+([A-Za-z_]\w*)\s*(?::\s*register\(\s*t(\d+)\s*\))?\s*;',
+    re.M)
+GLSL_SMP = re.compile(
+    r'^layout\(binding = (\d+)\)(\s*\n\s*uniform sampler(?:1D|2D|3D|Cube|2DArray)\s+)([A-Za-z_]\w*?)_0\s*;',
+    re.M)
+
+
+def d3d_texture_slots(hlsl_path):
+    """name -> D3D t-register: explicit register(tN), else declaration order."""
+    try:
+        with open(hlsl_path, 'r', encoding='utf-8', errors='replace') as f:
+            src = f.read()
+    except OSError:
+        return {}
+    slots, nxt, used = {}, 0, set()
+    decls = HLSL_TEX.findall(src)
+    for name, reg in decls:
+        if reg:
+            slots[name] = int(reg)
+            used.add(int(reg))
+    for name, reg in decls:
+        if not reg:
+            while nxt in used:
+                nxt += 1
+            slots[name] = nxt
+            used.add(nxt)
+    return slots
+
+
+def remap_bindings(text, slots):
+    """Texture units follow the D3D slots the C++ binds (Slang numbers samplers,
+    textures and uniform blocks in one sequence, so `texture1` came out at 5)."""
+    def sub(m):
+        slot = slots.get(m.group(3))
+        if slot is None:
+            return m.group(0)
+        return 'layout(binding = %d)%s%s_0;' % (slot, m.group(2), m.group(3))
+    out = GLSL_SMP.sub(sub, text)
+    return out, out != text
+
+
+def hlsl_for(glsl_name, hlsl_dir):
+    base = re.sub(r'_(ps|vs)\.glsl$', '', glsl_name)
+    while base:
+        cand = os.path.join(hlsl_dir, base + '.hlsl')
+        if os.path.isfile(cand):
+            return cand
+        if '_' not in base:
+            break
+        base = base.rsplit('_', 1)[0]   # slug_fill -> slug
+    return None
 
 
 def main():
     root = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
         os.path.dirname(os.path.abspath(__file__)), 'shaders', 'glsl')
+    hlsl_dir = os.path.join(os.path.dirname(os.path.abspath(root)), 'hlsl_src')
     if not os.path.isdir(root):
         print('not a directory: %s' % root)
         return 1
@@ -97,6 +158,10 @@ def main():
         with open(path, 'r', encoding='utf-8', errors='replace', newline='') as f:
             src = f.read()
         out, changed = convert(src)
+        hlsl = hlsl_for(name, hlsl_dir)
+        if hlsl:
+            out, remapped = remap_bindings(out, d3d_texture_slots(hlsl))
+            changed |= remapped
         if changed:
             with open(path, 'w', encoding='utf-8', newline='') as f:
                 f.write(out)

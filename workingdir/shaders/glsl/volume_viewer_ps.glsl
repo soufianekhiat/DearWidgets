@@ -31,7 +31,7 @@ layout(std140) uniform block_SLANG_ParameterGroup_VolumeViewerParams_std140_0
 }VolumeViewerParams_0;
 
 #line 38
-layout(binding = 5)
+layout(binding = 1)
 uniform sampler3D volume_0;
 
 
