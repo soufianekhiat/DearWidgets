@@ -27316,6 +27316,44 @@ namespace ImWidgets {
 		return yBot - v01 * h;
 	}
 
+	// ---- Scope hover readouts (shared) ----
+	// Inverse of the axis mapping used for the scope graduations: screen t in
+	// [0,1] -> code value in [0, maxVal].
+	static float DW_ScopeAxisValue( ImParadeScale scale, float t, float logMaxBits, int maxVal )
+	{
+		t = ImSaturate( t );
+		if ( scale == ImParadeScale_Log )
+			return ImClamp( ImPow( 2.0f, t * logMaxBits ) - 1.0f, 0.0f, ( float )maxVal );
+		if ( scale == ImParadeScale_InvLog )
+			return ImClamp( ( float )maxVal - ( ImPow( 2.0f, ( 1.0f - t ) * logMaxBits ) - 1.0f ), 0.0f, ( float )maxVal );
+		return t * ( float )maxVal;
+	}
+	// Normalized value -> bin, matching the Accumulate functions (v * (N-1) + 0.5).
+	static int DW_ScopeBin( float v01, int binCount )
+	{
+		return ImClamp( ( int )( ImSaturate( v01 ) * ( float )( binCount - 1 ) + 0.5f ), 0, binCount - 1 );
+	}
+	static char const* DW_ScopeChannelName( int mode, int ch, bool histogram )
+	{
+		static char const* const luma[]  = { "Y" };
+		static char const* const rgb[]   = { "R", "G", "B" };
+		static char const* const yrgb[]  = { "Y", "R", "G", "B" };
+		static char const* const ycbcr[] = { "Y", "Cb", "Cr" };
+		static char const* const hsv[]   = { "H", "S", "V" };
+		static char const* const oklch[] = { "L", "C", "h" };
+		char const* const* names = rgb; int n = 3;
+		switch ( mode )
+		{
+		case 0: names = luma;  n = 1; break;	// *_Luma
+		case 1: names = rgb;   n = 3; break;	// *_RGB
+		case 2: names = yrgb;  n = 4; break;	// *_YRGB
+		case 3: names = ycbcr; n = 3; break;	// *_YCbCr
+		case 4: if ( histogram ) { names = hsv;   n = 3; } break;
+		case 5: if ( histogram ) { names = oklch; n = 3; } break;
+		}
+		return ( ch >= 0 && ch < n ) ? names[ ch ] : "?";
+	}
+
 	void ParadeScope( char const* label, ImParadeScopeData const& data, bool overlay, ImParadeScale scale, ImVec2 size )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
@@ -27485,7 +27523,30 @@ namespace ImWidgets {
 
 		if ( data.ChannelCount <= 0 || data.PeakCount == 0 || data.XBins <= 0 || data.YBins <= 0 )
 		{
-			finishScope();
+			// Hover readout: code level under the cursor and the trace density there.
+		if ( ImGui::IsItemHovered() && scope_bb.Contains( g.IO.MousePos ) && !IsMouseOverExpandButton( id, scope_bb ) )
+		{
+			ImVec2 const m = g.IO.MousePos;
+			float const level = DW_ScopeAxisValue( scale, ( scope_bb.Max.y - m.y ) / scope_bb.GetHeight(), logMaxBits, maxVal );
+			bool const split = !overlay && data.ChannelCount > 1;
+			float const colW = scope_bb.GetWidth() / ( split ? ( float )data.ChannelCount : 1.0f );
+			int const colCh = split ? ImClamp( ( int )( ( m.x - scope_bb.Min.x ) / colW ), 0, data.ChannelCount - 1 ) : -1;
+			float const xIn = ImSaturate( ( m.x - scope_bb.Min.x - ( colCh < 0 ? 0.0f : colCh * colW ) ) / colW );
+			int const xb = ImClamp( ( int )( xIn * data.XBins ), 0, data.XBins - 1 );
+			int const yb = DW_ScopeBin( level / ( float )maxVal, data.YBins );
+			ImGui::BeginTooltip();
+			ImGui::Text( "Level %d / %d   (column %.0f%%)", ( int )( level + 0.5f ), maxVal, xIn * 100.0f );
+			for ( int ch = 0; ch < data.ChannelCount; ++ch )
+			{
+				if ( colCh >= 0 && ch != colCh ) continue;
+				int const idx = ch * data.XBins * data.YBins + xb * data.YBins + yb;
+				ImU32 const cnt = ( idx >= 0 && idx < data.Bins.Size ) ? data.Bins[ idx ] : 0;
+				ImGui::Text( "%-2s %u px", DW_ScopeChannelName( ( int )data.Mode, ch, false ), cnt );
+			}
+			ImGui::EndTooltip();
+		}
+
+		finishScope();
 			return;
 		}
 
@@ -27812,7 +27873,28 @@ namespace ImWidgets {
 
 		if ( data.Resolution <= 0 || data.PeakCount == 0 )
 		{
-			finishScope();
+			// Hover readout: chroma, hue and saturation under the cursor (BT.709 Cb/Cr).
+		if ( ImGui::IsItemHovered() && total_bb.Contains( g.IO.MousePos ) && !IsMouseOverExpandButton( id, total_bb ) && radius > 0.0f )
+		{
+			ImVec2 const m = g.IO.MousePos;
+			float const cb = ( m.x - center.x ) / ( 2.0f * radius );
+			float const cr = ( center.y - m.y ) / ( 2.0f * radius );
+			float hue = ImAtan2( cr, cb ) * ( 180.0f / IM_PI );
+			if ( hue < 0.0f ) hue += 360.0f;
+			float const sat = ImSqrt( cb * cb + cr * cr ) / 0.5f;
+			int const res = data.Resolution;
+			int const xb = DW_ScopeBin( cb + 0.5f, res );
+			int const yb = DW_ScopeBin( cr + 0.5f, res );
+			int const idx = xb * res + yb;
+			ImU32 const cnt = ( idx >= 0 && idx < data.Bins.Size ) ? data.Bins[ idx ] : 0;
+			ImGui::BeginTooltip();
+			ImGui::Text( "Cb %+.3f  Cr %+.3f", cb, cr );
+			ImGui::Text( "Hue %.0f deg  Sat %.0f%%", hue, sat * 100.0f );
+			ImGui::Text( "%u px", cnt );
+			ImGui::EndTooltip();
+		}
+
+		finishScope();
 			return;
 		}
 
@@ -28221,7 +28303,25 @@ namespace ImWidgets {
 
 		if ( data.ChannelCount <= 0 || data.PeakCount == 0 || data.BinCount <= 0 )
 		{
-			finishScope();
+			// Hover readout: code value under the cursor and the per-channel counts.
+		if ( ImGui::IsItemHovered() && scope_bb.Contains( g.IO.MousePos ) && !IsMouseOverExpandButton( id, scope_bb ) )
+		{
+			ImVec2 const m = g.IO.MousePos;
+			float const value = DW_ScopeAxisValue( xScale, ( m.x - scope_bb.Min.x ) / scope_bb.GetWidth(), logMaxBits, maxVal );
+			int const b = DW_ScopeBin( value / ( float )maxVal, data.BinCount );
+			ImGui::BeginTooltip();
+			ImGui::Text( "Value %d / %d  (bin %d)", ( int )( value + 0.5f ), maxVal, b );
+			for ( int ch = 0; ch < data.ChannelCount; ++ch )
+			{
+				int const idx = ch * data.BinCount + b;
+				ImU32 const cnt = ( idx < data.Bins.Size ) ? data.Bins[ idx ] : 0;
+				ImGui::Text( "%-2s %u px  (%.1f%% of peak)", DW_ScopeChannelName( ( int )data.Mode, ch, true ), cnt,
+					data.PeakCount ? 100.0f * ( float )cnt / ( float )data.PeakCount : 0.0f );
+			}
+			ImGui::EndTooltip();
+		}
+
+		finishScope();
 			return;
 		}
 
@@ -28618,6 +28718,30 @@ namespace ImWidgets {
 			}
 
 			dl->PopClipRect();
+		}
+
+		// Hover readout: xy under the cursor, whether it lies inside the gamut
+		// triangle, and McCamy's CCT estimate.
+		if ( ImGui::IsItemHovered() && scope_bb.Contains( g.IO.MousePos ) && !IsMouseOverExpandButton( id, scope_bb ) )
+		{
+			ImVec2 const m = g.IO.MousePos;
+			float const x = minX + ( m.x - scope_bb.Min.x ) / scopeW * ( maxX - minX );
+			float const y = minY + ( scope_bb.Max.y - m.y ) / scopeH * ( maxY - minY );
+			auto edge = []( ImVec2 a, ImVec2 b, float px, float py ) { return ( b.x - a.x ) * ( py - a.y ) - ( b.y - a.y ) * ( px - a.x ); };
+			float const e0 = edge( gd.r, gd.g, x, y ), e1 = edge( gd.g, gd.b, x, y ), e2 = edge( gd.b, gd.r, x, y );
+			bool const inGamut = ( e0 >= 0.0f && e1 >= 0.0f && e2 >= 0.0f ) || ( e0 <= 0.0f && e1 <= 0.0f && e2 <= 0.0f );
+			ImGui::BeginTooltip();
+			ImGui::Text( "x %.4f  y %.4f", x, y );
+			ImGui::Text( inGamut ? "inside gamut" : "outside gamut" );
+			float const dn = 0.1858f - y;
+			if ( ImFabs( dn ) > 1e-4f )
+			{
+				float const n = ( x - 0.3320f ) / dn;
+				float const cct = 449.0f * n * n * n + 3525.0f * n * n + 6823.3f * n + 5520.33f;
+				if ( cct > 1000.0f && cct < 25000.0f )
+					ImGui::Text( "CCT ~%.0f K (McCamy)", cct );
+			}
+			ImGui::EndTooltip();
 		}
 
 		// Border
