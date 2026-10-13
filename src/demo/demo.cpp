@@ -2451,6 +2451,30 @@ namespace ImWidgets{
 			}
 			ImWidgets::GetStyle().TextDirection = savedDir;
 
+			// Font fallback: a Latin-only font with an Arabic fallback, like
+			// CSS font-family: "Fraunces", "Amiri".
+			ImGui::SeparatorText( "Font fallback (SetFontFallbacks)" );
+			{
+				ImFont* latin = g_frauncesFont ? g_frauncesFont : ( g_alegreyaFont ? g_alegreyaFont : g_firaCodeFont );
+				if ( latin && bf && latin != bf )
+				{
+					static bool s_useFallback = true;
+					ImGui::Checkbox( "Arabic fallback##SlugFallback", &s_useFallback );
+					ImFont* const fb[ 1 ] = { bf };
+					ImWidgets::SetFontFallbacks( latin, fb, s_useFallback ? 1 : 0 );
+					const char* mixed = "Latin font + fallback: \xd9\x85\xd8\xb1\xd8\xad\xd8\xa8\xd8\xa7 world 2026";
+					ImWidgets::GetStyle().TextDirection = s_bidi_dir;
+					float asc = 0.0f;
+					ImVec2 tsz = ImWidgets::CalcTextSize( latin, 26.0f, mixed, nullptr, &asc );
+					ImVec2 p0 = ImGui::GetCursorScreenPos();
+					ImWidgets::DrawText( pDrawList, latin, 26.0f, ImVec2( p0.x, p0.y + asc ), ImGui::GetColorU32( ImGuiCol_Text ), mixed );
+					ImWidgets::GetStyle().TextDirection = savedDir;
+					ImGui::Dummy( ImVec2( tsz.x, tsz.y + gap ) );
+				}
+				else
+					ImGui::TextDisabled( "Load a Latin font (Fraunces / Alegreya / Fira Code) and Amiri to see the fallback." );
+			}
+
 			// Caret, hit-testing and selection on a shaped bidi line: a tiny line editor.
 			ImGui::SeparatorText( "Caret & selection (CalcTextGraphemes / TextHitTest)" );
 			ImGui::TextDisabled( "Click to place the caret, drag to select, arrows / Home / End, type, Backspace / Delete." );

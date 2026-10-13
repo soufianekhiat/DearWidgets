@@ -123,6 +123,20 @@ keep the caret visible, IME position reporting. Enter or Escape leave the
 field. Returns `true` when the buffer changed (`ImGuiInputTextFlags_EnterReturnsTrue`:
 when Enter is pressed); honours `ImGuiInputTextFlags_ReadOnly`.
 
+### `SetFontFallbacks`
+```cpp
+void SetFontFallbacks( ImFont* font, ImFont* const* fallbacks, int count );
+```
+A font fallback chain, like a CSS `font-family` list: characters `font` has no
+glyph for are drawn with the first fallback that has them. Whole graphemes
+switch font; spaces, digits and punctuation stay with their neighbours. The
+paragraph's bidi levels are resolved on the full string, the text is cut into
+pieces of one font and one direction, the pieces are reordered visually and
+each one is shaped on its own, so a Latin UI font with an Arabic fallback lays
+out mixed strings correctly. Applies to `DrawText`, `CalcTextSize`,
+`DrawTextBlock`, `CalcTextGraphemes` and `InputTextShaped`. Strings the primary
+font fully covers take the single-font path at no extra cost.
+
 ### Caret, hit-testing and selection
 ```cpp
 float CalcTextGraphemes  ( ImFont*, float font_size, char const* text, char const* text_end,

@@ -2653,26 +2653,175 @@ namespace ImWidgets {
 		return ImVec2(width, (maxY - minY) * font_size);
 	}
 
-	ImVec2 CalcTextSize(ImFont* font, float font_size,
-	                    const char* text, const char* text_end, float* out_ascent)
+	// ---- Font fallback (CSS font-family list) ----------------------------------
+	// Graphemes the primary font cannot render are taken from the first
+	// fallback that can. The paragraph's bidi levels are resolved on the whole
+	// string, the text is cut into pieces of one font and one level, the pieces
+	// are reordered visually (L2) and each one is shaped / drawn on its own.
+
+	static ImVector<ImFont*> s_fbPrimary, s_fbFallback;   // (primary, fallback) pairs, in priority order
+
+	void SetFontFallbacks(ImFont* font, ImFont* const* fallbacks, int count)
 	{
-		if (font_size > 0.0f) font_size = SlugLpToPx(font_size);
-		else                  font_size = ImGui::GetFontSize();
+		int w = 0;
+		for (int i = 0; i < s_fbPrimary.Size; ++i)
+			if (s_fbPrimary[i] != font) { s_fbPrimary[w] = s_fbPrimary[i]; s_fbFallback[w] = s_fbFallback[i]; ++w; }
+		s_fbPrimary.resize(w); s_fbFallback.resize(w);
+		for (int i = 0; i < count && fallbacks; ++i)
+			if (fallbacks[i] && fallbacks[i] != font) { s_fbPrimary.push_back(font); s_fbFallback.push_back(fallbacks[i]); }
+	}
+
+	struct SlugPiece { const char* b; const char* e; ImFont* font; int level; };
+
+	// Default-ignorable / formatting codepoints never decide the font.
+	static inline bool SlugIgnorableCp(unsigned int cp)
+	{
+		return cp < 0x20 || cp == 0x200B || cp == 0x200C || cp == 0x200D || cp == 0x2060 || cp == 0xFEFF
+		    || (cp >= 0xFE00 && cp <= 0xFE0F) || (cp >= 0xE0100 && cp <= 0xE01EF) || (cp >= 0x202A && cp <= 0x202E)
+		    || (cp >= 0x2066 && cp <= 0x2069) || cp == 0x200E || cp == 0x200F || cp == 0x061C;
+	}
+
+	// Returns false when no fallback is needed (single-font fast path).
+	static bool SlugFallbackPieces(ImFont* font, const char* text, const char* end, ImVector<SlugPiece>& out)
+	{
+		out.resize(0);
+		if (!gs_pContext || !font || s_fbPrimary.Size == 0 || text >= end) return false;
+		ImFont* chain[9]; int nChain = 0;
+		chain[nChain++] = font;
+		for (int i = 0; i < s_fbPrimary.Size && nChain < 9; ++i) if (s_fbPrimary[i] == font) chain[nChain++] = s_fbFallback[i];
+		if (nChain == 1) return false;
+		if (!gs_pContext->slugState) gs_pContext->slugState = IM_NEW(ImWidgetsSlugState);
+		SlugFontCache* atlases[9];
+		for (int i = 0; i < nChain; ++i) atlases[i] = SlugGetOrCreateAtlas(gs_pContext->slugState, chain[i]);
+		if (!atlases[0]) return false;
+		auto has = [&](int fi, unsigned int cp) {
+			return atlases[fi] && (SlugIgnorableCp(cp) || cp >= 0x100000 || stbtt_FindGlyphIndex(&atlases[fi]->stbFont, (int)cp) != 0);
+		};
+
+		// Fast path: the primary font covers every codepoint.
+		bool allPrimary = true;
+		for (const char* p = text; p < end && allPrimary; )
+		{
+			unsigned int cp = 0; int n = ImTextCharFromUtf8(&cp, p, end); if (n <= 0) break;
+			if (!has(0, cp)) allPrimary = false;
+			p += n;
+		}
+		if (allPrimary) return false;
+
+		// Font per grapheme. Characters every font has (spaces, digits,
+		// punctuation) stay in the current run's font to avoid fragmenting.
+		const int len = (int)(end - text);
+		ImVector<unsigned int> brk; brk.resize(len + 1);
+		DwShaper_TextBreaks(text, len, brk.Data);
+		ImVector<signed char> fontOf; fontOf.resize(len);
+		int cur = 0;
+		for (int b = 0; b < len; )
+		{
+			int e = b + 1;
+			while (e < len && !(brk[e] & DwShaperBreak_Grapheme)) ++e;
+			auto covers = [&](int fi) {
+				for (const char* p = text + b; p < text + e; )
+				{
+					unsigned int cp = 0; int n = ImTextCharFromUtf8(&cp, p, text + e); if (n <= 0) break;
+					if (!has(fi, cp)) return false;
+					p += n;
+				}
+				return true;
+			};
+			int f = -1;
+			if (covers(cur)) f = cur;
+			else for (int fi = 0; fi < nChain; ++fi) if (covers(fi)) { f = fi; break; }
+			if (f < 0) f = 0; // nobody has it: the primary draws its .notdef
+			cur = f;
+			for (int k = b; k < e; ++k) fontOf[k] = (signed char)f;
+			b = e;
+		}
+
+		// Bidi levels on the whole paragraph, then pieces of one font + one level.
+		ImVector<unsigned char> lv; lv.resize(len);
+		DwShaper_ResolveLevels(text, len, GetStyle().TextDirection, lv.Data);
+		ImVector<SlugPiece> logical;
+		for (int b = 0; b < len; )
+		{
+			int e = b + 1;
+			while (e < len && fontOf[e] == fontOf[b] && lv[e] == lv[b]) ++e;
+			SlugPiece pc = { text + b, text + e, chain[(int)fontOf[b]], lv[b] };
+			logical.push_back(pc);
+			b = e;
+		}
+		// L2: reverse runs of pieces at or above each odd level, highest first.
+		int maxL = 0, minOdd = 255;
+		for (int i = 0; i < logical.Size; ++i) { maxL = ImMax(maxL, logical[i].level); if (logical[i].level & 1) minOdd = ImMin(minOdd, logical[i].level); }
+		for (int L = maxL; L >= minOdd && L > 0; --L)
+			for (int i = 0; i < logical.Size; )
+			{
+				if (logical[i].level < L) { ++i; continue; }
+				int j = i; while (j < logical.Size && logical[j].level >= L) ++j;
+				for (int a = i, z = j - 1; a < z; ++a, --z) { SlugPiece t = logical[a]; logical[a] = logical[z]; logical[z] = t; }
+				i = j;
+			}
+		out.swap(logical);
+		return true;
+	}
+
+	// Single-font measure in pixels, matching what DrawText_Impl draws.
+	static ImVec2 SlugMeasurePx(ImFont* font, float size_px, const char* text, const char* text_end, float* out_ascent)
+	{
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
-		// Measure the way DrawText will draw: the ImGui atlas renderer uses
-		// AddText (unshaped); GPU and CPU-vector renderers both draw shaped glyphs.
 		const ImWidgetsTextRenderer renderer = SlugResolveRenderer();
 		if (text && (renderer == ImWidgetsTextRenderer_ImGuiAtlas ||
 		             (renderer == ImWidgetsTextRenderer_GPU && gs_pContext && !gs_pContext->slugShader.program)))
 		{
 			if (!font) font = ImGui::GetFont();
-			ImFontBaked* baked = font->GetFontBaked(font_size);
-			if (out_ascent) *out_ascent = baked ? baked->Ascent * (font_size / baked->Size) : font_size * 0.8f;
-			ImVec2 sz = font->CalcTextSizeA(font_size, FLT_MAX, 0.0f, text, text_end);
-			return ImVec2(sz.x, font_size);
+			ImFontBaked* baked = font->GetFontBaked(size_px);
+			if (out_ascent) *out_ascent = baked ? baked->Ascent * (size_px / baked->Size) : size_px * 0.8f;
+			ImVec2 sz = font->CalcTextSizeA(size_px, FLT_MAX, 0.0f, text, text_end);
+			return ImVec2(sz.x, size_px);
 		}
 #endif
-		return CalcTextSize_Impl(font, font_size, text, text_end, out_ascent);
+		return CalcTextSize_Impl(font, size_px, text, text_end, out_ascent);
+	}
+
+	// Runs `fn(piece, x)` over the pieces in visual order with the piece's
+	// direction forced; returns the total width.
+	template <typename Fn>
+	static float SlugForPieces(const ImVector<SlugPiece>& pieces, float size_px, Fn fn)
+	{
+		ImWidgetsTextDirection const saved = GetStyle().TextDirection;
+		float x = 0.0f;
+		for (int i = 0; i < pieces.Size; ++i)
+		{
+			GetStyle().TextDirection = (pieces[i].level & 1) ? ImWidgetsTextDirection_RTL : ImWidgetsTextDirection_LTR;
+			float w = SlugMeasurePx(pieces[i].font, size_px, pieces[i].b, pieces[i].e, nullptr).x;
+			fn(pieces[i], x, w);
+			x += w;
+		}
+		GetStyle().TextDirection = saved;
+		return x;
+	}
+
+	ImVec2 CalcTextSize(ImFont* font, float font_size,
+	                    const char* text, const char* text_end, float* out_ascent)
+	{
+		if (font_size > 0.0f) font_size = SlugLpToPx(font_size);
+		else                  font_size = ImGui::GetFontSize();
+		if (!font) font = ImGui::GetFont();
+		if (text && !text_end) text_end = text + strlen(text);
+		ImVector<SlugPiece> pieces;
+		if (text && SlugFallbackPieces(font, text, text_end, pieces))
+		{
+			// Several fonts: the line box spans the tallest ascent and descent.
+			float asc = 0.0f, desc = 0.0f, w = 0.0f;
+			for (int i = 0; i < pieces.Size; ++i)
+			{
+				float a = 0.0f;
+				ImVec2 sz = SlugMeasurePx(pieces[i].font, font_size, pieces[i].b, pieces[i].e, &a);
+				w += sz.x; asc = ImMax(asc, a); desc = ImMax(desc, sz.y - a);
+			}
+			if (out_ascent) *out_ascent = asc;
+			return ImVec2(w, asc + desc);
+		}
+		return SlugMeasurePx(font, font_size, text, text_end, out_ascent);
 	}
 
 	float CalcShapedTextWidth(ImFont* font, float font_size,
@@ -3173,6 +3322,27 @@ namespace ImWidgets {
 		if (!text_end) text_end = text + strlen(text);
 		if (!font) font = ImGui::GetFont();
 		const float sz = font_size > 0.0f ? SlugLpToPx(font_size) : ImGui::GetFontSize();
+		// Font fallback: graphemes of every piece, shifted to the piece's place.
+		{
+			ImVector<SlugPiece> pieces;
+			if (SlugFallbackPieces(font, text, text_end, pieces))
+			{
+				ImVector<ImWidgetsTextGrapheme> part;
+				float total = SlugForPieces(pieces, sz, [&](const SlugPiece& pc, float x, float) {
+					CalcTextGraphemes(pc.font, PxToLp(sz), pc.b, pc.e, part); // single font: no fallback inside one piece
+					const int off = (int)(pc.b - text);
+					for (int i = 0; i < part.Size; ++i)
+					{
+						ImWidgetsTextGrapheme gg = part[i];
+						gg.Begin += off; gg.End += off; gg.X0 += x; gg.X1 += x;
+						out.push_back(gg);
+					}
+				});
+				ImQsort(out.Data, (size_t)out.Size, sizeof(ImWidgetsTextGrapheme), [](const void* a, const void* b) -> int {
+					return ((const ImWidgetsTextGrapheme*)a)->Begin - ((const ImWidgetsTextGrapheme*)b)->Begin; });
+				return total;
+			}
+		}
 		// Same renderer decision as DrawText / CalcTextSize: the ImGui atlas path
 		// (forced, or GPU requested without its program) lays out unshaped.
 		const ImWidgetsTextRenderer rr = SlugResolveRenderer();
@@ -3743,13 +3913,23 @@ namespace ImWidgets {
 	{
 		if (font_size > 0.0f) font_size = SlugLpToPx(font_size);
 		else                  font_size = ImGui::GetFontSize();
+		if (!font) font = ImGui::GetFont();
+		if (text && !text_end) text_end = text + strlen(text);
+		ImVector<SlugPiece> pieces;
+		if (text && SlugFallbackPieces(font, text, text_end, pieces))
+		{
+			SlugForPieces(pieces, font_size, [&](const SlugPiece& pc, float x, float) {
+				DrawText_Impl(pDrawList, pc.font, font_size, ImVec2(pos.x + x, pos.y), col, pc.b, pc.e);
+			});
+			return;
+		}
 		DrawText_Impl(pDrawList, font, font_size, pos, col, text, text_end);
 	}
 
 	void DrawText(ImDrawList* pDrawList, ImVec2 pos, ImU32 col,
 	              const char* text, const char* text_end)
 	{
-		DrawText_Impl(pDrawList, nullptr, ImGui::GetFontSize(), pos, col, text, text_end);
+		DrawText(pDrawList, nullptr, 0.0f, pos, col, text, text_end);
 	}
 
 	// ---- GPU gradient fill text (SLUG_FILL shader permutation) ---------------
@@ -6850,6 +7030,8 @@ namespace ImWidgets {
 		const float sz = font_size > 0.0f ? SlugLpToPx(font_size) : ImGui::GetFontSize();
 		return DW_GraphemesUnshaped(font, sz, text, text_end, out);
 	}
+
+	void SetFontFallbacks(ImFont*, ImFont* const*, int) {} // ImGui atlas: its own font merging applies
 
 	// No custom-shader support in this build: text always goes through the ImGui atlas.
 	void SetTextRenderer(ImWidgetsTextRenderer) {}

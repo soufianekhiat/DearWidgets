@@ -4682,6 +4682,12 @@ namespace ImWidgets{
 	IMGUI_API void DrawText( ImDrawList* pDrawList, ImVec2 pos, ImU32 col, char const* text, char const* text_end = nullptr );
 	// Explicit font and size in logical pixels (pass nullptr/0 to use current ImGui font/size)
 	IMGUI_API void DrawText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, ImU32 col, char const* text, char const* text_end = nullptr );
+	// Font fallback chain (CSS font-family list): characters `font` cannot render
+	// are drawn with the first font in `fallbacks` that can (whole graphemes;
+	// spaces, digits and punctuation stay with their neighbours). Up to 8
+	// fallbacks; count 0 clears the chain. Applies to DrawText, CalcTextSize,
+	// DrawTextBlock, CalcTextGraphemes and InputTextShaped.
+	IMGUI_API void SetFontFallbacks( ImFont* font, ImFont* const* fallbacks, int count );
 	// Text renderer used by DrawText / DrawTextBlock. CPUVector draws the same
 	// shaped, bidi-ordered glyphs as the GPU path with plain ImDrawList triangles
 	// (cached per string), so complex scripts render on any backend.

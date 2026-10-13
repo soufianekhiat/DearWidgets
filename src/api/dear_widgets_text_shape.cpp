@@ -313,6 +313,34 @@ int DwShaper_ParagraphLevel(const char* text, int len, int direction)
     return 0;
 }
 
+int DwShaper_ResolveLevels(const char* text, int len, int direction, unsigned char* out_levels)
+{
+    if (!text || len <= 0 || !out_levels) return 0;
+    ImVector<unsigned int>  cps;
+    ImVector<int>           offs;
+    ImVector<unsigned char> types, levels;
+    const char* p = text;
+    const char* e = text + len;
+    while (p < e)
+    {
+        unsigned int cp = 0;
+        int adv = ImTextCharFromUtf8(&cp, p, e);
+        if (adv <= 0) break;
+        offs.push_back((int)(p - text));
+        cps.push_back(cp);
+        p += adv;
+    }
+    offs.push_back(len);
+    const int n = cps.Size;
+    if (n == 0) return 0;
+    types.resize(n); levels.resize(n);
+    for (int i = 0; i < n; ++i) types[i] = kbts__GetUnicodeBidirectionalClass(cps[i]);
+    const int para = DwBidi_ResolveLevels(types.Data, cps.Data, n, direction, levels.Data);
+    for (int i = 0; i < n; ++i)
+        for (int b = offs[i]; b < offs[i + 1]; ++b) out_levels[b] = levels[i];
+    return para;
+}
+
 int DwShaper_ShapeBidi(DwShaperCtx* ctx, const char* text, int len, int direction,
                        DwShaperEmitFn emit, void* user)
 {

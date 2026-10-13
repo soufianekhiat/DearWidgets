@@ -360,6 +360,13 @@ after the 29 physical colour pickers, `ColorSlice`, `SpectrumEditor`,
 in a group (as ImGui's own `ColorPicker4` is); the ones with a single main item
 still report its ID, so `BeginPopupContextItem()` right after them keeps working.
 
+#### Font fallback
+
+`SetFontFallbacks( font, fallbacks, count )`: a CSS-like font-family chain.
+Missing characters come from the first fallback that has them, with bidi
+resolved across the whole string, so e.g. a Latin font with an Arabic fallback
+draws, measures and edits mixed strings correctly.
+
 #### Caret, hit-testing and selection
 
 `CalcTextGraphemes` exposes the graphemes of a shaped line with their visual

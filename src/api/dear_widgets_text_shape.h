@@ -94,6 +94,10 @@ void DwShaper_TextBreaks(const char* text, int len, unsigned int* out_flags /* l
 // Paragraph level per UAX #9 P2-P3 for `direction` (DwShaperDirection): 0 = LTR, 1 = RTL.
 int  DwShaper_ParagraphLevel(const char* text, int len, int direction);
 
+// Resolved bidi embedding level of every byte (UAX #9 implicit levels, same as
+// DwShaper_ShapeBidi uses). Returns the paragraph level.
+int  DwShaper_ResolveLevels(const char* text, int len, int direction, unsigned char* out_levels /* len entries */);
+
 typedef void (*DwShaperEmitFn)(void* user, const DwShaperGlyph* glyph);
 int  DwShaper_ShapeBidi(DwShaperCtx* ctx, const char* text, int len, int direction,
                         DwShaperEmitFn emit, void* user);
