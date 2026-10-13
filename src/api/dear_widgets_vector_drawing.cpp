@@ -215,7 +215,7 @@ namespace ImWidgets {
         // the closest point, used to split the segment on double-click.
         int seg_path = -1, seg_index = -1;
         float seg_t = 0.0f;
-        if (hovered && hit_path < 0)
+        if (hovered && hit_path < 0 && data.ActivePath < 0)   // segments are inert while authoring
         {
             const int K = 24;
             float best = hitR * hitR;
@@ -375,6 +375,9 @@ namespace ImWidgets {
                     data.SelectedNode = at;
                     data.SelectedNodes.push_back(at);
                     data.SelectedHandle = 0;
+                    // Don't let this press drag the new node to the raw cursor:
+                    // it sits exactly on the curve, the cursor only within hitR.
+                    noDrag = true;
                     changed = true;
                 }
                 else

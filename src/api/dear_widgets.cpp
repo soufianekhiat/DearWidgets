@@ -1439,6 +1439,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 	float	ImLinearSample( float t, float* buffer, int count )
 	{
+		if ( count <= 0 ) return 0.0f;
+		if ( !( t == t ) ) t = 0.0f;	// NaN
 		float const width = ( float )( count - 1 );
 
 		float const i0 = ImFloor( ImSaturate( t ) * width );
@@ -27564,30 +27566,7 @@ namespace ImWidgets {
 
 		if ( data.ChannelCount <= 0 || data.PeakCount == 0 || data.XBins <= 0 || data.YBins <= 0 )
 		{
-			// Hover readout: code level under the cursor and the trace density there.
-		if ( ImGui::IsItemHovered() && scope_bb.Contains( g.IO.MousePos ) && !IsMouseOverExpandButton( id, scope_bb ) )
-		{
-			ImVec2 const m = g.IO.MousePos;
-			float const level = DW_ScopeAxisValue( scale, ( scope_bb.Max.y - m.y ) / scope_bb.GetHeight(), logMaxBits, maxVal );
-			bool const split = !overlay && data.ChannelCount > 1;
-			float const colW = scope_bb.GetWidth() / ( split ? ( float )data.ChannelCount : 1.0f );
-			int const colCh = split ? ImClamp( ( int )( ( m.x - scope_bb.Min.x ) / colW ), 0, data.ChannelCount - 1 ) : -1;
-			float const xIn = ImSaturate( ( m.x - scope_bb.Min.x - ( colCh < 0 ? 0.0f : colCh * colW ) ) / colW );
-			int const xb = ImClamp( ( int )( xIn * data.XBins ), 0, data.XBins - 1 );
-			int const yb = DW_ScopeBin( level / ( float )maxVal, data.YBins );
-			ImGui::BeginTooltip();
-			ImGui::Text( "Level %d / %d   (column %.0f%%)", ( int )( level + 0.5f ), maxVal, xIn * 100.0f );
-			for ( int ch = 0; ch < data.ChannelCount; ++ch )
-			{
-				if ( colCh >= 0 && ch != colCh ) continue;
-				int const idx = ch * data.XBins * data.YBins + xb * data.YBins + yb;
-				ImU32 const cnt = ( idx >= 0 && idx < data.Bins.Size ) ? data.Bins[ idx ] : 0;
-				ImGui::Text( "%-2s %u px", DW_ScopeChannelName( ( int )data.Mode, ch, false ), cnt );
-			}
-			ImGui::EndTooltip();
-		}
-
-		finishScope();
+			finishScope();
 			return;
 		}
 
@@ -27718,6 +27697,29 @@ namespace ImWidgets {
 		}
 
 		dl->PopClipRect();
+
+		// Hover readout: code level under the cursor and the trace density there.
+		if ( ImGui::IsItemHovered() && scope_bb.Contains( g.IO.MousePos ) && !IsMouseOverExpandButton( id, scope_bb ) )
+		{
+			ImVec2 const m = g.IO.MousePos;
+			float const level = DW_ScopeAxisValue( scale, ( scope_bb.Max.y - m.y ) / scope_bb.GetHeight(), logMaxBits, maxVal );
+			bool const split = !overlay && data.ChannelCount > 1;
+			float const colW = scope_bb.GetWidth() / ( split ? ( float )data.ChannelCount : 1.0f );
+			int const colCh = split ? ImClamp( ( int )( ( m.x - scope_bb.Min.x ) / colW ), 0, data.ChannelCount - 1 ) : -1;
+			float const xIn = ImSaturate( ( m.x - scope_bb.Min.x - ( colCh < 0 ? 0.0f : colCh * colW ) ) / colW );
+			int const xb = ImClamp( ( int )( xIn * data.XBins ), 0, data.XBins - 1 );
+			int const yb = DW_ScopeBin( level / ( float )maxVal, data.YBins );
+			ImGui::BeginTooltip();
+			ImGui::Text( "Level %d / %d   (column %.0f%%)", ( int )( level + 0.5f ), maxVal, xIn * 100.0f );
+			for ( int ch = 0; ch < data.ChannelCount; ++ch )
+			{
+				if ( colCh >= 0 && ch != colCh ) continue;
+				int const idx = ch * data.XBins * data.YBins + xb * data.YBins + yb;
+				ImU32 const cnt = ( idx >= 0 && idx < data.Bins.Size ) ? data.Bins[ idx ] : 0;
+				ImGui::Text( "%-2s %u px", DW_ScopeChannelName( ( int )data.Mode, ch, false ), cnt );
+			}
+			ImGui::EndTooltip();
+		}
 
 		finishScope();
 	}
@@ -27914,28 +27916,7 @@ namespace ImWidgets {
 
 		if ( data.Resolution <= 0 || data.PeakCount == 0 )
 		{
-			// Hover readout: chroma, hue and saturation under the cursor (BT.709 Cb/Cr).
-		if ( ImGui::IsItemHovered() && total_bb.Contains( g.IO.MousePos ) && !IsMouseOverExpandButton( id, total_bb ) && radius > 0.0f )
-		{
-			ImVec2 const m = g.IO.MousePos;
-			float const cb = ( m.x - center.x ) / ( 2.0f * radius );
-			float const cr = ( center.y - m.y ) / ( 2.0f * radius );
-			float hue = ImAtan2( cr, cb ) * ( 180.0f / IM_PI );
-			if ( hue < 0.0f ) hue += 360.0f;
-			float const sat = ImSqrt( cb * cb + cr * cr ) / 0.5f;
-			int const res = data.Resolution;
-			int const xb = DW_ScopeBin( cb + 0.5f, res );
-			int const yb = DW_ScopeBin( cr + 0.5f, res );
-			int const idx = xb * res + yb;
-			ImU32 const cnt = ( idx >= 0 && idx < data.Bins.Size ) ? data.Bins[ idx ] : 0;
-			ImGui::BeginTooltip();
-			ImGui::Text( "Cb %+.3f  Cr %+.3f", cb, cr );
-			ImGui::Text( "Hue %.0f deg  Sat %.0f%%", hue, sat * 100.0f );
-			ImGui::Text( "%u px", cnt );
-			ImGui::EndTooltip();
-		}
-
-		finishScope();
+			finishScope();
 			return;
 		}
 
@@ -28014,6 +27995,27 @@ namespace ImWidgets {
 		}
 
 		dl->PopClipRect();
+
+		// Hover readout: chroma, hue and saturation under the cursor (BT.709 Cb/Cr).
+		if ( ImGui::IsItemHovered() && total_bb.Contains( g.IO.MousePos ) && !IsMouseOverExpandButton( id, total_bb ) && radius > 0.0f )
+		{
+			ImVec2 const m = g.IO.MousePos;
+			float const cb = ( m.x - center.x ) / ( 2.0f * radius );
+			float const cr = ( center.y - m.y ) / ( 2.0f * radius );
+			float hue = ImAtan2( cr, cb ) * ( 180.0f / IM_PI );
+			if ( hue < 0.0f ) hue += 360.0f;
+			float const sat = ImSqrt( cb * cb + cr * cr ) / 0.5f;
+			int const res = data.Resolution;
+			int const xb = DW_ScopeBin( cb + 0.5f, res );
+			int const yb = DW_ScopeBin( cr + 0.5f, res );
+			int const idx = xb * res + yb;
+			ImU32 const cnt = ( idx >= 0 && idx < data.Bins.Size ) ? data.Bins[ idx ] : 0;
+			ImGui::BeginTooltip();
+			ImGui::Text( "Cb %+.3f  Cr %+.3f", cb, cr );
+			ImGui::Text( "Hue %.0f deg  Sat %.0f%%", hue, sat * 100.0f );
+			ImGui::Text( "%u px", cnt );
+			ImGui::EndTooltip();
+		}
 
 		finishScope();
 	}
@@ -28344,25 +28346,7 @@ namespace ImWidgets {
 
 		if ( data.ChannelCount <= 0 || data.PeakCount == 0 || data.BinCount <= 0 )
 		{
-			// Hover readout: code value under the cursor and the per-channel counts.
-		if ( ImGui::IsItemHovered() && scope_bb.Contains( g.IO.MousePos ) && !IsMouseOverExpandButton( id, scope_bb ) )
-		{
-			ImVec2 const m = g.IO.MousePos;
-			float const value = DW_ScopeAxisValue( xScale, ( m.x - scope_bb.Min.x ) / scope_bb.GetWidth(), logMaxBits, maxVal );
-			int const b = DW_ScopeBin( value / ( float )maxVal, data.BinCount );
-			ImGui::BeginTooltip();
-			ImGui::Text( "Value %d / %d  (bin %d)", ( int )( value + 0.5f ), maxVal, b );
-			for ( int ch = 0; ch < data.ChannelCount; ++ch )
-			{
-				int const idx = ch * data.BinCount + b;
-				ImU32 const cnt = ( idx < data.Bins.Size ) ? data.Bins[ idx ] : 0;
-				ImGui::Text( "%-2s %u px  (%.1f%% of peak)", DW_ScopeChannelName( ( int )data.Mode, ch, true ), cnt,
-					data.PeakCount ? 100.0f * ( float )cnt / ( float )data.PeakCount : 0.0f );
-			}
-			ImGui::EndTooltip();
-		}
-
-		finishScope();
+			finishScope();
 			return;
 		}
 
@@ -28507,6 +28491,24 @@ namespace ImWidgets {
 		}
 
 		dl->PopClipRect();
+
+		// Hover readout: code value under the cursor and the per-channel counts.
+		if ( ImGui::IsItemHovered() && scope_bb.Contains( g.IO.MousePos ) && !IsMouseOverExpandButton( id, scope_bb ) )
+		{
+			ImVec2 const m = g.IO.MousePos;
+			float const value = DW_ScopeAxisValue( xScale, ( m.x - scope_bb.Min.x ) / scope_bb.GetWidth(), logMaxBits, maxVal );
+			int const b = DW_ScopeBin( value / ( float )maxVal, data.BinCount );
+			ImGui::BeginTooltip();
+			ImGui::Text( "Value %d / %d  (bin %d)", ( int )( value + 0.5f ), maxVal, b );
+			for ( int ch = 0; ch < data.ChannelCount; ++ch )
+			{
+				int const idx = ch * data.BinCount + b;
+				ImU32 const cnt = ( idx >= 0 && idx < data.Bins.Size ) ? data.Bins[ idx ] : 0;
+				ImGui::Text( "%-2s %u px  (%.1f%% of peak)", DW_ScopeChannelName( ( int )data.Mode, ch, true ), cnt,
+					data.PeakCount ? 100.0f * ( float )cnt / ( float )data.PeakCount : 0.0f );
+			}
+			ImGui::EndTooltip();
+		}
 
 		finishScope();
 	}
