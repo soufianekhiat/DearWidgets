@@ -786,7 +786,6 @@ ImFont* g_brightMarchFont = nullptr;
 ImFont* g_camoodFont = nullptr;
 ImFont* g_cheronaFont = nullptr;
 ImFont* g_classicalFont = nullptr;
-ImFont* g_endlessFont = nullptr;
 ImFont* g_foglihtenFont = nullptr;
 ImFont* g_gimboFont = nullptr;
 ImFont* g_metaforaSsFont = nullptr;
@@ -819,7 +818,6 @@ ImFont* g_primecolorGFont = nullptr;
 ImFont* g_primecolorMFont = nullptr;
 ImFont* g_honkFont = nullptr;
 ImFont* g_coralPixelsFont = nullptr;
-ImFont* g_notoZnamennyFont = nullptr;
 // Arabic
 ImFont* g_amiriFont = nullptr;
 ImFont* g_arefRuqaaBoldFont = nullptr;
@@ -1279,85 +1277,6 @@ int main( int argc, char** argv )
 	// fonts downloaded via the UI become renderable without restart.
 	LoadOrRefreshDemoFonts( io );
 	DW_StartupMark( "demo fonts loaded" );
-
-	// (legacy block below is no-op'd -- replaced by LoadOrRefreshDemoFonts).
-	ImFontConfig slugCfg;
-	slugCfg.FontLoader = ImWidgets::GetSlugFontLoader();
-	(void)slugCfg;
-#if 0
-	g_firaCodeFont = AddFontIfExists( io.Fonts, "fonts/FiraCode[wght].ttf", 24.0f, &slugCfg );
-
-	// Keepers (already on Google Fonts)
-	g_cinzelFont = AddFontIfExists( io.Fonts, "fonts/Cinzel[wght].ttf", 24.0f, &slugCfg );
-	g_alfaSlabFont = AddFontIfExists( io.Fonts, "fonts/AlfaSlabOne-Regular.ttf", 24.0f, &slugCfg );
-	g_loveLightFont = AddFontIfExists( io.Fonts, "fonts/LoveLight-Regular.ttf", 24.0f, &slugCfg );
-	g_nablaFont = AddFontIfExists( io.Fonts, "fonts/Nabla[EDPT,EHLT].ttf", 24.0f, &slugCfg );
-	g_bungeeSpiceFont = AddFontIfExists( io.Fonts, "fonts/BungeeSpice-Regular.ttf", 24.0f, &slugCfg );
-	g_coralPixelsFont = AddFontIfExists( io.Fonts, "fonts/CoralPixels-Regular.ttf", 24.0f, &slugCfg );
-	g_honkFont = AddFontIfExists( io.Fonts, "fonts/Honk[MORF,SHLN].ttf", 24.0f, &slugCfg );
-
-	// --- Replacements (original -> replacement) ---
-	g_monblockFont = AddFontIfExists( io.Fonts, "fonts/Sligoil-Micro.otf", 24.0f, &slugCfg );  // Monblock -> Sligoil (Velvetyne)
-	g_classicalFont = AddFontIfExists( io.Fonts, "fonts/CinzelDecorative-Regular.ttf", 24.0f, &slugCfg );  // Classical Aesthetics
-	g_foglihtenFont = AddFontIfExists( io.Fonts, "fonts/UnifrakturCook-Bold.ttf", 24.0f, &slugCfg );  // Foglihten -> UnifrakturCook
-	g_prida61Font = AddFontIfExists( io.Fonts, "fonts/PlayfairDisplaySC-Regular.ttf", 24.0f, &slugCfg );  // Prida 61 -> Playfair Display SC
-	g_steelworksFont = AddFontIfExists( io.Fonts, "fonts/Rye-Regular.ttf", 24.0f, &slugCfg );  // Steelworks -> Rye
-	g_allessaFont = AddFontIfExists( io.Fonts, "fonts/Allura-Regular.ttf", 24.0f, &slugCfg );  // Allessa -> Allura
-	g_brightMarchFont = AddFontIfExists( io.Fonts, "fonts/Sacramento-Regular.ttf", 24.0f, &slugCfg );  // Bright Marching -> Sacramento
-	g_camoodFont = AddFontIfExists( io.Fonts, "fonts/KaushanScript-Regular.ttf", 24.0f, &slugCfg );  // Camood -> Kaushan Script
-	g_cheronaFont = AddFontIfExists( io.Fonts, "fonts/GreatVibes-Regular.ttf", 24.0f, &slugCfg );  // Cherona -> Great Vibes
-	g_daelingFont = AddFontIfExists( io.Fonts, "fonts/Parisienne-Regular.ttf", 24.0f, &slugCfg );  // Daeling -> Parisienne
-	g_flowmeryFont = AddFontIfExists( io.Fonts, "fonts/PinyonScript-Regular.ttf", 24.0f, &slugCfg );  // Flowmery -> Pinyon Script
-	g_galinsFont = AddFontIfExists( io.Fonts, "fonts/AlexBrush-Regular.ttf", 24.0f, &slugCfg );  // Galins -> Alex Brush
-	g_gallanteFont = AddFontIfExists( io.Fonts, "fonts/Italianno-Regular.ttf", 24.0f, &slugCfg );  // Gallante -> Italianno
-	g_kleymisskyFont = AddFontIfExists( io.Fonts, "fonts/Yellowtail-Regular.ttf", 24.0f, &slugCfg );  // Kleymissky -> Yellowtail
-	g_metaforaAltFont = AddFontIfExists( io.Fonts, "fonts/Tangerine-Regular.ttf", 24.0f, &slugCfg );  // Metafora Alt -> Tangerine
-	g_metaforaSsFont = AddFontIfExists( io.Fonts, "fonts/Sail-Regular.ttf", 24.0f, &slugCfg );  // Metafora SS -> Sail
-	g_migullonFont = AddFontIfExists( io.Fonts, "fonts/Satisfy-Regular.ttf", 24.0f, &slugCfg );  // Migullon -> Satisfy
-	g_milsskyFont = AddFontIfExists( io.Fonts, "fonts/DancingScript[wght].ttf", 24.0f, &slugCfg );  // Milssky -> Dancing Script
-	g_reginaFont = AddFontIfExists( io.Fonts, "fonts/Niconne-Regular.ttf", 24.0f, &slugCfg );  // Regina -> Niconne
-	g_retroHeartFont = AddFontIfExists( io.Fonts, "fonts/PetitFormalScript-Regular.ttf", 24.0f, &slugCfg );  // Retro Heart -> Petit Formal Script
-	g_rosehotFont = AddFontIfExists( io.Fonts, "fonts/Melodrama-Regular.otf", 24.0f, &slugCfg );  // Rosehot -> Melodrama (Fontshare)
-	g_sophieFont = AddFontIfExists( io.Fonts, "fonts/EagleLake-Regular.ttf", 24.0f, &slugCfg );  // Sophiemelanie -> Eagle Lake
-	g_bollgoFont = AddFontIfExists( io.Fonts, "fonts/Basteleur-Moonlight.otf", 24.0f, &slugCfg );  // Bollgo -> Basteleur (Velvetyne)
-	g_boucherFont = AddFontIfExists( io.Fonts, "fonts/AlmendraSC-Regular.ttf", 24.0f, &slugCfg );  // Boucher -> Almendra SC
-	g_dottedFont = AddFontIfExists( io.Fonts, "fonts/Codystar-Regular.ttf", 24.0f, &slugCfg );  // Dotted -> Codystar
-	g_franticallyFont = AddFontIfExists( io.Fonts, "fonts/RubikBeastly-Regular.ttf", 24.0f, &slugCfg );  // Frantically -> Rubik Beastly
-	g_gimboFont = AddFontIfExists( io.Fonts, "fonts/Pilowlava-Regular.otf", 24.0f, &slugCfg );  // Gimbo -> Pilowlava (Velvetyne)
-	g_magnoliaFont = AddFontIfExists( io.Fonts, "fonts/UncialAntiqua-Regular.ttf", 24.0f, &slugCfg );  // Magnolia -> Uncial Antiqua
-	g_molgethFont = AddFontIfExists( io.Fonts, "fonts/Trickster-Reg.otf", 24.0f, &slugCfg );  // Molgeth -> Trickster (Velvetyne)
-	g_squareLilyFont = AddFontIfExists( io.Fonts, "fonts/StalinistOne-Regular.ttf", 24.0f, &slugCfg );  // Square Lily -> Stalinist One
-	g_manbowClearFont = AddFontIfExists( io.Fonts, "fonts/Array-Regular.otf", 24.0f, &slugCfg );  // Manbow Clear -> Array (Fontshare, CFF)
-	g_twemojiFont = AddFontIfExists( io.Fonts, "fonts/Noto-COLRv1.ttf", 24.0f, &slugCfg );  // Twemoji -> Noto Color Emoji (COLRv1)
-	g_endlessFont = nullptr;  // originally commented-out; kept for source compatibility
-
-	// --- Unmatched (no replacement found on Google Fonts / Fontshare /
-	// Velvetyne / Open Foundry). These slots stay null; their UI labels
-	// indicate no replacement is available. ---
-	g_manbowSpotsFont = AddFontIfExists( io.Fonts, "fonts/ManBow-Spots.otf", 24.0f, &slugCfg );  // Manbow Spots (Typodermic, CC0)
-	g_manbowToneFont  = AddFontIfExists( io.Fonts, "fonts/ManBow-Lines.otf", 24.0f, &slugCfg ); // Manbow Lines (Typodermic, CC0)
-	g_aquaphonicDownpourFont = AddFontIfExists( io.Fonts, "fonts/Aquaphonic-Downpour.otf", 24.0f, &slugCfg );
-	g_cimeroProFont    = AddFontIfExists( io.Fonts, "fonts/CimeroPro.otf",        24.0f, &slugCfg );
-	g_colorTubeFont    = AddFontIfExists( io.Fonts, "fonts/ColorTube.otf",      24.0f, &slugCfg );
-	g_gilbertColorFont = AddFontIfExists( io.Fonts, "fonts/GilbertColorBold.otf", 24.0f, &slugCfg );
-	g_multicoloreFont  = AddFontIfExists( io.Fonts, "fonts/Multicolore-Pro.otf",  24.0f, &slugCfg );
-	g_primecolorGFont  = AddFontIfExists( io.Fonts, "fonts/Primecolor-G.ttf",     24.0f, &slugCfg );
-	g_primecolorMFont  = AddFontIfExists( io.Fonts, "fonts/Primecolor-M.ttf",     24.0f, &slugCfg );
-	g_fatternFont      = AddFontIfExists( io.Fonts, "fonts/Fattern.otf",          24.0f, &slugCfg );
-
-	// Arabic glyph range for Arabic fonts
-	static const ImWchar arabicRanges[] = { 0x0020, 0x007E, 0x0600, 0x06FF, 0xFE70, 0xFEFF, 0 };
-	g_amiriFont = AddFontIfExists( io.Fonts, "fonts/Amiri-Regular.ttf", 24.0f, &slugCfg, arabicRanges );
-	g_arefRuqaaBoldFont = AddFontIfExists( io.Fonts, "fonts/ArefRuqaaInk-Bold.ttf", 24.0f, &slugCfg, arabicRanges );
-	g_arefRuqaaRegFont = AddFontIfExists( io.Fonts, "fonts/ArefRuqaaInk-Regular.ttf", 24.0f, &slugCfg, arabicRanges );
-	g_blakaInkFont = AddFontIfExists( io.Fonts, "fonts/BlakaInk-Regular.ttf", 24.0f, &slugCfg, arabicRanges );
-	g_reemKufiInkFont = AddFontIfExists( io.Fonts, "fonts/ReemKufiInk-Regular.ttf", 24.0f, &slugCfg, arabicRanges );
-	g_reemKufiFunFont = AddFontIfExists( io.Fonts, "fonts/ReemKufiFun[wght].ttf", 24.0f, &slugCfg, arabicRanges );
-	// Cairo Play upstream is now a single variable font (slnt,wght axes); both
-	// demo slots load the same file -- visually identical until we wire axis
-	// instancing into the Slug font loader.
-	g_cairoPlayBoldFont = AddFontIfExists( io.Fonts, "fonts/CairoPlay[slnt,wght].ttf", 24.0f, &slugCfg, arabicRanges );
-#endif
 
 	// Sync downloader statuses against what's on disk (so "Downloaded" labels
 	// render correctly for files that already exist).
@@ -2411,7 +2330,6 @@ namespace ImWidgets{
 			{ &g_reginaFont,          "HomemadeApple-Regular.ttf", "Regina -> Homemade Apple",   kLatin, kGrpScript },
 			{ &g_bollgoFont,      "FlorDeRuina-Flor.otf", "Bollgo -> Flor de Ruina (Velvetyne)",      kLatin,  kGrpDisp },
 			{ &g_dottedFont,      "Bianzhidai-NoBG-Base.otf", "Dotted -> Bianzhidai (Velvetyne)",         kLatin,  kGrpDisp },
-			//{ &g_endlessFont,   "Endlessly Expanded",                       kLatin,  kGrpDisp },
 			{ &g_franticallyFont, "Mess.otf", "Frantically -> Mess (Velvetyne)",          kLatin,  kGrpDisp },
 			{ &g_gimboFont,       "Pilowlava-Regular.otf", "Gimbo -> Pilowlava (Velvetyne)",           kLatin,  kGrpDisp },
 			{ &g_magnoliaFont,    "Letters-Torn.otf", "Magnolia -> Letters (Velvetyne)",          kLatin,  kGrpDisp },

@@ -58,9 +58,9 @@
 #include <atomic>    // PrewarmTessellationCache work distribution
 #include <vector>    // per-glyph result slots
 
-// Toggle startup tessellation-prewarm profiling (per-glyph + sub-phase timings to stderr).
+// Startup tessellation-prewarm profiling (per-glyph + sub-phase timings to stderr). Off by default.
 #ifndef DW_PROFILE_PREWARM
-#define DW_PROFILE_PREWARM 1
+#define DW_PROFILE_PREWARM 0
 #endif
 
 #ifndef IM_SUPPORT_LIGATURE

@@ -1439,38 +1439,18 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 	float	ImLinearSample( float t, float* buffer, int count )
 	{
-#if 0
 		float const width = ( float )( count - 1 );
 
-		float tx = ScaleFromNormalized( t, 0.0f, width );
-
-		float i0 = ImFloor( tx );
-		float i1 = ImCeil( tx );
-
-		float t0 = i0 / width;
-		float t1 = i1 / width;
-
-		float ti;
-		if ( t0 != t1 )
-			ti = Normalize01( t, t0, t1 );
-		else
-			ti = 1.0f;
-
-		return ImLerp( buffer[ ( int )i0 ], buffer[ ( int )i1 ], ti );
-#else
-		float const width = ( float )( count - 1 );
-
-		float const i0 = ImFloor( t * width );
-		float const i1 = ImCeil( t * width );
+		float const i0 = ImFloor( ImSaturate( t ) * width );
+		float const i1 = ImCeil( ImSaturate( t ) * width );
 
 		float ti;
 		if ( i0 != i1 )
-			ti = ( t * width - i0 ) / ( i1 - i0 );
+			ti = ( ImSaturate( t ) * width - i0 ) / ( i1 - i0 );
 		else
 			ti = 1.0f;
 
 		return ImLerp( buffer[ ( int )i0 ], buffer[ ( int )i1 ], ti );
-#endif
 	}
 
 	void ColorConvertsRGBtosRGB( float& out_r, float& out_g, float& out_b, float r, float g, float b )
