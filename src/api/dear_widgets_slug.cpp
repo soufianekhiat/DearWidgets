@@ -7309,7 +7309,19 @@ namespace ImWidgets {
 				if (L.b >= L.e) continue;
 				const float x = pos.x + L.x;
 				GetStyle().TextDirection = L.rtl ? ImWidgetsTextDirection_RTL : ImWidgetsTextDirection_LTR;
-				DrawText(dl, font, size_lp, ImVec2(x, pos.y + L.y + baselineOff), col, L.b, L.e);
+				const float baseY = pos.y + L.y + baselineOff;
+				DrawText(dl, font, size_lp, ImVec2(x, baseY), col, L.b, L.e);
+				if (lay.Decoration)
+				{
+					// Thickness / offsets derived from the font size (the fonts' own post-table
+					// values are not read). Lines span the drawn text, not hanging spaces.
+					const ImU32 dc = lay.DecorationColor ? lay.DecorationColor : col;
+					const float th = ImMax(1.0f, size_px / 14.0f);
+					auto deco = [&](float yy) { dl->AddRectFilled(ImVec2(x, yy - th * 0.5f), ImVec2(x + L.w, yy + th * 0.5f), dc); };
+					if (lay.Decoration & ImWidgetsTextDecoration_Underline)   deco(baseY + ImMax(descent * 0.45f, th * 1.5f));
+					if (lay.Decoration & ImWidgetsTextDecoration_LineThrough) deco(baseY - ascent * 0.32f);
+					if (lay.Decoration & ImWidgetsTextDecoration_Overline)    deco(baseY - ascent - th * 0.5f);
+				}
 			}
 		}
 		GetStyle().TextDirection = savedDir;
@@ -7473,6 +7485,7 @@ namespace ImWidgets {
 		double  blinkStart;
 		bool    selectAllLock; // double-click selected all: ignore mouse until release
 		float   desiredX;      // multi-line: x kept by Up / Down (-1 = take the caret's)
+		int     lastCaret;     // multi-line: follow the caret only when it moved
 	};
 	static ImVector<SlugInputState> s_inputStates;
 
@@ -7480,7 +7493,7 @@ namespace ImWidgets {
 	{
 		for (int i = 0; i < s_inputStates.Size; ++i)
 			if (s_inputStates[i].id == id) return &s_inputStates[i];
-		SlugInputState st = { id, 0, 0, false, 0.0f, 0.0, false, -1.0f };
+		SlugInputState st = { id, 0, 0, false, 0.0f, 0.0, false, -1.0f, -1 };
 		s_inputStates.push_back(st);
 		return &s_inputStates.back();
 	}
@@ -7594,9 +7607,12 @@ namespace ImWidgets {
 			auto insertText = [&](const char* t, int n) {
 				if (readOnly || n <= 0) return;
 				if (st->caret != st->anchor) eraseRange(st->caret, st->anchor);
-				if (len + n >= (int)buf_size) n = (int)buf_size - 1 - len;
-				// never cut a UTF-8 sequence
-				while (n > 0 && (t[n] & 0xC0) == 0x80) --n;
+				if (len + n >= (int)buf_size)
+				{
+					n = (int)buf_size - 1 - len;
+					// never cut a UTF-8 sequence (t[n] is in range: the text was longer)
+					while (n > 0 && (t[n] & 0xC0) == 0x80) --n;
+				}
 				if (n <= 0) return;
 				memmove(buf + st->caret + n, buf + st->caret, (size_t)(len - st->caret + 1));
 				memcpy(buf + st->caret, t, (size_t)n);
@@ -7757,7 +7773,7 @@ namespace ImWidgets {
 		if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
 
 		SlugInputState* st = SlugGetInputState(id);
-		bool changed = false;
+		bool changed = false, enterPressed = false;
 		int len = (int)strlen(buf);
 
 		const bool clicked = hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left, ImGuiInputFlags_None, id);
@@ -7771,6 +7787,8 @@ namespace ImWidgets {
 		else if (g.ActiveId == id && io.MouseClicked[0] && !hovered)
 			ImGui::ClearActiveID();
 		const bool active = (g.ActiveId == id);
+		// The wheel scrolls this field, not the window behind it.
+		if (hovered) ImGui::SetKeyOwner(ImGuiKey_MouseWheelY, id);
 
 		// Layout: the paragraph layout of DrawTextBlock, wrapped to the inner width.
 		const float padX = style.FramePadding.x, padY = style.FramePadding.y;
@@ -7806,8 +7824,16 @@ namespace ImWidgets {
 			const SlugBlockLine& L = lines[li];
 			ImWidgetsTextDirection const saved = GetStyle().TextDirection;
 			GetStyle().TextDirection = L.rtl ? ImWidgetsTextDirection_RTL : ImWidgetsTextDirection_LTR;
-			CalcTextGraphemes(font, size_lp, L.b, L.raw, lg);
+			const float rawW = CalcTextGraphemes(font, size_lp, L.b, L.raw, lg);
 			GetStyle().TextDirection = saved;
+			// The line is drawn trimmed ([b, e), width L.w) at L.x. Its hanging
+			// spaces sit after the text in reading order: on the left of an RTL
+			// line, so shift the graphemes to keep the glyphs where they are drawn.
+			if (L.rtl && rawW > L.w)
+			{
+				const float dx = -(rawW - L.w);
+				for (int k = 0; k < lg.Size; ++k) { lg[k].X0 += dx; lg[k].X1 += dx; }
+			}
 		};
 		auto caretX = [&](int o, bool up) {           // x relative to the text area
 			if (lines.Size == 0) return 0.0f;
@@ -7870,8 +7896,11 @@ namespace ImWidgets {
 			auto insertText = [&](const char* t, int n) {
 				if (readOnly || n <= 0) return;
 				if (st->caret != st->anchor) eraseRange(st->caret, st->anchor);
-				if (len + n >= (int)buf_size) n = (int)buf_size - 1 - len;
-				while (n > 0 && (t[n] & 0xC0) == 0x80) --n;
+				if (len + n >= (int)buf_size)
+				{
+					n = (int)buf_size - 1 - len;
+					while (n > 0 && (t[n] & 0xC0) == 0x80) --n; // t[n] is in range: the text was longer
+				}
 				if (n <= 0) return;
 				memmove(buf + st->caret + n, buf + st->caret, (size_t)(len - st->caret + 1));
 				memcpy(buf + st->caret, t, (size_t)n);
@@ -7883,7 +7912,7 @@ namespace ImWidgets {
 			int selA = 0, selB = 0;
 			auto refreshSel = [&]() { selA = ImMin(st->caret, st->anchor); selB = ImMax(st->caret, st->anchor); };
 			refreshSel();
-			const bool lineRtl = lines.Size && lines[lineOf(st->caret)].rtl;
+			const bool lineRtl = lines.Size && lines[caretLine(st->caret, st->upstream)].rtl;
 			if (pressed(ImGuiKey_LeftArrow))
 			{
 				if (!shift && selA != selB) moveTo(lineRtl ? selB : selA);
@@ -7908,8 +7937,19 @@ namespace ImWidgets {
 			const int pageLines = ImMax(1, (int)(innerH / lineAdv) - 1);
 			if (pressed(ImGuiKey_PageUp))   vertical(-pageLines);
 			if (pressed(ImGuiKey_PageDown)) vertical(+pageLines);
-			if (pressed(ImGuiKey_Home)) { if (ctrl || !lines.Size) moveTo(0); else moveTo((int)(lines[lineOf(st->caret)].b - buf)); }
-			if (pressed(ImGuiKey_End))  { if (ctrl || !lines.Size) moveTo(len); else moveTo((int)(lines[lineOf(st->caret)].raw - buf)); }
+			if (pressed(ImGuiKey_Home)) { if (ctrl || !lines.Size) moveTo(0); else moveTo((int)(lines[caretLine(st->caret, st->upstream)].b - buf)); }
+			if (pressed(ImGuiKey_End))
+			{
+				if (ctrl || !lines.Size) moveTo(len);
+				else
+				{
+					// End of a soft-wrapped line is also the next line's start: keep
+					// the caret on this line (upstream affinity).
+					const int li = caretLine(st->caret, st->upstream);
+					moveTo((int)(lines[li].raw - buf));
+					st->upstream = (li + 1 < lines.Size && lines[li + 1].b == lines[li].raw);
+				}
+			}
 			if (ctrl && pressed(ImGuiKey_A)) { st->anchor = 0; st->caret = len; }
 			refreshSel();
 			if (ctrl && (pressed(ImGuiKey_C) || pressed(ImGuiKey_X)) && selA != selB)
@@ -7924,7 +7964,11 @@ namespace ImWidgets {
 				{
 					// normalise CRLF / CR to LF
 					ImVector<char> t;
-					for (const char* q = clip; *q; ++q) { if (*q == '\r') { t.push_back('\n'); if (q[1] == '\n') ++q; } else t.push_back(*q); }
+					for (const char* q = clip; *q; ++q)
+					{
+						if (*q == '\r') { t.push_back('\n'); if (q[1] == '\n') ++q; }
+						else if ((unsigned char)*q >= 0x20 || *q == '\n') t.push_back(*q); // same filter as typing
+					}
 					insertText(t.Data, t.Size);
 				}
 			refreshSel();
@@ -7940,7 +7984,12 @@ namespace ImWidgets {
 				else if (st->caret < len) eraseRange(st->caret, nextG(st->caret));
 			}
 			bool leaving = false;
-			if (pressed(ImGuiKey_Enter) || pressed(ImGuiKey_KeypadEnter)) insertText("\n", 1);
+			if (pressed(ImGuiKey_Enter) || pressed(ImGuiKey_KeypadEnter))
+			{
+				// EnterReturnsTrue: Enter submits, Ctrl+Enter inserts a line break.
+				if ((flags & ImGuiInputTextFlags_EnterReturnsTrue) && !io.KeyCtrl) { enterPressed = true; leaving = true; ImGui::ClearActiveID(); }
+				else insertText("\n", 1);
+			}
 			if (pressed(ImGuiKey_Escape)) { leaving = true; ImGui::ClearActiveID(); }
 			if (!ctrl && !justActivated && !leaving)
 				for (int qi = 0; qi < io.InputQueueCharacters.Size; ++qi)
@@ -7954,9 +8003,11 @@ namespace ImWidgets {
 			io.InputQueueCharacters.resize(0);
 			if (changed) ImGui::MarkItemEdited(id);
 
-			// Keep the caret's line visible.
-			if (lines.Size)
+			// Keep the caret's line visible -- only when it moved or the text
+			// changed, so the wheel can scroll away while editing.
+			if (lines.Size && (st->caret != st->lastCaret || changed))
 			{
+				st->lastCaret = st->caret;
 				const float cy = lines[caretLine(st->caret, st->upstream)].y;
 				if (cy < st->scroll) st->scroll = cy;
 				if (cy + lineAdv > st->scroll + innerH) st->scroll = cy + lineAdv - innerH;
@@ -8015,6 +8066,7 @@ namespace ImWidgets {
 		dl->PopClipRect();
 		if (labelSize.x > 0.0f)
 			ImGui::RenderText(ImVec2(frame.Max.x + style.ItemInnerSpacing.x, frame.Min.y + style.FramePadding.y), label);
+		if (flags & ImGuiInputTextFlags_EnterReturnsTrue) return enterPressed;
 		return changed;
 	}
 

@@ -535,12 +535,24 @@ enum ImWidgetsTextAlign_
 };
 typedef int ImWidgetsTextAlign;
 
+// CSS text-decoration-line (flags) for ImWidgetsTextLayout::Decoration.
+enum ImWidgetsTextDecoration_
+{
+	ImWidgetsTextDecoration_None        = 0,
+	ImWidgetsTextDecoration_Underline   = 1 << 0,
+	ImWidgetsTextDecoration_LineThrough = 1 << 1,
+	ImWidgetsTextDecoration_Overline    = 1 << 2,
+};
+typedef int ImWidgetsTextDecoration;
+
 // Layout of a multi-line text block (DrawTextBlock / CalcTextBlockSize).
 struct ImWidgetsTextLayout
 {
 	float              WrapWidth  = 0.0f;  // logical pixels; <= 0: no wrapping (lines only break at '\n')
 	ImWidgetsTextAlign Align      = 0;     // ImWidgetsTextAlign_Start
 	float              LineHeight = 1.25f; // line box height as a multiple of the font size (CSS line-height)
+	int                Decoration = 0;     // ImWidgetsTextDecoration_ flags: underline / line-through / overline per drawn line
+	ImU32              DecorationColor = 0; // 0 = the text colour (CSS currentColor)
 };
 
 // How DrawText renders (SetTextRenderer).

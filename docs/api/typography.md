@@ -89,6 +89,8 @@ struct ImWidgetsTextLayout {
     float              WrapWidth  = 0.0f;   // lp; <= 0: no wrapping
     ImWidgetsTextAlign Align      = Start;  // Start / End / Left / Right / Center
     float              LineHeight = 1.25f;  // multiple of the font size
+    int                Decoration = 0;      // ImWidgetsTextDecoration_ Underline / LineThrough / Overline
+    ImU32              DecorationColor = 0; // 0 = the text colour
 };
 ImVec2 DrawTextBlock    ( ImDrawList*, ImFont*, float font_size, ImVec2 pos, ImU32 col,
                           char const* text, char const* text_end = nullptr,
@@ -105,7 +107,10 @@ trailing spaces hang. Every paragraph resolves its own direction
 shaped and bidi-reordered on its own. `Start` / `End` alignment follow the
 paragraph direction, like CSS `text-align: start`. `pos` is the top-left of the
 block; the line box is `LineHeight * font_size` with the glyphs centred in it
-(half-leading). Returns the block size in pixels.
+(half-leading). `Decoration` draws CSS `text-decoration-line` rules under,
+through or over every line, spanning the drawn text (not hanging spaces);
+thickness and offsets derive from the font size. Returns the block size in
+pixels.
 
 ### `InputTextShaped`
 ```cpp
@@ -148,7 +153,10 @@ width (UAX #14), every `
 aligned to its start. Up / Down keep the horizontal position (a soft wrap keeps
 the caret at the end of the clicked line), PageUp / PageDown, Home / End per
 line, Ctrl+Home / End for the whole text, Enter inserts a paragraph break,
-pasted CRLF becomes LF, the view scrolls with the caret and the mouse wheel.
+pasted CRLF becomes LF and other control characters are dropped, the view
+follows the caret when it moves and otherwise scrolls with the mouse wheel.
+Flags: `ReadOnly`; `EnterReturnsTrue` makes Enter submit (returns true, Ctrl+Enter
+inserts a break).
 `size` is in lp (0 = item width x 8 lines).
 
 ### Caret, hit-testing and selection

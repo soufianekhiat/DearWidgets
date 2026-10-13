@@ -2583,6 +2583,11 @@ namespace ImWidgets{
 			{
 				ImWidgetsTextLayout lay;
 				lay.WrapWidth = s_blk_wrap; lay.Align = s_blk_align; lay.LineHeight = s_blk_lh;
+				static int s_blk_deco = 0;
+				ImGui::CheckboxFlags( "underline##SlugBlk", &s_blk_deco, ImWidgetsTextDecoration_Underline ); ImGui::SameLine();
+				ImGui::CheckboxFlags( "line-through##SlugBlk", &s_blk_deco, ImWidgetsTextDecoration_LineThrough ); ImGui::SameLine();
+				ImGui::CheckboxFlags( "overline##SlugBlk", &s_blk_deco, ImWidgetsTextDecoration_Overline );
+				lay.Decoration = s_blk_deco;
 				ImWidgets::GetStyle().TextDirection = s_bidi_dir;
 				ImVec2 p0 = ImGui::GetCursorScreenPos();
 				ImVec2 bsz = ImWidgets::CalcTextBlockSize( bf, 22.0f, kBlockText, nullptr, lay );
