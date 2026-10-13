@@ -7498,6 +7498,28 @@ namespace ImWidgets {
 		return &s_inputStates.back();
 	}
 
+	// Multi-line input layout, kept between frames: re-shaped only when the
+	// text or the layout parameters change. Heap-allocated (it owns vectors).
+	struct SlugMultiLayout
+	{
+		ImGuiID                 id;
+		ImGuiID                 key;     // hash of text + parameters (0 = none)
+		ImVector<SlugBlockLine> lines;
+		ImVector<unsigned int>  brk;
+		float                   blockH;
+	};
+	static ImVector<SlugMultiLayout*> s_multiLayouts;
+
+	static SlugMultiLayout* SlugGetMultiLayout(ImGuiID id)
+	{
+		for (int i = 0; i < s_multiLayouts.Size; ++i)
+			if (s_multiLayouts[i]->id == id) return s_multiLayouts[i];
+		SlugMultiLayout* ml = IM_NEW(SlugMultiLayout)();
+		ml->id = id; ml->key = 0; ml->blockH = 0.0f;
+		s_multiLayouts.push_back(ml);
+		return ml;
+	}
+
 	bool InputTextShaped(const char* label, char* buf, size_t buf_size, ImFont* font, float font_size, ImGuiInputTextFlags flags)
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
@@ -7794,10 +7816,20 @@ namespace ImWidgets {
 		ImWidgetsTextLayout lay;
 		lay.WrapWidth = PxToLp(ImMax(innerW, size_px));
 		lay.LineHeight = 1.25f;
-		ImVector<SlugBlockLine> lines;
-		ImVector<unsigned int> brk;
-		float blockH = 0.0f;
+		SlugMultiLayout* ml = SlugGetMultiLayout(id);
+		ImVector<SlugBlockLine>& lines = ml->lines;
+		ImVector<unsigned int>& brk = ml->brk;
+		float& blockH = ml->blockH;
 		auto relayout = [&]() {
+			// Lines point into buf: the key covers the buffer address, the text
+			// and everything the layout depends on.
+			struct Params { const char* b; ImFont* f; int len; float size, wrap; int dir; } params;
+			memset(&params, 0, sizeof(params)); // padding bytes are hashed too
+			params.b = buf; params.f = font; params.len = len; params.size = size_px; params.wrap = lay.WrapWidth; params.dir = (int)GetStyle().TextDirection;
+			ImGuiID key = ImHashData(buf, (size_t)len, ImHashData(&params, sizeof(params)));
+			if (key == 0) key = 1;
+			if (key == ml->key) return;
+			ml->key = key;
 			blockH = SlugTextBlock(nullptr, font, size_lp, ImVec2(0, 0), 0, buf, buf + len, lay, false, nullptr, FLT_MAX, &lines).y;
 			brk.resize(len + 1);
 			DwShaper_TextBreaks(buf, len, brk.Data);
@@ -7867,7 +7899,20 @@ namespace ImWidgets {
 			if (clicked && io.MouseClickedCount[0] >= 2) { st->anchor = 0; st->caret = len; st->selectAllLock = true; }
 			else if (io.MouseDown[0] && !st->selectAllLock && (clicked || ImGui::IsMouseDragging(ImGuiMouseButton_Left)))
 			{
-				st->caret = hitAt(io.MousePos.x - textLeft, io.MousePos.y - textTop + st->scroll, &st->upstream);
+				// Dragging past the top / bottom edge scrolls, faster the further
+				// away the mouse is; the caret follows the edge line.
+				float my = io.MousePos.y;
+				if (!clicked)
+				{
+					const float top = frame.Min.y + padY, bot = frame.Max.y - padY;
+					float over = 0.0f;
+					if (my < top) { over = my - top; my = top; }
+					else if (my > bot) { over = my - bot; my = bot - 1.0f; }
+					if (over != 0.0f)
+						st->scroll = ImClamp(st->scroll + ImClamp(over, -lineAdv * 4.0f, lineAdv * 4.0f) * io.DeltaTime * 10.0f,
+						                     0.0f, ImMax(0.0f, blockH - innerH));
+				}
+				st->caret = hitAt(io.MousePos.x - textLeft, my - textTop + st->scroll, &st->upstream);
 				if (clicked && !io.KeyShift) st->anchor = st->caret;
 				st->desiredX = -1.0f;
 				st->blinkStart = ImGui::GetTime();
