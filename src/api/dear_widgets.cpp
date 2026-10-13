@@ -34143,6 +34143,17 @@ namespace ImWidgets
         // enforce the same lower bound here so the GPU path does not render
         // weird cap-overlap "dashes" when the caller passes dash_len smaller
         // than the cap extension.
+        // SVG stroke-dasharray: an odd-length list is repeated once to make it
+        // even ("5" = 5 on / 5 off, "5,3,2" = "5,3,2,5,3,2").
+        ImVector<float> svg_even_storage;
+        if (dashes && (dashes_count % 2) == 1)
+        {
+            svg_even_storage.resize(dashes_count * 2);
+            for (int i = 0; i < dashes_count * 2; ++i)
+                svg_even_storage[i] = dashes[i % dashes_count];
+            dashes = svg_even_storage.Data;
+            dashes_count *= 2;
+        }
         const float dash_env_min = 2.0f * cap_ext_cpu;
         // Pre-clamp envelope entries (even indices) in the caller's pattern
         // so both the GPU dispatch above and the CPU consumer below agree on

@@ -849,7 +849,7 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
     }
 
     int num_segs = segs.Size / 2;
-    if (num_segs <= 0 || num_segs > IMGUI_STROKE_MAX_SEGMENTS) return;
+    if (num_segs <= 0) return;
 
 
     // --- Compute bounding box ---
@@ -861,12 +861,10 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
     }
     bx0 -= aa; by0 -= aa; bx1 += aa; by1 += aa;
 
-    // --- Fill constant buffer ---
-    // Use pool to keep data alive until GPU reads it (double-buffered)
+    // --- Free last frame's constant buffers (the GPU has consumed them) ---
     ImU64 frame = ImGui::GetFrameCount();
     if (frame != s_strokeCBFrame) {
         s_strokeCBFrame = frame;
-        // Free previous frame's pool
         for (int i = 0; i < s_strokeCBPool.Size; ++i) {
             if (s_strokeCBPool[i]->buf) IM_FREE(s_strokeCBPool[i]->buf);
             IM_FREE(s_strokeCBPool[i]);
@@ -874,47 +872,89 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
         s_strokeCBPool.resize(0);
     }
 
-    int buf_size = (int)(12 * sizeof(float) + num_segs * 4 * sizeof(float)); // params+color+bounds + segments
-    buf_size = (buf_size + 15) & ~15; // 16-byte align
-    ImWidgetsStrokeBuffer* buf = (ImWidgetsStrokeBuffer*)IM_ALLOC(buf_size);
-    memset(buf, 0, buf_size);
+    // --- One shader draw over a horizontal band, with the segments it needs ---
+    // The shader casts a horizontal ray, so a pixel's winding only depends on
+    // segments that cross its row; its AA only on segments within `aa`. A band
+    // therefore needs exactly the segments whose y-range overlaps the band
+    // grown by `aa`, and the result is identical to one draw over everything.
+    auto emitBand = [&](float y0, float y1, const int* idx, int count)
+    {
+        int buf_size = (int)(12 * sizeof(float) + count * 4 * sizeof(float)); // params+color+bounds + segments
+        buf_size = (buf_size + 15) & ~15; // 16-byte align
+        ImWidgetsStrokeBuffer* buf = (ImWidgetsStrokeBuffer*)IM_ALLOC(buf_size);
+        memset(buf, 0, buf_size);
+        buf->params[0] = (float)count;
+        buf->params[1] = half_w;
+        buf->params[2] = aa;
+        buf->params[3] = 0;
+        buf->color[0] = ((col >> 0) & 0xFF) / 255.0f;
+        buf->color[1] = ((col >> 8) & 0xFF) / 255.0f;
+        buf->color[2] = ((col >> 16) & 0xFF) / 255.0f;
+        buf->color[3] = ((col >> 24) & 0xFF) / 255.0f;
+        buf->bounds[0] = bx0; buf->bounds[1] = y0;
+        buf->bounds[2] = bx1; buf->bounds[3] = y1;
+        for (int k = 0; k < count; ++k) {
+            const int i = idx ? idx[k] : k;
+            buf->segments[k * 4 + 0] = segs[i * 2].x;
+            buf->segments[k * 4 + 1] = segs[i * 2].y;
+            buf->segments[k * 4 + 2] = segs[i * 2 + 1].x;
+            buf->segments[k * 4 + 3] = segs[i * 2 + 1].y;
+        }
+        DW_StrokeCBData* cb = (DW_StrokeCBData*)IM_ALLOC(sizeof(DW_StrokeCBData));
+        cb->program = program;
+        cb->buf = buf;
+        cb->buf_size = buf_size;
+        s_strokeCBPool.push_back(cb);
 
-    buf->params[0] = (float)num_segs;
-    buf->params[1] = half_w;
-    buf->params[2] = aa;
-    buf->params[3] = 0;
+        dl->AddCallback(DW_PrepareStrokeUniforms, cb);
+        ImPlatform_BeginCustomShader(dl, program);
+        dl->AddImageQuad(
+            ctx->whiteImg,
+            ImVec2(bx0, y0), ImVec2(bx1, y0), ImVec2(bx1, y1), ImVec2(bx0, y1),
+            ImVec2(0, 0), ImVec2(1, 0), ImVec2(1, 1), ImVec2(0, 1),
+            IM_COL32(255, 255, 255, 255));
+        ImPlatform_EndCustomShader(dl);
+    };
 
-    // Color: convert ImU32 to float4
-    buf->color[0] = ((col >> 0) & 0xFF) / 255.0f;
-    buf->color[1] = ((col >> 8) & 0xFF) / 255.0f;
-    buf->color[2] = ((col >> 16) & 0xFF) / 255.0f;
-    buf->color[3] = ((col >> 24) & 0xFF) / 255.0f;
-
-    buf->bounds[0] = bx0; buf->bounds[1] = by0;
-    buf->bounds[2] = bx1; buf->bounds[3] = by1;
-
-    for (int i = 0; i < num_segs; ++i) {
-        buf->segments[i * 4 + 0] = segs[i * 2].x;
-        buf->segments[i * 4 + 1] = segs[i * 2].y;
-        buf->segments[i * 4 + 2] = segs[i * 2 + 1].x;
-        buf->segments[i * 4 + 3] = segs[i * 2 + 1].y;
+    // Small outlines: one draw. Larger ones are split into bands holding at
+    // most kBandSegs segments each -- this both lifts the old hard limit
+    // (strokes over IMGUI_STROKE_MAX_SEGMENTS segments used to vanish) and
+    // keeps the per-pixel loop short on long strokes.
+    const int kBandSegs = 256;
+    if (num_segs <= kBandSegs) {
+        emitBand(by0, by1, NULL, num_segs);
+    } else {
+        struct Band { float y0, y1; };
+        ImVector<Band> stack;
+        ImVector<int>  idx;
+        Band whole = { by0, by1 };
+        stack.push_back(whole);
+        while (!stack.empty()) {
+            Band band = stack.back();
+            stack.pop_back();
+            idx.resize(0);
+            for (int i = 0; i < num_segs; ++i) {
+                float sy0 = ImMin(segs[i * 2].y, segs[i * 2 + 1].y);
+                float sy1 = ImMax(segs[i * 2].y, segs[i * 2 + 1].y);
+                if (sy1 >= band.y0 - aa && sy0 <= band.y1 + aa)
+                    idx.push_back(i);
+            }
+            if (idx.Size == 0) continue;
+            const bool tooThin = (band.y1 - band.y0) <= 1.0f;
+            if (idx.Size <= kBandSegs || tooThin) {
+                // A band one pixel tall that still holds more than the constant
+                // buffer can take is pathological (thousands of segments on one
+                // row); clamp rather than drop the whole stroke.
+                int count = ImMin(idx.Size, (int)IMGUI_STROKE_MAX_SEGMENTS);
+                emitBand(band.y0, band.y1, idx.Data, count);
+                continue;
+            }
+            float mid = (band.y0 + band.y1) * 0.5f;
+            Band lo = { band.y0, mid }, hi = { mid, band.y1 };
+            stack.push_back(hi);
+            stack.push_back(lo);
+        }
     }
-
-    DW_StrokeCBData* cb = (DW_StrokeCBData*)IM_ALLOC(sizeof(DW_StrokeCBData));
-    cb->program = program;
-    cb->buf = buf;
-    cb->buf_size = buf_size;
-    s_strokeCBPool.push_back(cb);
-
-    // --- Render bounding quad via custom shader ---
-    dl->AddCallback(DW_PrepareStrokeUniforms, cb);
-    ImPlatform_BeginCustomShader(dl, program);
-    dl->AddImageQuad(
-        ctx->whiteImg,
-        ImVec2(bx0, by0), ImVec2(bx1, by0), ImVec2(bx1, by1), ImVec2(bx0, by1),
-        ImVec2(0, 0), ImVec2(1, 0), ImVec2(1, 1), ImVec2(0, 1),
-        IM_COL32(255, 255, 255, 255));
-    ImPlatform_EndCustomShader(dl);
 
     // --- Debug wireframe overlay ---
     if (s_strokeDebugWireframe) {
@@ -1006,12 +1046,17 @@ static inline float DW_DashCapExt(ImWidgetsCap cap, float thickness) {
 static void DW_DashPatternToBody(const float* dash_array, int dash_count, float cap_ext,
                                  ImVector<float>& out_body)
 {
+    // SVG stroke-dasharray: an odd-length list is repeated once to make it even
+    // ("5,3,2" behaves as "5,3,2,5,3,2"), so dashes and gaps keep alternating
+    // when the pattern wraps. Without this the wrap merged two dashes.
+    const int n = (dash_count % 2) ? dash_count * 2 : dash_count;
     out_body.resize(0);
-    out_body.reserve(dash_count);
-    for (int i = 0; i < dash_count; ++i) {
+    out_body.reserve(n);
+    for (int i = 0; i < n; ++i) {
+        float src = dash_array[i % dash_count];
         float v = ((i % 2) == 0)
-            ? ImMax(0.0f, dash_array[i] - 2.0f * cap_ext)   // body length
-            : ImMax(0.0f, dash_array[i] + 2.0f * cap_ext);  // expanded gap
+            ? ImMax(0.0f, src - 2.0f * cap_ext)   // body length
+            : ImMax(0.0f, src + 2.0f * cap_ext);  // expanded gap
         out_body.push_back(v);
     }
 }
@@ -1032,6 +1077,7 @@ static void DW_DashSplitCubicPath(
     ImVector<float> body_pat;
     DW_DashPatternToBody(dash_array, dash_count, cap_ext, body_pat);
     const float* pat = body_pat.Data;
+    dash_count = body_pat.Size;   // may have doubled (odd SVG dasharray)
 
     float pattern_len = 0;
     for (int i = 0; i < dash_count; ++i) pattern_len += pat[i];
@@ -1151,6 +1197,7 @@ static void DW_DashSplitPolyline(
     ImVector<float> body_pat;
     DW_DashPatternToBody(dash_array, dash_count, cap_ext, body_pat);
     const float* pat = body_pat.Data;
+    dash_count = body_pat.Size;   // may have doubled (odd SVG dasharray)
 
     float pattern_len = 0;
     for (int i = 0; i < dash_count; ++i) pattern_len += pat[i];
