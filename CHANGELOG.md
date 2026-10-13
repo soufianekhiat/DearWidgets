@@ -321,9 +321,45 @@ and both `DrawDashedPolylineAA` overloads, so only explicit uses need updating.
 The other two enumerators (`ImWidgetsJoin_Round`, `ImWidgetsJoin_Bevel`) are
 unchanged.
 
+#### 26. `PushStyleVar( ImVec2 )` / `PushStyleVar( ImVec4 )` removed
+
+No `ImWidgetsStyleVar_` is a vector, so both overloads could only assert. Every
+style var is a `float`; `int` / `bool` fields are set directly on `GetStyle()`.
+
+#### 27. `size` is in logical pixels for three more widgets
+
+`NetworkGraph`, `GradientMeshEditor` and `ToonRampEditor` took `size` in screen
+pixels, unlike every other widget. They now take logical pixels (DPI applied
+internally), and `ImNetworkGraphData::Zoom` is a logical zoom. Callers that
+wrapped the size in `ImPlatform_LpToPx` should drop the wrap; `0` still means
+"fill the available width".
+
 ---
 
 ### Added
+
+#### Edit reporting on composite widgets
+
+`IsItemEdited()`, `IsItemActive()` and `IsItemDeactivatedAfterEdit()` now work
+after the 29 physical colour pickers, `ColorSlice`, `SpectrumEditor`,
+`ChromaWarp`, `GridWarp`, `UnitField`, `PaintCanvas`, `TransformGizmo`,
+`NotchedDial`, `AngleDial`, `SizeControl2D/3D`, `GradientMeshEditor`,
+`ToonRampEditor`, `VectorDrawingTool` and `CropRect`. These widgets are wrapped
+in a group (as ImGui's own `ColorPicker4` is); the ones with a single main item
+still report its ID, so `BeginPopupContextItem()` right after them keeps working.
+
+#### Interaction additions
+
+- `BeginSelection`: Escape cancels a drag (`s.Cancelled`); Shift / Alt at drag
+  start set `s.Op` to `ImWidgetsSelectionOp_Add` / `_Subtract`.
+- `SliderRingFloatEx`: `ImWidgetsSliderFlags_Stepped` snaps to the format's
+  precision; `ImWidgetsSliderFlags_ProportionalDrag` joins the enclosing
+  `PushDragGroup` with an automatic slot.
+- `GradientMeshEditor`: nodes can be dragged (corners pinned, edge nodes slide
+  along their edge) and the fill follows the moved nodes; click a node without
+  dragging to edit its colour.
+- `RangeSliderVertical*` shows its values (inside the bar when it fits,
+  otherwise as a tooltip).
 
 #### Version and licence banner
 
@@ -514,6 +550,19 @@ per effect through a `BG_EFFECT` define so only the requested variant compiles.
 - **`ContainerAtlas` -> `OwnerAtlas`**, following the upstream ImGui rename.
 - **Demo font download link fixed** -- the Noto COLRv1 emoji font moved to
   `2D/fonts/` upstream.
+- **Scopes orphaned their expand window on empty data.** `ParadeScope`,
+  `VectorScope` and `Histogram` returned before drawing the expand button.
+- **Double DPI scaling** in the `PaintCanvas` and `VectorDrawingTool` expand
+  windows; `NetworkGraph` ignored DPI entirely.
+- **Range sliders on int types reported a change every frame** while the mouse
+  sat between two integer steps (the test ran before quantisation).
+- **`VectorDrawingTool`**: Shift+click on a node now multi-selects (Shift used
+  to always pan); deselecting a node no longer makes the rest run away on drag.
+- **`CropRect`** picks the nearest grip instead of the first one in range.
+- **`ColorWheel` "Copy Hex"** clamps HDR / negative values.
+- **Image loupe** (`ImageViewer`, `ImageInspector`) owns its right-button drag.
+- **`PushDragGroup`** delivers each delta exactly once (the release frame used
+  to re-apply the last delta to slots after the initiator).
 
 ---
 

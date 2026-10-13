@@ -784,9 +784,22 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 	}
 
 	// --- Right-click pixel inspector loupe ---
-	if ( hovered && ImGui::IsMouseDown( 1 ) )
+	// The loupe owns its right-button drag: it starts on a right-click over the
+	// image and keeps tracking until release even if the cursor leaves the
+	// widget (sampling is clamped to the image rect). Gating on `hovered` made
+	// it vanish at the edge and let a right-press that began elsewhere trigger it.
+	bool* pLoupe = window->StateStorage.GetBoolRef( id ^ 0x10C9E001u, false );
+	if ( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) )
 	{
-		ImVec2 mouseImg = screenToImg( mp );
+		*pLoupe = true;
+		ImGui::SetKeyOwner( ImGuiKey_MouseRight, id );
+	}
+	if ( !ImGui::IsMouseDown( ImGuiMouseButton_Right ) )
+		*pLoupe = false;
+	if ( *pLoupe )
+	{
+		ImVec2 const mpSample = ImVec2( ImClamp( mp.x, bb.Min.x, bb.Max.x - 1.0f ), ImClamp( mp.y, bb.Min.y, bb.Max.y - 1.0f ) );
+		ImVec2 mouseImg = screenToImg( mpSample );
 		int    px       = ( int )floorf( mouseImg.x );
 		int    py       = ( int )floorf( mouseImg.y );
 

@@ -4126,12 +4126,25 @@ enum ImWidgetsSelectionMode_
 };
 typedef int ImWidgetsSelectionMode;
 
+// How the finished selection combines with the caller's existing one. Captured
+// from the modifiers when the drag starts: none = Replace, Shift = Add,
+// Alt = Subtract. BeginSelection only reports it; the caller applies it.
+enum ImWidgetsSelectionOp_
+{
+    ImWidgetsSelectionOp_Replace  = 0,
+    ImWidgetsSelectionOp_Add      = 1,
+    ImWidgetsSelectionOp_Subtract = 2
+};
+typedef int ImWidgetsSelectionOp;
+
 struct ImWidgetsSelectionState
 {
     ImWidgetsSelectionMode Mode;
     ImVector<ImVec2>       Path;     // Marquee: Path[0]=anchor, Path[1]=cursor. Lasso: drag polyline.
     bool                   Active;   // currently dragging
     bool                   Closed;   // user released this frame; selection is finalized
+    ImWidgetsSelectionOp   Op;       // modifier op of the current/last drag (see ImWidgetsSelectionOp_)
+    bool                   Cancelled;// Escape pressed this frame: drag aborted, Path cleared
 };
 
 //////////////////////////////////////////////////////////////////////////
@@ -6166,7 +6179,8 @@ namespace ImWidgets{
 
     // Begin a selection over `bounds`. The InvisibleButton is placed under any
     // visual content the caller draws after this call. Returns true if a
-    // selection is either active or finalized this frame.
+    // selection is either active or finalized this frame. Escape cancels a drag
+    // (s.Cancelled); Shift / Alt at drag start set s.Op to Add / Subtract.
     IMGUI_API bool BeginSelection( char const* id_str, ImRect bounds,
                                     ImWidgetsSelectionState& s,
                                     ImU32 fill_col = IM_COL32(  80, 160, 255,  60 ),

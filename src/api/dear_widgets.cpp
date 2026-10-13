@@ -9683,6 +9683,7 @@ namespace ImWidgets{
 		ImVec2 cmin = ImGui::GetCursorScreenPos();
 		ImVec2 cmax( cmin.x + w, cmin.y + h );
 		ImGui::InvisibleButton( "##canvas", ImVec2( w, h ) );
+		dwEditGroup.SetPrimary( ImGui::GetItemID() );
 		bool active  = ImGui::IsItemActive();
 		bool pressed = ImGui::IsItemActivated();
 		bool hovered = ImGui::IsItemHovered();
@@ -11563,6 +11564,7 @@ namespace ImWidgets{
 		// ---- chromaticity diagram ----
 		ImVec2 dmin = ImGui::GetCursorScreenPos();
 		ImGui::InvisibleButton( "##diagram", ImVec2( dsize, dsize ) );
+		dwEditGroup.SetPrimary( ImGui::GetItemID() );
 		bool dActive  = ImGui::IsItemActive();
 		bool dHovered = ImGui::IsItemHovered();
 		bool dPressed = ImGui::IsItemActivated();
@@ -15910,6 +15912,7 @@ namespace ImWidgets{
 		ImGui::ItemSize( frame_bb, style.FramePadding.y );
 		if ( !ImGui::ItemAdd( frame_bb, id ) )
 			return false;
+		dwEditGroup.SetPrimary( id );
 
 		const bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.ItemFlags );
 		const float cw = frame_bb.GetWidth();
@@ -24443,6 +24446,7 @@ namespace ImWidgets{
 		ImGui::ItemSize( bb );
 		if ( !ImGui::ItemAdd( bb, id ) )
 			return false;
+		dwEditGroup.SetPrimary( id );
 
 		bool modified = false;
 		ImDrawList* dl = window->DrawList;
@@ -24496,7 +24500,9 @@ namespace ImWidgets{
 			float screenR = ImMax( canvas->BrushSize * pixW, 1.0f );
 			// Foreground list so the cursor sits above other windows, but clipped to the canvas.
 			ImDrawList* fg = ImGui::GetForegroundDrawList();
-			fg->PushClipRect( bb.Min, bb.Max, true );
+			ImRect ring_clip = bb;
+			ring_clip.ClipWithFull( window->ClipRect );
+			fg->PushClipRect( ring_clip.Min, ring_clip.Max, false );
 			fg->AddCircle( mp, screenR, IM_COL32( 255, 255, 255, 200 ), 0, LpToPx( 1.0f ) );
 			fg->AddCircle( mp, screenR + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ), 0, LpToPx( 1.0f ) );
 			fg->PopClipRect();
@@ -24689,6 +24695,7 @@ namespace ImWidgets{
 		ImGui::ItemSize( canvasBB );
 		if ( !ImGui::ItemAdd( canvasBB, id, &canvasBB ) )
 			return false;
+		dwEditGroup.SetPrimary( id );
 
 		ImDrawList* dl = window->DrawList;
 		ImVec2 canvasCenter( canvasBB.Min.x + cw * 0.5f, canvasBB.Min.y + ch * 0.5f );
@@ -32170,9 +32177,22 @@ namespace ImWidgets {
 		}
 
 		// ---- Right-click pixel inspector ----
-		if ( hovered && ImGui::IsMouseDown( 1 ) )
+		// The loupe owns its right-button drag: it starts on a right-click over the
+		// image and keeps tracking until release even if the cursor leaves the
+		// widget (sampling is clamped to the image rect). Gating on `hovered` made
+		// it vanish at the edge and let a right-press that began elsewhere trigger it.
+		bool* pLoupe = window->StateStorage.GetBoolRef( id ^ 0x10C9E001u, false );
+		if ( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) )
 		{
-			ImVec2 mouseImg = screenToImg( mp );
+			*pLoupe = true;
+			ImGui::SetKeyOwner( ImGuiKey_MouseRight, id );
+		}
+		if ( !ImGui::IsMouseDown( ImGuiMouseButton_Right ) )
+			*pLoupe = false;
+		if ( *pLoupe )
+		{
+			ImVec2 const mpSample = ImVec2( ImClamp( mp.x, bb.Min.x, bb.Max.x - 1.0f ), ImClamp( mp.y, bb.Min.y, bb.Max.y - 1.0f ) );
+			ImVec2 mouseImg = screenToImg( mpSample );
 			int    px       = ( int )floorf( mouseImg.x );
 			int    py       = ( int )floorf( mouseImg.y );
 
@@ -36967,6 +36987,7 @@ namespace ImWidgets
         // dropped and made the dial look like it wasn't listening.
         DW_EditGroup dwEditGroup;
         ImGui::InvisibleButton(label, size, ImGuiButtonFlags_MouseButtonLeft);
+        dwEditGroup.SetPrimary(ImGui::GetItemID());
         bool hovered   = ImGui::IsItemHovered();
         bool activated = ImGui::IsItemActivated();
         bool active    = ImGui::IsItemActive();
@@ -37086,6 +37107,7 @@ namespace ImWidgets
         ImVec2 pos = ImGui::GetCursorScreenPos();
         DW_EditGroup dwEditGroup;
         ImGui::InvisibleButton(label, size, ImGuiButtonFlags_MouseButtonLeft);
+        dwEditGroup.SetPrimary(ImGui::GetItemID());
         bool hovered   = ImGui::IsItemHovered();
         bool active    = ImGui::IsItemActive();
         bool activated = ImGui::IsItemActivated();
@@ -40270,7 +40292,10 @@ namespace ImWidgets
 
         bool changed = prev_rect.Min.x != s.Rect.Min.x || prev_rect.Min.y != s.Rect.Min.y
                     || prev_rect.Max.x != s.Rect.Max.x || prev_rect.Max.y != s.Rect.Max.y;
-        if ( changed )
+        // An aspect change driven by the caller's own (still active) slider is
+        // reported through the return value but not marked as this item's edit:
+        // MarkItemEdited asserts unless ActiveId is ours or nobody's.
+        if ( changed && ( GImGui->ActiveId == id || GImGui->ActiveId == 0 ) )
             ImGui::MarkItemEdited( id );
         return changed;
     }
@@ -40907,17 +40932,33 @@ namespace ImWidgets
         ImGui::ButtonBehavior( bounds, id, NULL, NULL,
                                 (ImGuiButtonFlags)( (int)ImGuiButtonFlags_MouseButtonLeft | (int)ImGuiButtonFlags_NoNavFocus ) );
 
-        ImVec2 mouse = ImGui::GetIO().MousePos;
+        ImGuiIO& io = ImGui::GetIO();
+        ImVec2 mouse = io.MousePos;
         s.Closed = false;
+        s.Cancelled = false;
+        thickness = LpToPx( thickness );
 
         if ( ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && ImGui::IsItemHovered() )
         {
             s.Active = true;
+            s.Op = io.KeyAlt ? ImWidgetsSelectionOp_Subtract
+                 : io.KeyShift ? ImWidgetsSelectionOp_Add
+                 : ImWidgetsSelectionOp_Replace;
             s.Path.clear();
             s.Path.push_back( mouse );
             if ( s.Mode == ImWidgetsSelectionMode_Marquee )
                 s.Path.push_back( mouse );
             ImGui::SetActiveID( id, win );
+            ImGui::SetKeyOwner( ImGuiKey_Escape, id );
+        }
+
+        // Escape aborts the drag: nothing is selected and the outline goes away.
+        if ( s.Active && ImGui::IsKeyPressed( ImGuiKey_Escape, false, id ) )
+        {
+            s.Active = false;
+            s.Cancelled = true;
+            s.Path.clear();
+            if ( ImGui::GetActiveID() == id ) ImGui::ClearActiveID();
         }
 
         if ( s.Active && ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
@@ -40933,7 +40974,8 @@ namespace ImWidgets
             {
                 ImVec2 last = s.Path.Size ? s.Path.back() : p;
                 float dx = p.x - last.x, dy = p.y - last.y;
-                if ( dx * dx + dy * dy >= 4.0f )  // ~2 px squared min stride
+                float const stride = LpToPx( 2.0f );
+                if ( dx * dx + dy * dy >= stride * stride )
                     s.Path.push_back( p );
             }
         }
@@ -41555,6 +41597,7 @@ namespace ImWidgets
         ImVec2 cur = ImGui::GetCursorScreenPos();
         ImRect bb( cur, cur + size );
         ImGui::InvisibleButton( "##gm", size );
+        dwEditGroup.SetPrimary( ImGui::GetItemID() );
         bool const hov       = ImGui::IsItemHovered();
         bool const activated = ImGui::IsItemActivated();
         bool const active    = ImGui::IsItemActive();

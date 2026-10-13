@@ -506,10 +506,22 @@ inline ImVec2 PxToLp(ImVec2 px) { float s = ImGui::GetStyle().FontScaleDpi; retu
 // IsItemActive / IsItemEdited / IsItemDeactivatedAfterEdit see whichever
 // sub-item was active; DW_Edited marks the edit on that active sub-item. The
 // RAII form keeps BeginGroup/EndGroup balanced on every early return.
+//
+// EndGroup submits the group with ID 0, so a caller's BeginPopupContextItem()
+// or BeginDragDropSource() right after the widget would assert. Widgets with
+// one main interactive item call SetPrimary( id ) and the group then reports
+// that ID whenever no sub-item claimed it.
 struct DW_EditGroup
 {
+    ImGuiID Primary = 0;
     DW_EditGroup()  { ImGui::BeginGroup(); }
-    ~DW_EditGroup() { ImGui::EndGroup(); }
+    ~DW_EditGroup()
+    {
+        ImGui::EndGroup();
+        if ( Primary != 0 && GImGui->LastItemData.ID == 0 )
+            GImGui->LastItemData.ID = Primary;
+    }
+    void SetPrimary( ImGuiID id ) { Primary = id; }
     DW_EditGroup( DW_EditGroup const& ) = delete;
     DW_EditGroup& operator=( DW_EditGroup const& ) = delete;
 };

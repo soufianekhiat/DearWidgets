@@ -8126,15 +8126,30 @@ namespace ImWidgets{
 				ImWidgets::BeginSelection( "##sel_demo", ImRect( p, p + sz ), s_sel );
 				bool inside[ N ];
 				ImWidgets::TestSelectionPoints( s_sel, abs_pts, N, inside );
+				// The caller owns the selection set and applies s_sel.Op on release
+				// (Shift = add, Alt = subtract, Esc = cancel the drag).
+				static bool s_sel_on[ N ] = {};
+				auto combine = [&]( bool was, bool in ) -> bool
+				{
+					switch ( s_sel.Op )
+					{
+					case ImWidgetsSelectionOp_Add:      return was || in;
+					case ImWidgetsSelectionOp_Subtract: return was && !in;
+					default:                            return in;
+					}
+				};
 				int hit = 0;
 				for ( int i = 0; i < N; ++i )
 				{
-					ImU32 c = inside[ i ] ? IM_COL32( 255, 220, 80, 255 ) : IM_COL32( 120, 160, 220, 255 );
-					dl->AddCircleFilled( abs_pts[ i ], 4.0f, c );
-					if ( inside[ i ] ) ++hit;
+					if ( s_sel.Closed )
+						s_sel_on[ i ] = combine( s_sel_on[ i ], inside[ i ] );
+					bool const on = s_sel.Active ? combine( s_sel_on[ i ], inside[ i ] ) : s_sel_on[ i ];
+					ImU32 c = on ? IM_COL32( 255, 220, 80, 255 ) : IM_COL32( 120, 160, 220, 255 );
+					dl->AddCircleFilled( abs_pts[ i ], ImPlatform_LpToPx( 4.0f ), c );
+					if ( on ) ++hit;
 				}
 				ImGui::SetCursorScreenPos( ImVec2( p.x, p.y + sz.y + 4.0f ) );
-				ImGui::Text( "%d / %d points inside selection", hit, N );
+				ImGui::Text( "%d / %d points selected  (Shift: add, Alt: subtract, Esc: cancel)", hit, N );
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();

@@ -103,6 +103,7 @@ namespace ImWidgets {
         ImGui::InvisibleButton("##vdt_canvas", size, ImGuiButtonFlags_MouseButtonLeft
                                                      | ImGuiButtonFlags_MouseButtonRight
                                                      | ImGuiButtonFlags_MouseButtonMiddle);
+        dwEditGroup.SetPrimary(ImGui::GetItemID());
         bool hovered = ImGui::IsItemHovered();
         bool active = ImGui::IsItemActive();
         ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -196,14 +197,27 @@ namespace ImWidgets {
         // ---- Click handling (only when NOT panning) ----
         if (hovered && io.KeyShift && hit_path < 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
             *shiftPan = true;
-        bool panning = *shiftPan || ImGui::IsMouseDown(ImGuiMouseButton_Middle)
-                    || (io.KeyShift && hit_path < 0);
+        // Interaction is decided by the click-time latch only. Re-testing
+        // "Shift over empty canvas" every frame stalled a Shift+drag of a node:
+        // once the node lagged the cursor by more than hitR, the hit test missed
+        // and the drag flipped into panning.
+        bool panning = *shiftPan || ImGui::IsMouseDown(ImGuiMouseButton_Middle);
+        // Hover feedback only: Shift over empty canvas means a click would pan.
+        bool hoverPan = panning || (io.KeyShift && hit_path < 0);
+
+        // A Shift/Ctrl click that REMOVES a node from the multi-selection must not
+        // start a drag: SelectedNode still points at the removed node, which the
+        // group drag never moves, so the delta grew every frame and the remaining
+        // nodes ran away. The lock lasts until the button is released.
+        ImGuiStorage* vdtStorage = ImGui::GetStateStorage();
+        ImGuiID const noDragKey = ImGui::GetID("##vdt_nodrag");
+        bool noDrag = ImGui::IsMouseDown(ImGuiMouseButton_Left) && vdtStorage->GetBool(noDragKey, false);
 
         // Hover feedback: tell the user whether a click adds a new anchor or
         // grabs an existing anchor/handle. Cursor + tooltip + a ghost ring at
         // mouse position when over empty canvas. The actual highlight halo on
         // hovered anchor/handle is drawn during the render loop below.
-        if (hovered && !panning)
+        if (hovered && !hoverPan)
         {
             if (hit_path >= 0)
             {
@@ -267,7 +281,7 @@ namespace ImWidgets {
                     {
                         bool in = false;
                         for (int k = 0; k < data.SelectedNodes.Size; ++k)
-                            if (data.SelectedNodes[k] == hit_node) { in = true; data.SelectedNodes.erase(data.SelectedNodes.Data + k); break; }
+                            if (data.SelectedNodes[k] == hit_node) { in = true; data.SelectedNodes.erase(data.SelectedNodes.Data + k); noDrag = true; break; }
                         if (!in) data.SelectedNodes.push_back(hit_node);
                     }
                     else
@@ -297,18 +311,22 @@ namespace ImWidgets {
 
         // Drag-pull tangent on newly-placed anchor: while left-down after placement,
         // set Out/In tangents based on drag.
-        if (active && !panning && data.SelectedPath >= 0 && data.SelectedNode >= 0
+        vdtStorage->SetBool(noDragKey, noDrag);
+        if (active && !panning && !noDrag && data.SelectedPath >= 0 && data.SelectedNode >= 0
             && ImGui::IsMouseDown(ImGuiMouseButton_Left))
         {
             ImVectorDrawingPath& p = data.Paths[data.SelectedPath];
             if (data.SelectedNode < p.Nodes.Size)
             {
                 ImVectorDrawingNode& n = p.Nodes[data.SelectedNode];
+                ImVectorDrawingNode const before = n;
                 ImVec2 w = DWE_VDTS2W(data, canvas_min, mouse);
                 if (data.SelectedHandle == 0)
                 {
                     // Move anchor. If multi-selected, translate the whole group by the same delta.
                     ImVec2 delta(w.x - n.Anchor.x, w.y - n.Anchor.y);
+                    if (delta.x != 0.0f || delta.y != 0.0f)
+                        changed = true;
                     if (data.SelectedNodes.Size > 1)
                     {
                         for (int k = 0; k < data.SelectedNodes.Size; ++k)
@@ -334,7 +352,10 @@ namespace ImWidgets {
                     n.OutTangent = ImVec2(w.x - n.Anchor.x, w.y - n.Anchor.y);
                     if (!n.Broken) n.InTangent = ImVec2(-n.OutTangent.x, -n.OutTangent.y);
                 }
-                changed = true;
+                // Report a change only when something moved, not every held frame.
+                if (n.InTangent.x != before.InTangent.x || n.InTangent.y != before.InTangent.y
+                    || n.OutTangent.x != before.OutTangent.x || n.OutTangent.y != before.OutTangent.y)
+                    changed = true;
             }
         }
 

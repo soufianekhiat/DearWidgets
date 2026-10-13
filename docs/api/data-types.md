@@ -628,6 +628,8 @@ struct ImWidgetsSelectionState {
     ImVector<ImVec2>       Path;     // Marquee: [0] = anchor, [1] = cursor. Lasso: drag polyline.
     bool                   Active;   // currently dragging
     bool                   Closed;   // released this frame; selection is final
+    ImWidgetsSelectionOp   Op;       // Replace / Add (Shift) / Subtract (Alt), set at drag start
+    bool                   Cancelled;// Escape pressed this frame; Path cleared
 };
 
 struct ImWidgetsCropState {

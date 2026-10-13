@@ -861,8 +861,11 @@ void TestSelectionPoints ( ImWidgetsSelectionState const& s, ImVec2 const* pts, 
 void TestSelectionRects  ( ImWidgetsSelectionState const& s, ImRect const* rects, int count,
                            bool* inside_out, bool fully_contained_only = false );
 ```
-`BeginSelection` returns `true` on the frame the marquee is released; test your
-items against `s` and write the per-item result into `inside_out`.
+`BeginSelection` returns `true` while dragging and on the frame the marquee is
+released (`s.Closed`); test your items against `s` and write the per-item result
+into `inside_out`. Holding Shift or Alt when the drag starts sets `s.Op` to
+`ImWidgetsSelectionOp_Add` / `_Subtract`, which the caller applies to its own
+selection set. Escape aborts the drag and sets `s.Cancelled`.
 
 > **Replaces** the removed `ImBoxSelectState` / `BoxSelectUpdate` /
 > `BoxSelectDraw` / `BoxSelectRect` family (2.0.0).
