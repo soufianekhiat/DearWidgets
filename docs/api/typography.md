@@ -124,8 +124,8 @@ content is right-aligned (paragraph direction from `GetStyle().TextDirection`,
 `Auto` = first strong character, like `dir="auto"`). Mouse placement with bidi
 caret affinity, drag / Shift selection, double-click selects all, Home / End,
 Ctrl+A / C / X / V, Backspace / Delete by grapheme, horizontal scrolling to
-keep the caret visible, IME position reporting. Enter or Escape leave the
-field. Returns `true` when the buffer changed (`ImGuiInputTextFlags_EnterReturnsTrue`:
+keep the caret visible, IME position reporting. Enter leaves the field;
+Escape leaves it and restores the text it had when activated (both inputs). Returns `true` when the buffer changed (`ImGuiInputTextFlags_EnterReturnsTrue`:
 when Enter is pressed); honours `ImGuiInputTextFlags_ReadOnly`.
 
 ### `SetFontFallbacks`

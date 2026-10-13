@@ -7520,6 +7520,18 @@ namespace ImWidgets {
 		return ml;
 	}
 
+	// Text of the active shaped input when it was activated (Escape restores
+	// it, like ImGui::InputText). Only one input is active at a time.
+	static ImVector<char> s_slugInputBackup;
+	static ImGuiID        s_slugInputBackupId = 0;
+	static void SlugInputBackup(ImGuiID id, const char* buf)
+	{
+		const int n = (int)strlen(buf);
+		s_slugInputBackup.resize(n + 1);
+		memcpy(s_slugInputBackup.Data, buf, (size_t)n + 1);
+		s_slugInputBackupId = id;
+	}
+
 	bool InputTextShaped(const char* label, char* buf, size_t buf_size, ImFont* font, float font_size, ImGuiInputTextFlags flags)
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
@@ -7553,6 +7565,7 @@ namespace ImWidgets {
 		const bool clicked = hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left, ImGuiInputFlags_None, id);
 		if (clicked || g.NavActivateId == id)
 		{
+			if (g.ActiveId != id) SlugInputBackup(id, buf);
 			ImGui::SetActiveID(id, window);
 			ImGui::SetFocusID(id, window);
 			ImGui::FocusWindow(window);
@@ -7690,7 +7703,21 @@ namespace ImWidgets {
 			}
 			bool leaving = false;
 			if (pressed(ImGuiKey_Enter) || pressed(ImGuiKey_KeypadEnter)) { enter = true; leaving = true; ImGui::ClearActiveID(); }
-			if (pressed(ImGuiKey_Escape)) { leaving = true; ImGui::ClearActiveID(); }
+			if (pressed(ImGuiKey_Escape))
+			{
+				// revert to the text the field had when it was activated
+				if (!readOnly && s_slugInputBackupId == id && s_slugInputBackup.Size && strcmp(buf, s_slugInputBackup.Data))
+				{
+					const int n = ImMin(s_slugInputBackup.Size - 1, (int)buf_size - 1);
+					memcpy(buf, s_slugInputBackup.Data, (size_t)n);
+					buf[n] = 0;
+					len = (int)strlen(buf);
+					st->caret = st->anchor = len; st->upstream = false;
+					changed = true;
+					relayout();
+				}
+				leaving = true; ImGui::ClearActiveID();
+			}
 
 			// Typed characters: ignore control characters and Ctrl shortcuts, but
 			// keep AltGr (= Ctrl+Alt on Windows) characters such as @ { [ \ and
@@ -7801,6 +7828,7 @@ namespace ImWidgets {
 		const bool clicked = hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left, ImGuiInputFlags_None, id);
 		if (clicked || g.NavActivateId == id)
 		{
+			if (g.ActiveId != id) SlugInputBackup(id, buf);
 			ImGui::SetActiveID(id, window);
 			ImGui::SetFocusID(id, window);
 			ImGui::FocusWindow(window);
@@ -8033,7 +8061,21 @@ namespace ImWidgets {
 				if ((flags & ImGuiInputTextFlags_EnterReturnsTrue) && !io.KeyCtrl) { enterPressed = true; leaving = true; ImGui::ClearActiveID(); }
 				else insertText("\n", 1);
 			}
-			if (pressed(ImGuiKey_Escape)) { leaving = true; ImGui::ClearActiveID(); }
+			if (pressed(ImGuiKey_Escape))
+			{
+				// revert to the text the field had when it was activated
+				if (!readOnly && s_slugInputBackupId == id && s_slugInputBackup.Size && strcmp(buf, s_slugInputBackup.Data))
+				{
+					const int n = ImMin(s_slugInputBackup.Size - 1, (int)buf_size - 1);
+					memcpy(buf, s_slugInputBackup.Data, (size_t)n);
+					buf[n] = 0;
+					len = (int)strlen(buf);
+					st->caret = st->anchor = len; st->upstream = false;
+					changed = true;
+					relayout();
+				}
+				leaving = true; ImGui::ClearActiveID();
+			}
 			if (!ctrl && !justActivated && !leaving)
 				for (int qi = 0; qi < io.InputQueueCharacters.Size; ++qi)
 				{
