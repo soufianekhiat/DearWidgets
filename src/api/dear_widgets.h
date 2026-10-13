@@ -5970,6 +5970,14 @@ namespace ImWidgets{
     // the path first to place it). Fill treats every subpath as closed (SVG).
     // Stroke uses the Euler-spiral stroker; without the stroke shader it fills
     // the exact stroke outline on the CPU, so caps / joins / dashes still apply.
+    // Clip paths (SVG clip-path / Canvas2D clip()): everything DearWidgets fills
+    // with its CPU filler -- PathFill, FillPolygons, PathStroke, variable-width
+    // strokes, CPU vector text, text on path, SVG documents -- is intersected
+    // with every active clip (anti-aliased edges, fill rule per clip). Up to 4
+    // nested clips; must be balanced. The clip path is in screen space.
+    // Not affected: plain ImDrawList calls and GPU-shader drawing (Slug text).
+    IMGUI_API void PushPathClip( ImWidgetsPath const& clip, ImWidgetsFillRule rule = ImWidgetsFillRule_NonZero );
+    IMGUI_API void PopPathClip();
     IMGUI_API void PathFill  ( ImDrawList* draw_list, ImWidgetsPath const& path, ImU32 col,
                                ImWidgetsFillRule rule = ImWidgetsFillRule_NonZero );
     // Same with a paint: linear / radial / conic gradient (stops, spread, transform,

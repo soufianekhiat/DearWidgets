@@ -3173,7 +3173,10 @@ namespace ImWidgets {
 		key = (key ^ (ImU64)(uintptr_t)atlas->stbFont.data) * 0x100000001B3ull;
 		const ImGuiID id = (ImGuiID)(key ^ (key >> 32));
 
-		SlugVecTextMesh* mesh = (SlugVecTextMesh*)s_vecMeshIndex.GetVoidPtr(id);
+		// A path clip is in screen space: the origin-relative cached mesh cannot
+		// be used, the glyphs are filled at their final place (clip applied).
+		const bool clipped = DW_PathClipActive();
+		SlugVecTextMesh* mesh = clipped ? nullptr : (SlugVecTextMesh*)s_vecMeshIndex.GetVoidPtr(id);
 		if (mesh && mesh->key != key) mesh = nullptr; // 32-bit index collision: rebuild in place below
 		if (!mesh)
 		{
@@ -3231,6 +3234,12 @@ namespace ImWidgets {
 				}
 			}
 
+			if (clipped)
+			{
+				for (int i = 0; i < segs.Size; ++i) segs[i] = ImVec2(segs[i].x + pos.x, segs[i].y + pos.y);
+				DW_FillSegments(dl, segs.Data, segs.Size / 2, col, ImWidgetsFillRule_NonZero, 1.0f);
+				return;
+			}
 			ImDrawList tmp(dl->_Data);
 			tmp._ResetForNewFrame();
 			tmp.PushClipRectFullScreen();

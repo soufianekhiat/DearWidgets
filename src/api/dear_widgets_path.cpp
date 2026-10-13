@@ -33,6 +33,7 @@ struct DW_FillEdge
 {
     float x0, y0, x1, y1; // y0 < y1 (top to bottom)
     int   dir;            // +1 if the original segment went downwards, -1 upwards
+    int   set;            // 0 = the filled shape, 1..N = active clip paths
 };
 
 struct DW_SlabEdge
@@ -40,7 +41,19 @@ struct DW_SlabEdge
     float xa, xb;         // x at the slab top / bottom
     int   dir;
     int   id;             // index into the edge array
+    int   set;
 };
+
+// ---- Path clip stack (PushPathClip / PopPathClip) ----
+// Every fill goes through DW_FillSegments, which intersects it with all
+// active clips in the same sweep: each clip's edges keep their own winding
+// count and a point is covered only if it is inside the shape and inside every
+// clip (with their fill rules). Clip edges get the same anti-aliased fringe.
+enum { DW_MaxPathClips = 4 };
+struct DW_PathClip { ImVector<ImVec2> segs; ImWidgetsFillRule rule; ImRect bounds; };
+static DW_PathClip* s_pathClips[DW_MaxPathClips];
+static int          s_pathClipCount = 0;
+static int          s_pathClipOverflow = 0; // pushes beyond the limit (ignored, but popped symmetrically)
 
 // A span between two edges that stays open over consecutive slabs: it is only
 // emitted (one trapezoid + its side fringes) when its bounding edges change,
@@ -486,20 +499,38 @@ void DW_FillSegments(ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32
     edges.reserve(seg_count);
     ImVector<float> ys;
     ys.reserve(seg_count * 2);
-    for (int i = 0; i < seg_count; ++i)
+    ImRect subjBounds(ImVec2(FLT_MAX, FLT_MAX), ImVec2(-FLT_MAX, -FLT_MAX));
+    auto addEdges = [&](const ImVec2* pts, int count, int set)
     {
-        ImVec2 a = seg_pts[i * 2], b = seg_pts[i * 2 + 1];
-        // NaN or inf: skip (x - x is NaN for both).
-        if (!(a.x - a.x == 0.0f) || !(a.y - a.y == 0.0f) || !(b.x - b.x == 0.0f) || !(b.y - b.y == 0.0f)) continue;
-        if (a.y == b.y) continue;   // horizontal edges never change the winding
-        DW_FillEdge e;
-        if (a.y < b.y) { e.x0 = a.x; e.y0 = a.y; e.x1 = b.x; e.y1 = b.y; e.dir = +1; }
-        else           { e.x0 = b.x; e.y0 = b.y; e.x1 = a.x; e.y1 = a.y; e.dir = -1; }
-        edges.push_back(e);
-        ys.push_back(e.y0);
-        ys.push_back(e.y1);
-    }
+        for (int i = 0; i < count; ++i)
+        {
+            ImVec2 a = pts[i * 2], b = pts[i * 2 + 1];
+            // NaN or inf: skip (x - x is NaN for both).
+            if (!(a.x - a.x == 0.0f) || !(a.y - a.y == 0.0f) || !(b.x - b.x == 0.0f) || !(b.y - b.y == 0.0f)) continue;
+            if (set == 0) { subjBounds.Add(a); subjBounds.Add(b); }
+            if (a.y == b.y) continue;   // horizontal edges never change the winding
+            DW_FillEdge e;
+            if (a.y < b.y) { e.x0 = a.x; e.y0 = a.y; e.x1 = b.x; e.y1 = b.y; e.dir = +1; }
+            else           { e.x0 = b.x; e.y0 = b.y; e.x1 = a.x; e.y1 = a.y; e.dir = -1; }
+            e.set = set;
+            edges.push_back(e);
+            ys.push_back(e.y0);
+            ys.push_back(e.y1);
+        }
+    };
+    addEdges(seg_pts, seg_count, 0);
     if (edges.Size == 0) return;
+    // Active clips: a clip that misses the shape entirely empties it.
+    ImWidgetsFillRule clipRules[DW_MaxPathClips + 1];
+    clipRules[0] = rule;
+    const int nClips = s_pathClipCount;
+    for (int c = 0; c < nClips; ++c)
+    {
+        const DW_PathClip* pc = s_pathClips[c];
+        if (!pc->bounds.Overlaps(subjBounds)) return;
+        clipRules[c + 1] = pc->rule;
+        addEdges(pc->segs.Data, pc->segs.Size / 2, c + 1);
+    }
 
     // Clip the work to the draw list's clip rect (vertically): slabs fully
     // outside it are skipped, which keeps huge off-screen paths cheap.
@@ -612,7 +643,7 @@ void DW_FillSegments(ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32
         for (int k = 0; k < active.Size; ++k)
         {
             const DW_FillEdge& e = edges[active[k]];
-            DW_SlabEdge s = { DW_EdgeXAt(e, ya), DW_EdgeXAt(e, yb), e.dir, active[k] };
+            DW_SlabEdge s = { DW_EdgeXAt(e, ya), DW_EdgeXAt(e, yb), e.dir, active[k], e.set };
             slab.push_back(s);
         }
         sortSlab(slab);
@@ -622,7 +653,7 @@ void DW_FillSegments(ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32
             int wi = 0;
             for (int k = 0; k < slab.Size; ++k)
             {
-                if (wi > 0 && slab[wi - 1].xa == slab[k].xa && slab[wi - 1].xb == slab[k].xb)
+                if (wi > 0 && slab[wi - 1].xa == slab[k].xa && slab[wi - 1].xb == slab[k].xb && slab[wi - 1].set == slab[k].set)
                     slab[wi - 1].dir += slab[k].dir;
                 else
                     slab[wi++] = slab[k];
@@ -637,12 +668,17 @@ void DW_FillSegments(ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32
         curBottom.resize(0);
         nextOpen.resize(0);
         int openCursor = 0;
-        int winding = 0;
+        // One winding count per set (shape + clips); covered = inside all of them.
+        int wnd[DW_MaxPathClips + 1] = {};
+        auto insideAll = [&]() {
+            for (int c = 0; c <= nClips; ++c) if (!DW_FillInside(wnd[c], clipRules[c])) return false;
+            return true;
+        };
         for (int k = 0; k < slab.Size; )
         {
-            bool wasIn = DW_FillInside(winding, rule);
-            winding += slab[k].dir;
-            bool isIn = DW_FillInside(winding, rule);
+            bool wasIn = insideAll();
+            wnd[slab[k].set] += slab[k].dir;
+            bool isIn = insideAll();
             if (!wasIn && isIn)
             {
                 // span starts at edge k; find where it ends
@@ -650,8 +686,8 @@ void DW_FillSegments(ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32
                 int m = k + 1;
                 for (; m < slab.Size; ++m)
                 {
-                    winding += slab[m].dir;
-                    if (!DW_FillInside(winding, rule)) break;
+                    wnd[slab[m].set] += slab[m].dir;
+                    if (!insideAll()) break;
                 }
                 if (m >= slab.Size) break; // malformed (open) input: nothing to close the span
                 const DW_SlabEdge& R = slab[m];
@@ -736,7 +772,7 @@ void DW_FillSegments(ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32
             for (int k = 0; k < active.Size; ++k)
             {
                 const DW_FillEdge& e = edges[active[k]];
-                DW_SlabEdge se = { DW_EdgeXAt(e, ya), DW_EdgeXAt(e, yb), 0, active[k] };
+                DW_SlabEdge se = { DW_EdgeXAt(e, ya), DW_EdgeXAt(e, yb), 0, active[k], e.set };
                 slab.push_back(se);
             }
             ImQsort(slab.Data, (size_t)slab.Size, sizeof(DW_SlabEdge), [](const void* a, const void* b) -> int {
@@ -1284,6 +1320,39 @@ void ImWidgetsPath::Flatten(ImVector<ImVec2>& out_points, ImVector<int>& out_cou
 
 namespace ImWidgets {
 
+void PushPathClip(const ImWidgetsPath& clip, ImWidgetsFillRule rule)
+{
+    if (s_pathClipCount >= DW_MaxPathClips) { ++s_pathClipOverflow; return; }
+    DW_PathClip* pc = IM_NEW(DW_PathClip)();
+    pc->rule = rule;
+    pc->bounds = ImRect(ImVec2(FLT_MAX, FLT_MAX), ImVec2(-FLT_MAX, -FLT_MAX));
+    ImVector<ImVec2> pts; ImVector<int> counts;
+    clip.Flatten(pts, counts, nullptr, 0.25f);
+    int base = 0;
+    for (int c = 0; c < counts.Size; ++c)
+    {
+        const int n = counts[c];
+        for (int i = 0; i < n && n >= 2; ++i)
+        {
+            pc->segs.push_back(pts[base + i]);
+            pc->segs.push_back(pts[base + (i + 1) % n]);
+            pc->bounds.Add(pts[base + i]);
+        }
+        base += n;
+    }
+    s_pathClips[s_pathClipCount++] = pc;
+}
+
+void PopPathClip()
+{
+    if (s_pathClipOverflow > 0) { --s_pathClipOverflow; return; }
+    IM_ASSERT(s_pathClipCount > 0 && "PopPathClip() without PushPathClip()");
+    if (s_pathClipCount <= 0) return;
+    IM_DELETE(s_pathClips[--s_pathClipCount]);
+}
+
+bool DW_PathClipActive() { return s_pathClipCount > 0; }
+
 void FillPolygons(ImDrawList* dl, const ImVec2* points, const int* contour_counts, int contour_count,
                   const ImWidgetsPaint& paint, ImWidgetsFillRule rule, float aa)
 {
@@ -1406,6 +1475,12 @@ void PathStroke(ImDrawList* dl, const ImWidgetsPath& path, const ImWidgetsPaint&
 
 void PathStroke(ImDrawList* dl, const ImWidgetsPath& path, ImU32 col, const ImWidgetsStrokeStyle& style)
 {
+    // The GPU stroke shader cannot honour path clips: fill the outline instead.
+    if (s_pathClipCount > 0 && !DW_StrokeCollectTarget())
+    {
+        PathStroke(dl, path, ImWidgetsPaint::Solid(col), style);
+        return;
+    }
     if (!dl || path.Subpaths.Size == 0 || style.Width <= 0.0f) return;
     for (int si = 0; si < path.Subpaths.Size; ++si)
     {

@@ -514,6 +514,7 @@ inline ImVec2 PxToLp(ImVec2 px) { float s = ImGui::GetStyle().FontScaleDpi; retu
 // Anti-aliased fill of a directed segment soup (pairs of points) with the given
 // fill rule, as ImDrawList triangles (dear_widgets_path.cpp). Used by FillPolygons
 // and as the CPU fallback of the stroke renderer.
+bool DW_PathClipActive(); // PushPathClip in effect (dear_widgets_path.cpp)
 void DW_FillSegments( ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32 col,
                       ImWidgetsFillRule rule, float aa, const ImWidgetsPaint* paint = nullptr );
 
