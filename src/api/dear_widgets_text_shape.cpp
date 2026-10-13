@@ -313,6 +313,12 @@ int DwShaper_ParagraphLevel(const char* text, int len, int direction)
     return 0;
 }
 
+bool DwShaper_IsStrong(unsigned int cp)
+{
+    unsigned char t = kbts__GetUnicodeBidirectionalClass(cp);
+    return t == DwBidi_L || t == DwBidi_R || t == DwBidi_AL;
+}
+
 int DwShaper_ResolveLevels(const char* text, int len, int direction, unsigned char* out_levels)
 {
     if (!text || len <= 0 || !out_levels) return 0;

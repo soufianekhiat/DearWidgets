@@ -96,6 +96,9 @@ int  DwShaper_ParagraphLevel(const char* text, int len, int direction);
 
 // Resolved bidi embedding level of every byte (UAX #9 implicit levels, same as
 // DwShaper_ShapeBidi uses). Returns the paragraph level.
+// True for a strongly directional character (bidi class L, R or AL): letters.
+// Digits, punctuation, spaces and marks are not strong.
+bool DwShaper_IsStrong(unsigned int codepoint);
 int  DwShaper_ResolveLevels(const char* text, int len, int direction, unsigned char* out_levels /* len entries */);
 
 typedef void (*DwShaperEmitFn)(void* user, const DwShaperGlyph* glyph);

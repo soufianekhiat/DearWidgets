@@ -18,8 +18,9 @@
 //               stop-opacity / offset (number or %), href / xlink:href stop
 //               inheritance
 //   transforms  matrix, translate, scale, rotate (with centre), skewX, skewY
-//   text        <text> (x, y, font-size, text-anchor, direction, fill / stroke
-//               paints; nested <tspan> content is flattened into the text):
+//   text        <text> (x, y, font-size, text-anchor, direction, fill paint;
+//               nested <tspan> content is flattened into the text; one font,
+//               no stroke):
 //               shaped, bidi-ordered glyph outlines transformed like any
 //               other shape (rotation, skew, gradients all apply)
 // Not supported: images, masks, clip paths, filters, patterns, markers,
@@ -380,7 +381,7 @@ struct DW_SvgStyle
     bool   visible = true, display = true;
     float  fontSize = 16.0f;   // inherited
     int    textAnchor = 0;     // 0 start, 1 middle, 2 end
-    int    direction = 0;      // ImWidgetsTextDirection_ (0 = auto)
+    int    direction = ImWidgetsTextDirection_LTR; // SVG initial value: ltr
 };
 
 struct DW_SvgItem
@@ -437,7 +438,7 @@ static void DW_SvgApplyProp(DW_SvgStyle& st, const char* name, const char* v)
     else if (!strcmp(name, "display")) { if (strstr(v, "none")) st.display = false; } // never re-shown below a hidden ancestor
     else if (!strcmp(name, "font-size")) st.fontSize = DW_SvgLength(v, st.fontSize, st.fontSize);
     else if (!strcmp(name, "text-anchor")) st.textAnchor = strstr(v, "middle") ? 1 : strstr(v, "end") ? 2 : 0;
-    else if (!strcmp(name, "direction")) st.direction = strstr(v, "rtl") ? ImWidgetsTextDirection_RTL : strstr(v, "ltr") ? ImWidgetsTextDirection_LTR : 0;
+    else if (!strcmp(name, "direction")) { if (strstr(v, "rtl")) st.direction = ImWidgetsTextDirection_RTL; else if (strstr(v, "ltr")) st.direction = ImWidgetsTextDirection_LTR; }
     else if (!strcmp(name, "visibility")) st.visible = !(strstr(v, "hidden") || strstr(v, "collapse"));
 }
 
@@ -652,10 +653,24 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
                 {
                     if (*s == '<')
                     {
+                        if (strncmp(s, "<![CDATA[", 9) == 0)
+                        {
+                            // character data: kept as is
+                            const char* e = strstr(s + 9, "]]>");
+                            const char* ce = e ? e : s + strlen(s);
+                            for (const char* q = s + 9; q < ce; ++q) content.push_back(*q);
+                            if (ce > s + 9) lastSpace = false;
+                            s = e ? e + 3 : ce;
+                            continue;
+                        }
+                        if (strncmp(s, "<!--", 4) == 0) { const char* e = strstr(s + 4, "-->"); s = e ? e + 3 : s + strlen(s); continue; }
                         if (strncmp(s, "</", 2) == 0)
                         {
-                            const char* q = s + 2; while (*q == ' ') ++q;
-                            if (strncmp(q, "text", 4) == 0 && (q[4] == '>' || q[4] == ' ')) depth = 0;
+                            // </text>, </text >, </svg:text> ... (prefix and whitespace allowed)
+                            const char* q = s + 2; while (isspace((unsigned char)*q)) ++q;
+                            const char* nb = q; while (*q && *q != '>' && !isspace((unsigned char)*q)) ++q;
+                            const char* local = nb; for (const char* r = nb; r < q; ++r) if (*r == ':') local = r + 1;
+                            if (q - local == 4 && strncmp(local, "text", 4) == 0) depth = 0;
                         }
                         const char* e = strchr(s, '>');
                         s = e ? e + 1 : s + strlen(s);
@@ -683,7 +698,7 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
                             const char* q = s + 1; unsigned int cp = 0;
                             if (*q == 'x' || *q == 'X') { ++q; while (DW_SvgHex(*q) >= 0) cp = cp * 16 + (unsigned)DW_SvgHex(*q++); }
                             else while (*q >= '0' && *q <= '9') cp = cp * 10 + (unsigned)(*q++ - '0');
-                            if (*q == ';') { char u[5] = {}; int n = ImTextCharToUtf8(u, cp); for (int k = 0; k < n; ++k) content.push_back(u[k]); s = q + 1; done = true; }
+                            if (*q == ';' && cp != 0) { char u[5] = {}; int n = ImTextCharToUtf8(u, cp); for (int k = 0; k < n; ++k) content.push_back(u[k]); s = q + 1; done = true; }
                         }
                         if (done) { lastSpace = false; continue; }
                     }
@@ -701,9 +716,14 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
             const float vbw0 = doc->viewBox.GetWidth(), vbh0 = doc->viewBox.GetHeight();
             item->textPos = ImVec2(DW_SvgAttrF(tag, "x", 0.0f, vbw0), DW_SvgAttrF(tag, "y", 0.0f, vbh0));
             item->text = content;
-            // Approximate bbox (for objectBoundingBox gradients): em box of the run.
-            float w = 0.55f * st.fontSize * (float)(content.Size - 1);
-            float x0 = item->textPos.x - (st.textAnchor == 1 ? w * 0.5f : st.textAnchor == 2 ? w : 0.0f);
+            // Approximate bbox (for objectBoundingBox gradients): em box of the
+            // run, from the codepoint count (not bytes).
+            int ncp = 0;
+            for (int k = 0; k < content.Size - 1; ++k) if (((unsigned char)content[k] & 0xC0) != 0x80) ++ncp;
+            float w = 0.55f * st.fontSize * (float)ncp;
+            const bool rtlRun = st.direction == ImWidgetsTextDirection_RTL;
+            const int anchor = rtlRun ? (st.textAnchor == 0 ? 2 : st.textAnchor == 2 ? 0 : 1) : st.textAnchor;
+            float x0 = item->textPos.x - (anchor == 1 ? w * 0.5f : anchor == 2 ? w : 0.0f);
             item->bbox = ImRect(x0, item->textPos.y - st.fontSize * 0.8f, x0 + w, item->textPos.y + st.fontSize * 0.2f);
             doc->items.push_back(item);
             continue;
@@ -904,7 +924,11 @@ static bool DW_SvgTextSegments(const DW_SvgItem& it, ImFont* font, const ImWidge
     if (!ok || glyphs.Size == 0) return false;
     float width = 0.0f;
     for (int i = 0; i < glyphs.Size; ++i) width = ImMax(width, glyphs[i].penX + glyphs[i].advance);
-    float ax = it.style.textAnchor == 1 ? -width * 0.5f : it.style.textAnchor == 2 ? -width : 0.0f;
+    // text-anchor is relative to the writing direction: "start" is the right
+    // end of an RTL run.
+    int anchor = it.style.textAnchor;
+    if (it.style.direction == ImWidgetsTextDirection_RTL) anchor = (anchor == 0) ? 2 : (anchor == 2) ? 0 : 1;
+    float ax = anchor == 1 ? -width * 0.5f : anchor == 2 ? -width : 0.0f;
     out.reserve(segs.Size);
     for (int i = 0; i < segs.Size; ++i)
     {

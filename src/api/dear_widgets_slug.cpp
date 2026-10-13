@@ -2581,6 +2581,7 @@ namespace ImWidgets {
 	static bool SlugShapeString(SlugFontCache* atlas, const char* text, const char* text_end,
 	                            ImVector<SlugShapedGlyph>& out, bool* anyNew);
 	static ImWidgetsTextRenderer SlugResolveRenderer();
+	static ImU64 SlugFNV64(const char* text, int len);
 
 	ImVec2 CalcTextSize_Impl(ImFont* font, float font_size,
 	                         const char* text, const char* text_end, float* out_ascent)
@@ -2698,18 +2699,32 @@ namespace ImWidgets {
 			return atlases[fi] && (SlugIgnorableCp(cp) || cp >= 0x100000 || stbtt_FindGlyphIndex(&atlases[fi]->stbFont, (int)cp) != 0);
 		};
 
-		// Fast path: the primary font covers every codepoint.
-		bool allPrimary = true;
-		for (const char* p = text; p < end && allPrimary; )
+		// Fast path: the primary font covers every codepoint. The answer is
+		// cached per (string, font chain) so steady UI text pays one hash.
+		static ImGuiStorage s_fbCoverage;   // key -> 1 primary covers all, 2 needs fallback
+		ImU64 key = SlugFNV64(text, (int)(end - text));
+		for (int i = 0; i < nChain; ++i) key = (key ^ (ImU64)(uintptr_t)chain[i]) * 1099511628211ULL;
+		const ImGuiID ckey = (ImGuiID)(key ^ (key >> 32));
+		int known = s_fbCoverage.GetInt(ckey, 0);
+		if (known == 0)
 		{
-			unsigned int cp = 0; int n = ImTextCharFromUtf8(&cp, p, end); if (n <= 0) break;
-			if (!has(0, cp)) allPrimary = false;
-			p += n;
+			bool allPrimary = true;
+			for (const char* p = text; p < end && allPrimary; )
+			{
+				unsigned int cp = 0; int n = ImTextCharFromUtf8(&cp, p, end); if (n <= 0) break;
+				if (!has(0, cp)) allPrimary = false;
+				p += n;
+			}
+			known = allPrimary ? 1 : 2;
+			if (s_fbCoverage.Data.Size > 8192) s_fbCoverage.Clear(); // bounded
+			s_fbCoverage.SetInt(ckey, known);
 		}
-		if (allPrimary) return false;
+		if (known == 1) return false;
 
-		// Font per grapheme. Characters every font has (spaces, digits,
-		// punctuation) stay in the current run's font to avoid fragmenting.
+		// Font per grapheme. Letters take the first font in the chain that has
+		// them (so Latin returns to the primary after a fallback run); neutral
+		// graphemes (spaces, digits, punctuation, marks) stay in the current
+		// run's font when it has them, to avoid fragmenting.
 		const int len = (int)(end - text);
 		ImVector<unsigned int> brk; brk.resize(len + 1);
 		DwShaper_TextBreaks(text, len, brk.Data);
@@ -2728,9 +2743,21 @@ namespace ImWidgets {
 				}
 				return true;
 			};
+			bool strong = false;
+			unsigned int firstCp = 0;
+			for (const char* p = text + b; p < text + e; )
+			{
+				unsigned int cp = 0; int n = ImTextCharFromUtf8(&cp, p, text + e); if (n <= 0) break;
+				if (p == text + b) firstCp = cp;
+				if (DwShaper_IsStrong(cp)) strong = true;
+				p += n;
+			}
 			int f = -1;
-			if (covers(cur)) f = cur;
+			if (!strong && covers(cur)) f = cur;
 			else for (int fi = 0; fi < nChain; ++fi) if (covers(fi)) { f = fi; break; }
+			// Nobody has the whole grapheme (e.g. a rare mark): keep the base
+			// letter readable with the first font that has it.
+			if (f < 0) for (int fi = 0; fi < nChain; ++fi) if (has(fi, firstCp)) { f = fi; break; }
 			if (f < 0) f = 0; // nobody has it: the primary draws its .notdef
 			cur = f;
 			for (int k = b; k < e; ++k) fontOf[k] = (signed char)f;
@@ -2811,13 +2838,17 @@ namespace ImWidgets {
 		if (text && SlugFallbackPieces(font, text, text_end, pieces))
 		{
 			// Several fonts: the line box spans the tallest ascent and descent.
+			// Each piece is measured with the direction it is drawn with.
 			float asc = 0.0f, desc = 0.0f, w = 0.0f;
+			ImWidgetsTextDirection const saved = GetStyle().TextDirection;
 			for (int i = 0; i < pieces.Size; ++i)
 			{
+				GetStyle().TextDirection = (pieces[i].level & 1) ? ImWidgetsTextDirection_RTL : ImWidgetsTextDirection_LTR;
 				float a = 0.0f;
 				ImVec2 sz = SlugMeasurePx(pieces[i].font, font_size, pieces[i].b, pieces[i].e, &a);
 				w += sz.x; asc = ImMax(asc, a); desc = ImMax(desc, sz.y - a);
 			}
+			GetStyle().TextDirection = saved;
 			if (out_ascent) *out_ascent = asc;
 			return ImVec2(w, asc + desc);
 		}
@@ -3314,6 +3345,25 @@ namespace ImWidgets {
 		return pen;
 	}
 
+	// One font, no fallback (used per piece).
+	static float SlugGraphemesSingleFont(ImFont* font, float sz, const char* text, const char* text_end,
+	                                     ImVector<ImWidgetsTextGrapheme>& out)
+	{
+		out.resize(0);
+		const ImWidgetsTextRenderer rr = SlugResolveRenderer();
+		const bool unshaped = rr == ImWidgetsTextRenderer_ImGuiAtlas || (rr == ImWidgetsTextRenderer_GPU && gs_pContext && !gs_pContext->slugShader.program);
+		if (!unshaped && gs_pContext)
+		{
+			if (!gs_pContext->slugState) gs_pContext->slugState = IM_NEW(ImWidgetsSlugState);
+			if (SlugFontCache* atlas = SlugGetOrCreateAtlas(gs_pContext->slugState, font))
+			{
+				float w = SlugGraphemesShaped(atlas, sz, text, text_end, out);
+				if (w >= 0.0f) return w;
+			}
+		}
+		return DW_GraphemesUnshaped(font, sz, text, text_end, out);
+	}
+
 	float CalcTextGraphemes(ImFont* font, float font_size, const char* text, const char* text_end,
 	                        ImVector<ImWidgetsTextGrapheme>& out)
 	{
@@ -3329,7 +3379,7 @@ namespace ImWidgets {
 			{
 				ImVector<ImWidgetsTextGrapheme> part;
 				float total = SlugForPieces(pieces, sz, [&](const SlugPiece& pc, float x, float) {
-					CalcTextGraphemes(pc.font, PxToLp(sz), pc.b, pc.e, part); // single font: no fallback inside one piece
+					SlugGraphemesSingleFont(pc.font, sz, pc.b, pc.e, part); // one font per piece: never re-enters the fallback
 					const int off = (int)(pc.b - text);
 					for (int i = 0; i < part.Size; ++i)
 					{
