@@ -18,8 +18,12 @@
 //               stop-opacity / offset (number or %), href / xlink:href stop
 //               inheritance
 //   transforms  matrix, translate, scale, rotate (with centre), skewX, skewY
-// Not supported: text, images, masks, clip paths, filters, patterns, markers,
-// use / symbol, CSS stylesheets (<style>).
+//   text        <text> (x, y, font-size, text-anchor, direction, fill / stroke
+//               paints; nested <tspan> content is flattened into the text):
+//               shaped, bidi-ordered glyph outlines transformed like any
+//               other shape (rotation, skew, gradients all apply)
+// Not supported: images, masks, clip paths, filters, patterns, markers,
+// use / symbol, CSS stylesheets (<style>), tspan positioning.
 
 #include "dear_widgets.h"
 #include "dear_widgets_internal.h"
@@ -374,6 +378,9 @@ struct DW_SvgStyle
     int    cap = ImWidgetsCap_Butt, join = ImWidgetsJoin_Miter;
     float  dashes[16]; int dashCount = 0;
     bool   visible = true, display = true;
+    float  fontSize = 16.0f;   // inherited
+    int    textAnchor = 0;     // 0 start, 1 middle, 2 end
+    int    direction = 0;      // ImWidgetsTextDirection_ (0 = auto)
 };
 
 struct DW_SvgItem
@@ -383,6 +390,8 @@ struct DW_SvgItem
     float                strokeScale; // scale of the element's transform (stroke width is in its local units)
     ImRect               bbox;        // object bounding box in the element's local space (objectBoundingBox gradients)
     ImWidgetsTransform2D xf;          // element user space -> document space (gradients live in user space)
+    ImVector<char>       text;        // <text> content (UTF-8, whitespace collapsed); empty for shapes
+    ImVec2               textPos;     // x, y of the first character (element space)
 };
 
 } // namespace ImWidgets
@@ -426,6 +435,9 @@ static void DW_SvgApplyProp(DW_SvgStyle& st, const char* name, const char* v)
         if (allZero) st.dashCount = 0; // "0" is solid per SVG
     }
     else if (!strcmp(name, "display")) { if (strstr(v, "none")) st.display = false; } // never re-shown below a hidden ancestor
+    else if (!strcmp(name, "font-size")) st.fontSize = DW_SvgLength(v, st.fontSize, st.fontSize);
+    else if (!strcmp(name, "text-anchor")) st.textAnchor = strstr(v, "middle") ? 1 : strstr(v, "end") ? 2 : 0;
+    else if (!strcmp(name, "direction")) st.direction = strstr(v, "rtl") ? ImWidgetsTextDirection_RTL : strstr(v, "ltr") ? ImWidgetsTextDirection_LTR : 0;
     else if (!strcmp(name, "visibility")) st.visible = !(strstr(v, "hidden") || strstr(v, "collapse"));
 }
 
@@ -434,7 +446,7 @@ static void DW_SvgApplyStyle(DW_SvgStyle& st, const DW_SvgTag& tag)
 {
     static const char* kProps[] = { "fill", "stroke", "fill-opacity", "stroke-opacity", "opacity", "stroke-width",
         "stroke-miterlimit", "stroke-dashoffset", "fill-rule", "stroke-linecap", "stroke-linejoin", "stroke-dasharray",
-        "display", "visibility" };
+        "display", "visibility", "font-size", "text-anchor", "direction" };
     st.ownOpacity = 1.0f;
     for (const char* k : kProps) DW_SvgApplyProp(st, k, tag.Get(k));
     if (const char* css = tag.Get("style"))
@@ -626,6 +638,77 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
             continue;
         }
 
+        // <text>: read its character content (tspan content flattened), then
+        // keep it as a text item; glyph outlines are made at draw time with
+        // the font passed to SvgDraw.
+        if (!strcmp(name, "text"))
+        {
+            ImVector<char> content;
+            if (!tag.selfClosing)
+            {
+                bool lastSpace = true;
+                int depth = 1;
+                while (*s && depth > 0)
+                {
+                    if (*s == '<')
+                    {
+                        if (strncmp(s, "</", 2) == 0)
+                        {
+                            const char* q = s + 2; while (*q == ' ') ++q;
+                            if (strncmp(q, "text", 4) == 0 && (q[4] == '>' || q[4] == ' ')) depth = 0;
+                        }
+                        const char* e = strchr(s, '>');
+                        s = e ? e + 1 : s + strlen(s);
+                        continue;
+                    }
+                    // xml:space="default": collapse whitespace runs into one space
+                    char c = *s++;
+                    if (c == '\n' || c == '\r' || c == '\t' || c == ' ')
+                    {
+                        if (!lastSpace) { content.push_back(' '); lastSpace = true; }
+                        continue;
+                    }
+                    if (c == '&')
+                    {
+                        struct E { const char* s; char c; } ents[] = { { "amp;", '&' }, { "lt;", '<' }, { "gt;", '>' }, { "quot;", '"' }, { "apos;", '\'' } };
+                        bool done = false;
+                        for (const E& en : ents)
+                        {
+                            size_t l = strlen(en.s);
+                            if (strncmp(s, en.s, l) == 0) { content.push_back(en.c); s += l; done = true; break; }
+                        }
+                        if (!done && *s == '#')
+                        {
+                            // numeric character reference
+                            const char* q = s + 1; unsigned int cp = 0;
+                            if (*q == 'x' || *q == 'X') { ++q; while (DW_SvgHex(*q) >= 0) cp = cp * 16 + (unsigned)DW_SvgHex(*q++); }
+                            else while (*q >= '0' && *q <= '9') cp = cp * 10 + (unsigned)(*q++ - '0');
+                            if (*q == ';') { char u[5] = {}; int n = ImTextCharToUtf8(u, cp); for (int k = 0; k < n; ++k) content.push_back(u[k]); s = q + 1; done = true; }
+                        }
+                        if (done) { lastSpace = false; continue; }
+                    }
+                    content.push_back(c);
+                    lastSpace = false;
+                }
+                while (content.Size && content.back() == ' ') content.pop_back();
+            }
+            if (content.Size == 0 || !st.display || !st.visible) continue;
+            content.push_back(0);
+            DW_SvgItem* item = IM_NEW(DW_SvgItem)();
+            item->style = st;
+            item->xf = xf;
+            item->strokeScale = ImSqrt(ImFabs(xf.m[0] * xf.m[3] - xf.m[1] * xf.m[2]));
+            const float vbw0 = doc->viewBox.GetWidth(), vbh0 = doc->viewBox.GetHeight();
+            item->textPos = ImVec2(DW_SvgAttrF(tag, "x", 0.0f, vbw0), DW_SvgAttrF(tag, "y", 0.0f, vbh0));
+            item->text = content;
+            // Approximate bbox (for objectBoundingBox gradients): em box of the run.
+            float w = 0.55f * st.fontSize * (float)(content.Size - 1);
+            float x0 = item->textPos.x - (st.textAnchor == 1 ? w * 0.5f : st.textAnchor == 2 ? w : 0.0f);
+            item->bbox = ImRect(x0, item->textPos.y - st.fontSize * 0.8f, x0 + w, item->textPos.y + st.fontSize * 0.2f);
+            doc->items.push_back(item);
+            continue;
+        }
+
         // Shapes -> path in local units.
         ImWidgetsPath p;
         const float vbw = doc->viewBox.GetWidth(), vbh = doc->viewBox.GetHeight();
@@ -803,8 +886,38 @@ static bool DW_SvgMakePaint(const ImWidgetsSvg* doc, const DW_SvgItem& it, const
     return true;
 }
 
-void SvgDraw(ImDrawList* dl, const ImWidgetsSvg* doc, ImVec2 pos, ImVec2 size, ImU32 current_color)
+// Glyph outlines of a text item, in screen space (nonzero fill soup).
+static bool DW_SvgTextSegments(const DW_SvgItem& it, ImFont* font, const ImWidgetsTransform2D& docToScreen, ImVector<ImVec2>& out)
 {
+    out.resize(0);
+    const ImWidgetsTransform2D m = docToScreen * it.xf;
+    // Outlines are produced at the on-screen size so flattening matches pixels.
+    const float k = ImSqrt(ImFabs(m.m[0] * m.m[3] - m.m[1] * m.m[2]));
+    if (k <= 0.0f || it.style.fontSize <= 0.0f) return false;
+    const float sizePx = it.style.fontSize * k;
+    ImVector<DW_GlyphOutline> glyphs;
+    ImVector<ImVec2> segs;
+    ImWidgetsTextDirection const saved = GetStyle().TextDirection;
+    GetStyle().TextDirection = it.style.direction;
+    bool ok = DW_ShapeTextOutlines(font, sizePx, it.text.Data, it.text.Data + it.text.Size - 1, glyphs, segs);
+    GetStyle().TextDirection = saved;
+    if (!ok || glyphs.Size == 0) return false;
+    float width = 0.0f;
+    for (int i = 0; i < glyphs.Size; ++i) width = ImMax(width, glyphs[i].penX + glyphs[i].advance);
+    float ax = it.style.textAnchor == 1 ? -width * 0.5f : it.style.textAnchor == 2 ? -width : 0.0f;
+    out.reserve(segs.Size);
+    for (int i = 0; i < segs.Size; ++i)
+    {
+        // local outline units are screen pixels at scale k: back to element units
+        ImVec2 l((segs[i].x + ax) / k + it.textPos.x, segs[i].y / k + it.textPos.y);
+        out.push_back(m.Apply(l));
+    }
+    return true;
+}
+
+void SvgDraw(ImDrawList* dl, const ImWidgetsSvg* doc, ImVec2 pos, ImVec2 size, ImU32 current_color, ImFont* font)
+{
+    if (!font) font = ImGui::GetFont();
     if (!dl || !doc || doc->viewBox.GetWidth() <= 0.0f || doc->viewBox.GetHeight() <= 0.0f) return;
     if (size.x <= 0.0f) size.x = doc->size.x;
     if (size.y <= 0.0f) size.y = doc->size.y;
@@ -819,6 +932,16 @@ void SvgDraw(ImDrawList* dl, const ImWidgetsSvg* doc, ImVec2 pos, ImVec2 size, I
     for (int i = 0; i < doc->items.Size; ++i)
     {
         const DW_SvgItem& it = *doc->items[i];
+        if (it.text.Size > 0)
+        {
+            ImVector<ImVec2> segs;
+            if (!DW_SvgTextSegments(it, font, docToScreen, segs)) continue;
+            const DW_SvgStyle& st = it.style;
+            ImWidgetsPaint paint;
+            if (DW_SvgMakePaint(doc, it, st.fill, st.fillOpacity * st.opacity, current_color, docToScreen, paint, stopsBuf))
+                DW_FillSegments(dl, segs.Data, segs.Size / 2, paint.Color, ImWidgetsFillRule_NonZero, 1.0f, &paint);
+            continue;
+        }
         ImWidgetsPath path = it.path;
         path.Transform(docToScreen);
         const DW_SvgStyle& st = it.style;

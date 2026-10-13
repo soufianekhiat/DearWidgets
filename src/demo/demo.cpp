@@ -5459,6 +5459,7 @@ namespace ImWidgets{
 							"    <polyline points='-14,-10 0,-24 14,-10' fill='none' stroke='currentColor' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'/>\n"
 							"  </g>\n"
 							"  <path d='M20 30 h60' stroke='white' stroke-width='3' stroke-dasharray='8 6' stroke-linecap='round' opacity='0.6'/>\n"
+							"  <text x='100' y='132' font-size='12' text-anchor='middle' fill='white'>SVG text: Hello \xd9\x85\xd8\xb1\xd8\xad\xd8\xa8\xd8\xa7" " 2026</text>\n"
 							"</svg>\n";
 						static ImWidgetsSvg* s_svgDoc = nullptr;
 						static bool s_svgDirty = true;
@@ -5480,7 +5481,9 @@ namespace ImWidgets{
 							ImVec2 sz( ImPlatform_LpToPx( isz.x * s_svgScale ), ImPlatform_LpToPx( isz.y * s_svgScale ) );
 							ImVec2 o = ImGui::GetCursorScreenPos();
 							ImGui::Dummy( sz );
-							ImWidgets::SvgDraw( ImGui::GetWindowDrawList(), s_svgDoc, o, sz, ImGui::ColorConvertFloat4ToU32( s_svgCurrent ) );
+							// <text> uses a font with Arabic and Latin glyphs when one is loaded.
+							ImWidgets::SvgDraw( ImGui::GetWindowDrawList(), s_svgDoc, o, sz, ImGui::ColorConvertFloat4ToU32( s_svgCurrent ),
+							                    g_amiriFont ? g_amiriFont : ( g_vazirmatnFont ? g_vazirmatnFont : nullptr ) );
 						}
 					}
 					DW_SsRecord( "SVG_Document", _sy0, ImGui::GetCursorPos().y ); }

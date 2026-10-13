@@ -450,7 +450,7 @@ ImWidgetsSvg* SvgLoad   ( char const* svg_text );
 void          SvgFree   ( ImWidgetsSvg* svg );
 ImVec2        SvgGetSize( ImWidgetsSvg const* svg );
 void          SvgDraw   ( ImDrawList*, ImWidgetsSvg const* svg, ImVec2 pos, ImVec2 size = ImVec2( 0, 0 ),
-                          ImU32 current_color = IM_COL32_WHITE );
+                          ImU32 current_color = IM_COL32_WHITE, ImFont* font = nullptr );
 ```
 Parse once, draw any number of times (no GPU resources). `SvgDraw` maps the
 `viewBox` into `[pos, pos + size]` with `preserveAspectRatio="xMidYMid meet"`.
@@ -463,8 +463,12 @@ attributes and `style="..."` for `fill`, `stroke`, `fill-rule`, `opacity`,
 `stroke-linejoin`, `stroke-miterlimit`, `stroke-dasharray`, `stroke-dashoffset`,
 `display`, `visibility`, inherited through groups; transform lists; colours as
 hex, `rgb()` / `rgba()`, CSS named colours, `none`, `transparent`,
-`currentColor`. Not supported: text, images, masks, clip paths, filters,
-patterns, markers, `use` / `symbol`, `<style>` sheets, radial focal points.
+`currentColor`; `<text>` with `x`, `y`, `font-size`, `text-anchor`,
+`direction` and fill paints, rendered as shaped, bidi-ordered glyph outlines
+with `font` (so transforms and gradients apply to text too; nested `<tspan>`
+content is flattened). Not supported: images, masks, clip paths, filters,
+patterns, markers, `use` / `symbol`, `<style>` sheets, radial focal points,
+tspan positioning.
 
 ## Lines, Strokes and Dashes
 

@@ -407,7 +407,9 @@ of degrading to `AddPolyline` (no caps / joins) or drawing nothing.
 `SvgLoad` / `SvgDraw` / `SvgFree`: icons and illustrations in a compact SVG
 subset (shapes, paths, groups, transforms, linear / radial gradients, fill and
 stroke properties, opacity, dashes, named colours, `currentColor`), drawn with
-plain `ImDrawList` geometry through the new path / paint / stroke APIs.
+plain `ImDrawList` geometry through the new path / paint / stroke APIs. `<text>`
+is drawn as shaped, bidi-ordered glyph outlines, so it follows the element's
+transform and gradient fills.
 
 #### Bidirectional text
 

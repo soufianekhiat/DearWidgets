@@ -5986,16 +5986,17 @@ namespace ImWidgets{
     // ---- SVG documents (plain ImDrawList geometry) ----
     // Parse once, draw many times. Supports the common icon / illustration
     // subset: svg viewBox, g, path, rect, circle, ellipse, line, polyline,
-    // polygon, linear / radial gradients, transforms, fill / stroke properties
-    // (attributes and style=), opacity, dashes, named colours, currentColor.
-    // No text, images, masks, clip paths, filters, patterns or <style>.
+    // polygon, text, linear / radial gradients, transforms, fill / stroke
+    // properties (attributes and style=), opacity, dashes, named colours,
+    // currentColor. No images, masks, clip paths, filters, patterns or <style>.
     IMGUI_API ImWidgetsSvg* SvgLoad( char const* svg_text );
     IMGUI_API void          SvgFree( ImWidgetsSvg* svg );
     IMGUI_API ImVec2        SvgGetSize( ImWidgetsSvg const* svg );   // intrinsic size (width / height, else viewBox)
     // Draws into [pos, pos + size] with preserveAspectRatio="xMidYMid meet"
-    // (size 0 = intrinsic size). current_color resolves `currentColor`.
+    // (size 0 = intrinsic size). current_color resolves `currentColor`; `font`
+    // renders <text> elements (shaped, bidi; nullptr = current ImGui font).
     IMGUI_API void          SvgDraw( ImDrawList* draw_list, ImWidgetsSvg const* svg, ImVec2 pos, ImVec2 size = ImVec2( 0, 0 ),
-                                     ImU32 current_color = IM_COL32_WHITE );
+                                     ImU32 current_color = IM_COL32_WHITE, ImFont* font = nullptr );
 
     // Variable-width stroke (pressure, taper): widths[i] is the stroke width at
     // points[i], interpolated linearly in between, with round joins and caps.
