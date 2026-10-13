@@ -534,6 +534,16 @@ struct ImWidgetsTextLayout
 	float              LineHeight = 1.25f; // line box height as a multiple of the font size (CSS line-height)
 };
 
+// How DrawText renders (SetTextRenderer).
+enum ImWidgetsTextRenderer_
+{
+	ImWidgetsTextRenderer_Auto       = 0, // GPU Slug when its shader is available, else CPU vector
+	ImWidgetsTextRenderer_GPU        = 1, // Slug GPU glyph shader (custom-shader backends)
+	ImWidgetsTextRenderer_CPUVector  = 2, // shaped glyph outlines filled with plain ImDrawList triangles
+	ImWidgetsTextRenderer_ImGuiAtlas = 3, // ImDrawList::AddText (ImGui font atlas, no shaping)
+};
+typedef int ImWidgetsTextRenderer;
+
 // Paragraph direction for shaped text (CSS `direction`, HTML `dir`).
 // Auto = the first strong character decides, LTR when there is none.
 enum ImWidgetsTextDirection_
@@ -4612,6 +4622,11 @@ namespace ImWidgets{
 	IMGUI_API void DrawText( ImDrawList* pDrawList, ImVec2 pos, ImU32 col, char const* text, char const* text_end = nullptr );
 	// Explicit font and size in logical pixels (pass nullptr/0 to use current ImGui font/size)
 	IMGUI_API void DrawText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, ImU32 col, char const* text, char const* text_end = nullptr );
+	// Text renderer used by DrawText / DrawTextBlock. CPUVector draws the same
+	// shaped, bidi-ordered glyphs as the GPU path with plain ImDrawList triangles
+	// (cached per string), so complex scripts render on any backend.
+	IMGUI_API void                  SetTextRenderer( ImWidgetsTextRenderer renderer );
+	IMGUI_API ImWidgetsTextRenderer GetTextRenderer();
 	// Measure text exactly as DrawText lays it out (shaped, bidi-ordered). font_size in lp.
 	// Returns (width, height) in physical pixels.
 	// out_ascent: if non-null, receives ascent in physical pixels (pass cursor.y + ascent as baseline to DrawText).

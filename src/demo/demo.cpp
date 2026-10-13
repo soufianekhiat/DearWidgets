@@ -2412,6 +2412,12 @@ namespace ImWidgets{
 				{ "Arabic with hyphenated number", "\xd8\xa7\xd9\x84\xd9\x87\xd8\xa7\xd8\xaa\xd9\x81: 555-1234" },
 				{ "Arabic-Indic digits", "\xd8\xa7\xd9\x84\xd8\xb9\xd8\xaf\xd8\xaf \xd9\xa1\xd9\xa2\xd9\xa3 \xd9\x88\xd8\xa7\xd9\x84\xd8\xb1\xd9\x82\xd9\x85 456" },
 			};
+			{
+				int r = ImWidgets::GetTextRenderer();
+				ImGui::SetNextItemWidth( ImPlatform_LpToPx( 260.0f ) );
+				if ( ImGui::Combo( "Text renderer##SlugBidiRenderer", &r, "Auto GPU (Slug shader) CPU vector (plain ImDrawList) ImGui atlas (no shaping) " ) )
+					ImWidgets::SetTextRenderer( r );
+			}
 			static int s_bidi_dir = ImWidgetsTextDirection_Auto;
 			ImGui::Combo( "Paragraph direction##SlugBidiDir", &s_bidi_dir, "Auto (first strong)\0LTR\0RTL\0" );
 			static char s_bidi_custom[256] = "";

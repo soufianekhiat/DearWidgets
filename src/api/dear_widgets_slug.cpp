@@ -2575,6 +2575,7 @@ namespace ImWidgets {
 
 	static bool SlugShapeString(SlugFontCache* atlas, const char* text, const char* text_end,
 	                            ImVector<SlugShapedGlyph>& out, bool* anyNew);
+	static ImWidgetsTextRenderer SlugResolveRenderer();
 
 	ImVec2 CalcTextSize_Impl(ImFont* font, float font_size,
 	                         const char* text, const char* text_end, float* out_ascent)
@@ -2653,9 +2654,11 @@ namespace ImWidgets {
 		if (font_size > 0.0f) font_size = SlugLpToPx(font_size);
 		else                  font_size = ImGui::GetFontSize();
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
-		// DrawText falls back to AddText when the Slug program failed to build:
-		// measure the same way so layout matches what is drawn.
-		if (gs_pContext && !gs_pContext->slugShader.program && text)
+		// Measure the way DrawText will draw: the ImGui atlas renderer uses
+		// AddText (unshaped); GPU and CPU-vector renderers both draw shaped glyphs.
+		const ImWidgetsTextRenderer renderer = SlugResolveRenderer();
+		if (text && (renderer == ImWidgetsTextRenderer_ImGuiAtlas ||
+		             (renderer == ImWidgetsTextRenderer_GPU && gs_pContext && !gs_pContext->slugShader.program)))
 		{
 			if (!font) font = ImGui::GetFont();
 			ImFontBaked* baked = font->GetFontBaked(font_size);
@@ -2855,6 +2858,201 @@ namespace ImWidgets {
 		return &e;
 	}
 
+	// ---- CPU vector text --------------------------------------------------------
+	// Shaped, bidi-ordered glyph outlines filled with plain ImDrawList triangles
+	// (DW_FillSegments, nonzero rule, AA fringe). Used when the Slug program is
+	// unavailable, or forced with SetTextRenderer( ImWidgetsTextRenderer_CPUVector )
+	// (e.g. on a backend whose custom-shader path renders incorrectly). Overlapping
+	// glyphs (connected Arabic, marks) merge into one coverage: no darker seams
+	// with translucent colours. Colour fonts draw their base outline only.
+
+	static ImWidgetsTextRenderer s_textRenderer = ImWidgetsTextRenderer_Auto;
+	void SetTextRenderer(ImWidgetsTextRenderer r) { s_textRenderer = r; }
+	ImWidgetsTextRenderer GetTextRenderer() { return s_textRenderer; }
+
+	// Effective renderer for this frame.
+	static ImWidgetsTextRenderer SlugResolveRenderer()
+	{
+		if (s_textRenderer != ImWidgetsTextRenderer_Auto) return s_textRenderer;
+#if defined(IM_CURRENT_GFX) && (IM_CURRENT_GFX == IM_GFX_OPENGL3)
+		// The OpenGL3 custom-shader path compiles but samples its textures wrongly
+		// (see notes/RELEASE_BLOCKERS.md D.3), so Auto draws vector text there.
+		return ImWidgetsTextRenderer_CPUVector;
+#else
+		return (gs_pContext && gs_pContext->slugShader.program) ? ImWidgetsTextRenderer_GPU : ImWidgetsTextRenderer_CPUVector;
+#endif
+	}
+
+	static void SlugExtractGlyphCurves(SlugFontCache* atlas, int gi, ImVector<SlugCurve>& curves); // below
+
+	// Per-glyph outline cache (em units), keyed by (font data, glyph index).
+	static ImGuiStorage        s_vecGlyphIndex;    // key -> 1 + slot
+	static ImVector<int>       s_vecGlyphStart, s_vecGlyphCount;
+	static ImVector<SlugCurve> s_vecCurvePool;
+
+	static void SlugVecGlyphCurves(SlugFontCache* atlas, int gi, const SlugCurve** out, int* outCount)
+	{
+		struct Key { const void* data; int gi; } k = { atlas->stbFont.data, gi };
+		ImGuiID id = ImHashData(&k, sizeof(k));
+		int slot = s_vecGlyphIndex.GetInt(id, 0) - 1;
+		if (slot < 0)
+		{
+			ImVector<SlugCurve> tmp;
+			SlugExtractGlyphCurves(atlas, gi, tmp);
+			slot = s_vecGlyphStart.Size;
+			s_vecGlyphStart.push_back(s_vecCurvePool.Size);
+			s_vecGlyphCount.push_back(tmp.Size);
+			for (int i = 0; i < tmp.Size; ++i) s_vecCurvePool.push_back(tmp[i]);
+			s_vecGlyphIndex.SetInt(id, slot + 1);
+		}
+		*out = s_vecCurvePool.Data + s_vecGlyphStart[slot];
+		*outCount = s_vecGlyphCount[slot];
+	}
+
+	// Per-string mesh cache, built at the origin (baseline y = 0) and translated
+	// on emit. Entries unused for a while are evicted.
+	struct SlugVecTextMesh
+	{
+		ImU64                key;
+		int                  lastFrame;
+		ImVector<ImDrawVert> vtx;
+		ImVector<ImDrawIdx>  idx;
+	};
+	static ImVector<SlugVecTextMesh*> s_vecMeshes;
+	static ImGuiStorage               s_vecMeshIndex; // key -> SlugVecTextMesh*
+	static int                        s_vecLastEvict = 0;
+
+	static void SlugVecEvict(int frame)
+	{
+		if (frame - s_vecLastEvict < 60) return;
+		s_vecLastEvict = frame;
+		int w = 0;
+		bool removed = false;
+		for (int i = 0; i < s_vecMeshes.Size; ++i)
+		{
+			if (frame - s_vecMeshes[i]->lastFrame > 240) { IM_DELETE(s_vecMeshes[i]); removed = true; }
+			else s_vecMeshes[w++] = s_vecMeshes[i];
+		}
+		s_vecMeshes.resize(w);
+		if (removed)
+		{
+			s_vecMeshIndex.Clear();
+			for (int i = 0; i < s_vecMeshes.Size; ++i)
+				s_vecMeshIndex.SetVoidPtr((ImGuiID)(s_vecMeshes[i]->key ^ (s_vecMeshes[i]->key >> 32)), s_vecMeshes[i]);
+		}
+	}
+
+	static void SlugDrawTextVector(ImDrawList* dl, SlugFontCache* atlas, float sz, ImVec2 pos, ImU32 col,
+	                               const char* text, const char* text_end)
+	{
+		if ((col & IM_COL32_A_MASK) == 0) return;
+		const int frame = ImGui::GetFrameCount();
+		SlugVecEvict(frame);
+
+		const int textLen = (int)(text_end - text);
+		ImU64 key = SlugFNV64(text, textLen);
+		ImU32 bits;
+		memcpy(&bits, &sz, 4); key = (key ^ bits) * 0x100000001B3ull;
+		key = (key ^ (ImU64)(GetStyle().TextDirection + 1)) * 0x100000001B3ull;
+		key = (key ^ (ImU64)(uintptr_t)atlas->stbFont.data) * 0x100000001B3ull;
+		const ImGuiID id = (ImGuiID)(key ^ (key >> 32));
+
+		SlugVecTextMesh* mesh = (SlugVecTextMesh*)s_vecMeshIndex.GetVoidPtr(id);
+		if (mesh && mesh->key != key) mesh = nullptr; // 32-bit index collision: rebuild in place below
+		if (!mesh)
+		{
+			// Lay out glyphs exactly as DrawText does: shaped (bidi, GSUB/GPOS) when
+			// possible, per codepoint otherwise.
+			ImVector<ImVec2> segs;
+			auto addGlyph = [&](int gi, float penX, float offX, float offY)
+			{
+				const SlugCurve* cv; int n;
+				SlugVecGlyphCurves(atlas, gi, &cv, &n);
+				for (int i = 0; i < n; ++i)
+				{
+					const SlugCurve& c = cv[i];
+					ImVec2 p1(penX + offX + c.p1x * sz, -(offY + c.p1y * sz));
+					ImVec2 p2(penX + offX + c.p2x * sz, -(offY + c.p2y * sz));
+					ImVec2 p3(penX + offX + c.p3x * sz, -(offY + c.p3y * sz));
+					// Quadratic flattening: segment count from the control-polygon deviation.
+					float dx = p1.x - 2.0f * p2.x + p3.x, dy = p1.y - 2.0f * p2.y + p3.y;
+					int m = (int)ImCeil(ImSqrt(ImSqrt(dx * dx + dy * dy) / 0.5f));
+					m = ImClamp(m, 1, 24);
+					ImVec2 prev = p1;
+					for (int k = 1; k <= m; ++k)
+					{
+						float t = (float)k / (float)m, u = 1.0f - t;
+						ImVec2 q(u * u * p1.x + 2 * u * t * p2.x + t * t * p3.x, u * u * p1.y + 2 * u * t * p2.y + t * t * p3.y);
+						segs.push_back(prev); segs.push_back(q);
+						prev = q;
+					}
+				}
+			};
+			ImVector<SlugShapedGlyph> shaped;
+			if (SlugShapeString(atlas, text, text_end, shaped, nullptr))
+			{
+				float penX = 0.0f;
+				for (int i = 0; i < shaped.Size; ++i)
+				{
+					addGlyph(shaped[i].glyphID, penX, shaped[i].offsetX * sz, shaped[i].offsetY * sz);
+					penX += shaped[i].advanceX * sz;
+				}
+			}
+			else
+			{
+				float penX = 0.0f;
+				const char* p = text;
+				while (p < text_end)
+				{
+					unsigned int cp = 0;
+					p += ImTextCharFromUtf8(&cp, p, text_end);
+					if (cp == 0) break;
+					int gi = (cp >= 0x100000) ? (int)(cp - 0x100000) : stbtt_FindGlyphIndex(&atlas->stbFont, (int)cp);
+					int adv = 0, lsb = 0;
+					stbtt_GetGlyphHMetrics(&atlas->stbFont, gi, &adv, &lsb);
+					addGlyph(gi, penX, 0.0f, 0.0f);
+					penX += (float)adv * atlas->emScale * sz;
+				}
+			}
+
+			ImDrawList tmp(dl->_Data);
+			tmp._ResetForNewFrame();
+			tmp.PushClipRectFullScreen();
+			DW_FillSegments(&tmp, segs.Data, segs.Size / 2, IM_COL32_WHITE, ImWidgetsFillRule_NonZero, 1.0f);
+			if (tmp.VtxBuffer.Size >= 60000)
+			{
+				// Too big to cache as one 16-bit-indexable block: draw it directly.
+				ImDrawList* target = dl;
+				for (int i = 0; i < segs.Size; ++i) segs[i] = ImVec2(segs[i].x + pos.x, segs[i].y + pos.y);
+				DW_FillSegments(target, segs.Data, segs.Size / 2, col, ImWidgetsFillRule_NonZero, 1.0f);
+				return;
+			}
+			SlugVecTextMesh* m = (SlugVecTextMesh*)s_vecMeshIndex.GetVoidPtr(id);
+			if (!m) { m = IM_NEW(SlugVecTextMesh)(); s_vecMeshes.push_back(m); s_vecMeshIndex.SetVoidPtr(id, m); }
+			m->key = key;
+			m->vtx = tmp.VtxBuffer;
+			m->idx = tmp.IdxBuffer;
+			mesh = m;
+		}
+		mesh->lastFrame = frame;
+
+		// Emit: translate, and tint with `col` (the mesh is white with coverage in alpha).
+		if (mesh->vtx.Size == 0) return;
+		dl->PrimReserve(mesh->idx.Size, mesh->vtx.Size);
+		const ImDrawIdx base = (ImDrawIdx)dl->_VtxCurrentIdx;
+		const ImU32 rgb = col & ~IM_COL32_A_MASK;
+		const ImU32 ca  = (col >> IM_COL32_A_SHIFT) & 0xFF;
+		const ImVec2 uv = dl->_Data->TexUvWhitePixel;
+		for (int i = 0; i < mesh->vtx.Size; ++i)
+		{
+			const ImDrawVert& v = mesh->vtx[i];
+			ImU32 a = (((v.col >> IM_COL32_A_SHIFT) & 0xFF) * ca + 127) / 255;
+			dl->PrimWriteVtx(ImVec2(v.pos.x + pos.x, v.pos.y + pos.y), uv, rgb | (a << IM_COL32_A_SHIFT));
+		}
+		for (int i = 0; i < mesh->idx.Size; ++i)
+			dl->PrimWriteIdx((ImDrawIdx)(base + mesh->idx[i]));
+	}
+
 	void DrawText_Impl(ImDrawList* pDrawList, ImFont* font, float font_size,
 	                   ImVec2 pos, ImU32 col, const char* text, const char* text_end)
 	{
@@ -2870,12 +3068,22 @@ namespace ImWidgets {
 		// Shaders must be compiled at startup via ImWidgetsFeatures_RichFont + CreateContext().
 		// If that failed (backend cannot build the Slug program), draw with ImGui
 		// instead of silently drawing nothing.
-		if (!gs_pContext->slugShader.program)
+		const ImWidgetsTextRenderer renderer = SlugResolveRenderer();
+		if (renderer == ImWidgetsTextRenderer_ImGuiAtlas || (renderer == ImWidgetsTextRenderer_GPU && !gs_pContext->slugShader.program))
 		{
 			// pos.y is the baseline; AddText takes the top of the line.
 			ImFontBaked* baked = font->GetFontBaked(font_size);
 			float ascent = baked ? baked->Ascent * (font_size / baked->Size) : font_size * 0.8f;
 			pDrawList->AddText(font, font_size, ImVec2(pos.x, pos.y - ascent), col, text, text_end);
+			return;
+		}
+		if (renderer == ImWidgetsTextRenderer_CPUVector)
+		{
+			if (!gs_pContext->slugState)
+				gs_pContext->slugState = IM_NEW(ImWidgetsSlugState);
+			SlugFontCache* vatlas = SlugGetOrCreateAtlas(gs_pContext->slugState, font);
+			if (!vatlas) return;
+			SlugDrawTextVector(pDrawList, vatlas, font_size, pos, col, text, text_end);
 			return;
 		}
 
@@ -6421,6 +6629,10 @@ namespace ImWidgets {
 	{
 		DrawText(pDrawList, nullptr, 0.0f, pos, col, text, text_end);
 	}
+
+	// No custom-shader support in this build: text always goes through the ImGui atlas.
+	void SetTextRenderer(ImWidgetsTextRenderer) {}
+	ImWidgetsTextRenderer GetTextRenderer() { return ImWidgetsTextRenderer_ImGuiAtlas; }
 
 	void DrawTextDebugCurves(ImDrawList*, ImFont*, float, ImVec2, const char*, const char*, int) {}
 	void DrawTextDebugLayers(ImDrawList*, ImFont*, float, ImVec2, const char*, const char*) {}
