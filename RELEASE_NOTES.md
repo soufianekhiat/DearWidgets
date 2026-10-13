@@ -124,6 +124,7 @@ Each one, with its replacement, is listed under **Breaking changes** and
 ## Licence
 
 The DearWidgets sources and documentation are CC0. Third-party components keep
-their own licences (CDT is MPL-2.0, vendored in `extern/CDT/`), and the Slug
-technique is covered by patents held by Terathon Software -- see
-[README.md](README.md#third-party-components) before redistributing.
+their own licences (CDT is MPL-2.0, vendored in `extern/CDT/`) -- see
+[README.md](README.md#third-party-components) before redistributing. The Slug
+GPU text technique (Eric Lengyel) is patent-free: its patent was dedicated to
+the public domain in March 2026.

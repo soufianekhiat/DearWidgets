@@ -347,14 +347,13 @@ The GPU glyph-rendering approach used by `dear_widgets_slug.cpp` follows the
 technique published by **Eric Lengyel / Terathon Software** (the "Slug"
 algorithm: rendering glyphs directly from their Bezier outlines in the pixel
 shader, with a per-glyph band acceleration structure). This is an independent
-implementation -- no Terathon code is included -- but **the technique is covered
-by patents held by Terathon Software**.
+implementation; no Terathon code is included.
 
-DearWidgets makes no claim about whether any particular use is or is not
-licensed. If you intend to ship a product using this renderer, satisfy yourself
-about the patent position for your jurisdiction and use case before you do.
-See [terathon.com/slug](https://terathon.com/blog/slug-algorithm.html) for the
-author's own description of the algorithm and licensing.
+The Slug patent (US 10,373,352) was dedicated to the public domain by its author
+on March 17, 2026, and his reference shaders are published under the MIT /
+Apache-2.0 licences at [github.com/EricLengyel/Slug](https://github.com/EricLengyel/Slug).
+See [A Decade of Slug](https://terathon.com/blog/decade-slug.html) for the
+announcement.
 
 ---
 
