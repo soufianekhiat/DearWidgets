@@ -411,6 +411,12 @@ plain `ImDrawList` geometry through the new path / paint / stroke APIs. `<text>`
 is drawn as shaped, bidi-ordered glyph outlines, so it follows the element's
 transform and gradient fills.
 
+#### Clip paths
+
+`PushPathClip` / `PopPathClip`: exact, anti-aliased clipping of every CPU fill
+(paths, strokes, vector text, SVG) by arbitrary paths, nested up to 4 deep.
+SVG documents support `<clipPath>` / `clip-path`.
+
 #### Bidirectional text
 
 `DrawText`, the gradient / image text variants and `CalcTextSize` now run the

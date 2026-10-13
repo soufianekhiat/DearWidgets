@@ -23,8 +23,11 @@
 //               no stroke):
 //               shaped, bidi-ordered glyph outlines transformed like any
 //               other shape (rotation, skew, gradients all apply)
-// Not supported: images, masks, clip paths, filters, patterns, markers,
-// use / symbol, CSS stylesheets (<style>), tspan positioning.
+//   clipping    <clipPath> (shapes, groups with transforms, clip-rule,
+//               clipPathUnits) referenced by clip-path="url(#id)" on shapes and
+//               groups (nested references intersect, up to 4)
+// Not supported: images, masks, filters, patterns, markers, use / symbol,
+// CSS stylesheets (<style>), tspan positioning.
 
 #include "dear_widgets.h"
 #include "dear_widgets_internal.h"
@@ -382,10 +385,27 @@ struct DW_SvgStyle
     float  fontSize = 16.0f;   // inherited
     int    textAnchor = 0;     // 0 start, 1 middle, 2 end
     int    direction = ImWidgetsTextDirection_LTR; // SVG initial value: ltr
+    int    clipRule = ImWidgetsFillRule_NonZero;    // inherited
+};
+
+// A clip-path reference: the clip's id and the user space it is used in
+// (the referencing element's coordinate system, its transform included).
+struct DW_SvgClipRef { char id[64]; ImWidgetsTransform2D xf; };
+enum { DW_SvgMaxClipRefs = 4 };
+
+struct DW_SvgClipDef
+{
+    char          id[64];
+    ImWidgetsPath path;       // union of the child shapes, in the clip's own space
+    bool          bboxUnits;  // clipPathUnits="objectBoundingBox"
+    int           rule;       // clip-rule of the children (the first one decides)
+    bool          hasRule;
 };
 
 struct DW_SvgItem
 {
+    DW_SvgClipRef clips[DW_SvgMaxClipRefs];
+    int           clipCount = 0;
     ImWidgetsPath        path;        // in document user space (element transforms applied)
     DW_SvgStyle          style;
     float                strokeScale; // scale of the element's transform (stroke width is in its local units)
@@ -401,12 +421,14 @@ struct ImWidgetsSvg
 {
     ImVector<ImWidgets::DW_SvgItem*>      items;
     ImVector<ImWidgets::DW_SvgGradient*>  gradients;
+    ImVector<ImWidgets::DW_SvgClipDef*>   clipDefs;
     ImRect                                viewBox;
     ImVec2                                size;   // intrinsic size (width / height, else viewBox)
     ~ImWidgetsSvg()
     {
         for (int i = 0; i < items.Size; ++i) IM_DELETE(items[i]);
         for (int i = 0; i < gradients.Size; ++i) IM_DELETE(gradients[i]);
+        for (int i = 0; i < clipDefs.Size; ++i) IM_DELETE(clipDefs[i]);
     }
 };
 
@@ -425,6 +447,7 @@ static void DW_SvgApplyProp(DW_SvgStyle& st, const char* name, const char* v)
     else if (!strcmp(name, "stroke-miterlimit")) { float f; const char* q = v; if (DW_SvgNum(q, f)) st.miterLimit = ImMax(1.0f, f); }
     else if (!strcmp(name, "stroke-dashoffset")) st.dashOffset = DW_SvgLength(v, 0.0f);
     else if (!strcmp(name, "fill-rule")) st.fillRule = strstr(v, "evenodd") ? ImWidgetsFillRule_EvenOdd : ImWidgetsFillRule_NonZero;
+    else if (!strcmp(name, "clip-rule")) st.clipRule = strstr(v, "evenodd") ? ImWidgetsFillRule_EvenOdd : ImWidgetsFillRule_NonZero;
     else if (!strcmp(name, "stroke-linecap")) st.cap = strstr(v, "round") ? ImWidgetsCap_Round : strstr(v, "square") ? ImWidgetsCap_Square : ImWidgetsCap_Butt;
     else if (!strcmp(name, "stroke-linejoin")) st.join = strstr(v, "round") ? ImWidgetsJoin_Round : strstr(v, "bevel") ? ImWidgetsJoin_Bevel : ImWidgetsJoin_Miter;
     else if (!strcmp(name, "stroke-dasharray"))
@@ -447,7 +470,7 @@ static void DW_SvgApplyStyle(DW_SvgStyle& st, const DW_SvgTag& tag)
 {
     static const char* kProps[] = { "fill", "stroke", "fill-opacity", "stroke-opacity", "opacity", "stroke-width",
         "stroke-miterlimit", "stroke-dashoffset", "fill-rule", "stroke-linecap", "stroke-linejoin", "stroke-dasharray",
-        "display", "visibility", "font-size", "text-anchor", "direction" };
+        "display", "visibility", "font-size", "text-anchor", "direction", "clip-rule" };
     st.ownOpacity = 1.0f;
     for (const char* k : kProps) DW_SvgApplyProp(st, k, tag.Get(k));
     if (const char* css = tag.Get("style"))
@@ -478,6 +501,32 @@ static void DW_SvgApplyStyle(DW_SvgStyle& st, const DW_SvgTag& tag)
 
 static float DW_SvgAttrF(const DW_SvgTag& t, const char* n, float def, float pct_ref = 0.0f) { return DW_SvgLength(t.Get(n), def, pct_ref); }
 
+// clip-path="url(#id)" (attribute or style declaration) -> id.
+static bool DW_SvgClipPathRef(const DW_SvgTag& tag, char* out, int out_size)
+{
+    const char* v = tag.Get("clip-path");
+    char buf[128] = {};
+    if (!v)
+        if (const char* css = tag.Get("style"))
+            if (const char* p = strstr(css, "clip-path"))
+                if ((p = strchr(p, ':')) != nullptr)
+                {
+                    ++p; int n = 0;
+                    while (p[n] && p[n] != ';' && n < 127) { buf[n] = p[n]; ++n; }
+                    v = buf;
+                }
+    if (!v) return false;
+    const char* u = strstr(v, "url(");
+    if (!u) return false;
+    u += 4;
+    while (*u == ' ' || *u == '\'' || *u == '"') ++u;
+    if (*u == '#') ++u;
+    int n = 0;
+    while (u[n] && u[n] != ')' && u[n] != '\'' && u[n] != '"' && n < out_size - 1) { out[n] = u[n]; ++n; }
+    out[n] = 0;
+    return n > 0;
+}
+
 // Offset of a stop: number or percentage, clamped and monotonic (SVG rule).
 static float DW_SvgStopOffset(const char* s)
 {
@@ -499,7 +548,7 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
     doc->viewBox = ImRect(0, 0, 0, 0);
     doc->size = ImVec2(0, 0);
 
-    struct Frame { DW_SvgStyle style; ImWidgetsTransform2D xf; ImVector<char> name; };
+    struct Frame { DW_SvgStyle style; ImWidgetsTransform2D xf; DW_SvgClipRef clips[DW_SvgMaxClipRefs]; int clipCount = 0; bool isClipRoot = false; };
     ImVector<Frame*> stack;
     Frame* root = IM_NEW(Frame)();
     root->style.fill.kind = DW_SvgPaint_Color; root->style.fill.color = IM_COL32_BLACK; // SVG initial fill
@@ -507,6 +556,7 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
     stack.push_back(root);
 
     DW_SvgGradient* curGrad = nullptr;
+    DW_SvgClipDef*  curClip = nullptr;   // inside <clipPath>: shapes feed the clip, not the document
     int defsDepth = 0;
     const char* s = text;
     DW_SvgTag tag;
@@ -517,7 +567,12 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
         if (tag.closing)
         {
             if (!strcmp(name, "linearGradient") || !strcmp(name, "radialGradient")) { curGrad = nullptr; continue; }
-            if (!strcmp(name, "defs") || !strcmp(name, "symbol") || !strcmp(name, "clipPath") || !strcmp(name, "mask")
+            if (!strcmp(name, "clipPath"))
+            {
+                if (curClip) { curClip = nullptr; if (stack.Size > 1 && stack.back()->isClipRoot) { IM_DELETE(stack.back()); stack.pop_back(); } }
+                continue;
+            }
+            if (!strcmp(name, "defs") || !strcmp(name, "symbol") || !strcmp(name, "mask")
                 || !strcmp(name, "pattern") || !strcmp(name, "marker")) { if (defsDepth > 0) --defsDepth; continue; }
             if ((!strcmp(name, "g") || !strcmp(name, "svg") || !strcmp(name, "a") || !strcmp(name, "switch")) && stack.Size > 1)
             {
@@ -592,12 +647,36 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
             }
             continue;
         }
+        // <clipPath>: its shapes are collected into a clip definition (in the
+        // clip's own space; the user space of the referencing element is
+        // applied at draw time). Works inside or outside <defs>.
+        if (!strcmp(name, "clipPath"))
+        {
+            DW_SvgClipDef* cd = IM_NEW(DW_SvgClipDef)();
+            memset(cd->id, 0, sizeof(cd->id));
+            if (const char* id = tag.Get("id")) ImStrncpy(cd->id, id, sizeof(cd->id));
+            const char* units = tag.Get("clipPathUnits");
+            cd->bboxUnits = units && strstr(units, "objectBoundingBox");
+            cd->rule = ImWidgetsFillRule_NonZero; cd->hasRule = false;
+            doc->clipDefs.push_back(cd);
+            if (!tag.selfClosing)
+            {
+                curClip = cd;
+                Frame* f = IM_NEW(Frame)();
+                f->style = stack.back()->style;
+                DW_SvgApplyStyle(f->style, tag);
+                f->xf = DW_SvgParseTransform(tag.Get("transform")); // the clip's own space
+                f->isClipRoot = true;
+                stack.push_back(f);
+            }
+            continue;
+        }
         // Not rendered directly: defs and the referenced-only containers
-        // (clip paths, masks, symbols, patterns, markers are unsupported, so
-        // their content must not show as plain shapes).
-        if (!strcmp(name, "defs") || !strcmp(name, "symbol") || !strcmp(name, "clipPath") || !strcmp(name, "mask")
+        // (masks, symbols, patterns, markers are unsupported, so their content
+        // must not show as plain shapes).
+        if (!strcmp(name, "defs") || !strcmp(name, "symbol") || !strcmp(name, "mask")
             || !strcmp(name, "pattern") || !strcmp(name, "marker")) { if (!tag.selfClosing) ++defsDepth; continue; }
-        if (defsDepth > 0)
+        if (defsDepth > 0 && !curClip)
         {
             // Keep the group stack balanced: a group opened in a skipped region
             // still gets popped by its closing tag.
@@ -614,6 +693,27 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
         DW_SvgApplyStyle(st, tag);
         st.opacity = parent->style.opacity * st.ownOpacity;
         ImWidgetsTransform2D xf = parent->xf * DW_SvgParseTransform(tag.Get("transform"));
+        // clip-path references: inherited from the enclosing groups, plus this
+        // element's own (in its user space, its transform included).
+        DW_SvgClipRef clips[DW_SvgMaxClipRefs];
+        int clipCount = curClip ? 0 : parent->clipCount;
+        for (int c = 0; c < clipCount; ++c) clips[c] = parent->clips[c];
+        if (!curClip && clipCount < DW_SvgMaxClipRefs)
+        {
+            char cid[64];
+            if (DW_SvgClipPathRef(tag, cid, (int)sizeof(cid)))
+            {
+                ImStrncpy(clips[clipCount].id, cid, sizeof(clips[clipCount].id));
+                clips[clipCount].xf = xf;
+                ++clipCount;
+            }
+        }
+        auto pushFrame = [&]() {
+            Frame* f = IM_NEW(Frame)(); f->style = st; f->xf = xf;
+            for (int c = 0; c < clipCount; ++c) f->clips[c] = clips[c];
+            f->clipCount = clipCount;
+            stack.push_back(f);
+        };
 
         if (!strcmp(name, "svg"))
         {
@@ -630,12 +730,12 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
                 if (doc->viewBox.GetWidth() <= 0.0f) doc->viewBox = ImRect(0, 0, w > 0 ? w : 100.0f, h > 0 ? h : 100.0f);
                 doc->size = ImVec2(w > 0 ? w : doc->viewBox.GetWidth(), h > 0 ? h : doc->viewBox.GetHeight());
             }
-            if (!tag.selfClosing) { Frame* f = IM_NEW(Frame)(); f->style = st; f->xf = xf; stack.push_back(f); }
+            if (!tag.selfClosing) pushFrame();
             continue;
         }
         if (!strcmp(name, "g") || !strcmp(name, "a") || !strcmp(name, "switch"))
         {
-            if (!tag.selfClosing) { Frame* f = IM_NEW(Frame)(); f->style = st; f->xf = xf; stack.push_back(f); }
+            if (!tag.selfClosing) pushFrame();
             continue;
         }
 
@@ -707,9 +807,11 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
                 }
                 while (content.Size && content.back() == ' ') content.pop_back();
             }
-            if (content.Size == 0 || !st.display || !st.visible) continue;
+            if (content.Size == 0 || !st.display || !st.visible || curClip) continue; // text in clip paths: not supported
             content.push_back(0);
             DW_SvgItem* item = IM_NEW(DW_SvgItem)();
+            for (int c = 0; c < clipCount; ++c) item->clips[c] = clips[c];
+            item->clipCount = clipCount;
             item->style = st;
             item->xf = xf;
             item->strokeScale = ImSqrt(ImFabs(xf.m[0] * xf.m[3] - xf.m[1] * xf.m[2]));
@@ -783,8 +885,26 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
         }
         else shape = false;
 
-        if (!shape || p.Subpaths.Size == 0 || !st.display || !st.visible) continue;
+        if (!shape || p.Subpaths.Size == 0) continue;
+        if (curClip)
+        {
+            // Clip children: union of their shapes (display:none ones excluded).
+            if (!st.display) continue;
+            p.Transform(xf);
+            for (int sp = 0; sp < p.Subpaths.Size; ++sp)
+            {
+                ImWidgetsSubpath sub = p.Subpaths[sp];
+                sub.First += curClip->path.Points.Size;
+                curClip->path.Subpaths.push_back(sub);
+            }
+            for (int k = 0; k < p.Points.Size; ++k) curClip->path.Points.push_back(p.Points[k]);
+            if (!curClip->hasRule) { curClip->rule = st.clipRule; curClip->hasRule = true; }
+            continue;
+        }
+        if (!st.display || !st.visible) continue;
         DW_SvgItem* item = IM_NEW(DW_SvgItem)();
+        for (int c = 0; c < clipCount; ++c) item->clips[c] = clips[c];
+        item->clipCount = clipCount;
         // Local bounding box from the flattened outline (control points overshoot curves).
         {
             ImVector<ImVec2> fp; ImVector<int> fc;
@@ -956,6 +1076,28 @@ void SvgDraw(ImDrawList* dl, const ImWidgetsSvg* doc, ImVec2 pos, ImVec2 size, I
     for (int i = 0; i < doc->items.Size; ++i)
     {
         const DW_SvgItem& it = *doc->items[i];
+        // clip-path: push every referenced clip (screen space) around the item.
+        int pushed = 0;
+        bool clippedAway = false;
+        for (int c = 0; c < it.clipCount; ++c)
+        {
+            const DW_SvgClipDef* cd = nullptr;
+            for (int k = 0; k < doc->clipDefs.Size; ++k) if (!strcmp(doc->clipDefs[k]->id, it.clips[c].id)) { cd = doc->clipDefs[k]; break; }
+            if (!cd) continue;                                   // unknown reference: ignored (as browsers do)
+            if (cd->path.Subpaths.Size == 0) { clippedAway = true; break; } // empty clip hides the element
+            ImWidgetsTransform2D m = docToScreen * it.clips[c].xf;
+            if (cd->bboxUnits)
+            {
+                if (it.bbox.GetWidth() <= 0.0f || it.bbox.GetHeight() <= 0.0f) { clippedAway = true; break; }
+                m = m * ImWidgetsTransform2D(it.bbox.GetWidth(), 0, 0, it.bbox.GetHeight(), it.bbox.Min.x, it.bbox.Min.y);
+            }
+            ImWidgetsPath cp = cd->path;
+            cp.Transform(m);
+            PushPathClip(cp, cd->rule);
+            ++pushed;
+        }
+        struct PopGuard { int n; ~PopGuard() { while (n-- > 0) PopPathClip(); } } popGuard = { pushed };
+        if (clippedAway) continue;
         if (it.text.Size > 0)
         {
             ImVector<ImVec2> segs;

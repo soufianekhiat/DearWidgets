@@ -401,6 +401,19 @@ follows the number of edges) with a 1 px anti-aliasing fringe; no pixel is
 covered twice, so translucent fills have no seams. `PathFill` treats every
 subpath as closed, like SVG.
 
+### Clip paths
+```cpp
+void PushPathClip( ImWidgetsPath const& clip, ImWidgetsFillRule rule = ImWidgetsFillRule_NonZero );
+void PopPathClip();
+```
+Like SVG `clip-path` / Canvas2D `clip()`: everything DearWidgets fills with its
+CPU filler (`PathFill`, `FillPolygons`, `PathStroke`, variable-width strokes,
+CPU vector text, text on path, SVG documents) is intersected with every active
+clip, in the same sweep as the fill: exact, anti-aliased clip edges, one fill
+rule per clip, up to 4 nested clips. The clip is in screen space. Plain
+`ImDrawList` calls and GPU-shader drawing (Slug text) are not clipped (use the
+draw list's clip rect for those).
+
 ### Gradient paint
 ```cpp
 ImWidgetsGradientStop stops[] = { { 0.0f, IM_COL32( 255, 80, 60, 255 ) },
@@ -463,12 +476,13 @@ attributes and `style="..."` for `fill`, `stroke`, `fill-rule`, `opacity`,
 `stroke-linejoin`, `stroke-miterlimit`, `stroke-dasharray`, `stroke-dashoffset`,
 `display`, `visibility`, inherited through groups; transform lists; colours as
 hex, `rgb()` / `rgba()`, CSS named colours, `none`, `transparent`,
-`currentColor`; `<text>` with `x`, `y`, `font-size`, `text-anchor`,
+`currentColor`; `<clipPath>` (shapes and groups, `clip-rule`, `clipPathUnits`)
+referenced by `clip-path` on shapes and groups; `<text>` with `x`, `y`, `font-size`, `text-anchor`,
 `direction` and fill paints, rendered as shaped, bidi-ordered glyph outlines
 with `font` (so transforms and gradients apply to text too; nested `<tspan>`
-content is flattened). Not supported: images, masks, clip paths, filters,
-patterns, markers, `use` / `symbol`, `<style>` sheets, radial focal points,
-tspan positioning.
+content is flattened). Not supported: images, masks, filters, patterns,
+markers, `use` / `symbol`, `<style>` sheets, radial focal points, tspan
+positioning, text inside clip paths.
 
 ## Lines, Strokes and Dashes
 
