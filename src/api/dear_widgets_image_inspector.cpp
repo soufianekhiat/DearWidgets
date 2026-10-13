@@ -788,7 +788,15 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 	// image and keeps tracking until release even if the cursor leaves the
 	// widget (sampling is clamped to the image rect). Gating on `hovered` made
 	// it vanish at the edge and let a right-press that began elsewhere trigger it.
+	// The latch is only valid if the widget ran last frame: if it was skipped
+	// (scrolled out) on the release frame, a later unrelated right-press must
+	// not bring the loupe back.
+	int* pLoupeFrame = window->StateStorage.GetIntRef( id ^ 0x10C9E002u, -1 );
+	bool const loupeFresh = ( *pLoupeFrame == ImGui::GetFrameCount() - 1 );
+	*pLoupeFrame = ImGui::GetFrameCount();
 	bool* pLoupe = window->StateStorage.GetBoolRef( id ^ 0x10C9E001u, false );
+	if ( !loupeFresh )
+		*pLoupe = false;
 	if ( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) )
 	{
 		*pLoupe = true;

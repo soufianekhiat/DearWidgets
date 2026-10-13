@@ -32366,7 +32366,15 @@ namespace ImWidgets {
 		// image and keeps tracking until release even if the cursor leaves the
 		// widget (sampling is clamped to the image rect). Gating on `hovered` made
 		// it vanish at the edge and let a right-press that began elsewhere trigger it.
+		// The latch is only valid if the widget ran last frame: if it was skipped
+		// (scrolled out) on the release frame, a later unrelated right-press must
+		// not bring the loupe back.
+		int* pLoupeFrame = window->StateStorage.GetIntRef( id ^ 0x10C9E002u, -1 );
+		bool const loupeFresh = ( *pLoupeFrame == ImGui::GetFrameCount() - 1 );
+		*pLoupeFrame = ImGui::GetFrameCount();
 		bool* pLoupe = window->StateStorage.GetBoolRef( id ^ 0x10C9E001u, false );
+		if ( !loupeFresh )
+			*pLoupe = false;
 		if ( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) )
 		{
 			*pLoupe = true;
@@ -36811,6 +36819,8 @@ namespace ImWidgets
             if (g != 0.0f)
             {
                 float nv = ImClamp(*value + g, ImMin(v_min, v_max), ImMax(v_min, v_max));
+                if (widgets_flags & ImWidgetsSliderFlags_Stepped)
+                    nv = ImGui::RoundScalarWithFormatT<float>(format ? format : "%.3f", ImGuiDataType_Float, nv);
                 followed = (nv != *value);
                 *value = nv;
             }
@@ -36832,7 +36842,10 @@ namespace ImWidgets
             SetDragGroupActive(slot, *value - start_val);   // every active frame, 0 when idle
         if (followed)
         {
-            ImGui::MarkItemEdited(ImGui::GetItemID());
+            // A follower is not the active item (the initiator is): MarkItemEdited
+            // would assert, so only mark when no item owns ActiveId.
+            if (ImGui::GetActiveID() == 0)
+                ImGui::MarkItemEdited(ImGui::GetItemID());
             changed = true;
         }
 
@@ -41138,6 +41151,10 @@ namespace ImWidgets
         }
 
         // Escape aborts the drag: nothing is selected and the outline goes away.
+        // Ownership is renewed every active frame (ImGui drops it from an
+        // un-held key), so callers testing Escape without an owner don't see it.
+        if ( s.Active )
+            ImGui::SetKeyOwner( ImGuiKey_Escape, id );
         if ( s.Active && ImGui::IsKeyPressed( ImGuiKey_Escape, false, id ) )
         {
             s.Active = false;
@@ -41862,8 +41879,10 @@ namespace ImWidgets
         // ---- Fill: each cell is a bilinear patch over its four (possibly moved) nodes ----
         int const cellsX = m.CountX - 1;
         int const cellsY = m.CountY - 1;
-        int const subX = ImMax( 1, sampleX / cellsX );
-        int const subY = ImMax( 1, sampleY / cellsY );
+        // Cap per-cell subdivision: one PrimReserve must stay below 65536 vertices
+        // with 16-bit indices (129 x 129 = 16641).
+        int const subX = ImClamp( sampleX / cellsX, 1, 128 );
+        int const subY = ImClamp( sampleY / cellsY, 1, 128 );
         dl->PushClipRect( bb.Min, bb.Max, true );
         for ( int cj = 0; cj < cellsY; ++cj )
         {
