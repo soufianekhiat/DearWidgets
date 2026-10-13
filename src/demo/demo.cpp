@@ -2403,6 +2403,12 @@ namespace ImWidgets{
 		if ( g_amiriFont || g_vazirmatnFont )
 			ImWidgets::InputTextShaped( "Arabic (InputTextShaped)##SlugArabicShaped", arabic_buf, sizeof( arabic_buf ),
 			                            g_amiriFont ? g_amiriFont : g_vazirmatnFont, 20.0f );
+		if ( g_amiriFont || g_vazirmatnFont )
+		{
+			static char s_multi[1024] = "Multi-line shaped input: lines wrap, Up / Down keep the column.\n\xd8\xaa\xd8\xaf\xd8\xb9\xd9\x85 \xd8\xa7\xd9\x84\xd8\xad\xd9\x82\xd9\x88\xd9\x84 \xd8\xa7\xd9\x84\xd9\x86\xd8\xb5\xd9\x8a\xd8\xa9 \xd9\x85\xd8\xaa\xd8\xb9\xd8\xaf\xd8\xaf\xd8\xa9 \xd8\xa7\xd9\x84\xd8\xa3\xd8\xb3\xd8\xb7\xd8\xb1 \xd8\xa7\xd9\x84\xd9\x83\xd8\xaa\xd8\xa7\xd8\xa8\xd8\xa9 \xd9\x85\xd9\x86 \xd8\xa7\xd9\x84\xd9\x8a\xd9\x85\xd9\x8a\xd9\x86 \xd8\xa5\xd9\x84\xd9\x89 \xd8\xa7\xd9\x84\xd9\x8a\xd8\xb3\xd8\xa7\xd8\xb1 \xd9\x85\xd8\xb9 \xd8\xa7\xd9\x84\xd8\xa3\xd8\xb1\xd9\x82\xd8\xa7\xd9\x85 2026.\nMixed: \xd9\x85\xd8\xb1\xd8\xad\xd8\xa8\xd8\xa7 world \xd9\xa1\xd9\xa2\xd9\xa3";
+			ImWidgets::InputTextMultilineShaped( "Multi-line (InputTextMultilineShaped)##SlugMulti", s_multi, sizeof( s_multi ),
+			                                     ImVec2( 0.0f, 140.0f ), g_amiriFont ? g_amiriFont : g_vazirmatnFont, 20.0f );
+		}
 
 		// Bidi: mixed-direction strings, laid out by the UAX #9 implicit algorithm
 		// (runs shaped per direction, then reordered visually). The second column

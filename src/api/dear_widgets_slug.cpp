@@ -7185,7 +7185,10 @@ namespace ImWidgets {
 
 	static inline bool SlugIsWs(char c) { return c == ' ' || c == '\t'; }
 
-	struct SlugBlockLine { const char* b; const char* e; float w; int rtl; float y; float x0; float x1; };
+	// One laid-out line: [b, e) is what is drawn (trailing spaces trimmed),
+	// [b, raw) the full line (hanging spaces included, newline excluded); x is
+	// the aligned left edge relative to the block.
+	struct SlugBlockLine { const char* b; const char* e; float w; int rtl; float y; float x0; float x1; const char* raw; float x; };
 
 	// Optional line extent: for a line box [y0, y1] (relative to the block top)
 	// returns false when nothing fits there, else the usable [x0, x1] (relative
@@ -7198,7 +7201,8 @@ namespace ImWidgets {
 
 	static ImVec2 SlugTextBlock(ImDrawList* dl, ImFont* font, float font_size_lp, ImVec2 pos, ImU32 col,
 	                            const char* text, const char* text_end, const ImWidgetsTextLayout& lay, bool draw,
-	                            const SlugLineExtent* extent = nullptr, float max_height = FLT_MAX)
+	                            const SlugLineExtent* extent = nullptr, float max_height = FLT_MAX,
+	                            ImVector<SlugBlockLine>* out_lines = nullptr)
 	{
 		if (!text) return ImVec2(0, 0);
 		if (!text_end) text_end = text + strlen(text);
@@ -7259,7 +7263,7 @@ namespace ImWidgets {
 				if (lineB < seg && lineW + wFit > lx1 - lx0)
 				{
 					const char* le = trimEnd(lineB, seg);
-					SlugBlockLine L = { lineB, le, measure(lineB, le), rtl, y, lx0, lx1 };
+					SlugBlockLine L = { lineB, le, measure(lineB, le), rtl, y, lx0, lx1, seg, 0.0f };
 					lines.push_back(L); maxW = ImMax(maxW, L.w); y += line_adv;
 					lineB = seg; lineW = 0.0f;
 					if (!nextExtent()) { full = true; break; }
@@ -7270,7 +7274,7 @@ namespace ImWidgets {
 			if (full) break;
 			{
 				const char* le = trimEnd(lineB, pe);
-				SlugBlockLine L = { lineB, le, measure(lineB, le), rtl, y, lx0, lx1 };
+				SlugBlockLine L = { lineB, le, measure(lineB, le), rtl, y, lx0, lx1, pe, 0.0f };
 				lines.push_back(L); maxW = ImMax(maxW, L.w); y += line_adv;
 			}
 			if (pe >= text_end) break;
@@ -7278,6 +7282,20 @@ namespace ImWidgets {
 		}
 
 		const float boxW = (lay.WrapWidth > 0.0f) ? wrap_px : maxW;
+		// Aligned x of every line (relative to the block).
+		for (int i = 0; i < lines.Size; ++i)
+		{
+			SlugBlockLine& L = lines[i];
+			int align = lay.Align;
+			if (align == ImWidgetsTextAlign_Start) align = L.rtl ? ImWidgetsTextAlign_Right : ImWidgetsTextAlign_Left;
+			if (align == ImWidgetsTextAlign_End)   align = L.rtl ? ImWidgetsTextAlign_Left  : ImWidgetsTextAlign_Right;
+			const float ex0 = extent ? L.x0 : 0.0f;
+			const float exW = extent ? (L.x1 - L.x0) : boxW;
+			L.x = ex0;
+			if (align == ImWidgetsTextAlign_Right)  L.x = ex0 + exW - L.w;
+			if (align == ImWidgetsTextAlign_Center) L.x = ex0 + (exW - L.w) * 0.5f;
+		}
+		if (out_lines) *out_lines = lines;
 		if (draw && dl)
 		{
 			ImFontBaked* baked = font->GetFontBaked(size_px);
@@ -7289,15 +7307,7 @@ namespace ImWidgets {
 			{
 				const SlugBlockLine& L = lines[i];
 				if (L.b >= L.e) continue;
-				int align = lay.Align;
-				if (align == ImWidgetsTextAlign_Start) align = L.rtl ? ImWidgetsTextAlign_Right : ImWidgetsTextAlign_Left;
-				if (align == ImWidgetsTextAlign_End)   align = L.rtl ? ImWidgetsTextAlign_Left  : ImWidgetsTextAlign_Right;
-				// Align within the line's own extent (the shape's span) or the block box.
-				const float ex0 = extent ? L.x0 : 0.0f;
-				const float exW = extent ? (L.x1 - L.x0) : boxW;
-				float x = pos.x + ex0;
-				if (align == ImWidgetsTextAlign_Right)  x = pos.x + ex0 + exW - L.w;
-				if (align == ImWidgetsTextAlign_Center) x = pos.x + ex0 + (exW - L.w) * 0.5f;
+				const float x = pos.x + L.x;
 				GetStyle().TextDirection = L.rtl ? ImWidgetsTextDirection_RTL : ImWidgetsTextDirection_LTR;
 				DrawText(dl, font, size_lp, ImVec2(x, pos.y + L.y + baselineOff), col, L.b, L.e);
 			}
@@ -7462,6 +7472,7 @@ namespace ImWidgets {
 		float   scroll;       // horizontal scroll in pixels
 		double  blinkStart;
 		bool    selectAllLock; // double-click selected all: ignore mouse until release
+		float   desiredX;      // multi-line: x kept by Up / Down (-1 = take the caret's)
 	};
 	static ImVector<SlugInputState> s_inputStates;
 
@@ -7469,7 +7480,7 @@ namespace ImWidgets {
 	{
 		for (int i = 0; i < s_inputStates.Size; ++i)
 			if (s_inputStates[i].id == id) return &s_inputStates[i];
-		SlugInputState st = { id, 0, 0, false, 0.0f, 0.0, false };
+		SlugInputState st = { id, 0, 0, false, 0.0f, 0.0, false, -1.0f };
 		s_inputStates.push_back(st);
 		return &s_inputStates.back();
 	}
@@ -7715,6 +7726,295 @@ namespace ImWidgets {
 			ImGui::RenderText(ImVec2(frame.Max.x + style.ItemInnerSpacing.x, frame.Min.y + style.FramePadding.y), label);
 
 		if (flags & ImGuiInputTextFlags_EnterReturnsTrue) return enter;
+		return changed;
+	}
+
+	// ---- InputTextMultilineShaped -------------------------------------------
+	bool InputTextMultilineShaped(const char* label, char* buf, size_t buf_size, const ImVec2& size,
+	                              ImFont* font, float font_size, ImGuiInputTextFlags flags)
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if (window->SkipItems || !buf || buf_size == 0) return false;
+		ImGuiContext& g = *GImGui;
+		ImGuiIO& io = g.IO;
+		const ImGuiStyle& style = g.Style;
+		const ImGuiID id = window->GetID(label);
+		if (!font) font = ImGui::GetFont();
+		const float size_lp = font_size > 0.0f ? font_size : PxToLp(ImGui::GetFontSize());
+		const float size_px = SlugLpToPx(size_lp);
+		const bool readOnly = (flags & ImGuiInputTextFlags_ReadOnly) != 0;
+		const float lineAdv = size_px * 1.25f;
+
+		const ImVec2 labelSize = ImGui::CalcTextSize(label, NULL, true);
+		const float w = size.x > 0.0f ? LpToPx(size.x) : ImGui::CalcItemWidth();
+		const float h = size.y > 0.0f ? LpToPx(size.y) : lineAdv * 8.0f + style.FramePadding.y * 2.0f;
+		const ImRect frame(window->DC.CursorPos, window->DC.CursorPos + ImVec2(w, h));
+		const ImRect total(frame.Min, frame.Max + ImVec2(labelSize.x > 0.0f ? style.ItemInnerSpacing.x + labelSize.x : 0.0f, 0.0f));
+		ImGui::ItemSize(total, style.FramePadding.y);
+		if (!ImGui::ItemAdd(total, id, &frame, ImGuiItemFlags_Inputable))
+			return false;
+		const bool hovered = ImGui::ItemHoverable(frame, id, g.LastItemData.ItemFlags);
+		if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
+
+		SlugInputState* st = SlugGetInputState(id);
+		bool changed = false;
+		int len = (int)strlen(buf);
+
+		const bool clicked = hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left, ImGuiInputFlags_None, id);
+		if (clicked || g.NavActivateId == id)
+		{
+			ImGui::SetActiveID(id, window);
+			ImGui::SetFocusID(id, window);
+			ImGui::FocusWindow(window);
+			st->blinkStart = ImGui::GetTime();
+		}
+		else if (g.ActiveId == id && io.MouseClicked[0] && !hovered)
+			ImGui::ClearActiveID();
+		const bool active = (g.ActiveId == id);
+
+		// Layout: the paragraph layout of DrawTextBlock, wrapped to the inner width.
+		const float padX = style.FramePadding.x, padY = style.FramePadding.y;
+		const float innerW = frame.GetWidth() - padX * 2.0f, innerH = frame.GetHeight() - padY * 2.0f;
+		ImWidgetsTextLayout lay;
+		lay.WrapWidth = PxToLp(ImMax(innerW, size_px));
+		lay.LineHeight = 1.25f;
+		ImVector<SlugBlockLine> lines;
+		ImVector<unsigned int> brk;
+		float blockH = 0.0f;
+		auto relayout = [&]() {
+			blockH = SlugTextBlock(nullptr, font, size_lp, ImVec2(0, 0), 0, buf, buf + len, lay, false, nullptr, FLT_MAX, &lines).y;
+			brk.resize(len + 1);
+			DwShaper_TextBreaks(buf, len, brk.Data);
+		};
+		relayout();
+
+		// Line containing a byte offset (offsets on a line break belong to the next line).
+		auto lineOf = [&](int o) {
+			int li = 0;
+			for (int i = 0; i < lines.Size; ++i) if ((int)(lines[i].b - buf) <= o) li = i;
+			return li;
+		};
+		// With upstream affinity, an offset at a soft wrap belongs to the end of
+		// the previous line (where the user clicked), not the start of the next.
+		auto caretLine = [&](int o, bool up) {
+			int li = lineOf(o);
+			if (up && li > 0 && (int)(lines[li].b - buf) == o && (int)(lines[li - 1].raw - buf) == o) --li;
+			return li;
+		};
+		ImVector<ImWidgetsTextGrapheme> lg;
+		auto lineGraphemes = [&](int li) {
+			const SlugBlockLine& L = lines[li];
+			ImWidgetsTextDirection const saved = GetStyle().TextDirection;
+			GetStyle().TextDirection = L.rtl ? ImWidgetsTextDirection_RTL : ImWidgetsTextDirection_LTR;
+			CalcTextGraphemes(font, size_lp, L.b, L.raw, lg);
+			GetStyle().TextDirection = saved;
+		};
+		auto caretX = [&](int o, bool up) {           // x relative to the text area
+			if (lines.Size == 0) return 0.0f;
+			int li = caretLine(o, up);
+			const SlugBlockLine& L = lines[li];
+			if (L.raw == L.b) return L.x;               // empty line: its aligned start
+			lineGraphemes(li);
+			return L.x + TextCaretX(lg, o - (int)(L.b - buf), up);
+		};
+		auto hitAt = [&](float x, float yInText, bool* up) {
+			if (lines.Size == 0) { *up = false; return 0; }
+			int li = ImClamp((int)ImFloor(yInText / lineAdv), 0, lines.Size - 1);
+			const SlugBlockLine& L = lines[li];
+			*up = false;
+			if (L.raw == L.b) return (int)(L.b - buf);
+			lineGraphemes(li);
+			return (int)(L.b - buf) + TextHitTest(lg, x - L.x, (int)(L.raw - L.b), up);
+		};
+		auto prevG = [&](int o) { if (o <= 0) return 0; --o; while (o > 0 && !(brk[o] & DwShaperBreak_Grapheme)) --o; return o; };
+		auto nextG = [&](int o) { if (o >= len) return len; ++o; while (o < len && !(brk[o] & DwShaperBreak_Grapheme)) ++o; return o; };
+
+		const float textLeft = frame.Min.x + padX, textTop = frame.Min.y + padY;
+		if (active)
+		{
+			const ImGuiKey owned[] = { ImGuiKey_LeftArrow, ImGuiKey_RightArrow, ImGuiKey_UpArrow, ImGuiKey_DownArrow, ImGuiKey_Home, ImGuiKey_End,
+			                           ImGuiKey_PageUp, ImGuiKey_PageDown, ImGuiKey_Backspace, ImGuiKey_Delete, ImGuiKey_Enter, ImGuiKey_KeypadEnter, ImGuiKey_Escape };
+			for (ImGuiKey k : owned) ImGui::SetKeyOwner(k, id);
+			g.WantTextInputNextFrame = 1;
+			auto snap = [&](int o) { o = ImClamp(o, 0, len); while (o > 0 && o < len && !(brk[o] & DwShaperBreak_Grapheme)) --o; return o; };
+			st->caret = snap(st->caret); st->anchor = snap(st->anchor);
+
+			if (!io.MouseDown[0]) st->selectAllLock = false;
+			if (clicked && io.MouseClickedCount[0] >= 2) { st->anchor = 0; st->caret = len; st->selectAllLock = true; }
+			else if (io.MouseDown[0] && !st->selectAllLock && (clicked || ImGui::IsMouseDragging(ImGuiMouseButton_Left)))
+			{
+				st->caret = hitAt(io.MousePos.x - textLeft, io.MousePos.y - textTop + st->scroll, &st->upstream);
+				if (clicked && !io.KeyShift) st->anchor = st->caret;
+				st->desiredX = -1.0f;
+				st->blinkStart = ImGui::GetTime();
+			}
+			const bool justActivated = g.ActiveIdIsJustActivated;
+			auto pressed = [&](ImGuiKey k) { return !justActivated && ImGui::IsKeyPressed(k, ImGuiInputFlags_Repeat, id); };
+			const bool ctrl = io.ConfigMacOSXBehaviors ? io.KeySuper : (io.KeyCtrl && !io.KeyAlt);
+			const bool shift = io.KeyShift;
+			auto moveTo = [&](int o, bool keepDesired = false) {
+				st->caret = o; st->upstream = false; if (!shift) st->anchor = o;
+				if (!keepDesired) st->desiredX = -1.0f;
+				st->blinkStart = ImGui::GetTime();
+			};
+			auto eraseRange = [&](int a, int b) {
+				if (a > b) { int t = a; a = b; b = t; }
+				a = ImClamp(a, 0, len); b = ImClamp(b, 0, len);
+				if (a == b || readOnly) return;
+				memmove(buf + a, buf + b, (size_t)(len - b + 1));
+				len -= (b - a);
+				st->caret = st->anchor = a; st->upstream = false; st->desiredX = -1.0f;
+				changed = true;
+				relayout();
+			};
+			auto insertText = [&](const char* t, int n) {
+				if (readOnly || n <= 0) return;
+				if (st->caret != st->anchor) eraseRange(st->caret, st->anchor);
+				if (len + n >= (int)buf_size) n = (int)buf_size - 1 - len;
+				while (n > 0 && (t[n] & 0xC0) == 0x80) --n;
+				if (n <= 0) return;
+				memmove(buf + st->caret + n, buf + st->caret, (size_t)(len - st->caret + 1));
+				memcpy(buf + st->caret, t, (size_t)n);
+				len += n;
+				st->caret += n; st->anchor = st->caret; st->upstream = false; st->desiredX = -1.0f;
+				changed = true;
+				relayout();
+			};
+			int selA = 0, selB = 0;
+			auto refreshSel = [&]() { selA = ImMin(st->caret, st->anchor); selB = ImMax(st->caret, st->anchor); };
+			refreshSel();
+			const bool lineRtl = lines.Size && lines[lineOf(st->caret)].rtl;
+			if (pressed(ImGuiKey_LeftArrow))
+			{
+				if (!shift && selA != selB) moveTo(lineRtl ? selB : selA);
+				else moveTo(lineRtl ? nextG(st->caret) : prevG(st->caret));
+			}
+			if (pressed(ImGuiKey_RightArrow))
+			{
+				if (!shift && selA != selB) moveTo(lineRtl ? selA : selB);
+				else moveTo(lineRtl ? prevG(st->caret) : nextG(st->caret));
+			}
+			auto vertical = [&](int dLines) {
+				if (lines.Size == 0) return;
+				if (st->desiredX < 0.0f) st->desiredX = caretX(st->caret, st->upstream);
+				int li = ImClamp(caretLine(st->caret, st->upstream) + dLines, 0, lines.Size - 1);
+				bool up = false;
+				int o = hitAt(st->desiredX, lines[li].y + lineAdv * 0.5f, &up);
+				moveTo(o, true);
+				st->upstream = up;
+			};
+			if (pressed(ImGuiKey_UpArrow))   vertical(-1);
+			if (pressed(ImGuiKey_DownArrow)) vertical(+1);
+			const int pageLines = ImMax(1, (int)(innerH / lineAdv) - 1);
+			if (pressed(ImGuiKey_PageUp))   vertical(-pageLines);
+			if (pressed(ImGuiKey_PageDown)) vertical(+pageLines);
+			if (pressed(ImGuiKey_Home)) { if (ctrl || !lines.Size) moveTo(0); else moveTo((int)(lines[lineOf(st->caret)].b - buf)); }
+			if (pressed(ImGuiKey_End))  { if (ctrl || !lines.Size) moveTo(len); else moveTo((int)(lines[lineOf(st->caret)].raw - buf)); }
+			if (ctrl && pressed(ImGuiKey_A)) { st->anchor = 0; st->caret = len; }
+			refreshSel();
+			if (ctrl && (pressed(ImGuiKey_C) || pressed(ImGuiKey_X)) && selA != selB)
+			{
+				ImVector<char> clip; clip.resize(selB - selA + 1);
+				memcpy(clip.Data, buf + selA, (size_t)(selB - selA)); clip[selB - selA] = 0;
+				ImGui::SetClipboardText(clip.Data);
+				if (ImGui::IsKeyPressed(ImGuiKey_X, ImGuiInputFlags_None, id)) eraseRange(selA, selB);
+			}
+			if (ctrl && pressed(ImGuiKey_V))
+				if (const char* clip = ImGui::GetClipboardText())
+				{
+					// normalise CRLF / CR to LF
+					ImVector<char> t;
+					for (const char* q = clip; *q; ++q) { if (*q == '\r') { t.push_back('\n'); if (q[1] == '\n') ++q; } else t.push_back(*q); }
+					insertText(t.Data, t.Size);
+				}
+			refreshSel();
+			if (pressed(ImGuiKey_Backspace))
+			{
+				if (selA != selB) eraseRange(selA, selB);
+				else if (st->caret > 0) eraseRange(prevG(st->caret), st->caret);
+			}
+			refreshSel();
+			if (pressed(ImGuiKey_Delete))
+			{
+				if (selA != selB) eraseRange(selA, selB);
+				else if (st->caret < len) eraseRange(st->caret, nextG(st->caret));
+			}
+			bool leaving = false;
+			if (pressed(ImGuiKey_Enter) || pressed(ImGuiKey_KeypadEnter)) insertText("\n", 1);
+			if (pressed(ImGuiKey_Escape)) { leaving = true; ImGui::ClearActiveID(); }
+			if (!ctrl && !justActivated && !leaving)
+				for (int qi = 0; qi < io.InputQueueCharacters.Size; ++qi)
+				{
+					unsigned int c = (unsigned int)io.InputQueueCharacters[qi];
+					if (c < 0x20 || c == 0x7F) continue;
+					char u[5] = {};
+					int n = ImTextCharToUtf8(u, c);
+					insertText(u, n);
+				}
+			io.InputQueueCharacters.resize(0);
+			if (changed) ImGui::MarkItemEdited(id);
+
+			// Keep the caret's line visible.
+			if (lines.Size)
+			{
+				const float cy = lines[caretLine(st->caret, st->upstream)].y;
+				if (cy < st->scroll) st->scroll = cy;
+				if (cy + lineAdv > st->scroll + innerH) st->scroll = cy + lineAdv - innerH;
+			}
+		}
+		if (hovered && io.MouseWheel != 0.0f) st->scroll -= io.MouseWheel * lineAdv * 3.0f;
+		st->scroll = ImClamp(st->scroll, 0.0f, ImMax(0.0f, blockH - innerH));
+
+		// Draw: frame, selection (per line, per visual run), text, caret.
+		const bool isActive = (g.ActiveId == id);
+		ImGui::RenderNavCursor(frame, id);
+		ImGui::RenderFrame(frame.Min, frame.Max, ImGui::GetColorU32(ImGuiCol_FrameBg), true, style.FrameRounding);
+		ImDrawList* dl = window->DrawList;
+		dl->PushClipRect(frame.Min + ImVec2(padX * 0.5f, padY * 0.5f), frame.Max - ImVec2(padX * 0.5f, padY * 0.5f), true);
+		ImFontBaked* baked = font->GetFontBaked(size_px);
+		const float ascent  = baked ? baked->Ascent  * (size_px / baked->Size) : size_px * 0.8f;
+		const float descent = baked ? -baked->Descent * (size_px / baked->Size) : size_px * 0.2f;
+		const float baselineOff = (lineAdv - (ascent + descent)) * 0.5f + ascent;
+		const int selA = ImMin(st->caret, st->anchor), selB = ImMax(st->caret, st->anchor);
+		ImWidgetsTextDirection const savedDir = GetStyle().TextDirection;
+		for (int i = 0; i < lines.Size; ++i)
+		{
+			const SlugBlockLine& L = lines[i];
+			const float ly = textTop + L.y - st->scroll;
+			if (ly + lineAdv < frame.Min.y || ly > frame.Max.y) continue;
+			const int lb = (int)(L.b - buf), lr = (int)(L.raw - buf);
+			if (isActive && selA != selB && selA <= lr && selB >= lb && L.raw > L.b)
+			{
+				lineGraphemes(i);
+				ImVector<ImVec2> sel;
+				TextSelectionRanges(lg, ImMax(selA, lb) - lb, ImMin(selB, lr) - lb, sel);
+				for (int k = 0; k < sel.Size; ++k)
+					dl->AddRectFilled(ImVec2(textLeft + L.x + sel[k].x, ly), ImVec2(textLeft + L.x + sel[k].y, ly + lineAdv), ImGui::GetColorU32(ImGuiCol_TextSelectedBg));
+			}
+			if (L.e > L.b)
+			{
+				GetStyle().TextDirection = L.rtl ? ImWidgetsTextDirection_RTL : ImWidgetsTextDirection_LTR;
+				DrawText(dl, font, size_lp, ImVec2(textLeft + L.x, ly + baselineOff), ImGui::GetColorU32(ImGuiCol_Text), L.b, L.e);
+			}
+		}
+		GetStyle().TextDirection = savedDir;
+		if (isActive && !readOnly)
+		{
+			const int li = lines.Size ? caretLine(st->caret, st->upstream) : 0;
+			const float cx = textLeft + caretX(st->caret, st->upstream);
+			const float cy = textTop + (lines.Size ? lines[li].y : 0.0f) - st->scroll;
+			const bool blinkOn = !io.ConfigInputTextCursorBlink || ImFmod((float)(ImGui::GetTime() - st->blinkStart), 1.2f) < 0.8f;
+			if (blinkOn)
+				dl->AddLine(ImVec2(cx, cy + (lineAdv - size_px) * 0.5f), ImVec2(cx, cy + (lineAdv + size_px) * 0.5f),
+				            ImGui::GetColorU32(ImGuiCol_InputTextCursor), ImMax(1.0f, style.InputTextCursorSize));
+			ImGuiPlatformImeData* ime = &g.PlatformImeData;
+			ime->WantVisible = true; ime->WantTextInput = true;
+			ime->InputPos = ImVec2(cx - 1.0f, cy); ime->InputLineHeight = lineAdv;
+			ime->ViewportId = window->Viewport->ID;
+		}
+		dl->PopClipRect();
+		if (labelSize.x > 0.0f)
+			ImGui::RenderText(ImVec2(frame.Max.x + style.ItemInnerSpacing.x, frame.Min.y + style.FramePadding.y), label);
 		return changed;
 	}
 

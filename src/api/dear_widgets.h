@@ -4741,6 +4741,13 @@ namespace ImWidgets{
 	// when Enter is pressed instead).
 	IMGUI_API bool InputTextShaped( char const* label, char* buf, size_t buf_size, ImFont* font = nullptr,
 	                                float font_size = 0.0f, ImGuiInputTextFlags flags = 0 );
+	// Multi-line version: the DrawTextBlock layout (wrapping at the inner
+	// width, '\n' paragraphs each with its own direction), Up / Down keep the
+	// horizontal position, PageUp / PageDown, Ctrl+Home / End, Enter inserts a
+	// new paragraph, the mouse wheel and the caret scroll vertically. size in lp
+	// (0 = item width x 8 lines).
+	IMGUI_API bool InputTextMultilineShaped( char const* label, char* buf, size_t buf_size, ImVec2 const& size = ImVec2( 0, 0 ),
+	                                         ImFont* font = nullptr, float font_size = 0.0f, ImGuiInputTextFlags flags = 0 );
 	// Same as CalcTextSize( ... ).x (CalcTextSize shapes: bidi, Arabic forms, ligatures, kerning).
 	// Kept for source compatibility.
 	IMGUI_API float CalcShapedTextWidth( ImFont* font, float font_size, char const* text, char const* text_end = nullptr );

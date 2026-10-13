@@ -137,6 +137,20 @@ out mixed strings correctly. Applies to `DrawText`, `CalcTextSize`,
 `DrawTextBlock`, `CalcTextGraphemes` and `InputTextShaped`. Strings the primary
 font fully covers take the single-font path at no extra cost.
 
+### `InputTextMultilineShaped`
+```cpp
+bool InputTextMultilineShaped( char const* label, char* buf, size_t buf_size, ImVec2 const& size = ImVec2( 0, 0 ),
+                               ImFont* font = nullptr, float font_size = 0.0f, ImGuiInputTextFlags flags = 0 );
+```
+The multi-line version, laid out like `DrawTextBlock`: lines wrap at the inner
+width (UAX #14), every `
+` paragraph resolves its own direction and is
+aligned to its start. Up / Down keep the horizontal position (a soft wrap keeps
+the caret at the end of the clicked line), PageUp / PageDown, Home / End per
+line, Ctrl+Home / End for the whole text, Enter inserts a paragraph break,
+pasted CRLF becomes LF, the view scrolls with the caret and the mouse wheel.
+`size` is in lp (0 = item width x 8 lines).
+
 ### Caret, hit-testing and selection
 ```cpp
 float CalcTextGraphemes  ( ImFont*, float font_size, char const* text, char const* text_end,

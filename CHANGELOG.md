@@ -374,7 +374,9 @@ boxes; `TextCaretX` / `TextHitTest` (with caret affinity at bidi run
 boundaries), `TextSelectionRanges` and `TextPrev/NextGrapheme` are the building
 blocks for editing shaped, mixed-direction text. `InputTextShaped` is a single-line
 input field built on them: shaped, bidi-ordered, grapheme-aware editing with
-selection, clipboard, scrolling and IME positioning.
+selection, clipboard, scrolling and IME positioning. `InputTextMultilineShaped` adds wrapped,
+multi-paragraph editing with per-paragraph direction and vertical caret
+movement.
 
 #### Text on any backend
 
