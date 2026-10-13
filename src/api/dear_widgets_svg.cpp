@@ -163,6 +163,7 @@ static bool DW_SvgNum(const char*& s, float& out)
         if (*q >= '0' && *q <= '9') { while (*q >= '0' && *q <= '9') { if (ex < 300) ex = ex * 10 + (*q - '0'); ++q; } v *= pow(10.0, es * ex); p = q; }
     }
     (void)e;
+    if (v > 1e30) v = 1e30;  // keep geometry finite
     out = (float)(sign * v);
     s = p;
     return true;
@@ -232,6 +233,7 @@ struct DW_SvgPaintRef
 {
     int      kind = DW_SvgPaint_Unset;
     ImU32    color = IM_COL32_BLACK; // straight alpha
+    bool     hasFallback = false;    // url(#id) <color>
     char     url[64] = {};
 };
 
@@ -287,8 +289,8 @@ static void DW_SvgParsePaint(const char* s, DW_SvgPaintRef& p)
 {
     s = DW_SvgWs(s);
     if (strncmp(s, "none", 4) == 0) { p.kind = DW_SvgPaint_None; return; }
-    if (strncmp(s, "currentColor", 12) == 0) { p.kind = DW_SvgPaint_Current; return; }
-    if (strncmp(s, "inherit", 7) == 0) { p.kind = DW_SvgPaint_Unset; return; }
+    if (ImStrnicmp(s, "currentColor", 12) == 0) { p.kind = DW_SvgPaint_Current; return; }
+    if (strncmp(s, "inherit", 7) == 0) return; // the style already holds the parent's value
     if (strncmp(s, "url(", 4) == 0)
     {
         const char* b = s + 4;
@@ -301,7 +303,8 @@ static void DW_SvgParsePaint(const char* s, DW_SvgPaintRef& p)
         // fallback colour after the url: "url(#g) red"
         const char* after = strchr(s, ')');
         ImU32 fb;
-        if (after && DW_SvgParseColor(after + 1, fb)) p.color = fb;
+        p.hasFallback = false;
+        if (after && DW_SvgParseColor(after + 1, fb)) { p.color = fb; p.hasFallback = true; }
         return;
     }
     ImU32 c;
@@ -353,7 +356,8 @@ struct DW_SvgGradient
     int   type;                 // ImWidgetsPaintType_LinearGradient / _RadialGradient
     bool  userSpace;            // gradientUnits="userSpaceOnUse"
     bool  hasX1, hasY1, hasX2, hasY2, hasCx, hasCy, hasR, hasFx, hasFy, hasFr, hasUnits, hasSpread, hasTransform;
-    float x1, y1, x2, y2, cx, cy, r, fx, fy, fr;
+    float x1, y1, x2, y2, cx, cy, r, fx, fy, fr;     // raw numbers (see *Pct)
+    bool  x1Pct, y1Pct, x2Pct, y2Pct, cxPct, cyPct, rPct, fxPct, fyPct, frPct;
     int   spread;
     ImWidgetsTransform2D transform;
     char  href[64];
@@ -363,7 +367,8 @@ struct DW_SvgGradient
 struct DW_SvgStyle
 {
     DW_SvgPaintRef fill, stroke;
-    float  fillOpacity = 1.0f, strokeOpacity = 1.0f, opacity = 1.0f;
+    float  fillOpacity = 1.0f, strokeOpacity = 1.0f, opacity = 1.0f; // opacity: ancestors x own
+    float  ownOpacity = 1.0f;
     float  strokeWidth = 1.0f, miterLimit = 4.0f, dashOffset = 0.0f;
     int    fillRule = ImWidgetsFillRule_NonZero;
     int    cap = ImWidgetsCap_Butt, join = ImWidgetsJoin_Miter;
@@ -373,10 +378,11 @@ struct DW_SvgStyle
 
 struct DW_SvgItem
 {
-    ImWidgetsPath path;     // in document user space (element transforms applied)
-    DW_SvgStyle   style;
-    float         strokeScale; // scale of the element's transform (stroke width is in its local units)
-    ImRect        bbox;        // for objectBoundingBox gradients (document space)
+    ImWidgetsPath        path;        // in document user space (element transforms applied)
+    DW_SvgStyle          style;
+    float                strokeScale; // scale of the element's transform (stroke width is in its local units)
+    ImRect               bbox;        // object bounding box in the element's local space (objectBoundingBox gradients)
+    ImWidgetsTransform2D xf;          // element user space -> document space (gradients live in user space)
 };
 
 } // namespace ImWidgets
@@ -404,7 +410,7 @@ static void DW_SvgApplyProp(DW_SvgStyle& st, const char* name, const char* v)
     else if (!strcmp(name, "stroke")) DW_SvgParsePaint(v, st.stroke);
     else if (!strcmp(name, "fill-opacity")) { float f; const char* q = v; if (DW_SvgNum(q, f)) st.fillOpacity = ImSaturate(*q == '%' ? f * 0.01f : f); }
     else if (!strcmp(name, "stroke-opacity")) { float f; const char* q = v; if (DW_SvgNum(q, f)) st.strokeOpacity = ImSaturate(*q == '%' ? f * 0.01f : f); }
-    else if (!strcmp(name, "opacity")) { float f; const char* q = v; if (DW_SvgNum(q, f)) st.opacity *= ImSaturate(*q == '%' ? f * 0.01f : f); }
+    else if (!strcmp(name, "opacity")) { float f; const char* q = v; if (DW_SvgNum(q, f)) st.ownOpacity = ImSaturate(*q == '%' ? f * 0.01f : f); }
     else if (!strcmp(name, "stroke-width")) st.strokeWidth = DW_SvgLength(v, st.strokeWidth);
     else if (!strcmp(name, "stroke-miterlimit")) { float f; const char* q = v; if (DW_SvgNum(q, f)) st.miterLimit = ImMax(1.0f, f); }
     else if (!strcmp(name, "stroke-dashoffset")) st.dashOffset = DW_SvgLength(v, 0.0f);
@@ -419,7 +425,7 @@ static void DW_SvgApplyProp(DW_SvgStyle& st, const char* name, const char* v)
         while (st.dashCount < 16 && DW_SvgNum(q, f)) { if (f < 0) { st.dashCount = 0; return; } st.dashes[st.dashCount++] = f; if (f > 0) allZero = false; if (*q == '%') ++q; while (*q && *q != ',' && !isspace((unsigned char)*q) && !(*q >= '0' && *q <= '9') && *q != '.' && *q != '-') ++q; }
         if (allZero) st.dashCount = 0; // "0" is solid per SVG
     }
-    else if (!strcmp(name, "display")) st.display = !strstr(v, "none");
+    else if (!strcmp(name, "display")) { if (strstr(v, "none")) st.display = false; } // never re-shown below a hidden ancestor
     else if (!strcmp(name, "visibility")) st.visible = !(strstr(v, "hidden") || strstr(v, "collapse"));
 }
 
@@ -429,6 +435,7 @@ static void DW_SvgApplyStyle(DW_SvgStyle& st, const DW_SvgTag& tag)
     static const char* kProps[] = { "fill", "stroke", "fill-opacity", "stroke-opacity", "opacity", "stroke-width",
         "stroke-miterlimit", "stroke-dashoffset", "fill-rule", "stroke-linecap", "stroke-linejoin", "stroke-dasharray",
         "display", "visibility" };
+    st.ownOpacity = 1.0f;
     for (const char* k : kProps) DW_SvgApplyProp(st, k, tag.Get(k));
     if (const char* css = tag.Get("style"))
     {
@@ -438,7 +445,7 @@ static void DW_SvgApplyStyle(DW_SvgStyle& st, const DW_SvgTag& tag)
             while (*p == ' ' || *p == ';' || *p == '\t' || *p == '\n') ++p;
             const char* nb = p;
             while (*p && *p != ':' && *p != ';') ++p;
-            if (*p != ':') break;
+            if (*p != ':') { while (*p && *p != ';') ++p; continue; } // malformed declaration: skip it
             const char* ne = p; while (ne > nb && isspace((unsigned char)ne[-1])) --ne;
             ++p;
             while (*p == ' ') ++p;
@@ -497,7 +504,8 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
         if (tag.closing)
         {
             if (!strcmp(name, "linearGradient") || !strcmp(name, "radialGradient")) { curGrad = nullptr; continue; }
-            if (!strcmp(name, "defs")) { if (defsDepth > 0) --defsDepth; continue; }
+            if (!strcmp(name, "defs") || !strcmp(name, "symbol") || !strcmp(name, "clipPath") || !strcmp(name, "mask")
+                || !strcmp(name, "pattern") || !strcmp(name, "marker")) { if (defsDepth > 0) --defsDepth; continue; }
             if ((!strcmp(name, "g") || !strcmp(name, "svg") || !strcmp(name, "a") || !strcmp(name, "switch")) && stack.Size > 1)
             {
                 IM_DELETE(stack.back()); stack.pop_back();
@@ -522,19 +530,23 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
             const char* gt = tag.Get("gradientTransform");
             gdef->hasTransform = gt != nullptr;
             gdef->transform = DW_SvgParseTransform(gt);
-            auto num = [&](const char* n, bool& has, float& out, float def) {
+            // Keep the raw number and whether it was a percentage: the meaning
+            // depends on gradientUnits, known only after href resolution.
+            // Defaults are the spec's percentages (x2 = 100%, cx = cy = r = 50%).
+            auto num = [&](const char* n, bool& has, float& out, bool& pct, float defPct) {
                 const char* v = tag.Get(n); has = v != nullptr;
-                if (!v) { out = def; return; }
+                out = defPct; pct = true;
+                if (!v) return;
                 float f; const char* q = v;
-                if (!DW_SvgNum(q, f)) { out = def; has = false; return; }
-                out = (*q == '%') ? f * 0.01f : f;   // percentages: fractions (bbox units); user units: as is
+                if (!DW_SvgNum(q, f)) { has = false; return; }
+                out = f; pct = (*q == '%');
             };
-            num("x1", gdef->hasX1, gdef->x1, 0.0f); num("y1", gdef->hasY1, gdef->y1, 0.0f);
-            num("x2", gdef->hasX2, gdef->x2, 1.0f); num("y2", gdef->hasY2, gdef->y2, 0.0f);
-            num("cx", gdef->hasCx, gdef->cx, 0.5f); num("cy", gdef->hasCy, gdef->cy, 0.5f);
-            num("r",  gdef->hasR,  gdef->r,  0.5f);
-            num("fx", gdef->hasFx, gdef->fx, 0.5f); num("fy", gdef->hasFy, gdef->fy, 0.5f);
-            num("fr", gdef->hasFr, gdef->fr, 0.0f);
+            num("x1", gdef->hasX1, gdef->x1, gdef->x1Pct, 0.0f);   num("y1", gdef->hasY1, gdef->y1, gdef->y1Pct, 0.0f);
+            num("x2", gdef->hasX2, gdef->x2, gdef->x2Pct, 100.0f); num("y2", gdef->hasY2, gdef->y2, gdef->y2Pct, 0.0f);
+            num("cx", gdef->hasCx, gdef->cx, gdef->cxPct, 50.0f);  num("cy", gdef->hasCy, gdef->cy, gdef->cyPct, 50.0f);
+            num("r",  gdef->hasR,  gdef->r,  gdef->rPct,  50.0f);
+            num("fx", gdef->hasFx, gdef->fx, gdef->fxPct, 50.0f);  num("fy", gdef->hasFy, gdef->fy, gdef->fyPct, 50.0f);
+            num("fr", gdef->hasFr, gdef->fr, gdef->frPct, 0.0f);
             doc->gradients.push_back(gdef);
             curGrad = tag.selfClosing ? nullptr : gdef;
             continue;
@@ -567,13 +579,27 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
             }
             continue;
         }
-        if (!strcmp(name, "defs")) { if (!tag.selfClosing) ++defsDepth; continue; }
-        if (defsDepth > 0) continue; // shapes inside <defs> are not rendered
+        // Not rendered directly: defs and the referenced-only containers
+        // (clip paths, masks, symbols, patterns, markers are unsupported, so
+        // their content must not show as plain shapes).
+        if (!strcmp(name, "defs") || !strcmp(name, "symbol") || !strcmp(name, "clipPath") || !strcmp(name, "mask")
+            || !strcmp(name, "pattern") || !strcmp(name, "marker")) { if (!tag.selfClosing) ++defsDepth; continue; }
+        if (defsDepth > 0)
+        {
+            // Keep the group stack balanced: a group opened in a skipped region
+            // still gets popped by its closing tag.
+            if ((!strcmp(name, "g") || !strcmp(name, "svg") || !strcmp(name, "a") || !strcmp(name, "switch")) && !tag.selfClosing)
+            {
+                Frame* f = IM_NEW(Frame)(); f->style = stack.back()->style; f->xf = stack.back()->xf; stack.push_back(f);
+            }
+            continue;
+        }
 
         // Inherited state for this element.
         Frame* parent = stack.back();
         DW_SvgStyle st = parent->style;
         DW_SvgApplyStyle(st, tag);
+        st.opacity = parent->style.opacity * st.ownOpacity;
         ImWidgetsTransform2D xf = parent->xf * DW_SvgParseTransform(tag.Get("transform"));
 
         if (!strcmp(name, "svg"))
@@ -656,12 +682,20 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
 
         if (!shape || p.Subpaths.Size == 0 || !st.display || !st.visible) continue;
         DW_SvgItem* item = IM_NEW(DW_SvgItem)();
+        // Local bounding box from the flattened outline (control points overshoot curves).
+        {
+            ImVector<ImVec2> fp; ImVector<int> fc;
+            p.Flatten(fp, fc, nullptr, 0.05f);
+            ImRect bb(ImVec2(FLT_MAX, FLT_MAX), ImVec2(-FLT_MAX, -FLT_MAX));
+            for (int k = 0; k < fp.Size; ++k) bb.Add(fp[k]);
+            item->bbox = bb;
+        }
+        item->xf = xf;
         p.Transform(xf);
         item->path = p;
         p.Points.clear(); p.Subpaths.clear();
         item->style = st;
         item->strokeScale = ImSqrt(ImFabs(xf.m[0] * xf.m[3] - xf.m[1] * xf.m[2]));
-        item->bbox = item->path.GetBounds();
         doc->items.push_back(item);
     }
     while (stack.Size) { IM_DELETE(stack.back()); stack.pop_back(); }
@@ -681,11 +715,14 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
                 if (!g->hasUnits && b->hasUnits) { g->userSpace = b->userSpace; g->hasUnits = true; }
                 if (!g->hasSpread && b->hasSpread) { g->spread = b->spread; g->hasSpread = true; }
                 if (!g->hasTransform && b->hasTransform) { g->transform = b->transform; g->hasTransform = true; }
-                if (!g->hasX1 && b->hasX1) { g->x1 = b->x1; g->hasX1 = true; } if (!g->hasY1 && b->hasY1) { g->y1 = b->y1; g->hasY1 = true; }
-                if (!g->hasX2 && b->hasX2) { g->x2 = b->x2; g->hasX2 = true; } if (!g->hasY2 && b->hasY2) { g->y2 = b->y2; g->hasY2 = true; }
-                if (!g->hasCx && b->hasCx) { g->cx = b->cx; g->hasCx = true; } if (!g->hasCy && b->hasCy) { g->cy = b->cy; g->hasCy = true; }
-                if (!g->hasR && b->hasR) { g->r = b->r; g->hasR = true; }
-                if (!g->hasFr && b->hasFr) { g->fr = b->fr; g->hasFr = true; }
+                if (!g->hasX1 && b->hasX1) { g->x1 = b->x1; g->x1Pct = b->x1Pct; g->hasX1 = true; }
+                if (!g->hasY1 && b->hasY1) { g->y1 = b->y1; g->y1Pct = b->y1Pct; g->hasY1 = true; }
+                if (!g->hasX2 && b->hasX2) { g->x2 = b->x2; g->x2Pct = b->x2Pct; g->hasX2 = true; }
+                if (!g->hasY2 && b->hasY2) { g->y2 = b->y2; g->y2Pct = b->y2Pct; g->hasY2 = true; }
+                if (!g->hasCx && b->hasCx) { g->cx = b->cx; g->cxPct = b->cxPct; g->hasCx = true; }
+                if (!g->hasCy && b->hasCy) { g->cy = b->cy; g->cyPct = b->cyPct; g->hasCy = true; }
+                if (!g->hasR && b->hasR)   { g->r = b->r;   g->rPct = b->rPct;   g->hasR = true; }
+                if (!g->hasFr && b->hasFr) { g->fr = b->fr; g->frPct = b->frPct; g->hasFr = true; }
                 break;
             }
         }
@@ -717,7 +754,13 @@ static bool DW_SvgMakePaint(const ImWidgetsSvg* doc, const DW_SvgItem& it, const
     const DW_SvgGradient* g = nullptr;
     for (int i = 0; i < doc->gradients.Size; ++i)
         if (!strcmp(doc->gradients[i]->id, ref.url)) { g = doc->gradients[i]; break; }
-    if (!g || g->stops.Size == 0) { out = ImWidgetsPaint::Solid(withAlpha(ref.color, opacity)); return ref.color != 0; }
+    // Missing gradient (or no stops): the fallback colour if one was given, else nothing.
+    if (!g || g->stops.Size == 0)
+    {
+        if (!ref.hasFallback) return false;
+        out = ImWidgetsPaint::Solid(withAlpha(ref.color, opacity));
+        return true;
+    }
     if (g->stops.Size == 1) { out = ImWidgetsPaint::Solid(withAlpha(g->stops[0].Color, opacity)); return true; }
 
     // Stops with opacity applied; the caller's buffer outlives the draw call.
@@ -729,22 +772,32 @@ static bool DW_SvgMakePaint(const ImWidgetsSvg* doc, const DW_SvgItem& it, const
     p.Stops = stopsBuf.Data;
     p.StopCount = g->stops.Size;
     p.Spread = g->spread;
-    // Gradient space -> document space: objectBoundingBox maps the unit square
-    // onto the element's bbox; then gradientTransform; then document -> screen.
-    ImWidgetsTransform2D unitToDoc;
+    // Gradient space lives in the element's user space (its transform
+    // included): objectBoundingBox maps the unit square onto the element's
+    // local bbox; then gradientTransform; then element -> document -> screen.
+    ImWidgetsTransform2D unitToLocal;
     if (!g->userSpace)
-        unitToDoc = ImWidgetsTransform2D(it.bbox.GetWidth(), 0, 0, it.bbox.GetHeight(), it.bbox.Min.x, it.bbox.Min.y);
-    p.Transform = docToScreen * unitToDoc * g->transform;
+    {
+        // A zero-width or zero-height box has no gradient space: draw nothing (spec).
+        if (it.bbox.GetWidth() <= 0.0f || it.bbox.GetHeight() <= 0.0f) return false;
+        unitToLocal = ImWidgetsTransform2D(it.bbox.GetWidth(), 0, 0, it.bbox.GetHeight(), it.bbox.Min.x, it.bbox.Min.y);
+    }
+    p.Transform = docToScreen * it.xf * unitToLocal * g->transform;
+    // Resolve coordinates: in bbox units percentages are fractions; in user
+    // space they are percentages of the viewport (r: of its normalised diagonal).
+    const float vw = doc->viewBox.GetWidth(), vh = doc->viewBox.GetHeight();
+    const float vd = ImSqrt((vw * vw + vh * vh) * 0.5f);
+    auto res = [&](float v, bool pct, float ref) { return pct ? (g->userSpace ? v * 0.01f * ref : v * 0.01f) : v; };
     if (g->type == ImWidgetsPaintType_LinearGradient)
     {
-        p.P0 = ImVec2(g->x1, g->y1);
-        p.P1 = ImVec2(g->x2, g->y2);
+        p.P0 = ImVec2(res(g->x1, g->x1Pct, vw), res(g->y1, g->y1Pct, vh));
+        p.P1 = ImVec2(res(g->x2, g->x2Pct, vw), res(g->y2, g->y2Pct, vh));
     }
     else
     {
-        p.P0 = ImVec2(g->cx, g->cy); // focal point not supported: uses the centre
-        p.R0 = g->fr;
-        p.R1 = g->r;
+        p.P0 = ImVec2(res(g->cx, g->cxPct, vw), res(g->cy, g->cyPct, vh)); // focal point not supported: uses the centre
+        p.R0 = res(g->fr, g->frPct, vd);
+        p.R1 = res(g->r, g->rPct, vd);
     }
     out = p;
     return true;

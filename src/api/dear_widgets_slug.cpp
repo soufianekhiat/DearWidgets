@@ -7179,6 +7179,7 @@ namespace ImWidgets {
 		bool    upstream;
 		float   scroll;       // horizontal scroll in pixels
 		double  blinkStart;
+		bool    selectAllLock; // double-click selected all: ignore mouse until release
 	};
 	static ImVector<SlugInputState> s_inputStates;
 
@@ -7186,7 +7187,7 @@ namespace ImWidgets {
 	{
 		for (int i = 0; i < s_inputStates.Size; ++i)
 			if (s_inputStates[i].id == id) return &s_inputStates[i];
-		SlugInputState st = { id, 0, 0, false, 0.0f, 0.0 };
+		SlugInputState st = { id, 0, 0, false, 0.0f, 0.0, false };
 		s_inputStates.push_back(st);
 		return &s_inputStates.back();
 	}
@@ -7249,29 +7250,53 @@ namespace ImWidgets {
 
 		if (active)
 		{
-			ImGui::SetActiveIdUsingAllKeyboardKeys();
+			// Own only the editing keys (like ImGui::InputText): Tab, Ctrl+Tab and
+			// application shortcuts keep working.
+			const ImGuiKey owned[] = { ImGuiKey_LeftArrow, ImGuiKey_RightArrow, ImGuiKey_Home, ImGuiKey_End,
+			                           ImGuiKey_Backspace, ImGuiKey_Delete, ImGuiKey_Enter, ImGuiKey_KeypadEnter, ImGuiKey_Escape };
+			for (ImGuiKey k : owned) ImGui::SetKeyOwner(k, id);
 			g.WantTextInputNextFrame = 1;
-			st->caret = ImClamp(st->caret, 0, len); st->anchor = ImClamp(st->anchor, 0, len);
+
+			// The buffer may have been changed by someone else (another widget
+			// editing the same text): keep the caret on a grapheme boundary.
+			auto snapToBoundary = [&](int o) {
+				o = ImClamp(o, 0, len);
+				int best = (o == len) ? len : 0;
+				for (int i = 0; i < gr.Size; ++i) { if (gr[i].Begin <= o) best = gr[i].Begin; }
+				return (o == len) ? len : best;
+			};
+			st->caret = snapToBoundary(st->caret); st->anchor = snapToBoundary(st->anchor);
 
 			// Mouse: click places the caret (Shift extends), drag selects, double-click selects all.
-			if (io.MouseDown[0] && (clicked || ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0f)) && g.ActiveId == id)
+			if (!io.MouseDown[0]) st->selectAllLock = false;
+			if (clicked && io.MouseClickedCount[0] >= 2) { st->anchor = 0; st->caret = len; st->selectAllLock = true; }
+			else if (io.MouseDown[0] && !st->selectAllLock && (clicked || ImGui::IsMouseDragging(ImGuiMouseButton_Left)) && g.ActiveId == id)
 			{
 				st->caret = TextHitTest(gr, io.MousePos.x - originX(), len, &st->upstream);
 				if (clicked && !io.KeyShift) st->anchor = st->caret;
 				st->blinkStart = ImGui::GetTime();
 			}
-			if (clicked && io.MouseClickedCount[0] >= 2) { st->anchor = 0; st->caret = len; }
+			// On the activation frame the key / character that activated the
+			// field (Enter, Space from navigation) must not also edit it.
+			const bool justActivated = g.ActiveIdIsJustActivated;
 
-			auto pressed = [&](ImGuiKey k) { return ImGui::IsKeyPressed(k, ImGuiInputFlags_Repeat, id); };
-			const bool ctrl = io.KeyCtrl, shift = io.KeyShift;
+			auto pressed = [&](ImGuiKey k) { return !justActivated && ImGui::IsKeyPressed(k, ImGuiInputFlags_Repeat, id); };
+			// Shortcut modifier: Ctrl (Cmd on macOS), but not AltGr (= Ctrl+Alt).
+			const bool ctrl = io.ConfigMacOSXBehaviors ? io.KeySuper : (io.KeyCtrl && !io.KeyAlt);
+			const bool shift = io.KeyShift;
 			auto moveTo = [&](int o) { st->caret = o; st->upstream = false; if (!shift) st->anchor = o; st->blinkStart = ImGui::GetTime(); };
+			// After any edit the grapheme layout is rebuilt, so a second edit in the
+			// same frame never works on stale offsets.
+			auto relayout = [&]() { textW = CalcTextGraphemes(font, size_lp, buf, buf + len, gr); };
 			auto eraseRange = [&](int a, int b) {
 				if (a > b) { int t = a; a = b; b = t; }
+				a = ImClamp(a, 0, len); b = ImClamp(b, 0, len);
 				if (a == b || readOnly) return;
 				memmove(buf + a, buf + b, (size_t)(len - b + 1));
 				len -= (b - a);
 				st->caret = st->anchor = a; st->upstream = false;
 				changed = true;
+				relayout();
 			};
 			auto insertText = [&](const char* t, int n) {
 				if (readOnly || n <= 0) return;
@@ -7285,8 +7310,10 @@ namespace ImWidgets {
 				len += n;
 				st->caret += n; st->anchor = st->caret; st->upstream = false;
 				changed = true;
+				relayout();
 			};
-			const int selA = ImMin(st->caret, st->anchor), selB = ImMax(st->caret, st->anchor);
+			int selA = ImMin(st->caret, st->anchor), selB = ImMax(st->caret, st->anchor);
+			auto refreshSel = [&]() { selA = ImMin(st->caret, st->anchor); selB = ImMax(st->caret, st->anchor); };
 
 			// Arrows move by grapheme in logical order; in an RTL paragraph the
 			// left arrow moves forward, as in browsers' logical caret movement.
@@ -7303,6 +7330,7 @@ namespace ImWidgets {
 			if (pressed(ImGuiKey_Home)) moveTo(0);
 			if (pressed(ImGuiKey_End))  moveTo(len);
 			if (ctrl && pressed(ImGuiKey_A)) { st->anchor = 0; st->caret = len; }
+			refreshSel();
 			if (ctrl && (pressed(ImGuiKey_C) || pressed(ImGuiKey_X)) && selA != selB)
 			{
 				ImVector<char> clip; clip.resize(selB - selA + 1);
@@ -7317,21 +7345,26 @@ namespace ImWidgets {
 					int n = 0; while (clip[n] && clip[n] != '\n' && clip[n] != '\r') ++n;
 					insertText(clip, n);
 				}
+			refreshSel();
 			if (pressed(ImGuiKey_Backspace))
 			{
 				if (selA != selB) eraseRange(selA, selB);
 				else if (st->caret > 0) eraseRange(TextPrevGrapheme(gr, st->caret), st->caret);
 			}
+			refreshSel();
 			if (pressed(ImGuiKey_Delete))
 			{
 				if (selA != selB) eraseRange(selA, selB);
 				else if (st->caret < len) eraseRange(st->caret, TextNextGrapheme(gr, st->caret, len));
 			}
-			if (pressed(ImGuiKey_Enter) || pressed(ImGuiKey_KeypadEnter)) { enter = true; ImGui::ClearActiveID(); }
-			if (pressed(ImGuiKey_Escape)) ImGui::ClearActiveID();
+			bool leaving = false;
+			if (pressed(ImGuiKey_Enter) || pressed(ImGuiKey_KeypadEnter)) { enter = true; leaving = true; ImGui::ClearActiveID(); }
+			if (pressed(ImGuiKey_Escape)) { leaving = true; ImGui::ClearActiveID(); }
 
-			// Typed characters (ignore control characters; Ctrl shortcuts handled above).
-			if (!ctrl)
+			// Typed characters: ignore control characters and Ctrl shortcuts, but
+			// keep AltGr (= Ctrl+Alt on Windows) characters such as @ { [ \ and
+			// whatever activated the field this frame.
+			if (!ctrl && !justActivated && !leaving)
 				for (int qi = 0; qi < io.InputQueueCharacters.Size; ++qi)
 				{
 					unsigned int c = (unsigned int)io.InputQueueCharacters[qi];
@@ -7343,10 +7376,7 @@ namespace ImWidgets {
 			io.InputQueueCharacters.resize(0);
 
 			if (changed)
-			{
-				textW = CalcTextGraphemes(font, size_lp, buf, buf + len, gr);
 				ImGui::MarkItemEdited(id);
-			}
 			// Keep the caret visible.
 			if (textW > innerW)
 			{
@@ -7360,6 +7390,8 @@ namespace ImWidgets {
 			}
 			else st->scroll = 0.0f;
 		}
+		else if (textW <= innerW) st->scroll = 0.0f;
+		else st->scroll = ImClamp(st->scroll, 0.0f, textW - innerW);
 
 		// Draw.
 		const bool isActive = (g.ActiveId == id);
