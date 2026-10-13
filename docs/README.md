@@ -16,6 +16,7 @@ the header wins and the documentation is a bug.
 | Goal | Start here |
 |---|---|
 | Use the library for the first time | [context.md](api/context.md) -- init order, feature flags, shaders |
+| See what 2.0 brings | [../RELEASE_NOTES.md](../RELEASE_NOTES.md) -- highlights and known limitations |
 | See what changed in 2.0.0 | [../CHANGELOG.md](../CHANGELOG.md) -- breaking changes first |
 | Understand which features need a custom shader backend | [compatibility.md](compatibility.md) |
 | Browse all widgets | [widgets.md](api/widgets.md) |

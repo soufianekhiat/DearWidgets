@@ -14,7 +14,8 @@ The version is exposed by the public header:
 ## 2.0.0 -- 2026-09-18
 
 First tagged release. 2.0.0 freezes the public API: names, argument order, enum
-prefixes and type scope are now considered stable. Everything below is relative
+prefixes and type scope are now considered stable. A shorter, user-facing
+summary is in [RELEASE_NOTES.md](RELEASE_NOTES.md). Everything below is relative
 to the `refacto` branch state of 2026-04-19.
 
 ---
@@ -346,6 +347,17 @@ wrapped the size in `ImPlatform_LpToPx` should drop the wrap; `0` still means
 
 There are no compatibility aliases -- rename the call sites.
 
+#### 29. Double-click resets, Ctrl+click types
+
+Double-click on a slider, 2D pad, slider popup or dial now resets it to its
+default value, everywhere. Typed numeric input, which some of them opened on
+double-click, moved to Ctrl+click (as `ImGui::SliderFloat` does).
+
+#### 30. `DrawDropShadowRect` / `DrawInnerGlowRect` removed
+
+The stacked-alpha shadow and glow helpers are gone. Draw the shadow with your
+own blurred texture, or with a gradient `PathFill` around the rect.
+
 ---
 
 ### Added
@@ -395,7 +407,8 @@ New `ImWidgetsPath` (moveTo / lineTo / quadratic / cubic / SVG elliptical arc /
 Canvas2D arc / rect / round rect / ellipse, 2x3 transforms) with an SVG path
 data parser (`AddSvgPathData`), and `FillPolygons` / `PathFill` / `PathStroke`.
 Fills are anti-aliased, honour the SVG fill rules (nonzero / evenodd, holes,
-self-intersections) and never double-cover a pixel. Everything is ImDrawList
+self-intersections) and never double-cover a pixel; `PathContains` hit-tests a
+point with the same rule (Canvas2D `isPointInPath`). Everything is ImDrawList
 triangles, so it works on stock Dear ImGui. `ImWidgetsPaint` adds CSS / SVG gradient fills (linear,
 radial, conic; stops, hard stops, pad / repeat / reflect, gradient transform,
 sRGB / linear / OkLab / OkLCH / HSV interpolation). `PathStroke` also takes a paint
@@ -432,8 +445,7 @@ sets the paragraph direction. `CalcTextSize` measures the shaped glyphs, so it
 matches what `DrawText` draws.
 
 New `DrawTextBlock` / `CalcTextBlockSize` lay out multi-line paragraphs:
-UAX #14 line breaking, `
-` paragraphs with their own direction, per-line bidi,
+UAX #14 line breaking, `\n` paragraphs with their own direction, per-line bidi,
 `ImWidgetsTextLayout` (wrap width, start / end / left / right / center
 alignment, line height, underline / line-through / overline decorations,
 `MaxLines` line-clamp with an ellipsis).
@@ -459,6 +471,9 @@ alignment, line height, underline / line-through / overline decorations,
   a node without changing the curve's shape.
 - `TransformGizmo`: Ctrl snaps (10 lp grid, 15 degrees, 0.1 scale), Shift locks
   a translation to its dominant axis.
+- `RangeSlider*`: Ctrl+click edits both bounds as numbers, kept within
+  `[v_min, v_max]` with lower <= upper.
+- `BeginCanvas`: right drag pans (as well as middle drag and Shift+left drag).
 
 #### Version and licence banner
 
@@ -669,6 +684,15 @@ per effect through a `BG_EFFECT` define so only the requested variant compiles.
   is the baseline, but the `AddText` fallback treated it as the top.
 - **`PushDragGroup`** delivers each delta exactly once (the release frame used
   to re-apply the last delta to slots after the initiator).
+- **Marquee / lasso outline stayed put when the window scrolled**;
+  `BeginSelection` now moves the path with its area.
+- **`GradientDrop` stroke drew over other windows** (foreground draw list); it
+  is now clipped to the swatch in the window's draw list.
+- **Delta-E heat map ramps were wrong**: the viridis, turbo and magma
+  polynomials in `delta_e_compare` are replaced by the published fits.
+- **`SizeControl2D/3D` numeric row** was wider than its preview; the fields now
+  share the preview width.
+- **`PaintCanvas`** defaults to the soft brush.
 
 ---
 
@@ -704,6 +728,7 @@ Summarised here; see **Breaking changes** above for the details and migration.
 | `int colorSpace` parameter on `Draw*GradientTextGPU` | `ImWidgetsGradientInterp interp` |
 | `DrawLumianceBand` | `DrawLuminanceBand` (spelling; no alias) |
 | `ImWidgetsJoin_Mitter` | `ImWidgetsJoin_Miter` (spelling) |
+| `DrawDropShadowRect`, `DrawInnerGlowRect` | -- |
 
 ---
 

@@ -1,6 +1,6 @@
 # DearWidgets
 
-Advanced widgets and rendering utilities for [Dear ImGui](https://github.com/ocornut/imgui), built for graphics applications: color grading tools, image processing, 3D visualization, scientific plotting, and rich-text rendering.
+Advanced widgets and rendering utilities for [Dear ImGui](https://github.com/ocornut/imgui), built for graphics applications: color grading tools, image processing, 3D visualization, scientific plotting, and rich-text rendering -- with the web's text and vector model (bidi text, paragraphs, SVG paths and documents) on a plain `ImDrawList`.
 
 **Version 2.0.0** -- the public API is frozen. The header exposes
 `IMWIDGETS_VERSION` (`"2.0.0"`) and `IMWIDGETS_VERSION_NUM` (`20000`, i.e.
@@ -12,7 +12,8 @@ Advanced widgets and rendering utilities for [Dear ImGui](https://github.com/oco
 #endif
 ```
 
-See [CHANGELOG.md](CHANGELOG.md) for the 2.0.0 breaking changes and migration notes.
+See [RELEASE_NOTES.md](RELEASE_NOTES.md) for what 2.0 brings, and
+[CHANGELOG.md](CHANGELOG.md) for the full list of changes and migration notes.
 
 ![DearWidgets Style Integration](https://github.com/soufianekhiat/DearWidgetsImages/raw/main/Images/WithStyle.gif)
 
@@ -26,7 +27,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the 2.0.0 breaking changes and migration no
 - **SliderRing / SliderRingFloatEx / SliderSpline** -- arc and Bezier-track sliders
 - **SliderGradient / SliderGradientVertical / SliderGradientRing / SliderGradientArc / SliderSplineGradient** -- gradient-painted tracks, single handle, optional fill-up-to-cursor
 - **...Range variants** of each gradient slider -- two handles, gradient painted between them
-- **RangeSlider / RangeSliderVertical** -- plain two-handle range sliders
+- **RangeSlider / RangeSliderVertical** -- plain two-handle range sliders (Ctrl+click: type both bounds)
 - **SegmentedControl** -- mutually exclusive segment row
 - **DragFloatPrecise / DragFloatColorUnderline / DragFloatGradientUnderline** -- precision drag and grading-style drag fields
 - **NotchedDial / AngleDial / UpVector / UnitField** -- dials, direction picker, unit-aware field
@@ -68,7 +69,15 @@ See [CHANGELOG.md](CHANGELOG.md) for the 2.0.0 breaking changes and migration no
 - **ImTimeline** -- temporal timeline with playhead, authored keys, events and cache/history bands
 - **VectorDrawingTool** -- bezier path authoring canvas with zoom/pan, per-path cap/join and dash style
 - **GradientMeshEditor / ToonRampEditor** -- Coons-patch colour mesh and cel-shading ramp editors
-- **Canvas toolkit** -- `BeginCanvas`/`EndCanvas` with minimap, marquee/lasso selection, alignment snapping with guides, crop rectangle, eyedropper and gradient-drop sampling, onion skin, ruler, grid overlay, crosshairs, drop shadow and inner glow
+- **Canvas toolkit** -- `BeginCanvas`/`EndCanvas` with minimap, marquee/lasso selection, crop rectangle, eyedropper and gradient-drop sampling, ruler, grid overlay, crosshairs; alignment snapping with guides and onion skin are experimental
+
+### Vector paths and SVG (ImGui only)
+- **ImWidgetsPath** -- moveTo / lineTo / quadratic / cubic / SVG arcs / rect / round rect / ellipse, transforms, SVG path-data parser
+- **PathFill / FillPolygons / PathContains** -- anti-aliased fills with the SVG fill rules (nonzero, even-odd: holes and self-intersections exact) and the matching hit test
+- **Paint** -- CSS / SVG linear, radial and conic gradients (hard stops, spread modes, gradient transform, sRGB / linear / OkLab / OkLCH / HSV interpolation) for fills and strokes
+- **PathStroke / DrawVariableWidthStroke** -- caps, joins, dashes, gradient strokes, pressure / taper strokes
+- **PushPathClip / PopPathClip** -- anti-aliased clipping by any path, nested up to 4 deep
+- **SvgLoad / SvgDraw** -- SVG documents: shapes, paths, groups, transforms, gradients, `<clipPath>`, `<use>` / `<symbol>`, `<style>` sheets, markers, shaped `<text>`
 
 ### DrawList extensions
 - **Shape system** -- generate, fill (linear/radial/diamond gradients in any color space) and draw arbitrary 2D shapes with holes
@@ -101,6 +110,14 @@ See [CHANGELOG.md](CHANGELOG.md) for the 2.0.0 breaking changes and migration no
 - **Contour extraction** -- `TessellateTextPerGlyph`, `ExtractTextContours` for downstream use of glyph geometry
 - **FontInspector / KerningPairEditor / VarFontAxisSliders** -- glyph grid, metrics, curves, kerning and variable-axis tooling
 - **Arabic / Hebrew / Indic shaping** -- via the vendored `kb_text_shape`
+- **Text renderers** -- `SetTextRenderer`: Slug GPU, a CPU vector renderer (outlines as `ImDrawList` triangles, works on any backend), or the ImGui atlas
+
+### Text layout and editing (web-like)
+- **Bidirectional text** -- Unicode bidi (UAX #9) in `DrawText` / `CalcTextSize`: mixed Arabic, Hebrew, Latin and numbers lay out as in a browser; `TextDirection` Auto / LTR / RTL
+- **DrawTextBlock / CalcTextBlockSize** -- paragraphs: UAX #14 line breaking, alignment, line height, underline / line-through / overline, line-clamp with ellipsis, letter / word spacing
+- **SetFontFallbacks** -- CSS-like font-family chain for missing characters
+- **InputTextShaped / InputTextMultilineShaped** -- grapheme-aware, bidi-ordered input fields (selection, clipboard, IME, wrapping)
+- **Caret and selection primitives** -- `CalcTextGraphemes`, `TextCaretX`, `TextHitTest`, `TextSelectionRanges`
 
 ### LaTeX math rendering
 - **DrawLaTeX / CalcLaTeXSize / TessellateLaTeX** -- self-contained math typesetter using Latin Modern Math
@@ -119,7 +136,7 @@ Features are grouped into three tiers depending on what they call at runtime:
 | **ImPlatform (any)** | Texture creation/destruction, pixel format | All ImPlatform backends including DX9 |
 | **ImPlatform + Shader** | Custom shader compilation and dispatch | DX10, DX11, DX12, OpenGL 3+, Vulkan |
 
-Most widgets and almost all DrawList extensions are **ImGui only**. The shader tier is required for GPU markers, Slug font rendering, LaTeX, GPU dashed lines, the image inspector, the volume and LookDev inspectors, the GPU Delta-E compare and the window background effects.
+Most widgets, almost all DrawList extensions, the vector path / SVG layer and the CPU vector text renderer are **ImGui only**. The shader tier is required for GPU markers, Slug font rendering, LaTeX, GPU dashed lines, the image inspector, the volume and LookDev inspectors, the GPU Delta-E compare and the window background effects.
 
 See [docs/compatibility.md](docs/compatibility.md) for the full per-feature table.
 
@@ -243,6 +260,8 @@ DearWidgets/
 |   |   +-- dear_widgets_slug.cpp           # Slug GPU font renderer (the actual implementation)
 |   |   +-- dear_widgets_latex.h/.cpp       # LaTeX math renderer (#included, not a separate TU)
 |   |   +-- dear_widgets_stroke.cpp         # Euler-spiral stroke expansion, dashes
+|   |   +-- dear_widgets_path.cpp           # ImWidgetsPath, fill rules, paints, path clips
+|   |   +-- dear_widgets_svg.cpp            # SVG document loader / renderer
 |   |   +-- dear_widgets_text_shape.h/.cpp  # Shaping front-end over kb_text_shape
 |   |   +-- kb_text_shape.h                 # Vendored complex-script shaper (zlib)
 |   |   +-- dear_widgets_image_inspector.cpp# GPU image inspector
@@ -277,6 +296,8 @@ DearWidgets/
 |   +-- main.cs  common.cs  APIProject.cs  DemoProject.cs
 |   +-- bin/                                # Sharpmake binaries (populated by Startup.bat)
 +-- docs/                                   # Documentation
++-- RELEASE_NOTES.md                        # 2.0 release summary
++-- CHANGELOG.md                            # Full change list and migration notes
 +-- projects/                               # Generated project files (git-ignored)
 ```
 
