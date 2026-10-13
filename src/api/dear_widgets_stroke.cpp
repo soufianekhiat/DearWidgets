@@ -739,8 +739,14 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
     // --- Lazy-init stroke shader ---
     ImWidgetsContext* ctx = GetCurrentContext();
     if (!ctx) return;
-    if (ctx->strokeShader.program == NULL)
+    // Try to build the stroke shader once; a failure is remembered so the CPU
+    // fill below does not pay a reload + recompile on every stroke.
+    static ImWidgetsContext* s_strokeShaderTried = NULL;
+    if (ctx->strokeShader.program == NULL && s_strokeShaderTried != ctx)
+    {
+        s_strokeShaderTried = ctx;
         CreateInternalShader(&ctx->strokeShader, "stroke", 0, NULL, 0, NULL);
+    }
     ImPlatform_ShaderProgram program = ctx->strokeShader.program;
     // No stroke shader (build without custom shaders, or a failed compile): the
     // outline below is still exact, so fill it on the CPU with the nonzero rule
@@ -855,7 +861,13 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
     if (num_segs <= 0) return;
 
     if (cpu_fill) {
-        DW_FillSegments(dl, segs.Data, num_segs, col, ImWidgetsFillRule_NonZero, 1.0f);
+        // The scanline filler needs exactly closed loops; a smooth closing join
+        // adds no point, so float error can leave fwd / bwd a hair open.
+        if (closed) {
+            segs.push_back(fwd[fwd.Size - 1]); segs.push_back(fwd[0]);
+            segs.push_back(bwd[0]);            segs.push_back(bwd[bwd.Size - 1]);
+        }
+        DW_FillSegments(dl, segs.Data, segs.Size / 2, col, ImWidgetsFillRule_NonZero, 1.0f);
         return;
     }
 

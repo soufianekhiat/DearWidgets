@@ -146,7 +146,8 @@ void DW_FillSegments(ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32
     for (int i = 0; i < seg_count; ++i)
     {
         ImVec2 a = seg_pts[i * 2], b = seg_pts[i * 2 + 1];
-        if (!(a.y == a.y) || !(b.y == b.y) || !(a.x == a.x) || !(b.x == b.x)) continue; // NaN
+        // NaN or inf: skip (x - x is NaN for both).
+        if (!(a.x - a.x == 0.0f) || !(a.y - a.y == 0.0f) || !(b.x - b.x == 0.0f) || !(b.y - b.y == 0.0f)) continue;
         if (a.y == b.y) continue;   // horizontal edges never change the winding
         DW_FillEdge e;
         if (a.y < b.y) { e.x0 = a.x; e.y0 = a.y; e.x1 = b.x; e.y1 = b.y; e.dir = +1; }
@@ -271,9 +272,27 @@ void DW_FillSegments(ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32
             slab.push_back(s);
         }
         sortSlab(slab);
+        // Coincident edges (shared edge of two shapes, zero-area spikes) must
+        // cancel or add as one edge, whatever order the sort left them in.
+        {
+            int wi = 0;
+            for (int k = 0; k < slab.Size; ++k)
+            {
+                if (wi > 0 && slab[wi - 1].xa == slab[k].xa && slab[wi - 1].xb == slab[k].xb)
+                    slab[wi - 1].dir += slab[k].dir;
+                else
+                    slab[wi++] = slab[k];
+            }
+            slab.resize(wi);
+            wi = 0;
+            for (int k = 0; k < slab.Size; ++k)
+                if (slab[k].dir != 0) slab[wi++] = slab[k];
+            slab.resize(wi);
+        }
         curTop.resize(0);
         curBottom.resize(0);
         nextOpen.resize(0);
+        int openCursor = 0;
         int winding = 0;
         for (int k = 0; k < slab.Size; )
         {
@@ -292,13 +311,16 @@ void DW_FillSegments(ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32
                 }
                 if (m >= slab.Size) break; // malformed (open) input: nothing to close the span
                 const DW_SlabEdge& R = slab[m];
+                if (R.xa <= L.xa && R.xb <= L.xb) { k = m + 1; continue; } // zero width: nothing to draw
 
                 DW_OpenSpan sp = { L.id, R.id, ya };
-                for (int o = 0; o < open.Size; ++o)
+                // Both lists are in x order, so a moving cursor finds matches in linear time.
+                for (int o = openCursor; o < open.Size; ++o)
                     if (open[o].L == L.id && open[o].R == R.id)
                     {
                         sp.y0 = open[o].y0;          // same edges: keep growing it
                         open[o].L = -1;              // consumed
+                        openCursor = o + 1;
                         break;
                     }
                 nextOpen.push_back(sp);
@@ -353,7 +375,8 @@ void DW_FillSegments(ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32
             if (edges[active[k]].y1 <= ya) { active[k] = active.back(); active.pop_back(); }
             else ++k;
         }
-        if (yb < clip.y - aa || ya > clip.w + aa) { flushAll(ya); continue; }
+        if (ya > clip.w + aa) { flushAll(ya); break; }           // everything below is clipped
+        if (yb < clip.y - aa) { flushAll(ya); continue; }
 
         // Edges that cross inside the slab change order between top and bottom:
         // split the slab at every crossing so each sub-slab is crossing-free.
@@ -381,7 +404,10 @@ void DW_FillSegments(ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32
             {
                 DW_SlabEdge t = slab[i];
                 int j = i - 1;
-                while (j >= 0 && slab[j].xb > t.xb + 1e-5f)
+                // Relative epsilon: shared vertices far from the origin must not
+                // count as crossings because of float rounding.
+                const float eps = 1e-5f + 1e-6f * ImFabs(t.xb);
+                while (j >= 0 && slab[j].xb > t.xb + eps)
                 {
                     // slab[j] (left at the top) ends right of t at the bottom: they cross.
                     if (crossings < kMaxExact)
@@ -403,7 +429,8 @@ void DW_FillSegments(ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32
             if (crossings > kMaxExact)
             {
                 subYs.resize(1);
-                const int n = ImClamp((int)ImCeil((yb - ya) * 4.0f), 2, 4096);
+                // Quarter-pixel steps, but never more cuts than crossings would need.
+                const int n = ImMax(2, ImMin((int)ImCeil((yb - ya) * 4.0f), crossings + 1));
                 for (int k = 1; k < n; ++k) subYs.push_back(ya + (yb - ya) * (float)k / (float)n);
             }
         }
@@ -534,6 +561,7 @@ ImWidgetsPath& ImWidgetsPath::CubicTo(ImVec2 c1, ImVec2 c2, ImVec2 p)
 
 ImWidgetsPath& ImWidgetsPath::LineTo(ImVec2 p)
 {
+    if (Subpaths.Size == 0) return MoveTo(p); // Canvas2D: lineTo on an empty path is a moveTo
     DW_EnsureSubpath();
     ImVec2 a = Points.back();
     return CubicTo(ImLerp(a, p, 1.0f / 3.0f), ImLerp(a, p, 2.0f / 3.0f), p);
@@ -629,12 +657,25 @@ ImWidgetsPath& ImWidgetsPath::Arc(ImVec2 center, float radius, float a_min, floa
 {
     // Canvas2D arc(): lines to the arc start when a subpath is open.
     ImVec2 start(center.x + ImCos(a_min) * radius, center.y + ImSin(a_min) * radius);
-    if (Subpaths.Size == 0 || Subpaths.back().Closed) MoveTo(start);
-    else LineTo(start);
-    float sweep = a_max - a_min;
-    if (!counter_clockwise && sweep < 0.0f) sweep = ImFmod(sweep, 2.0f * IM_PI) + 2.0f * IM_PI;
-    if (counter_clockwise && sweep > 0.0f)  sweep = ImFmod(sweep, 2.0f * IM_PI) - 2.0f * IM_PI;
-    if (ImFabs(a_max - a_min) >= 2.0f * IM_PI) sweep = counter_clockwise ? -2.0f * IM_PI : 2.0f * IM_PI;
+    // Canvas2D: with no subpath, moveTo the arc start; otherwise (including right
+    // after closePath, whose current point is the subpath start) lineTo it.
+    if (Subpaths.Size == 0) MoveTo(start);
+    else { DW_EnsureSubpath(); LineTo(start); }
+    const float twoPi = 2.0f * IM_PI;
+    float sweep;
+    if (!counter_clockwise)
+    {
+        float d = a_max - a_min;
+        if (d >= twoPi) sweep = twoPi;                              // full circle
+        else { sweep = ImFmod(d, twoPi); if (sweep < 0.0f) sweep += twoPi; }
+    }
+    else
+    {
+        float d = a_min - a_max;
+        if (d >= twoPi) sweep = -twoPi;
+        else { sweep = ImFmod(d, twoPi); if (sweep < 0.0f) sweep += twoPi; sweep = -sweep; }
+    }
+    if (sweep == 0.0f) return *this;
     int segs = ImMax(1, (int)ImCeil(ImFabs(sweep) / (IM_PI * 0.5f) - 1e-4f));
     float step = sweep / (float)segs;
     for (int i = 0; i < segs; ++i)
@@ -666,9 +707,11 @@ ImWidgetsPath& ImWidgetsPath::RoundRect(ImVec2 min, ImVec2 max, float r)
 
 ImWidgetsPath& ImWidgetsPath::Ellipse(ImVec2 center, ImVec2 radii)
 {
-    MoveTo(ImVec2(center.x + radii.x, center.y));
+    const ImVec2 start(center.x + radii.x, center.y);
+    MoveTo(start);
     for (int i = 0; i < 4; ++i)
         DW_ArcSegment(*this, center, radii.x, radii.y, 1.0f, 0.0f, IM_PI * 0.5f * i, IM_PI * 0.5f * (i + 1));
+    Points.back() = start; // cos/sin(2*pi) in float is not exactly the start
     return Close();
 }
 
@@ -716,12 +759,28 @@ static bool DW_SvgNumber(const char*& s, float& out)
         if (*q == '+' || *q == '-') ++q;
         if (*q >= '0' && *q <= '9') { p = q; while (*p >= '0' && *p <= '9') ++p; }
     }
-    char buf[64];
-    int len = (int)(p - s);
-    if (len <= 0 || len >= (int)sizeof(buf)) return false;
-    memcpy(buf, s, (size_t)len);
-    buf[len] = 0;
-    out = (float)ImAtof(buf);
+    // Locale-independent conversion (atof would read "1.5" as 1 under a
+    // comma-decimal locale).
+    const char* q = s;
+    double sign = 1.0;
+    if (*q == '+' || *q == '-') { if (*q == '-') sign = -1.0; ++q; }
+    double v = 0.0;
+    while (*q >= '0' && *q <= '9') v = v * 10.0 + (*q++ - '0');
+    if (*q == '.')
+    {
+        ++q;
+        double f = 0.1;
+        while (*q >= '0' && *q <= '9') { v += (*q++ - '0') * f; f *= 0.1; }
+    }
+    if (q < p && (*q == 'e' || *q == 'E'))
+    {
+        ++q;
+        int es = 1, e = 0;
+        if (*q == '+' || *q == '-') { if (*q == '-') es = -1; ++q; }
+        while (*q >= '0' && *q <= '9') { if (e < 1000) e = e * 10 + (*q - '0'); ++q; }
+        v *= pow(10.0, (double)(es * e));
+    }
+    out = (float)(sign * v);
     s = p;
     return true;
 }
@@ -749,6 +808,7 @@ bool ImWidgetsPath::AddSvgPathData(const char* d)
         if ((*s >= 'A' && *s <= 'Z') || (*s >= 'a' && *s <= 'z'))
             cmd = *s++;
         else if (cmd == 0) { ok = false; break; }   // data must start with a command
+        if (lastCmd == 0 && cmd != 'M' && cmd != 'm') { ok = false; break; } // ... and that command is a moveto
 
         const bool rel = (cmd >= 'a' && cmd <= 'z');
         const char C = (char)(rel ? cmd - 32 : cmd);
@@ -809,10 +869,17 @@ bool ImWidgetsPath::AddSvgPathData(const char* d)
             ArcTo(a, b, c2, fa, fs, P(e, f));
             break;
         case 'Z':
+        {
             Close();
             // A command after Z without moveto starts at the closed subpath's start.
             if (Subpaths.Size) { ImVec2 st = Points[Subpaths.back().First]; MoveTo(st); }
+            // Z takes no arguments: anything other than a command letter (or the
+            // end) after it is an error. Treating it as an implicit repeat would
+            // loop forever on input like "M0 0 Z 5".
+            const char* q = DW_SvgSkipWsp(s);
+            if (*q && !((*q >= 'A' && *q <= 'Z') || (*q >= 'a' && *q <= 'z'))) ok = false;
             break;
+        }
         default:
             ok = false;
             break;
@@ -889,7 +956,21 @@ void PathStroke(ImDrawList* dl, const ImWidgetsPath& path, ImU32 col, const ImWi
     for (int si = 0; si < path.Subpaths.Size; ++si)
     {
         const ImWidgetsSubpath& sp = path.Subpaths[si];
-        if (sp.Count < 4) continue;
+        if (sp.Count < 4)
+        {
+            // Zero-length subpath: SVG draws a dot for round / square caps.
+            ImVec2 c = path.Points[sp.First];
+            float h = style.Width * 0.5f;
+            if (style.Cap == ImWidgetsCap_Round)
+            {
+                ImWidgetsPath dot; dot.Circle(c, h); PathFill(dl, dot, col);
+            }
+            else if (style.Cap == ImWidgetsCap_Square)
+            {
+                ImWidgetsPath dot; dot.Rect(ImVec2(c.x - h, c.y - h), ImVec2(c.x + h, c.y + h)); PathFill(dl, dot, col);
+            }
+            continue;
+        }
         const ImVec2* pts = path.Points.Data + sp.First;
         // Closed subpaths already end on their start point, so the stroker adds
         // no extra closing segment -- it only joins the ends.

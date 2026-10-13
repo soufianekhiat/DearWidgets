@@ -35529,7 +35529,7 @@ namespace ImWidgets
         case ImWidgetsThickLineMode_StrokedBezierPath:
         {
             // Catmull-Rom -> cubic Bezier path -> Euler-spiral stroke via the
-            // "stroke" custom shader. CPU-polyline fallback when it's unavailable.
+            // "stroke" custom shader, or a CPU fill of its outline when that shader is unavailable.
             // Without the stroke shader the stroker fills the outline on the CPU.
             ImVector<ImVec2> bez;
             CatmullRomToCubicBezierPath(points, n, bez);
