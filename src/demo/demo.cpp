@@ -6882,7 +6882,25 @@ namespace ImWidgets{
 							}
 
 							DrawImageShapeWithHole( pDrawList, background, pts.Data, pts.Size, IM_COL32( 255, 255, 255, 255 ), uv_offset, uv_scale, gap, strokeWidth );
-							ImGui::Dummy( ImVec2( size, size ) );
+
+							// Same shape as an even-odd path filled in white with the image bound,
+							// then its UVs remapped onto the image (same uv_offset / uv_scale).
+							const float dx = size + ImPlatform_LpToPx( 16.0f );
+							ImWidgetsPath imgPath;
+							imgPath.MoveTo( pts[ 0 ] + ImVec2( dx, 0 ) );
+							for ( int k = 1; k < 4; ++k ) imgPath.LineTo( pts[ k ] + ImVec2( dx, 0 ) );
+							imgPath.Close().MoveTo( pts[ 5 ] + ImVec2( dx, 0 ) );
+							for ( int k = 6; k < pts.Size - 1; ++k ) imgPath.LineTo( pts[ k ] + ImVec2( dx, 0 ) );
+							imgPath.Close();
+							pDrawList->PushTexture( background );
+							const int v0 = pDrawList->VtxBuffer.Size;
+							ImWidgets::PathFill( pDrawList, imgPath, IM_COL32_WHITE, ImWidgetsFillRule_EvenOdd );
+							ImGui::ShadeVertsLinearUV( pDrawList, v0, pDrawList->VtxBuffer.Size, pos + ImVec2( dx, 0 ), pos + ImVec2( dx + size, size ),
+							                           uv_offset, uv_offset + uv_scale, false );
+							pDrawList->PopTexture();
+							pDrawList->AddText( pos + ImVec2( 0, size + 2.0f ), ImGui::GetColorU32( ImGuiCol_TextDisabled ), "DrawImageShapeWithHole" );
+							pDrawList->AddText( pos + ImVec2( dx, size + 2.0f ), ImGui::GetColorU32( ImGuiCol_TextDisabled ), "PathFill even-odd + ShadeVertsLinearUV" );
+							ImGui::Dummy( ImVec2( size + dx, size + ImGui::GetTextLineHeightWithSpacing() ) );
 						}
 						DW_SsRecord( "Image_Shape_With_Hole", _sy0, ImGui::GetCursorPos().y );
 					}
