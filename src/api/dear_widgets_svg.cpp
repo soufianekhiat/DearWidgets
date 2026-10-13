@@ -630,6 +630,21 @@ static bool DW_SvgCssMatch(const DW_SvgCssRule& r, const DW_SvgTag& tag)
     return true;
 }
 
+// Start of the closing tag "</name>" (any namespace prefix, whitespace
+// allowed before '>'), or null.
+static const char* DW_SvgFindClose(const char* s, const char* name)
+{
+    const size_t nl = strlen(name);
+    for (const char* e = strstr(s, "</"); e; e = strstr(e + 2, "</"))
+    {
+        const char* q = e + 2; while (isspace((unsigned char)*q)) ++q;
+        const char* nb = q; while (*q && *q != '>' && !isspace((unsigned char)*q)) ++q;
+        const char* local = nb; for (const char* r = nb; r < q; ++r) if (*r == ':') local = r + 1;
+        if ((size_t)(q - local) == nl && strncmp(local, name, nl) == 0) return e;
+    }
+    return nullptr;
+}
+
 // Applies a declaration block ("fill:red; stroke:blue").
 static void DW_SvgApplyDecls(DW_SvgStyle& st, const char* css)
 {
@@ -670,16 +685,17 @@ static void DW_SvgApplyStyle(DW_SvgStyle& st, const DW_SvgTag& tag, const DW_Svg
     for (const char* k : kProps) DW_SvgApplyProp(st, k, tag.Get(k));
     if (css && css->rules.Size)
     {
-        int match[32]; int n = 0;
-        for (int i = 0; i < css->rules.Size && n < 32; ++i)
+        ImVector<int> match;
+        for (int i = 0; i < css->rules.Size; ++i)
             if (DW_SvgCssMatch(css->rules[i], tag))
             {
                 // insertion by specificity, stable for source order
-                int k = n++;
+                match.push_back(i);
+                int k = match.Size - 1;
                 while (k > 0 && css->rules[match[k - 1]].specificity > css->rules[i].specificity) { match[k] = match[k - 1]; --k; }
                 match[k] = i;
             }
-        for (int k = 0; k < n; ++k) DW_SvgApplyDecls(st, css->decls.Data + css->rules[match[k]].declOff);
+        for (int k = 0; k < match.Size; ++k) DW_SvgApplyDecls(st, css->decls.Data + css->rules[match[k]].declOff);
     }
     if (const char* decl = tag.Get("style")) DW_SvgApplyDecls(st, decl);
 }
@@ -733,7 +749,7 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
     doc->viewBox = ImRect(0, 0, 0, 0);
     doc->size = ImVec2(0, 0);
 
-    struct Frame { DW_SvgStyle style; ImWidgetsTransform2D xf; DW_SvgClipRef clips[DW_SvgMaxClipRefs]; int clipCount = 0; bool isClipRoot = false; };
+    struct Frame { DW_SvgStyle style; ImWidgetsTransform2D xf; DW_SvgClipRef clips[DW_SvgMaxClipRefs]; int clipCount = 0; bool isClipRoot = false; DW_SvgClipDef* outerClip = nullptr; };
     ImVector<Frame*> stack;
     Frame* root = IM_NEW(Frame)();
     root->style.fill.kind = DW_SvgPaint_Color; root->style.fill.color = IM_COL32_BLACK; // SVG initial fill
@@ -775,16 +791,23 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
                     idx = idRanges.Size - 1;
                     idMap.SetInt(ImHashStr(id), idx + 1);
                 }
-            if (t.selfClosing) continue;
+            // Shapes and other empty elements never have children: treat them
+            // as closed even when written HTML-style without "/>".
+            static const char* kEmpty[] = { "rect", "circle", "ellipse", "line", "polyline", "polygon", "path", "use", "stop", "image" };
+            bool empty = t.selfClosing;
+            for (const char* k : kEmpty) if (!strcmp(t.Name(), k)) empty = true;
+            if (empty) continue;
             Open o; ImStrncpy(o.name, t.Name(), sizeof(o.name)); o.idx = idx;
             open.push_back(o);
             if (!strcmp(t.Name(), "style"))
             {
-                // raw CSS up to </style> (the tokenizer would skip its CDATA)
-                const char* e = strstr(q, "</");
-                while (e && strncmp(e, "</style", 7) && strncmp(e, "</svg:style", 11)) e = strstr(e + 2, "</");
-                DW_SvgParseCss(q, e ? e : q + strlen(q), css);
-                q = e ? e : q + strlen(q);
+                // raw CSS up to </style> (the tokenizer would skip its CDATA);
+                // an unclosed sheet is ignored rather than eating the document
+                if (const char* e = DW_SvgFindClose(q, "style"))
+                {
+                    DW_SvgParseCss(q, e, css);
+                    q = e;
+                }
             }
         }
         // unclosed elements end with the document
@@ -802,6 +825,10 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
     // (no recursion); at its end the parser resumes after the <use>.
     struct UseSrc { const char* resume; const char* end; int stackSize; int defsDepth; int idIdx; DW_SvgGradient* grad; DW_SvgClipDef* clip; };
     ImVector<UseSrc> srcs;
+    // Total source re-parsed by <use> expansions: bounded so chains of uses
+    // that multiply (a uses b ten times, b uses c ten times...) stay linear.
+    const size_t textLen = strlen(text);
+    size_t useBudget = ImMax(textLen * 16, (size_t)(4u << 20));
     for (;;)
     {
         if (srcs.Size && s >= srcs.back().end)
@@ -823,9 +850,7 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
             // parsed in the pre-pass: skip the sheet's text
             if (!tag.selfClosing)
             {
-                const char* e = strstr(s, "</");
-                while (e && strncmp(e, "</style", 7) && strncmp(e, "</svg:style", 11)) e = strstr(e + 2, "</");
-                if (e) s = e;
+                if (const char* e = DW_SvgFindClose(s, "style")) s = e;
             }
             continue;
         }
@@ -840,8 +865,9 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
                         for (int c = 0; c < curClip->childFirst.Size; ++c)
                             DW_SvgNormaliseClipChild(curClip->path, curClip->childFirst[c],
                                                      c + 1 < curClip->childFirst.Size ? curClip->childFirst[c + 1] : curClip->path.Subpaths.Size);
-                    curClip = nullptr;
-                    if (stack.Size > 1 && stack.back()->isClipRoot) { IM_DELETE(stack.back()); stack.pop_back(); }
+                    DW_SvgClipDef* outer = nullptr; // a clipPath nested in another (or reached by <use> from one)
+                    if (stack.Size > 1 && stack.back()->isClipRoot) { outer = stack.back()->outerClip; IM_DELETE(stack.back()); stack.pop_back(); }
+                    curClip = outer;
                 }
                 continue;
             }
@@ -936,8 +962,9 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
             doc->clipDefs.push_back(cd);
             if (!tag.selfClosing)
             {
-                curClip = cd;
                 Frame* f = IM_NEW(Frame)();
+                f->outerClip = curClip;
+                curClip = cd;
                 f->style = stack.back()->style;
                 DW_SvgApplyStyle(f->style, tag, &css);
                 f->xf = ImWidgetsTransform2D(); // children in clip space; the clipPath transform is applied at draw time
@@ -1035,10 +1062,16 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
             if (!href || href[0] != '#' || !st.display) continue;
             const int idx = idMap.GetInt(ImHashStr(href + 1), 0) - 1;
             if (idx < 0 || srcs.Size >= 16) continue;
-            bool cycle = false;
+            const IdRange& r = idRanges[idx];
+            // A reference to an element being expanded, or to an ancestor of
+            // this <use> (its source contains the use), is a cycle: an error,
+            // nothing is rendered (as browsers do).
+            bool cycle = (r.b <= tag.start && tag.start < r.e);
             for (int k = 0; k < srcs.Size; ++k) if (srcs[k].idIdx == idx) cycle = true;
             if (cycle) continue;
-            const IdRange& r = idRanges[idx];
+            const size_t cost = (size_t)(r.e - r.b);
+            if (cost > useBudget) continue;
+            useBudget -= cost;
             const float vbw = doc->viewBox.GetWidth(), vbh = doc->viewBox.GetHeight();
             xf = xf * ImWidgetsTransform2D(1, 0, 0, 1, DW_SvgAttrF(tag, "x", 0, vbw), DW_SvgAttrF(tag, "y", 0, vbh));
             const char* b = r.b;
