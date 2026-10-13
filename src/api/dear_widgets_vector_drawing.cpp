@@ -13,17 +13,6 @@ namespace ImWidgets {
     // inside dear_widgets.cpp. Duplicating them here keeps this TU independent
     // without the overhead of promoting them to external-linkage symbols.
     static inline float DWE_Len2(const ImVec2& a) { return ImSqrt(a.x * a.x + a.y * a.y); }
-    static ImVec2 DWE_CubicBezier(const ImVec2& p0, const ImVec2& p1, const ImVec2& p2, const ImVec2& p3, float t)
-    {
-        float u = 1.0f - t;
-        float uu = u * u;
-        float uuu = uu * u;
-        float tt = t * t;
-        float ttt = tt * t;
-        return ImVec2(uuu * p0.x + 3.0f * uu * t * p1.x + 3.0f * u * tt * p2.x + ttt * p3.x,
-                      uuu * p0.y + 3.0f * uu * t * p1.y + 3.0f * u * tt * p2.y + ttt * p3.y);
-    }
-
     //==================================================================
     // W2. Vector Drawing Tool (canvas with zoom/pan + bezier authoring)
     //==================================================================
@@ -82,7 +71,7 @@ namespace ImWidgets {
             for (int k = 1; k <= samples_per_seg; ++k)
             {
                 float t = (float)k / (float)samples_per_seg;
-                out.push_back(DWE_CubicBezier(P0, P1, P2, P3, t));
+                out.push_back(ImBezierCubicCalc(P0, P1, P2, P3, t));
             }
         }
     }
@@ -143,14 +132,17 @@ namespace ImWidgets {
         ImVec2 mouse = io.MousePos;
 
         // ---- Pan / zoom ----
-        if (hovered && ImGui::IsMouseDown(ImGuiMouseButton_Middle))
+        // Gate on IsItemActive, not IsItemHovered: the canvas InvisibleButton already
+        // captures middle/right, so the drag keeps working when the cursor leaves the
+        // canvas and it owns ActiveId instead of racing other widgets for the mouse.
+        if (active && ImGui::IsMouseDown(ImGuiMouseButton_Middle))
         {
             ImVec2 d = io.MouseDelta;
             data.PanOffset.x += d.x;
             data.PanOffset.y += d.y;
         }
         // Shift + left drag pans too (convenience when no middle button).
-        if (hovered && io.KeyShift && ImGui::IsMouseDown(ImGuiMouseButton_Left))
+        if (active && io.KeyShift && ImGui::IsMouseDown(ImGuiMouseButton_Left))
         {
             ImVec2 d = io.MouseDelta;
             data.PanOffset.x += d.x;
@@ -499,7 +491,7 @@ namespace ImWidgets {
                         ImVector<ImVec2> pl; DWE_VDTFlattenPolyline(p, 16, pl);
                         for (int i = 0; i < pl.Size; ++i) pl[i] = DWE_VDTW2S(data, canvas_min, pl[i]);
                         if (pl.Size >= 2)
-                            dl->AddPolyline(pl.Data, pl.Size, p.Color, p.Closed ? ImDrawFlags_Closed : 0, th);
+                            dl->AddPolyline(pl.Data, pl.Size, p.Color, th, p.Closed ? ImDrawFlags_Closed : 0);
                     }
                     break;
                 case ImVectorDrawingStyle_PolylineAA:
@@ -732,8 +724,8 @@ namespace ImWidgets {
                     // ImWidgetsCap_: None(0) / Butt(1) / Square(2) / Round(3) / TriangleOut(4) / TriangleIn(5)
                     const char* cap_names[] = { "None", "Butt", "Square", "Round", "TriangleOut", "TriangleIn" };
                     ImGui::Combo("Cap", &p.Cap, cap_names, IM_ARRAYSIZE(cap_names));
-                    // ImWidgetsJoin_: Round(0) / Mitter(1) / Bevel(2)
-                    const char* join_names[] = { "Round", "Mitter", "Bevel" };
+                    // ImWidgetsJoin_: Round(0) / Miter(1) / Bevel(2)
+                    const char* join_names[] = { "Round", "Miter", "Bevel" };
                     ImGui::Combo("Join", &p.Join, join_names, IM_ARRAYSIZE(join_names));
                     if (p.Style == ImVectorDrawingStyle_StrokedDashedBezier
                         || p.Style == ImVectorDrawingStyle_DashedPolyline)

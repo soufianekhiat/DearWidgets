@@ -602,8 +602,8 @@ namespace ImWidgets {
 				dl->AddRectFilled( bmin + off + off, bmax + off + off, ghost, round );
 				dl->AddRectFilled( bmin + off, bmax + off, ghost, round );
 				dl->AddRectFilled( bmin, bmax, ImGui::GetColorU32( ImGuiCol_Header, 0.95f ), round );
-				dl->AddRect( bmin, bmax, hovered ? col_hover : col_border, round, 0,
-				             hovered ? 2.5f : 1.5f );
+				dl->AddRect( bmin, bmax, hovered ? col_hover : col_border, round, hovered ? 2.5f : 1.5f,
+				             0 );
 				if ( zoom >= NG_LodText )
 				{
 					float const fs  = ImClamp( 16.0f * zoom, 8.0f, 28.0f );
@@ -630,8 +630,8 @@ namespace ImWidgets {
 				if ( fill == 0 )
 					fill = ImGui::GetColorU32( ImGuiCol_Button, 0.9f );
 				dl->AddRectFilled( bmin, bmax, fill, round );
-				dl->AddRect( bmin, bmax, hovered ? col_hover : col_border, round, 0,
-				             hovered ? 2.5f : 1.0f );
+				dl->AddRect( bmin, bmax, hovered ? col_hover : col_border, round, hovered ? 2.5f : 1.0f,
+				             0 );
 				if ( zoom >= NG_LodText )
 				{
 					float const fs  = ImClamp( 14.0f * zoom, 8.0f, 24.0f );

@@ -1,5 +1,5 @@
 // dear_widgets_timeline.h
-// Public types and entry point for the Timeline widget (The Flow M5): the
+// Public types and entry point for the Timeline widget: the
 // authoritative keys/cache visualization for a temporal document. Draws the
 // playable tick range with playhead, authored keys, events, cache coverage,
 // checkpoints, INVALID ranges and stale retained branches distinctly; supports

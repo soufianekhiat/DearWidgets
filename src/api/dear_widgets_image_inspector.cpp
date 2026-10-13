@@ -566,7 +566,7 @@ static void II_DrawShaderQuad( ImDrawList* dl,
 
 	dl->AddCallback( &ImageInspectorShaderCallback, call );
 	dl->AddImage( state.PackedTexture, quadMin, quadMax, ImVec2( 0, 0 ), ImVec2( 1, 1 ) );
-	dl->AddCallback( ImDrawCallback_ResetRenderState, NULL );
+	dl->AddCallback( ImGui::GetPlatformIO().DrawCallback_ResetRenderState, NULL );
 }
 
 #endif  // IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
@@ -859,7 +859,7 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 		ImDrawList* fg = ImGui::GetForegroundDrawList();
 
 		fg->AddRectFilled( panelMin, panelMax, IM_COL32( 18, 18, 18, 235 ), rounding );
-		fg->AddRect( panelMin, panelMax, IM_COL32( 90, 90, 90, 220 ), rounding, 0, LpToPx( 1.0f ) );
+		fg->AddRect( panelMin, panelMax, IM_COL32( 90, 90, 90, 220 ), rounding, LpToPx( 1.0f ), 0 );
 
 		// --- Loupe (left square): show a small region of the image through the same shader ---
 		ImVec2 lTL  = ImVec2( panelMin.x + pad, panelMin.y + pad );
@@ -910,10 +910,10 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 			fg->AddLine( ImVec2( lTL.x, ctr2.y ), ImVec2( lBR.x, ctr2.y ), IM_COL32( 255, 60, 60, 100 ) );
 			fg->AddLine( ImVec2( ctr2.x, lTL.y ), ImVec2( ctr2.x, lBR.y ), IM_COL32( 255, 60, 60, 100 ) );
 			fg->AddRect( ImVec2( pxLeft, pxTop ), ImVec2( pxLeft + pixSz, pxTop + pixSz ),
-			             IM_COL32( 255, 60, 60, 255 ), 0.0f, 0, 1.5f );
+			             IM_COL32( 255, 60, 60, 255 ), 0.0f, 1.5f, 0 );
 		}
 		fg->PopClipRect();
-		fg->AddRect( lTL, lBR, IM_COL32( 110, 110, 110, 200 ), 0.0f, 0, 1.0f );
+		fg->AddRect( lTL, lBR, IM_COL32( 110, 110, 110, 200 ), 0.0f, 1.0f, 0 );
 
 		// --- Text column (4 rows: pos, uv, channels0, channels1) ---
 		const ImU32 colValue = IM_COL32( 230, 230, 230, 255 );
@@ -951,7 +951,7 @@ bool ImageInspector( char const* label, const ImImageBuffer& buffer, ImImageInsp
 				fg->AddLine( ImVec2( sTL.x + d, sTL.y ), ImVec2( sTL.x, sTL.y + d ), IM_COL32( 70, 70, 70, 255 ) );
 			fg->PopClipRect();
 		}
-		fg->AddRect( sTL, sBR, IM_COL32( 90, 90, 90, 180 ), LpToPx( 2.0f ), 0, LpToPx( 1.0f ) );
+		fg->AddRect( sTL, sBR, IM_COL32( 90, 90, 90, 180 ), LpToPx( 2.0f ), LpToPx( 1.0f ), 0 );
 	}
 
 	// --- Expand button ---

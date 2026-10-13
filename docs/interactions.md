@@ -1,5 +1,26 @@
 # Widget Interactions
 
+**Scope: the six classic editing widgets only.** This table covers
+`GradientEditor`, `CurveEditor`, `ColorCurve`, `ToneCurve`, `ColorWheel` and
+`ColorWarper`. The other ~50 widgets are not described here; their interactions
+are documented inline with each function in
+[api/widgets.md](api/widgets.md) and [api/drawlist.md](api/drawlist.md).
+
+Shared conventions that are **not** repeated per widget:
+
+- Every widget with a numeric value opens a typed-input precision popup on
+  double-click (`BeginPrecisionPopup` / `PrecisionFloat` / `PrecisionInt`).
+- Canvas-style widgets pan with a left or middle drag and zoom to the cursor
+  with the wheel.
+- `KeyboardNudgeXY` / `KeyboardNudge1D` provide the arrow-key delta (Shift =
+  10x) and `AxisConstrain` snaps a drag to the dominant axis while Shift is
+  held; widgets that support nudging use these.
+
+> **Known gap.** Arrow / Delete handling in the widgets below is gated on
+> `hovered` without `SetKeyOwner`, so the same keys can also drive ImGui
+> navigation in that frame. Hold that in mind when embedding them in a
+> keyboard-navigated layout.
+
 | Feature | GradientEditor | CurveEditor | ColorCurve | ToneCurve | ColorWheel | ColorWarper |
 |---|---|---|---|---|---|---|
 | **Arrow key nudging** | L/R | L/R/U/D | L/R/U/D | L/R/U/D | - | - |

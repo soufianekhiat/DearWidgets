@@ -53,12 +53,12 @@ struct ImVectorDrawingPath
 	// Ignored by the plain Polyline style (ImGui::AddPolyline has no cap/join).
 	// Values are ImWidgetsCap_* / ImWidgetsJoin_* from dear_widgets.h.
 	int                           Cap;   // ImWidgetsCap_Butt
-	int                           Join;  // ImWidgetsJoin_Mitter
+	int                           Join;  // ImWidgetsJoin_Miter
 
 	ImVectorDrawingPath()
 		: Closed( false ), Color( IM_COL32( 255, 220, 100, 255 ) ), Thickness( 2.0f ),
 		  Style( ImVectorDrawingStyle_StrokedBezier ), DashLen( 8.0f ), GapLen( 6.0f ),
-		  Cap( 1 /*ImWidgetsCap_Butt*/ ), Join( 1 /*ImWidgetsJoin_Mitter*/ ) {}
+		  Cap( 1 /*ImWidgetsCap_Butt*/ ), Join( 1 /*ImWidgetsJoin_Miter*/ ) {}
 };
 
 struct ImVectorDrawingData
@@ -76,6 +76,76 @@ struct ImVectorDrawingData
 	ImVectorDrawingData()
 		: PanOffset( 0, 0 ), Zoom( 1.0f ), SelectedPath( -1 ), SelectedNode( -1 ),
 		  SelectedHandle( 0 ), ActivePath( -1 ) {}
+
+	// Release every buffer this struct owns and reset it to its initial state.
+	//
+	// ImVector's destructor is `{ if (Data) IM_FREE(Data); } // does not destruct
+	// anything`, so ~ImVector<ImVectorDrawingPath> frees the Paths array itself
+	// but NOT the ImVectorDrawingPath::Nodes buffer each element owns. Those have
+	// to be released by hand, inner first, then the outer vector -- the same
+	// manual deep-clear pattern as ImNetworkGraphData::Clear().
+	//
+	// The cleanup lives here and deliberately NOT in a ~ImVectorDrawingPath:
+	// ImVector moves elements with raw memcpy/memmove (push_back, reserve, erase),
+	// so path structs are bitwise-copied and two headers can transiently alias the
+	// same Nodes buffer (see the "Path: Duplicate" note in
+	// dear_widgets_vector_drawing.cpp). A per-path destructor would turn each of
+	// those copies into a double free; owning the cleanup at the container level
+	// cannot, because exactly one header reaches this loop per buffer.
+	void Clear()
+	{
+		for ( int i = 0; i < Paths.Size; ++i )
+			Paths[ i ].Nodes.clear();   // ImVector::clear() frees Data
+		Paths.clear();
+		SelectedNodes.clear();
+		PanOffset      = ImVec2( 0, 0 );
+		Zoom           = 1.0f;
+		SelectedPath   = -1;
+		SelectedNode   = -1;
+		SelectedHandle = 0;
+		ActivePath     = -1;
+	}
+
+	~ImVectorDrawingData() { Clear(); }
+
+	// Deep copy. The implicit copy would memcpy the path headers (ImVector's copy
+	// is clear + resize + memcpy of raw bytes), aliasing every Nodes buffer, and
+	// the destructor above would then free each of them twice. Rebuild instead:
+	// push an EMPTY path (nothing to alias) and assign into it, so the per-path
+	// ImVector::operator= does the element copy. Same idiom as "Path: Duplicate".
+	ImVectorDrawingData( const ImVectorDrawingData& src )
+		: PanOffset( 0, 0 ), Zoom( 1.0f ), SelectedPath( -1 ), SelectedNode( -1 ),
+		  SelectedHandle( 0 ), ActivePath( -1 )
+	{
+		CopyFrom( src );
+	}
+	ImVectorDrawingData& operator=( const ImVectorDrawingData& src )
+	{
+		if ( this != &src )
+		{
+			Clear();
+			CopyFrom( src );
+		}
+		return *this;
+	}
+
+	// Precondition: *this holds no paths (fresh, or just Clear()ed).
+	void CopyFrom( const ImVectorDrawingData& src )
+	{
+		Paths.reserve( src.Paths.Size );
+		for ( int i = 0; i < src.Paths.Size; ++i )
+		{
+			Paths.push_back( ImVectorDrawingPath() ); // empty header: aliases nothing
+			Paths[ Paths.Size - 1 ] = src.Paths[ i ]; // ImVector::operator= copies Nodes
+		}
+		SelectedNodes  = src.SelectedNodes;
+		PanOffset      = src.PanOffset;
+		Zoom           = src.Zoom;
+		SelectedPath   = src.SelectedPath;
+		SelectedNode   = src.SelectedNode;
+		SelectedHandle = src.SelectedHandle;
+		ActivePath     = src.ActivePath;
+	}
 };
 
 namespace ImWidgets {

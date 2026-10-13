@@ -24,17 +24,13 @@ layout(std140) uniform block_SLANG_ParameterGroup_LookDevInspectorParams_std140_
 
 #line 27
 layout(binding = 5)
-uniform texture2D texture1_0;
+uniform sampler2D texture1_0;
 
 
 #line 26
-layout(binding = 4)
-uniform sampler sampler1_0;
-
-
 #line 25
 layout(binding = 3)
-uniform texture2D texture0_0;
+uniform sampler2D texture0_0;
 
 
 #line 24
@@ -113,7 +109,7 @@ void main()
     vec4 c_0;
     if(onB_1)
     {
-        vec4 _S2 = (texture(sampler2D(texture1_0,sampler1_0), (input_uv_0)));
+        vec4 _S2 = (texture(texture1_0, (input_uv_0)));
 
 #line 81
         c_0 = _S2;
@@ -125,7 +121,7 @@ void main()
     {
 
 #line 86
-        vec4 _S3 = (texture(sampler2D(texture0_0,sampler0_0), (input_uv_0)));
+        vec4 _S3 = (texture(texture0_0, (input_uv_0)));
 
 #line 86
         c_0 = _S3;

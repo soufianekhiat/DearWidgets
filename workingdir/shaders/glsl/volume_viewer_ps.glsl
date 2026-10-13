@@ -32,14 +32,10 @@ layout(std140) uniform block_SLANG_ParameterGroup_VolumeViewerParams_std140_0
 
 #line 38
 layout(binding = 5)
-uniform texture3D volume_0;
+uniform sampler3D volume_0;
 
 
 #line 37
-layout(binding = 4)
-uniform sampler volumeSampler_0;
-
-
 #line 53
 vec2 ray_box_0(vec3 ro_0, vec3 rd_0, vec3 bmin_0, vec3 bmax_0)
 {
@@ -56,7 +52,7 @@ vec2 ray_box_0(vec3 ro_0, vec3 rd_0, vec3 bmin_0, vec3 bmax_0)
 float sample_vol_0(vec3 uvw_0)
 {
 
-    return (textureLod(sampler3D(volume_0,volumeSampler_0), (uvw_0), (0.0))).x;
+    return (textureLod(volume_0, (uvw_0), (0.0))).x;
 }
 
 

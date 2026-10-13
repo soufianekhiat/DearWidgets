@@ -1,16 +1,15 @@
 #version 450
-#extension GL_EXT_samplerless_texture_functions : require
 layout(row_major) uniform;
 layout(row_major) buffer;
 
 #line 53 0
 layout(binding = 1)
-uniform texture2D bandTexture_0;
+uniform sampler2D bandTexture_0;
 
 
 #line 48
 layout(binding = 0)
-uniform texture2D curveTexture_0;
+uniform sampler2D curveTexture_0;
 
 
 #line 39
@@ -39,14 +38,10 @@ layout(std140) uniform block_SLANG_ParameterGroup_fillParams_std140_0
 
 #line 57
 layout(binding = 2)
-uniform texture2D fillTexture_0;
+uniform sampler2D fillTexture_0;
 
 
 #line 58
-layout(binding = 0)
-uniform sampler fillSampler_0;
-
-
 #line 265
 ivec2 BandLoad_0(ivec2 coord_0)
 {
@@ -1186,7 +1181,7 @@ void main()
     {
 
 #line 485
-        vec4 texColor_0 = (texture(sampler2D(fillTexture_0,fillSampler_0), (uv_0 * fillParams_0.fillUVEnd_0.xy + fillParams_0.fillUVStart_0.xy)));
+        vec4 texColor_0 = (texture(fillTexture_0, (uv_0 * fillParams_0.fillUVEnd_0.xy + fillParams_0.fillUVStart_0.xy)));
 
 #line 485
         entryPointParam_main_ps_0 = vec4(mix(fillParams_0.fillColor0_0.xyz, texColor_0.xyz * fillParams_0.fillColor0_0.xyz, vec3(texColor_0.w)), fillParams_0.fillColor0_0.w * coverage_0);

@@ -53,11 +53,16 @@
 namespace ImWidgets{
     ImGlobalData GlobalData;
 	bool g_SlugDebugShader = false;
+	ImU32 GetColorU32( ImWidgetsCol colorIndex ) { return ImGui::GetColorU32( GetStyle().Colors[ colorIndex ] ); }
+	void SetSlugDebugShader( bool enabled ) { g_SlugDebugShader = enabled; }
+	bool GetSlugDebugShader() { return g_SlugDebugShader; }
 
 	// Forward declarations: definitions live further down in this file. Earlier
 	// widgets (SliderRing / SliderSpline / their gradient variants) call the
 	// shared popup helper for Ctrl+Click + double-click precision input, so the
 	// declaration needs to precede them.
+	static void ImGradientInterpGetFunctions( ImWidgetsGradientInterp interp, pfSpace2sRGB* out_toRGB, pfsRGB2Space* out_fromRGB );
+	void DW_FreePlaneCaches();
 	bool BeginPrecisionPopup(const char* str_id, ImVec2 anchor);
 	void EndPrecisionPopup();
 	bool DW_SliderScalarPopup(
@@ -1301,74 +1306,26 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return result;
 	}
 
-	ImU64	ClampScalar(ImGuiDataType data_type, void* p_value, void* p_min, void* p_max)
+	// Clamps *p_value into [*p_min, *p_max] IN PLACE and reports whether that
+	// actually altered it. It used to compute the clamped value, return it as an
+	// ImU64 and leave *p_value untouched -- and every one of its call sites
+	// discarded the return, so typed-in values were never clamped at all.
+	bool	ClampScalar(ImGuiDataType data_type, void* p_value, void* p_min, void* p_max)
 	{
-		ImU64 result = 0;
 		switch (data_type)
 		{
-		case ImGuiDataType_S8:
-		{
-			ImS8 value = ImClamp(*reinterpret_cast<ImS8*>(p_value), *static_cast<ImS8*>(p_min), *static_cast<ImS8*>(p_max));
-			result = static_cast<ImU64>(value);
+		case ImGuiDataType_S8:     { ImS8&    v = *reinterpret_cast<ImS8*>(p_value);    ImS8    c = ImClamp(v, *static_cast<ImS8*>(p_min),    *static_cast<ImS8*>(p_max));    if (c == v) return false; v = c; return true; }
+		case ImGuiDataType_U8:     { ImU8&    v = *reinterpret_cast<ImU8*>(p_value);    ImU8    c = ImClamp(v, *static_cast<ImU8*>(p_min),    *static_cast<ImU8*>(p_max));    if (c == v) return false; v = c; return true; }
+		case ImGuiDataType_S16:    { ImS16&   v = *reinterpret_cast<ImS16*>(p_value);   ImS16   c = ImClamp(v, *static_cast<ImS16*>(p_min),   *static_cast<ImS16*>(p_max));   if (c == v) return false; v = c; return true; }
+		case ImGuiDataType_U16:    { ImU16&   v = *reinterpret_cast<ImU16*>(p_value);   ImU16   c = ImClamp(v, *static_cast<ImU16*>(p_min),   *static_cast<ImU16*>(p_max));   if (c == v) return false; v = c; return true; }
+		case ImGuiDataType_S32:    { ImS32&   v = *reinterpret_cast<ImS32*>(p_value);   ImS32   c = ImClamp(v, *static_cast<ImS32*>(p_min),   *static_cast<ImS32*>(p_max));   if (c == v) return false; v = c; return true; }
+		case ImGuiDataType_U32:    { ImU32&   v = *reinterpret_cast<ImU32*>(p_value);   ImU32   c = ImClamp(v, *static_cast<ImU32*>(p_min),   *static_cast<ImU32*>(p_max));   if (c == v) return false; v = c; return true; }
+		case ImGuiDataType_S64:    { ImS64&   v = *reinterpret_cast<ImS64*>(p_value);   ImS64   c = ImClamp(v, *static_cast<ImS64*>(p_min),   *static_cast<ImS64*>(p_max));   if (c == v) return false; v = c; return true; }
+		case ImGuiDataType_U64:    { ImU64&   v = *reinterpret_cast<ImU64*>(p_value);   ImU64   c = ImClamp(v, *static_cast<ImU64*>(p_min),   *static_cast<ImU64*>(p_max));   if (c == v) return false; v = c; return true; }
+		case ImGuiDataType_Float:  { float&   v = *reinterpret_cast<float*>(p_value);   float   c = ImClamp(v, *static_cast<float*>(p_min),   *static_cast<float*>(p_max));   if (c == v) return false; v = c; return true; }
+		case ImGuiDataType_Double: { double&  v = *reinterpret_cast<double*>(p_value);  double  c = ImClamp(v, *static_cast<double*>(p_min),  *static_cast<double*>(p_max));  if (c == v) return false; v = c; return true; }
 		}
-		break;
-		case ImGuiDataType_U8:
-		{
-			ImU8 value = ImClamp(*reinterpret_cast<ImU8*>(p_value), *static_cast<ImU8*>(p_min), *static_cast<ImU8*>(p_max));
-			result = static_cast<ImU64>(value);
-		}
-		break;
-		case ImGuiDataType_S16:
-		{
-			ImS16 value = ImClamp(*reinterpret_cast<ImS16*>(p_value), *static_cast<ImS16*>(p_min), *static_cast<ImS16*>(p_max));
-			result = static_cast<ImU64>(value);
-		}
-		break;
-		case ImGuiDataType_U16:
-		{
-			ImU16 value = ImClamp(*reinterpret_cast<ImU16*>(p_value), *static_cast<ImU16*>(p_min), *static_cast<ImU16*>(p_max));
-			result = static_cast<ImU64>(value);
-		}
-		break;
-		case ImGuiDataType_S32:
-		{
-			ImS32 value = ImClamp(*reinterpret_cast<ImS32*>(p_value), *static_cast<ImS32*>(p_min), *static_cast<ImS32*>(p_max));
-			result = static_cast<ImU64>(value);
-		}
-		break;
-		case ImGuiDataType_U32:
-		{
-			ImU32 value = ImClamp(*reinterpret_cast<ImU32*>(p_value), *static_cast<ImU32*>(p_min), *static_cast<ImU32*>(p_max));
-			result = static_cast<ImU64>(value);
-		}
-		break;
-		case ImGuiDataType_S64:
-		{
-			ImS64 value = ImClamp(*reinterpret_cast<ImS64*>(p_value), *static_cast<ImS64*>(p_min), *static_cast<ImS64*>(p_max));
-			result = static_cast<ImU64>(value);
-		}
-		break;
-		case ImGuiDataType_U64:
-		{
-			ImU64 value = ImClamp(*reinterpret_cast<ImU64*>(p_value), *static_cast<ImU64*>(p_min), *static_cast<ImU64*>(p_max));
-			result = static_cast<ImU64>(value);
-		}
-		break;
-		case ImGuiDataType_Float:
-		{
-			float value = ImClamp(*reinterpret_cast<float*>(p_value), *static_cast<float*>(p_min), *static_cast<float*>(p_max));
-			result = *reinterpret_cast<ImU64*>(&value);
-		}
-		break;
-		case ImGuiDataType_Double:
-		{
-			double value = ImClamp(*reinterpret_cast<double*>(p_value), *static_cast<double*>(p_min), *static_cast<double*>(p_max));
-			result = *reinterpret_cast<ImU64*>(&value);
-		}
-		break;
-		}
-
-		return result;
+		return false;
 	}
 
 	ImU64	Normalize01(ImGuiDataType data_type, void* p_value, void const* p_min, void const* p_max)
@@ -1453,147 +1410,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		*z2 = Dot3(x, y, z, &mat[6]);
 	}
 
-//	void		MemoryString(std::string& sResult, ImU64 const uMemoryByte)
-//	{
-//		if (uMemoryByte < ImWidgets_Kibi)
-//		{
-//			sResult = std::to_string(static_cast<float>(uMemoryByte)) + " B";
-//		}
-//		else if (uMemoryByte < ImWidgets_Mibi)
-//		{
-//			sResult = std::to_string(static_cast<float>(uMemoryByte) / static_cast<float>(ImWidgets_Kibi)) + " KiB";
-//		}
-//		else if (uMemoryByte < ImWidgets_Gibi)
-//		{
-//			sResult = std::to_string(static_cast<float>(uMemoryByte) / static_cast<float>(ImWidgets_Mibi)) + " MiB";
-//		}
-//		else if (uMemoryByte < ImWidgets_Tebi)
-//		{
-//			sResult = std::to_string(static_cast<float>(uMemoryByte) / static_cast<float>(ImWidgets_Gibi)) + " GiB";
-//		}
-//		else if (uMemoryByte < ImWidgets_Pebi)
-//		{
-//			sResult = std::to_string(static_cast<float>(uMemoryByte) / static_cast<float>(ImWidgets_Tebi)) + " TiB";
-//		}
-//	}
-//
-//	void		TimeString(std::string& sResult, ImU64 const uNanoseconds)
-//	{
-//		std::chrono::nanoseconds oDuration( uNanoseconds );
-//
-//		typedef std::chrono::duration< ImU64, std::ratio_multiply< std::chrono::hours::period, std::ratio< 8 > >::type > Days; // UTC: +8:00
-//
-//		Days oDays			= std::chrono::duration_cast< Days >( oDuration );
-//		oDuration -= oDays;
-//		auto oHours			= std::chrono::duration_cast< std::chrono::hours >( oDuration );
-//		oDuration -= oHours;
-//		auto oMinutes		= std::chrono::duration_cast< std::chrono::minutes >( oDuration );
-//		oDuration -= oMinutes;
-//		auto oSeconds		= std::chrono::duration_cast< std::chrono::seconds >( oDuration );
-//		oDuration -= oSeconds;
-//		auto oMilliseconds	= std::chrono::duration_cast< std::chrono::milliseconds >( oDuration );
-//		oDuration -= oMilliseconds;
-//		auto oMicroseconds	= std::chrono::duration_cast< std::chrono::microseconds >( oDuration );
-//		oDuration -= oMicroseconds;
-//		auto oNanoseconds	= std::chrono::duration_cast< std::chrono::nanoseconds >( oDuration );
-//
-//		ImU64 const uNanoSecondsCountRaw	= oNanoseconds.count();
-//		ImU64 const uNanoSecondsCount		= uNanoSecondsCountRaw <= 100ull ? 0ull : uNanoSecondsCountRaw;
-//
-//		sResult.clear();
-//		if ( oDays.count() > 0 )
-//		{
-//			sResult =	std::to_string( oDays.count() )			+ " d : " +
-//						std::to_string( oHours.count() )		+ " h : " +
-//						std::to_string( oMinutes.count() )		+ " min : " +
-//						std::to_string( oSeconds.count() )		+ " s : " +
-//						std::to_string( oMilliseconds.count() )	+ " ms : " +
-//						//std::to_string( oMicroseconds.count() ) + " \u00B5s : " +
-//						std::to_string( oMicroseconds.count() ) + " us";//: " +
-//						//std::to_string( uNanoSecondsCount )		+ " ns";
-//		}
-//		else if ( oHours.count() > 0 )
-//		{
-//			sResult =	std::to_string( oHours.count() )		+ " h : " +
-//						std::to_string( oMinutes.count() )		+ " min : " +
-//						std::to_string( oSeconds.count() )		+ " s : " +
-//						std::to_string( oMilliseconds.count() )	+ " ms : " +
-//						//std::to_string( oMicroseconds.count() ) + " \u00B5s : " +
-//						std::to_string( oMicroseconds.count() ) + " us";//: " +
-//						//std::to_string( uNanoSecondsCount )		+ " ns";
-//		}
-//		else if ( oMinutes.count() > 0 )
-//		{
-//			sResult =	std::to_string( oMinutes.count() )		+ " min : " +
-//						std::to_string( oSeconds.count() )		+ " s : " +
-//						std::to_string( oMilliseconds.count() )	+ " ms : " +
-//						//std::to_string( oMicroseconds.count() ) + " \u00B5s : " +
-//						std::to_string( oMicroseconds.count() ) + " us";//: " +
-//						//std::to_string( uNanoSecondsCount )		+ " ns";
-//		}
-//		else if ( oSeconds.count() > 0 )
-//		{
-//			sResult =	std::to_string( oSeconds.count() )		+ " s : " +
-//						std::to_string( oMilliseconds.count() )	+ " ms : " +
-//						//std::to_string( oMicroseconds.count() ) + " \u00B5s : " +
-//						std::to_string( oMicroseconds.count() ) + " us";//: " +
-//						//std::to_string( uNanoSecondsCount )		+ " ns";
-//		}
-//		else if ( oMilliseconds.count() > 0 )
-//		{
-//			sResult =	std::to_string( oMilliseconds.count() )	+ " ms : " +
-//						//std::to_string( oMicroseconds.count() ) + " \u00B5s : " +
-//						std::to_string( oMicroseconds.count() ) + " us";//: " +
-//						//std::to_string( uNanoSecondsCount )		+ " ns";
-//		}
-//		else if ( oMicroseconds.count() > 0 )
-//		{
-//			sResult =	//std::to_string( oMicroseconds.count() ) + " \u00B5s : " +
-//						std::to_string( oMicroseconds.count() ) + " us";//: " +
-//						//std::to_string( uNanoSecondsCount )		+ " ns";
-//		}
-//		else //if ( oNanoseconds.count() > 0 )
-//		{
-//			sResult =	std::to_string( uNanoSecondsCount )		+ " ns";
-//		}
-//	}
 
 	float Dist2(ImVec2 const v, ImVec2 const w)
 	{
 		//return Sqr(v.x - w.x) + Sqr(v.y - w.y);
 		return ImLengthSqr(v - w);
-	}
-	float DistOnSegmentSqr(ImVec2 const p, ImVec2 const v, ImVec2 const w)
-	{
-		float l2 = Dist2(v, w);
-		//if (l2 == 0.0f)
-		//	return 0.0f;
-
-		float t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
-
-		return ImSaturate(t) * Dist2(w, v);
-	}
-	float DistToSegmentSqr(ImVec2 const p, ImVec2 const v, ImVec2 const w)
-	{
-		//float l2 = Dist2(v, w);
-		////if (l2 == 0.0f)
-		////	return Dist2(p, v);
-		//
-		//float t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
-		//t = ImSaturate(t);
-		//
-		//return Dist2(p, ImVec2(v.x + t * (w.x - v.x),
-		//					   v.y + t * (w.y - v.y)));
-
-		float const lDx = v.x - w.x;
-		float const lDy = v.y - w.y;
-
-		float const dx = v.x - p.x;
-		float const dy = v.y - p.y;
-
-		float const l2 = ImSqrt(ImLengthSqr(w - v));
-
-		return ImAbs(lDx * dy - lDy * dx) / l2;
 	}
 	float Side(ImVec2 const src, ImVec2 const tgt, ImVec2 const pts)
 	{
@@ -1603,14 +1424,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float zCross = vDir.x * vVec.y - vDir.y * vVec.x;
 
 		return zCross >= 0.0f ? 1.0f : -1.0f;
-	}
-	ImVec2 Saturatev(ImVec2 const v)
-	{
-		return ImVec2(ImSaturate(v.x), ImSaturate(v.y));
-	}
-	ImVec2 Clampv(ImVec2 const v, ImVec2 const min, ImVec2 const max)
-	{
-		return ImVec2(ImClamp(v.x, min.x, max.x), ImClamp(v.y, min.y, max.y));
 	}
 	float Rescale01(float const x, float const min, float const max)
 	{
@@ -1623,15 +1436,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	float Rescale(float const x, float const min, float const max, float const newMin, float const newMax)
 	{
 		return Rescale01(x, min, max) * (newMax - newMin) + newMin;
-	}
-	ImVec2 Rescalev(ImVec2 const x, ImVec2 const min, ImVec2 const max, ImVec2 const newMin, ImVec2 const newMax)
-	{
-		ImVec2 const vNorm = Rescale01v(x, min, max);
-		return ImVec2(vNorm.x * (newMax.x - newMin.x) + newMin.x, vNorm.y * (newMax.y - newMin.y) + newMin.y);
-	}
-	float Sign(float x)
-	{
-		return x < 0.0f ? -1.0f : 1.0f;
 	}
 	float	ImLinearSample( float t, float* buffer, int count )
 	{
@@ -1675,20 +1479,17 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		out_g = g;
 		out_b = b;
 	}
-	void ColorConvertRGBtoLinear( float& out_L, float& out_a, float& out_b, float r, float g, float b )
+	void ColorConvertRGBtoLinear( float& out_lr, float& out_lg, float& out_lb, float r, float g, float b )
 	{
-		out_L = ImsRGBToLinear( r );
-		out_a = ImsRGBToLinear( g );
-		out_b = ImsRGBToLinear( b );
-		out_L = ImSaturate( out_L );
-		out_a = ImSaturate( out_a );
-		out_b = ImSaturate( out_b );
+		out_lr = ImSaturate( ImsRGBToLinear( r ) );
+		out_lg = ImSaturate( ImsRGBToLinear( g ) );
+		out_lb = ImSaturate( ImsRGBToLinear( b ) );
 	}
-	void ColorConvertLineartoRGB( float& out_r, float& out_g, float& out_b, float L, float a, float b )
+	void ColorConvertLineartoRGB( float& out_r, float& out_g, float& out_b, float lr, float lg, float lb )
 	{
-		out_r = ImLinearTosRGB( L );
-		out_g = ImLinearTosRGB( a );
-		out_b = ImLinearTosRGB( b );
+		out_r = ImLinearTosRGB( lr );
+		out_g = ImLinearTosRGB( lg );
+		out_b = ImLinearTosRGB( lb );
 		out_r = ImSaturate( out_r );
 		out_g = ImSaturate( out_g );
 		out_b = ImSaturate( out_b );
@@ -1723,23 +1524,23 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		out_g = ImLinearTosRGB( out_g );
 		out_b = ImLinearTosRGB( out_b );
 	}
-	void ColorConvertOKLCHtoOKLAB( float& out_L, float& out_a, float& out_b, float r, float g, float b )
+	void ColorConvertOKLCHtoOKLAB( float& out_L, float& out_a, float& out_b, float L_in, float c, float h )
 	{
-		out_L = r;
-		out_a = g * ImCos( b * 2.0f * IM_PI );
-		out_b = g * ImSin( b * 2.0f * IM_PI );
+		out_L = L_in;
+		out_a = c * ImCos( h * 2.0f * IM_PI );
+		out_b = c * ImSin( h * 2.0f * IM_PI );
 	}
-	void ColorConvertOKLABtoOKLCH( float& out_r, float& out_g, float& out_b, float L, float a, float b )
+	void ColorConvertOKLABtoOKLCH( float& out_L, float& out_c, float& out_h, float L, float a, float b )
 	{
-		out_r = L;
-		out_g = ImSqrt( a * a + b * b );
-		out_b = ImAtan2( b, a );
-		if ( out_b < 0.0f )
+		out_L = L;
+		out_c = ImSqrt( a * a + b * b );
+		out_h = ImAtan2( b, a );
+		if ( out_h < 0.0f )
 		{
-			out_b += 2.0f * IM_PI;
+			out_h += 2.0f * IM_PI;
 		}
-		out_b /= 2.0f * IM_PI;
-		out_b = ImSaturate( out_b );
+		out_h /= 2.0f * IM_PI;
+		out_h = ImSaturate( out_h );
 	}
 	void ColorConvertsRGBtoOKLCH( float& out_L, float& out_c, float& out_h, float r, float g, float b )
 	{
@@ -1916,37 +1717,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	//void ColorConvertHWBtoRGB( float h, float w, float bk, float& r, float& g, float& b )
 	//{
-	//	/**
- //* @param {number} hue -  Hue as degrees 0..360
- //* @param {number} white -  Whiteness in reference range [0,100]
- //* @param {number} black -  Blackness in reference range [0,100]
- //* @return {number[]} Array of RGB components 0..1
- //*/
-	//	/*function hwbToRgb( hue, white, black )
-	//	{
-	//		white /= 100;
-	//		black /= 100;
-	//		if ( white + black >= 1 )
-	//		{
-	//			let gray = white / ( white + black );
-	//			return[ gray, gray, gray ];
-	//		}
-	//		let rgb = hslToRgb( hue, 100, 50 );
-	//		for ( let i = 0; i < 3; i++ )
-	//		{
-	//			rgb[ i ] *= ( 1 - white - black );
-	//			rgb[ i ] += white;
-	//		}
-	//		return rgb;
-	//	}*/
-	//	if ( w + bk >= 1.0f )
-	//	{
-	//		float grey = w / ( w + bk );
-	//		r = grey;
-	//		g = grey;
-	//		b = grey;
-	//	}
-	//}
 
 	IMGUI_API ImU32 ImColorBlendsRGB( ImU32 col0, ImU32 col1, float t )
 	{
@@ -2196,109 +1966,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return s_Style;
 	}
 
-	void ImVectorUniqueEdge( int& size, ImVector<ImWidgetsEdgeIdx>& edges )
-	{
-		size = edges.size();
-		for ( int p = 0; p < size; ++p )
-		{
-			for ( int q = p + 1; q < size; ++q )
-			{
-				if ( edges[ p ].a == edges[ q ].a &&
-					 edges[ p ].b == edges[ q ].b )
-				{
-					while ( edges[ p ].a == edges[ q ].a &&
-							edges[ p ].b == edges[ q ].b )
-					{
-						// Flag non-unique edges with -index of the duplicate edge
-						edges[ q ].a = -p;
-						//edges[ q ].b = -p;
-						//ImEdgeIdx last = vector[ size - 1 ];
-						//vector[ size - 1 ] = vector[ q ];
-						//vector[ q ] = last;
-						--size;
-					}
-				}
-			}
-		}
-		//vector.resize( size );
-	}
 
-	int GetEdgeIndex( ImVector<ImWidgetsEdgeIdx> const& edges, ImWidgetsEdgeIdx e )
-	{
-		int edge_count = edges.size();
-		for ( int k = 0; k < edge_count; ++k )
-		{
-			ImWidgetsEdgeIdx const& cur = edges[ k ];
-			if ( cur.a == e.a && cur.b == e.b )
-				return k;
-		}
 
-		return -1;
-	}
 
-	ImDrawIdx GetOtherIdx( ImDrawIdx a, ImDrawIdx b, ImWidgetsTriIdx& tri )
-	{
-		if ( a == tri.a )
-		{
-			if ( b == tri.b )
-			{
-				return tri.c;
-			}
-			else if ( b == tri.c )
-			{
-				return tri.b;
-			}
-		}
-		else if ( a == tri.b )
-		{
-			if ( b == tri.a )
-			{
-				return tri.c;
-			}
-			else if ( b == tri.c )
-			{
-				return tri.a;
-			}
-		}
-		else if ( a == tri.c )
-		{
-			if ( b == tri.a )
-			{
-				return tri.b;
-			}
-			else if ( b == tri.b )
-			{
-				return tri.a;
-			}
-		}
-
-		return ImDrawIdx( -1 );
-	}
-
-	void GetOtherIdxOrdered( ImDrawIdx& a, ImDrawIdx& b, ImWidgetsTriIdx& tri, ImDrawIdx p )
-	{
-		if ( p == tri.a )
-		{
-			a = tri.b;
-			b = tri.c;
-			return;
-		}
-		else if ( p == tri.b )
-		{
-			a = tri.c;
-			b = tri.a;
-			return;
-		}
-		else if ( p == tri.c )
-		{
-			a = tri.a;
-			b = tri.b;
-			return;
-		}
-
-		a = (ImDrawIdx)(-1);
-		b = (ImDrawIdx)(-1);
-	}
 
 	float ImCross( ImVec2 v1, ImVec2 v2 )
 	{
@@ -2716,23 +2386,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			shape.bb.Min.y = ImMin( shape.bb.Min.y, shape.vertices[ k ].pos.y );
 			shape.bb.Max.x = ImMax( shape.bb.Max.x, shape.vertices[ k ].pos.x );
 			shape.bb.Max.y = ImMax( shape.bb.Max.y, shape.vertices[ k ].pos.y );
-		}
-	}
-
-	void	ShapeLineSetBound( ImWidgetsShapeLine& shape )
-	{
-		shape.bb.Min = shape.vertices.front().pos;
-		shape.bb.Max = shape.vertices.front().pos;
-		//shape.bb.Min = shape.vertices->pos;
-		//shape.bb.Max = shape.vertices->pos;
-		int vtx_count = shape.vertices.size();
-		//int vtx_count = shape.vertices_count;
-		for ( int k = 1; k < vtx_count; ++k )
-		{
-			shape.bb.Min.x = ImMin( shape.bb.Min.x, shape.vertices[ k ].pos.x );
-			shape.bb.Min.y = ImMin( shape.bb.Min.y, shape.vertices[ k ].pos.y );
-			shape.bb.Max.x = ImMin( shape.bb.Max.x, shape.vertices[ k ].pos.x );
-			shape.bb.Max.y = ImMin( shape.bb.Max.y, shape.vertices[ k ].pos.y );
 		}
 	}
 
@@ -3722,108 +3375,31 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 	}
 
-	void	ShapeSRGBLinearGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	// Enum-driven entry points. One conversion-pointer map (the same one gradients
+	// and ColorBlend use) replaces the fifteen per-space wrappers that were here.
+	void	ShapeLinearGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, ImWidgetsGradientInterp interp )
 	{
-		//ImVec2 delta = uv_end - uv_start;
-		//ImVec2 d = ImNormalized( delta );
-		//float l = 1.0f / ImLength( delta );
-		//int vtx_count = shape.vertices.size();
-		//for ( int k = 0; k < vtx_count; ++k )
-		//{
-		//	ImVec2 v = shape.vertices[ k ].pos;
-		//	ImVec2 uv;
-		//	uv.x = Normalize01( v.x, shape.bb.Min.x, shape.bb.Max.x );
-		//	uv.y = Normalize01( v.y, shape.bb.Min.y, shape.bb.Max.y );
-		//	ImVec2 c = uv - uv_start;
-		//	float t = ImSaturate( ImDot( d, c ) * l );
-		//	shape.vertices[ k ].col = ImColorBlendsRGB( col0, col1, t );
-		//}
-		ShapeLinearGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertsRGBtosRGB, &ColorConvertsRGBtosRGB );
+		pfSpace2sRGB toRGB = NULL; pfsRGB2Space fromRGB = NULL;
+		ImGradientInterpGetFunctions( interp, &toRGB, &fromRGB );
+		ShapeLinearGradientGeneric( shape, uv_start, uv_end, col0, col1, toRGB, fromRGB );
 	}
-	void	ShapeSRGBRadialGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
+	void	ShapeRadialGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, ImWidgetsGradientInterp interp )
 	{
-		//ImVec2 delta = uv_end - uv_start;
-		//float l = 1.0f / ImLength( delta );
-		//int vtx_count = shape.vertices.size();
-		//for ( int k = 0; k < vtx_count; ++k )
-		//{
-		//	ImVec2 v = shape.vertices[ k ].pos;
-		//	ImVec2 uv;
-		//	uv.x = Normalize01( v.x, shape.bb.Min.x, shape.bb.Max.x );
-		//	uv.y = Normalize01( v.y, shape.bb.Min.y, shape.bb.Max.y );
-		//	float t = ImSaturate( ImLength( uv - uv_start ) * l );
-		//	shape.vertices[ k ].col = ImColorBlendsRGB( col0, col1, t );
-		//}
-		ShapeRadialGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertsRGBtosRGB, &ColorConvertsRGBtosRGB );
+		pfSpace2sRGB toRGB = NULL; pfsRGB2Space fromRGB = NULL;
+		ImGradientInterpGetFunctions( interp, &toRGB, &fromRGB );
+		ShapeRadialGradientGeneric( shape, uv_start, uv_end, col0, col1, toRGB, fromRGB );
 	}
+	void	ShapeDiamondGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, ImWidgetsGradientInterp interp )
+	{
+		pfSpace2sRGB toRGB = NULL; pfsRGB2Space fromRGB = NULL;
+		ImGradientInterpGetFunctions( interp, &toRGB, &fromRGB );
+		ShapeDiamondGradientGeneric( shape, uv_start, uv_end, col0, col1, toRGB, fromRGB );
+	}
+
 	// Just L1-Norm
-	void	ShapeSRGBDiamondGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
-	{
-		//ImVec2 delta = uv_end - uv_start;
-		//float l = 1.0f / ImLengthL1( delta );
-		//int vtx_count = shape.vertices.size();
-		//for ( int k = 0; k < vtx_count; ++k )
-		//{
-		//	ImVec2 v = shape.vertices[ k ].pos;
-		//	ImVec2 uv;
-		//	uv.x = Normalize01( v.x, shape.bb.Min.x, shape.bb.Max.x );
-		//	uv.y = Normalize01( v.y, shape.bb.Min.y, shape.bb.Max.y );
-		//	float t = ImSaturate( ImLengthL1( uv - uv_start ) * l );
-		//	shape.vertices[ k ].col = ImColorBlendsRGB( col0, col1, t );
-		//}
-		ShapeDiamondGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertsRGBtosRGB, &ColorConvertsRGBtosRGB );
-	}
-	void	ShapeOkLabLinearGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
-	{
-		ShapeLinearGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertOKLABtoRGB, &ColorConvertRGBtoOKLAB );
-	}
-	void	ShapeOkLabRadialGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
-	{
-		ShapeRadialGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertOKLABtoRGB, &ColorConvertRGBtoOKLAB );
-	}
-	void	ShapeOkLabDiamondGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
-	{
-		ShapeDiamondGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertOKLABtoRGB, &ColorConvertRGBtoOKLAB );
-	}
 
-	void	ShapeOkLchLinearGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
-	{
-		ShapeLinearGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertOKLCHtosRGB, &ColorConvertsRGBtoOKLCH );
-	}
-	void	ShapeOkLchRadialGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
-	{
-		ShapeRadialGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertOKLCHtosRGB, &ColorConvertsRGBtoOKLCH );
-	}
-	void	ShapeOkLchDiamondGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
-	{
-		ShapeDiamondGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertOKLCHtosRGB, &ColorConvertsRGBtoOKLCH );
-	}
 
-	void	ShapeLinearSRGBLinearGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
-	{
-		ShapeLinearGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertLineartoRGB, &ColorConvertRGBtoLinear );
-	}
-	void	ShapeLinearSRGBRadialGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
-	{
-		ShapeRadialGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertLineartoRGB, &ColorConvertRGBtoLinear );
-	}
-	void	ShapeLinearSRGBDiamondGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
-	{
-		ShapeDiamondGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertLineartoRGB, &ColorConvertRGBtoLinear );
-	}
 
-	void	ShapeHSVLinearGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
-	{
-		ShapeLinearGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertHSVtoRGB, &ColorConvertRGBtoHSV );
-	}
-	void	ShapeHSVRadialGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
-	{
-		ShapeRadialGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertHSVtoRGB, &ColorConvertRGBtoHSV );
-	}
-	void	ShapeHSVDiamondGradient( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1 )
-	{
-		ShapeDiamondGradientGeneric( shape, uv_start, uv_end, col0, col1, &ColorConvertHSVtoRGB, &ColorConvertRGBtoHSV );
-	}
 
 	//////////////////////////////////////////////////////////////////////////
 	// ImWidgets Context pointer -- used by Slug and other subsystems
@@ -3867,28 +3443,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 //		char* ps_source;
 //
 //#define FILENAME_BUF 512
-//		char filename_vs[ FILENAME_BUF ];
-//		char filename_ps[ FILENAME_BUF ];
-//
-//#if IM_CURRENT_GFX == IM_GFX_OPENGL3 || IM_CURRENT_GFX == IM_GFX_VULKAN
-//		ImFormatString( filename_vs, FILENAME_BUF, "./shaders/%s/markers_vs.%s", "glsl", "glsl" );
-//		ImFormatString( filename_ps, FILENAME_BUF, "./shaders/%s/markers_ps.%s", "glsl", "glsl" );
-//#elif IM_CURRENT_GFX == IM_GFX_DIRECTX9 || IM_CURRENT_GFX == IM_GFX_DIRECTX10 || IM_CURRENT_GFX == IM_GFX_DIRECTX11 || IM_CURRENT_GFX == IM_GFX_DIRECTX12
-//		ImFormatString( filename_vs, FILENAME_BUF, "./shaders/%s/markers.%s", "hlsl_src", "hlsl" );
-//		ImFormatString( filename_ps, FILENAME_BUF, "./shaders/%s/markers.%s", "hlsl_src", "hlsl" );
-//#elif IM_CURRENT_GFX == IM_GFX_METAL
-//		ImFormatString( filename_vs, FILENAME_BUF, "./shaders/%s/markers_vs.%s", "msl", "msl" );
-//		ImFormatString( filename_ps, FILENAME_BUF, "./shaders/%s/markers_ps.%s", "msl", "msl" );
-//#endif
-//
-//		size_t file_data_size_vs;
-//		size_t file_data_size_ps;
-//		LoadShaderFile( &file_data_size_vs, &vs_source, filename_vs );
-//		LoadShaderFile( &file_data_size_ps, &ps_source, filename_ps );
-//
-//		ctx->markerShader = ImPlatform::CreateShader( vs_source, ps_source, 0, NULL, sizeof( ImWidgetsMarkerBuffer ), &markerParams );
-//		IM_FREE( vs_source );
-//		IM_FREE( ps_source );
 	}
 
 	void PrebuildShaders()
@@ -4050,6 +3604,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	void	DestroyContext( ImWidgetsContext* ctx )
 	{
+		// Per-instance colour-picker plane caches are process-wide, not per-context.
+		DW_FreePlaneCaches();
+
 		if ( ctx != NULL )
 		{
 			// Clean up resources BEFORE deleting the context
@@ -4346,7 +3903,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImVec2 pts[ 5 ];
 		ImInternalGetSignetVertices( &pts[ 0 ], 5, targetPoint, width, height, height_ratio, align01, angle, thickness );
 
-		pDrawList->AddPolyline( &pts[ 0 ], 5, col, ImDrawFlags_Closed, thickness );
+		pDrawList->AddPolyline( &pts[ 0 ], 5, col, thickness, ImDrawFlags_Closed );
 	}
 
 	void DrawSignetFilledCursor( ImDrawList* pDrawList, ImVec2 targetPoint, float width, float height, float height_ratio, float align01, float angle, ImU32 col )
@@ -4672,7 +4229,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		DrawHueBand( pDrawList, vpos, size, division, alpha, gamma, h );
 	}
 
-	void DrawLumianceBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma )
+	void DrawLuminanceBand( ImDrawList* pDrawList, ImVec2 const vpos, ImVec2 const size, int division, ImVec4 const& color, float gamma )
 	{
 		float h, s, v;
 		ImGui::ColorConvertRGBtoHSV( color.x, color.y, color.z, h, s, v );
@@ -5178,7 +4735,21 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+	// Shader build failures are reported once each and are NOT fatal: a backend
+	// may not support a given shader (the OpenGL GLSL outputs, for instance, are
+	// generated with Vulkan-style separate samplers). Callers receive an empty
+	// ImDrawShader and fall back to their CPU path or draw a notice instead.
+	static void DW_ShaderWarn( const char* msg )
+	{
+		static ImGuiStorage s_reported;
+		ImGuiID key = ImHashStr( msg );
+		if ( s_reported.GetBool( key ) ) return;
+		s_reported.SetBool( key, true );
+		fprintf( stderr, "[DearWidgets] %s\n", msg );
+	}
+#if (IM_CURRENT_GFX == IM_GFX_DIRECTX9) || (IM_CURRENT_GFX == IM_GFX_DIRECTX10) || (IM_CURRENT_GFX == IM_GFX_DIRECTX11) || (IM_CURRENT_GFX == IM_GFX_DIRECTX12)
 	// Resolve one level of #include "filename" in HLSL source (D3DCompile has no include handler).
+	// Only the D3D backends need this; the others compile GLSL/SPIR-V with their own includes.
 	// Returns a newly IM_ALLOC'd string with the include inlined; frees the original src.
 	static char* HlslInlineIncludes(char* src, const char* srcFilePath)
 	{
@@ -5241,6 +4812,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 		return src;
 	}
+#endif // D3D backends only
 
 	void CreateInternalShader( ImDrawShader *shaders_out, char const *shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer, char const* extra_define, char const* cache_suffix, unsigned int compile_flags )
 	{
@@ -5367,7 +4939,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			char error_msg[512];
 			ImFormatString(error_msg, sizeof(error_msg), "Failed to load shader files for '%s': vs_source=%p (%d bytes), ps_source=%p (%d bytes)",
 				shader_name, vs_source, (int)file_data_size_vs, ps_source, (int)file_data_size_ps);
-			IM_ASSERT(false && error_msg);
+			DW_ShaderWarn( error_msg ); // non-fatal: caller falls back to an empty shader
 			ImDrawShader zero = {};
 			memset( &zero, 0, sizeof( ImDrawShader ) );
 			memcpy( shaders_out, &zero, sizeof( ImDrawShader ) );
@@ -5404,7 +4976,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			// Check console output for D3DCompile error message
 			char error_msg[256];
 			ImFormatString(error_msg, sizeof(error_msg), "Failed to create vertex shader for '%s' - check console for D3DCompile errors", shader_name);
-			IM_ASSERT(false && error_msg);
+			DW_ShaderWarn( error_msg ); // non-fatal: caller falls back to an empty shader
 
 			// Clean up and return empty shader
 			if (vs_source) IM_FREE(vs_source);
@@ -5432,7 +5004,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			// Shader compilation failed - error message printed to stderr by ImPlatform
 			char error_msg[256];
 			ImFormatString(error_msg, sizeof(error_msg), "Failed to create pixel shader for '%s' - check console for D3DCompile errors", shader_name);
-			IM_ASSERT(false && error_msg);
+			DW_ShaderWarn( error_msg ); // non-fatal: caller falls back to an empty shader
 
 			// Clean up and return empty shader
 			if (vertex_shader) ImPlatform_DestroyShader(vertex_shader);
@@ -5451,7 +5023,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			program = ImPlatform_CreateShaderProgram( vertex_shader, pixel_shader );
 			if (program == NULL)
 			{
-				IM_ASSERT(false && "Failed to link shader program");
+				char link_msg[256];
+				ImFormatString( link_msg, sizeof( link_msg ),
+					"Failed to link shader program for '%s'", shader_name );
+				DW_ShaderWarn( link_msg );
 			}
 		}
 
@@ -5555,7 +5130,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		                        IM_COL32(255,255,255,255));
 
 		// Restore default render state
-		pDrawList->AddCallback(ImDrawCallback_ResetRenderState, NULL);
+		pDrawList->AddCallback(ImGui::GetPlatformIO().DrawCallback_ResetRenderState, NULL);
 	}
 
 #endif
@@ -5656,7 +5231,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		if ( showBorder )
 		{
-			pDrawList->AddPolyline( &chromLine[ 0 ], chromeLineSamplesCount, borderColor, ImDrawFlags_Closed, borderThickness );
+			pDrawList->AddPolyline( &chromLine[ 0 ], chromeLineSamplesCount, borderColor, borderThickness, ImDrawFlags_Closed );
 		}
 
 		ImWidgetsStyle const& dwPlotStyle = GetStyle();
@@ -5671,8 +5246,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				vCur.y = curPos.y + ImRescale( vCur.y, minY, maxY, size.y, 0.0f );
 			}
 			pDrawList->AddPolyline( &sRGBLines[ 0 ], 3,
-				ImGui::GetColorU32( dwPlotStyle.Colors[ StyleColor_ChromaticityPlot_Triangle ] ),
-				true, LpToPx( dwPlotStyle.ChromaticityPlot_TriangleThickness ) );
+				ImGui::GetColorU32( dwPlotStyle.Colors[ ImWidgetsCol_ChromaticityPlot_Triangle ] ),
+				LpToPx( dwPlotStyle.ChromaticityPlot_TriangleThickness ), ImDrawFlags_Closed );
 		}
 
 		if ( showWhitePoint )
@@ -5681,7 +5256,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			vWhitePoint.x = curPos.x + ImRescale( vWhitePoint.x, minX, maxX, 0.0f, size.x );
 			vWhitePoint.y = curPos.y + ImRescale( vWhitePoint.y, minY, maxY, size.y, 0.0f );
 			pDrawList->AddCircleFilled( vWhitePoint, LpToPx( dwPlotStyle.WhitePoint_Radius ),
-				ImGui::GetColorU32( dwPlotStyle.Colors[ StyleColor_ChromaticityPlot_WhitePoint ] ), 16 );
+				ImGui::GetColorU32( dwPlotStyle.Colors[ ImWidgetsCol_ChromaticityPlot_WhitePoint ] ), 16 );
 		}
 
 		if ( borderColor || showColorSpaceTriangle || showWhitePoint )
@@ -6159,7 +5734,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 
 		drawlist->PathArcTo( center, radius, -start_angle, -end_angle, num_segments );
-		drawlist->PathStroke( mainCol, ImDrawFlags_None, mainLineThickness );
+		drawlist->PathStroke( mainCol, mainLineThickness, ImDrawFlags_None );
 	}
 
 	void DrawLogLineGraduation( ImDrawList* drawlist, ImVec2 start, ImVec2 end,
@@ -6303,7 +5878,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 
 		drawlist->PathArcTo( center, radius, -start_angle, -end_angle, num_segments );
-		drawlist->PathStroke( mainCol, ImDrawFlags_None, mainLineThickness );
+		drawlist->PathStroke( mainCol, mainLineThickness, ImDrawFlags_None );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -6530,7 +6105,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const ImU32 eqCol   = IM_COL32( 255, 230, 180, 110 );
 		auto strokeStrip = [ & ]( ImVector<ImVec2>& s, ImU32 col, float w )
 		{
-			if ( s.Size >= 2 ) pDrawList->AddPolyline( s.Data, s.Size, col, ImDrawFlags_None, w );
+			if ( s.Size >= 2 ) pDrawList->AddPolyline( s.Data, s.Size, col, w, ImDrawFlags_None );
 			s.clear();
 		};
 		static const int kParallels[] = { -60, -30, 0, 30, 60 };
@@ -6769,7 +6344,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 			auto strokeStrip = [ & ]( ImVector<ImVec2>& s, ImU32 col, float w )
 			{
-				if ( s.Size >= 2 ) pDrawList->AddPolyline( s.Data, s.Size, col, ImDrawFlags_None, w );
+				if ( s.Size >= 2 ) pDrawList->AddPolyline( s.Data, s.Size, col, w, ImDrawFlags_None );
 				s.clear();
 			};
 
@@ -7731,7 +7306,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			}
 
 			pDrawList->AddRect( ar0, ImVec2( ar0.x + sz.x, ar0.y + sz.y ),
-			                    outlineCol, 0.0f, 0, 1.0f );
+			                    outlineCol, 0.0f, 1.0f, 0 );
 		}
 	}
 
@@ -8060,7 +7635,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		//drawlist->PathArcToFast( values->pos + ImVec2( values->length, 0.0f ), values->thickness, 3, -3 );
 		//drawlist->PathStroke( col );
 		ImVec2 t = { values->thickness, values->thickness };
-		drawlist->AddRect( values->pos - t, values->pos + t + ImVec2( values->length, 0.0f ), col, values->thickness, ImDrawFlags_RoundCornersAll );
+		drawlist->AddRect( values->pos - t, values->pos + t + ImVec2( values->length, 0.0f ), col, values->thickness, 1.0f, ImDrawFlags_RoundCornersAll );
 	}
 	void Im_DrawCapsuleV( ImDrawList* drawlist, ImU32 col, float thickness, void* data )
 	{
@@ -8070,23 +7645,23 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		//drawlist->PathArcToFast( values->pos + ImVec2( 0.0f, values->length ), values->thickness, 6, 0 );
 		//drawlist->PathStroke( col );
 		ImVec2 t = { values->thickness, values->thickness };
-		drawlist->AddRect( values->pos - t, values->pos + t + ImVec2( 0.0f, values->length ), col, values->thickness, ImDrawFlags_RoundCornersAll );
+		drawlist->AddRect( values->pos - t, values->pos + t + ImVec2( 0.0f, values->length ), col, values->thickness, 1.0f, ImDrawFlags_RoundCornersAll );
 	}
 	void Im_DrawShapeConvex( ImDrawList* drawlist, ImU32 col, float thickness, void* data )
 	{
 		ImPolyShapeData* values = ( ImPolyShapeData* )data;
-		drawlist->AddPolyline( values->pts, values->pts_count, col, 0, thickness );
+		drawlist->AddPolyline( values->pts, values->pts_count, col, thickness, 0 );
 	}
 	void Im_DrawShapeConcave( ImDrawList* drawlist, ImU32 col, float thickness, void* data )
 	{
 		ImPolyShapeData* values = ( ImPolyShapeData* )data;
-		drawlist->AddPolyline( values->pts, values->pts_count, col, 0, thickness );
+		drawlist->AddPolyline( values->pts, values->pts_count, col, thickness, 0 );
 	}
 	// TODO
 	void Im_DrawShapeWithHole( ImDrawList* drawlist, ImU32 col, float thickness, void* data )
 	{
 		ImPolyHoleShapeData* values = ( ImPolyHoleShapeData* )data;
-		drawlist->AddPolyline( values->pts, values->pts_count, col, 0, thickness );
+		drawlist->AddPolyline( values->pts, values->pts_count, col, thickness, 0 );
 	}
 
 	void Im_DrawCircleFilled( ImDrawList* drawlist, ImU32 col, void* data )
@@ -8217,7 +7792,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( flags & ImGuiNavRenderCursorFlags_Compact )
 		{
 			func( window->DrawList, ImGui::GetColorU32( ImGuiCol_NavCursor ), thickness, data );
-			//window->DrawList->AddRect( display_rect.Min, display_rect.Max, GetColorU32( ImGuiCol_NavCursor ), rounding, 0, thickness );
+			//window->DrawList->AddRect( display_rect.Min, display_rect.Max, GetColorU32( ImGuiCol_NavCursor ), rounding, thickness, 0 );
 		}
 		else
 		{
@@ -8226,38 +7801,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			bool fully_visible = window->ClipRect.Contains( display_rect );
 			if ( !fully_visible )
 				window->DrawList->PushClipRect( display_rect.Min, display_rect.Max );
-			//window->DrawList->AddRect( display_rect.Min, display_rect.Max, GetColorU32( ImGuiCol_NavCursor ), rounding, 0, thickness );
+			//window->DrawList->AddRect( display_rect.Min, display_rect.Max, GetColorU32( ImGuiCol_NavCursor ), rounding, thickness, 0 );
 			func( window->DrawList, ImGui::GetColorU32( ImGuiCol_NavCursor ), thickness, data );
 			if ( !fully_visible )
 				window->DrawList->PopClipRect();
 		}
-		//ImGuiContext& g = *GImGui;
-		//if ( id != g.NavId )
-		//	return;
-		//if ( g.NavDisableHighlight && !( flags & ImGuiNavHighlightFlags_AlwaysDraw ) )
-		//	return;
-		//ImGuiWindow* window = g.CurrentWindow;
-		//if ( window->DC.NavHideHighlightOneFrame )
-		//	return;
-
-		//float rounding = ( flags & ImGuiNavHighlightFlags_NoRounding ) ? 0.0f : g.Style.FrameRounding;
-		//display_rect.ClipWith( window->ClipRect );
-		//const float thickness = 2.0f;
-		//if ( flags & ImGuiNavHighlightFlags_Compact )
-		//{
-		//	func( window->DrawList, ImGui::GetColorU32( ImGuiCol_NavHighlight ), thickness, data );
-		//}
-		//else
-		//{
-		//	const float distance = 3.0f + thickness * 0.5f;
-		//	display_rect.Expand( ImVec2( distance, distance ) );
-		//	bool fully_visible = window->ClipRect.Contains( display_rect );
-		//	if ( !fully_visible )
-		//		window->DrawList->PushClipRect( display_rect.Min, display_rect.Max );
-		//	func( window->DrawList, ImGui::GetColorU32( ImGuiCol_NavHighlight ), thickness, data );
-		//	if ( !fully_visible )
-		//		window->DrawList->PopClipRect();
-		//}
 	}
 	void RenderNavCursorCircle( ImVec2 center, float radius, ImGuiID id, ImGuiNavRenderCursorFlags flags /*= ImGuiNavRenderCursorFlags_None */ )
 	{
@@ -8545,7 +8093,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					if ( flags & ( ImGuiButtonFlags_PressedOnClickRelease | ImGuiButtonFlags_PressedOnClickReleaseAnywhere ) )
 					{
 						ImGui::SetActiveID( id, window );
-						g.ActiveIdMouseButton = mouse_button_clicked;
+						g.ActiveIdMouseButton = ( ImS8 )mouse_button_clicked; // ImGuiContext stores it as ImS8
 						if ( !( flags & ImGuiButtonFlags_NoNavFocus ) )
 						{
 							ImGui::SetFocusID( id, window );
@@ -8563,7 +8111,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 							ImGui::ClearActiveID();
 						else
 							ImGui::SetActiveID( id, window ); // Hold on ID
-						g.ActiveIdMouseButton = mouse_button_clicked;
+						g.ActiveIdMouseButton = ( ImS8 )mouse_button_clicked; // ImGuiContext stores it as ImS8
 						if ( !( flags & ImGuiButtonFlags_NoNavFocus ) )
 						{
 							ImGui::SetFocusID( id, window );
@@ -9030,7 +8578,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( width == 0.0f )
 		{
 			window->DrawList->AddLine( ImVec2( xCenter, curPos.y ), ImVec2( xCenter, curPos.y + hueHeight ),
-				ImGui::GetColorU32( dwstyle.Colors[ StyleColor_HueSelector_ZeroWidthLine ] ),
+				ImGui::GetColorU32( dwstyle.Colors[ ImWidgetsCol_HueSelector_ZeroWidthLine ] ),
 				LpToPx( dwstyle.HueSelector_Thickness_ZeroWidth ) );
 		}
 		else
@@ -9044,7 +8592,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Render grab
 		float pos = ImLerp( cursor_bb.Min.x, cursor_bb.Max.x, *hueCenter );
 		DrawTriangleCursorFilled( window->DrawList, ImVec2( pos, cursor_bb.Min.y ), 0.0f, cursorSize,
-			ImGui::GetColorU32( dwstyle.Colors[ StyleColor_HueSelector_Cursor ] ) );
+			ImGui::GetColorU32( dwstyle.Colors[ ImWidgetsCol_HueSelector_Cursor ] ) );
 
 		return value_changed;
 	}
@@ -9197,7 +8745,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float grabCx = frame_bb.Min.x + grabT * ( frame_bb.Max.x - frame_bb.Min.x );
 		float grabCy = frame_bb.Min.y + h * 0.5f;
 		bool isActive = ( g.ActiveId == id );
-		ImU32 grabCol = ImGui::GetColorU32( dwStyle.Colors[ isActive ? StyleColor_SliderSpline_GrabActive : StyleColor_SliderSpline_Grab ] );
+		ImU32 grabCol = ImGui::GetColorU32( dwStyle.Colors[ isActive ? ImWidgetsCol_SliderSpline_GrabActive : ImWidgetsCol_SliderSpline_Grab ] );
 		window->DrawList->AddCircleFilled( ImVec2( grabCx, grabCy ), grabR, grabCol );
 		window->DrawList->AddCircle( ImVec2( grabCx, grabCy ), grabR, IM_COL32( 0, 0, 0, 200 ), 0, LpToPx( 1.5f ) );
 		(void)grab_bb; // still used by SliderBehavior for interaction; we just don't render from it.
@@ -9335,7 +8883,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float grabCx = frame_bb.Min.x + w * 0.5f;
 		float grabCy = frame_bb.Max.y - grabP * ( frame_bb.Max.y - frame_bb.Min.y );
 		bool isActive = ( g.ActiveId == id );
-		ImU32 grabCol = ImGui::GetColorU32( dwStyle.Colors[ isActive ? StyleColor_SliderSpline_GrabActive : StyleColor_SliderSpline_Grab ] );
+		ImU32 grabCol = ImGui::GetColorU32( dwStyle.Colors[ isActive ? ImWidgetsCol_SliderSpline_GrabActive : ImWidgetsCol_SliderSpline_Grab ] );
 		window->DrawList->AddCircleFilled( ImVec2( grabCx, grabCy ), grabR, grabCol );
 		window->DrawList->AddCircle( ImVec2( grabCx, grabCy ), grabR, IM_COL32( 0, 0, 0, 200 ), 0, LpToPx( 1.5f ) );
 		(void)grab_bb;
@@ -9682,6 +9230,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return d;
 	}
 
+} // namespace ImWidgets -- ImColorSliceData is a global type
+
 	void ImColorSliceData::ResolveVectors()
 	{
 		// The 7 Resolve vectors. Skin sits between Red and Yellow (it tracks the
@@ -9729,6 +9279,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ResetSlices();
 		ResetGlobals();
 	}
+
+namespace ImWidgets{
 
 	// One slice's hue wheel: the full circle drawn dim, this slice's wedge
 	// brightened, its two FIXED boundary lines, and the movable centre line.
@@ -10006,6 +9558,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// Spectrum editor (SPD -> XYZ -> RGB)
 	//////////////////////////////////////////////////////////////////////////
 
+} // namespace ImWidgets -- ImSpectrumData is a global type
+
 	void ImSpectrumData::SetGaussian( float center_nm, float sigma_nm, float amplitude )
 	{
 		if ( sigma_nm < 0.5f ) sigma_nm = 0.5f;
@@ -10015,6 +9569,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			Samples[ i ] = amplitude * expf( -0.5f * d * d );
 		}
 	}
+
+namespace ImWidgets{
 
 	void SpectrumToXYZ( ImSpectrumData const& spectrum, ImWidgetsObserver observer,
 						float& out_X, float& out_Y, float& out_Z, bool normalize )
@@ -10234,7 +9790,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float py = cmax.y - h * ImClamp( spectrum.Samples[ i ] / y_max, 0.0f, 1.0f );
 			dl->PathLineTo( ImVec2( px, py ) );
 		}
-		dl->PathStroke( IM_COL32( 255, 255, 255, 235 ), 0, LpToPx( 1.8f ) );
+		dl->PathStroke( IM_COL32( 255, 255, 255, 235 ), LpToPx( 1.8f ), 0 );
 		dl->PopClipRect();
 
 		dl->AddRect( cmin, cmax, ImGui::GetColorU32( ImGuiCol_Border ) );
@@ -10570,15 +10126,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// Model conversions -- enum resolved to a pointer
 	//////////////////////////////////////////////////////////////////////////
 
-	// HSL / HSY / HSP take their outputs LAST, unlike the ColorConvert*to* family,
-	// so they need a shim to fit the uniform pointer signature. Everything else
-	// already has the right shape and is pointed at directly.
-	static void DW_HSLtoRGB( float& r, float& g, float& b, float h, float s, float l ) { ColorConvertHSLtoRGB( h, s, l, r, g, b ); }
-	static void DW_RGBtoHSL( float& h, float& s, float& l, float r, float g, float b ) { ColorConvertRGBtoHSL( r, g, b, h, s, l ); }
-	static void DW_HSYtoRGB( float& r, float& g, float& b, float h, float s, float y ) { ColorConvertHSYtoRGB( h, s, y, r, g, b ); }
-	static void DW_RGBtoHSY( float& h, float& s, float& y, float r, float g, float b ) { ColorConvertRGBtoHSY( r, g, b, h, s, y ); }
-	static void DW_HSPtoRGB( float& r, float& g, float& b, float h, float s, float p ) { ColorConvertHSPtoRGB( h, s, p, r, g, b ); }
-	static void DW_RGBtoHSP( float& h, float& s, float& p, float r, float g, float b ) { ColorConvertRGBtoHSP( r, g, b, h, s, p ); }
+	// Every ColorConvert* takes its outputs first, so all of them fit the uniform
+	// pointer signature directly -- no shims needed.
 
 	// CIE LCh: polar form of Lab, with h NORMALISED to [0,1] to match this file
 	// OkLCH convention rather than carrying degrees around.
@@ -10632,11 +10181,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		case ImWidgetsColorModel_HSV:
 			to = &ColorConvertHSVtoRGB;		from = &ColorConvertRGBtoHSV;	break;
 		case ImWidgetsColorModel_HSL:
-			to = &DW_HSLtoRGB;				from = &DW_RGBtoHSL;			break;
+			to = &ColorConvertHSLtoRGB;				from = &ColorConvertRGBtoHSL;			break;
 		case ImWidgetsColorModel_HSY:
-			to = &DW_HSYtoRGB;				from = &DW_RGBtoHSY;			break;
+			to = &ColorConvertHSYtoRGB;				from = &ColorConvertRGBtoHSY;			break;
 		case ImWidgetsColorModel_HSP:
-			to = &DW_HSPtoRGB;				from = &DW_RGBtoHSP;			break;
+			to = &ColorConvertHSPtoRGB;				from = &ColorConvertRGBtoHSP;			break;
 		case ImWidgetsColorModel_OkLab:
 			to = &ColorConvertOKLABtoRGB;	from = &ColorConvertRGBtoOKLAB;	break;
 		case ImWidgetsColorModel_OkLCH:
@@ -11616,8 +11165,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// One entry point per working space -- all sharing ImWidgetsColor1DCallback
 	//////////////////////////////////////////////////////////////////////////
 
+	// Internal: reachable through ColorScalarCallback( space ), not exported.
 #define DW_DEFINE_COLOR_SCALAR_SPACE( fn_name, space_enum )                     \
-	ImU32 fn_name( float t, void* pUserData )                                   \
+	static ImU32 fn_name( float t, void* pUserData )                                   \
 	{                                                                           \
 		return ColorScalarInSpace( space_enum, t,                               \
 								   ( ImWidgetsColorScalar const* )pUserData );  \
@@ -12045,7 +11595,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					  data.WhitePoint.y + ImSin( ar ) * rr );
 			dl->PathLineTo( DW_CW_TO_SCREEN( p ) );
 		}
-		dl->PathStroke( IM_COL32( 255, 255, 255, 90 ), ImDrawFlags_Closed, LpToPx( 1.0f ) );
+		dl->PathStroke( IM_COL32( 255, 255, 255, 90 ), LpToPx( 1.0f ), ImDrawFlags_Closed );
 
 		// White point.
 		ImVec2 wpS = DW_CW_TO_SCREEN( data.WhitePoint );
@@ -12196,7 +11746,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 						dl->PathClear();
 						dl->PathArcTo( a, r, ang + IM_PI * 0.5f, ang + IM_PI * 1.5f, 24 );
 						dl->PathArcTo( b, r, ang - IM_PI * 0.5f, ang + IM_PI * 0.5f, 24 );
-						dl->PathStroke( colOutline, ImDrawFlags_Closed, LpToPx( 1.5f ) );
+						dl->PathStroke( colOutline, LpToPx( 1.5f ), ImDrawFlags_Closed );
 					}
 					else
 					{
@@ -12578,7 +12128,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float grabOffset = ( innerR + outerRadius ) * 0.5f;
 		ImVec2 grabPos( center.x + ImCos( grabAngle ) * grabOffset, center.y + ImSin( grabAngle ) * grabOffset );
 		bool isActive = ( g.ActiveId == id );
-		ImU32 grabCol = ImGui::GetColorU32( dwStyle.Colors[ isActive ? StyleColor_SliderRing_GrabActive : StyleColor_SliderRing_Grab ] );
+		ImU32 grabCol = ImGui::GetColorU32( dwStyle.Colors[ isActive ? ImWidgetsCol_SliderRing_GrabActive : ImWidgetsCol_SliderRing_Grab ] );
 		dl->AddCircleFilled( grabPos, grabR, grabCol );
 		dl->AddCircle( grabPos, grabR, IM_COL32( 0, 0, 0, 200 ), 0, LpToPx( 1.5f ) );
 
@@ -12605,20 +12155,20 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return SliderGradientRingScalar( label, ImGuiDataType_S32, v, &v_min, &v_max, gradient, outerRadius, thickness, fill_up_to_cursor );
 	}
 
-	// Arc overload: clamped at arc endpoints.
-	bool SliderGradientRingScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle, bool fill_up_to_cursor )
+	// Arc variant: clamped at arc endpoints.
+	bool SliderGradientArcScalar( char const* label, ImGuiDataType data_type, void* p_value, const void* p_min, const void* p_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle, bool fill_up_to_cursor )
 	{
 		return SliderRingImpl( label, data_type, p_value, p_min, p_max, gradient, outerRadius, thickness, startAngle, sweepAngle, false, fill_up_to_cursor );
 	}
 
-	bool SliderGradientRingFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle, bool fill_up_to_cursor )
+	bool SliderGradientArcFloat( char const* label, float* v, float v_min, float v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle, bool fill_up_to_cursor )
 	{
-		return SliderGradientRingScalar( label, ImGuiDataType_Float, v, &v_min, &v_max, gradient, outerRadius, thickness, startAngle, sweepAngle, fill_up_to_cursor );
+		return SliderGradientArcScalar( label, ImGuiDataType_Float, v, &v_min, &v_max, gradient, outerRadius, thickness, startAngle, sweepAngle, fill_up_to_cursor );
 	}
 
-	bool SliderGradientRingInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle, bool fill_up_to_cursor )
+	bool SliderGradientArcInt( char const* label, int* v, int v_min, int v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle, bool fill_up_to_cursor )
 	{
-		return SliderGradientRingScalar( label, ImGuiDataType_S32, v, &v_min, &v_max, gradient, outerRadius, thickness, startAngle, sweepAngle, fill_up_to_cursor );
+		return SliderGradientArcScalar( label, ImGuiDataType_S32, v, &v_min, &v_max, gradient, outerRadius, thickness, startAngle, sweepAngle, fill_up_to_cursor );
 	}
 
 	// -------------------------------------------------------------------
@@ -12778,7 +12328,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float xLow = ScreenX( tLower );
 		float xUp  = ScreenX( tUpper );
 		auto DrawHandle = [ & ]( float x, bool isActiveHandle ) {
-			ImU32 grabCol = ImGui::GetColorU32( dwStyle.Colors[ isActiveHandle ? StyleColor_SliderSpline_GrabActive : StyleColor_SliderSpline_Grab ] );
+			ImU32 grabCol = ImGui::GetColorU32( dwStyle.Colors[ isActiveHandle ? ImWidgetsCol_SliderSpline_GrabActive : ImWidgetsCol_SliderSpline_Grab ] );
 			window->DrawList->AddCircleFilled( ImVec2( x, grabCy ), grabR, grabCol );
 			window->DrawList->AddCircle( ImVec2( x, grabCy ), grabR, IM_COL32( 0, 0, 0, 200 ), 0, LpToPx( 1.5f ) );
 		};
@@ -12810,7 +12360,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	// on the rest of the arc. Full-circle rings do not support range
 	// (ambiguous wrap semantics) - use two SliderGradientRing calls.
 	// -------------------------------------------------------------------
-	static bool SliderGradientRingRangeImpl(
+	static bool SliderGradientArcRangeImpl(
 		char const* label, ImGuiDataType data_type,
 		void* p_lower, void* p_upper,
 		const void* p_min, const void* p_max,
@@ -12980,7 +12530,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		int activeHandle = isActive ? storage->GetInt( activeKey, 0 ) : -1;
 		auto DrawHandle = [ & ]( float t, bool isActiveHandle ) {
 			ImVec2 p = RingPos( t );
-			ImU32 grabCol = ImGui::GetColorU32( dwStyle.Colors[ isActiveHandle ? StyleColor_SliderRing_GrabActive : StyleColor_SliderRing_Grab ] );
+			ImU32 grabCol = ImGui::GetColorU32( dwStyle.Colors[ isActiveHandle ? ImWidgetsCol_SliderRing_GrabActive : ImWidgetsCol_SliderRing_Grab ] );
 			dl->AddCircleFilled( p, grabR, grabCol );
 			dl->AddCircle( p, grabR, IM_COL32( 0, 0, 0, 200 ), 0, LpToPx( 1.5f ) );
 		};
@@ -12993,19 +12543,19 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return value_changed;
 	}
 
-	bool SliderGradientRingRangeScalar( char const* label, ImGuiDataType data_type, void* p_lower, void* p_upper, const void* p_min, const void* p_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle )
+	bool SliderGradientArcRangeScalar( char const* label, ImGuiDataType data_type, void* p_lower, void* p_upper, const void* p_min, const void* p_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle )
 	{
-		return SliderGradientRingRangeImpl( label, data_type, p_lower, p_upper, p_min, p_max, gradient, outerRadius, thickness, startAngle, sweepAngle );
+		return SliderGradientArcRangeImpl( label, data_type, p_lower, p_upper, p_min, p_max, gradient, outerRadius, thickness, startAngle, sweepAngle );
 	}
 
-	bool SliderGradientRingRangeFloat( char const* label, float* v_lower, float* v_upper, float v_min, float v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle )
+	bool SliderGradientArcRangeFloat( char const* label, float* v_lower, float* v_upper, float v_min, float v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle )
 	{
-		return SliderGradientRingRangeImpl( label, ImGuiDataType_Float, v_lower, v_upper, &v_min, &v_max, gradient, outerRadius, thickness, startAngle, sweepAngle );
+		return SliderGradientArcRangeImpl( label, ImGuiDataType_Float, v_lower, v_upper, &v_min, &v_max, gradient, outerRadius, thickness, startAngle, sweepAngle );
 	}
 
-	bool SliderGradientRingRangeInt( char const* label, int* v_lower, int* v_upper, int v_min, int v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle )
+	bool SliderGradientArcRangeInt( char const* label, int* v_lower, int* v_upper, int v_min, int v_max, ImGradientData const* gradient, float outerRadius, float thickness, float startAngle, float sweepAngle )
 	{
-		return SliderGradientRingRangeImpl( label, ImGuiDataType_S32, v_lower, v_upper, &v_min, &v_max, gradient, outerRadius, thickness, startAngle, sweepAngle );
+		return SliderGradientArcRangeImpl( label, ImGuiDataType_S32, v_lower, v_upper, &v_min, &v_max, gradient, outerRadius, thickness, startAngle, sweepAngle );
 	}
 
 	bool SliderNScalar( char const* label, ImGuiDataType data_type, void* ordered_value, int value_count, void* p_min, void* p_max, float cursor_width, bool show_hover_by_region )
@@ -13060,18 +12610,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					ImVec2( ImLerp( frame_bb.Min.x, frame_bb.Max.x, centers[ k     ] ), frame_bb.Max.y )
 				);
 		}
-		//srand( 97 );
-		//for ( int k = 0; k < value_count; ++k )
-		//{
-		//	ImRect& bb = drag_bbs[ k ];
-		//	window->DrawList->AddRect( bb.Min, bb.Max, IM_COL32( rand() % 255, rand() % 255, rand() % 255, 255 ), 0, 0, 5 );
-		//}
-		//srand( 97 );
-		//for ( int k = 0; k < value_count; ++k )
-		//{
-		//	float x = ImLerp( frame_bb.Min.x, frame_bb.Max.x, ScalarIndirectToFloat( data_type, ordered_value, k ) / ( ScalarToFloat( data_type, ( ImU64* )p_max ) - ScalarToFloat( data_type, ( ImU64* )p_min ) ) );
-		//	window->DrawList->AddLine( ImVec2( x, frame_bb.Min.y ), ImVec2( x, frame_bb.Max.y ), IM_COL32( rand() % 255, rand() % 255, rand() % 255, 255 ), 5 );
-		//}
 
 		ImGui::ItemSize( total_bb, style.FramePadding.y );
 
@@ -13131,8 +12669,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				signet01 = 1.0f;
 			else
 				signet01 = 0.5f;
-			float x = ImLerp( frame_bb.Min.x, frame_bb.Max.x, Rescale01( ScalarIndirectToFloat( data_type, ordered_value, k ), fMin, fMax ) );
-			DrawSignetFilledCursor( window->DrawList, ImVec2( x, frame_bb.Min.y ), cursor_width_px, frame_bb.GetHeight(), 1.0f / 3.0f, signet01, 0.0f, IM_COL32( 255, 0, 0, 255 ) );
+			// Cursors are drawn once, after the frame, by the loop below -- drawing
+			// them here too put them underneath the frame render.
 			bool current_value_changed = ImGui::SliderBehavior( bb, ids[ k ], data_type, &currentValue, &v_local_min, &v_local_max, NULL, ImGuiSliderFlags_NoInput | ImGuiSliderFlags_NoRoundToFormat, &grab_bb);
 			if ( current_value_changed )
 			{
@@ -13157,7 +12695,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			else
 				signet01 = 0.5f;
 			float x = ImLerp( frame_bb.Min.x, frame_bb.Max.x, Rescale01( ScalarIndirectToFloat( data_type, ordered_value, k ), fMin, fMax ) );
-			DrawSignetFilledCursor( window->DrawList, ImVec2( x, frame_bb.Min.y ), cursor_width_px, frame_bb.GetHeight(), 1.0f / 3.0f, signet01, 0.0f, IM_COL32( 255, 0, 0, 255 ) );
+			DrawSignetFilledCursor( window->DrawList, ImVec2( x, frame_bb.Min.y ), cursor_width_px, frame_bb.GetHeight(), 1.0f / 3.0f, signet01, 0.0f, GetColorU32( ImWidgetsCol_SliderN_Cursor ) );
 		}
 
 		if ( label_size.x > 0.0f )
@@ -13249,8 +12787,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			ImRect& bb = drag_bbs[ k ];
 
+			// `continue`, not `return false`: bailing out of the loop discarded
+			// any value_changed already accumulated from bands 0..k-1 and left
+			// bands k..n-1 unregistered, desyncing ImGui's id/active tracking
+			// against the next fully-visible frame. Matches SliderNScalar.
 			if ( !ImGui::ItemAdd( total_bb, ids[ k ], &bb, 0 ) )
-				return false;
+				continue;
 
 			const bool hovered = ImGui::ItemHoverable( bb, ids[ k ], g.LastItemData.ItemFlags );
 			full_hovered |= hovered;
@@ -13356,8 +12898,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// Get style colors for cursors
 		ImWidgetsStyle& widgetStyle = GetStyle();
-		ImVec4 vBlue = widgetStyle.Colors[ StyleColor_Slider2D_CursorX ];
-		ImVec4 vOrange = widgetStyle.Colors[ StyleColor_Slider2D_CursorY ];
+		ImVec4 vBlue = widgetStyle.Colors[ ImWidgetsCol_Slider2D_CursorX ];
+		ImVec4 vOrange = widgetStyle.Colors[ ImWidgetsCol_Slider2D_CursorY ];
 		ImU32 uBlue = ImGui::GetColorU32( vBlue );
 		ImU32 uOrange = ImGui::GetColorU32( vOrange );
 
@@ -13561,14 +13103,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		char const* formatX = ImGui::DataTypeGetInfo( data_type )->PrintFmt;
 		char const* formatY = ImGui::DataTypeGetInfo( data_type )->PrintFmt;
 
-		//if ( IsPositiveScalar( data_type, ( ImU64* )p_valueX ) )
-		//{
-		//	formatX = " " + formatX;
-		//}
-		//if ( IsPositiveScalar( data_type, ( ImU64* )p_valueY ) )
-		//{
-		//	formatY = " " + formatY;
-		//}
 
 		// Cursor
 		pDrawList->AddCircleFilled( vCursorPos, cursor_radius, uBlue, cursor_segments );
@@ -13651,7 +13185,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return Slider2DScalar( pLabel, ImGuiDataType_Float, pValueX, pValueY, &v_minX, &v_maxX, &v_minY, &v_maxY );
 	}
 
-	bool Slider2DInt( char const* pLabel, int* pValueX, void* pValueY, int v_minX, int v_maxX, int v_minY, int v_maxY )
+	bool Slider2DInt( char const* pLabel, int* pValueX, int* pValueY, int v_minX, int v_maxX, int v_minY, int v_maxY )
 	{
 		return Slider2DScalar( pLabel, ImGuiDataType_S32, pValueX, pValueY, &v_minX, &v_maxX, &v_minY, &v_maxY );
 	}
@@ -13758,7 +13292,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float const inW = LpToPx( GetStyle().PrecisionPopup_InputWidth );
 			ImGui::SetNextItemWidth( inW );
 			ImGui::InputScalar( "Min X", data_type, p_minX, NULL, NULL, NULL, ImGuiInputTextFlags_AutoSelectAll );
-			if ( ImGui::IsItemDeactivatedAfterEdit() ) { ClampScalar( data_type, p_minX, b_minX, b_maxX ); value_changed = true; }
+			if ( ImGui::IsItemDeactivatedAfterEdit() ) { ClampScalar( data_type, p_minX, b_minX, b_maxX ); value_changed = true; } // InputScalar edited it
 			ImGui::SetNextItemWidth( inW );
 			ImGui::InputScalar( "Max X", data_type, p_maxX, NULL, NULL, NULL, ImGuiInputTextFlags_AutoSelectAll );
 			if ( ImGui::IsItemDeactivatedAfterEdit() ) { ClampScalar( data_type, p_maxX, b_minX, b_maxX ); value_changed = true; }
@@ -13918,8 +13452,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		ImDrawList* dl = window->DrawList;
 
-		ImU32 uBlue   = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Slider2DRange_MinHandle ] );
-		ImU32 uOrange = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Slider2DRange_MaxHandle ] );
+		ImU32 uBlue   = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_Slider2DRange_MinHandle ] );
+		ImU32 uOrange = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_Slider2DRange_MaxHandle ] );
 		ImU32 uFrame  = ImGui::GetColorU32( ImGuiCol_FrameBg );
 
 		// Normalized handle positions -> screen coords inside frame_bb_drag (Y inverted: min at bottom)
@@ -14119,7 +13653,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImDrawList* dl = window->DrawList;
 
 		// Disc background: if user set an explicit alpha, use that color; otherwise use standard FrameBg (responsive to hover/active).
-		ImVec4 bgCol4 = dwStyle.Colors[ StyleColor_Slider2DDisc_Background ];
+		ImVec4 bgCol4 = dwStyle.Colors[ ImWidgetsCol_Slider2DDisc_Background ];
 		ImU32 discFill = ( bgCol4.w > 0.001f ) ? ImGui::GetColorU32( bgCol4 ) : frameCol;
 		dl->AddCircleFilled( center, disc_r, discFill, 64 );
 
@@ -14129,13 +13663,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( g.ActiveId == id )
 			ringCol = ImGui::GetColorU32( ImGuiCol_SliderGrabActive );
 		else if ( hovered )
-			{ ImVec4 rc = dwStyle.Colors[ StyleColor_Slider2DDisc_Ring ]; rc.w = ImMin( rc.w * 1.5f, 1.0f ); ringCol = ImGui::GetColorU32( rc ); }
+			{ ImVec4 rc = dwStyle.Colors[ ImWidgetsCol_Slider2DDisc_Ring ]; rc.w = ImMin( rc.w * 1.5f, 1.0f ); ringCol = ImGui::GetColorU32( rc ); }
 		else
-			ringCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Slider2DDisc_Ring ] );
+			ringCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_Slider2DDisc_Ring ] );
 		dl->AddCircle( center, disc_r, ringCol, 64, ringThk );
 
 		// Grid: crosshair + concentric rings
-		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Slider2DDisc_Grid ] );
+		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_Slider2DDisc_Grid ] );
 		dl->AddLine( ImVec2( center.x - disc_r, center.y ), ImVec2( center.x + disc_r, center.y ), gridCol, 1.0f );
 		dl->AddLine( ImVec2( center.x, center.y - disc_r ), ImVec2( center.x, center.y + disc_r ), gridCol, 1.0f );
 		int nRings = dwStyle.Slider2DDisc_GridRings;
@@ -14159,8 +13693,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float handleR = LpToPx( dwStyle.Slider2DDisc_CursorRadius );
 		if ( hovered || g.ActiveId == id )
 			handleR += LpToPx( 1.5f );
-		ImU32 cursorFill    = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Slider2DDisc_Cursor ] );
-		ImU32 cursorOutline = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Slider2DDisc_CursorOutline ] );
+		ImU32 cursorFill    = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_Slider2DDisc_Cursor ] );
+		ImU32 cursorOutline = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_Slider2DDisc_CursorOutline ] );
 		float outlineThk    = LpToPx( dwStyle.Slider2DDisc_CursorOutlineThickness );
 		dl->AddCircleFilled( handlePos, handleR, cursorFill );
 		dl->AddCircle( handlePos, handleR, cursorOutline, 0, outlineThk );
@@ -14235,6 +13769,53 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( interp == ImWidgetsGradientInterp_HSV )
 			return 0;
 		return 2; // OkLCH: L, C, H
+	}
+
+	// Blend two packed colors inside an arbitrary interpolation space. Shares the
+	// conversion-pointer map with GradientSample below, so a two-stop gradient and
+	// a direct ColorBlend of the same two colors agree exactly.
+	IMGUI_API ImU32 ColorBlend( ImU32 col0, ImU32 col1, float t, ImWidgetsGradientInterp interp )
+	{
+		ImVec4 c0 = ImGui::ColorConvertU32ToFloat4( col0 );
+		ImVec4 c1 = ImGui::ColorConvertU32ToFloat4( col1 );
+
+		pfSpace2sRGB toRGB = NULL;
+		pfsRGB2Space fromRGB = NULL;
+		ImGradientInterpGetFunctions( interp, &toRGB, &fromRGB );
+		if ( toRGB == NULL || fromRGB == NULL )
+			return ImColorBlendsRGB( col0, col1, t );
+
+		float a[ 3 ], b[ 3 ], result[ 3 ];
+		fromRGB( a[ 0 ], a[ 1 ], a[ 2 ], c0.x, c0.y, c0.z );
+		fromRGB( b[ 0 ], b[ 1 ], b[ 2 ], c1.x, c1.y, c1.z );
+
+		if ( ImGradientInterpHasHue( interp ) )
+		{
+			int hIdx = ImGradientInterpHueIdx( interp );
+			float delta = b[ hIdx ] - a[ hIdx ];
+			if ( delta > 0.5f ) delta -= 1.0f;
+			if ( delta < -0.5f ) delta += 1.0f;
+			float h = a[ hIdx ] + delta * t;
+			if ( h < 0.0f ) h += 1.0f;
+			if ( h > 1.0f ) h -= 1.0f;
+
+			for ( int c = 0; c < 3; ++c )
+				result[ c ] = ( c == hIdx ) ? h : ImLerp( a[ c ], b[ c ], t );
+		}
+		else
+		{
+			for ( int c = 0; c < 3; ++c )
+				result[ c ] = ImLerp( a[ c ], b[ c ], t );
+		}
+
+		ImVec4 out;
+		toRGB( out.x, out.y, out.z, result[ 0 ], result[ 1 ], result[ 2 ] );
+		out.x = ImClamp( out.x, 0.0f, 1.0f );
+		out.y = ImClamp( out.y, 0.0f, 1.0f );
+		out.z = ImClamp( out.z, 0.0f, 1.0f );
+		out.w = ImLerp( c0.w, c1.w, t ); // Alpha always linear
+
+		return ImGui::GetColorU32( out );
 	}
 
 	ImVec4 GradientSample( ImGradientData const& gradient, float t )
@@ -14462,7 +14043,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float p = LpToPx( 3.0f );
 		ImVec2 a( btnMin.x + p, btnMin.y + p );
 		ImVec2 b( btnMax.x - p, btnMax.y - p );
-		dl->AddRect( a, b, fg, 0.0f, 0, LpToPx( 1.0f ) );
+		dl->AddRect( a, b, fg, 0.0f, LpToPx( 1.0f ), 0 );
 		float titleY = a.y + LpToPx( 2.0f );
 		dl->AddLine( ImVec2( a.x, titleY ), ImVec2( b.x, titleY ), fg, LpToPx( 1.0f ) );
 
@@ -14590,8 +14171,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( alpha )
 		{
 			DrawCheckerboard( window->DrawList, bar_bb.Min, bar_bb.GetSize(), LpToPx( dwStyle.Gradient_CheckerboardCellSize ),
-							  ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gradient_Checkerboard1 ] ),
-							  ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gradient_Checkerboard2 ] ) );
+							  ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_Gradient_Checkerboard1 ] ),
+							  ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_Gradient_Checkerboard2 ] ) );
 		}
 
 		// Gradient bar
@@ -14620,7 +14201,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			window->DrawList->AddTriangleFilled( p0, p1, p2, ImGui::GetColorU32( stopCol ) );
 
 			// Outline
-			ImU32 outlineCol = ImGui::GetColorU32( dwStyle.Colors[ isSelected ? StyleColor_Gradient_MarkerOutlineSelected : ( isHovered ? StyleColor_Gradient_MarkerOutlineHovered : StyleColor_Gradient_MarkerOutline ) ] );
+			ImU32 outlineCol = ImGui::GetColorU32( dwStyle.Colors[ isSelected ? ImWidgetsCol_Gradient_MarkerOutlineSelected : ( isHovered ? ImWidgetsCol_Gradient_MarkerOutlineHovered : ImWidgetsCol_Gradient_MarkerOutline ) ] );
 			float outlineThick = isSelected ? markerThickness * 2.0f : markerThickness;
 			window->DrawList->AddTriangle( p0, p1, p2, outlineCol, outlineThick );
 
@@ -14634,7 +14215,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				window->DrawList->AddLine(
 					ImVec2( tickX, marker_bb.Max.y ),
 					ImVec2( tickX, tickTopY ),
-					ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gradient_AlphaIndicator ] ),
+					ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_Gradient_AlphaIndicator ] ),
 					markerThickness );
 			}
 		}
@@ -14660,7 +14241,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				window->DrawList->AddTriangleFilled( p0, p1, p2, fillCol );
 
 				// Outline
-				ImU32 outlineCol = ImGui::GetColorU32( dwStyle.Colors[ isSelected ? StyleColor_Gradient_MarkerOutlineSelected : ( isHovered ? StyleColor_Gradient_MarkerOutlineHovered : StyleColor_Gradient_MarkerOutline ) ] );
+				ImU32 outlineCol = ImGui::GetColorU32( dwStyle.Colors[ isSelected ? ImWidgetsCol_Gradient_MarkerOutlineSelected : ( isHovered ? ImWidgetsCol_Gradient_MarkerOutlineHovered : ImWidgetsCol_Gradient_MarkerOutline ) ] );
 				float outlineThick = isSelected ? markerThickness * 2.0f : markerThickness;
 				window->DrawList->AddTriangle( p0, p1, p2, outlineCol, outlineThick );
 			}
@@ -15719,8 +15300,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		dl->PushClipRect( frame_bb.Min, frame_bb.Max, true );
 
 		// Grid lines
-		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_GridMinor ] );
-		ImU32 gridColMajor = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_GridMajor ] );
+		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CurveEditor_GridMinor ] );
+		ImU32 gridColMajor = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CurveEditor_GridMajor ] );
 		int gridDivX = 10;
 		int gridDivY = 10;
 		for ( int i = 0; i <= gridDivX; ++i )
@@ -15738,7 +15319,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			ImVec2 zeroScreen = CurveToScreen( ImVec2( 0.0f, 0.0f ), frame_bb, rangeMin, rangeMax );
 			ImVec2 oneScreen  = CurveToScreen( ImVec2( 1.0f, 1.0f ), frame_bb, rangeMin, rangeMax );
-			ImU32 zeroCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_ZeroLine ] );
+			ImU32 zeroCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CurveEditor_ZeroLine ] );
 			float zeroThick = LpToPx( dwStyle.CurveEditor_ZeroLineThickness );
 			if ( zeroScreen.x > frame_bb.Min.x && zeroScreen.x < frame_bb.Max.x )
 				dl->AddLine( ImVec2( zeroScreen.x, frame_bb.Min.y ), ImVec2( zeroScreen.x, frame_bb.Max.y ), zeroCol, zeroThick );
@@ -15755,7 +15336,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// DrawThickLine so the user-selected line mode (AddPolyline / PolylineAA / Stroked*)
 		// applies uniformly. Step segments push their corner points; smooth segments are
 		// densely sampled.
-		ImU32 curveCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_Line ] );
+		ImU32 curveCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CurveEditor_Line ] );
 		float curveThickness = LpToPx( dwStyle.CurveEditor_LineThickness );
 
 		if ( curve->Keys.Size >= 2 )
@@ -15840,8 +15421,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			bool showRight = ( sk.Segment == ImCurveEditorSeg_CubicBezier && selected < curve->Keys.Size - 1 );
 			bool showLeft = ( selected > 0 && curve->Keys[ selected - 1 ].Segment == ImCurveEditorSeg_CubicBezier );
 			ImVec2 keyScreen = CurveToScreen( sk.Pos, frame_bb, rangeMin, rangeMax );
-			ImU32 tangentCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_TangentLine ] );
-			ImU32 tangentHovCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_TangentHovered ] );
+			ImU32 tangentCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CurveEditor_TangentLine ] );
+			ImU32 tangentHovCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CurveEditor_TangentHovered ] );
 			ImVec2 tanLScreen = showLeft ? CurveToScreen( sk.Pos + sk.TangentLeft, frame_bb, rangeMin, rangeMax ) : ImVec2();
 			ImVec2 tanRScreen = showRight ? CurveToScreen( sk.Pos + sk.TangentRight, frame_bb, rangeMin, rangeMax ) : ImVec2();
 			DrawBezierHandles( dl, keyScreen, tanLScreen, tanRScreen, showLeft, showRight,
@@ -15855,8 +15436,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			bool isSelected = ( i == selected );
 			bool isHovered = ( i == hovered_key );
 			float radius = isHovered ? keyRadius + LpToPx( 2.0f ) : keyRadius;
-			ImU32 keyCol = ImGui::GetColorU32( dwStyle.Colors[ isSelected ? StyleColor_CurveEditor_KeySelected : ( isHovered ? StyleColor_CurveEditor_KeyHovered : StyleColor_CurveEditor_Key ) ] );
-			ImU32 outCol = ImGui::GetColorU32( dwStyle.Colors[ isSelected ? StyleColor_CurveEditor_KeyOutlineSelected : ( isHovered ? StyleColor_CurveEditor_KeyOutlineHovered : StyleColor_CurveEditor_KeyOutline ) ] );
+			ImU32 keyCol = ImGui::GetColorU32( dwStyle.Colors[ isSelected ? ImWidgetsCol_CurveEditor_KeySelected : ( isHovered ? ImWidgetsCol_CurveEditor_KeyHovered : ImWidgetsCol_CurveEditor_Key ) ] );
+			ImU32 outCol = ImGui::GetColorU32( dwStyle.Colors[ isSelected ? ImWidgetsCol_CurveEditor_KeyOutlineSelected : ( isHovered ? ImWidgetsCol_CurveEditor_KeyOutlineHovered : ImWidgetsCol_CurveEditor_KeyOutline ) ] );
 			dl->AddCircleFilled( kScreen, radius, keyCol );
 			dl->AddCircle( kScreen, radius, outCol, 0, isSelected ? LpToPx( dwStyle.CurveEditor_KeyOutlineThickness ) * 1.33f : LpToPx( dwStyle.CurveEditor_KeyOutlineThickness ) );
 		}
@@ -15873,14 +15454,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			else
 			{
 				// Over empty area: show crosshair and "+" to indicate add
-				ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_Crosshair ] );
+				ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CurveEditor_Crosshair ] );
 				DrawCrosshairInRect( dl, mp, frame_bb, crossCol, 1.0f );
 
 				// "+" sign near cursor
 				float plusSize = keyRadius;
 				float plusOffset = keyRadius * 2.4f;
 				ImVec2 pc( mp.x + plusOffset, mp.y - plusOffset );
-				ImU32 plusCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_AddIndicator ] );
+				ImU32 plusCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CurveEditor_AddIndicator ] );
 				dl->AddLine( ImVec2( pc.x - plusSize, pc.y ), ImVec2( pc.x + plusSize, pc.y ), plusCol, curveThickness );
 				dl->AddLine( ImVec2( pc.x, pc.y - plusSize ), ImVec2( pc.x, pc.y + plusSize ), plusCol, curveThickness );
 
@@ -15892,7 +15473,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// Axis labels at frame edges and at 0/1 tick positions
 		{
-			ImU32 axisTextCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_AxisLabel ] );
+			ImU32 axisTextCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CurveEditor_AxisLabel ] );
 			float pad = 3.0f;
 			char buf[ 16 ];
 
@@ -16646,7 +16227,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// Radial guide lines: hue line from center to disc edge + saturation ring
 		{
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorWheel_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorWheel_Crosshair ] );
 			// Hue line: from center through dot to disc edge
 			float cosA = ImCos( dotAngle );
 			float sinA = ImSin( dotAngle );
@@ -16659,7 +16240,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// Control dot (filled with current color)
 		bool isDraggingDisc = ( g.ActiveId == id && *pDragMode == 1 );
-		ImU32 dotOutCol = ImGui::GetColorU32( dwStyle.Colors[ isDraggingDisc ? StyleColor_ColorWheel_DotOutlineActive : StyleColor_ColorWheel_DotOutline ] );
+		ImU32 dotOutCol = ImGui::GetColorU32( dwStyle.Colors[ isDraggingDisc ? ImWidgetsCol_ColorWheel_DotOutlineActive : ImWidgetsCol_ColorWheel_DotOutline ] );
 		{
 			// Current selected color for dot fill
 			float dr, dg, db;
@@ -16716,8 +16297,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				ImU32 handleFill = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
 
 				dl->AddRectFilled( handleMin, handleMax, handleFill, 2.0f );
-				dl->AddRect( handleMin, handleMax, IM_COL32_WHITE, 2.0f, 0, 1.5f );
-				dl->AddRect( ImVec2( handleMin.x - 0.5f, handleMin.y - 0.5f ), ImVec2( handleMax.x + 0.5f, handleMax.y + 0.5f ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorWheel_SliderOutline ] ), 2.0f );
+				dl->AddRect( handleMin, handleMax, IM_COL32_WHITE, 2.0f, 1.5f, 0 );
+				dl->AddRect( ImVec2( handleMin.x - 0.5f, handleMin.y - 0.5f ), ImVec2( handleMax.x + 0.5f, handleMax.y + 0.5f ), ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorWheel_SliderOutline ] ), 2.0f );
 			}
 		}
 
@@ -17029,24 +16610,24 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		else
 		{
 			// Solid track with fill
-			ImU32 colTrack = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_SliderRing_Track ] );
+			ImU32 colTrack = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_SliderRing_Track ] );
 			const int arcSegs = 48;
 			dl->PathArcTo( center, midR, angleStart, angleEnd, arcSegs );
-			dl->PathStroke( colTrack, 0, thickness );
+			dl->PathStroke( colTrack, thickness, 0 );
 
 			// Filled portion from start to current value
 			float grabAngle = aStart + t * span;
 			if ( t > 0.001f )
 			{
 				dl->PathArcTo( center, midR, angleStart, grabAngle, ( int )( arcSegs * t ) + 2 );
-				dl->PathStroke( col0, 0, thickness );
+				dl->PathStroke( col0, thickness, 0 );
 			}
 		}
 
 		// Grab handle
 		float grabAngle = aStart + t * span;
 		ImVec2 grabPos( center.x + midR * ImCos( grabAngle ), center.y + midR * ImSin( grabAngle ) );
-		ImU32 colGrab = ImGui::GetColorU32( dwStyle.Colors[ isActive ? StyleColor_SliderRing_GrabActive : StyleColor_SliderRing_Grab ] );
+		ImU32 colGrab = ImGui::GetColorU32( dwStyle.Colors[ isActive ? ImWidgetsCol_SliderRing_GrabActive : ImWidgetsCol_SliderRing_Grab ] );
 		dl->AddCircleFilled( grabPos, grabR, colGrab );
 		dl->AddCircle( grabPos, grabR, ImGui::GetColorU32( ImGuiCol_Border ), 0, 1.5f );
 
@@ -17110,9 +16691,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImGuiID rightId = id + ImHashStr( "##rightArc" );
 			ImGuiID leftId  = id + ImHashStr( "##leftArc" );
 
-			ImU32 colRight    = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_HDRWheel_RightArc ] );
-			ImU32 colLeftMin  = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_HDRWheel_LeftArcMin ] );
-			ImU32 colLeftMax  = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_HDRWheel_LeftArcMax ] );
+			ImU32 colRight    = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_HDRWheel_RightArc ] );
+			ImU32 colLeftMin  = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_HDRWheel_LeftArcMin ] );
+			ImU32 colLeftMax  = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_HDRWheel_LeftArcMax ] );
 
 			if ( rightValue && HDRWheelArcSlider( rightId, window->DrawList, center,
 					arcOuterR, arcInnerR, arcGrabR, rightStart, rightEnd,
@@ -17267,7 +16848,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return IM_COL32( ( int )( r * 255.0f + 0.5f ), ( int )( g * 255.0f + 0.5f ), ( int )( b * 255.0f + 0.5f ), 255 );
 	}
 
-	static bool ColorPickerInternal( char const* label, ImVec4* color, ImColorPickerSpaceDesc const& desc )
+	static bool ColorPickerInternal( char const* label, ImVec4* color, ImColorPickerSpaceDesc const& desc, ImVec2 size = ImVec2( 0, 0 ) )
 	{
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
@@ -17278,7 +16859,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImWidgetsStyle& dwStyle = GetStyle();
 		const ImGuiID id = window->GetID( label );
 
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderWidth = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float compSliderH = LpToPx( dwStyle.ColorPicker_ComponentSliderHeight );
 		const float spacing = style.ItemInnerSpacing.x;
@@ -17371,7 +16953,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 					   ImLerp( plane_bb.Min.y, plane_bb.Max.y, dotV ) );
 
 		bool isDraggingPlane = ( g.ActiveId == id && *pDragMode == 1 );
-		ImU32 dotOutCol = ImGui::GetColorU32( dwStyle.Colors[ isDraggingPlane ? StyleColor_ColorPicker_DotOutlineActive : StyleColor_ColorPicker_DotOutline ] );
+		ImU32 dotOutCol = ImGui::GetColorU32( dwStyle.Colors[ isDraggingPlane ? ImWidgetsCol_ColorPicker_DotOutlineActive : ImWidgetsCol_ColorPicker_DotOutline ] );
 		{
 			float dr, dg, db;
 			desc.spaceToSRGB( dr, dg, db, comp[0], comp[1], comp[2] );
@@ -17385,7 +16967,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// Crosshairs on plane
 		{
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 		}
 
@@ -17400,7 +16982,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			DrawProceduralColor1DBilinearVertical( dl, ColorPickerSlider1DCallback, &cbData,
 				desc.axisMax[ sliderAxis ], desc.axisMin[ sliderAxis ],
 				vslider_bb.Min, vslider_bb.GetSize(), sliderRes );
-			dl->AddRect( vslider_bb.Min, vslider_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( vslider_bb.Min, vslider_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 
 			// Slider handle
 			float handleT = ImSaturate( ImNormalize01( comp[ sliderAxis ], desc.axisMin[ sliderAxis ], desc.axisMax[ sliderAxis ] ) );
@@ -17415,7 +16997,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImU32 handleFill = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
 
 			dl->AddRectFilled( handleMin, handleMax, handleFill, 2.0f );
-			dl->AddRect( handleMin, handleMax, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			dl->AddRect( handleMin, handleMax, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		// Component sliders
@@ -17556,7 +17138,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerSRGB( char const* label, ImVec4* color, int fixedAxis, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		int pX, pY, sA;
 		switch ( fixedAxis )
 		{
@@ -17573,12 +17154,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		desc.axisMin[0] = 0.0f; desc.axisMin[1] = 0.0f; desc.axisMin[2] = 0.0f;
 		desc.axisMax[0] = 1.0f; desc.axisMax[1] = 1.0f; desc.axisMax[2] = 1.0f;
 		desc.planeAxisX = pX; desc.planeAxisY = pY; desc.sliderAxis = sA;
-		return ColorPickerInternal( label, color, desc );
+		return ColorPickerInternal( label, color, desc, size );
 	}
 
 	bool ColorPickerHSV( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImColorPickerSpaceDesc desc;
 		desc.sRGBToSpace = ColorConvertRGBtoHSV;
 		desc.spaceToSRGB = ColorConvertHSVtoRGB;
@@ -17587,12 +17167,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		desc.axisMin[0] = 0.0f; desc.axisMin[1] = 0.0f; desc.axisMin[2] = 0.0f;
 		desc.axisMax[0] = 1.0f; desc.axisMax[1] = 1.0f; desc.axisMax[2] = 1.0f;
 		desc.planeAxisX = 0; desc.planeAxisY = 1; desc.sliderAxis = 2; // H on X, S on Y, V on slider
-		return ColorPickerInternal( label, color, desc );
+		return ColorPickerInternal( label, color, desc, size );
 	}
 
 	bool ColorPickerOkLab( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImColorPickerSpaceDesc desc;
 		desc.sRGBToSpace = ColorConvertRGBtoOKLAB;
 		desc.spaceToSRGB = ColorConvertOKLABtoRGB;
@@ -17601,12 +17180,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		desc.axisMin[0] = 0.0f; desc.axisMin[1] = -0.4f; desc.axisMin[2] = -0.4f;
 		desc.axisMax[0] = 1.0f; desc.axisMax[1] = 0.4f;  desc.axisMax[2] = 0.4f;
 		desc.planeAxisX = 1; desc.planeAxisY = 2; desc.sliderAxis = 0; // a on X, b on Y, L on slider
-		return ColorPickerInternal( label, color, desc );
+		return ColorPickerInternal( label, color, desc, size );
 	}
 
 	bool ColorPickerOkLCH( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImColorPickerSpaceDesc desc;
 		desc.sRGBToSpace = ColorConvertsRGBtoOKLCH;
 		desc.spaceToSRGB = ColorConvertOKLCHtosRGB;
@@ -17615,12 +17193,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		desc.axisMin[0] = 0.0f; desc.axisMin[1] = 0.0f; desc.axisMin[2] = 0.0f;
 		desc.axisMax[0] = 1.0f; desc.axisMax[1] = 0.4f; desc.axisMax[2] = 1.0f;
 		desc.planeAxisX = 1; desc.planeAxisY = 2; desc.sliderAxis = 0; // C on X, H on Y, L on slider
-		return ColorPickerInternal( label, color, desc );
+		return ColorPickerInternal( label, color, desc, size );
 	}
 
 	bool ColorPickerCIELab( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImColorPickerSpaceDesc desc;
 		desc.sRGBToSpace = ColorConvertsRGBtoCIELab;
 		desc.spaceToSRGB = ColorConvertCIELabtosRGB;
@@ -17629,35 +17206,21 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		desc.axisMin[0] = 0.0f;  desc.axisMin[1] = -128.0f; desc.axisMin[2] = -128.0f;
 		desc.axisMax[0] = 100.0f; desc.axisMax[1] = 127.0f;  desc.axisMax[2] = 127.0f;
 		desc.planeAxisX = 1; desc.planeAxisY = 2; desc.sliderAxis = 0; // a* on X, b* on Y, L* on slider
-		return ColorPickerInternal( label, color, desc );
+		return ColorPickerInternal( label, color, desc, size );
 	}
 
 	// XYZ picker uses xyY for the plane, Y for the slider
-	static void sRGBtoxyY_ForPicker( float& out_x, float& out_y, float& out_Y, float r, float g, float b )
-	{
-		float X, Y, Z;
-		ColorConvertsRGBtoXYZ( X, Y, Z, r, g, b );
-		ColorConvertXYZtoxyY( out_x, out_y, out_Y, X, Y, Z );
-	}
-	static void xyYtosRGB_ForPicker( float& out_r, float& out_g, float& out_b, float x, float y, float Y )
-	{
-		float X, Yout, Z;
-		ColorConvertxyYtoXYZ( X, Yout, Z, x, y, Y );
-		ColorConvertXYZtosRGB( out_r, out_g, out_b, X, Yout, Z );
-	}
-
 	bool ColorPickerXYZ( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImColorPickerSpaceDesc desc;
-		desc.sRGBToSpace = sRGBtoxyY_ForPicker;
-		desc.spaceToSRGB = xyYtosRGB_ForPicker;
+		desc.sRGBToSpace = DW_RGBtoxyY;
+		desc.spaceToSRGB = DW_xyYtoRGB;
 		desc.axisName[0] = "x"; desc.axisName[1] = "y"; desc.axisName[2] = "Y";
 		desc.axisFormat[0] = "%.4f"; desc.axisFormat[1] = "%.4f"; desc.axisFormat[2] = "%.3f";
 		desc.axisMin[0] = 0.0f; desc.axisMin[1] = 0.0f; desc.axisMin[2] = 0.0f;
 		desc.axisMax[0] = 0.8f; desc.axisMax[1] = 0.9f; desc.axisMax[2] = 1.0f;
 		desc.planeAxisX = 0; desc.planeAxisY = 1; desc.sliderAxis = 2; // x on X, y on Y, Y on slider
-		return ColorPickerInternal( label, color, desc );
+		return ColorPickerInternal( label, color, desc, size );
 	}
 
 	bool ColorPicker( char const* label, ImVec4* color, ImColorPickerSpace space, int fixedAxis, ImVec2 size )
@@ -17864,7 +17427,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerSkin( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
 			return false;
@@ -17895,6 +17457,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pType  = storage->GetFloatRef( ImGui::GetID( "type" ), 0.30f );
 
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
 		const char* modes[] = { "Biophysical", "High-level (aging)" };
 		ImGui::Combo( "Mode##Skin", pMode, modes, IM_ARRAYSIZE( modes ) );
@@ -17914,10 +17479,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 
 		// Geometry: melanin x blend plane + blood vertical slider.
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing;
+		if ( size.y > 0.0f ) planeSide = size.y;
 		if ( planeSide < 32.0f ) planeSide = 32.0f;
 		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
 		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
@@ -17969,7 +17536,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float dr, dg, db;
 			SampleSkinColorLUT( dr, dg, db, *pMel, *pBlend, *pBlood );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -17981,7 +17548,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImSkinSliderData cbData; cbData.melanin = *pMel; cbData.blend = *pBlend;
 			DrawProceduralColor1DBilinearVertical( dl, SkinBloodCallback, &cbData,
 				SKIN_BLOOD_MAX, SKIN_BLOOD_MIN, blood_bb.Min, blood_bb.GetSize(), sliderRes );
-			dl->AddRect( blood_bb.Min, blood_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( blood_bb.Min, blood_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 
 			float t = ImSaturate( ImNormalize01( *pBlood, SKIN_BLOOD_MIN, SKIN_BLOOD_MAX ) );
 			float handleY = ImLerp( blood_bb.Min.y, blood_bb.Max.y, t );
@@ -17992,7 +17559,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			SampleSkinColorLUT( hr, hg, hb, *pMel, *pBlend, *pBlood );
 			ImU32 handleFill = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
 			dl->AddRectFilled( hMin, hMax, handleFill, 2.0f );
-			dl->AddRect( hMin, hMax, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			dl->AddRect( hMin, hMax, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		// Readouts.
@@ -18005,7 +17572,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		color->x = r; color->y = gg; color->z = b;
 
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -18111,7 +17679,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerHair( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
 			return false;
@@ -18140,6 +17707,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pGray   = storage->GetFloatRef( ImGui::GetID( "gray" ), 0.0f );
 
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
 		const char* modes[] = { "Biophysical", "High-level (natural)" };
 		ImGui::Combo( "Mode##Hair", pMode, modes, IM_ARRAYSIZE( modes ) );
@@ -18158,10 +17728,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 
 		// Geometry: eumelanin x pheomelanin plane + redness vertical slider.
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing;
+		if ( size.y > 0.0f ) planeSide = size.y;
 		if ( planeSide < 32.0f ) planeSide = 32.0f;
 		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
 		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
@@ -18212,7 +17784,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float dr, dg, db;
 			HairParamsToSRGB( dr, dg, db, *pEu, *pPheo, *pRed );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -18224,7 +17796,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImHairSliderData cbData; cbData.eu01 = *pEu; cbData.pheo01 = *pPheo;
 			DrawProceduralColor1DBilinearVertical( dl, HairRednessCallback, &cbData,
 				HAIR_REDNESS_MAX, HAIR_REDNESS_MIN, red_bb.Min, red_bb.GetSize(), sliderRes );
-			dl->AddRect( red_bb.Min, red_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( red_bb.Min, red_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 
 			float t = ImSaturate( ImNormalize01( *pRed, HAIR_REDNESS_MIN, HAIR_REDNESS_MAX ) );
 			float handleY = ImLerp( red_bb.Min.y, red_bb.Max.y, t );
@@ -18235,7 +17807,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			HairParamsToSRGB( hr, hg, hb, *pEu, *pPheo, *pRed );
 			ImU32 handleFill = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
 			dl->AddRectFilled( hMin, hMax, handleFill, 2.0f );
-			dl->AddRect( hMin, hMax, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			dl->AddRect( hMin, hMax, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		// Readouts.
@@ -18248,7 +17820,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		color->x = r; color->y = gg; color->z = b;
 
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -18527,7 +18100,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerLeaf( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems )
 			return false;
@@ -18558,6 +18130,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pRedness = storage->GetFloatRef( ImGui::GetID( "redness" ), 0.4f );
 
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
 		const char* modes[] = { "Biophysical", "High-level (season)" };
 		ImGui::Combo( "Mode##Leaf", pMode, modes, IM_ARRAYSIZE( modes ) );
@@ -18576,10 +18151,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 
 		// Geometry: chlorophyll x carotenoid plane + anthocyanin vertical slider.
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing;
+		if ( size.y > 0.0f ) planeSide = size.y;
 		if ( planeSide < 32.0f ) planeSide = 32.0f;
 		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
 		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
@@ -18630,7 +18207,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float dr, dg, db;
 			LeafParamsToSRGB( dr, dg, db, *pCab, *pCar, *pCanth, *pBrown, LEAF_CW, LEAF_CM, LEAF_N );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -18642,7 +18219,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImLeafSliderData cbData; cbData.cab = *pCab; cbData.car = *pCar;
 			DrawProceduralColor1DBilinearVertical( dl, LeafCanthCallback, &cbData,
 				LEAF_CANTH_MAX, LEAF_CANTH_MIN, canth_bb.Min, canth_bb.GetSize(), sliderRes );
-			dl->AddRect( canth_bb.Min, canth_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( canth_bb.Min, canth_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 
 			float t = ImSaturate( ImNormalize01( *pCanth, LEAF_CANTH_MIN, LEAF_CANTH_MAX ) );
 			float handleY = ImLerp( canth_bb.Min.y, canth_bb.Max.y, t );
@@ -18653,7 +18230,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			LeafParamsToSRGB( hr, hg, hb, *pCab, *pCar, *pCanth, *pBrown, LEAF_CW, LEAF_CM, LEAF_N );
 			ImU32 handleFill = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
 			dl->AddRectFilled( hMin, hMax, handleFill, 2.0f );
-			dl->AddRect( hMin, hMax, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			dl->AddRect( hMin, hMax, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		// Readouts.
@@ -18666,7 +18243,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		color->x = r; color->y = gg; color->z = b;
 
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -18748,6 +18326,69 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			}
 	}
 	#define DW_PLANE_CACHE_CAP ( ( 64 + 1 ) * ( 64 + 1 ) )
+
+	// One plane cache per live picker instance, keyed by ImGui ID.
+	//
+	// Each picker used to own a function-local `static ImU32 s_cache[...]`. That
+	// meant two instances of the SAME picker on screen evicted each other's cache
+	// every frame (so both re-evaluated the whole plane every frame), and the 23
+	// arrays cost ~380 KB of BSS whether or not a picker was ever drawn.
+	//
+	// Entries are heap-allocated and held by pointer so the vector can grow without
+	// invalidating a cache handed out earlier in the same frame. Entries untouched
+	// for a while are reclaimed, and everything is freed by DW_FreePlaneCaches().
+	struct DW_PlaneCacheEntry
+	{
+		ImGuiID	id;
+		ImU32	key;
+		int		lastFrame;
+		ImU32*	texels;
+	};
+	static ImVector<DW_PlaneCacheEntry*> g_PlaneCaches;
+
+	static ImU32* DW_AcquirePlaneCache( ImGuiID id, ImU32** out_key )
+	{
+		int const frame = ImGui::GetFrameCount();
+		for ( int i = 0; i < g_PlaneCaches.Size; ++i )
+		{
+			DW_PlaneCacheEntry* e = g_PlaneCaches[ i ];
+			if ( e->id == id )
+			{
+				e->lastFrame = frame;
+				*out_key = &e->key;
+				return e->texels;
+			}
+		}
+		// Reclaim caches whose widget has not been drawn for a couple of seconds.
+		for ( int i = g_PlaneCaches.Size - 1; i >= 0; --i )
+		{
+			DW_PlaneCacheEntry* e = g_PlaneCaches[ i ];
+			if ( frame - e->lastFrame > 120 )
+			{
+				IM_FREE( e->texels );
+				IM_DELETE( e );
+				g_PlaneCaches.erase( g_PlaneCaches.Data + i );
+			}
+		}
+		DW_PlaneCacheEntry* e = IM_NEW( DW_PlaneCacheEntry )();
+		e->id = id;
+		e->key = 0xFFFFFFFFu;
+		e->lastFrame = frame;
+		e->texels = ( ImU32* )IM_ALLOC( sizeof( ImU32 ) * DW_PLANE_CACHE_CAP );
+		g_PlaneCaches.push_back( e );
+		*out_key = &e->key;
+		return e->texels;
+	}
+
+	void DW_FreePlaneCaches()
+	{
+		for ( int i = 0; i < g_PlaneCaches.Size; ++i )
+		{
+			IM_FREE( g_PlaneCaches[ i ]->texels );
+			IM_DELETE( g_PlaneCaches[ i ] );
+		}
+		g_PlaneCaches.clear();
+	}
 
 	//////////////////////////////////////////////////////////////////////////
 	// Blackbody / Color-Temperature Picker
@@ -18979,7 +18620,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerPigment( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems ) return false;
 
@@ -19005,16 +18645,21 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pBlack = storage->GetFloatRef( ImGui::GetID( "black" ), 0.0f );
 
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
 		const char* names[ KM_PAINT_COUNT ];
 		for ( int i = 0; i < KM_PAINT_COUNT; ++i ) names[ i ] = s_Paints[ i ].name;
 		changed |= ImGui::Combo( "Paint A##Pig", pA, names, KM_PAINT_COUNT );
 		changed |= ImGui::Combo( "Paint B##Pig", pB, names, KM_PAINT_COUNT );
 
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing;
+		if ( size.y > 0.0f ) planeSide = size.y;
 		if ( planeSide < 32.0f ) planeSide = 32.0f;
 		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
 		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
@@ -19046,11 +18691,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Plane: X = A->B mix, Y = white tint (top=saturated, bottom=tinted).
 		{
 			ImPigmentData cbData; cbData.a = *pA; cbData.b = *pB; cbData.black = *pBlack;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pA ), *pB ), *pBlack );
 			DrawCachedProceduralColor2DBilinear( dl, PigmentPlaneCallback, &cbData,
 				0.0f, 1.0f, 1.0f, 0.0f,
-				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		// Dot.
@@ -19061,7 +18707,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float conc[ 4 ] = { kc * ( 1.0f - *pBFrac ), kc * ( *pBFrac ), *pWhite, *pBlack };
 			float dr, dg, db; PigmentMixToSRGB( dr, dg, db, idx, conc, 4 );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -19072,12 +18718,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImPigmentSlider cbData; cbData.a = *pA; cbData.b = *pB; cbData.bFrac = *pBFrac; cbData.white = *pWhite;
 			DrawProceduralColor1DBilinearVertical( dl, PigmentBlackCallback, &cbData,
 				1.0f, 0.0f, black_bb.Min, black_bb.GetSize(), sliderRes );
-			dl->AddRect( black_bb.Min, black_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( black_bb.Min, black_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( *pBlack );
 			float handleY = ImLerp( black_bb.Min.y, black_bb.Max.y, t );
 			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
 			dl->AddRectFilled( ImVec2( black_bb.Min.x - 1.0f, handleY - hh ), ImVec2( black_bb.Max.x + 1.0f, handleY + hh ), IM_COL32( 30, 30, 30, 255 ), 2.0f );
-			dl->AddRect( ImVec2( black_bb.Min.x - 1.0f, handleY - hh ), ImVec2( black_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			dl->AddRect( ImVec2( black_bb.Min.x - 1.0f, handleY - hh ), ImVec2( black_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		ImGui::Text( "%s + %s   White %.0f%%   Black %.0f%%", s_Paints[ *pA ].name, s_Paints[ *pB ].name, ( *pWhite ) * 100.0f, ( *pBlack ) * 100.0f );
@@ -19089,7 +18735,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		color->x = r; color->y = gg; color->z = b;
 
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -19162,7 +18809,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerGem( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems ) return false;
 
@@ -19184,14 +18830,19 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pClarity = storage->GetFloatRef( ImGui::GetID( "clarity" ), 0.0f );
 
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 		const char* names[ GEM_COUNT ];
 		for ( int i = 0; i < GEM_COUNT; ++i ) names[ i ] = s_Gems[ i ].name;
 		changed |= ImGui::Combo( "Gem##Gem", pGem, names, GEM_COUNT );
 
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing;
+		if ( size.y > 0.0f ) planeSide = size.y;
 		if ( planeSide < 32.0f ) planeSide = 32.0f;
 		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
 		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
@@ -19221,11 +18872,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		{
 			ImGemData cbData; cbData.gem = *pGem; cbData.clarity = *pClarity;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pGem ), *pClarity );
 			DrawCachedProceduralColor2DBilinear( dl, GemPlaneCallback, &cbData,
 				GEM_CONC_MIN, GEM_CONC_MAX, GEM_PATH_MAX, GEM_PATH_MIN,
-				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
@@ -19234,7 +18886,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
 			float dr, dg, db; GemToSRGB( dr, dg, db, *pGem, *pConc, *pPath, *pClarity );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -19244,14 +18896,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImGemSlider cbData; cbData.gem = *pGem; cbData.conc = *pConc; cbData.pathMm = *pPath;
 			DrawProceduralColor1DBilinearVertical( dl, GemClarityCallback, &cbData,
 				1.0f, 0.0f, clar_bb.Min, clar_bb.GetSize(), sliderRes );
-			dl->AddRect( clar_bb.Min, clar_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( clar_bb.Min, clar_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( *pClarity );
 			float handleY = ImLerp( clar_bb.Min.y, clar_bb.Max.y, t );
 			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
 			float hr, hg, hb; GemToSRGB( hr, hg, hb, *pGem, *pConc, *pPath, *pClarity );
 			ImU32 handleFill = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
 			dl->AddRectFilled( ImVec2( clar_bb.Min.x - 1.0f, handleY - hh ), ImVec2( clar_bb.Max.x + 1.0f, handleY + hh ), handleFill, 2.0f );
-			dl->AddRect( ImVec2( clar_bb.Min.x - 1.0f, handleY - hh ), ImVec2( clar_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			dl->AddRect( ImVec2( clar_bb.Min.x - 1.0f, handleY - hh ), ImVec2( clar_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		ImGui::Text( "Conc %.2f   Path %.1f mm   Clarity %.0f%%", *pConc, *pPath, ( 1.0f - *pClarity ) * 100.0f );
@@ -19259,7 +18911,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float r, gg, b; GemToSRGB( r, gg, b, *pGem, *pConc, *pPath, *pClarity );
 		color->x = r; color->y = gg; color->z = b;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -19342,7 +18995,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerWater( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems ) return false;
 
@@ -19362,11 +19014,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pTurb = storage->GetFloatRef( ImGui::GetID( "turb" ), 5.0f );
 
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing;
+		if ( size.y > 0.0f ) planeSide = size.y;
 		if ( planeSide < 32.0f ) planeSide = 32.0f;
 		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
 		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
@@ -19401,12 +19058,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		{
 			ImWaterData cbData; cbData.turb = *pTurb;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pTurb );
 			// Pass normalized [0,1] axes; WaterPlaneCallback applies the gamma remap.
 			DrawCachedProceduralColor2DBilinear( dl, WaterPlaneCallback, &cbData,
 				0.0f, 1.0f, 1.0f, 0.0f,
-				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
@@ -19417,7 +19075,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
 			float dr, dg, db; WaterToSRGB( dr, dg, db, *pChl, *pCdom, *pTurb );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -19427,14 +19085,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImWaterSlider cbData; cbData.chl = *pChl; cbData.cdom = *pCdom;
 			DrawProceduralColor1DBilinearVertical( dl, WaterTurbCallback, &cbData,
 				WATER_TURB_MAX, WATER_TURB_MIN, turb_bb.Min, turb_bb.GetSize(), sliderRes );
-			dl->AddRect( turb_bb.Min, turb_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( turb_bb.Min, turb_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( ImNormalize01( *pTurb, WATER_TURB_MIN, WATER_TURB_MAX ) );
 			float handleY = ImLerp( turb_bb.Min.y, turb_bb.Max.y, t );
 			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
 			float hr, hg, hb; WaterToSRGB( hr, hg, hb, *pChl, *pCdom, *pTurb );
 			ImU32 handleFill = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
 			dl->AddRectFilled( ImVec2( turb_bb.Min.x - 1.0f, handleY - hh ), ImVec2( turb_bb.Max.x + 1.0f, handleY + hh ), handleFill, 2.0f );
-			dl->AddRect( ImVec2( turb_bb.Min.x - 1.0f, handleY - hh ), ImVec2( turb_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			dl->AddRect( ImVec2( turb_bb.Min.x - 1.0f, handleY - hh ), ImVec2( turb_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		ImGui::Text( "Chlorophyll %.1f mg/m3   CDOM %.2f   Turbidity %.1f", *pChl, *pCdom, *pTurb );
@@ -19442,7 +19100,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float r, gg, b; WaterToSRGB( r, gg, b, *pChl, *pCdom, *pTurb );
 		color->x = r; color->y = gg; color->z = b;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -19503,7 +19162,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerIris( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems ) return false;
 
@@ -19523,11 +19181,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pPos    = storage->GetFloatRef( ImGui::GetID( "pos" ), 0.9f );
 
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing;
+		if ( size.y > 0.0f ) planeSide = size.y;
 		if ( planeSide < 32.0f ) planeSide = 32.0f;
 		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
 		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
@@ -19557,18 +19220,19 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		{
 			ImIrisData cbData; cbData.posMel = *pPos;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pPos );
 			DrawCachedProceduralColor2DBilinear( dl, IrisPlaneCallback, &cbData,
 				0.0f, 1.0f, 1.0f, 0.0f,
-				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
 			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, ImSaturate( *pAnt ) ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, ImSaturate( *pStroma ) ) );
 			float dr, dg, db; IrisToSRGB( dr, dg, db, *pAnt, *pStroma, *pPos );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -19578,14 +19242,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImIrisSlider cbData; cbData.antMel = *pAnt; cbData.stroma = *pStroma;
 			DrawProceduralColor1DBilinearVertical( dl, IrisPosCallback, &cbData,
 				1.0f, 0.0f, pos_bb.Min, pos_bb.GetSize(), sliderRes );
-			dl->AddRect( pos_bb.Min, pos_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( pos_bb.Min, pos_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( *pPos );
 			float handleY = ImLerp( pos_bb.Min.y, pos_bb.Max.y, t );
 			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
 			float hr, hg, hb; IrisToSRGB( hr, hg, hb, *pAnt, *pStroma, *pPos );
 			ImU32 handleFill = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
 			dl->AddRectFilled( ImVec2( pos_bb.Min.x - 1.0f, handleY - hh ), ImVec2( pos_bb.Max.x + 1.0f, handleY + hh ), handleFill, 2.0f );
-			dl->AddRect( ImVec2( pos_bb.Min.x - 1.0f, handleY - hh ), ImVec2( pos_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			dl->AddRect( ImVec2( pos_bb.Min.x - 1.0f, handleY - hh ), ImVec2( pos_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		ImGui::Text( "Anterior melanin %.0f%%   Stroma scatter %.0f%%   Posterior melanin %.0f%%", ( *pAnt ) * 100.0f, ( *pStroma ) * 100.0f, ( *pPos ) * 100.0f );
@@ -19593,7 +19257,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float r, gg, b; IrisToSRGB( r, gg, b, *pAnt, *pStroma, *pPos );
 		color->x = r; color->y = gg; color->z = b;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -19688,7 +19353,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerFlame( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems ) return false;
 
@@ -19710,14 +19374,19 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pSodium = storage->GetFloatRef( ImGui::GetID( "na" ), 0.0f );
 
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 		const char* names[ FLAME_COUNT ];
 		for ( int i = 0; i < FLAME_COUNT; ++i ) names[ i ] = s_Flames[ i ].name;
 		changed |= ImGui::Combo( "Element##Flame", pElem, names, FLAME_COUNT );
 
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing;
+		if ( size.y > 0.0f ) planeSide = size.y;
 		if ( planeSide < 32.0f ) planeSide = 32.0f;
 		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
 		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
@@ -19747,11 +19416,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		{
 			ImFlameData cbData; cbData.elem = *pElem; cbData.sodium = *pSodium;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pElem ), *pSodium );
 			DrawCachedProceduralColor2DBilinear( dl, FlamePlaneCallback, &cbData,
 				FLAME_TEMP_MIN, FLAME_TEMP_MAX, 1.0f, 0.0f,
-				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
@@ -19760,7 +19430,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
 			float dr, dg, db; FlameToSRGB( dr, dg, db, *pElem, *pTemp, *pLine, *pSodium );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -19770,14 +19440,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImFlameSlider cbData; cbData.elem = *pElem; cbData.tempK = *pTemp; cbData.lineStrength = *pLine;
 			DrawProceduralColor1DBilinearVertical( dl, FlameSodiumCallback, &cbData,
 				1.0f, 0.0f, na_bb.Min, na_bb.GetSize(), sliderRes );
-			dl->AddRect( na_bb.Min, na_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( na_bb.Min, na_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( *pSodium );
 			float handleY = ImLerp( na_bb.Min.y, na_bb.Max.y, t );
 			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
 			float hr, hg, hb; FlameToSRGB( hr, hg, hb, *pElem, *pTemp, *pLine, *pSodium );
 			ImU32 handleFill = IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 );
 			dl->AddRectFilled( ImVec2( na_bb.Min.x - 1.0f, handleY - hh ), ImVec2( na_bb.Max.x + 1.0f, handleY + hh ), handleFill, 2.0f );
-			dl->AddRect( ImVec2( na_bb.Min.x - 1.0f, handleY - hh ), ImVec2( na_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			dl->AddRect( ImVec2( na_bb.Min.x - 1.0f, handleY - hh ), ImVec2( na_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		ImGui::Text( "%s   Temp %.0f K   Line %.0f%%   Na %.0f%%", s_Flames[ *pElem ].name, *pTemp, ( *pLine ) * 100.0f, ( *pSodium ) * 100.0f );
@@ -19785,7 +19455,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float r, gg, b; FlameToSRGB( r, gg, b, *pElem, *pTemp, *pLine, *pSodium );
 		color->x = r; color->y = gg; color->z = b;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	static inline float SpecGauss( float lam, float c, float w ) { float d = ( lam - c ) / w; return expf( -d * d ); }
@@ -19863,7 +19534,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerBruise( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems ) return false;
 		ImGuiContext& g = *GImGui;
@@ -19880,8 +19550,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pSev  = storage->GetFloatRef( ImGui::GetID( "sev" ), 0.7f );
 		float* pMel  = storage->GetFloatRef( ImGui::GetID( "mel" ), 0.12f );
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing; if ( planeSide < 32.0f ) planeSide = 32.0f;
@@ -19904,9 +19578,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		{
 			ImBruiseData cb; cb.mel = *pMel;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pMel );
-			DrawCachedProceduralColor2DBilinear( dl, BruisePlaneCallback, &cb, BRUISE_DAYS_MIN, BRUISE_DAYS_MAX, 1.0f, 0.0f, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			DrawCachedProceduralColor2DBilinear( dl, BruisePlaneCallback, &cb, BRUISE_DAYS_MIN, BRUISE_DAYS_MAX, 1.0f, 0.0f, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
@@ -19914,7 +19589,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
 			float dr, dg, db; BruiseToSRGB( dr, dg, db, *pDays, *pSev, *pMel );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -19923,17 +19598,18 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			ImBruiseSlider cb; cb.days = *pDays; cb.severity = *pSev;
 			DrawProceduralColor1DBilinearVertical( dl, BruiseMelCallback, &cb, 1.0f, 0.0f, mel_bb.Min, mel_bb.GetSize(), sliderRes );
-			dl->AddRect( mel_bb.Min, mel_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( mel_bb.Min, mel_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( *pMel ), handleY = ImLerp( mel_bb.Min.y, mel_bb.Max.y, t ), hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
 			float hr, hg, hb; BruiseToSRGB( hr, hg, hb, *pDays, *pSev, *pMel );
 			dl->AddRectFilled( ImVec2( mel_bb.Min.x - 1.0f, handleY - hh ), ImVec2( mel_bb.Max.x + 1.0f, handleY + hh ), IM_COL32( ( int )( hr * 255 ), ( int )( hg * 255 ), ( int )( hb * 255 ), 255 ), 2.0f );
-			dl->AddRect( ImVec2( mel_bb.Min.x - 1.0f, handleY - hh ), ImVec2( mel_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			dl->AddRect( ImVec2( mel_bb.Min.x - 1.0f, handleY - hh ), ImVec2( mel_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 		ImGui::Text( "Day %.1f   Severity %.0f%%   Skin melanin %.0f%%", *pDays, ( *pSev ) * 100.0f, ( *pMel ) * 100.0f );
 		float r, gg, b; BruiseToSRGB( r, gg, b, *pDays, *pSev, *pMel );
 		color->x = r; color->y = gg; color->z = b;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -19989,7 +19665,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerNebula( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems ) return false;
 		ImGuiContext& g = *GImGui;
@@ -20006,8 +19681,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pLow = storage->GetFloatRef( ImGui::GetID( "low" ), 0.3f );
 		float* pH   = storage->GetFloatRef( ImGui::GetID( "h" ), 0.8f );
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing; if ( planeSide < 32.0f ) planeSide = 32.0f;
@@ -20030,16 +19709,17 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		{
 			ImNebulaData cb; cb.hydrogen = *pH;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pH );
-			DrawCachedProceduralColor2DBilinear( dl, NebulaPlaneCallback, &cb, 0.0f, 1.0f, 1.0f, 0.0f, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			DrawCachedProceduralColor2DBilinear( dl, NebulaPlaneCallback, &cb, 0.0f, 1.0f, 1.0f, 0.0f, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
 			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, ImSaturate( *pIon ) ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, ImSaturate( *pLow ) ) );
 			float dr, dg, db; NebulaToSRGB( dr, dg, db, *pIon, *pLow, *pH );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -20048,17 +19728,18 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			ImNebulaSlider cb; cb.ion = *pIon; cb.lowion = *pLow;
 			DrawProceduralColor1DBilinearVertical( dl, NebulaHCallback, &cb, 1.0f, 0.0f, h_bb.Min, h_bb.GetSize(), sliderRes );
-			dl->AddRect( h_bb.Min, h_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( h_bb.Min, h_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( *pH ), handleY = ImLerp( h_bb.Min.y, h_bb.Max.y, t ), hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
 			float hr, hg, hb; NebulaToSRGB( hr, hg, hb, *pIon, *pLow, *pH );
 			dl->AddRectFilled( ImVec2( h_bb.Min.x - 1.0f, handleY - hh ), ImVec2( h_bb.Max.x + 1.0f, handleY + hh ), IM_COL32( ( int )( hr * 255 ), ( int )( hg * 255 ), ( int )( hb * 255 ), 255 ), 2.0f );
-			dl->AddRect( ImVec2( h_bb.Min.x - 1.0f, handleY - hh ), ImVec2( h_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			dl->AddRect( ImVec2( h_bb.Min.x - 1.0f, handleY - hh ), ImVec2( h_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 		ImGui::Text( "Ionization [OIII] %.0f%%   Low-ion [NII/SII] %.0f%%   Hydrogen %.0f%%", ( *pIon ) * 100.0f, ( *pLow ) * 100.0f, ( *pH ) * 100.0f );
 		float r, gg, b; NebulaToSRGB( r, gg, b, *pIon, *pLow, *pH );
 		color->x = r; color->y = gg; color->z = b;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -20115,7 +19796,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerMaillard( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems ) return false;
 		ImGuiContext& g = *GImGui;
@@ -20132,8 +19812,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pTime  = storage->GetFloatRef( ImGui::GetID( "time" ), 8.0f );
 		float* pSugar = storage->GetFloatRef( ImGui::GetID( "sugar" ), 0.5f );
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing; if ( planeSide < 32.0f ) planeSide = 32.0f;
@@ -20156,9 +19840,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		{
 			ImMaillardData cb; cb.sugar = *pSugar;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pSugar );
-			DrawCachedProceduralColor2DBilinear( dl, MaillardPlaneCallback, &cb, MAIL_TEMP_MIN, MAIL_TEMP_MAX, MAIL_TIME_MAX, MAIL_TIME_MIN, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			DrawCachedProceduralColor2DBilinear( dl, MaillardPlaneCallback, &cb, MAIL_TEMP_MIN, MAIL_TEMP_MAX, MAIL_TIME_MAX, MAIL_TIME_MIN, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
@@ -20166,7 +19851,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
 			float dr, dg, db; MaillardToSRGB( dr, dg, db, *pTemp, *pTime, *pSugar );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -20175,17 +19860,18 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			ImMaillardSlider cb; cb.tempC = *pTemp; cb.minutes = *pTime;
 			DrawProceduralColor1DBilinearVertical( dl, MaillardSugarCallback, &cb, 1.0f, 0.0f, sug_bb.Min, sug_bb.GetSize(), sliderRes );
-			dl->AddRect( sug_bb.Min, sug_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( sug_bb.Min, sug_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( *pSugar ), handleY = ImLerp( sug_bb.Min.y, sug_bb.Max.y, t ), hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
 			float hr, hg, hb; MaillardToSRGB( hr, hg, hb, *pTemp, *pTime, *pSugar );
 			dl->AddRectFilled( ImVec2( sug_bb.Min.x - 1.0f, handleY - hh ), ImVec2( sug_bb.Max.x + 1.0f, handleY + hh ), IM_COL32( ( int )( hr * 255 ), ( int )( hg * 255 ), ( int )( hb * 255 ), 255 ), 2.0f );
-			dl->AddRect( ImVec2( sug_bb.Min.x - 1.0f, handleY - hh ), ImVec2( sug_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			dl->AddRect( ImVec2( sug_bb.Min.x - 1.0f, handleY - hh ), ImVec2( sug_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 		ImGui::Text( "Temp %.0f C   Time %.1f min   Sugar<->Protein %.0f%%", *pTemp, *pTime, ( *pSugar ) * 100.0f );
 		float r, gg, b; MaillardToSRGB( r, gg, b, *pTemp, *pTime, *pSugar );
 		color->x = r; color->y = gg; color->z = b;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -20245,7 +19931,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerPatina( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems ) return false;
 		ImGuiContext& g = *GImGui;
@@ -20262,8 +19947,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pEnv = storage->GetFloatRef( ImGui::GetID( "env" ), 0.4f );
 		float* pHum = storage->GetFloatRef( ImGui::GetID( "hum" ), 0.5f );
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing; if ( planeSide < 32.0f ) planeSide = 32.0f;
@@ -20286,9 +19975,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		{
 			ImPatinaData cb; cb.humidity = *pHum;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pHum );
-			DrawCachedProceduralColor2DBilinear( dl, PatinaPlaneCallback, &cb, PAT_YEARS_MIN, PAT_YEARS_MAX, 1.0f, 0.0f, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			DrawCachedProceduralColor2DBilinear( dl, PatinaPlaneCallback, &cb, PAT_YEARS_MIN, PAT_YEARS_MAX, 1.0f, 0.0f, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
@@ -20296,7 +19986,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
 			float dr, dg, db; PatinaToSRGB( dr, dg, db, *pYr, *pEnv, *pHum );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -20305,17 +19995,18 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			ImPatinaSlider cb; cb.years = *pYr; cb.env = *pEnv;
 			DrawProceduralColor1DBilinearVertical( dl, PatinaHumCallback, &cb, 1.0f, 0.0f, hum_bb.Min, hum_bb.GetSize(), sliderRes );
-			dl->AddRect( hum_bb.Min, hum_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( hum_bb.Min, hum_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( *pHum ), handleY = ImLerp( hum_bb.Min.y, hum_bb.Max.y, t ), hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
 			float hr, hg, hb; PatinaToSRGB( hr, hg, hb, *pYr, *pEnv, *pHum );
 			dl->AddRectFilled( ImVec2( hum_bb.Min.x - 1.0f, handleY - hh ), ImVec2( hum_bb.Max.x + 1.0f, handleY + hh ), IM_COL32( ( int )( hr * 255 ), ( int )( hg * 255 ), ( int )( hb * 255 ), 255 ), 2.0f );
-			dl->AddRect( ImVec2( hum_bb.Min.x - 1.0f, handleY - hh ), ImVec2( hum_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			dl->AddRect( ImVec2( hum_bb.Min.x - 1.0f, handleY - hh ), ImVec2( hum_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 		ImGui::Text( "Age %.0f yr   Environment %.0f%%   Humidity %.0f%%", *pYr, ( *pEnv ) * 100.0f, ( *pHum ) * 100.0f );
 		float r, gg, b; PatinaToSRGB( r, gg, b, *pYr, *pEnv, *pHum );
 		color->x = r; color->y = gg; color->z = b;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -20377,7 +20068,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerSubsurface( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems ) return false;
 		ImGuiContext& g = *GImGui;
@@ -20396,12 +20086,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pSS  = storage->GetFloatRef( ImGui::GetID( "ss" ), 20.0f );
 		float* pIor = storage->GetFloatRef( ImGui::GetID( "ior" ), 1.4f );
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
 		const char* names[ SSS_MAT_COUNT ];
 		for ( int i = 0; i < SSS_MAT_COUNT; ++i ) names[ i ] = s_SSSMats[ i ].name;
 		changed |= ImGui::Combo( "Material##SSS", pMat, names, SSS_MAT_COUNT );
 
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing; if ( planeSide < 32.0f ) planeSide = 32.0f;
@@ -20425,9 +20119,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			ImSSSData cb; cb.mat = *pMat; cb.ior = *pIor;
 			// Y: scattering high at top (opaque) -> low at bottom (translucent).
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pMat ), *pIor );
-			DrawCachedProceduralColor2DBilinear( dl, SubsurfacePlaneCallback, &cb, SSS_ABS_MIN, SSS_ABS_MAX, SSS_SS_MIN, SSS_SS_MAX, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			DrawCachedProceduralColor2DBilinear( dl, SubsurfacePlaneCallback, &cb, SSS_ABS_MIN, SSS_ABS_MAX, SSS_SS_MIN, SSS_SS_MAX, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
@@ -20435,7 +20130,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, du ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, 1.0f - dv ) );
 			float dr, dg, db; SubsurfaceToSRGB( dr, dg, db, *pMat, *pAbs, *pSS, *pIor );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -20444,17 +20139,18 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			ImSSSSlider cb; cb.mat = *pMat; cb.absMag = *pAbs; cb.sigmaS = *pSS;
 			DrawProceduralColor1DBilinearVertical( dl, SubsurfaceIorCallback, &cb, 1.6f, 1.3f, ior_bb.Min, ior_bb.GetSize(), sliderRes );
-			dl->AddRect( ior_bb.Min, ior_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( ior_bb.Min, ior_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( ImNormalize01( *pIor, 1.3f, 1.6f ) ), handleY = ImLerp( ior_bb.Min.y, ior_bb.Max.y, t ), hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
 			float hr, hg, hb; SubsurfaceToSRGB( hr, hg, hb, *pMat, *pAbs, *pSS, *pIor );
 			dl->AddRectFilled( ImVec2( ior_bb.Min.x - 1.0f, handleY - hh ), ImVec2( ior_bb.Max.x + 1.0f, handleY + hh ), IM_COL32( ( int )( hr * 255 ), ( int )( hg * 255 ), ( int )( hb * 255 ), 255 ), 2.0f );
-			dl->AddRect( ImVec2( ior_bb.Min.x - 1.0f, handleY - hh ), ImVec2( ior_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			dl->AddRect( ImVec2( ior_bb.Min.x - 1.0f, handleY - hh ), ImVec2( ior_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 		ImGui::Text( "%s   Absorption %.2f   Scatter %.0f   IOR %.2f", s_SSSMats[ *pMat ].name, *pAbs, *pSS, *pIor );
 		float r, gg, b; SubsurfaceToSRGB( r, gg, b, *pMat, *pAbs, *pSS, *pIor );
 		color->x = r; color->y = gg; color->z = b;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -20528,7 +20224,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerDischarge( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems ) return false;
 		ImGuiContext& g = *GImGui;
@@ -20547,12 +20242,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pPhos = storage->GetFloatRef( ImGui::GetID( "phos" ), 0.0f );
 		float* pWarm = storage->GetFloatRef( ImGui::GetID( "warm" ), 0.35f );
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
 		const char* names[ GAS_COUNT ];
 		for ( int i = 0; i < GAS_COUNT; ++i ) names[ i ] = s_Gases[ i ].name;
 		changed |= ImGui::Combo( "Gas##Disc", pGas, names, GAS_COUNT );
 
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing; if ( planeSide < 32.0f ) planeSide = 32.0f;
@@ -20575,16 +20274,17 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		{
 			ImDischargeData cb; cb.gas = *pGas; cb.warmthN = *pWarm;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pGas ), *pWarm );
-			DrawCachedProceduralColor2DBilinear( dl, DischargePlaneCallback, &cb, 0.0f, 1.0f, 1.0f, 0.0f, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			DrawCachedProceduralColor2DBilinear( dl, DischargePlaneCallback, &cb, 0.0f, 1.0f, 1.0f, 0.0f, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
 			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, ImSaturate( *pHg ) ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, ImSaturate( *pPhos ) ) );
 			float dr, dg, db; DischargeToSRGB( dr, dg, db, *pGas, *pHg, *pPhos, *pWarm );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -20593,17 +20293,18 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			ImDischargeSlider cb; cb.gas = *pGas; cb.mercury = *pHg; cb.phosphor = *pPhos;
 			DrawProceduralColor1DBilinearVertical( dl, DischargeWarmthCallback, &cb, 1.0f, 0.0f, warm_bb.Min, warm_bb.GetSize(), sliderRes );
-			dl->AddRect( warm_bb.Min, warm_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( warm_bb.Min, warm_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( *pWarm ), handleY = ImLerp( warm_bb.Min.y, warm_bb.Max.y, t ), hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
 			float hr, hg, hb; DischargeToSRGB( hr, hg, hb, *pGas, *pHg, *pPhos, *pWarm );
 			dl->AddRectFilled( ImVec2( warm_bb.Min.x - 1.0f, handleY - hh ), ImVec2( warm_bb.Max.x + 1.0f, handleY + hh ), IM_COL32( ( int )( hr * 255 ), ( int )( hg * 255 ), ( int )( hb * 255 ), 255 ), 2.0f );
-			dl->AddRect( ImVec2( warm_bb.Min.x - 1.0f, handleY - hh ), ImVec2( warm_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			dl->AddRect( ImVec2( warm_bb.Min.x - 1.0f, handleY - hh ), ImVec2( warm_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 		ImGui::Text( "%s   Mercury %.0f%%   Phosphor %.0f%%   White %.0fK", s_Gases[ *pGas ].name, ( *pHg ) * 100.0f, ( *pPhos ) * 100.0f, ImLerp( 2700.0f, 6500.0f, *pWarm ) );
 		float r, gg, b; DischargeToSRGB( r, gg, b, *pGas, *pHg, *pPhos, *pWarm );
 		color->x = r; color->y = gg; color->z = b;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -20660,7 +20361,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerIce( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems ) return false;
 		ImGuiContext& g = *GImGui;
@@ -20677,8 +20377,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pPath  = storage->GetFloatRef( ImGui::GetID( "path" ), 0.5f );
 		float* pImp   = storage->GetFloatRef( ImGui::GetID( "imp" ), 0.0f );
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing; if ( planeSide < 32.0f ) planeSide = 32.0f;
@@ -20701,16 +20405,17 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		{
 			ImIceData cb; cb.impurity = *pImp;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pImp );
-			DrawCachedProceduralColor2DBilinear( dl, IcePlaneCallback, &cb, 0.0f, 1.0f, 1.0f, 0.0f, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			DrawCachedProceduralColor2DBilinear( dl, IcePlaneCallback, &cb, 0.0f, 1.0f, 1.0f, 0.0f, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
 			ImVec2 dotPos( ImLerp( plane_bb.Min.x, plane_bb.Max.x, ImSaturate( *pGrain ) ), ImLerp( plane_bb.Min.y, plane_bb.Max.y, ImSaturate( *pPath ) ) );
 			float dr, dg, db; IceToSRGB( dr, dg, db, *pGrain, *pPath, *pImp );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -20719,17 +20424,18 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			ImIceSlider cb; cb.grain = *pGrain; cb.pathN = *pPath;
 			DrawProceduralColor1DBilinearVertical( dl, IceImpurityCallback, &cb, 1.0f, 0.0f, imp_bb.Min, imp_bb.GetSize(), sliderRes );
-			dl->AddRect( imp_bb.Min, imp_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( imp_bb.Min, imp_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( *pImp ), handleY = ImLerp( imp_bb.Min.y, imp_bb.Max.y, t ), hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
 			float hr, hg, hb; IceToSRGB( hr, hg, hb, *pGrain, *pPath, *pImp );
 			dl->AddRectFilled( ImVec2( imp_bb.Min.x - 1.0f, handleY - hh ), ImVec2( imp_bb.Max.x + 1.0f, handleY + hh ), IM_COL32( ( int )( hr * 255 ), ( int )( hg * 255 ), ( int )( hb * 255 ), 255 ), 2.0f );
-			dl->AddRect( ImVec2( imp_bb.Min.x - 1.0f, handleY - hh ), ImVec2( imp_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			dl->AddRect( ImVec2( imp_bb.Min.x - 1.0f, handleY - hh ), ImVec2( imp_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 		ImGui::Text( "Grain/scatter %.0f%%   Path depth %.0f%%   Impurity %.0f%%", ( *pGrain ) * 100.0f, ( *pPath ) * 100.0f, ( *pImp ) * 100.0f );
 		float r, gg, b; IceToSRGB( r, gg, b, *pGrain, *pPath, *pImp );
 		color->x = r; color->y = gg; color->z = b;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -20809,7 +20515,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerOchre( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems ) return false;
 		ImGuiContext& g = *GImGui;
@@ -20830,13 +20535,17 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pWhite = storage->GetFloatRef( ImGui::GetID( "white" ), 0.0f );
 		float* pBlack = storage->GetFloatRef( ImGui::GetID( "black" ), 0.0f );
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
 		const char* names[ OCHRE_COUNT ];
 		for ( int i = 0; i < OCHRE_COUNT; ++i ) names[ i ] = s_Ochres[ i ].name;
 		changed |= ImGui::Combo( "Pigment A##Ochre", pA, names, OCHRE_COUNT );
 		changed |= ImGui::Combo( "Pigment B##Ochre", pB, names, OCHRE_COUNT );
 
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing; if ( planeSide < 32.0f ) planeSide = 32.0f;
@@ -20859,9 +20568,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		{
 			ImOchreData cb; cb.a = *pA; cb.b = *pB; cb.black = *pBlack;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pA ), *pB ), *pBlack );
-			DrawCachedProceduralColor2DBilinear( dl, OchrePlaneCallback, &cb, 0.0f, 1.0f, 1.0f, 0.0f, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+			DrawCachedProceduralColor2DBilinear( dl, OchrePlaneCallback, &cb, 0.0f, 1.0f, 1.0f, 0.0f, plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
@@ -20871,7 +20581,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float conc[ 4 ] = { kc * ( 1.0f - *pBFrac ), kc * ( *pBFrac ), *pWhite, *pBlack };
 			float dr, dg, db; KMMixPaletteToSRGB( dr, dg, db, s_Ochres, idx, conc, 4 );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -20880,10 +20590,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 			ImOchreSlider cb; cb.a = *pA; cb.b = *pB; cb.bFrac = *pBFrac; cb.white = *pWhite;
 			DrawProceduralColor1DBilinearVertical( dl, OchreBlackCallback, &cb, 1.0f, 0.0f, black_bb.Min, black_bb.GetSize(), sliderRes );
-			dl->AddRect( black_bb.Min, black_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( black_bb.Min, black_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( *pBlack ), handleY = ImLerp( black_bb.Min.y, black_bb.Max.y, t ), hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
 			dl->AddRectFilled( ImVec2( black_bb.Min.x - 1.0f, handleY - hh ), ImVec2( black_bb.Max.x + 1.0f, handleY + hh ), IM_COL32( 30, 28, 26, 255 ), 2.0f );
-			dl->AddRect( ImVec2( black_bb.Min.x - 1.0f, handleY - hh ), ImVec2( black_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			dl->AddRect( ImVec2( black_bb.Min.x - 1.0f, handleY - hh ), ImVec2( black_bb.Max.x + 1.0f, handleY + hh ), ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 		ImGui::Text( "%s + %s   Chalk %.0f%%   Charcoal %.0f%%", s_Ochres[ *pA ].name, s_Ochres[ *pB ].name, ( *pWhite ) * 100.0f, ( *pBlack ) * 100.0f );
 		float kc = ImMax( 0.0f, 1.0f - *pWhite - *pBlack );
@@ -20892,7 +20602,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float r, gg, b; KMMixPaletteToSRGB( r, gg, b, s_Ochres, oidx, oconc, 4 );
 		color->x = r; color->y = gg; color->z = b;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -21006,7 +20717,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerStar( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems ) return false;
 		ImGuiContext& g = *GImGui;
@@ -21023,11 +20733,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pLogg = storage->GetFloatRef( ImGui::GetID( "logg" ), 4.44f );
 		float* pFeH  = storage->GetFloatRef( ImGui::GetID( "feh" ),  0.0f );
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing;
+		if ( size.y > 0.0f ) planeSide = size.y;
 		if ( planeSide < 32.0f ) planeSide = 32.0f;
 		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
 		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
@@ -21060,11 +20775,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		{
 			ImStarData cbData; cbData.feh = *pFeH;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pFeH );
 			DrawCachedProceduralColor2DBilinear( dl, StarPlaneCallback, &cbData,
 				0.0f, 1.0f, 1.0f, 0.0f,
-				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
@@ -21074,7 +20790,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
 			float dr, dg, db; StarToSRGB( dr, dg, db, *pT, *pLogg, *pFeH );
 			ImU32 dotFill = IM_COL32( (int)( dr*255.0f+0.5f ), (int)( dg*255.0f+0.5f ), (int)( db*255.0f+0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -21084,7 +20800,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImStarSlider cbData; cbData.T = *pT; cbData.logg = *pLogg;
 			DrawProceduralColor1DBilinearVertical( dl, StarFeHCallback, &cbData,
 				STAR_FE_MAX, STAR_FE_MIN, feh_bb.Min, feh_bb.GetSize(), sliderRes );
-			dl->AddRect( feh_bb.Min, feh_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( feh_bb.Min, feh_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( ( STAR_FE_MAX - *pFeH ) / ( STAR_FE_MAX - STAR_FE_MIN ) );
 			float handleY = ImLerp( feh_bb.Min.y, feh_bb.Max.y, t );
 			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
@@ -21094,7 +20810,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			                   IM_COL32( (int)( hr*255.0f+0.5f ), (int)( hg*255.0f+0.5f ), (int)( hb*255.0f+0.5f ), 255 ), 2.0f );
 			dl->AddRect( ImVec2( feh_bb.Min.x - 1.0f, handleY - hh ),
 			             ImVec2( feh_bb.Max.x + 1.0f, handleY + hh ),
-			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			             ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		changed |= ImGui::SliderFloat( "Teff (K)##Star", pT, STAR_T_MIN, STAR_T_MAX, "%.0f", ImGuiSliderFlags_Logarithmic );
@@ -21106,7 +20822,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		if ( planeActive || fehActive ) changed = true;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -21221,7 +20938,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerHemoglobin( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems ) return false;
 		ImGuiContext& g = *GImGui;
@@ -21238,11 +20954,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pBV   = storage->GetFloatRef( ImGui::GetID( "bv" ),   0.02f );
 		float* pMel  = storage->GetFloatRef( ImGui::GetID( "mel" ),  0.05f );
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing;
+		if ( size.y > 0.0f ) planeSide = size.y;
 		if ( planeSide < 32.0f ) planeSide = 32.0f;
 		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
 		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
@@ -21276,12 +20997,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		{
 			ImHemData cbData; cbData.mel = *pMel;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pMel );
 			// Note maxY/minY are inverted to put low BV (lighter) at top.
 			DrawCachedProceduralColor2DBilinear( dl, HemPlaneCallback, &cbData,
 				HEM_SPO2_MIN, HEM_SPO2_MAX, HEM_BV_MAX, HEM_BV_MIN,
-				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
@@ -21291,7 +21013,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
 			float dr, dg, db; HemoglobinToSRGB( dr, dg, db, *pSpO2, *pBV, *pMel );
 			ImU32 dotFill = IM_COL32( (int)( dr*255.0f+0.5f ), (int)( dg*255.0f+0.5f ), (int)( db*255.0f+0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -21301,7 +21023,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImHemSlider cbData; cbData.spO2 = *pSpO2; cbData.bv = *pBV;
 			DrawProceduralColor1DBilinearVertical( dl, HemMelCallback, &cbData,
 				HEM_MEL_MAX, HEM_MEL_MIN, mel_bb.Min, mel_bb.GetSize(), sliderRes );
-			dl->AddRect( mel_bb.Min, mel_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( mel_bb.Min, mel_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( ( HEM_MEL_MAX - *pMel ) / ( HEM_MEL_MAX - HEM_MEL_MIN ) );
 			float handleY = ImLerp( mel_bb.Min.y, mel_bb.Max.y, t );
 			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
@@ -21311,7 +21033,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			                   IM_COL32( (int)( hr*255.0f+0.5f ), (int)( hg*255.0f+0.5f ), (int)( hb*255.0f+0.5f ), 255 ), 2.0f );
 			dl->AddRect( ImVec2( mel_bb.Min.x - 1.0f, handleY - hh ),
 			             ImVec2( mel_bb.Max.x + 1.0f, handleY + hh ),
-			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			             ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		float spo2Pct = *pSpO2 * 100.0f;
@@ -21327,7 +21049,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		if ( planeActive || melActive ) changed = true;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -21413,7 +21136,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerCloud( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems ) return false;
 		ImGuiContext& g = *GImGui;
@@ -21430,11 +21152,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pMu    = storage->GetFloatRef( ImGui::GetID( "mu" ),    -0.6f );
 		float* pSigma = storage->GetFloatRef( ImGui::GetID( "sig" ),   0.8f );
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing;
+		if ( size.y > 0.0f ) planeSide = size.y;
 		if ( planeSide < 32.0f ) planeSide = 32.0f;
 		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
 		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
@@ -21469,11 +21196,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		{
 			ImCloudData cbData; cbData.sigma = *pSigma;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pSigma );
 			DrawCachedProceduralColor2DBilinear( dl, CloudPlaneCallback, &cbData,
 				CLOUD_D_MIN, CLOUD_D_MAX, CLOUD_MU_MAX, CLOUD_MU_MIN,
-				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
@@ -21483,7 +21211,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
 			float dr, dg, db; CloudToSRGB( dr, dg, db, *pDepth, *pMu, *pSigma );
 			ImU32 dotFill = IM_COL32( (int)( dr*255.0f+0.5f ), (int)( dg*255.0f+0.5f ), (int)( db*255.0f+0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -21493,7 +21221,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImCloudSlider cbData; cbData.depth = *pDepth; cbData.mu = *pMu;
 			DrawProceduralColor1DBilinearVertical( dl, CloudSigmaCallback, &cbData,
 				CLOUD_SIG_MAX, CLOUD_SIG_MIN, sig_bb.Min, sig_bb.GetSize(), sliderRes );
-			dl->AddRect( sig_bb.Min, sig_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( sig_bb.Min, sig_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( ( CLOUD_SIG_MAX - *pSigma ) / ( CLOUD_SIG_MAX - CLOUD_SIG_MIN ) );
 			float handleY = ImLerp( sig_bb.Min.y, sig_bb.Max.y, t );
 			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
@@ -21503,7 +21231,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			                   IM_COL32( (int)( hr*255.0f+0.5f ), (int)( hg*255.0f+0.5f ), (int)( hb*255.0f+0.5f ), 255 ), 2.0f );
 			dl->AddRect( ImVec2( sig_bb.Min.x - 1.0f, handleY - hh ),
 			             ImVec2( sig_bb.Max.x + 1.0f, handleY + hh ),
-			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			             ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		changed |= ImGui::SliderFloat( "Optical depth##Cloud",     pDepth, CLOUD_D_MIN,  CLOUD_D_MAX,  "%.2f" );
@@ -21515,7 +21243,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		if ( planeActive || sigActive ) changed = true;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -21634,7 +21363,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerStreetlight( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems ) return false;
 		ImGuiContext& g = *GImGui;
@@ -21651,11 +21379,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pPres = storage->GetFloatRef( ImGui::GetID( "pres" ), 0.3f );
 		float* pPhos = storage->GetFloatRef( ImGui::GetID( "phos" ), 0.0f );
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing;
+		if ( size.y > 0.0f ) planeSide = size.y;
 		if ( planeSide < 32.0f ) planeSide = 32.0f;
 		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
 		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
@@ -21689,11 +21422,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		{
 			ImSLData cbData; cbData.phos = *pPhos;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pPhos );
 			DrawCachedProceduralColor2DBilinear( dl, SLPlaneCallback, &cbData,
 				SL_MIX_MIN, SL_MIX_MAX, SL_PRES_MAX, SL_PRES_MIN,
-				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
@@ -21703,7 +21437,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, dv ) );
 			float dr, dg, db; StreetlightToSRGB( dr, dg, db, *pMix, *pPres, *pPhos );
 			ImU32 dotFill = IM_COL32( (int)( dr*255.0f+0.5f ), (int)( dg*255.0f+0.5f ), (int)( db*255.0f+0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -21713,7 +21447,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImSLSlider cbData; cbData.mix = *pMix; cbData.pres = *pPres;
 			DrawProceduralColor1DBilinearVertical( dl, SLPhosCallback, &cbData,
 				SL_PHOS_MAX, SL_PHOS_MIN, phos_bb.Min, phos_bb.GetSize(), sliderRes );
-			dl->AddRect( phos_bb.Min, phos_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( phos_bb.Min, phos_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( ( SL_PHOS_MAX - *pPhos ) / ( SL_PHOS_MAX - SL_PHOS_MIN ) );
 			float handleY = ImLerp( phos_bb.Min.y, phos_bb.Max.y, t );
 			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
@@ -21723,7 +21457,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			                   IM_COL32( (int)( hr*255.0f+0.5f ), (int)( hg*255.0f+0.5f ), (int)( hb*255.0f+0.5f ), 255 ), 2.0f );
 			dl->AddRect( ImVec2( phos_bb.Min.x - 1.0f, handleY - hh ),
 			             ImVec2( phos_bb.Max.x + 1.0f, handleY + hh ),
-			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			             ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		changed |= ImGui::SliderFloat( "Hg <-> Na##SL",   pMix,  SL_MIX_MIN,  SL_MIX_MAX,  "%.2f" );
@@ -21735,7 +21469,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		if ( planeActive || phosActive ) changed = true;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -21750,18 +21485,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	// ---- Common helpers ----------------------------------------------------
 
-	static inline float ArtLinToSrgb( float c )
-	{
-		if ( c <= 0.0f ) return 0.0f;
-		if ( c >= 1.0f ) return 1.0f;
-		return ( c <= 0.0031308f ) ? 12.92f * c : 1.055f * powf( c, 1.0f / 2.4f ) - 0.055f;
-	}
-	static inline float ArtSrgbToLin( float c )
-	{
-		if ( c <= 0.0f ) return 0.0f;
-		if ( c >= 1.0f ) return 1.0f;
-		return ( c <= 0.04045f ) ? c * ( 1.0f / 12.92f ) : powf( ( c + 0.055f ) * ( 1.0f / 1.055f ), 2.4f );
-	}
+	// Clamped wrappers over the library's single sRGB transfer pair. The artistic
+	// pigment models feed these unbounded intermediates, hence the saturation.
+	static inline float ArtLinToSrgb( float c ) { return ImLinearTosRGB( ImSaturate( c ) ); }
+	static inline float ArtSrgbToLin( float c ) { return ImsRGBToLinear( ImSaturate( c ) ); }
 
 	// Björn Ottosson's Oklab — perceptually-uniform colour space.
 	// Ref: https://bottosson.github.io/posts/oklab/
@@ -21779,27 +21506,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		bl = -0.0041960863f * l - 0.7034186147f * m + 1.7076147010f * s;
 	}
 
-	// LCh (cylindrical Oklab) → sRGB. Out-of-gamut channels get clipped to
-	// [0,1] (the cheap way) so the picker still produces a viewable colour.
-	static inline void ArtOklchToSrgb( float L, float C, float h_rad,
-	                                   float& r, float& g, float& b )
-	{
-		float a  = C * cosf( h_rad );
-		float bb = C * sinf( h_rad );
-		float lr, lg, lbb;
-		ArtOklabToLinearRGB( L, a, bb, lr, lg, lbb );
-		r = ArtLinToSrgb( lr );
-		g = ArtLinToSrgb( lg );
-		b = ArtLinToSrgb( lbb );
-	}
-	static inline bool ArtOklchInGamut( float L, float C, float h_rad )
-	{
-		float a  = C * cosf( h_rad );
-		float bb = C * sinf( h_rad );
-		float lr, lg, lbb;
-		ArtOklabToLinearRGB( L, a, bb, lr, lg, lbb );
-		return lr >= 0.0f && lr <= 1.0f && lg >= 0.0f && lg <= 1.0f && lbb >= 0.0f && lbb <= 1.0f;
-	}
 
 	//////////////////////////////////////////////////////////////////////////
 	// 1. ColorPickerPaletteHarmony — anchor + scheme → 4-5 swatch palette
@@ -21835,17 +21541,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	static int ArtHarmonyBuildPalette( int scheme, float h, float s, float v,
 	                                   float spread_deg, ImVec4* out, int outCap )
 	{
+		// ArtHarmonyScheme is ImWidgetsColorHarmony_ without its leading None entry,
+		// so the offsets come from the one public table instead of a second copy.
 		float off[5] = { 0, 0, 0, 0, 0 };
-		int n = 1;
-		switch ( scheme )
-		{
-		case ArtHarmony_Complement: n = 2; off[ 1 ] = 180.0f; break;
-		case ArtHarmony_SplitComp:  n = 3; off[ 1 ] = 180.0f - spread_deg; off[ 2 ] = 180.0f + spread_deg; break;
-		case ArtHarmony_Triad:      n = 3; off[ 1 ] = 120.0f; off[ 2 ] = 240.0f; break;
-		case ArtHarmony_Tetrad:     n = 4; off[ 1 ] = 60.0f; off[ 2 ] = 180.0f; off[ 3 ] = 240.0f; break;
-		case ArtHarmony_Square:     n = 4; off[ 1 ] = 90.0f; off[ 2 ] = 180.0f; off[ 3 ] = 270.0f; break;
-		case ArtHarmony_Analogous:  n = 5; off[ 0 ] = -2.0f * spread_deg; off[ 1 ] = -spread_deg; off[ 2 ] = 0.0f; off[ 3 ] = spread_deg; off[ 4 ] = 2.0f * spread_deg; break;
-		}
+		int n = ColorHarmonyOffsets( ( ImWidgetsColorHarmony )( scheme + 1 ), spread_deg, off, 5 );
 		if ( n > outCap ) n = outCap;
 		for ( int i = 0; i < n; ++i )
 		{
@@ -21892,6 +21591,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pSpread = storage->GetFloatRef( ImGui::GetID( "spread" ), 30.0f );
 		int*   pActive = storage->GetIntRef  ( ImGui::GetID( "active" ), 0 );
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
 		const float w = ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
@@ -21926,11 +21628,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		{
 			ImHarmoData cbData; cbData.hue = *pH;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( 2166136261u, planeRes ), *pH );
 			DrawCachedProceduralColor2DBilinear( dl, HarmoPlaneCallback, &cbData,
 				0.0f, 1.0f, 1.0f, 0.0f,
-				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
@@ -21938,7 +21641,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, 1.0f - *pV ) );
 			float dr, dg, db; ImGui::ColorConvertHSVtoRGB( *pH, *pS, *pV, dr, dg, db );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -21952,7 +21655,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			// this file passes (1, 0). Pre-existing; not changed here.
 			DrawProceduralColor1DBilinearVertical( dl, ImWidgetsColorScalar(),
 				0.0f, 1.0f, hue_bb.Min, hue_bb.GetSize(), sliderRes );
-			dl->AddRect( hue_bb.Min, hue_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( hue_bb.Min, hue_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float handleY = ImLerp( hue_bb.Min.y, hue_bb.Max.y, *pH );
 			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
 			float hr, hg, hb; ImGui::ColorConvertHSVtoRGB( *pH, 1.0f, 1.0f, hr, hg, hb );
@@ -21961,7 +21664,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			                   IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 ), 2.0f );
 			dl->AddRect( ImVec2( hue_bb.Min.x - 1.0f, handleY - hh ),
 			             ImVec2( hue_bb.Max.x + 1.0f, handleY + hh ),
-			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			             ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		ImGui::SetNextItemWidth( w );
@@ -21991,7 +21694,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			                      ( int )( palette[ i ].z * 255.0f + 0.5f ), 255 );
 			dl->AddRectFilled( sw_bb.Min, sw_bb.Max, col, 3.0f );
 			ImU32 ring = ( i == *pActive ) ? IM_COL32( 255, 255, 255, 255 ) : ImGui::GetColorU32( ImGuiCol_Border );
-			dl->AddRect( sw_bb.Min, sw_bb.Max, ring, 3.0f, 0, ( i == *pActive ) ? 2.5f : 1.0f );
+			dl->AddRect( sw_bb.Min, sw_bb.Max, ring, 3.0f, ( i == *pActive ) ? 2.5f : 1.0f, 0 );
 			ImGui::PopID();
 			if ( i + 1 < paletteN ) ImGui::SameLine( 0.0f, swSp );
 		}
@@ -22005,7 +21708,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		if ( planeActive || hueActive ) changed = true;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -22104,6 +21808,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pW1  = storage->GetFloatRef( ImGui::GetID( "w1" ), 0.2f );
 		float* pTint = storage->GetFloatRef( ImGui::GetID( "tint" ), 0.0f );
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
 		ImVec4 pri0( *pP0r, *pP0g, *pP0b, 1.0f );
 		ImVec4 pri1( *pP1r, *pP1g, *pP1b, 1.0f );
@@ -22237,7 +21944,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				dl->AddRectFilledMultiColor( tint_bb.Min, ImVec2( tint_bb.Max.x, mid.y ), white, white, mixCol, mixCol );
 				dl->AddRectFilledMultiColor( mid, tint_bb.Max, mixCol, mixCol, black, black );
 			}
-			dl->AddRect( tint_bb.Min, tint_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( tint_bb.Min, tint_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = enable_k ? ImClamp( *pTint, 0.0f, 1.0f )
 			                   : ImClamp( 0.5f - 0.5f * ( *pTint ), 0.0f, 1.0f );
 			float handleY = ImLerp( tint_bb.Min.y, tint_bb.Max.y, t );
@@ -22246,7 +21953,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			                   ImVec2( tint_bb.Max.x + 1.0f, handleY + hh ), dotFill, 2.0f );
 			dl->AddRect( ImVec2( tint_bb.Min.x - 1.0f, handleY - hh ),
 			             ImVec2( tint_bb.Max.x + 1.0f, handleY + hh ),
-			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			             ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		float p0[ 3 ] = { *pP0r, *pP0g, *pP0b };
@@ -22258,13 +21965,14 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( enable_k )
 			changed |= ImGui::SliderFloat( "K (black ink)##Tri", pTint, 0.0f, 1.0f, "%.2f" );
 		else
-			changed |= ImGui::SliderFloat( "Tint (white↔black)##Tri", pTint, -1.0f, 1.0f, "%+.2f" );
+			changed |= ImGui::SliderFloat( "Tint (white <-> black)##Tri", pTint, -1.0f, 1.0f, "%+.2f" );
 
 		color->x = mr; color->y = mg; color->z = mb;
 
 		if ( planeActive || tintActive ) changed = true;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -22376,6 +22084,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pRough = storage->GetFloatRef( ImGui::GetID( "rough" ),  0.30f );
 		float* pGrime = storage->GetFloatRef( ImGui::GetID( "grime" ),  0.10f );
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
 		const float w = ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
@@ -22410,11 +22121,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		{
 			ImMetalData cbData; cbData.metal = *pMetal; cbData.grime = *pGrime;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pMetal ), *pGrime );
 			DrawCachedProceduralColor2DBilinear( dl, MetalPlaneCallback, &cbData,
 				0.0f, 1.0f, 0.0f, 1.0f,
-				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
@@ -22422,7 +22134,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, *pRough ) );
 			float dr, dg, db; ArtMetalCompose( *pMetal, *pPat, *pRough, *pGrime, dr, dg, db );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -22432,7 +22144,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImMetalSlider cbData; cbData.metal = *pMetal; cbData.patina = *pPat; cbData.rough = *pRough;
 			DrawProceduralColor1DBilinearVertical( dl, MetalGrimeCallback, &cbData,
 				0.0f, 1.0f, gr_bb.Min, gr_bb.GetSize(), sliderRes );
-			dl->AddRect( gr_bb.Min, gr_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( gr_bb.Min, gr_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( *pGrime );
 			float handleY = ImLerp( gr_bb.Min.y, gr_bb.Max.y, t );
 			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
@@ -22442,7 +22154,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			                   IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 ), 2.0f );
 			dl->AddRect( ImVec2( gr_bb.Min.x - 1.0f, handleY - hh ),
 			             ImVec2( gr_bb.Max.x + 1.0f, handleY + hh ),
-			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			             ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		ImGui::SetNextItemWidth( w );
@@ -22456,7 +22168,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		if ( planeActive || grActive ) changed = true;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -22552,6 +22265,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pSat = storage->GetFloatRef( ImGui::GetID( "s" ),   0.75f );
 		float* pInt = storage->GetFloatRef( ImGui::GetID( "i" ),   1.5f );
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
 		const float w = ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
@@ -22587,11 +22303,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		{
 			ImFabricData cbData; cbData.fabric = *pFab; cbData.intensity = *pInt;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pFab ), *pInt );
 			DrawCachedProceduralColor2DBilinear( dl, FabricPlaneCallback, &cbData,
 				0.0f, 1.0f, 1.0f, 0.0f,
-				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
@@ -22599,7 +22316,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, 1.0f - *pSat ) );
 			float dr, dg, db; ArtFabricCompose( *pFab, *pHue, *pSat, *pInt, dr, dg, db );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -22609,7 +22326,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImFabricSlider cbData; cbData.fabric = *pFab; cbData.hue = *pHue; cbData.sat = *pSat;
 			DrawProceduralColor1DBilinearVertical( dl, FabricIntensityCallback, &cbData,
 				3.0f, 0.0f, int_bb.Min, int_bb.GetSize(), sliderRes );
-			dl->AddRect( int_bb.Min, int_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( int_bb.Min, int_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( ( 3.0f - *pInt ) / 3.0f );
 			float handleY = ImLerp( int_bb.Min.y, int_bb.Max.y, t );
 			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
@@ -22619,7 +22336,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			                   IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 ), 2.0f );
 			dl->AddRect( ImVec2( int_bb.Min.x - 1.0f, handleY - hh ),
 			             ImVec2( int_bb.Max.x + 1.0f, handleY + hh ),
-			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			             ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		ImGui::SetNextItemWidth( w );
@@ -22633,7 +22350,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		if ( planeActive || intActive ) changed = true;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 	//////////////////////////////////////////////////////////////////////////
 	// 9. ColorPickerMoodPalette — curated 5-swatch palettes by mood word
@@ -22772,6 +22490,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pL     = storage->GetFloatRef( ImGui::GetID( "L" ),     0.0f );
 		float* pCrush = storage->GetFloatRef( ImGui::GetID( "cr" ),    0.0f );
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
 		const float w = ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
@@ -22807,11 +22528,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		{
 			ImMoodData cbData; cbData.mood = *pMood; cbData.satCrush = *pCrush;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pMood ), *pCrush );
 			DrawCachedProceduralColor2DBilinear( dl, MoodPlaneCallback, &cbData,
 				0.0f, 1.0f, 1.0f, -1.0f,
-				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
@@ -22819,7 +22541,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, 0.5f - 0.5f * ( *pL ) ) );
 			float dr, dg, db; ArtMoodCompose( *pMood, *pT, *pL, *pCrush, dr, dg, db );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -22829,7 +22551,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImMoodSlider cbData; cbData.mood = *pMood; cbData.t = *pT; cbData.L = *pL;
 			DrawProceduralColor1DBilinearVertical( dl, MoodSatCallback, &cbData,
 				0.0f, 1.0f, cr_bb.Min, cr_bb.GetSize(), sliderRes );
-			dl->AddRect( cr_bb.Min, cr_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( cr_bb.Min, cr_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( *pCrush );
 			float handleY = ImLerp( cr_bb.Min.y, cr_bb.Max.y, t );
 			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
@@ -22839,7 +22561,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			                   IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 ), 2.0f );
 			dl->AddRect( ImVec2( cr_bb.Min.x - 1.0f, handleY - hh ),
 			             ImVec2( cr_bb.Max.x + 1.0f, handleY + hh ),
-			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			             ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		ImGui::SetNextItemWidth( w );
@@ -22875,7 +22597,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		if ( planeActive || crActive ) changed = true;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -22952,6 +22675,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pShift = storage->GetFloatRef( ImGui::GetID( "shift" ), 1.0f );
 		float* pTerm = storage->GetFloatRef( ImGui::GetID( "term" ), 0.25f );
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
 		const float w = ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
@@ -22986,11 +22712,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 
 		{
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyI( 2166136261u, planeRes );
 			DrawCachedProceduralColor2DBilinear( dl, ToonPlaneCallback, nullptr,
 				0.0f, 1.0f, 1.0f, 0.0f,
-				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+				plane_bb.Min, plane_bb.GetSize(), planeRes, s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 		{
@@ -22998,7 +22725,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			               ImLerp( plane_bb.Min.y, plane_bb.Max.y, 1.0f - *pV ) );
 			float dr, dg, db; ImGui::ColorConvertHSVtoRGB( *pH, *pS, *pV, dr, dg, db );
 			ImU32 dotFill = IM_COL32( ( int )( dr * 255.0f + 0.5f ), ( int )( dg * 255.0f + 0.5f ), ( int )( db * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -23008,7 +22735,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float satH = *pH;
 			DrawProceduralColor1DBilinearVertical( dl, ToonSatCallback, &satH,
 				1.0f, 0.0f, sat_bb.Min, sat_bb.GetSize(), sliderRes );
-			dl->AddRect( sat_bb.Min, sat_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( sat_bb.Min, sat_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( 1.0f - *pS );
 			float handleY = ImLerp( sat_bb.Min.y, sat_bb.Max.y, t );
 			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
@@ -23018,7 +22745,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			                   IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 ), 2.0f );
 			dl->AddRect( ImVec2( sat_bb.Min.x - 1.0f, handleY - hh ),
 			             ImVec2( sat_bb.Max.x + 1.0f, handleY + hh ),
-			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			             ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		changed |= ImGui::SliderFloat( "Chroma drop into shadow##Toon", pDrop, 0.0f, 1.0f, "%.2f" );
@@ -23067,7 +22794,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		if ( planeActive || satActive ) changed = true;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -23121,13 +22849,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImGui::ColorConvertHSVtoRGB( h, s, v, r, g, b );
 			break;
 		case ImHarmonyWheelColorSpace_HSL:
-			ColorConvertHSLtoRGB( h, s, v, r, g, b );
+			ColorConvertHSLtoRGB( r, g, b, h, s, v );
 			break;
 		case ImHarmonyWheelColorSpace_HSY:
-			ColorConvertHSYtoRGB( h, s, v, r, g, b );
+			ColorConvertHSYtoRGB( r, g, b, h, s, v );
 			break;
 		case ImHarmonyWheelColorSpace_HSP:
-			ColorConvertHSPtoRGB( h, s, v, r, g, b );
+			ColorConvertHSPtoRGB( r, g, b, h, s, v );
 			break;
 		case ImHarmonyWheelColorSpace_OkLCH:
 		{
@@ -23257,6 +22985,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		float* pV      = storage->GetFloatRef( ImGui::GetID( "v" ),   0.85f );
 		float* pSpread = storage->GetFloatRef( ImGui::GetID( "sp" ),  30.0f );
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
 		const float w = ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
@@ -23350,7 +23081,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		}
 
 		// === Render handles ===
-		ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+		ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 		for ( int i = 0; i < handleCount; ++i )
 		{
 			float angle = handles[ i ].x * ( 2.0f * IM_PI );
@@ -23384,7 +23115,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				ImVec2 b2( v_bb.Max.x, ImLerp( v_bb.Min.y, v_bb.Max.y, ( float )( i + 1 ) / sliderRes ) );
 				dl->AddRectFilledMultiColor( a, b2, c0, c0, c1, c1 );
 			}
-			dl->AddRect( v_bb.Min, v_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( v_bb.Min, v_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( 1.0f - *pV );
 			float handleY = ImLerp( v_bb.Min.y, v_bb.Max.y, t );
 			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
@@ -23394,7 +23125,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			                   IM_COL32( ( int )( hr * 255.0f + 0.5f ), ( int )( hg * 255.0f + 0.5f ), ( int )( hb * 255.0f + 0.5f ), 255 ), 2.0f );
 			dl->AddRect( ImVec2( v_bb.Min.x - 1.0f, handleY - hh ),
 			             ImVec2( v_bb.Max.x + 1.0f, handleY + hh ),
-			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			             ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		// === Component controls ===
@@ -23425,7 +23156,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 				ImU32 col = IM_COL32( ( int )( rr * 255.0f + 0.5f ), ( int )( gg * 255.0f + 0.5f ), ( int )( bb * 255.0f + 0.5f ), 255 );
 				dl->AddRectFilled( sw_bb.Min, sw_bb.Max, col, 3.0f );
 				ImU32 ring = ( i == *pActive ) ? IM_COL32_WHITE : ImGui::GetColorU32( ImGuiCol_Border );
-				dl->AddRect( sw_bb.Min, sw_bb.Max, ring, 3.0f, 0, ( i == *pActive ) ? 2.5f : 1.0f );
+				dl->AddRect( sw_bb.Min, sw_bb.Max, ring, 3.0f, ( i == *pActive ) ? 2.5f : 1.0f, 0 );
 				ImGui::PopID();
 				if ( i + 1 < handleCount ) ImGui::SameLine( 0.0f, swSp );
 			}
@@ -23449,7 +23180,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		if ( planeActive || vActive ) changed = true;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 
@@ -23979,7 +23711,6 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 	bool ColorPickerSky( char const* label, ImVec4* color, ImVec2 size )
 	{
-		IM_UNUSED( size );
 		ImGuiWindow* window = ImGui::GetCurrentWindow();
 		if ( window->SkipItems ) return false;
 		ImGuiContext& g = *GImGui;
@@ -24012,11 +23743,16 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		if ( !s_SkyTransLUTBuilt ) BuildSkyTransmittanceLUT();
 
 		bool changed = false;
+		// Out-only picker: report a change only when the colour it drives actually
+		// moved, not merely because the mouse is still held on a control.
+		ImVec4 const dwColorBefore = *color;
 
-		const float w = ImGui::CalcItemWidth();
+		// size.x overrides the item width; size.y overrides the plane height.
+		const float w = ( size.x > 0.0f ) ? size.x : ImGui::CalcItemWidth();
 		const float sliderW = LpToPx( dwStyle.ColorPicker_SliderWidth );
 		const float spacing = style.ItemInnerSpacing.x;
 		float planeSide = w - sliderW - spacing;
+		if ( size.y > 0.0f ) planeSide = size.y;
 		if ( planeSide < 32.0f ) planeSide = 32.0f;
 		const int planeRes = dwStyle.ColorPicker_PlaneResolution;
 		const int sliderRes = dwStyle.ColorPicker_SliderResolution;
@@ -24058,12 +23794,13 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImSkyPlaneData cb;
 			cb.view_az_rel = *pViewAz; cb.doy = *pDoy; cb.lat = *pLat;
 			cb.obs_alt_m   = *pObsAlt; cb.year = 2026;
-			static ImU32 s_cache[ DW_PLANE_CACHE_CAP ]; static ImU32 s_key = 0xFFFFFFFFu;
+			ImU32* s_key = NULL;
+			ImU32* s_cache = DW_AcquirePlaneCache( ImGui::GetID( "##dw_plane" ), &s_key );
 			ImU32 key = PlaneKeyF( PlaneKeyF( PlaneKeyF( PlaneKeyI( PlaneKeyI( 2166136261u, planeRes ), *pDoy ), *pLat ), *pViewAz ), *pObsAlt );
 			DrawCachedProceduralColor2DBilinear( dl, SkyPlaneCallback, &cb,
 				0.0f, 24.0f, 0.0f, 90.0f,
 				plane_bb.Min, plane_bb.GetSize(), planeRes,
-				s_cache, IM_ARRAYSIZE( s_cache ), &s_key, key );
+				s_cache, DW_PLANE_CACHE_CAP, s_key, key );
 			dl->AddRect( plane_bb.Min, plane_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
 		}
 
@@ -24077,7 +23814,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			float r, gg, b;
 			DwSkyColorBruneton( r, gg, b, view_zen, sun_zen, *pViewAz, *pObsAlt );
 			ImU32 dotFill = IM_COL32( (int)( r * 255.0f + 0.5f ), (int)( gg * 255.0f + 0.5f ), (int)( b * 255.0f + 0.5f ), 255 );
-			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_Crosshair ] );
+			ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_Crosshair ] );
 			DrawCrosshairInRect( dl, dotPos, plane_bb, crossCol );
 			dl->AddCircleFilled( dotPos, dotRadius + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ) );
 			dl->AddCircleFilled( dotPos, dotRadius, dotFill );
@@ -24093,7 +23830,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			cb.view_az_rel = *pViewAz; cb.doy = *pDoy; cb.lat = *pLat; cb.year = 2026;
 			DrawProceduralColor1DBilinearVertical( dl, SkyAltSliderCallback, &cb,
 				OBS_ALT_MAX_M, 0.0f, alt_bb.Min, alt_bb.GetSize(), sliderRes );
-			dl->AddRect( alt_bb.Min, alt_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderOutline ] ) );
+			dl->AddRect( alt_bb.Min, alt_bb.Max, ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderOutline ] ) );
 			float t = ImSaturate( 1.0f - *pObsAlt / OBS_ALT_MAX_M );
 			float handleY = ImLerp( alt_bb.Min.y, alt_bb.Max.y, t );
 			float hh = LpToPx( dwStyle.ColorPicker_SliderHandleHeight ) * 0.5f;
@@ -24102,7 +23839,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			                   IM_COL32( 30, 28, 26, 255 ), 2.0f );
 			dl->AddRect( ImVec2( alt_bb.Min.x - 1.0f, handleY - hh ),
 			             ImVec2( alt_bb.Max.x + 1.0f, handleY + hh ),
-			             ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorPicker_SliderHandle ] ), 2.0f, 0, 1.5f );
+			             ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorPicker_SliderHandle ] ), 2.0f, 1.5f, 0 );
 		}
 
 		// Component sliders below.
@@ -24123,7 +23860,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		if ( planeActive || altActive ) changed = true;
 		ImGui::PopID();
-		return changed;
+		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
+		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -24791,11 +24529,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		const float rotLineThick  = LpToPx( dwStyle.Gizmo_RotationLineThickness );
 		const float centerDotR    = LpToPx( dwStyle.Gizmo_CenterDotRadius );
 		const float edgeHandleSc  = dwStyle.Gizmo_EdgeHandleScale;
-		const ImU32 colCanvas     = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gizmo_Canvas ] );
-		const ImU32 colOutline    = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gizmo_Outline ] );
-		const ImU32 colHandle     = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gizmo_Handle ] );
-		const ImU32 colHandleAct  = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gizmo_HandleActive ] );
-		const ImU32 colOutlineDim = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Gizmo_DimOutline ] );
+		const ImU32 colCanvas     = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_Gizmo_Canvas ] );
+		const ImU32 colOutline    = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_Gizmo_Outline ] );
+		const ImU32 colHandle     = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_Gizmo_Handle ] );
+		const ImU32 colHandleAct  = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_Gizmo_HandleActive ] );
+		const ImU32 colOutlineDim = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_Gizmo_DimOutline ] );
 		const ImU32 colBorder     = ImGui::GetColorU32( ImGuiCol_Border );
 
 		// Canvas size
@@ -25275,7 +25013,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	//////////////////////////////////////////////////////////////////////////
 
 	// ---- HSL conversion ----
-	void ColorConvertRGBtoHSL( float r, float g, float b, float& out_h, float& out_s, float& out_l )
+	void ColorConvertRGBtoHSL( float& out_h, float& out_s, float& out_l, float r, float g, float b )
 	{
 		float mx = ImMax( r, ImMax( g, b ) );
 		float mn = ImMin( r, ImMin( g, b ) );
@@ -25305,7 +25043,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		return p;
 	}
 
-	void ColorConvertHSLtoRGB( float h, float s, float l, float& out_r, float& out_g, float& out_b )
+	void ColorConvertHSLtoRGB( float& out_r, float& out_g, float& out_b, float h, float s, float l )
 	{
 		if ( s < 1e-6f )
 		{
@@ -25320,7 +25058,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 	// ---- HSY conversion (BT.709 luma) ----
-	void ColorConvertRGBtoHSY( float r, float g, float b, float& out_h, float& out_s, float& out_y )
+	void ColorConvertRGBtoHSY( float& out_h, float& out_s, float& out_y, float r, float g, float b )
 	{
 		out_y = 0.2126f * r + 0.7152f * g + 0.0722f * b;
 		// Use HSV hue
@@ -25342,7 +25080,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		out_s = ( mx > 1e-6f ) ? d / mx : 0.0f;
 	}
 
-	void ColorConvertHSYtoRGB( float h, float s, float y, float& out_r, float& out_g, float& out_b )
+	void ColorConvertHSYtoRGB( float& out_r, float& out_g, float& out_b, float h, float s, float y )
 	{
 		if ( s < 1e-6f )
 		{
@@ -25385,7 +25123,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 	// ---- HSP conversion (perceived brightness) ----
-	void ColorConvertRGBtoHSP( float r, float g, float b, float& out_h, float& out_s, float& out_p )
+	void ColorConvertRGBtoHSP( float& out_h, float& out_s, float& out_p, float r, float g, float b )
 	{
 		out_p = ImSqrt( 0.299f * r * r + 0.587f * g * g + 0.114f * b * b );
 		float mx = ImMax( r, ImMax( g, b ) );
@@ -25405,7 +25143,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		out_s = ( mx > 1e-6f ) ? d / mx : 0.0f;
 	}
 
-	void ColorConvertHSPtoRGB( float h, float s, float p, float& out_r, float& out_g, float& out_b )
+	void ColorConvertHSPtoRGB( float& out_r, float& out_g, float& out_b, float h, float s, float p )
 	{
 		if ( s < 1e-6f )
 		{
@@ -25448,7 +25186,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 	// ---- HSP Log conversion (log-perceived brightness) ----
-	void ColorConvertRGBtoHSPLog( float r, float g, float b, float& out_h, float& out_s, float& out_p )
+	void ColorConvertRGBtoHSPLog( float& out_h, float& out_s, float& out_p, float r, float g, float b )
 	{
 		float pLin = ImSqrt( 0.299f * r * r + 0.587f * g * g + 0.114f * b * b );
 		out_p = ( pLin > 1e-6f ) ? ImLog( 1.0f + pLin * 99.0f ) / ImLog( 100.0f ) : 0.0f; // log [0,1] -> [0,1]
@@ -25469,11 +25207,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		out_s = ( mx > 1e-6f ) ? d / mx : 0.0f;
 	}
 
-	void ColorConvertHSPLogtoRGB( float h, float s, float pLog, float& out_r, float& out_g, float& out_b )
+	void ColorConvertHSPLogtoRGB( float& out_r, float& out_g, float& out_b, float h, float s, float pLog )
 	{
 		// Invert log: pLin = (10^(pLog * 2) - 1) / 99
 		float pLin = ( ImPow( 100.0f, pLog ) - 1.0f ) / 99.0f;
-		ColorConvertHSPtoRGB( h, s, pLin, out_r, out_g, out_b );
+		ColorConvertHSPtoRGB( out_r, out_g, out_b, h, s, pLin );
 	}
 
 	// Sample disc color for the warper background
@@ -25488,10 +25226,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 		default:
 		case ImColorWarperSpace_HSV: ImGui::ColorConvertHSVtoRGB( h, normRadius, thirdAxis, r, g, b ); break;
-		case ImColorWarperSpace_HSL: ColorConvertHSLtoRGB( h, normRadius, thirdAxis, r, g, b ); break;
-		case ImColorWarperSpace_HSY: ColorConvertHSYtoRGB( h, normRadius, thirdAxis, r, g, b ); break;
-		case ImColorWarperSpace_HSP: ColorConvertHSPtoRGB( h, normRadius, thirdAxis, r, g, b ); break;
-		case ImColorWarperSpace_HSPLog: ColorConvertHSPLogtoRGB( h, normRadius, thirdAxis, r, g, b ); break;
+		case ImColorWarperSpace_HSL: ColorConvertHSLtoRGB( r, g, b, h, normRadius, thirdAxis ); break;
+		case ImColorWarperSpace_HSY: ColorConvertHSYtoRGB( r, g, b, h, normRadius, thirdAxis ); break;
+		case ImColorWarperSpace_HSP: ColorConvertHSPtoRGB( r, g, b, h, normRadius, thirdAxis ); break;
+		case ImColorWarperSpace_HSPLog: ColorConvertHSPLogtoRGB( r, g, b, h, normRadius, thirdAxis ); break;
 		case ImColorWarperSpace_OkLCH:
 		{
 			float c = normRadius * kOkLCHMaxChroma;
@@ -25522,10 +25260,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		{
 		default:
 		case ImColorWarperSpace_HSV:  ImGui::ColorConvertRGBtoHSV( r, g, b, h, s, third ); return third;
-		case ImColorWarperSpace_HSL:  ColorConvertRGBtoHSL( r, g, b, h, s, third ); return third;
-		case ImColorWarperSpace_HSY:  ColorConvertRGBtoHSY( r, g, b, h, s, third ); return third;
-		case ImColorWarperSpace_HSP:  ColorConvertRGBtoHSP( r, g, b, h, s, third ); return third;
-		case ImColorWarperSpace_HSPLog: ColorConvertRGBtoHSPLog( r, g, b, h, s, third ); return third;
+		case ImColorWarperSpace_HSL:  ColorConvertRGBtoHSL( h, s, third, r, g, b ); return third;
+		case ImColorWarperSpace_HSY:  ColorConvertRGBtoHSY( h, s, third, r, g, b ); return third;
+		case ImColorWarperSpace_HSP:  ColorConvertRGBtoHSP( h, s, third, r, g, b ); return third;
+		case ImColorWarperSpace_HSPLog: ColorConvertRGBtoHSPLog( h, s, third, r, g, b ); return third;
 		case ImColorWarperSpace_OkLab:
 		case ImColorWarperSpace_OkLCH:
 		{
@@ -25832,7 +25570,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			ImU32 flatCol = 0;
 			if ( signalColor == ImColorWarperSignalColor_Flat )
 			{
-				ImVec4 sigF = dwStyle.Colors[ StyleColor_CIEChromaticity_Signal ];
+				ImVec4 sigF = dwStyle.Colors[ ImWidgetsCol_CIEChromaticity_Signal ];
 				sigF.w = signalAlphaF;
 				flatCol = ImGui::GetColorU32( sigF );
 			}
@@ -26010,11 +25748,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Clip
 		dl->PushClipRect( content_bb.Min, content_bb.Max, true );
 
-		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorWarper_GridLine ] );
-		ImU32 pointOutCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorWarper_PointOutline ] );
-		ImU32 pointActCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorWarper_PointOutlineActive ] );
-		ImU32 pointFillCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorWarper_PointFill ] );
-		ImU32 pointMovedCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorWarper_PointFillMoved ] );
+		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorWarper_GridLine ] );
+		ImU32 pointOutCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorWarper_PointOutline ] );
+		ImU32 pointActCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorWarper_PointOutlineActive ] );
+		ImU32 pointFillCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorWarper_PointFill ] );
+		ImU32 pointMovedCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorWarper_PointFillMoved ] );
 
 		int hueDivs = data->HueDivisions;
 		int satDivs = data->SatDivisions;
@@ -26752,7 +26490,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// Optional luminance histogram overlay
 		if ( histogramOverlay && histogramOverlay->BinCount > 0 && histogramOverlay->PeakCount > 0 )
 		{
-			ImU32 histCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorCurve_HistogramOverlay ] );
+			ImU32 histCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorCurve_HistogramOverlay ] );
 			int binCount = histogramOverlay->BinCount;
 			float frameW = frame_bb.GetWidth();
 			float frameH = frame_bb.GetHeight();
@@ -26774,7 +26512,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// Grid lines
 		{
-			ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorCurve_Grid ] );
+			ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorCurve_Grid ] );
 			int gridDivX = 10;
 			int gridDivY = 4;
 			for ( int i = 1; i < gridDivX; ++i )
@@ -26791,7 +26529,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// Neutral / default line
 		{
-			ImU32 neutralCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorCurve_NeutralLine ] );
+			ImU32 neutralCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorCurve_NeutralLine ] );
 			ImVec2 nLeft = ColorCurveToScreen( 0.0f, defaultY, frame_bb, yMin, yMax );
 			ImVec2 nRight = ColorCurveToScreen( 1.0f, defaultY, frame_bb, yMin, yMax );
 			dl->AddLine( nLeft, nRight, neutralCol, 1.5f );
@@ -26799,7 +26537,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// Curve polyline — sample then route through DrawThickLine.
 		{
-			ImU32 curveCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorCurve_Line ] );
+			ImU32 curveCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorCurve_Line ] );
 			int sampleCount = ( int )( w * 0.5f );
 			if ( sampleCount < 64 ) sampleCount = 64;
 
@@ -26842,9 +26580,9 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			}
 			else
 			{
-				keyCol = ImGui::GetColorU32( dwStyle.Colors[ isSelected ? StyleColor_ColorCurve_KeySelected : ( isHovered ? StyleColor_ColorCurve_KeyHovered : StyleColor_ColorCurve_Key ) ] );
+				keyCol = ImGui::GetColorU32( dwStyle.Colors[ isSelected ? ImWidgetsCol_ColorCurve_KeySelected : ( isHovered ? ImWidgetsCol_ColorCurve_KeyHovered : ImWidgetsCol_ColorCurve_Key ) ] );
 			}
-			ImU32 outCol = isSelected ? IM_COL32_WHITE : ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorCurve_KeyOutline ] );
+			ImU32 outCol = isSelected ? IM_COL32_WHITE : ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorCurve_KeyOutline ] );
 			float outThk = isSelected ? 2.5f : 1.5f;
 
 			dl->AddCircleFilled( kScreen, radius, keyCol );
@@ -26858,8 +26596,8 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			bool showRight = ( sk.Segment == ImCurveEditorSeg_CubicBezier && selected < curve->Keys.Size - 1 );
 			bool showLeft = ( selected > 0 && curve->Keys[ selected - 1 ].Segment == ImCurveEditorSeg_CubicBezier );
 			ImVec2 keyScreen = ColorCurveToScreen( sk.Position, sk.Value, frame_bb, yMin, yMax );
-			ImU32 tangentCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_TangentLine ] );
-			ImU32 tangentHovCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_TangentHovered ] );
+			ImU32 tangentCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CurveEditor_TangentLine ] );
+			ImU32 tangentHovCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CurveEditor_TangentHovered ] );
 			ImVec2 tanLScreen = showLeft ? ColorCurveToScreen( sk.Position + sk.TangentLeft.x, sk.Value + sk.TangentLeft.y, frame_bb, yMin, yMax ) : ImVec2();
 			ImVec2 tanRScreen = showRight ? ColorCurveToScreen( sk.Position + sk.TangentRight.x, sk.Value + sk.TangentRight.y, frame_bb, yMin, yMax ) : ImVec2();
 			DrawBezierHandles( dl, keyScreen, tanLScreen, tanRScreen, showLeft, showRight,
@@ -26877,7 +26615,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 			{
 				// Crosshair for "add" hint
 				ImVec2 mp = g.IO.MousePos;
-				ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ColorCurve_Crosshair ] );
+				ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ColorCurve_Crosshair ] );
 				DrawCrosshairInRect( dl, mp, frame_bb, crossCol );
 			}
 		}
@@ -27258,18 +26996,20 @@ static void ImForEachPixelConvert( void const* data, int width, int height, int 
 	}
 }
 
-void ImColorWarperOverlay::Accumulate( void const* data, int width, int height, int channels,
-									   ImPixelBitDepth bitDepth, ImPixelLayout layout,
-									   int maxSamples )
+// Shared by the widgets that just need a flat RGB sample buffer (colour-warper
+// overlay, CIE chromaticity cloud): decode up to maxSamples pixels into out_rgb.
+static void DW_AccumulateSampledRGB( void const* data, int width, int height, int channels,
+									 ImPixelBitDepth bitDepth, ImPixelLayout layout, int maxSamples,
+									 ImVector<float>& out_rgb, int& out_count )
 {
 	int totalPixels = width * height;
 	int actualSamples = ( maxSamples > 0 && totalPixels > maxSamples ) ? maxSamples : totalPixels;
 
-	SampledRGB.resize( actualSamples * 3 );
-	SampleCount = 0;
+	out_rgb.resize( actualSamples * 3 );
+	out_count = 0;
 
-	int& sampleCount = SampleCount;
-	ImVector<float>& sampledRGB = SampledRGB;
+	int& sampleCount = out_count;
+	ImVector<float>& sampledRGB = out_rgb;
 	ImForEachPixelConvert( data, width, height, channels, bitDepth, layout, maxSamples,
 		[ &sampleCount, &sampledRGB, actualSamples ]( int, int, float r, float g, float b ) -> bool
 	{
@@ -27280,6 +27020,65 @@ void ImColorWarperOverlay::Accumulate( void const* data, int width, int height, 
 		++sampleCount;
 		return sampleCount < actualSamples;
 	} );
+}
+
+void ImColorWarperOverlay::Accumulate( void const* data, int width, int height, int channels,
+									   ImPixelBitDepth bitDepth, ImPixelLayout layout,
+									   int maxSamples )
+{
+	DW_AccumulateSampledRGB( data, width, height, channels, bitDepth, layout, maxSamples,
+							 SampledRGB, SampleCount );
+}
+
+// Channel extraction shared by the waveform/parade scope and the histogram.
+// ImParadeMode_ is an ordinal-compatible prefix of ImHistogramMode_ (Luma, RGB,
+// YRGB, YCbCr), so both widgets key into this one table.
+static void DW_PixelToChannels( int mode, float r, float g, float b, float* out_values )
+{
+	switch ( mode )
+	{
+	case ImHistogramMode_Luma:
+		out_values[ 0 ] = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+		break;
+	case ImHistogramMode_RGB:
+		out_values[ 0 ] = r;
+		out_values[ 1 ] = g;
+		out_values[ 2 ] = b;
+		break;
+	case ImHistogramMode_YRGB:
+		out_values[ 0 ] = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+		out_values[ 1 ] = r;
+		out_values[ 2 ] = g;
+		out_values[ 3 ] = b;
+		break;
+	case ImHistogramMode_YCbCr:
+	{
+		float y = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+		out_values[ 0 ] = y;
+		out_values[ 1 ] = ( b - y ) / 1.8556f + 0.5f;
+		out_values[ 2 ] = ( r - y ) / 1.5748f + 0.5f;
+		break;
+	}
+	case ImHistogramMode_HSV:
+	{
+		float h, sat, v;
+		ImGui::ColorConvertRGBtoHSV( r, g, b, h, sat, v );
+		out_values[ 0 ] = h;
+		out_values[ 1 ] = sat;
+		out_values[ 2 ] = v;
+		break;
+	}
+	case ImHistogramMode_OkLCH:
+	{
+		float L, C, H;
+		ImWidgets::ColorConvertsRGBtoOKLCH( L, C, H, r, g, b );
+		out_values[ 0 ] = ImClamp( L, 0.0f, 1.0f );
+		out_values[ 1 ] = ImClamp( C / ImWidgets::kOkLCHMaxChroma, 0.0f, 1.0f );
+		out_values[ 2 ] = H;
+		break;
+	}
+	default: break;
+	}
 }
 
 void ImParadeScopeData::Accumulate( void const* data, int width, int height, int channels,
@@ -27314,32 +27113,7 @@ void ImParadeScopeData::Accumulate( void const* data, int width, int height, int
 		[ &bins, &peakCount, channelCount, xBinCount, yBinCount, width, mode ]( int px, int /*py*/, float r, float g, float b ) -> bool
 	{
 		float values[ 4 ];
-		switch ( mode )
-		{
-		case ImParadeMode_Luma:
-			values[ 0 ] = 0.2126f * r + 0.7152f * g + 0.0722f * b;
-			break;
-		case ImParadeMode_RGB:
-			values[ 0 ] = r;
-			values[ 1 ] = g;
-			values[ 2 ] = b;
-			break;
-		case ImParadeMode_YRGB:
-			values[ 0 ] = 0.2126f * r + 0.7152f * g + 0.0722f * b;
-			values[ 1 ] = r;
-			values[ 2 ] = g;
-			values[ 3 ] = b;
-			break;
-		case ImParadeMode_YCbCr:
-		{
-			float y = 0.2126f * r + 0.7152f * g + 0.0722f * b;
-			values[ 0 ] = y;
-			values[ 1 ] = ( b - y ) / 1.8556f + 0.5f;
-			values[ 2 ] = ( r - y ) / 1.5748f + 0.5f;
-			break;
-		}
-		default: break;
-		}
+		DW_PixelToChannels( mode, r, g, b, values );
 
 		int xBin = ImClamp( px * xBinCount / width, 0, xBinCount - 1 );
 		for ( int ch = 0; ch < channelCount; ++ch )
@@ -27435,13 +27209,13 @@ namespace ImWidgets {
 		}
 
 		// Background
-		ImU32 bgCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ParadeScope_Background ] );
+		ImU32 bgCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ParadeScope_Background ] );
 		dl->AddRectFilled( scope_bb.Min, scope_bb.Max, bgCol );
 
 		// --- Left graduation using DrawLinearLineGraduation / DrawLogLineGraduation ---
-		ImU32 tickCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ParadeScope_GradTick ] );
-		ImU32 labelCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ParadeScope_GradLabel ] );
-		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ParadeScope_Grid ] );
+		ImU32 tickCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ParadeScope_GradTick ] );
+		ImU32 labelCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ParadeScope_GradLabel ] );
+		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ParadeScope_Grid ] );
 		float tickLen = LpToPx( dwStyle.ParadeScope_GradTickLength );
 		float tickThk = LpToPx( dwStyle.ParadeScope_GradTickThickness );
 
@@ -27542,23 +27316,23 @@ namespace ImWidgets {
 		switch ( data.Mode )
 		{
 		case ImParadeMode_Luma:
-			channelColorsF[ 0 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelLuma ];
+			channelColorsF[ 0 ] = dwStyle.Colors[ ImWidgetsCol_ParadeScope_ChannelLuma ];
 			break;
 		case ImParadeMode_RGB:
-			channelColorsF[ 0 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelR ];
-			channelColorsF[ 1 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelG ];
-			channelColorsF[ 2 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelB ];
+			channelColorsF[ 0 ] = dwStyle.Colors[ ImWidgetsCol_ParadeScope_ChannelR ];
+			channelColorsF[ 1 ] = dwStyle.Colors[ ImWidgetsCol_ParadeScope_ChannelG ];
+			channelColorsF[ 2 ] = dwStyle.Colors[ ImWidgetsCol_ParadeScope_ChannelB ];
 			break;
 		case ImParadeMode_YRGB:
-			channelColorsF[ 0 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelLuma ];
-			channelColorsF[ 1 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelR ];
-			channelColorsF[ 2 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelG ];
-			channelColorsF[ 3 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelB ];
+			channelColorsF[ 0 ] = dwStyle.Colors[ ImWidgetsCol_ParadeScope_ChannelLuma ];
+			channelColorsF[ 1 ] = dwStyle.Colors[ ImWidgetsCol_ParadeScope_ChannelR ];
+			channelColorsF[ 2 ] = dwStyle.Colors[ ImWidgetsCol_ParadeScope_ChannelG ];
+			channelColorsF[ 3 ] = dwStyle.Colors[ ImWidgetsCol_ParadeScope_ChannelB ];
 			break;
 		case ImParadeMode_YCbCr:
-			channelColorsF[ 0 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelLuma ];
-			channelColorsF[ 1 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelCb ];
-			channelColorsF[ 2 ] = dwStyle.Colors[ StyleColor_ParadeScope_ChannelCr ];
+			channelColorsF[ 0 ] = dwStyle.Colors[ ImWidgetsCol_ParadeScope_ChannelLuma ];
+			channelColorsF[ 1 ] = dwStyle.Colors[ ImWidgetsCol_ParadeScope_ChannelCb ];
+			channelColorsF[ 2 ] = dwStyle.Colors[ ImWidgetsCol_ParadeScope_ChannelCr ];
 			break;
 		default: break;
 		}
@@ -27766,15 +27540,15 @@ namespace ImWidgets {
 		float radius = scopeW * 0.5f * dwStyle.VectorScope_DiscScale;
 
 		// Background
-		ImU32 bgCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_VectorScope_Background ] );
+		ImU32 bgCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_VectorScope_Background ] );
 		dl->AddRectFilled( total_bb.Min, total_bb.Max, bgCol );
 
 		// Graticule
-		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_VectorScope_Grid ] );
-		// StyleColor_VectorScope_Graticule was fetched and immediately discarded,
+		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_VectorScope_Grid ] );
+		// ImWidgetsCol_VectorScope_Graticule was fetched and immediately discarded,
 		// leaving the style entry dead and everything drawn in the grid colour.
 		// The concentric rings are the graticule proper, so they use it.
-		ImU32 gratCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_VectorScope_Graticule ] );
+		ImU32 gratCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_VectorScope_Graticule ] );
 		float gratThk = LpToPx( dwStyle.VectorScope_GraticuleThickness );
 
 		// Center crosshair
@@ -27796,14 +27570,14 @@ namespace ImWidgets {
 
 		// 75% color bar reference targets
 		{
-			struct Target { float r, g, b; ImWidgetsStyleColor styleIdx; char const* name; };
+			struct Target { float r, g, b; ImWidgetsCol styleIdx; char const* name; };
 			Target const targets[] = {
-				{ 0.75f, 0.0f,  0.0f,  StyleColor_VectorScope_TargetR,  "R"  },
-				{ 0.0f,  0.75f, 0.0f,  StyleColor_VectorScope_TargetG,  "G"  },
-				{ 0.0f,  0.0f,  0.75f, StyleColor_VectorScope_TargetB,  "B"  },
-				{ 0.0f,  0.75f, 0.75f, StyleColor_VectorScope_TargetCy, "Cy" },
-				{ 0.75f, 0.0f,  0.75f, StyleColor_VectorScope_TargetMg, "Mg" },
-				{ 0.75f, 0.75f, 0.0f,  StyleColor_VectorScope_TargetYl, "Yl" },
+				{ 0.75f, 0.0f,  0.0f,  ImWidgetsCol_VectorScope_TargetR,  "R"  },
+				{ 0.0f,  0.75f, 0.0f,  ImWidgetsCol_VectorScope_TargetG,  "G"  },
+				{ 0.0f,  0.0f,  0.75f, ImWidgetsCol_VectorScope_TargetB,  "B"  },
+				{ 0.0f,  0.75f, 0.75f, ImWidgetsCol_VectorScope_TargetCy, "Cy" },
+				{ 0.75f, 0.0f,  0.75f, ImWidgetsCol_VectorScope_TargetMg, "Mg" },
+				{ 0.75f, 0.75f, 0.0f,  ImWidgetsCol_VectorScope_TargetYl, "Yl" },
 			};
 			float targetSize = ImMax( 6.0f, radius * 0.06f );
 
@@ -27822,7 +27596,7 @@ namespace ImWidgets {
 
 				dl->AddRect( ImVec2( pos.x - targetSize, pos.y - targetSize ),
 							 ImVec2( pos.x + targetSize, pos.y + targetSize ),
-							 tCol, 0.0f, 0, gratThk );
+							 tCol, 0.0f, gratThk, 0 );
 				ImVec2 textSize = ImGui::CalcTextSize( t.name );
 				dl->AddText( ImVec2( pos.x + targetSize + 2.0f, pos.y - textSize.y * 0.5f ), tCol, t.name );
 			}
@@ -27834,7 +27608,7 @@ namespace ImWidgets {
 		// 180° + 123° = 303° = -57°.
 		if ( showSkinToneLine )
 		{
-			ImU32 skinCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_VectorScope_SkinToneLine ] );
+			ImU32 skinCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_VectorScope_SkinToneLine ] );
 			float angle = -57.0f * 3.14159265f / 180.0f;
 			float dx = ImCos( angle ) * radius;
 			float dy = ImSin( angle ) * radius;
@@ -27855,7 +27629,7 @@ namespace ImWidgets {
 
 		float logPeak = ImLog( ( float )data.PeakCount + 1.0f );
 		float signalAlpha = dwStyle.VectorScope_SignalAlpha;
-		ImVec4 const& signalColorF = dwStyle.Colors[ StyleColor_VectorScope_Signal ];
+		ImVec4 const& signalColorF = dwStyle.Colors[ ImWidgetsCol_VectorScope_Signal ];
 		ImU8 sigR = ( ImU8 )( signalColorF.x * 255.0f );
 		ImU8 sigG = ( ImU8 )( signalColorF.y * 255.0f );
 		ImU8 sigB = ( ImU8 )( signalColorF.z * 255.0f );
@@ -27998,50 +27772,7 @@ void ImHistogramData::Accumulate( void const* data, int width, int height, int c
 		[ &bins, &peakCount, channelCount, binCountLocal, mode ]( int /*px*/, int /*py*/, float r, float g, float b ) -> bool
 	{
 		float values[ 4 ];
-		switch ( mode )
-		{
-		case ImHistogramMode_Luma:
-			values[ 0 ] = 0.2126f * r + 0.7152f * g + 0.0722f * b;
-			break;
-		case ImHistogramMode_RGB:
-			values[ 0 ] = r;
-			values[ 1 ] = g;
-			values[ 2 ] = b;
-			break;
-		case ImHistogramMode_YRGB:
-			values[ 0 ] = 0.2126f * r + 0.7152f * g + 0.0722f * b;
-			values[ 1 ] = r;
-			values[ 2 ] = g;
-			values[ 3 ] = b;
-			break;
-		case ImHistogramMode_YCbCr:
-		{
-			float y = 0.2126f * r + 0.7152f * g + 0.0722f * b;
-			values[ 0 ] = y;
-			values[ 1 ] = ( b - y ) / 1.8556f + 0.5f;
-			values[ 2 ] = ( r - y ) / 1.5748f + 0.5f;
-			break;
-		}
-		case ImHistogramMode_HSV:
-		{
-			float h, s, v;
-			ImGui::ColorConvertRGBtoHSV( r, g, b, h, s, v );
-			values[ 0 ] = h;
-			values[ 1 ] = s;
-			values[ 2 ] = v;
-			break;
-		}
-		case ImHistogramMode_OkLCH:
-		{
-			float L, C, H;
-			ImWidgets::ColorConvertsRGBtoOKLCH( L, C, H, r, g, b );
-			values[ 0 ] = ImClamp( L, 0.0f, 1.0f );
-			values[ 1 ] = ImClamp( C / kOkLCHMaxChroma, 0.0f, 1.0f );
-			values[ 2 ] = H;
-			break;
-		}
-		default: break;
-		}
+		DW_PixelToChannels( mode, r, g, b, values );
 
 		for ( int ch = 0; ch < channelCount; ++ch )
 		{
@@ -28155,13 +27886,13 @@ namespace ImWidgets {
 		}
 
 		// Background
-		ImU32 bgCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Histogram_Background ] );
+		ImU32 bgCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_Histogram_Background ] );
 		dl->AddRectFilled( scope_bb.Min, scope_bb.Max, bgCol );
 
 		// Style
-		ImU32 tickCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Histogram_GradTick ] );
-		ImU32 labelCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Histogram_GradLabel ] );
-		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_Histogram_Grid ] );
+		ImU32 tickCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_Histogram_GradTick ] );
+		ImU32 labelCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_Histogram_GradLabel ] );
+		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_Histogram_Grid ] );
 		float tickLen = LpToPx( dwStyle.Histogram_GradTickLength );
 		float tickThk = LpToPx( dwStyle.Histogram_GradTickThickness );
 
@@ -28304,33 +28035,33 @@ namespace ImWidgets {
 		switch ( data.Mode )
 		{
 		case ImHistogramMode_Luma:
-			channelColorsF[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelLuma ];
+			channelColorsF[ 0 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelLuma ];
 			break;
 		case ImHistogramMode_RGB:
-			channelColorsF[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelR ];
-			channelColorsF[ 1 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelG ];
-			channelColorsF[ 2 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelB ];
+			channelColorsF[ 0 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelR ];
+			channelColorsF[ 1 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelG ];
+			channelColorsF[ 2 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelB ];
 			break;
 		case ImHistogramMode_YRGB:
-			channelColorsF[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelLuma ];
-			channelColorsF[ 1 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelR ];
-			channelColorsF[ 2 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelG ];
-			channelColorsF[ 3 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelB ];
+			channelColorsF[ 0 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelLuma ];
+			channelColorsF[ 1 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelR ];
+			channelColorsF[ 2 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelG ];
+			channelColorsF[ 3 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelB ];
 			break;
 		case ImHistogramMode_YCbCr:
-			channelColorsF[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelLuma ];
-			channelColorsF[ 1 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelCb ];
-			channelColorsF[ 2 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelCr ];
+			channelColorsF[ 0 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelLuma ];
+			channelColorsF[ 1 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelCb ];
+			channelColorsF[ 2 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelCr ];
 			break;
 		case ImHistogramMode_HSV:
-			channelColorsF[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelH ];
-			channelColorsF[ 1 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelS ];
-			channelColorsF[ 2 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelV ];
+			channelColorsF[ 0 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelH ];
+			channelColorsF[ 1 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelS ];
+			channelColorsF[ 2 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelV ];
 			break;
 		case ImHistogramMode_OkLCH:
-			channelColorsF[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelOkL ];
-			channelColorsF[ 1 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelOkC ];
-			channelColorsF[ 2 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelOkH ];
+			channelColorsF[ 0 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelOkL ];
+			channelColorsF[ 1 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelOkC ];
+			channelColorsF[ 2 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelOkH ];
 			break;
 		default: break;
 		}
@@ -28480,24 +28211,8 @@ void ImCIEChromaticityData::Accumulate( void const* data, int width, int height,
 										ImPixelBitDepth bitDepth, ImPixelLayout layout,
 										int maxSamples )
 {
-	int totalPixels = width * height;
-	int actualSamples = ( maxSamples > 0 && totalPixels > maxSamples ) ? maxSamples : totalPixels;
-
-	SampledRGB.resize( actualSamples * 3 );
-	SampleCount = 0;
-
-	int& sampleCount = SampleCount;
-	ImVector<float>& sampledRGB = SampledRGB;
-	ImForEachPixelConvert( data, width, height, channels, bitDepth, layout, maxSamples,
-		[ &sampleCount, &sampledRGB, actualSamples ]( int, int, float r, float g, float b ) -> bool
-	{
-		int idx = sampleCount * 3;
-		sampledRGB[ idx + 0 ] = r;
-		sampledRGB[ idx + 1 ] = g;
-		sampledRGB[ idx + 2 ] = b;
-		++sampleCount;
-		return sampleCount < actualSamples;
-	} );
+	DW_AccumulateSampledRGB( data, width, height, channels, bitDepth, layout, maxSamples,
+							 SampledRGB, SampleCount );
 }
 
 namespace ImWidgets {
@@ -28563,7 +28278,7 @@ namespace ImWidgets {
 		float scopeH = scope_bb.GetHeight();
 
 		// Background
-		ImU32 bgCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_Background ] );
+		ImU32 bgCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CIEChromaticity_Background ] );
 		dl->AddRectFilled( scope_bb.Min, scope_bb.Max, bgCol );
 
 		// Optional: Draw CIE chromaticity diagram background (spectral locus + colors)
@@ -28576,15 +28291,15 @@ namespace ImWidgets {
 				64, // chrome line samples
 				scope_bb.Min, ImVec2( scopeW, scopeH ),
 				32, 32, // resolution
-				ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_Background ] ),
+				ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CIEChromaticity_Background ] ),
 				400.0f, 700.0f,
 				minX, maxX, minY, maxY,
 				false, false, false );
 		}
 
 		// Grid
-		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_Grid ] );
-		ImU32 labelCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_GradLabel ] );
+		ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CIEChromaticity_Grid ] );
+		ImU32 labelCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CIEChromaticity_GradLabel ] );
 
 		// Grid lines and labels
 		{
@@ -28633,7 +28348,7 @@ namespace ImWidgets {
 
 		GamutDef const& gd = s_Gamuts[ gamut ];
 		float gamutThk = LpToPx( dwStyle.CIEChromaticity_GamutLineThickness );
-		ImU32 gamutCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_GamutLine ] );
+		ImU32 gamutCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CIEChromaticity_GamutLine ] );
 
 		// Map xy chromaticity to screen
 		auto xyToScreen = [&]( ImVec2 xy ) -> ImVec2
@@ -28653,9 +28368,9 @@ namespace ImWidgets {
 
 		// Primary labels
 		{
-			ImU32 colR = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_PrimaryR ] );
-			ImU32 colG = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_PrimaryG ] );
-			ImU32 colB = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_PrimaryB ] );
+			ImU32 colR = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CIEChromaticity_PrimaryR ] );
+			ImU32 colG = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CIEChromaticity_PrimaryG ] );
+			ImU32 colB = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CIEChromaticity_PrimaryB ] );
 			ImVec2 ts;
 			ts = ImGui::CalcTextSize( "R" );
 			dl->AddText( ImVec2( sR.x + 4.0f, sR.y - ts.y * 0.5f ), colR, "R" );
@@ -28668,7 +28383,7 @@ namespace ImWidgets {
 		// White point
 		{
 			float wpR = LpToPx( dwStyle.CIEChromaticity_WhitePointRadius );
-			ImU32 wpCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CIEChromaticity_WhitePoint ] );
+			ImU32 wpCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CIEChromaticity_WhitePoint ] );
 			ImVec2 wp = xyToScreen( gd.w );
 			dl->AddCircle( wp, wpR, wpCol, 12, gamutThk );
 			dl->AddLine( ImVec2( wp.x - wpR - 2.0f, wp.y ), ImVec2( wp.x + wpR + 2.0f, wp.y ), wpCol, gamutThk * 0.5f );
@@ -28719,7 +28434,7 @@ namespace ImWidgets {
 			else
 			{
 				// Flat style color with alpha override
-				ImVec4 sigF = dwStyle.Colors[ StyleColor_CIEChromaticity_Signal ];
+				ImVec4 sigF = dwStyle.Colors[ ImWidgetsCol_CIEChromaticity_Signal ];
 				sigF.w = signalAlpha;
 				ImU32 signalCol = ImGui::GetColorU32( sigF );
 
@@ -28923,33 +28638,33 @@ namespace ImWidgets {
 		switch ( mode )
 		{
 		case ImHistogramMode_Luma:
-			out[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelLuma ];
+			out[ 0 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelLuma ];
 			break;
 		case ImHistogramMode_RGB:
-			out[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelR ];
-			out[ 1 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelG ];
-			out[ 2 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelB ];
+			out[ 0 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelR ];
+			out[ 1 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelG ];
+			out[ 2 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelB ];
 			break;
 		case ImHistogramMode_YRGB:
-			out[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelLuma ];
-			out[ 1 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelR ];
-			out[ 2 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelG ];
-			out[ 3 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelB ];
+			out[ 0 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelLuma ];
+			out[ 1 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelR ];
+			out[ 2 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelG ];
+			out[ 3 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelB ];
 			break;
 		case ImHistogramMode_YCbCr:
-			out[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelLuma ];
-			out[ 1 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelCb ];
-			out[ 2 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelCr ];
+			out[ 0 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelLuma ];
+			out[ 1 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelCb ];
+			out[ 2 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelCr ];
 			break;
 		case ImHistogramMode_HSV:
-			out[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelH ];
-			out[ 1 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelS ];
-			out[ 2 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelV ];
+			out[ 0 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelH ];
+			out[ 1 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelS ];
+			out[ 2 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelV ];
 			break;
 		case ImHistogramMode_OkLCH:
-			out[ 0 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelOkL ];
-			out[ 1 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelOkC ];
-			out[ 2 ] = dwStyle.Colors[ StyleColor_Histogram_ChannelOkH ];
+			out[ 0 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelOkL ];
+			out[ 1 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelOkC ];
+			out[ 2 ] = dwStyle.Colors[ ImWidgetsCol_Histogram_ChannelOkH ];
 			break;
 		default: break;
 		}
@@ -29046,7 +28761,7 @@ namespace ImWidgets {
 		DW_EnsureFreshVtxOffset( dl );
 
 		// Background
-		ImU32 bgCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ToneCurve_Background ] );
+		ImU32 bgCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ToneCurve_Background ] );
 		dl->AddRectFilled( scope_bb.Min, scope_bb.Max, bgCol );
 
 		dl->PushClipRect( scope_bb.Min, scope_bb.Max, true );
@@ -29061,7 +28776,7 @@ namespace ImWidgets {
 			ImVec4 histChColors[ 4 ];
 			ToneCurveGetChannelColors( histogramOverlay->Mode, dwStyle, histChColors, 4 );
 
-			float histOverlayAlpha = dwStyle.Colors[ StyleColor_ToneCurve_HistogramOverlay ].w;
+			float histOverlayAlpha = dwStyle.Colors[ ImWidgetsCol_ToneCurve_HistogramOverlay ].w;
 			int histCh = ImClamp( active, 0, chCount - 1 );
 			ImU32 const* bins = histogramOverlay->Bins.Data + histCh * binCount;
 			ImVec4 cf = histChColors[ histCh ];
@@ -29081,7 +28796,7 @@ namespace ImWidgets {
 
 		// Grid
 		{
-			ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ToneCurve_Grid ] );
+			ImU32 gridCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ToneCurve_Grid ] );
 			int gridDiv = 4;
 			for ( int i = 1; i < gridDiv; ++i )
 			{
@@ -29095,7 +28810,7 @@ namespace ImWidgets {
 
 		// Identity / neutral diagonal line
 		{
-			ImU32 neutralCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ToneCurve_NeutralLine ] );
+			ImU32 neutralCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ToneCurve_NeutralLine ] );
 			dl->AddLine( ImVec2( scope_bb.Min.x, scope_bb.Max.y ), ImVec2( scope_bb.Max.x, scope_bb.Min.y ), neutralCol, 1.0f );
 		}
 
@@ -29142,9 +28857,9 @@ namespace ImWidgets {
 		// Keys (active channel only)
 		{
 			ImVec4 cf = channelColorsF[ active ];
-			ImU32 keyCol = ImGui::GetColorU32( ImVec4( cf.x, cf.y, cf.z, dwStyle.Colors[ StyleColor_ToneCurve_Key ].w ) );
-			ImU32 outCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ToneCurve_KeyOutline ] );
-			ImU32 selCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ToneCurve_KeySelected ] );
+			ImU32 keyCol = ImGui::GetColorU32( ImVec4( cf.x, cf.y, cf.z, dwStyle.Colors[ ImWidgetsCol_ToneCurve_Key ].w ) );
+			ImU32 outCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ToneCurve_KeyOutline ] );
+			ImU32 selCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ToneCurve_KeySelected ] );
 
 			for ( int i = 0; i < activeCurve.Keys.Size; ++i )
 			{
@@ -29165,8 +28880,8 @@ namespace ImWidgets {
 			bool showRight = ( sk.Segment == ImCurveEditorSeg_CubicBezier && activeCurve.SelectedIdx < activeCurve.Keys.Size - 1 );
 			bool showLeft = ( activeCurve.SelectedIdx > 0 && activeCurve.Keys[ activeCurve.SelectedIdx - 1 ].Segment == ImCurveEditorSeg_CubicBezier );
 			ImVec2 keyScreen = ToneCurveToScreen( sk.Position, sk.Value, scope_bb );
-			ImU32 tangentCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_TangentLine ] );
-			ImU32 tangentHovCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_CurveEditor_TangentHovered ] );
+			ImU32 tangentCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CurveEditor_TangentLine ] );
+			ImU32 tangentHovCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_CurveEditor_TangentHovered ] );
 			ImVec2 tanLScreen = showLeft ? ToneCurveToScreen( sk.Position + sk.TangentLeft.x, sk.Value + sk.TangentLeft.y, scope_bb ) : ImVec2();
 			ImVec2 tanRScreen = showRight ? ToneCurveToScreen( sk.Position + sk.TangentRight.x, sk.Value + sk.TangentRight.y, scope_bb ) : ImVec2();
 			DrawBezierHandles( dl, keyScreen, tanLScreen, tanRScreen, showLeft, showRight,
@@ -29183,7 +28898,7 @@ namespace ImWidgets {
 			else
 			{
 				ImVec2 mp = g.IO.MousePos;
-				ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ StyleColor_ToneCurve_Crosshair ] );
+				ImU32 crossCol = ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_ToneCurve_Crosshair ] );
 				DrawCrosshairInRect( dl, mp, scope_bb, crossCol );
 			}
 		}
@@ -29846,9 +29561,9 @@ namespace ImWidgets {
 
 				ImGui::BeginChild( "##colors", ImVec2( 0, 0 ), ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_AlwaysVerticalScrollbar );
 				ImGui::PushItemWidth( ImGui::GetFontSize() * -12.0f );
-				for ( int i = 0; i < StyleColor_Count; i++ )
+				for ( int i = 0; i < ImWidgetsCol_COUNT; i++ )
 				{
-					const char* name = style.GetColorName( ( ImWidgetsStyleColor )i );
+					const char* name = style.GetColorName( ( ImWidgetsCol )i );
 					if ( !g_filter.PassFilter( name ) )
 						continue;
 					ImGui::PushID( i );
@@ -29889,7 +29604,7 @@ namespace ImWidgets {
 				ImGui::Checkbox( "AntiAliasedLines",       &ImGui::GetStyle().AntiAliasedLines );
 				ImGui::Checkbox( "AntiAliasedLinesUseTex", &ImGui::GetStyle().AntiAliasedLinesUseTex );
 				ImGui::Checkbox( "AntiAliasedFill",        &ImGui::GetStyle().AntiAliasedFill );
-				ImGui::SliderFloat( "CurveTessellationTol", &ImGui::GetStyle().CurveTessellationTol, 0.10f, 10.0f, "%.2f" );
+				ImGui::SliderFloat( "CurveTessellationMaxError", &ImGui::GetStyle().CurveTessellationMaxError, 0.005f, 5.0f, "%.4f" );
 				ImGui::SliderFloat( "CircleTessellationMaxError", &ImGui::GetStyle().CircleTessellationMaxError, 0.005f, 5.0f, "%.4f" );
 
 				ImGui::Separator();
@@ -29908,7 +29623,7 @@ namespace ImWidgets {
 				ImGui::TextDisabled( "Build info" );
 				ImGui::Text( "Texture3D supported: %s", ImPlatform_SupportsTexture3D() ? "yes" : "no" );
 				ImGui::Text( "Style color count: %d    Style var count: %d",
-					(int)StyleColor_Count, (int)StyleVar_Count );
+					(int)ImWidgetsCol_COUNT, (int)ImWidgetsStyleVar_COUNT );
 
 				ImGui::EndTabItem();
 			}
@@ -30083,10 +29798,10 @@ namespace ImWidgets {
 #undef DW_SF
 #undef DW_SI
 #undef DW_SB
-		for ( int i = 0; i < StyleColor_Count; ++i )
+		for ( int i = 0; i < ImWidgetsCol_COUNT; ++i )
 		{
 			const ImVec4& c = s.Colors[ i ];
-			fprintf( fp, "Color_%s=%.6g,%.6g,%.6g,%.6g\n", s.GetColorName( (ImWidgetsStyleColor)i ), c.x, c.y, c.z, c.w );
+			fprintf( fp, "Color_%s=%.6g,%.6g,%.6g,%.6g\n", s.GetColorName( (ImWidgetsCol)i ), c.x, c.y, c.z, c.w );
 		}
 		fclose( fp );
 	}
@@ -30265,9 +29980,9 @@ namespace ImWidgets {
 				float r = 0.f, g = 0.f, b = 0.f, a = 1.f;
 				if ( sscanf( val, "%f,%f,%f,%f", &r, &g, &b, &a ) == 4 )
 				{
-					for ( int i = 0; i < StyleColor_Count; ++i )
+					for ( int i = 0; i < ImWidgetsCol_COUNT; ++i )
 					{
-						if ( strcmp( colorName, s.GetColorName( (ImWidgetsStyleColor)i ) ) == 0 )
+						if ( strcmp( colorName, s.GetColorName( (ImWidgetsCol)i ) ) == 0 )
 						{
 							s.Colors[ i ] = ImVec4( r, g, b, a );
 							break;
@@ -30464,20 +30179,20 @@ namespace ImWidgets {
 			is_active ? ImGuiCol_FrameBgActive
 			: hovered ? ImGuiCol_FrameBgHovered
 			          : ImGuiCol_FrameBg );
-		const ImU32 col_track_fill  = ImGui::GetColorU32( dwStyle.Colors[ is_active ? StyleColor_SliderRing_GrabActive : StyleColor_SliderRing_TrackActive ] );
-		const ImU32 col_grab        = ImGui::GetColorU32( dwStyle.Colors[ is_active ? StyleColor_SliderRing_GrabActive : StyleColor_SliderRing_Grab ] );
+		const ImU32 col_track_fill  = ImGui::GetColorU32( dwStyle.Colors[ is_active ? ImWidgetsCol_SliderRing_GrabActive : ImWidgetsCol_SliderRing_TrackActive ] );
+		const ImU32 col_grab        = ImGui::GetColorU32( dwStyle.Colors[ is_active ? ImWidgetsCol_SliderRing_GrabActive : ImWidgetsCol_SliderRing_Grab ] );
 
 		// Draw background track arc
 		const int arc_segments = 64;
 		draw_list->PathArcTo( center, midRadius, v_angle_min, v_angle_max, arc_segments );
-		draw_list->PathStroke( col_frame_bg, 0, trackThickness );
+		draw_list->PathStroke( col_frame_bg, trackThickness, 0 );
 
 		// Draw filled portion (from min angle to current value angle)
 		float grab_angle = v_angle_min + t * ( v_angle_max - v_angle_min );
 		if ( t > 0.001f )
 		{
 			draw_list->PathArcTo( center, midRadius, v_angle_min, grab_angle, ( int )( arc_segments * t ) + 2 );
-			draw_list->PathStroke( col_track_fill, 0, trackThickness );
+			draw_list->PathStroke( col_track_fill, trackThickness, 0 );
 		}
 
 		// Draw grab handle
@@ -30502,6 +30217,10 @@ namespace ImWidgets {
 		ImRect labelRect( text_pos, text_pos + text_size );
 		if ( DW_SliderScalarPopup( labelRect, id, data_type, p_value, p_min, p_max, "value" ) )
 			value_changed = true;
+
+		// Without this IsItemEdited() / IsItemDeactivatedAfterEdit() never fire.
+		if ( value_changed )
+			ImGui::MarkItemEdited( id );
 
 		return value_changed;
 	}
@@ -30728,12 +30447,12 @@ namespace ImWidgets {
 		const bool is_active = (g.ActiveId == id);
 		const float trackThickness = LpToPx( (v_thickness > 0.0f) ? v_thickness : dwStyle.SliderSpline_TrackThickness );
 
-		// col_track (StyleColor_SliderSpline_Track) is no longer used for the
+		// col_track (ImWidgetsCol_SliderSpline_Track) is no longer used for the
 		// background -- replaced by ImGuiCol_FrameBg so SliderSpline matches
 		// SliderGradient / ImGui's own sliders. Kept the style var registered
 		// for backward compat with user-authored themes.
-		const ImU32 col_track_fill = ImGui::GetColorU32(dwStyle.Colors[ is_active ? StyleColor_SliderSpline_GrabActive : StyleColor_SliderSpline_TrackActive ]);
-		const ImU32 col_grab = ImGui::GetColorU32(dwStyle.Colors[ is_active ? StyleColor_SliderSpline_GrabActive : StyleColor_SliderSpline_Grab ]);
+		const ImU32 col_track_fill = ImGui::GetColorU32(dwStyle.Colors[ is_active ? ImWidgetsCol_SliderSpline_GrabActive : ImWidgetsCol_SliderSpline_TrackActive ]);
+		const ImU32 col_grab = ImGui::GetColorU32(dwStyle.Colors[ is_active ? ImWidgetsCol_SliderSpline_GrabActive : ImWidgetsCol_SliderSpline_Grab ]);
 
 		// Draw background spline track (all segments)
 		const int segs_per_bezier = 32;
@@ -30764,7 +30483,7 @@ namespace ImWidgets {
 			draw_list->PathClear();
 			for (int i = 0; i < polyline.Size; ++i)
 				draw_list->PathLineTo(polyline[ i ]);
-			draw_list->PathStroke(frame_bg, 0, trackThickness);
+			draw_list->PathStroke(frame_bg, trackThickness, 0);
 
 			if (fill_up_to_cursor)
 			{
@@ -30797,7 +30516,7 @@ namespace ImWidgets {
 					draw_list->PathLineTo( pt );
 				}
 			}
-			draw_list->PathStroke( frame_bg_no_grad, 0, trackThickness );
+			draw_list->PathStroke( frame_bg_no_grad, trackThickness, 0 );
 
 			// Draw filled portion from start to current t (solid track only; gradient encodes position)
 			if ( t > 0.001f )
@@ -30810,7 +30529,7 @@ namespace ImWidgets {
 					ImVec2 pt = SplineEval( sp, num_segments, gt );
 					draw_list->PathLineTo( pt );
 				}
-				draw_list->PathStroke( col_track_fill, 0, trackThickness );
+				draw_list->PathStroke( col_track_fill, trackThickness, 0 );
 			}
 		}
 
@@ -30835,6 +30554,10 @@ namespace ImWidgets {
 		ImRect labelRect( text_pos, text_pos + text_size );
 		if ( DW_SliderScalarPopup( labelRect, id, data_type, p_value, p_min, p_max, "value" ) )
 			value_changed = true;
+
+		// Without this IsItemEdited() / IsItemDeactivatedAfterEdit() never fire.
+		if ( value_changed )
+			ImGui::MarkItemEdited( id );
 
 		return value_changed;
 	}
@@ -31032,7 +30755,7 @@ namespace ImWidgets {
 		draw_list->PathClear();
 		for ( int i = 0; i < polyline.Size; ++i )
 			draw_list->PathLineTo( polyline[ i ] );
-		draw_list->PathStroke( frame_bg, 0, trackThickness );
+		draw_list->PathStroke( frame_bg, trackThickness, 0 );
 
 		float vLowerF = ScalarToFloat( data_type, ( ImU64* )p_lower );
 		float vUpperF = ScalarToFloat( data_type, ( ImU64* )p_upper );
@@ -31046,7 +30769,7 @@ namespace ImWidgets {
 		int activeHandle = is_active ? storage->GetInt( activeKey, 0 ) : -1;
 		auto DrawHandle = [ & ]( float t, bool isActiveHandle ) {
 			ImVec2 p = SplineEval( sp, num_segments, t );
-			ImU32 grabCol = ImGui::GetColorU32( dwStyle.Colors[ isActiveHandle ? StyleColor_SliderSpline_GrabActive : StyleColor_SliderSpline_Grab ] );
+			ImU32 grabCol = ImGui::GetColorU32( dwStyle.Colors[ isActiveHandle ? ImWidgetsCol_SliderSpline_GrabActive : ImWidgetsCol_SliderSpline_Grab ] );
 			draw_list->AddCircleFilled( p, grabRadius, grabCol );
 			draw_list->AddCircle( p, grabRadius, ImGui::GetColorU32( ImGuiCol_Border ), 0, 1.5f );
 		};
@@ -31600,7 +31323,7 @@ namespace ImWidgets {
 			float dotViewDot = direction[ 0 ] * vFwd[ 0 ] + direction[ 1 ] * vFwd[ 1 ] + direction[ 2 ] * vFwd[ 2 ];
 			ImU32 circleCol = dotViewDot < 0.1f ? IM_COL32( 255, 255, 0, 220 ) : IM_COL32( 255, 255, 0, 80 );
 			float thickness = dotViewDot < 0.1f ? 2.0f : 1.0f;
-			dl->AddPolyline( circlePts, circleSegs + 1, circleCol, ImDrawFlags_None, thickness );
+			dl->AddPolyline( circlePts, circleSegs + 1, circleCol, thickness, ImDrawFlags_None );
 
 			// Draw cross (two perpendicular lines through center, on the sphere surface)
 			float crossAngle = circleAngle * 0.8f;
@@ -31840,7 +31563,7 @@ namespace ImWidgets {
 
 			ImU32 border = ( i == sel ) ? IM_COL32( 255, 200, 50, 255 ) : ( hovThumb ? IM_COL32( 180, 180, 180, 200 ) : IM_COL32( 80, 80, 80, 150 ) );
 			float borderThk = ( i == sel ) ? 2.0f : 1.0f;
-			dl->AddRect( tMin, tMax, border, 2.0f, 0, borderThk );
+			dl->AddRect( tMin, tMax, border, 2.0f, borderThk, 0 );
 
 			if ( hovThumb && ImGui::IsMouseClicked( 0 ) && i != sel )
 			{
@@ -32019,11 +31742,11 @@ namespace ImWidgets {
 			// Selection / hover / active outlines. Active (held) wins
 			// so the user sees which cell they are currently dragging.
 			if ( item_active )
-				dl->AddRect( cellMin, cellMax, IM_COL32( 255, 210,  60, 240 ), 2.0f, 0, 2.5f );
+				dl->AddRect( cellMin, cellMax, IM_COL32( 255, 210,  60, 240 ), 2.0f, 2.5f, 0 );
 			else if ( i == *pSelectedIndex )
-				dl->AddRect( cellMin, cellMax, IM_COL32( 255, 200,  50, 255 ), 2.0f, 0, 2.0f );
+				dl->AddRect( cellMin, cellMax, IM_COL32( 255, 200,  50, 255 ), 2.0f, 2.0f, 0 );
 			else if ( item_hovered )
-				dl->AddRect( cellMin, cellMax, IM_COL32( 200, 200, 200, 180 ), 2.0f, 0, 1.0f );
+				dl->AddRect( cellMin, cellMax, IM_COL32( 200, 200, 200, 180 ), 2.0f, 1.0f, 0 );
 
 			if ( pressed && i != *pSelectedIndex )
 			{
@@ -32060,7 +31783,7 @@ namespace ImWidgets {
 	// (the ImageViewer image quad). ImGui's backend has already bound b0 (ProjMtx)
 	// and will bind the quad's texture as PS slot t0 before issuing the draw, so the
 	// PS samples the image via texture0/sampler0. Paired with an
-	// ImDrawCallback_ResetRenderState that restores ImGui's default shaders.
+	// ImGui::GetPlatformIO().DrawCallback_ResetRenderState that restores ImGui's default shaders.
 	static void ImageViewer_BindShader_cb( const ImDrawList*, const ImDrawCmd* cmd )
 	{
 		ImPlatform_ShaderProgram prog = ( ImPlatform_ShaderProgram )cmd->UserCallbackData;
@@ -32218,7 +31941,7 @@ namespace ImWidgets {
 				dl->AddCallback( ImageViewer_BindShader_cb, shaderProgram );
 			dl->AddImage( image, bb.Min, bb.Max, ImVec2( uMin, vMin ), ImVec2( uMax, vMax ) );
 			if ( shaderProgram )
-				dl->AddCallback( ImDrawCallback_ResetRenderState, NULL );
+				dl->AddCallback( ImGui::GetPlatformIO().DrawCallback_ResetRenderState, NULL );
 		}
 
 		// Pixel-grid overlay (shown when zoomed in enough for pixels to be visible)
@@ -32375,7 +32098,7 @@ namespace ImWidgets {
 			ImDrawList* fg = ImGui::GetForegroundDrawList();
 
 			fg->AddRectFilled( panelMin, panelMax, IM_COL32( 18, 18, 18, 235 ), rounding );
-			fg->AddRect( panelMin, panelMax, IM_COL32( 90, 90, 90, 220 ), rounding, 0, 1.0f );
+			fg->AddRect( panelMin, panelMax, IM_COL32( 90, 90, 90, 220 ), rounding, 1.0f, 0 );
 
 			// --- Loupe (left square, fills innerH) ---
 			ImVec2 lTL  = ImVec2( panelMin.x + pad, panelMin.y + pad );
@@ -32426,10 +32149,10 @@ namespace ImWidgets {
 				fg->AddLine( ImVec2( lTL.x, ctr2.y ), ImVec2( lBR.x, ctr2.y ), IM_COL32( 255, 60, 60, 100 ) );
 				fg->AddLine( ImVec2( ctr2.x, lTL.y ), ImVec2( ctr2.x, lBR.y ), IM_COL32( 255, 60, 60, 100 ) );
 				fg->AddRect( ImVec2( pxLeft, pxTop ), ImVec2( pxLeft + pixSz, pxTop + pixSz ),
-				             IM_COL32( 255, 60, 60, 255 ), 0.0f, 0, 1.5f );
+				             IM_COL32( 255, 60, 60, 255 ), 0.0f, 1.5f, 0 );
 			}
 			fg->PopClipRect();
-			fg->AddRect( lTL, lBR, IM_COL32( 110, 110, 110, 200 ), 0.0f, 0, 1.0f );
+			fg->AddRect( lTL, lBR, IM_COL32( 110, 110, 110, 200 ), 0.0f, 1.0f, 0 );
 
 			// --- Text column (4 rows, vertically centred) ---
 			const ImU32 colValue = IM_COL32( 230, 230, 230, 255 );
@@ -32466,7 +32189,7 @@ namespace ImWidgets {
 					fg->AddLine( ImVec2( sTL.x + d, sTL.y ), ImVec2( sTL.x, sTL.y + d ), IM_COL32( 70, 70, 70, 255 ) );
 				fg->PopClipRect();
 			}
-			fg->AddRect( sTL, sBR, IM_COL32( 90, 90, 90, 180 ), 2.0f, 0, 1.0f );
+			fg->AddRect( sTL, sBR, IM_COL32( 90, 90, 90, 180 ), 2.0f, 1.0f, 0 );
 		}
 
 		// Expand button
@@ -32637,7 +32360,7 @@ namespace ImWidgets {
 			dl->AddRectFilled( tl, br, fill );
 
 			float this_t = ( i == hovered_index ) ? thickness * 2.0f : thickness;
-			dl->AddRect( tl, br, col, 0.0f, 0, this_t );
+			dl->AddRect( tl, br, col, 0.0f, this_t, 0 );
 
 			// Label chip
 			if ( br.x - tl.x < 20.0f ) continue;
@@ -33178,15 +32901,15 @@ namespace ImWidgets {
 			{
 				// Dashed border via two-color repeated segments (simple: draw two rects with gaps)
 				// Simpler: solid thicker border with distinctive color
-				dl->AddRect( tl, br, col, 0.0f, 0, thickness * 1.5f );
+				dl->AddRect( tl, br, col, 0.0f, thickness * 1.5f, 0 );
 				dl->AddRect( ImVec2( tl.x - 1.0f, tl.y - 1.0f ),
 							 ImVec2( br.x + 1.0f, br.y + 1.0f ),
-							 IM_COL32( 255, 255, 255, 200 ), 0.0f, 0, 1.0f );
+							 IM_COL32( 255, 255, 255, 200 ), 0.0f, 1.0f, 0 );
 			}
 			else
 			{
 				float t = ( b.user_id == es.HoveredId ) ? thickness * 2.0f : thickness;
-				dl->AddRect( tl, br, col, 0.0f, 0, t );
+				dl->AddRect( tl, br, col, 0.0f, t, 0 );
 			}
 
 			// Class label chip (small, top-left)
@@ -33242,7 +32965,7 @@ namespace ImWidgets {
 			ImVec2 br( ImMax( a.x, b.x ), ImMax( a.y, b.y ) );
 			ImU32 col = IM_COL32( 90, 210, 255, 255 );
 			dl->AddRectFilled( tl, br, DW_WithAlpha( col, 0.25f ) );
-			dl->AddRect( tl, br, col, 0.0f, 0, thickness );
+			dl->AddRect( tl, br, col, 0.0f, thickness, 0 );
 		}
 
 		dl->PopClipRect();
@@ -33578,7 +33301,7 @@ namespace ImWidgets {
 			drawList->AddImageRounded( ctx->blurIntermediate, winMin, winMax, uv0, uv1, tint, window->WindowRounding );
 
 			// Reset to default ImGui state
-			drawList->AddCallback( ImDrawCallback_ResetRenderState, NULL );
+			drawList->AddCallback( ImGui::GetPlatformIO().DrawCallback_ResetRenderState, NULL );
 		}
 		else
 		{
@@ -33680,7 +33403,7 @@ namespace ImWidgets {
 			// Callback: capture backbuffer + bind shader + push constants at render time
 			drawList->AddCallback( BlurSinglePassCallback, cb );
 			drawList->AddImageRounded( ctx->blurBackbufferCopy, winMin, winMax, uv0, uv1, tint, window->WindowRounding );
-			drawList->AddCallback( ImDrawCallback_ResetRenderState, NULL );
+			drawList->AddCallback( ImGui::GetPlatformIO().DrawCallback_ResetRenderState, NULL );
 		}
 #else
 		(void)effect; (void)param0; (void)param1; (void)param2; (void)tint;
@@ -33929,7 +33652,7 @@ namespace ImWidgets
     static void DW_DrawJoinOverlay(ImDrawList* draw, const ImVec2& A, const ImVec2& B, const ImVec2& C,
                                    ImU32 col, float thickness, ImWidgetsJoin join, float miter_limit)
     {
-        if (join != ImWidgetsJoin_Round && join != ImWidgetsJoin_Mitter && join != ImWidgetsJoin_Bevel)
+        if (join != ImWidgetsJoin_Round && join != ImWidgetsJoin_Miter && join != ImWidgetsJoin_Bevel)
             return;
         ImVec2 v0 = DW_Normalize(ImVec2(B.x - A.x, B.y - A.y));
         ImVec2 v1 = DW_Normalize(ImVec2(C.x - B.x, C.y - B.y));
@@ -33989,7 +33712,7 @@ namespace ImWidgets
         ImVec2 apex;
         bool has_inter = DW_LineIntersection(e0, v0, e1, ImVec2(-v1.x, -v1.y), apex);
         bool allow_miter = has_inter && (miter_len <= miter_limit * halfw);
-        if (join == ImWidgetsJoin_Mitter && allow_miter)
+        if (join == ImWidgetsJoin_Miter && allow_miter)
         {
             draw->AddTriangleFilled(e0, apex, e1, col);
         }
@@ -34203,7 +33926,7 @@ namespace ImWidgets
                     float cos_a = seg_t[i].x * adj_dir.x + seg_t[i].y * adj_dir.y;
                     float cos_half = ImSqrt(ImMax(0.0f, 0.5f * (1.0f + cos_a)));
                     float ext = (cos_half > 0.01f) ? halfw / cos_half : halfw * 100.0f;
-                    if (join == ImWidgetsJoin_Mitter)
+                    if (join == ImWidgetsJoin_Miter)
                         ext = ImMin(ext, miter_limit * halfw);
                     else
                         ext = ImMin(ext, halfw * 2.0f);
@@ -34498,7 +34221,7 @@ namespace ImWidgets
                 ImVec2 edge_next = sp[i] + ImVec2(nn.x * sign, nn.y * sign) * halfw;
                 ImVector<ImVec2>& outer = right_outer ? L : R;
 
-                if (join == ImWidgetsJoin_Mitter && miter_ok)
+                if (join == ImWidgetsJoin_Miter && miter_ok)
                 {
                     // Single miter apex -- lies on both offset lines, so the
                     // contour transitions correctly from prev to next segment.
@@ -35151,7 +34874,7 @@ namespace ImWidgets
         if (!any_drawn && !gpu_used && points_count >= 2)
         {
             ImDrawFlags flags = closed ? ImDrawFlags_Closed : 0;
-            drawlist->AddPolyline(points, points_count, col, flags, thickness);
+            drawlist->AddPolyline(points, points_count, col, thickness, flags);
         }
 
         // Optional debug: visualize joins using current join + miter_limit on full path
@@ -35253,14 +34976,14 @@ namespace ImWidgets
             if (!dl || !pts || n < 2 || thickness <= 0.0f || (col & IM_COL32_A_MASK) == 0) return;
             if (dash_len <= 0.0f)
             {
-                dl->AddPolyline(pts, n, col, ImDrawFlags_None, thickness);
+                dl->AddPolyline(pts, n, col, thickness, ImDrawFlags_None);
                 return;
             }
             float const period = dash_len + gap_len;
             if (period <= 0.0f)
             {
                 // Pathological: full overlap, every point covered by every dash. Render solid.
-                dl->AddPolyline(pts, n, col, ImDrawFlags_None, thickness);
+                dl->AddPolyline(pts, n, col, thickness, ImDrawFlags_None);
                 return;
             }
 
@@ -35321,7 +35044,7 @@ namespace ImWidgets
                 }
                 dashBuf.push_back(point_at(dash_end));
                 if (dashBuf.Size >= 2)
-                    dl->AddPolyline(dashBuf.Data, dashBuf.Size, col, ImDrawFlags_None, thickness);
+                    dl->AddPolyline(dashBuf.Data, dashBuf.Size, col, thickness, ImDrawFlags_None);
             }
         }
 
@@ -35395,7 +35118,7 @@ namespace ImWidgets
                 DW_SoftwareDashedPolyline(dl, points, n, d.color, d.thickness,
                                           d.dash_len, d.gap_len, d.dash_offset);
             else
-                dl->AddPolyline(points, n, d.color, ImDrawFlags_None, d.thickness);
+                dl->AddPolyline(points, n, d.color, d.thickness, ImDrawFlags_None);
             return;
 
         case ImWidgetsThickLineMode_PolylineAA:
@@ -35419,7 +35142,7 @@ namespace ImWidgets
                 DW_SoftwareDashedPolyline(dl, points, n, d.color, d.thickness,
                                           d.dash_len, d.gap_len, d.dash_offset);
             else
-                dl->AddPolyline(points, n, d.color, ImDrawFlags_None, d.thickness);
+                dl->AddPolyline(points, n, d.color, d.thickness, ImDrawFlags_None);
 #endif
             return;
 
@@ -35432,7 +35155,7 @@ namespace ImWidgets
                     DW_SoftwareDashedPolyline(dl, points, n, d.color, d.thickness,
                                               d.dash_len, d.gap_len, d.dash_offset);
                 else
-                    dl->AddPolyline(points, n, d.color, ImDrawFlags_None, d.thickness);
+                    dl->AddPolyline(points, n, d.color, d.thickness, ImDrawFlags_None);
                 return;
             }
             if (d.dashed)
@@ -35459,7 +35182,7 @@ namespace ImWidgets
                     DW_SoftwareDashedPolyline(dl, points, n, d.color, d.thickness,
                                               d.dash_len, d.gap_len, d.dash_offset);
                 else
-                    dl->AddPolyline(points, n, d.color, ImDrawFlags_None, d.thickness);
+                    dl->AddPolyline(points, n, d.color, d.thickness, ImDrawFlags_None);
                 return;
             }
             ImVector<ImVec2> bez;
@@ -35510,7 +35233,7 @@ namespace ImWidgets
         }
 
         default:
-            dl->AddPolyline(points, n, d.color, ImDrawFlags_None, d.thickness);
+            dl->AddPolyline(points, n, d.color, d.thickness, ImDrawFlags_None);
             return;
         }
     }
@@ -35614,121 +35337,7 @@ namespace ImWidgets
         else                             return ImVec2(0.0f, d.y);
     }
 
-    bool BoxSelectUpdate(ImBoxSelectState* st, ImVec2 cmin, ImVec2 cmax, bool hovered_empty)
-    {
-        if (!st) return false;
-        ImVec2 mouse = ImGui::GetIO().MousePos;
-        if (!st->Active)
-        {
-            if (hovered_empty && ImGui::IsMouseClicked(0)
-                && mouse.x >= cmin.x && mouse.x <= cmax.x
-                && mouse.y >= cmin.y && mouse.y <= cmax.y)
-            {
-                st->Start = mouse;
-                st->End = mouse;
-                st->Active = true;
-            }
-            return false;
-        }
-        st->End = mouse;
-        if (!ImGui::IsMouseDown(0))
-        {
-            st->Active = false;
-            return false;
-        }
-        return true;
-    }
-    ImRect BoxSelectRect(const ImBoxSelectState* st)
-    {
-        if (!st) return ImRect(0, 0, 0, 0);
-        ImVec2 a(ImMin(st->Start.x, st->End.x), ImMin(st->Start.y, st->End.y));
-        ImVec2 b(ImMax(st->Start.x, st->End.x), ImMax(st->Start.y, st->End.y));
-        return ImRect(a, b);
-    }
 
-    //------------------------------------------------------------------
-    // Shared curve data model
-    //------------------------------------------------------------------
-    void ImCurveSort(ImCurveData& c)
-    {
-        // Insertion sort (small N).
-        for (int i = 1; i < c.Keys.Size; ++i)
-        {
-            ImCurveKey k = c.Keys[i]; int j = i - 1;
-            while (j >= 0 && c.Keys[j].Pos.x > k.Pos.x) { c.Keys[j + 1] = c.Keys[j]; --j; }
-            c.Keys[j + 1] = k;
-        }
-    }
-    int ImCurveAdd(ImCurveData& c, ImVec2 p)
-    {
-        c.Keys.push_back(ImCurveKey(p));
-        ImCurveSort(c);
-        for (int i = 0; i < c.Keys.Size; ++i)
-            if (c.Keys[i].Pos.x == p.x && c.Keys[i].Pos.y == p.y) return i;
-        return c.Keys.Size - 1;
-    }
-    void ImCurveRemove(ImCurveData& c, int idx)
-    {
-        if (idx < 0 || idx >= c.Keys.Size) return;
-        c.Keys.erase(c.Keys.Data + idx);
-        if (c.SelectedIdx == idx) c.SelectedIdx = -1;
-        else if (c.SelectedIdx > idx) --c.SelectedIdx;
-    }
-    float ImCurveEval(const ImCurveData& c, float x)
-    {
-        int n = c.Keys.Size;
-        if (n == 0) return 0.0f;
-        if (x <= c.Keys[0].Pos.x) return c.Keys[0].Pos.y;
-        if (x >= c.Keys[n - 1].Pos.x) return c.Keys[n - 1].Pos.y;
-        // Find segment.
-        for (int i = 0; i + 1 < n; ++i)
-        {
-            const ImCurveKey& a = c.Keys[i];
-            const ImCurveKey& b = c.Keys[i + 1];
-            if (x < a.Pos.x || x > b.Pos.x) continue;
-            switch (a.InterpToNext)
-            {
-            case ImCurveInterp_Step:
-                return a.Pos.y;
-            case ImCurveInterp_Linear:
-            {
-                float w = b.Pos.x - a.Pos.x;
-                float t = (w < 1e-9f) ? 0.0f : (x - a.Pos.x) / w;
-                return a.Pos.y + (b.Pos.y - a.Pos.y) * t;
-            }
-            case ImCurveInterp_CubicBezier:
-            default:
-            {
-                float w = b.Pos.x - a.Pos.x;
-                if (w < 1e-9f) return a.Pos.y;
-                ImVec2 P0 = a.Pos;
-                ImVec2 P1(a.Pos.x + a.TangentR.x, a.Pos.y + a.TangentR.y);
-                ImVec2 P2(b.Pos.x + b.TangentL.x, b.Pos.y + b.TangentL.y);
-                ImVec2 P3 = b.Pos;
-                // Binary search for X = x on the Bezier.
-                float lo = 0.0f, hi = 1.0f;
-                for (int it = 0; it < 24; ++it)
-                {
-                    float t = 0.5f * (lo + hi);
-                    float u = 1.0f - t;
-                    float bx = u * u * u * P0.x + 3 * u * u * t * P1.x + 3 * u * t * t * P2.x + t * t * t * P3.x;
-                    if (bx < x) lo = t; else hi = t;
-                }
-                float t = 0.5f * (lo + hi);
-                float u = 1.0f - t;
-                return u * u * u * P0.y + 3 * u * u * t * P1.y + 3 * u * t * t * P2.y + t * t * t * P3.y;
-            }
-            }
-        }
-        return c.Keys[n - 1].Pos.y;
-    }
-    void BoxSelectDraw(const ImBoxSelectState* st, ImDrawList* dl, ImU32 fill, ImU32 border)
-    {
-        if (!st || !st->Active || !dl) return;
-        ImRect r = BoxSelectRect(st);
-        dl->AddRectFilled(r.Min, r.Max, fill);
-        dl->AddRect      (r.Min, r.Max, border);
-    }
 
     //------------------------------------------------------------------
     // Shared math utilities
@@ -35749,28 +35358,6 @@ namespace ImWidgets
                 inside = !inside;
         }
         return inside;
-    }
-
-    static ImVec2 DWE_CubicBezier(const ImVec2& p0, const ImVec2& p1, const ImVec2& p2, const ImVec2& p3, float t)
-    {
-        float u = 1.0f - t;
-        float b0 = u * u * u;
-        float b1 = 3.0f * u * u * t;
-        float b2 = 3.0f * u * t * t;
-        float b3 = t * t * t;
-        return ImVec2(b0 * p0.x + b1 * p1.x + b2 * p2.x + b3 * p3.x,
-                      b0 * p0.y + b1 * p1.y + b2 * p2.y + b3 * p3.y);
-    }
-
-    static ImU32 DWE_LerpColU32(ImU32 a, ImU32 b, float t)
-    {
-        int ar = (a >> IM_COL32_R_SHIFT) & 0xFF, ag = (a >> IM_COL32_G_SHIFT) & 0xFF;
-        int ab = (a >> IM_COL32_B_SHIFT) & 0xFF, aa = (a >> IM_COL32_A_SHIFT) & 0xFF;
-        int br = (b >> IM_COL32_R_SHIFT) & 0xFF, bg = (b >> IM_COL32_G_SHIFT) & 0xFF;
-        int bb = (b >> IM_COL32_B_SHIFT) & 0xFF, ba = (b >> IM_COL32_A_SHIFT) & 0xFF;
-        int r = (int)(ar + (br - ar) * t), g = (int)(ag + (bg - ag) * t);
-        int B = (int)(ab + (bb - ab) * t), A = (int)(aa + (ba - aa) * t);
-        return IM_COL32(r, g, B, A);
     }
 
     //==================================================================
@@ -36070,10 +35657,10 @@ namespace ImWidgets
         // Lc = (1-v)*bottom(u) + v*top(u)
         // Ld = (1-u)*left(v) + u*right(v)
         // B = bilinear blend of four corner points.
-        ImVec2 bu = DWE_CubicBezier(p.bottom[0], p.bottom[1], p.bottom[2], p.bottom[3], u);
-        ImVec2 tu = DWE_CubicBezier(p.top[0], p.top[1], p.top[2], p.top[3], u);
-        ImVec2 lv = DWE_CubicBezier(p.left[0], p.left[1], p.left[2], p.left[3], v);
-        ImVec2 rv = DWE_CubicBezier(p.right[0], p.right[1], p.right[2], p.right[3], v);
+        ImVec2 bu = ImBezierCubicCalc(p.bottom[0], p.bottom[1], p.bottom[2], p.bottom[3], u);
+        ImVec2 tu = ImBezierCubicCalc(p.top[0], p.top[1], p.top[2], p.top[3], u);
+        ImVec2 lv = ImBezierCubicCalc(p.left[0], p.left[1], p.left[2], p.left[3], v);
+        ImVec2 rv = ImBezierCubicCalc(p.right[0], p.right[1], p.right[2], p.right[3], v);
         ImVec2 c00 = p.bottom[0]; // == left[0]
         ImVec2 c10 = p.bottom[3]; // == right[0]
         ImVec2 c01 = p.top[0];    // == left[3]
@@ -36099,9 +35686,9 @@ namespace ImWidgets
             {
                 float u = (float)i / (float)resU;
                 grid[j * (resU + 1) + i] = DWE_EvalCoons(p, u, v);
-                ImU32 cb = DWE_LerpColU32(c00, c10, u);
-                ImU32 ct = DWE_LerpColU32(c01, c11, u);
-                cols[j * (resU + 1) + i] = DWE_LerpColU32(cb, ct, v);
+                ImU32 cb = ImLerpU32(c00, c10, u);
+                ImU32 ct = ImLerpU32(c01, c11, u);
+                cols[j * (resU + 1) + i] = ImLerpU32(cb, ct, v);
             }
         }
         ImVec2 uv = dl->_Data->TexUvWhitePixel;
@@ -36216,8 +35803,8 @@ namespace ImWidgets
         // Bicubic evaluation (de Casteljau in u then v).
         ImVec2 col[4];
         for (int j = 0; j < 4; ++j)
-            col[j] = DWE_CubicBezier(b[0][j], b[1][j], b[2][j], b[3][j], u);
-        return DWE_CubicBezier(col[0], col[1], col[2], col[3], v);
+            col[j] = ImBezierCubicCalc(b[0][j], b[1][j], b[2][j], b[3][j], u);
+        return ImBezierCubicCalc(col[0], col[1], col[2], col[3], v);
     }
 
     void DrawGregoryPatch(ImDrawList* dl, const ImGregoryPatch& p, ImU32 col, int resU, int resV)
@@ -36396,7 +35983,7 @@ namespace ImWidgets
             }
             else
             {
-                if (join == ImWidgetsJoin_Mitter)
+                if (join == ImWidgetsJoin_Miter)
                 {
                     // Convex + miter: use bisector point, clip to miter_limit (bevel fallback).
                     ImVec2 sum(np.x + nn.x, np.y + nn.y);
@@ -36450,7 +36037,7 @@ namespace ImWidgets
         ImVector<ImVec2> out;
         OffsetPolyline(pts, n, offset, join, miter_limit, out, closed);
         if (out.Size < 2) return;
-        dl->AddPolyline(out.Data, out.Size, col, closed ? ImDrawFlags_Closed : 0, thickness);
+        dl->AddPolyline(out.Data, out.Size, col, thickness, closed ? ImDrawFlags_Closed : 0);
     }
 
     void DrawOffsetFilled(ImDrawList* dl, const ImVec2* pts, int n,
@@ -37041,7 +36628,7 @@ namespace ImWidgets
                     ImVec2(text_pos.x + ts.x + 4, text_pos.y), IM_COL32(100, 180, 255, 160), 1.0f);
         dl->AddLine(ImVec2(text_pos.x - 4, baseline_y - descent),
                     ImVec2(text_pos.x + ts.x + 4, baseline_y - descent), IM_COL32(255, 100, 180, 160), 1.0f);
-        dl->AddRect(text_pos, ImVec2(text_pos.x + ts.x, text_pos.y + ts.y), IM_COL32(180, 180, 180, 120), 0.0f, 0, 1.0f);
+        dl->AddRect(text_pos, ImVec2(text_pos.x + ts.x, text_pos.y + ts.y), IM_COL32(180, 180, 180, 120), 0.0f, 1.0f, 0);
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ts.y + 80.0f);
         ImGui::Text("Ascent: %.2f    Descent: %.2f    Size: %.2f    Glyphs: %d",
                     (double)ascent, (double)descent, (double)display_size,
@@ -37736,7 +37323,7 @@ namespace ImWidgets
                                   IM_COL32(80, 100, 140, 50), 6.0f);
                 dl->AddRect      (ImVec2(cx - pad, cursor_y - pad * 0.5f),
                                   ImVec2(cx + szLat.x + pad, cursor_y + szLat.y + pad * 0.5f),
-                                  IM_COL32(200, 160, 100, 180), 6.0f, 0, 1.0f);
+                                  IM_COL32(200, 160, 100, 180), 6.0f, 1.0f, 0);
                 DrawLaTeX(dl, bs, ImVec2(cx, cursor_y),
                           IM_COL32(255, 230, 200, 255), tmp);
                 cursor_y += szLat.y + 6.0f;
@@ -38303,7 +37890,7 @@ namespace ImWidgets
             g_LDIPool[g_LDIIdx].push_back(call);
             dl->AddCallback(&LDIShaderCallback, call);
             dl->AddImage(tex_a, bb.Min, bb.Max, ImVec2(0, 0), ImVec2(1, 1));
-            dl->AddCallback(ImDrawCallback_ResetRenderState, NULL);
+            dl->AddCallback(ImGui::GetPlatformIO().DrawCallback_ResetRenderState, NULL);
         }
         else
         {
@@ -38477,6 +38064,19 @@ namespace ImWidgets
         ImPlatform_BeginCustomShader_Render(d->program);
     }
 
+    // The shader numbers its formulas 0=dE76, 1=dE-OK, 2=dE94, 3=dE2000 (see
+    // delta_e_compare.hlsl); the public enum is ordered by increasing accuracy.
+    static unsigned DW_DeltaEFormulaToShader( ImDeltaEFormula f )
+    {
+        switch ( f )
+        {
+        case ImDeltaEFormula_EOK:   return 1u;
+        case ImDeltaEFormula_E94:   return 2u;
+        case ImDeltaEFormula_E2000: return 3u;
+        default:                    return 0u; // dE76
+        }
+    }
+
     bool ColorDifferenceImageViewer(const char* label,
                                     ImTextureID tex_a, ImTextureID tex_b,
                                     ImDeltaECompareState* st, ImVec2 size)
@@ -38485,11 +38085,11 @@ namespace ImWidgets
         ImGui::PushID(label);
         bool changed = false;
 
-        const char* formula_names[] = { "dE76 (Lab Euclidean)", "dE-OK (OkLab)", "dE94 (approx)", "dE2000 (approx)" };
+        const char* formula_names[] = { "dE76 (Lab Euclidean)", "dE94 (approx)", "dE2000 (approx)", "dE-OK (OkLab)" };
         const char* ramp_names[]    = { "Gray", "Viridis", "Turbo", "Magma" };
         int f = (int)st->Formula;
         if (ImGui::Combo("Formula", &f, formula_names, IM_ARRAYSIZE(formula_names)))
-        { st->Formula = (ImDeltaEFormulaShader)f; changed = true; }
+        { st->Formula = (ImDeltaEFormula)f; changed = true; }
         int r = (int)st->Ramp;
         if (ImGui::Combo("Ramp", &r, ramp_names, IM_ARRAYSIZE(ramp_names)))
         { st->Ramp = (ImDeltaEColorRamp)r; changed = true; }
@@ -38522,7 +38122,7 @@ namespace ImWidgets
             DEDrawCallData* call = IM_NEW(DEDrawCallData);
             call->program = gs_pContext->deltaECompareShader.program;
             call->texB    = tex_b;
-            call->params.modePack[0] = (unsigned)st->Formula;
+            call->params.modePack[0] = DW_DeltaEFormulaToShader( st->Formula );
             call->params.modePack[1] = (unsigned)st->Ramp;
             call->params.modePack[2] = st->ShowThreshold ? 1u : 0u;
             call->params.modePack[3] = 0u;
@@ -38537,7 +38137,7 @@ namespace ImWidgets
             g_DEPool[g_DEIdx].push_back(call);
             dl->AddCallback(&DEShaderCallback, call);
             dl->AddImage(tex_a, bb.Min, bb.Max, ImVec2(0, 0), ImVec2(1, 1));
-            dl->AddCallback(ImDrawCallback_ResetRenderState, NULL);
+            dl->AddCallback(ImGui::GetPlatformIO().DrawCallback_ResetRenderState, NULL);
         }
         else
         {
@@ -38555,26 +38155,6 @@ namespace ImWidgets
         return changed;
     }
 
-    //==================================================================
-    // Phase G -- Volume Slice Viewer
-    //==================================================================
-    void VolumeGenerateTestField(float* out, int w, int h, int d, float seed)
-    {
-        // Simple sum of sines -- not "real" Perlin but pretty and deterministic.
-        if (!out) return;
-        for (int z = 0; z < d; ++z)
-            for (int y = 0; y < h; ++y)
-                for (int x = 0; x < w; ++x)
-                {
-                    float fx = (float)x / (float)w * 8.0f + seed;
-                    float fy = (float)y / (float)h * 8.0f + seed;
-                    float fz = (float)z / (float)d * 8.0f + seed;
-                    float v = ImSin(fx) * ImCos(fy) * ImSin(fz)
-                            + 0.5f * ImSin(fx * 2.3f + fz) * ImCos(fy * 1.7f);
-                    v = 0.5f + 0.5f * ImClamp(v * 0.7f, -1.0f, 1.0f);
-                    out[(z * h + y) * w + x] = v;
-                }
-    }
 
     // Deterministic hash -> [0,1) -- used for the SphericalNoise mode.
     static float DWE_Vol_Hash01(int x, int y, int z, unsigned int seed)
@@ -39016,7 +38596,7 @@ namespace ImWidgets
             dl->AddCallback(&CB::Callback, call);
             // AddImage with any valid texture to enter the pipeline; the shader ignores texture0.
             dl->AddImage(st->Tex3D, pos, mx, ImVec2(0, 0), ImVec2(1, 1));
-            dl->AddCallback(ImDrawCallback_ResetRenderState, NULL);
+            dl->AddCallback(ImGui::GetPlatformIO().DrawCallback_ResetRenderState, NULL);
             dl->AddRect(pos, mx, IM_COL32(255, 255, 255, 80));
             dl->PopClipRect();
             ImGui::PopID();
@@ -39882,7 +39462,7 @@ namespace ImWidgets
         float pen_x   = pen_x0;
         float pen_y   = -align.y * tsize.y;
 
-        ImTextureRef atlas_tex = font->ContainerAtlas->TexRef;
+        ImTextureRef atlas_tex = font->OwnerAtlas->TexRef;
         dl->PushTexture( atlas_tex );
 
         char const* s = text;
@@ -40202,9 +39782,9 @@ namespace ImWidgets
                     dl->AddRectFilled( a, ImVec2( a.x + cell, a.y + cell ), c );
                 }
             }
-            dl->AddRect( lmin, lmax, outline_col, 0.0f, 0, 1.5f );
+            dl->AddRect( lmin, lmax, outline_col, 0.0f, 1.5f, 0 );
             ImVec2 cmin = ImVec2( lmin.x + half * cell, lmin.y + half * cell );
-            dl->AddRect( cmin, ImVec2( cmin.x + cell, cmin.y + cell ), highlight_col, 0.0f, 0, 1.5f );
+            dl->AddRect( cmin, ImVec2( cmin.x + cell, cmin.y + cell ), highlight_col, 0.0f, 1.5f, 0 );
 
             char buf[ 64 ];
             ImU32 c = r.Color;
@@ -40436,7 +40016,7 @@ namespace ImWidgets
             dl->AddLine( ImVec2( s.Rect.Min.x, c.y ), ImVec2( s.Rect.Max.x, c.y ), guide_col );
         }
 
-        dl->AddRect( s.Rect.Min, s.Rect.Max, line_col, 0.0f, 0, 1.0f );
+        dl->AddRect( s.Rect.Min, s.Rect.Max, line_col, 0.0f, 1.0f, 0 );
 
         float gh = grip_px;
         for ( int i = 0; i < 8; ++i )
@@ -40514,7 +40094,7 @@ namespace ImWidgets
         dl->AddLine( ImVec2( c.x - shr, ay ), ImVec2( c.x - shr, bmin.y ), col, th );
         dl->PathClear();
         dl->PathArcTo( ImVec2( c.x, ay ), shr, IM_PI, IM_PI * 2.0f, 16 );
-        dl->PathStroke( col, 0, th );
+        dl->PathStroke( col, th, 0 );
         float rleg = locked ? bmin.y : ( bmin.y - sz * 0.18f );
         dl->AddLine( ImVec2( c.x + shr, ay ), ImVec2( c.x + shr, rleg ), col, th );
         dl->AddRectFilled( bmin, bmax, col, sz * 0.08f );
@@ -40628,7 +40208,7 @@ namespace ImWidgets
 
         dl->PushClipRect( cmin, cmax, true );
         dl->AddRectFilled( bmin, bmax, col_fill, 0.0f );
-        dl->AddRect( bmin, bmax, col_edge, 0.0f, 0, LpToPx( 1.5f ) );
+        dl->AddRect( bmin, bmax, col_edge, 0.0f, LpToPx( 1.5f ), 0 );
         dl->PopClipRect();
 
         // ---- resize handles: BR (both), R (width), B (height) ----
@@ -41126,7 +40706,7 @@ namespace ImWidgets
                 ImVec2 mn( ImMin( a.x, b.x ), ImMin( a.y, b.y ) );
                 ImVec2 mx( ImMax( a.x, b.x ), ImMax( a.y, b.y ) );
                 dl->AddRectFilled( mn, mx, fill_col );
-                dl->AddRect      ( mn, mx, line_col, 0.0f, 0, thickness );
+                dl->AddRect      ( mn, mx, line_col, 0.0f, thickness, 0 );
             }
             else
             {
@@ -41134,7 +40714,7 @@ namespace ImWidgets
                 // OPEN (no closing chord back to the start) while dragging. The
                 // closing edge only appears once the loop is released (s.Closed).
                 dl->AddConcavePolyFilled( s.Path.Data, s.Path.Size, fill_col );
-                dl->AddPolyline( s.Path.Data, s.Path.Size, line_col, ImDrawFlags_None, thickness );
+                dl->AddPolyline( s.Path.Data, s.Path.Size, line_col, thickness, ImDrawFlags_None );
             }
         }
         else if ( s.Path.Size >= 2 )
@@ -41147,11 +40727,11 @@ namespace ImWidgets
                 ImVec2 a = s.Path[ 0 ], b = s.Path[ 1 ];
                 ImVec2 mn( ImMin( a.x, b.x ), ImMin( a.y, b.y ) );
                 ImVec2 mx( ImMax( a.x, b.x ), ImMax( a.y, b.y ) );
-                dl->AddRect( mn, mx, line_col, 0.0f, 0, thickness );
+                dl->AddRect( mn, mx, line_col, 0.0f, thickness, 0 );
             }
             else
             {
-                dl->AddPolyline( s.Path.Data, s.Path.Size, line_col, ImDrawFlags_Closed, thickness );
+                dl->AddPolyline( s.Path.Data, s.Path.Size, line_col, thickness, ImDrawFlags_Closed );
             }
         }
         return s.Active || s.Closed;
@@ -41365,7 +40945,7 @@ namespace ImWidgets
         ImVec2 vp_clip_mn( ImMax( vp_mn.x, mmin.x ), ImMax( vp_mn.y, mmin.y ) );
         ImVec2 vp_clip_mx( ImMin( vp_mx.x, mmax.x ), ImMin( vp_mx.y, mmax.y ) );
         if ( vp_clip_mx.x > vp_clip_mn.x && vp_clip_mx.y > vp_clip_mn.y )
-            dl->AddRect( vp_clip_mn, vp_clip_mx, viewport_col, 0.0f, 0, 2.0f );
+            dl->AddRect( vp_clip_mn, vp_clip_mx, viewport_col, 0.0f, 2.0f, 0 );
 
         ImGuiIO& io = ImGui::GetIO();
         ImRect mm_rect( mmin, mmax );
@@ -41534,7 +41114,7 @@ namespace ImWidgets
             ImRect rr( r.Min.x + pad, r.Min.y + pad, r.Max.x - pad, r.Max.y - pad );
             if ( rr.Max.x <= rr.Min.x || rr.Max.y <= rr.Min.y ) break;
             float cr = ImMax( 0.0f, corner_round - pad );
-            dl->AddRect( rr.Min, rr.Max, c, cr, 0, 1.0f );
+            dl->AddRect( rr.Min, rr.Max, c, cr, 1.0f, 0 );
         }
     }
 
@@ -41679,19 +41259,6 @@ namespace ImWidgets
     //////////////////////////////////////////////////////////////////////////
     // Gradient mesh editor
     //////////////////////////////////////////////////////////////////////////
-    static ImU32 DW_LerpU32( ImU32 a, ImU32 b, float t )
-    {
-        int Ar = ( a >> IM_COL32_R_SHIFT ) & 0xFF, Ag = ( a >> IM_COL32_G_SHIFT ) & 0xFF;
-        int Ab = ( a >> IM_COL32_B_SHIFT ) & 0xFF, Aa = ( a >> IM_COL32_A_SHIFT ) & 0xFF;
-        int Br = ( b >> IM_COL32_R_SHIFT ) & 0xFF, Bg = ( b >> IM_COL32_G_SHIFT ) & 0xFF;
-        int Bb = ( b >> IM_COL32_B_SHIFT ) & 0xFF, Ba = ( b >> IM_COL32_A_SHIFT ) & 0xFF;
-        int R = (int)( Ar + ( Br - Ar ) * t );
-        int G = (int)( Ag + ( Bg - Ag ) * t );
-        int B = (int)( Ab + ( Bb - Ab ) * t );
-        int A = (int)( Aa + ( Ba - Aa ) * t );
-        return IM_COL32( R, G, B, A );
-    }
-
     void GradientMeshInit( ImWidgetsGradientMesh& m, int nx, int ny,
                             ImU32 c00, ImU32 c10, ImU32 c01, ImU32 c11 )
     {
@@ -41710,9 +41277,9 @@ namespace ImWidgets
                 float u = (float)i / (float)( nx - 1 );
                 ImWidgetsGradientMeshNode& n = m.Nodes[ j * nx + i ];
                 n.PosUV = ImVec2( u, v );
-                ImU32 top = DW_LerpU32( c00, c10, u );
-                ImU32 bot = DW_LerpU32( c01, c11, u );
-                n.Color = DW_LerpU32( top, bot, v );
+                ImU32 top = ImLerpU32( c00, c10, u );
+                ImU32 bot = ImLerpU32( c01, c11, u );
+                n.Color = ImLerpU32( top, bot, v );
             }
         }
     }
@@ -41730,7 +41297,7 @@ namespace ImWidgets
         ImU32 c10 = m.Nodes[ iy * m.CountX + ix + 1 ].Color;
         ImU32 c01 = m.Nodes[ ( iy + 1 ) * m.CountX + ix ].Color;
         ImU32 c11 = m.Nodes[ ( iy + 1 ) * m.CountX + ix + 1 ].Color;
-        return DW_LerpU32( DW_LerpU32( c00, c10, tx ), DW_LerpU32( c01, c11, tx ), ty );
+        return ImLerpU32( ImLerpU32( c00, c10, tx ), ImLerpU32( c01, c11, tx ), ty );
     }
 
     bool GradientMeshEditor( char const* id_str, ImWidgetsGradientMesh& m, ImVec2 size,
@@ -41858,7 +41425,7 @@ namespace ImWidgets
             float boundary = p0 + span * ( 1.0f - soft );  // hard step happens at p0 + (1-soft)*span
             if ( t01 < boundary || soft <= 0.0f ) return r.Bands[ i ].Color;
             float u = ( t01 - boundary ) / ( p1 - boundary );
-            return DW_LerpU32( r.Bands[ i ].Color, r.Bands[ i + 1 ].Color, ImClamp( u, 0.0f, 1.0f ) );
+            return ImLerpU32( r.Bands[ i ].Color, r.Bands[ i + 1 ].Color, ImClamp( u, 0.0f, 1.0f ) );
         }
         return r.Bands.back().Color;
     }
@@ -42074,7 +41641,7 @@ namespace ImWidgets
 
         ImFontBaked* baked = font->GetFontBaked( font_size );
         if ( !baked ) return;
-        dl->PushTexture( font->ContainerAtlas->TexRef );
+        dl->PushTexture( font->OwnerAtlas->TexRef );
 
         float pen = offset_along;
         char const* p = text;
@@ -42179,7 +41746,7 @@ namespace ImWidgets
                 for ( int b = 0; b <= boldPasses; ++b )
                 {
                     float ox = (float)b * 0.7f;         // faux-bold smear
-                    dl->AddImageQuad( font->ContainerAtlas->TexRef,
+                    dl->AddImageQuad( font->OwnerAtlas->TexRef,
                         ImVec2( x0 + sh0 + ox, y0 ), ImVec2( x1 + sh0 + ox, y0 ),
                         ImVec2( x1 + sh1 + ox, y1 ), ImVec2( x0 + sh1 + ox, y1 ),
                         ImVec2( g->U0, g->V0 ), ImVec2( g->U1, g->V0 ),

@@ -184,7 +184,7 @@ namespace ImDwDownload
 
         // ---- Color: COLR v0 ----
         { "Noto-COLRv1.ttf", "Twemoji -> Noto Color Emoji (COLRv1)", kCColr0, "Google Fonts",
-          "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/fonts/Noto-COLRv1.ttf",
+          "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/2D/fonts/Noto-COLRv1.ttf",
           nullptr },
         { "CoralPixels-Regular.ttf", "Coral Pixels", kCColr0, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/coralpixels/CoralPixels-Regular.ttf",
@@ -255,12 +255,16 @@ namespace ImDwDownload
         { "FluentEmojiColor.ttf", "Microsoft Fluent Emoji (COLRv1)", kCColr1, "tetunori (GitHub)",
           "https://raw.githubusercontent.com/tetunori/fluent-emoji-webfont/main/dist/FluentEmojiColor.ttf",
           nullptr },
-        // Amiri Quran Colored (aliftype, OFL) — Arabic Quran with COLRv1 markup colors.
-        { "AmiriQuranColored.ttf", "Amiri Quran Colored (COLR)", kCColr1, "aliftype (GitHub)",
+        // ---- Arabic ----
+        // Amiri Quran Colored (aliftype, OFL) — Arabic Quran with COLRv1 markup
+        // colors. Technically a COLRv1 font, but the demo files it under Arabic
+        // (kGrpArabic in demo.cpp's kFonts), and the per-category download
+        // button downloads by manifest category -- so listing it under kCColr1
+        // meant "Download Arabic" never fetched it and "Download Color: COLR v1"
+        // fetched a font that group does not display.
+        { "AmiriQuranColored.ttf", "Amiri Quran Colored (COLR)", kCArabic, "aliftype (GitHub)",
           "https://github.com/aliftype/amiri/releases/download/1.003/Amiri-1.003.zip",
           "Amiri-1.003/AmiriQuranColored.ttf" },
-
-        // ---- Arabic ----
         { "Amiri-Regular.ttf", "Amiri", kCArabic, "Google Fonts",
           "https://raw.githubusercontent.com/google/fonts/main/ofl/amiri/Amiri-Regular.ttf",
           nullptr },

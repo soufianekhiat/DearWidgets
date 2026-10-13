@@ -1,4 +1,4 @@
-// dear_widgets_stroke.cpp
+﻿// dear_widgets_stroke.cpp
 // GPU stroke expansion -- based on "Fast GPU stroke expansion" (HPG 2024).
 // Paper: https://arxiv.org/abs/2405.00127
 // Reference implementation: https://github.com/linebender/gpu-stroke-expansion-paper
@@ -120,13 +120,6 @@ struct DW_EulerSeg {
         ImVec2 c(p1.x-p0.x, p1.y-p0.y);
         ImVec2 n=params.EvalEvolute(t);
         return ImVec2(p0.x+c.x*n.x-c.y*n.y, p0.y+c.x*n.y+c.y*n.x);
-    }
-    ImVec2 EvalTangent(float t) const {
-        float th=params.EvalTh(t);
-        ImVec2 c(p1.x-p0.x,p1.y-p0.y); float cl=sqrtf(c.x*c.x+c.y*c.y);
-        if(cl<1e-6f)return ImVec2(1,0);
-        float ca=cosf(th),sa=sinf(th); ImVec2 d(c.x/cl,c.y/cl);
-        return ImVec2(d.x*ca-d.y*sa, d.x*sa+d.y*ca);
     }
 };
 
@@ -548,7 +541,7 @@ static void DW_DoJoin(ImVec2 p0, ImVec2 last_tan, ImVec2 tan0, ImVec2 norm,
         if (join_style == ImWidgetsJoin_Bevel) {
             fwd.push_back(ImVec2(p0.x - norm.x, p0.y - norm.y));
             bwd.push_back(ImVec2(p0.x + norm.x, p0.y + norm.y));
-        } else if (join_style == ImWidgetsJoin_Mitter) {
+        } else if (join_style == ImWidgetsJoin_Miter) {
             // Vello PR #1323: guard against near-collinear tangents producing
             // degenerate miter geometry. Fall back to bevel when cross is tiny.
             const float TANGENT_THRESH = 1e-6f;
@@ -1314,12 +1307,19 @@ void DrawStrokedDashedBezierPath(ImDrawList* drawlist,
     ImVector<ImVector<ImVec2>> dashes;
     DW_DashSplitCubicPath(points, nc, tolerance, closed, dash_array, dash_count, dash_offset, cap_ext, dashes);
 
-    // Stroke each dash as a cubic path (smooth Euler spiral offset)
+    // Stroke each dash as a cubic path (smooth Euler spiral offset), then
+    // release it. DW_DashSplitCubicPath hands ownership of every inner buffer
+    // to `dashes`, but ~ImVector is `{ if (Data) IM_FREE(Data); }` -- it frees
+    // the OUTER buffer and destructs no elements, so each inner ImVec2 buffer
+    // must be freed by hand or it leaks on every frame this runs.
+    // Freeing inside the consumption loop (rather than in a second pass) keeps
+    // the release adjacent to the use, so no `continue`/early-out can skip it.
     for (int i = 0; i < dashes.Size; ++i) {
         ImVector<ImVec2>& dp = dashes[i];
-        if (dp.Size < 4) continue;
-        DrawStrokedBezierPath(drawlist, dp.Data, dp.Size, col, thickness,
-            cap, join, miter_limit, tolerance, false, primitive, correctness);
+        if (dp.Size >= 4)
+            DrawStrokedBezierPath(drawlist, dp.Data, dp.Size, col, thickness,
+                cap, join, miter_limit, tolerance, false, primitive, correctness);
+        dp.clear(); // ImVector::clear() frees Data
     }
 }
 
@@ -1339,11 +1339,15 @@ void DrawStrokedDashedPolyline(ImDrawList* drawlist,
     ImVector<ImVector<ImVec2>> dashes;
     DW_DashSplitPolyline(points, points_count, closed, dash_array, dash_count, dash_offset, cap_ext, dashes);
 
+    // Same ownership rule as DrawStrokedDashedBezierPath above: DW_DashSplitPolyline
+    // swaps a heap buffer into every entry of `dashes`, and ~ImVector destructs no
+    // elements -- free each inner buffer in the same pass that consumes it.
     for (int i = 0; i < dashes.Size; ++i) {
         ImVector<ImVec2>& dp = dashes[i];
-        if (dp.Size < 2) continue;
-        DrawStrokedPolyline(drawlist, dp.Data, dp.Size, col, thickness,
-            cap, join, miter_limit, false);
+        if (dp.Size >= 2)
+            DrawStrokedPolyline(drawlist, dp.Data, dp.Size, col, thickness,
+                cap, join, miter_limit, false);
+        dp.clear(); // ImVector::clear() frees Data
     }
 }
 

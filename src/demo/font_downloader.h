@@ -24,6 +24,7 @@
 #include <deque>
 #include <cstdio>
 #include <cstring>
+#include <cstdarg>
 #include <sys/stat.h>
 
 #if defined(_WIN32)
@@ -88,7 +89,12 @@ namespace ImDwDownload
     void Shutdown();
 
     // --- Integration helpers ---
-    // Convenience: returns "fonts/<canonical>" as std::string (demo is run from workingdir/)
+    // Directory the demo resolved its assets to (see DemoResolveAssetRoot in
+    // demo.cpp). Everything below is rooted there, so downloads land next to
+    // the fonts the demo actually loads even when the demo was not started
+    // from workingdir/. Defaults to "." until the demo calls this.
+    void SetAssetRoot( const char* root );
+    // Convenience: returns "<asset root>/fonts/<canonical>" as std::string.
     std::string PathFor( const Meta& m );
     std::string PathForCanonical( const char* canonical );
 }
@@ -121,23 +127,44 @@ namespace ImDwDownload
         return stat( path, &st ) == 0 && ( st.st_mode & S_IFREG );
     }
 
+    // Asset root the demo resolved (see demo.cpp). "." until SetAssetRoot runs.
+    static std::string s_asset_root = ".";
+
+    void SetAssetRoot( const char* root )
+    {
+        s_asset_root = ( root && root[0] ) ? root : ".";
+        // Drop a trailing slash so Rooted() never produces "//".
+        while ( s_asset_root.size() > 1 &&
+                ( s_asset_root.back() == '/' || s_asset_root.back() == '\\' ) )
+            s_asset_root.pop_back();
+    }
+
+    // "<asset root>/<rel>"
+    static std::string Rooted( const char* rel )
+    {
+        std::string p = s_asset_root;
+        p += '/';
+        p += rel;
+        return p;
+    }
+
     std::string PathFor( const Meta& m )
     {
         std::string p = "fonts/";
         p += m.canonical;
-        return p;
+        return Rooted( p.c_str() );
     }
 
     std::string PathForCanonical( const char* canonical )
     {
         std::string p = "fonts/";
         p += canonical;
-        return p;
+        return Rooted( p.c_str() );
     }
 
     static void EnsureFontsDir()
     {
-        IMDW_MKDIR( "fonts" );
+        IMDW_MKDIR( Rooted( "fonts" ).c_str() );
         (void)errno; // ignore "already exists"
     }
 
@@ -276,9 +303,13 @@ namespace ImDwDownload
         const Meta& m = kFontMeta[index];
         namespace fs = std::filesystem;
 
-        char tmp_zip[128], extract_dir[128];
-        std::snprintf( tmp_zip, sizeof( tmp_zip ), "fonts/.tmp_%d.zip", index );
-        std::snprintf( extract_dir, sizeof( extract_dir ), "fonts/.tmp_%d_d", index );
+        char rel[128];
+        std::snprintf( rel, sizeof( rel ), "fonts/.tmp_%d.zip", index );
+        std::string tmp_zip_s = Rooted( rel );
+        std::snprintf( rel, sizeof( rel ), "fonts/.tmp_%d_d", index );
+        std::string extract_dir_s = Rooted( rel );
+        const char* tmp_zip     = tmp_zip_s.c_str();
+        const char* extract_dir = extract_dir_s.c_str();
 
         // Clean slate
         std::error_code ec;
@@ -456,29 +487,72 @@ namespace ImDwDownload
     }
 
     // --- UI ---
+    // Tooltip that also shows for a disabled control -- the whole point here is to
+    // explain WHY a button is greyed out.
+    static void DisabledTooltip( const char* fmt, ... )
+    {
+        if ( !ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenDisabled ) ) return;
+        va_list args;
+        va_start( args, fmt );
+        ImGui::BeginTooltip();
+        ImGui::TextV( fmt, args );
+        ImGui::EndTooltip();
+        va_end( args );
+    }
+
     void DrawDownloadAllButton()
     {
         InitStatusArray();
         int done = GetDoneCount();
         int pend = GetPendingCount();
         int total = kFontMetaCount;
+        int unmatched = 0;
+        for ( int i = 0; i < kFontMetaCount; ++i )
+            if ( !kFontMeta[i].url ) ++unmatched;
+        int fetchable = total - done - unmatched - pend;
 
         ImGui::PushID( "##DwDlAll" );
-        bool any_pending = pend > 0;
-        if ( any_pending )
+        if ( pend > 0 )
         {
             ImGui::BeginDisabled();
-            ImGui::Button( "Download all fonts" );
+            ImGui::Button( "Downloading...###dlall" );
             ImGui::EndDisabled();
+            DisabledTooltip( "%d font(s) still queued or downloading.", pend );
+        }
+        else if ( fetchable <= 0 )
+        {
+            // Everything that CAN be fetched already is. Say so on the button
+            // instead of leaving a bare greyed control with no explanation.
+            ImGui::BeginDisabled();
+            ImGui::Button( "All fonts present###dlall" );
+            ImGui::EndDisabled();
+            DisabledTooltip( "Nothing to download: %d of %d fonts are already in\n"
+                             "%s.\n\n"
+                             "Delete a font from that folder and press Re-check to\n"
+                             "download it again.",
+                             done, total, PathForCanonical( "" ).c_str() );
         }
         else
         {
-            if ( ImGui::Button( "Download all fonts" ) ) StartDownloadAll();
+            if ( ImGui::Button( "Download all fonts###dlall" ) ) StartDownloadAll();
+            DisabledTooltip( "Fetches the %d missing font(s) into\n%s",
+                             fetchable, PathForCanonical( "" ).c_str() );
         }
+
+        ImGui::SameLine();
+        if ( ImGui::SmallButton( "Re-check" ) ) RefreshStatuses();
+        DisabledTooltip( "Re-scan the fonts folder. Use this after deleting a font\n"
+                         "so its Download button becomes available again." );
+
         ImGui::SameLine();
         ImGui::Text( "(%d / %d ready%s)",
             done, total,
             pend > 0 ? ", downloading..." : "" );
+        if ( unmatched > 0 )
+        {
+            ImGui::SameLine();
+            ImGui::TextDisabled( "(%d have no download URL)", unmatched );
+        }
         ImGui::PopID();
     }
 
@@ -497,31 +571,49 @@ namespace ImDwDownload
         }
         if ( total == 0 ) return false;
 
-        char label[96];
-        std::snprintf( label, sizeof( label ), "Download %s (%d/%d)###dl_%s",
-            category, done, total, category );
+        int fetchable = total - done - unmatched - pend;
 
+        char label[128];
         ImGui::PushID( category );
         bool clicked = false;
-        bool disabled = ( done + unmatched >= total ) || ( pend > 0 );
-        if ( disabled )
+
+        if ( pend > 0 )
         {
+            std::snprintf( label, sizeof( label ), "%s: downloading...###dl_%s", category, category );
             ImGui::BeginDisabled();
             ImGui::SmallButton( label );
             ImGui::EndDisabled();
+            DisabledTooltip( "%d of %d still queued or downloading.", pend, total );
+        }
+        else if ( fetchable <= 0 )
+        {
+            // Complete. Label it as such rather than showing a greyed
+            // "Download ... (9/9)", which reads like the button is broken.
+            std::snprintf( label, sizeof( label ), "%s ready (%d/%d)###dl_%s",
+                category, done, total, category );
+            ImGui::BeginDisabled();
+            ImGui::SmallButton( label );
+            ImGui::EndDisabled();
+            DisabledTooltip( "All %d font(s) in \"%s\" are already in\n%s.\n\n"
+                             "Delete one and press Re-check to fetch it again.",
+                             total, category, PathForCanonical( "" ).c_str() );
         }
         else
         {
+            std::snprintf( label, sizeof( label ), "Download %s (%d/%d)###dl_%s",
+                category, done, total, category );
             if ( ImGui::SmallButton( label ) )
             {
                 clicked = true;
                 StartDownloadCategory( category );
             }
+            DisabledTooltip( "Fetches the %d missing font(s) of \"%s\".", fetchable, category );
         }
+
         if ( unmatched > 0 )
         {
             ImGui::SameLine();
-            ImGui::TextDisabled( "(%d unmatched)", unmatched );
+            ImGui::TextDisabled( "(%d no URL)", unmatched );
         }
         ImGui::PopID();
         return clicked;

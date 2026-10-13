@@ -1,16 +1,15 @@
 #version 450
-#extension GL_EXT_samplerless_texture_functions : require
 layout(row_major) uniform;
 layout(row_major) buffer;
 
 #line 53 0
 layout(binding = 1)
-uniform texture2D bandTexture_0;
+uniform sampler2D bandTexture_0;
 
 
 #line 48
 layout(binding = 0)
-uniform texture2D curveTexture_0;
+uniform sampler2D curveTexture_0;
 
 
 #line 265

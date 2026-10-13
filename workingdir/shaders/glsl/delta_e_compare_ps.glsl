@@ -4,15 +4,12 @@ layout(row_major) buffer;
 
 #line 22 0
 layout(binding = 3)
-uniform texture2D texture0_0;
+uniform sampler2D texture0_0;
 
 
 #line 21
-layout(binding = 2)
-uniform sampler sampler0_0;
-
 layout(binding = 5)
-uniform texture2D texture1_0;
+uniform sampler2D texture1_0;
 
 
 #line 23
@@ -222,8 +219,8 @@ in vec2 input_uv_0;
 
 void main()
 {
-    vec3 a_srgb_0 = (texture(sampler2D(texture0_0,sampler0_0), (input_uv_0))).xyz;
-    vec3 b_srgb_0 = (texture(sampler2D(texture1_0,sampler1_0), (input_uv_0))).xyz;
+    vec3 a_srgb_0 = (texture(texture0_0, (input_uv_0))).xyz;
+    vec3 b_srgb_0 = (texture(texture1_0, (input_uv_0))).xyz;
     vec3 a_lin_0 = srgb_to_linear_0(a_srgb_0);
     vec3 b_lin_0 = srgb_to_linear_0(b_srgb_0);
 

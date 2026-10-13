@@ -1390,7 +1390,7 @@ static void RenderBox(ImDrawList* dl, LaTeXBox* box, ImFont* mathFont, float fon
 		// Boxed: draw rectangle
 		if (box->delimRight == (ImWchar)0xFFFF) {
 			float thick = ImMax(1.5f, fontSize * box->sizeFactor * 0.05f);
-			dl->AddRect(ImVec2(px, py - box->height), ImVec2(px + box->width, py + box->depth), col, 0, 0, thick);
+			dl->AddRect(ImVec2(px, py - box->height), ImVec2(px + box->width, py + box->depth), col, 0, thick, 0);
 		}
 		// Cancel: diagonal strikethrough
 		if (box->delimRight == (ImWchar)0xFFFD) {
@@ -1580,7 +1580,7 @@ static void DebugDrawBox(ImDrawList* dl, LaTeXBox* box, float fontSize, float x,
 		ImVec2 tl(px, py - box->height);
 		ImVec2 br(px + box->width, py + box->depth);
 		dl->AddRectFilled(tl, br, kDbgColors[ci]);
-		dl->AddRect(tl, br, kDbgOutlines[ci], 0, 0, 1.0f);
+		dl->AddRect(tl, br, kDbgOutlines[ci], 0, 1.0f, 0);
 		// Baseline tick
 		dl->AddLine(ImVec2(px, py), ImVec2(px + box->width, py), IM_COL32(255, 255, 0, 120), 1.0f);
 		(*colorIdx)++;
@@ -1602,7 +1602,7 @@ static void DebugDrawBox(ImDrawList* dl, LaTeXBox* box, float fontSize, float x,
 		float sz = fontSize * box->sizeFactor;
 		float axisY = py - sz * 0.25f;
 		dl->AddRect(ImVec2(px, py - box->height), ImVec2(px + box->width, py + box->depth),
-			IM_COL32(255, 128, 0, 150), 0, 0, 1.0f);
+			IM_COL32(255, 128, 0, 150), 0, 1.0f, 0);
 		// Axis line
 		dl->AddLine(ImVec2(px, axisY), ImVec2(px + box->width, axisY), IM_COL32(255, 128, 0, 80), 1.0f);
 		for (int i = 0; i < box->children.Size; i++)
@@ -1611,7 +1611,7 @@ static void DebugDrawBox(ImDrawList* dl, LaTeXBox* box, float fontSize, float x,
 	}
 	case LaTeXBox_Sqrt: {
 		dl->AddRect(ImVec2(px, py - box->height), ImVec2(px + box->width, py + box->depth),
-			IM_COL32(0, 200, 200, 150), 0, 0, 1.0f);
+			IM_COL32(0, 200, 200, 150), 0, 1.0f, 0);
 		for (int i = 0; i < box->children.Size; i++)
 			DebugDrawBox(dl, box->children[i], fontSize, px, py, colorIdx);
 		if (box->base) DebugDrawBox(dl, box->base, fontSize, px, py, colorIdx);
@@ -1619,14 +1619,14 @@ static void DebugDrawBox(ImDrawList* dl, LaTeXBox* box, float fontSize, float x,
 	}
 	case LaTeXBox_Matrix: {
 		dl->AddRect(ImVec2(px, py - box->height), ImVec2(px + box->width, py + box->depth),
-			IM_COL32(200, 100, 200, 150), 0, 0, 1.0f);
+			IM_COL32(200, 100, 200, 150), 0, 1.0f, 0);
 		for (int i = 0; i < box->children.Size; i++)
 			DebugDrawBox(dl, box->children[i], fontSize, px, py, colorIdx);
 		break;
 	}
 	case LaTeXBox_VBox: {
 		dl->AddRect(ImVec2(px, py - box->height), ImVec2(px + box->width, py + box->depth),
-			IM_COL32(100, 200, 100, 150), 0, 0, 1.0f);
+			IM_COL32(100, 200, 100, 150), 0, 1.0f, 0);
 		for (int i = 0; i < box->children.Size; i++)
 			DebugDrawBox(dl, box->children[i], fontSize, px, py, colorIdx);
 		break;
@@ -1738,7 +1738,7 @@ void DrawLaTeXDebug(ImDrawList* pDrawList, float font_size, ImVec2 pos, const ch
 
 	// Draw overall bbox outline
 	pDrawList->AddRect(ImVec2(pos.x, pos.y), ImVec2(pos.x + bb.z - bb.x, pos.y + bb.w - bb.y),
-		IM_COL32(255, 255, 255, 200), 0, 0, 1.5f);
+		IM_COL32(255, 255, 255, 200), 0, 1.5f, 0);
 
 	IM_DELETE(tree);
 }

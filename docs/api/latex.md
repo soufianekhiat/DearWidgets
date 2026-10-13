@@ -10,15 +10,53 @@ See [concepts/latex.md](../concepts/latex.md) for supported syntax and architect
 
 ## Setup
 
-Call `LoadLaTeXFont()` **during the font loading phase**, before `ImGui::CreateContext()`:
+`LoadLaTeXFont()` calls `ImGui::GetIO().Fonts->AddFontFromFileTTF(...)`, so it
+needs a **live ImGui context** and must run **during the font-loading phase** --
+that is, *after* `ImGui::CreateContext()` and *before* the font atlas is built
+and uploaded (`ImPlatform_InitGfx()`, or whatever your backend's equivalent is).
 
 ```cpp
-ImWidgets::SetFeatures(ImWidgetsFeatures_LaTeX);
-ImWidgets::LoadLaTeXFont();           // loads Latin Modern Math
-// ... add other fonts ...
-ImGui::CreateContext();
-ImWidgetsContext* ctx = ImWidgets::CreateContext();
+ImPlatform_CreateWindow( "App", pos, w, h );
+ImPlatform_InitGfxAPI();
+ImPlatform_ShowWindow();
+
+ImGui::CreateContext();               // 1. ImGui context first
+// ... io.Fonts->AddFontFromFileTTF(...) for your own fonts ...
+ImWidgets::LoadLaTeXFont();           // 2. adds Latin Modern Math to the atlas
+
+ImPlatform_InitPlatform();
+ImPlatform_InitGfx();                 // 3. builds and uploads the font atlas
+
+ImWidgets::AddFeatures( ImWidgetsFeatures_LaTeX );
+ImWidgetsContext* ctx = ImWidgets::CreateContext();   // 4. compiles the shaders
+ImWidgets::SetCurrentContext( ctx );
 ```
+
+> Earlier revisions of this page said to call `LoadLaTeXFont()` *before*
+> `ImGui::CreateContext()`. That is wrong -- there is no font atlas to add to at
+> that point.
+
+### Where the font comes from
+
+The math font is **not compiled into the library**. `LoadLaTeXFont()` loads
+
+```
+latex_fonts/latinmodern-math.otf
+```
+
+as a path **relative to the process working directory**, using the Slug font
+loader (`ImFontConfig::FontLoader = GetSlugFontLoader()`) at 24 px with the
+math-relevant Unicode ranges (Greek, arrows, operators, Mathematical
+Alphanumeric Symbols, ...).
+
+The file ships in `workingdir/latex_fonts/`, so either run with `workingdir/` as
+the current directory or copy that folder next to your executable. If the file
+is missing, `LoadLaTeXFont()` silently leaves the math font null and every
+`DrawLaTeX` call renders nothing.
+
+Latin Modern Math is an **OTF** (CFF outlines), not a TTF, and is distributed
+under the GUST Font License -- see the Third-party components section of
+[README.md](../../README.md).
 
 ---
 
@@ -28,7 +66,9 @@ ImWidgetsContext* ctx = ImWidgets::CreateContext();
 ```cpp
 void LoadLaTeXFont();
 ```
-Loads the bundled Latin Modern Math TTF into the ImGui font atlas. Must be called before `ImGui::CreateContext()`.
+Loads `latex_fonts/latinmodern-math.otf` into the ImGui font atlas. Idempotent:
+a second call is a no-op. Must be called **after** `ImGui::CreateContext()` and
+**before** the atlas is built.
 
 ---
 
@@ -84,13 +124,13 @@ void TesselateLaTeX(float font_size, const char* latex, ImVec2 pos,
 Tessellates a LaTeX expression into an `ImWidgetsShape` (triangle mesh). Use with gradient or image fill functions:
 
 ```cpp
+ImVec2 sz = ImWidgets::CalcLaTeXSize( 24.0f, "E = mc^2" );
+
 ImWidgetsShape shape;
-ImWidgets::TesselateLaTeX(24.0f, "E = mc^2", pos, shape);
-ImWidgets::DrawLinearGradientText(dl, nullptr, 0, pos, "E = mc^2",
-    pos, pos + sz, col0, col1);
-// Or directly:
-ImWidgets::ShapeSRGBLinearGradient(shape, pos, pos + sz, col0, col1);
-ImWidgets::DrawShape(dl, shape);
+ImWidgets::TesselateLaTeX( 24.0f, "E = mc^2", pos, shape );
+ImWidgets::ShapeLinearGradient( shape, pos, pos + sz, col0, col1,
+                                ImWidgetsGradientInterp_OkLab );
+ImWidgets::DrawShape( dl, shape );
 ```
 
 ---

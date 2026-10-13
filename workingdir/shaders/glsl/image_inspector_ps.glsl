@@ -1,5 +1,4 @@
 #version 450
-#extension GL_EXT_samplerless_texture_functions : require
 #extension GL_EXT_control_flow_attributes : require
 layout(row_major) uniform;
 layout(row_major) buffer;
@@ -54,7 +53,7 @@ layout(std140) uniform block_SLANG_ParameterGroup_ImageInspectorParams_std140_0
 
 #line 73
 layout(binding = 3)
-uniform texture2D texture0_0;
+uniform sampler2D texture0_0;
 
 
 #line 188

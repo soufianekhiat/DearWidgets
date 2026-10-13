@@ -1,4 +1,4 @@
-// dear_widgets_slug.cpp -- Slug GPU font rendering: color fonts, gradients, ligatures, atlas baking.
+﻿// dear_widgets_slug.cpp -- Slug GPU font rendering: color fonts, gradients, ligatures, atlas baking.
 // Compiled as its own translation unit; resolved by the linker.
 
 // stb_rect_pack -- atlas packing (STATIC = all funcs private to this TU, no ODR conflict with dear_widgets.cpp)
@@ -2459,6 +2459,25 @@ namespace ImWidgets {
 		for (int i = 0; i < atlas->drawCacheTable.Size; i++)
 			if (atlas->drawCacheTable[i].key)
 				SlugDrawCacheEntryDestroy(atlas->drawCacheTable[i]);
+
+		// IM_DELETE runs ~SlugFontCache, which runs ~ImVector on each member --
+		// but ~ImVector is `{ if (Data) IM_FREE(Data); }` and destructs NO
+		// elements. Every NESTED ImVector is therefore invisible to it and must
+		// be freed by hand first (same ownership discipline as the rehash in
+		// SlugShapeCacheInsert, which clears the old inner vectors before
+		// replacing the table). Entries never touched are memset to zero, so
+		// their Data is null and clear() is a safe no-op.
+		for (int i = 0; i < atlas->bandHScratch.Size; i++)
+			atlas->bandHScratch[i].clear();
+		atlas->bandHScratch.clear();
+		for (int i = 0; i < atlas->bandVScratch.Size; i++)
+			atlas->bandVScratch[i].clear();
+		atlas->bandVScratch.clear();
+		for (int i = 0; i < atlas->shapeCacheTable.Size; i++)
+			atlas->shapeCacheTable[i].glyphs.clear();
+		atlas->shapeCacheTable.clear();
+		atlas->shapeCacheCount = 0;
+
 		IM_DELETE(atlas);
 	}
 
@@ -2525,7 +2544,7 @@ namespace ImWidgets {
 				for (int i = 0; i < d->debugQuadCount; i++)
 				{
 					const ImVec2* q = d->debugQuads + i * 4; // TL, TR, BR, BL
-					overlay->AddPolyline(q, 4, IM_COL32(255, 255, 0, 255), ImDrawFlags_Closed, 1.0f);
+					overlay->AddPolyline(q, 4, IM_COL32(255, 255, 0, 255), 1.0f, ImDrawFlags_Closed);
 				}
 			}
 			overlay->Flags = backup;
@@ -3306,7 +3325,7 @@ namespace ImWidgets {
 		float fillColor0[4];   // gradient start color (or image tint)
 		float fillColor1[4];   // gradient end color (unused for image)
 		float fillBBox[4];     // (reserved -- bbox from vertex color)
-		float fillGrad[4];     // x=type (0=linear,1=radial,2=diamond,3=image), y=colorSpace (0-4), z,w=0
+		float fillGrad[4];     // x=type (0=linear,1=radial,2=diamond,3=image), y=interp (0-4), z,w=0
 		float fillUVStart[4];  // gradient UV start (or image uv_offset)
 		float fillUVEnd[4];    // gradient UV end (or image uv_scale)
 	};
@@ -3355,7 +3374,7 @@ namespace ImWidgets {
 	static void DrawGPUGradientText_Impl(ImDrawList* pDrawList, ImFont* font, float font_size,
 	    ImVec2 pos, const char* text, int gradType,
 	    ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1,
-	    const char* text_end, bool perChar = false, int colorSpace = 0)
+	    const char* text_end, bool perChar = false, int interp = 0)
 	{
 		if (!pDrawList || !gs_pContext || !text || text == text_end) return;
 		if (!gs_pContext->slugFillShader.program) return;
@@ -3370,7 +3389,7 @@ namespace ImWidgets {
 		U32toF4(col0, &cbParams.fillColor0[0], &cbParams.fillColor0[1], &cbParams.fillColor0[2], &cbParams.fillColor0[3]);
 		U32toF4(col1, &cbParams.fillColor1[0], &cbParams.fillColor1[1], &cbParams.fillColor1[2], &cbParams.fillColor1[3]);
 		cbParams.fillGrad[0] = (float)gradType;
-		cbParams.fillGrad[1] = (float)colorSpace;
+		cbParams.fillGrad[1] = (float)interp;
 		cbParams.fillUVStart[0] = uv_start.x; cbParams.fillUVStart[1] = uv_start.y;
 		cbParams.fillUVEnd[0] = uv_end.x; cbParams.fillUVEnd[1] = uv_end.y;
 
@@ -3695,7 +3714,7 @@ namespace ImWidgets {
 			cbd->params     = cbParams;
 			cbd->fillTex    = tex;
 			pDrawList->AddCallback(SlugFillRawDraw, cbd);
-			pDrawList->AddCallback(ImDrawCallback_ResetRenderState, NULL);
+			pDrawList->AddCallback(ImGui::GetPlatformIO().DrawCallback_ResetRenderState, NULL);
 
 			SlugVBIBPair pair;
 			pair.vb = vb; pair.ib = ib;
@@ -3734,24 +3753,24 @@ namespace ImWidgets {
 	}
 
 	void DrawLinearGradientTextGPU(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
-	    const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end, bool perChar, int colorSpace)
+	    const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end, bool perChar, ImWidgetsGradientInterp interp)
 	{
 		font_size = SlugLpToPx(font_size);
-		DrawGPUGradientText_Impl(pDrawList, font, font_size, pos, text, 0/*linear*/, uv_start, uv_end, col0, col1, text_end, perChar, colorSpace);
+		DrawGPUGradientText_Impl(pDrawList, font, font_size, pos, text, 0/*linear*/, uv_start, uv_end, col0, col1, text_end, perChar, interp);
 	}
 
 	void DrawRadialGradientTextGPU(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
-	    const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end, bool perChar, int colorSpace)
+	    const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end, bool perChar, ImWidgetsGradientInterp interp)
 	{
 		font_size = SlugLpToPx(font_size);
-		DrawGPUGradientText_Impl(pDrawList, font, font_size, pos, text, 1/*radial*/, uv_start, uv_end, col0, col1, text_end, perChar, colorSpace);
+		DrawGPUGradientText_Impl(pDrawList, font, font_size, pos, text, 1/*radial*/, uv_start, uv_end, col0, col1, text_end, perChar, interp);
 	}
 
 	void DrawDiamondGradientTextGPU(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
-	    const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end, bool perChar, int colorSpace)
+	    const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end, bool perChar, ImWidgetsGradientInterp interp)
 	{
 		font_size = SlugLpToPx(font_size);
-		DrawGPUGradientText_Impl(pDrawList, font, font_size, pos, text, 2/*diamond*/, uv_start, uv_end, col0, col1, text_end, perChar, colorSpace);
+		DrawGPUGradientText_Impl(pDrawList, font, font_size, pos, text, 2/*diamond*/, uv_start, uv_end, col0, col1, text_end, perChar, interp);
 	}
 
 	void DrawImageTextGPU(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
@@ -3798,212 +3817,6 @@ namespace ImWidgets {
 		    cbParams, textures[0], textures, nTextures);
 	}
 
-	// ---- Linear gradient text -----------------------------------------------
-
-	static ImU32 LerpColor(ImU32 a, ImU32 b, float t)
-	{
-		float u = 1.0f - t;
-		int r = (int)(((a >>  0) & 0xFF) * u + ((b >>  0) & 0xFF) * t + 0.5f);
-		int g = (int)(((a >>  8) & 0xFF) * u + ((b >>  8) & 0xFF) * t + 0.5f);
-		int bv= (int)(((a >> 16) & 0xFF) * u + ((b >> 16) & 0xFF) * t + 0.5f);
-		int al= (int)(((a >> 24) & 0xFF) * u + ((b >> 24) & 0xFF) * t + 0.5f);
-		return ((ImU32)al << 24) | ((ImU32)bv << 16) | ((ImU32)g << 8) | (ImU32)r;
-	}
-
-	void DrawTextGradient(ImDrawList* pDrawList, ImFont* font, float font_size,
-	                       ImVec2 pos, ImU32 col_left, ImU32 col_right,
-	                       const char* text, const char* text_end)
-	{
-#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
-		if (!gs_pContext || !text) return;
-		if (!text_end) text_end = text + strlen(text);
-		if (text >= text_end) return;
-		if (!font)             font      = ImGui::GetFont();
-		if (font_size > 0.0f)  font_size = SlugLpToPx(font_size);
-		else                   font_size = ImGui::GetFontSize();
-
-		ImWidgetsSlugState* state = gs_pContext->slugState;
-		if (!state) state = gs_pContext->slugState = IM_NEW(ImWidgetsSlugState);
-
-		if (!gs_pContext->slugShader.program) return;
-
-		// Early clip-rect culling
-		{
-			ImVec4 cr = pDrawList->_CmdHeader.ClipRect;
-			float textTop = pos.y - font_size;
-			float textBot = pos.y + font_size * 0.5f;
-			if (textTop > cr.w || textBot < cr.y || pos.x > cr.z)
-				return;
-		}
-
-		SlugFontCache* atlas = SlugGetOrCreateAtlas(state, font);
-		if (!atlas) return;
-
-		// Build glyphs
-		bool anyNew = false;
-		const char* p = text;
-		while (p < text_end) {
-			unsigned int cp = 0;
-			p += ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
-			if (cp == 0) break;
-			if (!SlugFindGlyph(atlas, (ImWchar)cp)) {
-				SlugGlyphEntry e; SlugBuildGlyph(atlas, (ImWchar)cp, &e); anyNew = true;
-			}
-		}
-		if (anyNew || atlas->dirty) SlugUploadTextures(atlas);
-		if (!atlas->curveTexture || !atlas->bandTexture) return;
-
-		// Measure total width for gradient interpolation
-		float totalWidth = CalcTextSize_Impl(font, font_size, text, text_end).x;
-		if (totalWidth < 1e-5f) totalWidth = 1.0f;
-
-		const float sz    = font_size;
-		const float invSz = 1.0f / sz;
-		float penX = pos.x;
-		float startX = pos.x;
-
-		static const ImPlatform_VertexAttribute kSlugAttribs[] = {
-			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, pos), "POSITION" },
-			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, tex), "TEXCOORD" },
-			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, jac), "TEXCOORD" },
-			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, bnd), "TEXCOORD" },
-			{ ImPlatform_VertexFormat_Float4, offsetof(SlugVertex, col), "COLOR"    },
-		};
-
-		auto U32toF4 = [](ImU32 c, float* r, float* g, float* b, float* a) {
-			*r = (float)((c >>  0) & 0xFF) / 255.0f;
-			*g = (float)((c >>  8) & 0xFF) / 255.0f;
-			*b = (float)((c >> 16) & 0xFF) / 255.0f;
-			*a = (float)((c >> 24) & 0xFF) / 255.0f;
-		};
-
-		ImVector<SlugVertex> verts;
-		ImVector<ImU16>      idxs;
-
-		// Gradient EmitQuad: left vertices get colL, right vertices get colR
-		auto EmitQuadGrad = [&](ImVector<SlugVertex>& vBuf, ImVector<ImU16>& iBuf,
-		                        const SlugGlyphEntry* ge, float penX_, ImU32 colL, ImU32 colR)
-		{
-			float sL = penX_ + ge->minXEm * sz;
-			float sR = penX_ + ge->maxXEm * sz;
-			float sT = pos.y - ge->maxYEm * sz;
-			float sB = pos.y - ge->minYEm * sz;
-			float uL = ge->minXEm, uR = ge->maxXEm;
-			float uT = ge->maxYEm, uB = ge->minYEm;
-
-			unsigned int gz = (unsigned int)(ImU16)ge->bandTexX
-			                | ((unsigned int)(ImU16)ge->bandTexY << 16);
-			unsigned int gw = (unsigned int)(ge->bandMaxX & 0xFF)
-			                | ((unsigned int)(ge->bandMaxY & 0xFF) << 16);
-			float fgz, fgw;
-			memcpy(&fgz, &gz, 4);
-			memcpy(&fgw, &gw, 4);
-
-			float cLR, cLG, cLB, cLA, cRR, cRG, cRB, cRA;
-			U32toF4(colL, &cLR, &cLG, &cLB, &cLA);
-			U32toF4(colR, &cRR, &cRG, &cRB, &cRA);
-
-			ImU16 base = (ImU16)vBuf.Size;
-			SlugVertex v;
-			v.tex[2] = fgz; v.tex[3] = fgw;
-			v.jac[0] = invSz; v.jac[1] = 0.0f;
-			v.jac[2] = 0.0f;  v.jac[3] = -invSz;
-			v.bnd[0] = ge->bandScaleX;  v.bnd[1] = ge->bandScaleY;
-			v.bnd[2] = ge->bandOffsetX; v.bnd[3] = ge->bandOffsetY;
-
-			// TL (left color)
-			v.pos[0]=sL; v.pos[1]=sT; v.pos[2]=-1; v.pos[3]=-1; v.tex[0]=uL; v.tex[1]=uT;
-			v.col[0]=cLR; v.col[1]=cLG; v.col[2]=cLB; v.col[3]=cLA; vBuf.push_back(v);
-			// TR (right color)
-			v.pos[0]=sR; v.pos[1]=sT; v.pos[2]=+1; v.pos[3]=-1; v.tex[0]=uR; v.tex[1]=uT;
-			v.col[0]=cRR; v.col[1]=cRG; v.col[2]=cRB; v.col[3]=cRA; vBuf.push_back(v);
-			// BR (right color)
-			v.pos[0]=sR; v.pos[1]=sB; v.pos[2]=+1; v.pos[3]=+1; v.tex[0]=uR; v.tex[1]=uB;
-			v.col[0]=cRR; v.col[1]=cRG; v.col[2]=cRB; v.col[3]=cRA; vBuf.push_back(v);
-			// BL (left color)
-			v.pos[0]=sL; v.pos[1]=sB; v.pos[2]=-1; v.pos[3]=+1; v.tex[0]=uL; v.tex[1]=uB;
-			v.col[0]=cLR; v.col[1]=cLG; v.col[2]=cLB; v.col[3]=cLA; vBuf.push_back(v);
-
-			iBuf.push_back(base+0); iBuf.push_back(base+1); iBuf.push_back(base+2);
-			iBuf.push_back(base+0); iBuf.push_back(base+2); iBuf.push_back(base+3);
-		};
-
-		p = text;
-		while (p < text_end) {
-			unsigned int cp = 0;
-			p += ImTextCharFromUtf8((unsigned int*)&cp, p, text_end);
-			if (cp == 0) break;
-			SlugGlyphEntry* ge = SlugFindGlyph(atlas, (ImWchar)cp);
-			if (!ge) continue;
-			float advance = ge->advanceEm * sz;
-
-			// Gradient t at left and right edges of this glyph
-			float tL = (penX + ge->minXEm * sz - startX) / totalWidth;
-			float tR = (penX + ge->maxXEm * sz - startX) / totalWidth;
-			tL = ImClamp(tL, 0.0f, 1.0f);
-			tR = ImClamp(tR, 0.0f, 1.0f);
-			ImU32 colL = LerpColor(col_left, col_right, tL);
-			ImU32 colR = LerpColor(col_left, col_right, tR);
-
-			if (ge->colorLayerCount > 0) {
-				for (int li = 0; li < ge->colorLayerCount; li++) {
-					const SlugColorLayer& cl = atlas->colorLayers[ge->colorLayerStart + li];
-					const SlugGlyphEntry& le = atlas->glyphs[cl.glyphEntryIdx];
-					if ((le.maxXEm - le.minXEm) < 1e-5f || (le.maxYEm - le.minYEm) < 1e-5f) continue;
-					// For color layers, modulate the layer color with the gradient
-					ImU32 layerCol = (cl.color != 0) ? cl.color : IM_COL32(255,255,255,255);
-					// Blend gradient with layer color (multiply RGB, keep layer alpha)
-					auto ModColor = [](ImU32 layer, ImU32 grad) -> ImU32 {
-						int r = (((layer>> 0)&0xFF) * ((grad>> 0)&0xFF) + 127) / 255;
-						int g = (((layer>> 8)&0xFF) * ((grad>> 8)&0xFF) + 127) / 255;
-						int b = (((layer>>16)&0xFF) * ((grad>>16)&0xFF) + 127) / 255;
-						int a = ((layer>>24)&0xFF);
-						return ((ImU32)a<<24)|((ImU32)b<<16)|((ImU32)g<<8)|(ImU32)r;
-					};
-					EmitQuadGrad(verts, idxs, &le, penX, ModColor(layerCol, colL), ModColor(layerCol, colR));
-				}
-			} else if ((ge->maxXEm - ge->minXEm) >= 1e-5f && (ge->maxYEm - ge->minYEm) >= 1e-5f) {
-				EmitQuadGrad(verts, idxs, ge, penX, colL, colR);
-			}
-			penX += advance;
-		}
-
-		if (verts.empty()) return;
-
-		auto IssueDrawCall = [&](ImVector<SlugVertex>& vBuf, ImVector<ImU16>& iBuf,
-		                         ImPlatform_ShaderProgram prog)
-		{
-			if (vBuf.empty()) return;
-			ImPlatform_VertexBufferDesc vbDesc = {};
-			vbDesc.vertex_count  = (unsigned int)vBuf.Size;
-			vbDesc.vertex_stride = sizeof(SlugVertex);
-			vbDesc.usage         = ImPlatform_BufferUsage_Stream;
-			vbDesc.attributes    = kSlugAttribs;
-			vbDesc.attribute_count = 5;
-			ImPlatform_IndexBufferDesc ibDesc = {};
-			ibDesc.index_count = (unsigned int)iBuf.Size;
-			ibDesc.format      = ImPlatform_IndexFormat_UInt16;
-			ibDesc.usage       = ImPlatform_BufferUsage_Stream;
-			ImPlatform_VertexBuffer vb = ImPlatform_CreateVertexBuffer(vBuf.Data, &vbDesc);
-			ImPlatform_IndexBuffer  ib = ImPlatform_CreateIndexBuffer(iBuf.Data, &ibDesc);
-			SlugDrawCBData* cbd = (SlugDrawCBData*)IM_ALLOC(sizeof(SlugDrawCBData));
-			cbd->program      = prog;
-			cbd->vb           = vb;
-			cbd->ib           = ib;
-			cbd->atlas         = atlas;
-			cbd->indexCount   = (unsigned int)iBuf.Size;
-			ImPlatform_BeginCustomShader(pDrawList, prog);
-			pDrawList->AddCallback(SlugRawDraw, cbd);
-			ImPlatform_EndCustomShader(pDrawList);
-		};
-
-		// All gradient glyphs use the color shader (preserves RGB, feathers alpha)
-		IssueDrawCall(verts, idxs, gs_pContext->slugColorShader.program);
-#else
-		(void)pDrawList; (void)font; (void)font_size; (void)pos;
-		(void)col_left; (void)col_right; (void)text; (void)text_end;
-#endif
-	}
 
 	// ---- Debug visualization: draw Slug curve outlines ----------------------
 
@@ -4186,7 +3999,7 @@ namespace ImWidgets {
 				if (stbtt_GetGlyphBox(&atlas->stbFont, gi, &bx0, &by0, &bx1, &by1)) {
 					float sc = atlas->emScale;
 					pDrawList->AddRect(Em2Scr(bx0*sc, by0*sc), Em2Scr(bx1*sc, by1*sc),
-						kPalette[glyphColorIdx % kPaletteN], 0.0f, 0, 1.0f);
+						kPalette[glyphColorIdx % kPaletteN], 0.0f, 1.0f, 0);
 				}
 			}
 
@@ -4243,7 +4056,7 @@ namespace ImWidgets {
 					ImU32 fillCol = (c & 0x00FFFFFF) | 0x60000000; // 37% alpha
 					ImU32 lineCol = (c & 0x00FFFFFF) | 0xC0000000; // 75% alpha
 					pDrawList->AddRectFilled(ImVec2(sL, sT), ImVec2(sR, sB), fillCol);
-					pDrawList->AddRect(ImVec2(sL, sT), ImVec2(sR, sB), lineCol, 0.0f, 0, 1.0f);
+					pDrawList->AddRect(ImVec2(sL, sT), ImVec2(sR, sB), lineCol, 0.0f, 1.0f, 0);
 					// Layer index label
 					char lbl[8]; ImFormatString(lbl, 8, "%d", li);
 					pDrawList->AddText(ImVec2(sL + 1, sT + 1), IM_COL32(255,255,255,200), lbl);
@@ -4255,7 +4068,7 @@ namespace ImWidgets {
 				float sR = penX + ge->maxXEm * sz;
 				float sT = pos.y - ge->maxYEm * sz;
 				float sB = pos.y - ge->minYEm * sz;
-				pDrawList->AddRect(ImVec2(sL, sT), ImVec2(sR, sB), IM_COL32(200,200,200,120), 0.0f, 0, 1.0f);
+				pDrawList->AddRect(ImVec2(sL, sT), ImVec2(sR, sB), IM_COL32(200,200,200,120), 0.0f, 1.0f, 0);
 			}
 
 			penX += advance;
@@ -5295,412 +5108,6 @@ namespace ImWidgets {
 		}
 	}
 
-	// Legacy flatten helper (kept for ExtractTextPoly compatibility)
-	static void FlattenQuadBezier(ImVector<ImVec2>& pts, ImVec2 p0, ImVec2 p1, ImVec2 p2, float tol)
-	{
-		float dx = p2.x - p0.x, dy = p2.y - p0.y;
-		float d = fabsf((p1.x - p2.x) * dy - (p1.y - p2.y) * dx);
-		if (d * d < tol * (dx * dx + dy * dy)) {
-			pts.push_back(p2);
-		} else {
-			ImVec2 m01((p0.x + p1.x) * 0.5f, (p0.y + p1.y) * 0.5f);
-			ImVec2 m12((p1.x + p2.x) * 0.5f, (p1.y + p2.y) * 0.5f);
-			ImVec2 mid((m01.x + m12.x) * 0.5f, (m01.y + m12.y) * 0.5f);
-			FlattenQuadBezier(pts, p0, m01, mid, tol);
-			FlattenQuadBezier(pts, mid, m12, p2, tol);
-		}
-	}
-
-	#if 0 // === OLD TYPOGRAPHY CODE -- replaced by QBez pipeline above ===
-	static bool PointInPolygon_OLD(const ImVec2* pts, int n, ImVec2 p)
-	{
-		bool inside = false;
-		for (int i = 0, j = n - 1; i < n; j = i++) {
-			if ((pts[i].y > p.y) != (pts[j].y > p.y) &&
-				p.x < (pts[j].x - pts[i].x) * (p.y - pts[i].y) / (pts[j].y - pts[i].y) + pts[i].x)
-				inside = !inside;
-		}
-		return inside;
-	}
-
-	// Extract text contour points as a flat array suitable for DrawShapeWithHole/DrawImageShapeWithHole.
-	// Output: CW outer contours + CCW holes, concatenated. Each contour implicitly closed.
-	// Also outputs the bounding box and total point count.
-	static void ExtractTextPoly(ImFont* font, float fontSize, const char* text, const char* text_end,
-	                            ImVec2 offset, ImVector<ImVec2>& outPoly, ImRect& outBB, float tess_tol)
-	{
-		outPoly.resize(0);
-		outBB = ImRect(FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX);
-
-		if (!gs_pContext || !gs_pContext->slugState) return;
-		if (!text_end) text_end = text + strlen(text);
-		if (text >= text_end) return;
-		if (!font) font = ImGui::GetFont();
-		if (fontSize <= 0.0f) fontSize = ImGui::GetFontSize();
-
-		SlugFontCache* atlas = SlugGetOrCreateAtlas(gs_pContext->slugState, font);
-		if (!atlas) return;
-		float sz = fontSize, sc = atlas->emScale;
-		float tol = (tess_tol > 0.0f) ? tess_tol : 0.5f;
-
-		// Shape text
-		struct ShGlyph { int glyphID; float advX, offX, offY; };
-		ImVector<ShGlyph> shaped;
-#if IM_SUPPORT_LIGATURE
-		if (DwShaper_IsReady(atlas->shaperCtx)) {
-			DwShaper_Begin(atlas->shaperCtx);
-			DwShaper_PushUtf8(atlas->shaperCtx, text, (int)(text_end - text));
-			DwShaper_End(atlas->shaperCtx);
-			DwShaperRun run;
-			while (DwShaper_NextRun(atlas->shaperCtx, &run)) {
-				DwShaperGlyph glyph;
-				while (DwShaper_NextGlyph(&run, &glyph)) {
-					ShGlyph sg = { (int)glyph.GlyphId, (float)glyph.AdvanceX * sc, (float)glyph.OffsetX * sc, (float)glyph.OffsetY * sc };
-					shaped.push_back(sg);
-				}
-			}
-		} else
-#endif
-		{
-			const char* p = text;
-			while (p < text_end) {
-				unsigned int cp = 0;
-				p += ImTextCharFromUtf8(&cp, p, text_end);
-				if (cp == 0) break;
-				int gi = stbtt_FindGlyphIndex(&atlas->stbFont, (int)cp);
-				int adv, lsb; stbtt_GetGlyphHMetrics(&atlas->stbFont, gi, &adv, &lsb);
-				ShGlyph sg = { gi, (float)adv * sc, 0, 0 };
-				shaped.push_back(sg);
-			}
-		}
-
-		float penX = 0;
-		for (int gi = 0; gi < shaped.Size; gi++)
-		{
-			const ShGlyph& sg = shaped[gi];
-			float gx = offset.x + penX + sg.offX * sz;
-			float gy = offset.y - sg.offY * sz;
-
-			stbtt_vertex* verts = NULL;
-			int nVerts = stbtt_GetGlyphShape(&atlas->stbFont, sg.glyphID, &verts);
-			if (nVerts <= 0 || !verts) { penX += sg.advX * sz; continue; }
-
-			// Flatten contours
-			struct Contour { ImVector<ImVec2> pts; float area; };
-			ImVector<Contour> contours;
-			Contour* cur = NULL;
-			for (int vi = 0; vi < nVerts; vi++) {
-				stbtt_vertex& v = verts[vi];
-				float vx = gx + (float)v.x * sc * sz;
-				float vy = gy - (float)v.y * sc * sz;
-				if (v.type == STBTT_vmove) {
-					contours.push_back(Contour()); cur = &contours.back();
-					cur->pts.push_back(ImVec2(vx, vy));
-				} else if (v.type == STBTT_vline && cur) {
-					cur->pts.push_back(ImVec2(vx, vy));
-				} else if (v.type == STBTT_vcurve && cur) {
-					ImVec2 p0 = cur->pts.back();
-					FlattenQuadBezier(cur->pts, p0, ImVec2(gx+(float)v.cx*sc*sz, gy-(float)v.cy*sc*sz), ImVec2(vx,vy), tol);
-				} else if (v.type == STBTT_vcubic && cur) {
-					ImVec2 p0=cur->pts.back(), p1(gx+(float)v.cx*sc*sz,gy-(float)v.cy*sc*sz);
-					ImVec2 p2(gx+(float)v.cx1*sc*sz,gy-(float)v.cy1*sc*sz), p3(vx,vy);
-					ImVec2 m((p1.x+p2.x)*0.5f,(p1.y+p2.y)*0.5f);
-					ImVec2 q1((p0.x+p1.x)*0.5f,(p0.y+p1.y)*0.5f), q2((p1.x+m.x)*0.5f,(p1.y+m.y)*0.5f);
-					ImVec2 mid((q1.x+q2.x)*0.5f,(q1.y+q2.y)*0.5f);
-					FlattenQuadBezier(cur->pts, p0, q1, mid, tol);
-					ImVec2 q3((m.x+p2.x)*0.5f,(m.y+p2.y)*0.5f), q4((p2.x+p3.x)*0.5f,(p2.y+p3.y)*0.5f);
-					ImVec2 mid2((q3.x+q4.x)*0.5f,(q3.y+q4.y)*0.5f);
-					FlattenQuadBezier(cur->pts, mid, q3, mid2, tol);
-					FlattenQuadBezier(cur->pts, mid2, q4, p3, tol);
-				}
-			}
-			stbtt_FreeShape(&atlas->stbFont, verts);
-
-			// Clean up: remove consecutive duplicates but KEEP the closing point
-			// (DrawShapeWithHole detects contour boundaries by last point == first point)
-			for (int ci = 0; ci < contours.Size; ci++) {
-				Contour& c = contours[ci];
-				// Remove interior consecutive duplicates
-				for (int pi = c.pts.Size-1; pi > 0; pi--) {
-					float dx2=c.pts[pi].x-c.pts[pi-1].x, dy2=c.pts[pi].y-c.pts[pi-1].y;
-					if (dx2*dx2+dy2*dy2 < 0.01f) c.pts.erase(c.pts.Data+pi);
-				}
-				// Ensure contour is explicitly closed (last point == first point)
-				if (c.pts.Size >= 3) {
-					float dx2=c.pts.back().x-c.pts[0].x, dy2=c.pts.back().y-c.pts[0].y;
-					if (dx2*dx2+dy2*dy2 > 0.01f)
-						c.pts.push_back(c.pts[0]); // close it
-				}
-				c.area = (c.pts.Size >= 3) ? PolygonSignedArea(c.pts.Data, c.pts.Size) : 0;
-			}
-
-			// Classify contours by containment and enforce winding for DrawShapeWithHole
-			// DrawShapeWithHole expects: CW outer + CCW holes, concatenated per glyph
-			ImVector<int> validCI;
-			for (int ci = 0; ci < contours.Size; ci++)
-				if (contours[ci].pts.Size >= 3 && fabsf(contours[ci].area) >= 0.1f)
-					validCI.push_back(ci);
-
-			// Sort by absolute area descending (outers first)
-			for (int i2 = 0; i2 < validCI.Size - 1; i2++)
-				for (int j2 = i2 + 1; j2 < validCI.Size; j2++)
-					if (fabsf(contours[validCI[j2]].area) > fabsf(contours[validCI[i2]].area))
-						ImSwap(validCI[i2], validCI[j2]);
-
-			// Classify holes by containment
-			ImVector<bool> isHoleMark;
-			isHoleMark.resize(contours.Size, false);
-			for (int vi2 = 1; vi2 < validCI.Size; vi2++) {
-				int ci2 = validCI[vi2];
-				for (int oi2 = 0; oi2 < vi2; oi2++) {
-					int outerCI2 = validCI[oi2];
-					if (!isHoleMark[outerCI2] && PointInPolygon(contours[outerCI2].pts.Data, contours[outerCI2].pts.Size, contours[ci2].pts[0])) {
-						isHoleMark[ci2] = true; break;
-					}
-				}
-			}
-
-			// Enforce winding: outers CW (positive area), holes CCW (negative area) in screen coords
-			for (int vi2 = 0; vi2 < validCI.Size; vi2++) {
-				Contour& c = contours[validCI[vi2]];
-				if (!isHoleMark[validCI[vi2]]) {
-					// Outer should be CW (positive area in screen coords)
-					if (c.area < 0)
-						for (int a2 = 0, b2 = c.pts.Size - 1; a2 < b2; a2++, b2--) ImSwap(c.pts[a2], c.pts[b2]);
-				} else {
-					// Hole should be CCW (negative area in screen coords)
-					if (c.area > 0)
-						for (int a2 = 0, b2 = c.pts.Size - 1; a2 < b2; a2++, b2--) ImSwap(c.pts[a2], c.pts[b2]);
-				}
-			}
-
-			// Append all contours: outers first, then holes
-			// Each contour is explicitly closed (last pt == first pt),
-			// which DrawShapeWithHole uses to detect contour boundaries.
-			for (int vi2 = 0; vi2 < validCI.Size; vi2++) {
-				if (isHoleMark[validCI[vi2]]) continue;
-				Contour& c = contours[validCI[vi2]];
-				for (int pi = 0; pi < c.pts.Size; pi++) { outPoly.push_back(c.pts[pi]); outBB.Add(c.pts[pi]); }
-			}
-			for (int vi2 = 0; vi2 < validCI.Size; vi2++) {
-				if (!isHoleMark[validCI[vi2]]) continue;
-				Contour& c = contours[validCI[vi2]];
-				for (int pi = 0; pi < c.pts.Size; pi++) { outPoly.push_back(c.pts[pi]); outBB.Add(c.pts[pi]); }
-			}
-
-			penX += sg.advX * sz;
-		}
-	}
-
-	// ---- Recursive hole-cutting triangulation ----
-
-	// Clip a polygon by a line (ax + by + c >= 0 side kept).
-	// Input: polygon pts (implicit closed). Output: clipped polygon.
-	// A single cut can produce 0, 1, or multiple pieces (stored separately in outPieces).
-	static void ClipPolyByLine(ImVector<ImVec2>& pts, float a, float b, float c, ImVector<ImVector<ImVec2>>& outPieces)
-	{
-		if (pts.Size < 3) return;
-		ImVector<ImVec2> current;
-		for (int i = 0; i < pts.Size; i++) {
-			int j = (i + 1) % pts.Size;
-			float di = a * pts[i].x + b * pts[i].y + c;
-			float dj = a * pts[j].x + b * pts[j].y + c;
-			bool iInside = di >= -0.01f;
-			bool jInside = dj >= -0.01f;
-			if (iInside) current.push_back(pts[i]);
-			if (iInside != jInside) {
-				float t = di / (di - dj);
-				ImVec2 inter(pts[i].x + t * (pts[j].x - pts[i].x), pts[i].y + t * (pts[j].y - pts[i].y));
-				current.push_back(inter);
-				if (iInside && current.Size >= 3) {
-					outPieces.push_back(ImVector<ImVec2>());
-					outPieces.back().swap(current);
-				}
-			}
-		}
-		if (current.Size >= 3) {
-			// If the polygon started inside, the first and last pieces are two halves
-			// of the same continuous piece (split by the loop boundary). Merge them.
-			if (outPieces.Size > 0) {
-				// Prepend the remaining 'current' points to the FIRST piece
-				ImVector<ImVec2>& first = outPieces[0];
-				ImVector<ImVec2> merged;
-				for (int k = 0; k < current.Size; k++) merged.push_back(current[k]);
-				for (int k = 0; k < first.Size; k++) merged.push_back(first[k]);
-				first.swap(merged);
-			} else {
-				outPieces.push_back(ImVector<ImVec2>());
-				outPieces.back().swap(current);
-			}
-		}
-	}
-
-	// Compute OBB of a polygon: returns center, main axis direction, and half-extents
-	static void ComputeOBB(ImVector<ImVec2>& pts, ImVec2& outCenter, ImVec2& outAxis, float& outHalfLen, float& outHalfWidth)
-	{
-		// Compute centroid
-		outCenter = ImVec2(0, 0);
-		for (int i = 0; i < pts.Size; i++) { outCenter.x += pts[i].x; outCenter.y += pts[i].y; }
-		outCenter.x /= pts.Size; outCenter.y /= pts.Size;
-
-		// Compute covariance matrix
-		float cxx = 0, cxy = 0, cyy = 0;
-		for (int i = 0; i < pts.Size; i++) {
-			float dx = pts[i].x - outCenter.x, dy = pts[i].y - outCenter.y;
-			cxx += dx * dx; cxy += dx * dy; cyy += dy * dy;
-		}
-
-		// Eigenvector of largest eigenvalue = main axis
-		float trace = cxx + cyy;
-		float det = cxx * cyy - cxy * cxy;
-		float disc = sqrtf(ImMax(trace * trace * 0.25f - det, 0.0f));
-		float lambda1 = trace * 0.5f + disc;
-
-		// Main axis eigenvector
-		float ax = cxy, ay = lambda1 - cxx;
-		float len = sqrtf(ax * ax + ay * ay);
-		if (len < 1e-6f) { ax = 1; ay = 0; } else { ax /= len; ay /= len; }
-		outAxis = ImVec2(ax, ay);
-
-		// Project all points to get half-extents
-		float minProj = FLT_MAX, maxProj = -FLT_MAX;
-		float minPerp = FLT_MAX, maxPerp = -FLT_MAX;
-		for (int i = 0; i < pts.Size; i++) {
-			float dx = pts[i].x - outCenter.x, dy = pts[i].y - outCenter.y;
-			float proj = dx * ax + dy * ay;
-			float perp = -dx * ay + dy * ax;
-			minProj = ImMin(minProj, proj); maxProj = ImMax(maxProj, proj);
-			minPerp = ImMin(minPerp, perp); maxPerp = ImMax(maxPerp, perp);
-		}
-		outHalfLen = (maxProj - minProj) * 0.5f;
-		outHalfWidth = (maxPerp - minPerp) * 0.5f;
-	}
-
-	// Add a simple polygon (no holes) to the output shape.
-	// Uses fan triangulation from vertex 0, which works correctly for convex polygons
-	// and reasonably well for mildly concave ones (the clipped pieces from CutAndTriangulate).
-	static void AddConcavePoly(ImVector<ImVec2>& pts, ImWidgetsShape& outShape, ImVec2 whiteUV)
-	{
-		if (pts.Size < 3) return;
-		int baseVtx = outShape.vertices.Size;
-		for (int pi = 0; pi < pts.Size; pi++) {
-			ImWidgetsVertex v; v.pos = pts[pi]; v.uv = whiteUV; v.col = IM_COL32_WHITE;
-			outShape.vertices.push_back(v);
-			outShape.bb.Add(v.pos);
-		}
-		// Fan from vertex 0
-		for (int pi = 1; pi < pts.Size - 1; pi++) {
-			ImWidgetsTriIdx tidx;
-			tidx.a = (ImDrawIdx)(baseVtx);
-			tidx.b = (ImDrawIdx)(baseVtx + pi);
-			tidx.c = (ImDrawIdx)(baseVtx + pi + 1);
-			outShape.triangles.push_back(tidx);
-		}
-	}
-
-	// Recursive: given an outer contour and its holes, cut along hole axes to eliminate holes,
-	// then triangulate the resulting hole-free pieces.
-	struct GlyphContour { ImVector<ImVec2> pts; float area; };
-
-	static void CutAndTriangulate(ImVector<ImVec2>& outerPts,
-	                              ImVector<GlyphContour*>& holes,
-	                              ImWidgetsShape& outShape, ImVec2 whiteUV, int depth)
-	{
-		if (depth > 10 || outerPts.Size < 3) return;
-
-		// Find holes that are inside this outer piece
-		ImVector<GlyphContour*> containedHoles;
-		for (int hi = 0; hi < holes.Size; hi++) {
-			if (holes[hi]->pts.Size < 3) continue;
-			if (PointInPolygon(outerPts.Data, outerPts.Size, holes[hi]->pts[0]))
-				containedHoles.push_back(holes[hi]);
-		}
-
-		if (containedHoles.Size == 0) {
-			// No holes -- triangulate directly
-			AddConcavePoly(outerPts, outShape, whiteUV);
-			return;
-		}
-
-		// Pick the largest hole to cut through
-		int bestHole = 0;
-		float bestArea = 0;
-		for (int hi = 0; hi < containedHoles.Size; hi++) {
-			float absArea = fabsf(containedHoles[hi]->area);
-			if (absArea > bestArea) { bestArea = absArea; bestHole = hi; }
-		}
-
-		// Compute OBB of the chosen hole
-		ImVec2 holeCenter, holeAxis;
-		float holeHalfLen, holeHalfWidth;
-		ComputeOBB(containedHoles[bestHole]->pts, holeCenter, holeAxis, holeHalfLen, holeHalfWidth);
-
-		// Cut line goes ALONG the longest axis of the hole, through the hole center.
-		// The cut line NORMAL is the SHORT axis (perpendicular to the longest).
-		// This splits the outer shape on either side of the hole.
-		ImVec2 cutNormal(-holeAxis.y, holeAxis.x); // short axis = perpendicular to longest
-		float lineC = -(cutNormal.x * holeCenter.x + cutNormal.y * holeCenter.y);
-
-		// Cut the outer polygon AND the chosen hole by the same line
-		ImVector<ImVector<ImVec2>> outerPos, outerNeg;
-		ClipPolyByLine(outerPts, cutNormal.x, cutNormal.y, lineC, outerPos);
-		ClipPolyByLine(outerPts, -cutNormal.x, -cutNormal.y, -lineC, outerNeg);
-
-		ImVector<ImVector<ImVec2>> holePos, holeNeg;
-		ClipPolyByLine(containedHoles[bestHole]->pts, cutNormal.x, cutNormal.y, lineC, holePos);
-		ClipPolyByLine(containedHoles[bestHole]->pts, -cutNormal.x, -cutNormal.y, -lineC, holeNeg);
-
-		// Bridge-cut: merge each clipped hole portion into its corresponding outer piece
-		// This creates the concave C-shape (outer half minus hole half)
-		auto BridgeHoleIntoPiece = [](ImVector<ImVec2>& piece, ImVector<ImVec2>& holePart) {
-			if (holePart.Size < 3 || piece.Size < 3) return;
-			// Ensure opposite winding
-			float pArea = 0, hArea2 = 0;
-			for (int i = 0, j = piece.Size-1; i < piece.Size; j=i++) pArea += (piece[j].x-piece[i].x)*(piece[j].y+piece[i].y);
-			for (int i = 0, j = holePart.Size-1; i < holePart.Size; j=i++) hArea2 += (holePart[j].x-holePart[i].x)*(holePart[j].y+holePart[i].y);
-			if ((pArea > 0) == (hArea2 > 0))
-				for (int a2=0, b2=holePart.Size-1; a2<b2; a2++,b2--) ImSwap(holePart[a2], holePart[b2]);
-			// Find closest pair of vertices for bridge
-			int hRIdx = 0;
-			for (int pi2 = 1; pi2 < holePart.Size; pi2++)
-				if (holePart[pi2].x > holePart[hRIdx].x) hRIdx = pi2;
-			int bestM = 0; float bestD2 = FLT_MAX;
-			for (int mi = 0; mi < piece.Size; mi++) {
-				float d = (piece[mi].x-holePart[hRIdx].x)*(piece[mi].x-holePart[hRIdx].x)
-				        + (piece[mi].y-holePart[hRIdx].y)*(piece[mi].y-holePart[hRIdx].y);
-				if (d < bestD2) { bestD2 = d; bestM = mi; }
-			}
-			ImVector<ImVec2> merged;
-			for (int mi = 0; mi <= bestM; mi++) merged.push_back(piece[mi]);
-			for (int hi2 = 0; hi2 <= holePart.Size; hi2++)
-				merged.push_back(holePart[(hRIdx + hi2) % holePart.Size]);
-			merged.push_back(piece[bestM]);
-			for (int mi = bestM+1; mi < piece.Size; mi++) merged.push_back(piece[mi]);
-			piece.swap(merged);
-		};
-
-		// Build remaining holes (excluding the one we cut through)
-		ImVector<GlyphContour*> remainingHoles;
-		for (int hi = 0; hi < holes.Size; hi++)
-			if (holes[hi] != containedHoles[bestHole])
-				remainingHoles.push_back(holes[hi]);
-
-		// Process positive side
-		for (int pi = 0; pi < outerPos.Size; pi++) {
-			if (outerPos[pi].Size < 3) continue;
-			for (int chi = 0; chi < holePos.Size; chi++)
-				BridgeHoleIntoPiece(outerPos[pi], holePos[chi]);
-			CutAndTriangulate(outerPos[pi], remainingHoles, outShape, whiteUV, depth + 1);
-		}
-		// Process negative side
-		for (int pi = 0; pi < outerNeg.Size; pi++) {
-			if (outerNeg[pi].Size < 3) continue;
-			for (int chi = 0; chi < holeNeg.Size; chi++)
-				BridgeHoleIntoPiece(outerNeg[pi], holeNeg[chi]);
-			CutAndTriangulate(outerNeg[pi], remainingHoles, outShape, whiteUV, depth + 1);
-		}
-	}
-	#endif // === END OLD TYPOGRAPHY CODE ===
 
 	// Reference pixel size for cached glyph tessellation.
 	// All cached positions are stored at this font size so CDT/flattening thresholds (~0.1px) work correctly.
@@ -6115,43 +5522,40 @@ namespace ImWidgets {
 
 	void DrawLinearGradientText(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
 	                            const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1,
-	                            pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space, const char* text_end, float tess_tol, int iterations)
+	                            ImWidgetsGradientInterp interp, const char* text_end, float tess_tol, int iterations)
 	{
 		font_size = SlugLpToPx(font_size);
 		{ ImVec4 cr = pDrawList->_CmdHeader.ClipRect; float tT = pos.y - font_size, tB = pos.y + font_size * 0.5f; if (tT > cr.w || tB < cr.y || pos.x > cr.z) return; }
 		ImWidgetsShape shape;
 		TesselateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
 		if (shape.triangles.Size == 0) return;
-		if (!space2sRGB) { space2sRGB = &ColorConvertsRGBtosRGB; sRGB2Space = &ColorConvertsRGBtosRGB; }
-		ShapeLinearGradientGeneric(shape, uv_start, uv_end, col0, col1, space2sRGB, sRGB2Space);
+		ShapeLinearGradient(shape, uv_start, uv_end, col0, col1, interp);
 		DrawShape(pDrawList, shape);
 	}
 
 	void DrawRadialGradientText(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
 	                            const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1,
-	                            pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space, const char* text_end, float tess_tol, int iterations)
+	                            ImWidgetsGradientInterp interp, const char* text_end, float tess_tol, int iterations)
 	{
 		font_size = SlugLpToPx(font_size);
 		{ ImVec4 cr = pDrawList->_CmdHeader.ClipRect; float tT = pos.y - font_size, tB = pos.y + font_size * 0.5f; if (tT > cr.w || tB < cr.y || pos.x > cr.z) return; }
 		ImWidgetsShape shape;
 		TesselateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
 		if (shape.triangles.Size == 0) return;
-		if (!space2sRGB) { space2sRGB = &ColorConvertsRGBtosRGB; sRGB2Space = &ColorConvertsRGBtosRGB; }
-		ShapeRadialGradientGeneric(shape, uv_start, uv_end, col0, col1, space2sRGB, sRGB2Space);
+		ShapeRadialGradient(shape, uv_start, uv_end, col0, col1, interp);
 		DrawShape(pDrawList, shape);
 	}
 
 	void DrawDiamondGradientText(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
 	                             const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1,
-	                             pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space, const char* text_end, float tess_tol, int iterations)
+	                             ImWidgetsGradientInterp interp, const char* text_end, float tess_tol, int iterations)
 	{
 		font_size = SlugLpToPx(font_size);
 		{ ImVec4 cr = pDrawList->_CmdHeader.ClipRect; float tT = pos.y - font_size, tB = pos.y + font_size * 0.5f; if (tT > cr.w || tB < cr.y || pos.x > cr.z) return; }
 		ImWidgetsShape shape;
 		TesselateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
 		if (shape.triangles.Size == 0) return;
-		if (!space2sRGB) { space2sRGB = &ColorConvertsRGBtosRGB; sRGB2Space = &ColorConvertsRGBtosRGB; }
-		ShapeDiamondGradientGeneric(shape, uv_start, uv_end, col0, col1, space2sRGB, sRGB2Space);
+		ShapeDiamondGradient(shape, uv_start, uv_end, col0, col1, interp);
 		DrawShape(pDrawList, shape);
 	}
 
@@ -6161,7 +5565,7 @@ namespace ImWidgets {
 		ImVector<ImVec2> pts;
 		FlattenQContour(c, pts, tol);
 		for (int i = 0; i < pts.Size; i++) pts[i] = ImVec2(pts[i].x + off.x, pts[i].y + off.y);
-		if (pts.Size >= 2) dl->AddPolyline(pts.Data, pts.Size, col, ImDrawFlags_Closed, thick);
+		if (pts.Size >= 2) dl->AddPolyline(pts.Data, pts.Size, col, thick, ImDrawFlags_Closed);
 	}
 
 	// Debug: render tessellation algorithm steps for a single glyph
@@ -6642,7 +6046,7 @@ namespace ImWidgets {
 			fgDl->AddRectFilled(ImVec2(d.screenPos.x - 5, d.screenPos.y - 5),
 			                    ImVec2(d.screenPos.x + 5, d.screenPos.y + 5), fillCol);
 			fgDl->AddRect(ImVec2(d.screenPos.x - 6, d.screenPos.y - 6),
-			              ImVec2(d.screenPos.x + 6, d.screenPos.y + 6), IM_COL32(255, 255, 255, 255), 0.0f, 0, 2.0f);
+			              ImVec2(d.screenPos.x + 6, d.screenPos.y + 6), IM_COL32(255, 255, 255, 255), 0.0f, 2.0f, 0);
 			char numBuf[16]; snprintf(numBuf, sizeof(numBuf), "%d%s", d.index, d.isHole ? "H" : "C");
 			fgDl->AddRectFilled(ImVec2(d.screenPos.x + 8, d.screenPos.y - 14),
 			                    ImVec2(d.screenPos.x + 40, d.screenPos.y + 2), IM_COL32(0, 0, 0, 220));
@@ -7045,22 +6449,22 @@ namespace ImWidgets {
 	void DrawTextDebugLayers(ImDrawList*, ImFont*, float, ImVec2, const char*, const char*) {}
 
 	void DrawLinearGradientTextGPU(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
-	    const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end, bool perChar, int colorSpace)
+	    const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end, bool perChar, ImWidgetsGradientInterp interp)
 	{
-		(void)perChar; (void)colorSpace;
-		DrawLinearGradientText(pDrawList, font, font_size, pos, text, uv_start, uv_end, col0, col1, nullptr, nullptr, text_end);
+		(void)perChar;
+		DrawLinearGradientText(pDrawList, font, font_size, pos, text, uv_start, uv_end, col0, col1, interp, text_end);
 	}
 	void DrawRadialGradientTextGPU(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
-	    const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end, bool perChar, int colorSpace)
+	    const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end, bool perChar, ImWidgetsGradientInterp interp)
 	{
-		(void)perChar; (void)colorSpace;
-		DrawRadialGradientText(pDrawList, font, font_size, pos, text, uv_start, uv_end, col0, col1, nullptr, nullptr, text_end);
+		(void)perChar;
+		DrawRadialGradientText(pDrawList, font, font_size, pos, text, uv_start, uv_end, col0, col1, interp, text_end);
 	}
 	void DrawDiamondGradientTextGPU(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
-	    const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end, bool perChar, int colorSpace)
+	    const char* text, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, const char* text_end, bool perChar, ImWidgetsGradientInterp interp)
 	{
-		(void)perChar; (void)colorSpace;
-		DrawDiamondGradientText(pDrawList, font, font_size, pos, text, uv_start, uv_end, col0, col1, nullptr, nullptr, text_end);
+		(void)perChar;
+		DrawDiamondGradientText(pDrawList, font, font_size, pos, text, uv_start, uv_end, col0, col1, interp, text_end);
 	}
 	void DrawImageTextGPU(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
 	    const char* text, ImTextureID tex, ImU32 tint,

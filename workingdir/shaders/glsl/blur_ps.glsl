@@ -40,14 +40,10 @@ layout(std140) uniform block_SLANG_ParameterGroup_PS_CONSTANT_BUFFER_std140_0
 
 #line 69
 layout(binding = 0)
-uniform texture2D sceneTexture_0;
+uniform sampler2D sceneTexture_0;
 
 
 #line 70
-layout(binding = 0)
-uniform sampler sceneSampler_0;
-
-
 #line 115
 vec2 uvToPixel_0(vec2 uv_0)
 {
@@ -90,7 +86,7 @@ float saturate_0(float x_0)
 #line 74 0
 vec4 sampleClamped_0(vec2 uv_2)
 {
-    return (texture(sampler2D(sceneTexture_0,sceneSampler_0), (clamp(uv_2, PS_CONSTANT_BUFFER_0.texel_size_0 * 0.5, 1.0 - PS_CONSTANT_BUFFER_0.texel_size_0 * 0.5))));
+    return (texture(sceneTexture_0, (clamp(uv_2, PS_CONSTANT_BUFFER_0.texel_size_0 * 0.5, 1.0 - PS_CONSTANT_BUFFER_0.texel_size_0 * 0.5))));
 }
 
 

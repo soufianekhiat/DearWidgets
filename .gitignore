@@ -30,19 +30,57 @@
 *.exe
 *.out
 *.app
+
+# IDE state and generated build files (recreate with generateprojects.bat)
 .vs
 projects
 *.sln
 *.pdb
-WorkingDir/dearwidgetsdemo.map
 tmp
 sharpmakes/bin
 workingdir/bin/slang
-*.txt
+workingdir/dearwidgetsdemo.map
+
+# Build / tool logs at the repo root.
+# Listed explicitly on purpose: a blanket *.txt rule would silently swallow
+# real files such as a future CMakeLists.txt or workingdir/latex_fonts/LICENSE.txt.
+build_errors.txt
+cpp_*.txt
+ref_*.txt
+
+# Build / tool logs and scratch dumps inside workingdir/
+workingdir/*_dump.txt
+workingdir/build_*.txt
+workingdir/*_errors.txt
+workingdir/error.txt
+workingdir/output.txt
+workingdir/fxc_*.txt
+workingdir/latex_dbg.txt
+workingdir/_fonts_to_delete.txt
+workingdir/_*.txt
+
+# Local demo run artifacts and helper scripts in workingdir/
+workingdir/*.exe
+workingdir/*.map
+workingdir/dearwidgetsdemo.pdb
+workingdir/dw_style.ini
+workingdir/dearwidgets_demo.ini
+workingdir/*.js
+workingdir/compile_*.bat
+workingdir/rebuild_*.bat
+workingdir/build_*.bat
+workingdir/shaders/bytecode_cache/
 
 # Demo fonts - not redistributed. Downloaded on-demand by the demo UI
-# (see workingdir/fonts_manifest.inl and DownloadFonts buttons).
+# (see src/demo/font_manifest.inl and DownloadFonts buttons).
 # LaTeX math fonts (workingdir/latex_fonts/) ARE redistributed.
 workingdir/fonts/*.ttf
 workingdir/fonts/*.otf
 *.dxbc
+
+# Local working notes, mockups, reference material and captures.
+# Kept on disk for the author, not part of the public release.
+notes/
+docs/screenshots/
+inspiration/
+marketing/

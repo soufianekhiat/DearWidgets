@@ -22,7 +22,7 @@ Features fall into three tiers based on what they actually call at runtime:
 | **Slider2D** | `Slider2DFloat/Int/Scalar` | Y | | |
 | **SliderN** | `SliderNFloat/Int/Scalar` | Y | | |
 | **SliderRing** | `SliderRingFloat/Int/Scalar` | Y | | |
-| **SliderGradientRing** | `SliderGradientRingFloat/Int/Scalar`, `SliderGradientRingRangeFloat/Int/Scalar` | Y | | |
+| **SliderGradientRing / Arc** | `SliderGradientRingFloat/Int/Scalar`, `SliderGradientArcFloat/Int/Scalar`, `SliderGradientArcRangeFloat/Int/Scalar` | Y | | |
 | **SliderSpline** | `SliderSplineFloat/Int/Scalar` | Y | | |
 | **SliderSplineGradient** | `SliderSplineGradientFloat/Int/Scalar`, `SliderSplineGradientRangeFloat/Int/Scalar` | Y | | |
 | **SliderGradient** | `SliderGradientFloat/Int/Scalar` | Y | | |
@@ -45,14 +45,14 @@ Features fall into three tiers based on what they actually call at runtime:
 | **VectorDrawingTool** | `VectorDrawingTool`, `ImVectorDrawingData` | Y | | |
 | **ImageCarousel** | `ImageCarousel` | Y | | |
 | **ImageBento** | `ImageBento` | Y | | |
-| **ImageTransformGizmo** | `ImageTransformGizmo` | Y | | |
+| **TransformGizmo** | `TransformGizmo`, `ImTransformGizmoCallbacks` | Y | | |
 | **Custom-shape buttons** | `ButtonEx*`, `ImageButtonEx*` | Y | | |
 | **Render frames** | `RenderFrame*` | Y | | |
 | **Nav cursors** | `RenderNavCursor*` | Y | | |
 | **Shape generation** | `GenShape*` | Y | | |
-| **Shape gradient fills** | `Shape*Gradient` (sRGB, OkLab, HSV...) | Y | | |
+| **Shape gradient fills** | `ShapeLinearGradient`, `ShapeRadialGradient`, `ShapeDiamondGradient` | Y | | |
 | **Draw shapes** | `DrawShape`, `DrawImageShape`, `DrawShapeWithHole` | Y | | |
-| **Color bands / rings** | `DrawHueBand`, `DrawLumianceBand`, `DrawSaturationBand`, `DrawColorRing` | Y | | |
+| **Color bands / rings** | `DrawHueBand`, `DrawLuminanceBand`, `DrawSaturationBand`, `DrawColorRing` | Y | | |
 | **Procedural color** | `DrawProceduralColor1D/2D` (nearest + bilinear) | Y | | |
 | **OkLab / OkLCH quads** | `DrawOkLabQuad`, `DrawOkLchQuad` | Y | | |
 | **Chromatic diagrams** | `DrawChromaticityPlot`, `DrawChromaticityPoints`, `DrawChromaticityLines` | Y | | |
@@ -62,20 +62,77 @@ Features fall into three tiers based on what they actually call at runtime:
 | **Spline gradient strokes** | `DrawSplineGradient`, `DrawSplineGradientCut` | Y | | |
 | **Thick lines / curves** ^5 | `DrawThickLine`, `GetThickLineModeName`, `DrawStrokedPolyline`, `DrawStrokedBezierPath`, `DrawStrokedDashedPolyline`, `DrawStrokedDashedBezierPath`, `DrawStrokedCubicBezier` | Y | | |
 | **Dashed polylines (CPU)** | `DrawDashedPolylineAA` with `SetDashedLinesUseGPU(false)` | Y | | |
-| **Color conversions** | `ColorConvert*`, `ImColorBlend*`, `KelvinTemperatureTosRGBColors` | Y | | |
+| **Color conversions** | `ColorConvert*`, `ColorBlend`, `ImColorBlendsRGB`, `KelvinTemperatureTosRGBColors` | Y | | |
 | **Window background** | `SetCurrentWindowBackgroundImage` | Y | | |
 | **Tessellated text** ^1 | `TesselateText`, `TesselateTextPerGlyph`, `ExtractTextContours` | Y ^1 | | |
 | **Gradient/image text fills** ^1 | `DrawImageText`, `DrawLinearGradientText`, `DrawRadialGradientText`, `DrawDiamondGradientText` | Y ^1 | | |
+| **Slider2DRange / Slider2DDisc** | `Slider2DRangeFloat/Int/Scalar`, `Slider2DDiscFloat/Int/Scalar` | Y | | |
+| **SliderNVertical** | `SliderNVerticalFloat/Int/Scalar` | Y | | |
+| **SliderGradientVertical** | `SliderGradientVerticalFloat/Int/Scalar` | Y | | |
+| **RangeSlider** | `RangeSliderFloat/Int/Scalar`, `RangeSliderVerticalFloat/Int/Scalar` | Y | | |
+| **SegmentedControl** | `SegmentedControlInt/Scalar` | Y | | |
+| **SliderRingFloatEx** | `SliderRingFloatEx`, `ImWidgetsSliderFlags` | Y | | |
+| **Underlined drag fields** | `DragFloatColorUnderline`, `DragFloatGradientUnderline` | Y | | |
+| **Physical / artistic pickers** | the 29 domain `ColorPicker*` widgets | Y | | |
+| **Color-space introspection** | `ColorSpaceName`, `ColorSpaceGetPrimaries`, `ColorSpaceGetTransfer`, `ColorSpaceEncode/Decode`, `ColorConvertRGBSpacetoXYZ`, `ColorConvertXYZtoRGBSpace`, `ColorAdaptSpaceToD65`, `ColorAdaptD65ToSpace`, `ChromaticityInsideGamut`, `ColorInsideSpaceGamut` | Y | | |
+| **Color model introspection** | `ColorModelName/CompName/CompRange/AxisIndex/DefaultTriple/GetFunctions/IsWorkingSpace`, `ColorModelToDisplay`, `ColorDisplayToModel`, `ColorAxisName`, `ColorHarmonyOffsets`, name helpers | Y | | |
+| **Scalar -> colour** | `ColorScalarResolve`, `ColorFromScalar*`, `ColorScalarPreset`, `ColorScalarCallback`, `ColorScalarInSpace` | Y | | |
+| **Grading gradients** | `GradingGradient` | Y | | |
+| **ColorBars / ColorSlice / ChromaWarp** | `ColorBars`, `ColorSlice`, `ChromaWarp` | Y | | |
+| **SpectrumEditor** | `SpectrumEditor`, `SpectrumToXYZ`, `WavelengthToRGB` | Y | | |
+| **GridWarp** | `GridWarp`, `ImGridWarpData` | Y | | |
+| **Chromaticity gamuts** | `DrawChromaticityGamuts` | Y | | |
+| **Delta-E maths** | `ColorDeltaE76/94/2000/OK`, `DeltaEFormulaName`, `DeltaEPerceptualLabel`, `ColorDifferenceVisualizer` | Y | | |
+| **3D LUT** | `LoadCubeLUT`, `SaveCubeLUT`, `SampleLUT3D`, `InitIdentityLUT3D`, `ColorLUT3DViewer` | Y | | |
+| **LookDev compare** | `LookDevCompare` | Y | | |
+| **Volume field generation** | `VolumeGenerateField` | Y | | |
+| **Image overlays** | `DetectionOverlay`, `KeypointOverlay`, `TextLabelOverlay`, `AnnotationEditor` | Y | | |
+| **NetworkGraph** | `NetworkGraph`, `NetworkGraphLayout` | Y | | |
+| **Timeline** | `ImTimeline` | Y | | |
+| **Canvas** | `BeginCanvas`, `EndCanvas`, `CanvasWorldToScreen`, `CanvasScreenToWorld`, `CanvasViewportWorld`, `DrawCanvasMinimap` | Y | | |
+| **Selection** | `BeginSelection`, `TestSelectionPoints`, `TestSelectionRects` | Y | | |
+| **Snapping** | `ComputeSnapAndDraw` | Y | | |
+| **Crop / size control** | `CropRect`, `SizeControl2D`, `SizeControl3D` | Y | | |
+| **Eyedropper** | `Eyedropper`, `EyedropperSampleBitmap`, `GradientDrop` | Y | | |
+| **Onion skin** | `DrawOnionSkin`, `DrawOnionSkinAuto` | Y | | |
+| **Arrows / dimensions** | `DrawArrow`, `DrawArrowHead`, `DrawAxisArrows`, `DrawDimensionLine`, `GetArrowHeadName`, `GetDimensionTextOrientName` | Y | | |
+| **Crosshair / ruler / grid** | `DrawCrosshair`, `DrawCrosshairInRect`, `GetCrosshairStyleName`, `DrawRuler`, `DrawGridOverlay` | Y | | |
+| **Shadow / glow** | `DrawDropShadowRect`, `DrawInnerGlowRect` | Y | | |
+| **Gradient mesh / toon ramp** | `GradientMeshInit`, `GradientMeshEditor`, `ToonRampEditor`, `ToonRampSample` | Y | | |
+| **Matrix editor** | `MatrixEditor`, `MatrixEditorDouble` | Y | | |
+| **Dials & fields** | `NotchedDial`, `AngleDial` | Y | | |
+| **Precision popups** | `BeginPrecisionPopup`, `EndPrecisionPopup`, `PrecisionFloat`, `PrecisionInt` | Y | | |
+| **Interaction helpers** | `KeyboardNudgeXY`, `KeyboardNudge1D`, `AxisConstrain`, `PushDeltaOverlay`, `RenderDeltaOverlay`, `PushDragGroup`, `PopDragGroup`, `GetDragGroupDelta`, `SetDragGroupActive` | Y | | |
+| **Hit-test primitives** | `Im_Is*Contains`, `IsMouseHovering`, `ItemHoverable`, `ButtonBehavior*`, `IsBoundingBoxWellFormed` | Y | | |
+| **Hatch / stipple fills** | `DrawHatchFill`, `DrawStippleFill` | Y | | |
+| **Coons / Gregory patches** | `DrawCoonsPatch`, `DrawCoonsPatchGradient`, `DrawCoonsPatchWireframe`, `DrawGregoryPatch`, `DrawGregoryPatchGradient` | Y | | |
+| **Offset curves** | `OffsetPolyline`, `DrawOffsetOutline`, `DrawOffsetFilled` | Y | | |
+| **Iso-contours** | `DrawIsoContour`, `DrawIsoContourTiered`, `DrawIsoFilled` | Y | | |
+| **Conic gradients** | `DrawConicGradient`, `DrawConicGradientRect` | Y | | |
+| **Ephemerides / sky charts** | `DrawMoonEphemeris`, `DrawEarthSunEphemeris`, `DrawStarChart`, `DrawSunPath`, `GetSkyCultureName`, `GetSkyCultureCount` | Y | | |
+| **Text on path / in shape** ^1 | `DrawTextOnPath`, `DrawTextInsideRect`, `DrawTextInsideConvex`, `DrawFontWaterfall` | Y ^1 | | |
+| **Font tooling** ^1 | `FontInspector`, `KerningPairEditor`, `VarFontAxisSliders` | Y ^1 | | |
+| **EquationInput** ^7 | `EquationInput` | | | Y `LaTeX` |
+| **Style persistence** | `SaveStyleToFile`, `LoadStyleFromFile`, `ShowStyleEditor` | Y | | |
 | **Context lifecycle** | `CreateContext`, `DestroyContext`, `SetCurrentContext` | | Y ^2 | |
 | **System textures** | `GetWhiteTexture`, `OwnTexture` | | Y | |
 | **PaintCanvas** | `PaintCanvas`, `ImPaintCanvasData` | | Y | |
-| **ImageViewer (pixel inspector)** | `ImageViewer` with `state.Pixels` set | | Y ^3 | |
+| **ImageViewer (pixel inspector)** | `ImageViewer` with `state.Pixels` set and `shaderProgram = nullptr` | | Y ^3 | |
 | **Dashed polylines (GPU)** | `DrawDashedPolylineAA` with `SetDashedLinesUseGPU(true)` | | | Y |
 | **Markers** | `DrawMarker` | | | Y `Markers` |
-| **Slug GPU text** | `DrawText`, `DrawTextGradient`, `CalcTextSize` | | | Y `RichFont` |
-| **Slug font loader** | `GetSlugFontLoader`, `SlugBuildGlyphByID` | | | Y `RichFont` |
-| **Slug debug** | `DrawTextDebugCurves`, `DrawTextDebugLayers`, `g_SlugDebugShader` | | | Y `RichFont` |
+| **Slug GPU text** | `DrawText`, `CalcTextSize`, `CalcShapedTextWidth` | | | Y `RichFont` |
+| **Slug font loader** | `GetSlugFontLoader`, `GetSlugFontInfo`, `SlugBuildGlyphByID`, `PrewarmTessellationCache` | | | Y `RichFont` |
+| **Slug debug** | `DrawTextDebugCurves`, `DrawTextDebugLayers`, `SetSlugDebugShader` / `GetSlugDebugShader` | | | Y `RichFont` |
 | **LaTeX** | `LoadLaTeXFont`, `DrawLaTeX`, `CalcLaTeXSize`, `DrawLaTeXDebug`, `TesselateLaTeX` | | | Y `LaTeX` |
+| **GPU gradient / image text** | `DrawLinearGradientTextGPU`, `DrawRadialGradientTextGPU`, `DrawDiamondGradientTextGPU`, `DrawImageTextGPU` | | | Y `RichFont` |
+| **ImageInspector** | `ImageInspector`, `ImageInspectorSupported`, `ImageInspectorReleaseState` | | | Y ^6 |
+| **ImageViewer (custom shader)** | `ImageViewer` with a non-null `shaderProgram` ^3 | | | Y ^6 |
+| **VolumeViewer** | `VolumeViewer` | | | Y ^6 |
+| **VolumeSliceViewer** | `VolumeSliceViewer` | | Y | |
+| **LookDevInspector** | `LookDevInspector` | | | Y ^6 |
+| **Delta-E image compare** | `ColorDifferenceImageViewer` | | | Y ^6 |
+| **Window blur / background effects** | `SetCurrentWindowBlurBackground`, `BlurBackgroundNewFrame` | | | Y ^6 |
+| **Shader plumbing** | `PrebuildShaders`, `CreateInternalShader` | | | Y ^6 |
 
 **^1 Tessellated text** -- the algorithm itself is pure CPU (stbtt + bezier tessellation -> `ImWidgetsShape` -> `DrawShape`). It is listed as "ImGui only" in intent. In the current implementation it shares the Slug context initialised by `CreateContext`, so enabling `ImWidgetsFeatures_RichFont` is needed today.
 
@@ -83,7 +140,14 @@ Features fall into three tiers based on what they actually call at runtime:
 
 **^3 `ImageViewer`** -- pan/zoom display is pure ImGui (forwards a user-provided `ImTextureID`). The pixel-inspector loupe (right-click) reads `ImImageViewerState::PixelFormat` which is an `ImPlatform_PixelFormat` type; setting `state.Pixels = nullptr` disables the inspector and removes any runtime ImPlatform dependency.
 
+The widget has **two rows** because its tier depends on how it is called. Pan/zoom display forwards a caller-provided `ImTextureID` and is pure ImGui; the pixel inspector adds the ImPlatform dependency above; and passing a non-null `shaderProgram` wraps the image draw in a custom pixel shader, which moves that call to the shader tier. The shader binds *inside* the widget, so it also applies to the expand-to-window modal. `overlay_callback` / `overlay_user_data` add no dependency of their own.
+
 **^4 `HDRWheel`** -- unified ColorWheel + gradient indicator ring + optional right/left arc sliders. Pass `rightValue = leftValue = NULL` (the default) to get the layout previously exposed as `PrimariesWheel` (no arcs, tighter footprint); pass non-null to get the arc-slider HDR layout. The standalone `PrimariesWheel` symbol has been removed.
+
+
+**^6 Lazily compiled shaders -- not behind a feature flag.** `image_inspector.hlsl`, `volume_viewer.hlsl`, `lookdev_inspector.hlsl`, `delta_e_compare.hlsl` and `blur.hlsl` are compiled **on first use** through `CreateInternalShader`, not at `CreateContext` time, and are **not** gated by any `ImWidgetsFeatures_` value. There is no flag to set: the widget only needs a backend with `IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER`. `ImageInspectorSupported()` reports whether the current build and backend can run the inspector; the others render a "not supported" message and return `false`. Call `PrebuildShaders()` once after `CreateContext()` to pay the compile cost up front instead of on the first frame that uses one.
+
+**^7 `EquationInput`** -- the text field itself is ImGui-only, but it typesets its content through the LaTeX renderer, so it needs `ImWidgetsFeatures_LaTeX` and therefore the Slug shader path.
 
 ### ^5 `DrawThickLine` — runtime fallback details
 
@@ -156,3 +220,7 @@ The Demo's `Draw -> Thick Line` tree node (in `src/demo/demo.cpp`) exposes every
 | `ImWidgetsFeatures_LaTeX` | LaTeX math rendering (implies `RichFont`) | ImPlatform + Shader |
 
 Flags combine with `|`. Setting no flags and calling `CreateContext` gives you all drawing and widget features using the CPU path only.
+
+This is a bit-flag enum with no `_COUNT` sentinel (one used to be declared by mistake; removed in 2.0.0).
+
+> **Not every shader is behind a flag.** `image_inspector.hlsl`, `volume_viewer.hlsl`, `lookdev_inspector.hlsl`, `delta_e_compare.hlsl` and `blur.hlsl` are compiled lazily on first use through `CreateInternalShader` and are **not** gated by any `ImWidgetsFeatures_` value -- so `ImageInspector`, `VolumeViewer`, `LookDevInspector`, `ColorDifferenceImageViewer` and `SetCurrentWindowBlurBackground` work with no flag set, provided the backend supports custom shaders. See footnote ^6 above.

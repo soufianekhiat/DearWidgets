@@ -1,5 +1,17 @@
 # Expand-to-Window
 
+> **Contributor / internal document.** This page describes how the
+> expand-to-window pattern is implemented inside `dear_widgets.cpp`. The
+> functions named in the Architecture section (`WidgetExpandButton`,
+> `BeginExpandedWindow`, `EndExpandedWindow`, `IsMouseOverExpandButton`,
+> `s_InsideExpandedWidget`) are `static` and are **not** part of the public API
+> -- you cannot call them from outside the library and they are not covered by
+> the 2.0 stability promise. Read this to add the pattern to a new widget, not
+> to use it.
+>
+> From the outside, the feature needs no API at all: widgets that support it
+> draw the button themselves.
+
 Each widget has a small expand button in its top-right corner. Clicking it opens a resizable, non-modal ImGui window.
 
 Both the inline and expanded versions share the same data, so changes propagate both ways.
@@ -49,7 +61,7 @@ ImGui::DragFloat( "##pos", &value, 0.001f, 0.0f, 1.0f, "%.3f" );
 | CIEChromaticity | Gamut (Combo), Background (Checkbox), Signal Color (Combo) |
 | ToneCurve | Mode, Channel (name + index), Keys (count), Selected: Input/Output (DragFloat) |
 
-**^A `HDRWheel`** -- replaces the former separate `PrimariesWheel`. When called with `rightValue = leftValue = NULL`, the widget renders without arc sliders (tighter footprint matching the old PrimariesWheel layout) and the right panel hides the corresponding arc DragFloats. With one or both arc pointers non-null, the matching DragFloat appears.
+**^A `HDRWheel`** -- replaces the former separate `PrimariesWheel`, removed in 2.0.0. When called with `rightValue = leftValue = NULL`, the widget renders without arc sliders (tighter footprint matching the old PrimariesWheel layout) and the right panel hides the corresponding arc DragFloats. With one or both arc pointers non-null, the matching DragFloat appears.
 
 ## Architecture
 

@@ -1,4 +1,4 @@
-// dear_widgets_internal.h
+﻿// dear_widgets_internal.h
 // Cross-translation-unit helpers shared by dear_widgets.cpp and its split
 // sibling files (dear_widgets_image_inspector.cpp, dear_widgets_stroke.cpp,
 // dear_widgets_vector_drawing.cpp, ...).
@@ -64,7 +64,7 @@ struct ImWidgetsShapeCacheEntry
 struct ImWidgetsShapeCache
 {
 	ImVector<ImWidgetsShapeCacheEntry>	entries;
-	ImVector<int>                       map;    // S-2: open-addressed hash map, slot -> entries index+1 (0=empty)
+	ImVector<int>                       map;    // open-addressed hash map, slot -> entries index+1 (0=empty)
 };
 
 // Shader constant buffer for dashed line rendering.
@@ -305,6 +305,22 @@ float	ImFunctionFromData( float const x, float const minX, float const maxX, flo
 	return ImLinearSample( t, data, samples_count );
 }
 
+// Per-channel lerp of two packed colours. Truncates like the call sites that
+// used to carry their own copy of this (DWE_LerpColU32 / DW_LerpU32).
+inline
+ImU32	ImLerpU32( ImU32 a, ImU32 b, float t )
+{
+	int Ar = ( a >> IM_COL32_R_SHIFT ) & 0xFF, Ag = ( a >> IM_COL32_G_SHIFT ) & 0xFF;
+	int Ab = ( a >> IM_COL32_B_SHIFT ) & 0xFF, Aa = ( a >> IM_COL32_A_SHIFT ) & 0xFF;
+	int Br = ( b >> IM_COL32_R_SHIFT ) & 0xFF, Bg = ( b >> IM_COL32_G_SHIFT ) & 0xFF;
+	int Bb = ( b >> IM_COL32_B_SHIFT ) & 0xFF, Ba = ( b >> IM_COL32_A_SHIFT ) & 0xFF;
+	int R = (int)( Ar + ( Br - Ar ) * t );
+	int G = (int)( Ag + ( Bg - Ag ) * t );
+	int B = (int)( Ab + ( Bb - Ab ) * t );
+	int A = (int)( Aa + ( Ba - Aa ) * t );
+	return IM_COL32( R, G, B, A );
+}
+
 inline
 float	ImsRGBToLinear( float x )
 {
@@ -382,7 +398,18 @@ ImU64	AddScalar( ImGuiDataType data_type, void* p_a, void* p_b );
 ImU64	SubScalar( ImGuiDataType data_type, void* p_a, void* p_b );
 ImU64	MulScalar( ImGuiDataType data_type, void* p_a, void* p_b );
 ImU64	DivScalar( ImGuiDataType data_type, void* p_a, void* p_b );
-ImU64	ClampScalar( ImGuiDataType data_type, void* p_value, void* p_min, void* p_max );
+bool	ClampScalar( ImGuiDataType data_type, void* p_value, void* p_min, void* p_max );
+
+// Shared implementation behind DrawShape / DrawImageShape. Not public: it has the
+// same signature as DrawImageShape, so having both on the public surface was a trap.
+IMGUI_API void DrawShapeEx( ImDrawList* pDrawList, ImTextureID tex, ImWidgetsShape& shape );
+
+// Function-pointer forms behind ShapeLinearGradient / ShapeRadialGradient /
+// ShapeDiamondGradient. Public code selects a space with ImWidgetsGradientInterp;
+// the Slug renderer needs to pass its own conversion pair, so these stay internal.
+IMGUI_API void	ShapeLinearGradientGeneric( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space );
+IMGUI_API void	ShapeRadialGradientGeneric( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space );
+IMGUI_API void	ShapeDiamondGradientGeneric( ImWidgetsShape& shape, ImVec2 uv_start, ImVec2 uv_end, ImU32 col0, ImU32 col1, pfSpace2sRGB space2sRGB, pfsRGB2Space sRGB2Space ); // clamps in place, returns whether it changed
 ImU64	Normalize01( ImGuiDataType data_type, void* p_value, void const* p_min, void const* p_max );
 
 //////////////////////////////////////////////////////////////////////////
