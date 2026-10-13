@@ -492,8 +492,12 @@ attributes and `style=`, also for `clip-path` and `stop-color` /
 ignored); `<text>` with `x`, `y`, `font-size`, `text-anchor`,
 `direction` and fill paints, rendered as shaped, bidi-ordered glyph outlines
 with `font` (so transforms and gradients apply to text too; nested `<tspan>`
-content is flattened). Not supported: images, masks, filters, patterns,
-markers, radial focal points, tspan positioning, text inside clip paths.
+content is flattened); markers (`marker-start` / `-mid` / `-end` and the
+`marker` shorthand, inherited, on `path`, `line`, `polyline`, `polygon`:
+`refX` / `refY`, `markerWidth` / `markerHeight`, `viewBox`, `orient` `auto`,
+`auto-start-reverse` or an angle, `markerUnits`, clipped to the marker
+viewport). Not supported: images, masks, filters, patterns, radial focal
+points, tspan positioning, text inside clip paths.
 
 ## Lines, Strokes and Dashes
 
