@@ -523,6 +523,9 @@ void DW_FillSegments( ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU3
 struct DW_GlyphOutline { float penX, advance; int segBegin, segCount; };
 bool DW_ShapeTextOutlines( ImFont* font, float size_px, const char* text, const char* text_end,
                            ImVector<DW_GlyphOutline>& glyphs, ImVector<ImVec2>& seg_pts );
+// Unshaped (ImGui atlas) grapheme layout of one line (dear_widgets_slug.cpp).
+float DW_GraphemesUnshaped( ImFont* font, float size_px, const char* text, const char* text_end,
+                            ImVector<ImWidgetsTextGrapheme>& out );
 // Paragraph layout flowed inside a polygon (dear_widgets_slug.cpp).
 void DW_DrawTextBlockInPolygon( ImDrawList* dl, ImFont* font, float font_size_lp, const ImVec2* poly, int n,
                                 ImU32 col, const char* text, const char* text_end, const ImWidgetsTextLayout& lay );

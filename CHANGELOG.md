@@ -360,6 +360,13 @@ after the 29 physical colour pickers, `ColorSlice`, `SpectrumEditor`,
 in a group (as ImGui's own `ColorPicker4` is); the ones with a single main item
 still report its ID, so `BeginPopupContextItem()` right after them keeps working.
 
+#### Caret, hit-testing and selection
+
+`CalcTextGraphemes` exposes the graphemes of a shaped line with their visual
+boxes; `TextCaretX` / `TextHitTest` (with caret affinity at bidi run
+boundaries), `TextSelectionRanges` and `TextPrev/NextGrapheme` are the building
+blocks for editing shaped, mixed-direction text.
+
 #### Text on any backend
 
 `SetTextRenderer` selects how `DrawText` renders: the Slug GPU shader, a new CPU

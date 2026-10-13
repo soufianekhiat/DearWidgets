@@ -107,6 +107,28 @@ paragraph direction, like CSS `text-align: start`. `pos` is the top-left of the
 block; the line box is `LineHeight * font_size` with the glyphs centred in it
 (half-leading). Returns the block size in pixels.
 
+### Caret, hit-testing and selection
+```cpp
+float CalcTextGraphemes  ( ImFont*, float font_size, char const* text, char const* text_end,
+                           ImVector<ImWidgetsTextGrapheme>& out );           // returns the line width
+float TextCaretX         ( graphemes, int byte_offset, bool upstream = false );
+int   TextHitTest        ( graphemes, float x, int text_len, bool* out_upstream = nullptr );
+void  TextSelectionRanges( graphemes, int sel_begin, int sel_end, ImVector<ImVec2>& out_x_ranges );
+int   TextPrevGrapheme   ( graphemes, int byte_offset );
+int   TextNextGrapheme   ( graphemes, int byte_offset, int text_len );
+```
+Editing primitives for a shaped line, measured exactly as `DrawText` lays it
+out. `CalcTextGraphemes` returns the user-perceived characters (grapheme
+clusters: a base letter and its marks, emoji sequences) in logical order, each
+with its byte range and visual box; a ligature's width (lam-alef, "fi") is
+split between its graphemes in reading order, as browsers do. In bidi text one
+byte offset can have two visual positions (at a run boundary): `TextHitTest`
+returns the affinity (`upstream` = the caret belongs to the previous
+character) and `TextCaretX` uses it, so the caret appears exactly where the
+user clicked. A selection across runs yields several x ranges. Arrow keys move
+logically (`TextPrevGrapheme` / `TextNextGrapheme`). The demo's Bidi section
+has a small line editor built on these.
+
 ### `DrawTextOnPath`
 ```cpp
 void DrawTextOnPath( ImDrawList* draw, ImFont* font, float font_size, char const* text,

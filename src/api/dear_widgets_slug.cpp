@@ -3089,6 +3089,84 @@ namespace ImWidgets {
 			dl->PrimWriteIdx((ImDrawIdx)(base + mesh->idx[i]));
 	}
 
+	// ---- Graphemes of a shaped line (caret / hit-testing) ----------------------
+	// Shaped glyphs (visual order) carry the byte offset of their cluster. A
+	// cluster spans [cluster, next larger cluster) in logical order and may hold
+	// several graphemes (ligatures): its width is split evenly between them, in
+	// reading order (right to left for RTL runs), which is what browsers do.
+	static float SlugGraphemesShaped(SlugFontCache* atlas, float sz, const char* text, const char* text_end,
+	                                 ImVector<ImWidgetsTextGrapheme>& out)
+	{
+		const int len = (int)(text_end - text);
+		ImVector<SlugShapedGlyph> shaped;
+		if (!SlugShapeString(atlas, text, text_end, shaped, nullptr)) return -1.0f;
+
+		// Visual clusters: merge consecutive glyphs with the same cluster.
+		struct VC { int c; float x0, x1; int level; };
+		ImVector<VC> vcs;
+		float pen = 0.0f;
+		for (int i = 0; i < shaped.Size; ++i)
+		{
+			const float adv = shaped[i].advanceX * sz;
+			if (vcs.Size && vcs.back().c == shaped[i].cluster) vcs.back().x1 = pen + adv;
+			else { VC v = { shaped[i].cluster, pen, pen + adv, shaped[i].level }; vcs.push_back(v); }
+			pen += adv;
+		}
+		// Cluster end = next larger cluster start (logical order).
+		ImVector<int> starts;
+		for (int i = 0; i < vcs.Size; ++i) starts.push_back(vcs[i].c);
+		ImQsort(starts.Data, (size_t)starts.Size, sizeof(int), [](const void* a, const void* b) -> int { return *(const int*)a - *(const int*)b; });
+		ImVector<unsigned int> brk; brk.resize(len + 1);
+		DwShaper_TextBreaks(text, len, brk.Data);
+		out.resize(0);
+		for (int i = 0; i < vcs.Size; ++i)
+		{
+			const VC& v = vcs[i];
+			int ce = len;
+			for (int k = 0; k < starts.Size; ++k) if (starts[k] > v.c) { ce = starts[k]; break; }
+			// Graphemes inside [v.c, ce)
+			int gb[64]; int ng = 0;
+			gb[ng++] = v.c;
+			for (int b = v.c + 1; b < ce && ng < 63; ++b)
+				if (brk[b] & DwShaperBreak_Grapheme) gb[ng++] = b;
+			gb[ng] = ce;
+			const bool rtl = (v.level & 1) != 0;
+			const float w = (v.x1 - v.x0) / (float)ng;
+			for (int g = 0; g < ng; ++g)
+			{
+				ImWidgetsTextGrapheme G;
+				G.Begin = gb[g]; G.End = gb[g + 1]; G.RTL = rtl;
+				const int slot = rtl ? (ng - 1 - g) : g;
+				G.X0 = v.x0 + w * slot; G.X1 = G.X0 + w;
+				out.push_back(G);
+			}
+		}
+		// Logical order.
+		ImQsort(out.Data, (size_t)out.Size, sizeof(ImWidgetsTextGrapheme), [](const void* a, const void* b) -> int {
+			return ((const ImWidgetsTextGrapheme*)a)->Begin - ((const ImWidgetsTextGrapheme*)b)->Begin; });
+		return pen;
+	}
+
+	float CalcTextGraphemes(ImFont* font, float font_size, const char* text, const char* text_end,
+	                        ImVector<ImWidgetsTextGrapheme>& out)
+	{
+		out.resize(0);
+		if (!text) return 0.0f;
+		if (!text_end) text_end = text + strlen(text);
+		if (!font) font = ImGui::GetFont();
+		const float sz = font_size > 0.0f ? SlugLpToPx(font_size) : ImGui::GetFontSize();
+		if (SlugResolveRenderer() != ImWidgetsTextRenderer_ImGuiAtlas && gs_pContext)
+		{
+			if (!gs_pContext->slugState) gs_pContext->slugState = IM_NEW(ImWidgetsSlugState);
+			if (SlugFontCache* atlas = SlugGetOrCreateAtlas(gs_pContext->slugState, font))
+			{
+				float w = SlugGraphemesShaped(atlas, sz, text, text_end, out);
+				if (w >= 0.0f) return w;
+			}
+		}
+		return DW_GraphemesUnshaped(font, sz, text, text_end, out);
+	}
+
 	bool DW_ShapeTextOutlines(ImFont* font, float size_px, const char* text, const char* text_end,
 	                          ImVector<DW_GlyphOutline>& glyphs, ImVector<ImVec2>& seg_pts)
 	{
@@ -6740,6 +6818,17 @@ namespace ImWidgets {
 		return false;
 	}
 
+	float CalcTextGraphemes(ImFont* font, float font_size, const char* text, const char* text_end,
+	                        ImVector<ImWidgetsTextGrapheme>& out)
+	{
+		out.resize(0);
+		if (!text) return 0.0f;
+		if (!text_end) text_end = text + strlen(text);
+		if (!font) font = ImGui::GetFont();
+		const float sz = font_size > 0.0f ? SlugLpToPx(font_size) : ImGui::GetFontSize();
+		return DW_GraphemesUnshaped(font, sz, text, text_end, out);
+	}
+
 	// No custom-shader support in this build: text always goes through the ImGui atlas.
 	void SetTextRenderer(ImWidgetsTextRenderer) {}
 	ImWidgetsTextRenderer GetTextRenderer() { return ImWidgetsTextRenderer_ImGuiAtlas; }
@@ -6969,6 +7058,95 @@ namespace ImWidgets {
 		dl->PushClipRect(ImVec2(minX, minY), ImVec2(maxX, maxY), true);
 		SlugTextBlock(dl, font, font_size_lp, ImVec2(minX, minY), col, text, text_end, l2, true, &ext, maxY - minY);
 		dl->PopClipRect();
+	}
+
+	// ---- Grapheme helpers (renderer independent) -------------------------------
+
+	// ImGui atlas layout: left to right, one box per grapheme (unshaped).
+	float DW_GraphemesUnshaped(ImFont* font, float sz, const char* text, const char* text_end,
+	                           ImVector<ImWidgetsTextGrapheme>& out)
+	{
+		const int len = (int)(text_end - text);
+		ImVector<unsigned int> brk; brk.resize(len + 1);
+		DwShaper_TextBreaks(text, len, brk.Data);
+		out.resize(0);
+		float x = 0.0f;
+		int b = 0;
+		while (b < len)
+		{
+			int e = b + 1;
+			while (e < len && !(brk[e] & DwShaperBreak_Grapheme)) ++e;
+			float w = font->CalcTextSizeA(sz, FLT_MAX, 0.0f, text + b, text + e).x;
+			ImWidgetsTextGrapheme G = { b, e, x, x + w, false };
+			out.push_back(G);
+			x += w;
+			b = e;
+		}
+		return x;
+	}
+
+	float TextCaretX(const ImVector<ImWidgetsTextGrapheme>& g, int o, bool upstream)
+	{
+		if (g.Size == 0) return 0.0f;
+		if (upstream)
+			for (int i = 0; i < g.Size; ++i)
+				if (g[i].End == o)                     // trailing edge of the grapheme ending here
+					return g[i].RTL ? g[i].X0 : g[i].X1;
+		for (int i = 0; i < g.Size; ++i)
+			if (g[i].Begin >= o)                       // leading edge of the grapheme starting here
+				return g[i].RTL ? g[i].X1 : g[i].X0;
+		const ImWidgetsTextGrapheme& last = g.back(); // end of text: trailing edge of the last one
+		return last.RTL ? last.X0 : last.X1;
+	}
+
+	int TextHitTest(const ImVector<ImWidgetsTextGrapheme>& g, float x, int text_len, bool* out_upstream)
+	{
+		if (out_upstream) *out_upstream = false;
+		if (g.Size == 0) return 0;
+		// Grapheme under x, or the nearest one.
+		int best = 0; float bestD = FLT_MAX;
+		for (int i = 0; i < g.Size; ++i)
+		{
+			float d = (x < g[i].X0) ? g[i].X0 - x : (x > g[i].X1) ? x - g[i].X1 : 0.0f;
+			if (d < bestD) { bestD = d; best = i; }
+		}
+		const ImWidgetsTextGrapheme& G = g[best];
+		const bool leftHalf = x < (G.X0 + G.X1) * 0.5f;
+		// Left half of an LTR grapheme = before it (leading edge, downstream);
+		// right half = after it (trailing edge, upstream). Mirrored for RTL.
+		if (leftHalf != G.RTL) return G.Begin;
+		if (out_upstream) *out_upstream = true;
+		return G.End <= text_len ? G.End : text_len;
+	}
+
+	void TextSelectionRanges(const ImVector<ImWidgetsTextGrapheme>& g, int a, int b, ImVector<ImVec2>& out)
+	{
+		out.resize(0);
+		if (a > b) { int t = a; a = b; b = t; }
+		if (a == b) return;
+		ImVector<ImVec2> r;
+		for (int i = 0; i < g.Size; ++i)
+			if (g[i].Begin >= a && g[i].End <= b) r.push_back(ImVec2(g[i].X0, g[i].X1));
+		ImQsort(r.Data, (size_t)r.Size, sizeof(ImVec2), [](const void* p, const void* q) -> int {
+			float x = ((const ImVec2*)p)->x, y = ((const ImVec2*)q)->x; return x < y ? -1 : x > y ? 1 : 0; });
+		for (int i = 0; i < r.Size; ++i)
+		{
+			if (out.Size && r[i].x <= out.back().y + 0.01f) out.back().y = ImMax(out.back().y, r[i].y);
+			else out.push_back(r[i]);
+		}
+	}
+
+	int TextPrevGrapheme(const ImVector<ImWidgetsTextGrapheme>& g, int o)
+	{
+		int prev = 0;
+		for (int i = 0; i < g.Size; ++i) { if (g[i].Begin >= o) break; prev = g[i].Begin; }
+		return prev;
+	}
+
+	int TextNextGrapheme(const ImVector<ImWidgetsTextGrapheme>& g, int o, int text_len)
+	{
+		for (int i = 0; i < g.Size; ++i) if (g[i].Begin > o) return g[i].Begin;
+		return text_len;
 	}
 
 	ImVec2 CalcTextBlockSize(ImFont* font, float font_size, const char* text, const char* text_end,

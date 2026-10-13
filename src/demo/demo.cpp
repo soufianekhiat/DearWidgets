@@ -2446,6 +2446,86 @@ namespace ImWidgets{
 			}
 			ImWidgets::GetStyle().TextDirection = savedDir;
 
+			// Caret, hit-testing and selection on a shaped bidi line: a tiny line editor.
+			ImGui::SeparatorText( "Caret & selection (CalcTextGraphemes / TextHitTest)" );
+			ImGui::TextDisabled( "Click to place the caret, drag to select, arrows / Home / End, type, Backspace / Delete." );
+			if ( bf )
+			{
+				static char  s_ed[256] = "Hello \xd9\x85\xd8\xb1\xd8\xad\xd8\xa8\xd8\xa7 2026 world";
+				static int   s_caret = 6, s_anchor = 6;
+				static bool  s_up = false;
+				const float  efs = 26.0f;
+				ImWidgets::GetStyle().TextDirection = s_bidi_dir;
+				ImVector<ImWidgetsTextGrapheme> g;
+				const int len = (int)strlen( s_ed );
+				float w = ImWidgets::CalcTextGraphemes( bf, efs, s_ed, s_ed + len, g );
+				float asc = 0.0f;
+				ImVec2 tsz = ImWidgets::CalcTextSize( bf, efs, "Ag", nullptr, &asc );
+				ImVec2 p0 = ImGui::GetCursorScreenPos();
+				float boxW = ImMax( w + ImPlatform_LpToPx( 8.0f ), canvas_w );
+				ImGui::InvisibleButton( "##caret_line", ImVec2( boxW, tsz.y + ImPlatform_LpToPx( 8.0f ) ) );
+				const bool active = ImGui::IsItemActive(), focused = ImGui::IsItemFocused() || active;
+				const float ox = p0.x + ImPlatform_LpToPx( 4.0f ), oy = p0.y + ImPlatform_LpToPx( 4.0f );
+				ImGuiIO& io = ImGui::GetIO();
+				if ( ImGui::IsItemActivated() || ( active && ImGui::IsMouseDragging( 0 ) ) )
+				{
+					s_caret = ImWidgets::TextHitTest( g, io.MousePos.x - ox, len, &s_up );
+					if ( ImGui::IsItemActivated() && !io.KeyShift ) s_anchor = s_caret;
+				}
+				if ( focused )
+				{
+					const bool shift = io.KeyShift;
+					bool moved = false;
+					if ( ImGui::IsKeyPressed( ImGuiKey_LeftArrow ) )  { s_caret = ImWidgets::TextPrevGrapheme( g, s_caret ); moved = true; }
+					if ( ImGui::IsKeyPressed( ImGuiKey_RightArrow ) ) { s_caret = ImWidgets::TextNextGrapheme( g, s_caret, len ); moved = true; }
+					if ( ImGui::IsKeyPressed( ImGuiKey_Home ) )       { s_caret = 0; moved = true; }
+					if ( ImGui::IsKeyPressed( ImGuiKey_End ) )        { s_caret = len; moved = true; }
+					if ( moved ) { s_up = false; if ( !shift ) s_anchor = s_caret; }
+					auto eraseRange = [&]( int a, int b ) { if ( a > b ) { int t = a; a = b; b = t; } memmove( s_ed + a, s_ed + b, (size_t)( len - b + 1 ) ); s_caret = s_anchor = a; s_up = false; };
+					if ( ImGui::IsKeyPressed( ImGuiKey_Backspace ) )
+					{
+						if ( s_caret != s_anchor ) eraseRange( s_caret, s_anchor );
+						else if ( s_caret > 0 ) eraseRange( ImWidgets::TextPrevGrapheme( g, s_caret ), s_caret );
+					}
+					else if ( ImGui::IsKeyPressed( ImGuiKey_Delete ) )
+					{
+						if ( s_caret != s_anchor ) eraseRange( s_caret, s_anchor );
+						else if ( s_caret < len ) eraseRange( s_caret, ImWidgets::TextNextGrapheme( g, s_caret, len ) );
+					}
+					for ( int qi = 0; qi < io.InputQueueCharacters.Size; ++qi )
+					{
+						if ( s_caret != s_anchor ) eraseRange( s_caret, s_anchor );
+						char utf8[5] = {};
+						int nb = ImTextCharToUtf8( utf8, (unsigned int)io.InputQueueCharacters[ qi ] );
+						int cur = (int)strlen( s_ed );
+						if ( nb > 0 && cur + nb < (int)sizeof( s_ed ) )
+						{
+							memmove( s_ed + s_caret + nb, s_ed + s_caret, (size_t)( cur - s_caret + 1 ) );
+							memcpy( s_ed + s_caret, utf8, (size_t)nb );
+							s_caret += nb; s_anchor = s_caret; s_up = false;
+						}
+					}
+					if ( io.InputQueueCharacters.Size ) io.InputQueueCharacters.resize( 0 );
+				}
+				// Re-layout after edits, then draw: selection (one range per visual run), text, caret.
+				const int len2 = (int)strlen( s_ed );
+				ImWidgets::CalcTextGraphemes( bf, efs, s_ed, s_ed + len2, g );
+				s_caret = ImClamp( s_caret, 0, len2 ); s_anchor = ImClamp( s_anchor, 0, len2 );
+				pDrawList->AddRect( p0, p0 + ImVec2( boxW, tsz.y + ImPlatform_LpToPx( 8.0f ) ), ImGui::GetColorU32( focused ? ImGuiCol_NavCursor : ImGuiCol_Border ) );
+				ImVector<ImVec2> sel;
+				ImWidgets::TextSelectionRanges( g, s_anchor, s_caret, sel );
+				for ( int i = 0; i < sel.Size; ++i )
+					pDrawList->AddRectFilled( ImVec2( ox + sel[ i ].x, oy ), ImVec2( ox + sel[ i ].y, oy + tsz.y ), IM_COL32( 80, 140, 255, 110 ) );
+				ImWidgets::DrawText( pDrawList, bf, efs, ImVec2( ox, oy + asc ), ImGui::GetColorU32( ImGuiCol_Text ), s_ed, s_ed + len2 );
+				if ( focused && fmodf( (float)ImGui::GetTime(), 1.0f ) < 0.6f )
+				{
+					float cx = ox + ImWidgets::TextCaretX( g, s_caret, s_up );
+					pDrawList->AddLine( ImVec2( cx, oy ), ImVec2( cx, oy + tsz.y ), ImGui::GetColorU32( ImGuiCol_Text ), ImPlatform_LpToPx( 1.5f ) );
+				}
+				ImGui::TextDisabled( "caret byte %d%s, selection [%d, %d)", s_caret, s_up ? " (upstream)" : "", ImMin( s_caret, s_anchor ), ImMax( s_caret, s_anchor ) );
+				ImWidgets::GetStyle().TextDirection = savedDir;
+			}
+
 			// Paragraph layout: wrapping (UAX #14), one direction per paragraph, per-line bidi.
 			ImGui::SeparatorText( "Paragraph layout (DrawTextBlock)" );
 			static float s_blk_wrap = 420.0f, s_blk_lh = 1.4f;

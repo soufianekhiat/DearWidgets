@@ -514,6 +514,15 @@ enum ImWidgetsThickLineMode_
 };
 typedef int ImWidgetsThickLineMode;
 
+// One user-perceived character (grapheme cluster) of a laid-out line:
+// its source byte range and its visual box, x relative to the line start.
+struct ImWidgetsTextGrapheme
+{
+	int   Begin, End;   // byte range in the source string (logical order)
+	float X0, X1;       // visual extent in pixels (X0 <= X1)
+	bool  RTL;          // resolved direction of its bidi run
+};
+
 // Horizontal alignment of a text block (CSS `text-align`). Start / End follow
 // each paragraph's direction (left / right for LTR, right / left for RTL).
 enum ImWidgetsTextAlign_
@@ -4691,6 +4700,28 @@ namespace ImWidgets{
 	                                ImWidgetsTextLayout const& layout = ImWidgetsTextLayout() );
 	IMGUI_API ImVec2 CalcTextBlockSize( ImFont* font, float font_size, char const* text, char const* text_end = nullptr,
 	                                    ImWidgetsTextLayout const& layout = ImWidgetsTextLayout() );
+	// ---- Caret / hit-testing / selection on a shaped line (like a browser) ----
+	// Graphemes of one line in logical order with their visual boxes, exactly as
+	// DrawText lays it out (shaping, bidi, ligatures: a ligature's width is split
+	// between its graphemes; marks stay with their base). Returns the line width.
+	IMGUI_API float CalcTextGraphemes( ImFont* font, float font_size, char const* text, char const* text_end,
+	                                   ImVector<ImWidgetsTextGrapheme>& out );
+	// Caret x (pixels from the line start) for a byte offset at a grapheme
+	// boundary. At a bidi run boundary one offset has two visual positions;
+	// `upstream` picks the trailing edge of the grapheme that ends there (the
+	// caret "belongs" to the previous character), otherwise the leading edge of
+	// the grapheme that starts there. End of text is always upstream.
+	IMGUI_API float TextCaretX( ImVector<ImWidgetsTextGrapheme> const& graphemes, int byte_offset, bool upstream = false );
+	// Byte offset of the grapheme boundary closest to x (click -> caret), with
+	// the affinity to pass back to TextCaretX so the caret lands where clicked.
+	IMGUI_API int   TextHitTest( ImVector<ImWidgetsTextGrapheme> const& graphemes, float x, int text_len, bool* out_upstream = nullptr );
+	// Visual rectangles (x ranges) covering the logical selection [sel_begin, sel_end);
+	// several ranges when the selection crosses bidi runs.
+	IMGUI_API void  TextSelectionRanges( ImVector<ImWidgetsTextGrapheme> const& graphemes, int sel_begin, int sel_end,
+	                                     ImVector<ImVec2>& out_x_ranges );
+	// Previous / next grapheme boundary in logical order (arrow keys, backspace).
+	IMGUI_API int   TextPrevGrapheme( ImVector<ImWidgetsTextGrapheme> const& graphemes, int byte_offset );
+	IMGUI_API int   TextNextGrapheme( ImVector<ImWidgetsTextGrapheme> const& graphemes, int byte_offset, int text_len );
 	// Same as CalcTextSize( ... ).x (CalcTextSize shapes: bidi, Arabic forms, ligatures, kerning).
 	// Kept for source compatibility.
 	IMGUI_API float CalcShapedTextWidth( ImFont* font, float font_size, char const* text, char const* text_end = nullptr );
