@@ -82,7 +82,7 @@ For gradient or image fills applied to text outlines (e.g. a gold-foil effect), 
 
 ```cpp
 ImWidgetsShape shape;
-ImWidgets::TesselateText(font, 48.0f, "DearWidgets", shape);
+ImWidgets::TessellateText(font, 48.0f, "DearWidgets", shape);
 ImWidgets::ShapeLinearGradient(shape, pos, pos + size, gold, amber,
                                ImWidgetsGradientInterp_OkLCH);
 ImWidgets::DrawShape(dl, shape);

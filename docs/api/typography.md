@@ -126,10 +126,10 @@ These convert outlines into triangle meshes (`ImWidgetsShape`) for gradient or
 image fills. The tessellation itself needs no shader.
 
 ```cpp
-void TesselateText        ( ImFont* font, float font_size, char const* text,
+void TessellateText        ( ImFont* font, float font_size, char const* text,
                             ImWidgetsShape& outShape, char const* text_end = nullptr,
                             float tess_tol = 0.0f, int iterations = 0 );
-void TesselateTextPerGlyph( ImFont* font, float font_size, char const* text,
+void TessellateTextPerGlyph( ImFont* font, float font_size, char const* text,
                             ImVector<ImWidgetsShape>& outShapes, char const* text_end = nullptr,
                             float tess_tol = 0.0f, int iterations = 0 );
 void ExtractTextContours  ( ImFont* font, float font_size, char const* text, char const* text_end,
@@ -137,7 +137,7 @@ void ExtractTextContours  ( ImFont* font, float font_size, char const* text, cha
                             float tess_tol = 0.0f );
 ```
 `tess_tol = 0` selects an automatic tolerance; `iterations` adds smoothing
-passes. `TesselateTextPerGlyph` preserves one shape per shaped glyph (including
+passes. `TessellateTextPerGlyph` preserves one shape per shaped glyph (including
 ligatures). `ExtractTextContours` returns raw contour points -- explicitly
 closed, clockwise outer / counter-clockwise holes -- suitable for
 `DrawShapeWithHole`.
@@ -254,7 +254,7 @@ void DrawTextDebugCurves ( ImDrawList* pDrawList, ImFont* font, float font_size,
                            char const* text, char const* text_end = nullptr, int flags = 0xFF );
 void DrawTextDebugLayers ( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
                            char const* text, char const* text_end = nullptr );
-void DrawTesselateDebug  ( ImDrawList* dl, ImFont* font, float font_size, char const* text,
+void DrawTessellateDebug  ( ImDrawList* dl, ImFont* font, float font_size, char const* text,
                            ImVec2 pos, float tess_tol, float spacing, float rowH );
 
 void SetSlugDebugShader( bool enabled );
@@ -267,7 +267,7 @@ bool GetSlugDebugShader();
 `DrawTextDebugLayers` draws each COLR layer quad as a flat semi-transparent
 rectangle, showing layer boundaries without running the Slug shader.
 
-`DrawTesselateDebug` steps through the tessellation algorithm for a single
+`DrawTessellateDebug` steps through the tessellation algorithm for a single
 character.
 
 `SetSlugDebugShader(true)` switches the renderer to the debug shader:

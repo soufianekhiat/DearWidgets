@@ -91,11 +91,11 @@ context creation.
 
 ## Functions
 
-### `SetFeatures` / `AddFeatures` / `RemoveFeature`
+### `SetFeatures` / `AddFeatures` / `RemoveFeatures`
 ```cpp
 void SetFeatures  ( ImWidgetsFeatures features );   // replace the set
 void AddFeatures  ( ImWidgetsFeatures features );   // OR into the set
-void RemoveFeature( ImWidgetsFeatures features );   // clear flags
+void RemoveFeatures( ImWidgetsFeatures features );   // clear flags
 ```
 Call before `CreateContext()`.
 

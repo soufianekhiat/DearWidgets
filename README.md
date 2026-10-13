@@ -98,12 +98,12 @@ See [CHANGELOG.md](CHANGELOG.md) for the 2.0.0 breaking changes and migration no
 - **Gradient and image text fills** -- tessellated outline fills with arbitrary gradients (CPU and GPU paths)
 - **GPU gradient text** -- `DrawLinearGradientTextGPU`, `DrawRadialGradientTextGPU`, `DrawDiamondGradientTextGPU`, `DrawImageTextGPU`; per-glyph or per-string, with color-space selection
 - **Text on a path, inside a rect, inside a convex polygon, and font waterfalls**
-- **Contour extraction** -- `TesselateTextPerGlyph`, `ExtractTextContours` for downstream use of glyph geometry
+- **Contour extraction** -- `TessellateTextPerGlyph`, `ExtractTextContours` for downstream use of glyph geometry
 - **FontInspector / KerningPairEditor / VarFontAxisSliders** -- glyph grid, metrics, curves, kerning and variable-axis tooling
 - **Arabic / Hebrew / Indic shaping** -- via the vendored `kb_text_shape`
 
 ### LaTeX math rendering
-- **DrawLaTeX / CalcLaTeXSize / TesselateLaTeX** -- self-contained math typesetter using Latin Modern Math
+- **DrawLaTeX / CalcLaTeXSize / TessellateLaTeX** -- self-contained math typesetter using Latin Modern Math
 - Supports scripts, fractions, roots, matrices, `\left...\right` stretchy delimiters, aligned environments
 - Rendered via the Slug GPU pipeline
 

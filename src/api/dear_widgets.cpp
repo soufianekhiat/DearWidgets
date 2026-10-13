@@ -2073,7 +2073,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 
 	#pragma optimize( "", off )
-	void	ShapeTesselationUniform( ImWidgetsShape& shape )
+	void	ShapeTessellationUniform( ImWidgetsShape& shape )
 	{
 		int vtx_count = shape.vertices.size();
 		int tri_count = shape.triangles.size();
@@ -3508,7 +3508,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		GlobalData.features |= features;
 	}
 
-	void RemoveFeature( ImWidgetsFeatures features )
+	void RemoveFeatures( ImWidgetsFeatures features )
 	{
 		GlobalData.features &= ~features;
 	}
@@ -13607,7 +13607,18 @@ namespace ImWidgets{
 		float center_v = ( vMinF + vMaxF ) * 0.5f;
 		float radius_v = ( vMaxF - vMinF ) * 0.5f;
 
+		ImVec2 center = frame_bb.GetCenter();
+		float disc_r = frame_bb.GetWidth() * 0.5f - LpToPx( 2.0f );
+
+		// Hit-test the disc, not its bounding square: a click in a corner used to
+		// grab the widget and snap the value to the rim.
 		bool hovered = ImGui::ItemHoverable( frame_bb, id, g.LastItemData.ItemFlags );
+		if ( hovered )
+		{
+			float hx = g.IO.MousePos.x - center.x, hy = g.IO.MousePos.y - center.y;
+			float hr = frame_bb.GetWidth() * 0.5f;
+			hovered = ( hx * hx + hy * hy ) <= hr * hr;
+		}
 		bool clicked = hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id );
 		bool make_active = ( clicked || g.NavActivateId == id );
 		if ( make_active && clicked )
@@ -13618,9 +13629,6 @@ namespace ImWidgets{
 			ImGui::SetFocusID( id, window );
 			ImGui::FocusWindow( window );
 		}
-
-		ImVec2 center = frame_bb.GetCenter();
-		float disc_r = frame_bb.GetWidth() * 0.5f - LpToPx( 2.0f );
 
 		bool value_changed = false;
 		if ( g.ActiveId == id )
@@ -14169,7 +14177,7 @@ namespace ImWidgets{
 
 		// --- DRAWING ---
 		// Frame background
-		const ImU32 frame_col = ImGui::GetColorU32( ( g.ActiveId == id || g.ActiveId == id ) ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
+		const ImU32 frame_col = ImGui::GetColorU32( g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg );
 		ImGui::RenderFrame( bar_bb.Min, bar_bb.Max, frame_col, true, g.Style.FrameRounding );
 
 		// Checkerboard for transparency (only when alpha is enabled)

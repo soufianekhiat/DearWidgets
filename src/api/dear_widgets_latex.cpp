@@ -45,7 +45,7 @@
 #  pragma GCC diagnostic pop
 #endif
 #include "dear_widgets.h"
-#include "dear_widgets_internal.h"  // CalcTextSize_Impl, DrawText_Impl, TesselateText_Impl, SlugLpToPx
+#include "dear_widgets_internal.h"  // CalcTextSize_Impl, DrawText_Impl, TessellateText_Impl, SlugLpToPx
 #include "dear_widgets_latex.h"
 #include <string.h>
 #include <stdlib.h>
@@ -1771,7 +1771,7 @@ static void TessLatexText(ImFont* font, float fontSize, const char* text,
 {
     ImWidgetsShape tmp;
     tmp.bb = ImRect(FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX);
-    TesselateText_Impl(font, fontSize, text, tmp, nullptr, tess_tol, iterations);
+    TessellateText_Impl(font, fontSize, text, tmp, nullptr, tess_tol, iterations);
     if (tmp.triangles.Size == 0) return;
     int baseVtx = outShape.vertices.Size;
     outShape.vertices.resize(baseVtx + tmp.vertices.Size);
@@ -2000,7 +2000,7 @@ static void TessellateBox(LaTeXBox* box, ImFont* mathFont, float fontSize, float
 // Tessellate a LaTeX expression into an ImWidgetsShape for gradient/image fills.
 // pos = top-left corner of the expression (same convention as DrawLaTeX).
 // The shape's bb reflects actual glyph bounds; use CalcLaTeXSize for layout space.
-void TesselateLaTeX(float font_size, const char* latex, ImVec2 pos,
+void TessellateLaTeX(float font_size, const char* latex, ImVec2 pos,
                     ImWidgetsShape& outShape, float tess_tol, int iterations)
 {
     font_size = SlugLpToPx(font_size);

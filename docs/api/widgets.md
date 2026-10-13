@@ -1186,7 +1186,7 @@ bool PrecisionFloat( char const* label, float* v, float step = 0.0f,
                      float v_min = -FLT_MAX, float v_max = FLT_MAX,
                      char const* fmt = "%.4f" );
 bool PrecisionInt  ( char const* label, int* v, int step = 1,
-                     int v_min = -INT_MAX, int v_max = INT_MAX );
+                     int v_min = INT_MIN, int v_max = INT_MAX );
 ```
 The typed-input popups that Slider2D, Slider2DRange and friends open on
 double-click. `BeginPrecisionPopup` must be balanced with `EndPrecisionPopup`

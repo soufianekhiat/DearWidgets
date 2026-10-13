@@ -4374,7 +4374,7 @@ namespace ImWidgets{
 	// Geometry Generation
 	//////////////////////////////////////////////////////////////////////////
 #ifdef DEAR_WIDGETS_TESSELATION
-	IMGUI_API void	ShapeTesselationUniform( ImWidgetsShape& shape );
+	IMGUI_API void	ShapeTessellationUniform( ImWidgetsShape& shape );
 #endif
 
 	IMGUI_API void	ShapeTranslate( ImWidgetsShape& shape, ImVec2 t );
@@ -4456,7 +4456,7 @@ namespace ImWidgets{
 
 	IMGUI_API void SetFeatures( ImWidgetsFeatures features );
 	IMGUI_API void AddFeatures( ImWidgetsFeatures features );
-	IMGUI_API void RemoveFeature( ImWidgetsFeatures features );
+	IMGUI_API void RemoveFeatures( ImWidgetsFeatures features );
 	IMGUI_API ImWidgetsContext*	CreateContext();
 	IMGUI_API void DestroyContext( ImWidgetsContext* );
 
@@ -4501,16 +4501,16 @@ namespace ImWidgets{
 	// ---- Typography: tesselated text for gradient/image fills ----
 	// font_size in lp. tess_tol: curve flattening tolerance (lower = more segments, smoother). 0 = auto.
 	// Convert text to CPU-tesselated geometry (ImWidgetsShape) for use with gradient/image fill functions.
-	IMGUI_API void TesselateText( ImFont* font, float font_size, char const* text, ImWidgetsShape& outShape, char const* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
-	// Same as TesselateText but returns per-glyph shapes (preserves ligatures/calt from full text shaping).
-	IMGUI_API void TesselateTextPerGlyph( ImFont* font, float font_size, char const* text, ImVector<ImWidgetsShape>& outShapes, char const* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
+	IMGUI_API void TessellateText( ImFont* font, float font_size, char const* text, ImWidgetsShape& outShape, char const* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
+	// Same as TessellateText but returns per-glyph shapes (preserves ligatures/calt from full text shaping).
+	IMGUI_API void TessellateTextPerGlyph( ImFont* font, float font_size, char const* text, ImVector<ImWidgetsShape>& outShapes, char const* text_end = nullptr, float tess_tol = 0.0f, int iterations = 0 );
 	// Pre-tessellate every glyph in the font and populate the cache. Call once at startup (after the
-	// first ImGui::NewFrame) to eliminate stalls when TesselateText/TesselateTextPerGlyph first runs.
+	// first ImGui::NewFrame) to eliminate stalls when TessellateText/TessellateTextPerGlyph first runs.
 	IMGUI_API void PrewarmTessellationCache( ImFont* font, float tess_tol = 0.0f );
 	// Extract raw contour points (explicitly closed, for DrawShapeWithHole). font_size in lp. Debug/internal use.
 	IMGUI_API void ExtractTextContours( ImFont* font, float font_size, char const* text, char const* text_end, ImVec2 offset, ImVector<ImVec2>& outPoly, ImRect& outBB, float tess_tol = 0.0f );
 	// Debug: draw the tessellation algorithm steps for a single character. font_size in lp.
-	IMGUI_API void DrawTesselateDebug( ImDrawList* dl, ImFont* font, float font_size, char const* text, ImVec2 pos, float tess_tol, float spacing, float rowH );
+	IMGUI_API void DrawTessellateDebug( ImDrawList* dl, ImFont* font, float font_size, char const* text, ImVec2 pos, float tess_tol, float spacing, float rowH );
 	// Text filled with an image texture. font_size in lp.
 	IMGUI_API void DrawImageText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, ImTextureID tex, char const* text, char const* text_end = nullptr, ImU32 tint = IM_COL32_WHITE, ImVec2 uv_offset = ImVec2(0,0), ImVec2 uv_scale = ImVec2(1,1), float tess_tol = 0.0f, int iterations = 0 );
 	// Text filled with a two-stop gradient, interpolated in the chosen space. font_size in lp.
@@ -4552,7 +4552,7 @@ namespace ImWidgets{
 	IMGUI_API void DrawLaTeXDebug( ImDrawList* pDrawList, float font_size, ImVec2 pos, char const* latex );
 	// Tessellate a LaTeX expression into an ImWidgetsShape for gradient/image fills. font_size in lp.
 	// pos = top-left corner (same convention as DrawLaTeX). Use CalcLaTeXSize for layout size.
-	IMGUI_API void TesselateLaTeX( float font_size, char const* latex, ImVec2 pos, ImWidgetsShape& outShape, float tess_tol = 0.25f, int iterations = 0 );
+	IMGUI_API void TessellateLaTeX( float font_size, char const* latex, ImVec2 pos, ImWidgetsShape& outShape, float tess_tol = 0.25f, int iterations = 0 );
 
 	//////////////////////////////////////////////////////////////////////////
 	// DrawList
@@ -5917,7 +5917,7 @@ namespace ImWidgets{
                                   float v_min = -FLT_MAX, float v_max = FLT_MAX,
                                   char const* fmt = "%.4f");
     IMGUI_API bool PrecisionInt  (char const* label, int*   v, int step = 1,
-                                  int v_min = -INT_MAX, int v_max = INT_MAX);
+                                  int v_min = INT_MIN, int v_max = INT_MAX);
 
     // Keyboard nudge: returns the delta in value units when an arrow key is
     // pressed while the caller's widget is hovered or active. Scales by:

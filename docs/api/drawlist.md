@@ -51,7 +51,7 @@ void GenShapeAnnulusArc    ( ImWidgetsShape& shape, ImVec2 center,
 ### Shape utilities
 
 ```cpp
-void ShapeTesselationUniform      ( ImWidgetsShape& shape );
+void ShapeTessellationUniform      ( ImWidgetsShape& shape );
 void ShapeTranslate               ( ImWidgetsShape& shape, ImVec2 t );
 void ShapeSetBound                ( ImWidgetsShape& shape );        // recompute shape.bb
 void ShapeSetDefaultUV            ( ImWidgetsShape& shape );

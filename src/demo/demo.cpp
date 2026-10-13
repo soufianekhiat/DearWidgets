@@ -2245,7 +2245,7 @@ namespace ImWidgets{
 				ImWidgets::ShapeSetDefaultUV( shape );
 #ifdef DEAR_WIDGETS_TESSELATION
 				for ( int k = 0; k < tess; ++k )
-					ImWidgets::ShapeTesselationUniform( shape );
+					ImWidgets::ShapeTessellationUniform( shape );
 #endif
 				ImWidgets::ShapeLinearGradient( shape, gradient.uv_start, gradient.uv_end,
 													gradient.cola.u, gradient.colb.u , ImWidgetsGradientInterp_sRGB );
@@ -2723,7 +2723,7 @@ namespace ImWidgets{
 				{
 					ImVec2 dbgPos = ImGui::GetCursorScreenPos();
 					float dbgRowH = dbgSize * 1.3f;
-					ImWidgets::DrawTesselateDebug( pDrawList, dbgFont, dbgSize, dbgChar, dbgPos, dbgTol, dbgSpacing, dbgRowH );
+					ImWidgets::DrawTessellateDebug( pDrawList, dbgFont, dbgSize, dbgChar, dbgPos, dbgTol, dbgSpacing, dbgRowH );
 				}
 				EndCullSection( s_cull_dbgtess_h, s_cull_dbgtess_y );
 			}
@@ -2813,7 +2813,7 @@ namespace ImWidgets{
 						{
 							// Per-glyph: shape full text (preserves ligatures/calt), then apply gradient per glyph
 							ImVector<ImWidgetsShape> glyphShapes;
-							ImWidgets::TesselateTextPerGlyph( tyFont, tySize, text_buf, glyphShapes, nullptr, tessTol, tyIterations );
+							ImWidgets::TessellateTextPerGlyph( tyFont, tySize, text_buf, glyphShapes, nullptr, tessTol, tyIterations );
 							for ( int gs = 0; gs < glyphShapes.Size; gs++ )
 							{
 								ImWidgetsShape& shape = glyphShapes[gs];
@@ -2881,7 +2881,7 @@ namespace ImWidgets{
 							{
 								// Per-glyph image fill: shape full text, one different image per glyph
 								ImVector<ImWidgetsShape> glyphShapes;
-								ImWidgets::TesselateTextPerGlyph( tyFont, tySize, text_buf, glyphShapes, nullptr, tessTol, tyIterations );
+								ImWidgets::TessellateTextPerGlyph( tyFont, tySize, text_buf, glyphShapes, nullptr, tessTol, tyIterations );
 								ImVec2 imgPos( p.x, p.y + asc2 );
 								for ( int gs = 0; gs < glyphShapes.Size; gs++ )
 								{
@@ -2941,7 +2941,7 @@ namespace ImWidgets{
 							ImVec2 p = ImGui::GetCursorScreenPos();
 
 							ImWidgetsShape latexShape;
-							ImWidgets::TesselateLaTeX( latexFillSize, lfe.eq, p, latexShape, tessTol, tyIterations );
+							ImWidgets::TessellateLaTeX( latexFillSize, lfe.eq, p, latexShape, tessTol, tyIterations );
 
 							if ( latexShape.triangles.Size > 0 )
 							{
@@ -3034,13 +3034,13 @@ namespace ImWidgets{
 			if ( cache[ci].valid ) continue;
 			cache[ci].textSize = ImWidgets::CalcTextSize( animFont, animSize, kTexts[ci], nullptr, &cache[ci].ascent );
 			cache[ci].glyphs.resize( 0 );
-			ImWidgets::TesselateTextPerGlyph( animFont, animSize, kTexts[ci], cache[ci].glyphs, nullptr, tessTol, iterations );
+			ImWidgets::TessellateTextPerGlyph( animFont, animSize, kTexts[ci], cache[ci].glyphs, nullptr, tessTol, iterations );
 			// Also build whole-text shape for reveal/pulse
 			if ( ci == 0 || ci == 4 )
 			{
 				cache[ci].whole.vertices.resize( 0 ); cache[ci].whole.triangles.resize( 0 );
 				cache[ci].whole.bb = ImRect( FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX );
-				ImWidgets::TesselateText( animFont, animSize, kTexts[ci], cache[ci].whole, nullptr, tessTol, iterations );
+				ImWidgets::TessellateText( animFont, animSize, kTexts[ci], cache[ci].whole, nullptr, tessTol, iterations );
 			}
 			cache[ci].valid = true;
 			break; // one entry per frame -- spreads cost across 6 frames at startup
@@ -3440,7 +3440,7 @@ namespace ImWidgets{
 		ImWidgets::ShapeSetDefaultUV( shape );
 #ifdef DEAR_WIDGETS_TESSELATION
 		for ( int k = 0; k < tess; ++k )
-			ImWidgets::ShapeTesselationUniform( shape );
+			ImWidgets::ShapeTessellationUniform( shape );
 #endif
 		ImWidgets::ShapeLinearGradient( shape, gradient.uv_start, gradient.uv_end,
 											gradient.cola.u, gradient.colb.u , ImWidgetsGradientInterp_sRGB );
@@ -5472,7 +5472,7 @@ namespace ImWidgets{
 							ShapeSetDefaultUV( shape );
 #ifdef DEAR_WIDGETS_TESSELATION
 							for ( int k = 0; k < tess; ++k )
-								ShapeTesselationUniform( shape );
+								ShapeTessellationUniform( shape );
 #endif
 							ShapeLinearGradient( shape,
 													 uv_start, uv_end,
@@ -5555,7 +5555,7 @@ namespace ImWidgets{
 							ShapeSetDefaultUV( shape );
 #ifdef DEAR_WIDGETS_TESSELATION
 							for ( int k = 0; k < tess; ++k )
-								ShapeTesselationUniform( shape );
+								ShapeTessellationUniform( shape );
 #endif
 							ShapeRadialGradient( shape,
 													  uv_start, uv_end,
@@ -5604,7 +5604,7 @@ namespace ImWidgets{
 							ShapeSetDefaultUV( shape );
 #ifdef DEAR_WIDGETS_TESSELATION
 							for ( int k = 0; k < tess; ++k )
-								ShapeTesselationUniform( shape );
+								ShapeTessellationUniform( shape );
 #endif
 							ShapeDiamondGradient( shape,
 													   uv_start, uv_end,
@@ -5674,7 +5674,7 @@ namespace ImWidgets{
 							ShapeSetDefaultBoundUVWhiteCol( shape );
 #ifdef DEAR_WIDGETS_TESSELATION
 							for ( int k = 0; k < tess; ++k )
-								ShapeTesselationUniform( shape );
+								ShapeTessellationUniform( shape );
 #endif
 							DrawImageShapeDebug( pDrawList, background, shape, edge_thickness, edge_col, triangle_col, vertex_radius, vertex_col, tri_idx );
 							ImGui::Dummy( ImVec2( size, size ) );
@@ -5738,7 +5738,7 @@ namespace ImWidgets{
 							ShapeSetDefaultBoundUV( shape );
 #ifdef DEAR_WIDGETS_TESSELATION
 							for ( int k = 0; k < tess; ++k )
-								ShapeTesselationUniform( shape );
+								ShapeTessellationUniform( shape );
 #endif
 							ShapeLinearGradient( shape,
 													 uv_start, uv_end,
@@ -7324,7 +7324,7 @@ namespace ImWidgets{
 				ImVec2 se_sz = ImPlatform_LpToPx( ImVec2( 360, 300 ) );
 				ImWidgets::GenShapeSuperellipse( sh, ImVec2( se_sz.x * 0.5f, se_sz.y * 0.5f ),
 												 ImPlatform_LpToPx( rx ), ImPlatform_LpToPx( ry ), nx, ny, sides );
-				for ( int k = 0; k < tess_iter; ++k ) ImWidgets::ShapeTesselationUniform( sh );
+				for ( int k = 0; k < tess_iter; ++k ) ImWidgets::ShapeTessellationUniform( sh );
 				ImDrawList* dl = ImGui::GetWindowDrawList();
 				ImVec2 o = ImGui::GetCursorScreenPos();
 				ImGui::Dummy( se_sz );

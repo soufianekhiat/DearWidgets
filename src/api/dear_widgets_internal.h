@@ -478,7 +478,7 @@ ImVec2 CalcTextSize_Impl(ImFont* font, float font_size, const char* text,
                          const char* text_end = nullptr, float* out_ascent = nullptr);
 void   DrawText_Impl(ImDrawList* pDrawList, ImFont* font, float font_size,
                      ImVec2 pos, ImU32 col, const char* text, const char* text_end = nullptr);
-void   TesselateText_Impl(ImFont* font, float font_size, const char* text,
+void   TessellateText_Impl(ImFont* font, float font_size, const char* text,
                           ImWidgetsShape& outShape, const char* text_end,
                           float tess_tol, int iterations);
 float  SlugLpToPx(float lp);

@@ -5268,7 +5268,7 @@ namespace ImWidgets {
 		));
 	}
 
-	void TesselateText_Impl(ImFont* font, float font_size, const char* text, ImWidgetsShape& outShape, const char* text_end, float tess_tol, int iterations)
+	void TessellateText_Impl(ImFont* font, float font_size, const char* text, ImWidgetsShape& outShape, const char* text_end, float tess_tol, int iterations)
 	{
 		outShape.vertices.resize(0);
 		outShape.triangles.resize(0);
@@ -5334,19 +5334,19 @@ namespace ImWidgets {
 
 		// Apply subdivision iterations after tessellation
 		for (int it = 0; it < iterations; it++)
-			ShapeTesselationUniform(outShape);
+			ShapeTessellationUniform(outShape);
 	}
 
-	void TesselateText(ImFont* font, float font_size, const char* text, ImWidgetsShape& outShape, const char* text_end, float tess_tol, int iterations)
+	void TessellateText(ImFont* font, float font_size, const char* text, ImWidgetsShape& outShape, const char* text_end, float tess_tol, int iterations)
 	{
 		if (font_size > 0.0f) font_size = SlugLpToPx(font_size);
 		else                  font_size = ImGui::GetFontSize();
-		TesselateText_Impl(font, font_size, text, outShape, text_end, tess_tol, iterations);
+		TessellateText_Impl(font, font_size, text, outShape, text_end, tess_tol, iterations);
 	}
 
-	// Tesselate text with full shaping but output per-glyph shapes (preserves ligatures/calt).
+	// Tessellate text with full shaping but output per-glyph shapes (preserves ligatures/calt).
 	// Each glyph gets its own ImWidgetsShape with position already applied.
-	void TesselateTextPerGlyph(ImFont* font, float font_size, const char* text,
+	void TessellateTextPerGlyph(ImFont* font, float font_size, const char* text,
 	                           ImVector<ImWidgetsShape>& outShapes, const char* text_end,
 	                           float tess_tol, int iterations)
 	{
@@ -5412,7 +5412,7 @@ namespace ImWidgets {
 			InstantiateGlyphFromCache(*cached, gx, gy, sz / kTessRefSize, whiteUV, glyphShape);
 
 			for (int it = 0; it < iterations; it++)
-				ShapeTesselationUniform(glyphShape);
+				ShapeTessellationUniform(glyphShape);
 
 			penX += sg.advX * sz;
 		}
@@ -5492,10 +5492,10 @@ namespace ImWidgets {
 #endif
 	}
 
-	// (old per-glyph code removed -- replaced by QBez pipeline in TesselateText above)
-	static void TesselateAndOffset(ImFont* font, float fontSize, const char* text, const char* text_end, ImVec2 pos, ImWidgetsShape& shape, float tess_tol, int iterations = 0)
+	// (old per-glyph code removed -- replaced by QBez pipeline in TessellateText above)
+	static void TessellateAndOffset(ImFont* font, float fontSize, const char* text, const char* text_end, ImVec2 pos, ImWidgetsShape& shape, float tess_tol, int iterations = 0)
 	{
-		TesselateText_Impl(font, fontSize, text, shape, text_end, tess_tol, iterations);
+		TessellateText_Impl(font, fontSize, text, shape, text_end, tess_tol, iterations);
 		for (int i = 0; i < shape.vertices.Size; i++)
 			shape.vertices[i].pos = ImVec2(shape.vertices[i].pos.x + pos.x, shape.vertices[i].pos.y + pos.y);
 		shape.bb.Translate(pos);
@@ -5508,7 +5508,7 @@ namespace ImWidgets {
 		font_size = SlugLpToPx(font_size);
 		{ ImVec4 cr = pDrawList->_CmdHeader.ClipRect; float tT = pos.y - font_size, tB = pos.y + font_size * 0.5f; if (tT > cr.w || tB < cr.y || pos.x > cr.z) return; }
 		ImWidgetsShape shape;
-		TesselateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
+		TessellateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
 		if (shape.triangles.Size == 0) return;
 		float bbW = ImMax(shape.bb.GetWidth(), 1.0f), bbH = ImMax(shape.bb.GetHeight(), 1.0f);
 		for (int i = 0; i < shape.vertices.Size; i++) {
@@ -5527,7 +5527,7 @@ namespace ImWidgets {
 		font_size = SlugLpToPx(font_size);
 		{ ImVec4 cr = pDrawList->_CmdHeader.ClipRect; float tT = pos.y - font_size, tB = pos.y + font_size * 0.5f; if (tT > cr.w || tB < cr.y || pos.x > cr.z) return; }
 		ImWidgetsShape shape;
-		TesselateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
+		TessellateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
 		if (shape.triangles.Size == 0) return;
 		ShapeLinearGradient(shape, uv_start, uv_end, col0, col1, interp);
 		DrawShape(pDrawList, shape);
@@ -5540,7 +5540,7 @@ namespace ImWidgets {
 		font_size = SlugLpToPx(font_size);
 		{ ImVec4 cr = pDrawList->_CmdHeader.ClipRect; float tT = pos.y - font_size, tB = pos.y + font_size * 0.5f; if (tT > cr.w || tB < cr.y || pos.x > cr.z) return; }
 		ImWidgetsShape shape;
-		TesselateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
+		TessellateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
 		if (shape.triangles.Size == 0) return;
 		ShapeRadialGradient(shape, uv_start, uv_end, col0, col1, interp);
 		DrawShape(pDrawList, shape);
@@ -5553,7 +5553,7 @@ namespace ImWidgets {
 		font_size = SlugLpToPx(font_size);
 		{ ImVec4 cr = pDrawList->_CmdHeader.ClipRect; float tT = pos.y - font_size, tB = pos.y + font_size * 0.5f; if (tT > cr.w || tB < cr.y || pos.x > cr.z) return; }
 		ImWidgetsShape shape;
-		TesselateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
+		TessellateAndOffset(font, font_size, text, text_end, pos, shape, tess_tol, iterations);
 		if (shape.triangles.Size == 0) return;
 		ShapeDiamondGradient(shape, uv_start, uv_end, col0, col1, interp);
 		DrawShape(pDrawList, shape);
@@ -5569,7 +5569,7 @@ namespace ImWidgets {
 	}
 
 	// Debug: render tessellation algorithm steps for a single glyph
-	void DrawTesselateDebug(ImDrawList* dl, ImFont* font, float font_size, const char* text, ImVec2 pos, float tess_tol, float spacing, float rowH)
+	void DrawTessellateDebug(ImDrawList* dl, ImFont* font, float font_size, const char* text, ImVec2 pos, float tess_tol, float spacing, float rowH)
 	{
 		IM_UNUSED(rowH);
 		if (!gs_pContext || !gs_pContext->slugState || !text || !*text) return;
@@ -5791,7 +5791,7 @@ namespace ImWidgets {
 					tessShape.vertices[vi].col = IM_COL32_WHITE;
 				}
 				for (int it = 0; it < gs_tessIterations; it++)
-					ShapeTesselationUniform(tessShape);
+					ShapeTessellationUniform(tessShape);
 				for (int ti = 0; ti < tessShape.triangles.Size; ti++) {
 					ImWidgetsTriIdx& t = tessShape.triangles[ti];
 					ImVec2 pa = tessShape.vertices[t.a].pos, pb = tessShape.vertices[t.b].pos, pc = tessShape.vertices[t.c].pos;
@@ -5971,7 +5971,7 @@ namespace ImWidgets {
 				dl->AddText(ImVec2(col1X, curY + glyphH + 2), IM_COL32(150,150,150,200), "Assembled");
 			}
 
-			// --- Middle: Tessellated with ShapeTesselationUniform iterations (wireframe) ---
+			// --- Middle: Tessellated with ShapeTessellationUniform iterations (wireframe) ---
 			float col2X = col1X + glyphW + spacing;
 			{
 				// Build a single combined shape from all leaf pieces
@@ -5985,7 +5985,7 @@ namespace ImWidgets {
 				}
 				// Apply subdivision iterations
 				for (int it = 0; it < gs_tessIterations; it++)
-					ShapeTesselationUniform(tessShape);
+					ShapeTessellationUniform(tessShape);
 				// Draw filled + wireframe
 				for (int ti = 0; ti < tessShape.triangles.Size; ti++) {
 					ImWidgetsTriIdx& t = tessShape.triangles[ti];

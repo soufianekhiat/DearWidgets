@@ -64,7 +64,7 @@ Features fall into three tiers based on what they actually call at runtime:
 | **Dashed polylines (CPU)** | `DrawDashedPolylineAA` with `SetDashedLinesUseGPU(false)` | Y | | |
 | **Color conversions** | `ColorConvert*`, `ColorBlend`, `ImColorBlendsRGB`, `KelvinTemperatureTosRGBColors` | Y | | |
 | **Window background** | `SetCurrentWindowBackgroundImage` | Y | | |
-| **Tessellated text** ^1 | `TesselateText`, `TesselateTextPerGlyph`, `ExtractTextContours` | Y ^1 | | |
+| **Tessellated text** ^1 | `TessellateText`, `TessellateTextPerGlyph`, `ExtractTextContours` | Y ^1 | | |
 | **Gradient/image text fills** ^1 | `DrawImageText`, `DrawLinearGradientText`, `DrawRadialGradientText`, `DrawDiamondGradientText` | Y ^1 | | |
 | **Slider2DRange / Slider2DDisc** | `Slider2DRangeFloat/Int/Scalar`, `Slider2DDiscFloat/Int/Scalar` | Y | | |
 | **SliderNVertical** | `SliderNVerticalFloat/Int/Scalar` | Y | | |
@@ -123,7 +123,7 @@ Features fall into three tiers based on what they actually call at runtime:
 | **Slug GPU text** | `DrawText`, `CalcTextSize`, `CalcShapedTextWidth` | | | Y `RichFont` |
 | **Slug font loader** | `GetSlugFontLoader`, `GetSlugFontInfo`, `SlugBuildGlyphByID`, `PrewarmTessellationCache` | | | Y `RichFont` |
 | **Slug debug** | `DrawTextDebugCurves`, `DrawTextDebugLayers`, `SetSlugDebugShader` / `GetSlugDebugShader` | | | Y `RichFont` |
-| **LaTeX** | `LoadLaTeXFont`, `DrawLaTeX`, `CalcLaTeXSize`, `DrawLaTeXDebug`, `TesselateLaTeX` | | | Y `LaTeX` |
+| **LaTeX** | `LoadLaTeXFont`, `DrawLaTeX`, `CalcLaTeXSize`, `DrawLaTeXDebug`, `TessellateLaTeX` | | | Y `LaTeX` |
 | **GPU gradient / image text** | `DrawLinearGradientTextGPU`, `DrawRadialGradientTextGPU`, `DrawDiamondGradientTextGPU`, `DrawImageTextGPU` | | | Y `RichFont` |
 | **ImageInspector** | `ImageInspector`, `ImageInspectorSupported`, `ImageInspectorReleaseState` | | | Y ^6 |
 | **ImageViewer (custom shader)** | `ImageViewer` with a non-null `shaderProgram` ^3 | | | Y ^6 |

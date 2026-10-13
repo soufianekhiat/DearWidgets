@@ -334,6 +334,18 @@ internally), and `ImNetworkGraphData::Zoom` is a logical zoom. Callers that
 wrapped the size in `ImPlatform_LpToPx` should drop the wrap; `0` still means
 "fill the available width".
 
+#### 28. "Tesselate" spelling fixed, `RemoveFeature` pluralised
+
+| before | now |
+|---|---|
+| `TesselateText` / `TesselateTextPerGlyph` | `TessellateText` / `TessellateTextPerGlyph` |
+| `TesselateLaTeX` | `TessellateLaTeX` |
+| `DrawTesselateDebug` | `DrawTessellateDebug` |
+| `ShapeTesselationUniform` | `ShapeTessellationUniform` |
+| `RemoveFeature` | `RemoveFeatures` (matches `SetFeatures` / `AddFeatures`) |
+
+There are no compatibility aliases -- rename the call sites.
+
 ---
 
 ### Added

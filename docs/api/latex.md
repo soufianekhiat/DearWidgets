@@ -115,9 +115,9 @@ Draws the same expression as `DrawLaTeX` plus colored bounding rectangles for ea
 
 ---
 
-### `TesselateLaTeX`
+### `TessellateLaTeX`
 ```cpp
-void TesselateLaTeX(float font_size, const char* latex, ImVec2 pos,
+void TessellateLaTeX(float font_size, const char* latex, ImVec2 pos,
                     ImWidgetsShape& outShape,
                     float tess_tol = 0.25f, int iterations = 0);
 ```
@@ -127,7 +127,7 @@ Tessellates a LaTeX expression into an `ImWidgetsShape` (triangle mesh). Use wit
 ImVec2 sz = ImWidgets::CalcLaTeXSize( 24.0f, "E = mc^2" );
 
 ImWidgetsShape shape;
-ImWidgets::TesselateLaTeX( 24.0f, "E = mc^2", pos, shape );
+ImWidgets::TessellateLaTeX( 24.0f, "E = mc^2", pos, shape );
 ImWidgets::ShapeLinearGradient( shape, pos, pos + sz, col0, col1,
                                 ImWidgetsGradientInterp_OkLab );
 ImWidgets::DrawShape( dl, shape );
