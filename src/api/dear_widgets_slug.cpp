@@ -3409,8 +3409,49 @@ namespace ImWidgets {
 		return DW_GraphemesUnshaped(font, sz, text, text_end, out);
 	}
 
+	static bool SlugShapeTextOutlinesSingle(ImFont* font, float size_px, const char* text, const char* text_end,
+	                                        ImVector<DW_GlyphOutline>& glyphs, ImVector<ImVec2>& seg_pts);
+
+	// With a font fallback chain: outlines of every piece (own font, forced
+	// direction), shifted to the piece's place in visual order.
 	bool DW_ShapeTextOutlines(ImFont* font, float size_px, const char* text, const char* text_end,
 	                          ImVector<DW_GlyphOutline>& glyphs, ImVector<ImVec2>& seg_pts)
+	{
+		if (!font) font = ImGui::GetFont();
+		if (text && !text_end) text_end = text + strlen(text);
+		ImVector<SlugPiece> pieces;
+		if (!text || !SlugFallbackPieces(font, text, text_end, pieces))
+			return SlugShapeTextOutlinesSingle(font, size_px, text, text_end, glyphs, seg_pts);
+		glyphs.resize(0);
+		seg_pts.resize(0);
+		ImVector<DW_GlyphOutline> pg;
+		ImVector<ImVec2> ps;
+		ImWidgetsTextDirection const saved = GetStyle().TextDirection;
+		float x = 0.0f;
+		bool any = false;
+		for (int i = 0; i < pieces.Size; ++i)
+		{
+			GetStyle().TextDirection = (pieces[i].level & 1) ? ImWidgetsTextDirection_RTL : ImWidgetsTextDirection_LTR;
+			if (!SlugShapeTextOutlinesSingle(pieces[i].font, size_px, pieces[i].b, pieces[i].e, pg, ps)) continue;
+			any = true;
+			const int segBase = seg_pts.Size / 2;
+			float w = 0.0f;
+			for (int g = 0; g < pg.Size; ++g)
+			{
+				DW_GlyphOutline o = pg[g];
+				w = ImMax(w, o.penX + o.advance);
+				o.penX += x; o.segBegin += segBase;
+				glyphs.push_back(o);
+			}
+			for (int k = 0; k < ps.Size; ++k) seg_pts.push_back(ImVec2(ps[k].x + x, ps[k].y));
+			x += w;
+		}
+		GetStyle().TextDirection = saved;
+		return any;
+	}
+
+	static bool SlugShapeTextOutlinesSingle(ImFont* font, float size_px, const char* text, const char* text_end,
+	                                        ImVector<DW_GlyphOutline>& glyphs, ImVector<ImVec2>& seg_pts)
 	{
 		glyphs.resize(0);
 		seg_pts.resize(0);
