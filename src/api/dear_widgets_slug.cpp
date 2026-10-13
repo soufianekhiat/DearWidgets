@@ -8042,6 +8042,14 @@ namespace ImWidgets {
 				for (int k = 0; k < sel.Size; ++k)
 					dl->AddRectFilled(ImVec2(textLeft + L.x + sel[k].x, ly), ImVec2(textLeft + L.x + sel[k].y, ly + lineAdv), ImGui::GetColorU32(ImGuiCol_TextSelectedBg));
 			}
+			// A selected paragraph break shows as a small box after the line's end
+			// (in its reading direction), so selected empty lines are visible too.
+			if (isActive && selA != selB && selA <= lr && selB > lr && lr < len && buf[lr] == '\n')
+			{
+				const float nlW = size_px * 0.35f;
+				const float x0 = L.rtl ? textLeft + L.x - nlW : textLeft + L.x + L.w;
+				dl->AddRectFilled(ImVec2(x0, ly), ImVec2(x0 + nlW, ly + lineAdv), ImGui::GetColorU32(ImGuiCol_TextSelectedBg));
+			}
 			if (L.e > L.b)
 			{
 				GetStyle().TextDirection = L.rtl ? ImWidgetsTextDirection_RTL : ImWidgetsTextDirection_LTR;
