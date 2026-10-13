@@ -14204,19 +14204,6 @@ namespace ImWidgets{
 			float outlineThick = isSelected ? markerThickness * 2.0f : markerThickness;
 			window->DrawList->AddTriangle( p0, p1, p2, outlineCol, outlineThick );
 
-			// Alpha indicator: small vertical tick on the right edge of the triangle
-			// base, rising from base toward tip as alpha decreases. Doesn't cross the
-			// triangle body, doesn't obscure the outline.
-			if ( alpha && !splitAlpha && gradient->Stops[ i ].Color.w < 1.0f )
-			{
-				float tickX = p2.x + LpToPx( 2.0f );
-				float tickTopY = ImLerp( marker_bb.Max.y, marker_bb.Min.y + LpToPx( 2.0f ), 1.0f - gradient->Stops[ i ].Color.w );
-				window->DrawList->AddLine(
-					ImVec2( tickX, marker_bb.Max.y ),
-					ImVec2( tickX, tickTopY ),
-					ImGui::GetColorU32( dwStyle.Colors[ ImWidgetsCol_Gradient_AlphaIndicator ] ),
-					markerThickness );
-			}
 		}
 
 		// Alpha markers (top edge, inverted triangles) -- only in split mode
@@ -39093,6 +39080,7 @@ namespace ImWidgets
     static ImGuiID RangeSlider_InitMtKey      ( ImGuiID id ) { return id ^ 0x0BBCCDDFu; }
     static ImGuiID RangeSlider_InitLoKey      ( ImGuiID id ) { return id ^ 0x0BBCCDE0u; }
     static ImGuiID RangeSlider_InitUpKey      ( ImGuiID id ) { return id ^ 0x0BBCCDE1u; }
+    static ImGuiID RangeSlider_EditKey        ( ImGuiID id ) { return id ^ 0x0BBCCDE2u; }
 
     static bool RangeSliderScalarImpl( char const* label, ImGuiDataType data_type,
                                        void* p_lower, void* p_upper,
@@ -39116,6 +39104,51 @@ namespace ImWidgets
         float h = ( size.y > 0.0f ) ? size.y : ImGui::GetFrameHeight();
 
         ImVec2 label_size = ImGui::CalcTextSize( label, NULL, true );
+
+        // Ctrl+click: both bounds as numeric fields, kept min <= lower <= upper <= max
+        // (the field being edited yields). Enter, Escape or a click elsewhere returns
+        // to the slider. State: 0 slider, 1 entering (focus lower), 2 editing.
+        {
+            ImGuiStorage* st = window->DC.StateStorage;
+            int const editState = st->GetInt( RangeSlider_EditKey( id ), 0 );
+            if ( editState != 0 )
+            {
+                char const* fmt = format ? format : ImGui::DataTypeGetInfo( data_type )->PrintFmt;
+                ImGui::BeginGroup();
+                ImGui::PushID( label );
+                float const half = ImMax( 1.0f, ( w - style.ItemInnerSpacing.x ) * 0.5f );
+                ImGui::SetNextItemWidth( half );
+                if ( editState == 1 ) ImGui::SetKeyboardFocusHere();
+                bool const loEdited = ImGui::InputScalar( "##lo", data_type, p_lower, NULL, NULL, fmt );
+                bool anyActive = ImGui::IsItemActive(), anyFocused = ImGui::IsItemFocused();
+                ImGui::SameLine( 0.0f, style.ItemInnerSpacing.x );
+                ImGui::SetNextItemWidth( half );
+                bool const hiEdited = ImGui::InputScalar( "##hi", data_type, p_upper, NULL, NULL, fmt );
+                anyActive |= ImGui::IsItemActive(); anyFocused |= ImGui::IsItemFocused();
+                ImGui::PopID();
+                if ( label_size.x > 0.0f )
+                {
+                    ImGui::SameLine( 0.0f, style.ItemInnerSpacing.x );
+                    ImGui::TextUnformatted( label, ImGui::FindRenderedTextEnd( label ) );
+                }
+                ImGui::EndGroup();
+                if ( loEdited || hiEdited )
+                {
+                    float const mn = ScalarToFloat( data_type, ( ImU64* )p_min ), mx = ScalarToFloat( data_type, ( ImU64* )p_max );
+                    float lo = ImClamp( ScalarToFloat( data_type, ( ImU64* )p_lower ), mn, mx );
+                    float hi = ImClamp( ScalarToFloat( data_type, ( ImU64* )p_upper ), mn, mx );
+                    if ( lo > hi ) { if ( loEdited ) lo = hi; else hi = lo; }
+                    WriteFloatToScalar( data_type, p_lower, lo );
+                    WriteFloatToScalar( data_type, p_upper, hi );
+                }
+                bool const done = !anyActive && ( !anyFocused || g.IO.MouseClicked[ 0 ]
+                                                  || ImGui::IsKeyPressed( ImGuiKey_Enter ) || ImGui::IsKeyPressed( ImGuiKey_KeypadEnter )
+                                                  || ImGui::IsKeyPressed( ImGuiKey_Escape ) );
+                st->SetInt( RangeSlider_EditKey( id ), editState == 1 ? 2 : ( done ? 0 : 2 ) );
+                return loEdited || hiEdited;
+            }
+        }
+
         ImRect const frame_bb( window->DC.CursorPos, window->DC.CursorPos + ImVec2( w, h ) );
         ImRect const total_bb( frame_bb.Min, ImVec2( frame_bb.Max.x + ( label_size.x > 0.0f ? style.ItemInnerSpacing.x + label_size.x : 0.0f ), frame_bb.Max.y ) );
 
@@ -39150,7 +39183,9 @@ namespace ImWidgets
         float grabHalf = grabW * 0.5f;
         float grabHalfT = ( frame_bb.GetWidth() > 0.0f ) ? ( grabHalf / frame_bb.GetWidth() ) : 0.0f;
 
-        if ( hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id ) )
+        if ( hovered && g.IO.KeyCtrl && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id ) )
+            storage->SetInt( RangeSlider_EditKey( id ), 1 ); // numeric fields from the next frame
+        else if ( hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id ) )
         {
             float tLo = ( den > 0.0f ) ? ImClamp( ( ScalarToFloat( data_type, ( ImU64* )p_lower ) - vMinF ) / den, 0.0f, 1.0f ) : 0.0f;
             float tUp = ( den > 0.0f ) ? ImClamp( ( ScalarToFloat( data_type, ( ImU64* )p_upper ) - vMinF ) / den, 0.0f, 1.0f ) : 0.0f;
@@ -41113,6 +41148,12 @@ namespace ImWidgets
         s.Cancelled = false;
         thickness = LpToPx( thickness );
 
+        // The path is in screen space: move it with the area (window scroll).
+        ImVec2 const moved = bounds.Min - s.Origin;
+        if ( moved.x != 0.0f || moved.y != 0.0f )
+            for ( int i = 0; i < s.Path.Size; ++i ) s.Path[ i ] += moved;
+        s.Origin = bounds.Min;
+
         if ( ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && ImGui::IsItemHovered() )
         {
             s.Active = true;
@@ -41323,8 +41364,9 @@ namespace ImWidgets
         }
 
         bool middle = ImGui::IsMouseDown( ImGuiMouseButton_Middle );
+        bool right = ImGui::IsMouseDown( ImGuiMouseButton_Right );
         bool shift_left = ImGui::IsMouseDown( ImGuiMouseButton_Left ) && ImGui::GetIO().KeyShift;
-        if ( ( hovered || s.PanActive ) && ( middle || shift_left ) )
+        if ( ( hovered || s.PanActive ) && ( middle || right || shift_left ) )
         {
             if ( !s.PanActive ) { s.PanLastMouse = mouse; s.PanActive = true; }
             s.Pan += mouse - s.PanLastMouse;
@@ -41542,50 +41584,6 @@ namespace ImWidgets
     //////////////////////////////////////////////////////////////////////////
     // Drop-shadow / inner-glow
     //////////////////////////////////////////////////////////////////////////
-    static ImU32 DW_ScaleAlpha( ImU32 c, float k )
-    {
-        int A = ( c >> IM_COL32_A_SHIFT ) & 0xFF;
-        int Af = (int)( (float)A * ImClamp( k, 0.0f, 1.0f ) + 0.5f );
-        return ( c & ~( 0xFFu << IM_COL32_A_SHIFT ) ) | ( ( (ImU32)Af & 0xFF ) << IM_COL32_A_SHIFT );
-    }
-
-    void DrawDropShadowRect( ImDrawList* dl, ImRect r, float radius, ImVec2 offset,
-                              ImU32 col, float corner_round )
-    {
-        if ( radius <= 0.0f ) { dl->AddRectFilled( r.Min + offset, r.Max + offset, col, corner_round ); return; }
-        int steps = ImMax( 3, (int)( radius / 1.5f ) );
-        for ( int k = steps; k >= 1; --k )
-        {
-            float u = (float)k / (float)steps;
-            float pad = radius * u;
-            float alpha = ( 1.0f - u );
-            alpha = alpha * alpha;  // quadratic falloff
-            alpha *= 0.6f;
-            ImU32 c = DW_ScaleAlpha( col, alpha );
-            dl->AddRectFilled( r.Min + offset - ImVec2( pad, pad ),
-                                r.Max + offset + ImVec2( pad, pad ),
-                                c, corner_round + pad );
-        }
-    }
-
-    void DrawInnerGlowRect( ImDrawList* dl, ImRect r, float radius, ImU32 col, float corner_round )
-    {
-        if ( radius <= 0.0f ) return;
-        int steps = ImMax( 3, (int)( radius / 1.5f ) );
-        for ( int k = 1; k <= steps; ++k )
-        {
-            float u = (float)k / (float)steps;
-            float pad = radius * u;
-            float alpha = ( 1.0f - u );
-            alpha = alpha * alpha * 0.55f;
-            ImU32 c = DW_ScaleAlpha( col, alpha );
-            ImRect rr( r.Min.x + pad, r.Min.y + pad, r.Max.x - pad, r.Max.y - pad );
-            if ( rr.Max.x <= rr.Min.x || rr.Max.y <= rr.Min.y ) break;
-            float cr = ImMax( 0.0f, corner_round - pad );
-            dl->AddRect( rr.Min, rr.Max, c, cr, 1.0f, 0 );
-        }
-    }
-
     //////////////////////////////////////////////////////////////////////////
     // Rulers
     //////////////////////////////////////////////////////////////////////////
@@ -42684,10 +42682,11 @@ namespace ImWidgets
             }
         }
 
-        // Persistent overlay on the foreground draw list. Stays visible above
-        // every window / scrollable panel because we draw last; stays attached
-        // to the source swatch because positions live in UV space.
-        ImDrawList* fg_path = ImGui::GetForegroundDrawList();
+        // Stroke overlay in the window's draw list, clipped to the swatch (and
+        // so to the window when it scrolls); attached to the swatch because
+        // positions live in UV space.
+        ImDrawList* fg_path = win->DrawList;
+        fg_path->PushClipRect( screen_rect.Min, screen_rect.Max, true );
         if ( state.Path.Size >= 2 )
         {
             for ( int i = 0; i + 1 < state.Path.Size; ++i )
@@ -42709,6 +42708,7 @@ namespace ImWidgets
             fg_path->AddCircleFilled( tail, 5.0f, IM_COL32( 0, 0, 0, 220 ) );
             fg_path->AddCircleFilled( tail, 3.0f, state.Colors.back() );
         }
+        fg_path->PopClipRect();
 
         if ( state.Active && show_live_preview && state.Path.Size >= 2 )
         {

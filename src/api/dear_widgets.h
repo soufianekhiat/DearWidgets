@@ -2879,7 +2879,7 @@ struct ImPaintCanvasData
 	ImVec2       _LastPos;
 	bool         _TexDirty;
 
-	ImPaintCanvasData()  { Pixels = NULL; Width = Height = 0; Format = ImPlatform_PixelFormat_RGBA8; Mode = ImPaintMode_Color; Brush = ImPaintBrush_Hard; Tool = ImPaintTool_Brush; BrushSize = 4.0f; BrushHardness = 0.5f; BrushOpacity = 1.0f; BrushColor = ImVec4( 1, 1, 1, 1 ); _TexID = ImTextureID_Invalid; _TexW = _TexH = 0; _TexFmt = ImPlatform_PixelFormat_RGBA8; _LastPos = ImVec2( -1, -1 ); _TexDirty = true; }
+	ImPaintCanvasData()  { Pixels = NULL; Width = Height = 0; Format = ImPlatform_PixelFormat_RGBA8; Mode = ImPaintMode_Color; Brush = ImPaintBrush_Soft; Tool = ImPaintTool_Brush; BrushSize = 4.0f; BrushHardness = 0.5f; BrushOpacity = 1.0f; BrushColor = ImVec4( 1, 1, 1, 1 ); _TexID = ImTextureID_Invalid; _TexW = _TexH = 0; _TexFmt = ImPlatform_PixelFormat_RGBA8; _LastPos = ImVec2( -1, -1 ); _TexDirty = true; }
 	void DestroyTexture() { if ( _TexID != ImTextureID_Invalid ) { ImPlatform_DestroyTexture( _TexID ); _TexID = ImTextureID_Invalid; } _TexW = _TexH = 0; }
 };
 
@@ -4355,13 +4355,14 @@ struct ImWidgetsSelectionState
     bool                   Closed;   // user released this frame; selection is finalized
     ImWidgetsSelectionOp   Op;       // modifier op of the current/last drag (see ImWidgetsSelectionOp_)
     bool                   Cancelled;// Escape pressed this frame: drag aborted, Path cleared
+    ImVec2                 Origin;   // bounds.Min of the last frame (Path follows the area when it scrolls)
 };
 
 //////////////////////////////////////////////////////////////////////////
 // Pan-zoom canvas + minimap.
 //   - BeginCanvas paints background + dotted grid + clips drawing to the
 //     viewport. The caller draws content using CanvasWorldToScreen().
-//   - Pan: middle drag, or Shift+left drag.
+//   - Pan: right drag, middle drag, or Shift+left drag.
 //   - Zoom: mouse wheel (anchored to cursor).
 //   - DrawCanvasMinimap shows the viewport rect within a content extent
 //     and lets the user drag it to re-center.
@@ -6564,16 +6565,6 @@ namespace ImWidgets{
     IMGUI_API void DrawCrosshairInRect( ImDrawList* draw, ImVec2 center, ImRect bounds,
                                          ImU32 col, float thickness = 1.0f );
 
-    //////////////////////////////////////////////////////////////////////////
-    // Soft drop-shadow / inner-glow on a rect (stacked-alpha approximation;
-    // no shader). `radius` is the spread of the falloff in px.
-    //////////////////////////////////////////////////////////////////////////
-    IMGUI_API void DrawDropShadowRect( ImDrawList* draw, ImRect r,
-                                        float radius, ImVec2 offset,
-                                        ImU32 col, float corner_round = 0.0f );
-
-    IMGUI_API void DrawInnerGlowRect( ImDrawList* draw, ImRect r,
-                                       float radius, ImU32 col, float corner_round = 0.0f );
 
 
     IMGUI_API void DrawRuler( ImDrawList* draw, ImRect bounds, ImWidgetsRulerOrient orient,

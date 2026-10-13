@@ -729,18 +729,6 @@ void DrawGridOverlay( ImDrawList* draw, ImRect bounds, ImVec2 origin,
 
 ---
 
-## Shadows and Glows
-
-```cpp
-void DrawDropShadowRect( ImDrawList* draw, ImRect r, float radius, ImVec2 offset,
-                         ImU32 col, float corner_round = 0.0f );
-void DrawInnerGlowRect ( ImDrawList* draw, ImRect r, float radius, ImU32 col,
-                         float corner_round = 0.0f );
-```
-Layered-quad approximations of a Gaussian falloff -- no shader required.
-
----
-
 ## Graduation Lines
 
 ```cpp

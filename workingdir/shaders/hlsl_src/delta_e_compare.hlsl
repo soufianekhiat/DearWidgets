@@ -81,28 +81,41 @@ float3 xyz_to_lab(float3 xyz)
 }
 
 // ---- ramp LUTs (inlined approximations)
+// Polynomial fits of the matplotlib colormaps (viridis / magma: Matt Zucker,
+// turbo: Google's reference approximation).
 float3 viridis(float t) {
     t = saturate(t);
-    float3 c = float3(0.267004, 0.004874, 0.329415)
-             + t * (float3( 1.026f, 1.523f,  0.355f)
-             + t * (float3( 1.183f,-1.283f, -3.015f)
-             + t * (float3(-3.180f, 0.694f,  2.547f))));
-    return saturate(c);
+    const float3 c0 = float3( 0.2777273272234177,  0.005407344544966578,  0.3340998053353061);
+    const float3 c1 = float3( 0.1050930431085774,  1.404613529898575,     1.384590162594685);
+    const float3 c2 = float3(-0.3308618287255563,  0.214847559468213,     0.09509516302823659);
+    const float3 c3 = float3(-4.634230498983486,  -5.799100973351585,   -19.33244095627987);
+    const float3 c4 = float3( 6.228269936347081,  14.17993336680509,     56.69055260068105);
+    const float3 c5 = float3( 4.776384997670288, -13.74514537774601,    -65.35303263337234);
+    const float3 c6 = float3(-5.435455855934631,   4.645852612178535,    26.3124352495832);
+    return saturate(c0 + t * (c1 + t * (c2 + t * (c3 + t * (c4 + t * (c5 + t * c6))))));
 }
 float3 turbo(float t) {
     t = saturate(t);
-    return saturate(float3(
-        34.61f + t * (-1565.95f + t * (23299.04f + t * (-73095.42f + t * (108052.02f - t * 58346.35f)))) * 0.000001f,
-        23.31f + t * ( 557.33f  + t * (1225.33f  + t * (-3574.96f  + t * ( 1073.77f  + t * 707.56f)))) * 0.001f,
-        27.2f  + t * ( 3211.1f  + t * (-15327.97f+ t * ( 27814.0f  + t * (-22569.18f + t * 6838.66f)))) * 0.00001f));
+    const float4 kRed4   = float4(0.13572138, 4.61539260, -42.66032258, 132.13108234);
+    const float4 kGreen4 = float4(0.09140261, 2.19418839, 4.84296658, -14.18503333);
+    const float4 kBlue4  = float4(0.10667330, 12.64194608, -60.58204836, 110.36276771);
+    const float2 kRed2   = float2(-152.94239396, 59.28637943);
+    const float2 kGreen2 = float2(4.27729857, 2.82956604);
+    const float2 kBlue2  = float2(-89.90310912, 27.34824973);
+    float4 v4 = float4(1.0, t, t * t, t * t * t);
+    float2 v2 = v4.zw * v4.z;
+    return saturate(float3(dot(v4, kRed4) + dot(v2, kRed2), dot(v4, kGreen4) + dot(v2, kGreen2), dot(v4, kBlue4) + dot(v2, kBlue2)));
 }
 float3 magma(float t) {
     t = saturate(t);
-    float3 c = float3(-0.002f, -0.002f, -0.013f)
-             + t * (float3( 0.25f, 0.15f,  0.70f)
-             + t * (float3( 1.60f, 0.35f,  0.60f)
-             + t * (float3(-1.10f,-0.20f, -1.90f))));
-    return saturate(c);
+    const float3 c0 = float3(-0.002136485053939582, -0.000749655052795221, -0.005386127855323933);
+    const float3 c1 = float3( 0.2516605407371642,    0.6775232436837668,    2.494026599312351);
+    const float3 c2 = float3( 8.353717279216625,    -3.577719514958484,     0.3144679030132573);
+    const float3 c3 = float3(-27.66873308576866,    14.26473078096533,    -13.64921318813922);
+    const float3 c4 = float3( 52.17613981234068,   -27.94360607168351,     12.94416944238394);
+    const float3 c5 = float3(-50.76852536473588,    29.04658282127291,      4.23415299384598);
+    const float3 c6 = float3( 18.65570506591883,   -11.48977351997711,     -5.601961508734096);
+    return saturate(c0 + t * (c1 + t * (c2 + t * (c3 + t * (c4 + t * (c5 + t * c6))))));
 }
 
 float3 ramp(float t, uint mode) {

@@ -97,7 +97,6 @@ Features fall into three tiers based on what they actually call at runtime:
 | **Onion skin** | `DrawOnionSkin`, `DrawOnionSkinAuto` | Y | | |
 | **Arrows / dimensions** | `DrawArrow`, `DrawArrowHead`, `DrawAxisArrows`, `DrawDimensionLine`, `GetArrowHeadName`, `GetDimensionTextOrientName` | Y | | |
 | **Crosshair / ruler / grid** | `DrawCrosshair`, `DrawCrosshairInRect`, `GetCrosshairStyleName`, `DrawRuler`, `DrawGridOverlay` | Y | | |
-| **Shadow / glow** | `DrawDropShadowRect`, `DrawInnerGlowRect` | Y | | |
 | **Gradient mesh / toon ramp** | `GradientMeshInit`, `GradientMeshEditor`, `ToonRampEditor`, `ToonRampSample` | Y | | |
 | **Matrix editor** | `MatrixEditor`, `MatrixEditorDouble` | Y | | |
 | **Dials & fields** | `NotchedDial`, `AngleDial` | Y | | |

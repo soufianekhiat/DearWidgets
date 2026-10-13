@@ -553,8 +553,7 @@ directly.
 `Eyedropper` / `EyedropperSampleBitmap`, `GradientDrop`, `CropRect`,
 `SizeControl2D` / `SizeControl3D`, `DrawOnionSkin` / `DrawOnionSkinAuto`,
 `DrawArrow` / `DrawArrowHead` / `DrawAxisArrows`, `DrawDimensionLine`,
-`DrawCrosshair` / `DrawCrosshairInRect`, `DrawDropShadowRect` /
-`DrawInnerGlowRect`, `DrawRuler`, `DrawGridOverlay`, `GradientMeshInit` /
+`DrawCrosshair` / `DrawCrosshairInRect`, `DrawRuler`, `DrawGridOverlay`, `GradientMeshInit` /
 `GradientMeshEditor`, `ToonRampEditor` / `ToonRampSample`, `MatrixEditor` /
 `MatrixEditorDouble`, plus the interaction helpers `KeyboardNudgeXY`,
 `KeyboardNudge1D`, `AxisConstrain`, `PushDeltaOverlay` / `RenderDeltaOverlay`,

@@ -304,7 +304,9 @@ bool RangeSliderVerticalScalar( char const* label, ImGuiDataType data_type,
                                 void* p_lower, void* p_upper, void const* p_min, void const* p_max,
                                 char const* format = NULL, ImVec2 size = ImVec2( 0, 0 ) );
 ```
-Plain two-handle range slider (no gradient). Horizontal and vertical.
+Plain two-handle range slider (no gradient). Horizontal and vertical. Ctrl+click on the
+horizontal one edits both bounds as numbers (kept within `[v_min, v_max]` with
+lower <= upper); Enter, Escape or a click elsewhere returns to the slider.
 
 ---
 

@@ -5705,38 +5705,6 @@ namespace ImWidgets{
 					{
 						float _sy0 = ImGui::GetCursorPos().y;
 						ApplyOpenAll();
-						if ( ImGui::CollapsingHeader( "Drop-Shadow / Inner-Glow" ) )
-						{
-							static float ds_radius = 16.0f, ds_round = 6.0f;
-							static ImVec2 ds_off( 4.0f, 6.0f );
-							static ImVec4 ds_col( 0.0f, 0.0f, 0.0f, 0.7f );
-							static ImVec4 ig_col( 1.0f, 0.85f, 0.30f, 0.8f );
-							ImGui::SliderFloat( "Radius##DS",  &ds_radius, 0.0f, 60.0f );
-							ImGui::SliderFloat( "Corner##DS",  &ds_round,  0.0f, 30.0f );
-							ImGui::SliderFloat2( "Offset##DS", &ds_off.x, -30.0f, 30.0f );
-							ImGui::ColorEdit4( "Shadow##DS",   &ds_col.x );
-							ImGui::ColorEdit4( "Glow##DS",     &ig_col.x );
-							ImDrawList* dl = ImGui::GetWindowDrawList();
-							ImVec2 p = ImGui::GetCursorScreenPos();
-							float W = ImGui::GetContentRegionAvail().x;
-							float row_h = ImPlatform_LpToPx( 180.0f );
-							ImGui::Dummy( ImVec2( W, row_h ) );
-							dl->AddRectFilled( p, ImVec2( p.x + W, p.y + row_h ),
-								IM_COL32( 220, 220, 225, 255 ) );
-							ImRect r1( p.x + 60, p.y + 30, p.x + 220, p.y + row_h - 30 );
-							ImWidgets::DrawDropShadowRect( dl, r1, ds_radius, ds_off,
-								ImGui::ColorConvertFloat4ToU32( ds_col ), ds_round );
-							dl->AddRectFilled( r1.Min, r1.Max, IM_COL32( 80, 130, 200, 255 ), ds_round );
-							ImRect r2( p.x + 280, p.y + 30, p.x + 440, p.y + row_h - 30 );
-							dl->AddRectFilled( r2.Min, r2.Max, IM_COL32( 35, 35, 45, 255 ), ds_round );
-							ImWidgets::DrawInnerGlowRect( dl, r2, ds_radius,
-								ImGui::ColorConvertFloat4ToU32( ig_col ), ds_round );
-						}
-						DW_SsRecord( "Drop_Shadow_Inner_Glow", _sy0, ImGui::GetCursorPos().y );
-					}
-					{
-						float _sy0 = ImGui::GetCursorPos().y;
-						ApplyOpenAll();
 						if ( ImGui::CollapsingHeader( "Grid Overlay" ) )
 						{
 							static float g_major = 40.0f;
@@ -6860,7 +6828,19 @@ namespace ImWidgets{
 							ImRect bb( pos, pos + ImVec2( size, size ) );
 							DrawShapeWithHole( pDrawList, &pos_norms[0], 10, IM_COL32( 255 * col.x, 255 * col.y, 255 * col.z, 255 * col.w ), &bb, gap, strokeWidth );
 
-							ImGui::Dummy( ImVec2( size, size ) );
+							// Same outline as an even-odd path fill: exact anti-aliased hole,
+							// no bridge, no gap / stroke tuning (CSS fill-rule: evenodd).
+							const float dx = size + ImPlatform_LpToPx( 16.0f );
+							ImWidgetsPath holePath;
+							holePath.MoveTo( pos_norms[ 0 ] + ImVec2( dx, 0 ) );
+							for ( int k = 1; k < 4; ++k ) holePath.LineTo( pos_norms[ k ] + ImVec2( dx, 0 ) );
+							holePath.Close().MoveTo( pos_norms[ 5 ] + ImVec2( dx, 0 ) );
+							for ( int k = 6; k < 9; ++k ) holePath.LineTo( pos_norms[ k ] + ImVec2( dx, 0 ) );
+							holePath.Close();
+							ImWidgets::PathFill( pDrawList, holePath, IM_COL32( 255 * col.x, 255 * col.y, 255 * col.z, 255 * col.w ), ImWidgetsFillRule_EvenOdd );
+							pDrawList->AddText( pos + ImVec2( dx, size + 2.0f ), ImGui::GetColorU32( ImGuiCol_TextDisabled ), "PathFill, even-odd" );
+
+							ImGui::Dummy( ImVec2( size + dx, size + ImGui::GetTextLineHeightWithSpacing() ) );
 						}
 						DW_SsRecord( "Shape_with_Hole", _sy0, ImGui::GetCursorPos().y );
 					}
@@ -8335,7 +8315,7 @@ namespace ImWidgets{
 				ImGui::Text( "%.0f x %.0f  (%.3f : 1)", s_sz2_w, s_sz2_h, s_sz2_h > 0.0f ? s_sz2_w / s_sz2_h : 0.0f );
 				ImGui::EndGroup();
 
-				ImGui::SameLine( 0.0f, ImPlatform_LpToPx( 24.0f ) );
+				ImGui::Spacing();
 
 				ImGui::BeginGroup();
 				ImGui::TextUnformatted( "3D  --  width x height x depth" );
@@ -8349,7 +8329,7 @@ namespace ImWidgets{
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Snap Lines / Smart Guides##Interactions" ) )
+			if ( ImGui::TreeNode( "Snap Lines / Smart Guides (experimental)##Interactions" ) )
 			{
 				static ImVec2 s_snap_moving_pos( 60.0f, 60.0f );
 				static ImVec2 s_snap_moving_sz ( 110.0f, 70.0f );
@@ -8395,7 +8375,7 @@ namespace ImWidgets{
 				ImGui::TreePop();
 			}
 			ApplyOpenAll();
-			if ( ImGui::TreeNode( "Onion-Skin Overlay##Interactions" ) )
+			if ( ImGui::TreeNode( "Onion-Skin Overlay (experimental)##Interactions" ) )
 			{
 				static ImTextureID s_onion_tex[ 9 ] = { ImTextureID_Invalid, ImTextureID_Invalid, ImTextureID_Invalid, ImTextureID_Invalid, ImTextureID_Invalid, ImTextureID_Invalid, ImTextureID_Invalid, ImTextureID_Invalid, ImTextureID_Invalid };
 				static const int s_onion_w = 128, s_onion_h = 96;
@@ -8504,7 +8484,7 @@ namespace ImWidgets{
 			if ( ImGui::TreeNode( "Pan-Zoom Canvas + Minimap##Interactions" ) )
 			{
 				static ImWidgetsCanvasState s_pz = { ImVec2( 200, 120 ), 1.0f, false, ImVec2( 0, 0 ), ImRect() };
-				ImGui::TextWrapped( "Wheel: zoom around cursor. MMB or Shift+LMB: pan. The minimap shows the viewport (yellow) within the world content (gray); click it to recenter." );
+				ImGui::TextWrapped( "Wheel: zoom around cursor. Right drag, MMB or Shift+LMB: pan. The minimap shows the viewport (yellow) within the world content (gray); click it to recenter." );
 				ImVec2 size( ImPlatform_LpToPx( 520.0f ), ImPlatform_LpToPx( 320.0f ) );
 				if ( ImWidgets::BeginCanvas( "##pz_demo", size, s_pz ) )
 				{
