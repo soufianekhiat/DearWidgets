@@ -81,6 +81,22 @@ namespace ImWidgets {
     // ImVector::erase is a raw memmove and ~ImVector destructs nothing, so a
     // bare Paths.erase() drops the erased path's Nodes allocation on the floor.
     // Same manual deep-clear pattern as ImNetworkGraphData::Clear().
+    // Control points of segment `si` (node si -> node si+1, wrapping on a closed path).
+    static void DWE_VDTSegmentCP(const ImVectorDrawingPath& path, int si, ImVec2 cp[4])
+    {
+        const ImVectorDrawingNode& a = path.Nodes[si];
+        const ImVectorDrawingNode& b = path.Nodes[(si + 1) % path.Nodes.Size];
+        cp[0] = a.Anchor;
+        cp[1] = ImVec2(a.Anchor.x + a.OutTangent.x, a.Anchor.y + a.OutTangent.y);
+        cp[2] = ImVec2(b.Anchor.x + b.InTangent.x, b.Anchor.y + b.InTangent.y);
+        cp[3] = b.Anchor;
+    }
+    static int DWE_VDTSegmentCount(const ImVectorDrawingPath& path)
+    {
+        if (path.Nodes.Size < 2) return 0;
+        return path.Nodes.Size - 1 + (path.Closed ? 1 : 0);
+    }
+
     static void DWE_VDTErasePath(ImVectorDrawingData& data, int idx)
     {
         if (idx < 0 || idx >= data.Paths.Size) return;
@@ -194,6 +210,44 @@ namespace ImWidgets {
             }
         }
 
+        // ---- Hit test path segments (only when no node/handle is under the cursor) ----
+        // Each cubic is flattened in screen space; seg_t is the curve parameter of
+        // the closest point, used to split the segment on double-click.
+        int seg_path = -1, seg_index = -1;
+        float seg_t = 0.0f;
+        if (hovered && hit_path < 0)
+        {
+            const int K = 24;
+            float best = hitR * hitR;
+            for (int pi = 0; pi < data.Paths.Size; ++pi)
+            {
+                const ImVectorDrawingPath& p = data.Paths[pi];
+                const int nseg = DWE_VDTSegmentCount(p);
+                for (int si = 0; si < nseg; ++si)
+                {
+                    ImVec2 cp[4];
+                    DWE_VDTSegmentCP(p, si, cp);
+                    for (int c = 0; c < 4; ++c) cp[c] = DWE_VDTW2S(data, canvas_min, cp[c]);
+                    ImVec2 prev = cp[0];
+                    for (int k = 1; k <= K; ++k)
+                    {
+                        ImVec2 cur = ImBezierCubicCalc(cp[0], cp[1], cp[2], cp[3], (float)k / (float)K);
+                        ImVec2 ab(cur.x - prev.x, cur.y - prev.y);
+                        float len2 = ab.x * ab.x + ab.y * ab.y;
+                        float u = len2 > 0.0f ? ImSaturate(((mouse.x - prev.x) * ab.x + (mouse.y - prev.y) * ab.y) / len2) : 0.0f;
+                        float dx = mouse.x - (prev.x + ab.x * u), dy = mouse.y - (prev.y + ab.y * u);
+                        if (dx * dx + dy * dy < best)
+                        {
+                            best = dx * dx + dy * dy;
+                            seg_path = pi; seg_index = si;
+                            seg_t = ((float)(k - 1) + u) / (float)K;
+                        }
+                        prev = cur;
+                    }
+                }
+            }
+        }
+
         // ---- Click handling (only when NOT panning) ----
         if (hovered && io.KeyShift && hit_path < 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
             *shiftPan = true;
@@ -225,6 +279,11 @@ namespace ImWidgets {
                 if (hit_handle == 0)      ImGui::SetTooltip("Click to select / drag to move anchor");
                 else if (hit_handle == 1) ImGui::SetTooltip("Drag to adjust In tangent");
                 else                      ImGui::SetTooltip("Drag to adjust Out tangent");
+            }
+            else if (seg_path >= 0 && data.ActivePath < 0)
+            {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                ImGui::SetTooltip("Click to select path / double-click to insert a node");
             }
             else
             {
@@ -289,6 +348,38 @@ namespace ImWidgets {
                         data.SelectedNodes.clear();
                         data.SelectedNodes.push_back(hit_node);
                     }
+                }
+            }
+            else if (seg_path >= 0 && data.ActivePath < 0)
+            {
+                ImVectorDrawingPath& sp = data.Paths[seg_path];
+                data.SelectedPath = seg_path;
+                data.SelectedNodes.clear();
+                if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                {
+                    // Split the cubic at seg_t (de Casteljau) so the curve shape is unchanged.
+                    ImVec2 cp[4];
+                    DWE_VDTSegmentCP(sp, seg_index, cp);
+                    const float t = seg_t;
+                    ImVec2 p01 = ImLerp(cp[0], cp[1], t), p12 = ImLerp(cp[1], cp[2], t), p23 = ImLerp(cp[2], cp[3], t);
+                    ImVec2 p012 = ImLerp(p01, p12, t), p123 = ImLerp(p12, p23, t);
+                    ImVec2 pt = ImLerp(p012, p123, t);
+                    const int ia = seg_index, ib = (seg_index + 1) % sp.Nodes.Size;
+                    sp.Nodes[ia].OutTangent = ImVec2(p01.x - sp.Nodes[ia].Anchor.x, p01.y - sp.Nodes[ia].Anchor.y);
+                    sp.Nodes[ib].InTangent  = ImVec2(p23.x - sp.Nodes[ib].Anchor.x, p23.y - sp.Nodes[ib].Anchor.y);
+                    ImVectorDrawingNode nn(pt);
+                    nn.InTangent  = ImVec2(p012.x - pt.x, p012.y - pt.y);
+                    nn.OutTangent = ImVec2(p123.x - pt.x, p123.y - pt.y);
+                    const int at = seg_index + 1;   // closing segment inserts at the end
+                    sp.Nodes.insert(sp.Nodes.Data + at, nn);
+                    data.SelectedNode = at;
+                    data.SelectedNodes.push_back(at);
+                    data.SelectedHandle = 0;
+                    changed = true;
+                }
+                else
+                {
+                    data.SelectedNode = -1;
                 }
             }
             else
