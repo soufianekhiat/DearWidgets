@@ -401,6 +401,24 @@ follows the number of edges) with a 1 px anti-aliasing fringe; no pixel is
 covered twice, so translucent fills have no seams. `PathFill` treats every
 subpath as closed, like SVG.
 
+### Gradient paint
+```cpp
+ImWidgetsGradientStop stops[] = { { 0.0f, IM_COL32( 255, 80, 60, 255 ) },
+                                  { 0.5f, IM_COL32( 255, 200, 0, 255 ) },
+                                  { 1.0f, IM_COL32( 60, 120, 255, 255 ) } };
+ImWidgetsPaint paint = ImWidgetsPaint::Linear( a, b, stops, 3 );   // or Radial( c, r, ... ), Conic( c, angle, ... )
+paint.Spread = ImWidgetsSpread_Repeat;                              // Pad / Repeat / Reflect (SVG spreadMethod)
+paint.Interp = ImWidgetsGradientInterp_OkLab;                       // sRGB (CSS default), LinearSRGB, OkLab, OkLCH, HSV
+ImWidgets::PathFill( dl, path, paint );
+```
+CSS / SVG gradients on any path (and `FillPolygons`): linear, radial (inner and
+outer radius, like SVG `fr` / `r`) and conic (`from` angle, clockwise from 12
+o'clock, like CSS). Stops with the same offset make hard edges. `Transform` is
+SVG's `gradientTransform`. Linear gradients are exact: the fill is sliced at
+every stop and period boundary and the GPU interpolates inside each slice
+(extra slices for non-sRGB spaces). Radial and conic gradients are evaluated on
+a 4 px grid. Hue spaces interpolate along the shorter arc.
+
 ### `PathStroke`
 ```cpp
 void PathStroke( ImDrawList*, ImWidgetsPath const&, ImU32 col,

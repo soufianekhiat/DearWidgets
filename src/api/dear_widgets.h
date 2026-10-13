@@ -1809,6 +1809,55 @@ struct ImWidgetsPath
 	void DW_EnsureSubpath(); // internal
 };
 
+// Paint for path fills: a solid colour or a CSS / SVG gradient.
+enum ImWidgetsPaintType_
+{
+	ImWidgetsPaintType_Solid          = 0,
+	ImWidgetsPaintType_LinearGradient = 1, // P0 -> P1
+	ImWidgetsPaintType_RadialGradient = 2, // centre P0, t = 0 at radius R0, t = 1 at radius R1
+	ImWidgetsPaintType_ConicGradient  = 3, // centre P0, clockwise from StartAngle (0 = 12 o'clock, CSS "from")
+};
+typedef int ImWidgetsPaintType;
+
+// What happens outside [0, 1] (SVG spreadMethod; CSS repeating-*-gradient = Repeat).
+enum ImWidgetsSpread_
+{
+	ImWidgetsSpread_Pad     = 0,
+	ImWidgetsSpread_Repeat  = 1,
+	ImWidgetsSpread_Reflect = 2,
+};
+typedef int ImWidgetsSpread;
+
+struct ImWidgetsGradientStop
+{
+	float Offset; // 0..1 along the gradient
+	ImU32 Color;
+};
+
+struct ImWidgetsPaint
+{
+	ImWidgetsPaintType            Type       = ImWidgetsPaintType_Solid;
+	ImU32                         Color      = IM_COL32_WHITE;      // Solid
+	ImVec2                        P0         = ImVec2( 0, 0 );
+	ImVec2                        P1         = ImVec2( 0, 0 );
+	float                         R0         = 0.0f;
+	float                         R1         = 0.0f;
+	float                         StartAngle = 0.0f;                // radians
+	ImWidgetsGradientStop const*  Stops      = nullptr;             // sorted by Offset; same offset twice = hard stop
+	int                           StopCount  = 0;
+	ImWidgetsSpread               Spread     = ImWidgetsSpread_Pad;
+	int                           Interp     = 0;                   // ImWidgetsGradientInterp_ (CSS "in <space>"): sRGB (default), LinearSRGB, OkLab, OkLCH, HSV
+	ImWidgetsTransform2D          Transform;                        // gradient space -> path space (gradientTransform)
+
+	static ImWidgetsPaint Solid( ImU32 col ) { ImWidgetsPaint p; p.Color = col; return p; }
+	static ImWidgetsPaint Linear( ImVec2 p0, ImVec2 p1, ImWidgetsGradientStop const* stops, int count )
+	{ ImWidgetsPaint p; p.Type = ImWidgetsPaintType_LinearGradient; p.P0 = p0; p.P1 = p1; p.Stops = stops; p.StopCount = count; return p; }
+	static ImWidgetsPaint Radial( ImVec2 center, float radius, ImWidgetsGradientStop const* stops, int count )
+	{ ImWidgetsPaint p; p.Type = ImWidgetsPaintType_RadialGradient; p.P0 = center; p.R1 = radius; p.Stops = stops; p.StopCount = count; return p; }
+	static ImWidgetsPaint Conic( ImVec2 center, float start_angle, ImWidgetsGradientStop const* stops, int count )
+	{ ImWidgetsPaint p; p.Type = ImWidgetsPaintType_ConicGradient; p.P0 = center; p.StartAngle = start_angle; p.Stops = stops; p.StopCount = count; return p; }
+};
+
 // Stroke parameters, mirroring SVG's stroke-* properties.
 struct ImWidgetsStrokeStyle
 {
@@ -5873,6 +5922,15 @@ namespace ImWidgets{
     // the exact stroke outline on the CPU, so caps / joins / dashes still apply.
     IMGUI_API void PathFill  ( ImDrawList* draw_list, ImWidgetsPath const& path, ImU32 col,
                                ImWidgetsFillRule rule = ImWidgetsFillRule_NonZero );
+    // Same with a paint: linear / radial / conic gradient (stops, spread, transform,
+    // interpolation space). Linear gradients are exact (the fill is sliced at every
+    // stop); radial and conic ones are evaluated on a few-pixel grid.
+    IMGUI_API void PathFill  ( ImDrawList* draw_list, ImWidgetsPath const& path, ImWidgetsPaint const& paint,
+                               ImWidgetsFillRule rule = ImWidgetsFillRule_NonZero );
+    IMGUI_API void FillPolygons( ImDrawList* draw_list, ImVec2 const* points,
+                                 int const* contour_counts, int contour_count,
+                                 ImWidgetsPaint const& paint, ImWidgetsFillRule rule = ImWidgetsFillRule_NonZero,
+                                 float aa = 1.0f );
     IMGUI_API void PathStroke( ImDrawList* draw_list, ImWidgetsPath const& path, ImU32 col,
                                ImWidgetsStrokeStyle const& style = ImWidgetsStrokeStyle() );
 

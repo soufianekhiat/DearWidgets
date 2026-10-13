@@ -378,7 +378,9 @@ Canvas2D arc / rect / round rect / ellipse, 2x3 transforms) with an SVG path
 data parser (`AddSvgPathData`), and `FillPolygons` / `PathFill` / `PathStroke`.
 Fills are anti-aliased, honour the SVG fill rules (nonzero / evenodd, holes,
 self-intersections) and never double-cover a pixel. Everything is ImDrawList
-triangles, so it works on stock Dear ImGui. Strokes now fall back to filling
+triangles, so it works on stock Dear ImGui. `ImWidgetsPaint` adds CSS / SVG gradient fills (linear,
+radial, conic; stops, hard stops, pad / repeat / reflect, gradient transform,
+sRGB / linear / OkLab / OkLCH / HSV interpolation). Strokes now fall back to filling
 their exact outline on the CPU when the stroke shader is unavailable, instead
 of degrading to `AddPolyline` (no caps / joins) or drawing nothing.
 

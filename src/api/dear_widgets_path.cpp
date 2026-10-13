@@ -57,6 +57,208 @@ static inline float DW_EdgeXAt(const DW_FillEdge& e, float y)
     return e.x0 + (e.x1 - e.x0) * t;
 }
 
+// ----------------------------------------------------------------------------
+// Gradient paint
+// ----------------------------------------------------------------------------
+
+static inline float DW_SrgbToLinear(float c) { return c <= 0.04045f ? c / 12.92f : powf((c + 0.055f) / 1.055f, 2.4f); }
+static inline float DW_LinearToSrgb(float c) { c = ImSaturate(c); return c <= 0.0031308f ? c * 12.92f : 1.055f * powf(c, 1.0f / 2.4f) - 0.055f; }
+
+static void DW_LinToOkLab(const float* rgb, float* lab)
+{
+    float l = 0.4122214708f * rgb[0] + 0.5363325363f * rgb[1] + 0.0514459929f * rgb[2];
+    float m = 0.2119034982f * rgb[0] + 0.6806995451f * rgb[1] + 0.1073969566f * rgb[2];
+    float s = 0.0883024619f * rgb[0] + 0.2817188376f * rgb[1] + 0.6299787005f * rgb[2];
+    l = cbrtf(l); m = cbrtf(m); s = cbrtf(s);
+    lab[0] = 0.2104542553f * l + 0.7936177850f * m - 0.0040720468f * s;
+    lab[1] = 1.9779984951f * l - 2.4285922050f * m + 0.4505937099f * s;
+    lab[2] = 0.0259040371f * l + 0.7827717662f * m - 0.8086757660f * s;
+}
+static void DW_OkLabToLin(const float* lab, float* rgb)
+{
+    float l = lab[0] + 0.3963377774f * lab[1] + 0.2158037573f * lab[2];
+    float m = lab[0] - 0.1055613458f * lab[1] - 0.0638541728f * lab[2];
+    float s = lab[0] - 0.0894841775f * lab[1] - 1.2914855480f * lab[2];
+    l = l * l * l; m = m * m * m; s = s * s * s;
+    rgb[0] =  4.0767416621f * l - 3.3077115913f * m + 0.2309699292f * s;
+    rgb[1] = -1.2684380046f * l + 2.6097574011f * m - 0.3413193965f * s;
+    rgb[2] = -0.0041960863f * l - 0.7034186147f * m + 1.7076147010f * s;
+}
+
+struct DW_PaintEval
+{
+    const ImWidgetsPaint* p;
+    float inv[6];          // path space -> gradient space
+    ImVec2 dir; float invLen2; // linear
+
+    void Init(const ImWidgetsPaint* paint)
+    {
+        p = paint;
+        const float* m = paint->Transform.m;
+        float det = m[0] * m[3] - m[1] * m[2];
+        if (ImFabs(det) < 1e-12f) det = 1e-12f;
+        float id = 1.0f / det;
+        inv[0] =  m[3] * id; inv[1] = -m[1] * id; inv[2] = -m[2] * id; inv[3] = m[0] * id;
+        inv[4] = -(inv[0] * m[4] + inv[2] * m[5]);
+        inv[5] = -(inv[1] * m[4] + inv[3] * m[5]);
+        dir = ImVec2(paint->P1.x - paint->P0.x, paint->P1.y - paint->P0.y);
+        float l2 = dir.x * dir.x + dir.y * dir.y;
+        invLen2 = l2 > 0.0f ? 1.0f / l2 : 0.0f;
+    }
+    ImVec2 ToGrad(ImVec2 q) const { return ImVec2(inv[0] * q.x + inv[2] * q.y + inv[4], inv[1] * q.x + inv[3] * q.y + inv[5]); }
+
+    // Gradient parameter (before spread) at a path-space point.
+    float T(ImVec2 q) const
+    {
+        ImVec2 g = ToGrad(q);
+        float dx = g.x - p->P0.x, dy = g.y - p->P0.y;
+        switch (p->Type)
+        {
+        case ImWidgetsPaintType_LinearGradient: return (dx * dir.x + dy * dir.y) * invLen2;
+        case ImWidgetsPaintType_RadialGradient:
+        {
+            float span = p->R1 - p->R0;
+            return span != 0.0f ? (ImSqrt(dx * dx + dy * dy) - p->R0) / span : 0.0f;
+        }
+        case ImWidgetsPaintType_ConicGradient:
+        {
+            // 0 at 12 o'clock, increasing clockwise on screen (y down), like CSS.
+            float a = ImAtan2(dx, -dy) - p->StartAngle;
+            float t = a / (2.0f * IM_PI);
+            return t - ImFloor(t);
+        }
+        default: return 0.0f;
+        }
+    }
+
+    float Spread(float t) const
+    {
+        switch (p->Spread)
+        {
+        case ImWidgetsSpread_Repeat:  return t - ImFloor(t);
+        case ImWidgetsSpread_Reflect: { float u = ImFmod(ImFabs(t), 2.0f); return u > 1.0f ? 2.0f - u : u; }
+        default:                      return ImSaturate(t);
+        }
+    }
+
+    // Premultiplied RGBA (0..1) at gradient parameter t (after spread).
+    void Color(float t, float out[4]) const
+    {
+        const ImWidgetsGradientStop* st = p->Stops;
+        const int n = p->StopCount;
+        auto unpack = [](ImU32 c, float o[4]) {
+            o[0] = ((c >> IM_COL32_R_SHIFT) & 0xFF) / 255.0f; o[1] = ((c >> IM_COL32_G_SHIFT) & 0xFF) / 255.0f;
+            o[2] = ((c >> IM_COL32_B_SHIFT) & 0xFF) / 255.0f; o[3] = ((c >> IM_COL32_A_SHIFT) & 0xFF) / 255.0f;
+        };
+        if (!st || n <= 0) { unpack(p->Color, out); out[0] *= out[3]; out[1] *= out[3]; out[2] *= out[3]; return; }
+        int i = 0;
+        while (i < n && st[i].Offset <= t) ++i;      // first stop strictly after t
+        float a[4], b[4], u = 0.0f;
+        if (i == 0)      { unpack(st[0].Color, a); memcpy(b, a, sizeof(a)); }
+        else if (i == n) { unpack(st[n - 1].Color, a); memcpy(b, a, sizeof(a)); }
+        else
+        {
+            unpack(st[i - 1].Color, a); unpack(st[i].Color, b);
+            float span = st[i].Offset - st[i - 1].Offset;
+            u = span > 0.0f ? (t - st[i - 1].Offset) / span : 1.0f;
+        }
+        if (p->Interp == ImWidgetsGradientInterp_sRGB)
+        {
+            for (int k = 0; k < 3; ++k) { a[k] *= a[3]; b[k] *= b[3]; }
+            for (int k = 0; k < 4; ++k) out[k] = a[k] + (b[k] - a[k]) * u;
+            return;
+        }
+        float alpha = a[3] + (b[3] - a[3]) * u;
+        // Hue interpolation takes the shorter arc (CSS "shorter hue").
+        auto lerpHue = [](float h0, float h1, float t, float period) {
+            float d = h1 - h0;
+            if (d >  period * 0.5f) d -= period;
+            if (d < -period * 0.5f) d += period;
+            float h = h0 + d * t;
+            return h - ImFloor(h / period) * period;
+        };
+        if (p->Interp == ImWidgetsGradientInterp_HSV)
+        {
+            float ha, sa, va, hb, sb, vb;
+            ImGui::ColorConvertRGBtoHSV(a[0], a[1], a[2], ha, sa, va);
+            ImGui::ColorConvertRGBtoHSV(b[0], b[1], b[2], hb, sb, vb);
+            float h = lerpHue(ha, hb, u, 1.0f), sv = sa + (sb - sa) * u, vv = va + (vb - va) * u;
+            float r, g, bl;
+            ImGui::ColorConvertHSVtoRGB(h, sv, vv, r, g, bl);
+            out[0] = r * alpha; out[1] = g * alpha; out[2] = bl * alpha; out[3] = alpha;
+            return;
+        }
+        float la[3] = { DW_SrgbToLinear(a[0]), DW_SrgbToLinear(a[1]), DW_SrgbToLinear(a[2]) };
+        float lb[3] = { DW_SrgbToLinear(b[0]), DW_SrgbToLinear(b[1]), DW_SrgbToLinear(b[2]) };
+        float rgb[3];
+        if (p->Interp == ImWidgetsGradientInterp_OkLab || p->Interp == ImWidgetsGradientInterp_OkLCH)
+        {
+            float oa[3], ob[3], o[3];
+            DW_LinToOkLab(la, oa); DW_LinToOkLab(lb, ob);
+            if (p->Interp == ImWidgetsGradientInterp_OkLab)
+            {
+                for (int k = 0; k < 3; ++k) o[k] = oa[k] + (ob[k] - oa[k]) * u;
+            }
+            else
+            {
+                float ca = ImSqrt(oa[1] * oa[1] + oa[2] * oa[2]), cb = ImSqrt(ob[1] * ob[1] + ob[2] * ob[2]);
+                float ha = ImAtan2(oa[2], oa[1]), hb = ImAtan2(ob[2], ob[1]);
+                // An achromatic end takes the other end's hue (CSS "powerless" hue).
+                if (ca < 1e-4f) ha = hb;
+                if (cb < 1e-4f) hb = ha;
+                float h = lerpHue(ha, hb, u, 2.0f * IM_PI), c = ca + (cb - ca) * u;
+                o[0] = oa[0] + (ob[0] - oa[0]) * u; o[1] = c * ImCos(h); o[2] = c * ImSin(h);
+            }
+            DW_OkLabToLin(o, rgb);
+        }
+        else
+        {
+            for (int k = 0; k < 3; ++k) rgb[k] = la[k] + (lb[k] - la[k]) * u;
+        }
+        for (int k = 0; k < 3; ++k) out[k] = DW_LinearToSrgb(rgb[k]) * alpha;
+        out[3] = alpha;
+    }
+
+    ImU32 ColorU32(ImVec2 q, float coverage) const
+    {
+        float c[4];
+        Color(Spread(T(q)), c);
+        float al = c[3] * coverage;
+        if (al <= 0.0f) return 0;
+        // un-premultiply for ImDrawList (straight alpha)
+        float inv_a = c[3] > 0.0f ? 1.0f / c[3] : 0.0f;
+        ImU32 r = (ImU32)(ImSaturate(c[0] * inv_a) * 255.0f + 0.5f);
+        ImU32 g = (ImU32)(ImSaturate(c[1] * inv_a) * 255.0f + 0.5f);
+        ImU32 b = (ImU32)(ImSaturate(c[2] * inv_a) * 255.0f + 0.5f);
+        ImU32 a = (ImU32)(ImSaturate(al) * 255.0f + 0.5f);
+        return (r << IM_COL32_R_SHIFT) | (g << IM_COL32_G_SHIFT) | (b << IM_COL32_B_SHIFT) | (a << IM_COL32_A_SHIFT);
+    }
+};
+
+// Polygon vertex carrying the coverage (1 inside, 0 at the outer fringe edge).
+struct DW_PVert { ImVec2 p; float cov; };
+
+// Clip a convex polygon to f(p) >= 0 for an affine f (Sutherland-Hodgman, one plane).
+template <typename F>
+static void DW_ClipPoly(const ImVector<DW_PVert>& in, ImVector<DW_PVert>& out, F f)
+{
+    out.resize(0);
+    const int n = in.Size;
+    for (int i = 0; i < n; ++i)
+    {
+        const DW_PVert& A = in[i];
+        const DW_PVert& B = in[(i + 1) % n];
+        float fa = f(A.p), fb = f(B.p);
+        if (fa >= 0.0f) out.push_back(A);
+        if ((fa >= 0.0f) != (fb >= 0.0f))
+        {
+            float t = fa / (fa - fb);
+            DW_PVert v = { ImVec2(A.p.x + (B.p.x - A.p.x) * t, A.p.y + (B.p.y - A.p.y) * t), A.cov + (B.cov - A.cov) * t };
+            out.push_back(v);
+        }
+    }
+}
+
 struct DW_FillWriter
 {
     ImDrawList* dl;
@@ -65,8 +267,144 @@ struct DW_FillWriter
     float       aa;       // fringe width in pixels (0 = no AA)
     ImVec2      uv;
 
+    const DW_PaintEval* paint = nullptr;
+    ImVector<DW_PVert> pa, pb;    // clipping scratch
+
+    // Emit a convex polygon (coverage per vertex) with the gradient paint.
+    void PaintPoly(const ImVector<DW_PVert>& poly)
+    {
+        if (poly.Size < 3) return;
+        dl->PrimReserve((poly.Size - 2) * 3, poly.Size);
+        ImDrawIdx base = (ImDrawIdx)dl->_VtxCurrentIdx;
+        for (int i = 0; i < poly.Size; ++i)
+            dl->PrimWriteVtx(poly[i].p, uv, paint->ColorU32(poly[i].p, poly[i].cov));
+        for (int i = 1; i + 1 < poly.Size; ++i)
+        {
+            dl->PrimWriteIdx(base); dl->PrimWriteIdx((ImDrawIdx)(base + i)); dl->PrimWriteIdx((ImDrawIdx)(base + i + 1));
+        }
+    }
+
+    void PaintQuad(ImVec2 a, ImVec2 b, ImVec2 c, ImVec2 d, float ka, float kb, float kc, float kd)
+    {
+        ImVector<DW_PVert> q;
+        DW_PVert v0 = { a, ka }, v1 = { b, kb }, v2 = { c, kc }, v3 = { d, kd };
+        q.push_back(v0); q.push_back(v1); q.push_back(v2); q.push_back(v3);
+        const ImWidgetsPaint& P = *paint->p;
+        if (P.Type == ImWidgetsPaintType_LinearGradient)
+        {
+            // Exact: slice at every place the colour stops being linear in t
+            // (stop offsets, spread periods), plus extra cuts for non-sRGB
+            // interpolation, then let the GPU interpolate inside each slice.
+            float tmin = FLT_MAX, tmax = -FLT_MAX;
+            for (int i = 0; i < 4; ++i) { float t = paint->T(q[i].p); tmin = ImMin(tmin, t); tmax = ImMax(tmax, t); }
+            ImVector<float> cuts;
+            const int sub = (P.Interp == ImWidgetsGradientInterp_sRGB) ? 1 : 12;
+            auto addPeriod = [&](float base, bool mirrored) {
+                float prev = 0.0f;
+                for (int si = 0; si <= P.StopCount; ++si)
+                {
+                    float o = (si < P.StopCount) ? ImSaturate(P.Stops[si].Offset) : 1.0f;
+                    for (int k = 1; k <= sub; ++k)
+                    {
+                        float u = prev + (o - prev) * (float)k / (float)sub;
+                        float t = mirrored ? base + 1.0f - u : base + u;
+                        if (t > tmin && t < tmax) cuts.push_back(t);
+                    }
+                    prev = o;
+                }
+                if (base > tmin && base < tmax) cuts.push_back(base);
+            };
+            if (P.Spread == ImWidgetsSpread_Pad) addPeriod(0.0f, false);
+            else
+            {
+                int k0 = (int)ImFloor(tmin), k1 = (int)ImCeil(tmax);
+                if (k1 - k0 > 512) k1 = k0 + 512; // pathological tiny period: cap the slicing
+                for (int k = k0; k <= k1; ++k)
+                    addPeriod((float)k, P.Spread == ImWidgetsSpread_Reflect && (k & 1));
+            }
+            if (cuts.Size > 1)
+                ImQsort(cuts.Data, (size_t)cuts.Size, sizeof(float), [](const void* x, const void* y) -> int {
+                    float a = *(const float*)x, b = *(const float*)y; return a < b ? -1 : a > b ? 1 : 0; });
+            float lo = -FLT_MAX;
+            for (int ci = 0; ci <= cuts.Size; ++ci)
+            {
+                float hi = ci < cuts.Size ? cuts[ci] : FLT_MAX;
+                if (hi <= lo) continue;
+                const DW_PaintEval* pe = paint;
+                DW_ClipPoly(q, pa, [&](ImVec2 p) { return pe->T(p) - lo; });
+                DW_ClipPoly(pa, pb, [&](ImVec2 p) { return hi - pe->T(p); });
+                // Evaluate the colour at the slice centre's t for its vertices on
+                // a cut: nudging avoids picking the other side of a hard stop.
+                PaintPolySlice(pb, lo, hi);
+                lo = hi;
+            }
+            return;
+        }
+        // Radial / conic: not linear in position; evaluate on a small grid.
+        const float cell = 4.0f;
+        float x0 = FLT_MAX, y0 = FLT_MAX, x1 = -FLT_MAX, y1 = -FLT_MAX;
+        for (int i = 0; i < 4; ++i) { x0 = ImMin(x0, q[i].p.x); y0 = ImMin(y0, q[i].p.y); x1 = ImMax(x1, q[i].p.x); y1 = ImMax(y1, q[i].p.y); }
+        for (float gy = ImFloor(y0 / cell) * cell; gy < y1; gy += cell)
+        {
+            DW_ClipPoly(q, pa, [&](ImVec2 p) { return p.y - gy; });
+            DW_ClipPoly(pa, pb, [&](ImVec2 p) { return gy + cell - p.y; });
+            if (pb.Size < 3) continue;
+            ImVector<DW_PVert> row = pb;
+            for (float gx = ImFloor(x0 / cell) * cell; gx < x1; gx += cell)
+            {
+                DW_ClipPoly(row, pa, [&](ImVec2 p) { return p.x - gx; });
+                DW_ClipPoly(pa, pb, [&](ImVec2 p) { return gx + cell - p.x; });
+                PaintPoly(pb);
+            }
+        }
+    }
+
+    // A linear-gradient slice between cuts lo and hi: colours of vertices
+    // exactly on a cut are evaluated slightly inside the slice.
+    void PaintPolySlice(const ImVector<DW_PVert>& poly, float lo, float hi)
+    {
+        if (poly.Size < 3) return;
+        dl->PrimReserve((poly.Size - 2) * 3, poly.Size);
+        ImDrawIdx base = (ImDrawIdx)dl->_VtxCurrentIdx;
+        const float eps = 1e-4f;
+        for (int i = 0; i < poly.Size; ++i)
+        {
+            // Keep the evaluation strictly inside the slice, also when one side is
+            // unbounded: a vertex on a hard stop or a repeat boundary must take the
+            // colour of its own slice, not the next one.
+            float t = paint->T(poly[i].p);
+            const float e = eps * ImMax(1.0f, ImFabs(t));
+            if (lo > -FLT_MAX && hi < FLT_MAX) t = ImClamp(t, lo + (hi - lo) * eps, hi - (hi - lo) * eps);
+            else if (hi < FLT_MAX)              t = ImMin(t, hi - e);
+            else if (lo > -FLT_MAX)             t = ImMax(t, lo + e);
+            float c[4];
+            paint->Color(paint->Spread(t), c);
+            float al = c[3] * poly[i].cov;
+            float inv_a = c[3] > 0.0f ? 1.0f / c[3] : 0.0f;
+            ImU32 col32 = 0;
+            if (al > 0.0f)
+                col32 = ((ImU32)(ImSaturate(c[0] * inv_a) * 255.0f + 0.5f) << IM_COL32_R_SHIFT)
+                      | ((ImU32)(ImSaturate(c[1] * inv_a) * 255.0f + 0.5f) << IM_COL32_G_SHIFT)
+                      | ((ImU32)(ImSaturate(c[2] * inv_a) * 255.0f + 0.5f) << IM_COL32_B_SHIFT)
+                      | ((ImU32)(ImSaturate(al) * 255.0f + 0.5f) << IM_COL32_A_SHIFT);
+            dl->PrimWriteVtx(poly[i].p, uv, col32);
+        }
+        for (int i = 1; i + 1 < poly.Size; ++i)
+        {
+            dl->PrimWriteIdx(base); dl->PrimWriteIdx((ImDrawIdx)(base + i)); dl->PrimWriteIdx((ImDrawIdx)(base + i + 1));
+        }
+    }
+
     void Quad(ImVec2 a, ImVec2 b, ImVec2 c, ImVec2 d, ImU32 ca, ImU32 cb, ImU32 cc, ImU32 cd)
     {
+        if (paint)
+        {
+            // Coverage per vertex is carried in the alpha the solid path would use.
+            const float full = (float)((col >> IM_COL32_A_SHIFT) & 0xFF);
+            auto k = [&](ImU32 v) { return full > 0.0f ? (float)((v >> IM_COL32_A_SHIFT) & 0xFF) / full : 0.0f; };
+            PaintQuad(a, b, c, d, k(ca), k(cb), k(cc), k(cd));
+            return;
+        }
         dl->PrimReserve(6, 4);
         ImDrawIdx base = (ImDrawIdx)dl->_VtxCurrentIdx;
         dl->PrimWriteVtx(a, uv, ca);
@@ -135,8 +473,13 @@ static void DW_SpanDifference(const ImVector<DW_Span>& a, const ImVector<DW_Span
 // Core: fill a soup of directed segments (pairs of points). Contours do not
 // need to be explicit -- winding only depends on the directed edges.
 void DW_FillSegments(ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32 col,
-                     ImWidgetsFillRule rule, float aa)
+                     ImWidgetsFillRule rule, float aa, const ImWidgetsPaint* paint)
 {
+    // A gradient paint drives the colour; `col` then only carries coverage.
+    DW_PaintEval paintEval;
+    const bool gradient = paint && paint->Type != ImWidgetsPaintType_Solid && paint->StopCount > 0 && paint->Stops;
+    if (paint && !gradient) { col = paint->Color; paint = nullptr; }
+    if (gradient) { paintEval.Init(paint); col = IM_COL32_WHITE; }
     if (!dl || !seg_pts || seg_count <= 0 || (col & IM_COL32_A_MASK) == 0) return;
 
     ImVector<DW_FillEdge> edges;
@@ -183,6 +526,7 @@ void DW_FillSegments(ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32
     w.colHalf  = w.colTrans | ((((col >> IM_COL32_A_SHIFT) & 0xFF) / 2) << IM_COL32_A_SHIFT);
     w.aa = aa;
     w.uv = dl->_Data->TexUvWhitePixel;
+    w.paint = gradient ? &paintEval : nullptr;
 
     ImVector<int>         active;     // indices into edges spanning the current y
     ImVector<DW_SlabEdge> slab;
@@ -939,6 +1283,34 @@ void ImWidgetsPath::Flatten(ImVector<ImVec2>& out_points, ImVector<int>& out_cou
 // ----------------------------------------------------------------------------
 
 namespace ImWidgets {
+
+void FillPolygons(ImDrawList* dl, const ImVec2* points, const int* contour_counts, int contour_count,
+                  const ImWidgetsPaint& paint, ImWidgetsFillRule rule, float aa)
+{
+    if (!dl || !points || !contour_counts || contour_count <= 0) return;
+    ImVector<ImVec2> segs;
+    int base = 0;
+    for (int c = 0; c < contour_count; ++c)
+    {
+        const int n = contour_counts[c];
+        for (int i = 0; i < n && n >= 2; ++i)
+        {
+            segs.push_back(points[base + i]);
+            segs.push_back(points[base + (i + 1) % n]);
+        }
+        base += ImMax(n, 0);
+    }
+    DW_FillSegments(dl, segs.Data, segs.Size / 2, paint.Color, rule, aa, &paint);
+}
+
+void PathFill(ImDrawList* dl, const ImWidgetsPath& path, const ImWidgetsPaint& paint, ImWidgetsFillRule rule)
+{
+    if (!dl || path.Subpaths.Size == 0) return;
+    ImVector<ImVec2> pts;
+    ImVector<int> counts;
+    path.Flatten(pts, counts, nullptr, 0.25f);
+    FillPolygons(dl, pts.Data, counts.Data, counts.Size, paint, rule, 1.0f);
+}
 
 void PathFill(ImDrawList* dl, const ImWidgetsPath& path, ImU32 col, ImWidgetsFillRule rule)
 {

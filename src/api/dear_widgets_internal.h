@@ -515,7 +515,7 @@ inline ImVec2 PxToLp(ImVec2 px) { float s = ImGui::GetStyle().FontScaleDpi; retu
 // fill rule, as ImDrawList triangles (dear_widgets_path.cpp). Used by FillPolygons
 // and as the CPU fallback of the stroke renderer.
 void DW_FillSegments( ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32 col,
-                      ImWidgetsFillRule rule, float aa );
+                      ImWidgetsFillRule rule, float aa, const ImWidgetsPaint* paint = nullptr );
 
 // Shaped (bidi, OpenType) glyph outlines of a string, flattened to directed
 // segments in local coordinates: x from the start of the line, y down from the
