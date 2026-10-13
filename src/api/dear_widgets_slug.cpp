@@ -3053,6 +3053,73 @@ namespace ImWidgets {
 			dl->PrimWriteIdx((ImDrawIdx)(base + mesh->idx[i]));
 	}
 
+	bool DW_ShapeTextOutlines(ImFont* font, float size_px, const char* text, const char* text_end,
+	                          ImVector<DW_GlyphOutline>& glyphs, ImVector<ImVec2>& seg_pts)
+	{
+		glyphs.resize(0);
+		seg_pts.resize(0);
+		if (!gs_pContext || !text) return false;
+		if (!text_end) text_end = text + strlen(text);
+		if (!font) font = ImGui::GetFont();
+		if (!gs_pContext->slugState) gs_pContext->slugState = IM_NEW(ImWidgetsSlugState);
+		SlugFontCache* atlas = SlugGetOrCreateAtlas(gs_pContext->slugState, font);
+		if (!atlas) return false;
+		const float sz = size_px;
+		auto addGlyph = [&](int gi, float penX, float adv, float offX, float offY)
+		{
+			DW_GlyphOutline g;
+			g.penX = penX; g.advance = adv; g.segBegin = seg_pts.Size / 2;
+			const SlugCurve* cv; int n;
+			SlugVecGlyphCurves(atlas, gi, &cv, &n);
+			for (int i = 0; i < n; ++i)
+			{
+				const SlugCurve& c = cv[i];
+				ImVec2 p1(penX + offX + c.p1x * sz, -(offY + c.p1y * sz));
+				ImVec2 p2(penX + offX + c.p2x * sz, -(offY + c.p2y * sz));
+				ImVec2 p3(penX + offX + c.p3x * sz, -(offY + c.p3y * sz));
+				float dx = p1.x - 2.0f * p2.x + p3.x, dy = p1.y - 2.0f * p2.y + p3.y;
+				int m = ImClamp((int)ImCeil(ImSqrt(ImSqrt(dx * dx + dy * dy) / 0.5f)), 1, 24);
+				ImVec2 prev = p1;
+				for (int k = 1; k <= m; ++k)
+				{
+					float t = (float)k / (float)m, u = 1.0f - t;
+					ImVec2 q(u * u * p1.x + 2 * u * t * p2.x + t * t * p3.x, u * u * p1.y + 2 * u * t * p2.y + t * t * p3.y);
+					seg_pts.push_back(prev); seg_pts.push_back(q);
+					prev = q;
+				}
+			}
+			g.segCount = seg_pts.Size / 2 - g.segBegin;
+			glyphs.push_back(g);
+		};
+		ImVector<SlugShapedGlyph> shaped;
+		float penX = 0.0f;
+		if (SlugShapeString(atlas, text, text_end, shaped, nullptr))
+		{
+			for (int i = 0; i < shaped.Size; ++i)
+			{
+				addGlyph(shaped[i].glyphID, penX, shaped[i].advanceX * sz, shaped[i].offsetX * sz, shaped[i].offsetY * sz);
+				penX += shaped[i].advanceX * sz;
+			}
+		}
+		else
+		{
+			const char* p = text;
+			while (p < text_end)
+			{
+				unsigned int cp = 0;
+				p += ImTextCharFromUtf8(&cp, p, text_end);
+				if (cp == 0) break;
+				int gi = stbtt_FindGlyphIndex(&atlas->stbFont, (int)cp);
+				int adv = 0, lsb = 0;
+				stbtt_GetGlyphHMetrics(&atlas->stbFont, gi, &adv, &lsb);
+				float a = (float)adv * atlas->emScale * sz;
+				addGlyph(gi, penX, a, 0.0f, 0.0f);
+				penX += a;
+			}
+		}
+		return true;
+	}
+
 	void DrawText_Impl(ImDrawList* pDrawList, ImFont* font, float font_size,
 	                   ImVec2 pos, ImU32 col, const char* text, const char* text_end)
 	{
@@ -6630,6 +6697,12 @@ namespace ImWidgets {
 		DrawText(pDrawList, nullptr, 0.0f, pos, col, text, text_end);
 	}
 
+	bool DW_ShapeTextOutlines(ImFont*, float, const char*, const char*, ImVector<DW_GlyphOutline>& glyphs, ImVector<ImVec2>& seg_pts)
+	{
+		glyphs.resize(0); seg_pts.resize(0);
+		return false;
+	}
+
 	// No custom-shader support in this build: text always goes through the ImGui atlas.
 	void SetTextRenderer(ImWidgetsTextRenderer) {}
 	ImWidgetsTextRenderer GetTextRenderer() { return ImWidgetsTextRenderer_ImGuiAtlas; }
@@ -6682,10 +6755,20 @@ namespace ImWidgets {
 
 	static inline bool SlugIsWs(char c) { return c == ' ' || c == '\t'; }
 
-	struct SlugBlockLine { const char* b; const char* e; float w; int rtl; float y; };
+	struct SlugBlockLine { const char* b; const char* e; float w; int rtl; float y; float x0; float x1; };
+
+	// Optional line extent: for a line box [y0, y1] (relative to the block top)
+	// returns false when nothing fits there, else the usable [x0, x1] (relative
+	// to pos.x). Lets the same paragraph layout flow text inside a shape.
+	struct SlugLineExtent
+	{
+		bool (*fn)(void* user, float y0, float y1, float* x0, float* x1);
+		void* user;
+	};
 
 	static ImVec2 SlugTextBlock(ImDrawList* dl, ImFont* font, float font_size_lp, ImVec2 pos, ImU32 col,
-	                            const char* text, const char* text_end, const ImWidgetsTextLayout& lay, bool draw)
+	                            const char* text, const char* text_end, const ImWidgetsTextLayout& lay, bool draw,
+	                            const SlugLineExtent* extent = nullptr, float max_height = FLT_MAX)
 	{
 		if (!text) return ImVec2(0, 0);
 		if (!text_end) text_end = text + strlen(text);
@@ -6717,30 +6800,47 @@ namespace ImWidgets {
 			const int rtl = DwShaper_ParagraphLevel(p, (int)(pe - p), savedDir) & 1;
 			GetStyle().TextDirection = rtl ? ImWidgetsTextDirection_RTL : ImWidgetsTextDirection_LTR;
 
+			// Usable extent of the current line box (whole wrap width, or the
+			// shape's span at that height). Lines where nothing fits are skipped.
+			float lx0 = 0.0f, lx1 = wrap_px;
+			auto nextExtent = [&]() -> bool {
+				if (!extent) { lx0 = 0.0f; lx1 = wrap_px; return true; }
+				while (y + line_adv <= max_height)
+				{
+					if (extent->fn(extent->user, y, y + line_adv, &lx0, &lx1) && lx1 - lx0 >= size_px * 0.5f) return true;
+					y += line_adv;
+				}
+				return false;
+			};
+			if (!nextExtent()) break;
+
 			// Greedy fill between soft break opportunities. Trailing spaces of a
 			// line hang (do not count toward the fit), as in CSS.
 			const char* lineB = p;
 			float lineW = 0.0f;
 			const char* seg = p;
+			bool full = false;
 			while (seg < pe)
 			{
 				const char* segE = seg + 1;
 				while (segE < pe && !(brk[(int)(segE - text)] & DwShaperBreak_LineSoft)) ++segE;
 				const float wFull = measure(seg, segE);
 				const float wFit  = measure(seg, trimEnd(seg, segE));
-				if (lineB < seg && lineW + wFit > wrap_px)
+				if (lineB < seg && lineW + wFit > lx1 - lx0)
 				{
 					const char* le = trimEnd(lineB, seg);
-					SlugBlockLine L = { lineB, le, measure(lineB, le), rtl, y };
+					SlugBlockLine L = { lineB, le, measure(lineB, le), rtl, y, lx0, lx1 };
 					lines.push_back(L); maxW = ImMax(maxW, L.w); y += line_adv;
 					lineB = seg; lineW = 0.0f;
+					if (!nextExtent()) { full = true; break; }
 				}
 				lineW += wFull;
 				seg = segE;
 			}
+			if (full) break;
 			{
 				const char* le = trimEnd(lineB, pe);
-				SlugBlockLine L = { lineB, le, measure(lineB, le), rtl, y };
+				SlugBlockLine L = { lineB, le, measure(lineB, le), rtl, y, lx0, lx1 };
 				lines.push_back(L); maxW = ImMax(maxW, L.w); y += line_adv;
 			}
 			if (pe >= text_end) break;
@@ -6762,9 +6862,12 @@ namespace ImWidgets {
 				int align = lay.Align;
 				if (align == ImWidgetsTextAlign_Start) align = L.rtl ? ImWidgetsTextAlign_Right : ImWidgetsTextAlign_Left;
 				if (align == ImWidgetsTextAlign_End)   align = L.rtl ? ImWidgetsTextAlign_Left  : ImWidgetsTextAlign_Right;
-				float x = pos.x;
-				if (align == ImWidgetsTextAlign_Right)  x = pos.x + boxW - L.w;
-				if (align == ImWidgetsTextAlign_Center) x = pos.x + (boxW - L.w) * 0.5f;
+				// Align within the line's own extent (the shape's span) or the block box.
+				const float ex0 = extent ? L.x0 : 0.0f;
+				const float exW = extent ? (L.x1 - L.x0) : boxW;
+				float x = pos.x + ex0;
+				if (align == ImWidgetsTextAlign_Right)  x = pos.x + ex0 + exW - L.w;
+				if (align == ImWidgetsTextAlign_Center) x = pos.x + ex0 + (exW - L.w) * 0.5f;
 				GetStyle().TextDirection = L.rtl ? ImWidgetsTextDirection_RTL : ImWidgetsTextDirection_LTR;
 				DrawText(dl, font, size_lp, ImVec2(x, pos.y + L.y + baselineOff), col, L.b, L.e);
 			}
@@ -6777,6 +6880,52 @@ namespace ImWidgets {
 	                     const char* text, const char* text_end, const ImWidgetsTextLayout& layout)
 	{
 		return SlugTextBlock(pDrawList, font, font_size, pos, col, text, text_end, layout, true);
+	}
+
+	// Text flowed inside a polygon (convex or not: each line takes the widest
+	// covered span at its height). Exported for DrawTextInsideConvex.
+	void DW_DrawTextBlockInPolygon(ImDrawList* dl, ImFont* font, float font_size_lp, const ImVec2* poly, int n,
+	                               ImU32 col, const char* text, const char* text_end, const ImWidgetsTextLayout& lay)
+	{
+		if (!poly || n < 3) return;
+		float minX = FLT_MAX, minY = FLT_MAX, maxX = -FLT_MAX, maxY = -FLT_MAX;
+		for (int i = 0; i < n; ++i) { minX = ImMin(minX, poly[i].x); minY = ImMin(minY, poly[i].y); maxX = ImMax(maxX, poly[i].x); maxY = ImMax(maxY, poly[i].y); }
+		struct Ctx { const ImVec2* poly; int n; ImVec2 origin; } c = { poly, n, ImVec2(minX, minY) };
+		SlugLineExtent ext;
+		ext.user = &c;
+		ext.fn = [](void* u, float y0, float y1, float* x0, float* x1) -> bool
+		{
+			// Span covered at both the top and the bottom of the line box (so
+			// glyphs stay inside), using the inner intersection.
+			const Ctx* c = (const Ctx*)u;
+			float lo = -FLT_MAX, hi = FLT_MAX;
+			for (int pass = 0; pass < 2; ++pass)
+			{
+				float y = c->origin.y + (pass == 0 ? y0 + 1.0f : y1 - 1.0f);
+				float a = FLT_MAX, b = -FLT_MAX;
+				for (int i = 0; i < c->n; ++i)
+				{
+					ImVec2 p = c->poly[i], q = c->poly[(i + 1) % c->n];
+					if ((p.y <= y && q.y > y) || (q.y <= y && p.y > y))
+					{
+						float x = p.x + (q.x - p.x) * (y - p.y) / (q.y - p.y);
+						a = ImMin(a, x); b = ImMax(b, x);
+					}
+				}
+				if (a > b) return false;
+				lo = ImMax(lo, a); hi = ImMin(hi, b);
+			}
+			if (hi <= lo) return false;
+			const float pad = 2.0f;
+			*x0 = lo - c->origin.x + pad;
+			*x1 = hi - c->origin.x - pad;
+			return *x1 > *x0;
+		};
+		ImWidgetsTextLayout l2 = lay;
+		l2.WrapWidth = PxToLp(maxX - minX);   // upper bound; the extent decides per line
+		dl->PushClipRect(ImVec2(minX, minY), ImVec2(maxX, maxY), true);
+		SlugTextBlock(dl, font, font_size_lp, ImVec2(minX, minY), col, text, text_end, l2, true, &ext, maxY - minY);
+		dl->PopClipRect();
 	}
 
 	ImVec2 CalcTextBlockSize(ImFont* font, float font_size, const char* text, const char* text_end,

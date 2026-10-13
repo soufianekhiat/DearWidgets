@@ -115,7 +115,10 @@ void DrawTextOnPath( ImDrawList* draw, ImFont* font, float font_size, char const
 ```
 Lays the string along an arbitrary polyline, rotating each glyph to the local
 tangent. `offset_along` shifts the start position in arc length;
-`baseline_above` flips which side of the path the baseline sits on.
+`baseline_above` flips which side of the path the baseline sits on. The string
+is shaped like `DrawText` (bidi, Arabic joining, ligatures, kerning) and the
+glyph outlines are filled with plain `ImDrawList` triangles, so it works on any
+backend; without the Slug atlas it falls back to ImGui atlas glyphs.
 
 ### `DrawTextInsideRect` / `DrawTextInsideConvex`
 ```cpp
@@ -125,8 +128,10 @@ void DrawTextInsideConvex( ImDrawList* draw, ImFont* font, float font_size,
                            ImVec2 const* convex_poly, int poly_count,
                            char const* text, ImU32 col );
 ```
-Wrap and fit a string inside a rectangle or a convex polygon, shrinking the
-effective size until it fits.
+Flow a string inside a rectangle or a polygon with the `DrawTextBlock` layout
+(shaped, bidi, UAX #14 line breaking, one direction per paragraph). Each line
+takes the polygon's span at its height; text that does not fit is cut, and the
+result is clipped to the shape's bounds.
 
 ### `DrawFontWaterfall`
 ```cpp

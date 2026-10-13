@@ -360,6 +360,17 @@ after the 29 physical colour pickers, `ColorSlice`, `SpectrumEditor`,
 in a group (as ImGui's own `ColorPicker4` is); the ones with a single main item
 still report its ID, so `BeginPopupContextItem()` right after them keeps working.
 
+#### Text on any backend
+
+`SetTextRenderer` selects how `DrawText` renders: the Slug GPU shader, a new CPU
+vector renderer (the same shaped, bidi-ordered glyph outlines filled with plain
+`ImDrawList` triangles, cached per string), or the ImGui atlas. `Auto` uses the
+GPU path when its shader is available and the CPU vector renderer otherwise --
+including on OpenGL3, whose custom-shader texture path still renders
+incorrectly. `DrawTextOnPath`, `DrawTextInsideRect` and `DrawTextInsideConvex`
+now shape their text too (they used unshaped ImGui glyphs; `DrawTextOnPath`
+did not even decode UTF-8).
+
 #### Vector paths (SVG / Canvas2D) on a plain ImDrawList
 
 New `ImWidgetsPath` (moveTo / lineTo / quadratic / cubic / SVG elliptical arc /

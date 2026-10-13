@@ -42186,6 +42186,49 @@ namespace ImWidgets
         }
         if ( total < 1e-3f ) return;
 
+        // Shaped path: the same glyphs as DrawText (bidi, Arabic joining,
+        // ligatures, kerning), each outline placed at its tangent and all of
+        // them filled in one pass (overlaps merge, any backend).
+        {
+            ImVector<DW_GlyphOutline> glyphs;
+            ImVector<ImVec2> segs;
+            if ( DW_ShapeTextOutlines( font, font_size, text, nullptr, glyphs, segs ) && glyphs.Size > 0 )
+            {
+                ImVector<ImVec2> placed;
+                placed.reserve( segs.Size );
+                for ( int gi = 0; gi < glyphs.Size; ++gi )
+                {
+                    const DW_GlyphOutline& g = glyphs[ gi ];
+                    float target = offset_along + g.penX + g.advance * 0.5f;
+                    if ( target < 0.0f || target > total || g.segCount == 0 ) continue;
+                    float acc = 0.0f;
+                    ImVec2 pos = path_pts[ 0 ], tan( 1, 0 );
+                    for ( int i = 0; i + 1 < path_count; ++i )
+                    {
+                        if ( acc + seg_len[ i ] >= target )
+                        {
+                            float u = seg_len[ i ] > 0.0f ? ( target - acc ) / seg_len[ i ] : 0.0f;
+                            ImVec2 a = path_pts[ i ], b = path_pts[ i + 1 ];
+                            pos = ImVec2( a.x + ( b.x - a.x ) * u, a.y + ( b.y - a.y ) * u );
+                            if ( seg_len[ i ] > 0.0f ) tan = ImVec2( ( b.x - a.x ) / seg_len[ i ], ( b.y - a.y ) / seg_len[ i ] );
+                            break;
+                        }
+                        acc += seg_len[ i ];
+                    }
+                    ImVec2 n( -tan.y, tan.x );
+                    const float cx = g.penX + g.advance * 0.5f;
+                    for ( int k = 0; k < g.segCount * 2; ++k )
+                    {
+                        ImVec2 l = segs[ g.segBegin * 2 + k ];
+                        float lx = l.x - cx, ly = baseline_above ? -l.y : l.y;
+                        placed.push_back( ImVec2( pos.x + tan.x * lx + n.x * ly, pos.y + tan.y * lx + n.y * ly ) );
+                    }
+                }
+                DW_FillSegments( dl, placed.Data, placed.Size / 2, col, ImWidgetsFillRule_NonZero, 1.0f );
+                return;
+            }
+        }
+
         ImFontBaked* baked = font->GetFontBaked( font_size );
         if ( !baked ) return;
         dl->PushTexture( font->OwnerAtlas->TexRef );
@@ -42194,7 +42237,11 @@ namespace ImWidgets
         char const* p = text;
         while ( *p )
         {
-            unsigned int c = (unsigned char)*p++;
+            // Decode UTF-8 (this used to treat every byte as a codepoint).
+            unsigned int c = 0;
+            int adv_bytes = ImTextCharFromUtf8( &c, p, nullptr );
+            if ( adv_bytes <= 0 ) break;
+            p += adv_bytes;
             if ( c == ' ' ) { pen += font_size * 0.27f; continue; }
             ImFontGlyph const* gl = baked->FindGlyph( (ImWchar)c );
             if ( !gl ) continue;
@@ -42405,80 +42452,17 @@ namespace ImWidgets
         return changed;
     }
 
-    static void DW_RasterTextWrapped( ImDrawList* dl, ImFont* font, float font_size,
-                                        char const* text, ImVec2 origin, float wrap_width,
-                                        float line_height, ImU32 col, float max_height = FLT_MAX )
-    {
-        char const* p = text;
-        float y = 0.0f;
-        while ( *p )
-        {
-            char const* line_start = p;
-            char const* break_at = NULL;
-            float run_w = 0.0f;
-            while ( *p && *p != '\n' )
-            {
-                char const* word = p;
-                while ( *p && *p != ' ' && *p != '\n' ) ++p;
-                ImVec2 sz = font->CalcTextSizeA( font_size, FLT_MAX, 0.0f, word, p );
-                if ( run_w + sz.x > wrap_width && break_at )
-                {
-                    p = break_at;
-                    break;
-                }
-                run_w += sz.x;
-                if ( *p == ' ' )
-                {
-                    break_at = p + 1;
-                    run_w += font_size * 0.27f;
-                    ++p;
-                }
-                else
-                {
-                    break_at = p;
-                }
-            }
-            if ( y + font_size > max_height ) return;
-            dl->AddText( font, font_size, ImVec2( origin.x, origin.y + y ), col, line_start, p );
-            if ( *p == '\n' ) ++p;
-            else
-            {
-                while ( *p == ' ' ) ++p;
-            }
-            y += line_height;
-        }
-    }
-
     void DrawTextInsideRect( ImDrawList* dl, ImFont* font, float font_size, ImRect bounds,
                               char const* text, ImU32 col )
     {
         if ( !text || !*text || bounds.GetWidth() <= 0.0f ) return;
         if ( !font ) font = ImGui::GetFont();
         if ( font_size <= 0.0f ) font_size = ImGui::GetFontSize();
-        dl->PushClipRect( bounds.Min, bounds.Max, true );
-        DW_RasterTextWrapped( dl, font, font_size, text, bounds.Min, bounds.GetWidth(),
-            font_size * 1.2f, col, bounds.GetHeight() );
-        dl->PopClipRect();
-    }
-
-    static bool DW_ConvexContainsAt( ImVec2 const* poly, int n, float y, float* x_lo, float* x_hi )
-    {
-        float lo = FLT_MAX, hi = -FLT_MAX;
-        for ( int i = 0; i < n; ++i )
-        {
-            ImVec2 a = poly[ i ], b = poly[ ( i + 1 ) % n ];
-            if ( ( a.y <= y && b.y >= y ) || ( b.y <= y && a.y >= y ) )
-            {
-                if ( ImFabs( b.y - a.y ) < 1e-3f ) continue;
-                float t = ( y - a.y ) / ( b.y - a.y );
-                float x = a.x + ( b.x - a.x ) * t;
-                if ( x < lo ) lo = x;
-                if ( x > hi ) hi = x;
-            }
-        }
-        if ( lo == FLT_MAX ) return false;
-        *x_lo = lo; *x_hi = hi;
-        return hi > lo;
+        // Shaped, bidi paragraph layout (UAX #14 wrapping), clipped to the rect.
+        ImVec2 const poly[ 4 ] = { bounds.Min, ImVec2( bounds.Max.x, bounds.Min.y ), bounds.Max, ImVec2( bounds.Min.x, bounds.Max.y ) };
+        ImWidgetsTextLayout lay;
+        lay.LineHeight = 1.2f;
+        DW_DrawTextBlockInPolygon( dl, font, PxToLp( font_size ), poly, 4, col, text, nullptr, lay );
     }
 
     void DrawTextInsideConvex( ImDrawList* dl, ImFont* font, float font_size,
@@ -42488,33 +42472,10 @@ namespace ImWidgets
         if ( !text || !*text || poly_count < 3 ) return;
         if ( !font ) font = ImGui::GetFont();
         if ( font_size <= 0.0f ) font_size = ImGui::GetFontSize();
-        float ymin = FLT_MAX, ymax = -FLT_MAX;
-        for ( int i = 0; i < poly_count; ++i ) { ymin = ImMin( ymin, convex_poly[ i ].y ); ymax = ImMax( ymax, convex_poly[ i ].y ); }
-        float line_h = font_size * 1.2f;
-        char const* p = text;
-        for ( float y = ymin; y + line_h <= ymax && *p; y += line_h )
-        {
-            float x_lo, x_hi;
-            if ( !DW_ConvexContainsAt( convex_poly, poly_count, y + font_size * 0.5f, &x_lo, &x_hi ) ) continue;
-            float wrap_w = x_hi - x_lo - 4.0f;
-            if ( wrap_w < font_size * 0.5f ) continue;
-            char const* line_start = p;
-            float run_w = 0.0f;
-            char const* break_at = NULL;
-            while ( *p && *p != '\n' )
-            {
-                char const* word = p;
-                while ( *p && *p != ' ' && *p != '\n' ) ++p;
-                ImVec2 sz = font->CalcTextSizeA( font_size, FLT_MAX, 0.0f, word, p );
-                if ( run_w + sz.x > wrap_w && break_at ) { p = break_at; break; }
-                run_w += sz.x;
-                if ( *p == ' ' ) { break_at = p + 1; run_w += font_size * 0.27f; ++p; }
-                else { break_at = p; }
-            }
-            dl->AddText( font, font_size, ImVec2( x_lo + 2.0f, y ), col, line_start, p );
-            if ( *p == '\n' ) ++p;
-            else while ( *p == ' ' ) ++p;
-        }
+        // Shaped, bidi paragraph layout; every line takes the polygon's span at its height.
+        ImWidgetsTextLayout lay;
+        lay.LineHeight = 1.2f;
+        DW_DrawTextBlockInPolygon( dl, font, PxToLp( font_size ), convex_poly, poly_count, col, text, nullptr, lay );
     }
 
     //////////////////////////////////////////////////////////////////////////

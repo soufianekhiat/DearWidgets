@@ -517,6 +517,16 @@ inline ImVec2 PxToLp(ImVec2 px) { float s = ImGui::GetStyle().FontScaleDpi; retu
 void DW_FillSegments( ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32 col,
                       ImWidgetsFillRule rule, float aa );
 
+// Shaped (bidi, OpenType) glyph outlines of a string, flattened to directed
+// segments in local coordinates: x from the start of the line, y down from the
+// baseline (dear_widgets_slug.cpp). Returns false without the Slug atlas.
+struct DW_GlyphOutline { float penX, advance; int segBegin, segCount; };
+bool DW_ShapeTextOutlines( ImFont* font, float size_px, const char* text, const char* text_end,
+                           ImVector<DW_GlyphOutline>& glyphs, ImVector<ImVec2>& seg_pts );
+// Paragraph layout flowed inside a polygon (dear_widgets_slug.cpp).
+void DW_DrawTextBlockInPolygon( ImDrawList* dl, ImFont* font, float font_size_lp, const ImVec2* poly, int n,
+                                ImU32 col, const char* text, const char* text_end, const ImWidgetsTextLayout& lay );
+
 struct DW_EditGroup
 {
     ImGuiID Primary = 0;
