@@ -115,7 +115,8 @@ void DrawTextOnPath( ImDrawList* draw, ImFont* font, float font_size, char const
 ```
 Lays the string along an arbitrary polyline, rotating each glyph to the local
 tangent. `offset_along` shifts the start position in arc length;
-`baseline_above` flips which side of the path the baseline sits on. The string
+`baseline_above` hangs the text below the path (the path runs along the top of
+the line) instead of standing on it. The string
 is shaped like `DrawText` (bidi, Arabic joining, ligatures, kerning) and the
 glyph outlines are filled with plain `ImDrawList` triangles, so it works on any
 backend; without the Slug atlas it falls back to ImGui atlas glyphs.

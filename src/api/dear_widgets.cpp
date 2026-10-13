@@ -42192,14 +42192,24 @@ namespace ImWidgets
         {
             ImVector<DW_GlyphOutline> glyphs;
             ImVector<ImVec2> segs;
-            if ( DW_ShapeTextOutlines( font, font_size, text, nullptr, glyphs, segs ) && glyphs.Size > 0 )
+            if ( GetTextRenderer() != ImWidgetsTextRenderer_ImGuiAtlas
+                 && DW_ShapeTextOutlines( font, font_size, text, nullptr, glyphs, segs ) && glyphs.Size > 0 )
             {
+                // baseline_above: the text hangs below the path (the path runs
+                // along the top of the line box) instead of standing on it.
+                ImFontBaked* bk = font->GetFontBaked( font_size );
+                const float ascent = bk ? bk->Ascent * ( font_size / bk->Size ) : font_size * 0.8f;
+                const float yShift = baseline_above ? ascent : 0.0f;
                 ImVector<ImVec2> placed;
                 placed.reserve( segs.Size );
+                // Zero-advance glyphs (combining marks) follow their base glyph's
+                // placement so they do not drift off it on curved paths.
+                float baseCenter = 0.0f;
                 for ( int gi = 0; gi < glyphs.Size; ++gi )
                 {
                     const DW_GlyphOutline& g = glyphs[ gi ];
-                    float target = offset_along + g.penX + g.advance * 0.5f;
+                    if ( g.advance > 0.0f || gi == 0 ) baseCenter = g.penX + g.advance * 0.5f;
+                    float target = offset_along + baseCenter;
                     if ( target < 0.0f || target > total || g.segCount == 0 ) continue;
                     float acc = 0.0f;
                     ImVec2 pos = path_pts[ 0 ], tan( 1, 0 );
@@ -42216,11 +42226,11 @@ namespace ImWidgets
                         acc += seg_len[ i ];
                     }
                     ImVec2 n( -tan.y, tan.x );
-                    const float cx = g.penX + g.advance * 0.5f;
+                    const float cx = baseCenter;
                     for ( int k = 0; k < g.segCount * 2; ++k )
                     {
                         ImVec2 l = segs[ g.segBegin * 2 + k ];
-                        float lx = l.x - cx, ly = baseline_above ? -l.y : l.y;
+                        float lx = l.x - cx, ly = l.y + yShift;
                         placed.push_back( ImVec2( pos.x + tan.x * lx + n.x * ly, pos.y + tan.y * lx + n.y * ly ) );
                     }
                 }
@@ -42270,7 +42280,7 @@ namespace ImWidgets
             float baseline_y = baked->Ascent;
             float gx0 = gl->X0, gy0 = gl->Y0 - baseline_y;
             float gx1 = gl->X1, gy1 = gl->Y1 - baseline_y;
-            if ( baseline_above ) { gy0 = -gy0; gy1 = -gy1; }
+            if ( baseline_above ) { gy0 += baseline_y; gy1 += baseline_y; } // hang below the path
             ImVec2 origin = pos - tan * ( adv * 0.5f );
             auto apply = [&]( float lx, float ly ) -> ImVec2
             {

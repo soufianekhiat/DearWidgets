@@ -2441,8 +2441,13 @@ namespace ImWidgets {
 		e.drawCount = 0;
 	}
 
+	static void SlugVecClearCaches(); // CPU vector text caches (defined below)
+
 	static void SlugDestroyAtlas(SlugFontCache* atlas)
 	{
+		// The CPU vector caches are keyed by font data pointers, which become
+		// invalid (and reusable by the allocator) once an atlas goes away.
+		SlugVecClearCaches();
 		if (atlas->curveTexture) ImPlatform_DestroyTexture(atlas->curveTexture);
 		if (atlas->bandTexture)  ImPlatform_DestroyTexture(atlas->bandTexture);
 #if IM_SUPPORT_LIGATURE
@@ -2886,15 +2891,26 @@ namespace ImWidgets {
 	static void SlugExtractGlyphCurves(SlugFontCache* atlas, int gi, ImVector<SlugCurve>& curves); // below
 
 	// Per-glyph outline cache (em units), keyed by (font data, glyph index).
-	static ImGuiStorage        s_vecGlyphIndex;    // key -> 1 + slot
-	static ImVector<int>       s_vecGlyphStart, s_vecGlyphCount;
+	// The index stores a hash; every slot keeps its full key so a hash
+	// collision is detected (and resolved by probing) instead of returning
+	// another glyph's outline.
+	static ImGuiStorage        s_vecGlyphIndex;    // hash -> 1 + slot
+	static ImVector<int>       s_vecGlyphStart, s_vecGlyphCount, s_vecGlyphId;
+	static ImVector<const void*> s_vecGlyphData;
 	static ImVector<SlugCurve> s_vecCurvePool;
 
 	static void SlugVecGlyphCurves(SlugFontCache* atlas, int gi, const SlugCurve** out, int* outCount)
 	{
-		struct Key { const void* data; int gi; } k = { atlas->stbFont.data, gi };
-		ImGuiID id = ImHashData(&k, sizeof(k));
-		int slot = s_vecGlyphIndex.GetInt(id, 0) - 1;
+		// Hash the two fields explicitly (a struct would hash its padding).
+		const void* data = atlas->stbFont.data;
+		ImGuiID id = ImHashData(&data, sizeof(data), (ImGuiID)gi * 2654435761u);
+		int slot = -1;
+		for (int probe = 0; probe < 8; ++probe, id = id * 31u + 1u)
+		{
+			int s0 = s_vecGlyphIndex.GetInt(id, 0) - 1;
+			if (s0 < 0) break;                                                   // free: insert here
+			if (s_vecGlyphData[s0] == data && s_vecGlyphId[s0] == gi) { slot = s0; break; }
+		}
 		if (slot < 0)
 		{
 			ImVector<SlugCurve> tmp;
@@ -2902,8 +2918,11 @@ namespace ImWidgets {
 			slot = s_vecGlyphStart.Size;
 			s_vecGlyphStart.push_back(s_vecCurvePool.Size);
 			s_vecGlyphCount.push_back(tmp.Size);
+			s_vecGlyphId.push_back(gi);
+			s_vecGlyphData.push_back(data);
 			for (int i = 0; i < tmp.Size; ++i) s_vecCurvePool.push_back(tmp[i]);
-			s_vecGlyphIndex.SetInt(id, slot + 1);
+			if (s_vecGlyphIndex.GetInt(id, 0) == 0)
+				s_vecGlyphIndex.SetInt(id, slot + 1);                           // 8 colliding probes: stays uncached-by-index (rare)
 		}
 		*out = s_vecCurvePool.Data + s_vecGlyphStart[slot];
 		*outCount = s_vecGlyphCount[slot];
@@ -2922,8 +2941,25 @@ namespace ImWidgets {
 	static ImGuiStorage               s_vecMeshIndex; // key -> SlugVecTextMesh*
 	static int                        s_vecLastEvict = 0;
 
+	static void SlugVecClearCaches()
+	{
+		for (int i = 0; i < s_vecMeshes.Size; ++i) IM_DELETE(s_vecMeshes[i]);
+		s_vecMeshes.clear();
+		s_vecMeshIndex.Clear();
+		s_vecGlyphIndex.Clear();
+		s_vecGlyphStart.clear(); s_vecGlyphCount.clear(); s_vecGlyphId.clear(); s_vecGlyphData.clear();
+		s_vecCurvePool.clear();
+		s_vecLastEvict = 0;
+	}
+
 	static void SlugVecEvict(int frame)
 	{
+		// A new context restarts the frame counter: treat a jump back as "now".
+		if (frame < s_vecLastEvict)
+		{
+			s_vecLastEvict = frame;
+			for (int i = 0; i < s_vecMeshes.Size; ++i) s_vecMeshes[i]->lastFrame = frame;
+		}
 		if (frame - s_vecLastEvict < 60) return;
 		s_vecLastEvict = frame;
 		int w = 0;
@@ -3109,7 +3145,7 @@ namespace ImWidgets {
 				unsigned int cp = 0;
 				p += ImTextCharFromUtf8(&cp, p, text_end);
 				if (cp == 0) break;
-				int gi = stbtt_FindGlyphIndex(&atlas->stbFont, (int)cp);
+				int gi = (cp >= 0x100000) ? (int)(cp - 0x100000) : stbtt_FindGlyphIndex(&atlas->stbFont, (int)cp);
 				int adv = 0, lsb = 0;
 				stbtt_GetGlyphHMetrics(&atlas->stbFont, gi, &adv, &lsb);
 				float a = (float)adv * atlas->emScale * sz;
@@ -3135,6 +3171,16 @@ namespace ImWidgets {
 		// Shaders must be compiled at startup via ImWidgetsFeatures_RichFont + CreateContext().
 		// If that failed (backend cannot build the Slug program), draw with ImGui
 		// instead of silently drawing nothing.
+		// Early clip-rect culling: skip all work if text is outside the visible area.
+		// Conservative bounds: ascenders up to 1 em above baseline, descenders 0.5 em below.
+		{
+			ImVec4 cr = pDrawList->_CmdHeader.ClipRect;
+			float textTop = pos.y - font_size;
+			float textBot = pos.y + font_size * 0.5f;
+			if (textTop > cr.w || textBot < cr.y || pos.x > cr.z)
+				return;
+		}
+
 		const ImWidgetsTextRenderer renderer = SlugResolveRenderer();
 		if (renderer == ImWidgetsTextRenderer_ImGuiAtlas || (renderer == ImWidgetsTextRenderer_GPU && !gs_pContext->slugShader.program))
 		{
@@ -3154,15 +3200,6 @@ namespace ImWidgets {
 			return;
 		}
 
-		// Early clip-rect culling: skip all work if text is outside the visible area.
-		// Conservative bounds: ascenders up to 1 em above baseline, descenders 0.5 em below.
-		{
-			ImVec4 cr = pDrawList->_CmdHeader.ClipRect;
-			float textTop = pos.y - font_size;
-			float textBot = pos.y + font_size * 0.5f;
-			if (textTop > cr.w || textBot < cr.y || pos.x > cr.z)
-				return;
-		}
 
 		if (!gs_pContext->slugState)
 			gs_pContext->slugState = IM_NEW(ImWidgetsSlugState);
@@ -6897,25 +6934,31 @@ namespace ImWidgets {
 		{
 			// Span covered at both the top and the bottom of the line box (so
 			// glyphs stay inside), using the inner intersection.
+			// Inside intervals (even-odd pairs of sorted crossings) at the top and
+			// bottom of the line box; the line uses the widest overlap of the two,
+			// so text in a concave shape never runs across a notch.
 			const Ctx* c = (const Ctx*)u;
-			float lo = -FLT_MAX, hi = FLT_MAX;
+			float xs[2][64]; int nx[2] = { 0, 0 };
 			for (int pass = 0; pass < 2; ++pass)
 			{
 				float y = c->origin.y + (pass == 0 ? y0 + 1.0f : y1 - 1.0f);
-				float a = FLT_MAX, b = -FLT_MAX;
-				for (int i = 0; i < c->n; ++i)
+				for (int i = 0; i < c->n && nx[pass] < 64; ++i)
 				{
 					ImVec2 p = c->poly[i], q = c->poly[(i + 1) % c->n];
 					if ((p.y <= y && q.y > y) || (q.y <= y && p.y > y))
-					{
-						float x = p.x + (q.x - p.x) * (y - p.y) / (q.y - p.y);
-						a = ImMin(a, x); b = ImMax(b, x);
-					}
+						xs[pass][nx[pass]++] = p.x + (q.x - p.x) * (y - p.y) / (q.y - p.y);
 				}
-				if (a > b) return false;
-				lo = ImMax(lo, a); hi = ImMin(hi, b);
+				ImQsort(xs[pass], (size_t)nx[pass], sizeof(float), [](const void* a, const void* b) -> int {
+					float fa = *(const float*)a, fb = *(const float*)b; return fa < fb ? -1 : fa > fb ? 1 : 0; });
 			}
-			if (hi <= lo) return false;
+			float lo = 0.0f, hi = 0.0f, best = 0.0f;
+			for (int i = 0; i + 1 < nx[0]; i += 2)
+				for (int j = 0; j + 1 < nx[1]; j += 2)
+				{
+					float a = ImMax(xs[0][i], xs[1][j]), b = ImMin(xs[0][i + 1], xs[1][j + 1]);
+					if (b - a > best) { best = b - a; lo = a; hi = b; }
+				}
+			if (best <= 0.0f) return false;
 			const float pad = 2.0f;
 			*x0 = lo - c->origin.x + pad;
 			*x1 = hi - c->origin.x - pad;
