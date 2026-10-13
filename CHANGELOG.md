@@ -437,6 +437,8 @@ UAX #14 line breaking, `
 `ImWidgetsTextLayout` (wrap width, start / end / left / right / center
 alignment, line height, underline / line-through / overline decorations,
 `MaxLines` line-clamp with an ellipsis).
+`GetStyle().LetterSpacing` / `WordSpacing` (em) space shaped text like CSS
+(no letter-spacing on cursive scripts).
 
 #### Interaction additions
 

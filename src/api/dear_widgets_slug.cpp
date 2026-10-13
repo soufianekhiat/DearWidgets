@@ -2939,6 +2939,32 @@ namespace ImWidgets {
 		c->out->push_back(sg);
 	}
 
+	// CSS letter-spacing / word-spacing (GetStyle(), in em) on shaped glyphs:
+	// extra advance after the visually last glyph of every cluster. Cursive
+	// scripts (Arabic, Syriac, N'Ko...) get no letter-spacing, which would break
+	// their joining (CSS Text 3 recommendation).
+	static bool SlugIsCursive(unsigned int c)
+	{
+		return (c >= 0x0600 && c <= 0x08FF) || (c >= 0xFB50 && c <= 0xFDFF) || (c >= 0xFE70 && c <= 0xFEFF)
+		    || (c >= 0x0700 && c <= 0x074F) || (c >= 0x07C0 && c <= 0x07FF) || (c >= 0x1800 && c <= 0x18AF);
+	}
+	static void SlugApplySpacing(const char* text, const char* text_end, ImVector<SlugShapedGlyph>& g)
+	{
+		const float ls = GetStyle().LetterSpacing, ws = GetStyle().WordSpacing;
+		if (ls == 0.0f && ws == 0.0f) return;
+		for (int i = 0; i < g.Size; ++i)
+		{
+			if (i + 1 < g.Size && g[i + 1].cluster == g[i].cluster) continue; // not the cluster's last glyph
+			if (g[i].cluster < 0 || text + g[i].cluster >= text_end) continue;
+			unsigned int cp = 0;
+			ImTextCharFromUtf8(&cp, text + g[i].cluster, text_end);
+			float add = 0.0f;
+			if (ls != 0.0f && !SlugIsCursive(cp)) add += ls;
+			if (ws != 0.0f && (cp == ' ' || cp == 0xA0 || cp == 0x3000)) add += ws;
+			g[i].advanceX += add;
+		}
+	}
+
 	static bool SlugShapeString(SlugFontCache* atlas, const char* text, const char* text_end,
 	                            ImVector<SlugShapedGlyph>& out, bool* anyNew)
 	{
@@ -2965,6 +2991,7 @@ namespace ImWidgets {
 			if (out.Size == 0) return false;
 			SlugShapeCacheInsert(atlas, shapeKey, textLen, out);
 		}
+		SlugApplySpacing(text, text_end, out);
 
 		// Build any shaped glyph IDs not yet in the atlas (no-op for built ones).
 		for (int i = 0; i < out.Size; i++)
@@ -2994,6 +3021,8 @@ namespace ImWidgets {
 		memcpy(&bits, &pos.y, 4); h = (h ^ bits) * 0x100000001B3ull;
 		h = (h ^ col) * 0x100000001B3ull;
 		h = (h ^ (ImU64)(GetStyle().TextDirection + 1)) * 0x100000001B3ull; // bidi result depends on it
+		memcpy(&bits, &GetStyle().LetterSpacing, 4); h = (h ^ bits) * 0x100000001B3ull;
+		memcpy(&bits, &GetStyle().WordSpacing, 4);   h = (h ^ bits) * 0x100000001B3ull;
 		memcpy(&bits, &sz, 4);    h = (h ^ bits) * 0x100000001B3ull;
 		return h ? h : 1; // 0 = empty sentinel
 	}
@@ -3170,6 +3199,8 @@ namespace ImWidgets {
 		ImU32 bits;
 		memcpy(&bits, &sz, 4); key = (key ^ bits) * 0x100000001B3ull;
 		key = (key ^ (ImU64)(GetStyle().TextDirection + 1)) * 0x100000001B3ull;
+		memcpy(&bits, &GetStyle().LetterSpacing, 4); key = (key ^ bits) * 0x100000001B3ull;
+		memcpy(&bits, &GetStyle().WordSpacing, 4);   key = (key ^ bits) * 0x100000001B3ull;
 		key = (key ^ (ImU64)(uintptr_t)atlas->stbFont.data) * 0x100000001B3ull;
 		const ImGuiID id = (ImGuiID)(key ^ (key >> 32));
 
@@ -7887,9 +7918,9 @@ namespace ImWidgets {
 		auto relayout = [&]() {
 			// Lines point into buf: the key covers the buffer address, the text
 			// and everything the layout depends on.
-			struct Params { const char* b; ImFont* f; int len; float size, wrap; int dir; } params;
+			struct Params { const char* b; ImFont* f; int len; float size, wrap; int dir; float ls, ws; } params;
 			memset(&params, 0, sizeof(params)); // padding bytes are hashed too
-			params.b = buf; params.f = font; params.len = len; params.size = size_px; params.wrap = lay.WrapWidth; params.dir = (int)GetStyle().TextDirection;
+			params.b = buf; params.f = font; params.len = len; params.size = size_px; params.wrap = lay.WrapWidth; params.dir = (int)GetStyle().TextDirection; params.ls = GetStyle().LetterSpacing; params.ws = GetStyle().WordSpacing;
 			ImGuiID key = ImHashData(buf, (size_t)len, ImHashData(&params, sizeof(params)));
 			if (key == 0) key = 1;
 			if (key == ml->key) return;

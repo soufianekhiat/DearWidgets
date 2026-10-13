@@ -2591,12 +2591,17 @@ namespace ImWidgets{
 				static int s_blk_clamp = 0;
 				ImGui::SliderInt( "max lines (line-clamp, 0 = all)##SlugBlk", &s_blk_clamp, 0, 8 );
 				lay.MaxLines = s_blk_clamp;
+				static float s_blk_ls = 0.0f, s_blk_ws = 0.0f;
+				ImGui::SetNextItemWidth( ImPlatform_LpToPx( 160.0f ) ); ImGui::SliderFloat( "letter-spacing (em)##SlugBlk", &s_blk_ls, -0.1f, 0.5f ); ImGui::SameLine();
+				ImGui::SetNextItemWidth( ImPlatform_LpToPx( 160.0f ) ); ImGui::SliderFloat( "word-spacing (em)##SlugBlk", &s_blk_ws, -0.2f, 1.0f );
 				ImWidgets::GetStyle().TextDirection = s_bidi_dir;
+				ImWidgets::GetStyle().LetterSpacing = s_blk_ls; ImWidgets::GetStyle().WordSpacing = s_blk_ws;
 				ImVec2 p0 = ImGui::GetCursorScreenPos();
 				ImVec2 bsz = ImWidgets::CalcTextBlockSize( bf, 22.0f, kBlockText, nullptr, lay );
 				pDrawList->AddRect( p0, p0 + bsz, IM_COL32( 120, 120, 120, 120 ) );
 				ImWidgets::DrawTextBlock( pDrawList, bf, 22.0f, p0, ImGui::GetColorU32( ImGuiCol_Text ), kBlockText, nullptr, lay );
 				ImWidgets::GetStyle().TextDirection = savedDir;
+				ImWidgets::GetStyle().LetterSpacing = 0.0f; ImWidgets::GetStyle().WordSpacing = 0.0f;
 				ImGui::Dummy( bsz );
 			}
 			ImGui::TreePop();

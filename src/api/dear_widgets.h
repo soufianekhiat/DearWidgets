@@ -779,6 +779,11 @@ struct ImWidgetsStyle
 	// Shaped text (DrawText / CalcTextSize and friends): paragraph direction used
 	// by the bidi algorithm. Not pushable -- set it on GetStyle() around a call.
 	ImWidgetsTextDirection TextDirection;
+	// CSS letter-spacing / word-spacing for shaped text, in em (0.1 = a tenth
+	// of the font size): added after every grapheme cluster (not for cursive
+	// scripts such as Arabic, whose letters must stay joined) / after spaces.
+	float  LetterSpacing;
+	float  WordSpacing;
 
 	// All bool flags grouped at the end so each one only contributes trailing padding
 	// rather than 3-byte holes between mid-struct floats. (Mode fields are typed enums
@@ -916,6 +921,8 @@ struct ImWidgetsStyle
 		ToneCurve_LineMode          = ImWidgetsThickLineMode_AddPolyline; // CPU: stroked (shader) mode silently no-draws if the stroke shader fails/rebuilds
 		ToneCurve_LineDashed        = false;
 		TextDirection               = ImWidgetsTextDirection_Auto;
+		LetterSpacing               = 0.0f;
+		WordSpacing                 = 0.0f;
 
 		// HDR Wheel / Primaries Wheel
 		HDRWheel_RightArcStart   = -45.0f;

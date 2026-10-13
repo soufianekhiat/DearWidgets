@@ -83,6 +83,17 @@ are treated as neutrals.
 If the Slug shader is unavailable the text is drawn with `ImDrawList::AddText`
 (unshaped).
 
+### Letter and word spacing
+```cpp
+ImWidgets::GetStyle().LetterSpacing = 0.05f; // em, CSS letter-spacing
+ImWidgets::GetStyle().WordSpacing   = 0.25f; // em, CSS word-spacing
+```
+Extra advance after every grapheme cluster / after spaces, applied to the
+shaped glyphs, so drawing, measuring, wrapping and caret positions agree.
+Cursive scripts (Arabic, Syriac, N'Ko, Mongolian) get no letter-spacing, which
+would break their joining (CSS Text 3). Text laid out without shaping (no
+shaper, synthetic MATH glyphs) ignores both.
+
 ### `DrawTextBlock` / `CalcTextBlockSize`
 ```cpp
 struct ImWidgetsTextLayout {
