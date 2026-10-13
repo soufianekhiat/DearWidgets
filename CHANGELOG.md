@@ -360,6 +360,13 @@ still report its ID, so `BeginPopupContextItem()` right after them keeps working
   dragging to edit its colour.
 - `RangeSliderVertical*` shows its values (inside the bar when it fits,
   otherwise as a tooltip).
+- Scopes show a hover readout: `ParadeScope` level and trace density,
+  `VectorScope` Cb/Cr, hue and saturation, `Histogram` value and per-channel
+  counts, `CIEChromaticity` xy, gamut membership and CCT.
+- `VectorDrawingTool`: click a curve to select its path, double-click to insert
+  a node without changing the curve's shape.
+- `TransformGizmo`: Ctrl snaps (10 lp grid, 15 degrees, 0.1 scale), Shift locks
+  a translation to its dominant axis.
 
 #### Version and licence banner
 
@@ -561,6 +568,8 @@ per effect through a `BG_EFFECT` define so only the requested variant compiles.
 - **`CropRect`** picks the nearest grip instead of the first one in range.
 - **`ColorWheel` "Copy Hex"** clamps HDR / negative values.
 - **Image loupe** (`ImageViewer`, `ImageInspector`) owns its right-button drag.
+- **`TransformGizmo` translation was in screen pixels** although documented as
+  logical pixels; it is now converted, so objects keep their place across DPI.
 - **`PushDragGroup`** delivers each delta exactly once (the release frame used
   to re-apply the last delta to slots after the initiator).
 

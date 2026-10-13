@@ -750,7 +750,12 @@ bool TransformGizmo( char const* label,
 delegated to `callbacks` (`ImTransformGizmoCallbacks` /
 `ImTransformGizmoDrawParams`), so the gizmo can drive any content; passing
 `nullptr` draws outlines only. Style: `ImWidgetsCol_Gizmo_*`,
-`ImWidgetsStyleVar_Gizmo_*`.
+`ImWidgetsStyleVar_Gizmo_*`. `ImTransformData::Translation` is in logical
+pixels from the canvas centre.
+
+While dragging, hold **Ctrl** to snap (translation to a 10 lp grid, rotation to
+15 degrees, scale to 0.1 steps) and **Shift** to lock a translation to its
+dominant axis.
 
 > **Replaces `ImageTransformGizmo`** (2.0.0). The old `ImTransformImage` struct
 > is gone; the gizmo no longer owns textures.

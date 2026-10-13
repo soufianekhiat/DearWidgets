@@ -24624,8 +24624,9 @@ namespace ImWidgets{
 
 		float hw = baseW * tr.Scale.x * 0.5f;
 		float hh = baseH * tr.Scale.y * 0.5f;
-		ImVec2 center( canvasCenter.x + tr.Translation.x,
-					   canvasCenter.y + tr.Translation.y );
+		// Translation is in logical pixels (see ImTransformData).
+		ImVec2 center( canvasCenter.x + LpToPx( tr.Translation.x ),
+					   canvasCenter.y + LpToPx( tr.Translation.y ) );
 		float cosR = ImCos( tr.Rotation );
 		float sinR = ImSin( tr.Rotation );
 
@@ -24821,6 +24822,20 @@ namespace ImWidgets{
 		const ImGuiID startDistKey   = id + 1004;
 		const ImGuiID startScaleXKey = id + 1005;
 		const ImGuiID startScaleYKey = id + 1006;
+		const ImGuiID startTxKey     = id + 1007;
+		const ImGuiID startTyKey     = id + 1008;
+		const ImGuiID startMxKey     = id + 1009;
+		const ImGuiID startMyKey     = id + 1010;
+
+		// Snapping (held during a drag): Ctrl snaps translation to a 10 lp grid,
+		// rotation to 15 degrees and scale to 0.1 steps; Shift locks translation
+		// to its dominant axis. Values are recomputed from the drag start each
+		// frame, so releasing the modifier returns to free movement.
+		const bool  snap       = g.IO.KeyCtrl;
+		const float snapGridLp = 10.0f;
+		const float snapAngle  = IM_PI / 12.0f;
+		const float snapScale  = 0.1f;
+		auto snapTo = []( float v, float step ) { return step > 0.0f ? ImRound( v / step ) * step : v; };
 
 		if ( g.ActiveId == id && sel >= 0 )
 		{
@@ -24834,9 +24849,23 @@ namespace ImWidgets{
 
 				if ( action == 1 ) // Translate
 				{
-					tr->Translation.x += delta.x;
-					tr->Translation.y += delta.y;
-					if ( delta.x != 0.0f || delta.y != 0.0f )
+					IM_UNUSED( delta );
+					ImVec2 const before = tr->Translation;
+					ImVec2 d = PxToLp( ImVec2( mouse.x - storage->GetFloat( startMxKey, mouse.x ),
+					                           mouse.y - storage->GetFloat( startMyKey, mouse.y ) ) );
+					if ( g.IO.KeyShift )
+					{
+						if ( ImFabs( d.x ) >= ImFabs( d.y ) ) d.y = 0.0f; else d.x = 0.0f;
+					}
+					ImVec2 t( storage->GetFloat( startTxKey, before.x ) + d.x,
+					          storage->GetFloat( startTyKey, before.y ) + d.y );
+					if ( snap )
+					{
+						t.x = snapTo( t.x, snapGridLp );
+						t.y = snapTo( t.y, snapGridLp );
+					}
+					tr->Translation = t;
+					if ( t.x != before.x || t.y != before.y )
 						value_changed = true;
 				}
 				else if ( action == 2 ) // Scale (uniform from corner)
@@ -24848,9 +24877,18 @@ namespace ImWidgets{
 					if ( startDist > 1.0f )
 					{
 						float ratio = newDist / startDist;
-						float sx = storage->GetFloat( startScaleXKey, 1.0f ) * ratio;
-						float sy = storage->GetFloat( startScaleYKey, 1.0f ) * ratio;
-						if ( sx > 0.01f && sy > 0.01f )
+						float sx0 = storage->GetFloat( startScaleXKey, 1.0f );
+						float sy0 = storage->GetFloat( startScaleYKey, 1.0f );
+						float sx = sx0 * ratio;
+						float sy = sy0 * ratio;
+						if ( snap && sx0 > 0.0f )
+						{
+							// Snap the X scale and keep the aspect the drag started with.
+							float snx = ImMax( snapTo( sx, snapScale ), snapScale );
+							sy = sy0 * ( snx / sx0 );
+							sx = snx;
+						}
+						if ( sx > 0.01f && sy > 0.01f && ( sx != tr->Scale.x || sy != tr->Scale.y ) )
 						{
 							tr->Scale.x = sx;
 							tr->Scale.y = sy;
@@ -24863,8 +24901,14 @@ namespace ImWidgets{
 					float angle = ImAtan2( mouse.y - selCenter.y, mouse.x - selCenter.x );
 					float startAngle = storage->GetFloat( startAngleKey, 0.0f );
 					float startRot = storage->GetFloat( startRotKey, 0.0f );
-					tr->Rotation = startRot + ( angle - startAngle );
-					value_changed = true;
+					float rot = startRot + ( angle - startAngle );
+					if ( snap )
+						rot = snapTo( rot, snapAngle );
+					if ( rot != tr->Rotation )
+					{
+						tr->Rotation = rot;
+						value_changed = true;
+					}
 				}
 				else if ( action == 4 ) // Non-uniform scale (edge handle)
 				{
@@ -24882,19 +24926,23 @@ namespace ImWidgets{
 					float startDist = storage->GetFloat( startDistKey, 1.0f );
 					if ( startDist > 1.0f )
 					{
+						ImVec2 const before = tr->Scale;
 						if ( edge == 0 || edge == 2 ) // top/bottom -> Y scale
 						{
 							float newDist = ImFabs( ly );
-							tr->Scale.y = startSY * ( newDist / startDist );
-							if ( tr->Scale.y < 0.01f ) tr->Scale.y = 0.01f;
+							float v = startSY * ( newDist / startDist );
+							if ( snap ) v = snapTo( v, snapScale );
+							tr->Scale.y = ImMax( v, 0.01f );
 						}
 						else // left/right -> X scale
 						{
 							float newDist = ImFabs( lx );
-							tr->Scale.x = startSX * ( newDist / startDist );
-							if ( tr->Scale.x < 0.01f ) tr->Scale.x = 0.01f;
+							float v = startSX * ( newDist / startDist );
+							if ( snap ) v = snapTo( v, snapScale );
+							tr->Scale.x = ImMax( v, 0.01f );
 						}
-						value_changed = true;
+						if ( tr->Scale.x != before.x || tr->Scale.y != before.y )
+							value_changed = true;
 					}
 				}
 			}
@@ -25008,8 +25056,13 @@ namespace ImWidgets{
 				{
 					if ( hitImage == sel )
 					{
-						// Already selected -> start translating
+						// Already selected -> start translating (from the drag-start state,
+						// so snapping / axis lock never accumulate rounding).
 						storage->SetInt( actionKey, 1 );
+						storage->SetFloat( startTxKey, transforms[ sel ].Translation.x );
+						storage->SetFloat( startTyKey, transforms[ sel ].Translation.y );
+						storage->SetFloat( startMxKey, mouse.x );
+						storage->SetFloat( startMyKey, mouse.y );
 						ImGui::SetKeyOwner( ImGuiKey_MouseLeft, id );
 						ImGui::SetActiveID( id, window );
 						ImGui::SetFocusID( id, window );
