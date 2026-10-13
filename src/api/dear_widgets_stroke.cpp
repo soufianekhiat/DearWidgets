@@ -760,7 +760,9 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
     // No stroke shader (build without custom shaders, or a failed compile): the
     // outline below is still exact, so fill it on the CPU with the nonzero rule
     // instead of drawing nothing.
-    const bool cpu_fill = (program == NULL) || (s_strokeCollect != NULL);
+    // Path clips are applied by the CPU filler only: fill the outline whenever
+    // one is active so DrawStroked* is clipped the same on every backend.
+    const bool cpu_fill = (program == NULL) || (s_strokeCollect != NULL) || DW_PathClipActive();
 
     // --- Build cap point arrays (same as reference finish()) ---
     ImVector<ImVec2> end_cap_pts, start_cap_pts;

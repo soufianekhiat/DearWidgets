@@ -390,16 +390,19 @@ struct DW_SvgStyle
 
 // A clip-path reference: the clip's id and the user space it is used in
 // (the referencing element's coordinate system, its transform included).
-struct DW_SvgClipRef { char id[64]; ImWidgetsTransform2D xf; };
+struct DW_SvgClipRef { char id[64]; ImWidgetsTransform2D xf; int serial; }; // serial: the referencing element
 enum { DW_SvgMaxClipRefs = 4 };
 
 struct DW_SvgClipDef
 {
     char          id[64];
-    ImWidgetsPath path;       // union of the child shapes, in the clip's own space
+    ImWidgetsPath path;       // union of the child shapes (clip space, without the clipPath's own transform)
+    ImWidgetsTransform2D xf;  // the clipPath element's transform
     bool          bboxUnits;  // clipPathUnits="objectBoundingBox"
-    int           rule;       // clip-rule of the children (the first one decides)
-    bool          hasRule;
+    int           rule;       // clip-rule (one child: its rule; several: nonzero on normalised children)
+    int           children;   // supported children added
+    bool          unsupported;// had children we cannot use (<use>, <text>): then ignore the clip
+    int           defsDepthAtStart;
 };
 
 struct DW_SvgItem
@@ -422,6 +425,8 @@ struct ImWidgetsSvg
     ImVector<ImWidgets::DW_SvgItem*>      items;
     ImVector<ImWidgets::DW_SvgGradient*>  gradients;
     ImVector<ImWidgets::DW_SvgClipDef*>   clipDefs;
+    ImVector<int>                         refSerials;   // clip reference serial -> index into refBoxes
+    ImVector<ImRect>                      refBoxes;     // bbox of the referencing element (its own space)
     ImRect                                viewBox;
     ImVec2                                size;   // intrinsic size (width / height, else viewBox)
     ~ImWidgetsSvg()
@@ -557,6 +562,7 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
 
     DW_SvgGradient* curGrad = nullptr;
     DW_SvgClipDef*  curClip = nullptr;   // inside <clipPath>: shapes feed the clip, not the document
+    int clipSerial = 0;
     int defsDepth = 0;
     const char* s = text;
     DW_SvgTag tag;
@@ -657,7 +663,9 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
             if (const char* id = tag.Get("id")) ImStrncpy(cd->id, id, sizeof(cd->id));
             const char* units = tag.Get("clipPathUnits");
             cd->bboxUnits = units && strstr(units, "objectBoundingBox");
-            cd->rule = ImWidgetsFillRule_NonZero; cd->hasRule = false;
+            cd->rule = ImWidgetsFillRule_NonZero; cd->children = 0; cd->unsupported = false;
+            cd->xf = DW_SvgParseTransform(tag.Get("transform"));
+            cd->defsDepthAtStart = defsDepth;
             doc->clipDefs.push_back(cd);
             if (!tag.selfClosing)
             {
@@ -665,7 +673,7 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
                 Frame* f = IM_NEW(Frame)();
                 f->style = stack.back()->style;
                 DW_SvgApplyStyle(f->style, tag);
-                f->xf = DW_SvgParseTransform(tag.Get("transform")); // the clip's own space
+                f->xf = ImWidgetsTransform2D(); // children in clip space; the clipPath transform is applied at draw time
                 f->isClipRoot = true;
                 stack.push_back(f);
             }
@@ -676,6 +684,15 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
         // must not show as plain shapes).
         if (!strcmp(name, "defs") || !strcmp(name, "symbol") || !strcmp(name, "mask")
             || !strcmp(name, "pattern") || !strcmp(name, "marker")) { if (!tag.selfClosing) ++defsDepth; continue; }
+        if (curClip && (defsDepth > curClip->defsDepthAtStart || !strcmp(name, "use") || !strcmp(name, "text")))
+        {
+            if (!strcmp(name, "use") || !strcmp(name, "text")) curClip->unsupported = true;
+            if (!strcmp(name, "text") && !tag.selfClosing)
+            {
+                const char* e = strstr(s, "text>"); s = e ? e + 5 : s + strlen(s); // skip its content
+            }
+            continue;
+        }
         if (defsDepth > 0 && !curClip)
         {
             // Keep the group stack balanced: a group opened in a skipped region
@@ -705,6 +722,7 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
             {
                 ImStrncpy(clips[clipCount].id, cid, sizeof(clips[clipCount].id));
                 clips[clipCount].xf = xf;
+                clips[clipCount].serial = ++clipSerial;
                 ++clipCount;
             }
         }
@@ -889,8 +907,37 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
         if (curClip)
         {
             // Clip children: union of their shapes (display:none ones excluded).
-            if (!st.display) continue;
+            if (!st.display || !st.visible) continue;
             p.Transform(xf);
+            // The clip region is the union of the children, each with its own
+            // clip-rule. With one child its rule is kept; with several, every
+            // child is turned positively oriented and the union is nonzero
+            // (exact for simple outlines; a child relying on even-odd holes
+            // loses them in a multi-child clip).
+            {
+                ImVector<ImVec2> fp; ImVector<int> fc;
+                p.Flatten(fp, fc, nullptr, 0.5f);
+                double area = 0.0;
+                int base = 0;
+                for (int c = 0; c < fc.Size; ++c)
+                {
+                    for (int k = 0; k < fc[c]; ++k)
+                    {
+                        ImVec2 a = fp[base + k], b = fp[base + (k + 1) % fc[c]];
+                        area += (double)a.x * b.y - (double)b.x * a.y;
+                    }
+                    base += fc[c];
+                }
+                if (area < 0.0)
+                {
+                    // reverse every subpath (cubic chains reversed point by point stay valid)
+                    for (int sp = 0; sp < p.Subpaths.Size; ++sp)
+                    {
+                        ImWidgetsSubpath sub = p.Subpaths[sp];
+                        for (int a2 = sub.First, b2 = sub.First + sub.Count - 1; a2 < b2; ++a2, --b2) { ImVec2 t = p.Points[a2]; p.Points[a2] = p.Points[b2]; p.Points[b2] = t; }
+                    }
+                }
+            }
             for (int sp = 0; sp < p.Subpaths.Size; ++sp)
             {
                 ImWidgetsSubpath sub = p.Subpaths[sp];
@@ -898,7 +945,8 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
                 curClip->path.Subpaths.push_back(sub);
             }
             for (int k = 0; k < p.Points.Size; ++k) curClip->path.Points.push_back(p.Points[k]);
-            if (!curClip->hasRule) { curClip->rule = st.clipRule; curClip->hasRule = true; }
+            curClip->rule = (curClip->children == 0) ? st.clipRule : ImWidgetsFillRule_NonZero;
+            ++curClip->children;
             continue;
         }
         if (!st.display || !st.visible) continue;
@@ -923,6 +971,39 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
     }
     while (stack.Size) { IM_DELETE(stack.back()); stack.pop_back(); }
     if (!sawSvg && doc->viewBox.GetWidth() <= 0.0f) { doc->viewBox = ImRect(0, 0, 100, 100); doc->size = ImVec2(100, 100); }
+
+    // Bounding box of each clip-referencing element, for objectBoundingBox
+    // clips: the union of all items under it, mapped into its own user space.
+    for (int i = 0; i < doc->items.Size; ++i)
+    {
+        DW_SvgItem* it = doc->items[i];
+        // item box in document space
+        ImRect db(ImVec2(FLT_MAX, FLT_MAX), ImVec2(-FLT_MAX, -FLT_MAX));
+        if (it->bbox.Min.x <= it->bbox.Max.x)
+        {
+            const ImVec2 cs[4] = { it->bbox.Min, ImVec2(it->bbox.Max.x, it->bbox.Min.y), it->bbox.Max, ImVec2(it->bbox.Min.x, it->bbox.Max.y) };
+            for (int k = 0; k < 4; ++k) db.Add(it->xf.Apply(cs[k]));
+        }
+        for (int c = 0; c < it->clipCount; ++c)
+        {
+            const DW_SvgClipRef& r = it->clips[c];
+            // document -> the referencing element's space
+            const float* m = r.xf.m;
+            float det = m[0] * m[3] - m[1] * m[2];
+            if (ImFabs(det) < 1e-12f || db.Min.x > db.Max.x) continue;
+            float id2 = 1.0f / det;
+            ImWidgetsTransform2D inv(m[3] * id2, -m[1] * id2, -m[2] * id2, m[0] * id2, 0, 0);
+            inv.m[4] = -(inv.m[0] * m[4] + inv.m[2] * m[5]);
+            inv.m[5] = -(inv.m[1] * m[4] + inv.m[3] * m[5]);
+            ImRect lb(ImVec2(FLT_MAX, FLT_MAX), ImVec2(-FLT_MAX, -FLT_MAX));
+            const ImVec2 cs[4] = { db.Min, ImVec2(db.Max.x, db.Min.y), db.Max, ImVec2(db.Min.x, db.Max.y) };
+            for (int k = 0; k < 4; ++k) lb.Add(inv.Apply(cs[k]));
+            int found = -1;
+            for (int k = 0; k < doc->refSerials.Size; ++k) if (doc->refSerials[k] == r.serial) { found = k; break; }
+            if (found < 0) { doc->refSerials.push_back(r.serial); doc->refBoxes.push_back(lb); }
+            else { doc->refBoxes[found].Add(lb.Min); doc->refBoxes[found].Add(lb.Max); }
+        }
+    }
 
     // Resolve gradient href chains (attributes and stops are inherited when missing).
     for (int pass = 0; pass < 4; ++pass)
@@ -1084,12 +1165,21 @@ void SvgDraw(ImDrawList* dl, const ImWidgetsSvg* doc, ImVec2 pos, ImVec2 size, I
             const DW_SvgClipDef* cd = nullptr;
             for (int k = 0; k < doc->clipDefs.Size; ++k) if (!strcmp(doc->clipDefs[k]->id, it.clips[c].id)) { cd = doc->clipDefs[k]; break; }
             if (!cd) continue;                                   // unknown reference: ignored (as browsers do)
-            if (cd->path.Subpaths.Size == 0) { clippedAway = true; break; } // empty clip hides the element
-            ImWidgetsTransform2D m = docToScreen * it.clips[c].xf;
+            if (cd->path.Subpaths.Size == 0)
+            {
+                // Only unsupported children (<use>, <text>): ignore the clip rather
+                // than hide the element. A truly empty clipPath hides it (spec).
+                if (cd->unsupported) continue;
+                clippedAway = true; break;
+            }
+            // ref space -> clipPath transform -> (objectBoundingBox) bbox mapping
+            ImWidgetsTransform2D m = docToScreen * it.clips[c].xf * cd->xf;
             if (cd->bboxUnits)
             {
-                if (it.bbox.GetWidth() <= 0.0f || it.bbox.GetHeight() <= 0.0f) { clippedAway = true; break; }
-                m = m * ImWidgetsTransform2D(it.bbox.GetWidth(), 0, 0, it.bbox.GetHeight(), it.bbox.Min.x, it.bbox.Min.y);
+                ImRect bb = it.bbox;
+                for (int k = 0; k < doc->refSerials.Size; ++k) if (doc->refSerials[k] == it.clips[c].serial) { bb = doc->refBoxes[k]; break; }
+                if (bb.GetWidth() <= 0.0f || bb.GetHeight() <= 0.0f) { clippedAway = true; break; }
+                m = m * ImWidgetsTransform2D(bb.GetWidth(), 0, 0, bb.GetHeight(), bb.Min.x, bb.Min.y);
             }
             ImWidgetsPath cp = cd->path;
             cp.Transform(m);

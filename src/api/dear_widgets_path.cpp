@@ -1322,6 +1322,7 @@ namespace ImWidgets {
 
 void PushPathClip(const ImWidgetsPath& clip, ImWidgetsFillRule rule)
 {
+    IM_ASSERT(s_pathClipCount < DW_MaxPathClips && "PushPathClip(): more than 4 nested clips; extra ones are ignored");
     if (s_pathClipCount >= DW_MaxPathClips) { ++s_pathClipOverflow; return; }
     DW_PathClip* pc = IM_NEW(DW_PathClip)();
     pc->rule = rule;

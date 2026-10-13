@@ -410,9 +410,11 @@ Like SVG `clip-path` / Canvas2D `clip()`: everything DearWidgets fills with its
 CPU filler (`PathFill`, `FillPolygons`, `PathStroke`, variable-width strokes,
 CPU vector text, text on path, SVG documents) is intersected with every active
 clip, in the same sweep as the fill: exact, anti-aliased clip edges, one fill
-rule per clip, up to 4 nested clips. The clip is in screen space. Plain
-`ImDrawList` calls and GPU-shader drawing (Slug text) are not clipped (use the
-draw list's clip rect for those).
+rule per clip, up to 4 nested clips (more asserts; the extra ones are
+ignored). The clip is in screen space. While a clip is active, `DrawStroked*`
+switch from the stroke shader to the CPU filler so they are clipped on every
+backend. Plain `ImDrawList` calls and GPU-shader drawing (Slug text) are not
+clipped (use the draw list's clip rect for those).
 
 ### Gradient paint
 ```cpp
@@ -476,8 +478,10 @@ attributes and `style="..."` for `fill`, `stroke`, `fill-rule`, `opacity`,
 `stroke-linejoin`, `stroke-miterlimit`, `stroke-dasharray`, `stroke-dashoffset`,
 `display`, `visibility`, inherited through groups; transform lists; colours as
 hex, `rgb()` / `rgba()`, CSS named colours, `none`, `transparent`,
-`currentColor`; `<clipPath>` (shapes and groups, `clip-rule`, `clipPathUnits`)
-referenced by `clip-path` on shapes and groups; `<text>` with `x`, `y`, `font-size`, `text-anchor`,
+`currentColor`; `<clipPath>` (shapes and groups, `clip-rule`, `clipPathUnits`,
+`transform`; several children clip to their union; a clip made only of
+unsupported children such as `<use>` is ignored) referenced by `clip-path` on
+shapes and groups (`objectBoundingBox` uses the group's box); `<text>` with `x`, `y`, `font-size`, `text-anchor`,
 `direction` and fill paints, rendered as shaped, bidi-ordered glyph outlines
 with `font` (so transforms and gradients apply to text too; nested `<tspan>`
 content is flattened). Not supported: images, masks, filters, patterns,
