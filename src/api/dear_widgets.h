@@ -514,6 +514,16 @@ enum ImWidgetsThickLineMode_
 };
 typedef int ImWidgetsThickLineMode;
 
+// Paragraph direction for shaped text (CSS `direction`, HTML `dir`).
+// Auto = the first strong character decides, LTR when there is none.
+enum ImWidgetsTextDirection_
+{
+	ImWidgetsTextDirection_Auto = 0,
+	ImWidgetsTextDirection_LTR  = 1,
+	ImWidgetsTextDirection_RTL  = 2,
+};
+typedef int ImWidgetsTextDirection;
+
 struct ImWidgetsStyle
 {
 	float	HueSelector_Thickness_ZeroWidth;
@@ -714,6 +724,10 @@ struct ImWidgetsStyle
 	// Precision popup input width (in lp)
 	float	PrecisionPopup_InputWidth;
 
+	// Shaped text (DrawText / CalcTextSize and friends): paragraph direction used
+	// by the bidi algorithm. Not pushable -- set it on GetStyle() around a call.
+	ImWidgetsTextDirection TextDirection;
+
 	// All bool flags grouped at the end so each one only contributes trailing padding
 	// rather than 3-byte holes between mid-struct floats. (Mode fields are typed enums
 	// and pack as int = 4 bytes so they stay grouped with the floats above.)
@@ -849,6 +863,7 @@ struct ImWidgetsStyle
 		ToneCurve_GradMarginTop     = 4.0f;
 		ToneCurve_LineMode          = ImWidgetsThickLineMode_AddPolyline; // CPU: stroked (shader) mode silently no-draws if the stroke shader fails/rebuilds
 		ToneCurve_LineDashed        = false;
+		TextDirection               = ImWidgetsTextDirection_Auto;
 
 		// HDR Wheel / Primaries Wheel
 		HDRWheel_RightArcStart   = -45.0f;

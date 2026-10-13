@@ -180,7 +180,7 @@ namespace ImWidgets {
 		float translateX, translateY;      // 2x1 translation (default 0)
 	};
 
-	struct SlugShapedGlyph { int glyphID; float advanceX; float offsetX; float offsetY; };
+	struct SlugShapedGlyph { int glyphID; float advanceX; float offsetX; float offsetY; int cluster; int level; }; // visual order; cluster = source byte offset, level = bidi level
 
 	// Vertex format matching slug.hlsl VS_INPUT (80 bytes = 5 x float4)
 	// Matches the reference implementation layout exactly.
@@ -2573,6 +2573,9 @@ namespace ImWidgets {
 
 	// ---- Public API implementation ------------------------------------------
 
+	static bool SlugShapeString(SlugFontCache* atlas, const char* text, const char* text_end,
+	                            ImVector<SlugShapedGlyph>& out, bool* anyNew);
+
 	ImVec2 CalcTextSize_Impl(ImFont* font, float font_size,
 	                         const char* text, const char* text_end, float* out_ascent)
 	{
@@ -2589,7 +2592,27 @@ namespace ImWidgets {
 		SlugFontCache* atlas = SlugGetOrCreateAtlas(state, font);
 		if (!atlas) { if (out_ascent) *out_ascent = font_size; return ImVec2(0, font_size); }
 
-		// Ensure all glyphs are built (no texture upload needed for measurement)
+		// Shaped measure: same glyphs, advances and bidi as DrawText.
+		{
+			ImVector<SlugShapedGlyph> shaped;
+			if (SlugShapeString(atlas, text, text_end, shaped, nullptr))
+			{
+				float width = 0.0f, maxY = 0.0f, minY = 0.0f;
+				for (int i = 0; i < shaped.Size; i++)
+				{
+					width += shaped[i].advanceX * font_size;
+					if (SlugGlyphEntry* ge = SlugFindGlyph(atlas, (ImWchar)(0x100000 + shaped[i].glyphID)))
+					{
+						maxY = ImMax(maxY, ge->maxYEm + shaped[i].offsetY);
+						minY = ImMin(minY, ge->minYEm + shaped[i].offsetY);
+					}
+				}
+				if (out_ascent) *out_ascent = maxY * font_size;
+				return ImVec2(width, (maxY - minY) * font_size);
+			}
+		}
+
+		// Unshaped fallback: ensure all glyphs are built (no texture upload needed for measurement)
 		const char* p = text;
 		while (p < text_end)
 		{
@@ -2635,49 +2658,8 @@ namespace ImWidgets {
 	float CalcShapedTextWidth(ImFont* font, float font_size,
 	                          const char* text, const char* text_end)
 	{
-		// Use the OpenType shaper for accurate advance width of shaped text (Arabic
-		// contextual forms, lam-alef ligatures, kerning). Slower than CalcTextSize --
-		// call only where alignment precision matters, not in tight measurement loops.
-		if (!gs_pContext || !text) return 0.0f;
-		if (!text_end) text_end = text + strlen(text);
-		if (text >= text_end) return 0.0f;
-
-		if (!font)             font      = ImGui::GetFont();
-		if (font_size > 0.0f)  font_size = SlugLpToPx(font_size);
-		else                   font_size = ImGui::GetFontSize();
-
-#if IM_SUPPORT_LIGATURE
-		ImWidgetsSlugState* state = gs_pContext->slugState;
-		if (!state) state = gs_pContext->slugState = IM_NEW(ImWidgetsSlugState);
-
-		SlugFontCache* atlas = SlugGetOrCreateAtlas(state, font);
-		if (!atlas) return 0.0f;
-
-		if (DwShaper_IsReady(atlas->shaperCtx))
-		{
-			// Skip shaping for synthetic codepoints (0x100000+ range)
-			unsigned int firstCp = 0;
-			ImTextCharFromUtf8(&firstCp, text, text_end);
-			if (firstCp < 0x100000)
-			{
-				int textLen = (int)(text_end - text);
-				DwShaper_Begin(atlas->shaperCtx);
-				DwShaper_PushUtf8(atlas->shaperCtx, text, textLen);
-				DwShaper_End(atlas->shaperCtx);
-
-				float width = 0.0f;
-				DwShaperRun run;
-				while (DwShaper_NextRun(atlas->shaperCtx, &run))
-				{
-					DwShaperGlyph glyph;
-					while (DwShaper_NextGlyph(&run, &glyph))
-						width += (float)glyph.AdvanceX * atlas->emScale * font_size;
-				}
-				return width;
-			}
-		}
-#endif
-		// Fallback: unshaped width
+		// CalcTextSize now shapes (bidi, contextual forms, ligatures, kerning), so
+		// this is the same measure; kept for source compatibility.
 		return CalcTextSize(font, font_size, text, text_end).x;
 	}
 
@@ -2734,6 +2716,69 @@ namespace ImWidgets {
 		e.textLen = textLen;
 		e.glyphs  = glyphs;
 		if (isNew) atlas->shapeCacheCount++;
+	}
+
+	// ---- Shared shaping: bidi + OpenType, cached ------------------------------
+	// Every text path (DrawText, gradient/image text, CalcTextSize) goes through
+	// here, so what is measured is exactly what is drawn. Produces glyphs in final
+	// left-to-right visual order (UAX #9 levels resolved, runs reordered) and
+	// builds any glyph the atlas does not have yet. Returns false when shaping is
+	// unavailable or the text uses synthetic MATH codepoints; callers then lay out
+	// per codepoint.
+	static void SlugShapeEmit(void* user, const DwShaperGlyph* g)
+	{
+		struct Ctx { ImVector<SlugShapedGlyph>* out; float em; };
+		Ctx* c = (Ctx*)user;
+		SlugShapedGlyph sg;
+		sg.glyphID  = (int)g->GlyphId;
+		sg.advanceX = (float)g->AdvanceX * c->em;
+		sg.offsetX  = (float)g->OffsetX  * c->em;
+		sg.offsetY  = (float)g->OffsetY  * c->em;
+		sg.cluster  = g->Cluster;
+		sg.level    = g->Level;
+		c->out->push_back(sg);
+	}
+
+	static bool SlugShapeString(SlugFontCache* atlas, const char* text, const char* text_end,
+	                            ImVector<SlugShapedGlyph>& out, bool* anyNew)
+	{
+		out.resize(0);
+#if IM_SUPPORT_LIGATURE
+		if (!atlas || !DwShaper_IsReady(atlas->shaperCtx) || text >= text_end) return false;
+		unsigned int firstCp = 0;
+		ImTextCharFromUtf8(&firstCp, text, text_end);
+		if (firstCp >= 0x100000) return false;   // synthetic MATH codepoints are laid out directly
+
+		const int textLen = (int)(text_end - text);
+		const int dir     = GetStyle().TextDirection;
+		ImU64 shapeKey = SlugFNV64(text, textLen);
+		shapeKey = (shapeKey ^ (ImU64)(dir + 1)) * 1099511628211ULL;
+		if (!shapeKey) shapeKey = 1ULL;
+		ImVector<SlugShapedGlyph>* cached = SlugShapeCacheLookup(atlas, shapeKey, textLen);
+		if (cached) {
+			out = *cached;
+		} else {
+			struct Ctx { ImVector<SlugShapedGlyph>* out; float em; } c = { &out, atlas->emScale };
+			DwShaper_ShapeBidi(atlas->shaperCtx, text, textLen, dir, &SlugShapeEmit, &c);
+			SlugShapeCacheInsert(atlas, shapeKey, textLen, out);
+		}
+
+		// Build any shaped glyph IDs not yet in the atlas (no-op for built ones).
+		for (int i = 0; i < out.Size; i++)
+		{
+			ImWchar glyphKey = (ImWchar)(0x100000 + out[i].glyphID);
+			if (!SlugFindGlyph(atlas, glyphKey))
+			{
+				SlugGlyphEntry e;
+				if (SlugBuildGlyphByIndex(atlas, out[i].glyphID, glyphKey, &e) && anyNew)
+					*anyNew = true;
+			}
+		}
+		return true;
+#else
+		IM_UNUSED(atlas); IM_UNUSED(text); IM_UNUSED(text_end); IM_UNUSED(anyNew);
+		return false;
+#endif
 	}
 
 	// ---- Draw cache: skip vertex emission for static text ----
@@ -2806,8 +2851,14 @@ namespace ImWidgets {
 		if (font_size <= 0.0f) font_size = ImGui::GetFontSize();
 
 #if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
-		// Shaders must be compiled at startup via ImWidgetsFeatures_RichFont + CreateContext()
-		if (!gs_pContext->slugShader.program) return;
+		// Shaders must be compiled at startup via ImWidgetsFeatures_RichFont + CreateContext().
+		// If that failed (backend cannot build the Slug program), draw with ImGui
+		// instead of silently drawing nothing.
+		if (!gs_pContext->slugShader.program)
+		{
+			pDrawList->AddText(font, font_size, pos, col, text, text_end);
+			return;
+		}
 
 		// Early clip-rect culling: skip all work if text is outside the visible area.
 		// Conservative bounds: ascenders up to 1 em above baseline, descenders 0.5 em below.
@@ -2862,56 +2913,7 @@ namespace ImWidgets {
 
 		// ---- Text shaping (ligatures, contextual forms, RTL, OpenType features) ----
 		ImVector<SlugShapedGlyph> shapedGlyphs;
-#if IM_SUPPORT_LIGATURE
-		// Skip shaping for synthetic codepoints (0x100000+ range, used by MATH table assembly)
-		bool skipShaping = false;
-		{
-			unsigned int firstCp = 0;
-			ImTextCharFromUtf8(&firstCp, text, text_end);
-			if (firstCp >= 0x100000) skipShaping = true;
-		}
-		if (DwShaper_IsReady(atlas->shaperCtx) && !skipShaping)
-		{
-			int textLen = (int)(text_end - text);
-			ImU64 shapeKey = SlugFNV64(text, textLen);
-			ImVector<SlugShapedGlyph>* cached = SlugShapeCacheLookup(atlas, shapeKey, textLen);
-			if (cached) {
-				shapedGlyphs = *cached;
-			} else {
-				DwShaper_Begin(atlas->shaperCtx);
-				DwShaper_PushUtf8(atlas->shaperCtx, text, textLen);
-				DwShaper_End(atlas->shaperCtx);
-
-				DwShaperRun run;
-				while (DwShaper_NextRun(atlas->shaperCtx, &run))
-				{
-					DwShaperGlyph glyph;
-					while (DwShaper_NextGlyph(&run, &glyph))
-					{
-						SlugShapedGlyph sg;
-						sg.glyphID  = (int)glyph.GlyphId;
-						sg.advanceX = (float)glyph.AdvanceX * atlas->emScale;
-						sg.offsetX  = (float)glyph.OffsetX  * atlas->emScale;
-						sg.offsetY  = (float)glyph.OffsetY  * atlas->emScale;
-						shapedGlyphs.push_back(sg);
-					}
-				}
-				SlugShapeCacheInsert(atlas, shapeKey, textLen, shapedGlyphs);
-			}
-
-			// Build any shaped glyph IDs not yet in atlas (no-op for already-built glyphs)
-			for (int sg_i = 0; sg_i < shapedGlyphs.Size; sg_i++)
-			{
-				ImWchar glyphKey = (ImWchar)(0x100000 + shapedGlyphs[sg_i].glyphID);
-				if (!SlugFindGlyph(atlas, glyphKey))
-				{
-					SlugGlyphEntry e;
-					if (SlugBuildGlyphByIndex(atlas, shapedGlyphs[sg_i].glyphID, glyphKey, &e))
-						anyNew = true;
-				}
-			}
-		}
-#endif
+		SlugShapeString(atlas, text, text_end, shapedGlyphs, &anyNew);
 		if (anyNew || atlas->dirty)
 			SlugUploadTextures(atlas);
 		if (!atlas->curveTexture || !atlas->bandTexture) return;
@@ -3457,54 +3459,7 @@ namespace ImWidgets {
 
 		// Text shaping
 		ImVector<SlugShapedGlyph> shapedGlyphs;
-#if IM_SUPPORT_LIGATURE
-		bool skipShaping = false;
-		{
-			unsigned int firstCp = 0;
-			ImTextCharFromUtf8(&firstCp, text, text_end);
-			if (firstCp >= 0x100000) skipShaping = true;
-		}
-		if (DwShaper_IsReady(atlas->shaperCtx) && !skipShaping)
-		{
-			int textLen = (int)(text_end - text);
-			ImU64 shapeKey = SlugFNV64(text, textLen);
-			ImVector<SlugShapedGlyph>* cached = SlugShapeCacheLookup(atlas, shapeKey, textLen);
-			if (cached) {
-				shapedGlyphs = *cached;
-			} else {
-				DwShaper_Begin(atlas->shaperCtx);
-				DwShaper_PushUtf8(atlas->shaperCtx, text, textLen);
-				DwShaper_End(atlas->shaperCtx);
-
-				DwShaperRun run;
-				while (DwShaper_NextRun(atlas->shaperCtx, &run))
-				{
-					DwShaperGlyph glyph;
-					while (DwShaper_NextGlyph(&run, &glyph))
-					{
-						SlugShapedGlyph sg;
-						sg.glyphID  = (int)glyph.GlyphId;
-						sg.advanceX = (float)glyph.AdvanceX * atlas->emScale;
-						sg.offsetX  = (float)glyph.OffsetX  * atlas->emScale;
-						sg.offsetY  = (float)glyph.OffsetY  * atlas->emScale;
-						shapedGlyphs.push_back(sg);
-					}
-				}
-				SlugShapeCacheInsert(atlas, shapeKey, textLen, shapedGlyphs);
-			}
-
-			for (int sg_i = 0; sg_i < shapedGlyphs.Size; sg_i++)
-			{
-				ImWchar glyphKey = (ImWchar)(0x100000 + shapedGlyphs[sg_i].glyphID);
-				if (!SlugFindGlyph(atlas, glyphKey))
-				{
-					SlugGlyphEntry e;
-					if (SlugBuildGlyphByIndex(atlas, shapedGlyphs[sg_i].glyphID, glyphKey, &e))
-						anyNew = true;
-				}
-			}
-		}
-#endif
+		SlugShapeString(atlas, text, text_end, shapedGlyphs, &anyNew);
 
 		if (anyNew || atlas->dirty)
 			SlugUploadTextures(atlas);
@@ -6423,11 +6378,11 @@ namespace ImWidgets {
 		else                   font_size = ImGui::GetFontSize();
 		ImFontBaked* baked = font->GetFontBaked(font_size);
 		if (out_ascent) *out_ascent = baked ? baked->Ascent * (font_size / baked->Size) : font_size * 0.8f;
-		// Delegate to ImGui for width; height from font metrics
-		ImVec2 sz = font->GetFontBaked(font_size) ?
-		    ImVec2(0, font_size) : ImVec2(0, font_size);
-		(void)text; (void)text_end;
-		return sz;
+		// No shader tier: DrawText falls back to AddText, so measure with ImGui.
+		// (This used to return width 0 for every string.)
+		if (!text) return ImVec2(0, font_size);
+		ImVec2 sz = font->CalcTextSizeA(font_size, FLT_MAX, 0.0f, text, text_end);
+		return ImVec2(sz.x, font_size);
 	}
 
 	void DrawText(ImDrawList* pDrawList, ImFont* font, float font_size,

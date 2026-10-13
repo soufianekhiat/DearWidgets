@@ -2,6 +2,7 @@
 // Compiled as its own translation unit; dear_widgets_slug.cpp includes the
 // header and the linker resolves calls via namespace ImWidgets.
 #include "imgui.h"   // IM_ALLOC / IM_FREE
+#include "imgui_internal.h" // ImTextCharFromUtf8, ImMax
 #include <cstring>   // memset
 
 // ── Backend include (outside namespace — it defines global types) ──
@@ -133,7 +134,274 @@ bool DwShaper_NextGlyph(DwShaperRun* run, DwShaperGlyph* out)
     out->AdvanceX = (int)g->AdvanceX;
     out->OffsetX  = (int)g->OffsetX;
     out->OffsetY  = (int)g->OffsetY;
+    out->Cluster  = -1;
+    out->Level    = 0;
     return true;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Unicode bidi (UAX #9, implicit levels) + per-run shaping + L2 reordering.
+//
+// kbts reduces the Unicode bidi classes to: NI (all neutrals: WS, ON, B, S and
+// isolates), BN, L, R, NSM, AL, AN, EN, ES, ET, CS. That is exactly what the
+// implicit part of the algorithm needs. Explicit embeddings/overrides/isolates
+// (LRE, RLO, LRI, ...) are treated as neutrals, so the maximum level is 2.
+
+enum DwBidiType : unsigned char
+{
+    DwBidi_NI = KBTS_UNICODE_BIDIRECTIONAL_CLASS_NI,
+    DwBidi_BN = KBTS_UNICODE_BIDIRECTIONAL_CLASS_BN,
+    DwBidi_L  = KBTS_UNICODE_BIDIRECTIONAL_CLASS_L,
+    DwBidi_R  = KBTS_UNICODE_BIDIRECTIONAL_CLASS_R,
+    DwBidi_NSM= KBTS_UNICODE_BIDIRECTIONAL_CLASS_NSM,
+    DwBidi_AL = KBTS_UNICODE_BIDIRECTIONAL_CLASS_AL,
+    DwBidi_AN = KBTS_UNICODE_BIDIRECTIONAL_CLASS_AN,
+    DwBidi_EN = KBTS_UNICODE_BIDIRECTIONAL_CLASS_EN,
+    DwBidi_ES = KBTS_UNICODE_BIDIRECTIONAL_CLASS_ES,
+    DwBidi_ET = KBTS_UNICODE_BIDIRECTIONAL_CLASS_ET,
+    DwBidi_CS = KBTS_UNICODE_BIDIRECTIONAL_CLASS_CS,
+};
+
+static inline bool DwBidi_IsWhitespace(unsigned int cp)
+{
+    return cp == 0x20 || cp == 0x09 || cp == 0x0B || cp == 0x0C || cp == 0x3000
+        || (cp >= 0x2000 && cp <= 0x200A) || cp == 0x00A0 || cp == 0x1680 || cp == 0x205F;
+}
+
+// Resolves one embedding level per codepoint. `types` is modified in place.
+static int DwBidi_ResolveLevels(unsigned char* types, const unsigned int* cps, int n,
+                                int direction, unsigned char* levels)
+{
+    // P2-P3: paragraph level.
+    int para = 0;
+    if (direction == DwShaperDirection_RTL) para = 1;
+    else if (direction == DwShaperDirection_Auto)
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            if (types[i] == DwBidi_L) { para = 0; break; }
+            if (types[i] == DwBidi_R || types[i] == DwBidi_AL) { para = 1; break; }
+        }
+    }
+    const unsigned char sos = (para & 1) ? DwBidi_R : DwBidi_L;
+    const unsigned char eos = sos;
+
+    // W1: NSM takes the type of the previous character (sos at the start).
+    // BN is "removed" (X9): give it the previous type too so it never splits a run.
+    for (int i = 0; i < n; ++i)
+        if (types[i] == DwBidi_NSM || types[i] == DwBidi_BN)
+            types[i] = (i == 0) ? sos : types[i - 1];
+
+    // W2: EN preceded (through any non-strong) by AL becomes AN.  W3: AL -> R.
+    {
+        unsigned char lastStrong = sos;
+        for (int i = 0; i < n; ++i)
+        {
+            unsigned char t = types[i];
+            if (t == DwBidi_L || t == DwBidi_R || t == DwBidi_AL) lastStrong = t;
+            else if (t == DwBidi_EN && lastStrong == DwBidi_AL) types[i] = DwBidi_AN;
+        }
+        for (int i = 0; i < n; ++i)
+            if (types[i] == DwBidi_AL) types[i] = DwBidi_R;
+    }
+
+    // W4: a single ES between two EN -> EN; a single CS between two numbers of the same type -> that type.
+    for (int i = 1; i + 1 < n; ++i)
+    {
+        unsigned char a = types[i - 1], b = types[i + 1];
+        if (types[i] == DwBidi_ES && a == DwBidi_EN && b == DwBidi_EN) types[i] = DwBidi_EN;
+        else if (types[i] == DwBidi_CS && a == b && (a == DwBidi_EN || a == DwBidi_AN)) types[i] = a;
+    }
+
+    // W5: a sequence of ET adjacent to an EN becomes EN.
+    for (int i = 0; i < n; )
+    {
+        if (types[i] != DwBidi_ET) { ++i; continue; }
+        int j = i;
+        while (j < n && types[j] == DwBidi_ET) ++j;
+        bool touchesEN = (i > 0 && types[i - 1] == DwBidi_EN) || (j < n && types[j] == DwBidi_EN);
+        if (touchesEN) for (int k = i; k < j; ++k) types[k] = DwBidi_EN;
+        i = j;
+    }
+
+    // W6: remaining separators and terminators become neutral.
+    for (int i = 0; i < n; ++i)
+        if (types[i] == DwBidi_ES || types[i] == DwBidi_ET || types[i] == DwBidi_CS) types[i] = DwBidi_NI;
+
+    // W7: EN preceded by L (or sos L) becomes L.
+    {
+        unsigned char lastStrong = sos;
+        for (int i = 0; i < n; ++i)
+        {
+            unsigned char t = types[i];
+            if (t == DwBidi_L || t == DwBidi_R) lastStrong = t;
+            else if (t == DwBidi_EN && lastStrong == DwBidi_L) types[i] = DwBidi_L;
+        }
+    }
+
+    // N1-N2: neutrals take the direction of their surroundings when both sides
+    // agree (EN/AN count as R), otherwise the embedding direction.
+    for (int i = 0; i < n; )
+    {
+        if (types[i] != DwBidi_NI) { ++i; continue; }
+        int j = i;
+        while (j < n && types[j] == DwBidi_NI) ++j;
+        auto strongOf = []( unsigned char t ) -> unsigned char
+        {
+            return ( t == DwBidi_EN || t == DwBidi_AN ) ? (unsigned char)DwBidi_R : t;
+        };
+        unsigned char before = (i == 0) ? sos : strongOf(types[i - 1]);
+        unsigned char after  = (j == n) ? eos : strongOf(types[j]);
+        unsigned char res    = (before == after) ? before : sos;
+        for (int k = i; k < j; ++k) types[k] = res;
+        i = j;
+    }
+
+    // I1-I2: implicit levels.
+    for (int i = 0; i < n; ++i)
+    {
+        unsigned char t = types[i];
+        int lv = para;
+        if ((para & 1) == 0)
+        {
+            if (t == DwBidi_R) lv += 1;
+            else if (t == DwBidi_AN || t == DwBidi_EN) lv += 2;
+        }
+        else
+        {
+            if (t == DwBidi_L || t == DwBidi_EN || t == DwBidi_AN) lv += 1;
+        }
+        levels[i] = (unsigned char)lv;
+    }
+
+    // L1: trailing whitespace goes back to the paragraph level.
+    for (int i = n - 1; i >= 0 && DwBidi_IsWhitespace(cps[i]); --i)
+        levels[i] = (unsigned char)para;
+
+    return para;
+}
+
+int DwShaper_ShapeBidi(DwShaperCtx* ctx, const char* text, int len, int direction,
+                       DwShaperEmitFn emit, void* user)
+{
+    if (!ctx || !ctx->kbts || !ctx->font || !text || len <= 0 || !emit)
+        return 0;
+
+    // Decode once: codepoints, their byte offsets and bidi types.
+    ImVector<unsigned int>  cps;
+    ImVector<int>           offs;
+    ImVector<unsigned char> types, levels;
+    cps.reserve(len); offs.reserve(len + 1);
+    {
+        const char* p = text;
+        const char* e = text + len;
+        while (p < e)
+        {
+            unsigned int cp = 0;
+            int adv = ImTextCharFromUtf8(&cp, p, e);
+            if (adv <= 0) break;
+            offs.push_back((int)(p - text));
+            cps.push_back(cp);
+            p += adv;
+        }
+        offs.push_back(len);
+    }
+    const int n = cps.Size;
+    if (n == 0) return 0;
+    types.resize(n); levels.resize(n);
+    for (int i = 0; i < n; ++i)
+        types[i] = kbts__GetUnicodeBidirectionalClass(cps[i]);
+    const int para = DwBidi_ResolveLevels(types.Data, cps.Data, n, direction, levels.Data);
+
+    // Level runs (logical order).
+    struct LevelRun { int cpBegin, cpEnd, level; int glyphBegin, glyphEnd; };
+    ImVector<LevelRun> runs;
+    for (int i = 0; i < n; )
+    {
+        int j = i + 1;
+        while (j < n && levels[j] == levels[i]) ++j;
+        LevelRun r = { i, j, levels[i], 0, 0 };
+        runs.push_back(r);
+        i = j;
+    }
+
+    // Shape every run with its own direction. kbts returns each run's glyphs
+    // already in visual order (RTL runs flipped), which is what L2 needs for an
+    // atomic run: a run at level L is reversed L times, i.e. once iff odd.
+    ImVector<DwShaperGlyph> glyphs;
+    for (int r = 0; r < runs.Size; ++r)
+    {
+        LevelRun& lr = runs[r];
+        lr.glyphBegin = glyphs.Size;
+        const int bBegin = offs[lr.cpBegin];
+        const int bEnd   = offs[lr.cpEnd];
+        kbts_ShapeBegin(ctx->kbts, (lr.level & 1) ? KBTS_DIRECTION_RTL : KBTS_DIRECTION_LTR, KBTS_LANGUAGE_DONT_KNOW);
+        kbts_ShapeUtf8(ctx->kbts, text + bBegin, (kbts_u32)(bEnd - bBegin), KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
+        kbts_ShapeEnd(ctx->kbts);
+        kbts_run kr;
+        while (kbts_ShapeRun(ctx->kbts, &kr))
+        {
+            // kbts segments direction on its own and flips any run it considers
+            // RTL (e.g. Arabic-Indic digits, class AN). Our levels are
+            // authoritative: undo the flip when kbts disagrees with them.
+            const int  subBegin = glyphs.Size;
+            const bool kbtsRtl  = (kr.Direction == KBTS_DIRECTION_RTL);
+            const bool wantRtl  = (lr.level & 1) != 0;
+            kbts_glyph* g = nullptr;
+            while (kbts_GlyphIteratorNext(&kr.Glyphs, &g))
+            {
+                DwShaperGlyph o;
+                o.GlyphId  = (unsigned int)g->Id;
+                o.AdvanceX = (int)g->AdvanceX;
+                o.OffsetX  = (int)g->OffsetX;
+                o.OffsetY  = (int)g->OffsetY;
+                int ci = lr.cpBegin + g->UserIdOrCodepointIndex;
+                if (ci < lr.cpBegin) ci = lr.cpBegin;
+                if (ci >= lr.cpEnd)  ci = lr.cpEnd - 1;
+                o.Cluster  = offs[ci];
+                o.Level    = lr.level;
+                glyphs.push_back(o);
+            }
+            if (kbtsRtl != wantRtl)
+                for (int a = subBegin, b = glyphs.Size - 1; a < b; ++a, --b)
+                {
+                    DwShaperGlyph t = glyphs[a]; glyphs[a] = glyphs[b]; glyphs[b] = t;
+                }
+        }
+        lr.glyphEnd = glyphs.Size;
+    }
+
+    // L2: from the highest level down to the lowest odd level, reverse every
+    // maximal sequence of runs at that level or higher.
+    ImVector<int> order;
+    order.resize(runs.Size);
+    int maxLevel = 0, minOdd = 255;
+    for (int r = 0; r < runs.Size; ++r)
+    {
+        order[r] = r;
+        maxLevel = ImMax(maxLevel, runs[r].level);
+        if (runs[r].level & 1) minOdd = ImMin(minOdd, runs[r].level);
+    }
+    for (int lv = maxLevel; lv >= minOdd && lv > 0; --lv)
+    {
+        for (int i = 0; i < order.Size; )
+        {
+            if (runs[order[i]].level < lv) { ++i; continue; }
+            int j = i;
+            while (j < order.Size && runs[order[j]].level >= lv) ++j;
+            for (int a = i, b = j - 1; a < b; ++a, --b) { int t = order[a]; order[a] = order[b]; order[b] = t; }
+            i = j;
+        }
+    }
+
+    for (int k = 0; k < order.Size; ++k)
+    {
+        const LevelRun& lr = runs[order[k]];
+        for (int gi = lr.glyphBegin; gi < lr.glyphEnd; ++gi)
+            emit(user, &glyphs[gi]);
+    }
+    return para;
+}
+
 } // namespace ImWidgets
+

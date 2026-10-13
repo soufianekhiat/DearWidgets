@@ -2399,6 +2399,49 @@ namespace ImWidgets{
 		static char arabic_buf[256] = "\xd8\xa7\xd9\x84\xd8\xa3\xd8\xaf\xd9\x88\xd8\xa7\xd8\xaa \xd8\xa7\xd9\x84\xd8\xb9\xd8\xb2\xd9\x8a\xd8\xb2\xd8\xa9";
 		ImGui::InputText( "Arabic##SlugArabic", arabic_buf, sizeof( arabic_buf ) );
 
+		// Bidi: mixed-direction strings, laid out by the UAX #9 implicit algorithm
+		// (runs shaped per direction, then reordered visually). The second column
+		// draws the same string with the paragraph direction forced.
+		if ( ImGui::TreeNode( "Bidi (mixed Arabic / Latin / numbers)##SlugBidi" ) )
+		{
+			struct BidiSample { const char* label; const char* text; };
+			static const BidiSample kBidi[] = {
+				{ "Arabic + Latin + digits", "\xd9\x85\xd8\xb1\xd8\xad\xd8\xa8\xd8\xa7 \xd8\xa8\xd8\xa7\xd9\x84\xd8\xb9\xd8\xa7\xd9\x84\xd9\x85 Hello World 2026" },
+				{ "Arabic with number and Latin in parentheses", "\xd8\xa7\xd9\x84\xd8\xb3\xd8\xb9\xd8\xb1 120 \xd8\xb1\xd9\x8a\xd8\xa7\xd9\x84 (VAT 15%)" },
+				{ "Latin paragraph containing Arabic", "Version 2.0 \xd8\xa7\xd9\x84\xd8\xa5\xd8\xb5\xd8\xaf\xd8\xa7\xd8\xb1 \xd8\xa7\xd9\x84\xd8\xac\xd8\xaf\xd9\x8a\xd8\xaf is out" },
+				{ "Arabic with hyphenated number", "\xd8\xa7\xd9\x84\xd9\x87\xd8\xa7\xd8\xaa\xd9\x81: 555-1234" },
+				{ "Arabic-Indic digits", "\xd8\xa7\xd9\x84\xd8\xb9\xd8\xaf\xd8\xaf \xd9\xa1\xd9\xa2\xd9\xa3 \xd9\x88\xd8\xa7\xd9\x84\xd8\xb1\xd9\x82\xd9\x85 456" },
+			};
+			static int s_bidi_dir = ImWidgetsTextDirection_Auto;
+			ImGui::Combo( "Paragraph direction##SlugBidiDir", &s_bidi_dir, "Auto (first strong)\0LTR\0RTL\0" );
+			static char s_bidi_custom[256] = "";
+			ImGui::InputText( "Custom##SlugBidiCustom", s_bidi_custom, sizeof( s_bidi_custom ) );
+			ImFont* bf = g_amiriFont ? g_amiriFont : ( g_vazirmatnFont ? g_vazirmatnFont : nullptr );
+			if ( !bf )
+				ImGui::TextDisabled( "Load Amiri or Vazirmatn (Fonts list above) to see Arabic glyphs." );
+			const float bfs = 26.0f;
+			ImWidgetsTextDirection const savedDir = ImWidgets::GetStyle().TextDirection;
+			ImWidgets::GetStyle().TextDirection = s_bidi_dir;
+			const int n = IM_ARRAYSIZE( kBidi ) + ( s_bidi_custom[ 0 ] ? 1 : 0 );
+			for ( int i = 0; i < n; ++i )
+			{
+				const char* label = i < IM_ARRAYSIZE( kBidi ) ? kBidi[ i ].label : "Custom";
+				const char* text  = i < IM_ARRAYSIZE( kBidi ) ? kBidi[ i ].text  : s_bidi_custom;
+				ImGui::TextDisabled( "%s", label );
+				float asc = 0.0f;
+				ImVec2 tsz = ImWidgets::CalcTextSize( bf, bfs, text, nullptr, &asc );
+				ImVec2 p0 = ImGui::GetCursorScreenPos();
+				// Right-align RTL paragraphs like a browser would (text-align: start).
+				bool rtl = s_bidi_dir == ImWidgetsTextDirection_RTL;
+				float x = rtl ? p0.x + ImMax( 0.0f, canvas_w - tsz.x ) : p0.x;
+				pDrawList->AddRect( ImVec2( x, p0.y ), ImVec2( x + tsz.x, p0.y + tsz.y ), IM_COL32( 120, 120, 120, 120 ) );
+				ImWidgets::DrawText( pDrawList, bf, bfs, ImVec2( x, p0.y + asc ), ImGui::GetColorU32( ImGuiCol_Text ), text );
+				ImGui::Dummy( ImVec2( canvas_w, tsz.y + gap ) );
+			}
+			ImWidgets::GetStyle().TextDirection = savedDir;
+			ImGui::TreePop();
+		}
+
 		static int s_open_fonts = 0;
 		if ( ImGui::Button( "Open Fonts" ) )  s_open_fonts = 1;
 		ImGui::SameLine();

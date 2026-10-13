@@ -67,7 +67,21 @@ void DrawText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos,
 ```
 Renders `text` through the Slug GPU shader. The first overload uses the current
 ImGui font and size; the second takes them explicitly (`nullptr` / `0` falls
-back to the current ones). `pos` is the top-left of the text region.
+back to the current ones). `pos.x` is the left edge and `pos.y` the **baseline**
+(use `CalcTextSize`'s `out_ascent` to place the top of the text).
+
+The string is shaped the way a browser shapes it: OpenType features (ligatures,
+contextual alternates, kerning, Arabic joining and lam-alef) and the Unicode
+bidirectional algorithm (UAX #9 implicit levels: mixed Arabic / Hebrew, Latin,
+European and Arabic-Indic numbers, neutrals). Each direction run is shaped on
+its own and the runs are reordered visually. The paragraph direction comes from
+`GetStyle().TextDirection` (`ImWidgetsTextDirection_Auto` by default: the first
+strong character decides, like HTML `dir="auto"`); set it to `_LTR` / `_RTL` to
+force it, as CSS `direction` does. Explicit embedding controls (LRE, RLI, ...)
+are treated as neutrals.
+
+If the Slug shader is unavailable the text is drawn with `ImDrawList::AddText`
+(unshaped).
 
 ### `DrawTextOnPath`
 ```cpp
@@ -110,13 +124,13 @@ float  CalcShapedTextWidth( ImFont* font, float font_size,
                             char const* text, char const* text_end = nullptr );
 ```
 `CalcTextSize` returns `(width, height)` in pixels for text rendered by
-`DrawText`. `out_ascent`, when non-null, receives the distance above the
+`DrawText`, measured on the same shaped, bidi-ordered glyphs (so Arabic widths
+and right-alignment are exact). `out_ascent`, when non-null, receives the distance above the
 baseline -- use `pos.y + ascent` as the baseline Y when aligning with other
 elements.
 
-`CalcShapedTextWidth` returns only the advance width, after full shaping
-(ligatures, kerning, complex scripts). Cheaper than `CalcTextSize` when you do
-not need the height.
+`CalcShapedTextWidth` returns `CalcTextSize( ... ).x`; it is kept for source
+compatibility now that `CalcTextSize` itself shapes.
 
 ---
 

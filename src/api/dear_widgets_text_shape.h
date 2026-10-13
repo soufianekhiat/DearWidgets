@@ -36,6 +36,17 @@ struct DwShaperGlyph
     int          AdvanceX; // horizontal advance
     int          OffsetX;  // horizontal placement offset
     int          OffsetY;  // vertical placement offset
+    int          Cluster;  // byte offset of the first source character of this glyph's cluster
+                           // (filled by DwShaper_ShapeBidi; -1 from the raw run iterator)
+    int          Level;    // resolved bidi embedding level (odd = RTL); DwShaper_ShapeBidi only
+};
+
+// Paragraph direction for DwShaper_ShapeBidi (CSS `direction` / HTML `dir`).
+enum DwShaperDirection
+{
+    DwShaperDirection_Auto = 0, // first strong character decides (HTML dir="auto"), LTR if none
+    DwShaperDirection_LTR  = 1,
+    DwShaperDirection_RTL  = 2,
 };
 
 // Opaque run handle — passed to DwShaper_NextGlyph() to iterate one script run.
@@ -62,3 +73,12 @@ void DwShaper_End(DwShaperCtx* ctx);
 // Output iteration — call after DwShaper_End().
 bool DwShaper_NextRun(DwShaperCtx* ctx, DwShaperRun* run);
 bool DwShaper_NextGlyph(DwShaperRun* run, DwShaperGlyph* out);
+
+// Whole-string shaping with Unicode bidi, as a browser does it: resolves the
+// implicit embedding levels of UAX #9 (rules P2-P3, W1-W7, N1-N2, I1-I2, L1),
+// shapes each level run with its own direction, then reorders the runs (L2).
+// `emit` receives every glyph once, in final left-to-right visual order.
+// Returns the resolved paragraph level (0 = LTR, 1 = RTL).
+typedef void (*DwShaperEmitFn)(void* user, const DwShaperGlyph* glyph);
+int  DwShaper_ShapeBidi(DwShaperCtx* ctx, const char* text, int len, int direction,
+                        DwShaperEmitFn emit, void* user);

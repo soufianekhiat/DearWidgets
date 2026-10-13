@@ -360,6 +360,17 @@ after the 29 physical colour pickers, `ColorSlice`, `SpectrumEditor`,
 in a group (as ImGui's own `ColorPicker4` is); the ones with a single main item
 still report its ID, so `BeginPopupContextItem()` right after them keeps working.
 
+#### Bidirectional text
+
+`DrawText`, the gradient / image text variants and `CalcTextSize` now run the
+Unicode bidirectional algorithm (UAX #9 implicit levels, rules P2-L2) before
+shaping: each direction run is shaped with kb_text_shape on its own and the runs
+are reordered visually. Mixed Arabic + Latin + numbers (European and
+Arabic-Indic) now lay out as in a browser; previously runs were placed in
+logical order. New `ImWidgetsStyle::TextDirection` (`Auto` / `LTR` / `RTL`)
+sets the paragraph direction. `CalcTextSize` measures the shaped glyphs, so it
+matches what `DrawText` draws.
+
 #### Interaction additions
 
 - `BeginSelection`: Escape cancels a drag (`s.Cancelled`); Shift / Alt at drag
@@ -582,6 +593,10 @@ per effect through a `BG_EFFECT` define so only the requested variant compiles.
 - **Image loupe** (`ImageViewer`, `ImageInspector`) owns its right-button drag.
 - **`TransformGizmo` translation was in screen pixels** although documented as
   logical pixels; it is now converted, so objects keep their place across DPI.
+- **`CalcTextSize` without the shader tier returned width 0** for every
+  string; it now measures with ImGui. `DrawText` falls back to `AddText` when
+  the Slug program failed to build instead of drawing nothing, and
+  `CalcShapedTextWidth` no longer applies the DPI scale twice.
 - **`PushDragGroup`** delivers each delta exactly once (the release frame used
   to re-apply the last delta to slots after the initiator).
 
