@@ -970,8 +970,10 @@ bool  MatrixEditor      ( char const* label, float*  data, int rows, int cols,
 bool  MatrixEditorDouble( char const* label, double* data, int rows, int cols,
                           float speed = 0.1f, char const* format = "%.3f" );
 ```
-`GradientMeshEditor` edits a Coons-patch colour mesh (drag control points and
-their colours). `ToonRampEditor` edits a stepped cel-shading ramp and
+`GradientMeshEditor` edits a bilinear colour mesh: drag a node to move it
+(corner nodes are pinned, edge nodes slide along their edge), click a node
+without dragging to edit its colour. `size` is in logical pixels; `sampleX` /
+`sampleY` set the total fill subdivision across the mesh. `ToonRampEditor` edits a stepped cel-shading ramp and
 `ToonRampSample` evaluates it. The matrix editors lay out a `rows x cols` grid of
 drag fields over a caller-owned row-major buffer.
 

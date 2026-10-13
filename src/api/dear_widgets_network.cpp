@@ -413,6 +413,12 @@ namespace ImWidgets {
 		data.ActivatedNode  = -1;
 		data.ActivatedGroup = -1;
 
+		// size is in logical pixels like every other widget. data.Zoom is a
+		// logical zoom too (layout unit -> logical pixel); `dpi` turns it into
+		// screen pixels, so the graph looks the same at any monitor scale.
+		float const dpi = LpToPx( 1.0f );
+		if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+		if ( size.y > 0.0f ) size.y = LpToPx( size.y );
 		if ( size.x <= 0.0f )
 			size.x = ImGui::GetContentRegionAvail().x;
 		if ( size.y <= 0.0f )
@@ -477,7 +483,7 @@ namespace ImWidgets {
 		// Auto-fit on first show of a level / explicit request.
 		if ( data.FitRequest || data.LastDrawnGroup != data.CurrentGroup )
 		{
-			NG_FitLevel( data, *lvl, size );
+			NG_FitLevel( data, *lvl, ImVec2( size.x / dpi, size.y / dpi ) );
 			data.FitRequest    = false;
 			data.LastDrawnGroup = data.CurrentGroup;
 		}
@@ -487,8 +493,8 @@ namespace ImWidgets {
 		     ( ImGui::IsMouseDragging( ImGuiMouseButton_Left, 1.0f ) ||
 		       ImGui::IsMouseDragging( ImGuiMouseButton_Middle, 1.0f ) ) )
 		{
-			data.Scroll.x -= io.MouseDelta.x / data.Zoom;
-			data.Scroll.y -= io.MouseDelta.y / data.Zoom;
+			data.Scroll.x -= io.MouseDelta.x / ( data.Zoom * dpi );
+			data.Scroll.y -= io.MouseDelta.y / ( data.Zoom * dpi );
 		}
 
 		// Wheel zoom-to-cursor.
@@ -497,7 +503,7 @@ namespace ImWidgets {
 			float const new_zoom = ImClamp( data.Zoom * ImPow( 1.15f, io.MouseWheel ), NG_ZoomMin, NG_ZoomMax );
 			if ( new_zoom != data.Zoom )
 			{
-				ImVec2 const mouse_rel = ImVec2( io.MousePos.x - p0.x, io.MousePos.y - p0.y );
+				ImVec2 const mouse_rel = ImVec2( ( io.MousePos.x - p0.x ) / dpi, ( io.MousePos.y - p0.y ) / dpi );
 				// keep the layout point under the cursor fixed
 				data.Scroll.x += mouse_rel.x / data.Zoom - mouse_rel.x / new_zoom;
 				data.Scroll.y += mouse_rel.y / data.Zoom - mouse_rel.y / new_zoom;
@@ -505,7 +511,8 @@ namespace ImWidgets {
 			}
 		}
 
-		float const zoom = data.Zoom;
+		float const lz   = data.Zoom;	// logical zoom: LOD thresholds
+		float const zoom = lz * dpi;	// screen zoom: geometry
 		dl->PushClipRect( p0, p1, true );
 
 		// Background
@@ -519,16 +526,16 @@ namespace ImWidgets {
 		IM_UNUSED( col_bg );
 
 		// Sparse dot grid (cheap orientation cue), only at readable zooms.
-		if ( zoom > 0.10f )
+		if ( lz > 0.10f )
 		{
 			float const step = 64.0f * zoom;
-			if ( step > 9.0f )
+			if ( step > 9.0f * dpi )
 			{
 				float const ox = p0.x - fmodf( data.Scroll.x * zoom, step );
 				float const oy = p0.y - fmodf( data.Scroll.y * zoom, step );
 				for ( float gy = oy; gy < p1.y; gy += step )
 					for ( float gx = ox; gx < p1.x; gx += step )
-						dl->AddCircleFilled( ImVec2( gx, gy ), 1.0f, col_grid, 4 );
+						dl->AddCircleFilled( ImVec2( gx, gy ), dpi, col_grid, 4 );
 			}
 		}
 
@@ -545,17 +552,17 @@ namespace ImWidgets {
 			if ( ( from.x < p0.x && to.x < p0.x ) || ( from.x > p1.x && to.x > p1.x ) ||
 			     ( from.y < p0.y && to.y < p0.y ) || ( from.y > p1.y && to.y > p1.y ) )
 				continue;
-			if ( zoom < NG_LodDots )
+			if ( lz < NG_LodDots )
 			{
-				dl->AddLine( from, to, col_edge, 1.0f );
+				dl->AddLine( from, to, col_edge, dpi );
 				continue;
 			}
 			float const tang = ImClamp( ( to.y - from.y ) * 0.45f, 12.0f * zoom, 160.0f * zoom );
 			dl->AddBezierCubic( from, ImVec2( from.x, from.y + tang ),
 			                    ImVec2( to.x, to.y - tang ), to,
-			                    col_edge, ImMax( 1.0f, 1.6f * zoom ) );
+			                    col_edge, ImMax( dpi, 1.6f * zoom ) );
 			// Arrowhead (entering the target from above).
-			float const ah = ImMax( 3.0f, 6.0f * zoom );
+			float const ah = ImMax( 3.0f * dpi, 6.0f * zoom );
 			dl->AddTriangleFilled(
 				ImVec2( to.x, to.y ),
 				ImVec2( to.x - 0.55f * ah, to.y - ah ),
@@ -581,18 +588,18 @@ namespace ImWidgets {
 			if ( hovered )
 				hovered_item = i;
 
-			if ( zoom < NG_LodDots )
+			if ( lz < NG_LodDots )
 			{
 				// Dot LOD: tint-filled mini rect, no text.
 				ImU32 fill = it.IsGroup ? ImGui::GetColorU32( ImGuiCol_Header, 0.9f )
 				                        : data.Nodes[ it.Id ].Color;
 				if ( fill == 0 )
 					fill = ImGui::GetColorU32( ImGuiCol_Button, 0.9f );
-				dl->AddRectFilled( bmin, bmax, fill, 1.0f );
+				dl->AddRectFilled( bmin, bmax, fill, dpi );
 				continue;
 			}
 
-			float const round = ( it.IsGroup ? 8.0f : 6.0f ) * ImClamp( zoom, 0.2f, 1.0f );
+			float const round = ( it.IsGroup ? 8.0f : 6.0f ) * ImClamp( lz, 0.2f, 1.0f ) * dpi;
 			if ( it.IsGroup )
 			{
 				ImNetworkGraphGroup const& grp = data.Groups[ it.Id ];
@@ -602,12 +609,12 @@ namespace ImWidgets {
 				dl->AddRectFilled( bmin + off + off, bmax + off + off, ghost, round );
 				dl->AddRectFilled( bmin + off, bmax + off, ghost, round );
 				dl->AddRectFilled( bmin, bmax, ImGui::GetColorU32( ImGuiCol_Header, 0.95f ), round );
-				dl->AddRect( bmin, bmax, hovered ? col_hover : col_border, round, hovered ? 2.5f : 1.5f,
+				dl->AddRect( bmin, bmax, hovered ? col_hover : col_border, round, hovered ? 2.5f * dpi : 1.5f * dpi,
 				             0 );
-				if ( zoom >= NG_LodText )
+				if ( lz >= NG_LodText )
 				{
-					float const fs  = ImClamp( 16.0f * zoom, 8.0f, 28.0f );
-					float const fs2 = ImClamp( 12.0f * zoom, 7.0f, 20.0f );
+					float const fs  = ImClamp( 16.0f * zoom, 8.0f * dpi, 28.0f * dpi );
+					float const fs2 = ImClamp( 12.0f * zoom, 7.0f * dpi, 20.0f * dpi );
 					ImVec4 const clip = ImVec4( bmin.x + 2, bmin.y, bmax.x - 2, bmax.y );
 					ImVec2 const ts = font->CalcTextSizeA( fs, FLT_MAX, 0.0f, grp.Label );
 					dl->AddText( font, fs,
@@ -630,12 +637,12 @@ namespace ImWidgets {
 				if ( fill == 0 )
 					fill = ImGui::GetColorU32( ImGuiCol_Button, 0.9f );
 				dl->AddRectFilled( bmin, bmax, fill, round );
-				dl->AddRect( bmin, bmax, hovered ? col_hover : col_border, round, hovered ? 2.5f : 1.0f,
+				dl->AddRect( bmin, bmax, hovered ? col_hover : col_border, round, hovered ? 2.5f * dpi : dpi,
 				             0 );
-				if ( zoom >= NG_LodText )
+				if ( lz >= NG_LodText )
 				{
-					float const fs  = ImClamp( 14.0f * zoom, 8.0f, 24.0f );
-					float const fs2 = ImClamp( 10.5f * zoom, 7.0f, 18.0f );
+					float const fs  = ImClamp( 14.0f * zoom, 8.0f * dpi, 24.0f * dpi );
+					float const fs2 = ImClamp( 10.5f * zoom, 7.0f * dpi, 18.0f * dpi );
 					ImVec4 const clip = ImVec4( bmin.x + 2, bmin.y, bmax.x - 2, bmax.y );
 					ImVec2 const ts = font->CalcTextSizeA( fs, FLT_MAX, 0.0f, node.Label );
 					bool const has_sub = node.Sublabel[ 0 ] != 0;

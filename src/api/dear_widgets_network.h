@@ -93,7 +93,7 @@ struct ImNetworkGraphData
 	// View state
 	int		CurrentGroup;	// level being displayed, -1 = root
 	ImVec2	Scroll;			// layout-space point at the view's top-left
-	float	Zoom;			// layout -> screen multiplier
+	float	Zoom;			// layout unit -> logical pixel multiplier (DPI applied on top)
 	int		HoveredNode;	// per-frame, -1 = none
 	int		HoveredGroup;	// per-frame, -1 = none
 	int		ActivatedNode;	// double-clicked op node this frame, -1 = none

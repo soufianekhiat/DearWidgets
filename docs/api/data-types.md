@@ -810,7 +810,7 @@ struct ImNetworkGraphData {
 
     int    CurrentGroup;    // level being displayed, -1 = root
     ImVec2 Scroll;          // layout-space point at the view's top-left
-    float  Zoom;            // layout -> screen multiplier
+    float  Zoom;            // layout unit -> logical pixel (DPI applied on top)
     int    HoveredNode, HoveredGroup;      // per-frame, -1 = none
     int    ActivatedNode, ActivatedGroup;  // double-clicked this frame, -1 = none
     bool   FitRequest;      // zoom-to-fit the current level on the next draw

@@ -11791,7 +11791,7 @@ namespace ImWidgets{
 							IM_COL32( 220,  10, 200, 255 ), IM_COL32(  10,  60, 110, 255 ) );
 					ImGui::Checkbox( "Show mesh", &gm.ShowMesh );
 					ImWidgets::GradientMeshEditor( "##gm_demo", gm,
-						ImVec2( ImGui::GetContentRegionAvail().x, ImPlatform_LpToPx( 220.0f ) ) );
+						ImVec2( 0.0f, 220.0f ) );
 					DW_SsRecord( "Gradient_Mesh", _sy0, ImGui::GetCursorPos().y );
 				}
 				ApplyOpenAll();
@@ -11800,7 +11800,7 @@ namespace ImWidgets{
 					float _sy0 = ImGui::GetCursorPos().y;
 					static ImWidgetsToonRamp tr;
 					ImWidgets::ToonRampEditor( "##tr_demo", tr,
-						ImVec2( ImGui::GetContentRegionAvail().x, 48.0f ) );
+						ImVec2( 0.0f, 48.0f ) );
 					ImGui::Text( "Sample at t = 0.0 / 0.25 / 0.5 / 0.75 / 1.0:" );
 					ImDrawList* dl = ImGui::GetWindowDrawList();
 					ImVec2 p = ImGui::GetCursorScreenPos();
@@ -13391,7 +13391,7 @@ namespace ImWidgets{
 						}
 
 						ImWidgets::NetworkGraph( "##net_graph", s_ngraph,
-							ImVec2( 0.0f, ImPlatform_LpToPx( 420.0f ) ) );
+							ImVec2( 0.0f, 420.0f ) );
 
 						// Drill into a double-clicked group.
 						if ( s_ngraph.ActivatedGroup >= 0 )

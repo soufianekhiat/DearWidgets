@@ -41457,20 +41457,13 @@ namespace ImWidgets
         }
     }
 
-    static ImU32 DW_MeshSample( ImWidgetsGradientMesh const& m, float u, float v )
+    // Bilinear patch evaluation for one mesh cell: corner positions and colours
+    // are interpolated with the same (s, t), so the fill follows moved nodes.
+    static inline ImVec2 DW_MeshLerpPos( ImVec2 const& p00, ImVec2 const& p10, ImVec2 const& p01, ImVec2 const& p11, float s, float t )
     {
-        if ( m.CountX < 2 || m.CountY < 2 ) return IM_COL32_WHITE;
-        float fx = u * (float)( m.CountX - 1 );
-        float fy = v * (float)( m.CountY - 1 );
-        int ix = ImClamp( (int)fx, 0, m.CountX - 2 );
-        int iy = ImClamp( (int)fy, 0, m.CountY - 2 );
-        float tx = ImClamp( fx - (float)ix, 0.0f, 1.0f );
-        float ty = ImClamp( fy - (float)iy, 0.0f, 1.0f );
-        ImU32 c00 = m.Nodes[ iy * m.CountX + ix ].Color;
-        ImU32 c10 = m.Nodes[ iy * m.CountX + ix + 1 ].Color;
-        ImU32 c01 = m.Nodes[ ( iy + 1 ) * m.CountX + ix ].Color;
-        ImU32 c11 = m.Nodes[ ( iy + 1 ) * m.CountX + ix + 1 ].Color;
-        return ImLerpU32( ImLerpU32( c00, c10, tx ), ImLerpU32( c01, c11, tx ), ty );
+        ImVec2 top = ImLerp( p00, p10, s );
+        ImVec2 bot = ImLerp( p01, p11, s );
+        return ImLerp( top, bot, t );
     }
 
     bool GradientMeshEditor( char const* id_str, ImWidgetsGradientMesh& m, ImVec2 size,
@@ -41478,80 +41471,157 @@ namespace ImWidgets
     {
         ImGuiWindow* win = ImGui::GetCurrentWindow();
         if ( win->SkipItems ) return false;
+        // size is in logical pixels, like every other widget.
+        if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+        if ( size.y > 0.0f ) size.y = LpToPx( size.y );
         if ( size.x <= 0.0f ) size.x = ImGui::GetContentRegionAvail().x;
-        if ( size.y <= 0.0f ) size.y = 200.0f;
+        if ( size.y <= 0.0f ) size.y = LpToPx( 200.0f );
         ImGui::PushID( id_str );
         DW_EditGroup dwEditGroup;
         ImVec2 cur = ImGui::GetCursorScreenPos();
         ImRect bb( cur, cur + size );
         ImGui::InvisibleButton( "##gm", size );
+        bool const hov       = ImGui::IsItemHovered();
+        bool const activated = ImGui::IsItemActivated();
+        bool const active    = ImGui::IsItemActive();
+        bool const released  = ImGui::IsItemDeactivated();
         ImDrawList* dl = win->DrawList;
 
-        if ( m.CountX < 2 || m.CountY < 2 )
-            GradientMeshInit( m, 3, 3,
+        if ( m.CountX < 2 || m.CountY < 2 || m.Nodes.Size != m.CountX * m.CountY )
+            GradientMeshInit( m, ImMax( m.CountX, 3 ), ImMax( m.CountY, 3 ),
                 IM_COL32( 220, 90, 90, 255 ), IM_COL32( 90, 220, 90, 255 ),
                 IM_COL32(  90, 90, 220, 255 ), IM_COL32(  240, 240, 240, 255 ) );
 
-        for ( int j = 0; j < sampleY; ++j )
+        auto nodeScreen = [&]( int idx ) -> ImVec2
         {
-            float v0 = (float)j / (float)sampleY;
-            float v1 = (float)( j + 1 ) / (float)sampleY;
-            for ( int i = 0; i < sampleX; ++i )
+            ImVec2 const uv = m.Nodes[ idx ].PosUV;
+            return ImVec2( bb.Min.x + size.x * uv.x, bb.Min.y + size.y * uv.y );
+        };
+
+        // ---- Interaction (before drawing so the frame shows the new state) ----
+        // Click a node: select it and start dragging. Release without moving:
+        // open the colour popup. Corner nodes are pinned; edge nodes slide along
+        // their edge, so the mesh always covers the whole rect.
+        bool changed = false;
+        ImVec2 const mouse = ImGui::GetIO().MousePos;
+        float const pick_r = LpToPx( 10.0f );
+        ImGuiStorage* st = ImGui::GetStateStorage();
+        ImGuiID const dragKey = ImGui::GetID( "##gm_drag" );
+        int dragNode = st->GetInt( dragKey, -1 );
+        if ( m.ShowMesh && activated )
+        {
+            int picked = -1;
+            float best = pick_r * pick_r;
+            for ( int idx = 0; idx < m.Nodes.Size; ++idx )
             {
-                float u0 = (float)i / (float)sampleX;
-                float u1 = (float)( i + 1 ) / (float)sampleX;
-                ImU32 c00 = DW_MeshSample( m, u0, v0 );
-                ImU32 c10 = DW_MeshSample( m, u1, v0 );
-                ImU32 c01 = DW_MeshSample( m, u0, v1 );
-                ImU32 c11 = DW_MeshSample( m, u1, v1 );
-                ImVec2 a( bb.Min.x + size.x * u0, bb.Min.y + size.y * v0 );
-                ImVec2 b( bb.Min.x + size.x * u1, bb.Min.y + size.y * v1 );
-                dl->AddRectFilledMultiColor( a, b, c00, c10, c11, c01 );
+                ImVec2 p = nodeScreen( idx );
+                float dx = mouse.x - p.x, dy = mouse.y - p.y;
+                float d2 = dx * dx + dy * dy;
+                if ( d2 <= best ) { best = d2; picked = idx; }
+            }
+            m.SelectedNode = picked;
+            dragNode = picked;
+        }
+        if ( active && dragNode >= 0 && dragNode < m.Nodes.Size
+             && ImGui::IsMouseDragging( ImGuiMouseButton_Left ) )
+        {
+            int const i = dragNode % m.CountX;
+            int const j = dragNode / m.CountX;
+            ImVec2 uv = m.Nodes[ dragNode ].PosUV;
+            ImVec2 nuv( ImSaturate( ( mouse.x - bb.Min.x ) / size.x ), ImSaturate( ( mouse.y - bb.Min.y ) / size.y ) );
+            bool const edgeX = ( i == 0 || i == m.CountX - 1 );
+            bool const edgeY = ( j == 0 || j == m.CountY - 1 );
+            if ( !edgeX ) uv.x = nuv.x;   // left/right column: x pinned to the edge
+            if ( !edgeY ) uv.y = nuv.y;   // top/bottom row:    y pinned to the edge
+            if ( uv.x != m.Nodes[ dragNode ].PosUV.x || uv.y != m.Nodes[ dragNode ].PosUV.y )
+            {
+                m.Nodes[ dragNode ].PosUV = uv;
+                changed = true;
+            }
+        }
+        if ( released )
+        {
+            // A click that never turned into a drag edits the colour instead.
+            if ( dragNode >= 0 && ImGui::GetIO().MouseDragMaxDistanceSqr[ ImGuiMouseButton_Left ]
+                                  < ImGui::GetIO().MouseDragThreshold * ImGui::GetIO().MouseDragThreshold )
+                ImGui::OpenPopup( "##gm_edit" );
+            dragNode = -1;
+        }
+        st->SetInt( dragKey, dragNode );
+        if ( hov && !active )
+        {
+            for ( int idx = 0; idx < m.Nodes.Size && m.ShowMesh; ++idx )
+            {
+                ImVec2 p = nodeScreen( idx );
+                if ( ImLengthSqr( mouse - p ) <= pick_r * pick_r ) { ImGui::SetMouseCursor( ImGuiMouseCursor_Hand ); break; }
             }
         }
 
-        ImVec2 mouse = ImGui::GetIO().MousePos;
-        bool hov = ImGui::IsItemHovered();
-        bool changed = false;
-        float pick_r = 10.0f;
+        // ---- Fill: each cell is a bilinear patch over its four (possibly moved) nodes ----
+        int const cellsX = m.CountX - 1;
+        int const cellsY = m.CountY - 1;
+        int const subX = ImMax( 1, sampleX / cellsX );
+        int const subY = ImMax( 1, sampleY / cellsY );
+        dl->PushClipRect( bb.Min, bb.Max, true );
+        for ( int cj = 0; cj < cellsY; ++cj )
+        {
+            for ( int ci = 0; ci < cellsX; ++ci )
+            {
+                int const i00 = cj * m.CountX + ci;
+                ImVec2 const p00 = nodeScreen( i00 ),               p10 = nodeScreen( i00 + 1 );
+                ImVec2 const p01 = nodeScreen( i00 + m.CountX ),    p11 = nodeScreen( i00 + m.CountX + 1 );
+                ImU32 const  c00 = m.Nodes[ i00 ].Color,            c10 = m.Nodes[ i00 + 1 ].Color;
+                ImU32 const  c01 = m.Nodes[ i00 + m.CountX ].Color, c11 = m.Nodes[ i00 + m.CountX + 1 ].Color;
+                dl->PrimReserve( subX * subY * 6, ( subX + 1 ) * ( subY + 1 ) );
+                ImDrawIdx const base = (ImDrawIdx)dl->_VtxCurrentIdx;
+                ImVec2 const uvw = dl->_Data->TexUvWhitePixel;
+                for ( int y = 0; y <= subY; ++y )
+                {
+                    float const t = (float)y / (float)subY;
+                    for ( int x = 0; x <= subX; ++x )
+                    {
+                        float const s = (float)x / (float)subX;
+                        ImU32 const col = ImLerpU32( ImLerpU32( c00, c10, s ), ImLerpU32( c01, c11, s ), t );
+                        dl->PrimWriteVtx( DW_MeshLerpPos( p00, p10, p01, p11, s, t ), uvw, col );
+                    }
+                }
+                for ( int y = 0; y < subY; ++y )
+                {
+                    for ( int x = 0; x < subX; ++x )
+                    {
+                        ImDrawIdx const a = (ImDrawIdx)( base + y * ( subX + 1 ) + x );
+                        ImDrawIdx const b = (ImDrawIdx)( a + 1 );
+                        ImDrawIdx const c = (ImDrawIdx)( a + subX + 1 );
+                        ImDrawIdx const d = (ImDrawIdx)( c + 1 );
+                        dl->PrimWriteIdx( a ); dl->PrimWriteIdx( b ); dl->PrimWriteIdx( d );
+                        dl->PrimWriteIdx( a ); dl->PrimWriteIdx( d ); dl->PrimWriteIdx( c );
+                    }
+                }
+            }
+        }
+        dl->PopClipRect();
+
+        // ---- Mesh overlay ----
         if ( m.ShowMesh )
         {
+            ImU32 const lineCol = IM_COL32( 30, 30, 30, 180 );
+            float const lineThk = LpToPx( 1.0f );
             for ( int j = 0; j < m.CountY; ++j )
             {
                 for ( int i = 0; i < m.CountX; ++i )
                 {
-                    ImWidgetsGradientMeshNode const& n = m.Nodes[ j * m.CountX + i ];
-                    ImVec2 pos( bb.Min.x + size.x * n.PosUV.x, bb.Min.y + size.y * n.PosUV.y );
-                    if ( i + 1 < m.CountX )
-                    {
-                        ImWidgetsGradientMeshNode const& nr = m.Nodes[ j * m.CountX + i + 1 ];
-                        dl->AddLine( pos, ImVec2( bb.Min.x + size.x * nr.PosUV.x, bb.Min.y + size.y * nr.PosUV.y ),
-                                      IM_COL32( 30, 30, 30, 180 ) );
-                    }
-                    if ( j + 1 < m.CountY )
-                    {
-                        ImWidgetsGradientMeshNode const& nd = m.Nodes[ ( j + 1 ) * m.CountX + i ];
-                        dl->AddLine( pos, ImVec2( bb.Min.x + size.x * nd.PosUV.x, bb.Min.y + size.y * nd.PosUV.y ),
-                                      IM_COL32( 30, 30, 30, 180 ) );
-                    }
-                    float r = ( m.SelectedNode == j * m.CountX + i ) ? 6.0f : 4.0f;
-                    dl->AddCircleFilled( pos, r + 2.0f, IM_COL32( 30, 30, 30, 255 ) );
-                    dl->AddCircleFilled( pos, r,        n.Color );
+                    int const idx = j * m.CountX + i;
+                    ImVec2 const pos = nodeScreen( idx );
+                    if ( i + 1 < m.CountX ) dl->AddLine( pos, nodeScreen( idx + 1 ), lineCol, lineThk );
+                    if ( j + 1 < m.CountY ) dl->AddLine( pos, nodeScreen( idx + m.CountX ), lineCol, lineThk );
                 }
             }
-            if ( hov && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) )
+            for ( int idx = 0; idx < m.Nodes.Size; ++idx )
             {
-                int picked = -1;
-                float pick_r2 = pick_r * pick_r;
-                for ( int idx = 0; idx < m.Nodes.Size; ++idx )
-                {
-                    ImWidgetsGradientMeshNode const& n = m.Nodes[ idx ];
-                    ImVec2 pos( bb.Min.x + size.x * n.PosUV.x, bb.Min.y + size.y * n.PosUV.y );
-                    float dx = mouse.x - pos.x, dy = mouse.y - pos.y;
-                    if ( dx * dx + dy * dy <= pick_r2 ) { picked = idx; break; }
-                }
-                m.SelectedNode = picked;
-                if ( picked >= 0 ) ImGui::OpenPopup( "##gm_edit" );
+                ImVec2 const pos = nodeScreen( idx );
+                float const r = LpToPx( m.SelectedNode == idx ? 6.0f : 4.0f );
+                dl->AddCircleFilled( pos, r + LpToPx( 2.0f ), IM_COL32( 30, 30, 30, 255 ) );
+                dl->AddCircleFilled( pos, r, m.Nodes[ idx ].Color );
             }
         }
 
@@ -41640,8 +41710,11 @@ namespace ImWidgets
             b.Pos = 1.0f; b.Color = IM_COL32( 255, 255, 235, 255 ); b.Softness = 0.0f; r.Bands.push_back( b );
             r.SelectedBand = -1;
         }
+        // size is in logical pixels, like every other widget.
+        if ( size.x > 0.0f ) size.x = LpToPx( size.x );
+        if ( size.y > 0.0f ) size.y = LpToPx( size.y );
         if ( size.x <= 0.0f ) size.x = ImGui::GetContentRegionAvail().x;
-        if ( size.y <= 0.0f ) size.y = 60.0f;
+        if ( size.y <= 0.0f ) size.y = LpToPx( 60.0f );
 
         ImVec2 cur = ImGui::GetCursorScreenPos();
         ImRect bb( cur, cur + size );
@@ -41662,14 +41735,15 @@ namespace ImWidgets
 
         bool changed = false;
         ImVec2 mouse = ImGui::GetIO().MousePos;
-        float marker_h = 10.0f;
+        float marker_h = LpToPx( 10.0f );
+        float const marker_hw = LpToPx( 6.0f );
         for ( int i = 0; i < r.Bands.Size; ++i )
         {
             float x = bb.Min.x + size.x * r.Bands[ i ].Pos;
             ImVec2 tri[ 3 ] = {
                 ImVec2( x, bb.Max.y ),
-                ImVec2( x - 6.0f, bb.Max.y + marker_h ),
-                ImVec2( x + 6.0f, bb.Max.y + marker_h ),
+                ImVec2( x - marker_hw, bb.Max.y + marker_h ),
+                ImVec2( x + marker_hw, bb.Max.y + marker_h ),
             };
             dl->AddTriangleFilled( tri[ 0 ], tri[ 1 ], tri[ 2 ], r.Bands[ i ].Color );
             dl->AddTriangle      ( tri[ 0 ], tri[ 1 ], tri[ 2 ], i == r.SelectedBand ? IM_COL32( 240, 240, 90, 255 ) : IM_COL32( 0, 0, 0, 200 ) );
