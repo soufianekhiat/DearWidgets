@@ -36575,6 +36575,8 @@ namespace ImWidgets
     //==================================================================
     // I1. SliderRing flag wrapper
     //==================================================================
+    static bool DWE_DragGroupNextSlot(int* out_slot); // I3, below
+
     bool SliderRingFloatEx(const char* label, float* value,
                            float v_min, float v_max,
                            float v_angle_min, float v_angle_max,
@@ -36592,9 +36594,43 @@ namespace ImWidgets
             v_angle_max =  IM_PI;
         }
         ImGuiID id = ImGui::GetID(label);
+
+        // ProportionalDrag: take the next slot of the enclosing PushDragGroup and
+        // follow the initiator's per-frame delta (scaled by the falloff kernel).
+        int slot = -1;
+        bool followed = false;
+        if ((widgets_flags & ImWidgetsSliderFlags_ProportionalDrag) && DWE_DragGroupNextSlot(&slot)
+            && ImGui::GetActiveID() != id)
+        {
+            float g = GetDragGroupDelta(slot);
+            if (g != 0.0f)
+            {
+                float nv = ImClamp(*value + g, ImMin(v_min, v_max), ImMax(v_min, v_max));
+                followed = (nv != *value);
+                *value = nv;
+            }
+        }
+
         float start_val = *value;
         bool changed = SliderRingFloat(label, value, v_min, v_max, v_angle_min, v_angle_max,
                                        v_thickness, format, imgui_flags);
+
+        // Stepped: snap to the precision the format displays ("%.1f" -> 0.1 steps).
+        if (changed && (widgets_flags & ImWidgetsSliderFlags_Stepped))
+        {
+            float snapped = ImGui::RoundScalarWithFormatT<float>(format ? format : "%.3f", ImGuiDataType_Float, *value);
+            *value = snapped;
+            changed = (snapped != start_val);
+        }
+
+        if (slot >= 0 && ImGui::IsItemActive())
+            SetDragGroupActive(slot, *value - start_val);   // every active frame, 0 when idle
+        if (followed)
+        {
+            ImGui::MarkItemEdited(ImGui::GetItemID());
+            changed = true;
+        }
+
         if (widgets_flags & ImWidgetsSliderFlags_ShowDelta)
         {
             if (ImGui::IsItemActivated())
@@ -36648,6 +36684,7 @@ namespace ImWidgets
         int             slot_counter;     // incremented for each participating widget this frame
         int             active_slot;      // slot that is the drag initiator
         float           active_delta;     // per-frame value delta from initiator
+        int             delta_frame;      // ImGui frame on which active_delta was produced
         bool            active;
     };
     static ImVector<DWE_DragGroupState> g_DragGroupStack;
@@ -36664,6 +36701,7 @@ namespace ImWidgets
         st.active_slot = s->GetInt(group_id ^ 0xD2A65101u, -1);
         float* pDelta = s->GetFloatRef(group_id ^ 0xD2A65102u, 0.0f);
         st.active_delta = *pDelta;
+        st.delta_frame = s->GetInt(group_id ^ 0xD2A65103u, -1);
         st.active = (st.active_slot >= 0);
         g_DragGroupStack.push_back(st);
     }
@@ -36704,7 +36742,14 @@ namespace ImWidgets
     {
         if (g_DragGroupStack.empty()) return 0.0f;
         DWE_DragGroupState& st = g_DragGroupStack.back();
-        if (!st.active || st.active_slot < 0) return 0.0f;
+        if (!st.active || st.active_slot < 0 || group_slot == st.active_slot) return 0.0f;
+        // Deliver each delta exactly once. Slots after the initiator see it the
+        // frame it is produced; slots before it were drawn first and see it the
+        // next frame. Without this, the release frame re-applied the last delta
+        // to every slot after the initiator.
+        int const frame = ImGui::GetFrameCount();
+        int const want  = (group_slot > st.active_slot) ? frame : frame - 1;
+        if (st.delta_frame != want) return 0.0f;
         float dist = (float)ImAbs(group_slot - st.active_slot);
         float x = dist / ImMax(st.falloff_radius, 1e-3f);
         return st.active_delta * DWE_FalloffKernel(st.kernel, x);
@@ -36716,10 +36761,21 @@ namespace ImWidgets
         DWE_DragGroupState& st = g_DragGroupStack.back();
         st.active_slot  = group_slot;
         st.active_delta = drag_delta;
+        st.delta_frame  = ImGui::GetFrameCount();
         st.active = true;
         ImGuiStorage* s = ImGui::GetStateStorage();
         s->SetInt(st.group_id ^ 0xD2A65101u, group_slot);
         s->SetFloat(st.group_id ^ 0xD2A65102u, drag_delta);
+        s->SetInt(st.group_id ^ 0xD2A65103u, st.delta_frame);
+    }
+
+    // Auto slot for widgets that join the group through ImWidgetsSliderFlags_ProportionalDrag:
+    // slots are handed out in submission order within the innermost group.
+    static bool DWE_DragGroupNextSlot(int* out_slot)
+    {
+        if (g_DragGroupStack.empty()) return false;
+        *out_slot = g_DragGroupStack.back().slot_counter++;
+        return true;
     }
 
 
@@ -38985,22 +39041,20 @@ namespace ImWidgets
                 else if ( activeHandle == 1 )
                 {
                     mt = ImMax( mt, tLo );
-                    float newV = vMinF + mt * den;
-                    if ( newV != vUpperF )
-                    {
-                        WriteFloatToScalar( data_type, p_upper, newV );
-                        value_changed = true;
-                    }
+                    // Compare AFTER the write: for int types the write quantizes,
+                    // and the raw float differs from the stored value almost
+                    // every frame the mouse sits between two integer steps.
+                    WriteFloatToScalar( data_type, p_upper, vMinF + mt * den );
+                    value_changed = ScalarToFloat( data_type, ( ImU64* )p_upper ) != vUpperF;
                 }
                 else
                 {
                     mt = ImMin( mt, tUp );
-                    float newV = vMinF + mt * den;
-                    if ( newV != vLowerF )
-                    {
-                        WriteFloatToScalar( data_type, p_lower, newV );
-                        value_changed = true;
-                    }
+                    // Compare AFTER the write: for int types the write quantizes,
+                    // and the raw float differs from the stored value almost
+                    // every frame the mouse sits between two integer steps.
+                    WriteFloatToScalar( data_type, p_lower, vMinF + mt * den );
+                    value_changed = ScalarToFloat( data_type, ( ImU64* )p_lower ) != vLowerF;
                 }
                 if ( value_changed )
                     ImGui::MarkItemEdited( id );
@@ -39210,22 +39264,20 @@ namespace ImWidgets
                 else if ( activeHandle == 1 )
                 {
                     mt = ImMax( mt, tLo );
-                    float newV = vMinF + mt * den;
-                    if ( newV != vUpperF )
-                    {
-                        WriteFloatToScalar( data_type, p_upper, newV );
-                        value_changed = true;
-                    }
+                    // Compare AFTER the write: for int types the write quantizes,
+                    // and the raw float differs from the stored value almost
+                    // every frame the mouse sits between two integer steps.
+                    WriteFloatToScalar( data_type, p_upper, vMinF + mt * den );
+                    value_changed = ScalarToFloat( data_type, ( ImU64* )p_upper ) != vUpperF;
                 }
                 else
                 {
                     mt = ImMin( mt, tUp );
-                    float newV = vMinF + mt * den;
-                    if ( newV != vLowerF )
-                    {
-                        WriteFloatToScalar( data_type, p_lower, newV );
-                        value_changed = true;
-                    }
+                    // Compare AFTER the write: for int types the write quantizes,
+                    // and the raw float differs from the stored value almost
+                    // every frame the mouse sits between two integer steps.
+                    WriteFloatToScalar( data_type, p_lower, vMinF + mt * den );
+                    value_changed = ScalarToFloat( data_type, ( ImU64* )p_lower ) != vLowerF;
                 }
                 if ( value_changed )
                     ImGui::MarkItemEdited( id );
@@ -39266,6 +39318,28 @@ namespace ImWidgets
         };
         DrawGrab( yLo, activeHandle == 0 );
         DrawGrab( yUp, activeHandle == 1 );
+
+        // Value readout: upper value near the top, lower near the bottom, inside
+        // the bar when it is wide enough; otherwise a tooltip while hovered or
+        // dragging (the default 20 lp bar is too narrow for text).
+        char bufLo[ 64 ], bufUp[ 64 ];
+        ImGui::DataTypeFormatString( bufLo, IM_ARRAYSIZE( bufLo ), data_type, p_lower, format );
+        ImGui::DataTypeFormatString( bufUp, IM_ARRAYSIZE( bufUp ), data_type, p_upper, format );
+        ImVec2 const tszLo = ImGui::CalcTextSize( bufLo );
+        ImVec2 const tszUp = ImGui::CalcTextSize( bufUp );
+        float const pad = LpToPx( 2.0f );
+        bool const fits = ImMax( tszLo.x, tszUp.x ) + 2.0f * pad <= frame_bb.GetWidth()
+                       && tszLo.y + tszUp.y + 4.0f * pad <= frame_bb.GetHeight();
+        if ( fits )
+        {
+            ImU32 const txtCol = ImGui::GetColorU32( ImGuiCol_Text );
+            window->DrawList->AddText( ImVec2( frame_bb.GetCenter().x - tszUp.x * 0.5f, frame_bb.Min.y + pad ), txtCol, bufUp );
+            window->DrawList->AddText( ImVec2( frame_bb.GetCenter().x - tszLo.x * 0.5f, frame_bb.Max.y - pad - tszLo.y ), txtCol, bufLo );
+        }
+        else if ( hovered || isActive )
+        {
+            ImGui::SetTooltip( "%s -- %s", bufLo, bufUp );
+        }
 
         if ( label_size.x > 0.0f )
             ImGui::RenderText( ImVec2( frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + style.FramePadding.y ), label );

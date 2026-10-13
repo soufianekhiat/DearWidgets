@@ -124,9 +124,9 @@ enum ImWidgetsSliderFlags_
 {
     ImWidgetsSliderFlags_None             = 0,
     ImWidgetsSliderFlags_AngleWrap,        // value wraps through the arc ends
-    ImWidgetsSliderFlags_AngleClamp,       // value stops at the arc ends
+    ImWidgetsSliderFlags_AngleClamp,       // value stops at the arc ends (default)
     ImWidgetsSliderFlags_ShowDelta,        // delta overlay while dragging
-    ImWidgetsSliderFlags_ProportionalDrag, // drag speed scales with radius
+    ImWidgetsSliderFlags_ProportionalDrag, // follow the enclosing PushDragGroup (auto slot, submission order)
     ImWidgetsSliderFlags_Stepped           // snap to the format's precision
 };
 ```

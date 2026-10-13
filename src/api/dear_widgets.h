@@ -2964,8 +2964,8 @@ enum ImWidgetsSliderFlags_
 	ImWidgetsSliderFlags_AngleWrap        = 1 << 0, // angle wraps around 2pi
 	ImWidgetsSliderFlags_AngleClamp       = 1 << 1, // clamp to [amin, amax] (default if neither set)
 	ImWidgetsSliderFlags_ShowDelta        = 1 << 2, // show floating drag-delta overlay
-	ImWidgetsSliderFlags_ProportionalDrag = 1 << 3, // participate in PushDragGroup
-	ImWidgetsSliderFlags_Stepped          = 1 << 4  // snap to nearest stop
+	ImWidgetsSliderFlags_ProportionalDrag = 1 << 3, // follow the enclosing PushDragGroup (slot = submission order)
+	ImWidgetsSliderFlags_Stepped          = 1 << 4  // snap to the format's precision ("%.1f" -> 0.1 steps)
 };
 typedef int ImWidgetsSliderFlags;
 
