@@ -403,7 +403,55 @@ struct DW_SvgClipDef
     int           children;   // supported children added
     bool          unsupported;// had children we cannot use (<use>, <text>): then ignore the clip
     int           defsDepthAtStart;
+    ImVector<int> childFirst; // first subpath of each child (for the union normalisation)
 };
+
+// Several clip children are combined as a nonzero union: orient each child's
+// subpaths so the outer ones are positive and the nested ones (holes, by
+// nesting depth parity) negative. A child's own region is then exactly
+// winding 1, so overlapping children add up instead of cancelling.
+static void DW_SvgNormaliseClipChild(ImWidgetsPath& path, int subFirst, int subEnd)
+{
+    ImWidgetsPath tmp;
+    tmp.Points = path.Points;
+    for (int k = subFirst; k < subEnd; ++k) tmp.Subpaths.push_back(path.Subpaths[k]);
+    ImVector<ImVec2> fp; ImVector<int> fc;
+    tmp.Flatten(fp, fc, nullptr, 0.5f);
+    if (fc.Size != subEnd - subFirst) return; // degenerate subpaths: leave as is
+    ImVector<int> start; start.resize(fc.Size);
+    for (int c = 0, b = 0; c < fc.Size; b += fc[c], ++c) start[c] = b;
+    for (int c = 0; c < fc.Size; ++c)
+    {
+        if (fc[c] < 3) continue;
+        double area = 0.0;
+        for (int k = 0; k < fc[c]; ++k)
+        {
+            ImVec2 a = fp[start[c] + k], b = fp[start[c] + (k + 1) % fc[c]];
+            area += (double)a.x * b.y - (double)b.x * a.y;
+        }
+        // nesting depth: how many other contours contain this one's first point
+        const ImVec2 q = fp[start[c]];
+        int depth = 0;
+        for (int o = 0; o < fc.Size; ++o)
+        {
+            if (o == c || fc[o] < 3) continue;
+            bool in = false;
+            for (int k = 0, j = fc[o] - 1; k < fc[o]; j = k++)
+            {
+                ImVec2 a = fp[start[o] + k], b = fp[start[o] + j];
+                if ((a.y > q.y) != (b.y > q.y) && q.x < (b.x - a.x) * (q.y - a.y) / (b.y - a.y) + a.x) in = !in;
+            }
+            if (in) ++depth;
+        }
+        const bool wantPositive = (depth & 1) == 0;
+        if ((area > 0.0) != wantPositive)
+        {
+            // reverse the cubic chain point by point (still a valid chain)
+            const ImWidgetsSubpath& sub = path.Subpaths[subFirst + c];
+            for (int a2 = sub.First, b2 = sub.First + sub.Count - 1; a2 < b2; ++a2, --b2) { ImVec2 t = path.Points[a2]; path.Points[a2] = path.Points[b2]; path.Points[b2] = t; }
+        }
+    }
+}
 
 struct DW_SvgItem
 {
@@ -425,8 +473,7 @@ struct ImWidgetsSvg
     ImVector<ImWidgets::DW_SvgItem*>      items;
     ImVector<ImWidgets::DW_SvgGradient*>  gradients;
     ImVector<ImWidgets::DW_SvgClipDef*>   clipDefs;
-    ImVector<int>                         refSerials;   // clip reference serial -> index into refBoxes
-    ImVector<ImRect>                      refBoxes;     // bbox of the referencing element (its own space)
+    ImVector<ImRect>                      refBoxes;     // by clip reference serial: bbox of the referencing element (its own space)
     ImRect                                viewBox;
     ImVec2                                size;   // intrinsic size (width / height, else viewBox)
     ~ImWidgetsSvg()
@@ -575,7 +622,15 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
             if (!strcmp(name, "linearGradient") || !strcmp(name, "radialGradient")) { curGrad = nullptr; continue; }
             if (!strcmp(name, "clipPath"))
             {
-                if (curClip) { curClip = nullptr; if (stack.Size > 1 && stack.back()->isClipRoot) { IM_DELETE(stack.back()); stack.pop_back(); } }
+                if (curClip)
+                {
+                    if (curClip->children > 1)
+                        for (int c = 0; c < curClip->childFirst.Size; ++c)
+                            DW_SvgNormaliseClipChild(curClip->path, curClip->childFirst[c],
+                                                     c + 1 < curClip->childFirst.Size ? curClip->childFirst[c + 1] : curClip->path.Subpaths.Size);
+                    curClip = nullptr;
+                    if (stack.Size > 1 && stack.back()->isClipRoot) { IM_DELETE(stack.back()); stack.pop_back(); }
+                }
                 continue;
             }
             if (!strcmp(name, "defs") || !strcmp(name, "symbol") || !strcmp(name, "mask")
@@ -684,12 +739,15 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
         // must not show as plain shapes).
         if (!strcmp(name, "defs") || !strcmp(name, "symbol") || !strcmp(name, "mask")
             || !strcmp(name, "pattern") || !strcmp(name, "marker")) { if (!tag.selfClosing) ++defsDepth; continue; }
-        if (curClip && (defsDepth > curClip->defsDepthAtStart || !strcmp(name, "use") || !strcmp(name, "text")))
+        // Inside a clipPath: <use> and <text> are not supported (<text> falls
+        // through to its parser, which consumes the content and drops it);
+        // nested defs / masks do not feed the clip.
+        if (curClip && (!strcmp(name, "use") || !strcmp(name, "text"))) curClip->unsupported = true;
+        if (curClip && (defsDepth > curClip->defsDepthAtStart || !strcmp(name, "use")))
         {
-            if (!strcmp(name, "use") || !strcmp(name, "text")) curClip->unsupported = true;
-            if (!strcmp(name, "text") && !tag.selfClosing)
+            if ((!strcmp(name, "g") || !strcmp(name, "svg") || !strcmp(name, "a") || !strcmp(name, "switch")) && !tag.selfClosing)
             {
-                const char* e = strstr(s, "text>"); s = e ? e + 5 : s + strlen(s); // skip its content
+                Frame* f = IM_NEW(Frame)(); f->style = stack.back()->style; f->xf = stack.back()->xf; stack.push_back(f); // balanced by the closing tag
             }
             continue;
         }
@@ -910,34 +968,10 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
             if (!st.display || !st.visible) continue;
             p.Transform(xf);
             // The clip region is the union of the children, each with its own
-            // clip-rule. With one child its rule is kept; with several, every
-            // child is turned positively oriented and the union is nonzero
-            // (exact for simple outlines; a child relying on even-odd holes
-            // loses them in a multi-child clip).
-            {
-                ImVector<ImVec2> fp; ImVector<int> fc;
-                p.Flatten(fp, fc, nullptr, 0.5f);
-                double area = 0.0;
-                int base = 0;
-                for (int c = 0; c < fc.Size; ++c)
-                {
-                    for (int k = 0; k < fc[c]; ++k)
-                    {
-                        ImVec2 a = fp[base + k], b = fp[base + (k + 1) % fc[c]];
-                        area += (double)a.x * b.y - (double)b.x * a.y;
-                    }
-                    base += fc[c];
-                }
-                if (area < 0.0)
-                {
-                    // reverse every subpath (cubic chains reversed point by point stay valid)
-                    for (int sp = 0; sp < p.Subpaths.Size; ++sp)
-                    {
-                        ImWidgetsSubpath sub = p.Subpaths[sp];
-                        for (int a2 = sub.First, b2 = sub.First + sub.Count - 1; a2 < b2; ++a2, --b2) { ImVec2 t = p.Points[a2]; p.Points[a2] = p.Points[b2]; p.Points[b2] = t; }
-                    }
-                }
-            }
+            // clip-rule. With one child its rule is kept; with several, the
+            // children are normalised when the clipPath closes and combined
+            // as nonzero (holes are taken by nesting depth, i.e. even-odd).
+            curClip->childFirst.push_back(curClip->path.Subpaths.Size);
             for (int sp = 0; sp < p.Subpaths.Size; ++sp)
             {
                 ImWidgetsSubpath sub = p.Subpaths[sp];
@@ -973,35 +1007,32 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
     if (!sawSvg && doc->viewBox.GetWidth() <= 0.0f) { doc->viewBox = ImRect(0, 0, 100, 100); doc->size = ImVec2(100, 100); }
 
     // Bounding box of each clip-referencing element, for objectBoundingBox
-    // clips: the union of all items under it, mapped into its own user space.
+    // clips: the union of all items under it, each item's box mapped straight
+    // from its space into the referencing element's (exact when they differ
+    // by translation / scale only, e.g. shapes inside a rotated group).
     for (int i = 0; i < doc->items.Size; ++i)
     {
         DW_SvgItem* it = doc->items[i];
-        // item box in document space
-        ImRect db(ImVec2(FLT_MAX, FLT_MAX), ImVec2(-FLT_MAX, -FLT_MAX));
-        if (it->bbox.Min.x <= it->bbox.Max.x)
-        {
-            const ImVec2 cs[4] = { it->bbox.Min, ImVec2(it->bbox.Max.x, it->bbox.Min.y), it->bbox.Max, ImVec2(it->bbox.Min.x, it->bbox.Max.y) };
-            for (int k = 0; k < 4; ++k) db.Add(it->xf.Apply(cs[k]));
-        }
+        if (it->bbox.Min.x > it->bbox.Max.x) continue;
         for (int c = 0; c < it->clipCount; ++c)
         {
             const DW_SvgClipRef& r = it->clips[c];
-            // document -> the referencing element's space
             const float* m = r.xf.m;
-            float det = m[0] * m[3] - m[1] * m[2];
-            if (ImFabs(det) < 1e-12f || db.Min.x > db.Max.x) continue;
-            float id2 = 1.0f / det;
+            const float det = m[0] * m[3] - m[1] * m[2];
+            if (ImFabs(det) < 1e-12f) continue;
+            const float id2 = 1.0f / det;
             ImWidgetsTransform2D inv(m[3] * id2, -m[1] * id2, -m[2] * id2, m[0] * id2, 0, 0);
             inv.m[4] = -(inv.m[0] * m[4] + inv.m[2] * m[5]);
             inv.m[5] = -(inv.m[1] * m[4] + inv.m[3] * m[5]);
-            ImRect lb(ImVec2(FLT_MAX, FLT_MAX), ImVec2(-FLT_MAX, -FLT_MAX));
-            const ImVec2 cs[4] = { db.Min, ImVec2(db.Max.x, db.Min.y), db.Max, ImVec2(db.Min.x, db.Max.y) };
-            for (int k = 0; k < 4; ++k) lb.Add(inv.Apply(cs[k]));
-            int found = -1;
-            for (int k = 0; k < doc->refSerials.Size; ++k) if (doc->refSerials[k] == r.serial) { found = k; break; }
-            if (found < 0) { doc->refSerials.push_back(r.serial); doc->refBoxes.push_back(lb); }
-            else { doc->refBoxes[found].Add(lb.Min); doc->refBoxes[found].Add(lb.Max); }
+            const ImWidgetsTransform2D toRef = inv * it->xf;
+            if (r.serial >= doc->refBoxes.Size)
+            {
+                const int old = doc->refBoxes.Size;
+                doc->refBoxes.resize(r.serial + 1);
+                for (int k = old; k < doc->refBoxes.Size; ++k) doc->refBoxes[k] = ImRect(ImVec2(FLT_MAX, FLT_MAX), ImVec2(-FLT_MAX, -FLT_MAX));
+            }
+            const ImVec2 cs[4] = { it->bbox.Min, ImVec2(it->bbox.Max.x, it->bbox.Min.y), it->bbox.Max, ImVec2(it->bbox.Min.x, it->bbox.Max.y) };
+            for (int k = 0; k < 4; ++k) doc->refBoxes[r.serial].Add(toRef.Apply(cs[k]));
         }
     }
 
@@ -1176,11 +1207,12 @@ void SvgDraw(ImDrawList* dl, const ImWidgetsSvg* doc, ImVec2 pos, ImVec2 size, I
             ImWidgetsTransform2D m = docToScreen * it.clips[c].xf * cd->xf;
             if (cd->bboxUnits)
             {
-                ImRect bb = it.bbox;
-                for (int k = 0; k < doc->refSerials.Size; ++k) if (doc->refSerials[k] == it.clips[c].serial) { bb = doc->refBoxes[k]; break; }
+                const int serial = it.clips[c].serial;
+                const ImRect bb = (serial < doc->refBoxes.Size) ? doc->refBoxes[serial] : it.bbox;
                 if (bb.GetWidth() <= 0.0f || bb.GetHeight() <= 0.0f) { clippedAway = true; break; }
                 m = m * ImWidgetsTransform2D(bb.GetWidth(), 0, 0, bb.GetHeight(), bb.Min.x, bb.Min.y);
             }
+            if (DW_PathClipRoom() <= 0) continue; // clip stack full (with the caller's clips): ignored
             ImWidgetsPath cp = cd->path;
             cp.Transform(m);
             PushPathClip(cp, cd->rule);

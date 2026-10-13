@@ -7787,8 +7787,6 @@ namespace ImWidgets {
 		else if (g.ActiveId == id && io.MouseClicked[0] && !hovered)
 			ImGui::ClearActiveID();
 		const bool active = (g.ActiveId == id);
-		// The wheel scrolls this field, not the window behind it.
-		if (hovered) ImGui::SetKeyOwner(ImGuiKey_MouseWheelY, id);
 
 		// Layout: the paragraph layout of DrawTextBlock, wrapped to the inner width.
 		const float padX = style.FramePadding.x, padY = style.FramePadding.y;
@@ -7967,7 +7965,7 @@ namespace ImWidgets {
 					for (const char* q = clip; *q; ++q)
 					{
 						if (*q == '\r') { t.push_back('\n'); if (q[1] == '\n') ++q; }
-						else if ((unsigned char)*q >= 0x20 || *q == '\n') t.push_back(*q); // same filter as typing
+						else if (((unsigned char)*q >= 0x20 && *q != 0x7F) || *q == '\n') t.push_back(*q); // same filter as typing
 					}
 					insertText(t.Data, t.Size);
 				}
@@ -8013,7 +8011,13 @@ namespace ImWidgets {
 				if (cy + lineAdv > st->scroll + innerH) st->scroll = cy + lineAdv - innerH;
 			}
 		}
-		if (hovered && io.MouseWheel != 0.0f) st->scroll -= io.MouseWheel * lineAdv * 3.0f;
+		// The wheel scrolls this field (not the window behind it) when it has
+		// something to scroll.
+		if (hovered && blockH > innerH)
+		{
+			ImGui::SetKeyOwner(ImGuiKey_MouseWheelY, id);
+			if (io.MouseWheel != 0.0f) st->scroll -= io.MouseWheel * lineAdv * 3.0f;
+		}
 		st->scroll = ImClamp(st->scroll, 0.0f, ImMax(0.0f, blockH - innerH));
 
 		// Draw: frame, selection (per line, per visual run), text, caret.
@@ -8047,7 +8051,14 @@ namespace ImWidgets {
 			if (isActive && selA != selB && selA <= lr && selB > lr && lr < len && buf[lr] == '\n')
 			{
 				const float nlW = size_px * 0.35f;
-				const float x0 = L.rtl ? textLeft + L.x - nlW : textLeft + L.x + L.w;
+				// after the hanging spaces too (they are selected with the break)
+				float lo = 0.0f, hi = L.w;
+				if (L.raw > L.e)
+				{
+					lineGraphemes(i);
+					for (int k = 0; k < lg.Size; ++k) { lo = ImMin(lo, lg[k].X0); hi = ImMax(hi, lg[k].X1); }
+				}
+				const float x0 = L.rtl ? textLeft + L.x + lo - nlW : textLeft + L.x + hi;
 				dl->AddRectFilled(ImVec2(x0, ly), ImVec2(x0 + nlW, ly + lineAdv), ImGui::GetColorU32(ImGuiCol_TextSelectedBg));
 			}
 			if (L.e > L.b)

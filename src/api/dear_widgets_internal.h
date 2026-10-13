@@ -515,6 +515,7 @@ inline ImVec2 PxToLp(ImVec2 px) { float s = ImGui::GetStyle().FontScaleDpi; retu
 // fill rule, as ImDrawList triangles (dear_widgets_path.cpp). Used by FillPolygons
 // and as the CPU fallback of the stroke renderer.
 bool DW_PathClipActive(); // PushPathClip in effect (dear_widgets_path.cpp)
+int  DW_PathClipRoom();   // clips that can still be pushed
 void DW_FillSegments( ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32 col,
                       ImWidgetsFillRule rule, float aa, const ImWidgetsPaint* paint = nullptr );
 

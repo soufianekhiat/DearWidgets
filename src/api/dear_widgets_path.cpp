@@ -1353,6 +1353,7 @@ void PopPathClip()
 }
 
 bool DW_PathClipActive() { return s_pathClipCount > 0; }
+int  DW_PathClipRoom()   { return DW_MaxPathClips - s_pathClipCount; }
 
 void FillPolygons(ImDrawList* dl, const ImVec2* points, const int* contour_counts, int contour_count,
                   const ImWidgetsPaint& paint, ImWidgetsFillRule rule, float aa)
