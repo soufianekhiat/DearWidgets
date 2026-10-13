@@ -2588,6 +2588,9 @@ namespace ImWidgets{
 				ImGui::CheckboxFlags( "line-through##SlugBlk", &s_blk_deco, ImWidgetsTextDecoration_LineThrough ); ImGui::SameLine();
 				ImGui::CheckboxFlags( "overline##SlugBlk", &s_blk_deco, ImWidgetsTextDecoration_Overline );
 				lay.Decoration = s_blk_deco;
+				static int s_blk_clamp = 0;
+				ImGui::SliderInt( "max lines (line-clamp, 0 = all)##SlugBlk", &s_blk_clamp, 0, 8 );
+				lay.MaxLines = s_blk_clamp;
 				ImWidgets::GetStyle().TextDirection = s_bidi_dir;
 				ImVec2 p0 = ImGui::GetCursorScreenPos();
 				ImVec2 bsz = ImWidgets::CalcTextBlockSize( bf, 22.0f, kBlockText, nullptr, lay );

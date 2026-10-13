@@ -91,6 +91,7 @@ struct ImWidgetsTextLayout {
     float              LineHeight = 1.25f;  // multiple of the font size
     int                Decoration = 0;      // ImWidgetsTextDecoration_ Underline / LineThrough / Overline
     ImU32              DecorationColor = 0; // 0 = the text colour
+    int                MaxLines   = 0;      // CSS line-clamp; 0 = no limit
 };
 ImVec2 DrawTextBlock    ( ImDrawList*, ImFont*, float font_size, ImVec2 pos, ImU32 col,
                           char const* text, char const* text_end = nullptr,
@@ -109,7 +110,10 @@ paragraph direction, like CSS `text-align: start`. `pos` is the top-left of the
 block; the line box is `LineHeight * font_size` with the glyphs centred in it
 (half-leading). `Decoration` draws CSS `text-decoration-line` rules under,
 through or over every line, spanning the drawn text (not hanging spaces);
-thickness and offsets derive from the font size. Returns the block size in
+thickness and offsets derive from the font size. `MaxLines` keeps at most N lines
+(CSS `line-clamp`): when text is cut, the last line is shortened at a grapheme
+boundary and ends with an ellipsis (U+2026, or `...` when the font lacks it),
+placed by the bidi algorithm (on the left of an RTL line). Returns the block size in
 pixels.
 
 ### `InputTextShaped`

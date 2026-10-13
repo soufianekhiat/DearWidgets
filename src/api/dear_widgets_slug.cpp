@@ -7188,7 +7188,7 @@ namespace ImWidgets {
 	// One laid-out line: [b, e) is what is drawn (trailing spaces trimmed),
 	// [b, raw) the full line (hanging spaces included, newline excluded); x is
 	// the aligned left edge relative to the block.
-	struct SlugBlockLine { const char* b; const char* e; float w; int rtl; float y; float x0; float x1; const char* raw; float x; };
+	struct SlugBlockLine { const char* b; const char* e; float w; int rtl; float y; float x0; float x1; const char* raw; float x; int ellipsis; };
 
 	// Optional line extent: for a line box [y0, y1] (relative to the block top)
 	// returns false when nothing fits there, else the usable [x0, x1] (relative
@@ -7281,6 +7281,31 @@ namespace ImWidgets {
 			p = pe + 1;
 		}
 
+		// line-clamp: keep MaxLines lines; the last one is cut at a grapheme
+		// boundary so the text plus an ellipsis fits its width.
+		const char* kEllipsis = (font->IsGlyphInFont((ImWchar)0x2026)) ? "\xE2\x80\xA6" : "...";
+		if (lay.MaxLines > 0 && lines.Size > lay.MaxLines)
+		{
+			lines.resize(lay.MaxLines);
+			SlugBlockLine& L = lines.back();
+			GetStyle().TextDirection = L.rtl ? ImWidgetsTextDirection_RTL : ImWidgetsTextDirection_LTR;
+			const float ellW = CalcTextSize(font, size_lp, kEllipsis).x;
+			const float avail = extent ? (L.x1 - L.x0) : wrap_px;
+			const char* e = L.e;
+			while (e > L.b && measure(L.b, e) + ellW > avail)
+			{
+				--e;
+				while (e > L.b && !(brk[(int)(e - text)] & DwShaperBreak_Grapheme)) --e;
+			}
+			e = trimEnd(L.b, e);
+			L.e = e;
+			L.w = measure(L.b, e) + ellW;
+			L.ellipsis = 1;
+			maxW = 0.0f;
+			for (int i = 0; i < lines.Size; ++i) maxW = ImMax(maxW, lines[i].w);
+			y = L.y + line_adv;
+		}
+
 		const float boxW = (lay.WrapWidth > 0.0f) ? wrap_px : maxW;
 		// Aligned x of every line (relative to the block).
 		for (int i = 0; i < lines.Size; ++i)
@@ -7306,11 +7331,22 @@ namespace ImWidgets {
 			for (int i = 0; i < lines.Size; ++i)
 			{
 				const SlugBlockLine& L = lines[i];
-				if (L.b >= L.e) continue;
+				if (L.b >= L.e && !L.ellipsis) continue;
 				const float x = pos.x + L.x;
 				GetStyle().TextDirection = L.rtl ? ImWidgetsTextDirection_RTL : ImWidgetsTextDirection_LTR;
 				const float baseY = pos.y + L.y + baselineOff;
-				DrawText(dl, font, size_lp, ImVec2(x, baseY), col, L.b, L.e);
+				if (L.ellipsis)
+				{
+					// The ellipsis is shaped with the line (a neutral at the
+					// paragraph's end: on the left of an RTL line).
+					ImVector<char> t;
+					t.resize((int)(L.e - L.b));
+					if (t.Size) memcpy(t.Data, L.b, (size_t)t.Size);
+					for (const char* q = kEllipsis; *q; ++q) t.push_back(*q);
+					DrawText(dl, font, size_lp, ImVec2(x, baseY), col, t.Data, t.Data + t.Size);
+				}
+				else
+					DrawText(dl, font, size_lp, ImVec2(x, baseY), col, L.b, L.e);
 				if (lay.Decoration)
 				{
 					// Thickness / offsets derived from the font size (the fonts' own post-table

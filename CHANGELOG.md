@@ -435,7 +435,8 @@ New `DrawTextBlock` / `CalcTextBlockSize` lay out multi-line paragraphs:
 UAX #14 line breaking, `
 ` paragraphs with their own direction, per-line bidi,
 `ImWidgetsTextLayout` (wrap width, start / end / left / right / center
-alignment, line height, underline / line-through / overline decorations).
+alignment, line height, underline / line-through / overline decorations,
+`MaxLines` line-clamp with an ellipsis).
 
 #### Interaction additions
 

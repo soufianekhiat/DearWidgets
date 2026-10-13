@@ -553,6 +553,7 @@ struct ImWidgetsTextLayout
 	float              LineHeight = 1.25f; // line box height as a multiple of the font size (CSS line-height)
 	int                Decoration = 0;     // ImWidgetsTextDecoration_ flags: underline / line-through / overline per drawn line
 	ImU32              DecorationColor = 0; // 0 = the text colour (CSS currentColor)
+	int                MaxLines   = 0;     // CSS line-clamp: at most N lines, the last one ends with an ellipsis when text is cut; 0 = no limit
 };
 
 // How DrawText renders (SetTextRenderer).
