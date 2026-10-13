@@ -516,6 +516,7 @@ inline ImVec2 PxToLp(ImVec2 px) { float s = ImGui::GetStyle().FontScaleDpi; retu
 // and as the CPU fallback of the stroke renderer.
 bool DW_PathClipActive(); // PushPathClip in effect (dear_widgets_path.cpp)
 int  DW_PathClipRoom();   // clips that can still be pushed
+void DW_SvgPathRecordVertices(ImVector<int>* out); // AddSvgPathData command vertices (nullptr = off)
 void DW_FillSegments( ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32 col,
                       ImWidgetsFillRule rule, float aa, const ImWidgetsPaint* paint = nullptr );
 

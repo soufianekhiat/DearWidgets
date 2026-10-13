@@ -393,7 +393,7 @@ struct DW_SvgStyle
 
 // A clip-path reference: the clip's id and the user space it is used in
 // (the referencing element's coordinate system, its transform included).
-struct DW_SvgClipRef { char id[64]; ImWidgetsTransform2D xf; int serial; }; // serial: the referencing element
+struct DW_SvgClipRef { char id[64]; ImWidgetsTransform2D xf; int serial; int def; }; // serial: the referencing element; def: resolved clipDefs index (-1 = unknown)
 enum { DW_SvgMaxClipRefs = 4 };
 
 struct DW_SvgClipDef
@@ -467,6 +467,7 @@ struct DW_SvgItem
     ImWidgetsTransform2D xf;          // element user space -> document space (gradients live in user space)
     ImVector<char>       text;        // <text> content (UTF-8, whitespace collapsed); empty for shapes
     ImVec2               textPos;     // x, y of the first character (element space)
+    bool                 fromMarker = false; // drawn by a marker: not part of objectBoundingBox boxes
 };
 
 } // namespace ImWidgets
@@ -733,7 +734,7 @@ static bool DW_SvgDeclValue(const char* block, const char* prop, char* out, int 
         ++p; while (isspace((unsigned char)*p)) ++p;
         const char* vb = p; while (*p && *p != ';') ++p;
         const char* ve = p; while (ve > vb && isspace((unsigned char)ve[-1])) --ve;
-        if ((size_t)(ne - nb) == pl && strncmp(nb, prop, pl) == 0)
+        if ((size_t)(ne - nb) == pl && strncmp(nb, prop, pl) == 0 && ve > vb)
         {
             const int n = ImMin((int)(ve - vb), out_size - 1);
             memcpy(out, vb, (size_t)n); out[n] = 0;
@@ -884,14 +885,18 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
     struct UseSrc
     {
         const char* resume; const char* begin; const char* end; int idIdx;
-        bool started; Frame* pending;                                   // before start
+        bool started; Frame* pending; bool isMarker;                    // before start
         int stackSize; int defsDepth; DW_SvgGradient* grad; DW_SvgClipDef* clip; // saved at start
     };
     ImVector<UseSrc> srcs;
     int activeSrcs = 0;
-    auto queueSrc = [&](const char* b, const char* e, int idIdx, Frame* f) {
+    int markerDepth = 0;                 // started marker expansions (their items are flagged)
+    ImVector<DW_SvgStyle> markerStyles;  // ancestors' style of each <marker> met in the document
+    ImGuiStorage          markerStyleIndex;
+    ImGuiStorage          viewportClips; // (w, h) -> generated clip def index + 1
+    auto queueSrc = [&](const char* b, const char* e, int idIdx, Frame* f, bool isMarker) {
         UseSrc u; memset(&u, 0, sizeof(u));
-        u.resume = s; u.begin = b; u.end = e; u.idIdx = idIdx; u.started = false; u.pending = f;
+        u.resume = s; u.begin = b; u.end = e; u.idIdx = idIdx; u.started = false; u.pending = f; u.isMarker = isMarker;
         srcs.push_back(u);
     };
     // Total source re-parsed by <use> expansions: bounded so chains of uses
@@ -903,7 +908,7 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
         if (srcs.Size && !srcs.back().started)
         {
             UseSrc& u = srcs.back();
-            u.started = true; ++activeSrcs;
+            u.started = true; ++activeSrcs; if (u.isMarker) ++markerDepth;
             u.stackSize = stack.Size; u.defsDepth = defsDepth; u.grad = curGrad; u.clip = curClip;
             stack.push_back(u.pending); u.pending = nullptr;
             defsDepth = curClip ? curClip->defsDepthAtStart : 0; // a referenced element in <defs> renders
@@ -913,7 +918,7 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
         if (srcs.Size && s >= srcs.back().end)
         {
             const UseSrc u = srcs.back();
-            srcs.pop_back(); --activeSrcs;
+            srcs.pop_back(); --activeSrcs; if (u.isMarker) --markerDepth;
             while (stack.Size > u.stackSize) { IM_DELETE(stack.back()); stack.pop_back(); }
             s = u.resume; defsDepth = u.defsDepth; curGrad = u.grad; curClip = u.clip;
             continue;
@@ -952,7 +957,9 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
             }
             if (!strcmp(name, "defs") || !strcmp(name, "symbol") || !strcmp(name, "mask")
                 || !strcmp(name, "pattern") || !strcmp(name, "marker")) { if (defsDepth > 0) --defsDepth; continue; }
-            if ((!strcmp(name, "g") || !strcmp(name, "svg") || !strcmp(name, "a") || !strcmp(name, "switch")) && stack.Size > 1)
+            // never below the frame an active expansion started with
+            const int floorSize = srcs.Size ? srcs.back().stackSize + 1 : 1;
+            if ((!strcmp(name, "g") || !strcmp(name, "svg") || !strcmp(name, "a") || !strcmp(name, "switch")) && stack.Size > floorSize)
             {
                 IM_DELETE(stack.back()); stack.pop_back();
             }
@@ -1051,7 +1058,19 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
         // (masks, symbols, patterns, markers are unsupported, so their content
         // must not show as plain shapes).
         if (!strcmp(name, "defs") || !strcmp(name, "symbol") || !strcmp(name, "mask")
-            || !strcmp(name, "pattern") || !strcmp(name, "marker")) { if (!tag.selfClosing) ++defsDepth; continue; }
+            || !strcmp(name, "pattern") || !strcmp(name, "marker"))
+        {
+            if (!strcmp(name, "marker") && srcs.Size == 0)
+                if (const char* id = tag.Get("id"))
+                {
+                    // markers inherit from their own ancestors, not from the path
+                    DW_SvgStyle ms = stack.back()->style;
+                    markerStyleIndex.SetInt(ImHashStr(id), markerStyles.Size + 1);
+                    markerStyles.push_back(ms);
+                }
+            if (!tag.selfClosing) ++defsDepth;
+            continue;
+        }
         // Inside a clipPath: <text> is not supported (it falls through to its
         // parser, which consumes the content and drops it); nested defs /
         // masks do not feed the clip.
@@ -1070,7 +1089,9 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
             // still gets popped by its closing tag.
             if ((!strcmp(name, "g") || !strcmp(name, "svg") || !strcmp(name, "a") || !strcmp(name, "switch")) && !tag.selfClosing)
             {
-                Frame* f = IM_NEW(Frame)(); f->style = stack.back()->style; f->xf = stack.back()->xf; stack.push_back(f);
+                Frame* f = IM_NEW(Frame)(); f->style = stack.back()->style; f->xf = stack.back()->xf;
+                DW_SvgApplyStyle(f->style, tag, &css); // inherited by markers defined inside
+                stack.push_back(f);
             }
             continue;
         }
@@ -1106,20 +1127,33 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
         auto pushFrame = [&]() { stack.push_back(makeFrame()); };
         // Generated clip rect [0,0,w,h] in the space xfClip (symbol / marker
         // viewports: overflow hidden).
-        auto addViewportClip = [&](float w, float h, const ImWidgetsTransform2D& xfClip) {
-            if (curClip || clipCount >= DW_SvgMaxClipRefs || w <= 0.0f || h <= 0.0f) return;
-            DW_SvgClipDef* cd = IM_NEW(DW_SvgClipDef)();
-            memset(cd->id, 0, sizeof(cd->id));
-            ImFormatString(cd->id, sizeof(cd->id), "\x01viewport%d", doc->clipDefs.Size); // not a valid XML id: never clashes
-            cd->path.Rect(ImVec2(0, 0), ImVec2(w, h));
-            cd->xf = ImWidgetsTransform2D();
-            cd->bboxUnits = false; cd->rule = ImWidgetsFillRule_NonZero;
-            cd->children = 1; cd->unsupported = false; cd->defsDepthAtStart = 0;
-            doc->clipDefs.push_back(cd);
-            ImStrncpy(clips[clipCount].id, cd->id, sizeof(clips[clipCount].id));
+        // Returns false when the viewport is empty (nothing is drawn).
+        // One generated def per viewport size (the placement is in the ref).
+        auto addViewportClip = [&](float w, float h, const ImWidgetsTransform2D& xfClip) -> bool {
+            if (w <= 0.0f || h <= 0.0f) return false;
+            if (curClip || clipCount >= DW_SvgMaxClipRefs) return true;
+            const float key2[2] = { w, h };
+            const ImGuiID key = ImHashData(key2, sizeof(key2));
+            int di = viewportClips.GetInt(key, 0) - 1;
+            if (di < 0)
+            {
+                DW_SvgClipDef* cd = IM_NEW(DW_SvgClipDef)();
+                memset(cd->id, 0, sizeof(cd->id));
+                ImFormatString(cd->id, sizeof(cd->id), "\x01viewport%d", doc->clipDefs.Size); // not a valid XML id: never clashes
+                cd->path.Rect(ImVec2(0, 0), ImVec2(w, h));
+                cd->xf = ImWidgetsTransform2D();
+                cd->bboxUnits = false; cd->rule = ImWidgetsFillRule_NonZero;
+                cd->children = 1; cd->unsupported = false; cd->defsDepthAtStart = 0;
+                doc->clipDefs.push_back(cd);
+                di = doc->clipDefs.Size - 1;
+                viewportClips.SetInt(key, di + 1);
+            }
+            ImStrncpy(clips[clipCount].id, doc->clipDefs[di]->id, sizeof(clips[clipCount].id));
             clips[clipCount].xf = xfClip;
             clips[clipCount].serial = ++clipSerial;
+            clips[clipCount].def = -1;
             ++clipCount;
+            return true;
         };
         // viewBox + preserveAspectRatio of `t` mapped to a w x h viewport.
         auto viewBoxXf = [&](const DW_SvgTag& t, float w, float h) {
@@ -1200,11 +1234,12 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
                 // default): a generated clip rect in the use's space.
                 char ovBuf[16] = {};
                 const char* ov = DW_SvgCascade(rt, &css, "overflow", ovBuf, (int)sizeof(ovBuf));
+                if (w <= 0.0f || h <= 0.0f) continue; // empty viewport: nothing is drawn
                 if (!(ov && (strstr(ov, "visible") || strstr(ov, "auto")))) addViewportClip(w, h, xf);
                 xf = xf * viewBoxXf(rt, w, h);
             }
             if (b >= r.e) continue;
-            queueSrc(b, r.e, idx, makeFrame()); // the use's style, transform and clips for the content
+            queueSrc(b, r.e, idx, makeFrame(), false); // the use's style, transform and clips for the content
             continue;
         }
 
@@ -1287,6 +1322,7 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
             const float vbw0 = doc->viewBox.GetWidth(), vbh0 = doc->viewBox.GetHeight();
             item->textPos = ImVec2(DW_SvgAttrF(tag, "x", 0.0f, vbw0), DW_SvgAttrF(tag, "y", 0.0f, vbh0));
             item->text = content;
+            item->fromMarker = markerDepth > 0;
             // Approximate bbox (for objectBoundingBox gradients): em box of the
             // run, from the codepoint count (not bytes).
             int ncp = 0;
@@ -1302,12 +1338,15 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
 
         // Shapes -> path in local units.
         ImWidgetsPath p;
+        ImVector<int> pathVertices; // <path>: command vertices (for markers)
         const float vbw = doc->viewBox.GetWidth(), vbh = doc->viewBox.GetHeight();
         const float vbd = ImSqrt((vbw * vbw + vbh * vbh) * 0.5f);
         bool shape = true;
         if (!strcmp(name, "path"))
         {
+            DW_SvgPathRecordVertices(&pathVertices);
             p.AddSvgPathData(tag.Get("d")); // keeps the prefix on errors, like browsers
+            DW_SvgPathRecordVertices(nullptr);
         }
         else if (!strcmp(name, "rect"))
         {
@@ -1394,14 +1433,54 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
         const bool markable = !strcmp(name, "path") || !strcmp(name, "line") || !strcmp(name, "polyline") || !strcmp(name, "polygon");
         if (markable && (st.markerStart[0] || st.markerMid[0] || st.markerEnd[0]) && activeSrcs < 16)
         {
+            // Segments between the command vertices (arcs split into several
+            // cubics are one segment). Each segment's start / end direction is
+            // its first / last non-zero tangent; a zero-length segment takes
+            // the direction of the nearest non-zero one (SVG 2).
             auto dirOk = [](ImVec2 d) { return d.x * d.x + d.y * d.y > 1e-12f; };
-            for (int sp = 0; sp < p.Subpaths.Size; ++sp)
+            for (int sp = 0; sp < p.Subpaths.Size && markerAt.Size < 4096; ++sp)
             {
                 const ImWidgetsSubpath& sub = p.Subpaths[sp];
-                const ImVec2* P = p.Points.Data + sub.First;
-                const int N = (sub.Count - 1) / 3; // segments
-                auto outDir = [&](int j) { for (int k = 1; k <= 3; ++k) { ImVec2 d = P[3 * j + k] - P[3 * j]; if (dirOk(d)) return d; } return ImVec2(0, 0); };
-                auto inDir  = [&](int j) { for (int k = 1; k <= 3; ++k) { ImVec2 d = P[3 * j] - P[3 * j - k]; if (dirOk(d)) return d; } return ImVec2(0, 0); };
+                const ImVec2* P = p.Points.Data;
+                ImVector<int> vtx;       // point indices of the vertices
+                bool zeroClose = false;  // closepath with no segment: an extra zero-length one
+                if (pathVertices.Size)
+                {
+                    for (int k = 0; k < pathVertices.Size; ++k)
+                    {
+                        int v = pathVertices[k];
+                        if (v <= -2) { v = -2 - v; if (v >= sub.First && v < sub.First + sub.Count) zeroClose = true; continue; }
+                        if (v < sub.First || v >= sub.First + sub.Count) continue;
+                        if (vtx.Size && vtx.back() == v) continue;
+                        vtx.push_back(v);
+                    }
+                    if (vtx.Size == 0 || vtx[0] != sub.First) vtx.push_front(sub.First);
+                }
+                else
+                {
+                    for (int k = sub.First; k < sub.First + sub.Count; k += 3) vtx.push_back(k);
+                    // polygon whose last point repeats the first: SVG still adds
+                    // the (zero-length) closing segment
+                    if (sub.Closed && sub.Count > 1 && P[sub.First].x == P[sub.First + sub.Count - 1].x && P[sub.First].y == P[sub.First + sub.Count - 1].y
+                        && !strcmp(name, "polygon")) zeroClose = true;
+                }
+                const int nseg = vtx.Size - 1 + (zeroClose ? 1 : 0);
+                ImVector<ImVec2> ds, de; // per segment start / end direction
+                for (int g = 0; g < vtx.Size - 1; ++g)
+                {
+                    ImVec2 a(0, 0), b(0, 0);
+                    for (int k = vtx[g] + 1; k <= vtx[g + 1]; ++k) { ImVec2 d = P[k] - P[vtx[g]]; if (dirOk(d)) { a = d; break; } }
+                    for (int k = vtx[g + 1] - 1; k >= vtx[g]; --k) { ImVec2 d = P[vtx[g + 1]] - P[k]; if (dirOk(d)) { b = d; break; } }
+                    ds.push_back(a); de.push_back(b);
+                }
+                if (zeroClose) { ds.push_back(ImVec2(0, 0)); de.push_back(ImVec2(0, 0)); }
+                for (int g = 0; g < nseg; ++g)
+                    if (!dirOk(ds[g]))
+                    {
+                        // nearest previous non-zero segment, else the next one
+                        for (int h2 = g - 1; h2 >= 0; --h2) if (dirOk(de[h2])) { ds[g] = de[g] = de[h2]; break; }
+                        if (!dirOk(ds[g])) for (int h2 = g + 1; h2 < nseg; ++h2) if (dirOk(ds[h2])) { ds[g] = de[g] = ds[h2]; break; }
+                    }
                 auto bisect = [&](ImVec2 a, ImVec2 b) {
                     const float la = ImSqrt(a.x * a.x + a.y * a.y), lb = ImSqrt(b.x * b.x + b.y * b.y);
                     if (la <= 0.0f) return ImAtan2(b.y, b.x);
@@ -1409,11 +1488,12 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
                     ImVec2 m(a.x / la + b.x / lb, a.y / la + b.y / lb);
                     return dirOk(m) ? ImAtan2(m.y, m.x) : ImAtan2(a.y, a.x);
                 };
-                for (int j = 0; j <= N && markerAt.Size < 4096; ++j)
+                const int nv = nseg + 1;
+                for (int v = 0; v < nv && markerAt.Size < 4096; ++v)
                 {
-                    ImVec2 din = j > 0 ? inDir(j) : (sub.Closed && N > 0 ? inDir(N) : ImVec2(0, 0));
-                    ImVec2 dout = j < N ? outDir(j) : (sub.Closed && N > 0 ? outDir(0) : ImVec2(0, 0));
-                    MarkerAt m; m.p = P[3 * j]; m.angle = bisect(din, dout); m.kind = 1;
+                    const ImVec2 din  = v > 0 ? de[v - 1] : (sub.Closed && nseg > 0 ? de[nseg - 1] : ImVec2(0, 0));
+                    const ImVec2 dout = v < nseg ? ds[v] : (sub.Closed && nseg > 0 ? ds[0] : ImVec2(0, 0));
+                    MarkerAt m; m.p = (v < vtx.Size) ? P[vtx[v]] : P[sub.First]; m.angle = bisect(din, dout); m.kind = 1;
                     markerAt.push_back(m);
                 }
             }
@@ -1426,6 +1506,7 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
         p.Points.clear(); p.Subpaths.clear();
         item->style = st;
         item->strokeScale = ImSqrt(ImFabs(xf.m[0] * xf.m[3] - xf.m[1] * xf.m[2]));
+        item->fromMarker = markerDepth > 0;
         doc->items.push_back(item);
 
         // Markers: each referenced <marker>'s content drawn at its vertices,
@@ -1472,6 +1553,10 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
                 // Marker content inherits from the marker's context (root
                 // defaults + its own properties), not from the path.
                 DW_SvgStyle ms = stack[0]->style;
+                {
+                    const int si = markerStyleIndex.GetInt(ImHashStr(pend[k].id), 0) - 1;
+                    if (si >= 0) ms = markerStyles[si];
+                }
                 DW_SvgApplyStyle(ms, mt, &css);
                 ms.opacity = st.opacity * ms.ownOpacity;
                 // the viewport clip is added for this marker only
@@ -1480,18 +1565,32 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
                 for (int c = 0; c < clipCount; ++c) savedClips[c] = clips[c];
                 char ovBuf[16] = {};
                 const char* ov = DW_SvgCascade(mt, &css, "overflow", ovBuf, (int)sizeof(ovBuf));
+                if (mw <= 0.0f || mh <= 0.0f) continue; // empty viewport: nothing is drawn
                 if (!(ov && (strstr(ov, "visible") || strstr(ov, "auto")))) addViewportClip(mw, mh, place);
                 Frame* f = IM_NEW(Frame)(); f->style = ms; f->xf = place * vbx;
                 for (int c = 0; c < clipCount; ++c) f->clips[c] = clips[c];
                 f->clipCount = clipCount;
                 clipCount = savedCount;
                 for (int c = 0; c < savedCount; ++c) clips[c] = savedClips[c];
-                queueSrc(r.content, r.e, idx, f);
+                queueSrc(r.content, r.e, idx, f, true);
             }
         }
     }
     while (stack.Size) { IM_DELETE(stack.back()); stack.pop_back(); }
     if (!sawSvg && doc->viewBox.GetWidth() <= 0.0f) { doc->viewBox = ImRect(0, 0, 100, 100); doc->size = ImVec2(100, 100); }
+
+    // Resolve every clip reference to its definition once (first one wins).
+    {
+        ImGuiStorage defIndex;
+        for (int k = doc->clipDefs.Size - 1; k >= 0; --k) defIndex.SetInt(ImHashStr(doc->clipDefs[k]->id), k + 1);
+        for (int i = 0; i < doc->items.Size; ++i)
+            for (int c = 0; c < doc->items[i]->clipCount; ++c)
+            {
+                DW_SvgClipRef& r = doc->items[i]->clips[c];
+                const int k = defIndex.GetInt(ImHashStr(r.id), 0) - 1;
+                r.def = (k >= 0 && !strcmp(doc->clipDefs[k]->id, r.id)) ? k : -1;
+            }
+    }
 
     // Bounding box of each clip-referencing element, for objectBoundingBox
     // clips: the union of all items under it, each item's box mapped straight
@@ -1500,7 +1599,7 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
     for (int i = 0; i < doc->items.Size; ++i)
     {
         DW_SvgItem* it = doc->items[i];
-        if (it->bbox.Min.x > it->bbox.Max.x) continue;
+        if (it->bbox.Min.x > it->bbox.Max.x || it->fromMarker) continue;
         for (int c = 0; c < it->clipCount; ++c)
         {
             const DW_SvgClipRef& r = it->clips[c];
@@ -1681,7 +1780,7 @@ void SvgDraw(ImDrawList* dl, const ImWidgetsSvg* doc, ImVec2 pos, ImVec2 size, I
         for (int c = 0; c < it.clipCount; ++c)
         {
             const DW_SvgClipDef* cd = nullptr;
-            for (int k = 0; k < doc->clipDefs.Size; ++k) if (!strcmp(doc->clipDefs[k]->id, it.clips[c].id)) { cd = doc->clipDefs[k]; break; }
+            if (it.clips[c].def >= 0) cd = doc->clipDefs[it.clips[c].def];
             if (!cd) continue;                                   // unknown reference: ignored (as browsers do)
             if (cd->path.Subpaths.Size == 0)
             {

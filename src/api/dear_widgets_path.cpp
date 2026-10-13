@@ -1173,6 +1173,13 @@ static bool DW_SvgFlag(const char*& s, bool& out)
     return false;
 }
 
+// Optional recorder of the command vertices of AddSvgPathData (SVG markers):
+// point index of every command's end point (arcs split into several cubics
+// still give one vertex), and -2 - index for a closepath that added no segment
+// (its end already on the start: a zero-length closing segment in SVG).
+static ImVector<int>* s_svgVertexRecorder = nullptr;
+namespace ImWidgets { void DW_SvgPathRecordVertices(ImVector<int>* out) { s_svgVertexRecorder = out; } }
+
 bool ImWidgetsPath::AddSvgPathData(const char* d)
 {
     if (!d) return false;
@@ -1250,7 +1257,12 @@ bool ImWidgetsPath::AddSvgPathData(const char* d)
             break;
         case 'Z':
         {
-            Close();
+            {
+                const int before = Points.Size;
+                Close();
+                if (s_svgVertexRecorder && Subpaths.Size)
+                    s_svgVertexRecorder->push_back(Points.Size > before ? Points.Size - 1 : -2 - (Points.Size - 1));
+            }
             // A command after Z without moveto starts at the closed subpath's start.
             if (Subpaths.Size) { ImVec2 st = Points[Subpaths.back().First]; MoveTo(st); }
             // Z takes no arguments: anything other than a command letter (or the
@@ -1265,6 +1277,7 @@ bool ImWidgetsPath::AddSvgPathData(const char* d)
             break;
         }
         if (!ok) break;
+        if (s_svgVertexRecorder && C != 'Z' && Points.Size) s_svgVertexRecorder->push_back(Points.Size - 1);
         lastCmd = C;
     }
     // Drop a trailing lone moveTo (e.g. after the final Z).
