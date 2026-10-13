@@ -81,16 +81,79 @@ enum ImTimelineActionKind
 	ImTimelineAction_None = 0,
 	ImTimelineAction_Scrub,        // TargetTick = requested playhead
 	ImTimelineAction_InsertKey,    // TargetTick + TrackIndex (past OK)
-	ImTimelineAction_SelectKey,    // KeyId
+	ImTimelineAction_SelectKey,    // KeyId (host reads Ctrl for toggle)
 	ImTimelineAction_DeleteKey,    // KeyId
+	ImTimelineAction_MoveKey,      // KeyId dragged to TargetTick (on release);
+	                               // host moves the whole selection by delta
+	ImTimelineAction_KeyContext,   // KeyId right-clicked: host opens its menu
+	ImTimelineAction_BoxSelect,    // marquee: ticks [TargetTick, TargetTickEnd]
+	                               // x tracks [TrackIndex, TrackIndexEnd];
+	                               // an EMPTY box (click) clears the selection
+	ImTimelineAction_DeleteSelection, // Del with a selection (no KeyId)
 };
 
 struct ImTimelineAction
 {
 	ImTimelineActionKind Kind;
 	long long			 TargetTick;
+	long long			 TargetTickEnd;
 	int					 TrackIndex;
+	int					 TrackIndexEnd;
 	unsigned			 KeyId;
+};
+
+//////////////////////////////////////////////////////////////////////////
+// Curve lane (The Flow review27): ONE parameter's f(t) with editable keys.
+// Hold keys draw as steps, linear keys as ramps; keys drag in BOTH axes
+// (tick + value), emitted on release. The host owns the data and re-feeds
+// it after applying an edit, exactly like ImTimeline.
+//////////////////////////////////////////////////////////////////////////
+
+struct ImTimelineCurveKey
+{
+	long long	Tick;
+	double		Value;
+	int			Interp;     // 0 = hold (step), 1 = linear (ramp), 2 = cubic
+	double		TanIn;      // hermite tangent slopes (value per tick) —
+	double		TanOut;     // handles drawn/editable on the selected cubic key
+	unsigned	Id;         // host identity (hit-testing / edits)
+	bool		Selected;
+};
+
+struct ImTimelineCurveData
+{
+	long long	BeginTick;    // drawn range [Begin, End)
+	long long	EndTick;
+	long long	PlayheadTick;
+	double		MinValue;     // vertical range (host-padded)
+	double		MaxValue;
+	char const*	Label;        // parameter name (nullable)
+	ImVector<ImTimelineCurveKey> Keys; // sorted by Tick
+	// Host-sampled curve polyline (x = tick, y = value). When non-empty it is
+	// drawn INSTEAD of the widget's internal step/ramp segments — the host
+	// owns the evaluator, so cubic zones render exactly what executes.
+	ImVector<ImVec2> Samples;
+};
+
+enum ImTimelineCurveActionKind
+{
+	ImTimelineCurveAction_None = 0,
+	ImTimelineCurveAction_Scrub,      // TargetTick = requested playhead
+	ImTimelineCurveAction_SelectKey,  // KeyId
+	ImTimelineCurveAction_DeleteKey,  // KeyId (Del on selection)
+	ImTimelineCurveAction_MoveKey,    // KeyId dragged to TargetTick/TargetValue
+	ImTimelineCurveAction_InsertKey,  // TargetTick (double-click empty space)
+	ImTimelineCurveAction_KeyContext, // KeyId right-clicked: host opens its menu
+	ImTimelineCurveAction_TangentIn,  // KeyId + TargetValue = new IN slope
+	ImTimelineCurveAction_TangentOut, // KeyId + TargetValue = new OUT slope
+};
+
+struct ImTimelineCurveAction
+{
+	ImTimelineCurveActionKind Kind;
+	long long	TargetTick;
+	double		TargetValue;
+	unsigned	KeyId;
 };
 
 namespace ImWidgets
@@ -101,4 +164,11 @@ namespace ImWidgets
 					 ImTimelineData const& data,
 					 ImVec2 const& size,
 					 ImTimelineAction* out_action );
+
+	// Draws ONE parameter's editable f(t) lane. Returns true when
+	// `out_action` carries a user action for the host.
+	bool ImTimelineCurve( char const* label,
+						  ImTimelineCurveData const& data,
+						  ImVec2 const& size,
+						  ImTimelineCurveAction* out_action );
 }
