@@ -514,6 +514,26 @@ enum ImWidgetsThickLineMode_
 };
 typedef int ImWidgetsThickLineMode;
 
+// Horizontal alignment of a text block (CSS `text-align`). Start / End follow
+// each paragraph's direction (left / right for LTR, right / left for RTL).
+enum ImWidgetsTextAlign_
+{
+	ImWidgetsTextAlign_Start  = 0,
+	ImWidgetsTextAlign_End    = 1,
+	ImWidgetsTextAlign_Left   = 2,
+	ImWidgetsTextAlign_Right  = 3,
+	ImWidgetsTextAlign_Center = 4,
+};
+typedef int ImWidgetsTextAlign;
+
+// Layout of a multi-line text block (DrawTextBlock / CalcTextBlockSize).
+struct ImWidgetsTextLayout
+{
+	float              WrapWidth  = 0.0f;  // logical pixels; <= 0: no wrapping (lines only break at '\n')
+	ImWidgetsTextAlign Align      = 0;     // ImWidgetsTextAlign_Start
+	float              LineHeight = 1.25f; // line box height as a multiple of the font size (CSS line-height)
+};
+
 // Paragraph direction for shaped text (CSS `direction`, HTML `dir`).
 // Auto = the first strong character decides, LTR when there is none.
 enum ImWidgetsTextDirection_
@@ -4596,6 +4616,17 @@ namespace ImWidgets{
 	// Returns (width, height) in physical pixels.
 	// out_ascent: if non-null, receives ascent in physical pixels (pass cursor.y + ascent as baseline to DrawText).
 	IMGUI_API ImVec2 CalcTextSize( ImFont* font, float font_size, char const* text, char const* text_end = nullptr, float* out_ascent = nullptr );
+	// Multi-line text block, laid out like a browser paragraph: '\n' separates
+	// paragraphs, lines wrap at UAX #14 break opportunities when layout.WrapWidth
+	// > 0 (trailing spaces hang), every paragraph gets its own bidi direction
+	// (GetStyle().TextDirection, Auto = first strong character) and each line is
+	// shaped / reordered on its own. pos = top-left of the block. Returns the
+	// block size in pixels (width = WrapWidth when wrapping, else widest line).
+	IMGUI_API ImVec2 DrawTextBlock( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, ImU32 col,
+	                                char const* text, char const* text_end = nullptr,
+	                                ImWidgetsTextLayout const& layout = ImWidgetsTextLayout() );
+	IMGUI_API ImVec2 CalcTextBlockSize( ImFont* font, float font_size, char const* text, char const* text_end = nullptr,
+	                                    ImWidgetsTextLayout const& layout = ImWidgetsTextLayout() );
 	// Same as CalcTextSize( ... ).x (CalcTextSize shapes: bidi, Arabic forms, ligatures, kerning).
 	// Kept for source compatibility.
 	IMGUI_API float CalcShapedTextWidth( ImFont* font, float font_size, char const* text, char const* text_end = nullptr );

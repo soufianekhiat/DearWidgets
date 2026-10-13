@@ -2872,7 +2872,10 @@ namespace ImWidgets {
 		// instead of silently drawing nothing.
 		if (!gs_pContext->slugShader.program)
 		{
-			pDrawList->AddText(font, font_size, pos, col, text, text_end);
+			// pos.y is the baseline; AddText takes the top of the line.
+			ImFontBaked* baked = font->GetFontBaked(font_size);
+			float ascent = baked ? baked->Ascent * (font_size / baked->Size) : font_size * 0.8f;
+			pDrawList->AddText(font, font_size, ImVec2(pos.x, pos.y - ascent), col, text, text_end);
 			return;
 		}
 
@@ -6407,7 +6410,10 @@ namespace ImWidgets {
 		if (!font)             font      = ImGui::GetFont();
 		if (font_size > 0.0f)  font_size = SlugLpToPx(font_size);
 		else                   font_size = ImGui::GetFontSize();
-		if (pDrawList) pDrawList->AddText(font, font_size, pos, col, text, text_end);
+		// pos.y is the baseline (same contract as the Slug path); AddText takes the top.
+		ImFontBaked* baked = font->GetFontBaked(font_size);
+		float ascent = baked ? baked->Ascent * (font_size / baked->Size) : font_size * 0.8f;
+		if (pDrawList) pDrawList->AddText(font, font_size, ImVec2(pos.x, pos.y - ascent), col, text, text_end);
 	}
 
 	void DrawText(ImDrawList* pDrawList, ImVec2 pos, ImU32 col,
@@ -6455,5 +6461,116 @@ namespace ImWidgets {
 
 #endif  // IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER_WAS_UNDEF
 
+	// ---- Paragraph layout (wrapping, alignment, multi-line bidi) --------------
+	// Built on the public DrawText / CalcTextSize, so it behaves the same with
+	// or without the shader tier. Line breaking follows UAX #14 (kb_text_shape);
+	// each line is shaped and bidi-reordered on its own with the paragraph's
+	// resolved direction, as a browser does after line breaking (UAX #9 L1-L2
+	// apply per line).
+
+	static inline bool SlugIsWs(char c) { return c == ' ' || c == '\t'; }
+
+	struct SlugBlockLine { const char* b; const char* e; float w; int rtl; float y; };
+
+	static ImVec2 SlugTextBlock(ImDrawList* dl, ImFont* font, float font_size_lp, ImVec2 pos, ImU32 col,
+	                            const char* text, const char* text_end, const ImWidgetsTextLayout& lay, bool draw)
+	{
+		if (!text) return ImVec2(0, 0);
+		if (!text_end) text_end = text + strlen(text);
+		if (!font) font = ImGui::GetFont();
+		const float size_px  = font_size_lp > 0.0f ? SlugLpToPx(font_size_lp) : ImGui::GetFontSize();
+		const float size_lp  = font_size_lp > 0.0f ? font_size_lp : PxToLp(size_px);
+		const float wrap_px  = lay.WrapWidth > 0.0f ? SlugLpToPx(lay.WrapWidth) : FLT_MAX;
+		const float line_adv = size_px * (lay.LineHeight > 0.0f ? lay.LineHeight : 1.25f);
+		const int   len      = (int)(text_end - text);
+
+		ImVector<unsigned int> brk;
+		brk.resize(len + 1);
+		DwShaper_TextBreaks(text, len, brk.Data);
+
+		ImWidgetsTextDirection const savedDir = GetStyle().TextDirection;
+		auto measure = [&](const char* a, const char* b) -> float {
+			return (a < b) ? CalcTextSize(font, size_lp, a, b).x : 0.0f;
+		};
+		auto trimEnd = [](const char* a, const char* b) { while (b > a && (SlugIsWs(b[-1]) || b[-1] == '\n' || b[-1] == '\r')) --b; return b; };
+
+		ImVector<SlugBlockLine> lines;
+		float y = 0.0f, maxW = 0.0f;
+		const char* p = text;
+		while (p <= text_end)
+		{
+			// Paragraph: up to the next newline (hard break), UAX #9 P1.
+			const char* pe = p;
+			while (pe < text_end && *pe != '\n') ++pe;
+			const int rtl = DwShaper_ParagraphLevel(p, (int)(pe - p), savedDir) & 1;
+			GetStyle().TextDirection = rtl ? ImWidgetsTextDirection_RTL : ImWidgetsTextDirection_LTR;
+
+			// Greedy fill between soft break opportunities. Trailing spaces of a
+			// line hang (do not count toward the fit), as in CSS.
+			const char* lineB = p;
+			float lineW = 0.0f;
+			const char* seg = p;
+			while (seg < pe)
+			{
+				const char* segE = seg + 1;
+				while (segE < pe && !(brk[(int)(segE - text)] & DwShaperBreak_LineSoft)) ++segE;
+				const float wFull = measure(seg, segE);
+				const float wFit  = measure(seg, trimEnd(seg, segE));
+				if (lineB < seg && lineW + wFit > wrap_px)
+				{
+					const char* le = trimEnd(lineB, seg);
+					SlugBlockLine L = { lineB, le, measure(lineB, le), rtl, y };
+					lines.push_back(L); maxW = ImMax(maxW, L.w); y += line_adv;
+					lineB = seg; lineW = 0.0f;
+				}
+				lineW += wFull;
+				seg = segE;
+			}
+			{
+				const char* le = trimEnd(lineB, pe);
+				SlugBlockLine L = { lineB, le, measure(lineB, le), rtl, y };
+				lines.push_back(L); maxW = ImMax(maxW, L.w); y += line_adv;
+			}
+			if (pe >= text_end) break;
+			p = pe + 1;
+		}
+
+		const float boxW = (lay.WrapWidth > 0.0f) ? wrap_px : maxW;
+		if (draw && dl)
+		{
+			ImFontBaked* baked = font->GetFontBaked(size_px);
+			const float ascent  = baked ? baked->Ascent  * (size_px / baked->Size) : size_px * 0.8f;
+			const float descent = baked ? -baked->Descent * (size_px / baked->Size) : size_px * 0.2f;
+			// Half-leading above, like CSS: the content box is centred in the line box.
+			const float baselineOff = (line_adv - (ascent + descent)) * 0.5f + ascent;
+			for (int i = 0; i < lines.Size; ++i)
+			{
+				const SlugBlockLine& L = lines[i];
+				if (L.b >= L.e) continue;
+				int align = lay.Align;
+				if (align == ImWidgetsTextAlign_Start) align = L.rtl ? ImWidgetsTextAlign_Right : ImWidgetsTextAlign_Left;
+				if (align == ImWidgetsTextAlign_End)   align = L.rtl ? ImWidgetsTextAlign_Left  : ImWidgetsTextAlign_Right;
+				float x = pos.x;
+				if (align == ImWidgetsTextAlign_Right)  x = pos.x + boxW - L.w;
+				if (align == ImWidgetsTextAlign_Center) x = pos.x + (boxW - L.w) * 0.5f;
+				GetStyle().TextDirection = L.rtl ? ImWidgetsTextDirection_RTL : ImWidgetsTextDirection_LTR;
+				DrawText(dl, font, size_lp, ImVec2(x, pos.y + L.y + baselineOff), col, L.b, L.e);
+			}
+		}
+		GetStyle().TextDirection = savedDir;
+		return ImVec2(boxW, y);
+	}
+
+	ImVec2 DrawTextBlock(ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, ImU32 col,
+	                     const char* text, const char* text_end, const ImWidgetsTextLayout& layout)
+	{
+		return SlugTextBlock(pDrawList, font, font_size, pos, col, text, text_end, layout, true);
+	}
+
+	ImVec2 CalcTextBlockSize(ImFont* font, float font_size, const char* text, const char* text_end,
+	                         const ImWidgetsTextLayout& layout)
+	{
+		return SlugTextBlock(nullptr, font, font_size, ImVec2(0, 0), 0, text, text_end, layout, false);
+	}
 
 } // namespace ImWidgets

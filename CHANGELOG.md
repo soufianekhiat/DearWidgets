@@ -382,6 +382,12 @@ logical order. New `ImWidgetsStyle::TextDirection` (`Auto` / `LTR` / `RTL`)
 sets the paragraph direction. `CalcTextSize` measures the shaped glyphs, so it
 matches what `DrawText` draws.
 
+New `DrawTextBlock` / `CalcTextBlockSize` lay out multi-line paragraphs:
+UAX #14 line breaking, `
+` paragraphs with their own direction, per-line bidi,
+`ImWidgetsTextLayout` (wrap width, start / end / left / right / center
+alignment, line height).
+
 #### Interaction additions
 
 - `BeginSelection`: Escape cancels a drag (`s.Cancelled`); Shift / Alt at drag
@@ -608,6 +614,8 @@ per effect through a `BG_EFFECT` define so only the requested variant compiles.
   string; it now measures with ImGui. `DrawText` falls back to `AddText` when
   the Slug program failed to build instead of drawing nothing, and
   `CalcShapedTextWidth` no longer applies the DPI scale twice.
+- **`DrawText` without the shader tier drew one ascent too low**: its `pos.y`
+  is the baseline, but the `AddText` fallback treated it as the top.
 - **`PushDragGroup`** delivers each delta exactly once (the release frame used
   to re-apply the last delta to slots after the initiator).
 

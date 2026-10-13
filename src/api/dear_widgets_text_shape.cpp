@@ -283,6 +283,36 @@ static int DwBidi_ResolveLevels(unsigned char* types, const unsigned int* cps, i
     return para;
 }
 
+void DwShaper_TextBreaks(const char* text, int len, unsigned int* out_flags)
+{
+    if (!out_flags) return;
+    memset(out_flags, 0, sizeof(unsigned int) * (size_t)(len + 1));
+    if (!text || len <= 0) return;
+    int breakCount = 0, flagCount = 0;
+    kbts_BreakEntireStringUtf8(KBTS_DIRECTION_DONT_KNOW, KBTS_JAPANESE_LINE_BREAK_STYLE_NORMAL, 0,
+                               text, len, nullptr, 0, &breakCount,
+                               (kbts_break_flags*)out_flags, len + 1, &flagCount);
+}
+
+int DwShaper_ParagraphLevel(const char* text, int len, int direction)
+{
+    if (direction == DwShaperDirection_LTR) return 0;
+    if (direction == DwShaperDirection_RTL) return 1;
+    const char* p = text;
+    const char* e = text + len;
+    while (p < e)
+    {
+        unsigned int cp = 0;
+        int adv = ImTextCharFromUtf8(&cp, p, e);
+        if (adv <= 0) break;
+        unsigned char t = kbts__GetUnicodeBidirectionalClass(cp);
+        if (t == DwBidi_L) return 0;
+        if (t == DwBidi_R || t == DwBidi_AL) return 1;
+        p += adv;
+    }
+    return 0;
+}
+
 int DwShaper_ShapeBidi(DwShaperCtx* ctx, const char* text, int len, int direction,
                        DwShaperEmitFn emit, void* user)
 {

@@ -79,6 +79,21 @@ bool DwShaper_NextGlyph(DwShaperRun* run, DwShaperGlyph* out);
 // shapes each level run with its own direction, then reorders the runs (L2).
 // `emit` receives every glyph once, in final left-to-right visual order.
 // Returns the resolved paragraph level (0 = LTR, 1 = RTL).
+// Text segmentation (UAX #14 line breaks, UAX #29 graphemes / words), one
+// flag word per byte of the UTF-8 input plus one for the end: flags[i] tells
+// what kind of boundary sits *before* byte i. Same bits as kbts_break_flags.
+enum DwShaperBreak
+{
+    DwShaperBreak_Grapheme = 1 << 2,
+    DwShaperBreak_Word     = 1 << 3,
+    DwShaperBreak_LineSoft = 1 << 4, // a line may wrap here
+    DwShaperBreak_LineHard = 1 << 5, // a line must break here (after LF, CR, LS, PS, ...)
+};
+void DwShaper_TextBreaks(const char* text, int len, unsigned int* out_flags /* len + 1 entries */);
+
+// Paragraph level per UAX #9 P2-P3 for `direction` (DwShaperDirection): 0 = LTR, 1 = RTL.
+int  DwShaper_ParagraphLevel(const char* text, int len, int direction);
+
 typedef void (*DwShaperEmitFn)(void* user, const DwShaperGlyph* glyph);
 int  DwShaper_ShapeBidi(DwShaperCtx* ctx, const char* text, int len, int direction,
                         DwShaperEmitFn emit, void* user);

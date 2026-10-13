@@ -2439,6 +2439,27 @@ namespace ImWidgets{
 				ImGui::Dummy( ImVec2( canvas_w, tsz.y + gap ) );
 			}
 			ImWidgets::GetStyle().TextDirection = savedDir;
+
+			// Paragraph layout: wrapping (UAX #14), one direction per paragraph, per-line bidi.
+			ImGui::SeparatorText( "Paragraph layout (DrawTextBlock)" );
+			static float s_blk_wrap = 420.0f, s_blk_lh = 1.4f;
+			static int   s_blk_align = ImWidgetsTextAlign_Start;
+			ImGui::SetNextItemWidth( ImPlatform_LpToPx( 200.0f ) ); ImGui::SliderFloat( "wrap width##SlugBlk", &s_blk_wrap, 80.0f, 900.0f, "%.0f lp" ); ImGui::SameLine();
+			ImGui::SetNextItemWidth( ImPlatform_LpToPx( 120.0f ) ); ImGui::Combo( "align##SlugBlk", &s_blk_align, "Start\0End\0Left\0Right\0Center\0" ); ImGui::SameLine();
+			ImGui::SetNextItemWidth( ImPlatform_LpToPx( 120.0f ) ); ImGui::SliderFloat( "line height##SlugBlk", &s_blk_lh, 1.0f, 2.2f );
+			static const char* kBlockText = "DearWidgets lays out paragraphs like a browser: lines wrap at Unicode break opportunities, and each paragraph keeps its own direction.\n\xd8\xaa\xd8\xaf\xd8\xb9\xd9\x85 \xd8\xa7\xd9\x84\xd9\x85\xd9\x83\xd8\xaa\xd8\xa8\xd8\xa9 \xd8\xa7\xd9\x84\xd9\x86\xd8\xb5\xd9\x88\xd8\xb5 \xd8\xa7\xd9\x84\xd8\xb9\xd8\xb1\xd8\xa8\xd9\x8a\xd8\xa9 \xd9\x85\xd8\xb9 \xd8\xa7\xd8\xaa\xd8\xac\xd8\xa7\xd9\x87 \xd8\xa7\xd9\x84\xd9\x83\xd8\xaa\xd8\xa7\xd8\xa8\xd8\xa9 \xd9\x85\xd9\x86 \xd8\xa7\xd9\x84\xd9\x8a\xd9\x85\xd9\x8a\xd9\x86 \xd8\xa5\xd9\x84\xd9\x89 \xd8\xa7\xd9\x84\xd9\x8a\xd8\xb3\xd8\xa7\xd8\xb1\xd8\x8c \xd9\x88\xd8\xa7\xd9\x84\xd8\xa3\xd8\xb1\xd9\x82\xd8\xa7\xd9\x85 \xd9\x85\xd8\xab\xd9\x84 2026 \xd9\x88 \xd9\xa1\xd9\xa2\xd9\xa3\xd8\x8c \xd9\x88\xd9\x83\xd9\x84\xd9\x85\xd8\xa7\xd8\xaa \xd8\xa5\xd9\x86\xd8\xac\xd9\x84\xd9\x8a\xd8\xb2\xd9\x8a\xd8\xa9 \xd9\x85\xd8\xab\xd9\x84 ImGui \xd8\xaf\xd8\xa7\xd8\xae\xd9\x84 \xd8\xa7\xd9\x84\xd8\xac\xd9\x85\xd9\x84\xd8\xa9.\nMixed line: the word \xd9\x85\xd8\xb1\xd8\xad\xd8\xa8\xd8\xa7 sits inside an English sentence, 42 times.";
+			if ( bf )
+			{
+				ImWidgetsTextLayout lay;
+				lay.WrapWidth = s_blk_wrap; lay.Align = s_blk_align; lay.LineHeight = s_blk_lh;
+				ImWidgets::GetStyle().TextDirection = s_bidi_dir;
+				ImVec2 p0 = ImGui::GetCursorScreenPos();
+				ImVec2 bsz = ImWidgets::CalcTextBlockSize( bf, 22.0f, kBlockText, nullptr, lay );
+				pDrawList->AddRect( p0, p0 + bsz, IM_COL32( 120, 120, 120, 120 ) );
+				ImWidgets::DrawTextBlock( pDrawList, bf, 22.0f, p0, ImGui::GetColorU32( ImGuiCol_Text ), kBlockText, nullptr, lay );
+				ImWidgets::GetStyle().TextDirection = savedDir;
+				ImGui::Dummy( bsz );
+			}
 			ImGui::TreePop();
 		}
 

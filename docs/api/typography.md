@@ -83,6 +83,30 @@ are treated as neutrals.
 If the Slug shader is unavailable the text is drawn with `ImDrawList::AddText`
 (unshaped).
 
+### `DrawTextBlock` / `CalcTextBlockSize`
+```cpp
+struct ImWidgetsTextLayout {
+    float              WrapWidth  = 0.0f;   // lp; <= 0: no wrapping
+    ImWidgetsTextAlign Align      = Start;  // Start / End / Left / Right / Center
+    float              LineHeight = 1.25f;  // multiple of the font size
+};
+ImVec2 DrawTextBlock    ( ImDrawList*, ImFont*, float font_size, ImVec2 pos, ImU32 col,
+                          char const* text, char const* text_end = nullptr,
+                          ImWidgetsTextLayout const& layout = ImWidgetsTextLayout() );
+ImVec2 CalcTextBlockSize( ImFont*, float font_size, char const* text, char const* text_end = nullptr,
+                          ImWidgetsTextLayout const& layout = ImWidgetsTextLayout() );
+```
+A paragraph block, laid out as a browser does: `
+` separates paragraphs;
+lines wrap at Unicode line-break opportunities (UAX #14, via kb_text_shape:
+after spaces, after hyphens, between CJK ideographs, never inside a word);
+trailing spaces hang. Every paragraph resolves its own direction
+(`GetStyle().TextDirection`, `Auto` = first strong character), and each line is
+shaped and bidi-reordered on its own. `Start` / `End` alignment follow the
+paragraph direction, like CSS `text-align: start`. `pos` is the top-left of the
+block; the line box is `LineHeight * font_size` with the glyphs centred in it
+(half-leading). Returns the block size in pixels.
+
 ### `DrawTextOnPath`
 ```cpp
 void DrawTextOnPath( ImDrawList* draw, ImFont* font, float font_size, char const* text,
