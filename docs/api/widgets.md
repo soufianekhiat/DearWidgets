@@ -30,8 +30,8 @@ bool Slider2DScalar( char const* pLabel, ImGuiDataType data_type,
                      void* pValueX, void* pValueY,
                      void* p_minX, void* p_maxX, void* p_minY, void* p_maxY );
 ```
-2D pad. Click-drag to move the cursor; double-click opens a typed-input
-precision popup. Style vars: `ImWidgetsStyleVar_Slider2D_*`.
+2D pad. Click-drag to move the cursor; Ctrl+click an axis label opens a
+typed-input precision popup. Style vars: `ImWidgetsStyleVar_Slider2D_*`.
 
 > **Fixed in 2.0.0.** `Slider2DInt`'s `pValueY` used to be typed `void*`.
 
@@ -1189,7 +1189,7 @@ bool PrecisionInt  ( char const* label, int* v, int step = 1,
                      int v_min = INT_MIN, int v_max = INT_MAX );
 ```
 The typed-input popups that Slider2D, Slider2DRange and friends open on
-double-click. `BeginPrecisionPopup` must be balanced with `EndPrecisionPopup`
+Ctrl+click (double-click is reserved for reset to default). `BeginPrecisionPopup` must be balanced with `EndPrecisionPopup`
 only when it returns `true`. Width:
 `ImWidgetsStyleVar_PrecisionPopup_InputWidth`.
 

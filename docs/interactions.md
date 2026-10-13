@@ -8,8 +8,12 @@ are documented inline with each function in
 
 Shared conventions that are **not** repeated per widget:
 
-- Every widget with a numeric value opens a typed-input precision popup on
-  double-click (`BeginPrecisionPopup` / `PrecisionFloat` / `PrecisionInt`).
+- **Ctrl+click** opens the typed-input precision popup on widgets that have one
+  (`BeginPrecisionPopup` / `PrecisionFloat` / `PrecisionInt`), as in ImGui's
+  own sliders.
+- **Double-click resets to the default** on widgets that have one (a
+  `v_default` parameter, an identity, or a natural neutral value). It never
+  opens text entry.
 - Canvas-style widgets pan with a left or middle drag and zoom to the cursor
   with the wheel.
 - `KeyboardNudgeXY` / `KeyboardNudge1D` provide the arrow-key delta (Shift =
@@ -26,7 +30,7 @@ Shared conventions that are **not** repeated per widget:
 | **Arrow key nudging** | L/R | L/R/U/D | L/R/U/D | L/R/U/D | - | - |
 | **SetKeyOwner (arrows)** | L/R | L/R/U/D | L/R/U/D | L/R/U/D | - | - |
 | **Shift = 10x speed** | Yes | Yes | Yes | Yes | - | - |
-| **Double-click reset** | - | Reset Y to midpoint | Reset value to default | Reset value to position (identity) | Reset sat/value | - |
+| **Double-click reset** | - | Reset Y to midpoint | Reset value to default | Reset value to position (identity) | Reset sat/value | Reset point offset to (0,0) |
 | **Delete key** | Remove stop | Remove key | Remove key | Remove key | - | Reset point offset to (0,0) |
 | **Right-click context menu** | - | - | - | Reset to Identity / Remove Key | Reset Color / Copy Hex | - |
 | **Tooltip on hover** | Stop index, position, RGBA | Key index, (x, y) | Key index, position, value | Key index, input, output | H/S/V or H/C/L + RGB + A | Point [hue,sat], pinned, shift values |

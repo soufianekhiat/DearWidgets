@@ -8980,8 +8980,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		// which can move hover bookkeeping off the item.
 		if ( ( hovered || ImGui::IsItemActive() ) && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
 		{
-			*v = v_default;
-			changed = true;
+			// Only a reset that moves the value is an edit.
+			if ( *v != v_default )
+			{
+				*v = v_default;
+				changed = true;
+			}
 		}
 
 		// Typing an exact value. NoInput above disables ImGui's own ctrl+click
@@ -12937,9 +12941,9 @@ namespace ImWidgets{
 			ImVec2( frame_bb_dragY.Min.x, frame_bb_drag.Max.y ) );
 		const ImVec2 mp = g.IO.MousePos;
 		const bool labelHovered = xLabelRect.Contains( mp ) || yLabelRect.Contains( mp );
-		const bool labelTriggered = labelHovered && (
-			( g.IO.KeyCtrl && ImGui::IsMouseClicked( 0 ) )
-			|| ImGui::IsMouseDoubleClicked( 0 ) );
+		// Ctrl+click opens typed input (ImGui's convention); double-click is
+		// reserved library-wide for "reset to default".
+		const bool labelTriggered = labelHovered && g.IO.KeyCtrl && ImGui::IsMouseClicked( 0 );
 
 		bool clicked = hovered && ImGui::IsMouseClicked( 0, ImGuiInputFlags_None, id );
 		bool make_active = ( clicked || g.NavActivateId == id );
@@ -13264,9 +13268,9 @@ namespace ImWidgets{
 			ImVec2( frame_bb_dragY.Min.x, frame_bb_drag.Max.y ) );
 		const ImVec2 mp = g.IO.MousePos;
 		const bool labelHovered = xLabelRect.Contains( mp ) || yLabelRect.Contains( mp );
-		const bool labelTriggered = labelHovered && (
-			( g.IO.KeyCtrl && ImGui::IsMouseClicked( 0 ) )
-			|| ImGui::IsMouseDoubleClicked( 0 ) );
+		// Ctrl+click opens typed input (ImGui's convention); double-click is
+		// reserved library-wide for "reset to default".
+		const bool labelTriggered = labelHovered && g.IO.KeyCtrl && ImGui::IsMouseClicked( 0 );
 		char rangePopId[ 32 ];
 		ImFormatString( rangePopId, sizeof( rangePopId ), "##s2drngprec_%08X", (unsigned)id );
 		if ( labelTriggered )
@@ -35622,9 +35626,9 @@ namespace ImWidgets
     {
         ImGuiContext& g = *GImGui;
         bool labelHovered = labelRect.Contains( g.IO.MousePos );
-        bool trigger = labelHovered && (
-            ( g.IO.KeyCtrl && ImGui::IsMouseClicked( 0 ) )
-            || ImGui::IsMouseDoubleClicked( 0 ) );
+        // Ctrl+click opens typed input (ImGui's convention); double-click is
+        // reserved library-wide for "reset to default".
+        bool trigger = labelHovered && g.IO.KeyCtrl && ImGui::IsMouseClicked( 0 );
         char popId[ 32 ];
         ImFormatString( popId, sizeof( popId ), "##slprec_%08X", (unsigned)id );
         if ( trigger )
@@ -37249,10 +37253,10 @@ namespace ImWidgets
             nxt = ImClamp(nxt, 0, stop_count - 1);
             if (nxt != cur) { *v = stops[nxt]; changed = true; }
         }
-        // Precision popup on double-click: snap to nearest stop after entry.
+        // Precision popup on Ctrl+click: snap to nearest stop after entry.
         char nd_prec_id[32];
         ImFormatString(nd_prec_id, sizeof(nd_prec_id), "##nd_prec%08X", ImGui::GetID(label));
-        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
+        if (ImGui::IsItemHovered() && ImGui::GetIO().KeyCtrl && ImGui::IsMouseClicked(0))
             ImGui::OpenPopup(nd_prec_id);
         if (BeginPrecisionPopup(nd_prec_id, ImGui::GetIO().MousePos))
         {
@@ -37370,11 +37374,17 @@ namespace ImWidgets
         dl->AddText(ImVec2(center.x - ts.x * 0.5f, pos.y + size.y - readout + LpToPx(1.0f)),
                     IM_COL32(220, 220, 220, 255), buf);
 
-        // Precision popup: type the exact angle in degrees.
+        // Ctrl+click: type the exact angle in degrees. Double-click: reset to
+        // 0 degrees (clamped into the dial's range).
         char prec_id[40];
         ImFormatString(prec_id, sizeof(prec_id), "##ad_prec%08X", ImGui::GetID(label));
-        if (hovered && ImGui::IsMouseDoubleClicked(0))
+        if (hovered && ImGui::GetIO().KeyCtrl && ImGui::IsMouseClicked(0))
             ImGui::OpenPopup(prec_id);
+        if (hovered && ImGui::IsMouseDoubleClicked(0))
+        {
+            float const def = ImClamp(0.0f, v_min_deg, v_max_deg);
+            if (*v_deg != def) { *v_deg = def; changed = true; }
+        }
         if (BeginPrecisionPopup(prec_id, ImGui::GetIO().MousePos))
         {
             float tmp = *v_deg;
