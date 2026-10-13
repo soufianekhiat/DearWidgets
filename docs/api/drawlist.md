@@ -484,10 +484,12 @@ made only of unsupported children such as `<text>` is ignored) referenced by
 `clip-path` on shapes and groups (`objectBoundingBox` uses the group's box);
 `<use>` (`href` / `xlink:href`, `x`, `y`, any element with an id, cycles
 ignored) and `<symbol>` (`viewBox`, `preserveAspectRatio`, sized by the use's
-`width` / `height`); `<style>` sheets with type, `.class`, `#id` and compound
+`width` / `height`, content clipped to that viewport unless `overflow` is
+`visible`); `<style>` sheets with type, `.class`, `#id` and compound
 selectors and selector lists, applied by specificity between presentation
-attributes and `style=` (rules with combinators or pseudo-classes and at-rules
-are ignored); `<text>` with `x`, `y`, `font-size`, `text-anchor`,
+attributes and `style=`, also for `clip-path` and `stop-color` /
+`stop-opacity` (rules with combinators or pseudo-classes and at-rules are
+ignored); `<text>` with `x`, `y`, `font-size`, `text-anchor`,
 `direction` and fill paints, rendered as shaped, bidi-ordered glyph outlines
 with `font` (so transforms and gradients apply to text too; nested `<tspan>`
 content is flattened). Not supported: images, masks, filters, patterns,

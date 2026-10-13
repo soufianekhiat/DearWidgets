@@ -1122,6 +1122,25 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
                 float h = DW_SvgAttrF(tag, "height", DW_SvgAttrF(rt, "height", -1.0f, vbh), vbh);
                 if (w < 0.0f) w = vbw;
                 if (h < 0.0f) h = vbh;
+                // The symbol's viewport clips its content (overflow: hidden by
+                // default): a generated clip rect in the use's space.
+                char ovBuf[16] = {};
+                const char* ov = DW_SvgCascade(rt, &css, "overflow", ovBuf, (int)sizeof(ovBuf));
+                if (!curClip && !(ov && (strstr(ov, "visible") || strstr(ov, "auto"))) && clipCount < DW_SvgMaxClipRefs && w > 0.0f && h > 0.0f)
+                {
+                    DW_SvgClipDef* cd = IM_NEW(DW_SvgClipDef)();
+                    memset(cd->id, 0, sizeof(cd->id));
+                    ImFormatString(cd->id, sizeof(cd->id), "\x01symbol%d", doc->clipDefs.Size); // not a valid XML id: never clashes
+                    cd->path.Rect(ImVec2(0, 0), ImVec2(w, h));
+                    cd->xf = ImWidgetsTransform2D();
+                    cd->bboxUnits = false; cd->rule = ImWidgetsFillRule_NonZero;
+                    cd->children = 1; cd->unsupported = false; cd->defsDepthAtStart = 0;
+                    doc->clipDefs.push_back(cd);
+                    ImStrncpy(clips[clipCount].id, cd->id, sizeof(clips[clipCount].id));
+                    clips[clipCount].xf = xf;
+                    clips[clipCount].serial = ++clipSerial;
+                    ++clipCount;
+                }
                 float v[4]; int n = 0;
                 if (const char* vb = rt.Get("viewBox")) { const char* q = vb; while (n < 4 && DW_SvgNum(q, v[n])) ++n; }
                 if (n == 4 && v[2] > 0.0f && v[3] > 0.0f)
