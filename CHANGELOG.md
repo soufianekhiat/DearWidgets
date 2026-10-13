@@ -417,7 +417,8 @@ transform and gradient fills.
 
 `PushPathClip` / `PopPathClip`: exact, anti-aliased clipping of every CPU fill
 (paths, strokes, vector text, SVG) by arbitrary paths, nested up to 4 deep.
-SVG documents support `<clipPath>` / `clip-path`.
+SVG documents support `<clipPath>` / `clip-path`, `<use>` / `<symbol>` and
+`<style>` sheets (simple selectors).
 
 #### Bidirectional text
 

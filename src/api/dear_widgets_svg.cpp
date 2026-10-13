@@ -52,6 +52,7 @@ struct DW_SvgTag
     ImVector<DW_SvgAttr> attrs;
     bool                 closing = false;     // </name>
     bool                 selfClosing = false; // <name ... />
+    const char*          start = nullptr;     // the tag's '<' in the source
 
     const char* Name() const { return pool.Data + nameOff; }
     int AddStr(const char* b, const char* e)
@@ -104,6 +105,7 @@ static bool DW_SvgNextTag(const char*& s, DW_SvgTag& tag)
         if (s[1] == '?' || s[1] == '!') { const char* e = strchr(s, '>'); s = e ? e + 1 : s + strlen(s); continue; }
         break;
     }
+    tag.start = s;
     ++s;
     tag.pool.resize(0);
     tag.attrs.resize(0);
@@ -517,26 +519,131 @@ static void DW_SvgApplyProp(DW_SvgStyle& st, const char* name, const char* v)
     else if (!strcmp(name, "visibility")) st.visible = !(strstr(v, "hidden") || strstr(v, "collapse"));
 }
 
-// Inheritable presentation attributes of an element (attributes first, style= wins).
-static void DW_SvgApplyStyle(DW_SvgStyle& st, const DW_SvgTag& tag)
+// ---- <style> sheets ----------------------------------------------------------
+// Simple selectors only: type, .class, #id, their compounds (rect.a.b) and
+// comma lists, with CSS specificity and source order. Rules with combinators,
+// pseudo-classes or attribute selectors are ignored; at-rules are skipped.
+struct DW_SvgCssRule
 {
-    static const char* kProps[] = { "fill", "stroke", "fill-opacity", "stroke-opacity", "opacity", "stroke-width",
-        "stroke-miterlimit", "stroke-dashoffset", "fill-rule", "stroke-linecap", "stroke-linejoin", "stroke-dasharray",
-        "display", "visibility", "font-size", "text-anchor", "direction", "clip-rule" };
-    st.ownOpacity = 1.0f;
-    for (const char* k : kProps) DW_SvgApplyProp(st, k, tag.Get(k));
-    if (const char* css = tag.Get("style"))
+    char tag[32];        // "" or "*" = any
+    char id[64];
+    char classes[4][48];
+    int  classCount;
+    int  specificity;    // id 100, class 10, type 1
+    int  declOff;        // into DW_SvgCss::decls (NUL-terminated block)
+};
+struct DW_SvgCss
+{
+    ImVector<DW_SvgCssRule> rules; // in source order
+    ImVector<char>          decls;
+};
+
+static void DW_SvgParseCss(const char* b, const char* e, DW_SvgCss& css)
+{
+    // Copy without comments and CDATA markers.
+    ImVector<char> src;
+    for (const char* q = b; q < e; )
+    {
+        if (q + 1 < e && q[0] == '/' && q[1] == '*') { const char* c = strstr(q + 2, "*/"); q = (c && c < e) ? c + 2 : e; continue; }
+        if (e - q >= 9 && strncmp(q, "<![CDATA[", 9) == 0) { q += 9; continue; }
+        if (e - q >= 3 && strncmp(q, "]]>", 3) == 0) { q += 3; continue; }
+        src.push_back(*q++);
+    }
+    src.push_back(0);
+    const char* p = src.Data;
+    while (*p)
+    {
+        while (*p && isspace((unsigned char)*p)) ++p;
+        if (!*p) break;
+        if (*p == '@')
+        {
+            // at-rule: up to ';' or a balanced block
+            while (*p && *p != ';' && *p != '{') ++p;
+            if (*p == '{') { int depth = 0; do { if (*p == '{') ++depth; else if (*p == '}') --depth; ++p; } while (*p && depth > 0); }
+            else if (*p) ++p;
+            continue;
+        }
+        const char* selB = p;
+        while (*p && *p != '{') ++p;
+        if (!*p) break;
+        const char* selE = p++;
+        const char* blkB = p;
+        while (*p && *p != '}') ++p;
+        const int declOff = css.decls.Size;
+        for (const char* q = blkB; q < p; ++q) css.decls.push_back(*q);
+        css.decls.push_back(0);
+        if (*p) ++p;
+        // each selector of the list
+        for (const char* a = selB; a < selE; )
+        {
+            const char* c = a; while (c < selE && *c != ',') ++c;
+            const char* x = a; const char* y = c;
+            while (x < y && isspace((unsigned char)*x)) ++x;
+            while (y > x && isspace((unsigned char)y[-1])) --y;
+            a = c + 1;
+            if (x == y) continue;
+            bool ok = true;
+            for (const char* q = x; q < y; ++q) if (isspace((unsigned char)*q) || strchr(">+~:[", *q)) { ok = false; break; }
+            if (!ok) continue;
+            DW_SvgCssRule r; memset(&r, 0, sizeof(r));
+            r.declOff = declOff;
+            const char* q = x;
+            int n = 0;
+            while (q < y && *q != '.' && *q != '#') { if (n < 31) r.tag[n++] = *q; ++q; }
+            if (n && strcmp(r.tag, "*")) r.specificity += 1;
+            while (q < y && ok)
+            {
+                const char kind = *q++;
+                const char* nb = q; while (q < y && *q != '.' && *q != '#') ++q;
+                const int len = (int)(q - nb);
+                if (len <= 0) { ok = false; break; }
+                if (kind == '#') { ImStrncpy(r.id, nb, (size_t)ImMin(len + 1, 64)); r.specificity += 100; }
+                else if (r.classCount < 4) { ImStrncpy(r.classes[r.classCount++], nb, (size_t)ImMin(len + 1, 48)); r.specificity += 10; }
+                else ok = false;
+            }
+            if (ok) css.rules.push_back(r);
+        }
+    }
+}
+
+static bool DW_SvgCssMatch(const DW_SvgCssRule& r, const DW_SvgTag& tag)
+{
+    if (r.tag[0] && strcmp(r.tag, "*") && strcmp(r.tag, tag.Name())) return false;
+    if (r.id[0]) { const char* id = tag.Get("id"); if (!id || strcmp(id, r.id)) return false; }
+    if (r.classCount)
+    {
+        const char* cls = tag.Get("class");
+        if (!cls) return false;
+        for (int k = 0; k < r.classCount; ++k)
+        {
+            const size_t l = strlen(r.classes[k]);
+            bool found = false;
+            for (const char* q = cls; *q && !found; )
+            {
+                while (*q && isspace((unsigned char)*q)) ++q;
+                const char* nb = q; while (*q && !isspace((unsigned char)*q)) ++q;
+                found = ((size_t)(q - nb) == l && strncmp(nb, r.classes[k], l) == 0);
+            }
+            if (!found) return false;
+        }
+    }
+    return true;
+}
+
+// Applies a declaration block ("fill:red; stroke:blue").
+static void DW_SvgApplyDecls(DW_SvgStyle& st, const char* css)
+{
     {
         const char* p = css;
         while (*p)
         {
-            while (*p == ' ' || *p == ';' || *p == '\t' || *p == '\n') ++p;
+            while (*p == ';' || isspace((unsigned char)*p)) ++p;
             const char* nb = p;
             while (*p && *p != ':' && *p != ';') ++p;
             if (*p != ':') { while (*p && *p != ';') ++p; continue; } // malformed declaration: skip it
             const char* ne = p; while (ne > nb && isspace((unsigned char)ne[-1])) --ne;
             ++p;
-            while (*p == ' ') ++p;
+            while (isspace((unsigned char)*p)) ++p;
             const char* vb = p;
             while (*p && *p != ';') ++p;
             const char* ve = p; while (ve > vb && isspace((unsigned char)ve[-1])) --ve;
@@ -549,6 +656,32 @@ static void DW_SvgApplyStyle(DW_SvgStyle& st, const DW_SvgTag& tag)
             DW_SvgApplyProp(st, name, val);
         }
     }
+}
+
+// Inheritable presentation properties of an element, in CSS cascade order:
+// presentation attributes, then matching <style> rules (by specificity, then
+// source order), then the style= attribute.
+static void DW_SvgApplyStyle(DW_SvgStyle& st, const DW_SvgTag& tag, const DW_SvgCss* css = nullptr)
+{
+    static const char* kProps[] = { "fill", "stroke", "fill-opacity", "stroke-opacity", "opacity", "stroke-width",
+        "stroke-miterlimit", "stroke-dashoffset", "fill-rule", "stroke-linecap", "stroke-linejoin", "stroke-dasharray",
+        "display", "visibility", "font-size", "text-anchor", "direction", "clip-rule" };
+    st.ownOpacity = 1.0f;
+    for (const char* k : kProps) DW_SvgApplyProp(st, k, tag.Get(k));
+    if (css && css->rules.Size)
+    {
+        int match[32]; int n = 0;
+        for (int i = 0; i < css->rules.Size && n < 32; ++i)
+            if (DW_SvgCssMatch(css->rules[i], tag))
+            {
+                // insertion by specificity, stable for source order
+                int k = n++;
+                while (k > 0 && css->rules[match[k - 1]].specificity > css->rules[i].specificity) { match[k] = match[k - 1]; --k; }
+                match[k] = i;
+            }
+        for (int k = 0; k < n; ++k) DW_SvgApplyDecls(st, css->decls.Data + css->rules[match[k]].declOff);
+    }
+    if (const char* decl = tag.Get("style")) DW_SvgApplyDecls(st, decl);
 }
 
 static float DW_SvgAttrF(const DW_SvgTag& t, const char* n, float def, float pct_ref = 0.0f) { return DW_SvgLength(t.Get(n), def, pct_ref); }
@@ -607,6 +740,57 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
     root->style.stroke.kind = DW_SvgPaint_None;
     stack.push_back(root);
 
+    // Pre-pass: source range of every element with an id (for <use>) and
+    // the <style> sheets (rules apply to elements before them too).
+    struct IdRange { const char* b; const char* content; const char* e; };
+    ImVector<IdRange> idRanges;
+    ImGuiStorage      idMap;   // ImHashStr(id) -> index + 1 (first definition wins)
+    DW_SvgCss         css;
+    {
+        struct Open { char name[32]; int idx; };
+        ImVector<Open> open;
+        const char* q = text;
+        DW_SvgTag t;
+        while (DW_SvgNextTag(q, t))
+        {
+            if (t.closing)
+            {
+                // pop to the matching element (tolerates unclosed children)
+                int k = open.Size - 1;
+                while (k >= 0 && strcmp(open[k].name, t.Name())) --k;
+                if (k < 0) continue;
+                while (open.Size > k)
+                {
+                    if (open.back().idx >= 0) idRanges[open.back().idx].e = q;
+                    open.pop_back();
+                }
+                continue;
+            }
+            int idx = -1;
+            if (const char* id = t.Get("id"))
+                if (*id && idMap.GetInt(ImHashStr(id), 0) == 0)
+                {
+                    IdRange r = { t.start, q, q };
+                    idRanges.push_back(r);
+                    idx = idRanges.Size - 1;
+                    idMap.SetInt(ImHashStr(id), idx + 1);
+                }
+            if (t.selfClosing) continue;
+            Open o; ImStrncpy(o.name, t.Name(), sizeof(o.name)); o.idx = idx;
+            open.push_back(o);
+            if (!strcmp(t.Name(), "style"))
+            {
+                // raw CSS up to </style> (the tokenizer would skip its CDATA)
+                const char* e = strstr(q, "</");
+                while (e && strncmp(e, "</style", 7) && strncmp(e, "</svg:style", 11)) e = strstr(e + 2, "</");
+                DW_SvgParseCss(q, e ? e : q + strlen(q), css);
+                q = e ? e : q + strlen(q);
+            }
+        }
+        // unclosed elements end with the document
+        for (int k = 0; k < open.Size; ++k) if (open[k].idx >= 0) idRanges[open[k].idx].e = q;
+    }
+
     DW_SvgGradient* curGrad = nullptr;
     DW_SvgClipDef*  curClip = nullptr;   // inside <clipPath>: shapes feed the clip, not the document
     int clipSerial = 0;
@@ -614,9 +798,37 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
     const char* s = text;
     DW_SvgTag tag;
     bool sawSvg = false;
-    while (DW_SvgNextTag(s, tag))
+    // <use> expansion: the referenced element's source is parsed in place
+    // (no recursion); at its end the parser resumes after the <use>.
+    struct UseSrc { const char* resume; const char* end; int stackSize; int defsDepth; int idIdx; DW_SvgGradient* grad; DW_SvgClipDef* clip; };
+    ImVector<UseSrc> srcs;
+    for (;;)
     {
+        if (srcs.Size && s >= srcs.back().end)
+        {
+            const UseSrc u = srcs.back();
+            srcs.pop_back();
+            while (stack.Size > u.stackSize) { IM_DELETE(stack.back()); stack.pop_back(); }
+            s = u.resume; defsDepth = u.defsDepth; curGrad = u.grad; curClip = u.clip;
+            continue;
+        }
+        if (!DW_SvgNextTag(s, tag))
+        {
+            if (srcs.Size) { s = srcs.back().end; continue; }
+            break;
+        }
         const char* name = tag.Name();
+        if (!strcmp(name, "style"))
+        {
+            // parsed in the pre-pass: skip the sheet's text
+            if (!tag.selfClosing)
+            {
+                const char* e = strstr(s, "</");
+                while (e && strncmp(e, "</style", 7) && strncmp(e, "</svg:style", 11)) e = strstr(e + 2, "</");
+                if (e) s = e;
+            }
+            continue;
+        }
         if (tag.closing)
         {
             if (!strcmp(name, "linearGradient") || !strcmp(name, "radialGradient")) { curGrad = nullptr; continue; }
@@ -691,10 +903,10 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
                 const char* so = tag.Get("stop-opacity");
                 // style="stop-color:..;stop-opacity:.."
                 char scBuf[64] = {}, soBuf[32] = {};
-                if (const char* css = tag.Get("style"))
+                if (const char* decl = tag.Get("style"))
                 {
-                    if (const char* p = strstr(css, "stop-color")) { p = strchr(p, ':'); if (p) { ++p; int n = 0; while (p[n] && p[n] != ';' && n < 63) { scBuf[n] = p[n]; ++n; } sc = scBuf; } }
-                    if (const char* p = strstr(css, "stop-opacity")) { p = strchr(p, ':'); if (p) { ++p; int n = 0; while (p[n] && p[n] != ';' && n < 31) { soBuf[n] = p[n]; ++n; } so = soBuf; } }
+                    if (const char* p = strstr(decl, "stop-color")) { p = strchr(p, ':'); if (p) { ++p; int n = 0; while (p[n] && p[n] != ';' && n < 63) { scBuf[n] = p[n]; ++n; } sc = scBuf; } }
+                    if (const char* p = strstr(decl, "stop-opacity")) { p = strchr(p, ':'); if (p) { ++p; int n = 0; while (p[n] && p[n] != ';' && n < 31) { soBuf[n] = p[n]; ++n; } so = soBuf; } }
                 }
                 if (sc) DW_SvgParseColor(sc, col);
                 if (so) { float f; const char* q = so; if (DW_SvgNum(q, f)) op = ImSaturate(*q == '%' ? f * 0.01f : f); }
@@ -727,7 +939,7 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
                 curClip = cd;
                 Frame* f = IM_NEW(Frame)();
                 f->style = stack.back()->style;
-                DW_SvgApplyStyle(f->style, tag);
+                DW_SvgApplyStyle(f->style, tag, &css);
                 f->xf = ImWidgetsTransform2D(); // children in clip space; the clipPath transform is applied at draw time
                 f->isClipRoot = true;
                 stack.push_back(f);
@@ -739,11 +951,11 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
         // must not show as plain shapes).
         if (!strcmp(name, "defs") || !strcmp(name, "symbol") || !strcmp(name, "mask")
             || !strcmp(name, "pattern") || !strcmp(name, "marker")) { if (!tag.selfClosing) ++defsDepth; continue; }
-        // Inside a clipPath: <use> and <text> are not supported (<text> falls
-        // through to its parser, which consumes the content and drops it);
-        // nested defs / masks do not feed the clip.
-        if (curClip && (!strcmp(name, "use") || !strcmp(name, "text"))) curClip->unsupported = true;
-        if (curClip && (defsDepth > curClip->defsDepthAtStart || !strcmp(name, "use")))
+        // Inside a clipPath: <text> is not supported (it falls through to its
+        // parser, which consumes the content and drops it); nested defs /
+        // masks do not feed the clip.
+        if (curClip && !strcmp(name, "text")) curClip->unsupported = true;
+        if (curClip && defsDepth > curClip->defsDepthAtStart)
         {
             if ((!strcmp(name, "g") || !strcmp(name, "svg") || !strcmp(name, "a") || !strcmp(name, "switch")) && !tag.selfClosing)
             {
@@ -765,7 +977,7 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
         // Inherited state for this element.
         Frame* parent = stack.back();
         DW_SvgStyle st = parent->style;
-        DW_SvgApplyStyle(st, tag);
+        DW_SvgApplyStyle(st, tag, &css);
         st.opacity = parent->style.opacity * st.ownOpacity;
         ImWidgetsTransform2D xf = parent->xf * DW_SvgParseTransform(tag.Get("transform"));
         // clip-path references: inherited from the enclosing groups, plus this
@@ -812,6 +1024,59 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
         if (!strcmp(name, "g") || !strcmp(name, "a") || !strcmp(name, "switch"))
         {
             if (!tag.selfClosing) pushFrame();
+            continue;
+        }
+        // <use href="#id">: the referenced element rendered as a child of the
+        // <use>, translated by x / y; a <symbol> is a viewport (viewBox,
+        // preserveAspectRatio) sized by the use's width / height.
+        if (!strcmp(name, "use"))
+        {
+            const char* href = tag.Get("href"); if (!href) href = tag.Get("xlink:href");
+            if (!href || href[0] != '#' || !st.display) continue;
+            const int idx = idMap.GetInt(ImHashStr(href + 1), 0) - 1;
+            if (idx < 0 || srcs.Size >= 16) continue;
+            bool cycle = false;
+            for (int k = 0; k < srcs.Size; ++k) if (srcs[k].idIdx == idx) cycle = true;
+            if (cycle) continue;
+            const IdRange& r = idRanges[idx];
+            const float vbw = doc->viewBox.GetWidth(), vbh = doc->viewBox.GetHeight();
+            xf = xf * ImWidgetsTransform2D(1, 0, 0, 1, DW_SvgAttrF(tag, "x", 0, vbw), DW_SvgAttrF(tag, "y", 0, vbh));
+            const char* b = r.b;
+            DW_SvgTag rt; const char* rq = r.b;
+            if (!DW_SvgNextTag(rq, rt) || rt.start != r.b) continue;
+            if (!strcmp(rt.Name(), "symbol"))
+            {
+                b = r.content;
+                // the symbol's own presentation attributes / rules
+                DW_SvgStyle s2 = st; DW_SvgApplyStyle(s2, rt, &css);
+                s2.opacity = st.opacity * s2.ownOpacity; st = s2;
+                float w = DW_SvgAttrF(tag, "width", DW_SvgAttrF(rt, "width", -1.0f, vbw), vbw);
+                float h = DW_SvgAttrF(tag, "height", DW_SvgAttrF(rt, "height", -1.0f, vbh), vbh);
+                if (w < 0.0f) w = vbw;
+                if (h < 0.0f) h = vbh;
+                float v[4]; int n = 0;
+                if (const char* vb = rt.Get("viewBox")) { const char* q = vb; while (n < 4 && DW_SvgNum(q, v[n])) ++n; }
+                if (n == 4 && v[2] > 0.0f && v[3] > 0.0f)
+                {
+                    float sx = w / v[2], sy = h / v[3];
+                    const char* par = rt.Get("preserveAspectRatio");
+                    float ax = 0.5f, ay = 0.5f;
+                    if (!(par && strstr(par, "none")))
+                    {
+                        const float u = (par && strstr(par, "slice")) ? ImMax(sx, sy) : ImMin(sx, sy);
+                        sx = sy = u;
+                        if (par && strstr(par, "xMin")) ax = 0.0f; else if (par && strstr(par, "xMax")) ax = 1.0f;
+                        if (par && strstr(par, "YMin")) ay = 0.0f; else if (par && strstr(par, "YMax")) ay = 1.0f;
+                    }
+                    xf = xf * ImWidgetsTransform2D(sx, 0, 0, sy, ax * (w - v[2] * sx) - v[0] * sx, ay * (h - v[3] * sy) - v[1] * sy);
+                }
+            }
+            if (b >= r.e) continue;
+            UseSrc u = { s, r.e, stack.Size, defsDepth, idx, curGrad, curClip };
+            pushFrame(); // the use's style, transform and clips for the content
+            srcs.push_back(u);
+            defsDepth = curClip ? curClip->defsDepthAtStart : 0; // a referenced element in <defs> renders
+            s = b;
             continue;
         }
 

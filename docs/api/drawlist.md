@@ -479,14 +479,19 @@ attributes and `style="..."` for `fill`, `stroke`, `fill-rule`, `opacity`,
 `display`, `visibility`, inherited through groups; transform lists; colours as
 hex, `rgb()` / `rgba()`, CSS named colours, `none`, `transparent`,
 `currentColor`; `<clipPath>` (shapes and groups, `clip-rule`, `clipPathUnits`,
-`transform`; several children clip to their union; a clip made only of
-unsupported children such as `<use>` is ignored) referenced by `clip-path` on
-shapes and groups (`objectBoundingBox` uses the group's box); `<text>` with `x`, `y`, `font-size`, `text-anchor`,
+`transform`, `<use>` children; several children clip to their union; a clip
+made only of unsupported children such as `<text>` is ignored) referenced by
+`clip-path` on shapes and groups (`objectBoundingBox` uses the group's box);
+`<use>` (`href` / `xlink:href`, `x`, `y`, any element with an id, cycles
+ignored) and `<symbol>` (`viewBox`, `preserveAspectRatio`, sized by the use's
+`width` / `height`); `<style>` sheets with type, `.class`, `#id` and compound
+selectors and selector lists, applied by specificity between presentation
+attributes and `style=` (rules with combinators or pseudo-classes and at-rules
+are ignored); `<text>` with `x`, `y`, `font-size`, `text-anchor`,
 `direction` and fill paints, rendered as shaped, bidi-ordered glyph outlines
 with `font` (so transforms and gradients apply to text too; nested `<tspan>`
 content is flattened). Not supported: images, masks, filters, patterns,
-markers, `use` / `symbol`, `<style>` sheets, radial focal points, tspan
-positioning, text inside clip paths.
+markers, radial focal points, tspan positioning, text inside clip paths.
 
 ## Lines, Strokes and Dashes
 
