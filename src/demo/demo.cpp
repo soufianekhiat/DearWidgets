@@ -5452,9 +5452,34 @@ namespace ImWidgets{
 					if ( ImGui::CollapsingHeader( "SVG Document" ) )
 					{
 						ImGui::TextWrapped( "SvgLoad / SvgDraw: a compact SVG subset (paths, basic shapes, groups, transforms, "
-						                    "linear / radial gradients, fill / stroke properties, opacity, dashes, currentColor) "
+						                    "linear / radial gradients, fill / stroke properties, opacity, dashes, currentColor, "
+						                    "<use> / <symbol>, <style> sheets, markers, clip paths, shaped <text>) "
 						                    "drawn with plain ImDrawList triangles. Edit the document below." );
-						static char s_svgText[4096] =
+						static const char* s_svgIcons =
+							"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 140'>\n"
+							"  <style>\n"
+							"    .card { fill: #22303c; stroke: #3d5a73; stroke-width: 1.5 }\n"
+							"    .ico  { fill: currentColor }\n"
+							"    #title { fill: #e8eef3 }\n"
+							"    .flow { fill: none; stroke: #7fb3d5; stroke-width: 2; marker-end: url(#arrow); marker-mid: url(#dot) }\n"
+							"  </style>\n"
+							"  <defs>\n"
+							"    <symbol id='star' viewBox='0 0 24 24'><path class='ico' d='M12 2l3 7h7l-5.5 4.5 2 7.5L12 17l-6.5 4 2-7.5L2 9h7z'/></symbol>\n"
+							"    <marker id='arrow' viewBox='0 0 10 10' refX='9' refY='5' markerWidth='4' markerHeight='4' orient='auto-start-reverse'><path d='M0 0L10 5L0 10z' fill='#7fb3d5'/></marker>\n"
+							"    <marker id='dot' markerWidth='6' markerHeight='6' refX='3' refY='3' markerUnits='userSpaceOnUse'><circle cx='3' cy='3' r='2.5' fill='#f4d35e'/></marker>\n"
+							"    <clipPath id='round'><circle cx='170' cy='34' r='20'/></clipPath>\n"
+							"    <linearGradient id='g'><stop offset='0' stop-color='#ee6c4d'/><stop offset='1' stop-color='#f4d35e'/></linearGradient>\n"
+							"  </defs>\n"
+							"  <rect class='card' x='4' y='4' width='192' height='132' rx='10'/>\n"
+							"  <use href='#star' x='14' y='14' width='24' height='24'/>\n"
+							"  <use href='#star' x='42' y='18' width='16' height='16' opacity='0.7'/>\n"
+							"  <use href='#star' x='62' y='21' width='10' height='10' opacity='0.4'/>\n"
+							"  <rect x='140' y='4' width='60' height='60' fill='url(#g)' clip-path='url(#round)'/>\n"
+							"  <polyline class='flow' points='20,110 60,70 100,100 140,60 178,96'/>\n"
+							"  <path d='M20 126 H120' stroke='#7fb3d5' stroke-width='1.5' marker-start='url(#arrow)' marker-end='url(#arrow)'/>\n"
+							"  <text id='title' x='100' y='54' font-size='11' text-anchor='middle'>use / symbol / style / markers / clip</text>\n"
+							"</svg>\n";
+						static char s_svgText[8192] =
 							"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 140'>\n"
 							"  <defs>\n"
 							"    <linearGradient id='sky' x1='0' y1='0' x2='0' y2='1'>\n"
@@ -5477,6 +5502,11 @@ namespace ImWidgets{
 							"</svg>\n";
 						static ImWidgetsSvg* s_svgDoc = nullptr;
 						static bool s_svgDirty = true;
+						static char s_svgLandscape[8192] = "";
+						if ( !s_svgLandscape[0] ) ImStrncpy( s_svgLandscape, s_svgText, sizeof( s_svgLandscape ) );
+						if ( ImGui::Button( "Landscape##svgdoc" ) ) { ImStrncpy( s_svgText, s_svgLandscape, sizeof( s_svgText ) ); s_svgDirty = true; }
+						ImGui::SameLine();
+						if ( ImGui::Button( "Icons: use / symbol / style / markers / clip##svgdoc" ) ) { ImStrncpy( s_svgText, s_svgIcons, sizeof( s_svgText ) ); s_svgDirty = true; }
 						if ( ImGui::InputTextMultiline( "##svgdoc", s_svgText, sizeof( s_svgText ), ImVec2( -FLT_MIN, ImGui::GetTextLineHeight() * 10.0f ) ) )
 							s_svgDirty = true;
 						if ( s_svgDirty )
