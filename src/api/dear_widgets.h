@@ -4722,6 +4722,17 @@ namespace ImWidgets{
 	// Previous / next grapheme boundary in logical order (arrow keys, backspace).
 	IMGUI_API int   TextPrevGrapheme( ImVector<ImWidgetsTextGrapheme> const& graphemes, int byte_offset );
 	IMGUI_API int   TextNextGrapheme( ImVector<ImWidgetsTextGrapheme> const& graphemes, int byte_offset, int text_len );
+	// Single-line text field that shapes and bidi-orders its content like
+	// DrawText (Arabic, Hebrew, mixed directions, ligatures, emoji / combining
+	// sequences as one character). Click / drag to select, Shift+arrows,
+	// Home / End, Ctrl+A / C / X / V, Backspace / Delete by grapheme, Enter or
+	// Escape to leave. RTL content (paragraph direction from GetStyle()
+	// .TextDirection, Auto = first strong character) is right-aligned, as a
+	// browser does with dir="auto". font_size in lp (0 = current font size).
+	// Returns true when the buffer changed (ImGuiInputTextFlags_EnterReturnsTrue:
+	// when Enter is pressed instead).
+	IMGUI_API bool InputTextShaped( char const* label, char* buf, size_t buf_size, ImFont* font = nullptr,
+	                                float font_size = 0.0f, ImGuiInputTextFlags flags = 0 );
 	// Same as CalcTextSize( ... ).x (CalcTextSize shapes: bidi, Arabic forms, ligatures, kerning).
 	// Kept for source compatibility.
 	IMGUI_API float CalcShapedTextWidth( ImFont* font, float font_size, char const* text, char const* text_end = nullptr );

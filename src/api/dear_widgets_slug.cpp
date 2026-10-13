@@ -7149,6 +7149,239 @@ namespace ImWidgets {
 		return text_len;
 	}
 
+	// ---- InputTextShaped ----------------------------------------------------
+	struct SlugInputState
+	{
+		ImGuiID id;
+		int     caret, anchor;
+		bool    upstream;
+		float   scroll;       // horizontal scroll in pixels
+		double  blinkStart;
+	};
+	static ImVector<SlugInputState> s_inputStates;
+
+	static SlugInputState* SlugGetInputState(ImGuiID id)
+	{
+		for (int i = 0; i < s_inputStates.Size; ++i)
+			if (s_inputStates[i].id == id) return &s_inputStates[i];
+		SlugInputState st = { id, 0, 0, false, 0.0f, 0.0 };
+		s_inputStates.push_back(st);
+		return &s_inputStates.back();
+	}
+
+	bool InputTextShaped(const char* label, char* buf, size_t buf_size, ImFont* font, float font_size, ImGuiInputTextFlags flags)
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if (window->SkipItems || !buf || buf_size == 0) return false;
+		ImGuiContext& g = *GImGui;
+		ImGuiIO& io = g.IO;
+		const ImGuiStyle& style = g.Style;
+		const ImGuiID id = window->GetID(label);
+		if (!font) font = ImGui::GetFont();
+		const float size_lp = font_size > 0.0f ? font_size : PxToLp(ImGui::GetFontSize());
+		const float size_px = SlugLpToPx(size_lp);
+		const bool readOnly = (flags & ImGuiInputTextFlags_ReadOnly) != 0;
+
+		const ImVec2 labelSize = ImGui::CalcTextSize(label, NULL, true);
+		const float w = ImGui::CalcItemWidth();
+		const float h = size_px + style.FramePadding.y * 2.0f;
+		const ImRect frame(window->DC.CursorPos, window->DC.CursorPos + ImVec2(w, h));
+		const ImRect total(frame.Min, frame.Max + ImVec2(labelSize.x > 0.0f ? style.ItemInnerSpacing.x + labelSize.x : 0.0f, 0.0f));
+		ImGui::ItemSize(total, style.FramePadding.y);
+		if (!ImGui::ItemAdd(total, id, &frame, ImGuiItemFlags_Inputable))
+			return false;
+		const bool hovered = ImGui::ItemHoverable(frame, id, g.LastItemData.ItemFlags);
+		if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
+
+		SlugInputState* st = SlugGetInputState(id);
+		bool changed = false, enter = false;
+		int len = (int)strlen(buf);
+
+		// Activation: click inside, or keyboard / nav activation. Clicking
+		// elsewhere, Enter or Escape leaves (like ImGui::InputText).
+		const bool clicked = hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left, ImGuiInputFlags_None, id);
+		if (clicked || g.NavActivateId == id)
+		{
+			ImGui::SetActiveID(id, window);
+			ImGui::SetFocusID(id, window);
+			ImGui::FocusWindow(window);
+			st->blinkStart = ImGui::GetTime();
+			if (g.NavActivateId == id && !clicked) { st->anchor = 0; st->caret = len; }
+		}
+		else if (g.ActiveId == id && io.MouseClicked[0] && !hovered)
+			ImGui::ClearActiveID();
+		const bool active = (g.ActiveId == id);
+
+		// Layout (paragraph direction decides alignment, as dir="auto" does).
+		const float padX = style.FramePadding.x;
+		const float innerW = frame.GetWidth() - padX * 2.0f;
+		ImVector<ImWidgetsTextGrapheme> gr;
+		float textW = CalcTextGraphemes(font, size_lp, buf, buf + len, gr);
+		const bool rtl = DwShaper_ParagraphLevel(buf, len, GetStyle().TextDirection) & 1;
+		auto originX = [&]() -> float {
+			// x of the text start, accounting for scroll and RTL right alignment
+			float base = rtl ? frame.Max.x - padX - textW : frame.Min.x + padX;
+			if (textW > innerW) base = rtl ? frame.Max.x - padX - textW + st->scroll : frame.Min.x + padX - st->scroll;
+			return base;
+		};
+
+		if (active)
+		{
+			ImGui::SetActiveIdUsingAllKeyboardKeys();
+			g.WantTextInputNextFrame = 1;
+			st->caret = ImClamp(st->caret, 0, len); st->anchor = ImClamp(st->anchor, 0, len);
+
+			// Mouse: click places the caret (Shift extends), drag selects, double-click selects all.
+			if (io.MouseDown[0] && (clicked || ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0f)) && g.ActiveId == id)
+			{
+				st->caret = TextHitTest(gr, io.MousePos.x - originX(), len, &st->upstream);
+				if (clicked && !io.KeyShift) st->anchor = st->caret;
+				st->blinkStart = ImGui::GetTime();
+			}
+			if (clicked && io.MouseClickedCount[0] >= 2) { st->anchor = 0; st->caret = len; }
+
+			auto pressed = [&](ImGuiKey k) { return ImGui::IsKeyPressed(k, ImGuiInputFlags_Repeat, id); };
+			const bool ctrl = io.KeyCtrl, shift = io.KeyShift;
+			auto moveTo = [&](int o) { st->caret = o; st->upstream = false; if (!shift) st->anchor = o; st->blinkStart = ImGui::GetTime(); };
+			auto eraseRange = [&](int a, int b) {
+				if (a > b) { int t = a; a = b; b = t; }
+				if (a == b || readOnly) return;
+				memmove(buf + a, buf + b, (size_t)(len - b + 1));
+				len -= (b - a);
+				st->caret = st->anchor = a; st->upstream = false;
+				changed = true;
+			};
+			auto insertText = [&](const char* t, int n) {
+				if (readOnly || n <= 0) return;
+				if (st->caret != st->anchor) eraseRange(st->caret, st->anchor);
+				if (len + n >= (int)buf_size) n = (int)buf_size - 1 - len;
+				// never cut a UTF-8 sequence
+				while (n > 0 && (t[n] & 0xC0) == 0x80) --n;
+				if (n <= 0) return;
+				memmove(buf + st->caret + n, buf + st->caret, (size_t)(len - st->caret + 1));
+				memcpy(buf + st->caret, t, (size_t)n);
+				len += n;
+				st->caret += n; st->anchor = st->caret; st->upstream = false;
+				changed = true;
+			};
+			const int selA = ImMin(st->caret, st->anchor), selB = ImMax(st->caret, st->anchor);
+
+			// Arrows move by grapheme in logical order; in an RTL paragraph the
+			// left arrow moves forward, as in browsers' logical caret movement.
+			if (pressed(ImGuiKey_LeftArrow))
+			{
+				if (!shift && selA != selB) moveTo(rtl ? selB : selA);
+				else moveTo(rtl ? TextNextGrapheme(gr, st->caret, len) : TextPrevGrapheme(gr, st->caret));
+			}
+			if (pressed(ImGuiKey_RightArrow))
+			{
+				if (!shift && selA != selB) moveTo(rtl ? selA : selB);
+				else moveTo(rtl ? TextPrevGrapheme(gr, st->caret) : TextNextGrapheme(gr, st->caret, len));
+			}
+			if (pressed(ImGuiKey_Home)) moveTo(0);
+			if (pressed(ImGuiKey_End))  moveTo(len);
+			if (ctrl && pressed(ImGuiKey_A)) { st->anchor = 0; st->caret = len; }
+			if (ctrl && (pressed(ImGuiKey_C) || pressed(ImGuiKey_X)) && selA != selB)
+			{
+				ImVector<char> clip; clip.resize(selB - selA + 1);
+				memcpy(clip.Data, buf + selA, (size_t)(selB - selA)); clip[selB - selA] = 0;
+				ImGui::SetClipboardText(clip.Data);
+				if (ImGui::IsKeyPressed(ImGuiKey_X, ImGuiInputFlags_None, id)) eraseRange(selA, selB);
+			}
+			if (ctrl && pressed(ImGuiKey_V))
+				if (const char* clip = ImGui::GetClipboardText())
+				{
+					// single line: stop at the first newline
+					int n = 0; while (clip[n] && clip[n] != '\n' && clip[n] != '\r') ++n;
+					insertText(clip, n);
+				}
+			if (pressed(ImGuiKey_Backspace))
+			{
+				if (selA != selB) eraseRange(selA, selB);
+				else if (st->caret > 0) eraseRange(TextPrevGrapheme(gr, st->caret), st->caret);
+			}
+			if (pressed(ImGuiKey_Delete))
+			{
+				if (selA != selB) eraseRange(selA, selB);
+				else if (st->caret < len) eraseRange(st->caret, TextNextGrapheme(gr, st->caret, len));
+			}
+			if (pressed(ImGuiKey_Enter) || pressed(ImGuiKey_KeypadEnter)) { enter = true; ImGui::ClearActiveID(); }
+			if (pressed(ImGuiKey_Escape)) ImGui::ClearActiveID();
+
+			// Typed characters (ignore control characters; Ctrl shortcuts handled above).
+			if (!ctrl)
+				for (int qi = 0; qi < io.InputQueueCharacters.Size; ++qi)
+				{
+					unsigned int c = (unsigned int)io.InputQueueCharacters[qi];
+					if (c < 0x20 || c == 0x7F) continue;
+					char u[5] = {};
+					int n = ImTextCharToUtf8(u, c);
+					insertText(u, n);
+				}
+			io.InputQueueCharacters.resize(0);
+
+			if (changed)
+			{
+				textW = CalcTextGraphemes(font, size_lp, buf, buf + len, gr);
+				ImGui::MarkItemEdited(id);
+			}
+			// Keep the caret visible.
+			if (textW > innerW)
+			{
+				float cx = TextCaretX(gr, st->caret, st->upstream);           // from the text start
+				float view0 = rtl ? textW - innerW - st->scroll : st->scroll; // visible text range [view0, view0 + innerW]
+				const float margin = size_px * 0.5f;
+				if (cx < view0 + margin)          view0 = cx - margin;
+				if (cx > view0 + innerW - margin) view0 = cx - innerW + margin;
+				view0 = ImClamp(view0, 0.0f, textW - innerW);
+				st->scroll = rtl ? textW - innerW - view0 : view0;
+			}
+			else st->scroll = 0.0f;
+		}
+
+		// Draw.
+		const bool isActive = (g.ActiveId == id);
+		ImGui::RenderNavCursor(frame, id);
+		ImGui::RenderFrame(frame.Min, frame.Max, ImGui::GetColorU32(ImGuiCol_FrameBg), true, style.FrameRounding);
+		ImDrawList* dl = window->DrawList;
+		dl->PushClipRect(frame.Min + ImVec2(padX * 0.5f, 0.0f), frame.Max - ImVec2(padX * 0.5f, 0.0f), true);
+		const float ox = originX();
+		float asc = 0.0f;
+		ImFontBaked* baked = font->GetFontBaked(size_px);
+		asc = baked ? baked->Ascent * (size_px / baked->Size) : size_px * 0.8f;
+		const float top = frame.Min.y + style.FramePadding.y;
+		if (isActive && st->caret != st->anchor)
+		{
+			ImVector<ImVec2> sel;
+			TextSelectionRanges(gr, st->anchor, st->caret, sel);
+			for (int i = 0; i < sel.Size; ++i)
+				dl->AddRectFilled(ImVec2(ox + sel[i].x, top), ImVec2(ox + sel[i].y, top + size_px), ImGui::GetColorU32(ImGuiCol_TextSelectedBg));
+		}
+		ImWidgetsTextDirection const savedDir = GetStyle().TextDirection;
+		GetStyle().TextDirection = rtl ? ImWidgetsTextDirection_RTL : ImWidgetsTextDirection_LTR;
+		DrawText(dl, font, size_lp, ImVec2(ox, top + asc), ImGui::GetColorU32(ImGuiCol_Text), buf, buf + len);
+		GetStyle().TextDirection = savedDir;
+		if (isActive && !readOnly)
+		{
+			const bool blinkOn = !io.ConfigInputTextCursorBlink || ImFmod((float)(ImGui::GetTime() - st->blinkStart), 1.2f) < 0.8f;
+			const float cx = ox + (len > 0 ? TextCaretX(gr, st->caret, st->upstream) : 0.0f);
+			if (blinkOn)
+				dl->AddLine(ImVec2(cx, top), ImVec2(cx, top + size_px), ImGui::GetColorU32(ImGuiCol_InputTextCursor), ImMax(1.0f, style.InputTextCursorSize));
+			ImGuiPlatformImeData* ime = &g.PlatformImeData;
+			ime->WantVisible = true;
+			ime->WantTextInput = true;
+			ime->InputPos = ImVec2(cx - 1.0f, top);
+			ime->InputLineHeight = size_px;
+			ime->ViewportId = window->Viewport->ID;
+		}
+		dl->PopClipRect();
+		if (labelSize.x > 0.0f)
+			ImGui::RenderText(ImVec2(frame.Max.x + style.ItemInnerSpacing.x, frame.Min.y + style.FramePadding.y), label);
+
+		if (flags & ImGuiInputTextFlags_EnterReturnsTrue) return enter;
+		return changed;
+	}
+
 	ImVec2 CalcTextBlockSize(ImFont* font, float font_size, const char* text, const char* text_end,
 	                         const ImWidgetsTextLayout& layout)
 	{

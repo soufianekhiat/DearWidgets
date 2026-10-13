@@ -365,7 +365,9 @@ still report its ID, so `BeginPopupContextItem()` right after them keeps working
 `CalcTextGraphemes` exposes the graphemes of a shaped line with their visual
 boxes; `TextCaretX` / `TextHitTest` (with caret affinity at bidi run
 boundaries), `TextSelectionRanges` and `TextPrev/NextGrapheme` are the building
-blocks for editing shaped, mixed-direction text.
+blocks for editing shaped, mixed-direction text. `InputTextShaped` is a single-line
+input field built on them: shaped, bidi-ordered, grapheme-aware editing with
+selection, clipboard, scrolling and IME positioning.
 
 #### Text on any backend
 

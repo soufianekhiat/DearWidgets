@@ -2397,7 +2397,12 @@ namespace ImWidgets{
 		ImGui::InputText( "Emoji##SlugEmoji", emoji_buf, sizeof( emoji_buf ) );
 		// Arabic text buffer: (Dear Widgets in Arabic) (Dear Widgets)
 		static char arabic_buf[256] = "\xd8\xa7\xd9\x84\xd8\xa3\xd8\xaf\xd9\x88\xd8\xa7\xd8\xaa \xd8\xa7\xd9\x84\xd8\xb9\xd8\xb2\xd9\x8a\xd8\xb2\xd8\xa9";
-		ImGui::InputText( "Arabic##SlugArabic", arabic_buf, sizeof( arabic_buf ) );
+		ImGui::InputText( "Arabic (ImGui::InputText, unshaped)##SlugArabic", arabic_buf, sizeof( arabic_buf ) );
+		// Same buffer in the shaped field: joined Arabic letters, right-aligned
+		// RTL, caret / selection by grapheme, mixed directions.
+		if ( g_amiriFont || g_vazirmatnFont )
+			ImWidgets::InputTextShaped( "Arabic (InputTextShaped)##SlugArabicShaped", arabic_buf, sizeof( arabic_buf ),
+			                            g_amiriFont ? g_amiriFont : g_vazirmatnFont, 20.0f );
 
 		// Bidi: mixed-direction strings, laid out by the UAX #9 implicit algorithm
 		// (runs shaped per direction, then reordered visually). The second column

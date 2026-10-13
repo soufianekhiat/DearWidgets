@@ -107,6 +107,22 @@ paragraph direction, like CSS `text-align: start`. `pos` is the top-left of the
 block; the line box is `LineHeight * font_size` with the glyphs centred in it
 (half-leading). Returns the block size in pixels.
 
+### `InputTextShaped`
+```cpp
+bool InputTextShaped( char const* label, char* buf, size_t buf_size, ImFont* font = nullptr,
+                      float font_size = 0.0f, ImGuiInputTextFlags flags = 0 );
+```
+Single-line text field whose content is shaped and bidi-ordered like
+`DrawText`: Arabic letters join, mixed-direction text is reordered, a
+grapheme (letter + marks, emoji sequence) is edited as one character, and RTL
+content is right-aligned (paragraph direction from `GetStyle().TextDirection`,
+`Auto` = first strong character, like `dir="auto"`). Mouse placement with bidi
+caret affinity, drag / Shift selection, double-click selects all, Home / End,
+Ctrl+A / C / X / V, Backspace / Delete by grapheme, horizontal scrolling to
+keep the caret visible, IME position reporting. Enter or Escape leave the
+field. Returns `true` when the buffer changed (`ImGuiInputTextFlags_EnterReturnsTrue`:
+when Enter is pressed); honours `ImGuiInputTextFlags_ReadOnly`.
+
 ### Caret, hit-testing and selection
 ```cpp
 float CalcTextGraphemes  ( ImFont*, float font_size, char const* text, char const* text_end,
