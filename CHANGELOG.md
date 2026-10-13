@@ -395,6 +395,13 @@ draws pressure / taper strokes. Strokes now fall back to filling
 their exact outline on the CPU when the stroke shader is unavailable, instead
 of degrading to `AddPolyline` (no caps / joins) or drawing nothing.
 
+#### SVG documents
+
+`SvgLoad` / `SvgDraw` / `SvgFree`: icons and illustrations in a compact SVG
+subset (shapes, paths, groups, transforms, linear / radial gradients, fill and
+stroke properties, opacity, dashes, named colours, `currentColor`), drawn with
+plain `ImDrawList` geometry through the new path / paint / stroke APIs.
+
 #### Bidirectional text
 
 `DrawText`, the gradient / image text variants and `CalcTextSize` now run the

@@ -3101,34 +3101,43 @@ namespace ImWidgets {
 		ImVector<SlugShapedGlyph> shaped;
 		if (!SlugShapeString(atlas, text, text_end, shaped, nullptr)) return -1.0f;
 
-		// Visual clusters: merge consecutive glyphs with the same cluster.
+		ImVector<unsigned int> brk; brk.resize(len + 1);
+		DwShaper_TextBreaks(text, len, brk.Data);
+		// The shaper tags each glyph with its own codepoint's byte offset, so a
+		// "cluster" can start inside a grapheme (combining marks, Indic pre-base
+		// vowels) and one cluster can be split around other glyphs (two-part
+		// vowels). Snap every glyph to the start of its grapheme and merge all
+		// glyphs of the same snapped start into one box (union of extents).
+		auto snap = [&](int c) { c = ImClamp(c, 0, len); while (c > 0 && !(brk[c] & DwShaperBreak_Grapheme)) --c; return c; };
 		struct VC { int c; float x0, x1; int level; };
 		ImVector<VC> vcs;
 		float pen = 0.0f;
 		for (int i = 0; i < shaped.Size; ++i)
 		{
 			const float adv = shaped[i].advanceX * sz;
-			if (vcs.Size && vcs.back().c == shaped[i].cluster) vcs.back().x1 = pen + adv;
-			else { VC v = { shaped[i].cluster, pen, pen + adv, shaped[i].level }; vcs.push_back(v); }
+			const int c = snap(shaped[i].cluster);
+			int found = -1;
+			for (int k = vcs.Size - 1; k >= 0 && k >= vcs.Size - 8; --k) if (vcs[k].c == c) { found = k; break; }
+			if (found < 0) for (int k = 0; k < vcs.Size; ++k) if (vcs[k].c == c) { found = k; break; }
+			if (found >= 0) { vcs[found].x0 = ImMin(vcs[found].x0, pen); vcs[found].x1 = ImMax(vcs[found].x1, pen + adv); }
+			else { VC v = { c, pen, pen + adv, shaped[i].level }; vcs.push_back(v); }
 			pen += adv;
 		}
 		// Cluster end = next larger cluster start (logical order).
 		ImVector<int> starts;
 		for (int i = 0; i < vcs.Size; ++i) starts.push_back(vcs[i].c);
 		ImQsort(starts.Data, (size_t)starts.Size, sizeof(int), [](const void* a, const void* b) -> int { return *(const int*)a - *(const int*)b; });
-		ImVector<unsigned int> brk; brk.resize(len + 1);
-		DwShaper_TextBreaks(text, len, brk.Data);
 		out.resize(0);
 		for (int i = 0; i < vcs.Size; ++i)
 		{
 			const VC& v = vcs[i];
 			int ce = len;
 			for (int k = 0; k < starts.Size; ++k) if (starts[k] > v.c) { ce = starts[k]; break; }
-			// Graphemes inside [v.c, ce)
+			// Graphemes inside [v.c, ce) (ligatures cover several)
 			int gb[64]; int ng = 0;
 			gb[ng++] = v.c;
-			for (int b = v.c + 1; b < ce && ng < 63; ++b)
-				if (brk[b] & DwShaperBreak_Grapheme) gb[ng++] = b;
+			for (int b2 = v.c + 1; b2 < ce && ng < 63; ++b2)
+				if (brk[b2] & DwShaperBreak_Grapheme) gb[ng++] = b2;
 			gb[ng] = ce;
 			const bool rtl = (v.level & 1) != 0;
 			const float w = (v.x1 - v.x0) / (float)ng;
@@ -3140,6 +3149,15 @@ namespace ImWidgets {
 				G.X0 = v.x0 + w * slot; G.X1 = G.X0 + w;
 				out.push_back(G);
 			}
+		}
+		// Bytes before the first shaped cluster (dropped by the shaper: BOM, ZWNJ...)
+		// become a zero-width grapheme so navigation and selection cover them.
+		if (starts.Size && starts[0] > 0)
+		{
+			float x = 0.0f;
+			for (int i = 0; i < out.Size; ++i) if (out[i].Begin == starts[0]) { x = out[i].RTL ? out[i].X1 : out[i].X0; break; }
+			ImWidgetsTextGrapheme G = { 0, starts[0], x, x, false };
+			out.push_back(G);
 		}
 		// Logical order.
 		ImQsort(out.Data, (size_t)out.Size, sizeof(ImWidgetsTextGrapheme), [](const void* a, const void* b) -> int {
@@ -3155,7 +3173,11 @@ namespace ImWidgets {
 		if (!text_end) text_end = text + strlen(text);
 		if (!font) font = ImGui::GetFont();
 		const float sz = font_size > 0.0f ? SlugLpToPx(font_size) : ImGui::GetFontSize();
-		if (SlugResolveRenderer() != ImWidgetsTextRenderer_ImGuiAtlas && gs_pContext)
+		// Same renderer decision as DrawText / CalcTextSize: the ImGui atlas path
+		// (forced, or GPU requested without its program) lays out unshaped.
+		const ImWidgetsTextRenderer rr = SlugResolveRenderer();
+		const bool unshaped = rr == ImWidgetsTextRenderer_ImGuiAtlas || (rr == ImWidgetsTextRenderer_GPU && gs_pContext && !gs_pContext->slugShader.program);
+		if (!unshaped && gs_pContext)
 		{
 			if (!gs_pContext->slugState) gs_pContext->slugState = IM_NEW(ImWidgetsSlugState);
 			if (SlugFontCache* atlas = SlugGetOrCreateAtlas(gs_pContext->slugState, font))

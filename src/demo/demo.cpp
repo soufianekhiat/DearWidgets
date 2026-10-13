@@ -2472,13 +2472,21 @@ namespace ImWidgets{
 				const bool active = ImGui::IsItemActive(), focused = ImGui::IsItemFocused() || active;
 				const float ox = p0.x + ImPlatform_LpToPx( 4.0f ), oy = p0.y + ImPlatform_LpToPx( 4.0f );
 				ImGuiIO& io = ImGui::GetIO();
-				if ( ImGui::IsItemActivated() || ( active && ImGui::IsMouseDragging( 0 ) ) )
+				// Hit-test only for real mouse input (keyboard activation of the
+				// button must not move the caret to wherever the mouse is).
+				const bool mouseClick = ImGui::IsItemActivated() && ImGui::IsMouseClicked( 0 );
+				if ( mouseClick || ( active && ImGui::IsMouseDragging( 0 ) ) )
 				{
 					s_caret = ImWidgets::TextHitTest( g, io.MousePos.x - ox, len, &s_up );
-					if ( ImGui::IsItemActivated() && !io.KeyShift ) s_anchor = s_caret;
+					if ( mouseClick && !io.KeyShift ) s_anchor = s_caret;
 				}
 				if ( focused )
 				{
+					// Own the editing keys so keyboard navigation does not also act on them.
+					const ImGuiID cid = ImGui::GetItemID();
+					const ImGuiKey owned[] = { ImGuiKey_LeftArrow, ImGuiKey_RightArrow, ImGuiKey_UpArrow, ImGuiKey_DownArrow, ImGuiKey_Home, ImGuiKey_End,
+					                           ImGuiKey_Backspace, ImGuiKey_Delete, ImGuiKey_Space, ImGuiKey_Enter, ImGuiKey_Tab };
+					for ( ImGuiKey k : owned ) ImGui::SetKeyOwner( k, cid );
 					const bool shift = io.KeyShift;
 					bool moved = false;
 					if ( ImGui::IsKeyPressed( ImGuiKey_LeftArrow ) )  { s_caret = ImWidgets::TextPrevGrapheme( g, s_caret ); moved = true; }
@@ -2499,6 +2507,8 @@ namespace ImWidgets{
 					}
 					for ( int qi = 0; qi < io.InputQueueCharacters.Size; ++qi )
 					{
+						const unsigned int qc = (unsigned int)io.InputQueueCharacters[ qi ];
+						if ( qc < 0x20 || qc == 0x7F ) continue; // Backspace / Enter / Esc / Ctrl+key arrive as control chars
 						if ( s_caret != s_anchor ) eraseRange( s_caret, s_anchor );
 						char utf8[5] = {};
 						int nb = ImTextCharToUtf8( utf8, (unsigned int)io.InputQueueCharacters[ qi ] );
@@ -5398,6 +5408,58 @@ namespace ImWidgets{
 						}
 					}
 					DW_SsRecord( "Vector_Paths", _sy0, ImGui::GetCursorPos().y ); }
+
+					{ float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "SVG Document" ) )
+					{
+						ImGui::TextWrapped( "SvgLoad / SvgDraw: a compact SVG subset (paths, basic shapes, groups, transforms, "
+						                    "linear / radial gradients, fill / stroke properties, opacity, dashes, currentColor) "
+						                    "drawn with plain ImDrawList triangles. Edit the document below." );
+						static char s_svgText[4096] =
+							"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 140'>\n"
+							"  <defs>\n"
+							"    <linearGradient id='sky' x1='0' y1='0' x2='0' y2='1'>\n"
+							"      <stop offset='0' stop-color='#1e3c72'/><stop offset='1' stop-color='#f7a072'/>\n"
+							"    </linearGradient>\n"
+							"    <radialGradient id='sun' cx='0.5' cy='0.5' r='0.5'>\n"
+							"      <stop offset='0' stop-color='#fff6c8'/><stop offset='0.6' stop-color='#ffd23f'/><stop offset='1' stop-color='#ff9f1c' stop-opacity='0'/>\n"
+							"    </radialGradient>\n"
+							"  </defs>\n"
+							"  <rect width='200' height='140' rx='12' fill='url(#sky)'/>\n"
+							"  <circle cx='150' cy='52' r='30' fill='url(#sun)'/>\n"
+							"  <path d='M0 110 Q40 70 80 100 T160 95 T200 90 V140 H0 Z' fill='#2d6a4f'/>\n"
+							"  <path d='M0 125 C50 100 110 135 200 112 V140 H0 Z' fill='#1b4332' opacity='0.9'/>\n"
+							"  <g transform='translate(40 60) rotate(-8)'>\n"
+							"    <rect x='-14' y='-10' width='28' height='20' rx='4' fill='currentColor' fill-opacity='0.85'/>\n"
+							"    <polyline points='-14,-10 0,-24 14,-10' fill='none' stroke='currentColor' stroke-width='3' stroke-linejoin='round' stroke-linecap='round'/>\n"
+							"  </g>\n"
+							"  <path d='M20 30 h60' stroke='white' stroke-width='3' stroke-dasharray='8 6' stroke-linecap='round' opacity='0.6'/>\n"
+							"</svg>\n";
+						static ImWidgetsSvg* s_svgDoc = nullptr;
+						static bool s_svgDirty = true;
+						if ( ImGui::InputTextMultiline( "##svgdoc", s_svgText, sizeof( s_svgText ), ImVec2( -FLT_MIN, ImGui::GetTextLineHeight() * 10.0f ) ) )
+							s_svgDirty = true;
+						if ( s_svgDirty )
+						{
+							ImWidgets::SvgFree( s_svgDoc );
+							s_svgDoc = ImWidgets::SvgLoad( s_svgText );
+							s_svgDirty = false;
+						}
+						static float s_svgScale = 2.0f;
+						static ImVec4 s_svgCurrent( 0.95f, 0.3f, 0.35f, 1.0f );
+						ImGui::SetNextItemWidth( ImPlatform_LpToPx( 200.0f ) ); ImGui::SliderFloat( "scale##svgdoc", &s_svgScale, 0.25f, 6.0f ); ImGui::SameLine();
+						ImGui::ColorEdit4( "currentColor##svgdoc", &s_svgCurrent.x, ImGuiColorEditFlags_NoInputs );
+						if ( s_svgDoc )
+						{
+							ImVec2 isz = ImWidgets::SvgGetSize( s_svgDoc );
+							ImVec2 sz( ImPlatform_LpToPx( isz.x * s_svgScale ), ImPlatform_LpToPx( isz.y * s_svgScale ) );
+							ImVec2 o = ImGui::GetCursorScreenPos();
+							ImGui::Dummy( sz );
+							ImWidgets::SvgDraw( ImGui::GetWindowDrawList(), s_svgDoc, o, sz, ImGui::ColorConvertFloat4ToU32( s_svgCurrent ) );
+						}
+					}
+					DW_SsRecord( "SVG_Document", _sy0, ImGui::GetCursorPos().y ); }
 
 					{ float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();

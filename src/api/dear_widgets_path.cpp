@@ -1371,9 +1371,10 @@ static void DW_TaperedCapsule(ImVector<ImVec2>& segs, ImVec2 c0, float r0, ImVec
 static void DW_VariableStrokeSegs(const ImVec2* pts, const float* widths, int count, ImVector<ImVec2>& segs)
 {
     const float tol = 0.2f;
-    if (count == 1) { DW_TaperedCapsule(segs, pts[0], widths[0] * 0.5f, pts[0], widths[0] * 0.5f, tol); return; }
+    auto rad = [](float w) { return (w > 0.0f) ? w * 0.5f : 0.0f; }; // also maps NaN to 0
+    if (count == 1) { DW_TaperedCapsule(segs, pts[0], rad(widths[0]), pts[0], rad(widths[0]), tol); return; }
     for (int i = 0; i + 1 < count; ++i)
-        DW_TaperedCapsule(segs, pts[i], ImMax(0.0f, widths[i]) * 0.5f, pts[i + 1], ImMax(0.0f, widths[i + 1]) * 0.5f, tol);
+        DW_TaperedCapsule(segs, pts[i], rad(widths[i]), pts[i + 1], rad(widths[i + 1]), tol);
 }
 
 void DrawVariableWidthStroke(ImDrawList* dl, const ImVec2* points, const float* widths, int count, ImU32 col)

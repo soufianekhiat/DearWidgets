@@ -1773,6 +1773,8 @@ struct ImWidgetsTransform2D
 	IMGUI_API static ImWidgetsTransform2D Rotate( float radians );
 };
 
+struct ImWidgetsSvg; // parsed SVG document (opaque; SvgLoad / SvgDraw / SvgFree)
+
 struct ImWidgetsSubpath
 {
 	int  First;   // index of the first point in ImWidgetsPath::Points
@@ -5975,6 +5977,20 @@ namespace ImWidgets{
                                  float aa = 1.0f );
     IMGUI_API void PathStroke( ImDrawList* draw_list, ImWidgetsPath const& path, ImU32 col,
                                ImWidgetsStrokeStyle const& style = ImWidgetsStrokeStyle() );
+    // ---- SVG documents (plain ImDrawList geometry) ----
+    // Parse once, draw many times. Supports the common icon / illustration
+    // subset: svg viewBox, g, path, rect, circle, ellipse, line, polyline,
+    // polygon, linear / radial gradients, transforms, fill / stroke properties
+    // (attributes and style=), opacity, dashes, named colours, currentColor.
+    // No text, images, masks, clip paths, filters, patterns or <style>.
+    IMGUI_API ImWidgetsSvg* SvgLoad( char const* svg_text );
+    IMGUI_API void          SvgFree( ImWidgetsSvg* svg );
+    IMGUI_API ImVec2        SvgGetSize( ImWidgetsSvg const* svg );   // intrinsic size (width / height, else viewBox)
+    // Draws into [pos, pos + size] with preserveAspectRatio="xMidYMid meet"
+    // (size 0 = intrinsic size). current_color resolves `currentColor`.
+    IMGUI_API void          SvgDraw( ImDrawList* draw_list, ImWidgetsSvg const* svg, ImVec2 pos, ImVec2 size = ImVec2( 0, 0 ),
+                                     ImU32 current_color = IM_COL32_WHITE );
+
     // Variable-width stroke (pressure, taper): widths[i] is the stroke width at
     // points[i], interpolated linearly in between, with round joins and caps.
     // Built as the union of tapered capsules filled once (no darker overlaps).

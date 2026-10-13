@@ -444,6 +444,28 @@ not darken where it crosses itself. `DrawVariableWidthStroke` takes a width
 per point (pressure, taper) with round joins and caps: the union of tapered
 capsules, filled once.
 
+### SVG documents
+```cpp
+ImWidgetsSvg* SvgLoad   ( char const* svg_text );
+void          SvgFree   ( ImWidgetsSvg* svg );
+ImVec2        SvgGetSize( ImWidgetsSvg const* svg );
+void          SvgDraw   ( ImDrawList*, ImWidgetsSvg const* svg, ImVec2 pos, ImVec2 size = ImVec2( 0, 0 ),
+                          ImU32 current_color = IM_COL32_WHITE );
+```
+Parse once, draw any number of times (no GPU resources). `SvgDraw` maps the
+`viewBox` into `[pos, pos + size]` with `preserveAspectRatio="xMidYMid meet"`.
+Supported: `svg` (`viewBox`, `width`, `height` with units), `g`, `path`, `rect`
+(`rx` / `ry`), `circle`, `ellipse`, `line`, `polyline`, `polygon`; `defs`,
+`linearGradient` / `radialGradient` / `stop` with `gradientUnits`,
+`gradientTransform`, `spreadMethod` and `href` inheritance; presentation
+attributes and `style="..."` for `fill`, `stroke`, `fill-rule`, `opacity`,
+`fill-opacity`, `stroke-opacity`, `stroke-width`, `stroke-linecap`,
+`stroke-linejoin`, `stroke-miterlimit`, `stroke-dasharray`, `stroke-dashoffset`,
+`display`, `visibility`, inherited through groups; transform lists; colours as
+hex, `rgb()` / `rgba()`, CSS named colours, `none`, `transparent`,
+`currentColor`. Not supported: text, images, masks, clip paths, filters,
+patterns, markers, `use` / `symbol`, `<style>` sheets, radial focal points.
+
 ## Lines, Strokes and Dashes
 
 ### Unified dispatcher
