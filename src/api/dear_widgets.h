@@ -5964,6 +5964,18 @@ namespace ImWidgets{
                                  float aa = 1.0f );
     IMGUI_API void PathStroke( ImDrawList* draw_list, ImWidgetsPath const& path, ImU32 col,
                                ImWidgetsStrokeStyle const& style = ImWidgetsStrokeStyle() );
+    // Variable-width stroke (pressure, taper): widths[i] is the stroke width at
+    // points[i], interpolated linearly in between, with round joins and caps.
+    // Built as the union of tapered capsules filled once (no darker overlaps).
+    IMGUI_API void DrawVariableWidthStroke( ImDrawList* draw_list, ImVec2 const* points, float const* widths, int count,
+                                            ImU32 col );
+    IMGUI_API void DrawVariableWidthStroke( ImDrawList* draw_list, ImVec2 const* points, float const* widths, int count,
+                                            ImWidgetsPaint const& paint );
+    // Stroke with a paint (gradient along the stroke, as SVG stroke="url(#g)").
+    // The outlines of all subpaths and dashes are filled once with the nonzero
+    // rule, so a translucent stroke never darkens where it overlaps itself.
+    IMGUI_API void PathStroke( ImDrawList* draw_list, ImWidgetsPath const& path, ImWidgetsPaint const& paint,
+                               ImWidgetsStrokeStyle const& style = ImWidgetsStrokeStyle() );
 
     // Debug
     IMGUI_API void SetStrokeDebugWireframe(bool enable);

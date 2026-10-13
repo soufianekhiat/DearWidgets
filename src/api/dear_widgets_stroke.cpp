@@ -729,12 +729,21 @@ static void DW_PrepareStrokeUniforms(const ImDrawList*, const ImDrawCmd* cmd)
 
 // Build line soup from fwd/bwd/cap arrays and render via winding-number shader.
 // Zero overdraw guaranteed -- each pixel evaluated exactly once.
+// Collect mode: instead of drawing, append each stroke's exact outline (a
+// directed segment soup) to a caller buffer, so several strokes can be filled
+// once -- with a gradient paint, and without double blending where they overlap.
+static ImVector<ImVec2>* s_strokeCollect = NULL;
+void DW_StrokeCollectBegin(ImVector<ImVec2>* out) { s_strokeCollect = out; }
+void DW_StrokeCollectEnd() { s_strokeCollect = NULL; }
+ImVector<ImVec2>* DW_StrokeCollectTarget() { return s_strokeCollect; }
+
 static void DW_StrokeRenderOutline(ImDrawList* dl,
     ImVector<ImVec2>& fwd, ImVector<ImVec2>& bwd,
     ImU32 col, float half_w, ImWidgetsCap cap, bool closed,
     float tol, ImVec2 start_pt, ImVec2 end_pt, ImVec2 start_norm)
 {
-    if (fwd.Size < 2 || bwd.Size < 2 || (col & IM_COL32_A_MASK) == 0) return;
+    if (fwd.Size < 2 || bwd.Size < 2) return;
+    if (!s_strokeCollect && (col & IM_COL32_A_MASK) == 0) return;
 
     // --- Lazy-init stroke shader ---
     ImWidgetsContext* ctx = GetCurrentContext();
@@ -751,7 +760,7 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
     // No stroke shader (build without custom shaders, or a failed compile): the
     // outline below is still exact, so fill it on the CPU with the nonzero rule
     // instead of drawing nothing.
-    const bool cpu_fill = (program == NULL);
+    const bool cpu_fill = (program == NULL) || (s_strokeCollect != NULL);
 
     // --- Build cap point arrays (same as reference finish()) ---
     ImVector<ImVec2> end_cap_pts, start_cap_pts;
@@ -866,6 +875,10 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
         if (closed) {
             segs.push_back(fwd[fwd.Size - 1]); segs.push_back(fwd[0]);
             segs.push_back(bwd[0]);            segs.push_back(bwd[bwd.Size - 1]);
+        }
+        if (s_strokeCollect) {
+            for (int i = 0; i < segs.Size; ++i) s_strokeCollect->push_back(segs[i]);
+            return;
         }
         DW_FillSegments(dl, segs.Data, segs.Size / 2, col, ImWidgetsFillRule_NonZero, 1.0f);
         return;

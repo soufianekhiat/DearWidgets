@@ -387,7 +387,9 @@ Fills are anti-aliased, honour the SVG fill rules (nonzero / evenodd, holes,
 self-intersections) and never double-cover a pixel. Everything is ImDrawList
 triangles, so it works on stock Dear ImGui. `ImWidgetsPaint` adds CSS / SVG gradient fills (linear,
 radial, conic; stops, hard stops, pad / repeat / reflect, gradient transform,
-sRGB / linear / OkLab / OkLCH / HSV interpolation). Strokes now fall back to filling
+sRGB / linear / OkLab / OkLCH / HSV interpolation). `PathStroke` also takes a paint
+(gradient strokes, no self-overlap darkening), and `DrawVariableWidthStroke`
+draws pressure / taper strokes. Strokes now fall back to filling
 their exact outline on the CPU when the stroke shader is unavailable, instead
 of degrading to `AddPolyline` (no caps / joins) or drawing nothing.
 

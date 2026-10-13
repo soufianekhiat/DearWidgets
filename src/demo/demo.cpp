@@ -5287,19 +5287,23 @@ namespace ImWidgets{
 						ImGui::InputTextMultiline( "d##svgpath", s_d, sizeof( s_d ), ImVec2( -FLT_MIN, ImGui::GetTextLineHeight() * 3.0f ) );
 
 						static bool  s_fill = true, s_stroke = true, s_ctrl = false;
+						static const ImWidgetsGradientStop kVarStops[] = { { 0.0f, IM_COL32( 120, 200, 255, 255 ) }, { 1.0f, IM_COL32( 255, 120, 200, 255 ) } };
 						static int   s_rule = ImWidgetsFillRule_NonZero;
 						static ImVec4 s_fillCol( 0.25f, 0.55f, 0.95f, 0.85f ), s_strokeCol( 0.95f, 0.95f, 0.95f, 1.0f );
 						static float s_width = 6.0f, s_miter = 4.0f, s_rot = 0.0f, s_dashOff = 0.0f;
 						static int   s_cap = ImWidgetsCap_Round, s_join = ImWidgetsJoin_Round;
 						static char  s_dash[64] = "";
 						static bool  s_animDash = true;
+						static bool  s_gradFill = false, s_gradStroke = false;
 						ImGui::Checkbox( "Fill##svgpath", &s_fill ); ImGui::SameLine();
 						ImGui::RadioButton( "nonzero", &s_rule, ImWidgetsFillRule_NonZero ); ImGui::SameLine();
 						ImGui::RadioButton( "evenodd", &s_rule, ImWidgetsFillRule_EvenOdd ); ImGui::SameLine();
 						ImGui::ColorEdit4( "##svgfillcol", &s_fillCol.x, ImGuiColorEditFlags_NoInputs );
 						ImGui::Checkbox( "Stroke##svgpath", &s_stroke ); ImGui::SameLine();
 						ImGui::ColorEdit4( "##svgstrokecol", &s_strokeCol.x, ImGuiColorEditFlags_NoInputs ); ImGui::SameLine();
-						ImGui::Checkbox( "Control points##svgpath", &s_ctrl );
+						ImGui::Checkbox( "Control points##svgpath", &s_ctrl ); ImGui::SameLine();
+						ImGui::Checkbox( "gradient fill##svgpath", &s_gradFill ); ImGui::SameLine();
+						ImGui::Checkbox( "gradient stroke##svgpath", &s_gradStroke );
 						ImGui::SetNextItemWidth( ImPlatform_LpToPx( 160.0f ) ); ImGui::SliderFloat( "width##svgpath", &s_width, 0.5f, 40.0f ); ImGui::SameLine();
 						ImGui::SetNextItemWidth( ImPlatform_LpToPx( 160.0f ) ); ImGui::SliderFloat( "rotate##svgpath", &s_rot, -180.0f, 180.0f, "%.0f deg" );
 						ImGui::SetNextItemWidth( ImPlatform_LpToPx( 120.0f ) ); ImGui::Combo( "cap##svgpath", &s_cap, "None\0Butt\0Square\0Round\0TriangleOut\0TriangleIn\0" ); ImGui::SameLine();
@@ -5344,14 +5348,24 @@ namespace ImWidgets{
 							                       * ImWidgetsTransform2D::Scale( sc, sc )
 							                       * ImWidgetsTransform2D::Translate( -c.x, -c.y );
 							path.Transform( t );
+							static const ImWidgetsGradientStop kFillStops[] = { { 0.0f, IM_COL32( 255, 90, 120, 255 ) }, { 0.5f, IM_COL32( 255, 200, 60, 255 ) }, { 1.0f, IM_COL32( 60, 140, 255, 255 ) } };
+							static const ImWidgetsGradientStop kStrokeStops[] = { { 0.0f, IM_COL32( 255, 255, 255, 255 ) }, { 1.0f, IM_COL32( 120, 255, 200, 255 ) } };
+							ImWidgetsPaint fillPaint = ImWidgetsPaint::Linear( o, o + ImVec2( side, side ), kFillStops, 3 );
+							fillPaint.Interp = ImWidgetsGradientInterp_OkLab;
+							ImWidgetsPaint strokePaint = ImWidgetsPaint::Conic( o + ImVec2( side, side ) * 0.5f, 0.0f, kStrokeStops, 2 );
+							strokePaint.Spread = ImWidgetsSpread_Reflect;
 							if ( s_fill )
-								ImWidgets::PathFill( dl, path, ImGui::ColorConvertFloat4ToU32( s_fillCol ), s_rule );
+							{
+								if ( s_gradFill ) ImWidgets::PathFill( dl, path, fillPaint, s_rule );
+								else              ImWidgets::PathFill( dl, path, ImGui::ColorConvertFloat4ToU32( s_fillCol ), s_rule );
+							}
 							if ( s_stroke )
 							{
 								ImWidgetsStrokeStyle st;
 								st.Width = s_width; st.Cap = s_cap; st.Join = s_join; st.MiterLimit = s_miter;
 								st.Dashes = dashCount > 0 ? dashes : nullptr; st.DashCount = dashCount; st.DashOffset = s_dashOff;
-								ImWidgets::PathStroke( dl, path, ImGui::ColorConvertFloat4ToU32( s_strokeCol ), st );
+								if ( s_gradStroke ) ImWidgets::PathStroke( dl, path, strokePaint, st );
+								else                ImWidgets::PathStroke( dl, path, ImGui::ColorConvertFloat4ToU32( s_strokeCol ), st );
 							}
 							if ( s_ctrl )
 								for ( int i = 0; i < path.Points.Size; ++i )
@@ -5361,6 +5375,22 @@ namespace ImWidgets{
 						if ( !parsed )
 							ImGui::TextColored( ImVec4( 1.0f, 0.5f, 0.4f, 1.0f ), "Syntax error in path data: drawn up to the error (as SVG does)." );
 						ImGui::TextDisabled( "%d subpaths, %d points", path.Subpaths.Size, path.Points.Size );
+
+						// Variable-width stroke: pressure-like taper along a wave.
+						ImGui::TextDisabled( "DrawVariableWidthStroke (taper / pressure):" );
+						{
+							ImVec2 const vo = ImGui::GetCursorScreenPos();
+							float const vw = side, vh = ImPlatform_LpToPx( 90.0f );
+							ImGui::Dummy( ImVec2( vw, vh ) );
+							ImVec2 vp[ 64 ]; float vwid[ 64 ];
+							for ( int i = 0; i < 64; ++i )
+							{
+								float t = (float)i / 63.0f;
+								vp[ i ] = ImVec2( vo.x + 12.0f + t * ( vw - 24.0f ), vo.y + vh * 0.5f + ImSin( t * 9.0f + (float)ImGui::GetTime() ) * vh * 0.3f );
+								vwid[ i ] = ImPlatform_LpToPx( 2.0f + 16.0f * ImSin( t * IM_PI ) );
+							}
+							ImWidgets::DrawVariableWidthStroke( dl, vp, vwid, 64, ImWidgetsPaint::Linear( vo, vo + ImVec2( vw, 0 ), kVarStops, 2 ) );
+						}
 					}
 					DW_SsRecord( "Vector_Paths", _sy0, ImGui::GetCursorPos().y ); }
 

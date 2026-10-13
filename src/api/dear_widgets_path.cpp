@@ -1322,6 +1322,87 @@ void PathFill(ImDrawList* dl, const ImWidgetsPath& path, ImU32 col, ImWidgetsFil
     FillPolygons(dl, pts.Data, counts.Data, counts.Size, col, rule, 1.0f);
 }
 
+// ---- Variable-width strokes ------------------------------------------------
+
+// Appends the outline (counter-clockwise on screen, consistently for every
+// piece, so the nonzero union is exact) of the convex hull of two circles.
+static void DW_TaperedCapsule(ImVector<ImVec2>& segs, ImVec2 c0, float r0, ImVec2 c1, float r1, float tol)
+{
+    auto arcPts = [&](ImVector<ImVec2>& out, ImVec2 c, float r, float a0, float a1)
+    {
+        // a0 -> a1 (a1 > a0), segment count from the sagitta tolerance
+        float sweep = a1 - a0;
+        int n = 1;
+        if (r > tol) n = (int)ImCeil(sweep / (2.0f * acosf(ImMax(-1.0f, 1.0f - tol / r))));
+        n = ImClamp(n, 1, 128);
+        for (int i = 0; i <= n; ++i)
+        {
+            float a = a0 + sweep * (float)i / (float)n;
+            out.push_back(ImVec2(c.x + ImCos(a) * r, c.y + ImSin(a) * r));
+        }
+    };
+    ImVector<ImVec2> poly;
+    float dx = c1.x - c0.x, dy = c1.y - c0.y;
+    float d = ImSqrt(dx * dx + dy * dy);
+    if (d <= ImFabs(r1 - r0) + 1e-4f)
+    {
+        // One circle contains the other: the hull is the bigger circle.
+        ImVec2 c = r0 >= r1 ? c0 : c1; float r = ImMax(r0, r1);
+        arcPts(poly, c, r, 0.0f, 2.0f * IM_PI);
+        poly.pop_back();
+    }
+    else
+    {
+        // External tangents: the normal makes angle +-acos((r0 - r1) / d) with the axis.
+        float base = ImAtan2(dy, dx);
+        float phi = acosf(ImClamp((r0 - r1) / d, -1.0f, 1.0f));
+        // Around c1 from base - phi to base + phi (the far side), then around
+        // c0 from base + phi to base + 2*pi - phi (its far side).
+        arcPts(poly, c1, r1, base - phi, base + phi);
+        arcPts(poly, c0, r0, base + phi, base + 2.0f * IM_PI - phi);
+    }
+    for (int i = 0; i < poly.Size; ++i)
+    {
+        segs.push_back(poly[i]);
+        segs.push_back(poly[(i + 1) % poly.Size]);
+    }
+}
+
+static void DW_VariableStrokeSegs(const ImVec2* pts, const float* widths, int count, ImVector<ImVec2>& segs)
+{
+    const float tol = 0.2f;
+    if (count == 1) { DW_TaperedCapsule(segs, pts[0], widths[0] * 0.5f, pts[0], widths[0] * 0.5f, tol); return; }
+    for (int i = 0; i + 1 < count; ++i)
+        DW_TaperedCapsule(segs, pts[i], ImMax(0.0f, widths[i]) * 0.5f, pts[i + 1], ImMax(0.0f, widths[i + 1]) * 0.5f, tol);
+}
+
+void DrawVariableWidthStroke(ImDrawList* dl, const ImVec2* points, const float* widths, int count, ImU32 col)
+{
+    if (!dl || !points || !widths || count <= 0) return;
+    ImVector<ImVec2> segs;
+    DW_VariableStrokeSegs(points, widths, count, segs);
+    DW_FillSegments(dl, segs.Data, segs.Size / 2, col, ImWidgetsFillRule_NonZero, 1.0f);
+}
+
+void DrawVariableWidthStroke(ImDrawList* dl, const ImVec2* points, const float* widths, int count, const ImWidgetsPaint& paint)
+{
+    if (!dl || !points || !widths || count <= 0) return;
+    ImVector<ImVec2> segs;
+    DW_VariableStrokeSegs(points, widths, count, segs);
+    DW_FillSegments(dl, segs.Data, segs.Size / 2, paint.Color, ImWidgetsFillRule_NonZero, 1.0f, &paint);
+}
+
+void PathStroke(ImDrawList* dl, const ImWidgetsPath& path, const ImWidgetsPaint& paint, const ImWidgetsStrokeStyle& style)
+{
+    if (!dl || path.Subpaths.Size == 0 || style.Width <= 0.0f) return;
+    ImVector<ImVec2> segs;
+    DW_StrokeCollectBegin(&segs);
+    // Any opaque colour: in collect mode only the geometry matters.
+    PathStroke(dl, path, IM_COL32_WHITE, style);
+    DW_StrokeCollectEnd();
+    DW_FillSegments(dl, segs.Data, segs.Size / 2, paint.Color, ImWidgetsFillRule_NonZero, 1.0f, &paint);
+}
+
 void PathStroke(ImDrawList* dl, const ImWidgetsPath& path, ImU32 col, const ImWidgetsStrokeStyle& style)
 {
     if (!dl || path.Subpaths.Size == 0 || style.Width <= 0.0f) return;
@@ -1333,14 +1414,19 @@ void PathStroke(ImDrawList* dl, const ImWidgetsPath& path, ImU32 col, const ImWi
             // Zero-length subpath: SVG draws a dot for round / square caps.
             ImVec2 c = path.Points[sp.First];
             float h = style.Width * 0.5f;
-            if (style.Cap == ImWidgetsCap_Round)
+            ImWidgetsPath dot;
+            if (style.Cap == ImWidgetsCap_Round)       dot.Circle(c, h);
+            else if (style.Cap == ImWidgetsCap_Square) dot.Rect(ImVec2(c.x - h, c.y - h), ImVec2(c.x + h, c.y + h));
+            else continue;
+            if (ImVector<ImVec2>* collect = DW_StrokeCollectTarget())
             {
-                ImWidgetsPath dot; dot.Circle(c, h); PathFill(dl, dot, col);
+                // Collecting (paint stroke): add the dot's outline to the soup.
+                ImVector<ImVec2> pts; ImVector<int> counts;
+                dot.Flatten(pts, counts, nullptr, style.Tolerance);
+                for (int i = 0; i < pts.Size; ++i) { collect->push_back(pts[i]); collect->push_back(pts[(i + 1) % pts.Size]); }
             }
-            else if (style.Cap == ImWidgetsCap_Square)
-            {
-                ImWidgetsPath dot; dot.Rect(ImVec2(c.x - h, c.y - h), ImVec2(c.x + h, c.y + h)); PathFill(dl, dot, col);
-            }
+            else
+                PathFill(dl, dot, col);
             continue;
         }
         const ImVec2* pts = path.Points.Data + sp.First;

@@ -430,6 +430,20 @@ repeats, as in SVG), `DashOffset`, `Tolerance`. Strokes use the Euler-spiral
 stroker below; when the stroke shader is unavailable its exact outline is filled
 on the CPU with the nonzero rule, so caps, joins and dashes are kept.
 
+### Paint strokes and variable width
+```cpp
+void PathStroke( ImDrawList*, ImWidgetsPath const&, ImWidgetsPaint const& paint,
+                 ImWidgetsStrokeStyle const& style = ImWidgetsStrokeStyle() );
+void DrawVariableWidthStroke( ImDrawList*, ImVec2 const* points, float const* widths, int count, ImU32 col );
+void DrawVariableWidthStroke( ImDrawList*, ImVec2 const* points, float const* widths, int count,
+                              ImWidgetsPaint const& paint );
+```
+`PathStroke` with a paint fills the exact outline of every subpath and dash
+once (nonzero), like SVG `stroke="url(#gradient)"`; a translucent stroke does
+not darken where it crosses itself. `DrawVariableWidthStroke` takes a width
+per point (pressure, taper) with round joins and caps: the union of tapered
+capsules, filled once.
+
 ## Lines, Strokes and Dashes
 
 ### Unified dispatcher

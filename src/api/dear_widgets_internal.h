@@ -517,6 +517,13 @@ inline ImVec2 PxToLp(ImVec2 px) { float s = ImGui::GetStyle().FontScaleDpi; retu
 void DW_FillSegments( ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32 col,
                       ImWidgetsFillRule rule, float aa, const ImWidgetsPaint* paint = nullptr );
 
+// Stroke outline collection (dear_widgets_stroke.cpp): between Begin and End,
+// the DrawStroked* functions append their exact outline segments to `out`
+// instead of drawing.
+void DW_StrokeCollectBegin( ImVector<ImVec2>* out );
+void DW_StrokeCollectEnd();
+ImVector<ImVec2>* DW_StrokeCollectTarget(); // NULL when not collecting
+
 // Shaped (bidi, OpenType) glyph outlines of a string, flattened to directed
 // segments in local coordinates: x from the start of the line, y down from the
 // baseline (dear_widgets_slug.cpp). Returns false without the Slug atlas.
