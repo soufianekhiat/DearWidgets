@@ -5152,6 +5152,113 @@ namespace ImWidgets{
 
 					{ float _sy0 = ImGui::GetCursorPos().y;
 					ApplyOpenAll();
+					if ( ImGui::CollapsingHeader( "Vector Paths (SVG)" ) )
+					{
+						ImGui::TextWrapped( "SVG path data parsed into an ImWidgetsPath and drawn with plain ImDrawList triangles: "
+						                    "anti-aliased fill with the SVG fill rules (nonzero / evenodd, holes, self-intersections) "
+						                    "and strokes with caps, joins, miter limit and dashes. Works on stock Dear ImGui." );
+						struct PathPreset { const char* name; const char* d; };
+						static const PathPreset kPresets[] = {
+							{ "Heart (arcs + cubics)", "M12 21 C12 21 2 14 2 8 A5 5 0 0 1 12 6 A5 5 0 0 1 22 8 C22 14 12 21 12 21 Z" },
+							{ "Star",                  "M12 2 L14.9 8.6 L22 9.3 L16.6 14 L18.2 21 L12 17.3 L5.8 21 L7.4 14 L2 9.3 L9.1 8.6 Z" },
+							{ "Pentagram (self-intersecting)", "M12 2 L18.2 21 L2 9.3 L22 9.3 L5.8 21 Z" },
+							{ "Ring (hole)",           "M12 2 A10 10 0 1 1 11.99 2 Z M12 7 A5 5 0 1 0 12.01 7 Z" },
+							{ "Pie slices (arcs)",     "M12 12 L12 2 A10 10 0 0 1 21.5 15 Z M10 13 L1.5 16 A9 9 0 0 1 9 3.2 Z" },
+							{ "Tag (relative cmds)",   "M3 5 a2 2 0 0 1 2-2 h8 l8 8 -8 8 h-8 a2 2 0 0 1 -2 -2 z M7 7 a1.5 1.5 0 1 0 3 0 a1.5 1.5 0 1 0 -3 0 z" },
+							{ "Wave (Q / T chain)",    "M2 12 Q5 4 8 12 T14 12 T20 12 T26 12" },
+						};
+						static int  s_preset = 0;
+						static char s_d[1024] = "";
+						if ( s_d[ 0 ] == 0 ) ImStrncpy( s_d, kPresets[ 0 ].d, sizeof( s_d ) );
+						ImGui::SetNextItemWidth( ImPlatform_LpToPx( 260.0f ) );
+						if ( ImGui::BeginCombo( "Preset##svgpath", kPresets[ s_preset ].name ) )
+						{
+							for ( int i = 0; i < IM_ARRAYSIZE( kPresets ); ++i )
+								if ( ImGui::Selectable( kPresets[ i ].name, i == s_preset ) ) { s_preset = i; ImStrncpy( s_d, kPresets[ i ].d, sizeof( s_d ) ); }
+							ImGui::EndCombo();
+						}
+						ImGui::InputTextMultiline( "d##svgpath", s_d, sizeof( s_d ), ImVec2( -FLT_MIN, ImGui::GetTextLineHeight() * 3.0f ) );
+
+						static bool  s_fill = true, s_stroke = true, s_ctrl = false;
+						static int   s_rule = ImWidgetsFillRule_NonZero;
+						static ImVec4 s_fillCol( 0.25f, 0.55f, 0.95f, 0.85f ), s_strokeCol( 0.95f, 0.95f, 0.95f, 1.0f );
+						static float s_width = 6.0f, s_miter = 4.0f, s_rot = 0.0f, s_dashOff = 0.0f;
+						static int   s_cap = ImWidgetsCap_Round, s_join = ImWidgetsJoin_Round;
+						static char  s_dash[64] = "";
+						static bool  s_animDash = true;
+						ImGui::Checkbox( "Fill##svgpath", &s_fill ); ImGui::SameLine();
+						ImGui::RadioButton( "nonzero", &s_rule, ImWidgetsFillRule_NonZero ); ImGui::SameLine();
+						ImGui::RadioButton( "evenodd", &s_rule, ImWidgetsFillRule_EvenOdd ); ImGui::SameLine();
+						ImGui::ColorEdit4( "##svgfillcol", &s_fillCol.x, ImGuiColorEditFlags_NoInputs );
+						ImGui::Checkbox( "Stroke##svgpath", &s_stroke ); ImGui::SameLine();
+						ImGui::ColorEdit4( "##svgstrokecol", &s_strokeCol.x, ImGuiColorEditFlags_NoInputs ); ImGui::SameLine();
+						ImGui::Checkbox( "Control points##svgpath", &s_ctrl );
+						ImGui::SetNextItemWidth( ImPlatform_LpToPx( 160.0f ) ); ImGui::SliderFloat( "width##svgpath", &s_width, 0.5f, 40.0f ); ImGui::SameLine();
+						ImGui::SetNextItemWidth( ImPlatform_LpToPx( 160.0f ) ); ImGui::SliderFloat( "rotate##svgpath", &s_rot, -180.0f, 180.0f, "%.0f deg" );
+						ImGui::SetNextItemWidth( ImPlatform_LpToPx( 120.0f ) ); ImGui::Combo( "cap##svgpath", &s_cap, "None\0Butt\0Square\0Round\0TriangleOut\0TriangleIn\0" ); ImGui::SameLine();
+						ImGui::SetNextItemWidth( ImPlatform_LpToPx( 120.0f ) ); ImGui::Combo( "join##svgpath", &s_join, "Round\0Miter\0Bevel\0" ); ImGui::SameLine();
+						ImGui::SetNextItemWidth( ImPlatform_LpToPx( 120.0f ) ); ImGui::SliderFloat( "miter limit##svgpath", &s_miter, 1.0f, 10.0f );
+						ImGui::SetNextItemWidth( ImPlatform_LpToPx( 160.0f ) ); ImGui::InputTextWithHint( "dasharray##svgpath", "e.g. 12 6 or 20 8 4 8", s_dash, sizeof( s_dash ) ); ImGui::SameLine();
+						ImGui::Checkbox( "animate offset##svgpath", &s_animDash );
+
+						ImWidgetsPath path;
+						bool const parsed = path.AddSvgPathData( s_d );
+						float dashes[ 16 ]; int dashCount = 0;
+						{
+							const char* q = s_dash;
+							while ( *q && dashCount < IM_ARRAYSIZE( dashes ) )
+							{
+								while ( *q == ' ' || *q == ',' ) ++q;
+								if ( !*q ) break;
+								char* end = nullptr;
+								float v = strtof( q, &end );
+								if ( end == q ) break;
+								if ( v >= 0.0f ) dashes[ dashCount++ ] = v;
+								q = end;
+							}
+						}
+						if ( s_animDash && dashCount > 0 ) s_dashOff += ImGui::GetIO().DeltaTime * 30.0f;
+
+						ImDrawList* dl = ImGui::GetWindowDrawList();
+						float const side = ImMin( ImGui::GetContentRegionAvail().x, ImPlatform_LpToPx( 420.0f ) );
+						ImVec2 const o = ImGui::GetCursorScreenPos();
+						ImGui::InvisibleButton( "##svgpath_canvas", ImVec2( side, side ) );
+						dl->AddRectFilled( o, o + ImVec2( side, side ), IM_COL32( 30, 32, 38, 255 ) );
+						dl->PushClipRect( o, o + ImVec2( side, side ), true );
+						if ( path.Subpaths.Size > 0 )
+						{
+							// Fit the path's bounds into the canvas (like an SVG viewBox), then rotate about the centre.
+							ImRect b = path.GetBounds();
+							float const margin = ImMax( s_width, 8.0f ) + ImPlatform_LpToPx( 12.0f );
+							float const sc = ( side - 2.0f * margin ) / ImMax( 1e-3f, ImMax( b.GetWidth(), b.GetHeight() ) );
+							ImVec2 const c = b.GetCenter();
+							ImWidgetsTransform2D t = ImWidgetsTransform2D::Translate( o.x + side * 0.5f, o.y + side * 0.5f )
+							                       * ImWidgetsTransform2D::Rotate( s_rot * IM_PI / 180.0f )
+							                       * ImWidgetsTransform2D::Scale( sc, sc )
+							                       * ImWidgetsTransform2D::Translate( -c.x, -c.y );
+							path.Transform( t );
+							if ( s_fill )
+								ImWidgets::PathFill( dl, path, ImGui::ColorConvertFloat4ToU32( s_fillCol ), s_rule );
+							if ( s_stroke )
+							{
+								ImWidgetsStrokeStyle st;
+								st.Width = s_width; st.Cap = s_cap; st.Join = s_join; st.MiterLimit = s_miter;
+								st.Dashes = dashCount > 0 ? dashes : nullptr; st.DashCount = dashCount; st.DashOffset = s_dashOff;
+								ImWidgets::PathStroke( dl, path, ImGui::ColorConvertFloat4ToU32( s_strokeCol ), st );
+							}
+							if ( s_ctrl )
+								for ( int i = 0; i < path.Points.Size; ++i )
+									dl->AddCircleFilled( path.Points[ i ], ImPlatform_LpToPx( 2.5f ), ( i % 3 ) == 0 ? IM_COL32( 255, 200, 60, 255 ) : IM_COL32( 120, 200, 255, 200 ) );
+						}
+						dl->PopClipRect();
+						if ( !parsed )
+							ImGui::TextColored( ImVec4( 1.0f, 0.5f, 0.4f, 1.0f ), "Syntax error in path data: drawn up to the error (as SVG does)." );
+						ImGui::TextDisabled( "%d subpaths, %d points", path.Subpaths.Size, path.Points.Size );
+					}
+					DW_SsRecord( "Vector_Paths", _sy0, ImGui::GetCursorPos().y ); }
+
+					{ float _sy0 = ImGui::GetCursorPos().y;
+					ApplyOpenAll();
 					if ( ImGui::CollapsingHeader( "Dashed Polylines" ) )
 					{
 						ImGui::TextWrapped( "Arc-length accurate dashed polylines with proper caps and joins. "

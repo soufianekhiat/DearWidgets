@@ -360,6 +360,17 @@ after the 29 physical colour pickers, `ColorSlice`, `SpectrumEditor`,
 in a group (as ImGui's own `ColorPicker4` is); the ones with a single main item
 still report its ID, so `BeginPopupContextItem()` right after them keeps working.
 
+#### Vector paths (SVG / Canvas2D) on a plain ImDrawList
+
+New `ImWidgetsPath` (moveTo / lineTo / quadratic / cubic / SVG elliptical arc /
+Canvas2D arc / rect / round rect / ellipse, 2x3 transforms) with an SVG path
+data parser (`AddSvgPathData`), and `FillPolygons` / `PathFill` / `PathStroke`.
+Fills are anti-aliased, honour the SVG fill rules (nonzero / evenodd, holes,
+self-intersections) and never double-cover a pixel. Everything is ImDrawList
+triangles, so it works on stock Dear ImGui. Strokes now fall back to filling
+their exact outline on the CPU when the stroke shader is unavailable, instead
+of degrading to `AddPolyline` (no caps / joins) or drawing nothing.
+
 #### Bidirectional text
 
 `DrawText`, the gradient / image text variants and `CalcTextSize` now run the

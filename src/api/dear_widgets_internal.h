@@ -511,6 +511,12 @@ inline ImVec2 PxToLp(ImVec2 px) { float s = ImGui::GetStyle().FontScaleDpi; retu
 // or BeginDragDropSource() right after the widget would assert. Widgets with
 // one main interactive item call SetPrimary( id ) and the group then reports
 // that ID whenever no sub-item claimed it.
+// Anti-aliased fill of a directed segment soup (pairs of points) with the given
+// fill rule, as ImDrawList triangles (dear_widgets_path.cpp). Used by FillPolygons
+// and as the CPU fallback of the stroke renderer.
+void DW_FillSegments( ImDrawList* dl, const ImVec2* seg_pts, int seg_count, ImU32 col,
+                      ImWidgetsFillRule rule, float aa );
+
 struct DW_EditGroup
 {
     ImGuiID Primary = 0;

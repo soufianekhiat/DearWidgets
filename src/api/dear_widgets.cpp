@@ -35457,25 +35457,6 @@ namespace ImWidgets
         }
     } // anonymous namespace
 
-    // The StrokedPolyline / StrokedBezierPath thick-line modes are rendered by the
-    // "stroke" custom shader (winding-number outline). Returns false when that
-    // shader can't be used -- a build without custom-shader support, or a failed/
-    // absent runtime compile -- so callers fall back to a CPU polyline instead of
-    // silently drawing nothing (which made e.g. Color Analysis / Curve editor
-    // lines disappear while their handles still showed).
-    static bool DW_StrokeShaderAvailable()
-    {
-#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
-        ImWidgetsContext* ctx = GetCurrentContext();
-        if ( !ctx ) return false;
-        if ( ctx->strokeShader.program == NULL )
-            CreateInternalShader( &ctx->strokeShader, "stroke", 0, NULL, 0, NULL );
-        return ctx->strokeShader.program != NULL;
-#else
-        return false;
-#endif
-    }
-
     void DrawThickLine(ImDrawList* dl,
                        ImVec2 const* points, int n,
                        ImWidgetsThickLineDesc const& d)
@@ -35510,26 +35491,27 @@ namespace ImWidgets
                                /*closed*/false, d.cap, d.join, d.miter_limit);
             }
 #else
+            // No shader tier: the stroker fills its exact outline on the CPU, so
+            // caps, joins and dashes are kept (AddPolyline has none of them).
             if (d.dashed)
-                DW_SoftwareDashedPolyline(dl, points, n, d.color, d.thickness,
-                                          d.dash_len, d.gap_len, d.dash_offset);
+            {
+                float const pat[2] = { d.dash_len, d.gap_len };
+                DrawStrokedDashedPolyline(dl, points, n, d.color, d.thickness,
+                                          pat, 2, d.dash_offset,
+                                          d.cap, d.join, d.miter_limit, /*closed*/false);
+            }
             else
-                dl->AddPolyline(points, n, d.color, d.thickness, ImDrawFlags_None);
+            {
+                DrawStrokedPolyline(dl, points, n, d.color, d.thickness,
+                                    d.cap, d.join, d.miter_limit, /*closed*/false);
+            }
 #endif
             return;
 
         case ImWidgetsThickLineMode_StrokedPolyline:
             // Euler-spiral stroke via the "stroke" custom shader. CPU-polyline
             // fallback when that shader is unavailable so the line never vanishes.
-            if ( !DW_StrokeShaderAvailable() )
-            {
-                if (d.dashed)
-                    DW_SoftwareDashedPolyline(dl, points, n, d.color, d.thickness,
-                                              d.dash_len, d.gap_len, d.dash_offset);
-                else
-                    dl->AddPolyline(points, n, d.color, d.thickness, ImDrawFlags_None);
-                return;
-            }
+            // Without the stroke shader the stroker fills the outline on the CPU.
             if (d.dashed)
             {
                 float const pat[2] = { d.dash_len, d.gap_len };
@@ -35548,15 +35530,7 @@ namespace ImWidgets
         {
             // Catmull-Rom -> cubic Bezier path -> Euler-spiral stroke via the
             // "stroke" custom shader. CPU-polyline fallback when it's unavailable.
-            if ( !DW_StrokeShaderAvailable() )
-            {
-                if (d.dashed)
-                    DW_SoftwareDashedPolyline(dl, points, n, d.color, d.thickness,
-                                              d.dash_len, d.gap_len, d.dash_offset);
-                else
-                    dl->AddPolyline(points, n, d.color, d.thickness, ImDrawFlags_None);
-                return;
-            }
+            // Without the stroke shader the stroker fills the outline on the CPU.
             ImVector<ImVec2> bez;
             CatmullRomToCubicBezierPath(points, n, bez);
             if (bez.Size < 4) return;

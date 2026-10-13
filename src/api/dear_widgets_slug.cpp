@@ -2652,6 +2652,18 @@ namespace ImWidgets {
 	{
 		if (font_size > 0.0f) font_size = SlugLpToPx(font_size);
 		else                  font_size = ImGui::GetFontSize();
+#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+		// DrawText falls back to AddText when the Slug program failed to build:
+		// measure the same way so layout matches what is drawn.
+		if (gs_pContext && !gs_pContext->slugShader.program && text)
+		{
+			if (!font) font = ImGui::GetFont();
+			ImFontBaked* baked = font->GetFontBaked(font_size);
+			if (out_ascent) *out_ascent = baked ? baked->Ascent * (font_size / baked->Size) : font_size * 0.8f;
+			ImVec2 sz = font->CalcTextSizeA(font_size, FLT_MAX, 0.0f, text, text_end);
+			return ImVec2(sz.x, font_size);
+		}
+#endif
 		return CalcTextSize_Impl(font, font_size, text, text_end, out_ascent);
 	}
 
@@ -2760,6 +2772,9 @@ namespace ImWidgets {
 		} else {
 			struct Ctx { ImVector<SlugShapedGlyph>* out; float em; } c = { &out, atlas->emScale };
 			DwShaper_ShapeBidi(atlas->shaperCtx, text, textLen, dir, &SlugShapeEmit, &c);
+			// Nothing came out (shaper error): report "not shaped" so callers lay
+			// out per codepoint, and don't cache the failure.
+			if (out.Size == 0) return false;
 			SlugShapeCacheInsert(atlas, shapeKey, textLen, out);
 		}
 
@@ -2790,6 +2805,7 @@ namespace ImWidgets {
 		memcpy(&bits, &pos.x, 4); h = (h ^ bits) * 0x100000001B3ull;
 		memcpy(&bits, &pos.y, 4); h = (h ^ bits) * 0x100000001B3ull;
 		h = (h ^ col) * 0x100000001B3ull;
+		h = (h ^ (ImU64)(GetStyle().TextDirection + 1)) * 0x100000001B3ull; // bidi result depends on it
 		memcpy(&bits, &sz, 4);    h = (h ^ bits) * 0x100000001B3ull;
 		return h ? h : 1; // 0 = empty sentinel
 	}

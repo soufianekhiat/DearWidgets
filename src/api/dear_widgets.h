@@ -1707,6 +1707,91 @@ enum ImWidgetsJoin_
 };
 typedef int ImWidgetsJoin;
 
+//////////////////////////////////////////////////////////////////////////
+// Vector paths (SVG / Canvas2D style), drawn with plain ImDrawList geometry.
+//////////////////////////////////////////////////////////////////////////
+
+// SVG `fill-rule` / Canvas2D fill rule.
+enum ImWidgetsFillRule_
+{
+	ImWidgetsFillRule_NonZero = 0,
+	ImWidgetsFillRule_EvenOdd = 1,
+};
+typedef int ImWidgetsFillRule;
+
+// 2x3 affine transform, SVG `matrix(a b c d e f)` layout:
+//   x' = a*x + c*y + e,  y' = b*x + d*y + f.   m = { a, b, c, d, e, f }.
+// `A * B` applies B first (same order as SVG / Canvas2D transform lists).
+struct ImWidgetsTransform2D
+{
+	float m[ 6 ];
+	ImWidgetsTransform2D() { m[ 0 ] = 1; m[ 1 ] = 0; m[ 2 ] = 0; m[ 3 ] = 1; m[ 4 ] = 0; m[ 5 ] = 0; }
+	ImWidgetsTransform2D( float a, float b, float c, float d, float e, float f ) { m[ 0 ] = a; m[ 1 ] = b; m[ 2 ] = c; m[ 3 ] = d; m[ 4 ] = e; m[ 5 ] = f; }
+	ImVec2 Apply( ImVec2 p ) const { return ImVec2( m[ 0 ] * p.x + m[ 2 ] * p.y + m[ 4 ], m[ 1 ] * p.x + m[ 3 ] * p.y + m[ 5 ] ); }
+	IMGUI_API ImWidgetsTransform2D operator*( ImWidgetsTransform2D const& o ) const;
+	IMGUI_API static ImWidgetsTransform2D Translate( float tx, float ty );
+	IMGUI_API static ImWidgetsTransform2D Scale( float sx, float sy );
+	IMGUI_API static ImWidgetsTransform2D Rotate( float radians );
+};
+
+struct ImWidgetsSubpath
+{
+	int  First;   // index of the first point in ImWidgetsPath::Points
+	int  Count;   // 3N+1 points: start + N cubic segments (c1, c2, end)
+	bool Closed;
+};
+
+// A path in the SVG / Canvas2D sense: a list of subpaths. Every segment is
+// stored as a cubic Bezier (lines, quadratics and arcs are converted exactly
+// or, for arcs, within a few 1e-4 of the radius), so one representation
+// serves fill, stroke and transforms. Builder calls chain:
+//     ImWidgetsPath p; p.MoveTo(a).LineTo(b).QuadTo(c, d).Close();
+struct ImWidgetsPath
+{
+	ImVector<ImVec2>           Points;
+	ImVector<ImWidgetsSubpath> Subpaths;
+
+	IMGUI_API void           Clear();
+	IMGUI_API ImWidgetsPath& MoveTo( ImVec2 p );
+	IMGUI_API ImWidgetsPath& LineTo( ImVec2 p );
+	IMGUI_API ImWidgetsPath& QuadTo( ImVec2 ctrl, ImVec2 p );
+	IMGUI_API ImWidgetsPath& CubicTo( ImVec2 c1, ImVec2 c2, ImVec2 p );
+	// SVG elliptical arc ("A rx ry x-axis-rotation large-arc-flag sweep-flag x y").
+	IMGUI_API ImWidgetsPath& ArcTo( float rx, float ry, float x_axis_rotation_deg, bool large_arc, bool sweep, ImVec2 p );
+	// Canvas2D arc(): circle arc between two angles (radians, y down = clockwise).
+	IMGUI_API ImWidgetsPath& Arc( ImVec2 center, float radius, float a_min, float a_max, bool counter_clockwise = false );
+	IMGUI_API ImWidgetsPath& Close();
+	IMGUI_API ImWidgetsPath& Rect( ImVec2 min, ImVec2 max );
+	IMGUI_API ImWidgetsPath& RoundRect( ImVec2 min, ImVec2 max, float radius );
+	IMGUI_API ImWidgetsPath& Ellipse( ImVec2 center, ImVec2 radii );
+	IMGUI_API ImWidgetsPath& Circle( ImVec2 center, float radius );
+	IMGUI_API ImWidgetsPath& Transform( ImWidgetsTransform2D const& t );
+	// Appends SVG path data (the `d` attribute): M L H V C S Q T A Z, absolute
+	// and relative, implicit repeats, packed numbers and arc flags. Returns
+	// false on a syntax error (everything before the error is kept, as SVG does).
+	IMGUI_API bool           AddSvgPathData( char const* d );
+	IMGUI_API ImVec2         CurrentPoint() const;
+	IMGUI_API ImRect         GetBounds() const;   // control-point bounds (conservative)
+	// Flattens to polylines (tolerance in path units); one count per subpath.
+	IMGUI_API void           Flatten( ImVector<ImVec2>& out_points, ImVector<int>& out_counts,
+	                                  ImVector<bool>* out_closed = nullptr, float tolerance = 0.25f ) const;
+
+	void DW_EnsureSubpath(); // internal
+};
+
+// Stroke parameters, mirroring SVG's stroke-* properties.
+struct ImWidgetsStrokeStyle
+{
+	float         Width      = 1.0f;                 // stroke-width (pixels)
+	ImWidgetsCap  Cap        = ImWidgetsCap_Butt;     // stroke-linecap (SVG default: butt)
+	ImWidgetsJoin Join       = ImWidgetsJoin_Miter;   // stroke-linejoin (SVG default: miter)
+	float         MiterLimit = 4.0f;                 // stroke-miterlimit
+	float const*  Dashes     = nullptr;              // stroke-dasharray (odd lists repeat, as in SVG)
+	int           DashCount  = 0;
+	float         DashOffset = 0.0f;                 // stroke-dashoffset
+	float         Tolerance  = 0.25f;                // flattening tolerance (pixels)
+};
+
 enum ImWidgetsPrimitive_
 {
     ImWidgetsPrimitive_Line,
@@ -4507,11 +4592,12 @@ namespace ImWidgets{
 	IMGUI_API void DrawText( ImDrawList* pDrawList, ImVec2 pos, ImU32 col, char const* text, char const* text_end = nullptr );
 	// Explicit font and size in logical pixels (pass nullptr/0 to use current ImGui font/size)
 	IMGUI_API void DrawText( ImDrawList* pDrawList, ImFont* font, float font_size, ImVec2 pos, ImU32 col, char const* text, char const* text_end = nullptr );
-	// Measure text. font_size in lp. Returns (width, height) in physical pixels.
+	// Measure text exactly as DrawText lays it out (shaped, bidi-ordered). font_size in lp.
+	// Returns (width, height) in physical pixels.
 	// out_ascent: if non-null, receives ascent in physical pixels (pass cursor.y + ascent as baseline to DrawText).
 	IMGUI_API ImVec2 CalcTextSize( ImFont* font, float font_size, char const* text, char const* text_end = nullptr, float* out_ascent = nullptr );
-	// Like CalcTextSize but runs the OpenType shaper (kb_text_shape) for accurate width of shaped text
-	// (Arabic contextual forms, ligatures). Slower than CalcTextSize -- use only when alignment precision matters.
+	// Same as CalcTextSize( ... ).x (CalcTextSize shapes: bidi, Arabic forms, ligatures, kerning).
+	// Kept for source compatibility.
 	IMGUI_API float CalcShapedTextWidth( ImFont* font, float font_size, char const* text, char const* text_end = nullptr );
 	// ---- Typography: tesselated text for gradient/image fills ----
 	// font_size in lp. tess_tol: curve flattening tolerance (lower = more segments, smoother). 0 = auto.
@@ -5726,6 +5812,23 @@ namespace ImWidgets{
         ImWidgetsJoin join = ImWidgetsJoin_Round,
         float miter_limit = 4.0f,
         bool closed = false);
+
+    // ---- Vector paths: plain ImDrawList geometry, works on stock Dear ImGui ----
+    // Anti-aliased fill of any set of closed contours (holes, self-intersections)
+    // with the SVG fill rule. contour_counts[i] points per contour, consecutive in
+    // `points`; each contour is implicitly closed. aa = fringe width in pixels.
+    IMGUI_API void FillPolygons( ImDrawList* draw_list, ImVec2 const* points,
+                                 int const* contour_counts, int contour_count,
+                                 ImU32 col, ImWidgetsFillRule rule = ImWidgetsFillRule_NonZero,
+                                 float aa = 1.0f );
+    // Fill / stroke an ImWidgetsPath (points are in screen pixels; Transform()
+    // the path first to place it). Fill treats every subpath as closed (SVG).
+    // Stroke uses the Euler-spiral stroker; without the stroke shader it fills
+    // the exact stroke outline on the CPU, so caps / joins / dashes still apply.
+    IMGUI_API void PathFill  ( ImDrawList* draw_list, ImWidgetsPath const& path, ImU32 col,
+                               ImWidgetsFillRule rule = ImWidgetsFillRule_NonZero );
+    IMGUI_API void PathStroke( ImDrawList* draw_list, ImWidgetsPath const& path, ImU32 col,
+                               ImWidgetsStrokeStyle const& style = ImWidgetsStrokeStyle() );
 
     // Debug
     IMGUI_API void SetStrokeDebugWireframe(bool enable);

@@ -742,7 +742,10 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
     if (ctx->strokeShader.program == NULL)
         CreateInternalShader(&ctx->strokeShader, "stroke", 0, NULL, 0, NULL);
     ImPlatform_ShaderProgram program = ctx->strokeShader.program;
-    if (!program) return; // shader compile failed
+    // No stroke shader (build without custom shaders, or a failed compile): the
+    // outline below is still exact, so fill it on the CPU with the nonzero rule
+    // instead of drawing nothing.
+    const bool cpu_fill = (program == NULL);
 
     // --- Build cap point arrays (same as reference finish()) ---
     ImVector<ImVec2> end_cap_pts, start_cap_pts;
@@ -850,6 +853,11 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
 
     int num_segs = segs.Size / 2;
     if (num_segs <= 0) return;
+
+    if (cpu_fill) {
+        DW_FillSegments(dl, segs.Data, num_segs, col, ImWidgetsFillRule_NonZero, 1.0f);
+        return;
+    }
 
 
     // --- Compute bounding box ---

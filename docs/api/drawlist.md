@@ -359,6 +359,59 @@ paints filled bands between successive `band_edges` (there must be
 
 ---
 
+## Vector Paths (SVG / Canvas2D)
+
+Paths drawn with plain `ImDrawList` triangles: no custom shader, so they work on
+stock Dear ImGui and every backend.
+
+```cpp
+ImWidgetsPath p;
+p.AddSvgPathData( "M12 21 C12 21 2 14 2 8 A5 5 0 0 1 12 6 A5 5 0 0 1 22 8 C22 14 12 21 12 21 Z" );
+p.Transform( ImWidgetsTransform2D::Translate( origin.x, origin.y ) * ImWidgetsTransform2D::Scale( 8, 8 ) );
+ImWidgets::PathFill  ( dl, p, IM_COL32( 230, 60, 80, 255 ) );
+ImWidgetsStrokeStyle st; st.Width = 3; st.Join = ImWidgetsJoin_Round;
+ImWidgets::PathStroke( dl, p, IM_COL32_WHITE, st );
+```
+
+### `ImWidgetsPath`
+Canvas2D-style builder (calls chain): `MoveTo`, `LineTo`, `QuadTo`, `CubicTo`,
+`ArcTo` (SVG elliptical arc: radii, x-axis rotation, large-arc and sweep flags),
+`Arc` (Canvas2D `arc()`), `Close`, plus `Rect`, `RoundRect`, `Ellipse`, `Circle`.
+`AddSvgPathData( d )` parses SVG path data: `M L H V C S Q T A Z`, absolute and
+relative, implicit command repeats, packed numbers (`10-5.5.5`) and packed arc
+flags; on a syntax error it keeps everything before the error and returns
+`false`, like a browser. Every segment is stored as a cubic Bezier, so
+`Transform( ImWidgetsTransform2D )` is exact for lines and curves.
+`Flatten` returns polylines; `GetBounds` the control-point bounds.
+
+`ImWidgetsTransform2D` is SVG's `matrix(a b c d e f)`; `A * B` applies `B`
+first, as in an SVG `transform` list.
+
+### `FillPolygons` / `PathFill`
+```cpp
+void FillPolygons( ImDrawList*, ImVec2 const* points, int const* contour_counts, int contour_count,
+                   ImU32 col, ImWidgetsFillRule rule = ImWidgetsFillRule_NonZero, float aa = 1.0f );
+void PathFill    ( ImDrawList*, ImWidgetsPath const&, ImU32 col,
+                   ImWidgetsFillRule rule = ImWidgetsFillRule_NonZero );
+```
+Anti-aliased fill with the SVG `fill-rule` (`NonZero` / `EvenOdd`): holes,
+multiple contours and self-intersecting outlines are exact. The covered area is
+decomposed into trapezoids (merged along each edge pair, so the triangle count
+follows the number of edges) with a 1 px anti-aliasing fringe; no pixel is
+covered twice, so translucent fills have no seams. `PathFill` treats every
+subpath as closed, like SVG.
+
+### `PathStroke`
+```cpp
+void PathStroke( ImDrawList*, ImWidgetsPath const&, ImU32 col,
+                 ImWidgetsStrokeStyle const& style = ImWidgetsStrokeStyle() );
+```
+`ImWidgetsStrokeStyle` mirrors SVG's `stroke-*` properties: `Width`, `Cap`,
+`Join`, `MiterLimit`, `Dashes` / `DashCount` (`stroke-dasharray`; an odd list
+repeats, as in SVG), `DashOffset`, `Tolerance`. Strokes use the Euler-spiral
+stroker below; when the stroke shader is unavailable its exact outline is filled
+on the CPU with the nonzero rule, so caps, joins and dashes are kept.
+
 ## Lines, Strokes and Dashes
 
 ### Unified dispatcher

@@ -1688,9 +1688,20 @@ static ImVec4 LaTeXBuildAndMeasure(const char* latex, float font_size, LaTeXBox*
 	return ImVec4(mnX, mnY, mxX, mxY);
 }
 
+// Math is laid out left to right whatever the paragraph direction of the
+// surrounding text: force LTR shaping for every glyph box (otherwise a lone
+// "(" or "-5" would be resolved as RTL and mirrored / reordered).
+struct LaTeXForceLTR
+{
+	ImWidgetsTextDirection saved;
+	LaTeXForceLTR()  : saved( GetStyle().TextDirection ) { GetStyle().TextDirection = ImWidgetsTextDirection_LTR; }
+	~LaTeXForceLTR() { GetStyle().TextDirection = saved; }
+};
+
 // pos = top-left corner of the visible bounding box.
 void DrawLaTeX(ImDrawList* pDrawList, float font_size, ImVec2 pos, ImU32 col, const char* latex)
 {
+	LaTeXForceLTR ltrGuard;
 	font_size = SlugLpToPx(font_size);
 	if (!pDrawList || !latex || !*latex) return;
 	ImFont* mathFont = LaTeXGetMathFont();
@@ -1712,6 +1723,7 @@ void DrawLaTeX(ImDrawList* pDrawList, float font_size, ImVec2 pos, ImU32 col, co
 // Returns (width, height) of the actual visible bounding box.
 ImVec2 CalcLaTeXSize(float font_size, const char* latex)
 {
+	LaTeXForceLTR ltrGuard;
 	font_size = SlugLpToPx(font_size);
 	if (!latex || !*latex) return ImVec2(0, 0);
 	ImVec4 bb = LaTeXBuildAndMeasure(latex, font_size, NULL);
@@ -1722,6 +1734,7 @@ void LoadLaTeXFont() { LaTeXLoadMathFont(); }
 
 void DrawLaTeXDebug(ImDrawList* pDrawList, float font_size, ImVec2 pos, const char* latex)
 {
+	LaTeXForceLTR ltrGuard;
 	font_size = SlugLpToPx(font_size);
 	if (!pDrawList || !latex || !*latex) return;
 
@@ -2003,6 +2016,7 @@ static void TessellateBox(LaTeXBox* box, ImFont* mathFont, float fontSize, float
 void TessellateLaTeX(float font_size, const char* latex, ImVec2 pos,
                     ImWidgetsShape& outShape, float tess_tol, int iterations)
 {
+    LaTeXForceLTR ltrGuard;
     font_size = SlugLpToPx(font_size);
     outShape.vertices.resize(0);
     outShape.triangles.resize(0);

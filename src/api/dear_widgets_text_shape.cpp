@@ -164,8 +164,10 @@ enum DwBidiType : unsigned char
 
 static inline bool DwBidi_IsWhitespace(unsigned int cp)
 {
+    // WS class plus segment / paragraph separators (L1). U+00A0 is CS, not WS.
     return cp == 0x20 || cp == 0x09 || cp == 0x0B || cp == 0x0C || cp == 0x3000
-        || (cp >= 0x2000 && cp <= 0x200A) || cp == 0x00A0 || cp == 0x1680 || cp == 0x205F;
+        || (cp >= 0x2000 && cp <= 0x200A) || cp == 0x1680 || cp == 0x205F
+        || cp == 0x2028 || cp == 0x2029;
 }
 
 // Resolves one embedding level per codepoint. `types` is modified in place.
@@ -338,9 +340,15 @@ int DwShaper_ShapeBidi(DwShaperCtx* ctx, const char* text, int len, int directio
         kbts_ShapeBegin(ctx->kbts, (lr.level & 1) ? KBTS_DIRECTION_RTL : KBTS_DIRECTION_LTR, KBTS_LANGUAGE_DONT_KNOW);
         kbts_ShapeUtf8(ctx->kbts, text + bBegin, (kbts_u32)(bEnd - bBegin), KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
         kbts_ShapeEnd(ctx->kbts);
+        // kbts may split one level run into several (script / font changes,
+        // e.g. Hebrew next to Arabic). It returns them in logical order with
+        // each one flipped internally; for an odd level the pieces themselves
+        // must also be emitted last-to-first.
+        ImVector<int> subStarts;
         kbts_run kr;
         while (kbts_ShapeRun(ctx->kbts, &kr))
         {
+            subStarts.push_back(glyphs.Size);
             // kbts segments direction on its own and flips any run it considers
             // RTL (e.g. Arabic-Indic digits, class AN). Our levels are
             // authoritative: undo the flip when kbts disagrees with them.
@@ -367,6 +375,18 @@ int DwShaper_ShapeBidi(DwShaperCtx* ctx, const char* text, int len, int directio
                 {
                     DwShaperGlyph t = glyphs[a]; glyphs[a] = glyphs[b]; glyphs[b] = t;
                 }
+        }
+        if ((lr.level & 1) && subStarts.Size > 1)
+        {
+            ImVector<DwShaperGlyph> tmp;
+            tmp.reserve(glyphs.Size - lr.glyphBegin);
+            for (int k = subStarts.Size - 1; k >= 0; --k)
+            {
+                int b0 = subStarts[k];
+                int b1 = (k + 1 < subStarts.Size) ? subStarts[k + 1] : glyphs.Size;
+                for (int gi = b0; gi < b1; ++gi) tmp.push_back(glyphs[gi]);
+            }
+            for (int k = 0; k < tmp.Size; ++k) glyphs[lr.glyphBegin + k] = tmp[k];
         }
         lr.glyphEnd = glyphs.Size;
     }
