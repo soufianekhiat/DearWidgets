@@ -702,20 +702,60 @@ static void DW_SvgApplyStyle(DW_SvgStyle& st, const DW_SvgTag& tag, const DW_Svg
 
 static float DW_SvgAttrF(const DW_SvgTag& t, const char* n, float def, float pct_ref = 0.0f) { return DW_SvgLength(t.Get(n), def, pct_ref); }
 
-// clip-path="url(#id)" (attribute or style declaration) -> id.
-static bool DW_SvgClipPathRef(const DW_SvgTag& tag, char* out, int out_size)
+// Value of one property in a declaration block (last declaration wins), trimmed.
+static bool DW_SvgDeclValue(const char* block, const char* prop, char* out, int out_size)
 {
-    const char* v = tag.Get("clip-path");
+    bool found = false;
+    const size_t pl = strlen(prop);
+    for (const char* p = block; *p; )
+    {
+        while (*p == ';' || isspace((unsigned char)*p)) ++p;
+        const char* nb = p;
+        while (*p && *p != ':' && *p != ';') ++p;
+        if (*p != ':') { while (*p && *p != ';') ++p; continue; }
+        const char* ne = p; while (ne > nb && isspace((unsigned char)ne[-1])) --ne;
+        ++p; while (isspace((unsigned char)*p)) ++p;
+        const char* vb = p; while (*p && *p != ';') ++p;
+        const char* ve = p; while (ve > vb && isspace((unsigned char)ve[-1])) --ve;
+        if ((size_t)(ne - nb) == pl && strncmp(nb, prop, pl) == 0)
+        {
+            const int n = ImMin((int)(ve - vb), out_size - 1);
+            memcpy(out, vb, (size_t)n); out[n] = 0;
+            if (char* imp = strstr(out, "!important")) { *imp = 0; for (int k = (int)(imp - out) - 1; k >= 0 && isspace((unsigned char)out[k]); --k) out[k] = 0; }
+            found = true;
+        }
+    }
+    return found;
+}
+
+// Cascaded value of a property: style= declaration, else the most specific
+// matching <style> rule (later wins on ties), else the presentation attribute.
+static const char* DW_SvgCascade(const DW_SvgTag& tag, const DW_SvgCss* css, const char* prop, char* buf, int buf_size)
+{
+    if (const char* decl = tag.Get("style"))
+        if (DW_SvgDeclValue(decl, prop, buf, buf_size)) return buf;
+    if (css)
+    {
+        int best = -1;
+        for (int i = 0; i < css->rules.Size; ++i)
+        {
+            const DW_SvgCssRule& r = css->rules[i];
+            if ((best < 0 || r.specificity >= css->rules[best].specificity) && DW_SvgCssMatch(r, tag))
+            {
+                char tmp[8];
+                if (DW_SvgDeclValue(css->decls.Data + r.declOff, prop, tmp, (int)sizeof(tmp))) best = i;
+            }
+        }
+        if (best >= 0 && DW_SvgDeclValue(css->decls.Data + css->rules[best].declOff, prop, buf, buf_size)) return buf;
+    }
+    return tag.Get(prop);
+}
+
+// clip-path="url(#id)" (attribute or style declaration) -> id.
+static bool DW_SvgClipPathRef(const DW_SvgTag& tag, const DW_SvgCss* css, char* out, int out_size)
+{
     char buf[128] = {};
-    if (!v)
-        if (const char* css = tag.Get("style"))
-            if (const char* p = strstr(css, "clip-path"))
-                if ((p = strchr(p, ':')) != nullptr)
-                {
-                    ++p; int n = 0;
-                    while (p[n] && p[n] != ';' && n < 127) { buf[n] = p[n]; ++n; }
-                    v = buf;
-                }
+    const char* v = DW_SvgCascade(tag, css, "clip-path", buf, (int)sizeof(buf));
     if (!v) return false;
     const char* u = strstr(v, "url(");
     if (!u) return false;
@@ -925,15 +965,10 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
                 DW_SvgStyle tmp;
                 ImU32 col = IM_COL32_BLACK;
                 float op = 1.0f;
-                const char* sc = tag.Get("stop-color");
-                const char* so = tag.Get("stop-opacity");
-                // style="stop-color:..;stop-opacity:.."
+                // attribute, <style> rule or style= declaration
                 char scBuf[64] = {}, soBuf[32] = {};
-                if (const char* decl = tag.Get("style"))
-                {
-                    if (const char* p = strstr(decl, "stop-color")) { p = strchr(p, ':'); if (p) { ++p; int n = 0; while (p[n] && p[n] != ';' && n < 63) { scBuf[n] = p[n]; ++n; } sc = scBuf; } }
-                    if (const char* p = strstr(decl, "stop-opacity")) { p = strchr(p, ':'); if (p) { ++p; int n = 0; while (p[n] && p[n] != ';' && n < 31) { soBuf[n] = p[n]; ++n; } so = soBuf; } }
-                }
+                const char* sc = DW_SvgCascade(tag, &css, "stop-color", scBuf, (int)sizeof(scBuf));
+                const char* so = DW_SvgCascade(tag, &css, "stop-opacity", soBuf, (int)sizeof(soBuf));
                 if (sc) DW_SvgParseColor(sc, col);
                 if (so) { float f; const char* q = so; if (DW_SvgNum(q, f)) op = ImSaturate(*q == '%' ? f * 0.01f : f); }
                 float a = ((col >> IM_COL32_A_SHIFT) & 0xFF) / 255.0f * op;
@@ -1015,7 +1050,7 @@ ImWidgetsSvg* ImWidgets::SvgLoad(const char* text)
         if (!curClip && clipCount < DW_SvgMaxClipRefs)
         {
             char cid[64];
-            if (DW_SvgClipPathRef(tag, cid, (int)sizeof(cid)))
+            if (DW_SvgClipPathRef(tag, &css, cid, (int)sizeof(cid)))
             {
                 ImStrncpy(clips[clipCount].id, cid, sizeof(clips[clipCount].id));
                 clips[clipCount].xf = xf;
