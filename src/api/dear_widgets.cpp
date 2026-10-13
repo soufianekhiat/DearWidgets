@@ -9427,6 +9427,7 @@ namespace ImWidgets{
 			return false;
 
 		ImGui::PushID( label );
+		DW_EditGroup dwEditGroup;
 		bool changed = false;
 
 		// `size.x` (logical px) is the width of the WHOLE panel, so derive the
@@ -9551,7 +9552,7 @@ namespace ImWidgets{
 		}
 
 		ImGui::PopID();
-		return changed;
+		return DW_Edited( changed );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -9667,6 +9668,7 @@ namespace ImWidgets{
 			return false;
 
 		ImGui::PushID( label );
+		DW_EditGroup dwEditGroup;
 		ImGuiIO&      io  = ImGui::GetIO();
 		ImDrawList*   dl  = window->DrawList;
 		ImGuiStorage* stg = ImGui::GetStateStorage();
@@ -9811,7 +9813,7 @@ namespace ImWidgets{
 		}
 
 		ImGui::PopID();
-		return changed;
+		return DW_Edited( changed );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -11538,6 +11540,7 @@ namespace ImWidgets{
 			return false;
 
 		ImGui::PushID( label );
+		DW_EditGroup dwEditGroup;
 		ImGuiIO& io = ImGui::GetIO();
 		ImDrawList* dl = window->DrawList;
 		ImGuiStorage* stg = ImGui::GetStateStorage();
@@ -11912,7 +11915,7 @@ namespace ImWidgets{
 		ImGui::EndGroup();
 
 		ImGui::PopID();
-		return changed;
+		return DW_Edited( changed );
 	}
 
 	// Round-half-away-from-zero, so integer quantization is symmetric about 0.
@@ -12854,7 +12857,7 @@ namespace ImWidgets{
 			float t   = ( range > 0.0f ) ? ImClamp( ( val - fMin ) / range, 0.0f, 1.0f ) : 0.0f;
 			float y   = ImLerp( frame_bb.Max.y, frame_bb.Min.y, t );  // Y inverted: t=0 → bottom, t=1 → top
 			float align01 = ( k == 0 ) ? 0.0f : ( k == value_count - 1 ) ? 1.0f : 0.5f;
-			DrawSignetFilledCursor( dl, ImVec2( frame_bb.Min.x, y ), cursorH, frame_w, 1.0f / 3.0f, align01, -IM_PI * 0.5f, IM_COL32( 255, 0, 0, 255 ) );
+			DrawSignetFilledCursor( dl, ImVec2( frame_bb.Min.x, y ), cursorH, frame_w, 1.0f / 3.0f, align01, -IM_PI * 0.5f, GetColorU32( ImWidgetsCol_SliderN_Cursor ) );
 		}
 
 		if ( label_size.x > 0.0f )
@@ -15893,6 +15896,7 @@ namespace ImWidgets{
 			return false;
 
 		ImGuiContext& g = *GImGui;
+		DW_EditGroup dwEditGroup;
 		const ImGuiStyle& style = g.Style;
 		const ImGuiID id = window->GetID( label );
 
@@ -16009,7 +16013,7 @@ namespace ImWidgets{
 
 		dl->PopClipRect();
 
-		return value_changed;
+		return DW_Edited( value_changed );
 	}
 
 	void DrawColorDisc( ImDrawList* pDrawList, ImVec2 center, float radius, ImColorWheelMode mode, float thirdAxis, int numSectors, int numRings )
@@ -16280,9 +16284,9 @@ namespace ImWidgets{
 			{
 				float handleT = ImClamp( thirdAxis / hdr_max, 0.0f, 1.0f );
 				float handleX = ImLerp( slider_bb.Min.x, slider_bb.Max.x, handleT );
-				float handleHalf = 4.0f;
-				ImVec2 handleMin( handleX - handleHalf, slider_bb.Min.y - 1.0f );
-				ImVec2 handleMax( handleX + handleHalf, slider_bb.Max.y + 1.0f );
+				float handleHalf = LpToPx( 4.0f );
+				ImVec2 handleMin( handleX - handleHalf, slider_bb.Min.y - LpToPx( 1.0f ) );
+				ImVec2 handleMax( handleX + handleHalf, slider_bb.Max.y + LpToPx( 1.0f ) );
 
 				// Fill handle with the current color at this position
 				float hr, hg, hb;
@@ -16399,11 +16403,12 @@ namespace ImWidgets{
 			}
 			if ( ImGui::MenuItem( "Copy Hex" ) )
 			{
-				float r = color->x, gg = color->y, b = color->z;
+				// HDR wheels (hdr_max > 1) and negative values do not fit a byte: clamp so the hex stays 8 digits.
+				float r = ImSaturate( color->x ), gg = ImSaturate( color->y ), b = ImSaturate( color->z );
 				char hex[ 16 ];
 				ImFormatString( hex, IM_ARRAYSIZE( hex ), "#%02X%02X%02X%02X",
 					( int )( r * 255.0f + 0.5f ), ( int )( gg * 255.0f + 0.5f ),
-					( int )( b * 255.0f + 0.5f ), ( int )( alpha * 255.0f + 0.5f ) );
+					( int )( b * 255.0f + 0.5f ), ( int )( ImSaturate( alpha ) * 255.0f + 0.5f ) );
 				ImGui::SetClipboardText( hex );
 			}
 			ImGui::EndPopup();
@@ -17082,22 +17087,36 @@ namespace ImWidgets{
 			{
 				float u = ImClamp( ( mp.x - plane_bb.Min.x ) / plane_bb.GetWidth(), 0.0f, 1.0f );
 				float v = ImClamp( ( mp.y - plane_bb.Min.y ) / plane_bb.GetHeight(), 0.0f, 1.0f );
-				comp[ desc.planeAxisX ] = ImLerp( desc.axisMin[ desc.planeAxisX ], desc.axisMax[ desc.planeAxisX ], u );
-				comp[ desc.planeAxisY ] = ImLerp( desc.axisMin[ desc.planeAxisY ], desc.axisMax[ desc.planeAxisY ], v );
-				value_changed = true;
+				float nx = ImLerp( desc.axisMin[ desc.planeAxisX ], desc.axisMax[ desc.planeAxisX ], u );
+				float ny = ImLerp( desc.axisMin[ desc.planeAxisY ], desc.axisMax[ desc.planeAxisY ], v );
+				// Report a change only when the value moves, not every frame the mouse is held.
+				if ( nx != comp[ desc.planeAxisX ] || ny != comp[ desc.planeAxisY ] )
+				{
+					comp[ desc.planeAxisX ] = nx;
+					comp[ desc.planeAxisY ] = ny;
+					value_changed = true;
+				}
 			}
 			else if ( *pDragMode == 2 ) // vslider
 			{
 				float t = ImClamp( ( mp.y - vslider_bb.Min.y ) / vslider_bb.GetHeight(), 0.0f, 1.0f );
-				comp[ desc.sliderAxis ] = ImLerp( desc.axisMin[ desc.sliderAxis ], desc.axisMax[ desc.sliderAxis ], t );
-				value_changed = true;
+				float nv = ImLerp( desc.axisMin[ desc.sliderAxis ], desc.axisMax[ desc.sliderAxis ], t );
+				if ( nv != comp[ desc.sliderAxis ] )
+				{
+					comp[ desc.sliderAxis ] = nv;
+					value_changed = true;
+				}
 			}
 			else if ( *pDragMode >= 3 && *pDragMode <= 5 ) // component sliders
 			{
 				int ci = *pDragMode - 3;
 				float t = ImClamp( ( mp.x - comp_bb[ci].Min.x ) / comp_bb[ci].GetWidth(), 0.0f, 1.0f );
-				comp[ci] = ImLerp( desc.axisMin[ci], desc.axisMax[ci], t );
-				value_changed = true;
+				float nv = ImLerp( desc.axisMin[ci], desc.axisMax[ci], t );
+				if ( nv != comp[ci] )
+				{
+					comp[ci] = nv;
+					value_changed = true;
+				}
 			}
 		}
 
@@ -17437,6 +17456,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		// Create keys first (inserts may shift/realloc storage), then grab stable pointers.
 		storage->GetIntRef( ImGui::GetID( "mode" ), 0 );
@@ -17571,9 +17591,12 @@ namespace ImWidgets{
 		SampleSkinColorLUT( r, gg, b, *pMel, *pBlend, *pBlood );
 		color->x = r; color->y = gg; color->z = b;
 
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -17689,6 +17712,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		// Create keys first (inserts may shift/realloc storage), then grab stable pointers.
 		storage->GetIntRef( ImGui::GetID( "mode" ), 0 );
@@ -17819,9 +17843,12 @@ namespace ImWidgets{
 		HairParamsToSRGB( r, gg, b, *pEu, *pPheo, *pRed );
 		color->x = r; color->y = gg; color->z = b;
 
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -18110,6 +18137,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		// Create keys first (inserts may shift/realloc storage), then grab stable pointers.
 		storage->GetIntRef( ImGui::GetID( "mode" ), 0 );
@@ -18242,9 +18270,12 @@ namespace ImWidgets{
 		LeafParamsToSRGB( r, gg, b, *pCab, *pCar, *pCanth, *pBrown, LEAF_CW, LEAF_CM, LEAF_N );
 		color->x = r; color->y = gg; color->z = b;
 
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -18423,6 +18454,7 @@ namespace ImWidgets{
 		if ( window->SkipItems ) return false;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		float* pT = storage->GetFloatRef( ImGui::GetID( "T" ), 6500.0f );
 
@@ -18449,8 +18481,12 @@ namespace ImWidgets{
 		BlackbodyToSRGB( r, g, b, *pT );
 		color->x = r; color->y = g; color->z = b;
 
+		bool const dwEdited = changed;
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed;
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -18629,6 +18665,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		// Materialize all keys first: GetIntRef/GetFloatRef insert into a sorted
 		// vector (shifting/reallocating it), which would invalidate any pointer
@@ -18734,9 +18771,12 @@ namespace ImWidgets{
 		float r, gg, b; PigmentMixToSRGB( r, gg, b, oidx, oconc, 4 );
 		color->x = r; color->y = gg; color->z = b;
 
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -18818,6 +18858,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		// Create keys first (inserts may shift/realloc storage), then grab stable pointers.
 		storage->GetIntRef( ImGui::GetID( "gem" ), 0 );
@@ -18910,9 +18951,12 @@ namespace ImWidgets{
 
 		float r, gg, b; GemToSRGB( r, gg, b, *pGem, *pConc, *pPath, *pClarity );
 		color->x = r; color->y = gg; color->z = b;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -19004,6 +19048,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		// Create keys first (inserts may shift/realloc storage), then grab stable pointers.
 		storage->GetFloatRef( ImGui::GetID( "chl" ), 0.3f );
@@ -19099,9 +19144,12 @@ namespace ImWidgets{
 
 		float r, gg, b; WaterToSRGB( r, gg, b, *pChl, *pCdom, *pTurb );
 		color->x = r; color->y = gg; color->z = b;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -19171,6 +19219,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		// Create keys first (inserts may shift/realloc storage), then grab stable pointers.
 		storage->GetFloatRef( ImGui::GetID( "ant" ), 0.08f );
@@ -19256,9 +19305,12 @@ namespace ImWidgets{
 
 		float r, gg, b; IrisToSRGB( r, gg, b, *pAnt, *pStroma, *pPos );
 		color->x = r; color->y = gg; color->z = b;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -19362,6 +19414,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		// Create keys first (inserts may shift/realloc storage), then grab stable pointers.
 		storage->GetIntRef( ImGui::GetID( "elem" ), 5 );
@@ -19454,9 +19507,12 @@ namespace ImWidgets{
 
 		float r, gg, b; FlameToSRGB( r, gg, b, *pElem, *pTemp, *pLine, *pSodium );
 		color->x = r; color->y = gg; color->z = b;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	static inline float SpecGauss( float lam, float c, float w ) { float d = ( lam - c ) / w; return expf( -d * d ); }
@@ -19542,6 +19598,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		storage->GetFloatRef( ImGui::GetID( "days" ), 1.0f );
 		storage->GetFloatRef( ImGui::GetID( "sev" ), 0.7f );
@@ -19607,9 +19664,12 @@ namespace ImWidgets{
 		ImGui::Text( "Day %.1f   Severity %.0f%%   Skin melanin %.0f%%", *pDays, ( *pSev ) * 100.0f, ( *pMel ) * 100.0f );
 		float r, gg, b; BruiseToSRGB( r, gg, b, *pDays, *pSev, *pMel );
 		color->x = r; color->y = gg; color->z = b;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -19673,6 +19733,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		storage->GetFloatRef( ImGui::GetID( "ion" ), 0.4f );
 		storage->GetFloatRef( ImGui::GetID( "low" ), 0.3f );
@@ -19737,9 +19798,12 @@ namespace ImWidgets{
 		ImGui::Text( "Ionization [OIII] %.0f%%   Low-ion [NII/SII] %.0f%%   Hydrogen %.0f%%", ( *pIon ) * 100.0f, ( *pLow ) * 100.0f, ( *pH ) * 100.0f );
 		float r, gg, b; NebulaToSRGB( r, gg, b, *pIon, *pLow, *pH );
 		color->x = r; color->y = gg; color->z = b;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -19804,6 +19868,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		storage->GetFloatRef( ImGui::GetID( "temp" ), 180.0f );
 		storage->GetFloatRef( ImGui::GetID( "time" ), 8.0f );
@@ -19869,9 +19934,12 @@ namespace ImWidgets{
 		ImGui::Text( "Temp %.0f C   Time %.1f min   Sugar<->Protein %.0f%%", *pTemp, *pTime, ( *pSugar ) * 100.0f );
 		float r, gg, b; MaillardToSRGB( r, gg, b, *pTemp, *pTime, *pSugar );
 		color->x = r; color->y = gg; color->z = b;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -19939,6 +20007,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		storage->GetFloatRef( ImGui::GetID( "yr" ), 6.0f );
 		storage->GetFloatRef( ImGui::GetID( "env" ), 0.4f );
@@ -20004,9 +20073,12 @@ namespace ImWidgets{
 		ImGui::Text( "Age %.0f yr   Environment %.0f%%   Humidity %.0f%%", *pYr, ( *pEnv ) * 100.0f, ( *pHum ) * 100.0f );
 		float r, gg, b; PatinaToSRGB( r, gg, b, *pYr, *pEnv, *pHum );
 		color->x = r; color->y = gg; color->z = b;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -20076,6 +20148,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		storage->GetIntRef( ImGui::GetID( "mat" ), 0 );
 		storage->GetFloatRef( ImGui::GetID( "abs" ), 1.2f );
@@ -20148,9 +20221,12 @@ namespace ImWidgets{
 		ImGui::Text( "%s   Absorption %.2f   Scatter %.0f   IOR %.2f", s_SSSMats[ *pMat ].name, *pAbs, *pSS, *pIor );
 		float r, gg, b; SubsurfaceToSRGB( r, gg, b, *pMat, *pAbs, *pSS, *pIor );
 		color->x = r; color->y = gg; color->z = b;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -20232,6 +20308,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		storage->GetIntRef( ImGui::GetID( "gas" ), 0 );
 		storage->GetFloatRef( ImGui::GetID( "hg" ), 0.0f );
@@ -20302,9 +20379,12 @@ namespace ImWidgets{
 		ImGui::Text( "%s   Mercury %.0f%%   Phosphor %.0f%%   White %.0fK", s_Gases[ *pGas ].name, ( *pHg ) * 100.0f, ( *pPhos ) * 100.0f, ImLerp( 2700.0f, 6500.0f, *pWarm ) );
 		float r, gg, b; DischargeToSRGB( r, gg, b, *pGas, *pHg, *pPhos, *pWarm );
 		color->x = r; color->y = gg; color->z = b;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -20369,6 +20449,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		storage->GetFloatRef( ImGui::GetID( "grain" ), 0.2f );
 		storage->GetFloatRef( ImGui::GetID( "path" ), 0.5f );
@@ -20433,9 +20514,12 @@ namespace ImWidgets{
 		ImGui::Text( "Grain/scatter %.0f%%   Path depth %.0f%%   Impurity %.0f%%", ( *pGrain ) * 100.0f, ( *pPath ) * 100.0f, ( *pImp ) * 100.0f );
 		float r, gg, b; IceToSRGB( r, gg, b, *pGrain, *pPath, *pImp );
 		color->x = r; color->y = gg; color->z = b;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -20523,6 +20607,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		storage->GetIntRef( ImGui::GetID( "a" ), 0 );
 		storage->GetIntRef( ImGui::GetID( "b" ), 2 );
@@ -20601,9 +20686,12 @@ namespace ImWidgets{
 		float oconc[ 4 ] = { kc * ( 1.0f - *pBFrac ), kc * ( *pBFrac ), *pWhite, *pBlack };
 		float r, gg, b; KMMixPaletteToSRGB( r, gg, b, s_Ochres, oidx, oconc, 4 );
 		color->x = r; color->y = gg; color->z = b;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -20725,6 +20813,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		storage->GetFloatRef( ImGui::GetID( "T" ),    5778.0f );
 		storage->GetFloatRef( ImGui::GetID( "logg" ), 4.44f );
@@ -20821,9 +20910,12 @@ namespace ImWidgets{
 		color->x = r; color->y = gg; color->z = b;
 
 		if ( planeActive || fehActive ) changed = true;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -20946,6 +21038,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		storage->GetFloatRef( ImGui::GetID( "spo2" ), 0.97f );
 		storage->GetFloatRef( ImGui::GetID( "bv" ),   0.02f );
@@ -21048,9 +21141,12 @@ namespace ImWidgets{
 		color->x = r; color->y = gg; color->z = b;
 
 		if ( planeActive || melActive ) changed = true;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -21144,6 +21240,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		storage->GetFloatRef( ImGui::GetID( "depth" ), 1.5f );
 		storage->GetFloatRef( ImGui::GetID( "mu" ),    -0.6f );
@@ -21242,9 +21339,12 @@ namespace ImWidgets{
 		color->x = r; color->y = gg; color->z = b;
 
 		if ( planeActive || sigActive ) changed = true;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -21371,6 +21471,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		storage->GetFloatRef( ImGui::GetID( "mix" ),  0.5f );
 		storage->GetFloatRef( ImGui::GetID( "pres" ), 0.3f );
@@ -21468,9 +21569,12 @@ namespace ImWidgets{
 		color->x = r; color->y = gg; color->z = b;
 
 		if ( planeActive || phosActive ) changed = true;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -21575,6 +21679,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		// Two-pass: insert every entry first, THEN grab pointers — ImGuiStorage's
 		// sorted vector can reallocate on insert and invalidate earlier pointers.
@@ -21707,9 +21812,12 @@ namespace ImWidgets{
 		if ( out_count ) *out_count = paletteN;
 
 		if ( planeActive || hueActive ) changed = true;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -21781,6 +21889,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		// Two-pass: insert every entry first, THEN grab pointers.
 		storage->GetFloatRef( ImGui::GetID( "p0r" ), 1.0f );
@@ -21970,9 +22079,12 @@ namespace ImWidgets{
 		color->x = mr; color->y = mg; color->z = mb;
 
 		if ( planeActive || tintActive ) changed = true;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -22073,6 +22185,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		// Two-pass: insert every entry first, THEN grab pointers.
 		storage->GetIntRef  ( ImGui::GetID( "metal" ),  ArtMetal_Iron );
@@ -22167,9 +22280,12 @@ namespace ImWidgets{
 		color->x = r; color->y = gg; color->z = b;
 
 		if ( planeActive || grActive ) changed = true;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -22252,6 +22368,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		// Two-pass: insert every entry first, THEN grab pointers. (Otherwise the
 		// sorted-vector reallocation on later inserts dangles the earlier ones —
@@ -22349,9 +22466,12 @@ namespace ImWidgets{
 		color->x = r; color->y = gg; color->z = b;
 
 		if ( planeActive || intActive ) changed = true;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 	//////////////////////////////////////////////////////////////////////////
 	// 9. ColorPickerMoodPalette — curated 5-swatch palettes by mood word
@@ -22479,6 +22599,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		// Two-pass: insert every entry first, THEN grab pointers.
 		storage->GetIntRef  ( ImGui::GetID( "mood" ), ArtMood_Sunset );
@@ -22596,9 +22717,12 @@ namespace ImWidgets{
 		}
 
 		if ( planeActive || crActive ) changed = true;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -22660,6 +22784,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		// Two-pass: insert every entry first, THEN grab pointers.
 		storage->GetFloatRef( ImGui::GetID( "h" ),    0.08f );
@@ -22793,9 +22918,12 @@ namespace ImWidgets{
 		}
 
 		if ( planeActive || satActive ) changed = true;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -22967,6 +23095,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		// Two-pass alloc to avoid pointer invalidation when ImGuiStorage's
 		// sorted vector reallocates on later inserts.
@@ -23179,9 +23308,12 @@ namespace ImWidgets{
 		if ( out_count ) *out_count = handleCount;
 
 		if ( planeActive || vActive ) changed = true;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 
@@ -23719,6 +23851,7 @@ namespace ImWidgets{
 		ImDrawList* dl = window->DrawList;
 
 		ImGui::PushID( label );
+		ImGui::BeginGroup(); // group: IsItemEdited/IsItemDeactivatedAfterEdit see the sub-items
 		ImGuiStorage* storage = ImGui::GetStateStorage();
 		// Two-pass key materialization to avoid storage-realloc pointer invalidation.
 		// State: time × elevation on the plane; observer altitude on the vertical
@@ -23859,9 +23992,12 @@ namespace ImWidgets{
 		}
 
 		if ( planeActive || altActive ) changed = true;
+		bool const dwEdited = changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y || color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		if ( dwEdited )
+			ImGui::MarkItemEdited( GImGui->ActiveId );
+		ImGui::EndGroup();
 		ImGui::PopID();
-		return changed && ( color->x != dwColorBefore.x || color->y != dwColorBefore.y ||
-		                    color->z != dwColorBefore.z || color->w != dwColorBefore.w );
+		return dwEdited;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -23887,6 +24023,7 @@ namespace ImWidgets{
 			return false;
 
 		ImGuiContext& g = *GImGui;
+		DW_EditGroup dwEditGroup;
 		const ImGuiStyle& style = g.Style;
 		const ImGuiID id = window->GetID( label );
 		const float w = ImGui::CalcItemWidth();
@@ -24015,7 +24152,7 @@ namespace ImWidgets{
 
 		ImGui::PopID();
 
-		return changed;
+		return DW_Edited( changed );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -24290,6 +24427,7 @@ namespace ImWidgets{
 			return false;
 
 		ImGuiContext& g = *GImGui;
+		DW_EditGroup dwEditGroup;
 		const ImGuiStyle& style = g.Style;
 		const ImGuiID id = window->GetID( label );
 
@@ -24356,8 +24494,12 @@ namespace ImWidgets{
 		if ( hovered || g.ActiveId == id )
 		{
 			float screenR = ImMax( canvas->BrushSize * pixW, 1.0f );
-			ImGui::GetForegroundDrawList()->AddCircle( mp, screenR, IM_COL32( 255, 255, 255, 200 ), 0, 1.0f );
-			ImGui::GetForegroundDrawList()->AddCircle( mp, screenR + 1.0f, IM_COL32( 0, 0, 0, 120 ), 0, 1.0f );
+			// Foreground list so the cursor sits above other windows, but clipped to the canvas.
+			ImDrawList* fg = ImGui::GetForegroundDrawList();
+			fg->PushClipRect( bb.Min, bb.Max, true );
+			fg->AddCircle( mp, screenR, IM_COL32( 255, 255, 255, 200 ), 0, LpToPx( 1.0f ) );
+			fg->AddCircle( mp, screenR + LpToPx( 1.0f ), IM_COL32( 0, 0, 0, 120 ), 0, LpToPx( 1.0f ) );
+			fg->PopClipRect();
 		}
 
 		// Label
@@ -24391,7 +24533,8 @@ namespace ImWidgets{
 					fitH = panelW / aspect;
 				}
 				// Left: canvas
-				if ( PaintCanvas( "##exp", canvas, ImVec2( fitW, fitH ) ) )
+				// fitW/fitH are screen pixels; PaintCanvas takes logical pixels.
+				if ( PaintCanvas( "##exp", canvas, PxToLp( ImVec2( fitW, fitH ) ) ) )
 					modified = true;
 				ImGui::SameLine();
 				// Right: controls
@@ -24455,7 +24598,7 @@ namespace ImWidgets{
 			EndExpandedWindow();
 		}
 
-		return modified;
+		return DW_Edited( modified );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -24518,6 +24661,7 @@ namespace ImWidgets{
 			return false;
 
 		ImGuiContext& g = *GImGui;
+		DW_EditGroup dwEditGroup;
 		ImWidgetsStyle& dwStyle = GetStyle();
 		const ImGuiID id = window->GetID( label );
 		const bool nonUniform = ( flags & ImTransformGizmoFlags_NonUniformScale ) != 0;
@@ -25005,7 +25149,7 @@ namespace ImWidgets{
 			EndExpandedWindow();
 		}
 
-		return value_changed;
+		return DW_Edited( value_changed );
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -27292,10 +27436,49 @@ namespace ImWidgets {
 			dl->AddText( ImVec2( labelX, sy - textSize.y * 0.5f ), labelCol, buf );
 		}
 
+		// Border, label and expand button are drawn on every path, including the
+		// empty-data one, so an open expand window is never orphaned.
+		auto finishScope = [&]()
+		{
+			// Border
+			dl->AddRect( scope_bb.Min, scope_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+
+			// Label
+			if ( label[ 0 ] != '#' || label[ 1 ] != '#' )
+				ImGui::RenderText( ImVec2( scope_bb.Max.x + style.ItemInnerSpacing.x, scope_bb.Min.y + style.FramePadding.y ), label );
+
+			// Expand button
+			bool* pExpanded = WidgetExpandButton( id, scope_bb );
+			if ( pExpanded && *pExpanded )
+			{
+				if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 800, 400 ) ) )
+				{
+					ImVec2 avail = ImGui::GetContentRegionAvail();
+					float widgetW = avail.x * 0.75f;
+					// Options (need to read before widget)
+					int* pOverlay = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##overlay" ), overlay ? 1 : 0 );
+					int* pScale = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##scale" ), ( int )scale );
+					// Left: widget
+					ParadeScope( "##exp", data, *pOverlay != 0, ( ImParadeScale )*pScale, ImVec2( widgetW, avail.y ) );
+					ImGui::SameLine();
+					// Right: options
+					ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
+					ImGui::TextUnformatted( "Overlay" );
+					ImGui::Checkbox( "##overlay", ( bool* )pOverlay );
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "Scale" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					ImGui::Combo( "##scale", pScale, "Linear\0Log\0Inv Log\0" );
+					ImGui::EndChild();
+				}
+				EndExpandedWindow();
+			}
+			ImGui::PopID();
+		};
+
 		if ( data.ChannelCount <= 0 || data.PeakCount == 0 || data.XBins <= 0 || data.YBins <= 0 )
 		{
-			dl->AddRect( scope_bb.Min, scope_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
-			ImGui::PopID();
+			finishScope();
 			return;
 		}
 
@@ -27427,40 +27610,7 @@ namespace ImWidgets {
 
 		dl->PopClipRect();
 
-		// Border
-		dl->AddRect( scope_bb.Min, scope_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
-
-		// Label
-		if ( label[ 0 ] != '#' || label[ 1 ] != '#' )
-			ImGui::RenderText( ImVec2( scope_bb.Max.x + style.ItemInnerSpacing.x, scope_bb.Min.y + style.FramePadding.y ), label );
-
-		// Expand button
-		bool* pExpanded = WidgetExpandButton( id, scope_bb );
-		if ( pExpanded && *pExpanded )
-		{
-			if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 800, 400 ) ) )
-			{
-				ImVec2 avail = ImGui::GetContentRegionAvail();
-				float widgetW = avail.x * 0.75f;
-				// Options (need to read before widget)
-				int* pOverlay = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##overlay" ), overlay ? 1 : 0 );
-				int* pScale = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##scale" ), ( int )scale );
-				// Left: widget
-				ParadeScope( "##exp", data, *pOverlay != 0, ( ImParadeScale )*pScale, ImVec2( widgetW, avail.y ) );
-				ImGui::SameLine();
-				// Right: options
-				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
-				ImGui::TextUnformatted( "Overlay" );
-				ImGui::Checkbox( "##overlay", ( bool* )pOverlay );
-				ImGui::Spacing();
-				ImGui::TextUnformatted( "Scale" );
-				ImGui::SetNextItemWidth( -FLT_MIN );
-				ImGui::Combo( "##scale", pScale, "Linear\0Log\0Inv Log\0" );
-				ImGui::EndChild();
-			}
-			EndExpandedWindow();
-		}
-		ImGui::PopID();
+		finishScope();
 	}
 
 	// ========================================================================
@@ -27618,10 +27768,44 @@ namespace ImWidgets {
 		}
 
 		// Signal rendering
+		// Border, label and expand button are drawn on every path, including the
+		// empty-data one, so an open expand window is never orphaned.
+		auto finishScope = [&]()
+		{
+			// Border
+			dl->AddRect( total_bb.Min, total_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+
+			// Label
+			if ( label[ 0 ] != '#' || label[ 1 ] != '#' )
+				ImGui::RenderText( ImVec2( total_bb.Max.x + style.ItemInnerSpacing.x, total_bb.Min.y + style.FramePadding.y ), label );
+
+			// Expand button
+			bool* pExpanded = WidgetExpandButton( id, total_bb );
+			if ( pExpanded && *pExpanded )
+			{
+				if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 800, 400 ) ) )
+				{
+					ImVec2 avail = ImGui::GetContentRegionAvail();
+					float widgetW = avail.x * 0.75f;
+					// Options (need to read before widget)
+					int* pSkinLine = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##skinline" ), showSkinToneLine ? 1 : 0 );
+					// Left: widget
+					VectorScope( "##exp", data, *pSkinLine != 0, ImVec2( widgetW, avail.y ) );
+					ImGui::SameLine();
+					// Right: options
+					ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
+					ImGui::TextUnformatted( "Skin Tone Line" );
+					ImGui::Checkbox( "##skinline", ( bool* )pSkinLine );
+					ImGui::EndChild();
+				}
+				EndExpandedWindow();
+			}
+			ImGui::PopID();
+		};
+
 		if ( data.Resolution <= 0 || data.PeakCount == 0 )
 		{
-			dl->AddRect( total_bb.Min, total_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
-			ImGui::PopID();
+			finishScope();
 			return;
 		}
 
@@ -27701,35 +27885,7 @@ namespace ImWidgets {
 
 		dl->PopClipRect();
 
-		// Border
-		dl->AddRect( total_bb.Min, total_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
-
-		// Label
-		if ( label[ 0 ] != '#' || label[ 1 ] != '#' )
-			ImGui::RenderText( ImVec2( total_bb.Max.x + style.ItemInnerSpacing.x, total_bb.Min.y + style.FramePadding.y ), label );
-
-		// Expand button
-		bool* pExpanded = WidgetExpandButton( id, total_bb );
-		if ( pExpanded && *pExpanded )
-		{
-			if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 800, 400 ) ) )
-			{
-				ImVec2 avail = ImGui::GetContentRegionAvail();
-				float widgetW = avail.x * 0.75f;
-				// Options (need to read before widget)
-				int* pSkinLine = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##skinline" ), showSkinToneLine ? 1 : 0 );
-				// Left: widget
-				VectorScope( "##exp", data, *pSkinLine != 0, ImVec2( widgetW, avail.y ) );
-				ImGui::SameLine();
-				// Right: options
-				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
-				ImGui::TextUnformatted( "Skin Tone Line" );
-				ImGui::Checkbox( "##skinline", ( bool* )pSkinLine );
-				ImGui::EndChild();
-			}
-			EndExpandedWindow();
-		}
-		ImGui::PopID();
+		finishScope();
 	}
 
 	// ========================================================================
@@ -28010,10 +28166,55 @@ namespace ImWidgets {
 			}
 		}
 
+		// Border, label and expand button are drawn on every path, including the
+		// empty-data one, so an open expand window is never orphaned.
+		auto finishScope = [&]()
+		{
+			// Border
+			dl->AddRect( scope_bb.Min, scope_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
+
+			// Label
+			if ( label[ 0 ] != '#' || label[ 1 ] != '#' )
+				ImGui::RenderText( ImVec2( scope_bb.Max.x + style.ItemInnerSpacing.x, scope_bb.Min.y + style.FramePadding.y ), label );
+
+			// Expand button
+			bool* pExpanded = WidgetExpandButton( id, scope_bb );
+			if ( pExpanded && *pExpanded )
+			{
+				if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 800, 400 ) ) )
+				{
+					ImVec2 avail = ImGui::GetContentRegionAvail();
+					float widgetW = avail.x * 0.75f;
+					// Options (need to read before widget)
+					int* pLayout = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##layout" ), ( int )layout );
+					int* pXScale = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##xscale" ), ( int )xScale );
+					int* pYScale = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##yscale" ), ( int )yScale );
+					// Left: widget
+					Histogram( "##exp", data, ( ImHistogramLayout )*pLayout, ( ImParadeScale )*pXScale, ( ImParadeScale )*pYScale, ImVec2( widgetW, avail.y ) );
+					ImGui::SameLine();
+					// Right: options
+					ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
+					ImGui::TextUnformatted( "Layout" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					ImGui::Combo( "##layout", pLayout, "Overlapped\0Stacked\0" );
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "X Scale" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					ImGui::Combo( "##xscale", pXScale, "Linear\0Log\0Inv Log\0" );
+					ImGui::Spacing();
+					ImGui::TextUnformatted( "Y Scale" );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					ImGui::Combo( "##yscale", pYScale, "Linear\0Log\0Inv Log\0" );
+					ImGui::EndChild();
+				}
+				EndExpandedWindow();
+			}
+			ImGui::PopID();
+		};
+
 		if ( data.ChannelCount <= 0 || data.PeakCount == 0 || data.BinCount <= 0 )
 		{
-			dl->AddRect( scope_bb.Min, scope_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
-			ImGui::PopID();
+			finishScope();
 			return;
 		}
 
@@ -28159,46 +28360,7 @@ namespace ImWidgets {
 
 		dl->PopClipRect();
 
-		// Border
-		dl->AddRect( scope_bb.Min, scope_bb.Max, ImGui::GetColorU32( ImGuiCol_Border ) );
-
-		// Label
-		if ( label[ 0 ] != '#' || label[ 1 ] != '#' )
-			ImGui::RenderText( ImVec2( scope_bb.Max.x + style.ItemInnerSpacing.x, scope_bb.Min.y + style.FramePadding.y ), label );
-
-		// Expand button
-		bool* pExpanded = WidgetExpandButton( id, scope_bb );
-		if ( pExpanded && *pExpanded )
-		{
-			if ( BeginExpandedWindow( label, id, pExpanded, ImVec2( 800, 400 ) ) )
-			{
-				ImVec2 avail = ImGui::GetContentRegionAvail();
-				float widgetW = avail.x * 0.75f;
-				// Options (need to read before widget)
-				int* pLayout = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##layout" ), ( int )layout );
-				int* pXScale = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##xscale" ), ( int )xScale );
-				int* pYScale = ImGui::GetStateStorage()->GetIntRef( ImGui::GetID( "##yscale" ), ( int )yScale );
-				// Left: widget
-				Histogram( "##exp", data, ( ImHistogramLayout )*pLayout, ( ImParadeScale )*pXScale, ( ImParadeScale )*pYScale, ImVec2( widgetW, avail.y ) );
-				ImGui::SameLine();
-				// Right: options
-				ImGui::BeginChild( "##info", ImVec2( 0, avail.y ), ImGuiChildFlags_Borders );
-				ImGui::TextUnformatted( "Layout" );
-				ImGui::SetNextItemWidth( -FLT_MIN );
-				ImGui::Combo( "##layout", pLayout, "Overlapped\0Stacked\0" );
-				ImGui::Spacing();
-				ImGui::TextUnformatted( "X Scale" );
-				ImGui::SetNextItemWidth( -FLT_MIN );
-				ImGui::Combo( "##xscale", pXScale, "Linear\0Log\0Inv Log\0" );
-				ImGui::Spacing();
-				ImGui::TextUnformatted( "Y Scale" );
-				ImGui::SetNextItemWidth( -FLT_MIN );
-				ImGui::Combo( "##yscale", pYScale, "Linear\0Log\0Inv Log\0" );
-				ImGui::EndChild();
-			}
-			EndExpandedWindow();
-		}
-		ImGui::PopID();
+		finishScope();
 	}
 
 	// ========================================================================
@@ -36747,6 +36909,7 @@ namespace ImWidgets
         // on IsItemActive, which is only true during held drags on the frame
         // after the click is registered -- first-click selections were silently
         // dropped and made the dial look like it wasn't listening.
+        DW_EditGroup dwEditGroup;
         ImGui::InvisibleButton(label, size, ImGuiButtonFlags_MouseButtonLeft);
         bool hovered   = ImGui::IsItemHovered();
         bool activated = ImGui::IsItemActivated();
@@ -36850,7 +37013,7 @@ namespace ImWidgets
             }
             EndPrecisionPopup();
         }
-        return changed;
+        return DW_Edited( changed );
     }
 
     // Continuous angle dial (degrees, 0 = East, CCW positive). See header.
@@ -36865,6 +37028,7 @@ namespace ImWidgets
         if (size.y <= 0.0f) size.y = LpToPx(96.0f) + readout;
 
         ImVec2 pos = ImGui::GetCursorScreenPos();
+        DW_EditGroup dwEditGroup;
         ImGui::InvisibleButton(label, size, ImGuiButtonFlags_MouseButtonLeft);
         bool hovered   = ImGui::IsItemHovered();
         bool active    = ImGui::IsItemActive();
@@ -36960,7 +37124,7 @@ namespace ImWidgets
                 apply(tmp);
             EndPrecisionPopup();
         }
-        return changed;
+        return DW_Edited( changed );
     }
 
     //==================================================================
@@ -39918,12 +40082,16 @@ namespace ImWidgets
 
         if ( clicked )
         {
+            // Nearest grip within pick range wins. Stopping at the first hit made
+            // the top-left grip shadow its neighbours once the rect got small.
             int hit = -1;
             float pick = ImMax( grip_px, LpToPx( 4.0f ) ) + LpToPx( 3.0f );
+            float best = FLT_MAX;
             for ( int i = 0; i < 8; ++i )
             {
                 ImVec2 g = DW_CropGripCenter( s.Rect, i );
-                if ( ImFabs( mouse.x - g.x ) <= pick && ImFabs( mouse.y - g.y ) <= pick ) { hit = i; break; }
+                float dx = ImFabs( mouse.x - g.x ), dy = ImFabs( mouse.y - g.y );
+                if ( dx <= pick && dy <= pick && dx * dx + dy * dy < best ) { best = dx * dx + dy * dy; hit = i; }
             }
             if ( hit < 0 && s.Rect.Contains( mouse ) )
                 hit = 8;
@@ -39960,7 +40128,7 @@ namespace ImWidgets
                 case 6: r.Min.x += d.x; r.Max.y += d.y; break;
                 case 7: r.Min.x += d.x; break;
                 }
-                float minsz = 4.0f;
+                float minsz = LpToPx( 4.0f );
                 if ( r.Max.x - r.Min.x < minsz ) { if ( s.Active == 0 || s.Active == 6 || s.Active == 7 ) r.Min.x = r.Max.x - minsz; else r.Max.x = r.Min.x + minsz; }
                 if ( r.Max.y - r.Min.y < minsz ) { if ( s.Active == 0 || s.Active == 1 || s.Active == 2 ) r.Min.y = r.Max.y - minsz; else r.Max.y = r.Min.y + minsz; }
                 r.ClipWith( bounds );
@@ -40016,7 +40184,7 @@ namespace ImWidgets
             dl->AddLine( ImVec2( s.Rect.Min.x, c.y ), ImVec2( s.Rect.Max.x, c.y ), guide_col );
         }
 
-        dl->AddRect( s.Rect.Min, s.Rect.Max, line_col, 0.0f, 1.0f, 0 );
+        dl->AddRect( s.Rect.Min, s.Rect.Max, line_col, 0.0f, LpToPx( 1.0f ), 0 );
 
         float gh = grip_px;
         for ( int i = 0; i < 8; ++i )
@@ -40026,8 +40194,11 @@ namespace ImWidgets
             dl->AddRect    ( ImVec2( g.x - gh, g.y - gh ), ImVec2( g.x + gh, g.y + gh ), IM_COL32( 0, 0, 0, 200 ) );
         }
 
-        return prev_rect.Min.x != s.Rect.Min.x || prev_rect.Min.y != s.Rect.Min.y
-            || prev_rect.Max.x != s.Rect.Max.x || prev_rect.Max.y != s.Rect.Max.y;
+        bool changed = prev_rect.Min.x != s.Rect.Min.x || prev_rect.Min.y != s.Rect.Min.y
+                    || prev_rect.Max.x != s.Rect.Max.x || prev_rect.Max.y != s.Rect.Max.y;
+        if ( changed )
+            ImGui::MarkItemEdited( id );
+        return changed;
     }
 
     //////////////////////////////////////////////////////////////////////////
@@ -40282,6 +40453,7 @@ namespace ImWidgets
         if ( win->SkipItems || width == NULL || height == NULL || lock == NULL ) return false;
 
         ImGui::PushID( label );
+        DW_EditGroup dwEditGroup;
         bool  changed = false;
         float oldW = *width, oldH = *height;
         float w = DW_SizeClamp( oldW, v_min, v_max );
@@ -40321,7 +40493,7 @@ namespace ImWidgets
         *width  = w;
         *height = h;
         ImGui::PopID();
-        return changed;
+        return DW_Edited( changed );
     }
 
     // Interactive 3D proxy (isometric box + 3 axis handles), drawn at the current
@@ -40460,6 +40632,7 @@ namespace ImWidgets
         if ( win->SkipItems || width == NULL || height == NULL || depth == NULL || lock == NULL ) return false;
 
         ImGui::PushID( label );
+        DW_EditGroup dwEditGroup;
         bool  changed = false;
         float oldW = *width, oldH = *height, oldD = *depth;
         float w = DW_SizeClamp( oldW, v_min, v_max );
@@ -40497,7 +40670,7 @@ namespace ImWidgets
         *height = h;
         *depth  = d;
         ImGui::PopID();
-        return changed;
+        return DW_Edited( changed );
     }
 
     //////////////////////////////////////////////////////////////////////////
@@ -41308,6 +41481,7 @@ namespace ImWidgets
         if ( size.x <= 0.0f ) size.x = ImGui::GetContentRegionAvail().x;
         if ( size.y <= 0.0f ) size.y = 200.0f;
         ImGui::PushID( id_str );
+        DW_EditGroup dwEditGroup;
         ImVec2 cur = ImGui::GetCursorScreenPos();
         ImRect bb( cur, cur + size );
         ImGui::InvisibleButton( "##gm", size );
@@ -41403,7 +41577,7 @@ namespace ImWidgets
 
         dl->AddRect( bb.Min, bb.Max, IM_COL32( 0, 0, 0, 200 ) );
         ImGui::PopID();
-        return changed;
+        return DW_Edited( changed );
     }
 
     //////////////////////////////////////////////////////////////////////////
@@ -41456,6 +41630,7 @@ namespace ImWidgets
     bool ToonRampEditor( char const* id_str, ImWidgetsToonRamp& r, ImVec2 size )
     {
         ImGui::PushID( id_str );
+        DW_EditGroup dwEditGroup;
         if ( r.Bands.Size == 0 )
         {
             ImWidgetsToonBand b;
@@ -41559,7 +41734,7 @@ namespace ImWidgets
             }
         }
         ImGui::PopID();
-        return changed;
+        return DW_Edited( changed );
     }
 
     //////////////////////////////////////////////////////////////////////////

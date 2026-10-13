@@ -499,6 +499,27 @@ inline ImVec2 LpToPx(ImVec2 lp) { float s = ImGui::GetStyle().FontScaleDpi; retu
 inline ImVec2 PxToLp(ImVec2 px) { float s = ImGui::GetStyle().FontScaleDpi; return s > 1e-3f ? ImVec2(px.x / s, px.y / s) : px; }
 #endif
 
+// ── Edit reporting for composite widgets ────────────────────────────────────
+// A widget built from several sub-items (canvas + popups, plane + slider, ...)
+// declares `DW_EditGroup dwEditGroup;` at the top of its body and returns
+// `DW_Edited( changed )`. The group makes the whole widget the "last item", so
+// IsItemActive / IsItemEdited / IsItemDeactivatedAfterEdit see whichever
+// sub-item was active; DW_Edited marks the edit on that active sub-item. The
+// RAII form keeps BeginGroup/EndGroup balanced on every early return.
+struct DW_EditGroup
+{
+    DW_EditGroup()  { ImGui::BeginGroup(); }
+    ~DW_EditGroup() { ImGui::EndGroup(); }
+    DW_EditGroup( DW_EditGroup const& ) = delete;
+    DW_EditGroup& operator=( DW_EditGroup const& ) = delete;
+};
+inline bool DW_Edited( bool changed )
+{
+    if ( changed )
+        ImGui::MarkItemEdited( GImGui->ActiveId );
+    return changed;
+}
+
 // Catmull-Rom -> cubic Bezier path. Produces 3*(n-1)+1 control points so
 // DrawStrokedBezierPath / DrawStrokedDashedBezierPath can consume it directly.
 // Endpoints are clamped (P-1 = P0, Pn = Pn-1) so the curve still passes through them.

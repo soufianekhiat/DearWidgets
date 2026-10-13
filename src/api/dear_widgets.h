@@ -1256,26 +1256,6 @@ struct ImWidgetsStyle
 		IM_ASSERT( var != nullptr );
 		VarModifier modifier;
 		modifier.Index = varIndex;
-		modifier.Value = ImVec4( *var, 0, 0, 0 );
-		*var = value;
-		m_VarStack.push_back( modifier );
-	}
-	void PushVar( ImWidgetsStyleVar varIndex, ImVec2 const& value )
-	{
-		auto* var = GetVarVec2Addr( varIndex );
-		IM_ASSERT( var != nullptr );
-		VarModifier modifier;
-		modifier.Index = varIndex;
-		modifier.Value = ImVec4( var->x, var->y, 0, 0 );
-		*var = value;
-		m_VarStack.push_back( modifier );
-	}
-	void PushVar( ImWidgetsStyleVar varIndex, ImVec4 const& value )
-	{
-		auto* var = GetVarVec4Addr( varIndex );
-		IM_ASSERT( var != nullptr );
-		VarModifier modifier;
-		modifier.Index = varIndex;
 		modifier.Value = *var;
 		*var = value;
 		m_VarStack.push_back( modifier );
@@ -1286,11 +1266,7 @@ struct ImWidgetsStyle
 		{
 			auto& modifier = m_VarStack.back();
 			if ( auto floatValue = GetVarFloatAddr( modifier.Index ) )
-				*floatValue = modifier.Value.x;
-			else if ( auto vec2Value = GetVarVec2Addr( modifier.Index ) )
-				*vec2Value = ImVec2( modifier.Value.x, modifier.Value.y );
-			else if ( auto vec4Value = GetVarVec4Addr( modifier.Index ) )
-				*vec4Value = modifier.Value;
+				*floatValue = modifier.Value;
 			m_VarStack.pop_back();
 			--count;
 		}
@@ -1454,7 +1430,7 @@ private:
 	struct VarModifier
 	{
 		ImWidgetsStyleVar Index;
-		ImVec4   Value;
+		float    Value;
 	};
 
 	float* GetVarFloatAddr( ImWidgetsStyleVar idx )
@@ -1586,18 +1562,6 @@ private:
 		case ImWidgetsStyleVar_PrecisionPopup_InputWidth:			return &PrecisionPopup_InputWidth;
 		default:										return nullptr;
 		}
-	}
-	ImVec2* GetVarVec2Addr( ImWidgetsStyleVar idx )
-	{
-		IM_UNUSED( idx );
-
-		return NULL;
-	}
-	ImVec4* GetVarVec4Addr( ImWidgetsStyleVar idx )
-	{
-		IM_UNUSED( idx );
-
-		return NULL;
 	}
 
 	ImVector<ColorModifier>	m_ColorStack;
@@ -4317,16 +4281,6 @@ namespace ImWidgets{
 	}
 	inline
 	void PushStyleVar( ImWidgetsStyleVar varIndex, float value )
-	{
-		GetStyle().PushVar( varIndex, value );
-	}
-	inline
-	void PushStyleVar( ImWidgetsStyleVar varIndex, ImVec2 const& value )
-	{
-		GetStyle().PushVar( varIndex, value );
-	}
-	inline
-	void PushStyleVar( ImWidgetsStyleVar varIndex, ImVec4 const& value )
 	{
 		GetStyle().PushVar( varIndex, value );
 	}

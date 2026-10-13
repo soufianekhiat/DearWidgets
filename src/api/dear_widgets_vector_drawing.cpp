@@ -95,8 +95,9 @@ namespace ImWidgets {
         if (size.x > 0.0f) size.x = LpToPx(size.x);
         if (size.y > 0.0f) size.y = LpToPx(size.y);
         if (size.x <= 0.0f) size.x = ImGui::GetContentRegionAvail().x;
-        if (size.y <= 0.0f) size.y = 360.0f;
+        if (size.y <= 0.0f) size.y = LpToPx(360.0f);
         ImGui::PushID(label);
+        DW_EditGroup dwEditGroup;
         ImVec2 canvas_min = ImGui::GetCursorScreenPos();
         ImVec2 canvas_max(canvas_min.x + size.x, canvas_min.y + size.y);
         ImGui::InvisibleButton("##vdt_canvas", size, ImGuiButtonFlags_MouseButtonLeft
@@ -141,8 +142,13 @@ namespace ImWidgets {
             data.PanOffset.x += d.x;
             data.PanOffset.y += d.y;
         }
-        // Shift + left drag pans too (convenience when no middle button).
-        if (active && io.KeyShift && ImGui::IsMouseDown(ImGuiMouseButton_Left))
+        // Shift + left drag on empty canvas pans too (convenience when no middle
+        // button). Shift + click on a node is multi-select instead, so the pan
+        // mode is latched at click time from what was under the cursor.
+        bool* shiftPan = ImGui::GetStateStorage()->GetBoolRef(ImGui::GetID("##vdt_shiftpan"), false);
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            *shiftPan = false;
+        if (active && *shiftPan && ImGui::IsMouseDown(ImGuiMouseButton_Left))
         {
             ImVec2 d = io.MouseDelta;
             data.PanOffset.x += d.x;
@@ -164,7 +170,7 @@ namespace ImWidgets {
 
         // ---- Hit test existing nodes (anchors and handles) ----
         int hit_path = -1, hit_node = -1, hit_handle = 0;
-        const float hitR = 7.0f;
+        const float hitR = LpToPx(7.0f);
         for (int pi = 0; pi < data.Paths.Size && hovered; ++pi)
         {
             ImVectorDrawingPath& p = data.Paths[pi];
@@ -188,7 +194,10 @@ namespace ImWidgets {
         }
 
         // ---- Click handling (only when NOT panning) ----
-        bool panning = io.KeyShift || ImGui::IsMouseDown(ImGuiMouseButton_Middle);
+        if (hovered && io.KeyShift && hit_path < 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+            *shiftPan = true;
+        bool panning = *shiftPan || ImGui::IsMouseDown(ImGuiMouseButton_Middle)
+                    || (io.KeyShift && hit_path < 0);
 
         // Hover feedback: tell the user whether a click adds a new anchor or
         // grabs an existing anchor/handle. Cursor + tooltip + a ghost ring at
@@ -662,7 +671,8 @@ namespace ImWidgets {
 
                 ImGui::BeginChild("##vdt_modal_canvas", ImVec2(canvas_w, avail.y), false,
                                   ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-                VectorDrawingTool("##vdt_modal", data, ImGui::GetContentRegionAvail());
+                // Content region is in screen pixels; VectorDrawingTool takes logical pixels.
+                VectorDrawingTool("##vdt_modal", data, PxToLp(ImGui::GetContentRegionAvail()));
                 ImGui::EndChild();
 
                 ImGui::SameLine();
@@ -767,7 +777,7 @@ namespace ImWidgets {
             }
         }
         ImGui::PopID();
-        return changed;
+        return DW_Edited( changed );
     }
 
 } // namespace ImWidgets

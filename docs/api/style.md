@@ -299,7 +299,7 @@ All values are logical pixels unless the description says otherwise.
 
 ### Non-pushable style fields
 
-`PushStyleVar` only carries `float` (and the `ImVec2` / `ImVec4` overloads).
+`PushStyleVar` only carries `float`.
 These `ImWidgetsStyle` members are `int`, `bool` or an enum, so they have no
 `ImWidgetsStyleVar_` entry -- set them directly on `GetStyle()`:
 
@@ -401,15 +401,12 @@ Temporarily override a color. Must be balanced with `PopStyleColor`.
 ### `PushStyleVar` / `PopStyleVar`
 ```cpp
 void PushStyleVar( ImWidgetsStyleVar varIndex, float value );
-void PushStyleVar( ImWidgetsStyleVar varIndex, ImVec2 const& value );
-void PushStyleVar( ImWidgetsStyleVar varIndex, ImVec4 const& value );
 void PopStyleVar( int count = 1 );
 ```
 Temporarily override a style var. Must be balanced with `PopStyleVar`.
 
-> Every var in the table above is a `float`. The `ImVec2` / `ImVec4` overloads
-> exist for forward compatibility and currently assert: there is no `ImVec2` or
-> `ImVec4` style var to target.
+> Every var in the table above is a `float`. `int`, `bool` and enum fields are
+> set directly on `GetStyle()` (see *Non-pushable style fields*).
 
 ---
 
