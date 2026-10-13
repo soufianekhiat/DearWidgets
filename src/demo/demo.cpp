@@ -7947,10 +7947,26 @@ namespace ImWidgets{
 								v.y *= size;
 								v += pos;
 							}
+							// Right: the same contours as an even-odd path (PathFill + PathContains).
+							const float dx = size + ImPlatform_LpToPx( 16.0f );
+							auto evenOdd = [&]( const ImVec2* outer, int no, const ImVec2* hole, int nh )
+							{
+								ImWidgetsPath path;
+								path.MoveTo( outer[ 0 ] + ImVec2( dx, 0 ) );
+								for ( int k = 1; k < no; ++k ) path.LineTo( outer[ k ] + ImVec2( dx, 0 ) );
+								path.Close().MoveTo( hole[ 0 ] + ImVec2( dx, 0 ) );
+								for ( int k = 1; k < nh; ++k ) path.LineTo( hole[ k ] + ImVec2( dx, 0 ) );
+								path.Close();
+								const bool hov = ImWidgets::PathContains( path, ImGui::GetIO().MousePos, ImWidgetsFillRule_EvenOdd );
+								ImWidgets::PathFill( pDrawList, path, IM_COL32( hov ? 200 : 0, hov ? 0 : 200, 0, 80 ), ImWidgetsFillRule_EvenOdd );
+							};
 							ImPolyHoleShapeData data = { &pos_norms[0], NULL, sz, 1, 1 };
 							bool hovered = IsMouseHovering( pos * 0.99f, pos + ImVec2( 1.01f * size, 1.01f * size ), Im_IsPolyWithHoleContains, &data );
 							DrawShapeWithHole( pDrawList, &pos_norms[0], sz, IM_COL32( hovered ? 200 : 0, hovered ? 0 : 200, 0, 80 ) );
-							ImGui::Dummy( ImVec2( size, size ) );
+							evenOdd( &pos_norms[ 0 ], 5, &pos_norms[ 5 ], 5 );
+							pDrawList->AddText( pos + ImVec2( 0, size + 2.0f ), ImGui::GetColorU32( ImGuiCol_TextDisabled ), "DrawShapeWithHole" );
+							pDrawList->AddText( pos + ImVec2( dx, size + 2.0f ), ImGui::GetColorU32( ImGuiCol_TextDisabled ), "PathFill / PathContains, even-odd" );
+							ImGui::Dummy( ImVec2( size + dx, size + ImGui::GetTextLineHeightWithSpacing() ) );
 							pos = ImGui::GetCursorScreenPos();
 							ImVector<ImVec2> ring;
 							sz = 64;
@@ -7978,7 +7994,8 @@ namespace ImWidgets{
 							data = { &ring[0], NULL, sz, 1, 1 };
 							hovered = IsMouseHovering( pos, pos + ImVec2( size, size ), Im_IsPolyWithHoleContains, &data );
 							DrawShapeWithHole( pDrawList, &ring[0], sz, IM_COL32( hovered ? 200 : 0, hovered ? 0 : 200, 0, 80 ) );
-							ImGui::Dummy( ImVec2( size, size ) );
+							evenOdd( &ring[ 0 ], 32, &ring[ 32 ], 32 );
+							ImGui::Dummy( ImVec2( size + dx, size ) );
 						}
 						DW_SsRecord( "Poly_With_Hole_Hovered", _sy0, ImGui::GetCursorPos().y );
 					}
@@ -8311,7 +8328,7 @@ namespace ImWidgets{
 				static float s_sz2_w = 160.0f, s_sz2_h = 90.0f;
 				static bool  s_sz2_lock = true;
 				ImWidgets::SizeControl2D( "##size2d", &s_sz2_w, &s_sz2_h, &s_sz2_lock,
-					                       1.0f, 512.0f, "%.0f", ImVec2( ImPlatform_LpToPx( 240.0f ), ImPlatform_LpToPx( 150.0f ) ), prev );
+					                       1.0f, 512.0f, "%.0f", ImVec2( 200.0f, 120.0f ), prev );
 				ImGui::Text( "%.0f x %.0f  (%.3f : 1)", s_sz2_w, s_sz2_h, s_sz2_h > 0.0f ? s_sz2_w / s_sz2_h : 0.0f );
 				ImGui::EndGroup();
 
@@ -8322,7 +8339,7 @@ namespace ImWidgets{
 				static float s_sz3_w = 100.0f, s_sz3_h = 60.0f, s_sz3_d = 40.0f;
 				static bool  s_sz3_lock = false;
 				ImWidgets::SizeControl3D( "##size3d", &s_sz3_w, &s_sz3_h, &s_sz3_d, &s_sz3_lock,
-					                       1.0f, 256.0f, "%.0f", ImVec2( ImPlatform_LpToPx( 280.0f ), ImPlatform_LpToPx( 170.0f ) ), prev );
+					                       1.0f, 256.0f, "%.0f", ImVec2( 220.0f, 140.0f ), prev );
 				ImGui::Text( "%.0f x %.0f x %.0f", s_sz3_w, s_sz3_h, s_sz3_d );
 				ImGui::EndGroup();
 

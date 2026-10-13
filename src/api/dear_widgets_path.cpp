@@ -1406,6 +1406,24 @@ void PathFill(ImDrawList* dl, const ImWidgetsPath& path, ImU32 col, ImWidgetsFil
     FillPolygons(dl, pts.Data, counts.Data, counts.Size, col, rule, 1.0f);
 }
 
+bool PathContains(const ImWidgetsPath& path, ImVec2 p, ImWidgetsFillRule rule)
+{
+    ImVector<ImVec2> pts;
+    ImVector<int> counts;
+    path.Flatten(pts, counts, nullptr, 0.25f);
+    // Winding number of the closed contours (every subpath closed, as filled).
+    int wnd = 0, base = 0;
+    for (int c = 0; c < counts.Size; base += counts[c], ++c)
+        for (int i = 0; i < counts[c]; ++i)
+        {
+            const ImVec2 a = pts[base + i], b = pts[base + (i + 1) % counts[c]];
+            const float side = (b.x - a.x) * (p.y - a.y) - (p.x - a.x) * (b.y - a.y);
+            if (a.y <= p.y) { if (b.y > p.y && side > 0.0f) ++wnd; }
+            else if (b.y <= p.y && side < 0.0f) --wnd;
+        }
+    return rule == ImWidgetsFillRule_EvenOdd ? (wnd & 1) != 0 : wnd != 0;
+}
+
 // ---- Variable-width strokes ------------------------------------------------
 
 // Appends the outline (counter-clockwise on screen, consistently for every

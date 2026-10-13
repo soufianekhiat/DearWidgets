@@ -393,13 +393,16 @@ void FillPolygons( ImDrawList*, ImVec2 const* points, int const* contour_counts,
                    ImU32 col, ImWidgetsFillRule rule = ImWidgetsFillRule_NonZero, float aa = 1.0f );
 void PathFill    ( ImDrawList*, ImWidgetsPath const&, ImU32 col,
                    ImWidgetsFillRule rule = ImWidgetsFillRule_NonZero );
+bool PathContains( ImWidgetsPath const&, ImVec2 p,
+                   ImWidgetsFillRule rule = ImWidgetsFillRule_NonZero );
 ```
 Anti-aliased fill with the SVG `fill-rule` (`NonZero` / `EvenOdd`): holes,
 multiple contours and self-intersecting outlines are exact. The covered area is
 decomposed into trapezoids (merged along each edge pair, so the triangle count
 follows the number of edges) with a 1 px anti-aliasing fringe; no pixel is
 covered twice, so translucent fills have no seams. `PathFill` treats every
-subpath as closed, like SVG.
+subpath as closed, like SVG. `PathContains` hit-tests a point with the same
+rule (Canvas2D `isPointInPath`), e.g. for hovering a shape with holes.
 
 ### Clip paths
 ```cpp

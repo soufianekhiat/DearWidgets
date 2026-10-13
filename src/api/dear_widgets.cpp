@@ -40604,21 +40604,30 @@ namespace ImWidgets
     // Padlock button + one drag field per axis (depth optional). When the lock
     // is engaged an edit scales the untouched axes by the same factor (computed
     // from the pre-edit `old*` values). Returns true if any field changed.
+    // row_w > 0: the fields share that width (the preview's), so the row is
+    // never wider than the proxy above / below it.
     static bool DW_SizeNumericRow( bool* lock, float* w, float* h, float* d,
                                    float oldW, float oldH, float oldD,
-                                   float v_min, float v_max, char const* format )
+                                   float v_min, float v_max, char const* format, float row_w )
     {
         bool changed = false;
-        DW_AspectLockButton( "##lockbtn", lock, ImGui::GetFrameHeight() );
+        float const side = ImGui::GetFrameHeight();
+        DW_AspectLockButton( "##lockbtn", lock, side );
         ImGui::SameLine();
 
         float lo = ( v_min > 0.0f ) ? v_min : 0.0f;
-        float fw = LpToPx( 62.0f );
         char const* names[ 3 ] = { "W", "H", "D" };
         char const* ids  [ 3 ] = { "##w", "##h", "##d" };
         float* vals [ 3 ] = { w, h, d };
         float  olds [ 3 ] = { oldW, oldH, oldD };
         int    n = d ? 3 : 2;
+        float fw = LpToPx( 62.0f );
+        if ( row_w > 0.0f )
+        {
+            float const sp = ImGui::GetStyle().ItemSpacing.x;
+            float const fixed = side + sp * (float)n + ( ImGui::CalcTextSize( "W" ).x + LpToPx( 3.0f ) ) * (float)n;
+            fw = ImMax( LpToPx( 36.0f ), ( row_w - fixed ) / (float)n );
+        }
 
         for ( int i = 0; i < n; ++i )
         {
@@ -40786,7 +40795,7 @@ namespace ImWidgets
             ImGui::Dummy( ImVec2( 0.0f, LpToPx( 6.0f ) ) );
         }
 
-        changed |= DW_SizeNumericRow( lock, &w, &h, NULL, oldW, oldH, 0.0f, v_min, v_max, format );
+        changed |= DW_SizeNumericRow( lock, &w, &h, NULL, oldW, oldH, 0.0f, v_min, v_max, format, cw );
 
         if ( preview == ImWidgetsSizePreview_Bottom )
         {
@@ -40964,7 +40973,7 @@ namespace ImWidgets
             ImGui::Dummy( ImVec2( 0.0f, LpToPx( 6.0f ) ) );
         }
 
-        changed |= DW_SizeNumericRow( lock, &w, &h, &d, oldW, oldH, oldD, v_min, v_max, format );
+        changed |= DW_SizeNumericRow( lock, &w, &h, &d, oldW, oldH, oldD, v_min, v_max, format, cw );
 
         if ( preview == ImWidgetsSizePreview_Bottom )
         {

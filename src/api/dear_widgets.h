@@ -6008,6 +6008,9 @@ namespace ImWidgets{
     IMGUI_API void PopPathClip();
     IMGUI_API void PathFill  ( ImDrawList* draw_list, ImWidgetsPath const& path, ImU32 col,
                                ImWidgetsFillRule rule = ImWidgetsFillRule_NonZero );
+    // Hit test with the same fill rule as PathFill (Canvas2D isPointInPath).
+    IMGUI_API bool PathContains( ImWidgetsPath const& path, ImVec2 p,
+                                 ImWidgetsFillRule rule = ImWidgetsFillRule_NonZero );
     // Same with a paint: linear / radial / conic gradient (stops, spread, transform,
     // interpolation space). Linear gradients are exact (the fill is sliced at every
     // stop); radial and conic ones are evaluated on a few-pixel grid.
