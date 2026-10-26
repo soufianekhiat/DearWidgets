@@ -15,7 +15,9 @@ namespace DearWidgets
             SourceRootPath = RootPath + @"\src\demo";
 
             // Use ImPlatform's bundled ImGui instead of the main extern/imgui
+            // (checked out at the fork's LayoutDocking: docking + stack layout + draw-command hooks).
             SourceFiles.Add("[project.ExternPath]/ImPlatform/imgui/imgui.cpp");
+            SourceFiles.Add("[project.ExternPath]/ImPlatform/imgui/imgui_stacklayout.cpp");
             SourceFiles.Add("[project.ExternPath]/ImPlatform/imgui/imgui_tables.cpp");
             SourceFiles.Add("[project.ExternPath]/ImPlatform/imgui/imgui_widgets.cpp");
             SourceFiles.Add("[project.ExternPath]/ImPlatform/imgui/misc/cpp/imgui_stdlib.cpp");

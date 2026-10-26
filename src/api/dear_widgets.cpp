@@ -3522,8 +3522,11 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		memset(&ctx->volumeViewerShader,     0, sizeof(ImDrawShader));
 		ctx->slugState = NULL;
 
-		// Register debug callback for slug draw commands in ImGui Metrics viewer
-		ImGui::GetIO().DebugDrawCmdCallback = SlugDebugDrawCmdCallback;
+		// Describe Slug draw commands in ImGui's Metrics/Debugger, where the ImGui
+		// build has draw-command hooks (stock ImGui: callbacks show as pointers).
+#ifdef IMGUI_HAS_DEBUG_DRAWCMD_HOOKS
+		ImGui::DebugAddDrawCmdHook( SlugDebugDrawCmdHook );
+#endif
 
 		if ( gs_pContext == NULL )
 			gs_pContext = ctx;
@@ -3588,6 +3591,10 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	{
 		// Per-instance colour-picker plane caches are process-wide, not per-context.
 		DW_FreePlaneCaches();
+#ifdef IMGUI_HAS_DEBUG_DRAWCMD_HOOKS
+		if ( ImGui::GetCurrentContext() )
+			ImGui::DebugRemoveDrawCmdHook( SlugDebugDrawCmdHook );
+#endif
 
 		if ( ctx != NULL )
 		{
@@ -4888,26 +4895,27 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 
 		// Optional preprocessor define injection (used to compile per-variant shaders,
 		// e.g. the background-effect shader compiled once per effect via BG_EFFECT).
-		// Prepended to both stages so the define is visible everywhere.
+		// Prepended to both stages so the define is visible everywhere -- after the
+		// "#version" line in GLSL, which must come first.
 		if ( extra_define && extra_define[ 0 ] )
 		{
 			size_t dl = strlen( extra_define );
-			if ( vs_source )
+			auto inject = [&]( char*& src, size_t& size )
 			{
-				size_t sl = strlen( vs_source );
+				size_t sl = strlen( src ), at = 0;
+				if ( strncmp( src, "#version", 8 ) == 0 )
+				{
+					const char* eol = strchr( src, '\n' );
+					at = eol ? ( size_t )( eol - src ) + 1 : sl;
+				}
 				char* ns = ( char* )IM_ALLOC( dl + sl + 2 );
-				memcpy( ns, extra_define, dl ); ns[ dl ] = '\n';
-				memcpy( ns + dl + 1, vs_source, sl ); ns[ dl + 1 + sl ] = '\0';
-				IM_FREE( vs_source ); vs_source = ns; file_data_size_vs = dl + 1 + sl;
-			}
-			if ( ps_source )
-			{
-				size_t sl = strlen( ps_source );
-				char* ns = ( char* )IM_ALLOC( dl + sl + 2 );
-				memcpy( ns, extra_define, dl ); ns[ dl ] = '\n';
-				memcpy( ns + dl + 1, ps_source, sl ); ns[ dl + 1 + sl ] = '\0';
-				IM_FREE( ps_source ); ps_source = ns; file_data_size_ps = dl + 1 + sl;
-			}
+				memcpy( ns, src, at );
+				memcpy( ns + at, extra_define, dl ); ns[ at + dl ] = '\n';
+				memcpy( ns + at + dl + 1, src + at, sl - at ); ns[ dl + 1 + sl ] = '\0';
+				IM_FREE( src ); src = ns; size = dl + 1 + sl;
+			};
+			if ( vs_source ) inject( vs_source, file_data_size_vs );
+			if ( ps_source ) inject( ps_source, file_data_size_ps );
 		}
 
 		// Cache key: shader_name plus an optional per-variant suffix so distinct
@@ -7617,7 +7625,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		//drawlist->PathArcToFast( values->pos + ImVec2( values->length, 0.0f ), values->thickness, 3, -3 );
 		//drawlist->PathStroke( col );
 		ImVec2 t = { values->thickness, values->thickness };
-		drawlist->AddRect( values->pos - t, values->pos + t + ImVec2( values->length, 0.0f ), col, values->thickness, 1.0f, ImDrawFlags_RoundCornersAll );
+		drawlist->AddRect( values->pos - t, values->pos + t + ImVec2( values->length, 0.0f ), col, values->thickness, 1.0f, 0 );
 	}
 	void Im_DrawCapsuleV( ImDrawList* drawlist, ImU32 col, float thickness, void* data )
 	{
@@ -7627,7 +7635,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		//drawlist->PathArcToFast( values->pos + ImVec2( 0.0f, values->length ), values->thickness, 6, 0 );
 		//drawlist->PathStroke( col );
 		ImVec2 t = { values->thickness, values->thickness };
-		drawlist->AddRect( values->pos - t, values->pos + t + ImVec2( 0.0f, values->length ), col, values->thickness, 1.0f, ImDrawFlags_RoundCornersAll );
+		drawlist->AddRect( values->pos - t, values->pos + t + ImVec2( 0.0f, values->length ), col, values->thickness, 1.0f, 0 );
 	}
 	void Im_DrawShapeConvex( ImDrawList* drawlist, ImU32 col, float thickness, void* data )
 	{
@@ -7662,7 +7670,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 								   max,
 								   uv_min, uv_max,
 								   col,
-								   values->radius, ImDrawFlags_RoundCornersAll );
+								   values->radius, 0 );
 		//int vert_end_idx = drawlist->VtxBuffer.Size;
 		//ImGui::ShadeVertsLinearUV( drawlist, vert_start_idx, vert_end_idx, min, max, uv_min, uv_max, true );
 	}
@@ -7673,7 +7681,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		//drawlist->PathArcToFast( values->pos + ImVec2( values->length, 0.0f ), values->thickness, 3, -3 );
 		//drawlist->PathFillConvex( col );
 		ImVec2 t = { values->thickness, values->thickness };
-		drawlist->AddRectFilled( values->pos - t, values->pos + t + ImVec2( values->length, 0.0f ), col, values->thickness, ImDrawFlags_RoundCornersAll );
+		drawlist->AddRectFilled( values->pos - t, values->pos + t + ImVec2( values->length, 0.0f ), col, values->thickness, 0 );
 	}
 	void Im_DrawCapsuleHFilledTex( ImDrawList* drawlist, ImU32 col, void* data, ImTextureID tex, ImVec2 uv_min, ImVec2 uv_max )
 	{
@@ -7684,12 +7692,12 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		ImCapsule* values = ( ImCapsule* )data;
 
 		ImVec2 t = { values->thickness, values->thickness };
-		//drawlist->AddRectFilled( values->pos - t, values->pos + t + ImVec2( values->length, 0.0f ), col, values->thickness, ImDrawFlags_RoundCornersAll );
+		//drawlist->AddRectFilled( values->pos - t, values->pos + t + ImVec2( values->length, 0.0f ), col, values->thickness, 0 );
 		drawlist->AddImageRounded( tex,
 								   values->pos - t,
 								   values->pos + t + ImVec2( values->length, 0.0f ),
 								   uv_min, uv_max,
-								   col, values->thickness, ImDrawFlags_RoundCornersAll );
+								   col, values->thickness, 0 );
 		//drawlist->AddImage( tex, values->pos - t, values->pos + t + ImVec2( values->length, 0.0f ), { 0.0f, 0.0f }, { 1.0f, 1.0f }, col );
 
 		//int vert_start_idx = drawlist->VtxBuffer.Size;
@@ -7715,7 +7723,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		//drawlist->PathArcToFast( values->pos + ImVec2( 0.0f, values->length ), values->thickness, 6, 0 );
 		//drawlist->PathFillConvex( col );
 		ImVec2 t = { values->thickness, values->thickness };
-		drawlist->AddRectFilled( values->pos - t, values->pos + t + ImVec2( 0.0f, values->length ), col, values->thickness, ImDrawFlags_RoundCornersAll );
+		drawlist->AddRectFilled( values->pos - t, values->pos + t + ImVec2( 0.0f, values->length ), col, values->thickness, 0 );
 	}
 	void Im_DrawCapsuleVFilledTex( ImDrawList* drawlist, ImU32 col, void* data, ImTextureID tex, ImVec2 uv_min, ImVec2 uv_max )
 	{
@@ -29594,7 +29602,8 @@ namespace ImWidgets {
 
 		// Global search filter (applies to both sizes and colors tabs).
 		static ImGuiTextFilter g_filter;
-		g_filter.Draw( "##filter", ImGui::GetFontSize() * 20.0f );
+		ImGui::SetNextItemWidth( ImGui::GetFontSize() * 20.0f );
+		g_filter.Draw( "##filter" );
 		ImGui::SameLine();
 		ImGui::TextDisabled( "Filter" );
 
@@ -29929,7 +29938,6 @@ namespace ImWidgets {
 				ImGui::SliderFloat( "Alpha",      &ImGui::GetStyle().Alpha,      0.2f, 1.0f, "%.2f" );
 				ImGui::SliderFloat( "DisabledAlpha", &ImGui::GetStyle().DisabledAlpha, 0.0f, 1.0f, "%.2f" );
 				ImGui::Checkbox( "AntiAliasedLines",       &ImGui::GetStyle().AntiAliasedLines );
-				ImGui::Checkbox( "AntiAliasedLinesUseTex", &ImGui::GetStyle().AntiAliasedLinesUseTex );
 				ImGui::Checkbox( "AntiAliasedFill",        &ImGui::GetStyle().AntiAliasedFill );
 				ImGui::SliderFloat( "CurveTessellationMaxError", &ImGui::GetStyle().CurveTessellationMaxError, 0.005f, 5.0f, "%.4f" );
 				ImGui::SliderFloat( "CircleTessellationMaxError", &ImGui::GetStyle().CircleTessellationMaxError, 0.005f, 5.0f, "%.4f" );
@@ -33470,8 +33478,8 @@ namespace ImWidgets {
 		return ctx->bgEffectShaders[ eff ].program;
 	}
 
-	// Render-time callback: captures backbuffer then sets up horizontal blur pass
-	// into the intermediate render texture.
+	// Render-time callback: captures what is behind the window, then runs the
+	// horizontal blur pass into the intermediate render texture right away.
 	static void BlurPass1Callback( const ImDrawList* /*parent_list*/, const ImDrawCmd* cmd )
 	{
 		ImWidgetsContext* ctx = gs_pContext;
@@ -33480,23 +33488,20 @@ namespace ImWidgets {
 		if ( !ctx || !ctx->blurBackbufferCopy || !ctx->blurIntermediate || !prog )
 			return;
 
-		// Capture current backbuffer (everything behind this window)
-		ImPlatform_CopyBackbuffer( ctx->blurBackbufferCopy );
-
-		// Redirect rendering to intermediate texture
-		ImPlatform_BeginRenderToTexture( ctx->blurIntermediate );
-
-		// Set up horizontal blur shader
+		const int w = (int)ctx->blurTexW, h = (int)ctx->blurTexH;
+		ImPlatform_CopyCurrentTarget( ctx->blurBackbufferCopy, 0, 0, w, h, 0, 0 );
+		if ( !ImPlatform_PushRenderTarget( ctx->blurIntermediate, true ) )
+			return;
 		cb->param1 = 0.0f; // horizontal
-		ImPlatform_BeginCustomShader_Render( prog );
 		void* handle = ImPlatform_PushShaderConstants( cb, sizeof(BlurConstants) );
 		ImPlatform_SetShaderTexture( prog, "sceneTexture", 0, ctx->blurBackbufferCopy );
+		ImPlatform_DrawQuadNow( prog, ImVec4( 0.0f, 0.0f, (float)w, (float)h ), ImVec4( 0.0f, 0.0f, 1.0f, 1.0f ) );
 		ImPlatform_PopShaderConstants( handle );
-		// Shader stays active -- next ImGui draw command will use it
+		ImPlatform_PopRenderTarget();
 	}
 
-	// Render-time callback: restore backbuffer, set up vertical blur pass
-	// reading from the intermediate texture.
+	// Render-time callback: vertical blur pass reading the intermediate texture
+	// (the next ImGui draw command, the window quad, runs with it).
 	static void BlurPass2Callback( const ImDrawList* /*parent_list*/, const ImDrawCmd* cmd )
 	{
 		ImWidgetsContext* ctx = gs_pContext;
@@ -33507,9 +33512,6 @@ namespace ImWidgets {
 			if ( cb ) IM_FREE( cb );
 			return;
 		}
-
-		// Restore backbuffer as render target
-		ImPlatform_EndRenderToTexture();
 
 		// Set up vertical blur shader reading from intermediate
 		cb->param1 = 1.0f; // vertical
@@ -33532,7 +33534,7 @@ namespace ImWidgets {
 			return;
 		}
 
-		ImPlatform_CopyBackbuffer( ctx->blurBackbufferCopy );
+		ImPlatform_CopyCurrentTarget( ctx->blurBackbufferCopy, 0, 0, (int)ctx->blurTexW, (int)ctx->blurTexH, 0, 0 );
 		ImPlatform_BeginCustomShader_Render( prog );
 		void* handle = ImPlatform_PushShaderConstants( cb, sizeof(BlurConstants) );
 		ImPlatform_SetShaderTexture( prog, "sceneTexture", 0, ctx->blurBackbufferCopy );
@@ -33635,13 +33637,10 @@ namespace ImWidgets {
 			cb->pad1 = 0.0f;
 			cb->pad2 = 0.0f;
 
-			// Pass 1: push fullscreen clip rect so the quad fills the entire intermediate RT
-			drawList->PushClipRectFullScreen();
+			// Pass 1 draws its quad itself (ImPlatform_DrawQuadNow), then Dear ImGui's
+			// render state is restored for the window quad of pass 2.
 			drawList->AddCallback( BlurPass1Callback, cb );
-			drawList->AddImage( ctx->blurBackbufferCopy,
-				ImVec2( 0, 0 ), ImVec2( (float)ctx->blurTexW, (float)ctx->blurTexH ),
-				ImVec2( 0, 0 ), ImVec2( 1, 1 ), IM_COL32( 255, 255, 255, 255 ) );
-			drawList->PopClipRect();
+			drawList->AddCallback( ImGui::GetPlatformIO().DrawCallback_ResetRenderState, NULL );
 
 			// Pass 2: restore RT -> bind vertical blur reading intermediate
 			drawList->AddCallback( BlurPass2Callback, cb );

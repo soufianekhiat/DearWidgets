@@ -48,12 +48,12 @@ in vec2 input_pos_0;
 
 
 #line 26
-layout(location = 1)
+layout(location = 2)
 in vec4 input_col_0;
 
 
 #line 26
-layout(location = 2)
+layout(location = 1)
 in vec2 input_uv_0;
 
 

@@ -2517,44 +2517,40 @@ namespace ImWidgets {
 
 	static void SlugRawDraw(const ImDrawList*, const ImDrawCmd* cmd); // forward decl for debug callback
 
-	// Debug callback for ImGui Metrics viewer -- shows slug draw command info + mesh overlay.
-	// Returns empty out_text for callbacks that aren't SlugRawDraw (imgui.cpp falls back to default display).
-	void SlugDebugDrawCmdCallback(ImDrawList* overlay, const ImDrawList* /*draw_list*/,
-	                              const ImDrawCmd* cmd, bool show_mesh, bool show_aabb,
-	                              char* out_text, int text_size)
+#ifdef IMGUI_HAS_DEBUG_DRAWCMD_HOOKS
+	// Metrics/Debugger hook: describes Slug draw commands (triangles, bounds) and
+	// shows their quads / bounding box on hover. Other callbacks are left to the
+	// next hook or ImGui's default display.
+	bool SlugDebugDrawCmdHook(const ImDrawList* draw_list, const ImDrawCmd* cmd, ImDrawList* overlay, void*)
 	{
-		// Only handle our own callbacks; leave others for default display
-		if (cmd->UserCallback != SlugRawDraw) {
-			if (out_text && text_size > 0) out_text[0] = 0;
-			return;
-		}
-		SlugDrawCBData* d = (SlugDrawCBData*)cmd->UserCallbackData;
-		if (!d) {
-			if (out_text) ImFormatString(out_text, text_size, "Slug: (null data)");
-			return;
-		}
-		// Fill descriptive text
-		if (out_text)
-			ImFormatString(out_text, text_size, "Slug: %d tris, BB (%.0f,%.0f)-(%.0f,%.0f)",
-			               d->indexCount / 3, d->debugBBMin.x, d->debugBBMin.y, d->debugBBMax.x, d->debugBBMax.y);
-		// Draw overlay
-		if (overlay)
+		if (cmd->UserCallback != SlugRawDraw)
+			return false;
+		const SlugDrawCBData* d = (const SlugDrawCBData*)cmd->UserCallbackData;
+		const void* node_id = (const void*)(intptr_t)(cmd - draw_list->CmdBuffer.Data);
+		if (!d)
 		{
-			ImDrawListFlags backup = overlay->Flags;
-			overlay->Flags &= ~ImDrawListFlags_AntiAliasedLines;
-			if (show_aabb)
-				overlay->AddRect(d->debugBBMin, d->debugBBMax, IM_COL32(255, 255, 0, 255));
-			if (show_mesh && d->debugQuads)
-			{
-				for (int i = 0; i < d->debugQuadCount; i++)
-				{
-					const ImVec2* q = d->debugQuads + i * 4; // TL, TR, BR, BL
-					overlay->AddPolyline(q, 4, IM_COL32(255, 255, 0, 255), 1.0f, ImDrawFlags_Closed);
-				}
-			}
-			overlay->Flags = backup;
+			ImGui::BulletText("Slug: (null data)");
+			return true;
 		}
+		const bool open = ImGui::TreeNode(node_id, "Slug: %d tris, BB (%.0f,%.0f)-(%.0f,%.0f)",
+		                                  d->indexCount / 3, d->debugBBMin.x, d->debugBBMin.y, d->debugBBMax.x, d->debugBBMax.y);
+		const ImGuiMetricsConfig& cfg = GImGui->DebugMetricsConfig;
+		if (overlay && ImGui::IsItemHovered() && (cfg.ShowDrawCmdMesh || cfg.ShowDrawCmdBoundingBoxes))
+		{
+			if (cfg.ShowDrawCmdBoundingBoxes)
+				overlay->AddRect(d->debugBBMin, d->debugBBMax, IM_COL32(255, 255, 0, 255));
+			if (cfg.ShowDrawCmdMesh && d->debugQuads)
+				for (int i = 0; i < d->debugQuadCount; i++)
+					overlay->AddPolyline(d->debugQuads + i * 4, 4, IM_COL32(255, 255, 0, 255), 1.0f, ImDrawFlags_Closed); // TL, TR, BR, BL
+		}
+		if (open)
+		{
+			ImGui::Text("Index count: %d, quads: %d", d->indexCount, d->debugQuadCount);
+			ImGui::TreePop();
+		}
+		return true;
 	}
+#endif
 
 	static void SlugRawDraw(const ImDrawList*, const ImDrawCmd* cmd)
 	{
@@ -6824,11 +6820,22 @@ namespace ImWidgets {
 		if (src->FontLoaderData) { IM_DELETE((SlugLoaderFontData*)src->FontLoaderData); src->FontLoaderData = NULL; }
 	}
 
-	static bool SlugLoader_FontSrcContainsGlyph(ImFontAtlas* atlas, ImFontConfig* src, ImWchar codepoint)
+	static inline bool SlugLoader_FontSrcContainsGlyph(ImFontAtlas* atlas, ImFontConfig* src, ImWchar codepoint)
 	{
 		(void)atlas;
 		SlugLoaderFontData* fd = (SlugLoaderFontData*)src->FontLoaderData;
 		return stbtt_FindGlyphIndex(&fd->fontInfo, (int)codepoint) != 0;
+	}
+	// ImGui 1.93 loaders work on glyph indices.
+	static inline int SlugLoader_FontSrcGetGlyphIndexFromCodepoint(ImFontAtlas*, ImFontConfig* src, ImWchar codepoint)
+	{
+		SlugLoaderFontData* fd = (SlugLoaderFontData*)src->FontLoaderData;
+		return stbtt_FindGlyphIndex(&fd->fontInfo, (int)codepoint);
+	}
+	static inline bool SlugLoader_FontSrcContainsGlyphIndex(ImFontAtlas*, ImFontConfig* src, int glyph_index)
+	{
+		SlugLoaderFontData* fd = (SlugLoaderFontData*)src->FontLoaderData;
+		return glyph_index > 0 && glyph_index < fd->fontInfo.numGlyphs;
 	}
 
 	static bool SlugLoader_FontBakedInit(ImFontAtlas* atlas, ImFontConfig* src, ImFontBaked* baked, void*)
@@ -6977,11 +6984,11 @@ namespace ImWidgets {
 		return 0;
 	}
 
-	static bool SlugLoader_FontBakedLoadGlyph(ImFontAtlas* atlas, ImFontConfig* src, ImFontBaked* baked, void*,
-	                                            ImWchar codepoint, ImFontGlyph* out_glyph, float* out_advance_x)
+	// Loads glyph `gi`; codepoint is 0 when ImGui supplies only the glyph index (1.93).
+	static bool SlugLoader_LoadGlyph(ImFontAtlas* atlas, ImFontConfig* src, ImFontBaked* baked,
+	                                 int gi, ImWchar codepoint, ImFontGlyph* out_glyph, float* out_advance_x)
 	{
 		SlugLoaderFontData* fd = (SlugLoaderFontData*)src->FontLoaderData;
-		int gi = stbtt_FindGlyphIndex(&fd->fontInfo, (int)codepoint);
 		if (gi == 0) return false;
 
 		const float scale = fd->scaleFactor * baked->Size;
@@ -6991,7 +6998,7 @@ namespace ImWidgets {
 		// Metrics-only mode
 		if (out_advance_x != NULL) { *out_advance_x = advance * scale; return true; }
 
-		out_glyph->Codepoint = codepoint;
+		if (codepoint) out_glyph->Codepoint = codepoint; // 1.93: set by ImGui itself
 		out_glyph->AdvanceX  = advance * scale;
 
 		// Check for color layers (COLR v0, COLR v1, SVG)
@@ -7061,6 +7068,45 @@ namespace ImWidgets {
 		return true;
 	}
 
+	static inline bool SlugLoader_FontBakedLoadGlyph(ImFontAtlas* atlas, ImFontConfig* src, ImFontBaked* baked, void*,
+	                                          ImWchar codepoint, ImFontGlyph* out_glyph, float* out_advance_x)
+	{
+		SlugLoaderFontData* fd = (SlugLoaderFontData*)src->FontLoaderData;
+		return SlugLoader_LoadGlyph(atlas, src, baked, stbtt_FindGlyphIndex(&fd->fontInfo, (int)codepoint), codepoint, out_glyph, out_advance_x);
+	}
+	static inline bool SlugLoader_FontBakedLoadGlyphIndex(ImFontAtlas* atlas, ImFontConfig* src, ImFontBaked* baked, void*,
+	                                               int glyph_index, ImFontGlyph* out_glyph, float* out_advance_x)
+	{
+		return SlugLoader_LoadGlyph(atlas, src, baked, glyph_index, 0, out_glyph, out_advance_x);
+	}
+
+	// ImFontLoader changed to glyph indices in ImGui 1.93 (#9559) without a
+	// version bump: pick the entry points by detecting the new member.
+	template<typename L> struct SlugLoaderApi
+	{
+		template<typename U> static char Test(decltype(&U::FontSrcGetGlyphIndexFromCodepoint));
+		template<typename U> static long Test(...);
+		enum { GlyphIndex = sizeof(Test<L>(0)) == 1 };
+	};
+	template<bool GlyphIndex, typename L> struct SlugLoaderGlyphFns;
+	template<typename L> struct SlugLoaderGlyphFns<true, L>
+	{
+		static void Set(L& l)
+		{
+			l.FontSrcGetGlyphIndexFromCodepoint = SlugLoader_FontSrcGetGlyphIndexFromCodepoint;
+			l.FontSrcContainsGlyph              = SlugLoader_FontSrcContainsGlyphIndex;
+			l.FontBakedLoadGlyph                = SlugLoader_FontBakedLoadGlyphIndex;
+		}
+	};
+	template<typename L> struct SlugLoaderGlyphFns<false, L>
+	{
+		static void Set(L& l)
+		{
+			l.FontSrcContainsGlyph = SlugLoader_FontSrcContainsGlyph;
+			l.FontBakedLoadGlyph   = SlugLoader_FontBakedLoadGlyph;
+		}
+	};
+
 	// Pre-build a glyph by glyph ID (not codepoint) into the Slug atlas.
 	// Key = 0x100000 + glyphID, used for MATH table assembly parts.
 	void SlugBuildGlyphByID(ImFont* font, int glyphID) {
@@ -7089,10 +7135,9 @@ namespace ImWidgets {
 			loader.Name                      = "Slug";
 			loader.FontSrcInit               = SlugLoader_FontSrcInit;
 			loader.FontSrcDestroy            = SlugLoader_FontSrcDestroy;
-			loader.FontSrcContainsGlyph      = SlugLoader_FontSrcContainsGlyph;
+			SlugLoaderGlyphFns<SlugLoaderApi<ImFontLoader>::GlyphIndex != 0, ImFontLoader>::Set(loader);
 			loader.FontBakedInit             = SlugLoader_FontBakedInit;
 			loader.FontBakedDestroy          = SlugLoader_FontBakedDestroy;
-			loader.FontBakedLoadGlyph        = SlugLoader_FontBakedLoadGlyph;
 			loader.FontBakedSrcLoaderDataSize = 0;
 			inited = true;
 		}

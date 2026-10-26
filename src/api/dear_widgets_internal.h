@@ -465,9 +465,9 @@ void	DrawChromaticityLinesGeneric( ImDrawList* pDrawList,
 
 // ── Slug lifecycle helpers (defined in dear_widgets_slug.cpp) ────────────────
 void SlugDestroyState(ImWidgetsSlugState* state);
-void SlugDebugDrawCmdCallback(ImDrawList* overlay, const ImDrawList* draw_list,
-                              const ImDrawCmd* cmd, bool show_mesh, bool show_aabb,
-                              char* out_text, int text_size);
+#ifdef IMGUI_HAS_DEBUG_DRAWCMD_HOOKS // Metrics/Debugger hook (ImGui builds that have it)
+bool SlugDebugDrawCmdHook(const ImDrawList* draw_list, const ImDrawCmd* cmd, ImDrawList* overlay, void* user_data);
+#endif
 
 // ── Shared state from dear_widgets.cpp ───────────────────────────────────────
 extern ImWidgetsContext* gs_pContext;
@@ -608,7 +608,7 @@ inline void CatmullRomToCubicBezierPath(ImVec2 const* pts, int n, ImVector<ImVec
 inline void DW_EnsureFreshVtxOffset(ImDrawList* dl)
 {
     if (!dl) return;
-    if (!(dl->Flags & ImDrawListFlags_AllowVtxOffset)) return;
+    if (!(ImGui::GetIO().BackendFlags & ImGuiBackendFlags_RendererHasVtxOffset)) return;
     if (dl->VtxBuffer.Size <= 0) return;
     if ((int)dl->_CmdHeader.VtxOffset >= dl->VtxBuffer.Size) return;
     dl->_CmdHeader.VtxOffset = (unsigned)dl->VtxBuffer.Size;

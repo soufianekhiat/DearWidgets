@@ -130,6 +130,20 @@ def remap_bindings(text, slots):
     return out, out != text
 
 
+VS_INPUT = re.compile(r'^layout\(location = (\d+)\)(\s*\n\s*in \w+ input_(\w+)_0\s*;)', re.M)
+IMGUI_ATTRIB = {'pos': 0, 'uv': 1, 'col': 2}   # imgui_impl_opengl3: Position, UV, Color
+
+
+def remap_imdrawvert_inputs(text):
+    """Vertex shaders fed with ImDrawVert by Dear ImGui's GL renderer must read its attribute
+    locations (0 Position, 1 UV, 2 Color); Slang numbers inputs in declaration order (col, uv)."""
+    names = {m.group(3) for m in VS_INPUT.finditer(text)}
+    if names != set(IMGUI_ATTRIB):
+        return text, False      # own vertex layout (e.g. Slug): locations match its buffer
+    out = VS_INPUT.sub(lambda m: 'layout(location = %d)%s' % (IMGUI_ATTRIB[m.group(3)], m.group(2)), text)
+    return out, out != text
+
+
 def hlsl_for(glsl_name, hlsl_dir):
     base = re.sub(r'_(ps|vs)\.glsl$', '', glsl_name)
     while base:
@@ -158,6 +172,8 @@ def main():
         with open(path, 'r', encoding='utf-8', errors='replace', newline='') as f:
             src = f.read()
         out, changed = convert(src)
+        out, attribs = remap_imdrawvert_inputs(out)
+        changed |= attribs
         hlsl = hlsl_for(name, hlsl_dir)
         if hlsl:
             out, remapped = remap_bindings(out, d3d_texture_slots(hlsl))
