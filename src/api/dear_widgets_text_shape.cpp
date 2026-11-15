@@ -2,6 +2,7 @@
 // Compiled as its own translation unit; dear_widgets_slug.cpp includes the
 // header and the linker resolves calls via namespace ImWidgets.
 #include "imgui.h"   // IM_ALLOC / IM_FREE
+#include <cstdint>   // intptr_t
 #include <cstring>   // memset
 
 // ── Backend include (outside namespace — it defines global types) ──
@@ -44,7 +45,8 @@ namespace ImWidgets {
 struct DwShaperCtx
 {
     kbts_shape_context* kbts;
-    kbts_font*          font;
+    kbts_font*          font;       // the first font pushed (IsReady)
+    int                 fontCount;  // fonts on the stack; each one's UserData holds its index
     kbts_run            current_run;
 };
 
@@ -80,19 +82,35 @@ bool DwShaper_IsReady(DwShaperCtx* ctx)
 
 bool DwShaper_PushFontFromMemory(DwShaperCtx* ctx, void* data, int size)
 {
+    if (!ctx || !ctx->kbts)
+        return false;
 #ifdef _WIN32
-    ctx->font = DwShaper_kbts_TryPushFont(ctx->kbts, data, size);
+    kbts_font* f = DwShaper_kbts_TryPushFont(ctx->kbts, data, size);
 #else
-    ctx->font = kbts_ShapePushFontFromMemory(ctx->kbts, data, size, 0);
+    kbts_font* f = kbts_ShapePushFontFromMemory(ctx->kbts, data, size, 0);
 #endif
-    if (!ctx->font || ctx->font->Error != 0)
+    if (!f || f->Error != 0)
     {
-        kbts_DestroyShapeContext(ctx->kbts);
-        ctx->kbts = nullptr;
-        ctx->font = nullptr;
+        // A fallback that fails leaves the fonts before it; a first font that fails, nothing.
+        if (f)
+            kbts_ShapePopFont(ctx->kbts);
+        if (ctx->fontCount == 0)
+        {
+            kbts_DestroyShapeContext(ctx->kbts);
+            ctx->kbts = nullptr;
+            ctx->font = nullptr;
+        }
         return false;
     }
+    f->UserData = (void*)(intptr_t)ctx->fontCount++;
+    if (!ctx->font)
+        ctx->font = f;
     return true;
+}
+
+int DwShaper_FontCount(DwShaperCtx* ctx)
+{
+    return ctx ? ctx->fontCount : 0;
 }
 
 void DwShaper_PushFeature(DwShaperCtx* ctx, unsigned tag, unsigned value)
@@ -103,6 +121,11 @@ void DwShaper_PushFeature(DwShaperCtx* ctx, unsigned tag, unsigned value)
 void DwShaper_Begin(DwShaperCtx* ctx)
 {
     kbts_ShapeBegin(ctx->kbts, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
+}
+
+void DwShaper_BeginWithDirection(DwShaperCtx* ctx, int direction)
+{
+    kbts_ShapeBegin(ctx->kbts, (kbts_direction)direction, KBTS_LANGUAGE_DONT_KNOW);
 }
 
 void DwShaper_PushUtf8(DwShaperCtx* ctx, const char* text, int len)
@@ -133,7 +156,20 @@ bool DwShaper_NextGlyph(DwShaperRun* run, DwShaperGlyph* out)
     out->AdvanceX = (int)g->AdvanceX;
     out->OffsetX  = (int)g->OffsetX;
     out->OffsetY  = (int)g->OffsetY;
+    out->Cluster  = g->UserIdOrCodepointIndex; // the context API's codepoint index
     return true;
+}
+
+bool DwShaper_RunIsRightToLeft(const DwShaperRun* run)
+{
+    const kbts_run* kr = (const kbts_run*)run->_p;
+    return kr && kr->Direction == KBTS_DIRECTION_RTL;
+}
+
+int DwShaper_RunFont(const DwShaperRun* run)
+{
+    const kbts_run* kr = (const kbts_run*)run->_p;
+    return kr && kr->Font ? (int)(intptr_t)kr->Font->UserData : 0;
 }
 
 } // namespace ImWidgets

@@ -36,7 +36,13 @@ struct DwShaperGlyph
     int          AdvanceX; // horizontal advance
     int          OffsetX;  // horizontal placement offset
     int          OffsetY;  // vertical placement offset
+    int          Cluster;  // index of the codepoint it was made from, in the text pushed since Begin
 };
+
+// Paragraph directions for DwShaper_BeginWithDirection (the values of kbts_direction).
+#define DW_SHAPER_DIRECTION_DONT_KNOW 0 // from the text's first strong character
+#define DW_SHAPER_DIRECTION_LTR       1
+#define DW_SHAPER_DIRECTION_RTL       2
 
 // Opaque run handle — passed to DwShaper_NextGlyph() to iterate one script run.
 struct DwShaperRun { void* _p; };
@@ -51,14 +57,23 @@ void         DwShaper_Destroy(DwShaperCtx* ctx);
 bool DwShaper_IsReady(DwShaperCtx* ctx);
 
 // Font + features — call once per font before any shaping.
+// A context can hold several fonts, a fallback stack: text is shaped with the last pushed font
+// that supports it, so push fallbacks first and the preferred font last. A font's index is its
+// push order. A font that fails to load leaves the fonts pushed before it in place.
 bool DwShaper_PushFontFromMemory(DwShaperCtx* ctx, void* data, int size);
+int  DwShaper_FontCount(DwShaperCtx* ctx);
 void DwShaper_PushFeature(DwShaperCtx* ctx, unsigned tag, unsigned value);
 
 // Per-string shaping — Begin / PushUtf8 / End sequence.
 void DwShaper_Begin(DwShaperCtx* ctx);
+void DwShaper_BeginWithDirection(DwShaperCtx* ctx, int direction); // DW_SHAPER_DIRECTION_*
 void DwShaper_PushUtf8(DwShaperCtx* ctx, const char* text, int len);
 void DwShaper_End(DwShaperCtx* ctx);
 
-// Output iteration — call after DwShaper_End().
+// Output iteration -- call after DwShaper_End(). Runs come in logical order (the text's): placing
+// them on a line is the caller's (bidi reordering). A run's glyphs come in visual order, left to
+// right, a right to left run's flipped.
 bool DwShaper_NextRun(DwShaperCtx* ctx, DwShaperRun* run);
 bool DwShaper_NextGlyph(DwShaperRun* run, DwShaperGlyph* out);
+bool DwShaper_RunIsRightToLeft(const DwShaperRun* run);
+int  DwShaper_RunFont(const DwShaperRun* run); // the index of the font the run was shaped with
