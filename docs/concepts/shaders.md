@@ -13,7 +13,9 @@ HLSL plus ImPlatform's `IMP_*` macros, with the rules listed in `ImPlatform.h` (
 vector constructors, `IMP_OUT` parameters, no `return` in a body (write `col_out`), no names of GLSL / MSL built-ins.
 
 Ported: `markers`, `lines`, `stroke`, `image_inspector` (not on Direct3D 9: bit reinterpretation), `volume_viewer` (3D texture
-at t1: a `1 volume 3d` texture line), `lookdev_inspector`, `delta_e_compare`, `blur` (every `BG_EFFECT` variant).
+at t1: a `1 volume 3d` texture line), Slug (`slug.hlsl` with `SLUG_COLOR` / `SLUG_DEBUG` / `SLUG_FILL` for `slug_color`,
+`slug_debug`, `slug_fill`, and `slug_gradient.hlsl` for its larger vertex; both take their own vertex inputs, `//@inputs`,
+and share `slug_core.inc` through a `//@include` line, which the loader expands), `lookdev_inspector`, `delta_e_compare`, `blur` (every `BG_EFFECT` variant).
 `dearwidgetsdemo --shader-check [image.png]` compiles each of them for the running backend and exits with 1 when one
 fails; with a path it also saves every marker type rendered by the GPU.
 

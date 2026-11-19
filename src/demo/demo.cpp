@@ -1114,7 +1114,7 @@ static void DW_ShaderCheckOne( char const* name, char const* define )
 
 static void DW_ShaderCheckBegin()
 {
-	char const* names[] = { "markers", "stroke", "lookdev_inspector", "delta_e_compare", "lines", "volume_viewer" };
+	char const* names[] = { "markers", "stroke", "lookdev_inspector", "delta_e_compare", "lines", "volume_viewer", "slug", "slug_color", "slug_debug", "slug_fill", "slug_gradient" };
 	for ( char const* name : names )
 		DW_ShaderCheckOne( name, nullptr );
 #if !( IM_CURRENT_GFX & ( IM_GFX_DIRECTX9 | IM_GFX_DIRECTX10 | IM_GFX_DIRECTX11 | IM_GFX_DIRECTX12 ) )
@@ -1130,26 +1130,33 @@ static void DW_ShaderCheckBegin()
 	fflush( stderr );
 	if ( !g_shaderCheckPng )
 		return;
-	ImPlatform_TextureDesc desc = ImPlatform_TextureDesc_Default( 600, 160 );
+	ImPlatform_TextureDesc desc = ImPlatform_TextureDesc_Default( 600, 240 );
 	desc.format = ImPlatform_GetRenderPassFormat();
 	g_shaderCheckTarget = ImPlatform_CreateRenderTexture( &desc );
 	g_shaderCheckList = IM_NEW( ImDrawList )( ImGui::GetDrawListSharedData() );
 	g_shaderCheckList->_ResetForNewFrame();
 	g_shaderCheckList->_SetPixelDensity( 1.0f );
-	g_shaderCheckList->PushClipRect( ImVec2( 0, 0 ), ImVec2( 600, 160 ) );
+	g_shaderCheckList->PushClipRect( ImVec2( 0, 0 ), ImVec2( 600, 240 ) );
 	g_shaderCheckList->PushTexture( ImGui::GetIO().Fonts->TexRef );
-	g_shaderCheckList->AddRectFilled( ImVec2( 0, 0 ), ImVec2( 600, 160 ), IM_COL32( 40, 40, 40, 255 ) );
+	g_shaderCheckList->AddRectFilled( ImVec2( 0, 0 ), ImVec2( 600, 240 ), IM_COL32( 40, 40, 40, 255 ) );
 	for ( int m = 0; m < ImWidgetsMarker_COUNT; m++ )
 		ImWidgets::DrawMarker( g_shaderCheckList, ImVec2( 4.0f + ( m % 9 ) * 64.0f, 4.0f + ( m / 9 ) * 64.0f ), ImVec2( 60, 60 ),
 							   IM_COL32( 91, 194, 231, 255 ), IM_COL32( 255, 128, 64, 255 ), 0.3f * m, 0.8f, 0.05f, 0.01f,
 							   (ImWidgetsMarker)m, (ImWidgetsDrawType)( m % ImWidgetsDrawType_COUNT ) );
+	// Slug text below: the base glyph shader and the GPU gradient fill (slug_fill).
+	const ImWidgetsTextRenderer renderer = ImWidgets::GetTextRenderer();
+	ImWidgets::SetTextRenderer( ImWidgetsTextRenderer_GPU );
+	ImWidgets::DrawText( g_shaderCheckList, nullptr, 28.0f, ImVec2( 6, 150 ), IM_COL32( 255, 255, 255, 255 ), "Slug GPU text: Hamburgefonstiv 0123" );
+	ImWidgets::DrawLinearGradientTextGPU( g_shaderCheckList, nullptr, 28.0f, ImVec2( 6, 195 ), "Gradient fill: Hamburgefonstiv",
+										  ImVec2( 0, 0 ), ImVec2( 1, 0 ), IM_COL32( 255, 80, 40, 255 ), IM_COL32( 40, 160, 255, 255 ) );
+	ImWidgets::SetTextRenderer( renderer );
 	g_shaderCheckList->PopTexture();
 	g_shaderCheckList->PopClipRect();
 	g_shaderCheckData.Clear();
 	g_shaderCheckData.Valid = true;
 	g_shaderCheckData.AddDrawList( g_shaderCheckList );
 	g_shaderCheckData.DisplayPos = ImVec2( 0, 0 );
-	g_shaderCheckData.DisplaySize = ImVec2( 600, 160 );
+	g_shaderCheckData.DisplaySize = ImVec2( 600, 240 );
 	g_shaderCheckData.FramebufferScale = ImVec2( 1, 1 );
 	if ( !g_shaderCheckTarget || !ImPlatform_QueueRenderPass( g_shaderCheckTarget, &g_shaderCheckData, true ) )
 		fprintf( stderr, "[shader-check] no render pass on this backend: no image\n" );
@@ -1158,14 +1165,16 @@ static void DW_ShaderCheckBegin()
 static void DW_ShaderCheckEnd()
 {
 #if IMPLATFORM_GFX_SUPPORT_READBACK && DW_SCREENSHOT_SUPPORT
-	static unsigned char px[ 600 * 160 * 4 ];
-	if ( g_shaderCheckPng && g_shaderCheckTarget && ImPlatform_ReadTexture( g_shaderCheckTarget, 0, 0, 600, 160, px, sizeof( px ) ) )
+	static unsigned char px[ 600 * 240 * 4 ];
+	if ( g_shaderCheckPng && g_shaderCheckTarget && ImPlatform_ReadTexture( g_shaderCheckTarget, 0, 0, 600, 240, px, sizeof( px ) ) )
 	{
 		if ( ImPlatform_GetRenderPassFormat() == ImPlatform_PixelFormat_BGRA8 )
-			for ( int i = 0; i < 600 * 160; i++ )
+			for ( int i = 0; i < 600 * 240; i++ )
 				ImSwap( px[ i * 4 ], px[ i * 4 + 2 ] );
-		stbi_write_png( g_shaderCheckPng, 600, 160, 4, px, 600 * 4 );
+		stbi_write_png( g_shaderCheckPng, 600, 240, 4, px, 600 * 4 );
 	}
+	else if ( g_shaderCheckPng )
+		fprintf( stderr, "[shader-check] the image could not be read back\n" );
 #endif
 	if ( g_shaderCheckList )
 		IM_DELETE( g_shaderCheckList );

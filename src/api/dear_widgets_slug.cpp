@@ -3718,7 +3718,7 @@ namespace ImWidgets {
 				return info;
 			}
 
-#if defined(IM_CURRENT_GFX) && (IM_CURRENT_GFX == IM_GFX_DIRECTX11)
+#if IMPLATFORM_GFX_SUPPORT_VERTEX_BUFFERS
 			ImPlatform_CreateVertexInputLayout(info.vb, prog);
 #endif
 			return info;
@@ -4389,7 +4389,7 @@ namespace ImWidgets {
 				if (ib) ImPlatform_DestroyIndexBuffer(ib);
 				return;
 			}
-#if defined(IM_CURRENT_GFX) && (IM_CURRENT_GFX == IM_GFX_DIRECTX11)
+#if IMPLATFORM_GFX_SUPPORT_VERTEX_BUFFERS
 			ImPlatform_CreateVertexInputLayout(vb, gs_pContext->slugFillShader.program);
 #endif
 			SlugFillDrawCBData* cbd = (SlugFillDrawCBData*)IM_ALLOC(sizeof(SlugFillDrawCBData));

@@ -4806,32 +4806,81 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 #if IMPLATFORM_GFX_SUPPORT_SHADER_PARTS
 	// A shader written once as parts (shaders/parts/<name>.hlsl, ImPlatform_ParseShaderParts sections), generated and
 	// compiled for this backend at run time. False when the file does not exist (the per-language files are used).
+	// Lines "//@include <file>" of a parts file replaced by shaders/parts/<file> (one level: code shared by several parts
+	// files). Returns a new IM_ALLOC'd text, or NULL when an included file is missing.
+	static char* ExpandPartsIncludes( char const* text )
+	{
+		ImGuiTextBuffer out;
+		for ( char const* line = text; *line; )
+		{
+			char const* end = line + strcspn( line, "\n" );
+			if ( strncmp( line, "//@include ", 11 ) == 0 )
+			{
+				char filename[ 128 ];
+				ImFormatString( filename, sizeof( filename ), "shaders/parts/%.*s", ( int )strcspn( line + 11, " \t\r\n" ), line + 11 );
+				char* inc = NULL;
+				size_t inc_size = 0;
+				if ( !LoadShaderFile( &inc_size, &inc, filename ) )
+				{
+					if ( inc )
+						IM_FREE( inc );
+					return NULL;
+				}
+				out.append( inc, inc + inc_size );
+				out.append( "\n" );
+				IM_FREE( inc );
+			}
+			else
+				out.append( line, *end ? end + 1 : end );
+			line = *end ? end + 1 : end;
+		}
+		return ImStrdup( out.c_str() );
+	}
+
 	static bool CreateInternalShaderFromParts( ImDrawShader* shaders_out, char const* shader_name, char const* extra_define,
 											   char const* cache_key, unsigned int compile_flags )
 	{
+		// Variants of one parts file, chosen by a define.
+		static const struct { char const* name; char const* file; char const* define; } kVariants[] = {
+			{ "slug_color", "slug", "#define SLUG_COLOR" }, { "slug_debug", "slug", "#define SLUG_DEBUG" },
+			{ "slug_fill", "slug", "#define SLUG_FILL" } };
+		char const* file = shader_name;
+		char variant_define[ 256 ] = "";
+		for ( auto const& v : kVariants )
+			if ( strcmp( shader_name, v.name ) == 0 )
+			{
+				file = v.file;
+				ImFormatString( variant_define, sizeof( variant_define ), "%s", v.define );
+			}
+		if ( extra_define && extra_define[ 0 ] )
+			ImFormatString( variant_define + strlen( variant_define ), sizeof( variant_define ) - strlen( variant_define ), "%s%s",
+							variant_define[ 0 ] ? "\n" : "", extra_define );
 		char filename[ 128 ];
-		char* text = NULL;
+		char* raw = NULL;
 		size_t size = 0;
-		ImFormatString( filename, sizeof( filename ), "shaders/parts/%s.hlsl", shader_name );
-		if ( !LoadShaderFile( &size, &text, filename ) || size == 0 )
+		ImFormatString( filename, sizeof( filename ), "shaders/parts/%s.hlsl", file );
+		if ( !LoadShaderFile( &size, &raw, filename ) || size == 0 )
+		{
+			if ( raw )
+				IM_FREE( raw );
+			return false;
+		}
+		char* text = ExpandPartsIncludes( raw );
+		IM_FREE( raw );
+		ImPlatform_ShaderParts parts = {};
+		if ( !text || !ImPlatform_ParseShaderParts( text, &parts ) )
 		{
 			if ( text )
 				IM_FREE( text );
 			return false;
 		}
-		ImPlatform_ShaderParts parts = {};
-		if ( !ImPlatform_ParseShaderParts( text, &parts ) )
-		{
-			IM_FREE( text );
-			return false;
-		}
 		// The variant define (e.g. "#define BG_EFFECT 3") goes before the file's own defines.
 		char* defines = NULL;
-		if ( extra_define && extra_define[ 0 ] )
+		if ( variant_define[ 0 ] )
 		{
-			const size_t a = strlen( extra_define ), b = parts.defines ? strlen( parts.defines ) : 0;
+			const size_t a = strlen( variant_define ), b = parts.defines ? strlen( parts.defines ) : 0;
 			defines = ( char* )IM_ALLOC( a + b + 2 );
-			memcpy( defines, extra_define, a );
+			memcpy( defines, variant_define, a );
 			defines[ a ] = '\n';
 			memcpy( defines + a + 1, parts.defines ? parts.defines : "", b );
 			defines[ a + 1 + b ] = '\0';
