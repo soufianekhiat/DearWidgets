@@ -1117,6 +1117,10 @@ static void DW_ShaderCheckBegin()
 	char const* names[] = { "markers", "stroke", "lookdev_inspector", "delta_e_compare", "lines" };
 	for ( char const* name : names )
 		DW_ShaderCheckOne( name, nullptr );
+#if !( IM_CURRENT_GFX & ( IM_GFX_DIRECTX9 | IM_GFX_DIRECTX10 | IM_GFX_DIRECTX11 | IM_GFX_DIRECTX12 ) )
+	// Not on Direct3D: fxc takes minutes on this uber-shader at any optimization level.
+	DW_ShaderCheckOne( "image_inspector", nullptr );
+#endif
 	for ( int effect = 0; effect < ImWidgetsBgEffect_COUNT; effect++ )
 	{
 		char define[ 32 ];

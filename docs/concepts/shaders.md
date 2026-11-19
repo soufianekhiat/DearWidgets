@@ -12,7 +12,7 @@ A parts file holds the sections `//@params` (the members of the `b1` parameter b
 HLSL plus ImPlatform's `IMP_*` macros, with the rules listed in `ImPlatform.h` (shader parts): float literals, full
 vector constructors, `IMP_OUT` parameters, no `return` in a body (write `col_out`), no names of GLSL / MSL built-ins.
 
-Ported: `markers`, `lines`, `stroke`, `lookdev_inspector`, `delta_e_compare`, `blur` (every `BG_EFFECT` variant).
+Ported: `markers`, `lines`, `stroke`, `image_inspector` (not on Direct3D 9: bit reinterpretation), `lookdev_inspector`, `delta_e_compare`, `blur` (every `BG_EFFECT` variant).
 `dearwidgetsdemo --shader-check [image.png]` compiles each of them for the running backend and exits with 1 when one
 fails; with a path it also saves every marker type rendered by the GPU.
 
