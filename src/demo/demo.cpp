@@ -1114,7 +1114,7 @@ static void DW_ShaderCheckOne( char const* name, char const* define )
 
 static void DW_ShaderCheckBegin()
 {
-	char const* names[] = { "markers", "stroke", "lookdev_inspector", "delta_e_compare" };
+	char const* names[] = { "markers", "stroke", "lookdev_inspector", "delta_e_compare", "lines" };
 	for ( char const* name : names )
 		DW_ShaderCheckOne( name, nullptr );
 	for ( int effect = 0; effect < ImWidgetsBgEffect_COUNT; effect++ )
