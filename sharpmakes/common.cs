@@ -75,7 +75,7 @@ namespace DearWidgets
 			CustomProperties.Add( "VcpkgEnabled", "false" );
 
 			AddTargets(new DearTarget(	Platform.win64 | Platform.linux,// | Platform.mac,
-										TargetAPI.OpenGL3 | TargetAPI.D3D11 | TargetAPI.D3D12,
+										TargetAPI.OpenGL3 | TargetAPI.D3D9 | TargetAPI.D3D10 | TargetAPI.D3D11 | TargetAPI.D3D12,
 										Optimization.Debug | Optimization.Release,
 										BuildType.APIOnly | BuildType.DemoOnly | BuildType.Full ) );
 		}
