@@ -1,5 +1,23 @@
 # Shader Cross-Compilation
 
+## Shaders written as parts
+
+Shaders in `workingdir/shaders/parts/<name>.hlsl` are written once as ImPlatform shader parts and generated for the
+backend at run time (`ImPlatform_CreateShaderFromParts`): HLSL on DirectX 9 to 12, GLSL 330 on OpenGL, MSL on Metal.
+`CreateInternalShader()` uses the parts file when it exists and the per-language files below otherwise (Vulkan and
+WebGPU, which cannot compile at run time, and the shaders not ported yet).
+
+A parts file holds the sections `//@params` (the members of the `b1` parameter block, the same layout as the C struct),
+`//@varyings`, `//@textures` (`<slot> <name>` lines), `//@defines`, `//@functions`, `//@vs` and `//@ps`. The bodies are
+HLSL plus ImPlatform's `IMP_*` macros, with the rules listed in `ImPlatform.h` (shader parts): float literals, full
+vector constructors, `IMP_OUT` parameters, no `return` in a body (write `col_out`), no names of GLSL / MSL built-ins.
+
+Ported: `markers`, `stroke`, `lookdev_inspector`, `delta_e_compare`, `blur` (every `BG_EFFECT` variant).
+`dearwidgetsdemo --shader-check [image.png]` compiles each of them for the running backend and exits with 1 when one
+fails; with a path it also saves every marker type rendered by the GPU.
+
+## Per-language files (Slang)
+
 DearWidgets custom shaders are authored in HLSL and cross-compiled to GLSL, MSL, WGSL, and WGPU targets using [Slang](https://shader-slang.com/).
 
 ---

@@ -1,4 +1,4 @@
-﻿#include <demo.h>
+#include <demo.h>
 
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
@@ -1089,6 +1089,87 @@ static void DW_StartupMark( const char* label )
 static inline void DW_StartupMark( const char* ) {}
 #endif
 
+// --shader-check [png]: compiles every shader written as parts (each background effect variant included) and prints
+// each result, then exits (code 1 when one fails). With a path, it also renders every marker type and draw type into a
+// render pass and saves it: what the generated marker shader draws, read back from the GPU. Runs while the window is
+// occluded (render passes and readback do not need it on screen).
+static bool g_shaderCheck = false;
+static const char* g_shaderCheckPng = nullptr;
+static int g_shaderCheckFrame = 0;
+static int g_shaderCheckFailures = 0;
+static ImDrawList* g_shaderCheckList = nullptr;
+static ImDrawData g_shaderCheckData;
+static ImTextureID g_shaderCheckTarget = 0;
+
+static void DW_ShaderCheckOne( char const* name, char const* define )
+{
+	ImDrawShader shader = {};
+	ImWidgets::CreateInternalShader( &shader, name, 0, NULL, 0, NULL, define, "_check" );
+	fprintf( stderr, "[shader-check] %s%s%s: %s\n", name, define ? " " : "", define ? define : "", shader.program ? "ok" : "FAILED" );
+	g_shaderCheckFailures += shader.program ? 0 : 1;
+	if ( shader.program ) ImPlatform_DestroyShaderProgram( shader.program );
+	if ( shader.vs ) ImPlatform_DestroyShader( shader.vs );
+	if ( shader.ps ) ImPlatform_DestroyShader( shader.ps );
+}
+
+static void DW_ShaderCheckBegin()
+{
+	char const* names[] = { "markers", "stroke", "lookdev_inspector", "delta_e_compare" };
+	for ( char const* name : names )
+		DW_ShaderCheckOne( name, nullptr );
+	for ( int effect = 0; effect < ImWidgetsBgEffect_COUNT; effect++ )
+	{
+		char define[ 32 ];
+		ImFormatString( define, sizeof( define ), "#define BG_EFFECT %d", effect );
+		DW_ShaderCheckOne( "blur", define );
+	}
+	fflush( stderr );
+	if ( !g_shaderCheckPng )
+		return;
+	ImPlatform_TextureDesc desc = ImPlatform_TextureDesc_Default( 600, 160 );
+	desc.format = ImPlatform_GetRenderPassFormat();
+	g_shaderCheckTarget = ImPlatform_CreateRenderTexture( &desc );
+	g_shaderCheckList = IM_NEW( ImDrawList )( ImGui::GetDrawListSharedData() );
+	g_shaderCheckList->_ResetForNewFrame();
+	g_shaderCheckList->_SetPixelDensity( 1.0f );
+	g_shaderCheckList->PushClipRect( ImVec2( 0, 0 ), ImVec2( 600, 160 ) );
+	g_shaderCheckList->PushTexture( ImGui::GetIO().Fonts->TexRef );
+	g_shaderCheckList->AddRectFilled( ImVec2( 0, 0 ), ImVec2( 600, 160 ), IM_COL32( 40, 40, 40, 255 ) );
+	for ( int m = 0; m < ImWidgetsMarker_COUNT; m++ )
+		ImWidgets::DrawMarker( g_shaderCheckList, ImVec2( 4.0f + ( m % 9 ) * 64.0f, 4.0f + ( m / 9 ) * 64.0f ), ImVec2( 60, 60 ),
+							   IM_COL32( 91, 194, 231, 255 ), IM_COL32( 255, 128, 64, 255 ), 0.3f * m, 0.8f, 0.05f, 0.01f,
+							   (ImWidgetsMarker)m, (ImWidgetsDrawType)( m % ImWidgetsDrawType_COUNT ) );
+	g_shaderCheckList->PopTexture();
+	g_shaderCheckList->PopClipRect();
+	g_shaderCheckData.Clear();
+	g_shaderCheckData.Valid = true;
+	g_shaderCheckData.AddDrawList( g_shaderCheckList );
+	g_shaderCheckData.DisplayPos = ImVec2( 0, 0 );
+	g_shaderCheckData.DisplaySize = ImVec2( 600, 160 );
+	g_shaderCheckData.FramebufferScale = ImVec2( 1, 1 );
+	if ( !g_shaderCheckTarget || !ImPlatform_QueueRenderPass( g_shaderCheckTarget, &g_shaderCheckData, true ) )
+		fprintf( stderr, "[shader-check] no render pass on this backend: no image\n" );
+}
+
+static void DW_ShaderCheckEnd()
+{
+#if IMPLATFORM_GFX_SUPPORT_READBACK && DW_SCREENSHOT_SUPPORT
+	static unsigned char px[ 600 * 160 * 4 ];
+	if ( g_shaderCheckPng && g_shaderCheckTarget && ImPlatform_ReadTexture( g_shaderCheckTarget, 0, 0, 600, 160, px, sizeof( px ) ) )
+	{
+		if ( ImPlatform_GetRenderPassFormat() == ImPlatform_PixelFormat_BGRA8 )
+			for ( int i = 0; i < 600 * 160; i++ )
+				ImSwap( px[ i * 4 ], px[ i * 4 + 2 ] );
+		stbi_write_png( g_shaderCheckPng, 600, 160, 4, px, 600 * 4 );
+	}
+#endif
+	if ( g_shaderCheckList )
+		IM_DELETE( g_shaderCheckList );
+	if ( g_shaderCheckTarget )
+		ImPlatform_DestroyTexture( g_shaderCheckTarget );
+	fprintf( stderr, "[shader-check] %d failure(s)\n", g_shaderCheckFailures );
+}
+
 int main( int argc, char** argv )
 {
 	DW_StartupMark( "main entry" );
@@ -1103,6 +1184,13 @@ int main( int argc, char** argv )
 	for ( int argi = 1; argi < argc; ++argi )
 		if ( strcmp( argv[argi], "--dev" ) == 0 )
 			g_dwDevMode = true;
+	for ( int argi = 1; argi < argc; ++argi )
+		if ( strcmp( argv[argi], "--shader-check" ) == 0 )
+		{
+			g_shaderCheck = true;
+			if ( argi + 1 < argc && argv[argi + 1][0] != '-' )
+				g_shaderCheckPng = argv[argi + 1];
+		}
 
 	// Parse command-line arguments
 #if DW_SCREENSHOT_SUPPORT
@@ -1360,7 +1448,7 @@ int main( int argc, char** argv )
 
 		ImPlatform_PlatformEvents();
 
-		if ( !ImPlatform_GfxCheck() )
+		if ( !ImPlatform_GfxCheck() && !g_shaderCheck )	// The shader check renders while occluded
 		{
 			static int s_gfxCheckFails = 0;
 			if ( dwFirst && s_gfxCheckFails++ == 0 )
@@ -1398,6 +1486,8 @@ int main( int argc, char** argv )
 			ImGui::SetNextWindowSize( ImVec2( 600.0f, 930.0f ), ImGuiCond_Always );
 		}
 #endif
+		if ( g_shaderCheck && g_shaderCheckFrame == 0 )
+			DW_ShaderCheckBegin();
 		if ( g_dwShowSamples )
 			ImWidgets::ShowSamples();
 		if ( dwFirst ) DW_StartupMark( "frame1: ShowSamples()" );
@@ -1480,6 +1570,10 @@ int main( int argc, char** argv )
 			ImGui::SetNextWindowBgAlpha( 0.0f );
 			ImGui::SetNextWindowSize( ImVec2( 340, 0 ), ImGuiCond_FirstUseEver );
 			ImGui::Begin( "Background Effect", NULL, winFlags );
+#if !( IMPLATFORM_GFX_SUPPORT_RENDER_TARGETS && IMPLATFORM_GFX_SUPPORT_DIRECT_DRAW && IMPLATFORM_GFX_SUPPORT_SHADER_TEXTURES )
+			ImGui::TextColored( ImVec4( 1.0f, 0.6f, 0.2f, 1.0f ), "Background effects are not supported by this graphics backend:" );
+			ImGui::TextWrapped( "they need a render-target stack and direct draws (IMPLATFORM_GFX_SUPPORT_RENDER_TARGETS, _DIRECT_DRAW)." );
+#endif
 
 			ImWidgetsBgEffect eff = (ImWidgetsBgEffect)effectIdx;
 			float p0 = 0.0f, p1 = 0.0f, p2 = 0.0f;
@@ -1619,6 +1713,11 @@ int main( int argc, char** argv )
 		ImPlatform_GfxAPISwapBuffer();
 
 		if ( !s_firstFrameMarked ) { DW_StartupMark( "frame1: SwapBuffer -> first frame presented" ); s_firstFrameMarked = true; }
+		if ( g_shaderCheck && ++g_shaderCheckFrame == 4 )
+		{
+			DW_ShaderCheckEnd();
+			break;
+		}
 
 		// Screenshot state machine
 #if DW_SCREENSHOT_SUPPORT
@@ -1952,7 +2051,7 @@ int main( int argc, char** argv )
 
 	ImPlatform_DestroyWindow();
 
-	return 0;
+	return g_shaderCheckFailures ? 1 : 0;
 }
 
 namespace ImWidgets{

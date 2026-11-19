@@ -1,4 +1,4 @@
-﻿#include <dear_widgets.h>
+#include <dear_widgets.h>
 #include "dear_widgets_internal.h"
 #include <stdint.h>
 
@@ -4803,8 +4803,70 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 	}
 #endif // D3D backends only
 
+#if IMPLATFORM_GFX_SUPPORT_SHADER_PARTS
+	// A shader written once as parts (shaders/parts/<name>.hlsl, ImPlatform_ParseShaderParts sections), generated and
+	// compiled for this backend at run time. False when the file does not exist (the per-language files are used).
+	static bool CreateInternalShaderFromParts( ImDrawShader* shaders_out, char const* shader_name, char const* extra_define,
+											   char const* cache_key, unsigned int compile_flags )
+	{
+		char filename[ 128 ];
+		char* text = NULL;
+		size_t size = 0;
+		ImFormatString( filename, sizeof( filename ), "shaders/parts/%s.hlsl", shader_name );
+		if ( !LoadShaderFile( &size, &text, filename ) || size == 0 )
+		{
+			if ( text )
+				IM_FREE( text );
+			return false;
+		}
+		ImPlatform_ShaderParts parts = {};
+		if ( !ImPlatform_ParseShaderParts( text, &parts ) )
+		{
+			IM_FREE( text );
+			return false;
+		}
+		// The variant define (e.g. "#define BG_EFFECT 3") goes before the file's own defines.
+		char* defines = NULL;
+		if ( extra_define && extra_define[ 0 ] )
+		{
+			const size_t a = strlen( extra_define ), b = parts.defines ? strlen( parts.defines ) : 0;
+			defines = ( char* )IM_ALLOC( a + b + 2 );
+			memcpy( defines, extra_define, a );
+			defines[ a ] = '\n';
+			memcpy( defines + a + 1, parts.defines ? parts.defines : "", b );
+			defines[ a + 1 + b ] = '\0';
+			parts.defines = defines;
+		}
+		parts.cache_key = cache_key;
+		parts.compile_flags = compile_flags;
+		memset( shaders_out, 0, sizeof( ImDrawShader ) );
+		shaders_out->vs = ImPlatform_CreateShaderFromParts( &parts, ImPlatform_ShaderStage_Vertex );
+		shaders_out->ps = shaders_out->vs ? ImPlatform_CreateShaderFromParts( &parts, ImPlatform_ShaderStage_Fragment ) : NULL;
+		if ( shaders_out->vs && shaders_out->ps )
+			shaders_out->program = ImPlatform_CreateShaderProgram( shaders_out->vs, shaders_out->ps );
+		if ( !shaders_out->program )
+		{
+			char msg[ 256 ];
+			ImFormatString( msg, sizeof( msg ), "Failed to build the shader parts '%s' - check the console for the compiler messages", shader_name );
+			DW_ShaderWarn( msg );   // non-fatal: the caller falls back as with an empty shader
+		}
+		if ( defines )
+			IM_FREE( defines );
+		IM_FREE( text );
+		return true;
+	}
+#endif
+
 	void CreateInternalShader( ImDrawShader *shaders_out, char const *shader_name, int sizeof_vs_const_buffer, void *vs_const_buffer, int sizeof_ps_const_buffer, void *ps_const_buffer, char const* extra_define, char const* cache_suffix, unsigned int compile_flags )
 	{
+#if IMPLATFORM_GFX_SUPPORT_SHADER_PARTS
+		{
+			char cache_key[ 256 ];
+			ImFormatString( cache_key, sizeof( cache_key ), "%s%s", shader_name, ( cache_suffix && cache_suffix[ 0 ] ) ? cache_suffix : "" );
+			if ( CreateInternalShaderFromParts( shaders_out, shader_name, extra_define, cache_key, compile_flags ) )
+				return;
+		}
+#endif
 		// Note: sizeof_vs_const_buffer, vs_const_buffer, sizeof_ps_const_buffer, ps_const_buffer
 		// are no longer used with the new ImPlatform API. Uniforms are set per-draw via ImPlatform_SetShaderUniform.
 		(void)sizeof_vs_const_buffer;
@@ -33438,6 +33500,10 @@ namespace ImWidgets {
 		drawList->AddImageRounded( id, cur, cur + winSize, ImVec2( 0.0f, 0.0f ), uv, col, window->WindowRounding );
 	}
 
+	// Background effects need a copy of what is behind the window, a render target and direct draws: on backends
+	// without them (DirectX 10, Metal, WebGPU) SetCurrentWindowBlurBackground() does nothing.
+#define DW_GFX_BACKDROP ( IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER && IMPLATFORM_GFX_SUPPORT_RENDER_TARGETS && IMPLATFORM_GFX_SUPPORT_DIRECT_DRAW && IMPLATFORM_GFX_SUPPORT_SHADER_TEXTURES )
+#if DW_GFX_BACKDROP
 	struct BlurConstants
 	{
 		float texel_size[2];
@@ -33541,10 +33607,11 @@ namespace ImWidgets {
 		ImPlatform_PopShaderConstants( handle );
 		IM_FREE( cb );
 	}
+#endif // DW_GFX_BACKDROP
 
 	void BlurBackgroundNewFrame()
 	{
-#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+#if DW_GFX_BACKDROP
 		ImWidgetsContext* ctx = gs_pContext;
 		if ( !ctx ) return;
 
@@ -33561,13 +33628,10 @@ namespace ImWidgets {
 			if ( ctx->blurIntermediate )
 				ImPlatform_DestroyTexture( ctx->blurIntermediate );
 
-			unsigned int pixelCount = bbW * bbH;
-			ImU8* zeros = (ImU8*)IM_ALLOC( pixelCount * 4 );
-			memset( zeros, 0, pixelCount * 4 );
+			// Render textures: ImPlatform_CopyCurrentTarget copies into render textures on every backend.
 			ImPlatform_TextureDesc desc = ImPlatform_TextureDesc_Default( bbW, bbH );
-			ctx->blurBackbufferCopy = ImPlatform_CreateTexture( zeros, &desc );
+			ctx->blurBackbufferCopy = ImPlatform_CreateRenderTexture( &desc );
 			ctx->blurIntermediate = ImPlatform_CreateRenderTexture( &desc );
-			IM_FREE( zeros );
 			ctx->blurTexW = bbW;
 			ctx->blurTexH = bbH;
 		}
@@ -33579,7 +33643,7 @@ namespace ImWidgets {
 
 	void SetCurrentWindowBlurBackground( ImWidgetsBgEffect effect, float param0, float param1, float param2, ImU32 tint )
 	{
-#if IMPLATFORM_GFX_SUPPORT_CUSTOM_SHADER
+#if DW_GFX_BACKDROP
 		ImWidgetsContext* ctx = gs_pContext;
 		if ( !ctx || !ctx->blurBackbufferCopy )
 			return;
