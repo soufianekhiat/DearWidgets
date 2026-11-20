@@ -104,26 +104,26 @@ float eval_dash_sdf(float u_rel, float dash_len,
 // only from the join zones (see main_ps body-vs-join branching).
 //
 // P_world:   pixel position in screen space
-// vertex:    join vertex position in screen space
+// join_p:    join vertex position in screen space
 // cur_dir:   tangent of current segment (ex)
 // adj_dir:   tangent of adjacent segment (prev_dir or next_dir)
 // dy:        perpendicular distance to current segment axis
 // jtype:     0=Round, 1=Miter, 2=Bevel
 // halfw:     half stroke width
 // mlimit:    miter limit ratio
-float join_dist(float2 P_world, float2 vertex,
+float join_dist(float2 P_world, float2 join_p,
                 float2 cur_dir, float2 adj_dir,
                 float dy, int jtype, float halfw, float mlimit)
 {
     // Round join: circle centered at vertex (already symmetric)
     if (jtype == 0)
-        return length(P_world - vertex);
+        return length(P_world - join_p);
 
     // Distance to current segment axis
     float d_cur = abs(dy);
     // Distance to adjacent segment axis
     float2 adj_perp = float2(-adj_dir.y, adj_dir.x);
-    float d_adj = abs(dot(P_world - vertex, adj_perp));
+    float d_adj = abs(dot(P_world - join_p, adj_perp));
 
     // Miter diamond: intersection of both stroke half-planes.
     // max(d_cur, d_adj) is identical from either segment's perspective.
@@ -136,7 +136,7 @@ float join_dist(float2 P_world, float2 vertex,
     {
         float2 bn = bisect * rsqrt(bl2);
         float2 bp = float2(-bn.y, bn.x);
-        float miter_d = abs(dot(P_world - vertex, bp));
+        float miter_d = abs(dot(P_world - join_p, bp));
 
         if (jtype == 1) // Miter: allow extension, clip at limit
             d = max(d, miter_d - mlimit * halfw);
