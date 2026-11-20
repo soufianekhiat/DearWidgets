@@ -50,7 +50,8 @@ float  pad2;
 
 float4 sampleClamped(float2 uv)
 {
-	return IMP_SAMPLE(sceneTexture, clamp(uv, texel_size * 0.5f, 1.0f - texel_size * 0.5f));
+	// Level 0 explicitly (the copy has one level): shader model 3 samples inside dynamic loops so (Rain).
+	return IMP_SAMPLE_LEVEL(sceneTexture, clamp(uv, texel_size * 0.5f, 1.0f - texel_size * 0.5f), 0.0f);
 }
 
 // sRGB <-> linear conversion (exact IEC 61966-2-1)
@@ -847,8 +848,8 @@ float4 effect_rain(float2 uv)
 		float3 acc = float3(0, 0, 0);
 		float count = 0.0f;
 		float spacing = max(focus * 0.5f, 1.0f);
-		for (int ky = -R; ky <= R; ++ky)
-		for (int kx = -R; kx <= R; ++kx)
+		IMP_LOOP for (int ky = -R; ky <= R; ++ky)
+		IMP_LOOP for (int kx = -R; kx <= R; ++kx)
 		{
 			float2 off = float2(float(kx), float(ky)) * spacing * texel_size;
 			acc += srgbToLinear3(sampleClamped(refractUV + off).rgb);

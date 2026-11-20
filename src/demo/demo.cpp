@@ -1114,7 +1114,14 @@ static void DW_ShaderCheckOne( char const* name, char const* define )
 
 static void DW_ShaderCheckBegin()
 {
-	char const* names[] = { "markers", "stroke", "lookdev_inspector", "delta_e_compare", "lines", "volume_viewer", "slug", "slug_color", "slug_debug", "slug_fill", "slug_gradient" };
+#if IM_CURRENT_GFX == IM_GFX_DIRECTX9
+	// Not on Direct3D 9: the stroke's 1024 segments exceed shader model 3's constants (the CPU fill draws strokes).
+	fprintf( stderr, "[shader-check] stroke: skipped on Direct3D 9\n" );
+	char const* names[] = { "markers", "lookdev_inspector",
+#else
+	char const* names[] = { "markers", "stroke", "lookdev_inspector",
+#endif
+		"delta_e_compare", "lines", "volume_viewer", "slug", "slug_color", "slug_debug", "slug_fill", "slug_gradient" };
 	for ( char const* name : names )
 		DW_ShaderCheckOne( name, nullptr );
 #if !( IM_CURRENT_GFX & ( IM_GFX_DIRECTX9 | IM_GFX_DIRECTX10 | IM_GFX_DIRECTX11 | IM_GFX_DIRECTX12 ) )

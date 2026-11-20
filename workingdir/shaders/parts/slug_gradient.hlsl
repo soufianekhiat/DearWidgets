@@ -6,6 +6,22 @@
 // SlugGradientVertex: SlugVertex (parts/slug.hlsl) plus grd (gradient: dirX, dirY, scale, bias) and col2 (color 1);
 // col is color 0. The gradient is evaluated in em space, the coverage as in parts/slug.hlsl.
 
+//@params
+float4 fillColor0;   // unused here: the parameter block of parts/slug.hlsl, set the same way
+float4 fillColor1;
+float4 fillBBox;
+float4 fillGrad;
+float4 fillUVStart;
+float4 fillUVEnd;
+float4 slugTexel;    // 1 / curve texture size (xy), 1 / band texture size (zw): shader model 3 only
+
+//@defines
+#ifdef IMP_SM3
+#define SLUG_GLYPH float4
+#else
+#define SLUG_GLYPH int4
+#endif
+
 //@inputs
 float4 pos : POSITION;
 float4 tex : TEXCOORD0;
@@ -17,7 +33,7 @@ float4 col2 : COLOR1;
 
 //@varyings
 nointerpolation float4 banding;
-nointerpolation int4 glyph;
+nointerpolation SLUG_GLYPH glyph;
 nointerpolation float4 gradColor0;
 nointerpolation float4 gradColor1;
 nointerpolation float4 gradParams;  // dirX, dirY, scale, bias (radial: centerX, centerY, scale, bias)
@@ -34,10 +50,14 @@ nointerpolation float4 gradParams;  // dirX, dirY, scale, bias (radial: centerX,
 //   linear: t = dot(em, dir) * scale + bias
 //   radial: t = length(em - center) * scale + bias
 // Center, radius and direction are pre-baked into the em space the band texture runs in.
-float4 SlugGradientShade(float2 texcoord, float4 banding, int4 glyph, float4 color0, float4 color1, float4 params)
+float4 SlugGradientShade(float2 texcoord, float4 banding, SLUG_GLYPH glyph, float4 color0, float4 color1, float4 params)
 {
     float coverage = SlugRender(texcoord, banding, glyph);
+#ifdef IMP_SM3
+    bool isRadial = glyph.w >= 255.5f;      // bandMaxY + 256 * flag
+#else
     bool isRadial = (glyph.w & 0x100) != 0;
+#endif
     float t = isRadial ? length(texcoord - params.xy) * params.z + params.w
                        : dot(texcoord, params.xy) * params.z + params.w;
     float4 gradColor = lerp(color0, color1, saturate(t));

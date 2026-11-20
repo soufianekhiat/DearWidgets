@@ -1,4 +1,4 @@
-﻿// dear_widgets_slug.cpp -- Slug GPU font rendering: color fonts, gradients, ligatures, atlas baking.
+// dear_widgets_slug.cpp -- Slug GPU font rendering: color fonts, gradients, ligatures, atlas baking.
 // Compiled as its own translation unit; resolved by the linker.
 
 // stb_rect_pack -- atlas packing (STATIC = all funcs private to this TU, no ODR conflict with dear_widgets.cpp)
@@ -93,6 +93,23 @@ namespace ImWidgets {
 	#define SLUG_BANDS_X      8        // vertical band count (partition x-axis)
 	#define SLUG_BANDS_Y      8        // horizontal band count (partition y-axis)
 	#define SLUG_TEX_INIT_H   16       // initial texture height (rows)
+
+	// Per-glyph data of a vertex (tex.zw): the band texture location, the band maxima and a flag (bit 24 of w, the
+	// radial gradient). Bit-cast integers (z: x | y << 16, w: maxX | maxY << 16 | flag << 24); on Direct3D 9, whose
+	// shader model 3 has no bit operations, plain floats instead (z: x + 4096 y, w: maxX + 256 maxY + 65536 flag),
+	// exact while the band texture is under 4096 rows.
+	static void SlugPackGlyphData(int bandTexX, int bandTexY, int bandMaxX, int bandMaxY, bool flag, float* z, float* w)
+	{
+#if IM_CURRENT_GFX == IM_GFX_DIRECTX9
+		*z = (float)bandTexX + 4096.0f * (float)bandTexY;
+		*w = (float)( bandMaxX & 0xFF ) + 256.0f * (float)( bandMaxY & 0xFF ) + ( flag ? 65536.0f : 0.0f );
+#else
+		unsigned int gz = (unsigned int)(ImU16)bandTexX | ((unsigned int)(ImU16)bandTexY << 16);
+		unsigned int gw = (unsigned int)(bandMaxX & 0xFF) | ((unsigned int)(bandMaxY & 0xFF) << 16) | ((flag ? 1u : 0u) << 24);
+		memcpy(z, &gz, 4);
+		memcpy(w, &gw, 4);
+#endif
+	}
 
 	// ---- Data Structures ----------------------------------------------------
 
@@ -208,6 +225,22 @@ namespace ImWidgets {
 
 	// Data passed to the raw draw callback (forward-declared here so SlugFontCache can hold a pool)
 	struct SlugFontCache;  // forward declaration
+	// The parameter block of the Slug shaders (b1): the fill values, and the texture sizes shader model 3 needs.
+	struct SlugFillCBParams {
+		float fillColor0[4];   // gradient start color (or image tint)
+		float fillColor1[4];   // gradient end color (unused for image)
+		float fillBBox[4];     // (reserved -- bbox from vertex color)
+		float fillGrad[4];     // x=type (0=linear,1=radial,2=diamond,3=image), y=interp (0-4), z,w=0
+		float fillUVStart[4];  // gradient UV start (or image uv_offset)
+		float fillUVEnd[4];    // gradient UV end (or image uv_scale)
+		float slugTexel[4];    // 1 / curve texture size, 1 / band texture size (shader model 3 samples texel centers)
+	};
+#if IM_CURRENT_GFX == IM_GFX_DIRECTX9
+	#define SLUG_PARAMS_SIZE sizeof(SlugFillCBParams)
+#else
+	#define SLUG_PARAMS_SIZE offsetof(SlugFillCBParams, slugTexel)     // the per-language files end at fillUVEnd
+#endif
+
 	struct SlugDrawCBData
 	{
 		ImPlatform_ShaderProgram program;
@@ -2552,6 +2585,15 @@ namespace ImWidgets {
 	}
 #endif
 
+	// 1 / curve texture size (xy) and 1 / band texture size (zw) of an atlas.
+	static void SlugTexelSizes(const SlugFontCache* atlas, float out[4])
+	{
+		out[0] = 1.0f / (float)SLUG_TEX_WIDTH;
+		out[1] = atlas && atlas->curveTexHeight > 0 ? 1.0f / (float)atlas->curveTexHeight : 0.0f;
+		out[2] = 1.0f / (float)SLUG_TEX_WIDTH;
+		out[3] = atlas && atlas->bandTexHeight > 0 ? 1.0f / (float)atlas->bandTexHeight : 0.0f;
+	}
+
 	static void SlugRawDraw(const ImDrawList*, const ImDrawCmd* cmd)
 	{
 		SlugDrawCBData* d = (SlugDrawCBData*)cmd->UserCallbackData;
@@ -2563,6 +2605,13 @@ namespace ImWidgets {
 			return;
 		}
 
+#if IM_CURRENT_GFX == IM_GFX_DIRECTX9
+		// Shader model 3 samples the texel centers: the texture sizes, in the parameter block (fill values unused)
+		SlugFillCBParams params = {};
+		SlugTexelSizes(d->atlas, params.slugTexel);
+		ImPlatform_SetShaderUniform(d->program, "fillParams", &params, SLUG_PARAMS_SIZE);
+		ImPlatform_BeginCustomShader_Render(d->program);
+#endif
 		ImPlatform_BindBuffers(d->vb, d->ib);
 		ImPlatform_SetShaderTexture(d->program, "curveTexture", 0, curveTex);
 		ImPlatform_SetShaderTexture(d->program, "bandTexture",  1, bandTex);
@@ -3805,13 +3854,8 @@ namespace ImWidgets {
 			float uL = ge->minXEm, uR = ge->maxXEm;
 			float uT = ge->maxYEm, uB = ge->minYEm;
 
-			unsigned int gz = (unsigned int)(ImU16)ge->bandTexX
-			                | ((unsigned int)(ImU16)ge->bandTexY << 16);
-			unsigned int gw = (unsigned int)(ge->bandMaxX & 0xFF)
-			                | ((unsigned int)(ge->bandMaxY & 0xFF) << 16);
 			float fgz, fgw;
-			memcpy(&fgz, &gz, 4);
-			memcpy(&fgw, &gw, 4);
+			SlugPackGlyphData(ge->bandTexX, ge->bandTexY, ge->bandMaxX, ge->bandMaxY, false, &fgz, &fgw);
 
 			float cR, cG, cB, cA;
 			U32toF4(quadCol, &cR, &cG, &cB, &cA);
@@ -3842,9 +3886,7 @@ namespace ImWidgets {
 			DbgRecordQuad(sL, sT, sR, sB);
 			float uL = ge->minXEm, uR = ge->maxXEm, uT = ge->maxYEm, uB = ge->minYEm;
 
-			unsigned int gz = (unsigned int)(ImU16)ge->bandTexX | ((unsigned int)(ImU16)ge->bandTexY << 16);
-			unsigned int gw = (unsigned int)(ge->bandMaxX & 0xFF) | ((unsigned int)(ge->bandMaxY & 0xFF) << 16);
-			float fgz, fgw; memcpy(&fgz, &gz, 4); memcpy(&fgw, &gw, 4);
+			float fgz, fgw_flag;
 
 			float c0R, c0G, c0B, c0A, c1R, c1G, c1B, c1A;
 			U32toF4(cl.gradColor0, &c0R, &c0G, &c0B, &c0A);
@@ -3852,19 +3894,13 @@ namespace ImWidgets {
 
 			ImU16 base = (ImU16)vertsGrad.Size;
 			SlugGradientVertex v = {};
-			// Pack the radial/linear discriminator into bit 24 of tex.w
-			// (the bit-cast uint of glyph-data zw). Bits 0-7 are bandMaxX,
-			// bits 16-23 are bandMaxY, leaving bits 8-15 and 24-31 free for
-			// per-layer flags. Storing the flag here frees grd[0..3] to hold
+			// The radial/linear discriminator goes with the glyph data (the flag of
+			// tex.w, SlugPackGlyphData). Storing it there frees grd[0..3] to hold
 			// (a, b, scale, bias) for BOTH gradient kinds -- necessary because
 			// proper stop-range handling for radial needs a real bias slot
 			// (without it the shader can't reproduce the falloff that creates
 			// the rim-lighting / halo effect emoji designers use).
-			unsigned int gw_with_flag = (unsigned int)(ge->bandMaxX & 0xFF)
-			                          | ((unsigned int)(ge->bandMaxY & 0xFF) << 16)
-			                          | ((cl.isRadial ? 1u : 0u) << 24);
-			float fgw_flag;
-			memcpy(&fgw_flag, &gw_with_flag, 4);
+			SlugPackGlyphData(ge->bandTexX, ge->bandTexY, ge->bandMaxX, ge->bandMaxY, cl.isRadial, &fgz, &fgw_flag);
 			v.tex[2] = fgz; v.tex[3] = fgw_flag;
 			v.jac[0] = invSz; v.jac[1] = 0; v.jac[2] = 0; v.jac[3] = -invSz;
 			v.bnd[0] = ge->bandScaleX; v.bnd[1] = ge->bandScaleY;
@@ -4055,14 +4091,6 @@ namespace ImWidgets {
 
 	// ---- GPU gradient fill text (SLUG_FILL shader permutation) ---------------
 
-	struct SlugFillCBParams {
-		float fillColor0[4];   // gradient start color (or image tint)
-		float fillColor1[4];   // gradient end color (unused for image)
-		float fillBBox[4];     // (reserved -- bbox from vertex color)
-		float fillGrad[4];     // x=type (0=linear,1=radial,2=diamond,3=image), y=interp (0-4), z,w=0
-		float fillUVStart[4];  // gradient UV start (or image uv_offset)
-		float fillUVEnd[4];    // gradient UV end (or image uv_scale)
-	};
 
 	struct SlugFillDrawCBData {
 		ImPlatform_ShaderProgram program;
@@ -4085,7 +4113,8 @@ namespace ImWidgets {
 			return;
 		}
 		// This draw's parameters, then the program bound with them (as the marker callbacks do, on every backend)
-		ImPlatform_SetShaderUniform(d->program, "fillParams", &d->params, sizeof(d->params));
+		SlugTexelSizes(d->atlas, d->params.slugTexel);
+		ImPlatform_SetShaderUniform(d->program, "fillParams", &d->params, SLUG_PARAMS_SIZE);
 		ImPlatform_BeginCustomShader_Render(d->program);
 		ImPlatform_BindBuffers(d->vb, d->ib);
 		ImPlatform_SetShaderTexture(d->program, "curveTexture", 0, curveTex);
@@ -4262,13 +4291,8 @@ namespace ImWidgets {
 			float uL = ge->minXEm, uR = ge->maxXEm;
 			float uT = ge->maxYEm, uB = ge->minYEm;
 
-			unsigned int gz = (unsigned int)(ImU16)ge->bandTexX
-			                | ((unsigned int)(ImU16)ge->bandTexY << 16);
-			unsigned int gw = (unsigned int)(ge->bandMaxX & 0xFF)
-			                | ((unsigned int)(ge->bandMaxY & 0xFF) << 16);
 			float fgz, fgw;
-			memcpy(&fgz, &gz, 4);
-			memcpy(&fgw, &gw, 4);
+			SlugPackGlyphData(ge->bandTexX, ge->bandTexY, ge->bandMaxX, ge->bandMaxY, false, &fgz, &fgw);
 
 			ImU16 base = (ImU16)verts.Size;
 			SlugVertex v;

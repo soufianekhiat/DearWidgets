@@ -15,7 +15,8 @@ vector constructors, `IMP_OUT` parameters, no `return` in a body (write `col_out
 Ported: `markers`, `lines`, `stroke`, `image_inspector` (not on Direct3D 9: bit reinterpretation), `volume_viewer` (3D texture
 at t1: a `1 volume 3d` texture line), Slug (`slug.hlsl` with `SLUG_COLOR` / `SLUG_DEBUG` / `SLUG_FILL` for `slug_color`,
 `slug_debug`, `slug_fill`, and `slug_gradient.hlsl` for its larger vertex; both take their own vertex inputs, `//@inputs`,
-and share `slug_core.inc` through a `//@include` line, which the loader expands), `lookdev_inspector`, `delta_e_compare`, `blur` (every `BG_EFFECT` variant).
+and share `slug_core.inc` through a `//@include` line, which the loader expands; on Direct3D 9, `IMP_SM3`, the glyph
+data are plain floats and the textures are sampled at texel centers), `lookdev_inspector`, `delta_e_compare`, `blur` (every `BG_EFFECT` variant).
 `dearwidgetsdemo --shader-check [image.png]` compiles each of them for the running backend and exits with 1 when one
 fails; with a path it also saves every marker type rendered by the GPU.
 

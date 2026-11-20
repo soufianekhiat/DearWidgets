@@ -23,6 +23,14 @@ float4 fillBBox;     // reserved: the bbox comes from the vertex color
 float4 fillGrad;     // x = type (0 linear, 1 radial, 2 diamond, 3 image), y = color space (0-4)
 float4 fillUVStart;  // gradient UV start (or image uv_offset)
 float4 fillUVEnd;    // gradient UV end (or image uv_scale)
+float4 slugTexel;    // 1 / curve texture size (xy), 1 / band texture size (zw): shader model 3 only
+
+//@defines
+#ifdef IMP_SM3
+#define SLUG_GLYPH float4
+#else
+#define SLUG_GLYPH int4
+#endif
 
 //@inputs
 float4 pos : POSITION;
@@ -33,7 +41,7 @@ float4 col : COLOR0;
 
 //@varyings
 nointerpolation float4 banding;  // band scale / offset, constant per glyph
-nointerpolation int4 glyph;      // glyph location + band max + flags, constant per glyph
+nointerpolation SLUG_GLYPH glyph; // glyph location + band max + flags, constant per glyph
 float2 screen;                   // SLUG_FILL: the pixel position in screen coordinates
 
 //@textures
@@ -147,7 +155,7 @@ float4 lerpInColorSpace(float4 c0, float4 c1, float ft, float space) {
 #endif // SLUG_FILL
 
 // The whole pixel stage: a function, so it can return early (a body cannot). texcoord: em-space sample coordinate.
-float4 SlugShade(float2 texcoord, float4 color, float4 banding, int4 glyph, float2 screen)
+float4 SlugShade(float2 texcoord, float4 color, float4 banding, SLUG_GLYPH glyph, float2 screen)
 {
     float coverage = SlugRender(texcoord, banding, glyph);
 #if defined(SLUG_DEBUG)
