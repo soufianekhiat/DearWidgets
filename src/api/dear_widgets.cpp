@@ -3511,6 +3511,7 @@ static const float DRAG_MOUSE_THRESHOLD_FACTOR = 0.50f; // COPY PASTED FROM imgu
 		memset(&ctx->slugColorShader,   0, sizeof(ImDrawShader));
 		memset(&ctx->slugFillShader,    0, sizeof(ImDrawShader));
 		memset(&ctx->strokeShader,     0, sizeof(ImDrawShader));
+		ctx->strokeSegTex = 0;
 		memset(&ctx->imageInspectorShader, 0, sizeof(ImDrawShader));
 		// The three late-added shader slots must also be zeroed. Without this,
 		// `program` holds heap garbage -- the lazy-init check `program == NULL`

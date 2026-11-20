@@ -72,7 +72,12 @@ struct ImWidgetsShapeCache
 // and GLSL std140 layout (vec2 aligned to 8, vec4 aligned to 16).
 // Registers: [0-15] p0+p1, [16-31] thickness+aa+dash, [32-47] dash_offset+cap+join+miter_limit,
 //            [48-63] rect_min+rect_max, [64-79] color.  Total: 80 bytes.
+// Segments one stroke draw holds: STROKE_SEGS of shaders/parts/stroke.hlsl (shader model 3 loops at most 255 times).
+#if IM_CURRENT_GFX == IM_GFX_DIRECTX9
+#define IMGUI_STROKE_MAX_SEGMENTS 192
+#else
 #define IMGUI_STROKE_MAX_SEGMENTS 1024
+#endif
 struct ImWidgetsDashedLineBuffer
 {
     ImVec2  p0;            // offset 0   - segment start (screen space)
@@ -143,6 +148,7 @@ struct ImWidgetsContext
 
 	// Stroke expansion (Euler spiral, winding-number fill)
 	ImDrawShader					strokeShader;
+	ImTextureID						strokeSegTex;       // Its t1: the segments on Direct3D 9 (refilled before each draw)
 
 	// Image Inspector: color-managed raw-buffer viewer (uber-shader for 44 sample-type/channel combos)
 	ImDrawShader					imageInspectorShader;

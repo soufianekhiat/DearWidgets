@@ -1114,13 +1114,7 @@ static void DW_ShaderCheckOne( char const* name, char const* define )
 
 static void DW_ShaderCheckBegin()
 {
-#if IM_CURRENT_GFX == IM_GFX_DIRECTX9
-	// Not on Direct3D 9: the stroke's 1024 segments exceed shader model 3's constants (the CPU fill draws strokes).
-	fprintf( stderr, "[shader-check] stroke: skipped on Direct3D 9\n" );
-	char const* names[] = { "markers", "lookdev_inspector",
-#else
 	char const* names[] = { "markers", "stroke", "lookdev_inspector",
-#endif
 		"delta_e_compare", "lines", "volume_viewer", "slug", "slug_color", "slug_debug", "slug_fill", "slug_gradient" };
 	for ( char const* name : names )
 		DW_ShaderCheckOne( name, nullptr );
@@ -1137,15 +1131,15 @@ static void DW_ShaderCheckBegin()
 	fflush( stderr );
 	if ( !g_shaderCheckPng )
 		return;
-	ImPlatform_TextureDesc desc = ImPlatform_TextureDesc_Default( 600, 240 );
+	ImPlatform_TextureDesc desc = ImPlatform_TextureDesc_Default( 600, 300 );
 	desc.format = ImPlatform_GetRenderPassFormat();
 	g_shaderCheckTarget = ImPlatform_CreateRenderTexture( &desc );
 	g_shaderCheckList = IM_NEW( ImDrawList )( ImGui::GetDrawListSharedData() );
 	g_shaderCheckList->_ResetForNewFrame();
 	g_shaderCheckList->_SetPixelDensity( 1.0f );
-	g_shaderCheckList->PushClipRect( ImVec2( 0, 0 ), ImVec2( 600, 240 ) );
+	g_shaderCheckList->PushClipRect( ImVec2( 0, 0 ), ImVec2( 600, 300 ) );
 	g_shaderCheckList->PushTexture( ImGui::GetIO().Fonts->TexRef );
-	g_shaderCheckList->AddRectFilled( ImVec2( 0, 0 ), ImVec2( 600, 240 ), IM_COL32( 40, 40, 40, 255 ) );
+	g_shaderCheckList->AddRectFilled( ImVec2( 0, 0 ), ImVec2( 600, 300 ), IM_COL32( 40, 40, 40, 255 ) );
 	for ( int m = 0; m < ImWidgetsMarker_COUNT; m++ )
 		ImWidgets::DrawMarker( g_shaderCheckList, ImVec2( 4.0f + ( m % 9 ) * 64.0f, 4.0f + ( m / 9 ) * 64.0f ), ImVec2( 60, 60 ),
 							   IM_COL32( 91, 194, 231, 255 ), IM_COL32( 255, 128, 64, 255 ), 0.3f * m, 0.8f, 0.05f, 0.01f,
@@ -1157,13 +1151,18 @@ static void DW_ShaderCheckBegin()
 	ImWidgets::DrawLinearGradientTextGPU( g_shaderCheckList, nullptr, 28.0f, ImVec2( 6, 195 ), "Gradient fill: Hamburgefonstiv",
 										  ImVec2( 0, 0 ), ImVec2( 1, 0 ), IM_COL32( 255, 80, 40, 255 ), IM_COL32( 40, 160, 255, 255 ) );
 	ImWidgets::SetTextRenderer( renderer );
+	// Stroke shader: a thick sine wave, more segments than one draw holds on Direct3D 9, so it is split into bands.
+	ImVec2 wave[ 160 ];
+	for ( int i = 0; i < 160; i++ )
+		wave[ i ] = ImVec2( 12.0f + i * 3.6f, 268.0f + 18.0f * sinf( i * 0.25f ) );
+	ImWidgets::DrawStrokedPolyline( g_shaderCheckList, wave, 160, IM_COL32( 120, 220, 90, 255 ), 9.0f );
 	g_shaderCheckList->PopTexture();
 	g_shaderCheckList->PopClipRect();
 	g_shaderCheckData.Clear();
 	g_shaderCheckData.Valid = true;
 	g_shaderCheckData.AddDrawList( g_shaderCheckList );
 	g_shaderCheckData.DisplayPos = ImVec2( 0, 0 );
-	g_shaderCheckData.DisplaySize = ImVec2( 600, 240 );
+	g_shaderCheckData.DisplaySize = ImVec2( 600, 300 );
 	g_shaderCheckData.FramebufferScale = ImVec2( 1, 1 );
 	if ( !g_shaderCheckTarget || !ImPlatform_QueueRenderPass( g_shaderCheckTarget, &g_shaderCheckData, true ) )
 		fprintf( stderr, "[shader-check] no render pass on this backend: no image\n" );
@@ -1172,13 +1171,13 @@ static void DW_ShaderCheckBegin()
 static void DW_ShaderCheckEnd()
 {
 #if IMPLATFORM_GFX_SUPPORT_READBACK && DW_SCREENSHOT_SUPPORT
-	static unsigned char px[ 600 * 240 * 4 ];
-	if ( g_shaderCheckPng && g_shaderCheckTarget && ImPlatform_ReadTexture( g_shaderCheckTarget, 0, 0, 600, 240, px, sizeof( px ) ) )
+	static unsigned char px[ 600 * 300 * 4 ];
+	if ( g_shaderCheckPng && g_shaderCheckTarget && ImPlatform_ReadTexture( g_shaderCheckTarget, 0, 0, 600, 300, px, sizeof( px ) ) )
 	{
 		if ( ImPlatform_GetRenderPassFormat() == ImPlatform_PixelFormat_BGRA8 )
-			for ( int i = 0; i < 600 * 240; i++ )
+			for ( int i = 0; i < 600 * 300; i++ )
 				ImSwap( px[ i * 4 ], px[ i * 4 + 2 ] );
-		stbi_write_png( g_shaderCheckPng, 600, 240, 4, px, 600 * 4 );
+		stbi_write_png( g_shaderCheckPng, 600, 300, 4, px, 600 * 4 );
 	}
 	else if ( g_shaderCheckPng )
 		fprintf( stderr, "[shader-check] the image could not be read back\n" );

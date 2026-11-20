@@ -712,9 +712,13 @@ static void DW_StrokeBuildOutlinePolyline(
 // Callback: upload stroke uniform buffer before shader activation.
 struct DW_StrokeCBData {
     ImPlatform_ShaderProgram program;
+    ImTextureID seg_tex;
     ImWidgetsStrokeBuffer* buf;
     int buf_size;
 };
+
+// Width of segTex: at least IMGUI_STROKE_MAX_SEGMENTS on Direct3D 9.
+#define DW_STROKE_TEX_WIDTH 256
 
 static ImVector<DW_StrokeCBData*> s_strokeCBPool;
 static int s_strokeCBPoolIdx = 0;
@@ -725,6 +729,10 @@ static void DW_PrepareStrokeUniforms(const ImDrawList*, const ImDrawCmd* cmd)
     DW_StrokeCBData* data = (DW_StrokeCBData*)cmd->UserCallbackData;
     if (!data || !data->program) return;
     ImPlatform_SetShaderUniform(data->program, "strokeBuffer", data->buf, data->buf_size);
+#if IM_CURRENT_GFX == IM_GFX_DIRECTX9
+    // Shader model 3 reads the segments from segTex: refilled here, at draw time (Direct3D 9 runs in order).
+    ImPlatform_UpdateTexture(data->seg_tex, data->buf->segments, 0, 0, (unsigned int)data->buf->params[0], 1);
+#endif
 }
 
 // Build line soup from fwd/bwd/cap arrays and render via winding-number shader.
@@ -755,6 +763,21 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
     {
         s_strokeShaderTried = ctx;
         CreateInternalShader(&ctx->strokeShader, "stroke", 0, NULL, 0, NULL);
+        if (ctx->strokeShader.program)
+        {
+            // segTex (t1): read by the shader on Direct3D 9 only, bound on every backend so the slot is never empty.
+            static const float zeros[DW_STROKE_TEX_WIDTH * 4] = {};
+            ImPlatform_TextureDesc desc = ImPlatform_TextureDesc_Default(DW_STROKE_TEX_WIDTH, 1);
+            desc.format = ImPlatform_PixelFormat_RGBA32F;
+            desc.min_filter = ImPlatform_TextureFilter_Nearest;
+            desc.mag_filter = ImPlatform_TextureFilter_Nearest;
+            ctx->strokeSegTex = ImPlatform_CreateTexture(zeros, &desc);
+            if (ctx->strokeSegTex)
+            {
+                ctx->ressources.push_back(ctx->strokeSegTex);
+                ImPlatform_SetShaderTexture(ctx->strokeShader.program, "segTex", 1, ctx->strokeSegTex);
+            }
+        }
     }
     ImPlatform_ShaderProgram program = ctx->strokeShader.program;
     // No stroke shader (build without custom shaders, or a failed compile): the
@@ -921,7 +944,7 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
         buf->params[0] = (float)count;
         buf->params[1] = half_w;
         buf->params[2] = aa;
-        buf->params[3] = 0;
+        buf->params[3] = 1.0f / DW_STROKE_TEX_WIDTH;
         buf->color[0] = ((col >> 0) & 0xFF) / 255.0f;
         buf->color[1] = ((col >> 8) & 0xFF) / 255.0f;
         buf->color[2] = ((col >> 16) & 0xFF) / 255.0f;
@@ -937,6 +960,7 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
         }
         DW_StrokeCBData* cb = (DW_StrokeCBData*)IM_ALLOC(sizeof(DW_StrokeCBData));
         cb->program = program;
+        cb->seg_tex = ctx->strokeSegTex;
         cb->buf = buf;
         cb->buf_size = buf_size;
         s_strokeCBPool.push_back(cb);
@@ -955,7 +979,7 @@ static void DW_StrokeRenderOutline(ImDrawList* dl,
     // most kBandSegs segments each -- this both lifts the old hard limit
     // (strokes over IMGUI_STROKE_MAX_SEGMENTS segments used to vanish) and
     // keeps the per-pixel loop short on long strokes.
-    const int kBandSegs = 256;
+    const int kBandSegs = ImMin(256, (int)IMGUI_STROKE_MAX_SEGMENTS);
     if (num_segs <= kBandSegs) {
         emitBand(by0, by1, NULL, num_segs);
     } else {
