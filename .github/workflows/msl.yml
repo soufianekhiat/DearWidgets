@@ -1,0 +1,54 @@
+name: MSL
+
+# The shaders written as parts (workingdir/shaders/parts) generated as MSL and compiled by the offline Metal compiler.
+# The hosted macOS runners have no GPU, so nothing runs on Metal there; this catches what does not compile.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  msl:
+    name: Shader parts compiled as MSL
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Submodules (ImPlatform and its imgui)
+        run: |
+          git submodule update --init --depth 1 extern/ImPlatform
+          git -C extern/ImPlatform submodule update --init --depth 1 imgui
+
+      - name: Build parts_msl
+        run: |
+          I=extern/ImPlatform/imgui
+          clang++ -std=c++17 -O1 -Wall -Wextra -I extern/ImPlatform/ImPlatform -I $I tools/parts_msl.cpp \
+            extern/ImPlatform/ImPlatform/ImPlatform_shader_parts.cpp $I/imgui.cpp $I/imgui_draw.cpp $I/imgui_tables.cpp \
+            $I/imgui_widgets.cpp $I/imgui_stacklayout.cpp -o parts_msl
+
+      # The list follows the demo's --shader-check (src/demo/demo.cpp) and the variants of CreateInternalShaderFromParts
+      # (slug_color / slug_debug / slug_fill are slug.hlsl with a define; blur has one BG_EFFECT per ImWidgetsBgEffect).
+      - name: Compile generated MSL (offline Metal compiler)
+        run: |
+          xcrun -sdk macosx metal -v > /dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
+          {
+            printf '%s|\n' markers stroke lookdev_inspector delta_e_compare lines volume_viewer image_inspector slug slug_gradient
+            printf 'slug|#define %s\n' SLUG_COLOR SLUG_DEBUG SLUG_FILL
+            for effect in $(seq 0 16); do echo "blur|#define BG_EFFECT $effect"; done
+          } > shaders.txt
+          status=0
+          while IFS='|' read -r name define; do
+            for stage in vs ps; do
+              ./parts_msl workingdir/shaders/parts "$name" $stage "$define" > shader.metal
+              if xcrun -sdk macosx metal -c shader.metal -o /dev/null 2> metal.log < /dev/null; then
+                echo "$name $define $stage: compiled"
+              else
+                status=1
+                cat -n shader.metal
+                echo "::error title=MSL $name $define $stage::$(sed 's/%/%25/g' metal.log | awk '{printf "%s%%0A", $0}')"
+              fi
+              cat metal.log
+            done
+          done < shaders.txt
+          exit $status

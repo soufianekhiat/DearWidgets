@@ -19,6 +19,8 @@ and share `slug_core.inc` through a `//@include` line, which the loader expands;
 data are plain floats and the textures are sampled at texel centers), `lookdev_inspector`, `delta_e_compare`, `blur` (every `BG_EFFECT` variant).
 `dearwidgetsdemo --shader-check [image.png]` compiles each of them for the running backend and exits with 1 when one
 fails; with a path it also saves every marker type rendered by the GPU.
+`tools/parts_msl.cpp` prints the MSL of one parts file (and variant define) without a device; the `MSL` workflow builds
+it on macOS and compiles every shader above with the offline Metal compiler, since the hosted runners have no GPU.
 
 ## Per-language files (Slang)
 
